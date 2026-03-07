@@ -1,0 +1,81 @@
+@import "tailwindcss";
+
+/* ═══════════════════════════════════════════════════ */
+/* Trace Recording Panel — Design Tokens              */
+/* Follows system theme via prefers-color-scheme       */
+/* ═══════════════════════════════════════════════════ */
+
+@theme {
+  --color-accent: #8b5cf6;
+  --color-accent-soft: #8b5cf620;
+  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+
+/* ── Light mode (default) ── */
+:root {
+  color-scheme: light dark;
+  --panel-bg: #f5f5f7;
+  --panel-surface: #ffffff;
+  --panel-surface-hover: #f0f0f2;
+  --panel-border: rgba(0, 0, 0, 0.08);
+  --panel-border-strong: rgba(0, 0, 0, 0.12);
+  --panel-text-primary: #1d1d1f;
+  --panel-text-secondary: #6e6e73;
+  --panel-text-tertiary: #aeaeb2;
+  --panel-thumb-bg: #e8e8ed;
+  --panel-thumb-hover: #d1d1d6;
+  --panel-card-bg: #ffffff;
+  --panel-card-hover: #f5f5f7;
+  --panel-card-selected: rgba(139, 92, 246, 0.08);
+  --panel-card-selected-border: rgba(139, 92, 246, 0.4);
+  --panel-divider: rgba(0, 0, 0, 0.06);
+  --panel-control-bg: rgba(0, 0, 0, 0.04);
+  --panel-control-hover: rgba(0, 0, 0, 0.08);
+}
+
+/* ── Dark mode ── */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --panel-bg: #1c1c1e;
+    --panel-surface: #2c2c2e;
+    --panel-surface-hover: #3a3a3c;
+    --panel-border: rgba(255, 255, 255, 0.08);
+    --panel-border-strong: rgba(255, 255, 255, 0.12);
+    --panel-text-primary: #f5f5f7;
+    --panel-text-secondary: #98989d;
+    --panel-text-tertiary: #636366;
+    --panel-thumb-bg: #3a3a3c;
+    --panel-thumb-hover: #48484a;
+    --panel-card-bg: #2c2c2e;
+    --panel-card-hover: #3a3a3c;
+    --panel-card-selected: rgba(139, 92, 246, 0.12);
+    --panel-card-selected-border: rgba(139, 92, 246, 0.5);
+    --panel-divider: rgba(255, 255, 255, 0.06);
+    --panel-control-bg: rgba(255, 255, 255, 0.06);
+    --panel-control-hover: rgba(255, 255, 255, 0.1);
+  }
+}
+
+@layer base {
+
+  *,
+  *::before,
+  *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  html,
+  body {
+    background: var(--panel-bg);
+    color: var(--panel-text-primary);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
