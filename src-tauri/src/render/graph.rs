@@ -239,12 +239,66 @@ fn resolve_background_path(value: &str, static_root: &Path) -> Option<PathBuf> {
         return Some(static_root.join("wallpapers").join(rest));
     }
 
+    if let Some(decoded_path) = decode_background_uri(value) {
+        if decoded_path.exists() {
+            return Some(decoded_path);
+        }
+    }
+
     let as_path = PathBuf::from(value);
     if as_path.exists() {
         Some(as_path)
     } else {
         None
     }
+}
+
+fn decode_background_uri(value: &str) -> Option<PathBuf> {
+    const PREFIXES: [&str; 4] = [
+        "asset://localhost/",
+        "http://asset.localhost/",
+        "https://asset.localhost/",
+        "file:///",
+    ];
+
+    for prefix in PREFIXES {
+        if let Some(rest) = value.strip_prefix(prefix) {
+            let decoded = percent_decode(rest);
+            let normalized = if decoded.starts_with('/')
+                && decoded.as_bytes().get(2) == Some(&b':')
+            {
+                decoded[1..].to_string()
+            } else {
+                decoded
+            };
+            return Some(PathBuf::from(normalized));
+        }
+    }
+
+    None
+}
+
+fn percent_decode(value: &str) -> String {
+    let bytes = value.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(hex) = std::str::from_utf8(&bytes[index + 1..index + 3]) {
+                if let Ok(byte) = u8::from_str_radix(hex, 16) {
+                    decoded.push(byte);
+                    index += 3;
+                    continue;
+                }
+            }
+        }
+
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+
+    String::from_utf8_lossy(&decoded).into_owned()
 }
 
 fn normalize_color(value: &str) -> String {

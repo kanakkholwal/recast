@@ -96,6 +96,7 @@ impl Default for AppConfig {
 struct ExportRequest {
     input_path: String,
     format: String,
+    quality: String,
     render_state: RenderState,
 }
 
@@ -105,6 +106,16 @@ struct PreviewFrameRequest {
     input_path: String,
     time: f64,
     render_state: RenderState,
+}
+
+#[derive(Clone, Copy)]
+struct ExportProfile {
+    max_width: Option<u32>,
+    max_height: Option<u32>,
+    mp4_crf: u32,
+    mp4_preset: &'static str,
+    webm_crf: u32,
+    gif_fps: u32,
 }
 
 struct AppState {
@@ -130,6 +141,97 @@ fn run_preview_ffmpeg(args: &[String]) -> Result<String, String> {
         "data:image/png;base64,{}",
         general_purpose::STANDARD.encode(output.stdout)
     ))
+}
+
+fn resolve_export_profile(quality: &str) -> ExportProfile {
+    match quality {
+        "small" => ExportProfile {
+            max_width: Some(1280),
+            max_height: Some(720),
+            mp4_crf: 28,
+            mp4_preset: "veryfast",
+            webm_crf: 34,
+            gif_fps: 12,
+        },
+        "4k" => ExportProfile {
+            max_width: Some(3840),
+            max_height: Some(2160),
+            mp4_crf: 18,
+            mp4_preset: "slow",
+            webm_crf: 24,
+            gif_fps: 18,
+        },
+        "source" => ExportProfile {
+            max_width: None,
+            max_height: None,
+            mp4_crf: 20,
+            mp4_preset: "slow",
+            webm_crf: 28,
+            gif_fps: 18,
+        },
+        _ => ExportProfile {
+            max_width: Some(1920),
+            max_height: Some(1080),
+            mp4_crf: 22,
+            mp4_preset: "medium",
+            webm_crf: 30,
+            gif_fps: 15,
+        },
+    }
+}
+
+fn build_output_scale_filter(profile: ExportProfile) -> Option<String> {
+    match (profile.max_width, profile.max_height) {
+        (Some(max_width), Some(max_height)) => Some(format!(
+            "scale=w='min(iw,{max_width})':h='min(ih,{max_height})':force_original_aspect_ratio=decrease:flags=lanczos"
+        )),
+        _ => None,
+    }
+}
+
+fn append_output_filters_to_complex(
+    filter_complex: &str,
+    input_label: &str,
+    filters: &[String],
+) -> (String, String) {
+    let final_label = "[vfinal]";
+    let normalized_input = if input_label.starts_with('[') {
+        input_label.to_string()
+    } else {
+        format!("[{input_label}]")
+    };
+
+    (
+        format!(
+            "{filter_complex};{normalized_input}{}{final_label}",
+            filters.join(",")
+        ),
+        final_label.to_string(),
+    )
+}
+
+fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
+    let text = String::from_utf8_lossy(stderr);
+    let lines: Vec<&str> = text
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    if lines.is_empty() {
+        "FFmpeg failed without returning a detailed error.".into()
+    } else {
+        lines
+            .iter()
+            .rev()
+            .take(8)
+            .copied()
+            .collect::<Vec<_>>()
+            .into_iter()
+            .rev()
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
 }
 
 fn config_path(app: &AppHandle) -> PathBuf {
@@ -704,9 +806,14 @@ fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Result<St
         .map(|value| value.recording_path.clone())
         .unwrap_or_else(|| input_path.clone());
     let metadata = probe_video_metadata(&source_video)?;
+    if metadata.width == 0 || metadata.height == 0 {
+        return Err("export failed: source video metadata is incomplete".into());
+    }
     let graph = RenderGraph::from_state(&request.render_state);
     let (trim_start, trim_end) = graph.trim_range();
     let duration = (trim_end - trim_start).max(0.0);
+    let profile = resolve_export_profile(&request.quality);
+    let output_scale_filter = build_output_scale_filter(profile);
     let output_dir = get_active_output_dir(&state);
     let extension = match request.format.as_str() {
         "gif" => "gif",
@@ -734,16 +841,18 @@ fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Result<St
         .map_err(|e| e.to_string())?;
 
     let mut args = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
         "-y".to_string(),
-        "-ss".to_string(),
-        format!("{trim_start:.3}"),
-        "-i".to_string(),
-        source_video.to_string_lossy().to_string(),
     ];
-
+    if trim_start > 0.0 {
+        args.extend(["-ss".to_string(), format!("{trim_start:.3}")]);
+    }
     if duration > 0.0 {
         args.extend(["-t".to_string(), format!("{duration:.3}")]);
     }
+    args.extend(["-i".to_string(), source_video.to_string_lossy().to_string()]);
 
     for input in &export_plan.extra_inputs {
         args.extend([
@@ -765,15 +874,30 @@ fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Result<St
         args.extend(["-map".to_string(), "0:v:0".to_string()]);
     }
 
-    if has_audio(&source_video) {
+    let has_source_audio = has_audio(&source_video) && request.format != "gif";
+    if has_source_audio {
         args.extend(["-map".to_string(), "0:a?".to_string()]);
+    }
+
+    let mut output_filters = Vec::new();
+    if request.format == "gif" {
+        output_filters.push(format!("fps={}", profile.gif_fps));
+    }
+    if let Some(scale_filter) = output_scale_filter {
+        output_filters.push(scale_filter);
+    }
+    if !output_filters.is_empty() && export_plan.filter_complex.is_none() {
+        args.extend(["-vf".to_string(), output_filters.join(",")]);
+    }
+
+    if !export_plan.extra_inputs.is_empty() {
+        args.push("-shortest".to_string());
     }
 
     match request.format.as_str() {
         "gif" => {
             args.extend([
-                "-vf".to_string(),
-                "fps=15,scale=960:-1:flags=lanczos".to_string(),
+                "-an".to_string(),
                 "-loop".to_string(),
                 "0".to_string(),
                 output_path.to_string_lossy().to_string(),
@@ -784,26 +908,68 @@ fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Result<St
                 "-c:v".to_string(),
                 "libvpx-vp9".to_string(),
                 "-crf".to_string(),
-                "30".to_string(),
+                profile.webm_crf.to_string(),
                 "-b:v".to_string(),
                 "0".to_string(),
-                "-c:a".to_string(),
-                "libopus".to_string(),
-                output_path.to_string_lossy().to_string(),
             ]);
+            if has_source_audio {
+                args.extend([
+                    "-c:a".to_string(),
+                    "libopus".to_string(),
+                ]);
+            } else {
+                args.push("-an".to_string());
+            }
+            args.push(output_path.to_string_lossy().to_string());
         }
         _ => {
             args.extend([
                 "-c:v".to_string(),
                 "libx264".to_string(),
                 "-preset".to_string(),
-                "medium".to_string(),
+                profile.mp4_preset.to_string(),
+                "-crf".to_string(),
+                profile.mp4_crf.to_string(),
                 "-pix_fmt".to_string(),
                 "yuv420p".to_string(),
                 "-movflags".to_string(),
                 "+faststart".to_string(),
-                output_path.to_string_lossy().to_string(),
             ]);
+            if has_source_audio {
+                args.extend([
+                    "-c:a".to_string(),
+                    "aac".to_string(),
+                    "-b:a".to_string(),
+                    "192k".to_string(),
+                ]);
+            } else {
+                args.push("-an".to_string());
+            }
+            args.push(output_path.to_string_lossy().to_string());
+        }
+    }
+
+    if !output_filters.is_empty() && export_plan.filter_complex.is_some() {
+        let (complex_filter, map_label) = append_output_filters_to_complex(
+            export_plan.filter_complex.as_deref().unwrap_or_default(),
+            &export_plan.video_map,
+            &output_filters,
+        );
+
+        let filter_index = args
+            .iter()
+            .position(|arg| arg == "-filter_complex")
+            .and_then(|index| args.get_mut(index + 1));
+        if let Some(slot) = filter_index {
+            *slot = complex_filter;
+        }
+
+        let map_index = args
+            .iter()
+            .position(|arg| arg == "-map")
+            .and_then(|index| args.get_mut(index + 1));
+        if let Some(slot) = map_index {
+            *slot = map_label;
         }
     }
 
@@ -813,10 +979,7 @@ fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Result<St
         .map_err(|e| e.to_string())?;
 
     if !output.status.success() {
-        return Err(format!(
-            "export failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
+        return Err(format!("export failed:\n{}", summarize_ffmpeg_error(&output.stderr)));
     }
     Ok(output_path.to_string_lossy().to_string())
 }

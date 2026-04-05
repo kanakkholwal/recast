@@ -222,7 +222,7 @@
         </CardHeader>
         <CardContent>
             <ButtonGroup aria-label="About">
-                <Button href={config.appDomain} target="_blank" variant="link">
+                <Button href={config.website} target="_blank" variant="link">
                     Website
                     <ArrowUpRight size={16} />
                 </Button>

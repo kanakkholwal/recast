@@ -7,6 +7,7 @@
     BackgroundType,
     EditorStore,
     ExportFormat,
+    ExportQuality,
   } from "$lib/stores/editor-store.svelte";
   import {
     ArrowLeft,
@@ -30,10 +31,19 @@
   let { store, filename = "Recording", onback, onexport }: Props = $props();
 
   let showFormatMenu = $state(false);
+  let showQualityMenu = $state(false);
   let showPresetsMenu = $state(false);
 
   $effect(() => {
     if (showFormatMenu) {
+      showPresetsMenu = false;
+      showQualityMenu = false;
+    }
+  });
+
+  $effect(() => {
+    if (showQualityMenu) {
+      showFormatMenu = false;
       showPresetsMenu = false;
     }
   });
@@ -41,6 +51,7 @@
   $effect(() => {
     if (showPresetsMenu) {
       showFormatMenu = false;
+      showQualityMenu = false;
     }
   });
 
@@ -50,45 +61,70 @@
     { value: "gif", label: "GIF", desc: "Animated, shareable" },
   ];
 
+  const exportQualities: {
+    value: ExportQuality;
+    label: string;
+    desc: string;
+  }[] = [
+    { value: "small", label: "Small", desc: "Up to 720p, lightweight share" },
+    { value: "hd", label: "HD", desc: "Up to 1080p, balanced default" },
+    { value: "4k", label: "4K", desc: "Up to 2160p, highest detail" },
+    { value: "source", label: "Source", desc: "Keep original resolution" },
+  ];
+
   const presets: {
     label: string;
     bg: BackgroundType;
     value?: string;
     padding: number;
     blur: number;
+    layout?: "auto" | "crop";
   }[] = [
     {
-      label: "Social Media",
+      label: "Studio",
       bg: "gradient",
-      value: "linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)",
-      padding: 40,
-      blur: 30,
-    },
-    { label: "Clean", bg: "color", value: "#111827", padding: 0, blur: 0 },
-    {
-      label: "Presentation",
-      bg: "wallpaper",
-      value: "/wallpapers/macos-1.png",
-      padding: 60,
-      blur: 50,
+      value: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)",
+      padding: 36,
+      blur: 18,
+      layout: "auto",
     },
     {
-      label: "Tutorial",
+      label: "Focus",
       bg: "color",
-      value: "#0f172a",
-      padding: 20,
+      value: "#0b1120",
+      padding: 24,
       blur: 0,
+      layout: "auto",
+    },
+    {
+      label: "Spotlight",
+      bg: "wallpaper",
+      value: "/wallpapers/wallpaper7.png",
+      padding: 56,
+      blur: 36,
+      layout: "auto",
+    },
+    {
+      label: "Edge to Edge",
+      bg: "color",
+      value: "#020617",
+      padding: 0,
+      blur: 0,
+      layout: "crop",
     },
   ];
 
   function applyPreset(preset: (typeof presets)[0]) {
     store.pushUndoState();
-    store.backgroundType = preset.bg;
-    if (preset.value) {
-      store.backgroundValue = preset.value;
-    }
+    store.setBackground({
+      type: preset.bg,
+      value: preset.value ?? store.backgroundValue,
+    });
     store.padding = preset.padding;
     store.backgroundBlur = preset.blur;
+    if (preset.layout) {
+      store.layoutMode = preset.layout;
+    }
     showPresetsMenu = false;
   }
 </script>
@@ -249,6 +285,39 @@
           >
             <span class="text-xs font-semibold text-foreground">{fmt.label}</span>
             <span class="text-[10px] text-muted-foreground">{fmt.desc}</span>
+          </DropdownMenu.Item>
+        {/each}
+      </DropdownMenu.Content>
+    </DropdownMenu.Root>
+
+    <DropdownMenu.Root bind:open={showQualityMenu}>
+      <DropdownMenu.Trigger
+        class="flex items-center gap-1 rounded-lg border border-border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-all duration-200 hover:bg-muted hover:text-foreground"
+      >
+        {store.exportQuality.toUpperCase()}
+        <ChevronDown
+          size={11}
+          class="transition-transform duration-200 {showQualityMenu
+            ? 'rotate-180'
+            : ''}"
+        />
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Content
+        align="end"
+        class="w-56"
+        preventScroll={false}
+      >
+        {#each exportQualities as quality}
+          <DropdownMenu.Item
+            onclick={() => {
+              store.exportQuality = quality.value;
+              showQualityMenu = false;
+            }}
+            class="flex w-full flex-col items-start gap-0 rounded-lg px-3 py-2 transition-colors hover:bg-muted
+              {store.exportQuality === quality.value ? 'bg-muted/50' : ''}"
+          >
+            <span class="text-xs font-semibold text-foreground">{quality.label}</span>
+            <span class="text-[10px] text-muted-foreground">{quality.desc}</span>
           </DropdownMenu.Item>
         {/each}
       </DropdownMenu.Content>

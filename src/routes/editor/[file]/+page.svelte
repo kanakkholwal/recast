@@ -197,6 +197,7 @@
 				request: {
 					inputPath: documentPath || data.filePath,
 					format: store.exportFormat,
+					quality: store.exportQuality,
 					renderState: store.toRenderState(),
 				},
 			});
@@ -284,7 +285,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground">
+<div class="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground">
 	<EditorToolbar
 		{store}
 		filename={data.filename}
@@ -292,9 +293,9 @@
 		onexport={handleExport}
 	/>
 
-	<div class="flex flex-1 overflow-hidden">
-		<div class="flex flex-1 flex-col overflow-hidden">
-			<div class="flex flex-1 items-center justify-center p-6 pb-2">
+	<div class="flex min-h-0 flex-1 overflow-hidden">
+		<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+			<div class="flex min-h-0 flex-1 items-center justify-center p-4 pb-2">
 				{#if isLoading}
 					<div class="animate-in fade-in flex w-full max-w-lg flex-col items-center gap-5 duration-500">
 						<div class="relative flex h-20 w-20 items-center justify-center rounded-[24px] border border-border/70 bg-card shadow-lg">
@@ -335,7 +336,7 @@
 			<Timeline {store} {videoEl} />
 		</div>
 
-		<div class="w-96 shrink-0">
+		<div class="min-h-0 w-[340px] shrink-0 xl:w-[360px]">
 			<PropertiesPanel {store} />
 		</div>
 	</div>

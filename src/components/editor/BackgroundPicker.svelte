@@ -124,7 +124,22 @@
     });
 
     if (!selected || typeof selected !== "string") return;
-    applyBackground("image", convertFileSrc(selected));
+    applyBackground("image", selected);
+  }
+
+  function getImagePreviewSrc(value: string) {
+    if (!value) return "";
+    if (
+      value.startsWith("data:") ||
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("asset://") ||
+      value.startsWith("/wallpapers/")
+    ) {
+      return value;
+    }
+
+    return convertFileSrc(value);
   }
 
   function getActiveBackgroundLabel() {
@@ -209,13 +224,13 @@
         </span>
       </div>
 
-      <div class="grid grid-cols-2 gap-2 mx-auto">
+      <div class="grid grid-cols-3 gap-2 mx-auto">
         {#each WALLPAPERS as wallpaper}
           <button
             type="button"
             onclick={() => applyBackground("wallpaper", wallpaper.src)}
             class={cn(
-              "group relative aspect-video overflow-hidden rounded-lg h-20 border transition-all duration-200",
+              "group relative aspect-sq overflow-hidden rounded-lg h-20 border transition-all duration-200",
               {
                 "border-primary shadow-[0_10px_24px_rgba(59,130,246,0.16)] ring-2 ring-primary/25":
                   store.backgroundValue === wallpaper.src,
@@ -357,7 +372,7 @@
           class="mt-3 overflow-hidden rounded-2xl border border-border/70 bg-background/80"
         >
           <img
-            src={store.backgroundValue}
+            src={getImagePreviewSrc(store.backgroundValue)}
             alt="Selected background"
             class="h-30 w-full object-cover"
           />

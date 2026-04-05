@@ -89,6 +89,7 @@ export interface EditorRenderState {
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
+export type ExportQuality = 'small' | 'hd' | '4k' | 'source';
 
 export type LayoutMode = 'auto' | 'crop';
 
@@ -181,6 +182,7 @@ export function createEditorStore() {
 
 	// Export
 	let exportFormat = $state<ExportFormat>('mp4');
+	let exportQuality = $state<ExportQuality>('hd');
 	let exportProgress = $state<number | null>(null);
 	let isExporting = $state(false);
 
@@ -314,6 +316,7 @@ export function createEditorStore() {
 			position: 'bottom-right',
 			inset: 24,
 		};
+		exportQuality = 'hd';
 		undoStack = [];
 		redoStack = [];
 	}
@@ -424,6 +427,9 @@ export function createEditorStore() {
 
 		get exportFormat() { return exportFormat; },
 		set exportFormat(v: ExportFormat) { exportFormat = v; },
+
+		get exportQuality() { return exportQuality; },
+		set exportQuality(v: ExportQuality) { exportQuality = v; },
 
 		get exportProgress() { return exportProgress; },
 		set exportProgress(v: number | null) { exportProgress = v; },
