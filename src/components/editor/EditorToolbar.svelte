@@ -175,7 +175,7 @@
             : ''}"
         />
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content id="presets">
+      <DropdownMenu.Content id="presets" preventScroll={false}>
           {#each presets as preset}
             <DropdownMenu.Item
               onclick={() => applyPreset(preset)}
@@ -233,7 +233,11 @@
             : ''}"
         />
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end" class="w-52">
+      <DropdownMenu.Content
+        align="end"
+        class="w-52"
+        preventScroll={false}
+      >
         {#each formats as fmt}
           <DropdownMenu.Item
             onclick={() => {

@@ -1,11 +1,10 @@
 <script lang="ts">
 	import {
-		COLOR_PRESETS,
-		GRADIENT_PRESETS,
-		WALLPAPERS,
-		type BackgroundType,
-		type EditorStore,
-		type WallpaperCategory,
+	  COLOR_PRESETS,
+	  GRADIENT_PRESETS,
+	  WALLPAPERS,
+	  type BackgroundType,
+	  type EditorStore,
 	} from "$lib/stores/editor-store.svelte";
 	import { Blend, ImageIcon, Palette, Sparkles } from "@lucide/svelte";
 	import SliderControl from "./SliderControl.svelte";
@@ -16,15 +15,7 @@
 
 	let { store }: Props = $props();
 
-	let activeCategory = $state<WallpaperCategory>("macOS");
 
-	const categories: WallpaperCategory[] = [
-		"macOS",
-		"Dark",
-		"Blue",
-		"Purple",
-		"Orange",
-	];
 
 	const bgTabs: {
 		type: BackgroundType;
@@ -37,11 +28,7 @@
 		{ type: "gradient", label: "Gradient", icon: Blend },
 	];
 
-	const filteredWallpapers = $derived(
-		activeCategory
-			? WALLPAPERS.filter((w) => w.category === activeCategory)
-			: WALLPAPERS,
-	);
+
 
 	function selectBackground(type: BackgroundType, value: string) {
 		store.backgroundType = type;
@@ -90,24 +77,9 @@
 
 		<!-- Wallpaper Content -->
 		{#if store.backgroundType === "wallpaper"}
-			<!-- Category pills -->
-			<div class="mb-3 flex flex-wrap gap-1.5">
-				{#each categories as cat}
-					<button
-						onclick={() => (activeCategory = cat)}
-						class="rounded-md px-2.5 py-1 text-[11px] font-medium transition-all duration-200
-							{activeCategory === cat
-							? 'bg-foreground text-background shadow-sm'
-							: 'bg-muted text-muted-foreground hover:bg-muted/80 hover:text-foreground'}"
-					>
-						{cat}
-					</button>
-				{/each}
-			</div>
-
 			<!-- Wallpaper Grid -->
 			<div class="grid grid-cols-5 gap-1.5">
-				{#each filteredWallpapers as wp, i}
+				{#each WALLPAPERS as wp, i}
 					<button
 						onclick={() => selectBackground("wallpaper", wp.src)}
 						class="group relative aspect-square overflow-hidden rounded-lg border transition-all duration-200 animate-in fade-in zoom-in-95
@@ -125,13 +97,7 @@
 						/>
 					</button>
 				{/each}
-				{#if filteredWallpapers.length === 0}
-					<div
-						class="col-span-5 flex items-center justify-center py-6 text-xs text-muted-foreground"
-					>
-						No wallpapers in this category
-					</div>
-				{/if}
+
 			</div>
 		{:else if store.backgroundType === "color"}
 			<!-- Color Grid -->

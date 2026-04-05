@@ -5,11 +5,9 @@
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
 
-export type WallpaperCategory = 'macOS' | 'Dark' | 'Blue' | 'Purple' | 'Orange';
 
 export interface WallpaperOption {
 	src: string;
-	category: WallpaperCategory;
 	label: string;
 }
 
@@ -46,13 +44,10 @@ export type LayoutMode = 'auto' | 'crop';
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
-export const WALLPAPERS: WallpaperOption[] = [
-	{ src: '/wallpapers/macos-1.png', category: 'macOS', label: 'macOS Sonoma' },
-	{ src: '/wallpapers/macos-2.png', category: 'macOS', label: 'macOS Sequoia' },
-	{ src: '/wallpapers/dark-1.png', category: 'Dark', label: 'Obsidian' },
-	{ src: '/wallpapers/dark-2.png', category: 'Dark', label: 'Carbon' },
-	{ src: '/wallpapers/blue-1.png', category: 'Blue', label: 'Ocean' },
-];
+export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 22 }, (_, i) => ({
+	src: `/wallpapers/wallpaper${i + 1}.png`,
+	label: `Wallpaper ${i + 1}`,
+}));
 
 export const GRADIENT_PRESETS = [
 	{ label: 'Sunset', value: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
