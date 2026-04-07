@@ -1,6 +1,8 @@
 mod audio;
 mod capture;
 mod commands;
+mod cursor;
+mod encoder;
 mod project;
 mod recording;
 mod render;

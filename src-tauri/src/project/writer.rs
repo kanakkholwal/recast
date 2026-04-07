@@ -1,8 +1,8 @@
-use std::fs::File;
+use std::fs::{self, File};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use zip::CompressionMethod;
 use zip::ZipWriter;
 use zip::write::SimpleFileOptions;
@@ -18,8 +18,37 @@ pub struct ProjectWriteRequest {
     pub edits_json: String,
 }
 
+/// Write a .recast project file atomically.
+/// Writes to a temporary file first, then renames to the final path.
+/// This prevents corrupted project files if the process crashes mid-write.
 pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
-    let file = File::create(&request.output_path)?;
+    let temp_path = request.output_path.with_extension("recast.tmp");
+
+    // Write to temporary file.
+    let result = write_project_inner(&temp_path, &request);
+
+    match result {
+        Ok(()) => {
+            // Atomic rename: on Windows this is a replace operation.
+            // If the target exists, we overwrite it.
+            if request.output_path.exists() {
+                fs::remove_file(&request.output_path)
+                    .context("failed to remove old project file before atomic rename")?;
+            }
+            fs::rename(&temp_path, &request.output_path)
+                .context("failed to atomically rename project file")?;
+            Ok(request.output_path)
+        }
+        Err(e) => {
+            // Clean up the temp file on failure.
+            let _ = fs::remove_file(&temp_path);
+            Err(e)
+        }
+    }
+}
+
+fn write_project_inner(path: &Path, request: &ProjectWriteRequest) -> Result<()> {
+    let file = File::create(path)?;
     let mut writer = ZipWriter::new(file);
     let options = SimpleFileOptions::default()
         .compression_method(CompressionMethod::Deflated)
@@ -41,7 +70,7 @@ pub fn write_project(request: ProjectWriteRequest) -> Result<PathBuf> {
     copy_file(&request.recording_path, &mut writer)?;
 
     writer.finish()?;
-    Ok(request.output_path)
+    Ok(())
 }
 
 fn copy_file(path: &Path, writer: &mut ZipWriter<File>) -> Result<()> {

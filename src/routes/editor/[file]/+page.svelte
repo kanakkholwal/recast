@@ -291,7 +291,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="flex h-screen w-full flex-col overflow-hidden bg-background text-foreground"
+  class="flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground fixed inset-0"
 >
   <EditorToolbar
     {store}

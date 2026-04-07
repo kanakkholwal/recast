@@ -1,3 +1,5 @@
+pub mod pipeline;
+
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,14 +11,12 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use xcap::{Monitor, Window};
 
-pub mod cursor;
-pub mod encoder;
-pub mod pipeline;
-
 use crate::audio::{AudioCaptureConfig, AudioCaptureSession};
-use cursor::{CursorTrack, spawn_cursor_capture, write_cursor_track};
-use encoder::{EncoderConfig, spawn_encoder_loop};
+use crate::cursor::{CursorTrack, spawn_cursor_capture, write_cursor_track};
+use crate::encoder::{EncoderConfig, spawn_encoder_loop};
 use pipeline::{PipelineSnapshot, RecordingPipeline, spawn_capture_loop};
+
+// ── Shared types ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -134,6 +134,8 @@ fn resolve_window_target(target_id: u32) -> Result<CaptureTarget> {
     })
 }
 
+// ── Recording stats and artifacts ───────────────────────────────────────
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RecordingStats {
@@ -153,6 +155,8 @@ pub struct RecordingArtifacts {
     pub started_at_unix_ms: u64,
     pub stats: RecordingStats,
 }
+
+// ── Recording session orchestration ─────────────────────────────────────
 
 pub struct RecordingManager {
     session: Mutex<Option<RecordingSession>>,
@@ -200,12 +204,14 @@ impl RecordingManager {
         let started_at = Instant::now();
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(180);
+
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
             pipeline.clone(),
             started_at,
         )?;
+
         let encoder_handle = spawn_encoder_loop(
             EncoderConfig {
                 width: target.source.width,
@@ -217,6 +223,7 @@ impl RecordingManager {
             stop_flag.clone(),
             pipeline.clone(),
         )?;
+
         let cursor_handle = spawn_cursor_capture(stop_flag.clone(), started_at)?;
 
         // Start real audio capture. If it fails (e.g., no audio device), log
@@ -273,9 +280,7 @@ impl RecordingManager {
             .join()
             .map_err(|_| anyhow!("encoder thread panicked"))??;
 
-        // Stop audio capture. If it was started, finalize the WAV file.
-        // If audio was unavailable, write a silence WAV as a placeholder
-        // so the project format always has an audio track.
+        // Stop audio capture. Write silence fallback if audio was unavailable.
         let audio_path = if let Some(audio_session) = session.audio_session {
             match audio_session.stop() {
                 Ok(path) => path,

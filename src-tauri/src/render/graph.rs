@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::nodes::{BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
+use super::node_types::{BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,7 +126,7 @@ impl RenderGraph {
         let canvas_height = source.height + padding * 2;
         let zoom_filter = zoom
             .map(|node| build_zoom_filter(node, source))
-            .filter(|value| !value.is_empty());
+            .filter(|value: &String| !value.is_empty());
 
         let mut extra_inputs = Vec::new();
         let filter_complex = match background {

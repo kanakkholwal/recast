@@ -8,8 +8,9 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
-use super::{CaptureArea, pipeline::RecordingPipeline};
+use crate::recording::{CaptureArea, pipeline::RecordingPipeline};
 
+/// Configuration for the live recording encoder.
 #[derive(Clone, Debug)]
 pub struct EncoderConfig {
     pub width: u32,
@@ -19,6 +20,8 @@ pub struct EncoderConfig {
     pub output_path: PathBuf,
 }
 
+/// Detect the best available H.264 encoder on the system.
+/// Prefers hardware encoders (nvenc) and falls back to libx264.
 fn preferred_encoder() -> &'static str {
     let output = Command::new("ffmpeg")
         .args(["-hide_banner", "-encoders"])
@@ -49,6 +52,8 @@ fn build_video_filter(crop: Option<CaptureArea>) -> Option<String> {
     })
 }
 
+/// Spawn the encoder thread. Pulls raw BGRA frames from the pipeline
+/// and pipes them to FFmpeg for H.264 encoding.
 pub fn spawn_encoder_loop(
     config: EncoderConfig,
     stop_flag: Arc<AtomicBool>,
@@ -120,9 +125,6 @@ pub fn spawn_encoder_loop(
 
             loop {
                 if let Some(frame) = pipeline.pop() {
-                    let _capture_ts = frame.timestamp_us;
-                    let _capture_w = frame.width;
-                    let _capture_h = frame.height;
                     stdin.write_all(&frame.data)?;
                     stats.encoded_frames.fetch_add(1, Ordering::Relaxed);
                     continue;

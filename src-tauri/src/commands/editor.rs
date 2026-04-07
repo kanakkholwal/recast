@@ -8,7 +8,7 @@ use tauri::State;
 
 use super::ffmpeg::{
     append_output_filters_to_complex, build_output_scale_filter, has_audio, probe_video_metadata,
-    resolve_export_profile, run_preview_ffmpeg, summarize_ffmpeg_error,
+    resolve_export_profile, summarize_ffmpeg_error,
 };
 use super::system::get_active_output_dir;
 use super::types::{
@@ -107,82 +107,26 @@ pub fn render_preview_frame(request: PreviewFrameRequest) -> Result<String, Stri
     let source_video = project
         .as_ref()
         .map(|value| value.recording_path.clone())
-        .unwrap_or(input_path);
+        .unwrap_or_else(|| input_path.clone());
     let metadata = probe_video_metadata(&source_video)?;
-    let graph = RenderGraph::from_state(&request.render_state);
-    let export_plan = graph
-        .build_export_plan(
-            SourceVideoMetadata {
-                width: metadata.width,
-                height: metadata.height,
-            },
-            &static_root(),
-            1,
-        )
-        .map_err(|e| e.to_string())?;
 
-    let mut args = vec![
-        "-v".to_string(),
-        "error".to_string(),
-        "-ss".to_string(),
-        format!("{:.3}", request.time.max(0.0)),
-        "-i".to_string(),
-        source_video.to_string_lossy().to_string(),
-    ];
+    let cursor_track_path = project.as_ref().map(|p| p.cursor_path.clone());
 
-    for input in &export_plan.extra_inputs {
-        args.extend([
-            "-loop".to_string(),
-            "1".to_string(),
-            "-i".to_string(),
-            input.to_string_lossy().to_string(),
-        ]);
-    }
+    // Use the native render pipeline: decode frame → process nodes → encode PNG.
+    let png_bytes = crate::render::compose::render_preview(
+        &source_video,
+        request.time.max(0.0),
+        &request.render_state,
+        &static_root(),
+        cursor_track_path.as_deref(),
+        metadata.width,
+        metadata.height,
+    )?;
 
-    if let Some(filter_complex) = &export_plan.filter_complex {
-        args.extend([
-            "-filter_complex".to_string(),
-            filter_complex.clone(),
-            "-map".to_string(),
-            export_plan.video_map.clone(),
-        ]);
-    } else {
-        args.extend(["-map".to_string(), "0:v:0".to_string()]);
-    }
-
-    args.extend([
-        "-frames:v".to_string(),
-        "1".to_string(),
-        "-f".to_string(),
-        "image2pipe".to_string(),
-        "-vcodec".to_string(),
-        "png".to_string(),
-        "-".to_string(),
-    ]);
-
-    match run_preview_ffmpeg(&args) {
-        Ok(frame) => Ok(frame),
-        Err(_) => {
-            let fallback_args = vec![
-                "-v".to_string(),
-                "error".to_string(),
-                "-ss".to_string(),
-                format!("{:.3}", request.time.max(0.0)),
-                "-i".to_string(),
-                source_video.to_string_lossy().to_string(),
-                "-frames:v".to_string(),
-                "1".to_string(),
-                "-vf".to_string(),
-                "scale=1280:-1:flags=lanczos".to_string(),
-                "-f".to_string(),
-                "image2pipe".to_string(),
-                "-vcodec".to_string(),
-                "png".to_string(),
-                "-".to_string(),
-            ];
-            run_preview_ffmpeg(&fallback_args)
-        }
-    }
+    Ok(format!(
+        "data:image/png;base64,{}",
+        base64::engine::general_purpose::STANDARD.encode(png_bytes)
+    ))
 }
 
 #[tauri::command]

@@ -8,25 +8,6 @@ use image::{ColorType, ImageEncoder};
 
 use super::types::{ExportProfile, VideoMetadata, THUMBNAIL_HEIGHT, THUMBNAIL_WIDTH};
 
-pub fn run_preview_ffmpeg(args: &[String]) -> Result<String, String> {
-    let output = Command::new("ffmpeg")
-        .args(args)
-        .output()
-        .map_err(|e| e.to_string())?;
-
-    if !output.status.success() || output.stdout.is_empty() {
-        return Err(format!(
-            "preview render failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        ));
-    }
-
-    Ok(format!(
-        "data:image/png;base64,{}",
-        general_purpose::STANDARD.encode(output.stdout)
-    ))
-}
-
 pub fn resolve_export_profile(quality: &str) -> ExportProfile {
     match quality {
         "small" => ExportProfile {
