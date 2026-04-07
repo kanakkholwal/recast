@@ -33,6 +33,14 @@ pub fn run() {
                 )?;
             }
             app.handle().plugin(tauri_plugin_dialog::init())?;
+
+            // Startup: clean up stale temp files and orphaned session artifacts.
+            let state = app.state::<AppState>();
+            let output_dir = state.config.lock().output_dir.clone();
+            if let Some(dir) = output_dir {
+                project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -48,7 +56,10 @@ pub fn run() {
             commands::load_editor_document,
             commands::render_preview_frame,
             commands::generate_thumbnails,
-            commands::export_video
+            commands::export_video,
+            commands::autosave_project,
+            commands::clear_autosave,
+            commands::get_recoverable_sessions
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

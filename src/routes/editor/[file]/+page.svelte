@@ -1,33 +1,31 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import EditorSubToolbar from "$components/editor/EditorSubToolbar.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import PlaybackControls from "$components/editor/PlaybackControls.svelte";
   import PropertiesPanel from "$components/editor/PropertiesPanel.svelte";
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";
-  import { Spinner } from "$components/ui/spinner";
-  import type {
-    EditorRenderState,
-    VideoMetadata,
-  } from "$lib/stores/editor-store.svelte";
+  import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+  import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+  import {
+    autosaveProject,
+    clearAutosave,
+    exportVideo,
+    generateThumbnails,
+    loadEditorDocument,
+    renderPreviewFrame,
+  } from "$lib/ipc";
+  import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
-  import { convertFileSrc, invoke } from "@tauri-apps/api/core";
-  import { tick } from "svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
+  import { onDestroy, tick } from "svelte";
 
   interface Props {
     data: {
       filePath: string;
       filename: string;
     };
-  }
-
-  interface EditorDocument {
-    projectPath: string;
-    mediaPath: string;
-    cursorPath?: string | null;
-    editsPath?: string | null;
-    metadata: VideoMetadata;
-    renderState: EditorRenderState;
   }
 
   let { data }: Props = $props();
@@ -47,6 +45,38 @@
   let previewToken = 0;
   let thumbnailToken = 0;
   let lastPreviewKey = "";
+
+  // Autosave: save edit state every 30 seconds while editing.
+  const AUTOSAVE_INTERVAL_MS = 30_000;
+  let autosaveTimer: ReturnType<typeof setInterval> | null = null;
+
+  function startAutosave() {
+    stopAutosave();
+    autosaveTimer = setInterval(async () => {
+      if (!documentPath || isLoading) return;
+      try {
+        const editsJson = JSON.stringify(store.toRenderState());
+        await autosaveProject(documentPath, editsJson);
+      } catch (err) {
+        console.warn("Autosave failed:", err);
+      }
+    }, AUTOSAVE_INTERVAL_MS);
+  }
+
+  function stopAutosave() {
+    if (autosaveTimer !== null) {
+      clearInterval(autosaveTimer);
+      autosaveTimer = null;
+    }
+  }
+
+  onDestroy(() => {
+    stopAutosave();
+    // Clear autosave on clean exit.
+    if (documentPath) {
+      clearAutosave(documentPath).catch(() => {});
+    }
+  });
 
   function handleTimeUpdate() {
     if (videoEl && store.isPlaying) {
@@ -88,13 +118,11 @@
     isRenderingPreview = true;
 
     try {
-      const frame = await invoke<string>("render_preview_frame", {
-        request: {
-          inputPath: documentPath,
-          time: previewTime,
-          renderState,
-        },
-      });
+      const frame = await renderPreviewFrame(
+        documentPath,
+        previewTime,
+        renderState,
+      );
       if (token === previewToken) {
         previewSrc = frame;
       }
@@ -115,10 +143,7 @@
     try {
       const count =
         store.metadata?.duration && store.metadata.duration > 60 ? 12 : 8;
-      const strip = await invoke<string[]>("generate_thumbnails", {
-        path,
-        count,
-      });
+      const strip = await generateThumbnails(path, count);
       if (token === thumbnailToken) {
         store.thumbnailStrip = strip;
         previewFallbackSrc = strip[0] ?? "";
@@ -145,6 +170,7 @@
     handleVideoLoadedMetadata();
     loadStage = "Ready";
     isLoading = false;
+    startAutosave();
     void renderPreview(true);
   }
 
@@ -170,9 +196,7 @@
 
     try {
       loadStage = "Reading recording metadata";
-      const document = await invoke<EditorDocument>("load_editor_document", {
-        path: data.filePath,
-      });
+      const document = await loadEditorDocument(data.filePath);
 
       documentPath = document.projectPath;
       store.videoPath = document.projectPath;
@@ -198,14 +222,12 @@
     store.exportProgress = 0;
 
     try {
-      const result = await invoke<string>("export_video", {
-        request: {
-          inputPath: documentPath || data.filePath,
-          format: store.exportFormat,
-          quality: store.exportQuality,
-          renderState: store.toRenderState(),
-        },
-      });
+      const result = await exportVideo(
+        documentPath || data.filePath,
+        store.exportFormat,
+        store.exportQuality,
+        store.toRenderState(),
+      );
       console.log("Export complete:", result);
     } catch (err) {
       console.error("Export failed:", err);
@@ -293,87 +315,62 @@
 <div
   class="flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground fixed inset-0"
 >
-  <EditorToolbar
-    {store}
-    filename={data.filename}
-    onback={handleBack}
-    onexport={handleExport}
-  />
+  <!-- Custom titlebar with embedded editor toolbar -->
+  <CustomTitlebar>
+    <EditorToolbar
+      {store}
+      filename={data.filename}
+      onback={handleBack}
+      onexport={handleExport}
+    />
+  </CustomTitlebar>
 
-  <div class="flex min-h-0 flex-1 overflow-hidden">
-    <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-      <div class="flex min-h-0 flex-1 items-center justify-center p-4 pb-2">
-        {#if isLoading}
-          <div
-            class="animate-in fade-in flex w-full max-w-lg flex-col items-center gap-5 duration-500"
-          >
-            <div
-              class="relative flex h-20 w-20 items-center justify-center rounded-[24px] border border-border/70 bg-card shadow-lg"
-            >
-              <div
-                class="absolute inset-2 rounded-[18px] bg-linear-to-br from-primary/15 via-primary/5 to-transparent"
-              ></div>
-              <div
-                class="h-9 w-9 animate-spin rounded-full border-2 border-primary border-t-transparent"
-              ></div>
-            </div>
-            <div class="space-y-2 text-center">
-              <p class="text-base font-semibold text-foreground">
-                Preparing editor
-              </p>
-              <p class="text-sm text-muted-foreground">{loadStage}...</p>
-            </div>
-            <div
-              class="w-full rounded-full border border-border/60 bg-card/80 p-1"
-            >
-              <div class="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div
-                  class="h-full w-2/3 animate-pulse rounded-full bg-linear-to-r from-primary via-sky-400 to-primary"
-                ></div>
-              </div>
-            </div>
-          </div>
-        {:else if error}
-          <div
-            class="animate-in fade-in flex flex-col items-center gap-4 text-center duration-500"
-          >
-            <div
-              class="flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"
-            >
-              <span class="text-2xl">!</span>
-            </div>
-            <p class="max-w-sm text-sm text-muted-foreground">{error}</p>
-            <button
-              onclick={handleBack}
-              class="text-sm text-primary hover:underline"
-            >
-              Back to recordings
-            </button>
-          </div>
-        {:else}
+  {#if isLoading}
+    <EditorSkeleton />
+  {:else if error}
+    <div class="flex-1 flex items-center justify-center">
+      <div
+        class="animate-in fade-in flex flex-col items-center gap-4 text-center duration-500"
+      >
+        <div
+          class="flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"
+        >
+          <span class="text-2xl">!</span>
+        </div>
+        <p class="max-w-sm text-sm text-muted-foreground">{error}</p>
+        <button
+          onclick={handleBack}
+          class="text-sm text-primary hover:underline"
+        >
+          Back to recordings
+        </button>
+      </div>
+    </div>
+  {:else}
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <!-- Left column: sub-toolbar + preview + controls + timeline -->
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <EditorSubToolbar {store} />
+
+        <div class="flex min-h-0 flex-1 items-center justify-center p-4 pb-2">
           <VideoPreview
             {store}
             {previewSrc}
             fallbackSrc={previewFallbackSrc}
             isRendering={isRenderingPreview}
           />
-        {/if}
+        </div>
+
+        <PlaybackControls {store} {videoEl} />
+        <Timeline {store} {videoEl} />
       </div>
 
-      <PlaybackControls {store} {videoEl} />
-      <Timeline {store} {videoEl} />
-    </div>
-
-    <div class="min-h-0 w-85 shrink-0 xl:w-90 border-l">
-      {#if isLoading}
-      <div class="inline-flex justify-center items-center gap-2 h-96 w-full">
-		  <Spinner class="size-6" />
-	  </div>
-      {:else}
+      <!-- Right column: properties panel -->
+      <div class="min-h-0 w-85 shrink-0 xl:w-90 border-l border-border">
         <PropertiesPanel {store} />
-      {/if}
+      </div>
     </div>
-  </div>
+  {/if}
 
   {#if videoSrc}
     <!-- svelte-ignore a11y_media_has_caption -->

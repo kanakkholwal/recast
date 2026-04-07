@@ -8,7 +8,7 @@
 
 
 @custom-variant dark (&:where([data-theme="dark"], .dark, .dark *, [data-theme="dark"] *));
-/* @source "./node_modules/@tauri-controls-v2/svelte*.{js,svelte,ts}"; */
+@source "./node_modules/@tauri-controls-v2/svelte/dist/**/*.{js,svelte,ts}";
 
 :root,
 [data-theme="light"] {

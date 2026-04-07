@@ -2,7 +2,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::recording::{CaptureTarget, RecordingStats};
 
+pub mod autosave;
 pub mod reader;
+pub mod storage;
 pub mod writer;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

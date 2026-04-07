@@ -209,8 +209,10 @@ export function createEditorStore() {
 		});
 	}
 
+	const MAX_UNDO_HISTORY = 50;
+
 	function pushUndoState() {
-		undoStack = [...undoStack, getSettingsSnapshot()];
+		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 	}
 

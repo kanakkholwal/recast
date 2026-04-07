@@ -6,6 +6,7 @@ pub const THUMBNAIL_WIDTH: u32 = 320;
 pub const THUMBNAIL_HEIGHT: u32 = 180;
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct DisplayInfo {
     pub id: u32,
     pub name: String,
@@ -18,6 +19,7 @@ pub struct DisplayInfo {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct WindowInfo {
     pub id: u32,
     pub pid: u32,
@@ -32,6 +34,7 @@ pub struct WindowInfo {
 }
 
 #[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct RecordingEntry {
     pub filename: String,
     pub path: String,

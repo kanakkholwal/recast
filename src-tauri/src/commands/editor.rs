@@ -371,3 +371,22 @@ pub fn export_video(request: ExportRequest, state: State<'_, AppState>) -> Resul
     }
     Ok(output_path.to_string_lossy().to_string())
 }
+
+#[tauri::command]
+pub fn autosave_project(project_path: String, edits_json: String) -> Result<(), String> {
+    crate::project::autosave::save_autosave(
+        Path::new(&project_path),
+        &edits_json,
+    )
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn clear_autosave(project_path: String) {
+    crate::project::autosave::clear_autosave(Path::new(&project_path));
+}
+
+#[tauri::command]
+pub fn get_recoverable_sessions() -> Vec<crate::project::autosave::AutosaveState> {
+    crate::project::autosave::find_recoverable_sessions()
+}

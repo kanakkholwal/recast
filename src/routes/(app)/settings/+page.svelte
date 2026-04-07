@@ -11,8 +11,8 @@
   import { Input } from "$components/ui/input";
   import { Label } from "$components/ui/label";
   import { config } from "$constants/app";
+  import { getOutputDir, setOutputDir } from "$lib/ipc";
   import { ArrowUpRight, ExternalLink, Monitor, Moon, Navigation, Sun } from "@lucide/svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { setMode } from "mode-watcher";
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
@@ -42,7 +42,7 @@
 
   async function fetchSettings() {
     try {
-      outputDir = await invoke<string>("get_output_dir");
+      outputDir = await getOutputDir();
     } catch (e) {
       console.error(e);
     }
@@ -57,9 +57,7 @@
     });
     if (selected && typeof selected === "string") {
       try {
-        await invoke("set_output_dir", {
-          path: selected,
-        });
+        await setOutputDir(selected);
         outputDir = selected;
       } catch (e) {
         toast.error(`Could not set directory: ${e}`);
@@ -78,7 +76,7 @@
     </p>
   </div>
 
-  <div class="fgrid grid-cols-1 gap-6">
+  <div class="grid grid-cols-1 gap-6">
     <section>
       <h3
         class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4"

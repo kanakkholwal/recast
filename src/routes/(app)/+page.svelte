@@ -8,7 +8,15 @@
     CardFooter,
     CardHeader,
   } from "$components/ui/card";
+  import DashboardSkeleton from "$components/skeletons/DashboardSkeleton.svelte";
   import { isTauriApp } from "$lib/runtime/tauri";
+  import {
+    getOutputDir,
+    listRecordings,
+    generateThumbnails,
+    openFileLocation,
+    type RecordingEntry,
+  } from "$lib/ipc";
   import {
     Clock3,
     ExternalLink,
@@ -18,15 +26,7 @@
     RefreshCw,
     Video,
   } from "@lucide/svelte";
-  import { invoke } from "@tauri-apps/api/core";
   import { onMount } from "svelte";
-
-  type RecordingEntry = {
-    filename: string;
-    path: string;
-    size_bytes: number;
-    created: number;
-  };
 
   type ThumbnailMap = Record<string, string>;
 
@@ -43,7 +43,7 @@
 
   async function fetchSettings() {
     try {
-      outputDir = await invoke<string>("get_output_dir");
+      outputDir = await getOutputDir();
     } catch (error) {
       console.error(error);
     }
@@ -53,7 +53,7 @@
     isFetching = true;
     thumbnails = {};
     try {
-      recordings = await invoke<RecordingEntry[]>("list_recordings");
+      recordings = await listRecordings();
       void loadThumbnails(recordings);
     } catch (error) {
       console.error(error);
@@ -66,10 +66,7 @@
     const pass = ++thumbnailPass;
     const settled = await Promise.allSettled(
       items.map(async (item) => {
-        const frames = await invoke<string[]>("generate_thumbnails", {
-          path: item.path,
-          count: 1,
-        });
+        const frames = await generateThumbnails(item.path, 1);
         return [item.path, frames[0] ?? ""] as const;
       }),
     );
@@ -86,7 +83,7 @@
   }
 
   async function openLocation(path: string) {
-    await invoke("open_file_location", { path });
+    await openFileLocation(path);
   }
 
   function encodeEditorPath(path: string) {
@@ -115,6 +112,7 @@
         width: 1440,
         height: 960,
         center: true,
+        decorations: false,
       });
       editorWindow.once("tauri://error", (error) => console.error(error));
       return;
@@ -180,16 +178,7 @@
   </div>
 
   {#if isFetching}
-    <div
-      class="animate-in fade-in flex flex-col items-center justify-center gap-4 py-32 duration-500"
-    >
-      <div
-        class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
-      ></div>
-      <span class="text-sm font-medium text-muted-foreground">
-        Loading recordings...
-      </span>
-    </div>
+    <DashboardSkeleton />
   {:else if recordings.length === 0}
     <div
       class="animate-in fade-in zoom-in-95 flex flex-col items-center justify-center gap-4 rounded-3xl border border-dashed border-border bg-card/50 py-32 transition-colors duration-500 hover:bg-card"
@@ -245,7 +234,7 @@
                 {getFileTypeLabel(item.filename)}
               </Badge>
               <Badge variant="secondary">
-                {formatSize(item.size_bytes)}
+                {formatSize(item.sizeBytes)}
               </Badge>
             </div>
 

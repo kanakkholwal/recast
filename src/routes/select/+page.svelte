@@ -8,28 +8,16 @@
         RefreshCw,
         X,
     } from "@lucide/svelte";
-    import { invoke } from "@tauri-apps/api/core";
+    import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
+    import {
+        getDisplays,
+        getWindows,
+        type DisplayInfo,
+        type WindowInfo,
+    } from "$lib/ipc";
     import { emit } from "@tauri-apps/api/event";
     import { getCurrentWindow } from "@tauri-apps/api/window";
     import { onMount } from "svelte";
-
-    type DisplayInfo = {
-        id: number;
-        name: string;
-        width: number;
-        height: number;
-        is_primary: boolean;
-        thumbnail: string | null;
-    };
-    type WindowInfo = {
-        id: number;
-        pid: number;
-        app_name: string;
-        title: string;
-        width: number;
-        height: number;
-        thumbnail: string | null;
-    };
     type TargetSource = {
         type: "monitor" | "window";
         id: number;
@@ -52,15 +40,15 @@
         isFetching = true;
         try {
             const [displays, windows] = await Promise.all([
-                invoke<DisplayInfo[]>("get_displays"),
-                invoke<WindowInfo[]>("get_windows"),
+                getDisplays(),
+                getWindows(),
             ]);
             const newSources: TargetSource[] = [];
             displays.forEach((d, i) =>
                 newSources.push({
                     type: "monitor",
                     id: d.id,
-                    label: d.is_primary
+                    label: d.isPrimary
                         ? "Primary Display"
                         : `Display ${i + 1}`,
                     thumbnail: d.thumbnail,
@@ -73,7 +61,7 @@
                         type: "window",
                         id: w.id,
                         label: w.title,
-                        appName: w.app_name,
+                        appName: w.appName,
                         thumbnail: w.thumbnail,
                         resolution: `${w.width} × ${w.height}`,
                     });
@@ -187,16 +175,7 @@
     <!-- Grid -->
     <div class="flex-1 select-none overflow-y-auto px-5 pb-4 custom-scrollbar">
         {#if isFetching}
-            <div
-                class="flex h-full w-full flex-col items-center justify-center gap-3 animate-in fade-in duration-500"
-            >
-                <div
-                    class="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent"
-                ></div>
-                <span class="text-xs font-medium text-muted-foreground"
-                    >Scanning sources...</span
-                >
-            </div>
+            <SourceSelectorSkeleton />
         {:else if filteredSources.length === 0}
             <div
                 class="flex h-44 w-full flex-col items-center justify-center gap-3 animate-in fade-in zoom-in-95"

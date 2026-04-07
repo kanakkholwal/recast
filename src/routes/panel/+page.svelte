@@ -1,5 +1,5 @@
 <script lang="ts">
-    import { invoke } from "@tauri-apps/api/core";
+    import { getDisplays, startRecording, stopRecording } from "$lib/ipc";
     import { emit, listen } from "@tauri-apps/api/event";
     import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
     import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -26,14 +26,14 @@
             selectedSource = event.payload;
         });
 
-        invoke<any[]>("get_displays")
+        getDisplays()
             .then((displays) => {
                 if (displays.length > 0 && !selectedSource) {
                     const d = displays[0];
                     selectedSource = {
                         type: "monitor",
                         id: d.id,
-                        label: d.is_primary ? "Primary Display" : `Display 1`,
+                        label: d.isPrimary ? "Primary Display" : `Display 1`,
                     };
                 }
             })
@@ -71,7 +71,7 @@
     async function toggleRecording() {
         if (isRecording) {
             try {
-                const filePath = await invoke<string>("stop_recording");
+                const filePath = await stopRecording();
                 isRecording = false;
                 recordingStartTime = null;
                 // toast.success("Recording saved successfully!", {
@@ -86,10 +86,7 @@
         } else {
             if (!selectedSource) return;
             try {
-                await invoke("start_recording", {
-                    targetType: selectedSource.type,
-                    targetId: selectedSource.id,
-                });
+                await startRecording(selectedSource.type, selectedSource.id);
                 isRecording = true;
                 now = Date.now();
                 recordingStartTime = now;
