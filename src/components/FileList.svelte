@@ -1,12 +1,11 @@
 <script lang="ts">
-  import { Badge } from "$components/ui/badge";
+  import { goto } from "$app/navigation";
   import { Button } from "$components/ui/button";
   import { generateThumbnails, openFileLocation, type RecordingEntry } from "$lib/ipc";
-  import { isTauriApp } from "$lib/runtime/tauri";
-  import { ExternalLink, FolderOpen, Pencil, Play } from "@lucide/svelte";
+  import { FolderOpen, Pencil, Play } from "@lucide/svelte";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
-  import { onMount } from "svelte";
   import type { Snippet } from "svelte";
+  import { onMount } from "svelte";
 
   interface Props {
     entries: RecordingEntry[];
@@ -27,6 +26,7 @@
     skeleton,
     showEditButton = false,
   }: Props = $props();
+  let editorWindow = $state<"navigate" | "new-window">("navigate");
 
   type ThumbnailMap = Record<string, string>;
   let thumbnails = $state<ThumbnailMap>({});
@@ -34,6 +34,12 @@
 
   $effect(() => {
     if (entries.length > 0) loadThumbnails(entries);
+  });
+  onMount(() => {
+   const storedEditorBehavior = (localStorage.getItem("recast-editor-window")) as "navigate" | "new-window" | null;
+    if (storedEditorBehavior !== null) {
+      editorWindow = storedEditorBehavior
+    }
   });
 
   async function loadThumbnails(items: RecordingEntry[]) {
@@ -75,7 +81,7 @@
 
   async function navigateToEditor(path: string, filename: string) {
     const route = `/editor/${encodeEditorPath(path)}`;
-    if (await isTauriApp()) {
+    if (editorWindow === "new-window") {
       const label = `editor-${encodeEditorPath(path).replace(/[^a-zA-Z0-9]/g, "").slice(0, 48)}`;
       const existing = await WebviewWindow.getByLabel(label);
       if (existing) {
@@ -91,7 +97,7 @@
         decorations: false,
       });
     } else {
-      window.location.href = route;
+      goto(route);
     }
   }
 </script>

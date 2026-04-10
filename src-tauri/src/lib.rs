@@ -63,7 +63,6 @@ pub fn run() {
             commands::open_file_location,
             commands::get_video_metadata,
             commands::load_editor_document,
-            commands::render_preview_frame,
             commands::generate_thumbnails,
             commands::export_video,
             commands::get_audio_devices,

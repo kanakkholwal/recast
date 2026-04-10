@@ -1,17 +1,24 @@
 <script lang="ts">
+  import { goto } from "$app/navigation";
+  import { RaycastList, type RaycastListItem } from "$components/raycast";
   import { Button } from "$components/ui/button";
-  import DashboardSkeleton from "$components/skeletons/DashboardSkeleton.svelte";
-  import FileList from "$components/FileList.svelte";
-  import { listRecasts, type RecordingEntry } from "$lib/ipc";
-  import { Film, RefreshCw } from "@lucide/svelte";
+  import { generateThumbnails, listRecasts, openFileLocation, type RecordingEntry } from "$lib/ipc";
+  import { Film, FolderOpen, Pencil, RefreshCw, Trash2 } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
+  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
 
   let entries = $state<RecordingEntry[]>([]);
   let isLoading = $state(true);
+  let thumbnails = $state<Record<string, string>>({});
+  let editorWindow = $state<"navigate" | "new-window">("navigate");
+  let thumbnailPass = 0;
 
   onMount(() => {
     fetchRecasts();
+    const stored = localStorage.getItem("recast-editor-window") as "navigate" | "new-window" | null;
+    if (stored) editorWindow = stored;
     const unlisten = listen("refresh-recordings", () => fetchRecasts());
     return () => { unlisten.then((fn) => fn()); };
   });
@@ -20,40 +27,134 @@
     isLoading = true;
     try {
       entries = await listRecasts();
+      loadThumbnails(entries);
     } catch (e) {
-      console.error(e);
+      toast.error(`Could not load recordings: ${e}`);
     } finally {
       isLoading = false;
     }
   }
+
+  async function loadThumbnails(items: RecordingEntry[]) {
+    const pass = ++thumbnailPass;
+    const settled = await Promise.allSettled(
+      items.map(async (item) => {
+        const frames = await generateThumbnails(item.path, 1);
+        return [item.path, frames[0] ?? ""] as const;
+      }),
+    );
+    if (pass !== thumbnailPass) return;
+    const next: Record<string, string> = {};
+    for (const r of settled) {
+      if (r.status === "fulfilled" && r.value[1]) next[r.value[0]] = r.value[1];
+    }
+    thumbnails = next;
+  }
+
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+
+  function formatDate(unix: number) {
+    return new Date(unix * 1000).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
+
+  function encodeEditorPath(path: string) {
+    return encodeURIComponent(btoa(encodeURIComponent(path)));
+  }
+
+  async function openInEditor(entry: RecordingEntry) {
+    const route = `/editor/${encodeEditorPath(entry.path)}`;
+    if (editorWindow === "new-window") {
+      const label = `editor-${encodeEditorPath(entry.path).replace(/[^a-zA-Z0-9]/g, "").slice(0, 48)}`;
+      const existing = await WebviewWindow.getByLabel(label);
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+      new WebviewWindow(label, {
+        url: route,
+        title: `Editor - ${entry.filename}`,
+        width: 1440,
+        height: 960,
+        center: true,
+        decorations: false,
+      });
+    } else {
+      goto(route);
+    }
+  }
+
+  async function copyPath(entry: RecordingEntry) {
+    try {
+      await navigator.clipboard.writeText(entry.path);
+      toast.success("Path copied to clipboard");
+    } catch (e) {
+      toast.error(`Copy failed: ${e}`);
+    }
+  }
+
+  const items = $derived<RaycastListItem[]>(
+    entries.map((entry) => ({
+      id: entry.path,
+      title: entry.filename,
+      subtitle: `${formatSize(entry.sizeBytes)} · ${formatDate(entry.created)}`,
+      icon: Film,
+      iconImage: thumbnails[entry.path],
+      keywords: [entry.filename, "recording", "recast"],
+      accessories: [{ text: ".recast", variant: "info" }],
+      onSelect: () => openInEditor(entry),
+      actions: [
+        {
+          id: "open",
+          label: "Open in Editor",
+          icon: Pencil,
+          onAction: () => openInEditor(entry),
+        },
+        {
+          id: "show",
+          label: "Show in Folder",
+          icon: FolderOpen,
+          onAction: () => openFileLocation(entry.path),
+        },
+        {
+          id: "copy-path",
+          label: "Copy Path",
+          shortcut: "⌘⇧C",
+          onAction: () => copyPath(entry),
+        },
+        {
+          id: "delete",
+          label: "Move to Trash",
+          icon: Trash2,
+          variant: "destructive",
+          shortcut: "⌘⌫",
+          onAction: () => { toast.info("Delete not yet implemented"); },
+        },
+      ],
+    })),
+  );
 </script>
 
-<div class="flex-1 flex flex-col p-8 w-full max-w-6xl mx-auto">
-  <div class="mb-6 flex items-center justify-between">
-    <div>
-      <h2 class="text-2xl font-bold tracking-tight text-foreground">Recasts</h2>
-      <p class="text-sm text-muted-foreground mt-1">Your screen recordings as .recast projects</p>
-    </div>
-    <Button variant="outline" size="sm" onclick={fetchRecasts} disabled={isLoading} class="gap-1.5">
+<RaycastList
+  {items}
+  {isLoading}
+  title="Recasts"
+  subtitle="Your screen recordings as .recast projects"
+  searchPlaceholder="Search recordings..."
+  emptyTitle="No recordings yet"
+  emptyHint="Take your first recording from the Recast Panel."
+>
+  {#snippet toolbar()}
+    <Button variant="ghost" size="icon-sm" onclick={fetchRecasts} disabled={isLoading} title="Refresh">
       <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
-      Refresh
     </Button>
-  </div>
-
-  <FileList
-    {entries}
-    {isLoading}
-    showEditButton
-    emptyTitle="No recordings yet"
-    emptyDescription="Take your first recording from the Recast Panel."
-  >
-    {#snippet emptyIcon()}
-      <div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
-        <Film size={24} />
-      </div>
-    {/snippet}
-    {#snippet skeleton()}
-      <DashboardSkeleton />
-    {/snippet}
-  </FileList>
-</div>
+  {/snippet}
+</RaycastList>

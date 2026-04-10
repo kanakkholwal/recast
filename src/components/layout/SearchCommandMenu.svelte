@@ -1,265 +1,142 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
   import { Button } from "$components/ui/button";
   import * as Command from "$components/ui/command";
   import * as Dialog from "$components/ui/dialog";
-  import { config } from "$constants/app";
+  import { buildGlobalCommands } from "$lib/commands";
+  import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
   import { cn } from "$lib/utils";
-  import { ChevronRight, Github, Search } from "@lucide/svelte";
+  import { Search } from "@lucide/svelte";
   import { onMount } from "svelte";
 
-  interface CommandItem {
-    id: string;
-    title: string;
-    description?: string;
-    category: string;
-    action: () => void;
-    icon?: any;
-    keywords?: string[];
-    color?: string;
-  }
-
-  interface GroupedCommand {
-    command: CommandItem;
-    index: number;
-  }
-
-  let open = $state(false);
-  let searchValue = $state("");
-  let selectedIndex = $state(0);
-  let filteredCommands = $state<CommandItem[]>([]);
   let { iconOnly } = $props<{ iconOnly?: boolean }>();
 
-  // PDF Tool commands - customize these based on your actual tools
-  const commands: CommandItem[] = [
-    {
-      id: "home",
-      title: "Go to Home",
-      description: "Navigate back to the homepage.",
-      category: "Navigation",
-      action: () => {
-        goto("/");
-      },
-      icon: ChevronRight,
-      keywords: ["home", "main page", "dashboard"],
-    },
-    {
-      id: "github",
-      title: "View on GitHub",
-      description: "Check out the source code on GitHub.",
-      category: "External",
-      action: () => {
-        window.open(config.github, "_blank");
-      },
-      icon: Github,
-      keywords: ["github", "source code", "repository"],
-    },
-    // ...( )Add more commands as needed
-  ];
-
-  function filterCommands(query: string) {
-    if (!query.trim()) {
-      filteredCommands = commands;
-      return;
-    }
-
-    const lowerQuery = query.toLowerCase();
-    filteredCommands = commands.filter((cmd) => {
-      const titleMatch = cmd.title.toLowerCase().includes(lowerQuery);
-      const descMatch = cmd.description?.toLowerCase().includes(lowerQuery);
-      const slugMatch = cmd.id.toLowerCase().includes(lowerQuery);
-      const keywordsMatch = cmd.keywords?.some((kw) =>
-        kw.toLowerCase().includes(lowerQuery),
-      );
-      return titleMatch || descMatch || slugMatch || keywordsMatch;
-    });
-
-    selectedIndex = 0;
-  }
-
-  function handleClose() {
-    open = false;
-    searchValue = "";
-    selectedIndex = 0;
-  }
-
-  function runCommand(command: () => unknown) {
-    open = false;
-    command();
-  }
-
-  function handleKeyDown(e: KeyboardEvent) {
-    if (!open) {
-      if ((e.ctrlKey || e.metaKey) && e.key === "k") {
-        e.preventDefault();
-        open = true;
-      }
-      return;
-    }
-
-    switch (e.key) {
-      case "ArrowDown":
-        e.preventDefault();
-        selectedIndex = Math.min(
-          selectedIndex + 1,
-          filteredCommands.length - 1,
-        );
-        break;
-      case "ArrowUp":
-        e.preventDefault();
-        selectedIndex = Math.max(selectedIndex - 1, 0);
-        break;
-      case "Enter":
-        e.preventDefault();
-        if (filteredCommands[selectedIndex]) {
-          runCommand(filteredCommands[selectedIndex].action);
-          handleClose();
-        }
-        break;
-      case "Escape":
-        e.preventDefault();
-        handleClose();
-        break;
-    }
-  }
-
+  // Register global commands once on mount
   onMount(() => {
-    window.addEventListener("keydown", handleKeyDown);
-    filterCommands("");
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
+    commandPalette.registerMany(buildGlobalCommands());
+    window.addEventListener("keydown", handleGlobalKeydown);
+    return () => window.removeEventListener("keydown", handleGlobalKeydown);
   });
 
-  $effect(() => {
-    filterCommands(searchValue);
-  });
-
-  // Group commands by category
-  function groupedCommands() {
-    const groups: { [key: string]: GroupedCommand[] } = {};
-    filteredCommands.forEach((cmd, index) => {
-      if (!groups[cmd.category]) {
-        groups[cmd.category] = [];
-      }
-      groups[cmd.category].push({ command: cmd, index });
-    });
-    return groups;
+  function handleGlobalKeydown(e: KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+      // Don't fire if a RaycastList already handles ⌘K
+      const target = e.target as HTMLElement | null;
+      if (target?.closest("[data-raycast-list]")) return;
+      e.preventDefault();
+      commandPalette.toggle();
+    }
   }
+
+  function runCommand(command: PaletteCommand) {
+    commandPalette.hide();
+    queueMicrotask(() => command.action());
+  }
+
+  const grouped = $derived.by(() => {
+    const map = new Map<string, PaletteCommand[]>();
+    for (const cmd of commandPalette.commands) {
+      if (!map.has(cmd.category)) map.set(cmd.category, []);
+      map.get(cmd.category)!.push(cmd);
+    }
+    return Array.from(map.entries());
+  });
 </script>
 
-<svelte:window on:keydown={handleKeyDown} />
+<Button
+  onclick={() => commandPalette.show()}
+  aria-label="Open Command Menu"
+  title="Open Command Menu (⌘K)"
+  variant="secondary"
+  size={iconOnly ? "icon-sm" : "sm"}
+  class={cn(
+    "border border-border group relative group-data-[state=collapsed]:size-8",
+    !iconOnly && "w-full max-w-xs",
+  )}
+>
+  <Search class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />
+  {#if !iconOnly}
+    <span class="flex-1 text-left text-xs font-medium group-data-[state=collapsed]:hidden!">
+      Search...
+    </span>
+    <kbd
+      class="group-data-[state=collapsed]:hidden! hidden items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground/70 backdrop-blur-sm sm:inline-flex"
+    >
+      <span class="text-xs font-semibold group-data-[state=collapsed]:hidden">⌘</span>K
+    </kbd>
+  {/if}
+</Button>
 
-<Dialog.Root bind:open>
-  <Dialog.Trigger>
-    {#snippet child({ props })}
-      <Button
-        {...props}
-        aria-label="Open Command Menu"
-        title="Open Command Menu (⌘K)"
-        variant="secondary"
-        size={iconOnly ? "icon-sm" : "sm"}
-        class={cn(
-          "group relative group-data-[state=collapsed]:size-8",
-          !iconOnly && "w-full max-w-xs",
-        )}
-      >
-        <Search
-          class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70"
-        />
-        {#if !iconOnly}
-          <span
-            class="flex-1 text-left text-xs font-medium group-data-[state=collapsed]:hidden!"
-            >Search...</span
-          >
-          <kbd
-            class="group-data-[state=collapsed]:hidden! hidden items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground/70 backdrop-blur-sm sm:inline-flex"
-          >
-            <span
-              class="text-xs font-semibold group-data-[state=collapsed]:hidden"
-              >⌘</span
-            >K
-          </kbd>
-        {/if}
-      </Button>
-    {/snippet}
-  </Dialog.Trigger>
+<Dialog.Root bind:open={() => commandPalette.open, (v) => (commandPalette.open = v)}>
   <Dialog.Content
     showCloseButton={false}
-		class="rounded-xl border-none bg-clip-padding p-2 pb-11 shadow-2xl ring-4 ring-neutral-200/80 dark:bg-neutral-900 dark:ring-neutral-800"
+    class="top-[20%] max-w-xl translate-y-0 overflow-hidden rounded-xl p-0 ring-1 ring-border"
   >
-  <Dialog.Header class="sr-only">
-			<Dialog.Title>Search across application...</Dialog.Title>
-			<Dialog.Description>Search for a command to run...</Dialog.Description>
-		</Dialog.Header>
-    <Command.Root class="rounded-none bg-transparent">
-
-      <Command.Input
-        placeholder={`Search anything...`}
-        class="bg-transparent!"
-      />
-      <Command.List class="scrollbar-hide">
-        {#if filteredCommands.length === 0}
-          <Command.Empty>
-            <div class="text-sm text-muted-foreground">
-              No results found. Try a different search.
-            </div>
-          </Command.Empty>
-        {:else}
-          {#each Object.entries(groupedCommands()) as [category, categoryCommands]}
-            <Command.Group heading={category}>
-              {#each categoryCommands as { command, index }}
-                {@const isSelected = selectedIndex === index}
-                <Command.Item
-                  value={command.id}
-                  onmouseenter={() => (selectedIndex = index)}
-                  onSelect={() => runCommand(command.action)}
-                  class={cn(
-                    "cursor-pointer rounded-md border border-transparent transition-colors hover:bg-accent hover:text-accent-foreground hover:border-border",
-                    isSelected &&
-                      "aria-selected:bg-primary/5 aria-selected:text-foreground aria-selected:border-primary",
-                  )}
-                >
-                  {#if command.icon}
-                    {@const IconComponent = command.icon}
-                    <IconComponent
-                      class={cn("size-5 shrink-0", command.color)}
-                    />
+    <Dialog.Header class="sr-only">
+      <Dialog.Title>Command Palette</Dialog.Title>
+      <Dialog.Description>Search across the application</Dialog.Description>
+    </Dialog.Header>
+    <Command.Root class="rounded-xl bg-popover">
+      <Command.Input placeholder="Search anything..." />
+      <Command.List class="max-h-96">
+        <Command.Empty>
+          <div class="py-8 text-center">
+            <p class="text-sm font-medium text-foreground">No results</p>
+            <p class="mt-1 text-xs text-muted-foreground">Try a different search term</p>
+          </div>
+        </Command.Empty>
+        {#each grouped as [category, cmds] (category)}
+          <Command.Group heading={category}>
+            {#each cmds as cmd (cmd.id)}
+              {@const Icon = cmd.icon}
+              <Command.Item
+                value={cmd.id + " " + cmd.title}
+                keywords={[cmd.title, cmd.description ?? "", ...(cmd.keywords ?? [])]}
+                onSelect={() => runCommand(cmd)}
+                class="h-9 gap-3 rounded-md px-2"
+              >
+                {#if Icon}
+                  <span class="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
+                    <Icon size={14} />
+                  </span>
+                {/if}
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <span class="truncate text-[13px] font-medium text-foreground">{cmd.title}</span>
+                  {#if cmd.description}
+                    <span class="truncate text-[11px] text-muted-foreground">{cmd.description}</span>
                   {/if}
-                  <div class="flex flex-col flex-1 min-w-0 gap-0.5">
-                    <span class="font-medium truncate text-foreground"
-                      >{command.title}</span
-                    >
-                    {#if command.description}
-                      <span class="text-xs text-muted-foreground truncate">
-                        {command.description}
-                      </span>
-                    {/if}
-                  </div>
-                  {#if isSelected}
-                    <ChevronRight class="size-4 shrink-0 opacity-60 ml-auto" />
-                  {/if}
-                </Command.Item>
-              {/each}
-            </Command.Group>
-          {/each}
-        {/if}
+                </div>
+                {#if cmd.shortcut}
+                  <Command.Shortcut>
+                    <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px]">
+                      {cmd.shortcut}
+                    </kbd>
+                  </Command.Shortcut>
+                {/if}
+              </Command.Item>
+            {/each}
+          </Command.Group>
+        {/each}
       </Command.List>
-    </Command.Root>
-    <div
-      class="text-muted-foreground absolute inset-x-0 bottom-0 z-20 flex h-10 items-center gap-2 rounded-b-xl border-t border-t-neutral-100 bg-neutral-50 px-4 text-xs font-medium dark:border-t-neutral-700 dark:bg-neutral-800"
-    >
-      <div class="flex items-center justify-between">
-        <span
-          >Press <kbd class="rounded bg-background px-1.5 py-0.5">Esc</kbd> to close</span
-        >
-        <span>
-          <kbd class="rounded bg-background px-1 py-0.5">↑</kbd>
-          <kbd class="rounded bg-background px-1 py-0.5 ml-1">↓</kbd>
-          <span class="ml-1">to navigate</span>
-        </span>
+      <div
+        class="flex h-9 items-center justify-between gap-3 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+      >
+        <span class="font-medium">Recast</span>
+        <div class="flex items-center gap-3">
+          <span class="flex items-center gap-1">
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">↵</kbd>
+            <span>Run</span>
+          </span>
+          <span class="flex items-center gap-1">
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">↑</kbd>
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">↓</kbd>
+            <span>Navigate</span>
+          </span>
+          <span class="flex items-center gap-1">
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">esc</kbd>
+            <span>Close</span>
+          </span>
+        </div>
       </div>
-    </div>
+    </Command.Root>
   </Dialog.Content>
 </Dialog.Root>

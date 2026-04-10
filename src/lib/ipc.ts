@@ -140,16 +140,6 @@ export function loadEditorDocument(path: string): Promise<EditorDocument> {
 	return invoke<EditorDocument>("load_editor_document", { path });
 }
 
-export function renderPreviewFrame(
-	inputPath: string,
-	time: number,
-	renderState: EditorRenderState,
-): Promise<string> {
-	return invoke<string>("render_preview_frame", {
-		request: { inputPath, time, renderState },
-	});
-}
-
 export function generateThumbnails(path: string, count: number): Promise<string[]> {
 	return invoke<string[]>("generate_thumbnails", { path, count });
 }

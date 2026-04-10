@@ -14,7 +14,6 @@
     exportVideo,
     generateThumbnails,
     loadEditorDocument,
-    renderPreviewFrame,
   } from "$lib/ipc";
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
@@ -35,26 +34,12 @@
 
   let videoEl: HTMLVideoElement | null = $state(null);
   let videoSrc = $state("");
+  let cursorPath = $state<string | null>(null);
   let documentPath = $state("");
-  let previewSrc = $state("");
-  let previewFallbackSrc = $state("");
   let isLoading = $state(true);
-  let isRenderingPreview = $state(false);
   let error = $state("");
   let loadedPath = $state("");
-  let previewToken = 0;
   let thumbnailToken = 0;
-  let lastPreviewKey = "";
-
-  // Detect if effects are active that require backend rendering.
-  // Plain playback uses the video element directly (instant).
-  const hasEffects = $derived(
-    store.padding > 0 ||
-    store.backgroundType !== "color" ||
-    store.backgroundValue !== "#111111" ||
-    (store.cursorSettings?.enabled ?? false) ||
-    (store.zoomRegions?.length ?? 0) > 0,
-  );
 
   // Autosave: save edit state every 30 seconds while editing.
   const AUTOSAVE_INTERVAL_MS = 30_000;
@@ -112,53 +97,6 @@
     }
   }
 
-  async function renderPreview(force = false) {
-    if (!documentPath) return;
-
-    const previewTime = store.isPlaying
-      ? Math.round(store.currentTime * 8) / 8
-      : store.currentTime;
-
-    // When no effects are active, just seek the video element — instant.
-    if (!hasEffects) {
-      previewSrc = "";
-      if (videoEl && !store.isPlaying) {
-        videoEl.currentTime = previewTime;
-      }
-      return;
-    }
-
-    // Effects active: render through native pipeline (debounced).
-    const renderState = store.toRenderState();
-    const previewKey = `${documentPath}|${previewTime.toFixed(3)}|${JSON.stringify(renderState)}`;
-    if (!force && previewKey === lastPreviewKey) return;
-    if (isRenderingPreview && !force) return;
-
-    lastPreviewKey = previewKey;
-    const token = ++previewToken;
-    isRenderingPreview = true;
-
-    try {
-      const frame = await renderPreviewFrame(
-        documentPath,
-        previewTime,
-        renderState,
-      );
-      if (token === previewToken) {
-        previewSrc = frame;
-      }
-    } catch (err) {
-      console.error("Preview render failed", err);
-      if (token === previewToken) {
-        previewSrc = "";
-      }
-    } finally {
-      if (token === previewToken) {
-        isRenderingPreview = false;
-      }
-    }
-  }
-
   async function loadThumbnailStrip(path: string) {
     const token = ++thumbnailToken;
     try {
@@ -167,13 +105,11 @@
       const strip = await generateThumbnails(path, count);
       if (token === thumbnailToken) {
         store.thumbnailStrip = strip;
-        previewFallbackSrc = strip[0] ?? "";
       }
     } catch (err) {
       console.error("Thumbnail generation failed", err);
       if (token === thumbnailToken) {
         store.thumbnailStrip = [];
-        previewFallbackSrc = "";
       }
     }
   }
@@ -191,7 +127,6 @@
     handleVideoLoadedMetadata();
     isLoading = false;
     startAutosave();
-    void renderPreview(true);
   }
 
   function handleVideoError() {
@@ -205,9 +140,8 @@
   async function loadDocument() {
     error = "";
     isLoading = true;
-    previewSrc = "";
-    previewFallbackSrc = "";
     videoSrc = "";
+    cursorPath = null;
     videoEl?.pause();
     store.metadata = null;
     store.reset();
@@ -221,6 +155,10 @@
       store.loadRenderState(document.renderState);
       void loadThumbnailStrip(document.projectPath);
       videoSrc = convertFileSrc(document.mediaPath);
+      cursorPath = document.cursorPath ?? null;
+      // Mount the editor body so the <video> element exists before we call load().
+      // The video element lives inside VideoPreview, which only renders when !isLoading.
+      isLoading = false;
       await tick();
       videoEl?.load();
     } catch (err) {
@@ -318,11 +256,6 @@
   });
 
   $effect(() => {
-    if (!documentPath || isLoading || error) return;
-    void renderPreview();
-  });
-
-  $effect(() => {
     if (!videoEl) return;
     videoEl.muted = true;
   });
@@ -373,11 +306,14 @@
         <div class="flex min-h-0 flex-1 items-center justify-center p-4 pb-2">
           <VideoPreview
             {store}
-            {videoEl}
-            {previewSrc}
-            fallbackSrc={previewFallbackSrc}
-            isRendering={isRenderingPreview}
-            hasEffects={hasEffects}
+            bind:videoEl
+            {videoSrc}
+            {cursorPath}
+            onTimeUpdate={handleTimeUpdate}
+            onEnded={handleVideoEnded}
+            onLoadedMetadata={handleVideoLoadedMetadata}
+            onReady={handleVideoReady}
+            onError={handleVideoError}
           />
         </div>
 
@@ -390,24 +326,6 @@
         <PropertiesPanel {store} />
       </div>
     </div>
-  {/if}
-
-  {#if videoSrc}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={videoEl}
-      src={videoSrc}
-      ontimeupdate={handleTimeUpdate}
-      onended={handleVideoEnded}
-      onloadedmetadata={handleVideoLoadedMetadata}
-      onloadeddata={handleVideoReady}
-      oncanplay={handleVideoReady}
-      onerror={handleVideoError}
-      class="absolute -z-10 h-0 w-0 opacity-0"
-      playsinline
-      preload="auto"
-      muted
-    ></video>
   {/if}
 
   {#if store.isExporting}

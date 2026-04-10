@@ -1,54 +1,51 @@
 <script lang="ts">
   import { Button } from "$components/ui/button";
-  import { ButtonGroup } from "$components/ui/button-group";
-  import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle,
-  } from "$components/ui/card";
-  import { Input } from "$components/ui/input";
-  import { Label } from "$components/ui/label";
   import { config } from "$constants/app";
   import { getOutputDir, setOutputDir } from "$lib/ipc";
-  import { ArrowUpRight, ExternalLink, Monitor, Moon, Navigation, Sun } from "@lucide/svelte";
+  import {
+    ArrowUpRight,
+    ExternalLink,
+    FolderOpen,
+    Monitor,
+    Moon,
+    Navigation,
+    Sun,
+  } from "@lucide/svelte";
   import { setMode } from "mode-watcher";
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
 
   let outputDir = $state("");
-  let isEditingDir = $state(false);
-  let newDirInput = $state("");
-  let currentTheme = $state("system");
+  let currentTheme = $state<"light" | "dark" | "system">("system");
   let editorWindow = $state<"navigate" | "new-window">("navigate");
 
   onMount(() => {
     fetchSettings();
-    const storedTheme = localStorage.getItem("mode-watcher-mode");
-    if (storedTheme) {
-      currentTheme = storedTheme;
-    }
-    const storedEditorBehavior = localStorage.getItem("recast-editor-window");
-    if (storedEditorBehavior === "new-window") {
-      editorWindow = "new-window";
-    }
+    const storedTheme = localStorage.getItem("mode-watcher-mode") as "light" | "dark" | "system" | null;
+    if (storedTheme) currentTheme = storedTheme;
+    const storedEditor = localStorage.getItem("recast-editor-window") as "navigate" | "new-window" | null;
+    if (storedEditor) editorWindow = storedEditor;
   });
-
-  function updateTheme(newTheme: "light" | "dark" | "system") {
-    setMode(newTheme);
-    currentTheme = newTheme;
-  }
 
   async function fetchSettings() {
     try {
       outputDir = await getOutputDir();
     } catch (e) {
-      console.error(e);
+      toast.error(`Could not load settings: ${e}`);
     }
   }
 
-  async function handleDirectoryChange() {
+  function updateTheme(theme: "light" | "dark" | "system") {
+    setMode(theme);
+    currentTheme = theme;
+  }
+
+  function updateEditorWindow(value: "navigate" | "new-window") {
+    editorWindow = value;
+    localStorage.setItem("recast-editor-window", value);
+  }
+
+  async function pickDirectory() {
     const { open } = await import("@tauri-apps/plugin-dialog");
     const selected = await open({
       directory: true,
@@ -59,6 +56,7 @@
       try {
         await setOutputDir(selected);
         outputDir = selected;
+        toast.success("Output directory updated");
       } catch (e) {
         toast.error(`Could not set directory: ${e}`);
       }
@@ -66,171 +64,137 @@
   }
 </script>
 
-<div
-  class="flex-1 flex flex-col p-8 w-full max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500"
->
-  <div class="mb-10 border-b pb-6">
-    <h2 class="text-2xl font-bold tracking-tight text-foreground">Settings</h2>
-    <p class="text-sm text-muted-foreground mt-1">
-      Configure Recast defaults and preferences.
-    </p>
-  </div>
+<div class="flex h-full flex-col">
+  <header class="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+    <div class="min-w-0">
+      <h2 class="truncate text-[13px] font-semibold tracking-tight text-foreground">Settings</h2>
+      <p class="truncate text-[11px] text-muted-foreground">Configure Recast defaults and preferences</p>
+    </div>
+  </header>
 
-  <div class="grid grid-cols-1 gap-6">
-    <section>
-      <h3
-        class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4"
-      >
-        Storage
-      </h3>
-
-      <Card>
-        <CardHeader>
-          <Label for="output-dir">Output Directory</Label>
-          <CardDescription>
-            Choose the folder where your Recast recordings are saved.
-          </CardDescription>
-        </CardHeader>
-        <CardContent class="flex flex-col gap-2">
-          <div class="flex items-center gap-3">
-            <Input
-              class="flex-1 px-3 py-2.5 rounded-lg truncate"
-              title={outputDir}
-              value={outputDir || "Default Temporary Directory"}
-              readonly
-              disabled
+  <div class="flex-1 overflow-y-auto px-6 py-4">
+    <div class="mx-auto flex max-w-2xl flex-col">
+      <!-- Storage section -->
+      <section class="border-b border-border py-4">
+        <h3 class="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Storage
+        </h3>
+        <div class="flex items-center gap-4 py-1.5">
+          <label for="output-dir" class="w-44 shrink-0 text-[12px] font-medium text-foreground"
+            >Output Directory</label
+          >
+          <div class="flex flex-1 items-center gap-2">
+            <input
               id="output-dir"
+              type="text"
+              value={outputDir || "Default Temporary Directory"}
+              title={outputDir}
+              readonly
+              class="h-8 flex-1 truncate rounded-md border border-input bg-input/30 px-2.5 text-[12px] text-muted-foreground outline-none"
             />
-            <Button
-              variant="secondary"
-              type="button"
-              onclick={handleDirectoryChange}
-            >
+            <Button variant="secondary" size="sm" onclick={pickDirectory} class="h-8 gap-1.5">
+              <FolderOpen size={13} />
               Change
             </Button>
           </div>
-        </CardContent>
-      </Card>
-    </section>
+        </div>
+      </section>
 
-    <section class="mt-4">
-      <h3
-        class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4"
-      >
-        Appearance
-      </h3>
-
-      <Card class="flex-row">
-        <CardHeader class="flex-1">
-          <CardTitle>Theme mode</CardTitle>
-          <CardDescription>
-            Customize the application's appearance.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ButtonGroup aria-label="Theme mode">
+      <!-- Appearance section -->
+      <section class="border-b border-border py-4">
+        <h3 class="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Appearance
+        </h3>
+        <div class="flex items-center gap-4 py-1.5">
+          <span class="w-44 shrink-0 text-[12px] font-medium text-foreground">Theme</span>
+          <div class="flex flex-1 items-center gap-1">
             <Button
-              variant={currentTheme === "light" ? "default_soft" : "secondary"}
-              class="flex-1 flex gap-2"
+              variant={currentTheme === "light" ? "default_soft" : "ghost"}
+              size="sm"
+              class="h-8 flex-1 gap-1.5"
               onclick={() => updateTheme("light")}
             >
-              <Sun size={16} />
+              <Sun size={13} />
               Light
             </Button>
             <Button
-              variant={currentTheme === "dark" ? "default_soft" : "secondary"}
-              class="flex-1 flex gap-2"
+              variant={currentTheme === "dark" ? "default_soft" : "ghost"}
+              size="sm"
+              class="h-8 flex-1 gap-1.5"
               onclick={() => updateTheme("dark")}
             >
-              <Moon size={16} />
+              <Moon size={13} />
               Dark
             </Button>
             <Button
-              variant={currentTheme === "system" ? "default_soft" : "secondary"}
-              class="flex-1 flex gap-2"
+              variant={currentTheme === "system" ? "default_soft" : "ghost"}
+              size="sm"
+              class="h-8 flex-1 gap-1.5"
               onclick={() => updateTheme("system")}
             >
-              <Monitor size={16} />
+              <Monitor size={13} />
               System
             </Button>
-          </ButtonGroup>
-        </CardContent>
-      </Card>
-    </section>
+          </div>
+        </div>
+      </section>
 
-    <section class="mt-4">
-      <h3
-        class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4"
-      >
-        Editor
-      </h3>
-
-      <Card class="flex-row">
-        <CardHeader class="flex-1">
-            <CardTitle>Window Behavior</CardTitle>
-            <CardDescription>
-              How the video editor opens when you click Edit.
-            </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <ButtonGroup aria-label="Window Behavior">
+      <!-- Editor section -->
+      <section class="border-b border-border py-4">
+        <h3 class="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Editor
+        </h3>
+        <div class="flex items-center gap-4 py-1.5">
+          <span class="w-44 shrink-0 text-[12px] font-medium text-foreground">Window Behavior</span>
+          <div class="flex flex-1 items-center gap-1">
             <Button
-              variant={editorWindow === "navigate"
-                ? "default_soft"
-                : "secondary"}
-              class="flex-1 flex gap-2"
-              onclick={() => {
-                editorWindow = "navigate";
-                localStorage.setItem("recast-editor-window", "navigate");
-              }}
+              variant={editorWindow === "navigate" ? "default_soft" : "ghost"}
+              size="sm"
+              class="h-8 flex-1 gap-1.5"
+              onclick={() => updateEditorWindow("navigate")}
             >
-              <Navigation size={16} />
+              <Navigation size={13} />
               Navigate
             </Button>
             <Button
-              variant={editorWindow === "new-window"
-                ? "default_soft"
-                : "secondary"}
-              class="flex-1 flex gap-2"
-              onclick={() => {
-                editorWindow = "new-window";
-                localStorage.setItem("recast-editor-window", "new-window");
-              }}
+              variant={editorWindow === "new-window" ? "default_soft" : "ghost"}
+              size="sm"
+              class="h-8 flex-1 gap-1.5"
+              onclick={() => updateEditorWindow("new-window")}
             >
-              <ExternalLink size={16} />
+              <ExternalLink size={13} />
               New Window
             </Button>
-          </ButtonGroup>
-        </CardContent>
-      </Card>
-    </section>
+          </div>
+        </div>
+        <p class="ml-48 mt-1 text-[11px] text-muted-foreground">
+          How the video editor opens when you click Edit.
+        </p>
+      </section>
 
-    <section class="mt-4">
-      <h3
-        class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-4"
-      >
-        About
-      </h3>
-
-      <Card
-      >
-        <CardHeader>
-          <CardTitle>Recast</CardTitle>
-          <CardDescription>Version 0.0.1</CardDescription>
-        </CardHeader>
-        <CardContent>
-            <ButtonGroup aria-label="About">
-                <Button href={config.website} target="_blank" variant="link">
-                    Website
-                    <ArrowUpRight size={16} />
-                </Button>
-                <Button href={config.github} target="_blank" variant="link">
-                    GitHub
-                    <ArrowUpRight size={16} />
-                </Button>
-            </ButtonGroup>
-        </CardContent>
-      </Card>
-    </section>
+      <!-- About section -->
+      <section class="py-4">
+        <h3 class="mb-3 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          About
+        </h3>
+        <div class="flex items-center gap-4 py-1.5">
+          <span class="w-44 shrink-0 text-[12px] font-medium text-foreground">Version</span>
+          <span class="flex-1 text-[12px] text-muted-foreground">{config.appName} v{config.appVersion}</span>
+        </div>
+        <div class="flex items-center gap-4 py-1.5">
+          <span class="w-44 shrink-0 text-[12px] font-medium text-foreground">Links</span>
+          <div class="flex flex-1 items-center gap-1">
+            <Button href={config.website} target="_blank" variant="ghost" size="sm" class="h-8 gap-1.5">
+              Website
+              <ArrowUpRight size={13} />
+            </Button>
+            <Button href={config.github} target="_blank" variant="ghost" size="sm" class="h-8 gap-1.5">
+              GitHub
+              <ArrowUpRight size={13} />
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
   </div>
 </div>

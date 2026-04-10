@@ -1,4 +1,3 @@
-use std::env;
 use std::fs;
 use std::io::BufRead;
 use std::path::{Path, PathBuf};
@@ -12,14 +11,12 @@ use super::ffmpeg::{
     resolve_export_profile, summarize_ffmpeg_error,
 };
 use super::system::get_active_output_dir;
-use super::types::{
-    AppState, EditorDocument, ExportRequest, PreviewFrameRequest, VideoMetadata,
-};
+use super::types::{AppState, EditorDocument, ExportRequest, VideoMetadata};
 use crate::project::reader::ProjectOpenResult;
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 
 fn static_root() -> PathBuf {
-    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let candidate = cwd.join("..").join("static");
     if candidate.exists() {
         candidate
@@ -108,35 +105,6 @@ pub fn load_editor_document(path: String) -> Result<EditorDocument, String> {
 }
 
 #[tauri::command]
-pub fn render_preview_frame(request: PreviewFrameRequest) -> Result<String, String> {
-    let input_path = PathBuf::from(&request.input_path);
-    let project = open_project_if_needed(&input_path)?;
-    let source_video = project
-        .as_ref()
-        .map(|value| value.recording_path.clone())
-        .unwrap_or_else(|| input_path.clone());
-    let metadata = probe_video_metadata(&source_video)?;
-
-    let cursor_track_path = project.as_ref().map(|p| p.cursor_path.clone());
-
-    // Use the native render pipeline: decode frame → process nodes → encode PNG.
-    let png_bytes = crate::render::compose::render_preview(
-        &source_video,
-        request.time.max(0.0),
-        &request.render_state,
-        &static_root(),
-        cursor_track_path.as_deref(),
-        metadata.width,
-        metadata.height,
-    )?;
-
-    Ok(format!(
-        "data:image/png;base64,{}",
-        base64::engine::general_purpose::STANDARD.encode(png_bytes)
-    ))
-}
-
-#[tauri::command]
 pub fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, String> {
     let input = PathBuf::from(&path);
     let project = open_project_if_needed(&input)?;
@@ -150,7 +118,7 @@ pub fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, Stri
     }
 
     let interval = meta.duration / count as f64;
-    let temp_dir = env::temp_dir().join("recast-thumbnails");
+    let temp_dir = std::env::temp_dir().join("recast-thumbnails");
     let _ = fs::create_dir_all(&temp_dir);
     let mut thumbnails = Vec::new();
 

@@ -87,14 +87,6 @@ pub struct ExportRequest {
     pub render_state: RenderState,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PreviewFrameRequest {
-    pub input_path: String,
-    pub time: f64,
-    pub render_state: RenderState,
-}
-
 #[derive(Clone, Copy)]
 pub struct ExportProfile {
     pub max_width: Option<u32>,

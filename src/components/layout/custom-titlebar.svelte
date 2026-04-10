@@ -72,36 +72,36 @@
       <button
         onmousedown={(e) => e.stopPropagation()}
         onclick={handleMinimize}
-        class="h-full w-11 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+        class="h-full w-9 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
         aria-label="Minimize"
         title="Minimize"
       >
-        <Minus size={14} strokeWidth={1.5} />
+        <Minus size={12} strokeWidth={1.5} />
       </button>
       <button
         onmousedown={(e) => e.stopPropagation()}
         onclick={handleToggleMaximize}
-        class="h-full w-11 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
+        class="h-full w-9 flex items-center justify-center text-muted-foreground hover:bg-muted transition-colors"
         aria-label={isMaximized ? "Restore" : "Maximize"}
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {#if isMaximized}
-          <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.2">
+          <svg width="11" height="11" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.2">
             <rect x="3" y="0.5" width="9" height="9" rx="1.5" />
             <rect x="0.5" y="3" width="9" height="9" rx="1.5" />
           </svg>
         {:else}
-          <Square size={13} strokeWidth={1.5} />
+          <Square size={11} strokeWidth={1.5} />
         {/if}
       </button>
       <button
         onmousedown={(e) => e.stopPropagation()}
         onclick={handleClose}
-        class="h-full w-11 flex items-center justify-center text-muted-foreground hover:bg-red-500 hover:text-white transition-colors"
+        class="h-full w-9 flex items-center justify-center text-muted-foreground hover:bg-red-500 hover:text-white transition-colors"
         aria-label="Close"
         title="Close"
       >
-        <X size={15} strokeWidth={1.5} />
+        <X size={13} strokeWidth={1.5} />
       </button>
     </div>
   {/if}

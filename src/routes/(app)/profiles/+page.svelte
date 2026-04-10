@@ -1,17 +1,19 @@
 <script lang="ts">
+  import { RaycastList, type RaycastAccessory, type RaycastListItem } from "$components/raycast";
   import { Button } from "$components/ui/button";
   import {
     Camera,
-    CameraOff,
+    CheckCircle2,
     Mic,
-    MicOff,
     Pencil,
     Plus,
+    SlidersHorizontal as SlidersIcon,
+    Star,
     Trash2,
     Volume2,
-    VolumeOff,
   } from "@lucide/svelte";
   import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
 
   interface RecordingProfile {
     id: string;
@@ -39,30 +41,9 @@
     }
     if (profiles.length === 0) {
       profiles = [
-        {
-          id: crypto.randomUUID(),
-          name: "Screen Only",
-          systemAudio: true,
-          microphone: false,
-          camera: false,
-          isDefault: true,
-        },
-        {
-          id: crypto.randomUUID(),
-          name: "Presentation",
-          systemAudio: true,
-          microphone: true,
-          camera: true,
-          isDefault: false,
-        },
-        {
-          id: crypto.randomUUID(),
-          name: "Tutorial",
-          systemAudio: true,
-          microphone: true,
-          camera: false,
-          isDefault: false,
-        },
+        { id: crypto.randomUUID(), name: "Screen Only", systemAudio: true, microphone: false, camera: false, isDefault: true },
+        { id: crypto.randomUUID(), name: "Presentation", systemAudio: true, microphone: true, camera: true, isDefault: false },
+        { id: crypto.randomUUID(), name: "Tutorial", systemAudio: true, microphone: true, camera: false, isDefault: false },
       ];
       save();
     }
@@ -87,17 +68,23 @@
   }
 
   function deleteProfile(id: string) {
+    if (profiles.length <= 1) {
+      toast.error("Keep at least one profile");
+      return;
+    }
     const wasDefault = profiles.find((p) => p.id === id)?.isDefault;
     profiles = profiles.filter((p) => p.id !== id);
     if (wasDefault && profiles.length > 0) {
       profiles[0].isDefault = true;
     }
     save();
+    toast.success("Profile deleted");
   }
 
   function setDefault(id: string) {
     profiles = profiles.map((p) => ({ ...p, isDefault: p.id === id }));
     save();
+    toast.success("Default profile updated");
   }
 
   function toggleOption(id: string, option: "systemAudio" | "microphone" | "camera") {
@@ -110,6 +97,11 @@
   function startEditing(id: string, name: string) {
     editingId = id;
     editingName = name;
+    setTimeout(() => {
+      const input = document.getElementById("profile-rename-input") as HTMLInputElement | null;
+      input?.focus();
+      input?.select();
+    }, 50);
   }
 
   function finishEditing() {
@@ -122,152 +114,126 @@
     editingId = null;
     editingName = "";
   }
+
+  function cancelEditing() {
+    editingId = null;
+    editingName = "";
+  }
+
+  function buildAccessories(profile: RecordingProfile): RaycastAccessory[] {
+    const accs: RaycastAccessory[] = [];
+    if (profile.isDefault) accs.push({ icon: Star, text: "Default", variant: "warning" });
+    if (profile.systemAudio) accs.push({ icon: Volume2, tooltip: "System audio on", variant: "info" });
+    if (profile.microphone) accs.push({ icon: Mic, tooltip: "Microphone on", variant: "success" });
+    if (profile.camera) accs.push({ icon: Camera, tooltip: "Camera on", variant: "default" });
+    return accs;
+  }
+
+  const items = $derived<RaycastListItem[]>(
+    profiles.map((profile) => ({
+      id: profile.id,
+      title: profile.name,
+      subtitle: [
+        profile.systemAudio && "System audio",
+        profile.microphone && "Mic",
+        profile.camera && "Camera",
+      ].filter(Boolean).join(" · ") || "Silent",
+      icon: profile.isDefault ? Star : SlidersIcon,
+      iconClass: profile.isDefault ? "text-warning" : undefined,
+      keywords: [profile.name, profile.isDefault ? "default" : ""],
+      accessories: buildAccessories(profile),
+      actions: [
+        {
+          id: "rename",
+          label: "Rename Profile",
+          icon: Pencil,
+          onAction: () => startEditing(profile.id, profile.name),
+        },
+        {
+          id: "set-default",
+          label: profile.isDefault ? "Already Default" : "Set as Default",
+          icon: CheckCircle2,
+          onAction: () => !profile.isDefault && setDefault(profile.id),
+        },
+        {
+          id: "toggle-audio",
+          label: profile.systemAudio ? "Disable System Audio" : "Enable System Audio",
+          icon: Volume2,
+          onAction: () => toggleOption(profile.id, "systemAudio"),
+        },
+        {
+          id: "toggle-mic",
+          label: profile.microphone ? "Disable Microphone" : "Enable Microphone",
+          icon: Mic,
+          onAction: () => toggleOption(profile.id, "microphone"),
+        },
+        {
+          id: "toggle-camera",
+          label: profile.camera ? "Disable Camera" : "Enable Camera",
+          icon: Camera,
+          onAction: () => toggleOption(profile.id, "camera"),
+        },
+        {
+          id: "delete",
+          label: "Delete Profile",
+          icon: Trash2,
+          variant: "destructive",
+          shortcut: "⌘⌫",
+          onAction: () => deleteProfile(profile.id),
+        },
+      ],
+    })),
+  );
+
 </script>
 
-<div
-  class="flex-1 flex flex-col p-8 w-full max-w-3xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500"
+<RaycastList
+  {items}
+  isLoading={false}
+  title="Recording Profiles"
+  subtitle="Save different recording configurations for quick access"
+  searchPlaceholder="Search profiles..."
+  emptyTitle="No profiles yet"
+  emptyHint="Create a profile to save your recording presets."
 >
-  <div class="mb-8 flex items-center justify-between">
-    <div>
-      <h2 class="text-2xl font-bold tracking-tight text-foreground">
-        Recording Profiles
-      </h2>
-      <p class="text-sm text-muted-foreground mt-1">
-        Save different recording configurations for quick access.
-      </p>
-    </div>
-    <Button onclick={addProfile} variant="outline" class="gap-1.5">
+  {#snippet toolbar()}
+    <Button variant="ghost" size="icon-sm" onclick={addProfile} title="New Profile">
       <Plus size={14} />
-      New Profile
     </Button>
-  </div>
+  {/snippet}
+</RaycastList>
 
-  <div class="space-y-3">
-    {#each profiles as profile (profile.id)}
-      <div
-        class="group rounded-xl border bg-card p-4 transition-all duration-200 hover:shadow-sm
-          {profile.isDefault
-          ? 'border-primary/30 ring-1 ring-primary/10'
-          : 'border-border'}"
-      >
-        <div class="flex items-center justify-between gap-4">
-          <!-- Name -->
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            {#if editingId === profile.id}
-              <input
-                bind:value={editingName}
-                onblur={finishEditing}
-                onkeydown={(e) => e.key === "Enter" && finishEditing()}
-                class="text-sm font-semibold bg-transparent border-b border-primary outline-none px-0 py-0.5 w-48"
-                autofocus
-              />
-            {:else}
-              <button
-                onclick={() => startEditing(profile.id, profile.name)}
-                class="text-sm font-semibold text-foreground hover:text-primary transition-colors truncate text-left"
-              >
-                {profile.name}
-              </button>
-            {/if}
-
-            {#if profile.isDefault}
-              <span
-                class="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary"
-              >
-                Default
-              </span>
-            {/if}
-          </div>
-
-          <!-- Toggle options -->
-          <div class="flex items-center gap-1">
-            <button
-              onclick={() => toggleOption(profile.id, "systemAudio")}
-              class="size-8 rounded-lg flex items-center justify-center transition-colors
-                {profile.systemAudio
-                ? 'bg-blue-500/10 text-blue-400'
-                : 'bg-muted text-muted-foreground/40 hover:text-muted-foreground'}"
-              title={profile.systemAudio ? "System audio: on" : "System audio: off"}
-            >
-              {#if profile.systemAudio}
-                <Volume2 size={14} />
-              {:else}
-                <VolumeOff size={14} />
-              {/if}
-            </button>
-
-            <button
-              onclick={() => toggleOption(profile.id, "microphone")}
-              class="size-8 rounded-lg flex items-center justify-center transition-colors
-                {profile.microphone
-                ? 'bg-emerald-500/10 text-emerald-400'
-                : 'bg-muted text-muted-foreground/40 hover:text-muted-foreground'}"
-              title={profile.microphone ? "Microphone: on" : "Microphone: off"}
-            >
-              {#if profile.microphone}
-                <Mic size={14} />
-              {:else}
-                <MicOff size={14} />
-              {/if}
-            </button>
-
-            <button
-              onclick={() => toggleOption(profile.id, "camera")}
-              class="size-8 rounded-lg flex items-center justify-center transition-colors
-                {profile.camera
-                ? 'bg-violet-500/10 text-violet-400'
-                : 'bg-muted text-muted-foreground/40 hover:text-muted-foreground'}"
-              title={profile.camera ? "Camera: on" : "Camera: off"}
-            >
-              {#if profile.camera}
-                <Camera size={14} />
-              {:else}
-                <CameraOff size={14} />
-              {/if}
-            </button>
-          </div>
-
-          <!-- Actions -->
-          <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            {#if !profile.isDefault}
-              <button
-                onclick={() => setDefault(profile.id)}
-                class="rounded-md px-2.5 py-1 text-[10px] font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
-              >
-                Set default
-              </button>
-            {/if}
-            <button
-              onclick={() => startEditing(profile.id, profile.name)}
-              class="size-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-foreground hover:bg-muted transition-colors"
-              title="Rename"
-            >
-              <Pencil size={12} />
-            </button>
-            {#if profiles.length > 1}
-              <button
-                onclick={() => deleteProfile(profile.id)}
-                class="size-7 rounded-md flex items-center justify-center text-muted-foreground/50 hover:text-destructive hover:bg-destructive/10 transition-colors"
-                title="Delete"
-              >
-                <Trash2 size={12} />
-              </button>
-            {/if}
-          </div>
-        </div>
-      </div>
-    {/each}
-  </div>
-
-  {#if profiles.length === 0}
+{#if editingId !== null}
+  <div
+    class="fixed inset-0 z-50 flex items-start justify-center bg-background/60 pt-32 backdrop-blur-sm"
+    role="presentation"
+    onclick={cancelEditing}
+    onkeydown={(e) => e.key === "Escape" && cancelEditing()}
+  >
     <div
-      class="flex flex-col items-center justify-center gap-4 rounded-2xl border border-dashed border-border bg-card/50 py-16"
+      role="dialog"
+      tabindex="-1"
+      aria-label="Rename profile"
+      class="w-full max-w-sm rounded-xl border border-border bg-popover p-4 shadow-2xl"
+      onclick={(e) => e.stopPropagation()}
+      onkeydown={(e) => e.stopPropagation()}
     >
-      <p class="text-sm text-muted-foreground">No profiles yet.</p>
-      <Button onclick={addProfile} variant="outline" class="gap-1.5">
-        <Plus size={14} />
-        Create your first profile
-      </Button>
+      <label for="profile-rename-input" class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+        >Rename profile</label
+      >
+      <input
+        id="profile-rename-input"
+        bind:value={editingName}
+        onkeydown={(e) => {
+          if (e.key === "Enter") finishEditing();
+          if (e.key === "Escape") cancelEditing();
+        }}
+        class="mt-2 w-full rounded-md border border-input bg-input/30 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
+      />
+      <div class="mt-3 flex items-center justify-end gap-2">
+        <Button variant="ghost" size="sm" onclick={cancelEditing}>Cancel</Button>
+        <Button variant="default" size="sm" onclick={finishEditing}>Save</Button>
+      </div>
     </div>
-  {/if}
-</div>
+  </div>
+{/if}
