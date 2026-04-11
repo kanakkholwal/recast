@@ -85,7 +85,20 @@ export function openFileLocation(path: string): Promise<void> {
 	return invoke("open_file_location", { path });
 }
 
-//  Recording commands 
+/** Move a file to the OS recycle bin / trash. Recoverable via the OS. */
+export function deleteFile(path: string): Promise<void> {
+	return invoke("delete_file", { path });
+}
+
+/**
+ * Rename a file in place. If `newName` has no extension, the original extension
+ * is preserved. Returns the new absolute path.
+ */
+export function renameFile(path: string, newName: string): Promise<string> {
+	return invoke<string>("rename_file", { path, newName });
+}
+
+//  Recording commands
 
 export interface RecordingOptions {
 	systemAudio?: boolean;

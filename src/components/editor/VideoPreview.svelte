@@ -14,6 +14,7 @@
 		onLoadedMetadata: () => void;
 		onReady: () => void;
 		onError: () => void;
+		onSeeked?: () => void;
 	}
 
 	let {
@@ -26,6 +27,7 @@
 		onLoadedMetadata,
 		onReady,
 		onError,
+		onSeeked,
 	}: Props = $props();
 
 	// ── DOM refs & GL state ──────────────────────────────────────────────
@@ -438,6 +440,13 @@ void main() {
 		if (!gl || !program || !canvasEl || !store.metadata) return;
 		if (!resizeCanvas()) return;
 
+		// Prefer the video element's current time for per-frame cursor & zoom
+		// interpolation — `store.currentTime` only updates ~4×/sec via the
+		// `timeupdate` event, so using it here caused visible cursor lag during
+		// playback. Fall back to the store value when the video isn't available
+		// (shouldn't happen inside draw but keeps the types honest).
+		const playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
+
 		// Make sure the latest video frame is in the texture before sampling
 		if (!uploadVideoFrame()) return;
 
@@ -482,7 +491,7 @@ void main() {
 		}
 
 		// Zoom
-		const activeZoom = findActiveZoom(store.currentTime);
+		const activeZoom = findActiveZoom(playbackTime);
 		if (activeZoom && activeZoom.scale > 1.0) {
 			gl.uniform2f(uniforms.u_zoomCenter, 0.5, 0.5); // center crop, matching Rust behavior
 			gl.uniform1f(uniforms.u_zoomScale, activeZoom.scale);
@@ -498,7 +507,7 @@ void main() {
 		let cursorPosX = 0;
 		let cursorPosY = 0;
 		if (cs.enabled && cursorSamples.length > 0) {
-			const ts = Math.max(0, store.currentTime) * 1_000_000;
+			const ts = Math.max(0, playbackTime) * 1_000_000;
 
 			// Idle hide check
 			let isIdle = false;
@@ -630,6 +639,7 @@ void main() {
 	// Hook video element events
 	function handleSeeked() {
 		requestRedraw();
+		onSeeked?.();
 	}
 	function handleLoadedData() {
 		isReady = true;

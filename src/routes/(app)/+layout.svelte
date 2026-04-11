@@ -18,10 +18,9 @@
         orientation="vertical"
         class="me-2 data-[orientation=vertical]:h-3"
       />
-      <div class="flex items-center gap-2 px-2 h-full" data-tauri-drag-region>
+      <div class="flex items-center gap-2 h-full" data-tauri-drag-region>
         <span class="text-sm font-semibold tracking-tight text-foreground"
-          >{config.appName}</span
-        >
+          >{config.appName}</span>
       </div>
       <div class="flex-1 h-full" data-tauri-drag-region></div>
     </CustomTitlebar>

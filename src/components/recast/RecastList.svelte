@@ -1,10 +1,15 @@
 <script lang="ts">
+	import { Button } from "$components/ui/button";
 	import * as Command from "$components/ui/command";
 	import { cn } from "$lib/utils";
+	import { Command as CommandIcon, Sparkles, X } from "@lucide/svelte";
 	import { onMount, type Snippet } from "svelte";
 	import ActionPanel from "./ActionPanel.svelte";
 	import TopProgress from "./TopProgress.svelte";
 	import type { RecastAccessory, RecastListItem } from "./types";
+
+	/** localStorage key for the first-visit tip. Global across all RecastList pages. */
+	const KBD_HINT_KEY = "recast-kbd-hint-dismissed";
 
 	interface Props {
 		items: RecastListItem[];
@@ -32,6 +37,19 @@
 	let searchValue = $state("");
 	let selectedValue = $state<string>("");
 	let actionPanelOpen = $state(false);
+	let showKbdHint = $state(false);
+
+	/** True if any item in the list exposes contextual actions. */
+	const hasAnyActions = $derived(items.some((i) => i.actions && i.actions.length > 0));
+
+	function dismissHint() {
+		showKbdHint = false;
+		try {
+			localStorage.setItem(KBD_HINT_KEY, "true");
+		} catch {
+			/* ignore — private mode etc. */
+		}
+	}
 
 	const sections = $derived.by(() => {
 		const grouped = new Map<string, RecastListItem[]>();
@@ -84,6 +102,15 @@
 			"[data-recast-list] [data-slot='command-input']"
 		);
 		input?.focus();
+
+		// First-visit hint: show a one-time banner teaching ⌘K. Dismissed forever on close.
+		try {
+			if (localStorage.getItem(KBD_HINT_KEY) !== "true") {
+				showKbdHint = true;
+			}
+		} catch {
+			/* ignore */
+		}
 	});
 
 	function accessoryClass(a: RecastAccessory) {
@@ -123,6 +150,37 @@
 				</div>
 			{/if}
 		</header>
+	{/if}
+
+	<!-- First-visit keyboard hint banner — dismissed forever on close -->
+	{#if showKbdHint && hasAnyActions}
+		<div
+			class="flex shrink-0 items-center gap-2 border-b border-primary/20 bg-primary/5 px-4 py-2 text-[11px]"
+		>
+			<span
+				class="flex size-5 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary"
+			>
+				<Sparkles size={11} />
+			</span>
+			<p class="flex-1 truncate text-foreground">
+				<span class="font-medium">Tip:</span>
+				<span class="text-muted-foreground">select a row and press</span>
+				<kbd
+					class="mx-0.5 rounded border border-primary/30 bg-background px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary"
+					>⌘K</kbd
+				>
+				<span class="text-muted-foreground">to see all actions</span>
+			</p>
+			<Button
+				variant="ghost"
+				size="icon-xs"
+				onclick={dismissHint}
+				class="shrink-0 text-muted-foreground hover:text-foreground"
+				aria-label="Dismiss tip"
+			>
+				<X size={11} />
+			</Button>
+		</div>
 	{/if}
 
 	<Command.Root
@@ -201,6 +259,20 @@
 									{/each}
 								</div>
 							{/if}
+
+							<!--
+								Per-row ⌘K chip: only visible on the currently selected row
+								when actions are available. Teaches the shortcut in place.
+							-->
+							{#if item.actions && item.actions.length > 0 && selectedValue === item.id}
+								<span
+									class="inline-flex items-center gap-1 rounded border border-primary/30 bg-primary/10 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-primary"
+									aria-hidden="true"
+								>
+									<CommandIcon size={10} strokeWidth={2.5} />
+									K
+								</span>
+							{/if}
 						</Command.Item>
 					{/each}
 				</Command.Group>
@@ -212,7 +284,7 @@
 		>
 			<div class="flex items-center gap-3">
 				{#if selectedItem && activeActions.length > 0}
-					<span class="flex items-center gap-1">
+					<span class="flex items-center gap-1 text-foreground">
 						<kbd
 							class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
 							>↵</kbd
@@ -220,11 +292,11 @@
 						<span>{activeActions[0].label}</span>
 					</span>
 				{/if}
-				{#if activeActions.length > 1}
-					<span class="flex items-center gap-1">
+				{#if hasAnyActions}
+					<span class="flex items-center gap-1 font-medium text-foreground">
 						<kbd
-							class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
-							>⌘K</kbd
+							class="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono font-semibold text-primary"
+							>⌘ + K</kbd
 						>
 						<span>Actions</span>
 					</span>

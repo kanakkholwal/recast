@@ -17,6 +17,7 @@
     Film,
     FolderOpen,
     Home as HomeIcon,
+    Mic,
     Monitor,
     Radio,
     Settings as SettingsIcon,
@@ -136,6 +137,45 @@
     }
   }
 
+  /** Open (or focus) the device-picker window for mic/camera. Mirrors the panel's logic. */
+  async function openDevicePickerWindow(type: "mic" | "camera") {
+    const label = `device-picker-${type}`;
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow(label, {
+      url: `/device-picker?type=${type}`,
+      title: `Select ${type === "mic" ? "Microphone" : "Camera"}`,
+      width: 320,
+      height: 340,
+      center: true,
+      decorations: false,
+      resizable: false,
+    });
+  }
+
+  /** Open (or focus) the floating camera-preview window (always-on-top, transparent). */
+  async function openCameraPreviewWindow() {
+    const existing = await WebviewWindow.getByLabel("camera-preview");
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+    new WebviewWindow("camera-preview", {
+      url: "/camera-preview",
+      title: "Camera",
+      width: 320,
+      height: 320,
+      decorations: false,
+      transparent: true,
+      alwaysOnTop: true,
+      resizable: true,
+      center: true,
+    });
+  }
+
   const items = $derived<RecastListItem[]>([
     // Quick actions
     {
@@ -158,36 +198,65 @@
       ],
     },
     {
-      id: "action-device-picker",
-      title: "Pick Source",
-      subtitle: "Choose a screen or window to record",
+      id: "action-pick-camera",
+      title: "Pick Camera",
+      subtitle: "Choose a webcam device",
       icon: Monitor,
-      keywords: ["display", "window", "source", "pick"],
+      keywords: ["camera", "webcam", "device", "source", "picker", "video"],
       section: "Quick Actions",
-      onSelect: () => goto("/device-picker"),
+      onSelect: () => openDevicePickerWindow("camera"),
       actions: [
         {
-          id: "pick",
-          label: "Open Device Picker",
-          icon: Monitor,
-          onAction: () => goto("/device-picker"),
+          id: "pick-camera",
+          label: "Open Camera Picker",
+          icon: Camera,
+          onAction: () => openDevicePickerWindow("camera"),
+        },
+        {
+          id: "pick-mic",
+          label: "Open Microphone Picker",
+          icon: Mic,
+          onAction: () => openDevicePickerWindow("mic"),
+        },
+      ],
+    },
+    {
+      id: "action-pick-microphone",
+      title: "Pick Microphone",
+      subtitle: "Choose an audio input device",
+      icon: Mic,
+      keywords: ["microphone", "mic", "audio", "device", "input", "picker"],
+      section: "Quick Actions",
+      onSelect: () => openDevicePickerWindow("mic"),
+      actions: [
+        {
+          id: "pick-mic",
+          label: "Open Microphone Picker",
+          icon: Mic,
+          onAction: () => openDevicePickerWindow("mic"),
+        },
+        {
+          id: "pick-camera",
+          label: "Open Camera Picker",
+          icon: Camera,
+          onAction: () => openDevicePickerWindow("camera"),
         },
       ],
     },
     {
       id: "action-camera-preview",
       title: "Camera Preview",
-      subtitle: "Test your webcam feed",
+      subtitle: "Test your webcam feed in a floating window",
       icon: Camera,
-      keywords: ["camera", "webcam", "preview", "test"],
+      keywords: ["camera", "webcam", "preview", "test", "floating"],
       section: "Quick Actions",
-      onSelect: () => goto("/camera-preview"),
+      onSelect: () => openCameraPreviewWindow(),
       actions: [
         {
           id: "preview",
           label: "Open Camera Preview",
           icon: Camera,
-          onAction: () => goto("/camera-preview"),
+          onAction: () => openCameraPreviewWindow(),
         },
       ],
     },

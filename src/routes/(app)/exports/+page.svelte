@@ -1,8 +1,20 @@
 <script lang="ts">
-  import { RecastList, type RecastListItem } from "$components/recast";
+  import {
+    ConfirmDialog,
+    RecastList,
+    RenameDialog,
+    type RecastListItem,
+  } from "$components/recast";
   import { Button } from "$components/ui/button";
-  import { generateThumbnails, listExports, openFileLocation, type RecordingEntry } from "$lib/ipc";
-  import { Download, FolderOpen, Play, RefreshCw } from "@lucide/svelte";
+  import {
+    deleteFile,
+    generateThumbnails,
+    listExports,
+    openFileLocation,
+    renameFile,
+    type RecordingEntry,
+  } from "$lib/ipc";
+  import { FolderOpen, Pencil, Play, RefreshCw, Trash2 } from "@lucide/svelte";
   import { onMount } from "svelte";
   import { toast } from "svelte-sonner";
 
@@ -10,6 +22,9 @@
   let isLoading = $state(true);
   let thumbnails = $state<Record<string, string>>({});
   let thumbnailPass = 0;
+
+  let renameTarget = $state<RecordingEntry | null>(null);
+  let deleteTarget = $state<RecordingEntry | null>(null);
 
   onMount(() => {
     fetchExports();
@@ -72,6 +87,31 @@
     }
   }
 
+  async function handleRename(entry: RecordingEntry, nextName: string) {
+    const newPath = await renameFile(entry.path, nextName);
+    entries = entries.map((e) =>
+      e.path === entry.path
+        ? { ...e, path: newPath, filename: newPath.split(/[\\/]/).pop() ?? nextName }
+        : e,
+    );
+    const existingThumb = thumbnails[entry.path];
+    if (existingThumb) {
+      const { [entry.path]: _, ...rest } = thumbnails;
+      thumbnails = { ...rest, [newPath]: existingThumb };
+    }
+    toast.success("Renamed");
+  }
+
+  async function handleDelete(entry: RecordingEntry) {
+    await deleteFile(entry.path);
+    entries = entries.filter((e) => e.path !== entry.path);
+    if (thumbnails[entry.path]) {
+      const { [entry.path]: _, ...rest } = thumbnails;
+      thumbnails = rest;
+    }
+    toast.success(`Moved "${entry.filename}" to trash`);
+  }
+
   const items = $derived<RecastListItem[]>(
     entries.map((entry) => ({
       id: entry.path,
@@ -90,10 +130,29 @@
           onAction: () => openFileLocation(entry.path),
         },
         {
+          id: "rename",
+          label: "Rename…",
+          icon: Pencil,
+          shortcut: "⌘R",
+          onAction: () => {
+            renameTarget = entry;
+          },
+        },
+        {
           id: "copy-path",
           label: "Copy Path",
           shortcut: "⌘⇧C",
           onAction: () => copyPath(entry),
+        },
+        {
+          id: "delete",
+          label: "Move to Trash",
+          icon: Trash2,
+          variant: "destructive",
+          shortcut: "⌘⌫",
+          onAction: () => {
+            deleteTarget = entry;
+          },
         },
       ],
     })),
@@ -115,3 +174,34 @@
     </Button>
   {/snippet}
 </RecastList>
+
+{#if renameTarget}
+  <RenameDialog
+    open={true}
+    title="Rename export"
+    label="New filename"
+    initialValue={renameTarget.filename}
+    onSave={async (next) => {
+      await handleRename(renameTarget!, next);
+    }}
+    onOpenChange={(v) => {
+      if (!v) renameTarget = null;
+    }}
+  />
+{/if}
+
+{#if deleteTarget}
+  <ConfirmDialog
+    open={true}
+    title="Move export to trash?"
+    description={`“${deleteTarget.filename}” will be sent to the recycle bin. You can restore it from there if needed.`}
+    confirmLabel="Move to Trash"
+    variant="destructive"
+    onConfirm={async () => {
+      await handleDelete(deleteTarget!);
+    }}
+    onOpenChange={(v) => {
+      if (!v) deleteTarget = null;
+    }}
+  />
+{/if}

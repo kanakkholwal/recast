@@ -356,7 +356,7 @@
 
   <!-- Timer -->
   <span
-    class="font-mono text-[10.5px] tabular-nums text-white/30 shrink-0 ml-auto"
+    class="font-mono text-[10.5px] tabular-nums text-card-foreground/30 shrink-0 ml-auto"
     data-tauri-drag-region
   >
     {timer}

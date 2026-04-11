@@ -8,7 +8,6 @@
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
   import { Button } from "$components/ui/button";
-  import { ArrowLeft } from "@lucide/svelte";
   import {
     autosaveProject,
     clearAutosave,
@@ -18,6 +17,7 @@
   } from "$lib/ipc";
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
+  import { ArrowLeft } from "@lucide/svelte";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onDestroy, tick } from "svelte";
@@ -34,7 +34,11 @@
   const store = createEditorStore();
 
   let videoEl: HTMLVideoElement | null = $state(null);
+  let systemAudioEl: HTMLAudioElement | null = $state(null);
+  let micAudioEl: HTMLAudioElement | null = $state(null);
   let videoSrc = $state("");
+  let systemAudioSrc = $state("");
+  let micAudioSrc = $state("");
   let cursorPath = $state<string | null>(null);
   let documentPath = $state("");
   let isLoading = $state(true);
@@ -77,11 +81,55 @@
   function handleTimeUpdate() {
     if (videoEl && store.isPlaying) {
       store.currentTime = videoEl.currentTime;
+      // Cheap drift correction: if audio elements drift > 150ms from video, snap them back.
+      const videoT = videoEl.currentTime;
+      for (const el of [systemAudioEl, micAudioEl]) {
+        if (el && !el.paused && Math.abs(el.currentTime - videoT) > 0.15) {
+          el.currentTime = videoT;
+        }
+      }
     }
   }
 
   function handleVideoEnded() {
     store.isPlaying = false;
+    systemAudioEl?.pause();
+    micAudioEl?.pause();
+  }
+
+  // Play/pause audio elements in lockstep with the video via the store's
+  // `isPlaying` flag (which is set by PlaybackControls, keyboard handler, etc.).
+  $effect(() => {
+    const playing = store.isPlaying;
+    for (const el of [systemAudioEl, micAudioEl]) {
+      if (!el) continue;
+      if (playing) {
+        // Align audio to the video's current time before resuming.
+        if (videoEl) el.currentTime = videoEl.currentTime;
+        void el.play().catch((err) => {
+          console.warn("Audio play failed:", err);
+        });
+      } else {
+        el.pause();
+      }
+    }
+  });
+
+  // Apply volume/mute from the store's audio settings to both audio elements.
+  $effect(() => {
+    const settings = store.audioSettings;
+    const vol = settings.muted ? 0 : Math.max(0, Math.min(1, settings.volume / 100));
+    if (systemAudioEl) systemAudioEl.volume = vol;
+    if (micAudioEl) micAudioEl.volume = vol;
+  });
+
+  // Snap audio to the video's time whenever the user scrubs.
+  function handleVideoSeeked() {
+    if (!videoEl) return;
+    const t = videoEl.currentTime;
+    for (const el of [systemAudioEl, micAudioEl]) {
+      if (el) el.currentTime = t;
+    }
   }
 
   function mergeVideoMetadata(next: Partial<VideoMetadata>) {
@@ -142,8 +190,12 @@
     error = "";
     isLoading = true;
     videoSrc = "";
+    systemAudioSrc = "";
+    micAudioSrc = "";
     cursorPath = null;
     videoEl?.pause();
+    systemAudioEl?.pause();
+    micAudioEl?.pause();
     store.metadata = null;
     store.reset();
     store.thumbnailStrip = [];
@@ -157,11 +209,15 @@
       void loadThumbnailStrip(document.projectPath);
       videoSrc = convertFileSrc(document.mediaPath);
       cursorPath = document.cursorPath ?? null;
+      systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
+      micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
       // Mount the editor body so the <video> element exists before we call load().
       // The video element lives inside VideoPreview, which only renders when !isLoading.
       isLoading = false;
       await tick();
       videoEl?.load();
+      systemAudioEl?.load();
+      micAudioEl?.load();
     } catch (err) {
       console.error("Failed to load editor document", err);
       error = `Could not load project: ${err}`;
@@ -307,6 +363,7 @@
             onLoadedMetadata={handleVideoLoadedMetadata}
             onReady={handleVideoReady}
             onError={handleVideoError}
+            onSeeked={handleVideoSeeked}
           />
         </div>
 
@@ -315,10 +372,32 @@
       </div>
 
       <!-- Right column: properties panel -->
-      <aside class="min-h-0 w-80 shrink-0 border-l border-border xl:w-[22rem]">
+      <aside class="min-h-0 w-80 shrink-0 border-l border-border xl:w-88">
         <PropertiesPanel {store} />
       </aside>
     </div>
+  {/if}
+
+  <!-- Separate audio tracks — .recast projects store system audio and mic audio
+       as separate WAVs (the recording.mp4 video stream has no audio). These
+       elements are kept in lockstep with the video via $effects above. -->
+  {#if systemAudioSrc}
+    <!-- svelte-ignore a11y_media_has_caption -->
+    <audio
+      bind:this={systemAudioEl}
+      src={systemAudioSrc}
+      preload="auto"
+      class="hidden"
+    ></audio>
+  {/if}
+  {#if micAudioSrc}
+    <!-- svelte-ignore a11y_media_has_caption -->
+    <audio
+      bind:this={micAudioEl}
+      src={micAudioSrc}
+      preload="auto"
+      class="hidden"
+    ></audio>
   {/if}
 
   {#if store.isExporting}
@@ -326,13 +405,13 @@
       class="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm duration-200"
     >
       <div
-        class="animate-in zoom-in-95 flex min-w-[280px] flex-col gap-3 rounded-xl border border-border bg-popover p-5 shadow-2xl ring-1 ring-border duration-200"
+        class="animate-in zoom-in-95 flex min-w-70 flex-col gap-3 rounded-xl border border-border bg-popover p-5 shadow-2xl ring-1 ring-border duration-200"
       >
-        <div class="flex items-center gap-3">
+        <div class="flex items-center justify-center gap-3">
           <div class="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
           <div class="flex-1">
-            <p class="text-[12px] font-semibold text-foreground">Exporting video</p>
-            <p class="text-[11px] text-muted-foreground">
+            <p class="text-sm font-semibold text-foreground">Exporting video</p>
+            <p class="text-xs text-muted-foreground">
               {store.exportFormat.toUpperCase()} ·
               {store.exportProgress !== null ? `${Math.round(store.exportProgress)}%` : "Preparing…"}
             </p>
