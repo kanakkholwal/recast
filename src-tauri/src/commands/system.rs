@@ -228,24 +228,36 @@ pub struct CameraDeviceInfo {
 #[tauri::command]
 pub fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
     // Use ffmpeg to list DirectShow video devices on Windows.
-    let output = Command::new(crate::ffmpeg::ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-list_devices",
-            "true",
-            "-f",
-            "dshow",
-            "-i",
-            "dummy",
-        ])
+    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+    command.args([
+        "-hide_banner",
+        "-list_devices",
+        "true",
+        "-f",
+        "dshow",
+        "-i",
+        "dummy",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command
         .output()
         .map_err(|e| format!("failed to list camera devices: {e}"))?;
 
     // ffmpeg prints device list to stderr (it "fails" because "dummy" isn't a real input).
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let mut devices = Vec::new();
+    let mut devices: Vec<CameraDeviceInfo> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
 
-    // Parse lines like: [dshow @ ...] "Device Name" (video)
+    // Two output formats to handle:
+    //   FFmpeg ≤6.x:   section header "DirectShow video devices" followed by lines
+    //                  like `[dshow @ ...]  "Integrated Camera"`
+    //   FFmpeg 7.x+:   no section headers, each device tagged inline:
+    //                  `[dshow @ ...] "Integrated Camera" (video)`
     let mut in_video_section = false;
     for line in stderr.lines() {
         if line.contains("DirectShow video devices") {
@@ -256,20 +268,38 @@ pub fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
             in_video_section = false;
             continue;
         }
-        if in_video_section {
-            // Extract device name between quotes.
-            if let Some(start) = line.find('"') {
-                if let Some(end) = line[start + 1..].find('"') {
-                    let name = &line[start + 1..start + 1 + end];
-                    // Skip "alternative name" lines.
-                    if !line.contains("Alternative name") {
-                        devices.push(CameraDeviceInfo {
-                            id: name.to_string(),
-                            name: name.to_string(),
-                        });
-                    }
-                }
-            }
+
+        // Skip the `Alternative name "@device_pnp_..."` lines — those are the
+        // raw PnP identifiers, not friendly names.
+        if line.contains("Alternative name") {
+            continue;
+        }
+
+        let has_video_tag = line.contains("(video)");
+        let has_audio_tag = line.contains("(audio)");
+        // A line is a video device if FFmpeg tagged it as such OR we're in
+        // the legacy video section header and it isn't explicitly audio.
+        let is_video_device = has_video_tag || (in_video_section && !has_audio_tag);
+        if !is_video_device {
+            continue;
+        }
+
+        // Extract device name between the first pair of double quotes.
+        let Some(start) = line.find('"') else {
+            continue;
+        };
+        let Some(end_rel) = line[start + 1..].find('"') else {
+            continue;
+        };
+        let name = line[start + 1..start + 1 + end_rel].to_string();
+        if name.is_empty() {
+            continue;
+        }
+        if seen.insert(name.clone()) {
+            devices.push(CameraDeviceInfo {
+                id: name.clone(),
+                name,
+            });
         }
     }
 

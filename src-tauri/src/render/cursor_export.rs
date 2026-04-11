@@ -6,6 +6,13 @@
 //! with zoom-aware coordinates and idle-hide). Rendering in Rust and encoding
 //! to an intermediate `.webm` file avoids both the "thousands of PNG files"
 //! disk-cost problem and any pixel-handoff via IPC.
+//!
+//! NOTE: this module is currently dormant. `export_video` in
+//! `src/commands/editor.rs` temporarily skips the cursor overlay pass while
+//! we diagnose a hang + corruption issue. The code is kept intact so we can
+//! re-enable it once the root cause is understood.
+
+#![allow(dead_code)]
 
 use std::fs;
 use std::io::Write;

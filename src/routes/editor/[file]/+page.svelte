@@ -231,6 +231,7 @@
   // overlay handles success/cancel/error reveals that don't belong in global state.
   let exportStartedAt = $state<number>(0);
   let exportCancelling = $state(false);
+  let exportFinalizing = $state(false);
   let exportResult = $state<
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
@@ -238,16 +239,54 @@
     | null
   >(null);
 
+  // Discriminated union for the `export-done` event payload emitted by the
+  // Rust backend. Matches the `serde_json::json!({ "kind": ..., ... })` shape
+  // used in `commands/editor.rs::export_video`.
+  type ExportDoneEvent =
+    | { kind: "success"; path: string }
+    | { kind: "cancelled" }
+    | { kind: "error"; message: string };
+
   async function handleExport() {
     if (store.isExporting) return;
     store.isExporting = true;
     store.exportProgress = 0;
     exportCancelling = false;
+    exportFinalizing = false;
     exportResult = null;
     exportStartedAt = Date.now();
 
-    const unlisten = await listen<number>("export-progress", (event) => {
+    const unlistenProgress = await listen<number>("export-progress", (event) => {
       store.exportProgress = event.payload;
+    });
+    // Emitted by Rust when FFmpeg crosses ~95% progress: encoding is done
+    // enough that we flip the dialog into an indeterminate "Finalizing…"
+    // state so the user sees motion while we wait on the mux trailer.
+    const unlistenFinalizing = await listen<null>("export-finalizing", () => {
+      exportFinalizing = true;
+    });
+    // Authoritative end-of-export signal. Rust emits this with a
+    // { kind, path?, message? } payload right before returning from the
+    // async command. We transition the dialog immediately on this event
+    // instead of waiting for the `exportVideo` Promise to resolve through
+    // Tauri's IPC layer — that round-trip can lag visibly on some systems
+    // and made the dialog look "stuck" at Finalizing.
+    const unlistenDone = await listen<ExportDoneEvent>("export-done", (event) => {
+      const payload = event.payload;
+      if (payload.kind === "success") {
+        exportResult = { kind: "success", path: payload.path };
+      } else if (payload.kind === "cancelled") {
+        exportResult = { kind: "cancelled" };
+      } else {
+        exportResult = { kind: "error", message: payload.message };
+      }
+      // Drop the progress-UI flags so the dialog template falls through to
+      // the result branch (which is keyed on `exportResult` below). We leave
+      // `store.isExporting` TRUE until the Promise actually resolves in the
+      // finally block — that way `handleExport` still guards against
+      // overlapping exports while we wait for Rust's IPC round-trip.
+      exportFinalizing = false;
+      exportCancelling = false;
     });
 
     try {
@@ -257,20 +296,30 @@
         store.exportQuality,
         store.toRenderState(),
       );
-      exportResult = { kind: "success", path };
+      // Safety net: if `export-done` was missed (very unlikely), fall back
+      // to the Promise result. Don't overwrite if the listener already set
+      // something.
+      if (!exportResult) {
+        exportResult = { kind: "success", path };
+      }
     } catch (err) {
       const message = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
-      if (message.toLowerCase().includes("cancel")) {
-        exportResult = { kind: "cancelled" };
-      } else {
-        console.error("Export failed:", err);
-        exportResult = { kind: "error", message };
+      if (!exportResult) {
+        if (message.toLowerCase().includes("cancel")) {
+          exportResult = { kind: "cancelled" };
+        } else {
+          console.error("Export failed:", err);
+          exportResult = { kind: "error", message };
+        }
       }
     } finally {
-      unlisten();
+      unlistenProgress();
+      unlistenFinalizing();
+      unlistenDone();
       store.isExporting = false;
       store.exportProgress = null;
       exportCancelling = false;
+      exportFinalizing = false;
     }
   }
 
@@ -480,7 +529,15 @@
       <div
         class="animate-in zoom-in-95 flex w-full max-w-sm flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-border duration-150"
       >
-        {#if store.isExporting}
+        <!--
+          Inner branch keys on `exportResult` (set by the `export-done` event
+          from Rust) rather than on `store.isExporting` (which tracks the
+          `exportVideo` Promise and can lag visibly while Tauri IPC rounds
+          back). This means the UI flips from "Finalizing…" to "Export
+          complete" the moment Rust emits `export-done`, even if the Promise
+          hasn't resolved yet.
+        -->
+        {#if !exportResult}
           <!--
             Indeterminate only when we haven't received ANY progress event yet.
             `store.exportProgress` is initialised to `0` when handleExport starts,
@@ -490,6 +547,7 @@
           -->
           {@const pct = store.exportProgress ?? 0}
           {@const isWaiting = store.exportProgress === null || store.exportProgress === 0}
+          {@const isIndeterminate = isWaiting || exportFinalizing}
 
           <!-- Header: title + live metadata -->
           <header class="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -502,6 +560,8 @@
               <h3 id="export-dialog-title" class="text-[13px] font-semibold tracking-tight text-foreground">
                 {#if exportCancelling}
                   Cancelling export…
+                {:else if exportFinalizing}
+                  Finalizing…
                 {:else if isWaiting}
                   Preparing export…
                 {:else}
@@ -516,14 +576,14 @@
               </p>
             </div>
             <span class="shrink-0 font-mono text-[11px] tabular-nums text-foreground">
-              {isWaiting ? "…" : `${Math.round(pct)}%`}
+              {#if isWaiting}…{:else if exportFinalizing}—{:else}{Math.round(pct)}%{/if}
             </span>
           </header>
 
           <!-- Progress track -->
           <div class="px-4 pt-3">
             <div class="relative h-1 overflow-hidden rounded-full bg-muted">
-              {#if isWaiting}
+              {#if isIndeterminate}
                 <div
                   class="animate-recast-indeterminate absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary"
                 ></div>

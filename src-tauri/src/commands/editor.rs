@@ -14,6 +14,7 @@ use super::ffmpeg::{
     append_cursor_overlay_to_complex, append_output_filters_to_complex, build_output_scale_filter,
     has_audio, probe_video_metadata, resolve_export_profile, summarize_ffmpeg_error,
 };
+#[allow(unused_imports)]
 use crate::render::cursor_export::{CursorOverlayRequest, render_cursor_overlay};
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, VideoMetadata};
@@ -218,45 +219,27 @@ pub async fn export_video(
         )
         .map_err(|e| e.to_string())?;
 
-    // Pre-render cursor overlay for .recast projects with cursor enabled.
-    // Held in this scope so the TempDirGuard inside `cursor_overlay` keeps
-    // the webm alive until after spawn_blocking reads it.
-    let cursor_overlay = if request.render_state.cursor_enabled && request.format != "gif" {
-        if let Some(ref project_res) = project {
-            let padding = request.render_state.padding.max(0.0).round() as u32;
-            let canvas_width = metadata.width + padding * 2;
-            let canvas_height = metadata.height + padding * 2;
-            let fps = metadata.fps.round().max(1.0) as u32;
-            match render_cursor_overlay(CursorOverlayRequest {
-                cursor_track_path: project_res.cursor_path.clone(),
-                canvas_width,
-                canvas_height,
-                source_width: metadata.width,
-                source_height: metadata.height,
-                padding,
-                fps,
-                duration_secs: duration.max(metadata.duration),
-                trim_start,
-                render_state: request.render_state.clone(),
-            }) {
-                Ok(result) => Some(result),
-                Err(e) => {
-                    log::warn!("cursor overlay pre-render failed, exporting without cursor: {e}");
-                    None
-                }
-            }
-        } else {
-            None
-        }
-    } else {
-        None
-    };
+    // TEMPORARY: cursor overlay in export is disabled while we diagnose a
+    // reproducible hang + output-corruption issue. Decoding a pre-rendered
+    // alpha VP9 webm and compositing it at 4K was causing FFmpeg to either
+    // stall during the mux trailer or write an unplayable file. Until we have
+    // a reliable path (likely a separate stream-copy remux pass), export runs
+    // without the cursor overlay — the WebGL preview still shows it correctly.
+    let cursor_overlay: Option<crate::render::cursor_export::CursorOverlayResult> = None;
 
     let mut args = vec![
         "-hide_banner".to_string(),
         "-loglevel".to_string(),
         "error".to_string(),
         "-y".to_string(),
+        // Progress reporting needs to be a global option so FFmpeg 7.x parses
+        // it correctly regardless of where the output file sits in the args.
+        // `-stats_period 0.1` forces 100ms updates so the UI transitions from
+        // "Preparing…" to a determinate progress bar almost immediately.
+        "-progress".to_string(),
+        "pipe:1".to_string(),
+        "-stats_period".to_string(),
+        "0.1".to_string(),
     ];
     if trim_start > 0.0 {
         args.extend(["-ss".to_string(), format!("{trim_start:.3}")]);
@@ -355,6 +338,14 @@ pub async fn export_video(
             args.push(output_path.to_string_lossy().to_string());
         }
         _ => {
+            // NOTE: we intentionally do NOT pass `-movflags +faststart` here.
+            // Faststart does an in-place moov-atom rewrite at the very end of
+            // the mux, and on 4K clips that rewrite can take 10–60+ seconds
+            // while stdout stays silent — manifesting as a UI that's stuck in
+            // the "Finalizing…" state. Desktop playback (VLC, Windows Media,
+            // browsers reading from disk) works fine with moov-at-end. If we
+            // later need HTTP-streamable output, add it as a separate optional
+            // `-c copy -movflags +faststart` remux pass with its own progress.
             match crate::ffmpeg::preferred_h264_encoder() {
                 "h264_nvenc" => {
                     args.extend([
@@ -374,8 +365,6 @@ pub async fn export_video(
                         "high".to_string(),
                         "-pix_fmt".to_string(),
                         "yuv420p".to_string(),
-                        "-movflags".to_string(),
-                        "+faststart".to_string(),
                     ]);
                 }
                 _ => {
@@ -390,8 +379,6 @@ pub async fn export_video(
                         "yuv420p".to_string(),
                         "-threads".to_string(),
                         "0".to_string(),
-                        "-movflags".to_string(),
-                        "+faststart".to_string(),
                     ]);
                 }
             }
@@ -433,17 +420,8 @@ pub async fn export_video(
         }
     }
 
-    // Add progress reporting: FFmpeg writes progress to stdout with -progress pipe:1.
-    // `-stats_period 0.1` forces updates every 100ms so the UI can transition from
-    // "Preparing…" to the determinate bar almost immediately after encoding starts.
-    args.extend([
-        "-progress".to_string(),
-        "pipe:1".to_string(),
-        "-stats_period".to_string(),
-        "0.1".to_string(),
-    ]);
-
     let output_path_str = output_path.to_string_lossy().to_string();
+    log::info!("export ffmpeg args: {}", args.join(" "));
 
     // Spawn FFmpeg in a background thread so the UI stays responsive.
     // Watchdog: if 60s pass without a progress line, kill the child.
@@ -505,8 +483,14 @@ pub async fn export_video(
         let killed_by_timeout = Arc::new(AtomicBool::new(false));
         let killed_by_user = Arc::new(AtomicBool::new(false));
 
-        // Spawn the watchdog thread. It kills the child if 60s pass with no progress
-        // OR if the user-facing cancel flag in AppState flips to true.
+        // Spawn the watchdog thread — narrow responsibility: only kill the
+        // child if it stops producing progress for >60s (genuine stall) OR if
+        // the user-facing cancel flag flips. Previous versions also auto-
+        // emitted `export-finalizing` when progress went quiet for 1.5s, but
+        // that fired falsely on Windows when FFmpeg's pipe buffering batched
+        // progress into multi-second bursts, flipping the UI to "Finalizing"
+        // mid-encode and leaving it there. Finalization detection now lives
+        // in the reader loop (below) on the more-reliable pct≥95 signal.
         let watchdog_last_progress = last_progress.clone();
         let watchdog_killed = killed_by_timeout.clone();
         let watchdog_cancel_flag = cancel_flag.clone();
@@ -519,15 +503,13 @@ pub async fn export_video(
         let watchdog_thread = std::thread::Builder::new()
             .name("recast-export-watchdog".into())
             .spawn(move || {
-                const TIMEOUT: Duration = Duration::from_secs(60);
-                // Poll more frequently so cancellation feels responsive (≤250 ms).
+                const STALL_TIMEOUT: Duration = Duration::from_secs(60);
                 const POLL_INTERVAL: Duration = Duration::from_millis(250);
                 while !watchdog_stop_flag.load(Ordering::Acquire) {
                     std::thread::sleep(POLL_INTERVAL);
                     if watchdog_stop_flag.load(Ordering::Acquire) {
                         return;
                     }
-                    // User-requested cancellation takes priority over the stall watchdog.
                     if watchdog_cancel_flag.load(Ordering::Acquire) {
                         let mut guard = watchdog_child.lock();
                         if let Some(ref mut child) = *guard {
@@ -541,10 +523,10 @@ pub async fn export_video(
                         let guard = watchdog_last_progress.lock();
                         guard.elapsed()
                     };
-                    if elapsed > TIMEOUT {
+                    if elapsed > STALL_TIMEOUT {
                         let mut guard = watchdog_child.lock();
                         if let Some(ref mut child) = *guard {
-                            log::warn!("export watchdog: killing stalled ffmpeg process");
+                            log::warn!("export watchdog: killing stalled ffmpeg process (no progress for {:?})", elapsed);
                             let _ = child.kill();
                             watchdog_killed.store(true, Ordering::Release);
                         }
@@ -553,6 +535,10 @@ pub async fn export_video(
                 }
             })
             .map_err(|e| format!("failed to spawn watchdog thread: {e}"))?;
+
+        // Tracks whether we've already emitted `export-finalizing` so we don't
+        // send it twice (once from the reader, once from the post-loop fallback).
+        let mut finalizing_emitted = false;
 
         // Read stdout for progress updates.
         let reader = std::io::BufReader::new(stdout);
@@ -570,12 +556,28 @@ pub async fn export_video(
                         0.0
                     };
                     let _ = app.emit("export-progress", pct);
+                    // When FFmpeg reports we're essentially done encoding,
+                    // flip the UI into finalizing mode. Threshold is intentionally
+                    // loose (95 vs. 99) because the final out_time_us reported by
+                    // FFmpeg is typically one frame period shy of the full duration.
+                    if !finalizing_emitted && pct >= 95.0 {
+                        finalizing_emitted = true;
+                        let _ = app.emit("export-progress", 100.0_f64);
+                        let _ = app.emit("export-finalizing", ());
+                    }
                 }
             }
         }
 
-        // stdout closed → child has exited (or been killed). Stop the watchdog
-        // and wait for it + the stderr drain to finish.
+        // stdout closed → FFmpeg is fully done. Fallback emit in case we
+        // never crossed the 95% threshold (e.g. a very short clip where the
+        // last progress line landed below 95%).
+        if !finalizing_emitted {
+            let _ = app.emit("export-progress", 100.0_f64);
+            let _ = app.emit("export-finalizing", ());
+        }
+
+        // Stop the watchdog and wait for it + the stderr drain to finish.
         watchdog_stop.store(true, Ordering::Release);
         let _ = watchdog_thread.join();
         let _ = stderr_thread.join();
@@ -592,26 +594,55 @@ pub async fn export_video(
             // Clean up the half-written output file so the exports list doesn't
             // show a broken artifact from the aborted run.
             let _ = std::fs::remove_file(&output_path_str);
+            let _ = app.emit(
+                "export-done",
+                serde_json::json!({ "kind": "cancelled" }),
+            );
             return Err("export cancelled".to_string());
         }
 
         if killed_by_timeout.load(Ordering::Acquire) {
             let _ = std::fs::remove_file(&output_path_str);
-            return Err(
-                "export timed out: ffmpeg produced no progress for 60s".to_string(),
+            let err_msg = "export timed out: ffmpeg produced no progress for 60s".to_string();
+            let _ = app.emit(
+                "export-done",
+                serde_json::json!({ "kind": "error", "message": err_msg }),
             );
+            return Err(err_msg);
         }
 
         if !status.success() {
             let stderr_bytes = stderr_buf.lock().clone();
             let _ = std::fs::remove_file(&output_path_str);
-            return Err(format!(
+            let err_msg = format!(
                 "export failed:\n{}",
                 summarize_ffmpeg_error(&stderr_bytes)
-            ));
+            );
+            let _ = app.emit(
+                "export-done",
+                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
+            );
+            return Err(err_msg);
         }
 
+        // Log stderr tail even on success so we can diagnose silent warnings
+        // (e.g. mux trailer problems) that produce a "valid" exit code but a
+        // broken file.
+        let stderr_bytes = stderr_buf.lock().clone();
+        if !stderr_bytes.is_empty() {
+            let tail = String::from_utf8_lossy(&stderr_bytes);
+            log::info!("export ffmpeg stderr tail: {tail}");
+        }
+
+        // Final 100% ping + an `export-done` event with the result. The
+        // frontend uses `export-done` to transition the dialog to the success
+        // state immediately — decoupled from the `exportVideo` Promise, which
+        // may take an extra beat to resolve through Tauri's IPC layer.
         let _ = app.emit("export-progress", 100.0_f64);
+        let _ = app.emit(
+            "export-done",
+            serde_json::json!({ "kind": "success", "path": &output_path_str }),
+        );
         Ok(output_path_str)
     })
     .await

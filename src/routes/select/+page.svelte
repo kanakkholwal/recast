@@ -174,7 +174,7 @@
             onclick={() => (selectedSource = source)}
             class="group relative overflow-hidden rounded-lg border text-left transition-all duration-200
                             {isSelected(source)
-              ? 'border-border bg-card ring-1 ring-card/10'
+              ? 'border-border bg-primary ring-1 ring-primary/10'
               : 'border-card bg-card hover:border-card/12 hover:bg-card/5'}"
             style="animation-delay: {i * 30}ms"
           >
