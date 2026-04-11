@@ -1,11 +1,8 @@
 <script lang="ts">
   import {
     Circle,
-    Maximize2,
-    Minimize2,
-    Move,
     RotateCcw,
-    X,
+    X
   } from "@lucide/svelte";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -96,7 +93,7 @@
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
-  class="h-screen w-screen overflow-hidden bg-black select-none"
+  class="h-screen w-screen overflow-hidden bg-background select-none"
   onmousemove={handleMouseMove}
   data-tauri-drag-region
   style="border-radius: {borderRadius}px"
@@ -121,7 +118,7 @@
       <button
         onclick={toggleShape}
         onmousedown={(e) => e.stopPropagation()}
-        class="size-7 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        class="size-7 rounded-full flex items-center justify-center text--card-foreground/60 hover:text--card-foreground hover:bg-card/10 transition-colors"
         title={isCircle ? "Rounded rectangle" : "Circle"}
       >
         <Circle size={13} strokeWidth={2} />
@@ -131,7 +128,7 @@
       <button
         onclick={toggleMirror}
         onmousedown={(e) => e.stopPropagation()}
-        class="size-7 rounded-full flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-colors"
+        class="size-7 rounded-full flex items-center justify-center text-card-foreground/60 hover:text-card-foreground hover:bg-card/10 transition-colors"
         title={isMirrored ? "Unmirror" : "Mirror"}
       >
         <RotateCcw size={13} strokeWidth={2} />
@@ -144,7 +141,7 @@
       <button
         onclick={closeWindow}
         onmousedown={(e) => e.stopPropagation()}
-        class="size-7 rounded-full flex items-center justify-center text-white/40 hover:text-red-400 hover:bg-white/10 transition-colors"
+        class="size-7 rounded-full flex items-center justify-center text-card-foreground/40 hover:text-red-400 hover:bg-card/10 transition-colors"
         title="Close camera"
       >
         <X size={13} strokeWidth={2} />
