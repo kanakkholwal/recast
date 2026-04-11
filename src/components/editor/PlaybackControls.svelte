@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { Button } from "$components/ui/button";
 	import * as Tooltip from "$components/ui/tooltip";
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Pause, Play, SkipBack, SkipForward, ZoomIn, ZoomOut } from "@lucide/svelte";
@@ -20,10 +21,11 @@
 	const currentTimeFormatted = $derived(formatTime(store.currentTime));
 	const durationFormatted = $derived(formatTime(store.metadata?.duration ?? 0));
 	const trimSummary = $derived(
-		`${formatTime(store.trimStart)} - ${formatTime(store.trimEnd || store.metadata?.duration || 0)}`,
+		`${formatTime(store.trimStart)} – ${formatTime(store.trimEnd || store.metadata?.duration || 0)}`,
 	);
 	const hasTrim = $derived(
-		store.trimStart > 0 || (store.metadata?.duration ?? 0) > 0 && store.trimEnd < (store.metadata?.duration ?? 0),
+		store.trimStart > 0 ||
+			((store.metadata?.duration ?? 0) > 0 && store.trimEnd < (store.metadata?.duration ?? 0)),
 	);
 
 	function togglePlay() {
@@ -52,101 +54,104 @@
 	}
 </script>
 
-<div class="shrink-0 border-t border-border/70 bg-card/30 px-4 py-2 backdrop-blur-sm">
-	<div class="flex flex-wrap items-center justify-between gap-3">
-		<div class="flex items-center gap-2 text-sm">
-			<span class="font-mono font-medium tabular-nums text-foreground">
-				{currentTimeFormatted}
+<div
+	class="flex h-9 shrink-0 items-center justify-between gap-3 border-t border-border bg-card/40 px-3 text-[11px]"
+>
+	<div class="flex min-w-0 items-center gap-2">
+		<span class="font-mono tabular-nums font-medium text-foreground">
+			{currentTimeFormatted}
+		</span>
+		<span class="text-muted-foreground/40">/</span>
+		<span class="font-mono tabular-nums text-muted-foreground">{durationFormatted}</span>
+		{#if hasTrim}
+			<span
+				class="inline-flex items-center rounded border border-success/20 bg-success/10 px-1.5 py-0.5 text-[10px] font-medium text-success"
+			>
+				Trim {trimSummary}
 			</span>
-			<span class="text-muted-foreground/50">/</span>
-			<span class="font-mono tabular-nums text-muted-foreground">{durationFormatted}</span>
-			{#if hasTrim}
-				<span class="rounded-full border border-emerald-500/25 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-200">
-					Trim {trimSummary}
-				</span>
-			{/if}
-		</div>
+		{/if}
+	</div>
 
-		<div class="flex items-center gap-1 rounded-full border border-border/70 bg-background/75 p-1 shadow-sm">
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						type="button"
-						onclick={() => stepFrame(-1)}
-						class="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						aria-label="Previous frame"
-					>
-						<SkipBack size={16} />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Previous frame</Tooltip.Content>
-			</Tooltip.Root>
+	<div class="flex items-center gap-0.5">
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => stepFrame(-1)}
+					aria-label="Previous frame"
+				>
+					<SkipBack size={13} />
+				</Button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>Previous frame (←)</Tooltip.Content>
+		</Tooltip.Root>
 
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						type="button"
-						onclick={togglePlay}
-						class="flex h-10 w-10 items-center justify-center rounded-full bg-foreground text-background shadow-sm transition-transform hover:scale-[1.02] active:scale-95"
-						aria-label={store.isPlaying ? "Pause" : "Play"}
-					>
-						{#if store.isPlaying}
-							<Pause size={18} fill="currentColor" />
-						{:else}
-							<Play size={18} fill="currentColor" class="ml-0.5" />
-						{/if}
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>{store.isPlaying ? "Pause" : "Play"} (Space)</Tooltip.Content>
-			</Tooltip.Root>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<Button
+					variant="default"
+					size="icon-sm"
+					onclick={togglePlay}
+					aria-label={store.isPlaying ? "Pause" : "Play"}
+					class="size-7"
+				>
+					{#if store.isPlaying}
+						<Pause size={13} fill="currentColor" />
+					{:else}
+						<Play size={13} fill="currentColor" class="ml-0.5" />
+					{/if}
+				</Button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>{store.isPlaying ? "Pause" : "Play"} (Space)</Tooltip.Content>
+		</Tooltip.Root>
 
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						type="button"
-						onclick={() => stepFrame(1)}
-						class="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-						aria-label="Next frame"
-					>
-						<SkipForward size={16} />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Next frame</Tooltip.Content>
-			</Tooltip.Root>
-		</div>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => stepFrame(1)}
+					aria-label="Next frame"
+				>
+					<SkipForward size={13} />
+				</Button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>Next frame (→)</Tooltip.Content>
+		</Tooltip.Root>
+	</div>
 
-		<div class="flex items-center gap-1 rounded-full border border-border/70 bg-background/75 px-2 py-1 text-[11px] text-muted-foreground shadow-sm">
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						type="button"
-						onclick={() => zoomTimeline(-1)}
-						class="flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-muted hover:text-foreground"
-						aria-label="Zoom out timeline"
-					>
-						<ZoomOut size={14} />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Zoom out</Tooltip.Content>
-			</Tooltip.Root>
+	<div class="flex items-center gap-0.5 text-muted-foreground">
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => zoomTimeline(-1)}
+					aria-label="Zoom out timeline"
+				>
+					<ZoomOut size={13} />
+				</Button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>Zoom out</Tooltip.Content>
+		</Tooltip.Root>
 
-			<span class="min-w-10 text-center font-mono tabular-nums text-foreground">
-				{store.timelineZoom.toFixed(1)}x
-			</span>
+		<span class="min-w-9 text-center font-mono tabular-nums text-foreground">
+			{store.timelineZoom.toFixed(1)}x
+		</span>
 
-			<Tooltip.Root>
-				<Tooltip.Trigger>
-					<button
-						type="button"
-						onclick={() => zoomTimeline(1)}
-						class="flex h-7 w-7 items-center justify-center rounded-full transition-colors hover:bg-muted hover:text-foreground"
-						aria-label="Zoom in timeline"
-					>
-						<ZoomIn size={14} />
-					</button>
-				</Tooltip.Trigger>
-				<Tooltip.Content>Zoom in</Tooltip.Content>
-			</Tooltip.Root>
-		</div>
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					onclick={() => zoomTimeline(1)}
+					aria-label="Zoom in timeline"
+				>
+					<ZoomIn size={13} />
+				</Button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>Zoom in</Tooltip.Content>
+		</Tooltip.Root>
 	</div>
 </div>

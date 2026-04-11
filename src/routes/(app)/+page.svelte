@@ -1,128 +1,342 @@
 <script lang="ts">
-  import { Button } from "$components/ui/button";
-  import { Card, CardContent } from "$components/ui/card";
-  import { config } from "$constants/app";
+  import { goto } from "$app/navigation";
+  import { RecastList, type RecastListItem } from "$components/recast";
   import {
-    ArrowRight,
+    generateThumbnails,
+    getOutputDir,
+    launchRecordingPanel,
+    listExports,
+    listRecasts,
+    openFileLocation,
+    type RecordingEntry,
+  } from "$lib/ipc";
+  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import {
+    Camera,
     Download,
     Film,
-    Keyboard,
+    FolderOpen,
+    Home as HomeIcon,
     Monitor,
     Radio,
-    Scissors,
+    Settings as SettingsIcon,
     SlidersHorizontal,
   } from "@lucide/svelte";
+  import { listen } from "@tauri-apps/api/event";
+  import { onMount } from "svelte";
+  import { toast } from "svelte-sonner";
 
-  const steps = [
+  let recasts = $state<RecordingEntry[]>([]);
+  let exports_ = $state<RecordingEntry[]>([]);
+  let isLoading = $state(true);
+  let thumbnails = $state<Record<string, string>>({});
+  let editorWindow = $state<"navigate" | "new-window">("navigate");
+  let thumbnailPass = 0;
+
+  onMount(() => {
+    fetchAll();
+    const stored = localStorage.getItem("recast-editor-window") as "navigate" | "new-window" | null;
+    if (stored) editorWindow = stored;
+    const unlisten = listen("refresh-recordings", () => fetchAll());
+    return () => {
+      unlisten.then((fn) => fn());
+    };
+  });
+
+  async function fetchAll() {
+    isLoading = true;
+    try {
+      const [r, e] = await Promise.all([listRecasts(), listExports()]);
+      recasts = r.sort((a, b) => b.created - a.created).slice(0, 5);
+      exports_ = e.sort((a, b) => b.created - a.created).slice(0, 5);
+      loadThumbnails([...recasts, ...exports_]);
+    } catch (err) {
+      toast.error(`Could not load activity: ${err}`);
+    } finally {
+      isLoading = false;
+    }
+  }
+
+  async function loadThumbnails(items: RecordingEntry[]) {
+    const pass = ++thumbnailPass;
+    const settled = await Promise.allSettled(
+      items.map(async (item) => {
+        const frames = await generateThumbnails(item.path, 1);
+        return [item.path, frames[0] ?? ""] as const;
+      }),
+    );
+    if (pass !== thumbnailPass) return;
+    const next: Record<string, string> = {};
+    for (const r of settled) {
+      if (r.status === "fulfilled" && r.value[1]) next[r.value[0]] = r.value[1];
+    }
+    thumbnails = next;
+  }
+
+  function formatSize(bytes: number) {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
+  }
+
+  function formatDate(unix: number) {
+    const now = Date.now() / 1000;
+    const diff = now - unix;
+    if (diff < 60) return "just now";
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 86400 * 7) return `${Math.floor(diff / 86400)}d ago`;
+    return new Date(unix * 1000).toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+    });
+  }
+
+  function encodeEditorPath(path: string) {
+    return encodeURIComponent(btoa(encodeURIComponent(path)));
+  }
+
+  async function openInEditor(entry: RecordingEntry) {
+    const route = `/editor/${encodeEditorPath(entry.path)}`;
+    if (editorWindow === "new-window") {
+      const label = `editor-${encodeEditorPath(entry.path).replace(/[^a-zA-Z0-9]/g, "").slice(0, 48)}`;
+      const existing = await WebviewWindow.getByLabel(label);
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+      new WebviewWindow(label, {
+        url: route,
+        title: `Editor - ${entry.filename}`,
+        width: 1440,
+        height: 960,
+        center: true,
+        decorations: false,
+      });
+    } else {
+      goto(route);
+    }
+  }
+
+  async function copyPath(entry: RecordingEntry) {
+    try {
+      await navigator.clipboard.writeText(entry.path);
+      toast.success("Path copied");
+    } catch (err) {
+      toast.error(`Copy failed: ${err}`);
+    }
+  }
+
+  async function showOutputFolder() {
+    try {
+      const dir = await getOutputDir();
+      await openFileLocation(dir);
+    } catch (err) {
+      toast.error(`Could not open folder: ${err}`);
+    }
+  }
+
+  const items = $derived<RecastListItem[]>([
+    // Quick actions
     {
+      id: "action-launch",
+      title: "Launch Recording Panel",
+      subtitle: "Start a new screen recording",
       icon: Radio,
-      title: "Launch Panel",
-      description: "Open the recording panel from the sidebar to start capturing your screen.",
+      iconClass: "text-primary",
+      keywords: ["record", "start", "capture", "panel"],
+      section: "Quick Actions",
+      accessories: [{ text: "⇧⌘R", variant: "default" }],
+      onSelect: () => launchRecordingPanel(),
+      actions: [
+        {
+          id: "launch",
+          label: "Launch Panel",
+          icon: Radio,
+          onAction: () => launchRecordingPanel(),
+        },
+      ],
     },
     {
+      id: "action-device-picker",
+      title: "Pick Source",
+      subtitle: "Choose a screen or window to record",
       icon: Monitor,
-      title: "Select Source",
-      description: "Choose a display or window to record. Pick your mic and camera sources.",
+      keywords: ["display", "window", "source", "pick"],
+      section: "Quick Actions",
+      onSelect: () => goto("/device-picker"),
+      actions: [
+        {
+          id: "pick",
+          label: "Open Device Picker",
+          icon: Monitor,
+          onAction: () => goto("/device-picker"),
+        },
+      ],
     },
     {
-      icon: Scissors,
-      title: "Edit",
-      description: "Trim, add backgrounds, adjust cursor, and apply effects in the editor.",
+      id: "action-camera-preview",
+      title: "Camera Preview",
+      subtitle: "Test your webcam feed",
+      icon: Camera,
+      keywords: ["camera", "webcam", "preview", "test"],
+      section: "Quick Actions",
+      onSelect: () => goto("/camera-preview"),
+      actions: [
+        {
+          id: "preview",
+          label: "Open Camera Preview",
+          icon: Camera,
+          onAction: () => goto("/camera-preview"),
+        },
+      ],
     },
-    {
-      icon: Download,
-      title: "Export",
-      description: "Export as MP4, WebM, or GIF in your preferred quality.",
-    },
-  ];
 
-  const shortcuts = [
-    { keys: "Space", action: "Play / Pause" },
-    { keys: "← →", action: "Frame step" },
-    { keys: "Ctrl+Z", action: "Undo" },
-    { keys: "Ctrl+Shift+Z", action: "Redo" },
-  ];
+    // Navigation
+    {
+      id: "nav-recasts",
+      title: "All Recordings",
+      subtitle: `${recasts.length > 0 ? `${recasts.length}+ recent` : "Browse your recordings"}`,
+      icon: Film,
+      keywords: ["recordings", "recasts", "library", "all"],
+      section: "Browse",
+      onSelect: () => goto("/recasts"),
+      actions: [
+        { id: "open", label: "Go to Recordings", icon: Film, onAction: () => goto("/recasts") },
+      ],
+    },
+    {
+      id: "nav-exports",
+      title: "All Exports",
+      subtitle: "Browse exported videos ready to share",
+      icon: Download,
+      keywords: ["exports", "rendered", "share"],
+      section: "Browse",
+      onSelect: () => goto("/exports"),
+      actions: [
+        { id: "open", label: "Go to Exports", icon: Download, onAction: () => goto("/exports") },
+      ],
+    },
+    {
+      id: "nav-profiles",
+      title: "Recording Profiles",
+      subtitle: "Manage your recording presets",
+      icon: SlidersHorizontal,
+      keywords: ["profiles", "presets", "config"],
+      section: "Browse",
+      onSelect: () => goto("/profiles"),
+      actions: [
+        {
+          id: "open",
+          label: "Go to Profiles",
+          icon: SlidersHorizontal,
+          onAction: () => goto("/profiles"),
+        },
+      ],
+    },
+    {
+      id: "nav-settings",
+      title: "Settings",
+      subtitle: "Configure Recast preferences",
+      icon: SettingsIcon,
+      keywords: ["settings", "preferences", "config"],
+      section: "Browse",
+      onSelect: () => goto("/settings"),
+      actions: [
+        {
+          id: "open",
+          label: "Go to Settings",
+          icon: SettingsIcon,
+          onAction: () => goto("/settings"),
+        },
+      ],
+    },
+    {
+      id: "action-show-folder",
+      title: "Show Output Folder",
+      subtitle: "Reveal the recordings directory in Explorer",
+      icon: FolderOpen,
+      keywords: ["folder", "directory", "reveal", "explorer", "finder"],
+      section: "Browse",
+      onSelect: () => showOutputFolder(),
+      actions: [
+        {
+          id: "show",
+          label: "Show in Folder",
+          icon: FolderOpen,
+          onAction: () => showOutputFolder(),
+        },
+      ],
+    },
+
+    // Recent recordings
+    ...recasts.map<RecastListItem>((entry) => ({
+      id: `recast-${entry.path}`,
+      title: entry.filename,
+      subtitle: `${formatSize(entry.sizeBytes)} · ${formatDate(entry.created)}`,
+      icon: Film,
+      iconImage: thumbnails[entry.path],
+      keywords: [entry.filename, "recording", "recent"],
+      accessories: [{ text: ".recast", variant: "info" }],
+      section: "Recent Recordings",
+      onSelect: () => openInEditor(entry),
+      actions: [
+        { id: "open", label: "Open in Editor", onAction: () => openInEditor(entry) },
+        {
+          id: "show",
+          label: "Show in Folder",
+          icon: FolderOpen,
+          onAction: () => openFileLocation(entry.path),
+        },
+        {
+          id: "copy",
+          label: "Copy Path",
+          shortcut: "⌘⇧C",
+          onAction: () => copyPath(entry),
+        },
+      ],
+    })),
+
+    // Recent exports
+    ...exports_.map<RecastListItem>((entry) => ({
+      id: `export-${entry.path}`,
+      title: entry.filename,
+      subtitle: `${formatSize(entry.sizeBytes)} · ${formatDate(entry.created)}`,
+      icon: Download,
+      iconImage: thumbnails[entry.path],
+      keywords: [entry.filename, "export", "recent"],
+      accessories: [
+        {
+          text: entry.filename.split(".").pop()?.toUpperCase() ?? "FILE",
+          variant: "default",
+        },
+      ],
+      section: "Recent Exports",
+      onSelect: () => openFileLocation(entry.path),
+      actions: [
+        {
+          id: "show",
+          label: "Show in Folder",
+          icon: FolderOpen,
+          onAction: () => openFileLocation(entry.path),
+        },
+        {
+          id: "copy",
+          label: "Copy Path",
+          shortcut: "⌘⇧C",
+          onAction: () => copyPath(entry),
+        },
+      ],
+    })),
+  ]);
 </script>
 
-<div class="flex-1 flex flex-col p-8 w-full max-w-4xl mx-auto">
-  <div class="mb-10">
-    <h1 class="text-3xl font-bold tracking-tight text-foreground">
-      Welcome to {config.appName}
-    </h1>
-    <p class="text-muted-foreground mt-2">
-      Record, edit, and export screen recordings with ease.
-    </p>
-  </div>
-
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-    {#each steps as step, i}
-      {@const Icon = step.icon}
-      <Card class="group transition-shadow hover:shadow-md">
-        <CardContent class="flex items-start gap-4 p-5">
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
-            <Icon size={20} />
-          </div>
-          <div>
-            <p class="text-sm font-semibold text-foreground">{step.title}</p>
-            <p class="mt-1 text-xs text-muted-foreground leading-relaxed">{step.description}</p>
-          </div>
-        </CardContent>
-      </Card>
-    {/each}
-  </div>
-
-  <div class="mt-8 grid grid-cols-1 gap-4 sm:grid-cols-2">
-    <a href="/recasts">
-      <Card class="group cursor-pointer transition-all hover:shadow-md hover:border-primary/30">
-        <CardContent class="flex items-center justify-between p-5">
-          <div class="flex items-center gap-3">
-            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Film size={18} />
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-foreground">Recasts</p>
-              <p class="text-xs text-muted-foreground">View your recordings</p>
-            </div>
-          </div>
-          <ArrowRight size={16} class="text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
-        </CardContent>
-      </Card>
-    </a>
-
-    <a href="/exports">
-      <Card class="group cursor-pointer transition-all hover:shadow-md hover:border-primary/30">
-        <CardContent class="flex items-center justify-between p-5">
-          <div class="flex items-center gap-3">
-            <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-              <Download size={18} />
-            </div>
-            <div>
-              <p class="text-sm font-semibold text-foreground">Exports</p>
-              <p class="text-xs text-muted-foreground">View exported videos</p>
-            </div>
-          </div>
-          <ArrowRight size={16} class="text-muted-foreground/50 transition-transform group-hover:translate-x-0.5" />
-        </CardContent>
-      </Card>
-    </a>
-  </div>
-
-  <Card class="mt-8">
-    <CardContent class="p-5">
-      <div class="flex items-center gap-2 mb-3">
-        <Keyboard size={16} class="text-muted-foreground" />
-        <p class="text-sm font-semibold text-foreground">Keyboard Shortcuts</p>
-      </div>
-      <div class="grid grid-cols-2 gap-2">
-        {#each shortcuts as shortcut}
-          <div class="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-            <span class="text-xs text-muted-foreground">{shortcut.action}</span>
-            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 text-[10px] font-mono text-foreground">
-              {shortcut.keys}
-            </kbd>
-          </div>
-        {/each}
-      </div>
-    </CardContent>
-  </Card>
-</div>
+<RecastList
+  {items}
+  {isLoading}
+  title="Home"
+  subtitle="Type to search across actions, recordings and exports"
+  searchPlaceholder="What do you want to do?"
+  emptyTitle="No matches"
+  emptyHint="Try a different term — or press ⌘K to see everything."
+/>

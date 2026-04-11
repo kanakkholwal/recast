@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import EditorSubToolbar from "$components/editor/EditorSubToolbar.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import PlaybackControls from "$components/editor/PlaybackControls.svelte";
   import PropertiesPanel from "$components/editor/PropertiesPanel.svelte";
@@ -264,10 +263,10 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground fixed inset-0"
+  class="fixed inset-0 flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground"
 >
-  <!-- Custom titlebar with embedded editor toolbar -->
-  <CustomTitlebar>
+  <!-- Dense custom titlebar that embeds the whole editor toolbar in a single row -->
+  <CustomTitlebar wrapperClass="h-9">
     <EditorToolbar
       {store}
       filename={data.filename}
@@ -279,31 +278,25 @@
   {#if isLoading}
     <EditorSkeleton />
   {:else if error}
-    <div class="flex-1 flex items-center justify-center">
-      <div
-        class="animate-in fade-in flex flex-col items-center gap-4 text-center duration-500"
-      >
-        <div
-          class="flex h-16 w-16 items-center justify-center rounded-2xl bg-destructive/10 text-destructive"
-        >
-          <span class="text-2xl">!</span>
+    <div class="flex flex-1 items-center justify-center">
+      <div class="animate-in fade-in flex max-w-sm flex-col items-center gap-3 text-center duration-500">
+        <div class="flex size-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive">
+          <span class="text-[18px] font-semibold">!</span>
         </div>
-        <p class="max-w-sm text-sm text-muted-foreground">{error}</p>
+        <p class="text-[12px] text-muted-foreground">{error}</p>
         <button
           onclick={handleBack}
-          class="text-sm text-primary hover:underline"
+          class="rounded-md border border-border bg-background px-3 py-1.5 text-[11px] font-medium text-foreground transition-colors hover:bg-muted"
         >
-          Back to recordings
+          ← Back to recordings
         </button>
       </div>
     </div>
   {:else}
     <div class="flex min-h-0 flex-1 overflow-hidden">
-      <!-- Left column: sub-toolbar + preview + controls + timeline -->
+      <!-- Left column: preview + playback + timeline -->
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <EditorSubToolbar {store} />
-
-        <div class="flex min-h-0 flex-1 items-center justify-center p-4 pb-2">
+        <div class="flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3">
           <VideoPreview
             {store}
             bind:videoEl
@@ -322,26 +315,35 @@
       </div>
 
       <!-- Right column: properties panel -->
-      <div class="min-h-0 w-85 shrink-0 xl:w-90 border-l border-border">
+      <aside class="min-h-0 w-80 shrink-0 border-l border-border xl:w-[22rem]">
         <PropertiesPanel {store} />
-      </div>
+      </aside>
     </div>
   {/if}
 
   {#if store.isExporting}
-    <div class="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div class="animate-in zoom-in-95 flex flex-col items-center gap-4 rounded-2xl border border-border bg-card p-8 shadow-2xl duration-300">
-        <div class="h-10 w-10 animate-spin rounded-full border-3 border-primary border-t-transparent"></div>
-        <div class="text-center">
-          <p class="text-sm font-semibold text-foreground">Exporting video...</p>
-          <p class="mt-1 text-xs text-muted-foreground">
-            {store.exportFormat.toUpperCase()} &middot;
-            {store.exportProgress !== null ? `${Math.round(store.exportProgress)}%` : "Preparing..."}
-          </p>
+    <div
+      class="animate-in fade-in fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm duration-200"
+    >
+      <div
+        class="animate-in zoom-in-95 flex min-w-[280px] flex-col gap-3 rounded-xl border border-border bg-popover p-5 shadow-2xl ring-1 ring-border duration-200"
+      >
+        <div class="flex items-center gap-3">
+          <div class="size-4 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
+          <div class="flex-1">
+            <p class="text-[12px] font-semibold text-foreground">Exporting video</p>
+            <p class="text-[11px] text-muted-foreground">
+              {store.exportFormat.toUpperCase()} ·
+              {store.exportProgress !== null ? `${Math.round(store.exportProgress)}%` : "Preparing…"}
+            </p>
+          </div>
         </div>
         {#if store.exportProgress !== null}
-          <div class="h-1.5 w-48 overflow-hidden rounded-full bg-muted">
-            <div class="h-full rounded-full bg-primary transition-[width] duration-300" style="width: {store.exportProgress}%"></div>
+          <div class="h-1 overflow-hidden rounded-full bg-muted">
+            <div
+              class="h-full rounded-full bg-primary transition-[width] duration-300"
+              style="width: {store.exportProgress}%"
+            ></div>
           </div>
         {/if}
       </div>

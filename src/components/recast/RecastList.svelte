@@ -15,6 +15,7 @@
 		title?: string;
 		subtitle?: string;
 		toolbar?: Snippet;
+		class?: string;
 	}
 
 	let {

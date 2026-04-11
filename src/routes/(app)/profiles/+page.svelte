@@ -1,6 +1,7 @@
 <script lang="ts">
   import { RecastList, type RecastAccessory, type RecastListItem } from "$components/recast";
   import { Button } from "$components/ui/button";
+  import { cn } from "$lib/utils";
   import {
     Camera,
     CheckCircle2,
@@ -28,7 +29,7 @@
 
   let profiles = $state<RecordingProfile[]>([]);
   let editingId = $state<string | null>(null);
-  let editingName = $state("");
+  let draft = $state<RecordingProfile | null>(null);
 
   onMount(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -45,9 +46,31 @@
         { id: crypto.randomUUID(), name: "Presentation", systemAudio: true, microphone: true, camera: true, isDefault: false },
         { id: crypto.randomUUID(), name: "Tutorial", systemAudio: true, microphone: true, camera: false, isDefault: false },
       ];
-      save();
     }
+    // Edge case: exactly one profile must be marked default. Repair loaded state.
+    profiles = ensureExactlyOneDefault(profiles);
+    save();
   });
+
+  /** Guarantees exactly one profile is marked default (when any profiles exist). */
+  function ensureExactlyOneDefault(list: RecordingProfile[]): RecordingProfile[] {
+    if (list.length === 0) return list;
+    const defaults = list.filter((p) => p.isDefault);
+    if (defaults.length === 1) return list;
+    if (defaults.length === 0) {
+      // None default → promote the first one.
+      return list.map((p, i) => (i === 0 ? { ...p, isDefault: true } : p));
+    }
+    // Multiple defaults → keep the first, clear the rest.
+    let seen = false;
+    return list.map((p) => {
+      if (p.isDefault && !seen) {
+        seen = true;
+        return p;
+      }
+      return p.isDefault ? { ...p, isDefault: false } : p;
+    });
+  }
 
   function save() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
@@ -60,11 +83,12 @@
       systemAudio: true,
       microphone: false,
       camera: false,
-      isDefault: false,
+      // First profile auto-becomes default.
+      isDefault: profiles.length === 0,
     };
     profiles = [...profiles, profile];
     save();
-    startEditing(profile.id, profile.name);
+    startEditing(profile);
   }
 
   function deleteProfile(id: string) {
@@ -74,8 +98,9 @@
     }
     const wasDefault = profiles.find((p) => p.id === id)?.isDefault;
     profiles = profiles.filter((p) => p.id !== id);
-    if (wasDefault && profiles.length > 0) {
-      profiles[0].isDefault = true;
+    // If we removed the default, promote the first remaining profile.
+    if (wasDefault) {
+      profiles = ensureExactlyOneDefault(profiles);
     }
     save();
     toast.success("Profile deleted");
@@ -94,30 +119,58 @@
     save();
   }
 
-  function startEditing(id: string, name: string) {
-    editingId = id;
-    editingName = name;
+  function startEditing(profile: RecordingProfile) {
+    editingId = profile.id;
+    draft = { ...profile };
     setTimeout(() => {
-      const input = document.getElementById("profile-rename-input") as HTMLInputElement | null;
+      const input = document.getElementById("profile-name-input") as HTMLInputElement | null;
       input?.focus();
       input?.select();
     }, 50);
   }
 
   function finishEditing() {
-    if (editingId && editingName.trim()) {
-      profiles = profiles.map((p) =>
-        p.id === editingId ? { ...p, name: editingName.trim() } : p,
-      );
-      save();
+    if (!editingId || !draft) return;
+    if (!draft.name.trim()) {
+      toast.error("Name cannot be empty");
+      return;
     }
+    const next = { ...draft, name: draft.name.trim() };
+    const currentId = editingId;
+    if (next.isDefault) {
+      // Applying default to this one unsets all others.
+      profiles = profiles.map((p) => ({
+        ...(p.id === currentId ? next : p),
+        isDefault: p.id === currentId,
+      }));
+    } else {
+      profiles = profiles.map((p) => (p.id === currentId ? next : p));
+      // Edge case: user unchecked default on the only default → keep this one default.
+      profiles = ensureExactlyOneDefault(profiles);
+    }
+    save();
+    toast.success("Profile saved");
     editingId = null;
-    editingName = "";
+    draft = null;
   }
 
   function cancelEditing() {
     editingId = null;
-    editingName = "";
+    draft = null;
+  }
+
+  function toggleDraft(field: "systemAudio" | "microphone" | "camera" | "isDefault") {
+    if (!draft) return;
+    // Edge case: don't allow unchecking "default" if this profile is the only default
+    // AND no other profile exists to take over.
+    if (field === "isDefault" && draft.isDefault) {
+      const otherCandidates = profiles.filter((p) => p.id !== draft!.id);
+      if (otherCandidates.length === 0) {
+        toast.info("At least one profile must be default");
+        return;
+      }
+    }
+    draft = { ...draft, [field]: !draft[field] };
   }
 
   function buildAccessories(profile: RecordingProfile): RecastAccessory[] {
@@ -142,12 +195,13 @@
       iconClass: profile.isDefault ? "text-warning" : undefined,
       keywords: [profile.name, profile.isDefault ? "default" : ""],
       accessories: buildAccessories(profile),
+      onSelect: () => startEditing(profile),
       actions: [
         {
-          id: "rename",
-          label: "Rename Profile",
+          id: "edit",
+          label: "Edit Profile…",
           icon: Pencil,
-          onAction: () => startEditing(profile.id, profile.name),
+          onAction: () => startEditing(profile),
         },
         {
           id: "set-default",
@@ -203,9 +257,9 @@
   {/snippet}
 </RecastList>
 
-{#if editingId !== null}
+{#if editingId !== null && draft}
   <div
-    class="fixed inset-0 z-50 flex items-start justify-center bg-background/60 pt-32 backdrop-blur-sm"
+    class="fixed inset-0 z-50 flex items-start justify-center bg-background/60 pt-24 backdrop-blur-sm"
     role="presentation"
     onclick={cancelEditing}
     onkeydown={(e) => e.key === "Escape" && cancelEditing()}
@@ -213,27 +267,174 @@
     <div
       role="dialog"
       tabindex="-1"
-      aria-label="Rename profile"
-      class="w-full max-w-sm rounded-xl border border-border bg-popover p-4 shadow-2xl"
+      aria-label="Edit profile"
+      class="w-full max-w-md overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-border"
       onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => e.stopPropagation()}
+      onkeydown={(e) => {
+        e.stopPropagation();
+        if (e.key === "Escape") cancelEditing();
+        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) finishEditing();
+      }}
     >
-      <label for="profile-rename-input" class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
-        >Rename profile</label
-      >
-      <input
-        id="profile-rename-input"
-        bind:value={editingName}
-        onkeydown={(e) => {
-          if (e.key === "Enter") finishEditing();
-          if (e.key === "Escape") cancelEditing();
-        }}
-        class="mt-2 w-full rounded-md border border-input bg-input/30 px-3 py-2 text-sm text-foreground outline-none focus:border-primary"
-      />
-      <div class="mt-3 flex items-center justify-end gap-2">
-        <Button variant="ghost" size="sm" onclick={cancelEditing}>Cancel</Button>
-        <Button variant="default" size="sm" onclick={finishEditing}>Save</Button>
+      <header class="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <div class="min-w-0">
+          <h3 class="truncate text-[13px] font-semibold tracking-tight text-foreground">Edit Profile</h3>
+          <p class="truncate text-[11px] text-muted-foreground">Configure what to capture</p>
+        </div>
+        {#if draft.isDefault}
+          <span
+            class="inline-flex shrink-0 items-center gap-1 rounded border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+          >
+            <Star size={11} />
+            Default
+          </span>
+        {/if}
+      </header>
+
+      <div class="flex flex-col">
+        <!-- Name -->
+        <div class="flex items-center gap-4 border-b border-border px-4 py-3">
+          <label for="profile-name-input" class="w-28 shrink-0 text-[12px] font-medium text-foreground"
+            >Name</label
+          >
+          <input
+            id="profile-name-input"
+            bind:value={draft.name}
+            class="h-8 flex-1 rounded-md border border-input bg-input/30 px-2.5 text-[12px] text-foreground outline-none focus:border-primary"
+          />
+        </div>
+
+        <!-- Default toggle -->
+        <button
+          type="button"
+          onclick={() => toggleDraft("isDefault")}
+          class="flex items-center gap-4 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        >
+          <span class="flex w-28 shrink-0 items-center gap-2 text-[12px] font-medium text-foreground">
+            <Star size={14} class="text-muted-foreground" />
+            Default
+          </span>
+          <span class="flex-1 truncate text-[11px] text-muted-foreground">
+            Use this profile automatically on launch
+          </span>
+          <span
+            class={cn(
+              "flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
+              draft.isDefault ? "border-primary bg-primary" : "border-border bg-muted"
+            )}
+          >
+            <span
+              class={cn(
+                "size-4 rounded-full bg-background shadow transition-transform",
+                draft.isDefault ? "translate-x-4" : "translate-x-0.5"
+              )}
+            ></span>
+          </span>
+        </button>
+
+        <!-- System audio toggle -->
+        <button
+          type="button"
+          onclick={() => toggleDraft("systemAudio")}
+          class="flex items-center gap-4 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        >
+          <span class="flex w-28 shrink-0 items-center gap-2 text-[12px] font-medium text-foreground">
+            <Volume2 size={14} class="text-muted-foreground" />
+            System Audio
+          </span>
+          <span class="flex-1 truncate text-[11px] text-muted-foreground">
+            Capture sounds playing on your device
+          </span>
+          <span
+            class={cn(
+              "flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
+              draft.systemAudio ? "border-primary bg-primary" : "border-border bg-muted"
+            )}
+          >
+            <span
+              class={cn(
+                "size-4 rounded-full bg-background shadow transition-transform",
+                draft.systemAudio ? "translate-x-4" : "translate-x-0.5"
+              )}
+            ></span>
+          </span>
+        </button>
+
+        <!-- Microphone toggle -->
+        <button
+          type="button"
+          onclick={() => toggleDraft("microphone")}
+          class="flex items-center gap-4 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        >
+          <span class="flex w-28 shrink-0 items-center gap-2 text-[12px] font-medium text-foreground">
+            <Mic size={14} class="text-muted-foreground" />
+            Microphone
+          </span>
+          <span class="flex-1 truncate text-[11px] text-muted-foreground">
+            Record your voice from the default input
+          </span>
+          <span
+            class={cn(
+              "flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
+              draft.microphone ? "border-primary bg-primary" : "border-border bg-muted"
+            )}
+          >
+            <span
+              class={cn(
+                "size-4 rounded-full bg-background shadow transition-transform",
+                draft.microphone ? "translate-x-4" : "translate-x-0.5"
+              )}
+            ></span>
+          </span>
+        </button>
+
+        <!-- Camera toggle -->
+        <button
+          type="button"
+          onclick={() => toggleDraft("camera")}
+          class="flex items-center gap-4 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/40"
+        >
+          <span class="flex w-28 shrink-0 items-center gap-2 text-[12px] font-medium text-foreground">
+            <Camera size={14} class="text-muted-foreground" />
+            Camera
+          </span>
+          <span class="flex-1 truncate text-[11px] text-muted-foreground">
+            Overlay webcam feed onto the recording
+          </span>
+          <span
+            class={cn(
+              "flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
+              draft.camera ? "border-primary bg-primary" : "border-border bg-muted"
+            )}
+          >
+            <span
+              class={cn(
+                "size-4 rounded-full bg-background shadow transition-transform",
+                draft.camera ? "translate-x-4" : "translate-x-0.5"
+              )}
+            ></span>
+          </span>
+        </button>
       </div>
+
+      <footer
+        class="flex h-10 items-center justify-between border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+      >
+        <div class="flex items-center gap-3">
+          <span class="flex items-center gap-1">
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">⌘↵</kbd>
+            <span>Save</span>
+          </span>
+          <span class="flex items-center gap-1">
+            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">esc</kbd>
+            <span>Cancel</span>
+          </span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <Button variant="ghost" size="sm" class="h-7" onclick={cancelEditing}>Cancel</Button>
+          <Button variant="default" size="sm" class="h-7" onclick={finishEditing}>Save</Button>
+        </div>
+      </footer>
     </div>
   </div>
 {/if}

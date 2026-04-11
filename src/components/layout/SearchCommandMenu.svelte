@@ -92,17 +92,17 @@
                 value={cmd.id + " " + cmd.title}
                 keywords={[cmd.title, cmd.description ?? "", ...(cmd.keywords ?? [])]}
                 onSelect={() => runCommand(cmd)}
-                class="h-9 gap-3 rounded-md px-2"
+                class="h-9 gap-3 rounded-md px-2 cursor-pointer"
               >
                 {#if Icon}
                   <span class="flex size-5 shrink-0 items-center justify-center text-muted-foreground">
                     <Icon size={14} />
                   </span>
                 {/if}
-                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-                  <span class="truncate text-[13px] font-medium text-foreground">{cmd.title}</span>
+                <div class="flex h-7 min-w-0 flex-1 flex-col gap-0.5 justify-center">
+                  <span class="truncate text-xs font-medium text-foreground">{cmd.title}</span>
                   {#if cmd.description}
-                    <span class="truncate text-[11px] text-muted-foreground">{cmd.description}</span>
+                    <span class="truncate text-[10px] text-muted-foreground">{cmd.description}</span>
                   {/if}
                 </div>
                 {#if cmd.shortcut}

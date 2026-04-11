@@ -1,4 +1,4 @@
-import type { RecastIcon } from "$components/raycast/types";
+import type { RecastIcon } from "$components/recast/types";
 
 export interface PaletteCommand {
 	id: string;
