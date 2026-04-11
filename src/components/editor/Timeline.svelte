@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
+	import { Scissors, Search, X } from "@lucide/svelte";
+	import { onMount } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, fly, slide } from "svelte/transition";
-	import { Scissors, Search, Sparkles, X } from "@lucide/svelte";
-	import { onMount } from "svelte";
 
 	interface Props {
 		store: EditorStore;
@@ -400,7 +400,7 @@
 							<div
 								in:fly={{ y: 10, duration: 180, easing: cubicOut }}
 								out:fade={{ duration: 140 }}
-								class="absolute overflow-hidden rounded border border-border bg-muted"
+								class="absolute overflow-hidden rounded border border-border bg-muted aspect-video"
 								style="
 									left: {region.start * pixelsPerSecond}px;
 									width: {Math.max((region.end - region.start) * pixelsPerSecond, 56)}px;
@@ -410,8 +410,8 @@
 							>
 								<div class="flex h-full items-center justify-between gap-2 px-2">
 									<div class="min-w-0">
-										<p class="truncate text-[10px] font-semibold text-foreground">Focus</p>
-										<p class="truncate text-[9px] text-muted-foreground">
+										<p class="text-[10px] font-semibold text-foreground">Focus</p>
+										<p class="text-[9px] text-muted-foreground">
 											{region.scale.toFixed(1)}x · {formatTime(region.start)}
 										</p>
 									</div>
