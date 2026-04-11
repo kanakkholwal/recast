@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { RaycastList, type RaycastListItem } from "$components/raycast";
+  import { RecastList, type RecastListItem } from "$components/recast";
   import { Button } from "$components/ui/button";
   import { generateThumbnails, listRecasts, openFileLocation, type RecordingEntry } from "$lib/ipc";
   import { Film, FolderOpen, Pencil, RefreshCw, Trash2 } from "@lucide/svelte";
@@ -101,7 +101,7 @@
     }
   }
 
-  const items = $derived<RaycastListItem[]>(
+  const items = $derived<RecastListItem[]>(
     entries.map((entry) => ({
       id: entry.path,
       title: entry.filename,
@@ -143,7 +143,7 @@
   );
 </script>
 
-<RaycastList
+<RecastList
   {items}
   {isLoading}
   title="Recasts"
@@ -157,4 +157,4 @@
       <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
     </Button>
   {/snippet}
-</RaycastList>
+</RecastList>

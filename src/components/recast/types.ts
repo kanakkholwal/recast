@@ -1,38 +1,38 @@
 import type { Component } from "svelte";
 
-export type RaycastIcon = Component<{ size?: number | string; class?: string }>;
+export type RecastIcon = Component<{ size?: number | string; class?: string }>;
 
-export interface RaycastAccessory {
+export interface RecastAccessory {
 	text?: string;
-	icon?: RaycastIcon;
+	icon?: RecastIcon;
 	tooltip?: string;
 	variant?: "default" | "success" | "warning" | "destructive" | "info";
 }
 
-export interface RaycastAction {
+export interface RecastAction {
 	id: string;
 	label: string;
-	icon?: RaycastIcon;
+	icon?: RecastIcon;
 	shortcut?: string;
 	variant?: "default" | "destructive";
 	onAction: () => void | Promise<void>;
 }
 
-export interface RaycastListItem {
+export interface RecastListItem {
 	id: string;
 	title: string;
 	subtitle?: string;
-	icon?: RaycastIcon;
+	icon?: RecastIcon;
 	iconImage?: string;
 	iconClass?: string;
 	keywords?: string[];
-	accessories?: RaycastAccessory[];
+	accessories?: RecastAccessory[];
 	section?: string;
-	actions?: RaycastAction[];
+	actions?: RecastAction[];
 	onSelect?: () => void | Promise<void>;
 }
 
-export interface RaycastSection {
+export interface RecastSection {
 	title: string;
-	items: RaycastListItem[];
+	items: RecastListItem[];
 }

@@ -4,10 +4,10 @@
 	import { onMount, type Snippet } from "svelte";
 	import ActionPanel from "./ActionPanel.svelte";
 	import TopProgress from "./TopProgress.svelte";
-	import type { RaycastAccessory, RaycastListItem } from "./types";
+	import type { RecastAccessory, RecastListItem } from "./types";
 
 	interface Props {
-		items: RaycastListItem[];
+		items: RecastListItem[];
 		isLoading?: boolean;
 		searchPlaceholder?: string;
 		emptyTitle?: string;
@@ -18,7 +18,7 @@
 	}
 
 	let {
-		items,
+		items,  
 		isLoading = false,
 		searchPlaceholder = "Search...",
 		emptyTitle = "Nothing here",
@@ -33,7 +33,7 @@
 	let actionPanelOpen = $state(false);
 
 	const sections = $derived.by(() => {
-		const grouped = new Map<string, RaycastListItem[]>();
+		const grouped = new Map<string, RecastListItem[]>();
 		for (const item of items) {
 			const key = item.section ?? "";
 			if (!grouped.has(key)) grouped.set(key, []);
@@ -48,7 +48,7 @@
 	const selectedItem = $derived(items.find((i) => i.id === selectedValue));
 	const activeActions = $derived(selectedItem?.actions ?? []);
 
-	function runPrimary(item: RaycastListItem) {
+	function runPrimary(item: RecastListItem) {
 		if (item.onSelect) {
 			item.onSelect();
 		} else if (item.actions && item.actions.length > 0) {
@@ -80,12 +80,12 @@
 	onMount(() => {
 		// Focus the search input on mount for keyboard-first flow
 		const input = document.querySelector<HTMLInputElement>(
-			"[data-raycast-list] [data-slot='command-input']"
+			"[data-recast-list] [data-slot='command-input']"
 		);
 		input?.focus();
 	});
 
-	function accessoryClass(a: RaycastAccessory) {
+	function accessoryClass(a: RecastAccessory) {
 		const variants = {
 			default: "bg-muted text-muted-foreground border-border",
 			success: "bg-success/10 text-success border-success/20",
@@ -99,7 +99,7 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="relative flex h-full flex-col" data-raycast-list>
+<div class="relative flex h-full flex-col" data-recast-list>
 	<TopProgress active={isLoading} />
 
 	{#if title || toolbar}
@@ -148,7 +148,7 @@
 							value={item.id}
 							keywords={[item.title, ...(item.keywords ?? []), item.subtitle ?? ""]}
 							onSelect={() => runPrimary(item)}
-							class="group/raycast-item h-9 gap-3 rounded-md px-2"
+							class="group/recast-item h-9 gap-3 rounded-md px-2"
 						>
 							{#if item.iconImage}
 								<img

@@ -12,15 +12,15 @@
 	aria-hidden={!active}
 >
 	{#if active}
-		<div class="raycast-top-progress h-full w-1/3 bg-primary"></div>
+		<div class="recast-top-progress h-full w-1/3 bg-primary"></div>
 	{/if}
 </div>
 
 <style>
-	.raycast-top-progress {
-		animation: raycast-top-progress 1.1s ease-in-out infinite;
+	.recast-top-progress {
+		animation: recast-top-progress 1.1s ease-in-out infinite;
 	}
-	@keyframes raycast-top-progress {
+	@keyframes recast-top-progress {
 		0% {
 			transform: translateX(-100%);
 		}

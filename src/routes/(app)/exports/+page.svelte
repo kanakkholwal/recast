@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RaycastList, type RaycastListItem } from "$components/raycast";
+  import { RecastList, type RecastListItem } from "$components/recast";
   import { Button } from "$components/ui/button";
   import { generateThumbnails, listExports, openFileLocation, type RecordingEntry } from "$lib/ipc";
   import { Download, FolderOpen, Play, RefreshCw } from "@lucide/svelte";
@@ -72,7 +72,7 @@
     }
   }
 
-  const items = $derived<RaycastListItem[]>(
+  const items = $derived<RecastListItem[]>(
     entries.map((entry) => ({
       id: entry.path,
       title: entry.filename,
@@ -100,7 +100,7 @@
   );
 </script>
 
-<RaycastList
+<RecastList
   {items}
   {isLoading}
   title="Exports"
@@ -114,4 +114,4 @@
       <RefreshCw size={14} class={isLoading ? "animate-spin" : ""} />
     </Button>
   {/snippet}
-</RaycastList>
+</RecastList>

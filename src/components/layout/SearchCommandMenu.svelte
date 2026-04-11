@@ -19,9 +19,9 @@
 
   function handleGlobalKeydown(e: KeyboardEvent) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-      // Don't fire if a RaycastList already handles ⌘K
+      // Don't fire if a RecastList already handles ⌘K
       const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-raycast-list]")) return;
+      if (target?.closest("[data-recast-list]")) return;
       e.preventDefault();
       commandPalette.toggle();
     }

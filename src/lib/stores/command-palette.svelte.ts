@@ -1,11 +1,11 @@
-import type { RaycastIcon } from "$components/raycast/types";
+import type { RecastIcon } from "$components/raycast/types";
 
 export interface PaletteCommand {
 	id: string;
 	title: string;
 	description?: string;
 	category: string;
-	icon?: RaycastIcon;
+	icon?: RecastIcon;
 	keywords?: string[];
 	shortcut?: string;
 	action: () => void | Promise<void>;

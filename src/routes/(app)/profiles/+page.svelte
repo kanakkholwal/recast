@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { RaycastList, type RaycastAccessory, type RaycastListItem } from "$components/raycast";
+  import { RecastList, type RecastAccessory, type RecastListItem } from "$components/recast";
   import { Button } from "$components/ui/button";
   import {
     Camera,
@@ -120,8 +120,8 @@
     editingName = "";
   }
 
-  function buildAccessories(profile: RecordingProfile): RaycastAccessory[] {
-    const accs: RaycastAccessory[] = [];
+  function buildAccessories(profile: RecordingProfile): RecastAccessory[] {
+    const accs: RecastAccessory[] = [];
     if (profile.isDefault) accs.push({ icon: Star, text: "Default", variant: "warning" });
     if (profile.systemAudio) accs.push({ icon: Volume2, tooltip: "System audio on", variant: "info" });
     if (profile.microphone) accs.push({ icon: Mic, tooltip: "Microphone on", variant: "success" });
@@ -129,7 +129,7 @@
     return accs;
   }
 
-  const items = $derived<RaycastListItem[]>(
+  const items = $derived<RecastListItem[]>(
     profiles.map((profile) => ({
       id: profile.id,
       title: profile.name,
@@ -187,7 +187,7 @@
 
 </script>
 
-<RaycastList
+<RecastList
   {items}
   isLoading={false}
   title="Recording Profiles"
@@ -201,7 +201,7 @@
       <Plus size={14} />
     </Button>
   {/snippet}
-</RaycastList>
+</RecastList>
 
 {#if editingId !== null}
   <div

@@ -2,18 +2,18 @@
 	import * as Command from "$components/ui/command";
 	import * as Dialog from "$components/ui/dialog";
 	import { cn } from "$lib/utils";
-	import type { RaycastAction } from "./types";
+	import type { RecastAction } from "./types";
 
 	interface Props {
 		open: boolean;
-		actions: RaycastAction[];
+		actions: RecastAction[];
 		title?: string;
 		onOpenChange: (open: boolean) => void;
 	}
 
 	let { open = $bindable(false), actions, title = "Actions", onOpenChange }: Props = $props();
 
-	function runAction(action: RaycastAction) {
+	function runAction(action: RecastAction) {
 		onOpenChange(false);
 		queueMicrotask(() => action.onAction());
 	}
