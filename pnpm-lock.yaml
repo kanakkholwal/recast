@@ -129,6 +129,9 @@ importers:
       tailwind-variants:
         specifier: ^3.2.2
         version: 3.2.2(tailwind-merge@3.5.0)(tailwindcss@4.2.2)
+      wrangler:
+        specifier: ^4.82.1
+        version: 4.82.1(@cloudflare/workers-types@4.20260413.1)
     devDependencies:
       '@fontsource-variable/geist':
         specifier: ^5.2.8
