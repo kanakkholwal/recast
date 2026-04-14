@@ -13,75 +13,41 @@ env:
   NODE_ENV: production
 
 jobs:
-  # Windows build and release using Tauri's GitHub Action. This is separate to ensure we can sign the Windows executable properly.
-  build-windows:
+  build-and-release:
     permissions:
       contents: write
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+          - os: ubuntu-22.04
+          - os: macos-latest
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
-      #  Bun
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
+      - name: Install pnpm
+        uses: pnpm/action-setup@v3
         with:
-          path: |
-            ~/.bun
-            node_modules
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install dependencies (Frontend)
-        run: bun install
-      - name: Clean Rust build
-        run: cd src-tauri && cargo clean
-      - name: Install msixbundle-cli
-        run: cargo install msixbundle-cli
-      - name: Build and Release (Windows)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          version: 9
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "Recast - Release ${{ inputs.tag || github.ref_name }}"
-          releaseBody: "## 🎉 Recast Release ${{ inputs.tag || github.ref_name }}\n\n### 📦 Available Downloads\n\n**Windows**: Download the `.msi` installer or `.exe` for your system.\n**macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.\n**Linux**: Download the `.AppImage` for universal Linux support.\n\n### 🚀 Installation\n- **Windows**: Run the installer and follow the prompts.\n- **macOS**: Mount the `.dmg` file and drag Recast to Applications.\n- **Linux**: Make the AppImage executable and run it.\n\n### ⚠️ Important Note on Code Signing\nThese applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:\n- You may see security warnings when installing on Windows or macOS\n- This is normal and expected for open-source projects without commercial signing\n- The code is safe to use and can be verified from our public repository\n\n### 📝 Additional Notes\n- Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.\n- Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).\n\n**Happy recording! 🎥✨**"
-          releaseDraft: false
-          prerelease: false
-      - name: Install msixbundle-cli
-        run: cargo install msixbundle-cli
+          node-version: 20
+          cache: 'pnpm'
 
-      - name: Build MSIX bundle
-        run: bun tauri:windows:build --arch x64,arm64 --runner bun
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
         with:
-          name: msix-bundle
-          path: src-tauri/target/msix/*.msixbundle
+          workspaces: "./apps/desktop/src-tauri -> target"
 
-  # Linux build and release using Tauri's GitHub Action. This is separate to ensure we can build the Linux AppImage properly.
-  build-linux:
-    permissions:
-      contents: write
-    runs-on: ubuntu-22.04
-    steps:
-      - uses: actions/checkout@v4
-
-      #  Bun
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
-        with:
-          path: |
-            ~/.bun
-            node_modules
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install dependencies (Frontend)
-        run: bun install
-      - name: Install Linux system dependencies
+      - name: Install Linux Dependencies
+        if: matrix.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -91,52 +57,47 @@ jobs:
             patchelf \
             libssl-dev \
             libgtk-3-dev
+
+      - name: Install Dependencies
+        run: pnpm install
+
+      # We run the frontend build via Turbo first to ensure assets exist
+      # Change '@repo/desktop' to match the "name" in apps/desktop/package.json
+      - name: Build Frontend
+        run: pnpm turbo run build --filter=@repo/desktop
+
       - name: Clean Rust build
-        run: cd src-tauri && cargo clean
-      - name: Build and Release (Linux)
+        shell: bash
+        run: cd apps/desktop/src-tauri && cargo clean
+
+      - name: Install msixbundle-cli (Windows only)
+        if: matrix.os == 'windows-latest'
+        run: cargo install msixbundle-cli
+
+      - name: Build and Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
+          projectPath: ./apps/desktop
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: "Recast - Release ${{ inputs.tag || github.ref_name }}"
           releaseBody: "## 🎉 Recast Release ${{ inputs.tag || github.ref_name }}\n\n### 📦 Available Downloads\n\n**Windows**: Download the `.msi` installer or `.exe` for your system.\n**macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.\n**Linux**: Download the `.AppImage` for universal Linux support.\n\n### 🚀 Installation\n- **Windows**: Run the installer and follow the prompts.\n- **macOS**: Mount the `.dmg` file and drag Recast to Applications.\n- **Linux**: Make the AppImage executable and run it.\n\n### ⚠️ Important Note on Code Signing\nThese applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:\n- You may see security warnings when installing on Windows or macOS\n- This is normal and expected for open-source projects without commercial signing\n- The code is safe to use and can be verified from our public repository\n\n### 📝 Additional Notes\n- Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.\n- Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).\n\n**Happy recording! 🎥✨**"
           releaseDraft: false
           prerelease: false
 
-  # macOS build and release using Tauri's GitHub Action. This is separate to ensure we can code sign the macOS app properly.
-  build-macos:
-    permissions:
-      contents: write
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
+      - name: Build MSIX bundle (Windows only)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          cd apps/desktop
+          pnpm tauri build --filter=recast-desktop --arch x64,arm64
 
-      #  Bun
-      - uses: oven-sh/setup-bun@v2
-      - uses: actions/cache@v4
+      - name: Upload MSIX Artifacts
+        if: matrix.os == 'windows-latest'
+        uses: actions/upload-artifact@v4
         with:
-          path: |
-            ~/.bun
-            node_modules
-            ~/.cargo/registry
-            ~/.cargo/git
-          key: ${{ runner.os }}-bun-${{ hashFiles('**/bun.lockb') }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-      - name: Install dependencies (Frontend)
-        run: bun install
-      - name: Clean Rust build
-        run: cd src-tauri && cargo clean
-      - name: Build and Release (macOS)
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-        with:
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "Recast - Release ${{ inputs.tag || github.ref_name }}"
-          releaseBody: "## 🎉 Recast Release ${{ inputs.tag || github.ref_name }}\n\n### 📦 Available Downloads\n\n**Windows**: Download the `.msi` installer or `.exe` for your system.\n**macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.\n**Linux**: Download the `.AppImage` for universal Linux support.\n\n### 🚀 Installation\n- **Windows**: Run the installer and follow the prompts.\n- **macOS**: Mount the `.dmg` file and drag Recast to Applications.\n- **Linux**: Make the AppImage executable and run it.\n\n### ⚠️ Important Note on Code Signing\nThese applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:\n- You may see security warnings when installing on Windows or macOS\n- This is normal and expected for open-source projects without commercial signing\n- The code is safe to use and can be verified from our public repository\n\n### 📝 Additional Notes\n- Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.\n- Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).\n\n**Happy recording! 🎥✨**"
-          releaseDraft: false
-          prerelease: false
+          name: msix-bundle
+          path: apps/desktop/src-tauri/target/msix/*.msixbundle

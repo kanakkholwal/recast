@@ -3,6 +3,7 @@
 	import { Button } from "@recast/ui/button";
 	import { ArrowRight, CheckCircle2 } from "lucide-svelte";
 	import { Sparkles, MousePointer2, Frame } from "lucide-svelte";
+	import { Terminal, Rocket, Users } from "lucide-svelte";
 </script>
 
 <svelte:head>
@@ -167,39 +168,78 @@
 
 	<FeatureGrid />
 
-	<Section id="use-cases" class="py-24 md:py-32">
-		<Container>
-			<div class="mb-16">
-				<h2 class="text-3xl font-semibold tracking-tight mb-4">Built for clarity. Designed for speed.</h2>
-				<p class="text-muted-foreground">Why Recast? Not a heavy editor. Not a laggy recorder. Not cloud-dependent.</p>
+<Section id="use-cases" class="py-24 md:py-32 bg-background">
+	<Container>
+		<div class="max-w-2xl mb-16 md:mb-24">
+			<h2 class="text-3xl md:text-5xl font-semibold tracking-tight mb-6 leading-tight">
+				Built for clarity. <br />
+				<span class="text-muted-foreground">Designed for speed.</span>
+			</h2>
+			<p class="text-lg text-muted-foreground">
+				Why Recast? Not a heavy editor. Not a laggy recorder. Not cloud-dependent.
+			</p>
+		</div>
+		
+		<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+			<div class="group p-8 md:p-10 rounded-[2rem] bg-muted/20 border border-border/40 hover:bg-muted/40 hover:border-border/60 transition-all duration-300">
+				<div class="size-12 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center mb-8 group-hover:scale-105 transition-transform">
+					<Terminal class="size-5 text-foreground" />
+				</div>
+				<h4 class="text-xl font-semibold mb-3 tracking-tight">For Developers</h4>
+				<p class="text-muted-foreground leading-relaxed">
+					Explain bugs, APIs, and flows clearly without typing a thousand-word pull request description.
+				</p>
 			</div>
 			
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-				<div class="p-8 rounded-2xl bg-muted/20 border border-border/40">
-					<h4 class="text-xl font-semibold mb-2">For Developers</h4>
-					<p class="text-muted-foreground">Explain bugs, APIs, and flows clearly.</p>
+			<div class="group p-8 md:p-10 rounded-[2rem] bg-muted/20 border border-border/40 hover:bg-muted/40 hover:border-border/60 transition-all duration-300">
+				<div class="size-12 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center mb-8 group-hover:scale-105 transition-transform">
+					<Rocket class="size-5 text-foreground" />
 				</div>
-				<div class="p-8 rounded-2xl bg-muted/20 border border-border/40">
-					<h4 class="text-xl font-semibold mb-2">For Founders</h4>
-					<p class="text-muted-foreground">Create product demos in minutes.</p>
-				</div>
-				<div class="p-8 rounded-2xl bg-muted/20 border border-border/40">
-					<h4 class="text-xl font-semibold mb-2">For Teams</h4>
-					<p class="text-muted-foreground">Replace meetings with async clarity.</p>
-				</div>
+				<h4 class="text-xl font-semibold mb-3 tracking-tight">For Founders</h4>
+				<p class="text-muted-foreground leading-relaxed">
+					Create product demos in minutes. Show your investors and users exactly what you've built with zero friction.
+				</p>
 			</div>
-		</Container>
-	</Section>
+			
+			<div class="group p-8 md:p-10 rounded-[2rem] bg-muted/20 border border-border/40 hover:bg-muted/40 hover:border-border/60 transition-all duration-300">
+				<div class="size-12 rounded-full bg-background border border-border/50 shadow-sm flex items-center justify-center mb-8 group-hover:scale-105 transition-transform">
+					<Users class="size-5 text-foreground" />
+				</div>
+				<h4 class="text-xl font-semibold mb-3 tracking-tight">For Teams</h4>
+				<p class="text-muted-foreground leading-relaxed">
+					Replace meetings with async clarity. Share pristine updates and walkthroughs that actually get watched.
+				</p>
+			</div>
+		</div>
+	</Container>
+</Section>
 
-	<Section id="cta" class="py-32 bg-primary text-primary-foreground text-center">
-		<Container>
-			<h2 class="text-4xl md:text-6xl font-semibold tracking-tight mb-8">Stop recording. <br /> Start presenting.</h2>
-			<Button size="lg" variant="secondary" class="h-14 px-8 text-lg font-medium shadow-sm group">
-				Start Recording
-				<ArrowRight class="ml-2 size-5 group-hover:translate-x-1 transition-transform" />
-			</Button>
-		</Container>
-	</Section>
+<Section id="cta" class="py-24 md:py-32 bg-background">
+	<Container>
+		<div class="relative max-w-5xl mx-auto rounded-[2rem] border border-border/50 bg-muted/10 px-6 py-20 md:py-28 text-center overflow-hidden">
+			
+			<div class="absolute inset-0 bg-linear-to-b from-primary/5 to-transparent opacity-50 pointer-events-none"></div>
+
+			<div class="relative z-10 max-w-2xl mx-auto flex flex-col items-center">
+				<h2 class="text-4xl md:text-5xl lg:text-6xl font-semibold tracking-tight mb-6 text-balance text-foreground">
+					Stop recording. <br /> Start presenting.
+				</h2>
+				<p class="text-lg text-muted-foreground mb-10 max-w-xl text-balance">
+					Join the next generation of storytellers. Export your first flawless, beautifully formatted video in seconds.
+				</p>
+				
+				<Button size="lg" class="h-14 px-8 text-base font-medium shadow-sm group transition-all hover:shadow-md">
+					Start Recording
+					<ArrowRight class="ml-2 size-5 group-hover:translate-x-1 transition-transform" />
+				</Button>
+				
+				<p class="mt-6 text-sm text-muted-foreground font-medium">
+					No credit card required. Free for local use.
+				</p>
+			</div>
+		</div>
+	</Container>
+</Section>
 </main>
 
 <footer class="py-12 border-t border-border/40 bg-background">
