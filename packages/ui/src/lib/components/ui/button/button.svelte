@@ -15,7 +15,7 @@
 	 */
 	export const buttonVariants = tv({
 		base: [
-			"group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap",
+			"group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap cursor-pointer",
 			"rounded-md border border-transparent bg-clip-padding font-medium outline-none transition-all select-none",
 			"focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
 			"aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-invalid:ring-3",

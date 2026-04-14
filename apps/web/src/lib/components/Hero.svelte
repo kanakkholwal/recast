@@ -23,9 +23,9 @@
 		</div>
 
 		<div class="mt-20 md:mt-32 relative rounded-2xl border border-border/50 bg-card shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-1000 delay-300 mx-auto max-w-5xl group">
-			<div class="absolute inset-0 bg-gradient-to-tr from-primary/10 via-transparent to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
+			<div class="absolute inset-0 bg-linear-to-tr from-primary/10 via-transparent to-secondary/10 opacity-0 group-hover:opacity-100 transition-opacity duration-700"></div>
 			<img src="/product_preview_hero.png" alt="Recast Product Preview" class="w-full h-auto" />
-			<div class="absolute inset-0 pointer-events-none border-[1px] border-white/10 rounded-2xl"></div>
+			<div class="absolute inset-0 pointer-events-none border border-white/10 rounded-2xl"></div>
 		</div>
 	</Container>
 </Section>

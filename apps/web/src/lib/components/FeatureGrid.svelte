@@ -1,66 +1,62 @@
 <script lang="ts">
-	import { Card } from "@recast/ui/card";
-	import { Layers, MousePointer2, Shield, Zap } from "lucide-svelte";
+	import { MousePointer2, Layout, Scissors, WifiOff, FileBox, Zap } from "lucide-svelte";
 	import { Container, Section } from ".";
 
 	const features = [
 		{
-			title: "Blazing Fast",
-			description:
-				"Native performance with GPU acceleration. Edit 4K video without breaking a sweat.",
-			icon: Zap,
-		},
-		{
-			title: "Minimal UI",
-			description:
-				"Interface that gets out of your way. Only the tools you need, exactly when you need them.",
+			title: "Cursor Engine",
+			description: "Precision tracking with smooth interpolation.",
 			icon: MousePointer2,
 		},
 		{
-			title: "Layered Precision",
-			description:
-				"Infinite tracks, sub-pixel positioning, and advanced masking for complex workflows.",
-			icon: Layers,
+			title: "Smart Layouts",
+			description: "Auto padding, backgrounds, and framing.",
+			icon: Layout,
 		},
 		{
-			title: "Cloud Sync",
-			description:
-				"Your projects are always with you. seamless transition between desktop and the web.",
-			icon: Shield,
+			title: "Lightweight Editor",
+			description: "Trim, tweak, done.",
+			icon: Scissors,
+		},
+		{
+			title: "Offline First",
+			description: "No uploads required. Everything runs locally.",
+			icon: WifiOff,
+		},
+		{
+			title: "Project Files (.recast)",
+			description: "Edit anytime without losing data.",
+			icon: FileBox,
+		},
+		{
+			title: "Fast Export",
+			description: "GPU-powered rendering pipeline.",
+			icon: Zap,
 		},
 	];
 </script>
 
-<Section id="features" class="bg-muted/30">
+<Section id="features" class="py-24 bg-background">
 	<Container>
-		<div class="text-center mb-20">
-			<h2 class="text-3xl md:text-5xl font-bold mb-4">
-				Everything you need, <br />nothing you don't.
-			</h2>
-			<p class="text-muted-foreground text-lg max-w-xl mx-auto">
-				Built for speed and simplicity. No clutter, just pure
-				creativity.
-			</p>
+		<div class="mb-16">
+			<h2 class="text-3xl font-semibold tracking-tight mb-4">Core Features</h2>
+			<p class="text-muted-foreground text-lg">Everything you need. Nothing you don't.</p>
 		</div>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
 			{#each features as feature}
-				<Card
-					class="p-8 group hover:border-primary/50 transition-all duration-300 bg-card/50 backdrop-blur-sm"
-				>
-					<div
-						class="size-12 rounded-xl bg-primary/10 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform duration-300"
-					>
+				<div class="p-6 rounded-2xl border border-border/50 bg-background hover:bg-muted/20 transition-colors duration-200">
+					<div class="size-10 rounded-lg bg-muted flex items-center justify-center mb-5">
 						{#if feature.icon}
 							{@const Icon = feature.icon}
-							<Icon class="size-6 text-primary" />
+							<Icon class="size-5 text-foreground" />
 						{/if}
 					</div>
-					<h3 class="text-xl font-bold mb-2">{feature.title}</h3>
-					<p class="text-muted-foreground leading-relaxed">
+					<h3 class="text-lg font-semibold mb-2">{feature.title}</h3>
+					<p class="text-sm text-muted-foreground leading-relaxed">
 						{feature.description}
 					</p>
-				</Card>
+				</div>
 			{/each}
 		</div>
 	</Container>

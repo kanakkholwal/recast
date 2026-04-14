@@ -3,6 +3,6 @@
 	let { children, class: className = "", id = "" } = $props();
 </script>
 
-<section {id} class={cn("section-padding", className)}>
+<section {id} class={cn("w-full", className)}>
 	{@render children()}
 </section>

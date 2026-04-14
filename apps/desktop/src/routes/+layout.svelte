@@ -5,9 +5,9 @@
 
 	let { children } = $props();
 
-	import { Toaster } from "@recast/ui/sonner";
 	import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
-	import { ModeWatcher, setMode } from "mode-watcher";
+	import { Toaster } from "@recast/ui/sonner";
+	import { ModeWatcher, setMode } from "@recast/ui/theme";
 	import { onMount, tick } from "svelte";
 
 	// Remove the boot splash screen after the app is mounted

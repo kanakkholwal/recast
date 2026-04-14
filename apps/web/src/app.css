@@ -1,22 +1,62 @@
 @import "@recast/design/index.css";
 
+
+
+@import "@fontsource-variable/geist";
+
+@source "../node_modules/@recast/ui/src";
+
 @layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  html::-webkit-scrollbar-track {
+    background: hsl(var(--muted));
+    border-radius: 0.5rem;
+  }
+
+  html::-webkit-scrollbar-thumb {
+    background: linear-gradient(135deg,
+        hsl(var(--primary) / 0.6),
+        hsl(var(--secondary) / 0.8));
+    border-radius: 0.5rem;
+    border: 2px solid hsl(var(--background));
+    transition: all 0.2s ease-in-out;
+  }
+
+  html::-webkit-scrollbar-corner {
+    background: hsl(var(--background));
+  }
+
+  html {
+    scroll-behavior: smooth;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--primary) / 0.6) hsl(var(--muted));
+  }
+
   body {
-    @apply bg-background text-foreground antialiased selection:bg-primary/30 selection:text-primary;
+    @apply bg-(--noise-bg) text-foreground;
+    font-weight: 400;
+    font-size: 16px;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+    position: relative;
     background-image: var(--noise-bg);
-    min-height: 100vh;
+    @apply selection:bg-primary/75 selection:text-white selection:rounded-2xl transition-all duration-300;
   }
 }
 
-/* Marketing specific utilities */
-.container {
-  @apply mx-auto px-6 max-w-7xl;
-}
-
-.section-padding {
-  @apply py-24 md:py-32;
-}
-
-.glass {
-  @apply bg-background/60 backdrop-blur-xl border border-border/50;
+/* Custom Grid Background Utility */
+.bg-grid-pattern {
+  background-size: 40px 40px;
+  background-image: linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
+  mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
 }

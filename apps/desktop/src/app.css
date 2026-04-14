@@ -2,9 +2,10 @@
 
 @import 'tw-animate-css';
 
-@import "shadcn-svelte/tailwind.css";
 
 @import "@fontsource-variable/geist";
+
+@source "../node_modules/@recast/ui/src";
 
 @layer base {
   * {

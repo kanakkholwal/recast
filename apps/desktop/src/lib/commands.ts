@@ -1,9 +1,7 @@
 import { goto } from "$app/navigation";
-import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
-import { launchRecordingPanel, openFileLocation, getOutputDir } from "$lib/ipc";
 import { config } from "$constants/app";
-import { setMode } from "mode-watcher";
-import { toast } from "svelte-sonner";
+import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
+import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 import {
 	Camera,
 	Download,
@@ -19,6 +17,8 @@ import {
 	SlidersHorizontal,
 	Sun,
 } from "@lucide/svelte";
+import { toast } from "@recast/ui/sonner";
+import { setMode } from "@recast/ui/theme";
 
 export function buildGlobalCommands(): PaletteCommand[] {
 	return [

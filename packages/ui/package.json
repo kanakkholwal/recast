@@ -3,7 +3,6 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "sideEffects": ["**/*.css"],
   "exports": {
     ".": {
       "svelte": "./src/lib/index.ts",
@@ -100,6 +99,10 @@
     "./tooltip": {
       "svelte": "./src/lib/components/ui/tooltip/index.ts",
       "default": "./src/lib/components/ui/tooltip/index.ts"
+    },
+    "./theme": {
+      "svelte": "./src/lib/components/ui/theme.ts",
+      "default": "./src/lib/components/ui/theme.ts"
     }
   },
   "peerDependencies": {
