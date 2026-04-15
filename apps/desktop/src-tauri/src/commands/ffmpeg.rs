@@ -106,6 +106,49 @@ pub fn append_cursor_overlay_to_complex(
     (new_complex, out_label.to_string())
 }
 
+/// Wrap the current video chain in a palettegen/paletteuse pipeline so GIF
+/// exports have a stable, dithered palette instead of FFmpeg's naive
+/// per-frame 256-colour quantization (which produces heavy banding and noise).
+/// Always routes through `filter_complex`: the `split`/labelled-graph needed
+/// by palettegen is not expressible in the linear `-vf` form.
+///
+/// Returns the extended `filter_complex` string and the new output label to
+/// pass to `-map`. Any inline scale filter is baked into the `paletteuse` leg
+/// so we don't double-sample.
+pub fn build_gif_palette_complex(
+    filter_complex: Option<&str>,
+    input_label: &str,
+    fps: u32,
+    inline_scale: Option<&str>,
+) -> (String, String) {
+    let final_label = "[vgif]";
+    let normalized_input = if input_label.starts_with('[') {
+        input_label.to_string()
+    } else {
+        format!("[{input_label}]")
+    };
+    // The `[b]` leg carries the frames through paletteuse. If the caller has
+    // a scale filter, apply it here (after fps reduction) so the generated
+    // palette matches the pixels that will actually end up in the GIF.
+    let scaled_b = match inline_scale {
+        Some(scale) if !scale.is_empty() => format!("[_gifb]{scale}[_gifbs]"),
+        _ => String::new(),
+    };
+    let (b_label, b_stage) = if scaled_b.is_empty() {
+        ("[_gifb]", String::new())
+    } else {
+        ("[_gifbs]", format!(";{scaled_b}"))
+    };
+    let palette_chain = format!(
+        "{normalized_input}fps={fps},split[_gifa][_gifb];[_gifa]palettegen=stats_mode=diff[_gifp]{b_stage};{b_label}[_gifp]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle{final_label}"
+    );
+    let new_complex = match filter_complex {
+        Some(existing) if !existing.is_empty() => format!("{existing};{palette_chain}"),
+        _ => palette_chain,
+    };
+    (new_complex, final_label.to_string())
+}
+
 pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let lines: Vec<&str> = text

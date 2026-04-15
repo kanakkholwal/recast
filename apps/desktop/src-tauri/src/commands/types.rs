@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::render::graph::RenderState;
@@ -105,7 +106,10 @@ pub struct AppState {
     pub recording_manager: crate::recording::RecordingManager,
     pub last_file_path: parking_lot::Mutex<Option<String>>,
     pub config: parking_lot::Mutex<AppConfig>,
-    /// Set by `cancel_export` to signal a running export to abort its ffmpeg child process.
-    /// Reset to `false` at the start of every export run.
-    pub export_cancel: Arc<AtomicBool>,
+    /// Per-run cancellation token for the active export. `export_video` installs a
+    /// fresh `Arc<AtomicBool>` on entry and clears it on exit; `cancel_export` sets
+    /// whatever token is currently installed. The option form closes a race where a
+    /// cancel click issued between the IPC kickoff and `export_video`'s first line
+    /// could be stomped by a shared-flag reset on entry.
+    pub export_cancel: Mutex<Option<Arc<AtomicBool>>>,
 }

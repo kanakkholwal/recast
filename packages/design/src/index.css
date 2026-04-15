@@ -140,3 +140,39 @@
     }
   }
 }
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: .5rem
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, hsl(var(--primary) / .6), hsl(var(--secondary) / .8));
+  border: 2px solid hsl(var(--background));
+  border-radius: .5rem;
+  transition: all .2s ease-in-out
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, hsl(var(--primary) / .8), hsl(var(--secondary) / 1));
+  transform: scale(1.1)
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)))
+}
+
+::-webkit-scrollbar-corner {
+  background: hsl(var(--background))
+}
+
+html {
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--primary) / .6) hsl(var(--muted))
+}
