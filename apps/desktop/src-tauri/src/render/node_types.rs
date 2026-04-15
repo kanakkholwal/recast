@@ -1,5 +1,11 @@
 use serde::{Deserialize, Serialize};
 
+use crate::render::easing::Easing;
+
+fn default_ramp_duration() -> f64 {
+    0.35
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrimNode {
@@ -35,6 +41,63 @@ pub struct ZoomRegion {
     pub start: f64,
     pub end: f64,
     pub scale: f64,
+    /// Curve for the `start → start + ramp_in` window. Missing in legacy
+    /// projects; serde default falls back to CSS `ease`.
+    #[serde(default)]
+    pub ease_in: Easing,
+    /// Curve for the `end - ramp_out → end` window.
+    #[serde(default)]
+    pub ease_out: Easing,
+    /// Seconds the zoom takes to reach full scale from the region's start.
+    #[serde(default = "default_ramp_duration")]
+    pub ramp_in: f64,
+    /// Seconds the zoom takes to fall back to 1.0 before the region's end.
+    #[serde(default = "default_ramp_duration")]
+    pub ramp_out: f64,
+}
+
+impl ZoomRegion {
+    /// Usable ramp durations for this region: never exceed half the region's
+    /// length each, so a short region still has a hold phase (even if it's a
+    /// single instant). Handles negative / zero durations by clamping to 0.
+    pub fn clamped_ramps(&self) -> (f64, f64) {
+        let duration = (self.end - self.start).max(0.0);
+        let half = duration * 0.5;
+        let ramp_in = self.ramp_in.max(0.0).min(half);
+        let ramp_out = self.ramp_out.max(0.0).min(half);
+        (ramp_in, ramp_out)
+    }
+
+    /// Eased scale at time `t` (seconds on the project timeline). Returns
+    /// 1.0 outside the region, `self.scale` during the hold, and a bezier-
+    /// shaped ramp in/out of the scale on the two edges.
+    pub fn scale_at(&self, t: f64) -> f64 {
+        if t <= self.start || t >= self.end {
+            return 1.0;
+        }
+        let (ramp_in, ramp_out) = self.clamped_ramps();
+        let hold_start = self.start + ramp_in;
+        let hold_end = self.end - ramp_out;
+        let target = self.scale;
+        let (curve, phase) = if t < hold_start {
+            let phase = if ramp_in > 0.0 {
+                ((t - self.start) / ramp_in).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            (self.ease_in, phase)
+        } else if t > hold_end {
+            let phase = if ramp_out > 0.0 {
+                ((self.end - t) / ramp_out).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            (self.ease_out, phase)
+        } else {
+            return target;
+        };
+        1.0 + (target - 1.0) * curve.y(phase as f32) as f64
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

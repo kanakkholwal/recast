@@ -1,5 +1,6 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import type { Easing } from "$lib/easing/cubic-bezier";
+  import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
   import { CircleQuestionMark, Scissors, Search, X } from "@lucide/svelte";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
@@ -212,6 +213,50 @@
       Math.max(start + 0.8, store.currentTime + 0.85),
     );
     store.addZoomRegion(start, end, 1.8);
+  }
+
+  // Approximate polynomial-in-t eval; indistinguishable from the real
+  // Newton-Raphson solve at sparkline resolution.
+  function approxEaseY(easing: Easing, x: number): number {
+    const a = 1 - 3 * easing.y2 + 3 * easing.y1;
+    const b = 3 * easing.y2 - 6 * easing.y1;
+    const c = 3 * easing.y1;
+    return ((a * x + b) * x + c) * x;
+  }
+
+  // Path drawing 0..100 × 0..18 viewBox: the region's scale curve, normalised
+  // so peak scale reaches the top of the box. Shows the rampIn/hold/rampOut
+  // shape at a glance.
+  function zoomSparklinePath(r: ZoomRegion): string {
+    const duration = Math.max(0.001, r.end - r.start);
+    const half = duration * 0.5;
+    const rampIn = Math.min(Math.max(0, r.rampIn), half);
+    const rampOut = Math.min(Math.max(0, r.rampOut), half);
+    const holdStart = rampIn;
+    const holdEnd = duration - rampOut;
+    const peak = Math.max(r.scale, 1.0);
+    const norm = (s: number) => (peak === 1 ? 0 : (s - 1) / (peak - 1));
+    const W = 100;
+    const H = 18;
+    const pts: string[] = [];
+    const N = 48;
+    for (let i = 0; i <= N; i++) {
+      const t = (i / N) * duration;
+      let s = 1.0;
+      if (t < holdStart) {
+        const phase = rampIn > 0 ? t / rampIn : 1;
+        s = 1 + (r.scale - 1) * approxEaseY(r.easeIn, phase);
+      } else if (t > holdEnd) {
+        const phase = rampOut > 0 ? (duration - t) / rampOut : 1;
+        s = 1 + (r.scale - 1) * approxEaseY(r.easeOut, phase);
+      } else {
+        s = r.scale;
+      }
+      const x = (t / duration) * W;
+      const y = H - norm(s) * (H - 2) - 1;
+      pts.push(`${i === 0 ? "M" : "L"} ${x.toFixed(2)} ${y.toFixed(2)}`);
+    }
+    return pts.join(" ");
   }
 
   function setTrimPoint(kind: "in" | "out") {
@@ -430,10 +475,14 @@
             </div>
           {:else}
             {#each store.zoomRegions as region, index (region.id)}
-              <div
+              {@const isSelected = region.id === store.selectedZoomRegionId}
+              <button
+                type="button"
+                onclick={() => (store.selectedZoomRegionId = region.id)}
                 in:fly={{ y: 10, duration: 180, easing: cubicOut }}
                 out:fade={{ duration: 140 }}
-                class="absolute overflow-hidden rounded border border-border bg-muted aspect-video"
+                aria-pressed={isSelected}
+                class="absolute overflow-hidden rounded border bg-muted text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring {isSelected ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:border-primary/60'}"
                 style="
 									left: {region.start * pixelsPerSecond}px;
 									width: {Math.max((region.end - region.start) * pixelsPerSecond, 56)}px;
@@ -441,8 +490,15 @@
 									height: 30px;
 								"
               >
+                <svg
+                  viewBox="0 0 100 18"
+                  preserveAspectRatio="none"
+                  class="pointer-events-none absolute inset-x-0 bottom-0 h-3 w-full text-primary/60"
+                >
+                  <path d={zoomSparklinePath(region)} stroke="currentColor" stroke-width="1.2" fill="none" />
+                </svg>
                 <div
-                  class="flex h-full items-center justify-between gap-2 px-2"
+                  class="relative flex h-full items-center justify-between gap-2 px-2"
                 >
                   <div class="min-w-0">
                     <p class="text-[10px] font-semibold text-foreground">
@@ -452,19 +508,27 @@
                       {region.scale.toFixed(1)}x · {formatTime(region.start)}
                     </p>
                   </div>
-                  <button
-                    type="button"
+                  <span
+                    role="button"
+                    tabindex="0"
                     onclick={(event) => {
                       event.stopPropagation();
                       store.removeZoomRegion(region.id);
                     }}
-                    class="flex h-4 w-4 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                    onkeydown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        store.removeZoomRegion(region.id);
+                      }
+                    }}
+                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
                     aria-label="Remove focus region"
                   >
                     <X size={9} strokeWidth={2.5} />
-                  </button>
+                  </span>
                 </div>
-              </div>
+              </button>
             {/each}
           {/if}
         </div>

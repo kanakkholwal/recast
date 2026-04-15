@@ -205,18 +205,22 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata) -> String {
         return String::new();
     }
 
-    let width_expr = nested_region_expr(&node.regions, "iw".into(), |region| {
-        format!("iw/{:.4}", region.scale.max(1.0))
-    });
-    let height_expr = nested_region_expr(&node.regions, "ih".into(), |region| {
-        format!("ih/{:.4}", region.scale.max(1.0))
-    });
-    let x_expr = nested_region_expr(&node.regions, "0".into(), |region| {
-        format!("(iw-iw/{:.4})/2", region.scale.max(1.0))
-    });
-    let y_expr = nested_region_expr(&node.regions, "0".into(), |region| {
-        format!("(ih-ih/{:.4})/2", region.scale.max(1.0))
-    });
+    // Pre-sample each region's scale curve so the filter stays simple math.
+    // FFmpeg's expression evaluator can't call our Rust bezier solver, but a
+    // dense piecewise-linear LUT is visually indistinguishable from the real
+    // curve at 20 Hz (every ~3 frames at 60 fps). Each sample records the
+    // four derived quantities we feed to `crop` so we don't recompute them
+    // inside the filter string.
+    let samples_per_region: Vec<Vec<ZoomSample>> = node
+        .regions
+        .iter()
+        .map(|region| sample_region(region, source))
+        .collect();
+
+    let width_expr = build_piecewise_expr(&samples_per_region, "iw", |s| s.width);
+    let height_expr = build_piecewise_expr(&samples_per_region, "ih", |s| s.height);
+    let x_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.x);
+    let y_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.y);
 
     format!(
         "crop=w='{width_expr}':h='{height_expr}':x='{x_expr}':y='{y_expr}',scale={}:{}",
@@ -224,19 +228,84 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata) -> String {
     )
 }
 
-fn nested_region_expr<F>(regions: &[ZoomRegion], default: String, value: F) -> String
+#[derive(Debug, Clone, Copy)]
+struct ZoomSample {
+    t: f64,
+    width: f64,  // iw / scale
+    height: f64, // ih / scale
+    x: f64,      // (iw - iw/scale) / 2
+    y: f64,      // (ih - ih/scale) / 2
+}
+
+fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSample> {
+    let duration = (region.end - region.start).max(0.0);
+    // 20 Hz baseline, capped so very long regions don't explode the filter
+    // string. 200 samples per region over a 10 s region is ~6 KB which
+    // FFmpeg handles fine; past that the LUT is denser than any human eye
+    // needs and we trade some fidelity for parser health.
+    let samples = ((duration * 20.0).ceil() as usize).clamp(8, 200);
+    let step = if samples > 0 { duration / samples as f64 } else { 0.0 };
+    let iw = source.width as f64;
+    let ih = source.height as f64;
+    let mut out = Vec::with_capacity(samples + 1);
+    for i in 0..=samples {
+        let t = region.start + step * i as f64;
+        let scale = region.scale_at(t).max(1.0);
+        out.push(ZoomSample {
+            t,
+            width: iw / scale,
+            height: ih / scale,
+            x: (iw - iw / scale) * 0.5,
+            y: (ih - ih / scale) * 0.5,
+        });
+    }
+    out
+}
+
+/// Build one FFmpeg expression that evaluates a per-sample quantity via a
+/// piecewise-linear lookup over all regions, falling back to `default` when
+/// `t` is outside every region. Each segment emits
+/// `if(between(t,ti,tj), vi + (vj-vi)*(t-ti)/(tj-ti), ACC)`. Built as a
+/// right-fold so the innermost if handles the first segment and the outer
+/// ones layer the fallback.
+fn build_piecewise_expr<F>(
+    samples_per_region: &[Vec<ZoomSample>],
+    default: &str,
+    field: F,
+) -> String
 where
-    F: Fn(&ZoomRegion) -> String,
+    F: Fn(&ZoomSample) -> f64,
 {
-    regions.iter().rev().fold(default, |acc, region| {
-        format!(
-            "if(between(t,{:.3},{:.3}),{}, {})",
-            region.start,
-            region.end,
-            value(region),
-            acc
-        )
-    })
+    // Collect every (t_i, v_i, t_{i+1}, v_{i+1}) segment across all regions in
+    // a flat list. Gaps between regions naturally fall through to `default`.
+    let mut segments: Vec<(f64, f64, f64, f64)> = Vec::new();
+    for samples in samples_per_region {
+        for pair in samples.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            if b.t <= a.t {
+                continue;
+            }
+            segments.push((a.t, field(a), b.t, field(b)));
+        }
+    }
+
+    segments
+        .into_iter()
+        .rev()
+        .fold(default.to_string(), |acc, (ta, va, tb, vb)| {
+            // If va == vb, skip the linear-interp arithmetic — keeps strings
+            // shorter during the hold phase where the scale is constant.
+            let value_expr = if (va - vb).abs() < 1e-6 {
+                format!("{va:.4}")
+            } else {
+                let dt = tb - ta;
+                let dv = vb - va;
+                format!("({va:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4})")
+            };
+            format!(
+                "if(between(t,{ta:.4},{tb:.4}),{value_expr}, {acc})"
+            )
+        })
 }
 
 fn resolve_background_path(value: &str, static_root: &Path) -> Option<PathBuf> {

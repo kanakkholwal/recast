@@ -540,6 +540,7 @@ pub async fn export_video(
             .name("recast-export-stderr".into())
             .spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
+                let mut finalizing_emitted = false;
                 for line in reader.lines().map_while(Result::ok) {
                     // FFmpeg progress blocks are key=value lines terminated by
                     // `progress=continue` (between blocks) or `progress=end`
@@ -566,6 +567,25 @@ pub async fn export_video(
                         }
                         continue;
                     }
+                    // `progress=end` means FFmpeg has finished encoding and
+                    // is about to write the container trailer / exit. Flip
+                    // the UI to finalizing NOW rather than waiting for the
+                    // pipes to close — on Windows stderr close can lag the
+                    // actual encoder finish by seconds, which manifested as
+                    // the bar sitting at 100% with no state change. Also
+                    // stamp `last_progress` so the 60 s stall watchdog gives
+                    // the trailer write its own fresh budget.
+                    if line.trim() == "progress=end" {
+                        if !finalizing_emitted {
+                            finalizing_emitted = true;
+                            let _ = stderr_app.emit("export-progress", 100.0_f64);
+                            let _ = stderr_app.emit("export-finalizing", ());
+                            log::info!("export: progress=end seen, flipping UI to finalizing");
+                        }
+                        let mut guard = stderr_last_progress.lock();
+                        *guard = Instant::now();
+                        continue;
+                    }
                     if is_ffmpeg_progress_key_line(&line) {
                         continue;
                     }
@@ -579,6 +599,7 @@ pub async fn export_video(
                         guard.drain(0..overflow);
                     }
                 }
+                log::info!("export: stderr thread exiting (pipe closed)");
             })
             .map_err(|e| format!("failed to spawn stderr drain thread: {e}"))?;
 
@@ -595,6 +616,7 @@ pub async fn export_video(
                         Ok(_) => {}
                     }
                 }
+                log::info!("export: stdout thread exiting (pipe closed)");
             })
             .map_err(|e| format!("failed to spawn stdout drain thread: {e}"))?;
 
@@ -652,15 +674,15 @@ pub async fn export_video(
             .map_err(|e| format!("failed to spawn watchdog thread: {e}"))?;
 
         // Wait for the I/O drain threads to finish. Both unblock when FFmpeg
-        // closes its respective pipes, which happens as it's exiting — this
-        // gives us the "encoding done, wrapping up" signal without having to
-        // poll progress percentages.
+        // closes its respective pipes, which happens as it's exiting.
         let _ = stdout_thread.join();
         let _ = stderr_thread.join();
+        log::info!("export: drain threads joined, pipes closed");
 
-        // Flip the UI to finalizing exactly once, right as the pipes close.
-        // For MP4-without-faststart / WebM / GIF this is sub-second; the
-        // try_wait deadline below bounds the worst case.
+        // Redundant-but-idempotent final emit: if `progress=end` wasn't seen
+        // (e.g. FFmpeg was killed before finishing), make sure the UI still
+        // gets a finalizing flip before `export-done` arrives so the dialog
+        // has a consistent visual sequence.
         let _ = app.emit("export-progress", 100.0_f64);
         let _ = app.emit("export-finalizing", ());
 

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { EASE } from "$lib/easing/cubic-bezier";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
     Activity,
@@ -6,9 +7,11 @@
     EyeOff,
     MousePointer,
     Sparkles,
+    Waves,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
+  import BezierEditor from "./BezierEditor.svelte";
   import InspectorHint from "./InspectorHint.svelte";
   import SliderControl from "./SliderControl.svelte";
 
@@ -107,6 +110,39 @@
           {/snippet}
         </SliderControl>
       </div>
+    </section>
+
+    <!-- Custom motion easing: reshapes the per-sample lerp in the preview. -->
+    <section>
+      <div class="mb-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5">
+          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Motion easing
+          </h3>
+          <InspectorHint
+            content="Reshape how the cursor interpolates between captured samples. Default (linear) preserves the raw trajectory. Ease-out curves decelerate into rest for a more deliberate feel."
+          />
+        </div>
+        <Button
+          variant={store.cursorMotionEasing ? "default_soft" : "outline"}
+          size="xs"
+          class="gap-1.5"
+          aria-pressed={!!store.cursorMotionEasing}
+          onclick={() =>
+            (store.cursorMotionEasing = store.cursorMotionEasing ? null : { ...EASE })}
+        >
+          <Waves size={11} />
+          {store.cursorMotionEasing ? "On" : "Off"}
+        </Button>
+      </div>
+      {#if store.cursorMotionEasing}
+        <BezierEditor
+          value={store.cursorMotionEasing}
+          onchange={(next) => (store.cursorMotionEasing = next)}
+          description="Applies to preview only"
+          size={160}
+        />
+      {/if}
     </section>
 
     <!-- Click highlight -->

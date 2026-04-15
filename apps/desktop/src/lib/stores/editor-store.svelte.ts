@@ -3,6 +3,8 @@
  * Uses Svelte 5 runes ($state) for granular reactivity.
  */
 
+import { EASE, type Easing } from '../easing/cubic-bezier';
+
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
 
 
@@ -19,7 +21,13 @@ export interface ZoomRegion {
 	start: number; // seconds
 	end: number; // seconds
 	scale: number; // 1.0 - 3.0
+	easeIn: Easing;
+	easeOut: Easing;
+	rampIn: number; // seconds spent ramping from 1.0 → scale
+	rampOut: number; // seconds spent ramping from scale → 1.0
 }
+
+export const DEFAULT_ZOOM_RAMP = 0.35;
 
 export interface CursorSettings {
 	enabled: boolean;
@@ -89,7 +97,12 @@ export interface EditorRenderState {
 		start: number;
 		end: number;
 		scale: number;
+		easeIn: Easing;
+		easeOut: Easing;
+		rampIn: number;
+		rampOut: number;
 	}>;
+	cursorMotionEasing: Easing | null;
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -154,6 +167,11 @@ export function createEditorStore() {
 
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
+	let selectedZoomRegionId = $state<string | null>(null);
+
+	// Global cursor motion easing. `null` means linear (today's behaviour);
+	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
+	let cursorMotionEasing = $state<Easing | null>(null);
 
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
@@ -213,6 +231,7 @@ export function createEditorStore() {
 			audioSettings,
 			watermarkSettings,
 			layoutMode,
+			cursorMotionEasing,
 		});
 	}
 
@@ -253,11 +272,23 @@ export function createEditorStore() {
 		audioSettings = s.audioSettings ?? audioSettings;
 		watermarkSettings = s.watermarkSettings ?? watermarkSettings;
 		layoutMode = s.layoutMode;
+		cursorMotionEasing = s.cursorMotionEasing ?? null;
 	}
 
 	function addZoomRegion(start: number, end: number, scale = 1.5) {
 		pushUndoState();
-		zoomRegions = [...zoomRegions, { id: generateId(), start, end, scale }];
+		const region: ZoomRegion = {
+			id: generateId(),
+			start,
+			end,
+			scale,
+			easeIn: { ...EASE },
+			easeOut: { ...EASE },
+			rampIn: DEFAULT_ZOOM_RAMP,
+			rampOut: DEFAULT_ZOOM_RAMP,
+		};
+		zoomRegions = [...zoomRegions, region];
+		selectedZoomRegionId = region.id;
 	}
 
 	function setBackground(selection: BackgroundSelection) {
@@ -284,10 +315,15 @@ export function createEditorStore() {
 	function removeZoomRegion(id: string) {
 		pushUndoState();
 		zoomRegions = zoomRegions.filter((z) => z.id !== id);
+		if (selectedZoomRegionId === id) selectedZoomRegionId = null;
 	}
 
 	function updateZoomRegion(id: string, updates: Partial<ZoomRegion>) {
 		zoomRegions = zoomRegions.map((z) => (z.id === id ? { ...z, ...updates } : z));
+	}
+
+	function selectZoomRegion(id: string | null) {
+		selectedZoomRegionId = id;
 	}
 
 	function reset() {
@@ -302,6 +338,8 @@ export function createEditorStore() {
 		borderRadius = 0;
 		layoutMode = 'auto';
 		zoomRegions = [];
+		selectedZoomRegionId = null;
+		cursorMotionEasing = null;
 		cursorSettings = {
 			enabled: true,
 			size: 3,
@@ -353,7 +391,12 @@ export function createEditorStore() {
 				start: region.start,
 				end: region.end,
 				scale: region.scale,
+				easeIn: region.easeIn,
+				easeOut: region.easeOut,
+				rampIn: region.rampIn,
+				rampOut: region.rampOut,
 			})),
+			cursorMotionEasing,
 		};
 	}
 
@@ -386,7 +429,12 @@ export function createEditorStore() {
 			start: region.start,
 			end: region.end,
 			scale: region.scale,
+			easeIn: region.easeIn ?? { ...EASE },
+			easeOut: region.easeOut ?? { ...EASE },
+			rampIn: region.rampIn ?? DEFAULT_ZOOM_RAMP,
+			rampOut: region.rampOut ?? DEFAULT_ZOOM_RAMP,
 		}));
+		cursorMotionEasing = state.cursorMotionEasing ?? null;
 	}
 
 	return {
@@ -432,6 +480,12 @@ export function createEditorStore() {
 
 		get zoomRegions() { return zoomRegions; },
 
+		get selectedZoomRegionId() { return selectedZoomRegionId; },
+		set selectedZoomRegionId(v: string | null) { selectedZoomRegionId = v; },
+
+		get cursorMotionEasing() { return cursorMotionEasing; },
+		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
+
 		get cursorSettings() { return cursorSettings; },
 		set cursorSettings(v: CursorSettings) { cursorSettings = v; },
 
@@ -470,6 +524,7 @@ export function createEditorStore() {
 		addZoomRegion,
 		removeZoomRegion,
 		updateZoomRegion,
+		selectZoomRegion,
 		reset,
 		toRenderState,
 		loadRenderState,

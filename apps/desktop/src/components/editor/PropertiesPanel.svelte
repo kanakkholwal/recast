@@ -1,26 +1,36 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Clock, Film, Gauge, ImageIcon, MousePointer, Volume2 } from "@lucide/svelte";
+  import { Clock, Film, Gauge, ImageIcon, MousePointer, Target, Volume2 } from "@lucide/svelte";
   import * as Tabs from "@recast/ui/tabs";
   import * as Tooltip from "@recast/ui/tooltip";
   import AudioPanel from "./AudioPanel.svelte";
   import BackgroundPicker from "./BackgroundPicker.svelte";
   import CursorPanel from "./CursorPanel.svelte";
+  import FocusPanel from "./FocusPanel.svelte";
 
   interface Props {
     store: EditorStore;
   }
 
-  type PanelTab = "background" | "cursor" | "audio";
+  type PanelTab = "background" | "focus" | "cursor" | "audio";
 
   const tabs: { id: PanelTab; label: string; icon: typeof ImageIcon }[] = [
     { id: "background", label: "Background", icon: ImageIcon },
+    { id: "focus", label: "Focus", icon: Target },
     { id: "cursor", label: "Cursor", icon: MousePointer },
     { id: "audio", label: "Audio", icon: Volume2 },
   ];
 
   let { store }: Props = $props();
   let activeTab = $state<PanelTab>("background");
+
+  // When a zoom region is selected from the timeline, switch to the Focus tab
+  // so the user lands on the relevant editor.
+  $effect(() => {
+    if (store.selectedZoomRegionId) {
+      activeTab = "focus";
+    }
+  });
 
   function formatDuration(seconds: number | undefined) {
     if (!seconds || seconds <= 0) return "--:--";
@@ -107,6 +117,10 @@
 
     <Tabs.Content value="background" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
       <BackgroundPicker {store} />
+    </Tabs.Content>
+
+    <Tabs.Content value="focus" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+      <FocusPanel {store} />
     </Tabs.Content>
 
     <Tabs.Content value="cursor" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">

@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { bezierY } from "$lib/easing/cubic-bezier";
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
@@ -389,14 +390,20 @@ void main() {
 		const a = cursorSamples[idx - 1];
 		const b = cursorSamples[idx];
 		const range = b.timestampUs - a.timestampUs;
-		const t = range > 0 ? (timestampUs - a.timestampUs) / range : 0;
+		const tLinear = range > 0 ? (timestampUs - a.timestampUs) / range : 0;
+		// Apply the user's cursor-motion easing if set. The curve reshapes
+		// the *interpolation parameter* between adjacent captured samples;
+		// boolean states still flip at the midpoint of the linear param to
+		// keep click/release timing predictable.
+		const easing = store.cursorMotionEasing;
+		const t = easing ? bezierY(easing, tLinear) : tLinear;
 		return {
 			timestampUs,
 			x: a.x + (b.x - a.x) * t,
 			y: a.y + (b.y - a.y) * t,
-			visible: t < 0.5 ? a.visible : b.visible,
-			leftDown: t < 0.5 ? a.leftDown : b.leftDown,
-			rightDown: t < 0.5 ? a.rightDown : b.rightDown,
+			visible: tLinear < 0.5 ? a.visible : b.visible,
+			leftDown: tLinear < 0.5 ? a.leftDown : b.leftDown,
+			rightDown: tLinear < 0.5 ? a.rightDown : b.rightDown,
 		};
 	}
 
@@ -485,12 +492,36 @@ void main() {
 		return true;
 	}
 
-	function findActiveZoom(timeSec: number) {
+	// Smoothly-eased zoom scale at `timeSec`. Returns 1.0 outside every
+	// region; inside a region, ramps 1.0 → `region.scale` across `rampIn`
+	// seconds shaped by `easeIn`, holds at `region.scale`, then ramps back
+	// across `rampOut` shaped by `easeOut`. Matches the Rust
+	// `ZoomRegion::scale_at` logic 1:1 so preview and export stay aligned.
+	function evaluateZoomAt(timeSec: number): number {
 		const regions = store.zoomRegions;
 		for (const r of regions) {
-			if (timeSec >= r.start && timeSec <= r.end) return r;
+			if (timeSec <= r.start || timeSec >= r.end) continue;
+			const duration = Math.max(0, r.end - r.start);
+			const half = duration * 0.5;
+			const rampIn = Math.min(Math.max(0, r.rampIn), half);
+			const rampOut = Math.min(Math.max(0, r.rampOut), half);
+			const holdStart = r.start + rampIn;
+			const holdEnd = r.end - rampOut;
+			let phase: number;
+			let curve;
+			if (timeSec < holdStart) {
+				phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
+				curve = r.easeIn;
+			} else if (timeSec > holdEnd) {
+				phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
+				curve = r.easeOut;
+			} else {
+				return r.scale;
+			}
+			phase = Math.max(0, Math.min(1, phase));
+			return 1.0 + (r.scale - 1.0) * bezierY(curve, phase);
 		}
-		return null;
+		return 1.0;
 	}
 
 	function draw() {
@@ -560,15 +591,11 @@ void main() {
 		const radiusPx = (radiusSource / compW) * canvasEl.width;
 		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
 
-		// Zoom
-		const activeZoom = findActiveZoom(playbackTime);
-		if (activeZoom && activeZoom.scale > 1.0) {
-			gl.uniform2f(uniforms.u_zoomCenter, 0.5, 0.5); // center crop, matching Rust behavior
-			gl.uniform1f(uniforms.u_zoomScale, activeZoom.scale);
-		} else {
-			gl.uniform2f(uniforms.u_zoomCenter, 0.5, 0.5);
-			gl.uniform1f(uniforms.u_zoomScale, 1.0);
-		}
+		// Zoom — eased per-frame scale. `evaluateZoomAt` returns 1.0 outside
+		// every region, otherwise the smoothly-ramped scale (see above).
+		const zoomScale = evaluateZoomAt(playbackTime);
+		gl.uniform2f(uniforms.u_zoomCenter, 0.5, 0.5); // center crop, matching Rust behavior
+		gl.uniform1f(uniforms.u_zoomScale, zoomScale);
 
 		// Cursor
 		const cs = store.cursorSettings;
