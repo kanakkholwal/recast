@@ -1,9 +1,8 @@
 <script lang="ts">
-	import { Navbar, Hero, FeatureGrid, Section, Container } from "$lib/components";
+	import { Container, FeatureGrid, Hero, Navbar, Section } from "$lib/components";
+	import Logo from "$lib/logo.svelte";
 	import { Button } from "@recast/ui/button";
-	import { ArrowRight, CheckCircle2 } from "lucide-svelte";
-	import { Sparkles, MousePointer2, Frame } from "lucide-svelte";
-	import { Terminal, Rocket, Users } from "lucide-svelte";
+	import { ArrowRight, CheckCircle2, Frame, MousePointer2, Rocket, Sparkles, Terminal, Users } from "lucide-svelte";
 </script>
 
 <svelte:head>
@@ -245,8 +244,8 @@
 <footer class="py-12 border-t border-border/40 bg-background">
 	<Container class="flex flex-col md:flex-row items-center justify-between gap-6">
 		<div class="flex items-center gap-2">
-			<div class="size-5 rounded bg-primary flex items-center justify-center">
-				<div class="size-2 rounded-full border border-primary-foreground"></div>
+			<div class="size-5 rounded flex items-center justify-center">
+				<Logo size="20" />
 			</div>
 			<span class="font-semibold tracking-tight">Recast</span>
 		</div>

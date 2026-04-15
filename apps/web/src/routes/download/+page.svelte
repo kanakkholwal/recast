@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Navbar, Container, Section } from "$lib/components";
+	import { Container, Navbar, Section } from "$lib/components";
 	import { Button } from "@recast/ui/button";
-	import { Apple, Monitor, Terminal, Download, ArrowDownToLine, ChevronRight } from "lucide-svelte";
+	import { Apple, ArrowDownToLine, ChevronRight, Download, Monitor, Terminal } from "lucide-svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -64,7 +64,7 @@
 					</a>
 				</div>
 			{:else}
-				<Button href="#all-platforms" size="lg" variant="secondary" class="h-14 px-8 text-base font-medium shadow-sm rounded-full">
+				<Button href="#all-platforms" size="lg" variant="default" class="h-14 text-base font-medium shadow-sm rounded-full">
 					View all downloads
 					<ChevronRight class="ml-2 size-4" />
 				</Button>

@@ -1,7 +1,8 @@
 <script lang="ts">
+	import Logo from "$lib/logo.svelte";
 	import { Button } from "@recast/ui/button";
-	import { Container } from ".";
 	import { cn } from "@recast/utils";
+	import { Container } from ".";
 
 	let { class: className = "" } = $props();
 	let scrolled = $state(false);
@@ -21,12 +22,12 @@
 	)}
 >
 	<Container class="flex items-center justify-between">
-		<div class="flex items-center gap-2">
-			<div class="size-6 rounded bg-primary flex items-center justify-center">
-				<div class="size-2 rounded-full border border-primary-foreground"></div>
+		<a href="/" class="flex items-center gap-2">
+			<div class="size-6 flex items-center justify-center">
+				<Logo size="24" />
 			</div>
 			<span class="text-lg font-semibold tracking-tight">Recast</span>
-		</div>
+		</a>
 
 		<nav class="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
 			<a href="#pillars" class="hover:text-foreground transition-colors">Philosophy</a>
@@ -35,7 +36,7 @@
 		</nav>
 
 		<div class="flex items-center gap-4">
-			<Button size="sm" class="font-medium shadow-sm" href="/download">Get Started</Button>
+			<Button size="sm" class="font-medium shadow-sm shadow-primary/20 hover:shadow-primary/40" href="/download">Get Started</Button>
 		</div>
 	</Container>
 </header>

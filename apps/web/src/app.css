@@ -49,7 +49,7 @@
     overflow-x: hidden;
     position: relative;
     background-image: var(--noise-bg);
-    @apply selection:bg-primary/75 selection:text-white selection:rounded-2xl transition-all duration-300;
+    @apply selection:bg-primary/50 selection:text-primary selection:rounded-2xl transition-all duration-300;
   }
 }
 

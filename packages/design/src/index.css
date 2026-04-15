@@ -13,8 +13,8 @@
   --popover: hsl(0 0% 100%);
   --popover-foreground: hsl(0deg 0% 9.8%);
 
-  --primary: hsl(175, 84%, 32%);
-  --primary-foreground: hsl(0deg 0% 92.16%);
+  --primary: hsl(75 100% 50%);
+  --primary-foreground: hsl(0 0% 5%);
 
   --secondary: hsla(240 4.8% 95.9%);
   --secondary-foreground: hsla(240 5.9% 10%);
@@ -51,32 +51,24 @@
 
 .dark,
 [data-theme="dark"] {
-  --background: hsl(0deg 0% 7.06%);
-  --foreground: hsl(0deg 0% 92.16%);
-
-  --card: hsl(0deg 0% 10%);
-  --card-foreground: hsl(0deg 0% 92.16%);
-
-  --popover: hsl(0deg 0% 10%);
-  --popover-foreground: hsl(0deg 0% 92.16%);
-
-  --primary: hsl(175, 84%, 32%);
-  --primary-foreground: hsl(0deg 0% 92.16%);
-
-  --secondary: hsla(240 3.7% 15.9%);
-  --secondary-foreground: hsla(0 0% 98%);
-
-  --muted: hsl(0deg 0.01% 12.16%);
-  --muted-foreground: hsl(217.9 10.6% 64.9%);
-
-  --accent: hsl(240 3.7% 15.9%);
-  --accent-foreground: hsl(0, 0%, 61%);
-
-  --destructive: oklch(0.704 0.191 22.216);
-  --destructive-foreground: oklch(0.985 0 0);
-
-  --border: hsl(0, 0%, 14%);
-  --input: oklch(1 0 0/15%);
+  --primary: hsl(75 100% 50%);
+  --primary-foreground: hsl(0 0% 5%);
+  --background: hsl(0 0% 5%);
+  --foreground: hsl(0 0% 94%);
+  --card: hsl(0 0% 9%);
+  --card-foreground: hsl(0 0% 94%);
+  --popover: hsl(0 0% 9%);
+  --popover-foreground: hsl(0 0% 94%);
+  --secondary: hsl(0 0% 14%);
+  --secondary-foreground: hsl(0 0% 94%);
+  --muted: hsl(0 0% 14%);
+  --muted-foreground: hsl(0 0% 55%);
+  --accent: hsl(0 0% 14%);
+  --accent-foreground: hsl(0 0% 94%);
+  --destructive: hsl(0 84% 60%);
+  --destructive-foreground: hsl(0 0% 100%);
+  --border: hsl(0 0% 18%);
+  --input: hsl(0 0% 18%);
   --ring: var(--primary);
 
   --noise-bg: linear-gradient(#393737, #1b1b1b);
@@ -129,11 +121,22 @@
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
   @keyframes accordion-down {
-    0% { height: 0; }
-    100% { height: var(--radix-accordion-content-height); }
+    0% {
+      height: 0;
+    }
+
+    100% {
+      height: var(--radix-accordion-content-height);
+    }
   }
+
   @keyframes accordion-up {
-    0% { height: var(--radix-accordion-content-height); }
-    100% { height: 0; }
+    0% {
+      height: var(--radix-accordion-content-height);
+    }
+
+    100% {
+      height: 0;
+    }
   }
 }
