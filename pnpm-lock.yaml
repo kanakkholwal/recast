@@ -45,9 +45,6 @@ importers:
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@recast/ui/utils':
-        specifier: workspace:*
-        version: link:../../packages/utils
       '@sveltejs/adapter-auto':
         specifier: ^7.0.0
         version: 7.0.1(@sveltejs/kit@2.57.1(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.55.3)(vite@7.3.2(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.3)(typescript@5.9.3)(vite@7.3.2(jiti@2.6.1)(lightningcss@1.32.0)))
@@ -139,9 +136,6 @@ importers:
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@recast/ui/utils':
-        specifier: workspace:*
-        version: link:../../packages/utils
       '@sveltejs/kit':
         specifier: ^2.50.2
         version: 2.57.1(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.55.3)(vite@7.3.2(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.3)(typescript@5.9.3)(vite@7.3.2(jiti@2.6.1)(lightningcss@1.32.0))
@@ -181,9 +175,6 @@ importers:
       '@lucide/svelte':
         specifier: ^0.577.0
         version: 0.577.0(svelte@5.55.3)
-      '@recast/ui/utils':
-        specifier: workspace:*
-        version: link:../utils
       '@tabler/icons-svelte':
         specifier: ^3.41.1
         version: 3.41.1(svelte@5.55.3)
@@ -218,15 +209,6 @@ importers:
       tailwindcss:
         specifier: ^4.2.1
         version: 4.2.2
-
-  packages/utils:
-    dependencies:
-      clsx:
-        specifier: latest
-        version: 2.1.1
-      tailwind-merge:
-        specifier: latest
-        version: 3.5.0
 
 packages:
 
