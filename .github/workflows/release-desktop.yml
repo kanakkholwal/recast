@@ -61,10 +61,8 @@ jobs:
       - name: Install Dependencies
         run: pnpm install
 
-      # We run the frontend build via Turbo first to ensure assets exist
-      # Change '@repo/desktop' to match the "name" in apps/desktop/package.json
       - name: Build Frontend
-        run: pnpm turbo run build --filter=@repo/desktop
+        run: pnpm turbo run build --filter=recast-desktop
 
       - name: Clean Rust build
         shell: bash
