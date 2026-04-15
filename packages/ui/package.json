@@ -5,122 +5,130 @@
   "type": "module",
   "exports": {
     ".": {
-      "svelte": "./src/lib/index.ts",
-      "default": "./src/lib/index.ts"
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
     },
     "./badge": {
-      "svelte": "./src/lib/components/ui/badge/index.ts",
-      "default": "./src/lib/components/ui/badge/index.ts"
+      "svelte": "./src/components/ui/badge/index.ts",
+      "default": "./src/components/ui/badge/index.ts"
     },
     "./button": {
-      "svelte": "./src/lib/components/ui/button/index.ts",
-      "default": "./src/lib/components/ui/button/index.ts"
+      "svelte": "./src/components/ui/button/index.ts",
+      "default": "./src/components/ui/button/index.ts"
     },
     "./button-group": {
-      "svelte": "./src/lib/components/ui/button-group/index.ts",
-      "default": "./src/lib/components/ui/button-group/index.ts"
+      "svelte": "./src/components/ui/button-group/index.ts",
+      "default": "./src/components/ui/button-group/index.ts"
     },
     "./card": {
-      "svelte": "./src/lib/components/ui/card/index.ts",
-      "default": "./src/lib/components/ui/card/index.ts"
+      "svelte": "./src/components/ui/card/index.ts",
+      "default": "./src/components/ui/card/index.ts"
     },
     "./checkbox": {
-      "svelte": "./src/lib/components/ui/checkbox/index.ts",
-      "default": "./src/lib/components/ui/checkbox/index.ts"
+      "svelte": "./src/components/ui/checkbox/index.ts",
+      "default": "./src/components/ui/checkbox/index.ts"
     },
     "./command": {
-      "svelte": "./src/lib/components/ui/command/index.ts",
-      "default": "./src/lib/components/ui/command/index.ts"
+      "svelte": "./src/components/ui/command/index.ts",
+      "default": "./src/components/ui/command/index.ts"
     },
     "./dialog": {
-      "svelte": "./src/lib/components/ui/dialog/index.ts",
-      "default": "./src/lib/components/ui/dialog/index.ts"
+      "svelte": "./src/components/ui/dialog/index.ts",
+      "default": "./src/components/ui/dialog/index.ts"
     },
     "./drawer": {
-      "svelte": "./src/lib/components/ui/drawer/index.ts",
-      "default": "./src/lib/components/ui/drawer/index.ts"
+      "svelte": "./src/components/ui/drawer/index.ts",
+      "default": "./src/components/ui/drawer/index.ts"
     },
     "./dropdown-menu": {
-      "svelte": "./src/lib/components/ui/dropdown-menu/index.ts",
-      "default": "./src/lib/components/ui/dropdown-menu/index.ts"
+      "svelte": "./src/components/ui/dropdown-menu/index.ts",
+      "default": "./src/components/ui/dropdown-menu/index.ts"
     },
     "./input": {
-      "svelte": "./src/lib/components/ui/input/index.ts",
-      "default": "./src/lib/components/ui/input/index.ts"
+      "svelte": "./src/components/ui/input/index.ts",
+      "default": "./src/components/ui/input/index.ts"
     },
     "./input-group": {
-      "svelte": "./src/lib/components/ui/input-group/index.ts",
-      "default": "./src/lib/components/ui/input-group/index.ts"
+      "svelte": "./src/components/ui/input-group/index.ts",
+      "default": "./src/components/ui/input-group/index.ts"
     },
     "./label": {
-      "svelte": "./src/lib/components/ui/label/index.ts",
-      "default": "./src/lib/components/ui/label/index.ts"
+      "svelte": "./src/components/ui/label/index.ts",
+      "default": "./src/components/ui/label/index.ts"
     },
     "./radio-group": {
-      "svelte": "./src/lib/components/ui/radio-group/index.ts",
-      "default": "./src/lib/components/ui/radio-group/index.ts"
+      "svelte": "./src/components/ui/radio-group/index.ts",
+      "default": "./src/components/ui/radio-group/index.ts"
     },
     "./select": {
-      "svelte": "./src/lib/components/ui/select/index.ts",
-      "default": "./src/lib/components/ui/select/index.ts"
+      "svelte": "./src/components/ui/select/index.ts",
+      "default": "./src/components/ui/select/index.ts"
     },
     "./separator": {
-      "svelte": "./src/lib/components/ui/separator/index.ts",
-      "default": "./src/lib/components/ui/separator/index.ts"
+      "svelte": "./src/components/ui/separator/index.ts",
+      "default": "./src/components/ui/separator/index.ts"
     },
     "./sheet": {
-      "svelte": "./src/lib/components/ui/sheet/index.ts",
-      "default": "./src/lib/components/ui/sheet/index.ts"
+      "svelte": "./src/components/ui/sheet/index.ts",
+      "default": "./src/components/ui/sheet/index.ts"
     },
     "./sidebar": {
-      "svelte": "./src/lib/components/ui/sidebar/index.ts",
-      "default": "./src/lib/components/ui/sidebar/index.ts"
+      "svelte": "./src/components/ui/sidebar/index.ts",
+      "default": "./src/components/ui/sidebar/index.ts"
     },
     "./skeleton": {
-      "svelte": "./src/lib/components/ui/skeleton/index.ts",
-      "default": "./src/lib/components/ui/skeleton/index.ts"
+      "svelte": "./src/components/ui/skeleton/index.ts",
+      "default": "./src/components/ui/skeleton/index.ts"
     },
     "./sonner": {
-      "svelte": "./src/lib/components/ui/sonner/index.ts",
-      "default": "./src/lib/components/ui/sonner/index.ts"
+      "svelte": "./src/components/ui/sonner/index.ts",
+      "default": "./src/components/ui/sonner/index.ts"
     },
     "./spinner": {
-      "svelte": "./src/lib/components/ui/spinner/index.ts",
-      "default": "./src/lib/components/ui/spinner/index.ts"
+      "svelte": "./src/components/ui/spinner/index.ts",
+      "default": "./src/components/ui/spinner/index.ts"
     },
     "./tabs": {
-      "svelte": "./src/lib/components/ui/tabs/index.ts",
-      "default": "./src/lib/components/ui/tabs/index.ts"
+      "svelte": "./src/components/ui/tabs/index.ts",
+      "default": "./src/components/ui/tabs/index.ts"
     },
     "./textarea": {
-      "svelte": "./src/lib/components/ui/textarea/index.ts",
-      "default": "./src/lib/components/ui/textarea/index.ts"
+      "svelte": "./src/components/ui/textarea/index.ts",
+      "default": "./src/components/ui/textarea/index.ts"
     },
     "./tooltip": {
-      "svelte": "./src/lib/components/ui/tooltip/index.ts",
-      "default": "./src/lib/components/ui/tooltip/index.ts"
+      "svelte": "./src/components/ui/tooltip/index.ts",
+      "default": "./src/components/ui/tooltip/index.ts"
+    },
+    "./hover-card": {
+      "svelte": "./src/components/ui/hover-card/index.ts",
+      "default": "./src/components/ui/hover-card/index.ts"
     },
     "./theme": {
-      "svelte": "./src/lib/components/ui/theme.ts",
-      "default": "./src/lib/components/ui/theme.ts"
+      "svelte": "./src/components/ui/theme.ts",
+      "default": "./src/components/ui/theme.ts"
+    },
+    "./utils": {
+      "svelte": "./src/lib/utils.ts",
+      "default": "./src/lib/utils.ts"
     }
   },
   "peerDependencies": {
     "svelte": "^5.0.0"
   },
   "dependencies": {
-    "tailwind-variants": "^3.2.2",
-    "tailwind-merge": "^3.5.0",
-    "clsx": "^2.1.1",
-    "@recast/utils": "workspace:*",
     "@lucide/svelte": "^0.577.0",
     "@tabler/icons-svelte": "^3.41.1",
     "bits-ui": "^2.16.3",
-    "svelte-sonner": "^1.1.0",
+    "clsx": "^2.1.1",
     "mode-watcher": "^1.1.0",
+    "svelte-sonner": "^1.1.0",
+    "tailwind-merge": "^3.5.0",
+    "tailwind-variants": "^3.2.2",
     "vaul-svelte": "^1.0.0-next.7"
   },
   "devDependencies": {
+    "@internationalized/date": "^3.12.0",
     "svelte": "^5.0.0",
     "tailwindcss": "^4.2.1"
   },

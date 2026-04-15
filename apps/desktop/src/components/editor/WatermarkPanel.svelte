@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { convertFileSrc } from "@tauri-apps/api/core";
 	import type { EditorStore, WatermarkPosition } from "$lib/stores/editor-store.svelte";
 	import { ImagePlus, Stamp, Trash2 } from "@lucide/svelte";
+	import { toast } from "@recast/ui/sonner";
+	import { convertFileSrc } from "@tauri-apps/api/core";
 	import InspectorHint from "./InspectorHint.svelte";
 	import SliderControl from "./SliderControl.svelte";
-	import { toast } from "svelte-sonner";
 
 	interface Props {
 		store: EditorStore;

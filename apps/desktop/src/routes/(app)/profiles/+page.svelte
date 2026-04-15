@@ -1,7 +1,5 @@
 <script lang="ts">
   import { RecastList, type RecastAccessory, type RecastListItem } from "$components/recast";
-  import { Button } from "@recast/ui/button";
-  import { cn } from "@recast/utils";
   import {
     Camera,
     CheckCircle2,
@@ -13,8 +11,10 @@
     Trash2,
     Volume2,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { toast } from "@recast/ui/sonner";
+  import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
-  import { toast } from "svelte-sonner";
 
   interface RecordingProfile {
     id: string;

@@ -1,8 +1,4 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Separator } from "@recast/ui/separator";
-  import * as Tooltip from "@recast/ui/tooltip";
   import type {
     BackgroundType,
     EditorStore,
@@ -21,6 +17,10 @@
     Trash2,
     Undo2,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import * as DropdownMenu from "@recast/ui/dropdown-menu";
+  import { Separator } from "@recast/ui/separator";
+  import * as Tooltip from "@recast/ui/tooltip";
 
   interface Props {
     store: EditorStore;

@@ -1,6 +1,5 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { Button } from "@recast/ui/button";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import { config } from "$constants/app";
   import {
@@ -11,6 +10,7 @@
     Home,
     RefreshCcw,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
 
   $: status = $page.status;
   $: message = $page.error?.message || "An unexpected error occurred.";

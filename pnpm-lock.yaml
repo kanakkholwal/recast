@@ -45,7 +45,7 @@ importers:
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@recast/utils':
+      '@recast/ui/utils':
         specifier: workspace:*
         version: link:../../packages/utils
       '@sveltejs/adapter-auto':
@@ -139,7 +139,7 @@ importers:
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui
-      '@recast/utils':
+      '@recast/ui/utils':
         specifier: workspace:*
         version: link:../../packages/utils
       '@sveltejs/kit':
@@ -181,7 +181,7 @@ importers:
       '@lucide/svelte':
         specifier: ^0.577.0
         version: 0.577.0(svelte@5.55.3)
-      '@recast/utils':
+      '@recast/ui/utils':
         specifier: workspace:*
         version: link:../utils
       '@tabler/icons-svelte':
@@ -209,6 +209,9 @@ importers:
         specifier: ^1.0.0-next.7
         version: 1.0.0-next.7(svelte@5.55.3)
     devDependencies:
+      '@internationalized/date':
+        specifier: ^3.12.0
+        version: 3.12.0
       svelte:
         specifier: ^5.0.0
         version: 5.55.3

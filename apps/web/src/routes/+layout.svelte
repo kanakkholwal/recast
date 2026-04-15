@@ -1,7 +1,7 @@
 <script lang="ts">
 	import favicon from "$lib/assets/favicon.svg";
-	import { ModeWatcher } from "mode-watcher";
-	import { Toaster } from "svelte-sonner";
+	import { Toaster } from "@recast/ui/sonner";
+	import { ModeWatcher } from "@recast/ui/theme";
 	import "../app.css";
 	let { children } = $props();
 </script>

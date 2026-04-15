@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
   import {
     getAudioDevices,
     getCameraDevices,
@@ -22,6 +21,7 @@
     VolumeOff,
     X,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
   import { emit, listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Command from "@recast/ui/command";
 	import * as Dialog from "@recast/ui/dialog";
-	import { cn } from "@recast/utils";
+	import { cn } from "@recast/ui/utils";
 	import type { RecastAction } from "./types";
 
 	interface Props {

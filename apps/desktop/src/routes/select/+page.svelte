@@ -1,6 +1,5 @@
 <script lang="ts">
   import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
-  import { Button } from "@recast/ui/button";
   import { getDisplays, getWindows } from "$lib/ipc";
   import {
     AppWindow,
@@ -9,6 +8,7 @@
     RefreshCw,
     X,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";

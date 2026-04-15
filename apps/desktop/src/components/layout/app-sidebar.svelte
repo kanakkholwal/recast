@@ -1,11 +1,12 @@
 <script lang="ts">
   import { page } from "$app/state";
   import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
+  import Logo from "$components/logo.svelte";
+  import { launchRecordingPanel } from "$lib/ipc";
+  import { Download, Film, LayoutDashboard, Radio, Settings, SlidersHorizontal } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";
-  import { launchRecordingPanel } from "$lib/ipc";
-  import { cn } from "@recast/utils";
-  import { Download, Film, Hexagon, LayoutDashboard, Radio, Settings, SlidersHorizontal } from "@lucide/svelte";
+  import { cn } from "@recast/ui/utils";
   import type { ComponentProps } from "svelte";
 
   let currentPath = $derived(page.url.pathname);
@@ -34,10 +35,11 @@
         class="group flex items-center gap-2.5 transition-opacity hover:opacity-80"
       >
         <div
-          class="flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"
+          class="flex size-7 shrink-0 items-center justify-center rounded-lg text-primary-foreground"
           data-tauri-drag-region
         >
-          <Hexagon size={15} class="fill-current" strokeWidth={2.5} />
+          <!-- <Hexagon size={15} class="fill-current" strokeWidth={2.5} /> -->
+           <Logo size="18" color="var(--primary)" />
         </div>
         <h1
           class="text-[13px] font-semibold tracking-tight group-data-[state=collapsed]:hidden"

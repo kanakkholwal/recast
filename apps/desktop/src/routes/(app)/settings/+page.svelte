@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
   import { config } from "$constants/app";
   import { getOutputDir, setOutputDir } from "$lib/ipc";
   import {
@@ -11,9 +10,10 @@
     Navigation,
     Sun,
   } from "@lucide/svelte";
-  import { setMode } from "mode-watcher";
+  import { Button } from "@recast/ui/button";
+  import { toast } from "@recast/ui/sonner";
+  import { setMode } from "@recast/ui/theme";
   import { onMount } from "svelte";
-  import { toast } from "svelte-sonner";
 
   let outputDir = $state("");
   let currentTheme = $state<"light" | "dark" | "system">("system");

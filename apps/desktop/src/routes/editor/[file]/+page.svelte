@@ -7,7 +7,6 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-  import { Button } from "@recast/ui/button";
   import {
     autosaveProject,
     cancelExport,
@@ -19,10 +18,11 @@
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { toast } from "@recast/ui/sonner";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { onDestroy, tick } from "svelte";
-  import { toast } from "svelte-sonner";
 
   interface Props {
     data: {

@@ -7,7 +7,7 @@
     type BackgroundType,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { cn } from "@recast/utils";
+  import { cn } from "@recast/ui/utils";
   import { Image } from "@unpic/svelte";
   import {
     Blend,

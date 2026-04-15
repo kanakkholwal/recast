@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from "@recast/utils";
+	import { cn } from "@recast/ui/utils";
 	let { children, class: className = "", id = "" } = $props();
 </script>
 

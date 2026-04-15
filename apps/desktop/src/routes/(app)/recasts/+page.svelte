@@ -6,7 +6,6 @@
     RenameDialog,
     type RecastListItem,
   } from "$components/recast";
-  import { Button } from "@recast/ui/button";
   import {
     deleteFile,
     generateThumbnails,
@@ -23,10 +22,11 @@
     RefreshCw,
     Trash2,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { toast } from "@recast/ui/sonner";
   import { listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
-  import { toast } from "svelte-sonner";
 
   let entries = $state<RecordingEntry[]>([]);
   let isLoading = $state(true);

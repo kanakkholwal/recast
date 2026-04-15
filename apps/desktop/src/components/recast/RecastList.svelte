@@ -1,8 +1,8 @@
 <script lang="ts">
+	import { Command as CommandIcon, Sparkles, X } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import * as Command from "@recast/ui/command";
-	import { cn } from "@recast/utils";
-	import { Command as CommandIcon, Sparkles, X } from "@lucide/svelte";
+	import { cn } from "@recast/ui/utils";
 	import { onMount, type Snippet } from "svelte";
 	import ActionPanel from "./ActionPanel.svelte";
 	import TopProgress from "./TopProgress.svelte";

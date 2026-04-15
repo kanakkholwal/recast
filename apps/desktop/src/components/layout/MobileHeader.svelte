@@ -1,7 +1,7 @@
 <script lang="ts">
   import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
-  import { Trigger as SidebarTrigger } from "@recast/ui/sidebar";
   import { Hexagon } from "@lucide/svelte";
+  import { Trigger as SidebarTrigger } from "@recast/ui/sidebar";
 </script>
 
 <header class="flex h-16 items-center justify-between px-4">

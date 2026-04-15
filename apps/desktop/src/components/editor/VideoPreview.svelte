@@ -2,7 +2,7 @@
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
-	import { onMount, onDestroy } from "svelte";
+	import { onDestroy, onMount } from "svelte";
 
 	interface Props {
 		store: EditorStore;

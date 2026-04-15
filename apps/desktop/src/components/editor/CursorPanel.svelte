@@ -1,7 +1,5 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { cn } from "@recast/utils";
   import {
     Activity,
     Eye,
@@ -9,6 +7,8 @@
     MousePointer,
     Sparkles,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import InspectorHint from "./InspectorHint.svelte";
   import SliderControl from "./SliderControl.svelte";
 

@@ -1,11 +1,11 @@
 <script lang="ts">
+  import { buildGlobalCommands } from "$lib/commands";
+  import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
+  import { Search } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Command from "@recast/ui/command";
   import * as Dialog from "@recast/ui/dialog";
-  import { buildGlobalCommands } from "$lib/commands";
-  import { commandPalette, type PaletteCommand } from "$lib/stores/command-palette.svelte";
-  import { cn } from "@recast/utils";
-  import { Search } from "@lucide/svelte";
+  import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
 
   let { iconOnly } = $props<{ iconOnly?: boolean }>();

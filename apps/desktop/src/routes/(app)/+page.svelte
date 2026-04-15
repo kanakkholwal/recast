@@ -21,10 +21,10 @@
     Settings as SettingsIcon,
     SlidersHorizontal
   } from "@lucide/svelte";
+  import { toast } from "@recast/ui/sonner";
   import { listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
-  import { toast } from "@recast/ui/sonner";
 
   let recasts = $state<RecordingEntry[]>([]);
   let exports_ = $state<RecordingEntry[]>([]);

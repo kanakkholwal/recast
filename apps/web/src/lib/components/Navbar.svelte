@@ -1,7 +1,7 @@
 <script lang="ts">
 	import Logo from "$lib/logo.svelte";
 	import { Button } from "@recast/ui/button";
-	import { cn } from "@recast/utils";
+	import { cn } from "@recast/ui/utils";
 	import { Container } from ".";
 
 	let { class: className = "" } = $props();

@@ -5,7 +5,6 @@
     RenameDialog,
     type RecastListItem,
   } from "$components/recast";
-  import { Button } from "@recast/ui/button";
   import {
     deleteFile,
     generateThumbnails,
@@ -15,8 +14,9 @@
     type RecordingEntry,
   } from "$lib/ipc";
   import { FolderOpen, Pencil, Play, RefreshCw, Trash2 } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { toast } from "@recast/ui/sonner";
   import { onMount } from "svelte";
-  import { toast } from "svelte-sonner";
 
   let entries = $state<RecordingEntry[]>([]);
   let isLoading = $state(true);

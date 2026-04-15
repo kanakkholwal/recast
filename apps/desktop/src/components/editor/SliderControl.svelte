@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { cn } from "@recast/utils";
+  import { cn } from "@recast/ui/utils";
   import type { Snippet } from "svelte";
 
   interface Props {
