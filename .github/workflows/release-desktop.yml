@@ -62,7 +62,7 @@ jobs:
         run: pnpm install
 
       - name: Build Frontend
-        run: pnpm turbo run build --filter=recast-desktop
+        run: pnpm run build --filter=recast-desktop
 
       - name: Clean Rust build
         shell: bash
