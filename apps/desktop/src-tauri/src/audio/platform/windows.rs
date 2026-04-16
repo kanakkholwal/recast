@@ -3,7 +3,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 
 use crate::audio::wav::WavWriter;
 use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
@@ -56,7 +56,10 @@ impl PlatformMicrophoneSession {
             .spawn(move || capture_microphone_thread(config, flag_clone))
             .context("failed to spawn microphone capture thread")?;
 
-        log::info!("microphone capture started, output: {}", output_path.display());
+        log::info!(
+            "microphone capture started, output: {}",
+            output_path.display()
+        );
 
         Ok(Self {
             stop_flag,
@@ -74,10 +77,13 @@ impl PlatformMicrophoneSession {
 
 /// WASAPI microphone capture running on a dedicated thread.
 /// Captures from a specific microphone device and writes PCM data as WAV.
-fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<AtomicBool>) -> Result<PathBuf> {
+fn capture_microphone_thread(
+    config: MicrophoneCaptureConfig,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<PathBuf> {
+    use windows::core::HSTRING;
     use windows::Win32::Media::Audio::*;
     use windows::Win32::System::Com::*;
-    use windows::core::HSTRING;
 
     unsafe {
         CoInitializeEx(None, COINIT_MULTITHREADED)
@@ -88,7 +94,9 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
     struct ComGuard;
     impl Drop for ComGuard {
         fn drop(&mut self) {
-            unsafe { CoUninitialize(); }
+            unsafe {
+                CoUninitialize();
+            }
         }
     }
     let _com_guard = ComGuard;
@@ -134,7 +142,10 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
 
     log::info!(
         "WASAPI microphone format: {}Hz, {} channels, {} bits, block_align={}",
-        sample_rate, channels, bits_per_sample, block_align
+        sample_rate,
+        channels,
+        bits_per_sample,
+        block_align
     );
 
     // Initialize in shared mode WITHOUT loopback flag — this captures from the mic input.
@@ -159,12 +170,7 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
     };
 
     let wav_bits = if bits_per_sample == 32 { 32u16 } else { 16u16 };
-    let mut wav_writer = WavWriter::new(
-        &config.output_path,
-        sample_rate,
-        channels,
-        wav_bits,
-    )?;
+    let mut wav_writer = WavWriter::new(&config.output_path, sample_rate, channels, wav_bits)?;
 
     unsafe {
         audio_client
@@ -177,9 +183,7 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
         thread::sleep(std::time::Duration::from_millis(10));
 
         loop {
-            let packet_length = unsafe {
-                capture_client.GetNextPacketSize().unwrap_or(0)
-            };
+            let packet_length = unsafe { capture_client.GetNextPacketSize().unwrap_or(0) };
             if packet_length == 0 {
                 break;
             }
@@ -209,9 +213,7 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
                     let silence = vec![0u8; byte_count];
                     let _ = wav_writer.write_samples(&silence);
                 } else {
-                    let data = unsafe {
-                        std::slice::from_raw_parts(buffer_ptr, byte_count)
-                    };
+                    let data = unsafe { std::slice::from_raw_parts(buffer_ptr, byte_count) };
                     let _ = wav_writer.write_samples(data);
                 }
             }
@@ -228,9 +230,7 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
 
     // Drain remaining packets.
     loop {
-        let packet_length = unsafe {
-            capture_client.GetNextPacketSize().unwrap_or(0)
-        };
+        let packet_length = unsafe { capture_client.GetNextPacketSize().unwrap_or(0) };
         if packet_length == 0 {
             break;
         }
@@ -259,9 +259,7 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
                 let silence = vec![0u8; byte_count];
                 let _ = wav_writer.write_samples(&silence);
             } else {
-                let data = unsafe {
-                    std::slice::from_raw_parts(buffer_ptr, byte_count)
-                };
+                let data = unsafe { std::slice::from_raw_parts(buffer_ptr, byte_count) };
                 let _ = wav_writer.write_samples(data);
             }
         }
@@ -276,13 +274,19 @@ fn capture_microphone_thread(config: MicrophoneCaptureConfig, stop_flag: Arc<Ato
     }
 
     wav_writer.finish()?;
-    log::info!("microphone capture finished: {}", config.output_path.display());
+    log::info!(
+        "microphone capture finished: {}",
+        config.output_path.display()
+    );
     Ok(config.output_path)
 }
 
 /// WASAPI loopback capture running on a dedicated thread.
 /// Captures system audio output (what-you-hear) and writes it as WAV.
-fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool>) -> Result<PathBuf> {
+fn capture_loopback_thread(
+    config: AudioCaptureConfig,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<PathBuf> {
     use windows::Win32::Media::Audio::*;
     use windows::Win32::System::Com::*;
 
@@ -297,7 +301,9 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
     struct ComGuard;
     impl Drop for ComGuard {
         fn drop(&mut self) {
-            unsafe { CoUninitialize(); }
+            unsafe {
+                CoUninitialize();
+            }
         }
     }
     let _com_guard = ComGuard;
@@ -368,12 +374,7 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
     // Determine output WAV format.
     // WASAPI loopback typically gives us 32-bit float. We'll write it as-is.
     let wav_bits = if bits_per_sample == 32 { 32u16 } else { 16u16 };
-    let mut wav_writer = WavWriter::new(
-        &config.output_path,
-        sample_rate,
-        channels,
-        wav_bits,
-    )?;
+    let mut wav_writer = WavWriter::new(&config.output_path, sample_rate, channels, wav_bits)?;
 
     // Start capturing.
     unsafe {
@@ -389,11 +390,7 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
         thread::sleep(std::time::Duration::from_millis(10));
 
         loop {
-            let packet_length = unsafe {
-                capture_client
-                    .GetNextPacketSize()
-                    .unwrap_or(0)
-            };
+            let packet_length = unsafe { capture_client.GetNextPacketSize().unwrap_or(0) };
 
             if packet_length == 0 {
                 break;
@@ -426,9 +423,7 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
                     let _ = wav_writer.write_samples(&silence);
                 } else {
                     // Copy the captured audio data.
-                    let data = unsafe {
-                        std::slice::from_raw_parts(buffer_ptr, byte_count)
-                    };
+                    let data = unsafe { std::slice::from_raw_parts(buffer_ptr, byte_count) };
                     let _ = wav_writer.write_samples(data);
                 }
             }
@@ -446,9 +441,7 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
 
     // Drain any remaining packets after stopping.
     loop {
-        let packet_length = unsafe {
-            capture_client.GetNextPacketSize().unwrap_or(0)
-        };
+        let packet_length = unsafe { capture_client.GetNextPacketSize().unwrap_or(0) };
         if packet_length == 0 {
             break;
         }
@@ -477,9 +470,7 @@ fn capture_loopback_thread(config: AudioCaptureConfig, stop_flag: Arc<AtomicBool
                 let silence = vec![0u8; byte_count];
                 let _ = wav_writer.write_samples(&silence);
             } else {
-                let data = unsafe {
-                    std::slice::from_raw_parts(buffer_ptr, byte_count)
-                };
+                let data = unsafe { std::slice::from_raw_parts(buffer_ptr, byte_count) };
                 let _ = wav_writer.write_samples(data);
             }
         }

@@ -115,19 +115,19 @@
       </span>
     </div>
 
-    <Tabs.Content value="background" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+    <Tabs.Content value="background" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
       <BackgroundPicker {store} />
     </Tabs.Content>
 
-    <Tabs.Content value="focus" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+    <Tabs.Content value="focus" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
       <FocusPanel {store} />
     </Tabs.Content>
 
-    <Tabs.Content value="cursor" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+    <Tabs.Content value="cursor" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
       <CursorPanel {store} />
     </Tabs.Content>
 
-    <Tabs.Content value="audio" class="min-h-0 flex-1 overflow-y-auto px-3 py-3">
+    <Tabs.Content value="audio" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
       <AudioPanel {store} />
     </Tabs.Content>
   </Tabs.Root>

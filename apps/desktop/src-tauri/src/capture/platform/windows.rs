@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use xcap::Monitor;
 
 use crate::capture::CaptureSource;
@@ -77,12 +77,13 @@ struct DxgiSource {
 
 impl DxgiSource {
     fn new(target: &CaptureTarget) -> Result<Self> {
+        use ::windows::core::Interface;
         use ::windows::Win32::Foundation::RECT;
         use ::windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
         use ::windows::Win32::Graphics::Direct3D11::{
-            D3D11_CPU_ACCESS_READ, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION,
-            D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, D3D11CreateDevice, ID3D11Device,
-            ID3D11DeviceContext,
+            D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, D3D11_CPU_ACCESS_READ,
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
+            D3D11_USAGE_STAGING,
         };
         use ::windows::Win32::Graphics::Dxgi::Common::{
             DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
@@ -91,7 +92,6 @@ impl DxgiSource {
             CreateDXGIFactory1, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput,
             IDXGIOutput1,
         };
-        use ::windows::core::Interface;
 
         let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory1()? };
         let target_rect = RECT {
@@ -185,13 +185,13 @@ impl DxgiSource {
 
 impl CaptureSource for DxgiSource {
     fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>> {
+        use ::windows::core::Interface;
         use ::windows::Win32::Graphics::Direct3D11::{
-            D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, ID3D11Resource, ID3D11Texture2D,
+            ID3D11Resource, ID3D11Texture2D, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
         };
         use ::windows::Win32::Graphics::Dxgi::{
-            DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO, IDXGIResource,
+            IDXGIResource, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
         };
-        use ::windows::core::Interface;
 
         let mut frame_info = DXGI_OUTDUPL_FRAME_INFO::default();
         let mut resource = None;

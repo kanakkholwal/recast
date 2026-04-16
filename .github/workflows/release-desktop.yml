@@ -1,4 +1,5 @@
 name: Release Desktop App
+
 on:
   push:
     tags:
@@ -9,93 +10,193 @@ on:
         description: "Release tag (e.g. v1.0.0)"
         required: true
         type: string
+
+concurrency:
+  group: release-desktop-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
 env:
-  NODE_ENV: production
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10.23.0"
+  RUST_BACKTRACE: "1"
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: "0"
 
 jobs:
-  build-and-release:
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      release_id: ${{ steps.create_release.outputs.id }}
+      tag_name: ${{ steps.resolve_tag.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: resolve_tag
+        shell: bash
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Create or reuse draft release
+        id: create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: "Recast ${{ steps.resolve_tag.outputs.tag }}"
+          draft: true
+          prerelease: false
+          body: |
+            ## 🎉 Recast Release ${{ steps.resolve_tag.outputs.tag }}
+
+            ### 📦 Available Downloads
+
+            **Windows**: Download the `.msi` installer or `.exe` for your system.
+            **macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.
+            **Linux**: Download the `.AppImage` for universal Linux support.
+
+            ### 🚀 Installation
+            - **Windows**: Run the installer and follow the prompts.
+            - **macOS**: Mount the `.dmg` file and drag Recast to Applications.
+            - **Linux**: Make the AppImage executable and run it.
+
+            ### ⚠️ Important Note on Code Signing
+            These applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:
+            - You may see security warnings when installing on Windows or macOS
+            - This is normal and expected for open-source projects without commercial signing
+            - The code is safe to use and can be verified from our public repository
+
+            ### 📝 Additional Notes
+            - Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.
+            - Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).
+
+            **Happy recording! 🎥✨**
+
+  build-desktop:
+    name: Build (${{ matrix.platform.name }})
+    needs: create-release
     permissions:
       contents: write
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-          - os: ubuntu-22.04
-          - os: macos-latest
-    runs-on: ${{ matrix.os }}
+        platform:
+          - name: macos-arm64
+            os: macos-latest
+            rust_target: aarch64-apple-darwin
+            tauri_args: --target aarch64-apple-darwin
+          - name: macos-x64
+            os: macos-latest
+            rust_target: x86_64-apple-darwin
+            tauri_args: --target x86_64-apple-darwin
+          - name: linux-x64
+            os: ubuntu-22.04
+            rust_target: x86_64-unknown-linux-gnu
+            tauri_args: ""
+          - name: windows-x64
+            os: windows-latest
+            rust_target: x86_64-pc-windows-msvc
+            tauri_args: ""
+    runs-on: ${{ matrix.platform.os }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Install pnpm
-        uses: pnpm/action-setup@v3
+        uses: pnpm/action-setup@v4
         with:
-          version: 9
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 20
-          cache: 'pnpm'
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
-      - name: Install Rust
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform.rust_target }}
 
-      - name: Rust Cache
+      - name: Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: "./apps/desktop/src-tauri -> target"
+          key: ${{ matrix.platform.rust_target }}
+          shared-key: tauri-${{ matrix.platform.name }}
+          cache-on-failure: true
 
-      - name: Install Linux Dependencies
-        if: matrix.os == 'ubuntu-22.04'
+      - name: Cache turbo build outputs
+        uses: actions/cache@v4
+        with:
+          path: .turbo
+          key: turbo-${{ matrix.platform.os }}-${{ github.sha }}
+          restore-keys: |
+            turbo-${{ matrix.platform.os }}-
+
+      - name: Install Linux system dependencies
+        if: matrix.platform.os == 'ubuntu-22.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
+            libayatana-appindicator3-dev \
             patchelf \
             libssl-dev \
-            libgtk-3-dev
+            libgtk-3-dev \
+            libsoup-3.0-dev \
+            libjavascriptcoregtk-4.1-dev
 
-      - name: Install Dependencies
-        run: pnpm install
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
 
-      - name: Build Frontend
+      - name: Build frontend (via turbo)
         run: pnpm turbo run build --filter=recast-desktop
 
-      - name: Clean Rust build
-        shell: bash
-        run: cd apps/desktop/src-tauri && cargo clean
-
-      - name: Install msixbundle-cli (Windows only)
-        if: matrix.os == 'windows-latest'
-        run: cargo install msixbundle-cli
-
-      - name: Build and Release
+      - name: Build & publish Tauri app
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # APPLE_ID: ${{ secrets.APPLE_ID }}
+          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           projectPath: ./apps/desktop
-          tagName: ${{ inputs.tag || github.ref_name }}
-          releaseName: "Recast - Release ${{ inputs.tag || github.ref_name }}"
-          releaseBody: "## 🎉 Recast Release ${{ inputs.tag || github.ref_name }}\n\n### 📦 Available Downloads\n\n**Windows**: Download the `.msi` installer or `.exe` for your system.\n**macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.\n**Linux**: Download the `.AppImage` for universal Linux support.\n\n### 🚀 Installation\n- **Windows**: Run the installer and follow the prompts.\n- **macOS**: Mount the `.dmg` file and drag Recast to Applications.\n- **Linux**: Make the AppImage executable and run it.\n\n### ⚠️ Important Note on Code Signing\nThese applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:\n- You may see security warnings when installing on Windows or macOS\n- This is normal and expected for open-source projects without commercial signing\n- The code is safe to use and can be verified from our public repository\n\n### 📝 Additional Notes\n- Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.\n- Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).\n\n**Happy recording! 🎥✨**"
-          releaseDraft: false
+          tagName: ${{ needs.create-release.outputs.tag_name }}
+          releaseId: ${{ needs.create-release.outputs.release_id }}
+          releaseDraft: true
           prerelease: false
+          args: ${{ matrix.platform.tauri_args }}
 
-      - name: Build MSIX bundle (Windows only)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          cd apps/desktop
-          pnpm tauri build --filter=recast-desktop --arch x64,arm64
-
-      - name: Upload MSIX Artifacts
-        if: matrix.os == 'windows-latest'
+      - name: Upload build artifacts (debug aid)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: msix-bundle
-          path: apps/desktop/src-tauri/target/msix/*.msixbundle
+          name: recast-${{ matrix.platform.name }}-${{ needs.create-release.outputs.tag_name }}
+          path: |
+            apps/desktop/src-tauri/target/release/bundle/**/*
+            apps/desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/**/*
+          if-no-files-found: ignore
+          retention-days: 7
+
+  publish-release:
+    name: Publish release
+    needs: [create-release, build-desktop]
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - name: Publish draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: false
+          prerelease: false

@@ -2,7 +2,7 @@ use std::io::Cursor;
 use std::path::Path;
 use std::process::Command;
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use image::codecs::png::PngEncoder;
 use image::{ColorType, ImageEncoder};
 
@@ -200,13 +200,11 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
                 .as_str()
                 .and_then(|value| value.parse::<f64>().ok())
                 .unwrap_or_default();
-            let video_stream = parsed["streams"]
-                .as_array()
-                .and_then(|streams| {
-                    streams
-                        .iter()
-                        .find(|stream| stream["codec_type"].as_str() == Some("video"))
-                });
+            let video_stream = parsed["streams"].as_array().and_then(|streams| {
+                streams
+                    .iter()
+                    .find(|stream| stream["codec_type"].as_str() == Some("video"))
+            });
 
             let (width, height, fps, codec) = if let Some(stream) = video_stream {
                 let fps_text = stream["r_frame_rate"].as_str().unwrap_or("30/1");
@@ -295,8 +293,12 @@ pub fn make_thumbnail(img: &image::RgbaImage) -> image::RgbaImage {
     let scaled_h = (h as f32 * scale)
         .round()
         .clamp(1.0, THUMBNAIL_HEIGHT as f32) as u32;
-    let resized =
-        image::imageops::resize(img, scaled_w, scaled_h, image::imageops::FilterType::Triangle);
+    let resized = image::imageops::resize(
+        img,
+        scaled_w,
+        scaled_h,
+        image::imageops::FilterType::Triangle,
+    );
     let mut canvas = image::RgbaImage::from_pixel(
         THUMBNAIL_WIDTH,
         THUMBNAIL_HEIGHT,

@@ -102,9 +102,7 @@ pub fn preferred_h264_encoder() -> &'static str {
 
 /// Check if ffmpeg is available. Returns an error message if not.
 pub fn check_availability() -> Result<(), String> {
-    let output = Command::new(ffmpeg_path())
-        .arg("-version")
-        .output();
+    let output = Command::new(ffmpeg_path()).arg("-version").output();
 
     match output {
         Ok(o) if o.status.success() => Ok(()),

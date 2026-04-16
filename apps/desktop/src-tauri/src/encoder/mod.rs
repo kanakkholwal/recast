@@ -1,14 +1,14 @@
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 
-use crate::recording::{CaptureArea, pipeline::RecordingPipeline};
+use crate::recording::{pipeline::RecordingPipeline, CaptureArea};
 
 /// Configuration for the live recording encoder.
 #[derive(Clone, Debug)]

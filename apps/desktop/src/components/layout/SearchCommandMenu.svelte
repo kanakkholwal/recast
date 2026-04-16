@@ -77,7 +77,7 @@
     </Dialog.Header>
     <Command.Root class="rounded-xl bg-popover">
       <Command.Input placeholder="Search anything..." />
-      <Command.List class="max-h-96">
+      <Command.List class="max-h-96 scrollbar-transparent">
         <Command.Empty>
           <div class="py-8 text-center">
             <p class="text-sm font-medium text-foreground">No results</p>

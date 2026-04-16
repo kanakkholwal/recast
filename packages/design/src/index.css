@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:where([data-theme="dark"], .dark, .dark *, [data-theme="dark"] *));
 
@@ -141,38 +142,48 @@
   }
 }
 
-::-webkit-scrollbar {
+.scrollbar-transparent {
+  scrollbar-width: thin;
+  scrollbar-color:
+    color-mix(in srgb, var(--foreground) 15%, transparent) transparent;
+  scroll-behavior: smooth;
+  scrollbar-width: thin;
+}
+
+.scrollbar-transparent::-webkit-scrollbar {
   width: 8px;
   height: 8px
 }
 
-::-webkit-scrollbar-track {
+.scrollbar-transparent::-webkit-scrollbar-track {
   background: hsl(var(--muted));
   border-radius: .5rem
 }
 
-::-webkit-scrollbar-thumb {
+.scrollbar-transparent::-webkit-scrollbar-thumb {
   background: linear-gradient(135deg, hsl(var(--primary) / .6), hsl(var(--secondary) / .8));
   border: 2px solid hsl(var(--background));
   border-radius: .5rem;
   transition: all .2s ease-in-out
 }
 
-::-webkit-scrollbar-thumb:hover {
+.scrollbar-transparent::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(135deg, hsl(var(--primary) / .8), hsl(var(--secondary) / 1));
   transform: scale(1.1)
 }
 
-::-webkit-scrollbar-thumb:active {
+.scrollbar-transparent::-webkit-scrollbar-thumb:active {
   background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)))
 }
 
-::-webkit-scrollbar-corner {
+.scrollbar-transparent::-webkit-scrollbar-corner {
   background: hsl(var(--background))
 }
 
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;
-  scrollbar-color: hsl(var(--primary) / .6) hsl(var(--muted))
+  scrollbar-color:
+    color-mix(in srgb, var(--foreground) 15%, transparent) transparent;
+  /* scrollbar-color: hsl(var(--primary) / .6) hsl(var(--muted)) */
 }

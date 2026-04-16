@@ -2,8 +2,8 @@ mod platform;
 pub mod smoothing;
 
 use std::path::Path;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -11,7 +11,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use platform::sample_cursor_state;
-use smoothing::{IdlePeriod, ZoomTrigger, detect_idle_periods, detect_zoom_triggers};
+use smoothing::{detect_idle_periods, detect_zoom_triggers, IdlePeriod, ZoomTrigger};
 
 // ── Data types ──────────────────────────────────────────────────────────
 

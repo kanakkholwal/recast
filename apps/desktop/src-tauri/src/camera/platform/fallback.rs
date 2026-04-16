@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 
 use crate::camera::CameraCaptureConfig;
 

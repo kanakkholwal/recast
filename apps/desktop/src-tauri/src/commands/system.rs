@@ -166,7 +166,9 @@ fn get_audio_devices_windows() -> Result<Vec<AudioDeviceInfo>, String> {
         let mut devices = Vec::new();
 
         for i in 0..count {
-            let Ok(device) = collection.Item(i) else { continue };
+            let Ok(device) = collection.Item(i) else {
+                continue;
+            };
 
             let id = device
                 .GetId()
@@ -175,8 +177,7 @@ fn get_audio_devices_windows() -> Result<Vec<AudioDeviceInfo>, String> {
                 .unwrap_or_default();
 
             // Use device friendly name from endpoint properties.
-            let name = get_device_name(&device)
-                .unwrap_or_else(|| format!("Microphone {}", i + 1));
+            let name = get_device_name(&device).unwrap_or_else(|| format!("Microphone {}", i + 1));
 
             let is_default = default_id.as_deref() == Some(&id);
 
@@ -194,15 +195,20 @@ fn get_audio_devices_windows() -> Result<Vec<AudioDeviceInfo>, String> {
 /// Extract the friendly name from an audio device using its property store.
 #[cfg(windows)]
 fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<String> {
-    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
     use windows::core::GUID;
+    use windows::Win32::UI::Shell::PropertiesSystem::{IPropertyStore, PROPERTYKEY};
 
     unsafe {
-        let store: IPropertyStore = device.OpenPropertyStore(windows::Win32::System::Com::STGM(0)).ok()?;
+        let store: IPropertyStore = device
+            .OpenPropertyStore(windows::Win32::System::Com::STGM(0))
+            .ok()?;
         // PKEY_Device_FriendlyName = {a45c254e-df1c-4efd-8020-67d146a850e0}, 14
         let key = PROPERTYKEY {
             fmtid: GUID::from_values(
-                0xa45c254e, 0xdf1c, 0x4efd, [0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0],
+                0xa45c254e,
+                0xdf1c,
+                0x4efd,
+                [0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0],
             ),
             pid: 14,
         };
@@ -360,7 +366,10 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
         return Err("Name cannot contain path separators".to_string());
     }
     // Basic Windows-illegal chars check.
-    if trimmed.chars().any(|c| matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*')) {
+    if trimmed
+        .chars()
+        .any(|c| matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
+    {
         return Err("Name contains illegal characters".to_string());
     }
 
@@ -373,7 +382,9 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
         trimmed.to_string()
     };
 
-    let parent = src.parent().ok_or_else(|| "Cannot determine parent directory".to_string())?;
+    let parent = src
+        .parent()
+        .ok_or_else(|| "Cannot determine parent directory".to_string())?;
     let dest = parent.join(&final_name);
 
     if dest == src {

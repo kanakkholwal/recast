@@ -3,8 +3,8 @@ use std::time::Instant;
 
 use anyhow::Result;
 
-use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 use crate::audio::wav::write_silence_wav;
+use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 
 /// Fallback audio session for non-Windows platforms.
 /// Writes a silence WAV file on stop.

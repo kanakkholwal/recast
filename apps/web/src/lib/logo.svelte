@@ -1,5 +1,5 @@
 <script>
-  export let color = "#BFFF00";
+  export let color = "var(--color-primary)";
   export let fill = "currentColor";
   export let size = "298";
 </script>

@@ -9,8 +9,8 @@ mod project;
 mod recording;
 mod render;
 
-use commands::types::AppState;
 use commands::system::load_config;
+use commands::types::AppState;
 use parking_lot::Mutex;
 use recording::RecordingManager;
 use tauri::Manager;
@@ -18,6 +18,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle();
             let config = load_config(&handle);

@@ -3,11 +3,9 @@ use crate::cursor::CursorState;
 /// Sample cursor position, visibility, and button state via Win32 APIs.
 pub fn sample_cursor_state() -> Option<CursorState> {
     use windows::Win32::Foundation::POINT;
-    use windows::Win32::UI::Input::KeyboardAndMouse::{
-        GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON,
-    };
+    use windows::Win32::UI::Input::KeyboardAndMouse::{GetAsyncKeyState, VK_LBUTTON, VK_RBUTTON};
     use windows::Win32::UI::WindowsAndMessaging::{
-        CURSOR_SHOWING, CURSORINFO, GetCursorInfo, GetCursorPos,
+        GetCursorInfo, GetCursorPos, CURSORINFO, CURSOR_SHOWING,
     };
 
     let mut point = POINT::default();

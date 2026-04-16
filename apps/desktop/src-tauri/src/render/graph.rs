@@ -135,8 +135,12 @@ impl RenderGraph {
 
         let mut extra_inputs = Vec::new();
         let filter_complex = match background {
-            Some(background) if matches!(background.background_type.as_str(), "wallpaper" | "image") => {
-                if let Some(background_path) = resolve_background_path(&background.value, static_root) {
+            Some(background)
+                if matches!(background.background_type.as_str(), "wallpaper" | "image") =>
+            {
+                if let Some(background_path) =
+                    resolve_background_path(&background.value, static_root)
+                {
                     extra_inputs.push(background_path);
                     let mut segments = Vec::new();
                     if let Some(zoom_filter) = zoom_filter {
@@ -145,15 +149,27 @@ impl RenderGraph {
                     // Label must be wrapped in brackets when chained into an
                     // overlay filter — otherwise FFmpeg parses `[bg]0:voverlay=…`
                     // as a single filter name.
-                    let video_label = if segments.is_empty() { "[0:v]".to_string() } else { "[video0]".to_string() };
+                    let video_label = if segments.is_empty() {
+                        "[0:v]".to_string()
+                    } else {
+                        "[video0]".to_string()
+                    };
                     let blur_sigma = (background.blur / 8.0).max(0.0);
                     segments.push(format!(
                         "[{background_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg]"
                     ));
-                    segments.push(format!("[bg]{video_label}overlay={padding}:{padding}[vout]"));
+                    segments.push(format!(
+                        "[bg]{video_label}overlay={padding}:{padding}[vout]"
+                    ));
                     Some(segments.join(";"))
                 } else {
-                    build_color_background_filter(background, zoom_filter, canvas_width, canvas_height, padding)
+                    build_color_background_filter(
+                        background,
+                        zoom_filter,
+                        canvas_width,
+                        canvas_height,
+                        padding,
+                    )
                 }
             }
             Some(background) => build_color_background_filter(
@@ -171,7 +187,11 @@ impl RenderGraph {
         Ok(ExportPlan {
             extra_inputs,
             filter_complex,
-            video_map: if requires_map { "[vout]".into() } else { "0:v:0".into() },
+            video_map: if requires_map {
+                "[vout]".into()
+            } else {
+                "0:v:0".into()
+            },
         })
     }
 }
@@ -194,9 +214,17 @@ fn build_color_background_filter(
         segments.push(format!("[0:v]{zoom_filter}[video0]"));
     }
     // Label must be wrapped in brackets when chained into an overlay filter.
-    let video_label = if segments.is_empty() { "[0:v]".to_string() } else { "[video0]".to_string() };
-    segments.push(format!("color=c={color}:s={canvas_width}x{canvas_height}[bg]"));
-    segments.push(format!("[bg]{video_label}overlay={padding}:{padding}[vout]"));
+    let video_label = if segments.is_empty() {
+        "[0:v]".to_string()
+    } else {
+        "[video0]".to_string()
+    };
+    segments.push(format!(
+        "color=c={color}:s={canvas_width}x{canvas_height}[bg]"
+    ));
+    segments.push(format!(
+        "[bg]{video_label}overlay={padding}:{padding}[vout]"
+    ));
     Some(segments.join(";"))
 }
 
@@ -244,7 +272,11 @@ fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSa
     // FFmpeg handles fine; past that the LUT is denser than any human eye
     // needs and we trade some fidelity for parser health.
     let samples = ((duration * 20.0).ceil() as usize).clamp(8, 200);
-    let step = if samples > 0 { duration / samples as f64 } else { 0.0 };
+    let step = if samples > 0 {
+        duration / samples as f64
+    } else {
+        0.0
+    };
     let iw = source.width as f64;
     let ih = source.height as f64;
     let mut out = Vec::with_capacity(samples + 1);
@@ -302,9 +334,7 @@ where
                 let dv = vb - va;
                 format!("({va:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4})")
             };
-            format!(
-                "if(between(t,{ta:.4},{tb:.4}),{value_expr}, {acc})"
-            )
+            format!("if(between(t,{ta:.4},{tb:.4}),{value_expr}, {acc})")
         })
 }
 
@@ -317,7 +347,10 @@ fn resolve_background_path(value: &str, static_root: &Path) -> Option<PathBuf> {
     // those back to `static/backgrounds/wallpapers/...` on disk. Also handle the
     // legacy `/wallpapers/...` prefix for any stored projects.
     if let Some(rest) = value.strip_prefix("/backgrounds/wallpapers/") {
-        let resolved = static_root.join("backgrounds").join("wallpapers").join(rest);
+        let resolved = static_root
+            .join("backgrounds")
+            .join("wallpapers")
+            .join(rest);
         if resolved.exists() {
             return Some(resolved);
         }
@@ -328,7 +361,10 @@ fn resolve_background_path(value: &str, static_root: &Path) -> Option<PathBuf> {
             return Some(resolved);
         }
         // Also try backgrounds/wallpapers/ as a fallback.
-        let alt = static_root.join("backgrounds").join("wallpapers").join(rest);
+        let alt = static_root
+            .join("backgrounds")
+            .join("wallpapers")
+            .join(rest);
         if alt.exists() {
             return Some(alt);
         }
@@ -366,8 +402,7 @@ fn decode_background_uri(value: &str) -> Option<PathBuf> {
     for prefix in PREFIXES {
         if let Some(rest) = value.strip_prefix(prefix) {
             let decoded = percent_decode(rest);
-            let normalized = if decoded.starts_with('/')
-                && decoded.as_bytes().get(2) == Some(&b':')
+            let normalized = if decoded.starts_with('/') && decoded.as_bytes().get(2) == Some(&b':')
             {
                 decoded[1..].to_string()
             } else {

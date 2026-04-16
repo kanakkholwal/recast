@@ -1,20 +1,22 @@
 pub mod pipeline;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use xcap::{Monitor, Window};
 
-use crate::audio::{AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession};
-use crate::cursor::{CursorTrack, spawn_cursor_capture, write_cursor_track};
-use crate::encoder::{EncoderConfig, spawn_encoder_loop};
-use pipeline::{PipelineSnapshot, RecordingPipeline, spawn_capture_loop};
+use crate::audio::{
+    AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession,
+};
+use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorTrack};
+use crate::encoder::{spawn_encoder_loop, EncoderConfig};
+use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
 // ── Shared types ────────────────────────────────────────────────────────
 
@@ -227,7 +229,12 @@ struct RecordingSession {
 }
 
 impl RecordingManager {
-    pub fn start(&self, target: CaptureTarget, output_dir: PathBuf, options: RecordingOptions) -> Result<()> {
+    pub fn start(
+        &self,
+        target: CaptureTarget,
+        output_dir: PathBuf,
+        options: RecordingOptions,
+    ) -> Result<()> {
         let mut guard = self.session.lock();
         if guard.is_some() {
             return Err(anyhow!("recording is already running"));
@@ -361,12 +368,7 @@ impl RecordingManager {
                 Err(e) => {
                     log::warn!("audio capture stop failed, writing silence: {e}");
                     let duration = session.started_at.elapsed().as_secs_f64();
-                    crate::audio::wav::write_silence_wav(
-                        &session.audio_path,
-                        48_000,
-                        2,
-                        duration,
-                    )?;
+                    crate::audio::wav::write_silence_wav(&session.audio_path, 48_000, 2, duration)?;
                     session.audio_path
                 }
             }

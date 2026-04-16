@@ -52,9 +52,7 @@ impl Easing {
     /// is the bezier parameter that produces `x` (solved via Newton-Raphson
     /// with a bisection fallback, same technique as Blink/WebKit).
     pub fn y(&self, x: f32) -> f32 {
-        if (self.x1 - self.y1).abs() < f32::EPSILON
-            && (self.x2 - self.y2).abs() < f32::EPSILON
-        {
+        if (self.x1 - self.y1).abs() < f32::EPSILON && (self.x2 - self.y2).abs() < f32::EPSILON {
             return x.clamp(0.0, 1.0);
         }
         if x <= 0.0 {
@@ -120,10 +118,7 @@ mod tests {
     fn ease_matches_reference_midpoint() {
         // CSS `ease` at x=0.5 is ≈0.8024 (reference from Chromium test data).
         let y = Easing::default().y(0.5);
-        assert!(
-            (y - 0.8024).abs() < 5e-3,
-            "ease(0.5)={y} expected ~0.8024"
-        );
+        assert!((y - 0.8024).abs() < 5e-3, "ease(0.5)={y} expected ~0.8024");
     }
 
     #[test]
@@ -131,8 +126,18 @@ mod tests {
         let curves = [
             Easing::LINEAR,
             Easing::default(),
-            Easing { x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0 },
-            Easing { x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0 },
+            Easing {
+                x1: 0.42,
+                y1: 0.0,
+                x2: 1.0,
+                y2: 1.0,
+            },
+            Easing {
+                x1: 0.0,
+                y1: 0.0,
+                x2: 0.58,
+                y2: 1.0,
+            },
         ];
         for e in curves {
             let mut prev = e.y(0.0);
@@ -147,7 +152,12 @@ mod tests {
 
     #[test]
     fn bounce_can_overshoot() {
-        let bounce = Easing { x1: 0.68, y1: -0.55, x2: 0.27, y2: 1.55 };
+        let bounce = Easing {
+            x1: 0.68,
+            y1: -0.55,
+            x2: 0.27,
+            y2: 1.55,
+        };
         let mut max_y = f32::NEG_INFINITY;
         let mut min_y = f32::INFINITY;
         for i in 0..=100 {

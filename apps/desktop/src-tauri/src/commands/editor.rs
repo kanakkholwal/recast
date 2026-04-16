@@ -2,24 +2,24 @@ use std::fs;
 use std::io::{BufRead, Read};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use base64::{Engine as _, engine::general_purpose};
+use base64::{engine::general_purpose, Engine as _};
 use parking_lot::Mutex;
 use tauri::{AppHandle, Emitter, State};
 
 use super::ffmpeg::{
-    append_cursor_overlay_to_complex, append_output_filters_to_complex,
-    build_gif_palette_complex, build_output_scale_filter, has_audio, probe_video_metadata,
-    resolve_export_profile, summarize_ffmpeg_error,
+    append_cursor_overlay_to_complex, append_output_filters_to_complex, build_gif_palette_complex,
+    build_output_scale_filter, has_audio, probe_video_metadata, resolve_export_profile,
+    summarize_ffmpeg_error,
 };
-#[allow(unused_imports)]
-use crate::render::cursor_export::{CursorOverlayRequest, render_cursor_overlay};
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, VideoMetadata};
 use crate::project::reader::ProjectOpenResult;
+#[allow(unused_imports)]
+use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 
 /// True if the line is part of an FFmpeg `-progress` block (key=value metric
@@ -106,7 +106,9 @@ pub fn load_editor_document(path: String) -> Result<EditorDocument, String> {
             cursor_path: Some(project.cursor_path.to_string_lossy().to_string()),
             edits_path: Some(project.edits_path.to_string_lossy().to_string()),
             audio_path: project.audio_path.map(|p| p.to_string_lossy().to_string()),
-            microphone_path: project.microphone_path.map(|p| p.to_string_lossy().to_string()),
+            microphone_path: project
+                .microphone_path
+                .map(|p| p.to_string_lossy().to_string()),
             camera_path: project.camera_path.map(|p| p.to_string_lossy().to_string()),
             metadata: VideoMetadata {
                 duration: project.metadata.video.duration_ms as f64 / 1000.0,
@@ -833,11 +835,8 @@ pub fn cancel_export(state: State<'_, AppState>) -> Result<(), String> {
 
 #[tauri::command]
 pub fn autosave_project(project_path: String, edits_json: String) -> Result<(), String> {
-    crate::project::autosave::save_autosave(
-        Path::new(&project_path),
-        &edits_json,
-    )
-    .map_err(|e| e.to_string())
+    crate::project::autosave::save_autosave(Path::new(&project_path), &edits_json)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

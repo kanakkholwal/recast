@@ -6,7 +6,7 @@ use tauri::State;
 use super::ffmpeg::probe_video_metadata;
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry};
-use crate::project::writer::{ProjectWriteRequest, write_project};
+use crate::project::writer::{write_project, ProjectWriteRequest};
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
 use crate::recording::{CaptureTarget, RecordingOptions};
 use crate::render::graph::RenderState;
@@ -42,10 +42,7 @@ pub fn start_recording(
 pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
     let artifacts = state.recording_manager.stop().map_err(|e| e.to_string())?;
     let dest = recasts_dir(&state);
-    let final_path = dest.join(format!(
-        "recast_{}.recast",
-        artifacts.started_at_unix_ms
-    ));
+    let final_path = dest.join(format!("recast_{}.recast", artifacts.started_at_unix_ms));
     let recording_meta = probe_video_metadata(&artifacts.recording_path)?;
     let metadata = ProjectMetadata {
         schema_version: 1,
@@ -53,8 +50,16 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
         capture_target: artifacts.capture_target.clone(),
         stats: artifacts.stats.clone(),
         video: ProjectVideoMetadata {
-            width: if recording_meta.width > 0 { recording_meta.width } else { artifacts.capture_target.crop.width },
-            height: if recording_meta.height > 0 { recording_meta.height } else { artifacts.capture_target.crop.height },
+            width: if recording_meta.width > 0 {
+                recording_meta.width
+            } else {
+                artifacts.capture_target.crop.width
+            },
+            height: if recording_meta.height > 0 {
+                recording_meta.height
+            } else {
+                artifacts.capture_target.crop.height
+            },
             fps: recording_meta.fps.round().max(1.0) as u32,
             duration_ms: artifacts.stats.duration_ms,
         },
@@ -121,7 +126,10 @@ fn list_files_by_ext(dir: &PathBuf, ext: &str) -> Result<Vec<RecordingEntry>, St
 
     for entry in read.flatten() {
         let path = entry.path();
-        let file_ext = path.extension().and_then(|v| v.to_str()).unwrap_or_default();
+        let file_ext = path
+            .extension()
+            .and_then(|v| v.to_str())
+            .unwrap_or_default();
         if file_ext != ext {
             continue;
         }

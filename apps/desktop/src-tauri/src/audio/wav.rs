@@ -64,7 +64,12 @@ impl Drop for WavWriter {
 }
 
 /// Build a 44-byte WAV header for PCM data.
-fn build_wav_header(sample_rate: u32, channels: u16, bits_per_sample: u16, data_len: u32) -> Vec<u8> {
+fn build_wav_header(
+    sample_rate: u32,
+    channels: u16,
+    bits_per_sample: u16,
+    data_len: u32,
+) -> Vec<u8> {
     let bytes_per_sample = bits_per_sample / 8;
     let block_align = channels * bytes_per_sample;
     let byte_rate = sample_rate * block_align as u32;

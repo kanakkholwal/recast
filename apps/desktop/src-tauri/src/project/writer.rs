@@ -3,9 +3,9 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 use zip::ZipWriter;
-use zip::write::SimpleFileOptions;
 
 use crate::project::ProjectMetadata;
 

@@ -20,7 +20,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use image::RgbaImage;
 
 use crate::cursor::CursorTrack;
@@ -129,16 +129,15 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     // where compW = source_width + padding * 2.
     let comp_w = request.source_width + request.padding * 2;
     let cursor_radius_canvas = if comp_w > 0 {
-        ((request.render_state.cursor_size * 2.0) * request.canvas_width as f64
-            / comp_w as f64)
+        ((request.render_state.cursor_size * 2.0) * request.canvas_width as f64 / comp_w as f64)
             .max(2.0)
     } else {
         2.0
     };
 
     // Parse highlight color.
-    let (hr, hg, hb) = parse_hex_color(&request.render_state.cursor_highlight_color)
-        .unwrap_or((0x3b, 0x82, 0xf6));
+    let (hr, hg, hb) =
+        parse_hex_color(&request.render_state.cursor_highlight_color).unwrap_or((0x3b, 0x82, 0xf6));
 
     // Allocate one reusable frame buffer.
     let canvas_w = request.canvas_width as usize;
@@ -205,7 +204,8 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let trim_start_us = (request.trim_start * 1_000_000.0).max(0.0) as u64;
 
     let idle_timeout_us = (request.render_state.cursor_idle_timeout * 1_000_000.0) as u64;
-    let highlight_alpha_base = (request.render_state.cursor_highlight_opacity / 100.0).clamp(0.0, 1.0);
+    let highlight_alpha_base =
+        (request.render_state.cursor_highlight_opacity / 100.0).clamp(0.0, 1.0);
 
     for i in 0..frame_count {
         // Clear frame to transparent.
@@ -256,9 +256,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
         // Apply zoom transform in source-video coordinates.
         let (mut cursor_source_x, mut cursor_source_y) = (sample.x, sample.y);
-        if let Some((scale, _)) =
-            active_zoom_at(&request.render_state.zoom_regions, t_out_secs)
-        {
+        if let Some((scale, _)) = active_zoom_at(&request.render_state.zoom_regions, t_out_secs) {
             let src_cx = request.source_width as f64 / 2.0;
             let src_cy = request.source_height as f64 / 2.0;
             cursor_source_x = (cursor_source_x - src_cx) * scale + src_cx;
@@ -282,14 +280,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Video area in the canvas is [padding, padding + source_width].
         let scale_canvas =
             request.canvas_width as f64 / (request.source_width + request.padding * 2) as f64;
-        let cursor_canvas_x =
-            (request.padding as f64 + cursor_source_x) * scale_canvas;
-        let cursor_canvas_y =
-            (request.padding as f64 + cursor_source_y) * scale_canvas;
+        let cursor_canvas_x = (request.padding as f64 + cursor_source_x) * scale_canvas;
+        let cursor_canvas_y = (request.padding as f64 + cursor_source_y) * scale_canvas;
 
         // Click highlight (drawn first, underneath cursor dot).
-        let show_highlight = request.render_state.cursor_highlight_clicks
-            && (sample.left_down || sample.right_down);
+        let show_highlight =
+            request.render_state.cursor_highlight_clicks && (sample.left_down || sample.right_down);
         if show_highlight {
             let hr_radius = cursor_radius_canvas * 6.0;
             draw_filled_circle_soft(
@@ -334,7 +330,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
     if !output.status.success() {
         let stderr_text = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("ffmpeg cursor overlay encode failed: {stderr_text}"));
+        return Err(anyhow!(
+            "ffmpeg cursor overlay encode failed: {stderr_text}"
+        ));
     }
 
     // Sanity check: the webm must exist and be > 0 bytes.

@@ -6,8 +6,8 @@ mod fallback;
 
 use anyhow::Result;
 
-use crate::recording::CaptureTarget;
 use super::CaptureSource;
+use crate::recording::CaptureTarget;
 
 pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     #[cfg(windows)]

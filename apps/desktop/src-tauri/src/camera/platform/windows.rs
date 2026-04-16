@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 
 use crate::camera::CameraCaptureConfig;
 
@@ -43,11 +43,11 @@ impl PlatformCameraSession {
 
 /// Capture camera video via FFmpeg DirectShow input on Windows.
 /// Spawns an FFmpeg child process that records from the webcam until stopped.
-fn camera_capture_thread(config: CameraCaptureConfig, stop_flag: Arc<AtomicBool>) -> Result<PathBuf> {
-    let device_name = config
-        .device_name
-        .as_deref()
-        .unwrap_or("video=default");
+fn camera_capture_thread(
+    config: CameraCaptureConfig,
+    stop_flag: Arc<AtomicBool>,
+) -> Result<PathBuf> {
+    let device_name = config.device_name.as_deref().unwrap_or("video=default");
 
     // Build the DirectShow input specifier.
     let input = if device_name.starts_with("video=") {
@@ -59,13 +59,20 @@ fn camera_capture_thread(config: CameraCaptureConfig, stop_flag: Arc<AtomicBool>
     let mut child = Command::new(crate::ffmpeg::ffmpeg_path())
         .args([
             "-y",
-            "-f", "dshow",
-            "-video_size", "1280x720",
-            "-framerate", "30",
-            "-i", &input,
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-pix_fmt", "yuv420p",
+            "-f",
+            "dshow",
+            "-video_size",
+            "1280x720",
+            "-framerate",
+            "30",
+            "-i",
+            &input,
+            "-c:v",
+            "libx264",
+            "-preset",
+            "veryfast",
+            "-pix_fmt",
+            "yuv420p",
             "-an", // No audio from camera
         ])
         .arg(config.output_path.to_string_lossy().as_ref())

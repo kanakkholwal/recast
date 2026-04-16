@@ -33,13 +33,21 @@ pub fn open_project(path: &Path) -> Result<ProjectOpenResult> {
     let cache_dir = cache_dir_for(path)?;
     fs::create_dir_all(&cache_dir)?;
 
-    let recording_path = extract_entry(&mut archive, "recording.mp4", &cache_dir.join("recording.mp4"))?;
+    let recording_path = extract_entry(
+        &mut archive,
+        "recording.mp4",
+        &cache_dir.join("recording.mp4"),
+    )?;
     let cursor_path = extract_entry(&mut archive, "cursor.json", &cache_dir.join("cursor.json"))?;
     let edits_path = extract_entry(&mut archive, "edits.json", &cache_dir.join("edits.json"))?;
 
     // Optional entries — v1 archives may not have these.
     let audio_path = try_extract_entry(&mut archive, "audio.wav", &cache_dir.join("audio.wav"));
-    let microphone_path = try_extract_entry(&mut archive, "microphone.wav", &cache_dir.join("microphone.wav"));
+    let microphone_path = try_extract_entry(
+        &mut archive,
+        "microphone.wav",
+        &cache_dir.join("microphone.wav"),
+    );
     let camera_path = try_extract_entry(&mut archive, "camera.mp4", &cache_dir.join("camera.mp4"));
 
     Ok(ProjectOpenResult {
@@ -59,11 +67,15 @@ fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("project");
-    Ok(env::temp_dir().join("recast-cache").join(format!("{stem}-{}", metadata.len())))
+    Ok(env::temp_dir()
+        .join("recast-cache")
+        .join(format!("{stem}-{}", metadata.len())))
 }
 
 fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Result<PathBuf> {
-    let mut entry = archive.by_name(name).with_context(|| format!("missing {name} in project"))?;
+    let mut entry = archive
+        .by_name(name)
+        .with_context(|| format!("missing {name} in project"))?;
     let mut output = File::create(path)?;
     let mut buffer = [0u8; 64 * 1024];
     loop {

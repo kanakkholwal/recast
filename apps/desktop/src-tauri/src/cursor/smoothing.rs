@@ -6,7 +6,7 @@ use super::CursorSample;
 // compositor (src/components/editor/VideoPreview.svelte). Only idle / zoom
 // detection — needed at recording-stop time — remains in this module.
 
-// ── Idle detection 
+// ── Idle detection
 
 /// A period where the cursor was stationary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -41,7 +41,9 @@ pub fn detect_idle_periods(
 
         if distance > radius_px {
             // Movement detected — check if the idle period was long enough.
-            let duration = samples[i - 1].timestamp_us.saturating_sub(samples[idle_start_idx].timestamp_us);
+            let duration = samples[i - 1]
+                .timestamp_us
+                .saturating_sub(samples[idle_start_idx].timestamp_us);
             if duration >= threshold_us {
                 periods.push(IdlePeriod {
                     start_us: samples[idle_start_idx].timestamp_us,
@@ -58,7 +60,9 @@ pub fn detect_idle_periods(
 
     // Check final segment.
     let last = samples.last().unwrap();
-    let duration = last.timestamp_us.saturating_sub(samples[idle_start_idx].timestamp_us);
+    let duration = last
+        .timestamp_us
+        .saturating_sub(samples[idle_start_idx].timestamp_us);
     if duration >= threshold_us {
         periods.push(IdlePeriod {
             start_us: samples[idle_start_idx].timestamp_us,
@@ -121,12 +125,9 @@ pub fn detect_zoom_triggers(
         let settle_threshold = 200.0; // px/sec — settled
 
         for window in samples.windows(3) {
-            let prev_speed =
-                (window[0].velocity_x.powi(2) + window[0].velocity_y.powi(2)).sqrt();
-            let curr_speed =
-                (window[1].velocity_x.powi(2) + window[1].velocity_y.powi(2)).sqrt();
-            let next_speed =
-                (window[2].velocity_x.powi(2) + window[2].velocity_y.powi(2)).sqrt();
+            let prev_speed = (window[0].velocity_x.powi(2) + window[0].velocity_y.powi(2)).sqrt();
+            let curr_speed = (window[1].velocity_x.powi(2) + window[1].velocity_y.powi(2)).sqrt();
+            let next_speed = (window[2].velocity_x.powi(2) + window[2].velocity_y.powi(2)).sqrt();
 
             // Was moving fast, now stopped.
             if prev_speed > velocity_threshold
