@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { SMOOTHING_PRESETS } from "$lib/cursor/smoothing";
   import { EASE } from "$lib/easing/cubic-bezier";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
@@ -7,11 +8,13 @@
     EyeOff,
     MousePointer,
     Sparkles,
+    Target,
     Waves,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import BezierEditor from "./BezierEditor.svelte";
+  import CursorTrajectoryMap from "./CursorTrajectoryMap.svelte";
   import InspectorHint from "./InspectorHint.svelte";
   import SliderControl from "./SliderControl.svelte";
 
@@ -77,7 +80,7 @@
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Pointer
         </h3>
-        <InspectorHint content="Size changes legibility. Smoothing makes motion feel less jittery." />
+        <InspectorHint content="Size controls how legibly the cursor reads on screen." />
       </header>
       <div class="space-y-2.5">
         <SliderControl
@@ -94,14 +97,76 @@
             <MousePointer size={11} />
           {/snippet}
         </SliderControl>
+      </div>
+    </section>
 
+    <!-- Mouse smoothing: post-recording Gaussian path smoothing + click snap.
+         This is the Screen Studio-style polish that turns a twitchy raw
+         capture into something that looks intentional. -->
+    <section>
+      <header class="mb-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5">
+          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Mouse smoothing
+          </h3>
+          <InspectorHint
+            content="Gaussian-window smoothing over the captured mouse path. The click-snap option anchors the smoothed curve to the exact press position inside the snap window so buttons still get hit cleanly."
+          />
+        </div>
+        <Sparkles size={11} class="text-muted-foreground" />
+      </header>
+
+      <CursorTrajectoryMap
+        samples={store.cursorSamplesRaw}
+        videoWidth={store.metadata?.width ?? 0}
+        videoHeight={store.metadata?.height ?? 0}
+        smoothing={store.cursorSettings.smoothing}
+        snapToClicks={store.cursorSettings.snapToClicks}
+        snapWindowMs={store.cursorSettings.snapWindowMs}
+      />
+
+      <!-- Presets -->
+      <div class="mt-2.5 flex flex-wrap gap-1">
+        {#each SMOOTHING_PRESETS as preset (preset.id)}
+          {@const isActive =
+            store.cursorSettings.smoothing === preset.smoothing &&
+            store.cursorSettings.snapToClicks === preset.snapToClicks &&
+            store.cursorSettings.snapWindowMs === preset.snapWindowMs}
+          <button
+            type="button"
+            aria-pressed={isActive}
+            onclick={() => {
+              store.pushUndoState();
+              store.updateCursorSettings({
+                smoothing: preset.smoothing,
+                snapToClicks: preset.snapToClicks,
+                snapWindowMs: preset.snapWindowMs,
+              });
+            }}
+            class={cn(
+              "h-6 rounded-sm border px-2 text-[10px] font-medium transition-colors",
+              "focus:outline-none focus:ring-1 focus:ring-ring",
+              isActive
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-background text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {preset.label}
+          </button>
+        {/each}
+      </div>
+
+      <div class="mt-3 space-y-2.5">
         <SliderControl
-          label="Motion smoothing"
+          label="Smoothing"
           value={store.cursorSettings.smoothing}
           min={0}
           max={100}
           step={5}
           unit="%"
+          description={store.cursorSettings.smoothing === 0
+            ? "Off — cursor follows the raw capture"
+            : undefined}
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateCursorSettings({ smoothing: next })}
         >
@@ -109,6 +174,42 @@
             <Sparkles size={11} />
           {/snippet}
         </SliderControl>
+
+        <div class="flex items-center justify-between gap-2 rounded-md border border-border bg-card/40 px-2 py-1.5">
+          <div class="flex items-center gap-1.5">
+            <Target size={11} class="text-muted-foreground" />
+            <span class="text-[11px] font-medium text-foreground">Snap to clicks</span>
+            <InspectorHint
+              content="Around every mouse-down, pin the smoothed curve to the exact click x/y inside the snap window. Prevents smoothing from rounding the corner off a press target."
+            />
+          </div>
+          <Button
+            variant={store.cursorSettings.snapToClicks ? "default_soft" : "outline"}
+            size="xs"
+            aria-pressed={store.cursorSettings.snapToClicks}
+            onclick={() => updateCursorSettings({ snapToClicks: !store.cursorSettings.snapToClicks }, true)}
+          >
+            {store.cursorSettings.snapToClicks ? "On" : "Off"}
+          </Button>
+        </div>
+
+        {#if store.cursorSettings.snapToClicks}
+          <SliderControl
+            label="Snap window"
+            value={store.cursorSettings.snapWindowMs}
+            min={0}
+            max={200}
+            step={10}
+            unit="ms"
+            description="Half-width of the cosine-ramped anchor around each click."
+            onstart={() => store.pushUndoState()}
+            onchange={(next) => store.updateCursorSettings({ snapWindowMs: next })}
+          >
+            {#snippet icon()}
+              <Target size={11} />
+            {/snippet}
+          </SliderControl>
+        {/if}
       </div>
     </section>
 

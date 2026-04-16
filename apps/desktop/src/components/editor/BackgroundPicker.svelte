@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { Button } from "@recast/ui/button";
   import {
     COLOR_PRESETS,
     GRADIENT_PRESETS,
@@ -7,18 +6,19 @@
     type BackgroundType,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { cn } from "@recast/ui/utils";
-  import { Image } from "@unpic/svelte";
   import {
     Blend,
     FolderOpen,
     ImageIcon,
     LayoutTemplate,
     Palette,
-    SquareRoundCorner,
     Sparkles,
+    SquareRoundCorner,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { convertFileSrc } from "@tauri-apps/api/core";
+  import { Image } from "@unpic/svelte";
   import InspectorHint from "./InspectorHint.svelte";
   import SliderControl from "./SliderControl.svelte";
 
@@ -69,6 +69,20 @@
     }
   }
 
+  function isValidImageValue(value: string) {
+    return (
+      value.startsWith("data:") ||
+      value.startsWith("http://") ||
+      value.startsWith("https://") ||
+      value.startsWith("asset://") ||
+      value.startsWith("/wallpapers/") ||
+      value.endsWith(".png") ||
+      value.endsWith(".jpg") ||
+      value.endsWith(".jpeg") ||
+      value.endsWith(".webp")
+    );
+  }
+
   function getSelectionValue(type: BackgroundType) {
     return isValidValueForType(type, store.backgroundValue)
       ? store.backgroundValue
@@ -117,6 +131,7 @@
     paddingValue = store.padding;
     borderRadiusValue = store.borderRadius;
   });
+
 </script>
 
 <div class="flex flex-col gap-5 animate-in fade-in duration-200">
@@ -133,7 +148,7 @@
         {@const Icon = mode.icon}
         {@const isActive = store.backgroundType === mode.type}
         <Button
-          variant={isActive ? "secondary" : "ghost"}
+          variant={isActive ? "default_soft" : "ghost"}
           size="xs"
           class="flex-1 gap-1"
           onclick={() => applyBackground(mode.type)}
@@ -286,7 +301,7 @@
         </Button>
       </header>
 
-      {#if store.backgroundValue}
+      {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
         <div class="overflow-hidden rounded-md border border-border bg-background">
           <Image
             src={getImagePreviewSrc(store.backgroundValue)}
@@ -297,7 +312,7 @@
             objectFit="cover"
             loading="lazy"
             decoding="async"
-            class="h-24 w-full"
+            class="max-h-56 w-full"
           />
         </div>
       {:else}

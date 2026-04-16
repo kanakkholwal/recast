@@ -98,7 +98,7 @@
             <Tooltip.Trigger>
               <Tabs.Trigger
                 value={tab.id}
-                class="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:text-foreground"
+                class="cursor-pointer flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground data-[state=active]:bg-muted data-[state=active]:text-primary"
               >
                 <Icon size={13} />
                 <span class="sr-only">{tab.label}</span>

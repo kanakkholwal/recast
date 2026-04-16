@@ -14,8 +14,8 @@
 	<Tooltip.Trigger>
 		<Button
 			variant="ghost"
-			size="raw"
-			class="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 hover:text-foreground"
+			size="xs"
+			class="inline-flex p-0 shrink-0 items-center justify-center rounded-full text-muted-foreground/60 hover:text-foreground"
 			aria-label="More information"
 		>
 			<CircleHelp size={11} />

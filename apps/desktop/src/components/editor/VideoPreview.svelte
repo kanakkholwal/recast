@@ -1,4 +1,8 @@
 <script lang="ts">
+	import {
+	  smoothCursorPath,
+	  smoothingStrengthToSigmaMs,
+	} from "$lib/cursor/smoothing";
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
@@ -61,9 +65,13 @@
 		rightDown: boolean;
 	};
 	type IdlePeriodJS = { startUs: number; endUs: number };
-	let cursorSamples: CursorSampleJS[] = [];
+	let cursorSamplesRaw: CursorSampleJS[] = [];
+	let cursorSamples: CursorSampleJS[] = []; // post-smoothing; read by interpolateCursor
 	let idlePeriods: IdlePeriodJS[] = [];
 	let loadedCursorPath = "";
+	// Signature of the inputs that drive smoothing. Recomputing only when this
+	// changes keeps playback cheap even on long recordings.
+	let smoothingSignature = "";
 
 	// ── Shaders ──────────────────────────────────────────────────────────
 	const VERT_SRC = `#version 300 es
@@ -363,14 +371,41 @@ void main() {
 				samples?: CursorSampleJS[];
 				idlePeriods?: IdlePeriodJS[];
 			};
-			cursorSamples = json.samples ?? [];
+			cursorSamplesRaw = json.samples ?? [];
+			cursorSamples = cursorSamplesRaw;
 			idlePeriods = json.idlePeriods ?? [];
 			loadedCursorPath = cursorPath;
+			smoothingSignature = "";
+			// Publish raw samples for the Cursor panel's trajectory minimap.
+			store.cursorSamplesRaw = cursorSamplesRaw;
+			ensureSmoothingCurrent();
 		} catch (err) {
 			console.warn("Cursor track load failed:", err);
+			cursorSamplesRaw = [];
 			cursorSamples = [];
 			idlePeriods = [];
 		}
+	}
+
+	// Recompute the smoothed cursor path whenever the inputs change. Called
+	// once per draw() — cheap signature check, real work only on deltas.
+	function ensureSmoothingCurrent() {
+		if (cursorSamplesRaw.length === 0) {
+			cursorSamples = cursorSamplesRaw;
+			smoothingSignature = "";
+			return;
+		}
+		const cs = store.cursorSettings;
+		const sig = `${loadedCursorPath}|${cs.smoothing}|${cs.snapToClicks ? 1 : 0}|${cs.snapWindowMs}`;
+		if (sig === smoothingSignature) return;
+		const sigmaMs = smoothingStrengthToSigmaMs(cs.smoothing);
+		const result = smoothCursorPath(cursorSamplesRaw, {
+			sigmaMs,
+			snapToClicks: cs.snapToClicks,
+			snapWindowMs: cs.snapWindowMs,
+		});
+		cursorSamples = result.samples;
+		smoothingSignature = sig;
 	}
 
 	// ── Cursor interpolation (mirror of cursor::smoothing::interpolate_at) ─
@@ -527,6 +562,11 @@ void main() {
 	function draw() {
 		if (!gl || !program || !canvasEl || !store.metadata) return;
 		if (!resizeCanvas()) return;
+
+		// Refresh the smoothed cursor path if any of its inputs changed since
+		// the last frame. Signature-based guard keeps this effectively free
+		// (one string compare) when nothing's changed.
+		ensureSmoothingCurrent();
 
 		// Prefer the video element's current time for per-frame cursor & zoom
 		// interpolation — `store.currentTime` only updates ~4×/sec via the
@@ -749,11 +789,11 @@ void main() {
 
 <div
 	bind:this={containerEl}
-	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden rounded-2xl border border-border bg-muted/30"
+	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden"
 >
 	<canvas
 		bind:this={canvasEl}
-		class="block max-h-full max-w-full rounded-lg"
+		class="block max-h-full max-w-full"
 	></canvas>
 
 	{#if videoSrc}

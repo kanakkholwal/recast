@@ -52,7 +52,18 @@
     @apply selection:bg-primary/50 selection:text-primary selection:rounded-2xl transition-all duration-300;
   }
 }
+input.no-webkit::-webkit-outer-spin-button,
+input.no-webkit::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
 
+/* Target Firefox */
+input[type=number].no-webkit {
+  -moz-appearance: textfield;
+  appearance: textfield;
+  -webkit-appearance: textfield;
+}
 /* Custom Grid Background Utility */
 .bg-grid-pattern {
   background-size: 40px 40px;

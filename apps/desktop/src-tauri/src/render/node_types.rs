@@ -114,3 +114,86 @@ pub enum RenderNode {
     Cursor(CursorNode),
     Zoom(ZoomNode),
 }
+
+// ── Annotations ────────────────────────────────────────────────────────
+//
+// Phase 1 ships `rect` and `ellipse`. `kind` is a tagged union so future
+// arrow/polygon/text/image variants slot in without breaking serialisation
+// of existing projects. All positions are in video UV space (0..1) so they
+// track zoom/crop without re-projection.
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationStroke {
+    /// Stroke width in UV space (width=0.004 ≈ 2 px at 1080p).
+    pub width: f64,
+    /// CSS colour string. `"transparent"` disables stroke.
+    pub color: String,
+}
+
+impl Default for AnnotationStroke {
+    fn default() -> Self {
+        Self {
+            width: 0.004,
+            color: "#3b82f6".into(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase", tag = "kind")]
+pub enum AnnotationKind {
+    Rect {
+        /// UV top-left corner.
+        x: f64,
+        y: f64,
+        /// UV width / height. Can be negative while the user drags — UI flips.
+        w: f64,
+        h: f64,
+        /// Corner radius in UV space. 0 = sharp.
+        #[serde(default)]
+        radius: f64,
+    },
+    Ellipse {
+        /// UV top-left of the bounding box.
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Annotation {
+    pub id: String,
+    /// Seconds on the project timeline when the annotation starts fading in.
+    pub start: f64,
+    /// Seconds when the annotation finishes fading out.
+    pub end: f64,
+    /// Seconds of fade-in. Clamped to half the region's duration by the
+    /// evaluator, same split-ramp semantics as Focus.
+    #[serde(default = "default_anno_ramp")]
+    pub ramp_in: f64,
+    #[serde(default = "default_anno_ramp")]
+    pub ramp_out: f64,
+    #[serde(default)]
+    pub ease_in: Easing,
+    #[serde(default)]
+    pub ease_out: Easing,
+    /// Optional stroke applied to all shape kinds.
+    #[serde(default)]
+    pub stroke: AnnotationStroke,
+    /// CSS fill colour (with alpha via rgba(...) / #rrggbbaa). `"transparent"` disables fill.
+    #[serde(default = "default_anno_fill")]
+    pub fill: String,
+    pub kind: AnnotationKind,
+}
+
+fn default_anno_ramp() -> f64 {
+    0.20
+}
+
+fn default_anno_fill() -> String {
+    "rgba(59,130,246,0.20)".into()
+}

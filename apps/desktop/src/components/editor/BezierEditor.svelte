@@ -5,6 +5,7 @@
     sampleCurve,
     type Easing,
   } from "$lib/easing/cubic-bezier";
+  import { Input } from "@recast/ui/input";
   import { cn } from "@recast/ui/utils";
 
   interface Props {
@@ -43,12 +44,15 @@
   const curvePath = $derived.by(() => {
     const pts = sampleCurve(value, 48);
     return pts
-      .map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(4)} ${(1 - y).toFixed(4)}`)
+      .map(
+        ([x, y], i) =>
+          `${i === 0 ? "M" : "L"} ${x.toFixed(4)} ${(1 - y).toFixed(4)}`,
+      )
       .join(" ");
   });
 
   const selectedPresetId = $derived(
-    EASING_PRESETS.find((p) => easingEquals(p.value, value))?.id ?? null
+    EASING_PRESETS.find((p) => easingEquals(p.value, value))?.id ?? null,
   );
 
   function svgPoint(e: PointerEvent): { x: number; y: number } | null {
@@ -98,7 +102,8 @@
   function setField(field: "x1" | "y1" | "x2" | "y2", raw: string) {
     const n = Number(raw);
     if (Number.isNaN(n)) return;
-    const clamped = field === "x1" || field === "x2" ? Math.max(0, Math.min(1, n)) : n;
+    const clamped =
+      field === "x1" || field === "x2" ? Math.max(0, Math.min(1, n)) : n;
     onchange({ ...value, [field]: clamped });
   }
 
@@ -124,7 +129,7 @@
   <div
     class={cn(
       "relative rounded-md border border-border bg-card/50",
-      disabled && "pointer-events-none opacity-60"
+      disabled && "pointer-events-none opacity-60",
     )}
     style:padding="6px"
   >
@@ -153,12 +158,31 @@
         <line x1="0" y1="1" x2="1" y2="1" />
         <line x1="0" y1="0" x2="0" y2="1" />
         <line x1="1" y1="0" x2="1" y2="1" />
-        <line x1="0" y1="0.5" x2="1" y2="0.5" stroke-dasharray="0.01 0.01" stroke-opacity="0.5" />
-        <line x1="0.5" y1="0" x2="0.5" y2="1" stroke-dasharray="0.01 0.01" stroke-opacity="0.5" />
+        <line
+          x1="0"
+          y1="0.5"
+          x2="1"
+          y2="0.5"
+          stroke-dasharray="0.01 0.01"
+          stroke-opacity="0.5"
+        />
+        <line
+          x1="0.5"
+          y1="0"
+          x2="0.5"
+          y2="1"
+          stroke-dasharray="0.01 0.01"
+          stroke-opacity="0.5"
+        />
       </g>
 
       <!-- Axis labels (tiny) -->
-      <g class="text-muted-foreground" fill="currentColor" font-size="0.06" font-family="ui-monospace, monospace">
+      <g
+        class="text-muted-foreground"
+        fill="currentColor"
+        font-size="0.06"
+        font-family="ui-monospace, monospace"
+      >
         <text x="-0.03" y="1.06" text-anchor="end">0</text>
         <text x="-0.03" y="0.02" text-anchor="end">1</text>
         <text x="0" y="1.14" text-anchor="start">0</text>
@@ -166,17 +190,40 @@
       </g>
 
       <!-- Tangent lines from anchors to control points -->
-      <g stroke="currentColor" stroke-width="0.004" class="text-muted-foreground" opacity="0.6">
+      <g
+        stroke="currentColor"
+        stroke-width="0.004"
+        class="text-muted-foreground"
+        opacity="0.6"
+      >
         <line x1="0" y1="1" x2={value.x1} y2={1 - value.y1} />
         <line x1="1" y1="0" x2={value.x2} y2={1 - value.y2} />
       </g>
 
       <!-- Curve -->
-      <path d={curvePath} stroke="currentColor" class="text-primary" stroke-width="0.012" fill="none" />
+      <path
+        d={curvePath}
+        stroke="currentColor"
+        class="text-primary"
+        stroke-width="0.012"
+        fill="none"
+      />
 
       <!-- Anchor points (non-interactive) -->
-      <circle cx="0" cy="1" r="0.018" fill="currentColor" class="text-muted-foreground" />
-      <circle cx="1" cy="0" r="0.018" fill="currentColor" class="text-muted-foreground" />
+      <circle
+        cx="0"
+        cy="1"
+        r="0.018"
+        fill="currentColor"
+        class="text-muted-foreground"
+      />
+      <circle
+        cx="1"
+        cy="0"
+        r="0.018"
+        fill="currentColor"
+        class="text-muted-foreground"
+      />
 
       <!-- P1 handle -->
       <circle
@@ -191,7 +238,10 @@
         aria-valuemax={1}
         aria-valuenow={value.x1}
         aria-valuetext="x {value.x1.toFixed(2)}, y {value.y1.toFixed(2)}"
-        class={cn("text-primary focus:outline-none", !disabled && "cursor-grab")}
+        class={cn(
+          "text-primary focus:outline-none",
+          !disabled && "cursor-grab",
+        )}
         style:cursor={dragging === "p1" ? "grabbing" : undefined}
         onpointerdown={(e) => handleStart("p1", e)}
       />
@@ -209,7 +259,10 @@
         aria-valuemax={1}
         aria-valuenow={value.x2}
         aria-valuetext="x {value.x2.toFixed(2)}, y {value.y2.toFixed(2)}"
-        class={cn("text-primary focus:outline-none", !disabled && "cursor-grab")}
+        class={cn(
+          "text-primary focus:outline-none",
+          !disabled && "cursor-grab",
+        )}
         style:cursor={dragging === "p2" ? "grabbing" : undefined}
         onpointerdown={(e) => handleStart("p2", e)}
       />
@@ -220,14 +273,19 @@
   <div class="grid grid-cols-4 gap-1.5">
     {#each [["x1", value.x1], ["y1", value.y1], ["x2", value.x2], ["y2", value.y2]] as const as [field, v] (field)}
       <label class="flex flex-col gap-0.5">
-        <span class="text-[9px] font-mono uppercase tracking-wide text-muted-foreground">{field}</span>
-        <input
+        <span
+          class="text-[9px] font-mono uppercase tracking-wide text-muted-foreground"
+          >{field}</span
+        >
+        <Input
           type="number"
+          pattern="^-?(?:\d+|\d*\.\d+)$"
           step="0.01"
           {disabled}
           value={numField(v)}
-          onchange={(e) => setField(field, (e.currentTarget as HTMLInputElement).value)}
-          class="h-6 rounded-sm border border-border bg-background px-1.5 text-[11px] font-mono tabular-nums text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          onchange={(e) =>
+            setField(field, (e.currentTarget as HTMLInputElement).value)}
+          class="h-6 rounded-sm px-1.5 text-[11px] font-mono tabular-nums text-foreground no-webkit"
         />
       </label>
     {/each}
@@ -246,7 +304,7 @@
             "focus:outline-none focus:ring-1 focus:ring-ring",
             isActive
               ? "border-primary bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground"
+              : "border-border bg-background text-muted-foreground hover:text-foreground",
           )}
         >
           {preset.label}

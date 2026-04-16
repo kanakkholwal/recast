@@ -3,6 +3,7 @@
  * Uses Svelte 5 runes ($state) for granular reactivity.
  */
 
+import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
@@ -32,7 +33,9 @@ export const DEFAULT_ZOOM_RAMP = 0.35;
 export interface CursorSettings {
 	enabled: boolean;
 	size: number; // 1-5 scale
-	smoothing: number; // 0-100
+	smoothing: number; // 0-100 → Gaussian σ in ms (0 = raw capture, 100 ≈ 150 ms)
+	snapToClicks: boolean; // anchor smoothed path to exact click x/y around mouse-down
+	snapWindowMs: number; // half-width (ms) of the snap anchor — 0..200
 	highlightClicks: boolean;
 	highlightColor: string;
 	highlightOpacity: number; // 0-100
@@ -88,6 +91,8 @@ export interface EditorRenderState {
 	cursorEnabled: boolean;
 	cursorSize: number;
 	cursorSmoothing: number;
+	cursorSnapToClicks: boolean;
+	cursorSnapWindowMs: number;
 	cursorHighlightClicks: boolean;
 	cursorHighlightColor: string;
 	cursorHighlightOpacity: number;
@@ -165,6 +170,11 @@ export function createEditorStore() {
 	// Layout
 	let layoutMode = $state<LayoutMode>('auto');
 
+	// Raw cursor samples, shared between the preview (which runs the actual
+	// compositor) and the Cursor panel (which needs them for the trajectory
+	// minimap). Set by VideoPreview on load; read-only elsewhere.
+	let cursorSamplesRaw = $state<CursorSampleLike[]>([]);
+
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
 	let selectedZoomRegionId = $state<string | null>(null);
@@ -178,6 +188,8 @@ export function createEditorStore() {
 		enabled: true,
 		size: 3,
 		smoothing: 50,
+		snapToClicks: true,
+		snapWindowMs: 80,
 		highlightClicks: true,
 		highlightColor: '#3b82f6',
 		highlightOpacity: 40,
@@ -344,6 +356,8 @@ export function createEditorStore() {
 			enabled: true,
 			size: 3,
 			smoothing: 50,
+			snapToClicks: true,
+			snapWindowMs: 80,
 			highlightClicks: true,
 			highlightColor: '#3b82f6',
 			highlightOpacity: 40,
@@ -382,6 +396,8 @@ export function createEditorStore() {
 			cursorEnabled: cursorSettings.enabled,
 			cursorSize: cursorSettings.size,
 			cursorSmoothing: cursorSettings.smoothing,
+			cursorSnapToClicks: cursorSettings.snapToClicks,
+			cursorSnapWindowMs: cursorSettings.snapWindowMs,
 			cursorHighlightClicks: cursorSettings.highlightClicks,
 			cursorHighlightColor: cursorSettings.highlightColor,
 			cursorHighlightOpacity: cursorSettings.highlightOpacity,
@@ -413,6 +429,8 @@ export function createEditorStore() {
 			enabled: state.cursorEnabled ?? cursorSettings.enabled,
 			size: state.cursorSize ?? cursorSettings.size,
 			smoothing: state.cursorSmoothing ?? cursorSettings.smoothing,
+			snapToClicks: state.cursorSnapToClicks ?? cursorSettings.snapToClicks,
+			snapWindowMs: state.cursorSnapWindowMs ?? cursorSettings.snapWindowMs,
 			highlightClicks:
 				state.cursorHighlightClicks ?? cursorSettings.highlightClicks,
 			highlightColor:
@@ -479,6 +497,9 @@ export function createEditorStore() {
 		set layoutMode(v: LayoutMode) { pushUndoState(); layoutMode = v; },
 
 		get zoomRegions() { return zoomRegions; },
+
+		get cursorSamplesRaw() { return cursorSamplesRaw; },
+		set cursorSamplesRaw(v: CursorSampleLike[]) { cursorSamplesRaw = v; },
 
 		get selectedZoomRegionId() { return selectedZoomRegionId; },
 		set selectedZoomRegionId(v: string | null) { selectedZoomRegionId = v; },

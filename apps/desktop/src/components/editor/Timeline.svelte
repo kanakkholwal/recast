@@ -549,7 +549,7 @@
           <div
             class="mx-auto mt-6 size-2 rounded-full border border-background bg-primary"
           ></div>
-          <div class="mx-auto h-[126px] w-px bg-primary/60"></div>
+          <div class="mx-auto h-31.5 w-px bg-primary/60"></div>
         </div>
       </div>
     </div>

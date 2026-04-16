@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::node_types::{BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
+use super::node_types::{Annotation, BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,6 +27,10 @@ pub struct RenderState {
     pub cursor_hide_when_idle: bool,
     pub cursor_idle_timeout: f64,
     pub zoom_regions: Vec<ZoomRegion>,
+    /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
+    /// Preview-only today; export integration lands with the cursor-overlay rewrite.
+    #[serde(default)]
+    pub annotations: Vec<Annotation>,
 }
 
 impl Default for RenderState {
@@ -48,6 +52,7 @@ impl Default for RenderState {
             cursor_hide_when_idle: false,
             cursor_idle_timeout: 3.0,
             zoom_regions: Vec::new(),
+            annotations: Vec::new(),
         }
     }
 }

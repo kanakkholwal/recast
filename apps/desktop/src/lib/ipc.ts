@@ -180,6 +180,25 @@ export function cancelExport(): Promise<void> {
 	return invoke("cancel_export");
 }
 
+// ── Zoom suggestions (auto-focus) ───────────────────────────────────────
+
+export type ZoomSuggestionReason = "click" | "settleAfterMotion";
+
+export interface ZoomSuggestion {
+	timestampUs: number;
+	x: number;
+	y: number;
+	reason: ZoomSuggestionReason;
+}
+
+/**
+ * Analyse a captured cursor track and return candidate auto-focus moments
+ * (clicks + settle-after-motion). Backed by `detect_zoom_triggers` in Rust.
+ */
+export function suggestZoomRegions(cursorPath: string): Promise<ZoomSuggestion[]> {
+	return invoke<ZoomSuggestion[]>("suggest_zoom_regions", { cursorPath });
+}
+
 //  Autosave / Recovery commands 
 
 export function autosaveProject(projectPath: string, editsJson: string): Promise<void> {
