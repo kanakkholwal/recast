@@ -1,8 +1,9 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Clock, Film, Gauge, ImageIcon, MousePointer, Target, Volume2 } from "@lucide/svelte";
+  import { Clock, Film, Gauge, ImageIcon, MousePointer, Pencil, Target, Volume2 } from "@lucide/svelte";
   import * as Tabs from "@recast/ui/tabs";
   import * as Tooltip from "@recast/ui/tooltip";
+  import AnnotationsPanel from "./AnnotationsPanel.svelte";
   import AudioPanel from "./AudioPanel.svelte";
   import BackgroundPicker from "./BackgroundPicker.svelte";
   import CursorPanel from "./CursorPanel.svelte";
@@ -12,11 +13,12 @@
     store: EditorStore;
   }
 
-  type PanelTab = "background" | "focus" | "cursor" | "audio";
+  type PanelTab = "background" | "focus" | "annotations" | "cursor" | "audio";
 
   const tabs: { id: PanelTab; label: string; icon: typeof ImageIcon }[] = [
     { id: "background", label: "Background", icon: ImageIcon },
     { id: "focus", label: "Focus", icon: Target },
+    { id: "annotations", label: "Annotations", icon: Pencil },
     { id: "cursor", label: "Cursor", icon: MousePointer },
     { id: "audio", label: "Audio", icon: Volume2 },
   ];
@@ -29,6 +31,13 @@
   $effect(() => {
     if (store.selectedZoomRegionId) {
       activeTab = "focus";
+    }
+  });
+
+  // Same idea for annotations — select → jump to the Annotations tab.
+  $effect(() => {
+    if (store.selectedAnnotationId || store.annotationTool) {
+      activeTab = "annotations";
     }
   });
 
@@ -121,6 +130,10 @@
 
     <Tabs.Content value="focus" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
       <FocusPanel {store} />
+    </Tabs.Content>
+
+    <Tabs.Content value="annotations" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">
+      <AnnotationsPanel {store} />
     </Tabs.Content>
 
     <Tabs.Content value="cursor" class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent">

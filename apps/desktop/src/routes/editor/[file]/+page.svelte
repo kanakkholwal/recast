@@ -36,6 +36,7 @@
   const store = createEditorStore();
 
   let videoEl: HTMLVideoElement | null = $state(null);
+  let previewContainerEl: HTMLDivElement | null = $state(null);
   let systemAudioEl: HTMLAudioElement | null = $state(null);
   let micAudioEl: HTMLAudioElement | null = $state(null);
   let videoSrc = $state("");
@@ -211,6 +212,7 @@
       void loadThumbnailStrip(document.projectPath);
       videoSrc = convertFileSrc(document.mediaPath);
       cursorPath = document.cursorPath ?? null;
+      store.cursorPath = cursorPath;
       systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
       micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
       // Mount the editor body so the <video> element exists before we call load().
@@ -422,6 +424,16 @@
           }
         }
         break;
+      case "f":
+      case "F":
+        if (e.ctrlKey || e.metaKey) return;
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          void document.exitFullscreen();
+        } else if (previewContainerEl) {
+          void previewContainerEl.requestFullscreen();
+        }
+        break;
     }
   }
 
@@ -471,7 +483,10 @@
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <!-- Left column: preview + playback + timeline -->
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div class="flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3">
+        <div
+          bind:this={previewContainerEl}
+          class="flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3"
+        >
           <VideoPreview
             {store}
             bind:videoEl
@@ -486,7 +501,7 @@
           />
         </div>
 
-        <PlaybackControls {store} {videoEl} />
+        <PlaybackControls {store} {videoEl} fullscreenTargetEl={previewContainerEl} />
         <Timeline {store} {videoEl} />
       </div>
 

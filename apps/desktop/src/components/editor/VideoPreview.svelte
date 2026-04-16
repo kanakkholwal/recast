@@ -8,6 +8,7 @@
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
+	import AnnotationOverlay from "./AnnotationOverlay.svelte";
 
 	interface Props {
 		store: EditorStore;
@@ -38,6 +39,9 @@
 	// ── DOM refs & GL state ──────────────────────────────────────────────
 	let canvasEl: HTMLCanvasElement | null = $state(null);
 	let containerEl: HTMLDivElement | null = $state(null);
+	/** Shrink-wrap around the WebGL canvas so the annotation overlay can sit
+	 * on top of it at the same rendered rect regardless of letterboxing. */
+	let previewRectEl: HTMLDivElement | null = $state(null);
 	let isReady = $state(false);
 
 	let gl: WebGL2RenderingContext | null = null;
@@ -791,10 +795,13 @@ void main() {
 	bind:this={containerEl}
 	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden"
 >
-	<canvas
-		bind:this={canvasEl}
-		class="block max-h-full max-w-full"
-	></canvas>
+	<div bind:this={previewRectEl} class="relative inline-block">
+		<canvas
+			bind:this={canvasEl}
+			class="block max-h-full max-w-full"
+		></canvas>
+		<AnnotationOverlay {store} {videoEl} targetEl={previewRectEl} />
+	</div>
 
 	{#if videoSrc}
 		<!-- svelte-ignore a11y_media_has_caption -->

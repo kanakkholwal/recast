@@ -147,7 +147,7 @@
   </div>
 
   <!-- Content -->
-  <div class="flex-1 overflow-y-auto px-4 pb-3 custom-scrollbar">
+  <div class="flex-1 overflow-y-auto px-4 pb-3 scrollbar-transparent">
     {#if isFetching}
       <SourceSelectorSkeleton />
     {:else if filteredSources.length === 0}
@@ -174,8 +174,8 @@
             onclick={() => (selectedSource = source)}
             class="group relative overflow-hidden rounded-lg border text-left transition-all duration-200
                             {isSelected(source)
-              ? 'border-border bg-primary ring-1 ring-primary/10'
-              : 'border-card bg-card hover:border-card/12 hover:bg-card/5'}"
+              ? 'border-border bg-primary/10 ring-1 ring-primary/10'
+              : 'border-card bg-card hover:border-primary/12 hover:bg-card/5'}"
             style="animation-delay: {i * 30}ms"
           >
             <!-- Thumbnail -->
@@ -213,14 +213,12 @@
             <!-- Label -->
             <div class="px-2.5 py-2">
               <div
-                class="truncate text-[11px] font-medium text-card-foreground/80 leading-tight"
+                class="truncate text-[11px] font-medium text-card-foreground leading-tight"
               >
                 {source.label}
               </div>
               {#if source.resolution}
-                <div
-                  class="mt-0.5 text-[9px] font-mono text-card-foreground/25"
-                >
+                <div class="mt-0.5 text-[9px] font-mono text-muted-foreground">
                   {source.resolution}
                 </div>
               {/if}
@@ -239,8 +237,8 @@
       onclick={fetchSources}
       disabled={isFetching}
       onmousedown={(e) => e.stopPropagation()}
-       variant="ghost"
-        size="sm"
+      variant="outline"
+      size="xs"
     >
       <RefreshCw size={12} class={isFetching ? "animate-spin" : ""} />
       Refresh

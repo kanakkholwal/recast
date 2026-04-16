@@ -30,6 +30,56 @@ export interface ZoomRegion {
 
 export const DEFAULT_ZOOM_RAMP = 0.35;
 
+// ── Annotations ────────────────────────────────────────────────────────
+//
+// Position / size live in video UV space (0..1) so annotations follow zoom
+// and crop transforms without re-projection. `kind` is a discriminated union
+// so arrows / polygons / text / image slot in without churn later.
+
+export interface AnnotationStroke {
+	width: number; // UV
+	color: string; // CSS colour
+}
+
+export type AnnotationKind =
+	| {
+			kind: "rect";
+			x: number;
+			y: number;
+			w: number;
+			h: number;
+			radius: number; // UV corner radius; 0 = sharp
+	  }
+	| {
+			kind: "ellipse";
+			x: number; // UV bounding-box top-left
+			y: number;
+			w: number;
+			h: number;
+	  };
+
+export type AnnotationKindName = AnnotationKind["kind"];
+
+export interface Annotation {
+	id: string;
+	start: number; // seconds
+	end: number; // seconds
+	rampIn: number; // seconds fade-in
+	rampOut: number; // seconds fade-out
+	easeIn: Easing;
+	easeOut: Easing;
+	stroke: AnnotationStroke;
+	fill: string; // CSS colour with alpha; "transparent" disables fill
+	kind: AnnotationKind;
+}
+
+export const DEFAULT_ANNOTATION_RAMP = 0.2;
+export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
+	width: 0.004,
+	color: "#3b82f6",
+};
+export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
+
 export interface CursorSettings {
 	enabled: boolean;
 	size: number; // 1-5 scale
@@ -108,6 +158,7 @@ export interface EditorRenderState {
 		rampOut: number;
 	}>;
 	cursorMotionEasing: Easing | null;
+	annotations: Array<Omit<Annotation, "id">>;
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -149,6 +200,7 @@ function generateId(): string {
 export function createEditorStore() {
 	// Video source
 	let videoPath = $state('');
+	let cursorPath = $state<string | null>(null);
 	let metadata = $state<VideoMetadata | null>(null);
 	let thumbnailStrip = $state<string[]>([]);
 
@@ -174,6 +226,11 @@ export function createEditorStore() {
 	// compositor) and the Cursor panel (which needs them for the trajectory
 	// minimap). Set by VideoPreview on load; read-only elsewhere.
 	let cursorSamplesRaw = $state<CursorSampleLike[]>([]);
+
+	// Annotations + active tool (for the preview canvas's place-mode).
+	let annotations = $state<Annotation[]>([]);
+	let selectedAnnotationId = $state<string | null>(null);
+	let annotationTool = $state<AnnotationKindName | null>(null);
 
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
@@ -338,6 +395,39 @@ export function createEditorStore() {
 		selectedZoomRegionId = id;
 	}
 
+	function addAnnotation(kind: AnnotationKind, start?: number, end?: number): Annotation {
+		pushUndoState();
+		const now = currentTime;
+		const clipEnd = trimEnd || metadata?.duration || 0;
+		const s = start ?? Math.max(trimStart, now);
+		const e = end ?? Math.min(clipEnd, Math.max(s + 2.0, now + 2.0));
+		const annotation: Annotation = {
+			id: generateId(),
+			start: s,
+			end: e,
+			rampIn: DEFAULT_ANNOTATION_RAMP,
+			rampOut: DEFAULT_ANNOTATION_RAMP,
+			easeIn: { ...EASE },
+			easeOut: { ...EASE },
+			stroke: { ...DEFAULT_ANNOTATION_STROKE },
+			fill: DEFAULT_ANNOTATION_FILL,
+			kind,
+		};
+		annotations = [...annotations, annotation];
+		selectedAnnotationId = annotation.id;
+		return annotation;
+	}
+
+	function updateAnnotation(id: string, updates: Partial<Annotation>) {
+		annotations = annotations.map((a) => (a.id === id ? { ...a, ...updates } : a));
+	}
+
+	function removeAnnotation(id: string) {
+		pushUndoState();
+		annotations = annotations.filter((a) => a.id !== id);
+		if (selectedAnnotationId === id) selectedAnnotationId = null;
+	}
+
 	function reset() {
 		currentTime = 0;
 		isPlaying = false;
@@ -351,6 +441,9 @@ export function createEditorStore() {
 		layoutMode = 'auto';
 		zoomRegions = [];
 		selectedZoomRegionId = null;
+		annotations = [];
+		selectedAnnotationId = null;
+		annotationTool = null;
 		cursorMotionEasing = null;
 		cursorSettings = {
 			enabled: true,
@@ -413,6 +506,7 @@ export function createEditorStore() {
 				rampOut: region.rampOut,
 			})),
 			cursorMotionEasing,
+			annotations: annotations.map(({ id: _id, ...rest }) => rest),
 		};
 	}
 
@@ -453,12 +547,29 @@ export function createEditorStore() {
 			rampOut: region.rampOut ?? DEFAULT_ZOOM_RAMP,
 		}));
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
+		annotations = (state.annotations ?? []).map((a) => ({
+			id: generateId(),
+			start: a.start,
+			end: a.end,
+			rampIn: a.rampIn ?? DEFAULT_ANNOTATION_RAMP,
+			rampOut: a.rampOut ?? DEFAULT_ANNOTATION_RAMP,
+			easeIn: a.easeIn ?? { ...EASE },
+			easeOut: a.easeOut ?? { ...EASE },
+			stroke: a.stroke ?? { ...DEFAULT_ANNOTATION_STROKE },
+			fill: a.fill ?? DEFAULT_ANNOTATION_FILL,
+			kind: a.kind,
+		}));
+		selectedAnnotationId = null;
+		annotationTool = null;
 	}
 
 	return {
 		// Getters (reactive reads)
 		get videoPath() { return videoPath; },
 		set videoPath(v: string) { videoPath = v; },
+
+		get cursorPath() { return cursorPath; },
+		set cursorPath(v: string | null) { cursorPath = v; },
 
 		get metadata() { return metadata; },
 		set metadata(v: VideoMetadata | null) { metadata = v; },
@@ -507,6 +618,12 @@ export function createEditorStore() {
 		get cursorMotionEasing() { return cursorMotionEasing; },
 		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
 
+		get annotations() { return annotations; },
+		get selectedAnnotationId() { return selectedAnnotationId; },
+		set selectedAnnotationId(v: string | null) { selectedAnnotationId = v; },
+		get annotationTool() { return annotationTool; },
+		set annotationTool(v: AnnotationKindName | null) { annotationTool = v; },
+
 		get cursorSettings() { return cursorSettings; },
 		set cursorSettings(v: CursorSettings) { cursorSettings = v; },
 
@@ -546,6 +663,9 @@ export function createEditorStore() {
 		removeZoomRegion,
 		updateZoomRegion,
 		selectZoomRegion,
+		addAnnotation,
+		updateAnnotation,
+		removeAnnotation,
 		reset,
 		toRenderState,
 		loadRenderState,

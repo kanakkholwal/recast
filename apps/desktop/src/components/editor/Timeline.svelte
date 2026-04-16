@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Easing } from "$lib/easing/cubic-bezier";
   import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
-  import { CircleQuestionMark, Scissors, Search, X } from "@lucide/svelte";
+  import { CircleQuestionMark, Scissors, Search, Wand2, X } from "@lucide/svelte";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import {
@@ -12,6 +12,7 @@
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
+  import ZoomSuggestionsPopover from "./ZoomSuggestionsPopover.svelte";
   interface Props {
     store: EditorStore;
     videoEl?: HTMLVideoElement | null;
@@ -22,7 +23,86 @@
   let timelineEl: HTMLDivElement | undefined = $state();
   let isDraggingPlayhead = $state(false);
   let showTrimHelp = $state(false);
+  let showSuggestions = $state(false);
   let timelineWidth = $state(900);
+  let activeTrimHandle = $state<"in" | "out" | null>(null);
+
+  const MIN_TRIM_GAP = 0.1; // seconds
+
+  function toggleSuggestions() {
+    showSuggestions = !showSuggestions;
+  }
+
+  function clientXToTime(clientX: number): number {
+    if (!timelineEl || duration <= 0) return 0;
+    const rect = timelineEl.getBoundingClientRect();
+    const scrollLeft = timelineEl.scrollLeft;
+    const x = clientX - rect.left + scrollLeft;
+    return Math.max(0, Math.min(duration, x / pixelsPerSecond));
+  }
+
+  function startTrimDrag(event: PointerEvent, which: "in" | "out") {
+    if (duration <= 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    store.pushUndoState();
+    activeTrimHandle = which;
+    (event.currentTarget as Element).setPointerCapture(event.pointerId);
+    updateTrimFromPointer(event.clientX, which);
+    const onMove = (e: PointerEvent) => {
+      updateTrimFromPointer(e.clientX, which);
+    };
+    const onUp = (e: PointerEvent) => {
+      activeTrimHandle = null;
+      try {
+        (event.currentTarget as Element).releasePointerCapture(e.pointerId);
+      } catch {
+        // already released on some browsers
+      }
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  function updateTrimFromPointer(clientX: number, which: "in" | "out") {
+    const t = clientXToTime(clientX);
+    const effectiveEnd = store.trimEnd || duration;
+    if (which === "in") {
+      const clamped = Math.min(t, Math.max(0, effectiveEnd - MIN_TRIM_GAP));
+      store.trimStart = Math.max(0, clamped);
+    } else {
+      const clamped = Math.max(t, Math.min(duration, store.trimStart + MIN_TRIM_GAP));
+      store.trimEnd = Math.min(duration, clamped);
+    }
+  }
+
+  function handleTrimHandleKey(event: KeyboardEvent, which: "in" | "out") {
+    if (duration <= 0) return;
+    const step = event.shiftKey
+      ? 1
+      : store.metadata?.fps
+        ? 1 / store.metadata.fps
+        : 1 / 30;
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const delta = event.key === "ArrowLeft" ? -step : step;
+    if (which === "in") {
+      const effectiveEnd = store.trimEnd || duration;
+      const next = Math.max(0, Math.min(effectiveEnd - MIN_TRIM_GAP, store.trimStart + delta));
+      store.trimStart = next;
+    } else {
+      const next = Math.max(
+        store.trimStart + MIN_TRIM_GAP,
+        Math.min(duration, (store.trimEnd || duration) + delta),
+      );
+      store.trimEnd = next;
+    }
+  }
 
   const duration = $derived(store.metadata?.duration ?? 0);
   const pixelsPerSecond = $derived(
@@ -160,6 +240,26 @@
       const next = Math.min(duration, store.currentTime + step);
       store.currentTime = next;
       if (videoEl) videoEl.currentTime = next;
+    }
+
+    // Final Cut-style in/out point shortcuts.
+    if (event.key === "i" || event.key === "I") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        store.pushUndoState();
+        store.trimStart = 0;
+      } else {
+        setTrimPoint("in");
+      }
+    }
+    if (event.key === "o" || event.key === "O") {
+      event.preventDefault();
+      if (event.shiftKey) {
+        store.pushUndoState();
+        store.trimEnd = duration;
+      } else {
+        setTrimPoint("out");
+      }
     }
   }
 
@@ -340,6 +440,25 @@
         <Search size={11} />
         Focus
       </Button>
+      <div class="relative">
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          aria-pressed={showSuggestions}
+          onclick={toggleSuggestions}
+          disabled={!store.cursorPath}
+          title={store.cursorPath ? "Suggest focus regions from captured cursor activity" : "No cursor data in this clip"}
+        >
+          <Wand2 size={11} />
+          Suggest
+        </Button>
+        {#if showSuggestions}
+          <div class="absolute left-0 top-full z-40 mt-1.5">
+            <ZoomSuggestionsPopover {store} onclose={() => (showSuggestions = false)} />
+          </div>
+        {/if}
+      </div>
       {#if hasTrim}
         <Button type="button" size="xs" variant="outline" onclick={resetTrim}>
           <Scissors size={11} />
@@ -455,12 +574,56 @@
             >
               {hasTrim ? "Trimmed" : "Full clip"}
             </div>
+            <!--
+              Trim drag handles. Each is a narrow vertical bar with a larger
+              invisible hit area (±6 px either side) so grabbing is easy.
+              Pointer events stop propagation so we don't fight the timeline's
+              click-to-seek / playhead-scrub handlers.
+            -->
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="absolute inset-y-0 left-0 w-1 rounded-l-md bg-primary"
-            ></div>
+              role="slider"
+              tabindex="0"
+              aria-label="Trim in"
+              aria-valuemin={0}
+              aria-valuemax={duration}
+              aria-valuenow={store.trimStart}
+              aria-valuetext={formatTime(store.trimStart)}
+              onpointerdown={(e) => startTrimDrag(e, "in")}
+              onkeydown={(e) => handleTrimHandleKey(e, "in")}
+              class="group absolute inset-y-0 left-0 z-10 w-2 -translate-x-1 cursor-ew-resize focus-visible:outline-none"
+            >
+              <div class="mx-auto h-full w-1 rounded-l-md bg-primary transition-all group-hover:w-1.5 group-hover:shadow-[0_0_0_2px_rgba(59,130,246,0.3)]"></div>
+              {#if activeTrimHandle === "in"}
+                <div
+                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
+                >
+                  {formatTime(store.trimStart)}
+                </div>
+              {/if}
+            </div>
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
             <div
-              class="absolute inset-y-0 right-0 w-1 rounded-r-md bg-primary"
-            ></div>
+              role="slider"
+              tabindex="0"
+              aria-label="Trim out"
+              aria-valuemin={0}
+              aria-valuemax={duration}
+              aria-valuenow={store.trimEnd || duration}
+              aria-valuetext={formatTime(store.trimEnd || duration)}
+              onpointerdown={(e) => startTrimDrag(e, "out")}
+              onkeydown={(e) => handleTrimHandleKey(e, "out")}
+              class="group absolute inset-y-0 right-0 z-10 w-2 translate-x-1 cursor-ew-resize focus-visible:outline-none"
+            >
+              <div class="mx-auto h-full w-1 rounded-r-md bg-primary transition-all group-hover:w-1.5 group-hover:shadow-[0_0_0_2px_rgba(59,130,246,0.3)]"></div>
+              {#if activeTrimHandle === "out"}
+                <div
+                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
+                >
+                  {formatTime(store.trimEnd || duration)}
+                </div>
+              {/if}
+            </div>
           </div>
         </div>
 
