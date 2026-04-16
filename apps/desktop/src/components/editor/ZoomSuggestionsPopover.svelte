@@ -1,8 +1,9 @@
 <script lang="ts">
   import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Check, MousePointerClick, Sparkles, Wand2, XCircle } from "@lucide/svelte";
+  import { AlertTriangle, Check, MousePointerClick, Sparkles, Wand2, XCircle } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
+  import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";
 
   interface Props {
@@ -11,6 +12,13 @@
   }
 
   let { store, onclose }: Props = $props();
+
+  // Target window around each trigger. We'll shrink if a neighbour forces it,
+  // but refuse to place anything shorter than MIN_REGION_DURATION — a 200 ms
+  // zoom reads as a flicker, not focus.
+  const IDEAL_HALF_WIDTH = 0.5; // seconds — full 1 s window when unobstructed
+  const MIN_REGION_DURATION = 0.4;
+  const MIN_GAP = 0.05; // guardband so adjacent regions don't visually touch
 
   type Status = "idle" | "loading" | "ready" | "error" | "empty";
   let status = $state<Status>("idle");
@@ -61,24 +69,93 @@
     store.currentTime = sug.timestampUs / 1_000_000;
   }
 
-  function makeRegion(sug: ZoomSuggestion) {
+  type Interval = { start: number; end: number };
+
+  /**
+   * Given a sorted list of occupied intervals within [clipStart, clipEnd],
+   * find the free slot that contains `t`. Returns null if `t` is inside an
+   * occupied interval.
+   */
+  function findFreeSlot(
+    occupied: Interval[],
+    clipStart: number,
+    clipEnd: number,
+    t: number,
+  ): Interval | null {
+    if (t < clipStart || t > clipEnd) return null;
+    let a = clipStart;
+    for (const iv of occupied) {
+      // Inside an existing region (with guardband) → blocked.
+      if (t >= iv.start - MIN_GAP && t <= iv.end + MIN_GAP) return null;
+      if (iv.end <= t) {
+        a = iv.end + MIN_GAP;
+      } else {
+        return { start: a, end: iv.start - MIN_GAP };
+      }
+    }
+    return { start: a, end: clipEnd };
+  }
+
+  /**
+   * Compute the placement window for a suggestion given current occupied
+   * intervals. Returns null if there's no room for a meaningful zoom.
+   */
+  function planPlacement(
+    occupied: Interval[],
+    clipStart: number,
+    clipEnd: number,
+    centerSec: number,
+  ): Interval | null {
+    const slot = findFreeSlot(occupied, clipStart, clipEnd, centerSec);
+    if (!slot) return null;
+    const start = Math.max(slot.start, centerSec - IDEAL_HALF_WIDTH);
+    const end = Math.min(slot.end, centerSec + IDEAL_HALF_WIDTH);
+    if (end - start < MIN_REGION_DURATION) return null;
+    return { start, end };
+  }
+
+  function currentOccupied(): Interval[] {
+    return store.zoomRegions
+      .map((z) => ({ start: z.start, end: z.end }))
+      .sort((a, b) => a.start - b.start);
+  }
+
+  function clipBounds(): { start: number; end: number } | null {
     const duration = store.metadata?.duration ?? 0;
-    if (duration <= 0) return;
-    const centerSec = sug.timestampUs / 1_000_000;
-    const clipEnd = store.trimEnd || duration;
-    const start = Math.max(store.trimStart, centerSec - 0.5);
-    const end = Math.min(clipEnd, Math.max(start + 1.0, centerSec + 1.0));
-    store.addZoomRegion(start, end, 1.8);
+    if (duration <= 0) return null;
+    return { start: store.trimStart, end: store.trimEnd || duration };
+  }
+
+  // Derive per-suggestion placement (or null) so blocked rows can be greyed
+  // out before the user tries to accept them. Re-plans whenever zoom regions
+  // or trim change.
+  const placements = $derived.by(() => {
+    const bounds = clipBounds();
+    if (!bounds) return new Map<string, Interval | null>();
+    const occupied = currentOccupied();
+    const map = new Map<string, Interval | null>();
+    for (const sug of pending) {
+      const centerSec = sug.timestampUs / 1_000_000;
+      const key = sug.timestampUs + "-" + sug.reason;
+      map.set(key, planPlacement(occupied, bounds.start, bounds.end, centerSec));
+    }
+    return map;
+  });
+
+  function keyOf(sug: ZoomSuggestion) {
+    return sug.timestampUs + "-" + sug.reason;
   }
 
   function accept(idx: number) {
     const sug = pending[idx];
     if (!sug) return;
-    makeRegion(sug);
+    const bounds = clipBounds();
+    if (!bounds) return;
+    const plan = planPlacement(currentOccupied(), bounds.start, bounds.end, sug.timestampUs / 1_000_000);
+    if (!plan) return; // blocked — button should already be disabled
+    store.addZoomRegion(plan.start, plan.end, 1.8);
     pending = pending.filter((_, i) => i !== idx);
-    if (pending.length === 0) {
-      status = "empty";
-    }
+    if (pending.length === 0) status = "empty";
   }
 
   function dismiss(idx: number) {
@@ -87,9 +164,26 @@
   }
 
   function acceptAll() {
-    for (const sug of pending) makeRegion(sug);
-    pending = [];
-    status = "empty";
+    const bounds = clipBounds();
+    if (!bounds) return;
+    // Re-plan after each placement so two adjacent suggestions don't both claim
+    // the same slot — a click + settle 400 ms apart would otherwise produce
+    // overlapping windows. We sort by timestamp so earlier triggers win.
+    const occupied = currentOccupied();
+    const sorted = [...pending].sort((a, b) => a.timestampUs - b.timestampUs);
+    const skipped: ZoomSuggestion[] = [];
+    for (const sug of sorted) {
+      const plan = planPlacement(occupied, bounds.start, bounds.end, sug.timestampUs / 1_000_000);
+      if (!plan) {
+        skipped.push(sug);
+        continue;
+      }
+      store.addZoomRegion(plan.start, plan.end, 1.8);
+      occupied.push(plan);
+      occupied.sort((a, b) => a.start - b.start);
+    }
+    pending = skipped;
+    if (pending.length === 0) status = "empty";
   }
 
   function dismissAll() {
@@ -132,21 +226,30 @@
       <Button variant="ghost" size="xs" onclick={loadSuggestions} class="mt-1">Re-scan</Button>
     </div>
   {:else if status === "ready"}
+    {@const availableCount = pending.filter((s) => placements.get(keyOf(s)) != null).length}
     <div class="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[10px] text-muted-foreground">
       <span>
-        {pending.length} candidate{pending.length === 1 ? "" : "s"}
+        {availableCount} of {pending.length} available
       </span>
       <div class="flex items-center gap-1">
         <Button variant="ghost" size="xs" onclick={dismissAll}>Dismiss all</Button>
-        <Button variant="default" size="xs" class="gap-1.5" onclick={acceptAll}>
+        <Button
+          variant="default"
+          size="xs"
+          class="gap-1.5"
+          onclick={acceptAll}
+          disabled={availableCount === 0}
+        >
           <Check size={11} />
           Accept all
         </Button>
       </div>
     </div>
     <ul class="flex-1 overflow-y-auto">
-      {#each pending as sug, i (sug.timestampUs + "-" + sug.reason)}
+      {#each pending as sug, i (keyOf(sug))}
         {@const ReasonIcon = reasonIcon(sug.reason)}
+        {@const plan = placements.get(keyOf(sug))}
+        {@const blocked = plan == null}
         <li>
           <button
             type="button"
@@ -155,10 +258,16 @@
             class={cn(
               "group flex w-full items-center gap-2 border-b border-border px-3 py-2 text-left transition-colors",
               "hover:bg-muted/50 focus-visible:bg-muted/50 focus:outline-none",
+              blocked && "opacity-60",
             )}
           >
-            <span class="flex size-7 shrink-0 items-center justify-center rounded-md border border-border bg-card">
-              <ReasonIcon size={12} class="text-primary" />
+            <span
+              class={cn(
+                "flex size-7 shrink-0 items-center justify-center rounded-md border bg-card",
+                blocked ? "border-amber-500/40" : "border-border",
+              )}
+            >
+              <ReasonIcon size={12} class={blocked ? "text-amber-500" : "text-primary"} />
             </span>
             <div class="flex-1 min-w-0">
               <div class="flex items-baseline justify-between gap-2">
@@ -170,7 +279,14 @@
                 </span>
               </div>
               <div class="truncate text-[10px] text-muted-foreground">
-                x {sug.x}, y {sug.y}
+                {#if blocked}
+                  <span class="inline-flex items-center gap-1 text-amber-500">
+                    <AlertTriangle size={9} />
+                    Overlaps an existing focus
+                  </span>
+                {:else}
+                  x {sug.x}, y {sug.y}
+                {/if}
               </div>
             </div>
             <div class="flex shrink-0 items-center gap-1">
@@ -185,18 +301,29 @@
               >
                 <XCircle size={11} />
               </Button>
-              <Button
-                variant="default"
-                size="xs"
-                class="gap-1"
-                aria-label="Add focus"
-                onclick={(event) => {
-                  event.stopPropagation();
-                  accept(i);
-                }}
-              >
-                <Check size={11} />
-              </Button>
+              {#if blocked}
+                <Tooltip.Root>
+                  <Tooltip.Trigger>
+                    <Button variant="default" size="xs" class="gap-1" disabled aria-label="Add focus (blocked)">
+                      <Check size={11} />
+                    </Button>
+                  </Tooltip.Trigger>
+                  <Tooltip.Content>Remove the overlapping focus first</Tooltip.Content>
+                </Tooltip.Root>
+              {:else}
+                <Button
+                  variant="default"
+                  size="xs"
+                  class="gap-1"
+                  aria-label="Add focus"
+                  onclick={(event) => {
+                    event.stopPropagation();
+                    accept(i);
+                  }}
+                >
+                  <Check size={11} />
+                </Button>
+              {/if}
             </div>
           </button>
         </li>

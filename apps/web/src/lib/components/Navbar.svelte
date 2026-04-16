@@ -16,27 +16,30 @@
 
 <header
 	class={cn(
-		"fixed top-0 left-0 right-0 z-50 transition-all duration-200 border-b",
-		scrolled ? "bg-background/80 backdrop-blur-md border-border/40 py-4" : "bg-transparent border-transparent py-6",
+		"fixed top-6 left-1/2 -translate-x-1/2 z-50 transition-all duration-300 w-fit max-w-[95vw]",
 		className
 	)}
 >
-	<Container class="flex items-center justify-between">
-		<a href="/" class="flex items-center gap-2">
+	<div class="glass-panel shadow-craft-md rounded-full px-6 py-3 flex items-center gap-8">
+		<a href="/" class="flex items-center gap-2 group transition-transform active:scale-95">
 			<div class="size-6 flex items-center justify-center">
 				<Logo size="24" />
 			</div>
-			<span class="text-lg font-semibold tracking-tight">Recast</span>
+			<span class="text-sm font-semibold tracking-tight">Recast</span>
 		</a>
 
-		<nav class="hidden md:flex items-center gap-8 text-sm font-medium text-muted-foreground">
+		<nav class="hidden md:flex items-center gap-6 text-[13px] font-medium text-foreground/60">
 			<a href="#pillars" class="hover:text-foreground transition-colors">Philosophy</a>
 			<a href="#how-it-works" class="hover:text-foreground transition-colors">Workflow</a>
 			<a href="#features" class="hover:text-foreground transition-colors">Features</a>
 		</nav>
 
+		<div class="h-4 w-px bg-border-low hidden md:block"></div>
+
 		<div class="flex items-center gap-4">
-			<Button size="sm" class="font-medium shadow-sm shadow-primary/20 hover:shadow-primary/40" href="/download">Get Started</Button>
+			<Button variant="ghost" size="sm" class="text-[13px] font-medium h-8 px-4 rounded-full" href="/download">
+				Get Started
+			</Button>
 		</div>
-	</Container>
+	</div>
 </header>

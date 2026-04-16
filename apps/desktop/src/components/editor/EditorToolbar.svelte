@@ -1,26 +1,22 @@
 <script lang="ts">
-  import type {
-    BackgroundType,
-    EditorStore,
-    ExportFormat,
-    ExportQuality,
-  } from "$lib/stores/editor-store.svelte";
+  import type { BackgroundType, EditorStore } from "$lib/stores/editor-store.svelte";
   import {
     ArrowLeft,
     ChevronDown,
     Crop,
-    Download,
     LayoutGrid,
     LoaderCircle,
     Redo2,
     Sparkles,
     Trash2,
     Undo2,
+    Upload,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Separator } from "@recast/ui/separator";
   import * as Tooltip from "@recast/ui/tooltip";
+  import ExportDialog from "./ExportDialog.svelte";
 
   interface Props {
     store: EditorStore;
@@ -31,8 +27,7 @@
 
   let { store, filename = "Recording", onback, onexport }: Props = $props();
   let showPresetsMenu = $state(false);
-  let showFormatMenu = $state(false);
-  let showQualityMenu = $state(false);
+  let exportDialogOpen = $state(false);
 
   const presets: {
     label: string;
@@ -48,19 +43,6 @@
     { label: "Edge to Edge", bg: "color", value: "#020617", padding: 0, blur: 0, layout: "crop" },
   ];
 
-  const formats: { value: ExportFormat; label: string; desc: string }[] = [
-    { value: "mp4", label: "MP4", desc: "Best quality, universal" },
-    { value: "webm", label: "WebM", desc: "Web-optimized, smaller" },
-    { value: "gif", label: "GIF", desc: "Animated, shareable" },
-  ];
-
-  const qualities: { value: ExportQuality; label: string; desc: string }[] = [
-    { value: "small", label: "Small", desc: "Up to 720p" },
-    { value: "hd", label: "HD", desc: "Up to 1080p" },
-    { value: "4k", label: "4K", desc: "Up to 2160p" },
-    { value: "source", label: "Source", desc: "Original resolution" },
-  ];
-
   function applyPreset(preset: (typeof presets)[0]) {
     store.pushUndoState();
     store.setBackground({ type: preset.bg, value: preset.value ?? store.backgroundValue });
@@ -68,6 +50,11 @@
     store.backgroundBlur = preset.blur;
     if (preset.layout) store.layoutMode = preset.layout;
     showPresetsMenu = false;
+  }
+
+  function openExport() {
+    if (store.isExporting) return;
+    exportDialogOpen = true;
   }
 </script>
 
@@ -182,66 +169,10 @@
     </Tooltip.Root>
   </div>
 
-  <!-- Right: format + quality + export -->
+  <!-- Right: export -->
   <div class="ml-auto flex items-center gap-1">
-    <DropdownMenu.Root bind:open={showFormatMenu}>
-      <DropdownMenu.Trigger>
-        <Button
-          variant="ghost"
-          size="sm"
-          class="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
-        >
-          {store.exportFormat.toUpperCase()}
-          <ChevronDown size={10} />
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end" class="w-48" preventScroll={false}>
-        {#each formats as fmt}
-          <DropdownMenu.Item
-            onclick={() => {
-              store.exportFormat = fmt.value;
-              showFormatMenu = false;
-            }}
-          >
-            <div class="flex flex-col gap-0.5">
-              <span class="text-[12px] font-medium">{fmt.label}</span>
-              <span class="text-[10px] text-muted-foreground">{fmt.desc}</span>
-            </div>
-          </DropdownMenu.Item>
-        {/each}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
-
-    <DropdownMenu.Root bind:open={showQualityMenu}>
-      <DropdownMenu.Trigger>
-        <Button
-          variant="ghost"
-          size="sm"
-          class="h-6 gap-1 px-2 text-[11px] text-muted-foreground"
-        >
-          {store.exportQuality.toUpperCase()}
-          <ChevronDown size={10} />
-        </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content align="end" class="w-48" preventScroll={false}>
-        {#each qualities as q}
-          <DropdownMenu.Item
-            onclick={() => {
-              store.exportQuality = q.value;
-              showQualityMenu = false;
-            }}
-          >
-            <div class="flex flex-col gap-0.5">
-              <span class="text-[12px] font-medium">{q.label}</span>
-              <span class="text-[10px] text-muted-foreground">{q.desc}</span>
-            </div>
-          </DropdownMenu.Item>
-        {/each}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
-
     <Button
-      onclick={() => onexport?.()}
+      onclick={openExport}
       disabled={store.isExporting}
       size="sm"
       class="h-6 gap-1 px-2 text-[11px]"
@@ -250,9 +181,16 @@
         <LoaderCircle size={12} class="animate-spin" />
         Exporting…
       {:else}
-        <Download size={11} />
+        <Upload size={11} />
         Export
       {/if}
     </Button>
   </div>
 </div>
+
+<ExportDialog
+  {store}
+  bind:open={exportDialogOpen}
+  onOpenChange={(v) => (exportDialogOpen = v)}
+  onConfirm={() => onexport?.()}
+/>

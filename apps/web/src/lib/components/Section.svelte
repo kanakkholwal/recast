@@ -3,6 +3,6 @@
 	let { children, class: className = "", id = "" } = $props();
 </script>
 
-<section {id} class={cn("w-full", className)}>
+<section {id} class={cn("w-full relative group", className)}>
 	{@render children()}
 </section>

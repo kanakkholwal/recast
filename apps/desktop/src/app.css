@@ -51,6 +51,10 @@
     background-image: var(--noise-bg);
     @apply selection:bg-primary/75 selection:text-white selection:rounded-2xl transition-all duration-300;
   }
+
+  li:has([class]) {
+    list-style: none;
+  }
 }
 
 /* Custom Grid Background Utility */

@@ -10,7 +10,7 @@
 </script>
 
 <Sidebar.Provider class="h-full min-h-full fixed inset-0" open={false}>
-  <AppSidebar />
+  <AppSidebar variant="floating"/>
   <Sidebar.Inset class="@container/layout">
     <CustomTitlebar
       class="shrink-0 items-center gap-2 border-b border-border px-2"

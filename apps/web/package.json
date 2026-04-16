@@ -24,6 +24,7 @@
     "vite": "^7.3.1"
   },
   "dependencies": {
+    "@fontsource-variable/instrument-sans": "^5.2.8",
     "@lucide/svelte": "^0.577.0",
     "@sveltejs/adapter-auto": "^6.0.4",
     "bits-ui": "^2.16.3",
