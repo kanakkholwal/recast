@@ -48,6 +48,25 @@ fn is_ffmpeg_progress_key_line(line: &str) -> bool {
     KEYS.iter().any(|k| trimmed.starts_with(k))
 }
 
+fn parse_ffmpeg_progress_seconds(line: &str) -> Option<f64> {
+    if let Some(value) = line
+        .strip_prefix("out_time_us=")
+        .or_else(|| line.strip_prefix("out_time_ms="))
+    {
+        return value.trim().parse::<f64>().ok().map(|raw| raw / 1_000_000.0);
+    }
+
+    let value = line.strip_prefix("out_time=")?.trim();
+    let mut parts = value.split(':');
+    let hours = parts.next()?.parse::<f64>().ok()?;
+    let minutes = parts.next()?.parse::<f64>().ok()?;
+    let seconds = parts.next()?.parse::<f64>().ok()?;
+    if parts.next().is_some() {
+        return None;
+    }
+    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+}
+
 fn static_root() -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let candidate = cwd.join("..").join("static");
@@ -528,6 +547,8 @@ pub async fn export_video(
         let last_progress = Arc::new(Mutex::new(Instant::now()));
         let killed_by_timeout = Arc::new(AtomicBool::new(false));
         let killed_by_user = Arc::new(AtomicBool::new(false));
+        let finalizing_seen = Arc::new(AtomicBool::new(false));
+        let progress_end_seen = Arc::new(AtomicBool::new(false));
 
         // Parse stderr line-by-line. Progress blocks (key=value lines) get
         // filtered out; only genuine log output is appended to the 8 KB error
@@ -538,35 +559,32 @@ pub async fn export_video(
         let stderr_buf_writer = stderr_buf.clone();
         let stderr_last_progress = last_progress.clone();
         let stderr_app = app.clone();
+        let stderr_finalizing_seen = finalizing_seen.clone();
+        let stderr_progress_end_seen = progress_end_seen.clone();
         let stderr_thread = std::thread::Builder::new()
             .name("recast-export-stderr".into())
             .spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
-                let mut finalizing_emitted = false;
                 for line in reader.lines().map_while(Result::ok) {
                     // FFmpeg progress blocks are key=value lines terminated by
                     // `progress=continue` (between blocks) or `progress=end`
                     // (final block). Treat all of these as non-log noise.
-                    if let Some(time_str) = line.strip_prefix("out_time_us=") {
-                        if let Ok(time_us) = time_str.trim().parse::<f64>() {
-                            {
-                                let mut guard = stderr_last_progress.lock();
-                                *guard = Instant::now();
-                            }
-                            let progress_secs = time_us / 1_000_000.0;
-                            let effective_duration = if duration > 0.0 {
-                                duration
-                            } else {
-                                source_duration
-                            };
-                            let pct = if effective_duration > 0.0 {
-                                (progress_secs / effective_duration * 100.0)
-                                    .clamp(0.0, 100.0)
-                            } else {
-                                0.0
-                            };
-                            let _ = stderr_app.emit("export-progress", pct);
+                    if let Some(progress_secs) = parse_ffmpeg_progress_seconds(&line) {
+                        {
+                            let mut guard = stderr_last_progress.lock();
+                            *guard = Instant::now();
                         }
+                        let effective_duration = if duration > 0.0 {
+                            duration
+                        } else {
+                            source_duration
+                        };
+                        let pct = if effective_duration > 0.0 {
+                            (progress_secs / effective_duration * 100.0).clamp(0.0, 100.0)
+                        } else {
+                            0.0
+                        };
+                        let _ = stderr_app.emit("export-progress", pct);
                         continue;
                     }
                     // `progress=end` means FFmpeg has finished encoding and
@@ -575,11 +593,11 @@ pub async fn export_video(
                     // pipes to close — on Windows stderr close can lag the
                     // actual encoder finish by seconds, which manifested as
                     // the bar sitting at 100% with no state change. Also
-                    // stamp `last_progress` so the 60 s stall watchdog gives
-                    // the trailer write its own fresh budget.
+                    // stamp `last_progress` so the watchdog gives the trailer
+                    // write its own fresh budget.
                     if line.trim() == "progress=end" {
-                        if !finalizing_emitted {
-                            finalizing_emitted = true;
+                        stderr_progress_end_seen.store(true, Ordering::Release);
+                        if !stderr_finalizing_seen.swap(true, Ordering::AcqRel) {
                             let _ = stderr_app.emit("export-progress", 100.0_f64);
                             let _ = stderr_app.emit("export-finalizing", ());
                             log::info!("export: progress=end seen, flipping UI to finalizing");
@@ -628,12 +646,13 @@ pub async fn export_video(
         // emitted `export-finalizing` when progress went quiet for 1.5s, but
         // that fired falsely on Windows when FFmpeg's pipe buffering batched
         // progress into multi-second bursts, flipping the UI to "Finalizing"
-        // mid-encode and leaving it there. Finalization detection now lives
-        // in the reader loop (below) on the more-reliable pct≥95 signal.
+        // mid-encode and leaving it there. Finalization is now reserved for
+        // FFmpeg's explicit `progress=end` signal.
         let watchdog_last_progress = last_progress.clone();
         let watchdog_killed = killed_by_timeout.clone();
         let watchdog_cancel_flag = cancel_flag.clone();
         let watchdog_user_kill = killed_by_user.clone();
+        let watchdog_progress_end_seen = progress_end_seen.clone();
         let watchdog_stop = Arc::new(AtomicBool::new(false));
         let watchdog_stop_flag = watchdog_stop.clone();
         // Share the child with the watchdog via a mutex so it can call kill().
@@ -642,7 +661,8 @@ pub async fn export_video(
         let watchdog_thread = std::thread::Builder::new()
             .name("recast-export-watchdog".into())
             .spawn(move || {
-                const STALL_TIMEOUT: Duration = Duration::from_secs(60);
+                const ENCODE_TIMEOUT: Duration = Duration::from_secs(60);
+                const FINALIZING_TIMEOUT: Duration = Duration::from_secs(15);
                 const POLL_INTERVAL: Duration = Duration::from_millis(250);
                 while !watchdog_stop_flag.load(Ordering::Acquire) {
                     std::thread::sleep(POLL_INTERVAL);
@@ -662,10 +682,26 @@ pub async fn export_video(
                         let guard = watchdog_last_progress.lock();
                         guard.elapsed()
                     };
-                    if elapsed > STALL_TIMEOUT {
+                    let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
+                    let allowed_idle = if in_finalizing {
+                        FINALIZING_TIMEOUT
+                    } else {
+                        ENCODE_TIMEOUT
+                    };
+                    if elapsed > allowed_idle {
                         let mut guard = watchdog_child.lock();
                         if let Some(ref mut child) = *guard {
-                            log::warn!("export watchdog: killing stalled ffmpeg process (no progress for {:?})", elapsed);
+                            if in_finalizing {
+                                log::warn!(
+                                    "export watchdog: killing ffmpeg after progress=end; no exit for {:?}",
+                                    elapsed
+                                );
+                            } else {
+                                log::warn!(
+                                    "export watchdog: killing stalled ffmpeg process (no progress for {:?})",
+                                    elapsed
+                                );
+                            }
                             let _ = child.kill();
                             watchdog_killed.store(true, Ordering::Release);
                         }
@@ -685,8 +721,13 @@ pub async fn export_video(
         // (e.g. FFmpeg was killed before finishing), make sure the UI still
         // gets a finalizing flip before `export-done` arrives so the dialog
         // has a consistent visual sequence.
-        let _ = app.emit("export-progress", 100.0_f64);
-        let _ = app.emit("export-finalizing", ());
+        if !killed_by_user.load(Ordering::Acquire)
+            && !killed_by_timeout.load(Ordering::Acquire)
+            && !finalizing_seen.swap(true, Ordering::AcqRel)
+        {
+            let _ = app.emit("export-progress", 100.0_f64);
+            let _ = app.emit("export-finalizing", ());
+        }
 
         // Stop the watchdog now that the I/O is done.
         watchdog_stop.store(true, Ordering::Release);
@@ -754,10 +795,14 @@ pub async fn export_video(
 
         if killed_by_timeout.load(Ordering::Acquire) {
             let _ = std::fs::remove_file(&output_path_str);
-            let err_msg = "export timed out: ffmpeg produced no progress for 60s".to_string();
+            let err_msg = if progress_end_seen.load(Ordering::Acquire) {
+                "export failed: ffmpeg reached finalizing but did not exit within 15s".to_string()
+            } else {
+                "export timed out: ffmpeg produced no progress for 60s".to_string()
+            };
             let _ = app.emit(
                 "export-done",
-                serde_json::json!({ "kind": "error", "message": err_msg }),
+                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
             );
             return Err(err_msg);
         }

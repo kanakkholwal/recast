@@ -2,20 +2,20 @@
   import { Skeleton } from "@recast/ui/skeleton";
 </script>
 
-<div class="grid grid-cols-2 gap-2 mt-4">
+<div class="grid grid-cols-2 gap-3.5">
   {#each Array(6) as _, i}
     <div
-      class="group relative overflow-hidden rounded-lg border border-card/6 bg-card/3"
+      class="group relative overflow-hidden rounded-[24px] border border-border-subtle bg-foreground/[0.02]"
     >
       <!-- Thumbnail -->
-      <div class="relative aspect-video w-full overflow-hidden bg-card/30">
-        <Skeleton class="h-full w-full rounded-none bg-muted" />
+      <div class="relative aspect-[16/10] w-full overflow-hidden bg-foreground/[0.05]">
+        <Skeleton class="h-full w-full rounded-none opacity-20" />
       </div>
 
       <!-- Label -->
-      <div class="px-2.5 py-2">
-        <Skeleton class="h-3.5 w-3/4 bg-muted rounded-sm" />
-        <Skeleton class="mt-1 h-3 w-1/3 bg-muted rounded-sm" />
+      <div class="px-5 py-4.5">
+        <Skeleton class="h-3.5 w-3/4 opacity-20" />
+        <Skeleton class="mt-1.5 h-3 w-1/3 opacity-20" />
       </div>
     </div>
   {/each}

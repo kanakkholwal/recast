@@ -53,6 +53,22 @@
       confirm();
     }
   }
+
+  function formatTime(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const centiseconds = Math.floor((seconds % 1) * 100);
+    return `${mins}:${secs.toString().padStart(2, "0")}.${centiseconds.toString().padStart(2, "0")}`;
+  }
+
+  const clipEnd = $derived(store.trimEnd > 0 ? store.trimEnd : (store.metadata?.duration ?? 0));
+  const clipDuration = $derived(Math.max(0, clipEnd - store.trimStart));
+  const sourceDuration = $derived(store.metadata?.duration ?? 0);
+  const hasTrim = $derived(
+    store.trimStart > 0 ||
+      (sourceDuration > 0 && store.trimEnd > 0 && store.trimEnd < sourceDuration),
+  );
 </script>
 
 <Dialog.Root bind:open {onOpenChange}>
@@ -84,6 +100,30 @@
           </p>
         </div>
       </header>
+
+      <section class="grid grid-cols-2 gap-2 border-b border-border bg-muted/20 px-4 py-3">
+        <div class="rounded-md border border-border bg-background/80 px-3 py-2">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Clip Length
+          </p>
+          <p class="mt-1 font-mono text-[12px] tabular-nums text-foreground">
+            {formatTime(clipDuration)}
+          </p>
+        </div>
+        <div class="rounded-md border border-border bg-background/80 px-3 py-2">
+          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Export Range
+          </p>
+          <p class="mt-1 font-mono text-[12px] tabular-nums text-foreground">
+            {formatTime(store.trimStart)} - {formatTime(clipEnd)}
+          </p>
+        </div>
+        {#if hasTrim}
+          <p class="col-span-2 text-[10px] text-muted-foreground">
+            Source length: <span class="font-mono tabular-nums text-foreground">{formatTime(sourceDuration)}</span>
+          </p>
+        {/if}
+      </section>
 
       <section class="flex flex-col gap-2 px-4 pt-4">
         <div class="flex items-center justify-between">

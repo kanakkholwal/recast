@@ -1,24 +1,32 @@
 <script lang="ts">
-	import { Command as CommandPrimitive } from "bits-ui";
 	import { cn } from "@recast/ui/utils";
+	import { IconSearch } from "@tabler/icons-svelte";
+	import { Command as CommandPrimitive } from "bits-ui";
 	import * as InputGroup from "../input-group";
-	import { IconSearch } from '@tabler/icons-svelte';
 
 	let {
 		ref = $bindable(null),
 		class: className,
+		wrapperClass,
 		value = $bindable(""),
 		...restProps
-	}: CommandPrimitive.InputProps = $props();
+	}: CommandPrimitive.InputProps & {
+		wrapperClass?: string;
+	} = $props();
 </script>
 
 <div data-slot="command-input-wrapper" class="p-1 pb-0">
-	<InputGroup.Root class="bg-input/30 border-input/30 h-8! rounded-lg! shadow-none! *:data-[slot=input-group-addon]:pl-2!">
+	<InputGroup.Root
+		class={cn(
+			"bg-input/30 border-input/30 h-8! rounded-lg! shadow-none! *:data-[slot=input-group-addon]:pl-2!",
+			wrapperClass,
+		)}
+	>
 		<CommandPrimitive.Input
 			data-slot="command-input"
 			class={cn(
 				"w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
-				className
+				className,
 			)}
 			bind:ref
 			{...restProps}

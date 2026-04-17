@@ -41,15 +41,16 @@
 /* Craft.do Block System Utilities */
 @layer utilities {
   .craft-block {
-    @apply rounded-3xl p-6 md:p-8 transition-all duration-200;
+    @apply rounded-3xl p-8 md:p-12 transition-all duration-300 bg-card border border-border/30 shadow-craft-sm;
   }
   
   .craft-card {
-    @apply bg-white dark:bg-neutral-900 border border-border-low shadow-craft-sm rounded-2xl;
+    @apply bg-white/80 dark:bg-neutral-900/80 backdrop-blur-xl border border-border/40 shadow-craft-floating rounded-2xl transition-all duration-200;
+    @apply hover:scale-[1.01] hover:shadow-md active:scale-[0.99];
   }
   
   .invisible-ui {
-    @apply opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity duration-200;
+    @apply opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 transition-all duration-200 ease-in-out;
   }
   
   .text-muted {
@@ -57,7 +58,7 @@
   }
 
   .glass-panel {
-    @apply bg-white/40 dark:bg-neutral-900/40 backdrop-blur-2xl border border-white/20 dark:border-white/10;
+    @apply bg-white/60 dark:bg-black/60 backdrop-blur-2xl border border-white/20 dark:border-white/10 shadow-craft-floating;
   }
 }
 

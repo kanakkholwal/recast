@@ -17,6 +17,9 @@ importers:
       '@fontsource-variable/google-sans':
         specifier: ^5.2.1
         version: 5.2.1
+      '@fontsource-variable/instrument-sans':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@lucide/svelte':
         specifier: ^0.577.0
         version: 0.577.0(svelte@5.55.3)

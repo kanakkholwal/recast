@@ -454,7 +454,7 @@
           Suggest
         </Button>
         {#if showSuggestions}
-          <div class="absolute left-0 top-full z-40 mt-1.5">
+          <div class="absolute left-0 bottom-full z-40 mt-1.5">
             <ZoomSuggestionsPopover {store} onclose={() => (showSuggestions = false)} />
           </div>
         {/if}

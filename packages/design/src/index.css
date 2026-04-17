@@ -5,8 +5,8 @@
 
 :root,
 [data-theme="light"] {
-  --background: hsl(40, 30%, 96%);
-  --foreground: hsl(0deg 0% 9.8%);
+  --background: hsl(0, 0%, 98%);
+  --foreground: hsl(0, 0%, 10%);
 
   --card: hsl(0, 0%, 100%);
   --card-foreground: hsl(0deg 0% 9.8%);
@@ -41,7 +41,8 @@
   --info: oklch(0.6 0.118 184.704);
   --info-foreground: oklch(0.985 0 0);
 
-  --border: hsl(220 13% 91%);
+  --border: hsl(0, 0%, 95%);
+  --border-subtle: hsla(0, 0%, 0%, 0.05);
   --input: oklch(.922 0 0);
   --ring: var(--primary);
   --radius: 0.75rem;
@@ -68,7 +69,8 @@
   --accent-foreground: hsl(0 0% 94%);
   --destructive: hsl(0 84% 60%);
   --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 18%);
+  --border: hsl(0 0% 12%);
+  --border-subtle: hsla(0 0% 100% / 0.05);
   --input: hsl(0 0% 18%);
   --ring: var(--primary);
 
@@ -109,6 +111,7 @@
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
   --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
@@ -116,7 +119,22 @@
   --font-mono: 'Space Mono', 'Fira Code', 'Courier New', monospace;
   --font-heading: 'Geist Variable', sans-serif;
 
-  --shadow-button: 0px -1px 0px 0px hsla(0, 0%, 100%, 0.04), 0px 0px 0px 1px hsla(0, 0%, 100%, 0.12), 0px 0px 1px 0px rgba(0, 0, 0, 0.04), 0px 2px 2px 0px rgba(0, 0, 0, 0.04), 0px 4px 2px 0px rgba(0, 0, 0, 0.04), 0px 6px 3px 0px rgba(0, 0, 0, 0.04);
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  --shadow-xl: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+
+  /* Craft-specific multi-layer shadows */
+  --shadow-craft-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-craft-md: 0 4px 8px -2px rgba(0, 0, 0, 0.06), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+  --shadow-craft-lg: 0 12px 24px -4px rgba(0, 0, 0, 0.08), 0 4px 8px -4px rgba(0, 0, 0, 0.04);
+  --shadow-craft-xl: 0 20px 40px -8px rgba(0, 0, 0, 0.1), 0 8px 16px -8px rgba(0, 0, 0, 0.06);
+
+  --shadow-craft-floating:
+    0 0 0 1px rgba(0, 0, 0, 0.05),
+    0 1px 2px 0 rgba(0, 0, 0, 0.05),
+    0 4px 12px 0 rgba(0, 0, 0, 0.05),
+    0 12px 24px -4px rgba(0, 0, 0, 0.05);
 
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
@@ -178,6 +196,15 @@
 
 .scrollbar-transparent::-webkit-scrollbar-corner {
   background: hsl(var(--background))
+}
+
+li:has([class]) {
+  list-style: none;
+}
+input[type="number"]:has(class){
+  -webkit-appearance: textfield;
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 html {

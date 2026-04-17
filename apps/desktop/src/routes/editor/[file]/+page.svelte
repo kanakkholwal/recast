@@ -232,8 +232,10 @@
   // Export lifecycle UI state — lives in the route, not the store, because the
   // overlay handles success/cancel/error reveals that don't belong in global state.
   let exportStartedAt = $state<number>(0);
+  let exportNow = $state<number>(Date.now());
   let exportCancelling = $state(false);
   let exportFinalizing = $state(false);
+  let exportHasProgress = $state(false);
   let exportResult = $state<
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
@@ -253,17 +255,18 @@
     if (store.isExporting) return;
     store.isExporting = true;
     store.exportProgress = 0;
+    exportHasProgress = false;
     exportCancelling = false;
     exportFinalizing = false;
     exportResult = null;
     exportStartedAt = Date.now();
+    exportNow = exportStartedAt;
 
     const unlistenProgress = await listen<number>("export-progress", (event) => {
       store.exportProgress = event.payload;
+      exportHasProgress = true;
     });
-    // Emitted by Rust when FFmpeg crosses ~95% progress: encoding is done
-    // enough that we flip the dialog into an indeterminate "Finalizing…"
-    // state so the user sees motion while we wait on the mux trailer.
+    // Emitted by Rust when FFmpeg reaches its trailer-write / shutdown phase.
     const unlistenFinalizing = await listen<null>("export-finalizing", () => {
       exportFinalizing = true;
     });
@@ -320,6 +323,7 @@
       unlistenDone();
       store.isExporting = false;
       store.exportProgress = null;
+      exportHasProgress = false;
       exportCancelling = false;
       exportFinalizing = false;
     }
@@ -354,6 +358,26 @@
     const s = Math.floor(ms / 1000);
     if (s < 60) return `${s}s`;
     return `${Math.floor(s / 60)}m ${s % 60}s`;
+  }
+
+  function formatTime(seconds: number) {
+    if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    const centiseconds = Math.floor((seconds % 1) * 100);
+    return `${mins}:${secs.toString().padStart(2, "0")}.${centiseconds.toString().padStart(2, "0")}`;
+  }
+
+  function getExportDuration() {
+    const duration = store.metadata?.duration ?? 0;
+    const clipEnd = store.trimEnd > 0 ? store.trimEnd : duration;
+    return Math.max(0, clipEnd - store.trimStart);
+  }
+
+  function getExportRangeLabel() {
+    const duration = store.metadata?.duration ?? 0;
+    const clipEnd = store.trimEnd > 0 ? store.trimEnd : duration;
+    return `${formatTime(store.trimStart)} - ${formatTime(clipEnd)}`;
   }
 
   function handleBack() {
@@ -446,6 +470,15 @@
   $effect(() => {
     if (!videoEl) return;
     videoEl.muted = true;
+  });
+
+  $effect(() => {
+    if (!store.isExporting) return;
+    exportNow = Date.now();
+    const timer = setInterval(() => {
+      exportNow = Date.now();
+    }, 1000);
+    return () => clearInterval(timer);
   });
 </script>
 
@@ -553,16 +586,12 @@
           hasn't resolved yet.
         -->
         {#if !exportResult}
-          <!--
-            Indeterminate only when we haven't received ANY progress event yet.
-            `store.exportProgress` is initialised to `0` when handleExport starts,
-            so we treat `null` OR `0` (with no previous event) as "waiting".
-            Once the first event lands (even if it reports 0.5%), the bar becomes
-            determinate and starts counting from whatever ffmpeg actually said.
-          -->
-          {@const pct = store.exportProgress ?? 0}
-          {@const isWaiting = store.exportProgress === null || store.exportProgress === 0}
+          {@const rawPct = store.exportProgress ?? 0}
+          {@const pct = exportFinalizing ? 99 : Math.min(Math.max(rawPct, 0), 99)}
+          {@const isWaiting = !exportHasProgress && !exportFinalizing}
           {@const isIndeterminate = isWaiting || exportFinalizing}
+          {@const exportDuration = getExportDuration()}
+          {@const exportRange = getExportRangeLabel()}
 
           <!-- Header: title + live metadata -->
           <header class="flex items-center gap-3 border-b border-border px-4 py-3">
@@ -585,8 +614,10 @@
               </h3>
               <p class="truncate text-[11px] text-muted-foreground">
                 {store.exportFormat.toUpperCase()} · {store.exportQuality.toUpperCase()}
+                · {formatTime(exportDuration)} clip
+                · {exportRange}
                 {#if exportStartedAt}
-                  · {formatElapsed(Date.now() - exportStartedAt)}
+                  · {formatElapsed(exportNow - exportStartedAt)}
                 {/if}
               </p>
             </div>

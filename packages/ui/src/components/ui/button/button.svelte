@@ -16,52 +16,50 @@
 	export const buttonVariants = tv({
 		base: [
 			"group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap cursor-pointer",
-			"rounded-md border border-transparent bg-clip-padding font-medium outline-none transition-all select-none",
+			"rounded-md border border-border/40 bg-clip-padding font-medium outline-none transition-all duration-200 select-none",
 			"focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
 			"aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-invalid:ring-3",
 			"dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-			"active:not-aria-[haspopup]:translate-y-px",
+			"active:scale-[0.98] hover:scale-[1.02]",
 			"disabled:pointer-events-none disabled:opacity-50",
 			"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 		].join(" "),
 		variants: {
 			variant: {
-				default: "bg-primary text-primary-foreground shadow-xs hover:bg-primary/90",
+				default: "bg-primary text-primary-foreground border-transparent shadow-craft-sm hover:bg-primary/95",
 				default_soft:
-					"bg-primary/10 text-primary hover:bg-primary/15 dark:bg-primary/10 dark:hover:bg-primary/20",
+					"bg-primary/8 text-primary border-primary/10 hover:bg-primary/12 dark:bg-primary/10 dark:hover:bg-primary/20",
 				secondary:
-					"bg-secondary text-secondary-foreground shadow-xs hover:bg-secondary/80",
+					"bg-card text-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
 				outline:
-					"border-border bg-background/40 shadow-xs hover:bg-accent hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
+					"border-border/50 bg-background/40 shadow-craft-sm hover:bg-accent/10 hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
 				ghost:
-					"hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
-				link: "text-primary underline-offset-4 hover:underline",
+					"border-transparent hover:bg-muted/40 hover:text-accent-foreground dark:hover:bg-accent/50",
+				link: "text-primary underline-offset-4 hover:underline hover:scale-100",
 				destructive:
-					"bg-destructive text-destructive-foreground shadow-xs hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+					"bg-destructive text-destructive-foreground shadow-craft-sm hover:bg-destructive/90 focus-visible:ring-destructive/20",
 				destructive_soft:
-					"bg-destructive/10 text-destructive hover:bg-destructive/15 dark:bg-destructive/10 dark:hover:bg-destructive/20",
-				success: "bg-success text-success-foreground shadow-xs hover:bg-success/90",
+					"bg-destructive/10 text-destructive border-destructive/10 hover:bg-destructive/15",
+				success: "bg-success text-success-foreground shadow-craft-sm hover:bg-success/90",
 				success_soft:
-					"bg-success/10 text-success hover:bg-success/15 dark:bg-success/10 dark:hover:bg-success/20",
-				warning: "bg-warning text-warning-foreground shadow-xs hover:bg-warning/90",
+					"bg-success/10 text-success border-success/10 hover:bg-success/15",
+				warning: "bg-warning text-warning-foreground shadow-craft-sm hover:bg-warning/90",
 				warning_soft:
-					"bg-warning/10 text-warning hover:bg-warning/15 dark:bg-warning/10 dark:hover:bg-warning/20",
-				info: "bg-info text-info-foreground shadow-xs hover:bg-info/90",
+					"bg-warning/10 text-warning border-warning/10 hover:bg-warning/15",
+				info: "bg-info text-info-foreground shadow-craft-sm hover:bg-info/90",
 				info_soft:
-					"bg-info/10 text-info hover:bg-info/15 dark:bg-info/10 dark:hover:bg-info/20",
-				// Chromeless button — inherits typography, no padding. For custom layouts that still want focus/active behavior.
-				raw: "",
+					"bg-info/10 text-info border-info/10 hover:bg-info/15",
+				raw: "border-0 p-0 h-auto w-auto hover:scale-100 active:scale-100",
 			},
 			size: {
-				default: "h-9 rounded-lg px-5 py-2.5 text-sm",
-				lg: "h-10 rounded-lg px-6 text-sm",
-				sm: "h-8 rounded-md px-3 text-xs",
+				default: "h-9 rounded-xl px-5 py-2.5 text-sm",
+				lg: "h-11 rounded-2xl px-8 text-base font-semibold",
+				sm: "h-8 rounded-lg px-3 text-xs",
 				xs: "h-6 rounded-md px-2 text-[11px] gap-1.5 [&_svg:not([class*='size-'])]:size-3",
-				icon: "size-9 rounded-lg",
-				"icon-sm": "size-8 rounded-md",
+				icon: "size-9 rounded-xl",
+				"icon-sm": "size-8 rounded-lg",
 				"icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-				"icon-lg": "size-10 rounded-lg",
-				// Chromeless size — no height/padding. Use with className when the button must match an arbitrary parent (e.g. window chrome).
+				"icon-lg": "size-11 rounded-2xl",
 				raw: "",
 			},
 		},
