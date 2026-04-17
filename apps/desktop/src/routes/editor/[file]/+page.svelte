@@ -289,6 +289,14 @@
         }
         exportHasProgress = true;
         exportLastProgressAt = Date.now();
+        // Aggressive flip: at ≥99.5% raw progress the encoder has effectively
+        // finished — only the mux trailer write remains. Don't wait for the
+        // explicit `progress=end` event (which can lag many seconds on Windows
+        // due to stderr pipe buffering) before flipping the UI to the
+        // indeterminate "Finalizing…" state.
+        if (!exportFinalizing && next >= 99.5) {
+          exportFinalizing = true;
+        }
         return;
       }
       case "finalizing":
@@ -509,18 +517,17 @@
     const timer = setInterval(() => {
       const now = Date.now();
       exportNow = now;
-      // Near-end stall flip: on Windows, FFmpeg's stderr can batch the final
-      // `progress=end` line so the bar parks at "99% Exporting…" for seconds
-      // before the real finalizing signal arrives. If progress reached ~99%
-      // and went quiet for >1.5s, assume we're in the mux-trailer window and
-      // flip the UI to "Finalizing…" locally. The narrow trigger condition
-      // (≥99% AND quiet) avoids the false-positive that retired the old
-      // Rust-side time-only flip — we won't fire mid-encode.
+      // Near-end stall fallback: the primary flip happens in handleExportState
+      // the moment a progress event arrives with pct ≥99.5. This block covers
+      // the case where the progress stream dies silently between ~98% and
+      // 99.5% — e.g. very short clips where FFmpeg jumps from 98 → progress=end
+      // without an intermediate tick at 99.5, and the `progress=end` line
+      // itself is buffered. Threshold lowered from 99 → 98 so we catch this.
       if (
         !exportFinalizing
         && exportHasProgress
         && exportLastProgressAt !== null
-        && (store.exportProgress ?? 0) >= 99
+        && (store.exportProgress ?? 0) >= 98
         && now - exportLastProgressAt > 1500
       ) {
         exportFinalizing = true;
@@ -635,7 +642,7 @@
         -->
         {#if !exportResult}
           {@const rawPct = store.exportProgress ?? 0}
-          {@const pct = exportFinalizing ? 99 : Math.min(Math.max(rawPct, 0), 99)}
+          {@const pct = exportFinalizing ? 99.5 : Math.min(Math.max(rawPct, 0), 99.5)}
           {@const isWaiting = !exportHasProgress && !exportFinalizing}
           {@const isIndeterminate = isWaiting || exportFinalizing}
           {@const exportDuration = getExportDuration()}
@@ -653,7 +660,7 @@
                 {#if exportCancelling}
                   Cancelling export…
                 {:else if exportFinalizing}
-                  Finalizing…
+                  Writing video file…
                 {:else if isWaiting}
                   Preparing export…
                 {:else}
@@ -670,7 +677,7 @@
               </p>
             </div>
             <span class="shrink-0 font-mono text-[11px] tabular-nums text-foreground">
-              {#if isWaiting}…{:else if exportFinalizing}—{:else}{Math.round(pct)}%{/if}
+              {#if isWaiting}…{:else if exportFinalizing}—{:else}{pct.toFixed(1)}%{/if}
             </span>
           </header>
 

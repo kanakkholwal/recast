@@ -756,7 +756,10 @@ pub async fn export_video(
                                 &stderr_app,
                                 ExportStateEvent::finalizing(&stderr_export_id),
                             );
-                            log::info!("export: progress=end seen, flipping UI to finalizing");
+                            log::info!(
+                                "export: progress=end seen at T+{}ms, flipping UI to finalizing",
+                                encode_started_at.elapsed().as_millis()
+                            );
                         }
                         let mut guard = stderr_last_progress.lock();
                         *guard = Instant::now();
@@ -775,7 +778,10 @@ pub async fn export_video(
                         guard.drain(0..overflow);
                     }
                 }
-                log::info!("export: stderr thread exiting (pipe closed)");
+                log::info!(
+                    "export: stderr thread exiting at T+{}ms (pipe closed)",
+                    encode_started_at.elapsed().as_millis()
+                );
             })
             .map_err(|e| format!("failed to spawn stderr drain thread: {e}"))?;
 
@@ -815,18 +821,22 @@ pub async fn export_video(
         // Share the child with the watchdog via a mutex so it can call kill().
         let child_handle = Arc::new(Mutex::new(Some(child)));
         let watchdog_child = child_handle.clone();
+        let watchdog_output_path = output_path_str.clone();
         let watchdog_thread = std::thread::Builder::new()
             .name("recast-export-watchdog".into())
             .spawn(move || {
                 const ENCODE_TIMEOUT: Duration = Duration::from_secs(60);
                 const NEAR_END_TIMEOUT: Duration = Duration::from_secs(20);
-                // Mux trailer writes (esp. MP4 faststart remux on long
-                // recordings / slow disks) can legitimately exceed 15s. The
-                // `completed_export_looks_usable` salvage path is a safety
-                // net, not a primary path — give the trailer enough room to
-                // finish cleanly.
-                const FINALIZING_TIMEOUT: Duration = Duration::from_secs(45);
+                // `FINALIZING_TIMEOUT` is a *no-file-growth* bound, not a
+                // wall-clock cap on the finalizing phase. While FFmpeg is
+                // legitimately writing the mux trailer the output file grows
+                // continuously — we watch for that below and stamp
+                // `watchdog_last_progress` on every size increase, so slow-
+                // but-productive trailer writes keep us out of the timeout.
+                // 60s of *no growth whatsoever* is a real stall.
+                const FINALIZING_TIMEOUT: Duration = Duration::from_secs(60);
                 const POLL_INTERVAL: Duration = Duration::from_millis(250);
+                let mut last_file_size: u64 = 0;
                 while !watchdog_stop_flag.load(Ordering::Acquire) {
                     std::thread::sleep(POLL_INTERVAL);
                     if watchdog_stop_flag.load(Ordering::Acquire) {
@@ -841,11 +851,27 @@ pub async fn export_video(
                         }
                         return;
                     }
+                    let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
+                    // File-size growth as a liveness signal. Once FFmpeg has
+                    // emitted `progress=end` it stops writing stderr progress
+                    // lines but keeps writing to the output file during the
+                    // trailer mux. Poll metadata cheaply; if the file is
+                    // growing, we know the process is alive and productive,
+                    // regardless of how long the phase takes.
+                    if in_finalizing {
+                        if let Ok(meta) = std::fs::metadata(&watchdog_output_path) {
+                            let size = meta.len();
+                            if size > last_file_size {
+                                last_file_size = size;
+                                let mut guard = watchdog_last_progress.lock();
+                                *guard = Instant::now();
+                            }
+                        }
+                    }
                     let elapsed = {
                         let guard = watchdog_last_progress.lock();
                         guard.elapsed()
                     };
-                    let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
                     let near_end = watchdog_near_end_seen.load(Ordering::Acquire);
                     let allowed_idle = if in_finalizing {
                         FINALIZING_TIMEOUT
@@ -857,19 +883,23 @@ pub async fn export_video(
                     if elapsed > allowed_idle {
                         let mut guard = watchdog_child.lock();
                         if let Some(ref mut child) = *guard {
+                            let total_elapsed = encode_started_at.elapsed().as_millis();
                             if in_finalizing {
                                 log::warn!(
-                                    "export watchdog: killing ffmpeg after progress=end; no exit for {:?}",
+                                    "export watchdog: killing ffmpeg after progress=end at T+{}ms; no exit for {:?}",
+                                    total_elapsed,
                                     elapsed
                                 );
                             } else if near_end {
                                 log::warn!(
-                                    "export watchdog: killing ffmpeg near end of encode; progress stopped for {:?}",
+                                    "export watchdog: killing ffmpeg near end of encode at T+{}ms; progress stopped for {:?}",
+                                    total_elapsed,
                                     elapsed
                                 );
                             } else {
                                 log::warn!(
-                                    "export watchdog: killing stalled ffmpeg process (no progress for {:?})",
+                                    "export watchdog: killing stalled ffmpeg at T+{}ms (no progress for {:?})",
+                                    total_elapsed,
                                     elapsed
                                 );
                             }
@@ -886,7 +916,10 @@ pub async fn export_video(
         // closes its respective pipes, which happens as it's exiting.
         let _ = stdout_thread.join();
         let _ = stderr_thread.join();
-        log::info!("export: drain threads joined, pipes closed");
+        log::info!(
+            "export: drain threads joined at T+{}ms (pipes closed)",
+            encode_started_at.elapsed().as_millis()
+        );
 
         // Redundant-but-idempotent final emit: if `progress=end` wasn't seen
         // (e.g. FFmpeg was killed before finishing), make sure the UI still
@@ -926,8 +959,9 @@ pub async fn export_video(
                 Ok(None) => {
                     if Instant::now() >= wait_deadline {
                         log::warn!(
-                            "export post-close wait exceeded {:?}; force-killing ffmpeg",
-                            POST_CLOSE_TIMEOUT
+                            "export post-close wait exceeded {:?} at T+{}ms; force-killing ffmpeg",
+                            POST_CLOSE_TIMEOUT,
+                            encode_started_at.elapsed().as_millis()
                         );
                         let _ = child.kill();
                         forced_exit = true;
@@ -939,6 +973,12 @@ pub async fn export_video(
                 Err(e) => return Err(e.to_string()),
             }
         };
+        log::info!(
+            "export: child exited at T+{}ms (status={:?}, forced_exit={})",
+            encode_started_at.elapsed().as_millis(),
+            status.code(),
+            forced_exit
+        );
 
         let expected_output_duration = if duration > 0.0 {
             duration
@@ -948,9 +988,19 @@ pub async fn export_video(
 
         if forced_exit {
             let output_path = Path::new(&output_path_str);
-            if completed_export_looks_usable(output_path, expected_output_duration) {
+            // Force-kill happens only after the I/O drain threads exited
+            // (pipes already closed = FFmpeg finished writing) AND we waited
+            // POST_CLOSE_TIMEOUT for the process to reap. If `progress_end`
+            // was seen, the encoder definitely got through the trailer write
+            // before this point — the salvage probe then confirms the file is
+            // playable. Without `progress_end` we can't trust the output even
+            // if probe succeeds; refuse rather than ship a corrupted file.
+            let encode_completed = progress_end_seen.load(Ordering::Acquire);
+            if encode_completed
+                && completed_export_looks_usable(output_path, expected_output_duration)
+            {
                 log::warn!(
-                    "export: ffmpeg was force-killed after post-close timeout, but output looks usable; treating as success"
+                    "export: ffmpeg was force-killed after post-close timeout, but progress=end was seen and output looks usable; treating as success"
                 );
                 emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
                 emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
@@ -976,9 +1026,20 @@ pub async fn export_video(
 
         if killed_by_timeout.load(Ordering::Acquire) {
             let output_path = Path::new(&output_path_str);
-            if completed_export_looks_usable(output_path, expected_output_duration) {
+            // Salvage path: only trust the on-disk file if FFmpeg actually
+            // signalled `progress=end` before the watchdog fired. That means
+            // the encoder finished writing every frame and we killed it
+            // partway through the trailer write — `completed_export_looks_usable`
+            // can probe successfully on the partial mux result, but the moov
+            // atom may be incomplete. Without `progress=end` we were killed
+            // mid-encode and the output is almost certainly truncated;
+            // refuse to surface a corrupted file as a successful export.
+            let encode_completed = progress_end_seen.load(Ordering::Acquire);
+            if encode_completed
+                && completed_export_looks_usable(output_path, expected_output_duration)
+            {
                 log::warn!(
-                    "export: watchdog killed ffmpeg, but output looks usable; treating as success"
+                    "export: watchdog killed ffmpeg after progress=end; output looks usable, treating as success"
                 );
                 emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
                 emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
@@ -986,8 +1047,8 @@ pub async fn export_video(
             }
 
             let _ = std::fs::remove_file(output_path);
-            let err_msg = if progress_end_seen.load(Ordering::Acquire) {
-                "export failed: ffmpeg reached finalizing but did not exit within 15s".to_string()
+            let err_msg = if encode_completed {
+                "export failed: ffmpeg reached finalizing but the output file stopped growing for 60s".to_string()
             } else if near_end_seen.load(Ordering::Acquire) {
                 "export failed: ffmpeg stopped making progress near the end of the encode".to_string()
             } else {
@@ -1017,12 +1078,26 @@ pub async fn export_video(
             log::info!("export ffmpeg stderr tail: {tail}");
         }
 
+        // On the happy path (status 0 + progress=end observed) we trust
+        // FFmpeg's own exit as the integrity signal — spawning ffprobe here
+        // just to re-verify what we already know would park the UI in
+        // "Finalizing…" for the duration of that probe, which is exactly the
+        // hang symptom users hit. Corruption guards remain on the salvage
+        // paths above (force-kill, watchdog-kill) where the exit code isn't
+        // trustworthy. `_expected_output_duration` kept in scope to make the
+        // salvage branches' dependency explicit.
+        let _ = expected_output_duration;
+
         // Final 100% ping + an `export-done` event with the result. The
         // frontend uses `export-done` to transition the dialog to the success
         // state immediately — decoupled from the `exportVideo` Promise, which
         // may take an extra beat to resolve through Tauri's IPC layer.
         emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
         emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
+        log::info!(
+            "export: success emitted at T+{}ms for {output_path_str}",
+            encode_started_at.elapsed().as_millis()
+        );
         Ok(output_path_str)
     })
     .await;

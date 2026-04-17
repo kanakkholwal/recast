@@ -180,17 +180,23 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
 
     let size_bytes = std::fs::metadata(path).map(|m| m.len()).unwrap_or_default();
     let path_string = path.to_string_lossy().to_string();
-    let output = Command::new(ffprobe_path())
-        .args([
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            &path_string,
-        ])
-        .output();
+    let mut command = Command::new(ffprobe_path());
+    command.args([
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        &path_string,
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output();
 
     match output {
         Ok(out) if out.status.success() => {
@@ -254,19 +260,25 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
 }
 
 pub fn has_audio(path: &Path) -> bool {
-    let output = Command::new(ffprobe_path())
-        .args([
-            "-v",
-            "error",
-            "-select_streams",
-            "a",
-            "-show_entries",
-            "stream=index",
-            "-of",
-            "csv=p=0",
-            &path.to_string_lossy(),
-        ])
-        .output();
+    let mut command = Command::new(ffprobe_path());
+    command.args([
+        "-v",
+        "error",
+        "-select_streams",
+        "a",
+        "-show_entries",
+        "stream=index",
+        "-of",
+        "csv=p=0",
+        &path.to_string_lossy(),
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        command.creation_flags(CREATE_NO_WINDOW);
+    }
+    let output = command.output();
 
     matches!(
         output,
