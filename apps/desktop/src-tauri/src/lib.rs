@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 mod audio;
 mod camera;
 mod capture;
@@ -22,11 +24,12 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
             let config = load_config(&handle);
+
             app.manage(AppState {
                 recording_manager: RecordingManager::default(),
                 last_file_path: Mutex::new(None),
                 config: Mutex::new(config),
-                export_cancel: Mutex::new(None),
+                export_cancel: Mutex::new(HashMap::new()),
             });
 
             if cfg!(debug_assertions) {

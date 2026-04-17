@@ -11,17 +11,19 @@
     autosaveProject,
     cancelExport,
     clearAutosave,
+    createExportId,
     exportVideo,
     generateThumbnails,
+    listenToExportState,
     loadEditorDocument,
   } from "$lib/ipc";
+  import type { ExportStateEvent } from "$lib/ipc";
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
   import { convertFileSrc } from "@tauri-apps/api/core";
-  import { listen } from "@tauri-apps/api/event";
   import { onDestroy, tick } from "svelte";
 
   interface Props {
@@ -236,6 +238,8 @@
   let exportCancelling = $state(false);
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
+  let exportLastProgressAt = $state<number | null>(null);
+  let activeExportId = $state<string | null>(null);
   let exportResult = $state<
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
@@ -243,56 +247,81 @@
     | null
   >(null);
 
-  // Discriminated union for the `export-done` event payload emitted by the
-  // Rust backend. Matches the `serde_json::json!({ "kind": ..., ... })` shape
-  // used in `commands/editor.rs::export_video`.
-  type ExportDoneEvent =
-    | { kind: "success"; path: string }
-    | { kind: "cancelled" }
-    | { kind: "error"; message: string };
+  function setExportResult(next: NonNullable<typeof exportResult>) {
+    let alreadySame = false;
+    if (exportResult?.kind === next.kind) {
+      if (next.kind === "success" && exportResult.kind === "success") {
+        alreadySame = exportResult.path === next.path;
+      } else if (next.kind === "error" && exportResult.kind === "error") {
+        alreadySame = exportResult.message === next.message;
+      } else if (next.kind === "cancelled" && exportResult.kind === "cancelled") {
+        alreadySame = true;
+      }
+    }
+    if (alreadySame) return;
+
+    exportResult = next;
+    exportFinalizing = false;
+    exportCancelling = false;
+
+    if (next.kind === "success") {
+      toast.success("Export complete");
+    } else if (next.kind === "cancelled") {
+      toast.info("Export cancelled");
+    } else {
+      toast.error("Export failed");
+    }
+  }
+
+  function handleExportState(event: ExportStateEvent) {
+    switch (event.status) {
+      case "started":
+        return;
+      case "progress": {
+        const next = Math.min(Math.max(event.progress, 0), 100);
+        const current = store.exportProgress ?? 0;
+
+        // FFmpeg progress gets noisy near the end on some Windows builds.
+        // Keep the UI monotonic and ignore sub-tenth-percent jitter so the
+        // progress bar does not flicker around 99%.
+        if (!exportHasProgress || next >= 100 || next > current + 0.1) {
+          store.exportProgress = Math.max(current, next);
+        }
+        exportHasProgress = true;
+        exportLastProgressAt = Date.now();
+        return;
+      }
+      case "finalizing":
+        exportFinalizing = true;
+        return;
+      case "success":
+        setExportResult({ kind: "success", path: event.path });
+        return;
+      case "cancelled":
+        setExportResult({ kind: "cancelled" });
+        return;
+      case "error":
+        setExportResult({ kind: "error", message: event.message });
+        return;
+    }
+  }
 
   async function handleExport() {
     if (store.isExporting) return;
+    const exportId = createExportId();
     store.isExporting = true;
     store.exportProgress = 0;
     exportHasProgress = false;
+    exportLastProgressAt = null;
     exportCancelling = false;
     exportFinalizing = false;
+    activeExportId = exportId;
     exportResult = null;
     exportStartedAt = Date.now();
     exportNow = exportStartedAt;
 
-    const unlistenProgress = await listen<number>("export-progress", (event) => {
-      store.exportProgress = event.payload;
-      exportHasProgress = true;
-    });
-    // Emitted by Rust when FFmpeg reaches its trailer-write / shutdown phase.
-    const unlistenFinalizing = await listen<null>("export-finalizing", () => {
-      exportFinalizing = true;
-    });
-    // Authoritative end-of-export signal. Rust emits this with a
-    // { kind, path?, message? } payload right before returning from the
-    // async command. We transition the dialog immediately on this event
-    // instead of waiting for the `exportVideo` Promise to resolve through
+    const unlistenExportState = await listenToExportState(exportId, handleExportState);
     // Tauri's IPC layer — that round-trip can lag visibly on some systems
-    // and made the dialog look "stuck" at Finalizing.
-    const unlistenDone = await listen<ExportDoneEvent>("export-done", (event) => {
-      const payload = event.payload;
-      if (payload.kind === "success") {
-        exportResult = { kind: "success", path: payload.path };
-      } else if (payload.kind === "cancelled") {
-        exportResult = { kind: "cancelled" };
-      } else {
-        exportResult = { kind: "error", message: payload.message };
-      }
-      // Drop the progress-UI flags so the dialog template falls through to
-      // the result branch (which is keyed on `exportResult` below). We leave
-      // `store.isExporting` TRUE until the Promise actually resolves in the
-      // finally block — that way `handleExport` still guards against
-      // overlapping exports while we wait for Rust's IPC round-trip.
-      exportFinalizing = false;
-      exportCancelling = false;
-    });
 
     try {
       const path = await exportVideo(
@@ -300,40 +329,42 @@
         store.exportFormat,
         store.exportQuality,
         store.toRenderState(),
+        exportId,
       );
-      // Safety net: if `export-done` was missed (very unlikely), fall back
-      // to the Promise result. Don't overwrite if the listener already set
-      // something.
+      // Safety net: if the export-state success event was missed, fall back to
+      // the Promise result. Don't overwrite if the listener already set it.
       if (!exportResult) {
-        exportResult = { kind: "success", path };
+        setExportResult({ kind: "success", path });
       }
     } catch (err) {
       const message = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
       if (!exportResult) {
         if (message.toLowerCase().includes("cancel")) {
-          exportResult = { kind: "cancelled" };
+          setExportResult({ kind: "cancelled" });
         } else {
           console.error("Export failed:", err);
-          exportResult = { kind: "error", message };
+          setExportResult({ kind: "error", message });
         }
       }
     } finally {
-      unlistenProgress();
-      unlistenFinalizing();
-      unlistenDone();
+      unlistenExportState();
+      if (activeExportId === exportId) {
+        activeExportId = null;
+      }
       store.isExporting = false;
       store.exportProgress = null;
       exportHasProgress = false;
+      exportLastProgressAt = null;
       exportCancelling = false;
       exportFinalizing = false;
     }
   }
 
   async function handleCancelExport() {
-    if (!store.isExporting || exportCancelling) return;
+    if (!store.isExporting || exportCancelling || !activeExportId) return;
     exportCancelling = true;
     try {
-      await cancelExport();
+      await cancelExport(activeExportId);
     } catch (err) {
       toast.error(`Could not cancel: ${err}`);
       exportCancelling = false;
@@ -476,8 +507,25 @@
     if (!store.isExporting) return;
     exportNow = Date.now();
     const timer = setInterval(() => {
-      exportNow = Date.now();
-    }, 1000);
+      const now = Date.now();
+      exportNow = now;
+      // Near-end stall flip: on Windows, FFmpeg's stderr can batch the final
+      // `progress=end` line so the bar parks at "99% Exporting…" for seconds
+      // before the real finalizing signal arrives. If progress reached ~99%
+      // and went quiet for >1.5s, assume we're in the mux-trailer window and
+      // flip the UI to "Finalizing…" locally. The narrow trigger condition
+      // (≥99% AND quiet) avoids the false-positive that retired the old
+      // Rust-side time-only flip — we won't fire mid-encode.
+      if (
+        !exportFinalizing
+        && exportHasProgress
+        && exportLastProgressAt !== null
+        && (store.exportProgress ?? 0) >= 99
+        && now - exportLastProgressAt > 1500
+      ) {
+        exportFinalizing = true;
+      }
+    }, 500);
     return () => clearInterval(timer);
   });
 </script>

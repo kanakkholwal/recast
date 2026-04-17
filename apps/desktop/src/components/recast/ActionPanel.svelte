@@ -85,7 +85,7 @@
 			</Command.List>
 			
       <footer
-				class="mx-4 mb-4 flex h-9 items-center justify-between rounded-full border border-border-subtle bg-foreground/[0.02] px-5 text-[9px] font-bold uppercase tracking-[0.12em] text-foreground/30"
+				class="mx-4 mb-4 flex h-9 items-center justify-between rounded-full px-5 text-[9px] font-bold uppercase tracking-[0.12em] text-foreground/30"
 			>
 				<span>Available Actions</span>
 				<div class="flex items-center gap-4">

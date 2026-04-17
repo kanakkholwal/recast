@@ -12,6 +12,7 @@
   } from "$lib/ipc";
   import {
     Camera,
+    CopyIcon,
     Download,
     Film,
     FolderOpen,
@@ -19,7 +20,9 @@
     Monitor,
     Radio,
     Settings as SettingsIcon,
-    SlidersHorizontal
+    SlidersHorizontal,
+
+    VideotapeIcon
   } from "@lucide/svelte";
   import { toast } from "@recast/ui/sonner";
   import { listen } from "@tauri-apps/api/event";
@@ -349,7 +352,7 @@
       section: "Recent Recordings",
       onSelect: () => openInEditor(entry),
       actions: [
-        { id: "open", label: "Open in Editor", onAction: () => openInEditor(entry) },
+        { id: "open", label: "Open in Editor",icon:VideotapeIcon, onAction: () => openInEditor(entry) },
         {
           id: "show",
           label: "Show in Folder",
@@ -360,6 +363,7 @@
           id: "copy",
           label: "Copy Path",
           shortcut: "⌘⇧C",
+          icon:CopyIcon,
           onAction: () => copyPath(entry),
         },
       ],
@@ -392,6 +396,7 @@
           id: "copy",
           label: "Copy Path",
           shortcut: "⌘⇧C",
+          icon:CopyIcon,
           onAction: () => copyPath(entry),
         },
       ],

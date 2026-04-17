@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use base64::{engine::general_purpose, Engine as _};
 use parking_lot::Mutex;
+use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use super::ffmpeg::{
@@ -53,7 +54,11 @@ fn parse_ffmpeg_progress_seconds(line: &str) -> Option<f64> {
         .strip_prefix("out_time_us=")
         .or_else(|| line.strip_prefix("out_time_ms="))
     {
-        return value.trim().parse::<f64>().ok().map(|raw| raw / 1_000_000.0);
+        return value
+            .trim()
+            .parse::<f64>()
+            .ok()
+            .map(|raw| raw / 1_000_000.0);
     }
 
     let value = line.strip_prefix("out_time=")?.trim();
@@ -100,6 +105,113 @@ fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
         });
     }
     probe_video_metadata(path)
+}
+
+fn completed_export_looks_usable(path: &Path, expected_duration: f64) -> bool {
+    if !path.exists() {
+        return false;
+    }
+
+    let Ok(metadata) = probe_video_metadata(path) else {
+        return false;
+    };
+
+    if metadata.duration <= 0.0 || metadata.width == 0 || metadata.height == 0 {
+        return false;
+    }
+
+    if expected_duration <= 0.0 {
+        return true;
+    }
+
+    let min_duration = if expected_duration > 1.0 {
+        (expected_duration - 0.5).max(expected_duration * 0.95)
+    } else {
+        expected_duration * 0.75
+    };
+
+    metadata.duration + 0.05 >= min_duration
+}
+
+const EXPORT_STATE_EVENT: &str = "export-state";
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ExportStateEvent {
+    export_id: String,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    progress: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    message: Option<String>,
+}
+
+impl ExportStateEvent {
+    fn started(export_id: &str) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "started",
+            progress: None,
+            path: None,
+            message: None,
+        }
+    }
+
+    fn progress(export_id: &str, progress: f64) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "progress",
+            progress: Some(progress),
+            path: None,
+            message: None,
+        }
+    }
+
+    fn finalizing(export_id: &str) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "finalizing",
+            progress: None,
+            path: None,
+            message: None,
+        }
+    }
+
+    fn success(export_id: &str, path: &str) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "success",
+            progress: None,
+            path: Some(path.to_string()),
+            message: None,
+        }
+    }
+
+    fn cancelled(export_id: &str) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "cancelled",
+            progress: None,
+            path: None,
+            message: None,
+        }
+    }
+
+    fn error(export_id: &str, message: &str) -> Self {
+        Self {
+            export_id: export_id.to_string(),
+            status: "error",
+            progress: None,
+            path: None,
+            message: Some(message.to_string()),
+        }
+    }
+}
+
+fn emit_export_state(app: &AppHandle, event: ExportStateEvent) {
+    let _ = app.emit(EXPORT_STATE_EVENT, event);
 }
 
 #[tauri::command]
@@ -232,12 +344,16 @@ pub async fn export_video(
     request: ExportRequest,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
-    // Install a fresh cancellation token for this run. Using a per-run token
-    // (rather than a shared flag that we reset-on-entry) closes a race where a
-    // cancel click issued between the frontend's IPC kickoff and this command's
-    // first line would be stomped by the reset and silently lost.
+    let export_id = request.export_id.clone();
+
+    // Install a fresh cancellation token for this run, scoped to the export
+    // session id that the frontend also uses to filter state events.
     let cancel_flag = Arc::new(AtomicBool::new(false));
-    *state.export_cancel.lock() = Some(cancel_flag.clone());
+    state
+        .export_cancel
+        .lock()
+        .insert(export_id.clone(), cancel_flag.clone());
+    emit_export_state(&app, ExportStateEvent::started(&export_id));
 
     let input_path = PathBuf::from(&request.input_path);
     let project = open_project_if_needed(&input_path)?;
@@ -515,7 +631,10 @@ pub async fn export_video(
     // Clone the handle so we retain one outside the closure for the
     // panic-fallback emit in the match below.
     let app_for_fallback = app.clone();
+    let export_id_for_task = export_id.clone();
+    let export_id_for_fallback = export_id.clone();
     let task_result = tokio::task::spawn_blocking(move || {
+        let export_id = export_id_for_task;
         let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
         command
             .args(&args)
@@ -545,9 +664,11 @@ pub async fn export_video(
         // Shared state consumed by the stderr parser (progress events) and the
         // watchdog (stall detection).
         let last_progress = Arc::new(Mutex::new(Instant::now()));
+        let last_progress_secs = Arc::new(Mutex::new(-1.0_f64));
         let killed_by_timeout = Arc::new(AtomicBool::new(false));
         let killed_by_user = Arc::new(AtomicBool::new(false));
         let finalizing_seen = Arc::new(AtomicBool::new(false));
+        let near_end_seen = Arc::new(AtomicBool::new(false));
         let progress_end_seen = Arc::new(AtomicBool::new(false));
 
         // Parse stderr line-by-line. Progress blocks (key=value lines) get
@@ -558,33 +679,62 @@ pub async fn export_video(
         let stderr_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
         let stderr_buf_writer = stderr_buf.clone();
         let stderr_last_progress = last_progress.clone();
+        let stderr_last_progress_secs = last_progress_secs.clone();
         let stderr_app = app.clone();
+        let stderr_export_id = export_id.clone();
         let stderr_finalizing_seen = finalizing_seen.clone();
+        let stderr_near_end_seen = near_end_seen.clone();
         let stderr_progress_end_seen = progress_end_seen.clone();
+        let encode_started_at = Instant::now();
         let stderr_thread = std::thread::Builder::new()
             .name("recast-export-stderr".into())
             .spawn(move || {
                 let reader = std::io::BufReader::new(stderr);
+                let mut logged_near_done = false;
                 for line in reader.lines().map_while(Result::ok) {
                     // FFmpeg progress blocks are key=value lines terminated by
                     // `progress=continue` (between blocks) or `progress=end`
                     // (final block). Treat all of these as non-log noise.
                     if let Some(progress_secs) = parse_ffmpeg_progress_seconds(&line) {
-                        {
-                            let mut guard = stderr_last_progress.lock();
-                            *guard = Instant::now();
-                        }
                         let effective_duration = if duration > 0.0 {
                             duration
                         } else {
                             source_duration
                         };
+                        {
+                            let mut last_secs = stderr_last_progress_secs.lock();
+                            if progress_secs > *last_secs + 0.01 {
+                                *last_secs = progress_secs;
+                                let mut guard = stderr_last_progress.lock();
+                                *guard = Instant::now();
+                            }
+                        }
                         let pct = if effective_duration > 0.0 {
                             (progress_secs / effective_duration * 100.0).clamp(0.0, 100.0)
                         } else {
                             0.0
                         };
-                        let _ = stderr_app.emit("export-progress", pct);
+                        if effective_duration > 0.0
+                            && (effective_duration - progress_secs).max(0.0) <= 0.25
+                        {
+                            stderr_near_end_seen.store(true, Ordering::Release);
+                        }
+                        // Log the moment we cross 99.5% so post-mortems of
+                        // "stuck at 99%" reports can locate the gap between
+                        // here and the eventual `progress=end` / drain-thread
+                        // exit in the captured stderr tail.
+                        if !logged_near_done && pct >= 99.5 {
+                            logged_near_done = true;
+                            log::info!(
+                                "export: reached {:.1}% at T+{}ms, awaiting progress=end",
+                                pct,
+                                encode_started_at.elapsed().as_millis()
+                            );
+                        }
+                        emit_export_state(
+                            &stderr_app,
+                            ExportStateEvent::progress(&stderr_export_id, pct),
+                        );
                         continue;
                     }
                     // `progress=end` means FFmpeg has finished encoding and
@@ -598,8 +748,14 @@ pub async fn export_video(
                     if line.trim() == "progress=end" {
                         stderr_progress_end_seen.store(true, Ordering::Release);
                         if !stderr_finalizing_seen.swap(true, Ordering::AcqRel) {
-                            let _ = stderr_app.emit("export-progress", 100.0_f64);
-                            let _ = stderr_app.emit("export-finalizing", ());
+                            emit_export_state(
+                                &stderr_app,
+                                ExportStateEvent::progress(&stderr_export_id, 100.0_f64),
+                            );
+                            emit_export_state(
+                                &stderr_app,
+                                ExportStateEvent::finalizing(&stderr_export_id),
+                            );
                             log::info!("export: progress=end seen, flipping UI to finalizing");
                         }
                         let mut guard = stderr_last_progress.lock();
@@ -652,6 +808,7 @@ pub async fn export_video(
         let watchdog_killed = killed_by_timeout.clone();
         let watchdog_cancel_flag = cancel_flag.clone();
         let watchdog_user_kill = killed_by_user.clone();
+        let watchdog_near_end_seen = near_end_seen.clone();
         let watchdog_progress_end_seen = progress_end_seen.clone();
         let watchdog_stop = Arc::new(AtomicBool::new(false));
         let watchdog_stop_flag = watchdog_stop.clone();
@@ -662,7 +819,13 @@ pub async fn export_video(
             .name("recast-export-watchdog".into())
             .spawn(move || {
                 const ENCODE_TIMEOUT: Duration = Duration::from_secs(60);
-                const FINALIZING_TIMEOUT: Duration = Duration::from_secs(15);
+                const NEAR_END_TIMEOUT: Duration = Duration::from_secs(20);
+                // Mux trailer writes (esp. MP4 faststart remux on long
+                // recordings / slow disks) can legitimately exceed 15s. The
+                // `completed_export_looks_usable` salvage path is a safety
+                // net, not a primary path — give the trailer enough room to
+                // finish cleanly.
+                const FINALIZING_TIMEOUT: Duration = Duration::from_secs(45);
                 const POLL_INTERVAL: Duration = Duration::from_millis(250);
                 while !watchdog_stop_flag.load(Ordering::Acquire) {
                     std::thread::sleep(POLL_INTERVAL);
@@ -683,8 +846,11 @@ pub async fn export_video(
                         guard.elapsed()
                     };
                     let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
+                    let near_end = watchdog_near_end_seen.load(Ordering::Acquire);
                     let allowed_idle = if in_finalizing {
                         FINALIZING_TIMEOUT
+                    } else if near_end {
+                        NEAR_END_TIMEOUT
                     } else {
                         ENCODE_TIMEOUT
                     };
@@ -694,6 +860,11 @@ pub async fn export_video(
                             if in_finalizing {
                                 log::warn!(
                                     "export watchdog: killing ffmpeg after progress=end; no exit for {:?}",
+                                    elapsed
+                                );
+                            } else if near_end {
+                                log::warn!(
+                                    "export watchdog: killing ffmpeg near end of encode; progress stopped for {:?}",
                                     elapsed
                                 );
                             } else {
@@ -725,8 +896,8 @@ pub async fn export_video(
             && !killed_by_timeout.load(Ordering::Acquire)
             && !finalizing_seen.swap(true, Ordering::AcqRel)
         {
-            let _ = app.emit("export-progress", 100.0_f64);
-            let _ = app.emit("export-finalizing", ());
+            emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
+            emit_export_state(&app, ExportStateEvent::finalizing(&export_id));
         }
 
         // Stop the watchdog now that the I/O is done.
@@ -769,16 +940,29 @@ pub async fn export_video(
             }
         };
 
+        let expected_output_duration = if duration > 0.0 {
+            duration
+        } else {
+            source_duration
+        };
+
         if forced_exit {
-            let _ = std::fs::remove_file(&output_path_str);
+            let output_path = Path::new(&output_path_str);
+            if completed_export_looks_usable(output_path, expected_output_duration) {
+                log::warn!(
+                    "export: ffmpeg was force-killed after post-close timeout, but output looks usable; treating as success"
+                );
+                emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
+                emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
+                return Ok(output_path_str);
+            }
+
+            let _ = std::fs::remove_file(output_path);
             let err_msg = format!(
                 "export failed: ffmpeg did not exit within {}s of finishing the encode",
                 POST_CLOSE_TIMEOUT.as_secs()
             );
-            let _ = app.emit(
-                "export-done",
-                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
-            );
+            emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
             return Err(err_msg);
         }
 
@@ -786,24 +970,30 @@ pub async fn export_video(
             // Clean up the half-written output file so the exports list doesn't
             // show a broken artifact from the aborted run.
             let _ = std::fs::remove_file(&output_path_str);
-            let _ = app.emit(
-                "export-done",
-                serde_json::json!({ "kind": "cancelled" }),
-            );
+            emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
             return Err("export cancelled".to_string());
         }
 
         if killed_by_timeout.load(Ordering::Acquire) {
-            let _ = std::fs::remove_file(&output_path_str);
+            let output_path = Path::new(&output_path_str);
+            if completed_export_looks_usable(output_path, expected_output_duration) {
+                log::warn!(
+                    "export: watchdog killed ffmpeg, but output looks usable; treating as success"
+                );
+                emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
+                emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
+                return Ok(output_path_str);
+            }
+
+            let _ = std::fs::remove_file(output_path);
             let err_msg = if progress_end_seen.load(Ordering::Acquire) {
                 "export failed: ffmpeg reached finalizing but did not exit within 15s".to_string()
+            } else if near_end_seen.load(Ordering::Acquire) {
+                "export failed: ffmpeg stopped making progress near the end of the encode".to_string()
             } else {
                 "export timed out: ffmpeg produced no progress for 60s".to_string()
             };
-            let _ = app.emit(
-                "export-done",
-                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
-            );
+            emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
             return Err(err_msg);
         }
 
@@ -814,10 +1004,7 @@ pub async fn export_video(
                 "export failed:\n{}",
                 summarize_ffmpeg_error(&stderr_bytes)
             );
-            let _ = app.emit(
-                "export-done",
-                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
-            );
+            emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
             return Err(err_msg);
         }
 
@@ -834,11 +1021,8 @@ pub async fn export_video(
         // frontend uses `export-done` to transition the dialog to the success
         // state immediately — decoupled from the `exportVideo` Promise, which
         // may take an extra beat to resolve through Tauri's IPC layer.
-        let _ = app.emit("export-progress", 100.0_f64);
-        let _ = app.emit(
-            "export-done",
-            serde_json::json!({ "kind": "success", "path": &output_path_str }),
-        );
+        emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
+        emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
         Ok(output_path_str)
     })
     .await;
@@ -847,7 +1031,7 @@ pub async fn export_video(
     // panicked — otherwise a panic would leak the cursor overlay's temp dir and
     // leave a stale cancel token installed that would poison the next export.
     drop(cursor_overlay);
-    *state.export_cancel.lock() = None;
+    state.export_cancel.lock().remove(&export_id);
 
     match task_result {
         Ok(inner) => inner,
@@ -855,9 +1039,9 @@ pub async fn export_video(
             // spawn_blocking only errors on panic; surface it so the frontend
             // can show a real failure dialog instead of hanging on the Promise.
             let err_msg = format!("export task failed: {join_err}");
-            let _ = app_for_fallback.emit(
-                "export-done",
-                serde_json::json!({ "kind": "error", "message": err_msg.clone() }),
+            emit_export_state(
+                &app_for_fallback,
+                ExportStateEvent::error(&export_id_for_fallback, &err_msg),
             );
             Err(err_msg)
         }
@@ -867,10 +1051,10 @@ pub async fn export_video(
 /// Signal any running export to abort. The watchdog thread polls this flag every
 /// ~250ms and kills the ffmpeg child process, which causes `export_video` to
 /// return `Err("export cancelled")`. Safe to call when no export is running
-/// (the flag just gets reset at the start of the next run).
+/// for the given export session id.
 #[tauri::command]
-pub fn cancel_export(state: State<'_, AppState>) -> Result<(), String> {
-    if let Some(flag) = state.export_cancel.lock().as_ref() {
+pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    if let Some(flag) = state.export_cancel.lock().get(&export_id) {
         flag.store(true, Ordering::Release);
     }
     // No installed token → no active export. Treat as a no-op rather than
@@ -899,7 +1083,9 @@ pub fn get_recoverable_sessions() -> Vec<crate::project::autosave::AutosaveState
 /// Reuses the existing `detect_zoom_triggers` helper — falls back to on-the-fly
 /// recomputation if the project was saved before trigger persistence landed.
 #[tauri::command]
-pub fn suggest_zoom_regions(cursor_path: String) -> Result<Vec<crate::cursor::smoothing::ZoomTrigger>, String> {
+pub fn suggest_zoom_regions(
+    cursor_path: String,
+) -> Result<Vec<crate::cursor::smoothing::ZoomTrigger>, String> {
     let bytes = fs::read(Path::new(&cursor_path)).map_err(|e| format!("read cursor track: {e}"))?;
     let track: crate::cursor::CursorTrack =
         serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;

@@ -10,6 +10,7 @@
 
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 // ── Types matching Rust structs ─────────────────────────────────────────
@@ -161,14 +162,43 @@ export function getVideoMetadata(path: string): Promise<VideoMetadata> {
 	return invoke<VideoMetadata>("get_video_metadata", { path });
 }
 
+export type ExportStateEvent =
+	| { exportId: string; status: "started" }
+	| { exportId: string; status: "progress"; progress: number }
+	| { exportId: string; status: "finalizing" }
+	| { exportId: string; status: "success"; path: string }
+	| { exportId: string; status: "cancelled" }
+	| { exportId: string; status: "error"; message: string };
+
+const EXPORT_STATE_EVENT = "export-state";
+
+export function createExportId(): string {
+	if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+		return crypto.randomUUID();
+	}
+
+	return `export-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function listenToExportState(
+	exportId: string,
+	onState: (event: ExportStateEvent) => void,
+): Promise<() => void> {
+	return listen<ExportStateEvent>(EXPORT_STATE_EVENT, (event) => {
+		if (event.payload.exportId !== exportId) return;
+		onState(event.payload);
+	});
+}
+
 export function exportVideo(
 	inputPath: string,
 	format: string,
 	quality: string,
 	renderState: EditorRenderState,
+	exportId: string,
 ): Promise<string> {
 	return invoke<string>("export_video", {
-		request: { inputPath, format, quality, renderState },
+		request: { exportId, inputPath, format, quality, renderState },
 	});
 }
 
@@ -176,8 +206,8 @@ export function exportVideo(
  * Signal any running export to abort. Causes `exportVideo` to reject with
  * `"export cancelled"`. Safe to call when no export is running.
  */
-export function cancelExport(): Promise<void> {
-	return invoke("cancel_export");
+export function cancelExport(exportId: string): Promise<void> {
+	return invoke("cancel_export", { exportId });
 }
 
 // ── Zoom suggestions (auto-focus) ───────────────────────────────────────

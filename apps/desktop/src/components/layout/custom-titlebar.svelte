@@ -58,10 +58,13 @@
 </script>
 
 <div
-  class={cn("h-10 flex items-center border-b border-border bg-background shrink-0 select-none", wrapperClass)}
+  class={cn(
+    "group h-9 flex items-center border-b border-border-subtle bg-background/80 backdrop-blur-xl shrink-0 select-none px-4 transition-all duration-300",
+    wrapperClass
+  )}
 >
   <!-- Drag region: only the content area, not the window controls -->
-  <div class={cn("flex-1 flex items-center min-w-0 h-full", className)} data-tauri-drag-region>
+  <div class={cn("flex-1 flex items-center min-w-0 h-full font-sans", className)} data-tauri-drag-region>
     {#if children}
       {@render children()}
     {/if}
@@ -69,46 +72,47 @@
 
   <!-- Window controls: outside the drag region so clicks aren't intercepted -->
   {#if isTauri}
-    <div class="shrink-0 flex items-center h-full">
+    <div 
+      class="shrink-0 flex items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity duration-300"
+      onmousedown={(e) => e.stopPropagation()}
+      role="presentation"
+    >
       <Button
         variant="ghost"
         size="raw"
-        onmousedown={(e) => e.stopPropagation()}
         onclick={handleMinimize}
-        class="h-full w-9 rounded-none text-muted-foreground hover:bg-muted"
+        class="size-7 rounded-[10px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all"
         aria-label="Minimize"
         title="Minimize"
       >
-        <Minus size={12} strokeWidth={1.5} />
+        <Minus size={11} />
       </Button>
       <Button
         variant="ghost"
         size="raw"
-        onmousedown={(e) => e.stopPropagation()}
         onclick={handleToggleMaximize}
-        class="h-full w-9 rounded-none text-muted-foreground hover:bg-muted"
+        class="size-7 rounded-[10px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all"
         aria-label={isMaximized ? "Restore" : "Maximize"}
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {#if isMaximized}
-          <svg width="11" height="11" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.2">
+          <svg width="10" height="10" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8">
             <rect x="3" y="0.5" width="9" height="9" rx="1.5" />
             <rect x="0.5" y="3" width="9" height="9" rx="1.5" />
           </svg>
         {:else}
-          <Square size={11} strokeWidth={1.5} />
+          <Square size={10} />
         {/if}
       </Button>
       <Button
-        variant="raw"
+        variant="ghost"
         size="raw"
-        onmousedown={(e) => e.stopPropagation()}
         onclick={handleClose}
-        class="h-full w-9 rounded-none text-muted-foreground transition-colors hover:bg-destructive hover:text-destructive-foreground"
+        class="size-7 rounded-[10px] text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive"
         aria-label="Close"
         title="Close"
       >
-        <X size={13} strokeWidth={1.5} />
+        <X size={12} />
       </Button>
     </div>
   {/if}

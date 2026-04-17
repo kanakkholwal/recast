@@ -3,7 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
-use super::node_types::{Annotation, BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion};
+use super::node_types::{
+    Annotation, BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

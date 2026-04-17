@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -85,6 +86,7 @@ impl Default for AppConfig {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
+    pub export_id: String,
     pub input_path: String,
     pub format: String,
     pub quality: String,
@@ -106,10 +108,8 @@ pub struct AppState {
     pub recording_manager: crate::recording::RecordingManager,
     pub last_file_path: parking_lot::Mutex<Option<String>>,
     pub config: parking_lot::Mutex<AppConfig>,
-    /// Per-run cancellation token for the active export. `export_video` installs a
-    /// fresh `Arc<AtomicBool>` on entry and clears it on exit; `cancel_export` sets
-    /// whatever token is currently installed. The option form closes a race where a
-    /// cancel click issued between the IPC kickoff and `export_video`'s first line
-    /// could be stomped by a shared-flag reset on entry.
-    pub export_cancel: Mutex<Option<Arc<AtomicBool>>>,
+    /// Per-run cancellation tokens for active exports, keyed by export session id.
+    /// `export_video` inserts a fresh `Arc<AtomicBool>` on entry and removes it on
+    /// exit; `cancel_export` looks up a specific session and flips only that flag.
+    pub export_cancel: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
