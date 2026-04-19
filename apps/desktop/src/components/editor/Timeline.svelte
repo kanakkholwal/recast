@@ -1,9 +1,10 @@
 <script lang="ts">
   import type { Easing } from "$lib/easing/cubic-bezier";
   import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
-  import { CircleQuestionMark, Scissors, Search, Wand2, X } from "@lucide/svelte";
+  import { CircleQuestionMark, Scissors, Search, Wand2, X, Gauge, ZoomIn, ZoomOut } from "@lucide/svelte";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
+  import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import {
     HoverCard,
     HoverCardContent,
@@ -28,6 +29,17 @@
   let activeTrimHandle = $state<"in" | "out" | null>(null);
 
   const MIN_TRIM_GAP = 0.1; // seconds
+
+  const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0];
+  let playbackSpeed = $state(1.0);
+
+  $effect(() => {
+    if (videoEl) videoEl.playbackRate = playbackSpeed;
+  });
+
+  function zoomTimeline(dir: number) {
+    store.timelineZoom = Math.max(0.5, Math.min(5, store.timelineZoom + dir * 0.25));
+  }
 
   function toggleSuggestions() {
     showSuggestions = !showSuggestions;
@@ -467,7 +479,62 @@
       {/if}
     </div>
 
-    <div class="flex items-center gap-1.5 text-muted-foreground">
+    <div class="flex items-center gap-2 text-muted-foreground">
+      <!-- Speed menu -->
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="gap-1 font-mono tabular-nums h-6 text-muted-foreground hover:text-foreground"
+            aria-label="Playback speed"
+          >
+            <Gauge size={12} />
+            {playbackSpeed.toFixed(2).replace(/\.?0+$/, "")}×
+          </Button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Content align="end">
+          {#each SPEEDS as speed (speed)}
+            <DropdownMenu.Item
+              onclick={() => (playbackSpeed = speed)}
+              class={playbackSpeed === speed ? "text-primary" : ""}
+            >
+              {speed.toFixed(2).replace(/\.?0+$/, "")}×
+            </DropdownMenu.Item>
+          {/each}
+        </DropdownMenu.Content>
+      </DropdownMenu.Root>
+
+      <div class="mx-1 h-4 w-px bg-border"></div>
+
+      <div class="flex items-center gap-0.5">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onclick={() => zoomTimeline(-1)}
+          aria-label="Zoom out timeline"
+          class="size-6 text-muted-foreground hover:text-foreground"
+        >
+          <ZoomOut size={13} />
+        </Button>
+
+        <span class="min-w-8 text-center font-mono tabular-nums text-[10px] font-medium text-foreground">
+          {store.timelineZoom.toFixed(1)}x
+        </span>
+
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onclick={() => zoomTimeline(1)}
+          aria-label="Zoom in timeline"
+          class="size-6 text-muted-foreground hover:text-foreground"
+        >
+          <ZoomIn size={13} />
+        </Button>
+      </div>
+
+      <div class="mx-1 h-4 w-px bg-border"></div>
+
       <Badge variant="secondary" class="font-mono text-[10px]">
         {aspectRatioLabel}
       </Badge>
@@ -475,7 +542,7 @@
         {frameCount} frames
       </Badge>
 
-      <span class="inline-flex items-center gap-1">
+      <span class="inline-flex items-center gap-1 ml-1">
         <kbd
           class="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]"
           >Scroll</kbd

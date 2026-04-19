@@ -14,10 +14,11 @@
     RefreshCw,
     X,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-  import { cn } from "@recast/ui/utils";
 
   // Determine device type from URL query: ?type=mic or ?type=camera
   const params = new URLSearchParams(window.location.search);
@@ -54,7 +55,11 @@
 
   function selectDevice(id: string) {
     currentSelectedId = id;
-    emit("device-selected", { type: deviceType, id, name: devices.find((d) => d.id === id)?.name ?? "" });
+    emit("device-selected", {
+      type: deviceType,
+      id,
+      name: devices.find((d) => d.id === id)?.name ?? "",
+    });
     getCurrentWindow().close();
   }
 
@@ -66,80 +71,136 @@
   function closeWindow() {
     getCurrentWindow().close();
   }
+
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeWindow();
+      return;
+    }
+    if (devices.length === 0) return;
+    const idx = devices.findIndex((d) => d.id === currentSelectedId);
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      const next = devices[(idx + 1 + devices.length) % devices.length];
+      currentSelectedId = next.id;
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      const prev =
+        devices[(idx - 1 + devices.length) % devices.length] ?? devices[0];
+      currentSelectedId = prev.id;
+    } else if (e.key === "Enter" && currentSelectedId) {
+      e.preventDefault();
+      selectDevice(currentSelectedId);
+    }
+  }
 </script>
 
-<div class="flex h-screen w-full flex-col bg-background/50 backdrop-blur-3xl text-foreground font-sans overflow-hidden select-none">
+<svelte:window onkeydown={handleKeydown} />
+
+<div
+  class="group/root flex h-screen w-full flex-col overflow-hidden select-none bg-background/80 backdrop-blur-3xl"
+>
   <!-- Header -->
-  <div class="group/header flex items-center justify-between px-7 pt-7 pb-4 shrink-0" data-tauri-drag-region>
-    <div class="space-y-1">
-      <h1 class="text-xl font-semibold tracking-tight text-foreground">
-        {title}
-      </h1>
-      <p class="text-[11px] font-medium text-foreground/40 uppercase tracking-[0.15em]">Select input device</p>
+  <header
+    class="flex items-center justify-between border-b border-border-subtle px-4 h-10 shrink-0"
+    data-tauri-drag-region
+  >
+    <div class="flex items-center gap-2">
+      {#if isMic}
+        <Mic size={11} class="text-muted-foreground" />
+      {:else}
+        <Camera size={11} class="text-muted-foreground" />
+      {/if}
+      <span
+        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
+        Select {title}
+      </span>
     </div>
-    <button
+    <Button
       onclick={closeWindow}
       onmousedown={(e) => e.stopPropagation()}
-      class="size-8 rounded-full flex items-center justify-center text-foreground/20 hover:text-foreground hover:bg-foreground/5 opacity-0 group-hover/header:opacity-100 transition-all duration-200"
+      size="icon-sm"
+      variant="ghost"
+      class="opacity-0 group-hover/root:opacity-100 transition-opacity"
+      title="Close (Esc)"
     >
-      <X size={14} strokeWidth={2.5} />
-    </button>
-  </div>
+      <X size={11} strokeWidth={2.5} />
+    </Button>
+  </header>
 
   <!-- Device list -->
-  <div class="flex-1 overflow-y-auto px-7 pb-4 scrollbar-transparent">
+  <div class="flex-1 overflow-y-auto px-2 py-2 scrollbar-transparent">
     {#if isLoading}
       <div class="flex items-center justify-center h-40">
-        <RefreshCw size={20} class="animate-spin text-primary/30" strokeWidth={1.5} />
+        <RefreshCw
+          size={16}
+          class="animate-spin text-muted-foreground"
+          strokeWidth={2}
+        />
       </div>
     {:else if devices.length === 0}
-      <div class="flex flex-col items-center justify-center h-40 gap-4 bg-foreground/[0.02] rounded-3xl border border-border-subtle">
+      <div
+        class="flex flex-col items-center justify-center h-40 gap-2 rounded-md border border-dashed border-border bg-card/40"
+      >
         {#if isMic}
-          <MicOff size={24} class="text-foreground/10" strokeWidth={1.5} />
+          <MicOff size={18} class="text-muted-foreground" />
         {:else}
-          <CameraOff size={24} class="text-foreground/10" strokeWidth={1.5} />
+          <CameraOff size={18} class="text-muted-foreground" />
         {/if}
-        <p class="text-[12px] font-medium text-foreground/30">No {title.toLowerCase()}s found</p>
+        <p class="text-[11px] font-medium text-foreground">
+          No {title.toLowerCase()}s found
+        </p>
       </div>
     {:else}
-      <div class="space-y-3">
-        {#each devices as device}
+      <div class="flex flex-col gap-0.5">
+        {#each devices as device (device.id)}
+          {@const active = currentSelectedId === device.id}
           <button
+            type="button"
             onclick={() => selectDevice(device.id)}
+            onmousedown={(e) => e.stopPropagation()}
             class={cn(
-              "w-full flex items-center gap-4 px-4 py-4 rounded-2xl text-left transition-all duration-300 group relative overflow-hidden border",
-              currentSelectedId === device.id
-              ? "bg-primary/[0.03] border-primary/20 shadow-craft-sm"
-              : "border-border-subtle hover:bg-card hover:border-border/40 hover:shadow-craft-md hover:scale-[1.01]"
+              "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
+              "focus:outline-none focus:ring-1 focus:ring-ring",
+              active
+                ? "bg-primary/10 text-foreground"
+                : "text-foreground/80 hover:bg-muted/60",
             )}
           >
-            <div class={cn(
-              "size-10 rounded-xl flex items-center justify-center transition-all duration-300",
-              currentSelectedId === device.id ? "bg-primary text-primary-foreground shadow-craft-sm" : "bg-foreground/[0.03] text-foreground/30 group-hover:text-foreground/50"
-            )}>
+            <div
+              class={cn(
+                "size-6 shrink-0 rounded-sm flex items-center justify-center",
+                active
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
               {#if isMic}
-                <Mic size={16} strokeWidth={2} />
+                <Mic size={12} strokeWidth={2} />
               {:else}
-                <Camera size={16} strokeWidth={2} />
+                <Camera size={12} strokeWidth={2} />
               {/if}
             </div>
 
             <div class="flex-1 min-w-0">
-              <span class={cn(
-                "text-[13px] font-semibold block truncate transition-colors",
-                currentSelectedId === device.id ? "text-foreground" : "text-foreground/70"
-              )}>
+              <div
+                class="truncate text-[11px] font-medium leading-tight text-foreground"
+              >
                 {device.name}
-              </span>
+              </div>
               {#if isMic && "isDefault" in device && device.isDefault}
-                <span class="text-[10px] font-medium text-primary/50 uppercase tracking-wider mt-0.5 block">Suggested Device</span>
+                <div
+                  class="text-[10px] font-medium text-muted-foreground leading-tight mt-0.5"
+                >
+                  System default
+                </div>
               {/if}
             </div>
 
-            {#if currentSelectedId === device.id}
-              <div class="size-6 bg-primary rounded-full flex items-center justify-center text-primary-foreground shadow-craft-sm animate-in zoom-in-50 duration-300">
-                <Check size={12} strokeWidth={4} />
-              </div>
+            {#if active}
+              <Check size={12} strokeWidth={3} class="text-primary shrink-0" />
             {/if}
           </button>
         {/each}
@@ -148,27 +209,33 @@
   </div>
 
   <!-- Footer -->
-  <div class="group/footer px-7 py-5 shrink-0 border-t border-border-subtle flex items-center justify-between">
-    <button
+  <footer
+    class="flex items-center justify-between border-t border-border-subtle bg-background/50 px-3 h-11 shrink-0"
+  >
+    <Button
       onclick={fetchDevices}
       disabled={isLoading}
       onmousedown={(e) => e.stopPropagation()}
-      class="flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.15em] text-foreground/20 hover:text-foreground transition-all duration-300 disabled:opacity-40 opacity-0 group-hover/footer:opacity-100"
+      variant="ghost"
+      size="xs"
+      class="gap-1.5"
     >
-      <RefreshCw size={12} strokeWidth={2.5} class={isLoading ? "animate-spin" : ""} />
+      <RefreshCw size={11} class={isLoading ? "animate-spin" : ""} />
       Rescan
-    </button>
-    <button
+    </Button>
+    <Button
       onclick={turnOff}
       onmousedown={(e) => e.stopPropagation()}
-      class="flex items-center gap-2 rounded-xl px-4 py-2 text-[11px] font-medium uppercase tracking-[0.15em] text-destructive/40 hover:text-destructive hover:bg-destructive/[0.05] transition-all duration-300"
+      variant="destructive_soft"
+      size="xs"
+      class="gap-1.5"
     >
       {#if isMic}
-        <MicOff size={12} strokeWidth={2.5} />
+        <MicOff size={11} />
       {:else}
-        <CameraOff size={12} strokeWidth={2.5} />
+        <CameraOff size={11} />
       {/if}
-      Disable
-    </button>
-  </div>
+      Turn off
+    </Button>
+  </footer>
 </div>

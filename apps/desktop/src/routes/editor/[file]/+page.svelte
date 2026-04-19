@@ -1,9 +1,9 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
-  import PlaybackControls from "$components/editor/PlaybackControls.svelte";
   import PropertiesPanel from "$components/editor/PropertiesPanel.svelte";
   import Timeline from "$components/editor/Timeline.svelte";
+  import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
@@ -573,23 +573,25 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 items-center justify-center bg-muted/10 p-3"
+          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-muted/10 p-3 pb-4"
         >
-          <VideoPreview
-            {store}
-            bind:videoEl
-            {videoSrc}
-            {cursorPath}
-            onTimeUpdate={handleTimeUpdate}
-            onEnded={handleVideoEnded}
-            onLoadedMetadata={handleVideoLoadedMetadata}
-            onReady={handleVideoReady}
-            onError={handleVideoError}
-            onSeeked={handleVideoSeeked}
-          />
+          <div class="flex-1 flex min-h-0 w-full items-center justify-center relative">
+            <VideoPreview
+              {store}
+              bind:videoEl
+              {videoSrc}
+              {cursorPath}
+              onTimeUpdate={handleTimeUpdate}
+              onEnded={handleVideoEnded}
+              onLoadedMetadata={handleVideoLoadedMetadata}
+              onReady={handleVideoReady}
+              onError={handleVideoError}
+              onSeeked={handleVideoSeeked}
+            />
+          </div>
+          <VideoPlayerControls {store} {videoEl} fullscreenTargetEl={previewContainerEl} />
         </div>
 
-        <PlaybackControls {store} {videoEl} fullscreenTargetEl={previewContainerEl} />
         <Timeline {store} {videoEl} />
       </div>
 

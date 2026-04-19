@@ -79,8 +79,11 @@
       const rampOut = Math.min(Math.max(0, r.rampOut), half);
       const holdStart = r.start + rampIn;
       const holdEnd = r.end - rampOut;
+      const cxTarget = r.centerX ?? 0.5;
+      const cyTarget = r.centerY ?? 0.5;
       let phase: number;
       let curve;
+      let atHold = false;
       if (t < holdStart) {
         phase = rampIn > 0 ? (t - r.start) / rampIn : 1;
         curve = r.easeIn;
@@ -88,11 +91,17 @@
         phase = rampOut > 0 ? (r.end - t) / rampOut : 1;
         curve = r.easeOut;
       } else {
-        return { scale: r.scale, cx: 0.5, cy: 0.5 };
+        atHold = true;
+        phase = 1;
+        curve = r.easeIn;
       }
       phase = Math.max(0, Math.min(1, phase));
-      const s = 1 + (r.scale - 1) * bezierY(curve, phase);
-      return { scale: s, cx: 0.5, cy: 0.5 };
+      const eased = atHold ? 1 : bezierY(curve, phase);
+      return {
+        scale: 1 + (r.scale - 1) * eased,
+        cx: 0.5 + (cxTarget - 0.5) * eased,
+        cy: 0.5 + (cyTarget - 0.5) * eased,
+      };
     }
     return { scale: 1, cx: 0.5, cy: 0.5 };
   }

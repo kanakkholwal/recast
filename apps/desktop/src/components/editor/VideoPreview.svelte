@@ -9,6 +9,7 @@
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./AnnotationOverlay.svelte";
+	import FocusOverlay from "./FocusOverlay.svelte";
 
 	interface Props {
 		store: EditorStore;
@@ -102,6 +103,7 @@ uniform vec4 u_gradEnd;
 uniform float u_bgBlurPx;         // image-mode blur radius in canvas pixels (0 = off)
 uniform vec2 u_zoomCenter;        // [0..1] in video UV
 uniform float u_zoomScale;        // 1.0 = no zoom
+uniform float u_motionBlurPx;     // radial motion-blur radius in canvas px (0 = off)
 uniform float u_borderRadiusPx;   // rounded corner radius of the video rect, canvas pixels
 
 uniform vec2 u_cursorPos;         // [0..1] in video UV
@@ -110,6 +112,13 @@ uniform float u_cursorRadius;     // pixels (canvas)
 uniform vec4 u_cursorColor;
 uniform vec4 u_highlightColor;
 uniform float u_highlightAlpha;   // 0 if no click highlight
+
+// Drop shadow cast by the video rect onto the background.
+uniform int u_shadowEnabled;      // 0 / 1
+uniform float u_shadowBlurPx;     // soft edge width
+uniform float u_shadowSpreadPx;   // rect grows by this much before blur
+uniform vec2 u_shadowOffsetPx;    // (x, y) offset
+uniform vec4 u_shadowColor;       // rgb + alpha
 
 in vec2 v_uv;
 out vec4 frag;
@@ -168,6 +177,20 @@ void main() {
 	// Coverage = 1 inside, fading to 0 over ~1 px at the edge for AA.
 	float videoCoverage = 1.0 - smoothstep(-1.0, 0.0, sd);
 
+	// Drop shadow — computed before the video mix so it sits under the rect.
+	// Reuse sdRoundRect against an offset, spread-expanded clone of the video
+	// rectangle, then falls off across u_shadowBlurPx pixels.
+	if (u_shadowEnabled == 1 && u_shadowColor.a > 0.0) {
+		float spread = max(u_shadowSpreadPx, 0.0);
+		float blurPx = max(u_shadowBlurPx, 0.5);
+		vec2 shadowP = (canvasPx - videoCenter) - u_shadowOffsetPx;
+		float sdShadow = sdRoundRect(shadowP, halfSize + vec2(spread), r + spread * 0.5);
+		float shadowMask = 1.0 - smoothstep(0.0, blurPx, sdShadow);
+		// Don't bleed shadow onto the video surface.
+		shadowMask *= (1.0 - videoCoverage);
+		color.rgb = mix(color.rgb, u_shadowColor.rgb, shadowMask * u_shadowColor.a);
+	}
+
 	if (videoCoverage > 0.0) {
 		vec2 videoUV = (canvasPx - videoMin) / videoSize;
 
@@ -177,7 +200,25 @@ void main() {
 			videoUV = clamp(videoUV, 0.0, 1.0);
 		}
 
-		vec4 videoColor = texture(u_video, videoUV);
+		// Radial motion blur centred on the focus point. Direction = vector
+		// from zoom centre outward; magnitude driven by d(scale)/dt in JS.
+		// 7 taps with a triangular weight — cheap enough per fragment.
+		vec4 videoColor;
+		if (u_motionBlurPx > 0.5) {
+			vec2 dir = (videoUV - u_zoomCenter) * (u_motionBlurPx / max(u_canvasSize.x, 1.0));
+			vec4 acc = vec4(0.0);
+			float w = 0.0;
+			for (int i = -3; i <= 3; i++) {
+				float fi = float(i) / 3.0;
+				vec2 uv = clamp(videoUV + dir * fi, 0.0, 1.0);
+				float wi = 1.0 - abs(fi) * 0.5;
+				acc += texture(u_video, uv) * wi;
+				w += wi;
+			}
+			videoColor = acc / w;
+		} else {
+			videoColor = texture(u_video, videoUV);
+		}
 
 		// Cursor overlay (drawn on top of video, clipped to rounded video region).
 		if (u_cursorVisible > 0.5) {
@@ -279,6 +320,7 @@ void main() {
 			"u_bgBlurPx",
 			"u_zoomCenter",
 			"u_zoomScale",
+			"u_motionBlurPx",
 			"u_borderRadiusPx",
 			"u_cursorPos",
 			"u_cursorVisible",
@@ -286,6 +328,11 @@ void main() {
 			"u_cursorColor",
 			"u_highlightColor",
 			"u_highlightAlpha",
+			"u_shadowEnabled",
+			"u_shadowBlurPx",
+			"u_shadowSpreadPx",
+			"u_shadowOffsetPx",
+			"u_shadowColor",
 		]) {
 			uniforms[name] = g.getUniformLocation(program, name);
 		}
@@ -536,7 +583,17 @@ void main() {
 	// seconds shaped by `easeIn`, holds at `region.scale`, then ramps back
 	// across `rampOut` shaped by `easeOut`. Matches the Rust
 	// `ZoomRegion::scale_at` logic 1:1 so preview and export stay aligned.
-	function evaluateZoomAt(timeSec: number): number {
+	// Returns the current zoom state for `timeSec`:
+	//  - scale: eased scale value (1.0 outside any region)
+	//  - cx/cy: focus centre in video UV space (0.5/0.5 at rest), eased from
+	//           the region's target centre in lockstep with the scale ramp
+	//  - motionBlur: 0..1 strength multiplier of the active region (or 0)
+	function evaluateZoomAt(timeSec: number): {
+		scale: number;
+		cx: number;
+		cy: number;
+		motionBlur: number;
+	} {
 		const regions = store.zoomRegions;
 		for (const r of regions) {
 			if (timeSec <= r.start || timeSec >= r.end) continue;
@@ -548,6 +605,7 @@ void main() {
 			const holdEnd = r.end - rampOut;
 			let phase: number;
 			let curve;
+			let atHold = false;
 			if (timeSec < holdStart) {
 				phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
 				curve = r.easeIn;
@@ -555,12 +613,18 @@ void main() {
 				phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
 				curve = r.easeOut;
 			} else {
-				return r.scale;
+				atHold = true;
+				phase = 1;
+				curve = r.easeIn;
 			}
 			phase = Math.max(0, Math.min(1, phase));
-			return 1.0 + (r.scale - 1.0) * bezierY(curve, phase);
+			const eased = atHold ? 1 : bezierY(curve, phase);
+			const scale = 1.0 + (r.scale - 1.0) * eased;
+			const cx = 0.5 + ((r.centerX ?? 0.5) - 0.5) * eased;
+			const cy = 0.5 + ((r.centerY ?? 0.5) - 0.5) * eased;
+			return { scale, cx, cy, motionBlur: r.motionBlur ?? 0 };
 		}
-		return 1.0;
+		return { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
 	}
 
 	function draw() {
@@ -635,11 +699,25 @@ void main() {
 		const radiusPx = (radiusSource / compW) * canvasEl.width;
 		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
 
-		// Zoom — eased per-frame scale. `evaluateZoomAt` returns 1.0 outside
-		// every region, otherwise the smoothly-ramped scale (see above).
-		const zoomScale = evaluateZoomAt(playbackTime);
-		gl.uniform2f(uniforms.u_zoomCenter, 0.5, 0.5); // center crop, matching Rust behavior
-		gl.uniform1f(uniforms.u_zoomScale, zoomScale);
+		// Zoom — eased per-frame scale + focus centre + motion-blur strength.
+		const zoom = evaluateZoomAt(playbackTime);
+		gl.uniform2f(uniforms.u_zoomCenter, zoom.cx, zoom.cy);
+		gl.uniform1f(uniforms.u_zoomScale, zoom.scale);
+
+		// Motion blur: radius scales with |d(scale)/dt| so hold frames are
+		// sharp and ramps smear toward the focus point. dt = 1/60 matches the
+		// preview's baseline and is fine as a finite-difference step since the
+		// ramp shapes are C1-continuous beziers.
+		let motionBlurPx = 0;
+		if (zoom.motionBlur > 0.001 && zoom.scale > 1.0001) {
+			const dt = 1 / 60;
+			const next = evaluateZoomAt(playbackTime + dt);
+			const dScaleDt = Math.abs(next.scale - zoom.scale) / dt;
+			// k = 30 px per unit-scale-per-second is a good default at 1080p;
+			// cap at 20 px to keep the 7-tap sample cheap.
+			motionBlurPx = Math.min(20, zoom.motionBlur * dScaleDt * 30);
+		}
+		gl.uniform1f(uniforms.u_motionBlurPx, motionBlurPx);
 
 		// Cursor
 		const cs = store.cursorSettings;
@@ -683,6 +761,23 @@ void main() {
 		const [hr, hg, hb] = hexToRgba(cs.highlightColor || "#3b82f6");
 		gl.uniform4fv(uniforms.u_highlightColor, [hr, hg, hb, 1]);
 		gl.uniform1f(uniforms.u_highlightAlpha, highlightAlpha);
+
+		// Drop shadow — offsets/blur/spread expressed in "video pixels" so the
+		// look scales consistently with the canvas at different container
+		// sizes. Same source-pixel → canvas-pixel factor as padding/radius.
+		const shadow = store.shadow;
+		if (shadow.enabled && shadow.opacity > 0) {
+			const vpToCanvas = canvasEl.width / compW;
+			gl.uniform1i(uniforms.u_shadowEnabled, 1);
+			gl.uniform1f(uniforms.u_shadowBlurPx, Math.max(0.5, shadow.blur * vpToCanvas));
+			gl.uniform1f(uniforms.u_shadowSpreadPx, Math.max(0, shadow.spread * vpToCanvas));
+			gl.uniform2f(uniforms.u_shadowOffsetPx, 0, shadow.offsetY * vpToCanvas);
+			const [sr, sg, sb] = hexToRgba(shadow.color || "#000000");
+			gl.uniform4fv(uniforms.u_shadowColor, [sr, sg, sb, shadow.opacity / 100]);
+		} else {
+			gl.uniform1i(uniforms.u_shadowEnabled, 0);
+			gl.uniform4fv(uniforms.u_shadowColor, [0, 0, 0, 0]);
+		}
 
 		gl.drawArrays(gl.TRIANGLES, 0, 6);
 	}
@@ -766,6 +861,7 @@ void main() {
 		void store.metadata;
 		void store.cursorSettings;
 		void store.zoomRegions;
+		void store.shadow;
 		requestRedraw();
 	});
 
@@ -801,6 +897,7 @@ void main() {
 			class="block max-h-full max-w-full"
 		></canvas>
 		<AnnotationOverlay {store} {videoEl} targetEl={previewRectEl} />
+		<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 	</div>
 
 	{#if videoSrc}

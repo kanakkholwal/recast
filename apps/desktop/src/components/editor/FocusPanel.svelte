@@ -1,11 +1,13 @@
 <script lang="ts">
   import { EASE, EASING_PRESETS, type Easing } from "$lib/easing/cubic-bezier";
   import {
+    DEFAULT_ZOOM_CENTER,
+    DEFAULT_ZOOM_MOTION_BLUR,
     DEFAULT_ZOOM_RAMP,
     type EditorStore,
     type ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
-  import { Plus, Target, Trash2 } from "@lucide/svelte";
+  import { Crosshair, Plus, Target, Trash2 } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import BezierEditor from "./BezierEditor.svelte";
@@ -50,6 +52,16 @@
       easeOut: { ...EASE },
       rampIn: DEFAULT_ZOOM_RAMP,
       rampOut: DEFAULT_ZOOM_RAMP,
+    });
+  }
+
+  function recenterFocus() {
+    if (!selected) return;
+    store.pushUndoState();
+    store.updateZoomRegion(selected.id, {
+      centerX: DEFAULT_ZOOM_CENTER,
+      centerY: DEFAULT_ZOOM_CENTER,
+      motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
     });
   }
 
@@ -225,6 +237,60 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ scale: v })}
         />
+
+        <div class="flex items-center justify-between gap-2 pt-1">
+          <div class="flex items-center gap-1.5">
+            <Crosshair size={11} class="text-muted-foreground" />
+            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Focus point
+            </span>
+            <InspectorHint
+              content="Drag the rectangle on the preview, or use the sliders. Values are 0..1 across the frame (0.5 = center)."
+            />
+          </div>
+          <Button
+            variant="ghost"
+            size="xs"
+            onclick={recenterFocus}
+            disabled={region.centerX === 0.5 &&
+              region.centerY === 0.5 &&
+              region.motionBlur === DEFAULT_ZOOM_MOTION_BLUR}
+          >
+            Recenter
+          </Button>
+        </div>
+        <SliderControl
+          label="Focus X"
+          value={region.centerX}
+          min={0}
+          max={1}
+          step={0.01}
+          formatValue={(v) => v.toFixed(2)}
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => updateSelected({ centerX: v })}
+        />
+        <SliderControl
+          label="Focus Y"
+          value={region.centerY}
+          min={0}
+          max={1}
+          step={0.01}
+          formatValue={(v) => v.toFixed(2)}
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => updateSelected({ centerY: v })}
+        />
+        <SliderControl
+          label="Motion blur"
+          value={Math.round(region.motionBlur * 100)}
+          min={0}
+          max={100}
+          step={1}
+          unit="%"
+          formatValue={(v) => `${v.toFixed(0)}%`}
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => updateSelected({ motionBlur: v / 100 })}
+        />
+
         <SliderControl
           label="Start"
           value={region.start}

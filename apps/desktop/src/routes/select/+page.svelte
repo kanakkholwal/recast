@@ -9,10 +9,11 @@
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
+  import * as Tabs from "@recast/ui/tabs";
+  import { cn } from "@recast/ui/utils";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-  import { cn } from "@recast/ui/utils";
 
   type TargetSource = {
     type: "monitor" | "window";
@@ -25,7 +26,7 @@
 
   let sources: TargetSource[] = $state([]);
   let selectedSource: TargetSource | null = $state(null);
-  let tab: "monitor" | "window" = $state("monitor");
+  let tab = $state<"monitor" | "window">("monitor");
   let isFetching = $state(true);
 
   onMount(() => {
@@ -80,6 +81,16 @@
     getCurrentWindow().close();
   }
 
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      closeWindow();
+    } else if (e.key === "Enter" && selectedSource) {
+      e.preventDefault();
+      confirmSelection();
+    }
+  }
+
   const monitorSources = $derived(sources.filter((s) => s.type === "monitor"));
   const windowSources = $derived(sources.filter((s) => s.type === "window"));
   const filteredSources = $derived(
@@ -93,146 +104,164 @@
   }
 </script>
 
+<svelte:window onkeydown={handleKeydown} />
+
 <div
-  class="flex h-screen w-full flex-col overflow-hidden bg-background/50 backdrop-blur-3xl text-foreground font-sans select-none"
+  class="group/root flex h-screen w-full flex-col overflow-hidden select-none bg-background/80 backdrop-blur-3xl"
 >
   <!-- Header -->
-  <div class="group/header flex items-center justify-between px-7 pt-7 pb-5 shrink-0" data-tauri-drag-region>
-    <div class="space-y-1.5">
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">
-        Choose Source
-      </h1>
-      <p class="text-[11px] font-medium text-foreground/40 uppercase tracking-[0.15em]">Select what to capture</p>
+  <header
+    class="group/header flex items-center justify-between border-b border-border-subtle px-4 h-10 shrink-0"
+    data-tauri-drag-region
+  >
+    <div class="flex items-center gap-2">
+      <span
+        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
+        Choose source
+      </span>
     </div>
-    <button
+    <Button
+      variant="ghost"
+      size="icon-sm"
       onclick={closeWindow}
       onmousedown={(e) => e.stopPropagation()}
-      class="size-8 rounded-full flex items-center justify-center text-foreground/20 hover:text-foreground hover:bg-foreground/5 opacity-0 group-hover/header:opacity-100 transition-all duration-200"
+      class="opacity-0 group-hover/root:opacity-100 transition-opacity"
+      title="Close (Esc)"
     >
-      <X size={14} strokeWidth={2.5} />
-    </button>
-  </div>
+      <X size={11} strokeWidth={2.5} />
+    </Button>
+  </header>
 
   <!-- Tabs -->
-  <div
-    class="mx-7 mb-6 flex items-center gap-1 rounded-[18px] bg-foreground/[0.03] p-1 shrink-0"
-  >
-    <button
-      onclick={() => (tab = "monitor")}
-      class="flex-1 flex items-center justify-center gap-2 rounded-[16px] py-2.5 text-[12px] font-medium tracking-tight transition-all duration-200
-                {tab === 'monitor'
-        ? 'bg-background text-foreground shadow-craft-md ring-1 ring-border-subtle'
-        : 'text-foreground/40 hover:text-foreground/60 hover:bg-foreground/[0.02]'}"
-    >
-      <MonitorIcon size={14} strokeWidth={2} />
-      Screens
-      {#if monitorSources.length > 0}
-        <span class="rounded-md bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] text-foreground/40"
-          >{monitorSources.length}</span
+  <div class="px-3 pt-3 pb-2 shrink-0">
+    <Tabs.Root bind:value={tab} class="w-full">
+      <Tabs.List
+        class="grid w-full grid-cols-2 bg-muted/60 border border-border-subtle p-0.5"
+      >
+        <Tabs.Trigger
+          value="monitor"
+          class="gap-1.5 text-[11px] font-medium text-muted-foreground data-active:bg-background data-active:text-foreground data-active:border-border-subtle data-active:shadow-craft-sm"
         >
-      {/if}
-    </button>
-    <button
-      onclick={() => (tab = "window")}
-      class="flex-1 flex items-center justify-center gap-2 rounded-[16px] py-2.5 text-[12px] font-medium tracking-tight transition-all duration-200
-                {tab === 'window'
-        ? 'bg-background text-foreground shadow-craft-md ring-1 ring-border-subtle'
-        : 'text-foreground/40 hover:text-foreground/60 hover:bg-foreground/[0.02]'}"
-    >
-      <AppWindow size={14} strokeWidth={2} />
-      Windows
-      {#if windowSources.length > 0}
-        <span class="rounded-md bg-foreground/[0.05] px-1.5 py-0.5 text-[10px] text-foreground/40"
-          >{windowSources.length}</span
+          <MonitorIcon size={12} />
+          Screens
+          {#if monitorSources.length > 0}
+            <span
+              class={cn(
+                "rounded-sm px-1 py-px font-mono text-[10px] tabular-nums transition-colors",
+                tab === "monitor"
+                  ? "bg-primary/15 text-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {monitorSources.length}
+            </span>
+          {/if}
+        </Tabs.Trigger>
+        <Tabs.Trigger
+          value="window"
+          class="gap-1.5 text-[11px] font-medium text-muted-foreground data-active:bg-background data-active:text-foreground data-active:border-border-subtle data-active:shadow-craft-sm"
         >
-      {/if}
-    </button>
+          <AppWindow size={12} />
+          Windows
+          {#if windowSources.length > 0}
+            <span
+              class={cn(
+                "rounded-sm px-1 py-px font-mono text-[10px] tabular-nums transition-colors",
+                tab === "window"
+                  ? "bg-primary/15 text-foreground"
+                  : "bg-muted text-muted-foreground",
+              )}
+            >
+              {windowSources.length}
+            </span>
+          {/if}
+        </Tabs.Trigger>
+      </Tabs.List>
+    </Tabs.Root>
   </div>
 
   <!-- Content -->
-  <div class="flex-1 overflow-y-auto px-7 pb-5 scrollbar-transparent">
+  <div class="flex-1 overflow-y-auto px-3 pb-3 scrollbar-transparent">
     {#if isFetching}
       <SourceSelectorSkeleton />
     {:else if filteredSources.length === 0}
-      <div class="flex h-48 w-full flex-col items-center justify-center gap-4 bg-foreground/[0.02] rounded-3xl border border-border-subtle">
-        <div
-          class="size-12 rounded-2xl bg-foreground/5 flex items-center justify-center text-foreground/20"
-        >
-          {#if tab === "monitor"}
-            <MonitorIcon size={24} strokeWidth={1.5} />
-          {:else}
-            <AppWindow size={24} strokeWidth={1.5} />
-          {/if}
-        </div>
-        <p class="text-[13px] font-medium text-foreground/30">
+      <div
+        class="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card/40"
+      >
+        {#if tab === "monitor"}
+          <MonitorIcon size={18} class="text-muted-foreground" />
+        {:else}
+          <AppWindow size={18} class="text-muted-foreground" />
+        {/if}
+        <p class="text-[11px] font-medium text-foreground">
           No {tab === "monitor" ? "displays" : "windows"} found
         </p>
       </div>
     {:else}
-      <div
-        class="grid gap-3.5 {tab === 'monitor' ? 'grid-cols-2' : 'grid-cols-2'}"
-      >
-        {#each filteredSources as source, i}
+      <div class="grid grid-cols-2 gap-2">
+        {#each filteredSources as source (source.type + source.id)}
+          {@const selected = isSelected(source)}
           <button
+            type="button"
             onclick={() => (selectedSource = source)}
+            ondblclick={confirmSelection}
+            onmousedown={(e) => e.stopPropagation()}
             class={cn(
-              "group relative overflow-hidden rounded-[24px] border transition-all duration-300",
-              isSelected(source)
-              ? "border-primary/40 bg-primary/[0.02] shadow-craft-lg"
-              : "border-border-subtle bg-card/40 hover:bg-card hover:border-border/40 hover:shadow-craft-md hover:scale-[1.01]"
+              "group/tile relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
+              "focus:outline-none focus:ring-1 focus:ring-ring",
+              selected
+                ? "border-primary bg-primary/10"
+                : "border-border bg-card hover:bg-muted/50",
             )}
-            style="animation-delay: {i * 30}ms"
           >
             <!-- Thumbnail -->
             <div
-              class="relative aspect-[16/10] w-full overflow-hidden bg-muted/20"
+              class="relative aspect-16/10 w-full overflow-hidden bg-muted/30"
             >
               {#if source.thumbnail}
                 <img
                   src={source.thumbnail}
                   alt={source.label}
-                  class="h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
+                  class="h-full w-full object-cover"
                   draggable="false"
                 />
               {:else}
                 <div
-                  class="flex h-full w-full items-center justify-center text-foreground/5 transition-all group-hover:scale-110"
+                  class="flex h-full w-full items-center justify-center text-muted-foreground"
                 >
                   {#if source.type === "monitor"}
-                    <MonitorIcon size={40} strokeWidth={1} />
+                    <MonitorIcon size={24} />
                   {:else}
-                    <AppWindow size={40} strokeWidth={1} />
+                    <AppWindow size={24} />
                   {/if}
                 </div>
               {/if}
 
-              <!-- Selection Ring / Check -->
-              <div class={cn(
-                "absolute inset-0 ring-1 ring-inset ring-primary/30 transition-all duration-300",
-                isSelected(source) ? "opacity-100" : "opacity-0"
-              )}></div>
-
-              {#if isSelected(source)}
+              {#if selected}
                 <div
-                  class="absolute right-4 top-4 size-7 rounded-full bg-primary flex items-center justify-center shadow-craft-md animate-in zoom-in-50 duration-300"
+                  class="absolute right-1.5 top-1.5 size-5 rounded-full bg-primary flex items-center justify-center shadow-craft-sm"
                 >
-                  <Check size={14} strokeWidth={3} class="text-primary-foreground" />
+                  <Check
+                    size={11}
+                    strokeWidth={3}
+                    class="text-primary-foreground"
+                  />
                 </div>
               {/if}
             </div>
 
             <!-- Label -->
-            <div class="px-5 py-4.5">
+            <div class="px-2 py-1.5">
               <div
-                class={cn(
-                  "truncate text-[13px] font-semibold leading-tight transition-colors",
-                  isSelected(source) ? "text-foreground" : "text-foreground/70"
-                )}
+                class="truncate text-[11px] font-medium leading-tight text-foreground"
               >
                 {source.label}
               </div>
               {#if source.resolution}
-                <div class="mt-1.5 text-[10px] font-medium text-foreground/30 uppercase tracking-wider">
+                <div
+                  class="mt-0.5 text-[10px] font-mono tabular-nums text-muted-foreground"
+                >
                   {source.resolution}
                 </div>
               {/if}
@@ -244,38 +273,39 @@
   </div>
 
   <!-- Footer -->
-  <div
-    class="group/footer flex items-center justify-between px-7 py-6 shrink-0 border-t border-border-subtle"
+  <footer
+    class="flex items-center justify-between border-t border-border-subtle bg-background/50 px-3 h-11 shrink-0"
   >
     <Button
       onclick={fetchSources}
       disabled={isFetching}
       onmousedown={(e) => e.stopPropagation()}
       variant="ghost"
-      size="sm"
-      class="text-[11px] font-medium uppercase tracking-[0.15em] text-foreground/20 hover:text-foreground transition-all duration-300 opacity-0 group-hover/footer:opacity-100"
+      size="xs"
+      class="gap-1.5"
     >
-      <RefreshCw size={12} strokeWidth={2.5} class={isFetching ? "animate-spin" : ""} />
+      <RefreshCw size={11} class={isFetching ? "animate-spin" : ""} />
       Rescan
     </Button>
 
-    <div class="flex items-center gap-4">
-      <button
+    <div class="flex items-center gap-1.5">
+      <Button
         onclick={closeWindow}
         onmousedown={(e) => e.stopPropagation()}
-        class="text-[13px] font-medium px-6 text-foreground/40 hover:text-foreground transition-all duration-200"
+        variant="ghost"
+        size="xs"
       >
         Cancel
-      </button>
+      </Button>
       <Button
         onclick={confirmSelection}
         disabled={!selectedSource}
         onmousedown={(e) => e.stopPropagation()}
-        class="shadow-craft-lg rounded-[14px] px-8 font-semibold h-11 bg-foreground text-background hover:bg-foreground/90 transition-all duration-200"
+        variant="default"
+        size="xs"
       >
-        Select Source
+        Select
       </Button>
     </div>
-  </div>
+  </footer>
 </div>
-

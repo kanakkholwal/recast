@@ -11,8 +11,10 @@
     FolderOpen,
     ImageIcon,
     LayoutTemplate,
+    Move,
     Palette,
     Sparkles,
+    Square,
     SquareRoundCorner,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -386,5 +388,109 @@
         {/snippet}
       </SliderControl>
     </div>
+  </section>
+
+  <!-- Drop shadow — casts a soft shadow under the video rect onto the background. -->
+  <section>
+    <header class="mb-2 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-1.5">
+        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          Drop shadow
+        </h3>
+        <InspectorHint content="Adds depth by casting a soft shadow under the recording onto the canvas background." />
+      </div>
+      <Button
+        variant={store.shadow.enabled ? "default_soft" : "outline"}
+        size="xs"
+        class="gap-1.5"
+        onclick={() => {
+          store.pushUndoState();
+          store.updateShadow({ enabled: !store.shadow.enabled });
+        }}
+        aria-pressed={store.shadow.enabled}
+      >
+        <Square size={11} />
+        {store.shadow.enabled ? "On" : "Off"}
+      </Button>
+    </header>
+
+    {#if store.shadow.enabled}
+      <div class="space-y-2.5">
+        <SliderControl
+          label="Blur"
+          value={store.shadow.blur}
+          min={0}
+          max={100}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ blur: v })}
+        >
+          {#snippet icon()}
+            <Blend size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Spread"
+          value={store.shadow.spread}
+          min={0}
+          max={50}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ spread: v })}
+        >
+          {#snippet icon()}
+            <SquareRoundCorner size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Offset Y"
+          value={store.shadow.offsetY}
+          min={-40}
+          max={40}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ offsetY: v })}
+        >
+          {#snippet icon()}
+            <Move size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Opacity"
+          value={store.shadow.opacity}
+          min={0}
+          max={100}
+          step={1}
+          unit="%"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ opacity: v })}
+        />
+
+        <div class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2">
+          <input
+            type="color"
+            value={store.shadow.color || "#000000"}
+            oninput={(e) => {
+              store.pushUndoState();
+              store.updateShadow({ color: (e.currentTarget as HTMLInputElement).value });
+            }}
+            class="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent"
+            aria-label="Choose shadow color"
+          />
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] font-medium text-foreground">Shadow color</p>
+            <p class="truncate font-mono text-[10px] text-muted-foreground">
+              {(store.shadow.color || "#000000").toUpperCase()}
+            </p>
+          </div>
+        </div>
+      </div>
+    {/if}
   </section>
 </div>

@@ -4,7 +4,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::node_types::{
-    Annotation, BackgroundNode, CursorNode, RenderNode, TrimNode, ZoomNode, ZoomRegion,
+    Annotation, BackgroundNode, CursorNode, RenderNode, ShadowSettings, TrimNode, ZoomNode,
+    ZoomRegion,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -33,6 +34,9 @@ pub struct RenderState {
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
     #[serde(default)]
     pub annotations: Vec<Annotation>,
+    /// Drop shadow cast by the video rect. Preview-only today.
+    #[serde(default)]
+    pub shadow: ShadowSettings,
 }
 
 impl Default for RenderState {
@@ -55,6 +59,7 @@ impl Default for RenderState {
             cursor_idle_timeout: 3.0,
             zoom_regions: Vec::new(),
             annotations: Vec::new(),
+            shadow: ShadowSettings::default(),
         }
     }
 }
@@ -286,16 +291,35 @@ fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSa
     };
     let iw = source.width as f64;
     let ih = source.height as f64;
+    // Focus centre eases from (0.5, 0.5) → (center_x, center_y) across the
+    // ramp, so the crop window drifts smoothly into the focused area rather
+    // than snapping off-centre on the first frame.
+    let fx_target = region.center_x.clamp(0.0, 1.0);
+    let fy_target = region.center_y.clamp(0.0, 1.0);
     let mut out = Vec::with_capacity(samples + 1);
     for i in 0..=samples {
         let t = region.start + step * i as f64;
         let scale = region.scale_at(t).max(1.0);
+        // Fractional progress of the zoom from 1.0 → region.scale; drives the
+        // centre lerp so rest frames stay centred.
+        let p = if region.scale > 1.0 {
+            ((scale - 1.0) / (region.scale - 1.0)).clamp(0.0, 1.0)
+        } else {
+            0.0
+        };
+        let fx = 0.5 + (fx_target - 0.5) * p;
+        let fy = 0.5 + (fy_target - 0.5) * p;
+        let cw = iw / scale;
+        let ch = ih / scale;
+        // Clamp so the crop window never leaves the source frame.
+        let x = ((iw - cw) * fx).clamp(0.0, iw - cw);
+        let y = ((ih - ch) * fy).clamp(0.0, ih - ch);
         out.push(ZoomSample {
             t,
-            width: iw / scale,
-            height: ih / scale,
-            x: (iw - iw / scale) * 0.5,
-            y: (ih - ih / scale) * 0.5,
+            width: cw,
+            height: ch,
+            x,
+            y,
         });
     }
     out

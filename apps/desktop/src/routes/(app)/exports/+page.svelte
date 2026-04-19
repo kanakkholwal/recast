@@ -13,7 +13,8 @@
     renameFile,
     type RecordingEntry,
   } from "$lib/ipc";
-  import { FolderOpen, Pencil, Play, RefreshCw, Trash2 } from "@lucide/svelte";
+
+  import { CopyIcon, FolderOpen, Pencil, Play, RefreshCw, Trash2 } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
   import { onMount } from "svelte";
@@ -142,6 +143,8 @@
           id: "copy-path",
           label: "Copy Path",
           shortcut: "⌘⇧C",
+                    icon:CopyIcon,
+
           onAction: () => copyPath(entry),
         },
         {

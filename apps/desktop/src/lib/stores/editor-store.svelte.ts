@@ -26,9 +26,23 @@ export interface ZoomRegion {
 	easeOut: Easing;
 	rampIn: number; // seconds spent ramping from 1.0 → scale
 	rampOut: number; // seconds spent ramping from scale → 1.0
+	centerX: number; // UV 0..1 — focus point X; 0.5 = center crop
+	centerY: number; // UV 0..1 — focus point Y; 0.5 = center crop
+	motionBlur: number; // 0..1 — preview motion-blur strength multiplier
 }
 
 export const DEFAULT_ZOOM_RAMP = 0.35;
+export const DEFAULT_ZOOM_CENTER = 0.5;
+export const DEFAULT_ZOOM_MOTION_BLUR = 0.5;
+
+export interface ShadowSettings {
+	enabled: boolean;
+	blur: number; // px
+	spread: number; // px
+	offsetY: number; // px (positive = downward)
+	opacity: number; // 0..100
+	color: string; // hex
+}
 
 // ── Annotations ────────────────────────────────────────────────────────
 //
@@ -156,9 +170,13 @@ export interface EditorRenderState {
 		easeOut: Easing;
 		rampIn: number;
 		rampOut: number;
+		centerX: number;
+		centerY: number;
+		motionBlur: number;
 	}>;
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
+	shadow: ShadowSettings;
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -218,6 +236,16 @@ export function createEditorStore() {
 	let backgroundBlur = $state(40);
 	let padding = $state(32);
 	let borderRadius = $state(0); // 0..50 (% of shorter video edge)
+
+	// Drop shadow cast by the video rect onto the background.
+	let shadow = $state<ShadowSettings>({
+		enabled: false,
+		blur: 40,
+		spread: 0,
+		offsetY: 24,
+		opacity: 40,
+		color: '#000000',
+	});
 
 	// Layout
 	let layoutMode = $state<LayoutMode>('auto');
@@ -293,6 +321,7 @@ export function createEditorStore() {
 			backgroundBlur,
 			padding,
 			borderRadius,
+			shadow,
 			trimStart,
 			trimEnd,
 			zoomRegions,
@@ -334,9 +363,15 @@ export function createEditorStore() {
 		backgroundBlur = s.backgroundBlur;
 		padding = s.padding;
 		borderRadius = s.borderRadius ?? 0;
+		shadow = s.shadow ?? shadow;
 		trimStart = s.trimStart;
 		trimEnd = s.trimEnd;
-		zoomRegions = s.zoomRegions;
+		zoomRegions = (s.zoomRegions ?? []).map((r: ZoomRegion) => ({
+			...r,
+			centerX: r.centerX ?? DEFAULT_ZOOM_CENTER,
+			centerY: r.centerY ?? DEFAULT_ZOOM_CENTER,
+			motionBlur: r.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
+		}));
 		cursorSettings = s.cursorSettings;
 		audioSettings = s.audioSettings ?? audioSettings;
 		watermarkSettings = s.watermarkSettings ?? watermarkSettings;
@@ -355,6 +390,9 @@ export function createEditorStore() {
 			easeOut: { ...EASE },
 			rampIn: DEFAULT_ZOOM_RAMP,
 			rampOut: DEFAULT_ZOOM_RAMP,
+			centerX: DEFAULT_ZOOM_CENTER,
+			centerY: DEFAULT_ZOOM_CENTER,
+			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
 		};
 		zoomRegions = [...zoomRegions, region];
 		selectedZoomRegionId = region.id;
@@ -379,6 +417,10 @@ export function createEditorStore() {
 
 	function updateWatermarkSettings(updates: Partial<WatermarkSettings>) {
 		watermarkSettings = { ...watermarkSettings, ...updates };
+	}
+
+	function updateShadow(updates: Partial<ShadowSettings>) {
+		shadow = { ...shadow, ...updates };
 	}
 
 	function removeZoomRegion(id: string) {
@@ -438,6 +480,14 @@ export function createEditorStore() {
 		backgroundBlur = 40;
 		padding = 32;
 		borderRadius = 0;
+		shadow = {
+			enabled: false,
+			blur: 40,
+			spread: 0,
+			offsetY: 24,
+			opacity: 40,
+			color: '#000000',
+		};
 		layoutMode = 'auto';
 		zoomRegions = [];
 		selectedZoomRegionId = null;
@@ -504,9 +554,13 @@ export function createEditorStore() {
 				easeOut: region.easeOut,
 				rampIn: region.rampIn,
 				rampOut: region.rampOut,
+				centerX: region.centerX,
+				centerY: region.centerY,
+				motionBlur: region.motionBlur,
 			})),
 			cursorMotionEasing,
 			annotations: annotations.map(({ id: _id, ...rest }) => rest),
+			shadow: { ...shadow },
 		};
 	}
 
@@ -545,7 +599,11 @@ export function createEditorStore() {
 			easeOut: region.easeOut ?? { ...EASE },
 			rampIn: region.rampIn ?? DEFAULT_ZOOM_RAMP,
 			rampOut: region.rampOut ?? DEFAULT_ZOOM_RAMP,
+			centerX: region.centerX ?? DEFAULT_ZOOM_CENTER,
+			centerY: region.centerY ?? DEFAULT_ZOOM_CENTER,
+			motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
 		}));
+		shadow = state.shadow ?? shadow;
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		annotations = (state.annotations ?? []).map((a) => ({
 			id: generateId(),
@@ -604,6 +662,9 @@ export function createEditorStore() {
 		get borderRadius() { return borderRadius; },
 		set borderRadius(v: number) { borderRadius = v; },
 
+		get shadow() { return shadow; },
+		set shadow(v: ShadowSettings) { shadow = v; },
+
 		get layoutMode() { return layoutMode; },
 		set layoutMode(v: LayoutMode) { pushUndoState(); layoutMode = v; },
 
@@ -659,6 +720,7 @@ export function createEditorStore() {
 		updateCursorSettings,
 		updateAudioSettings,
 		updateWatermarkSettings,
+		updateShadow,
 		addZoomRegion,
 		removeZoomRegion,
 		updateZoomRegion,

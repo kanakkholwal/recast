@@ -81,6 +81,11 @@
     @apply text-foreground/40;
   }
 }
+input[type="number"]:has(class){
+  -webkit-appearance: textfield;
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
 
 .bg-grid-pattern {
   background-size: 40px 40px;

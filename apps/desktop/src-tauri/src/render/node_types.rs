@@ -6,6 +6,44 @@ fn default_ramp_duration() -> f64 {
     0.35
 }
 
+fn default_zoom_center() -> f64 {
+    0.5
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShadowSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub blur: f64,
+    #[serde(default)]
+    pub spread: f64,
+    #[serde(default)]
+    pub offset_y: f64,
+    #[serde(default)]
+    pub opacity: f64,
+    #[serde(default = "default_shadow_color")]
+    pub color: String,
+}
+
+impl Default for ShadowSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            blur: 40.0,
+            spread: 0.0,
+            offset_y: 24.0,
+            opacity: 40.0,
+            color: default_shadow_color(),
+        }
+    }
+}
+
+fn default_shadow_color() -> String {
+    "#000000".into()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrimNode {
@@ -54,6 +92,16 @@ pub struct ZoomRegion {
     /// Seconds the zoom takes to fall back to 1.0 before the region's end.
     #[serde(default = "default_ramp_duration")]
     pub ramp_out: f64,
+    /// UV-space focus centre X. 0.5 reproduces legacy center-crop behaviour.
+    #[serde(default = "default_zoom_center")]
+    pub center_x: f64,
+    /// UV-space focus centre Y.
+    #[serde(default = "default_zoom_center")]
+    pub center_y: f64,
+    /// Preview motion-blur strength 0..1. Export currently ignores this
+    /// (see graph.rs — FFmpeg `tmix`/`minterpolate` follow-up).
+    #[serde(default)]
+    pub motion_blur: f64,
 }
 
 impl ZoomRegion {
