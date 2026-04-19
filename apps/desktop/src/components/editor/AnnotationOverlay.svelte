@@ -315,9 +315,12 @@
       drawAnnotation(ctx, a, opacity, t);
     }
 
-    // Selection adornment on top — always at 100% alpha regardless of fade.
-    const sel = store.annotations.find((a) => a.id === store.selectedAnnotationId);
-    if (sel) drawSelection(ctx, sel, t);
+    // Selection adornment only shows on the Annotations tab so the editing
+    // handles don't clutter the preview while the user is on other panels.
+    if (store.activePanel === "annotations") {
+      const sel = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+      if (sel) drawSelection(ctx, sel, t);
+    }
   }
 
   function tick() {
@@ -581,12 +584,17 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
+<!-- Annotations themselves always render (they're part of the composed
+     preview), but pointer interaction is gated to the Annotations tab so the
+     user can't accidentally drag handles while editing audio/cursor/focus. -->
 <canvas
   bind:this={canvasEl}
   onpointerdown={handlePointerDown}
   onpointermove={handlePointerMove}
   onpointerup={handlePointerUp}
   onpointercancel={handlePointerUp}
-  class="pointer-events-auto absolute inset-0 h-full w-full"
+  class="absolute inset-0 h-full w-full"
+  class:pointer-events-auto={store.activePanel === "annotations"}
+  class:pointer-events-none={store.activePanel !== "annotations"}
   style:cursor={canvasCursor}
 ></canvas>

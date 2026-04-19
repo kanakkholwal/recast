@@ -67,7 +67,7 @@
     <Tooltip.Root>
       <Tooltip.Trigger>
         <Button variant="ghost" size="icon-sm" onclick={() => onback?.()} aria-label="Back">
-          <ArrowLeft size={14} />
+          <ArrowLeft size={12} />
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>Back to recordings</Tooltip.Content>
@@ -81,7 +81,7 @@
           class="text-muted-foreground/60 hover:text-destructive"
           aria-label="Delete"
         >
-          <Trash2 size={13} />
+          <Trash2 size={12} />
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>Delete recording</Tooltip.Content>
@@ -103,30 +103,30 @@
     <div class="flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
       <Button
         variant={store.layoutMode === "auto" ? "secondary" : "ghost"}
-        size="sm"
-        class="h-6 gap-1 px-2 text-[11px]"
+        size="xs"
+        class="gap-1 text-[11px]"
         onclick={() => (store.layoutMode = "auto")}
       >
-        <LayoutGrid size={11} />
+        <LayoutGrid size={12} />
         Auto
       </Button>
       <Button
         variant={store.layoutMode === "crop" ? "secondary" : "ghost"}
-        size="sm"
-        class="h-6 gap-1 px-2 text-[11px]"
+        size="xs"
+        class="gap-1 text-[11px]"
         onclick={() => (store.layoutMode = "crop")}
       >
-        <Crop size={11} />
+        <Crop size={12} />
         Crop
       </Button>
     </div>
 
     <DropdownMenu.Root bind:open={showPresetsMenu}>
       <DropdownMenu.Trigger>
-        <Button variant="ghost" size="sm" class="h-6 gap-1 px-2 text-[11px] text-muted-foreground">
-          <Sparkles size={11} />
+        <Button variant="ghost" size="xs" class="gap-1 text-[11px] text-muted-foreground">
+          <Sparkles size={12} />
           Presets
-          <ChevronDown size={10} class="transition-transform {showPresetsMenu ? 'rotate-180' : ''}" />
+          <ChevronDown size={11} class="transition-transform {showPresetsMenu ? 'rotate-180' : ''}" />
         </Button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content preventScroll={false}>
@@ -147,7 +147,7 @@
           disabled={!store.canUndo}
           aria-label="Undo"
         >
-          <Undo2 size={13} />
+          <Undo2 size={12} />
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>Undo (Ctrl+Z)</Tooltip.Content>
@@ -162,7 +162,7 @@
           disabled={!store.canRedo}
           aria-label="Redo"
         >
-          <Redo2 size={13} />
+          <Redo2 size={12} />
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>Redo (Ctrl+Shift+Z)</Tooltip.Content>
@@ -174,14 +174,14 @@
     <Button
       onclick={openExport}
       disabled={store.isExporting}
-      size="sm"
-      class="h-6 gap-1 px-2 text-[11px]"
+      size="xs"
+      class="gap-1 text-[11px]"
     >
       {#if store.isExporting}
         <LoaderCircle size={12} class="animate-spin" />
         Exporting…
       {:else}
-        <Upload size={11} />
+        <Upload size={12} />
         Export
       {/if}
     </Button>

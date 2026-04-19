@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { Easing } from "$lib/easing/cubic-bezier";
   import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
-  import { CircleQuestionMark, Scissors, Search, Wand2, X, Gauge, ZoomIn, ZoomOut } from "@lucide/svelte";
+  import { CircleQuestionMark, Gauge, Scissors, Search, Wand2, X, ZoomIn, ZoomOut } from "@lucide/svelte";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -449,7 +449,7 @@
         variant="outline"
         onclick={addFocusRegion}
       >
-        <Search size={11} />
+        <Search size={12} />
         Focus
       </Button>
       <div class="relative">
@@ -462,7 +462,7 @@
           disabled={!store.cursorPath}
           title={store.cursorPath ? "Suggest focus regions from captured cursor activity" : "No cursor data in this clip"}
         >
-          <Wand2 size={11} />
+          <Wand2 size={12} />
           Suggest
         </Button>
         {#if showSuggestions}
@@ -473,7 +473,7 @@
       </div>
       {#if hasTrim}
         <Button type="button" size="xs" variant="outline" onclick={resetTrim}>
-          <Scissors size={11} />
+          <Scissors size={12} />
           Reset Trim
         </Button>
       {/if}
@@ -486,7 +486,7 @@
           <Button
             variant="ghost"
             size="xs"
-            class="gap-1 font-mono tabular-nums h-6 text-muted-foreground hover:text-foreground"
+            class="gap-1 font-mono tabular-nums text-muted-foreground hover:text-foreground"
             aria-label="Playback speed"
           >
             <Gauge size={12} />
@@ -513,9 +513,9 @@
           size="icon-sm"
           onclick={() => zoomTimeline(-1)}
           aria-label="Zoom out timeline"
-          class="size-6 text-muted-foreground hover:text-foreground"
+          class="text-muted-foreground hover:text-foreground"
         >
-          <ZoomOut size={13} />
+          <ZoomOut size={12} />
         </Button>
 
         <span class="min-w-8 text-center font-mono tabular-nums text-[10px] font-medium text-foreground">
@@ -527,9 +527,9 @@
           size="icon-sm"
           onclick={() => zoomTimeline(1)}
           aria-label="Zoom in timeline"
-          class="size-6 text-muted-foreground hover:text-foreground"
+          class="text-muted-foreground hover:text-foreground"
         >
-          <ZoomIn size={13} />
+          <ZoomIn size={12} />
         </Button>
       </div>
 
@@ -729,6 +729,8 @@
                 </svg>
                 <div
                   class="relative flex h-full items-center justify-between gap-2 px-2"
+                  id={`zoom-region-${region.id}`}
+                  aria-label={`Focus region from ${formatTime(region.start)} to ${formatTime(region.end)}, scale ${region.scale.toFixed(1)}x. Click to select, or press Enter or Space when focused. Press the X button to remove.`}
                 >
                   <div class="min-w-0">
                     <p class="text-[10px] font-semibold text-foreground">
@@ -740,6 +742,7 @@
                   </div>
                   <span
                     role="button"
+                    id={`remove-zoom-region-${region.id}`}
                     tabindex="0"
                     onclick={(event) => {
                       event.stopPropagation();
@@ -752,7 +755,7 @@
                         store.removeZoomRegion(region.id);
                       }
                     }}
-                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive"
+                    class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive pointer-events-auto"
                     aria-label="Remove focus region"
                   >
                     <X size={9} strokeWidth={2.5} />
@@ -779,7 +782,7 @@
           <div
             class="mx-auto mt-6 size-2 rounded-full border border-background bg-primary"
           ></div>
-          <div class="mx-auto h-31.5 w-px bg-primary/60"></div>
+          <div class="mx-auto h-31.5 w-px bg-primary/60 pointer-events-none" id="timeline-control"></div>
         </div>
       </div>
     </div>

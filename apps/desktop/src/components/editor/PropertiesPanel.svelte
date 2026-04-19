@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
   import { Clock, Film, Gauge, ImageIcon, MousePointer, Pencil, Target, Volume2 } from "@lucide/svelte";
   import * as Tabs from "@recast/ui/tabs";
   import * as Tooltip from "@recast/ui/tooltip";
@@ -13,8 +13,6 @@
     store: EditorStore;
   }
 
-  type PanelTab = "background" | "focus" | "annotations" | "cursor" | "audio";
-
   const tabs: { id: PanelTab; label: string; icon: typeof ImageIcon }[] = [
     { id: "background", label: "Background", icon: ImageIcon },
     { id: "focus", label: "Focus", icon: Target },
@@ -24,20 +22,19 @@
   ];
 
   let { store }: Props = $props();
-  let activeTab = $state<PanelTab>("background");
 
   // When a zoom region is selected from the timeline, switch to the Focus tab
   // so the user lands on the relevant editor.
   $effect(() => {
     if (store.selectedZoomRegionId) {
-      activeTab = "focus";
+      store.activePanel = "focus";
     }
   });
 
   // Same idea for annotations — select → jump to the Annotations tab.
   $effect(() => {
     if (store.selectedAnnotationId || store.annotationTool) {
-      activeTab = "annotations";
+      store.activePanel = "annotations";
     }
   });
 
@@ -57,7 +54,7 @@
     return `${Math.round(store.metadata.fps)} fps`;
   }
 
-  const activeTabLabel = $derived(tabs.find((t) => t.id === activeTab)?.label ?? "Panel");
+  const activeTabLabel = $derived(tabs.find((t) => t.id === store.activePanel)?.label ?? "Panel");
 </script>
 
 <aside class="@container/panel flex h-full min-h-0 flex-col bg-card text-[12px]">
@@ -95,7 +92,11 @@
     </div>
   </header>
 
-  <Tabs.Root bind:value={activeTab} class="flex min-h-0 flex-1 flex-col">
+  <Tabs.Root
+    value={store.activePanel}
+    onValueChange={(v) => { store.activePanel = v as PanelTab; }}
+    class="flex min-h-0 flex-1 flex-col"
+  >
     <!-- Tabs row: dense icon buttons + current tab label -->
     <div
       class="shrink-0 flex items-center justify-between gap-2 border-b border-border px-2 py-1.5"

@@ -186,6 +186,8 @@ export type LayoutMode = 'auto' | 'crop';
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
+export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audio';
+
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 23 }, (_, i) => ({
 	src: `/backgrounds/wallpapers/wallpaper${i + 1}.png`,
 	thumb: `/backgrounds/thumbs/wallpaper${i + 1}.webp`,
@@ -263,6 +265,11 @@ export function createEditorStore() {
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
 	let selectedZoomRegionId = $state<string | null>(null);
+
+	// Which properties-panel tab is active. Overlays (FocusOverlay,
+	// AnnotationOverlay) gate their editing UI on this so users don't interact
+	// with handles for a feature whose panel isn't visible.
+	let activePanel = $state<PanelTab>('background');
 
 	// Global cursor motion easing. `null` means linear (today's behaviour);
 	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
@@ -675,6 +682,9 @@ export function createEditorStore() {
 
 		get selectedZoomRegionId() { return selectedZoomRegionId; },
 		set selectedZoomRegionId(v: string | null) { selectedZoomRegionId = v; },
+
+		get activePanel() { return activePanel; },
+		set activePanel(v: PanelTab) { activePanel = v; },
 
 		get cursorMotionEasing() { return cursorMotionEasing; },
 		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },

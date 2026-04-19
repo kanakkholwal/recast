@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import {
-		Maximize2,
-		Minimize2,
-		Pause,
-		Play,
-		Repeat,
-		SkipBack,
-		SkipForward,
+	  Maximize2,
+	  Minimize2,
+	  Pause,
+	  Play,
+	  Repeat,
+	  SkipBack,
+	  SkipForward,
 	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
@@ -107,9 +107,9 @@
 </script>
 
 <div
-	class="flex h-12 w-full max-w-280 items-center justify-between gap-4 px-2 -mt-1"
+	class="flex h-11 w-full items-center justify-between gap-3 px-2"
 >
-	<div class="flex items-center gap-1 text-muted-foreground">
+	<div class="flex items-center gap-0.5 text-foreground">
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<Button
@@ -117,12 +117,11 @@
 					size="icon-sm"
 					onclick={togglePlay}
 					aria-label={store.isPlaying ? "Pause" : "Play"}
-					class="size-8 hover:text-foreground group text-foreground"
 				>
 					{#if store.isPlaying}
-						<Pause size={15} fill="currentColor" />
+						<Pause size={12} fill="currentColor" />
 					{:else}
-						<Play size={15} fill="currentColor" class="ml-0.5" />
+						<Play size={12} fill="currentColor" />
 					{/if}
 				</Button>
 			</Tooltip.Trigger>
@@ -138,9 +137,8 @@
 					size="icon-sm"
 					onclick={() => stepFrame(-1)}
 					aria-label="Previous frame"
-					class="size-7 hover:text-foreground"
 				>
-					<SkipBack size={13} />
+					<SkipBack size={12} />
 				</Button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>Previous frame (←)</Tooltip.Content>
@@ -153,9 +151,8 @@
 					size="icon-sm"
 					onclick={() => stepFrame(1)}
 					aria-label="Next frame"
-					class="size-7 hover:text-foreground"
 				>
-					<SkipForward size={13} />
+					<SkipForward size={12} />
 				</Button>
 			</Tooltip.Trigger>
 			<Tooltip.Content>Next frame (→)</Tooltip.Content>
@@ -163,15 +160,15 @@
 	</div>
 
 	<div
-		class="flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-medium text-muted-foreground min-w-20"
+		class="flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-medium text-muted-foreground min-w-[80px] text-center"
 	>
 		<span class="text-foreground">{currentTimeFormatted}</span>
-		<span class="text-muted-foreground/40 leading-0 -mt-px">/</span>
+		<span class="text-muted-foreground/40">/</span>
 		<span>{durationFormatted}</span>
 	</div>
 
 	<!-- Scrubber -->
-	<div class="flex-1 px-3">
+	<div class="flex-1">
 		<Input
 			type="range"
 			min="0"
@@ -184,7 +181,7 @@
 		/>
 	</div>
 
-	<div class="flex items-center gap-1 text-muted-foreground">
+	<div class="flex items-center gap-0.5 text-foreground">
 		<Tooltip.Root>
 			<Tooltip.Trigger>
 				<Button
@@ -193,9 +190,8 @@
 					onclick={() => (loopEnabled = !loopEnabled)}
 					aria-pressed={loopEnabled}
 					aria-label="Loop playback within trim"
-					class="size-7"
 				>
-					<Repeat size={13} />
+					<Repeat size={12} />
 				</Button>
 			</Tooltip.Trigger>
 			<Tooltip.Content
@@ -214,12 +210,11 @@
 					aria-label={isFullscreen
 						? "Exit fullscreen"
 						: "Enter fullscreen"}
-					class="size-7 hover:text-foreground disabled:opacity-50"
 				>
 					{#if isFullscreen}
-						<Minimize2 size={13} />
+						<Minimize2 size={12} />
 					{:else}
-						<Maximize2 size={13} />
+						<Maximize2 size={12} />
 					{/if}
 				</Button>
 			</Tooltip.Trigger>

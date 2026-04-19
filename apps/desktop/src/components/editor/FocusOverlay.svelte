@@ -367,16 +367,24 @@
     void store.padding;
   });
 
-  const isActive = $derived(store.selectedZoomRegionId !== null);
+  // Editing chrome (dashed rect, handles, crosshair) is only meaningful while
+  // the user is on the Focus tab — otherwise the overlay both hides itself and
+  // stops swallowing pointer events so clicks reach the AnnotationOverlay or
+  // the preview underneath.
+  const isActive = $derived(
+    store.activePanel === "focus" && store.selectedZoomRegionId !== null,
+  );
 </script>
 
-<canvas
-  bind:this={canvasEl}
-  onpointerdown={handlePointerDown}
-  onpointermove={handlePointerMove}
-  onpointerup={handlePointerUp}
-  onpointercancel={handlePointerUp}
-  class="pointer-events-auto absolute inset-0 h-full w-full"
-  class:pointer-events-none={!isActive}
-  style="touch-action: none;"
-></canvas>
+{#if store.activePanel === "focus"}
+  <canvas
+    bind:this={canvasEl}
+    onpointerdown={handlePointerDown}
+    onpointermove={handlePointerMove}
+    onpointerup={handlePointerUp}
+    onpointercancel={handlePointerUp}
+    class="pointer-events-auto absolute inset-0 h-full w-full"
+    class:pointer-events-none={!isActive}
+    style="touch-action: none;"
+  ></canvas>
+{/if}
