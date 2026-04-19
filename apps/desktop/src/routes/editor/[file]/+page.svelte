@@ -7,6 +7,7 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+  import type { ExportStateEvent } from "$lib/ipc";
   import {
     autosaveProject,
     cancelExport,
@@ -17,7 +18,6 @@
     listenToExportState,
     loadEditorDocument,
   } from "$lib/ipc";
-  import type { ExportStateEvent } from "$lib/ipc";
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
@@ -573,7 +573,7 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-muted/10 p-3 pb-4"
+          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background p-3 pb-4"
         >
           <div class="flex-1 flex min-h-0 w-full items-center justify-center relative">
             <VideoPreview

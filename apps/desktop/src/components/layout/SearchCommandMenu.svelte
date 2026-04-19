@@ -47,10 +47,10 @@
   aria-label="Open Command Menu"
   title="Open Command Menu (⌘ + K)"
   variant="secondary"
-  size={iconOnly ? "icon-sm" : "sm"}
+  size="sm"
   class={cn(
-    "border border-border group relative group-data-[state=collapsed]:size-8",
-    !iconOnly && "w-full max-w-xs",
+    "border border-border group relative h-8",
+    iconOnly ? "group-data-[state=collapsed]:w-8" : "w-full max-w-xs",
   )}
 >
   <Search class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />

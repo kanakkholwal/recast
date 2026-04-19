@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Container, Navbar, Section } from "$lib/components";
+	import { Container, Footer, Navbar, Section } from "$lib/components";
 	import { Button } from "@recast/ui/button";
-	import { Apple, ArrowDownToLine, ChevronRight, Download, Monitor, Terminal } from "lucide-svelte";
+	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { cn } from "@recast/ui/utils";
-	import Logo from "$lib/logo.svelte";
+	import { Apple, ArrowDownToLine, ChevronDown, ChevronRight, Download, Monitor, Terminal } from "lucide-svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -18,18 +18,38 @@
 		else if (ua.includes("Linux")) detectedOS = "Linux";
 	});
 
-	// Helper to resolve the best direct download link based on OS
-	let primaryDownload = $derived(() => {
+	// Helper to resolve OS-specific downloads into a primary and an array of secondaries
+	let platformLinks = $derived(() => {
 		switch (detectedOS) {
 			case "macOS":
-				return { link: data.downloads.macosAppleSilicon, label: "Download for Mac (Apple Silicon)" };
+				return [
+					{ link: data.downloads.macosAppleSilicon, label: "Apple Silicon (.dmg)" },
+					{ link: data.downloads.macosIntel, label: "Intel (.dmg)" }
+				];
 			case "Windows":
-				return { link: data.downloads.windowsExe || data.downloads.windowsMsi, label: "Download for Windows" };
+				return [
+					{ link: data.downloads.windowsExe, label: "Installer (.exe)" },
+					{ link: data.downloads.windowsMsi, label: "Installer (.msi)" }
+				];
 			case "Linux":
-				return { link: data.downloads.linuxAppImage || data.downloads.linuxDeb, label: "Download for Linux" };
+				return [
+					{ link: data.downloads.linuxAppImage, label: "AppImage (Universal)" },
+					{ link: data.downloads.linuxDeb, label: "Debian/Ubuntu (.deb)" },
+					{ link: data.downloads.linuxRpm, label: "Red Hat/Fedora (.rpm)" }
+				];
 			default:
-				return { link: null, label: "Select your platform below" };
+				return [];
 		}
+	});
+
+	let primaryDownload = $derived(() => {
+		const links = platformLinks();
+		return links.length > 0 ? links[0] : { link: null, label: "Select your platform below" };
+	});
+
+	let secondaryDownloads = $derived(() => {
+		const links = platformLinks();
+		return links.length > 1 ? links.slice(1) : [];
 	});
 </script>
 
@@ -43,7 +63,7 @@
 <main class="bg-background text-foreground/80 min-h-screen pt-32 pb-24">
 	<Section class="py-16 md:py-24">
 		<Container>
-			<div class="max-w-4xl">
+			<div class="max-w-6xl">
 				<div class="inline-flex items-center gap-3 px-4 py-1.5 rounded-full glass-panel shadow-craft-sm text-[13px] font-semibold text-foreground/40 mb-12">
 					<div class="size-2 rounded-full bg-success animate-pulse"></div>
 					Latest Release: {data.version}
@@ -60,10 +80,31 @@
 
 				{#if primaryDownload().link}
 					<div class="flex flex-col items-start gap-8 group">
-						<Button href={primaryDownload().link} size="lg" class="h-16 px-12 text-lg font-bold bg-foreground text-background hover:bg-foreground/90 rounded-2xl shadow-craft-xl transition-all active:scale-95">
-							<Download class="mr-3 size-6" />
-							{primaryDownload().label}
-						</Button>
+						<div class="flex items-stretch bg-foreground text-background shadow-craft-xl rounded-2xl transition-all hover:scale-[1.02] active:scale-95 divide-x divide-background/20 overflow-hidden">
+							<a href={primaryDownload().link || '#'} class="flex items-center h-16 px-10 text-lg font-bold hover:bg-background/10 transition-colors focus-visible:outline-none">
+								<Download class="mr-3 size-6" />
+								Download for {detectedOS}
+								<span class="ml-2 text-sm font-medium opacity-60">({primaryDownload().label})</span>
+							</a>
+							
+							{#if secondaryDownloads().length > 0}
+								<DropdownMenu.Root>
+									<DropdownMenu.Trigger class="w-14 items-center justify-center flex hover:bg-background/10 transition-colors focus-visible:outline-none">
+										<ChevronDown class="size-6 opacity-80" />
+									</DropdownMenu.Trigger>
+									<DropdownMenu.Content align="end" class="w-56 p-1">
+										<DropdownMenu.Label class="text-xs text-muted-foreground uppercase tracking-widest font-bold px-2 py-1.5">Other architectures</DropdownMenu.Label>
+										<DropdownMenu.Separator />
+										{#each secondaryDownloads() as dl}
+											<DropdownMenu.Item class="cursor-pointer" onclick={() => { if (dl.link) window.location.href = dl.link; }}>
+												{dl.label}
+											</DropdownMenu.Item>
+										{/each}
+									</DropdownMenu.Content>
+								</DropdownMenu.Root>
+							{/if}
+						</div>
+
 						<a href="#all-platforms" class="text-sm font-bold text-foreground/20 hover:text-foreground/60 transition-colors tracking-wide uppercase">
 							Not on {detectedOS}? See all platforms ↓
 						</a>
@@ -78,7 +119,7 @@
 		</Container>
 	</Section>
 
-	<Section id="all-platforms" class="py-24 bg-muted/30 dark:bg-white/[0.02] border-y border-border-low">
+	<Section id="all-platforms" class="py-24 bg-muted/30 dark:bg-white/2 border-y border-border-low">
 		<Container>
 			<div class="max-w-2xl mb-24">
 				<h2 class="text-5xl font-semibold text-foreground tracking-tight mb-6">All Platforms.</h2>
@@ -120,7 +161,7 @@
 					}
 				] as platform}
 					<div class="group craft-block bg-white dark:bg-neutral-900 border border-border-low shadow-craft-sm hover:shadow-craft-md flex flex-col">
-						<div class="size-12 rounded-2xl bg-muted/50 dark:bg-white/[0.05] flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
+						<div class="size-12 rounded-2xl bg-muted/50 dark:bg-white/5 flex items-center justify-center mb-8 group-hover:scale-110 transition-transform">
 							<platform.icon class="size-5 text-foreground/60" />
 						</div>
 						
@@ -131,10 +172,9 @@
 							{#each platform.links as link}
 								<Button 
 									href={link.href} 
-									variant={link.primary ? 'secondary' : 'ghost'} 
+									variant="ghost" 
 									class={cn(
 										"w-full justify-between group/link transition-all rounded-xl h-12 px-5 text-[13px] font-bold",
-										!link.primary && "text-foreground/40 hover:text-foreground invisible-ui"
 									)} 
 									disabled={!link.href}
 								>
@@ -150,13 +190,4 @@
 	</Section>
 </main>
 
-<footer class="py-20 border-t border-border-low overflow-hidden">
-	<Container class="flex flex-col md:flex-row items-center justify-between gap-12 font-medium">
-		<div class="flex items-center gap-3">
-			<Logo size="24" />
-			<span class="text-sm font-bold tracking-tight">Recast</span>
-		</div>
-		<p class="text-xs text-foreground/30 tracking-widest uppercase font-bold">Built for clarity. Designed for speed.</p>
-		<p class="text-xs text-foreground/20">© 2026 Recast. All rights reserved.</p>
-	</Container>
-</footer>
+<Footer />

@@ -1,12 +1,12 @@
 <script lang="ts">
 	import {
-		Container,
-		FeatureGrid,
-		Hero,
-		Navbar,
-		Section,
+	  Container,
+	  FeatureGrid,
+	  Footer,
+	  Hero,
+	  Navbar,
+	  Section,
 	} from "$lib/components";
-	import Logo from "$lib/logo.svelte";
 	import { Button } from "@recast/ui/button";
 	import { Rocket, Terminal, Users } from "lucide-svelte";
 </script>
@@ -259,21 +259,4 @@
 	</Section>
 </main>
 
-<footer class="py-20 border-t border-border-low overflow-hidden">
-	<Container
-		class="flex flex-col md:flex-row items-center justify-between gap-12 font-medium"
-	>
-		<div class="flex items-center gap-3">
-			<Logo size="24" />
-			<span class="text-sm font-bold tracking-tight">Recast</span>
-		</div>
-		<p
-			class="text-xs text-foreground/30 tracking-widest uppercase font-bold"
-		>
-			Built for clarity. Designed for speed.
-		</p>
-		<p class="text-xs text-foreground/20">
-			© 2026 Recast. All rights reserved.
-		</p>
-	</Container>
-</footer>
+<Footer />

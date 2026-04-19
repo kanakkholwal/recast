@@ -2,12 +2,13 @@
 @import "tailwindcss";
 
 @import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/plus-jakarta-sans";
 
 @source "../node_modules/@recast/ui/src";
 
 @theme {
   --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  
+  --font-serif: "Plus Jakarta Sans Variable", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --color-border-low: color-mix(in srgb, var(--color-border) 40%, transparent);
   
   --shadow-craft-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
