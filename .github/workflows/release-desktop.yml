@@ -42,10 +42,12 @@ jobs:
       - name: Create or reuse draft release
         id: create_release
         uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
           name: "Recast ${{ steps.resolve_tag.outputs.tag }}"
-          draft: true
+          draft: false
           prerelease: false
           body: |
             ## 🎉 Recast Release ${{ steps.resolve_tag.outputs.tag }}
