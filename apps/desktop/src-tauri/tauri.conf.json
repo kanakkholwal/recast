@@ -59,7 +59,7 @@
     "linux": {
       "appimage": {}
     },
-    "createUpdaterArtifacts": true
+    "createUpdaterArtifacts": false
   },
   "plugins": {
     "updater": {
