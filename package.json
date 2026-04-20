@@ -8,7 +8,8 @@
   "scripts": {
     "dev": "turbo dev",
     "build": "turbo build",
-    "check": "turbo check"
+    "check": "turbo check",
+    "prepare:assets-wallpapers": "node scripts/prepare-backgrounds.mjs"
   },
   "packageManager": "pnpm@10.23.0"
 }

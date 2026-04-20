@@ -30,8 +30,8 @@ Recast is structured as a **pnpm** workspace utilizing **Turborepo** for fast, c
 
 ## 📸 Screenshots
 
-![Screenshot 1 Placeholder](screenshots/preview_homescreen.png)
-![Screenshot 2 Placeholder](screenshots/preview_profiles.png)
+![Screenshot 1 Placeholder](assets/screenshots/preview_homescreen.png)
+![Screenshot 2 Placeholder](assets/screenshots/preview_profiles.png)
 
 ## 🚀 Getting Started
 
