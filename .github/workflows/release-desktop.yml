@@ -147,7 +147,8 @@ jobs:
             librsvg2-dev \
             patchelf \
             libssl-dev \
-            libgtk-3-dev
+            libgtk-3-dev \
+            libpipewire-0.3-dev
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
