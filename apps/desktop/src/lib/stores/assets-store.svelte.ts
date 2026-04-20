@@ -1,11 +1,15 @@
 /**
- * Reactive state for the external-asset cache. Holds per-id cached file paths
- * plus install progress. Consumed by LazyExternalImage and the render pipeline
- * to upgrade placeholder thumbs to full-res downloaded assets.
+ * Reactive state for the external-asset cache. Tracks two tiers per asset id:
+ *  - `paths[id]`       — the full-resolution cached file (preferred)
+ *  - `thumbPaths[id]`  — the low-res WebP thumbnail (used until full-res lands)
+ *
+ * Components prefer `paths`, fall back to `thumbPaths`, and as a last resort
+ * render a pure-CSS placeholder.
  */
 
 function createAssetsStore() {
 	let paths = $state<Record<string, string>>({});
+	let thumbPaths = $state<Record<string, string>>({});
 	let ready = $state(false);
 	let installing = $state(false);
 	let failed = $state<string[]>([]);
@@ -14,6 +18,9 @@ function createAssetsStore() {
 	return {
 		get paths() {
 			return paths;
+		},
+		get thumbPaths() {
+			return thumbPaths;
 		},
 		get ready() {
 			return ready;
@@ -36,12 +43,8 @@ function createAssetsStore() {
 		setPath(id: string, path: string) {
 			paths = { ...paths, [id]: path };
 		},
-		clearPath(id: string) {
-			if (id in paths) {
-				const next = { ...paths };
-				delete next[id];
-				paths = next;
-			}
+		setThumbPath(id: string, path: string) {
+			thumbPaths = { ...thumbPaths, [id]: path };
 		},
 		setFailed(ids: string[]) {
 			failed = ids;

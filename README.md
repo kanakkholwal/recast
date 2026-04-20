@@ -74,36 +74,59 @@ pnpm turbo run build --filter=recast-desktop
 
 ## 🖼 Wallpaper assets (external download)
 
-The 23 full-res wallpapers (~157 MB) are **not** bundled with the installer. They
-live in `assets/backgrounds/wallpapers/` and are distributed via GitHub Release
-assets, then downloaded on first launch into the user's app data dir and
-verified against a SHA-256 manifest. If the user is offline, tiny bundled WebP
-thumbnails are shown as placeholders with an "Offline" badge; once connectivity
-returns the downloader retries automatically.
+No wallpaper imagery — neither full-res PNGs nor WebP thumbnails — ships with
+the installer. Everything is distributed via a **separate GitHub Release**
+(tagged like `wallpapers-v1`) and downloaded on first launch into the user's
+app data dir. Thumbs download first (a few KB each, seconds); full-res PNGs
+follow in the background. All files are SHA-256-verified against
+`manifest.json` before they're written to disk.
+
+**Release layout — two independent tags:**
+| Tag              | Assets uploaded                                      |
+|------------------|------------------------------------------------------|
+| `v0.0.1`, `v0.0.2`, … | App installers (`.msi`, `.dmg`, `.AppImage`, `latest.json`) |
+| `wallpapers-v1`, `wallpapers-v2`, … | `*.png` + `*.webp` + `manifest.json` |
+
+This keeps app updates small (no wallpaper re-downloads) and lets you refresh
+wallpapers without cutting a new app version.
+
+**Fallback behaviour:**
+- **First-run online** — picker shows a CSS gradient placeholder; thumbs land within seconds; full-res replaces the thumb once downloaded.
+- **First-run offline** — CSS placeholder + "Offline" badge on every tile; no crash; downloader retries automatically when `window.online` fires.
+- **Subsequent runs offline** — hydrates instantly from the on-disk `manifest.lock.json`, no network call needed.
+- **Corruption** — mismatched SHA-256 triggers re-download on next install pass.
 
 **To add / update wallpapers:**
 
-1. Drop the PNG(s) into `assets/backgrounds/wallpapers/`.
-2. Run `pnpm prepare:assets-wallpapers` — this regenerates bundled WebP thumbs
-   at `apps/desktop/static/backgrounds/thumbs/` and rewrites `assets/manifest.json`
-   with fresh sha256 + size fields.
-3. Publish a GitHub Release with the PNGs **and** the manifest:
+1. Drop the PNG(s) into `assets/backgrounds/wallpapers/` and commit.
+2. Tag and push — the [Release Wallpaper Assets](.github/workflows/release-wallpapers.yml)
+   workflow regenerates thumbs + manifest and publishes the release:
+   ```sh
+   git tag wallpapers-v2
+   git push origin wallpapers-v2
+   ```
+   Or trigger it manually from the Actions tab with a tag input.
+
+   To run locally instead:
    ```sh
    RELEASE_TAG=wallpapers-v2 pnpm prepare:assets-wallpapers
    gh release create wallpapers-v2 \
      ./assets/backgrounds/wallpapers/*.png \
+     ./assets/backgrounds/thumbs/*.webp \
      ./assets/manifest.json
    ```
-4. Bump the release tag default (or set `PUBLIC_ASSETS_MANIFEST_URL` at build
-   time) so the app fetches the new manifest. `PUBLIC_ASSETS_MANIFEST_URL` should
-   point at the raw `manifest.json` asset URL on the release.
-5. Add the wallpaper to the picker: extend `WALLPAPERS` in
-   `apps/desktop/src/lib/stores/editor-store.svelte.ts`.
+4. Point the app at the new release by setting `PUBLIC_ASSETS_MANIFEST_URL`
+   at build time (or bumping the default in [apps/desktop/src/lib/assets.ts](apps/desktop/src/lib/assets.ts)).
+5. If adding a new wallpaper id, extend `WALLPAPERS` in
+   [apps/desktop/src/lib/stores/editor-store.svelte.ts](apps/desktop/src/lib/stores/editor-store.svelte.ts).
 
-**Cache location** (delete to force re-download): `<appDataDir>/assets/` —
-`%APPDATA%\com.nexonauts.recast\assets\` on Windows,
-`~/Library/Application Support/com.nexonauts.recast/assets/` on macOS,
-`~/.local/share/com.nexonauts.recast/assets/` on Linux.
+**Cache location** (delete to force a full re-download):
+- Windows: `%APPDATA%\com.nexonauts.recast\assets\`
+- macOS: `~/Library/Application Support/com.nexonauts.recast/assets/`
+- Linux: `~/.local/share/com.nexonauts.recast/assets/`
+
+The folder contains each downloaded file plus a `manifest.lock.json` — the
+persisted snapshot used for offline hydration.
 
 ## 🤝 Contributing
 We welcome community contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to submit pull requests.

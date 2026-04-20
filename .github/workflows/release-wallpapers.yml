@@ -1,0 +1,133 @@
+name: Release Wallpaper Assets
+
+# Publishes a standalone GitHub Release containing full-res PNGs, WebP thumbs,
+# and the SHA-256 manifest consumed by the desktop app at runtime. This release
+# stream is intentionally decoupled from the app installer stream (`v*` tags)
+# so wallpaper refreshes don't require cutting a new app build, and app updates
+# don't force users to re-download ~150 MB of imagery.
+#
+# Triggers:
+#   - Push a tag matching `wallpapers-v*` → publishes automatically.
+#   - Manual `workflow_dispatch` → useful for first-cut or re-running against
+#     an existing tag.
+
+on:
+  push:
+    tags:
+      - "wallpapers-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (e.g. wallpapers-v1)"
+        required: true
+        type: string
+
+concurrency:
+  group: release-wallpapers-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10.23.0"
+
+jobs:
+  release-wallpapers:
+    name: Build manifest + publish release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve tag
+        id: resolve_tag
+        shell: bash
+        run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
+
+      - name: Install workspace dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify wallpaper source dir
+        shell: bash
+        run: |
+          if [ ! -d assets/backgrounds/wallpapers ] || [ -z "$(ls -A assets/backgrounds/wallpapers/*.png 2>/dev/null)" ]; then
+            echo "::error::assets/backgrounds/wallpapers is empty — nothing to release."
+            exit 1
+          fi
+          count=$(ls assets/backgrounds/wallpapers/*.png | wc -l)
+          echo "Found $count wallpaper PNG(s)."
+
+      - name: Generate thumbs + manifest
+        env:
+          RELEASE_TAG: ${{ steps.resolve_tag.outputs.tag }}
+          GH_REPO: ${{ github.repository }}
+        run: pnpm prepare:assets-wallpapers
+
+      - name: Verify manifest
+        shell: bash
+        run: |
+          test -f assets/manifest.json || { echo "::error::manifest.json missing"; exit 1; }
+          node -e "
+            const m = require('./assets/manifest.json');
+            if (!Array.isArray(m.assets) || m.assets.length === 0) {
+              throw new Error('manifest.assets is empty');
+            }
+            for (const a of m.assets) {
+              for (const f of ['id','filename','url','sha256','thumbFilename','thumbUrl','thumbSha256']) {
+                if (!a[f]) throw new Error('missing ' + f + ' on ' + (a.id || '?'));
+              }
+            }
+            console.log('Manifest OK —', m.assets.length, 'assets, version=' + m.version);
+          "
+
+      - name: Summarise release payload
+        shell: bash
+        run: |
+          echo "## Wallpaper release ${{ steps.resolve_tag.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File | Size |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|------|------|" >> "$GITHUB_STEP_SUMMARY"
+          for f in assets/backgrounds/wallpapers/*.png assets/backgrounds/thumbs/*.webp assets/manifest.json; do
+            size=$(du -h "$f" | cut -f1)
+            echo "| \`$(basename "$f")\` | $size |" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.resolve_tag.outputs.tag }}
+          name: "Wallpapers ${{ steps.resolve_tag.outputs.tag }}"
+          draft: false
+          prerelease: false
+          body: |
+            ## 🖼 Recast wallpaper pack — `${{ steps.resolve_tag.outputs.tag }}`
+
+            Full-res PNGs, WebP thumbnails, and a SHA-256 `manifest.json` for the
+            Recast desktop app's external-asset cache.
+
+            **Consumed automatically** by any desktop build whose
+            `PUBLIC_ASSETS_MANIFEST_URL` points at this release's
+            `manifest.json`. Thumbs download first, full-res follows in the
+            background, every file verified against the manifest before it
+            lands in the user's app data dir.
+
+            Not an installer — see the [app releases](../../releases?q=v) for
+            those.
+          files: |
+            assets/backgrounds/wallpapers/*.png
+            assets/backgrounds/thumbs/*.webp
+            assets/manifest.json

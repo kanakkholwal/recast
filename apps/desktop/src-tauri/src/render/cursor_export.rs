@@ -351,7 +351,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     })
 }
 
-// ── Cursor interpolation (mirror of VideoPreview.svelte:317-342) ────────
+//  Cursor interpolation (mirror of VideoPreview.svelte:317-342) 
 
 #[derive(Debug, Clone, Copy)]
 struct InterpolatedCursor {
@@ -423,7 +423,7 @@ fn interpolate_cursor(track: &CursorTrack, timestamp_us: u64) -> Option<Interpol
     })
 }
 
-// ── Zoom lookup (mirror of nested_region_expr in graph.rs) ──────────────
+//  Zoom lookup (mirror of nested_region_expr in graph.rs) 
 
 fn active_zoom_at(
     regions: &[crate::render::node_types::ZoomRegion],
@@ -441,7 +441,7 @@ fn active_zoom_at(
     None
 }
 
-// ── Pixel drawing ────────────────────────────────────────────────────────
+//  Pixel drawing 
 
 /// Alpha-blend a filled circle into the RGBA buffer using a 1-px smoothstep
 /// edge to match the WebGL shader's `smoothstep(r-1.5, r, dist)` aesthetic.

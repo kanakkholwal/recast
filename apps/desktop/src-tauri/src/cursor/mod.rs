@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use platform::sample_cursor_state;
 use smoothing::{detect_idle_periods, detect_zoom_triggers, IdlePeriod, ZoomTrigger};
 
-// ── Data types ──────────────────────────────────────────────────────────
+//  Data types 
 
 /// Raw cursor position and button state at a single point in time.
 #[derive(Debug, Clone, Copy)]
@@ -67,7 +67,7 @@ pub struct CursorTrack {
     pub zoom_triggers: Vec<ZoomTrigger>,
 }
 
-// ── Capture loop ────────────────────────────────────────────────────────
+//  Capture loop 
 
 /// State for tracking click duration during capture.
 struct ClickTracker {
@@ -204,7 +204,7 @@ pub fn spawn_cursor_capture(
         .map_err(Into::into)
 }
 
-// ── Serialization ───────────────────────────────────────────────────────
+//  Serialization 
 
 /// Write a cursor track to a JSON file.
 pub fn write_cursor_track(path: &Path, track: &CursorTrack) -> Result<()> {

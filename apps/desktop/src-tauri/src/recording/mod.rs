@@ -18,7 +18,7 @@ use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorTrack};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
-// ── Shared types ────────────────────────────────────────────────────────
+//  Shared types 
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,7 +136,7 @@ fn resolve_window_target(target_id: u32) -> Result<CaptureTarget> {
     })
 }
 
-// ── Recording stats and artifacts ───────────────────────────────────────
+//  Recording stats and artifacts 
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -197,7 +197,7 @@ impl Default for RecordingOptions {
     }
 }
 
-// ── Recording session orchestration ─────────────────────────────────────
+//  Recording session orchestration 
 
 pub struct RecordingManager {
     session: Mutex<Option<RecordingSession>>,

@@ -13,12 +13,11 @@ export interface WallpaperOption {
 	/**
 	 * Stable identifier — matches the `id` in `assets/manifest.json`. Stored
 	 * in `backgroundValue` as `asset:<id>` so both preview and export can
-	 * resolve against the downloaded cache.
+	 * resolve against the downloaded cache. No bundled thumbnail — the
+	 * LazyExternalImage component reads thumbs from the same downloaded
+	 * cache, with a CSS placeholder while nothing is available yet.
 	 */
 	id: string;
-	/** Small WebP preview (~3 KB). Bundled; used as the picker thumbnail and as
-	 * the offline placeholder before the full-res download lands. */
-	thumb: string;
 	label: string;
 }
 
@@ -54,7 +53,7 @@ export interface ShadowSettings {
 	color: string; // hex
 }
 
-// ── Annotations ────────────────────────────────────────────────────────
+//  Annotations 
 //
 // Position / size live in video UV space (0..1) so annotations follow zoom
 // and crop transforms without re-projection. `kind` is a discriminated union
@@ -200,7 +199,6 @@ export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audi
 
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 23 }, (_, i) => ({
 	id: `wallpaper${i + 1}`,
-	thumb: `/backgrounds/thumbs/wallpaper${i + 1}.webp`,
 	label: `Wallpaper ${i + 1}`,
 }));
 

@@ -1,14 +1,26 @@
 /**
- * External-asset download/cache helper. Wraps the Rust `ensure_assets_installed`
- * command, publishes results to `assetsStore`, and exposes a reconnect-retry hook
- * so missing assets self-heal when connectivity returns.
+ * External-asset download/cache helper.
  *
- * The manifest URL is read from the `PUBLIC_ASSETS_MANIFEST_URL` Vite env var so
- * it can be changed without a code edit (different releases, forks, staging).
+ * Flow on startup:
+ *   1. `hydrateCachedAssets()` — synchronous (no network) read of the on-disk
+ *      lock file. Populates the store with whatever is already cached so the
+ *      UI upgrades past the CSS placeholder the moment it paints, even when
+ *      the user is offline.
+ *   2. `ensureAssetsInstalled(manifestUrl)` — network fetch of the manifest,
+ *      then SHA-256-verified download of missing/mismatched assets. Thumbs
+ *      download first (tiny) so the picker grid becomes usable fast.
+ *   3. On `window.online` — retry any failed downloads automatically.
+ *
+ * Manifest URL comes from `PUBLIC_ASSETS_MANIFEST_URL` (Vite env). Falls back
+ * to the main `wallpapers-v1` release so dev builds work out of the box.
  */
 
 import { isTauriApp } from "$lib/runtime/tauri";
-import { ensureAssetsInstalled, getCachedAssetPath } from "$lib/ipc";
+import {
+	ensureAssetsInstalled,
+	getCachedAssetPath,
+	hydrateCachedAssets,
+} from "$lib/ipc";
 import { assetsStore } from "$lib/stores/assets-store.svelte";
 
 const DEFAULT_MANIFEST_URL =
@@ -21,16 +33,37 @@ function manifestUrl(): string {
 
 let initialised = false;
 let inFlight: Promise<void> | null = null;
+let hydrated = false;
+
+/** Populate the store from the persisted lock file without touching the network. */
+async function hydrateFromDisk(): Promise<void> {
+	if (hydrated) return;
+	if (!(await isTauriApp())) {
+		hydrated = true;
+		return;
+	}
+	try {
+		const entries = await hydrateCachedAssets();
+		for (const entry of entries) {
+			if (entry.path) assetsStore.setPath(entry.id, entry.path);
+			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
+		}
+	} catch (err) {
+		console.warn("asset hydrate failed:", err);
+	}
+	hydrated = true;
+}
 
 async function runInstall(): Promise<void> {
 	if (!(await isTauriApp())) return;
+	await hydrateFromDisk();
 	assetsStore.setInstalling(true);
 	assetsStore.setError(null);
 	try {
 		const result = await ensureAssetsInstalled(manifestUrl());
-		for (const id of [...result.installed, ...result.skipped]) {
-			const path = await getCachedAssetPath(id);
-			if (path) assetsStore.setPath(id, path);
+		for (const entry of result.hydrated) {
+			if (entry.path) assetsStore.setPath(entry.id, entry.path);
+			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
 		}
 		assetsStore.setFailed(result.failed.map((f) => f.id));
 		if (result.failed.length > 0) {
@@ -75,7 +108,7 @@ export function retryOnReconnect() {
 export function initAssets() {
 	if (initialised) return;
 	initialised = true;
-	void ensureAssets();
+	void hydrateFromDisk().then(() => ensureAssets());
 	if (typeof window !== "undefined") {
 		window.addEventListener("online", retryOnReconnect);
 	}

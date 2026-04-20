@@ -1,14 +1,14 @@
 <script lang="ts">
+	import { resolveAsset } from "$lib/assets";
 	import {
 	  smoothCursorPath,
 	  smoothingStrengthToSigmaMs,
 	} from "$lib/cursor/smoothing";
 	import { bezierY } from "$lib/easing/cubic-bezier";
+	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
-	import { resolveAsset } from "$lib/assets";
-	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./AnnotationOverlay.svelte";
 	import FocusOverlay from "./FocusOverlay.svelte";
@@ -39,7 +39,7 @@
 		onSeeked,
 	}: Props = $props();
 
-	// ── DOM refs & GL state ──────────────────────────────────────────────
+	//  DOM refs & GL state 
 	let canvasEl: HTMLCanvasElement | null = $state(null);
 	let containerEl: HTMLDivElement | null = $state(null);
 	/** Shrink-wrap around the WebGL canvas so the annotation overlay can sit
@@ -80,7 +80,7 @@
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
 
-	// ── Shaders ──────────────────────────────────────────────────────────
+	//  Shaders 
 	const VERT_SRC = `#version 300 es
 in vec2 a_pos;
 out vec2 v_uv;
@@ -251,7 +251,7 @@ void main() {
 	frag = vec4(color.rgb, 1.0);
 }`;
 
-	// ── GL helpers ───────────────────────────────────────────────────────
+	//  GL helpers 
 	function compile(g: WebGL2RenderingContext, type: number, src: string): WebGLShader {
 		const sh = g.createShader(type)!;
 		g.shaderSource(sh, src);
@@ -361,16 +361,20 @@ void main() {
 		g.uniform1i(uniforms.u_background, 1);
 	}
 
-	// ── Background loading ──────────────────────────────────────────────
+	//  Background loading 
 	async function resolveBackgroundSrc(value: string): Promise<string> {
 		if (!value) return "";
-		// External-asset scheme: resolve to the downloaded cache file, or fall
-		// back to the bundled thumbnail if not yet installed.
+		// External-asset scheme: prefer the full-res cache, fall back to the
+		// cached thumbnail for a blurry preview while full-res is in-flight.
+		// Returns "" if neither tier is cached — the caller skips the texture
+		// upload and the shader renders the flat background instead.
 		if (value.startsWith("asset:") && !value.startsWith("asset://")) {
 			const id = value.slice("asset:".length);
 			const cached = await resolveAsset(id);
 			if (cached) return convertFileSrc(cached);
-			return `/backgrounds/thumbs/${id}.webp`;
+			const thumb = assetsStore.thumbPaths[id];
+			if (thumb) return convertFileSrc(thumb);
+			return "";
 		}
 		if (
 			value.startsWith("data:") ||
@@ -392,10 +396,13 @@ void main() {
 		const type = store.backgroundType;
 		const value = store.backgroundValue;
 		// Including the resolved cache path in the key ensures the texture
-		// re-loads when an `asset:<id>` download lands after an initial miss.
+		// re-loads when an `asset:<id>` download lands after an initial miss,
+		// or when the thumbnail lands before the full-res does.
 		let resolvedForKey = value;
 		if (value.startsWith("asset:") && !value.startsWith("asset://")) {
-			resolvedForKey = assetsStore.paths[value.slice("asset:".length)] ?? value;
+			const id = value.slice("asset:".length);
+			resolvedForKey =
+				assetsStore.paths[id] ?? assetsStore.thumbPaths[id] ?? value;
 		}
 		const key = `${type}|${resolvedForKey}`;
 		if (key === lastBgKey) return;
@@ -412,9 +419,17 @@ void main() {
 		}
 
 		try {
+			const resolvedSrc = await resolveBackgroundSrc(value);
+			if (!resolvedSrc) {
+				// Asset not yet cached (first-run offline, or still downloading).
+				// Fall through to flat-background rendering until a later tick
+				// re-runs this effect once the cache populates.
+				bgTexReady = false;
+				return;
+			}
 			const img = new Image();
 			img.crossOrigin = "anonymous";
-			img.src = await resolveBackgroundSrc(value);
+			img.src = resolvedSrc;
 			await img.decode();
 			if (lastBgKey !== key) return; // Superseded by another load
 			gl.bindTexture(gl.TEXTURE_2D, bgTex);
@@ -427,7 +442,7 @@ void main() {
 		}
 	}
 
-	// ── Cursor track loading ────────────────────────────────────────────
+	//  Cursor track loading 
 	async function loadCursorTrackIfNeeded() {
 		if (!cursorPath || cursorPath === loadedCursorPath) return;
 		try {
@@ -475,7 +490,7 @@ void main() {
 		smoothingSignature = sig;
 	}
 
-	// ── Cursor interpolation (mirror of cursor::smoothing::interpolate_at) ─
+	//  Cursor interpolation (mirror of cursor::smoothing::interpolate_at) 
 	function interpolateCursor(timestampUs: number) {
 		if (cursorSamples.length === 0) return null;
 		// Binary search
@@ -509,7 +524,7 @@ void main() {
 		};
 	}
 
-	// ── Color parsing ────────────────────────────────────────────────────
+	//  Color parsing 
 	function hexToRgba(hex: string, alpha = 1): [number, number, number, number] {
 		const s = hex.trim().replace(/^#/, "");
 		if (s.length < 6) return [17 / 255, 17 / 255, 17 / 255, alpha];
@@ -527,7 +542,7 @@ void main() {
 		return [a, b];
 	}
 
-	// ── Sizing ───────────────────────────────────────────────────────────
+	//  Sizing 
 	function resizeCanvas() {
 		if (!canvasEl || !containerEl || !store.metadata) return false;
 		const meta = store.metadata;
@@ -569,7 +584,7 @@ void main() {
 		return true;
 	}
 
-	// ── Render ───────────────────────────────────────────────────────────
+	//  Render 
 	let loggedTexError = false;
 	function uploadVideoFrame() {
 		if (!gl || !videoTex || !videoEl) return false;
@@ -806,7 +821,7 @@ void main() {
 		});
 	}
 
-	// ── Playback frame loop (rVFC) ───────────────────────────────────────
+	//  Playback frame loop (rVFC) 
 	type RVFCMetadata = { mediaTime: number; presentedFrames: number };
 	type VideoElWithRVFC = HTMLVideoElement & {
 		requestVideoFrameCallback?: (cb: (now: number, metadata: RVFCMetadata) => void) => number;
@@ -835,7 +850,7 @@ void main() {
 		rvfcHandle = null;
 	}
 
-	// ── Lifecycle & reactive wiring ──────────────────────────────────────
+	//  Lifecycle & reactive wiring 
 	onMount(() => {
 		initGL();
 		const ro = new ResizeObserver(() => requestRedraw());
@@ -867,6 +882,7 @@ void main() {
 		if (store.backgroundValue.startsWith("asset:") && !store.backgroundValue.startsWith("asset://")) {
 			const id = store.backgroundValue.slice("asset:".length);
 			void assetsStore.paths[id];
+			void assetsStore.thumbPaths[id];
 		}
 		void loadBackgroundIfNeeded();
 		requestRedraw();

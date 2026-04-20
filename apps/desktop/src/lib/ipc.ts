@@ -13,7 +13,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-// ── Types matching Rust structs ─────────────────────────────────────────
+//  Types matching Rust structs 
 
 export interface DisplayInfo {
 	id: number;
@@ -210,7 +210,7 @@ export function cancelExport(exportId: string): Promise<void> {
 	return invoke("cancel_export", { exportId });
 }
 
-// ── Zoom suggestions (auto-focus) ───────────────────────────────────────
+//  Zoom suggestions (auto-focus) 
 
 export type ZoomSuggestionReason = "click" | "settleAfterMotion";
 
@@ -243,11 +243,17 @@ export function getRecoverableSessions(): Promise<AutosaveState[]> {
 	return invoke<AutosaveState[]>("get_recoverable_sessions");
 }
 
-// ── External asset cache ────────────────────────────────────────────────
+//  External asset cache 
 
 export interface AssetInstallFailure {
 	id: string;
 	reason: string;
+}
+
+export interface HydratedAsset {
+	id: string;
+	path: string | null;
+	thumbPath: string | null;
 }
 
 export interface AssetInstallResult {
@@ -255,6 +261,7 @@ export interface AssetInstallResult {
 	skipped: string[];
 	failed: AssetInstallFailure[];
 	cacheDir: string;
+	hydrated: HydratedAsset[];
 }
 
 export function ensureAssetsInstalled(manifestUrl: string): Promise<AssetInstallResult> {
@@ -263,6 +270,12 @@ export function ensureAssetsInstalled(manifestUrl: string): Promise<AssetInstall
 
 export function getCachedAssetPath(id: string): Promise<string | null> {
 	return invoke<string | null>("get_cached_asset_path", { id });
+}
+
+/** Read the on-disk manifest lock and return which assets are already cached.
+ *  No network traffic — safe to call on offline launches before `ensure`. */
+export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
+	return invoke<HydratedAsset[]>("hydrate_cached_assets");
 }
 
 

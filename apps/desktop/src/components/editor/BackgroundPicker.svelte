@@ -196,7 +196,6 @@
           >
             <LazyExternalImage
               assetId={wallpaper.id}
-              placeholderSrc={wallpaper.thumb}
               alt={wallpaper.label}
               class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
             />

@@ -20,7 +20,7 @@
   let rafHandle: number | null = null;
   let resizeObserver: ResizeObserver | null = null;
 
-  // ── Drag / placement state ────────────────────────────────────────────
+  //  Drag / placement state 
   type HandleName = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "body";
   type DragState =
     | null
@@ -47,7 +47,7 @@
   const HANDLE_RADIUS_PX = 6; // CSS px half-size of resize handles
   const SELECTION_COLOUR = "#3b82f6";
 
-  // ── Helpers ───────────────────────────────────────────────────────────
+  //  Helpers 
 
   function getDpr(): number {
     return window.devicePixelRatio || 1;
@@ -179,7 +179,7 @@
     return videoEl?.currentTime ?? store.currentTime;
   }
 
-  // ── Drawing ────────────────────────────────────────────────────────────
+  //  Drawing 
 
   function drawAnnotation(
     ctx: CanvasRenderingContext2D,
@@ -299,7 +299,7 @@
     };
   }
 
-  // ── Frame loop ─────────────────────────────────────────────────────────
+  //  Frame loop 
 
   function draw() {
     if (!canvasEl || !store.metadata) return;
@@ -340,7 +340,7 @@
     }
   }
 
-  // ── Pointer interaction ────────────────────────────────────────────────
+  //  Pointer interaction 
 
   function hitTestHandle(
     pt: { x: number; y: number },
@@ -557,7 +557,7 @@
     }
   }
 
-  // ── Lifecycle ──────────────────────────────────────────────────────────
+  //  Lifecycle 
 
   onMount(() => {
     tick();

@@ -163,7 +163,7 @@ pub enum RenderNode {
     Zoom(ZoomNode),
 }
 
-// ── Annotations ────────────────────────────────────────────────────────
+//  Annotations 
 //
 // Phase 1 ships `rect` and `ellipse`. `kind` is a tagged union so future
 // arrow/polygon/text/image variants slot in without breaking serialisation

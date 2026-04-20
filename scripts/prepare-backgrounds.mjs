@@ -2,13 +2,25 @@
  * Build WebP thumbnails + an external-asset manifest for every wallpaper in
  * `assets/backgrounds/wallpapers/*.{png,jpg,jpeg}`.
  *
- * Thumbnails land in `apps/desktop/static/backgrounds/thumbs/` (bundled with
- * the app — used in the picker and as offline placeholders). Full-res PNGs
- * stay at `assets/backgrounds/wallpapers/` and are NOT bundled — instead the
- * manifest (written to `assets/manifest.json`) drives runtime download into
- * the app's cache.
+ * All artefacts live under the repo-root `assets/` dir and are **not** bundled
+ * with the app installer. The manifest drives runtime download into the app's
+ * cache; thumbs download first (tiny) to unblock the picker UI, then full-res
+ * downloads run in the background.
  *
- * Env: RELEASE_TAG (default `wallpapers-v1`), GH_REPO (default kanakkholwal/recast).
+ * Outputs:
+ *   assets/backgrounds/thumbs/<name>.webp   (~3 KB each)
+ *   assets/manifest.json                    (SHA-256s + URLs for release)
+ *
+ * Env:
+ *   RELEASE_TAG   GitHub release tag to template URLs against (default wallpapers-v1)
+ *   GH_REPO       owner/repo for the release (default kanakkholwal/recast)
+ *
+ * Publish flow:
+ *   RELEASE_TAG=wallpapers-v1 pnpm prepare:assets-wallpapers
+ *   gh release create wallpapers-v1 \
+ *     ./assets/backgrounds/wallpapers/*.png \
+ *     ./assets/backgrounds/thumbs/*.webp \
+ *     ./assets/manifest.json
  */
 
 import { createHash } from "node:crypto";
@@ -20,7 +32,7 @@ import sharp from "sharp";
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(SCRIPTS_DIR, "..");
 const WALLPAPERS_DIR = join(ROOT, "assets/backgrounds/wallpapers");
-const THUMBS_DIR = join(ROOT, "apps/desktop/static/backgrounds/thumbs");
+const THUMBS_DIR = join(ROOT, "assets/backgrounds/thumbs");
 const MANIFEST_PATH = join(ROOT, "assets/manifest.json");
 
 const RELEASE_TAG = process.env.RELEASE_TAG ?? "wallpapers-v1";
@@ -41,6 +53,10 @@ function sha256File(path) {
 	const hash = createHash("sha256");
 	hash.update(readFileSync(path));
 	return hash.digest("hex");
+}
+
+function releaseUrl(filename) {
+	return `https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/${filename}`;
 }
 
 async function main() {
@@ -69,7 +85,8 @@ async function main() {
 	for (const file of files) {
 		const srcPath = join(WALLPAPERS_DIR, file);
 		const name = basename(file, extname(file));
-		const outPath = join(THUMBS_DIR, `${name}.webp`);
+		const thumbFilename = `${name}.webp`;
+		const thumbPath = join(THUMBS_DIR, thumbFilename);
 
 		const srcStat = statSync(srcPath);
 		totalSrc += srcStat.size;
@@ -77,18 +94,20 @@ async function main() {
 		await sharp(srcPath)
 			.resize({ width: THUMB_WIDTH, withoutEnlargement: true, fit: "inside" })
 			.webp({ quality: THUMB_QUALITY, effort: 5 })
-			.toFile(outPath);
+			.toFile(thumbPath);
 
-		const thumbStat = statSync(outPath);
+		const thumbStat = statSync(thumbPath);
 		totalThumb += thumbStat.size;
 
-		const sha256 = sha256File(srcPath);
 		manifestAssets.push({
 			id: name,
 			filename: file,
-			url: `https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}/${file}`,
-			sha256,
+			url: releaseUrl(file),
+			sha256: sha256File(srcPath),
 			size: srcStat.size,
+			thumbFilename,
+			thumbUrl: releaseUrl(thumbFilename),
+			thumbSha256: sha256File(thumbPath),
 		});
 
 		results.push({ file, src: srcStat.size, thumb: thumbStat.size });

@@ -6,7 +6,7 @@ use super::CursorSample;
 // compositor (src/components/editor/VideoPreview.svelte). Only idle / zoom
 // detection — needed at recording-stop time — remains in this module.
 
-// ── Idle detection
+//  Idle detection
 
 /// A period where the cursor was stationary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -75,7 +75,7 @@ pub fn detect_idle_periods(
     periods
 }
 
-// ── Zoom trigger detection ──────────────────────────────────────────────
+//  Zoom trigger detection 
 
 /// A suggested zoom region based on cursor activity.
 #[derive(Debug, Clone, Serialize, Deserialize)]

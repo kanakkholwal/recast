@@ -6,161 +6,230 @@
       "filename": "wallpaper1.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper1.png",
       "sha256": "6db566a65f4ba7cc55287522a620e1d01c70c30ec66a58e89051037d2aeaeb7f",
-      "size": 1329279
+      "size": 1329279,
+      "thumbFilename": "wallpaper1.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper1.webp",
+      "thumbSha256": "11653fd04a7497a0310eb5d99d6a934172b76ed39aae2447de1706de4aef0bee"
     },
     {
       "id": "wallpaper10",
       "filename": "wallpaper10.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper10.png",
       "sha256": "237c5b69499a9adec7262ad3380fb320296b718b870daa1a0d8d8fe9ff19cd3f",
-      "size": 17882595
+      "size": 17882595,
+      "thumbFilename": "wallpaper10.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper10.webp",
+      "thumbSha256": "2e18b493b84137b9b96b2420f10d16a2df548a6b3f9a5644bae1e39d94e27a60"
     },
     {
       "id": "wallpaper11",
       "filename": "wallpaper11.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper11.png",
       "sha256": "706ac260e9a0db6c655993062078e00f19f29c4b2c034ad8482a8996f6cb3278",
-      "size": 2433740
+      "size": 2433740,
+      "thumbFilename": "wallpaper11.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper11.webp",
+      "thumbSha256": "54e72b97dec9b9db9cd23e22fc5a6453f7a75594f575d30f02a6a60e89a261b8"
     },
     {
       "id": "wallpaper12",
       "filename": "wallpaper12.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper12.png",
       "sha256": "2b441f0b0f7078324a6ea007ef53099c50991f550be0bdff6352338041fcbb9a",
-      "size": 2832219
+      "size": 2832219,
+      "thumbFilename": "wallpaper12.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper12.webp",
+      "thumbSha256": "bb100feec89aaf47b8979c172a275683bcf7ba35d5639d51625859aeb5d4073a"
     },
     {
       "id": "wallpaper13",
       "filename": "wallpaper13.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper13.png",
       "sha256": "43634886526d45ec59fc7897c93516c486f56a7acfcd2635bc538131ae6a0912",
-      "size": 8096301
+      "size": 8096301,
+      "thumbFilename": "wallpaper13.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper13.webp",
+      "thumbSha256": "b38f41de4ec146bec32f12d9e34a0db8f7ee84f638814cc731e1360dbf4d5bff"
     },
     {
       "id": "wallpaper14",
       "filename": "wallpaper14.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper14.png",
       "sha256": "bc6d6f7d099ddde8980fcf1bb80780d8a3dbf22cb7e4143e852e17ab0ac6b147",
-      "size": 10552385
+      "size": 10552385,
+      "thumbFilename": "wallpaper14.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper14.webp",
+      "thumbSha256": "1431598bee6c82f1647e5e609d5852b57edc0ef630e761c9007f2331c9c6e93b"
     },
     {
       "id": "wallpaper15",
       "filename": "wallpaper15.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper15.png",
       "sha256": "b9c49703594357bee6af4ddc40a7715f0734158b8821733bd1dc27e2c9ca29fb",
-      "size": 1435394
+      "size": 1435394,
+      "thumbFilename": "wallpaper15.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper15.webp",
+      "thumbSha256": "365ffbbd5a61beb37848b98f45644a56e78f07f37971a62e56415c4bacd569e6"
     },
     {
       "id": "wallpaper16",
       "filename": "wallpaper16.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper16.png",
       "sha256": "2eee8643e3082a68ebe1659f906e9f7929a77a955c6b757f72b3289a5fb6ed4e",
-      "size": 14313686
+      "size": 14313686,
+      "thumbFilename": "wallpaper16.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper16.webp",
+      "thumbSha256": "053d05912a4901e8fe744666314fe66283dc325fe3012fa8ac973bf577eadefe"
     },
     {
       "id": "wallpaper17",
       "filename": "wallpaper17.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper17.png",
       "sha256": "9be8546ef271fcb3ccfb8d2e16f4284e8936bbd94cd300d656351266f0d59dc6",
-      "size": 21950474
+      "size": 21950474,
+      "thumbFilename": "wallpaper17.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper17.webp",
+      "thumbSha256": "29629e28faa57af812f2459acd11a9f62e32e204e26522dabb47a94bcbe92309"
     },
     {
       "id": "wallpaper18",
       "filename": "wallpaper18.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper18.png",
       "sha256": "072866d6c35d16eea6fb4e7a1bffd21e473bbb9a425520803a08b0630ca88f17",
-      "size": 3207827
+      "size": 3207827,
+      "thumbFilename": "wallpaper18.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper18.webp",
+      "thumbSha256": "826235f7c76e9f7f029f5d6b55677391a59ea837aa580fe55683fd4f8e2afbd9"
     },
     {
       "id": "wallpaper19",
       "filename": "wallpaper19.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper19.png",
       "sha256": "c8292e569d2af15c2a634bc433d24340ee29a0fc24a529bf828beafa042d6204",
-      "size": 478644
+      "size": 478644,
+      "thumbFilename": "wallpaper19.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper19.webp",
+      "thumbSha256": "688f7ec7e2adcca93044d6018993a5f0c58fbfd38d23ba2e1213491eca41f12a"
     },
     {
       "id": "wallpaper2",
       "filename": "wallpaper2.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper2.png",
       "sha256": "9ef23ac33d4186de9f1b9a0a4862d00ada7a46cab066d492276be3b0e1ddad80",
-      "size": 1991630
+      "size": 1991630,
+      "thumbFilename": "wallpaper2.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper2.webp",
+      "thumbSha256": "dac23109595cf4d5253490e5ee0c3dd297be4c24774cfc1b1b3ae225de7510a9"
     },
     {
       "id": "wallpaper20",
       "filename": "wallpaper20.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper20.png",
       "sha256": "0ec321734996ebdb314659e7b8a51348b04397c7cbe30e570c3822ba896fc4eb",
-      "size": 576305
+      "size": 576305,
+      "thumbFilename": "wallpaper20.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper20.webp",
+      "thumbSha256": "03329b1b45fc0232acf085b35908c4d60431081b5d6ac94d3738ebf8e02fc7c1"
     },
     {
       "id": "wallpaper21",
       "filename": "wallpaper21.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper21.png",
       "sha256": "a8889010ec285210189ec1e4db084bada37631cbd932c9bc1d79e4bd47833012",
-      "size": 401853
+      "size": 401853,
+      "thumbFilename": "wallpaper21.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper21.webp",
+      "thumbSha256": "47bdb90769e0a19f9e963f02e8328483c9c3d18bf9881bd3b29171be076c6623"
     },
     {
       "id": "wallpaper22",
       "filename": "wallpaper22.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper22.png",
       "sha256": "8c0c80ca7abb67d2aea9df33e3bff01fd3f1dcfc1ddd1311b90e079bab0f60c4",
-      "size": 375857
+      "size": 375857,
+      "thumbFilename": "wallpaper22.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper22.webp",
+      "thumbSha256": "61e44562d0839b18411a28014cd6ee56a98c1def4ce0cbf2aa7e6896ca80fc8e"
     },
     {
       "id": "wallpaper23",
       "filename": "wallpaper23.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper23.png",
       "sha256": "769dfe25da4811b33016ff6db7010f62a25ecf5c8acbbd1c1f3962c7d5cfff33",
-      "size": 495607
+      "size": 495607,
+      "thumbFilename": "wallpaper23.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper23.webp",
+      "thumbSha256": "6b1074b61dfbba0d18da012a94b31447920dd97e150a64034c3e03840fb96ce1"
     },
     {
       "id": "wallpaper3",
       "filename": "wallpaper3.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper3.png",
       "sha256": "ab815682647758f93145a3df7cb76d7f2830bca5ca81c2da8e2600195f497f88",
-      "size": 7266061
+      "size": 7266061,
+      "thumbFilename": "wallpaper3.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper3.webp",
+      "thumbSha256": "1fefa7501225cb164c24ddefeeeeb378de60c7b1161f24e2c1cb4e608626c4e7"
     },
     {
       "id": "wallpaper4",
       "filename": "wallpaper4.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper4.png",
       "sha256": "953b8542d8e47fa2c4d202c76e1a39fbc9a365c2a89f5544fef9e0578bd1943e",
-      "size": 25320574
+      "size": 25320574,
+      "thumbFilename": "wallpaper4.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper4.webp",
+      "thumbSha256": "50027402355733a45affbc70feddab66dc55ec338a44dd1e1a91959f2906fec5"
     },
     {
       "id": "wallpaper5",
       "filename": "wallpaper5.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper5.png",
       "sha256": "4b64fa562fb253d2e5e7ee737153a9893b5c1a7e6b6531bd92ff1e9a6eef92a4",
-      "size": 10025948
+      "size": 10025948,
+      "thumbFilename": "wallpaper5.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper5.webp",
+      "thumbSha256": "8f0aaa10b07a4dd1c541d67b4104cd8d8837cf02a764729dd8ea581af4b36bb1"
     },
     {
       "id": "wallpaper6",
       "filename": "wallpaper6.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper6.png",
       "sha256": "9b4dadb11cdaf1403a141bf17aee3e409d2efdfd955d1ec48a41d5b852be11af",
-      "size": 6146413
+      "size": 6146413,
+      "thumbFilename": "wallpaper6.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper6.webp",
+      "thumbSha256": "a87b7f8f9e7f9c3089c144c2d29644fa7238b535362bf9686947025988be94fa"
     },
     {
       "id": "wallpaper7",
       "filename": "wallpaper7.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper7.png",
       "sha256": "3e8586a1ce5a11e9e1f9c615ec965657c4c9e50384fd17ce0ff7f5cccf64e6e4",
-      "size": 5291928
+      "size": 5291928,
+      "thumbFilename": "wallpaper7.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper7.webp",
+      "thumbSha256": "6b8bf6ad57fb583290f89a59dbedc481ac263aeb890a68cdf1ad6a2f8e17f697"
     },
     {
       "id": "wallpaper8",
       "filename": "wallpaper8.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper8.png",
       "sha256": "4c4635158023b6a1d6d7bef642b3057a2135798f80be4e68da2af7462ad5f4ef",
-      "size": 9548952
+      "size": 9548952,
+      "thumbFilename": "wallpaper8.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper8.webp",
+      "thumbSha256": "917427abf21aa2cdc85a2f6d3dd402f84803eb04db5a1d8f8d6a69c7d62319dd"
     },
     {
       "id": "wallpaper9",
       "filename": "wallpaper9.png",
       "url": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper9.png",
       "sha256": "359c16943646278a9fe092e6afe8024c0460f002973ad82f50547113080a49bd",
-      "size": 12349825
+      "size": 12349825,
+      "thumbFilename": "wallpaper9.webp",
+      "thumbUrl": "https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/wallpaper9.webp",
+      "thumbSha256": "445179f5ce2befc7b22f825010ba3275c6d974514550e5e67aa58e4ab0069ba0"
     }
   ]
 }
