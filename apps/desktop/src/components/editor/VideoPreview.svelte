@@ -7,6 +7,8 @@
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
+	import { resolveAsset } from "$lib/assets";
+	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./AnnotationOverlay.svelte";
 	import FocusOverlay from "./FocusOverlay.svelte";
@@ -360,8 +362,16 @@ void main() {
 	}
 
 	// ── Background loading ──────────────────────────────────────────────
-	function resolveBackgroundSrc(value: string): string {
+	async function resolveBackgroundSrc(value: string): Promise<string> {
 		if (!value) return "";
+		// External-asset scheme: resolve to the downloaded cache file, or fall
+		// back to the bundled thumbnail if not yet installed.
+		if (value.startsWith("asset:") && !value.startsWith("asset://")) {
+			const id = value.slice("asset:".length);
+			const cached = await resolveAsset(id);
+			if (cached) return convertFileSrc(cached);
+			return `/backgrounds/thumbs/${id}.webp`;
+		}
 		if (
 			value.startsWith("data:") ||
 			value.startsWith("http://") ||
@@ -381,7 +391,13 @@ void main() {
 		if (!gl || !bgTex) return;
 		const type = store.backgroundType;
 		const value = store.backgroundValue;
-		const key = `${type}|${value}`;
+		// Including the resolved cache path in the key ensures the texture
+		// re-loads when an `asset:<id>` download lands after an initial miss.
+		let resolvedForKey = value;
+		if (value.startsWith("asset:") && !value.startsWith("asset://")) {
+			resolvedForKey = assetsStore.paths[value.slice("asset:".length)] ?? value;
+		}
+		const key = `${type}|${resolvedForKey}`;
 		if (key === lastBgKey) return;
 		lastBgKey = key;
 
@@ -398,7 +414,7 @@ void main() {
 		try {
 			const img = new Image();
 			img.crossOrigin = "anonymous";
-			img.src = resolveBackgroundSrc(value);
+			img.src = await resolveBackgroundSrc(value);
 			await img.decode();
 			if (lastBgKey !== key) return; // Superseded by another load
 			gl.bindTexture(gl.TEXTURE_2D, bgTex);
@@ -843,10 +859,15 @@ void main() {
 		void loadCursorTrackIfNeeded();
 	});
 
-	// Background (re)load when type/value changes
+	// Background (re)load when type/value changes, or when an asset:<id>
+	// download lands and the cached path becomes available.
 	$effect(() => {
 		void store.backgroundType;
 		void store.backgroundValue;
+		if (store.backgroundValue.startsWith("asset:") && !store.backgroundValue.startsWith("asset://")) {
+			const id = store.backgroundValue.slice("asset:".length);
+			void assetsStore.paths[id];
+		}
 		void loadBackgroundIfNeeded();
 		requestRedraw();
 	});

@@ -78,7 +78,9 @@ pub fn run() {
             commands::autosave_project,
             commands::clear_autosave,
             commands::get_recoverable_sessions,
-            commands::suggest_zoom_regions
+            commands::suggest_zoom_regions,
+            commands::ensure_assets_installed,
+            commands::get_cached_asset_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

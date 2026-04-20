@@ -1,7 +1,9 @@
 {
   "name": "recast",
   "version": "0.1.0-beta",
-  "dependencies": {},
+  "dependencies": {
+    "sharp": "^0.34.5"
+  },
   "devDependencies": {
     "turbo": "^2.9.6"
   },

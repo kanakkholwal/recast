@@ -72,6 +72,39 @@ To build the binaries for your current platform:
 pnpm turbo run build --filter=recast-desktop
 ```
 
+## 🖼 Wallpaper assets (external download)
+
+The 23 full-res wallpapers (~157 MB) are **not** bundled with the installer. They
+live in `assets/backgrounds/wallpapers/` and are distributed via GitHub Release
+assets, then downloaded on first launch into the user's app data dir and
+verified against a SHA-256 manifest. If the user is offline, tiny bundled WebP
+thumbnails are shown as placeholders with an "Offline" badge; once connectivity
+returns the downloader retries automatically.
+
+**To add / update wallpapers:**
+
+1. Drop the PNG(s) into `assets/backgrounds/wallpapers/`.
+2. Run `pnpm prepare:assets-wallpapers` — this regenerates bundled WebP thumbs
+   at `apps/desktop/static/backgrounds/thumbs/` and rewrites `assets/manifest.json`
+   with fresh sha256 + size fields.
+3. Publish a GitHub Release with the PNGs **and** the manifest:
+   ```sh
+   RELEASE_TAG=wallpapers-v2 pnpm prepare:assets-wallpapers
+   gh release create wallpapers-v2 \
+     ./assets/backgrounds/wallpapers/*.png \
+     ./assets/manifest.json
+   ```
+4. Bump the release tag default (or set `PUBLIC_ASSETS_MANIFEST_URL` at build
+   time) so the app fetches the new manifest. `PUBLIC_ASSETS_MANIFEST_URL` should
+   point at the raw `manifest.json` asset URL on the release.
+5. Add the wallpaper to the picker: extend `WALLPAPERS` in
+   `apps/desktop/src/lib/stores/editor-store.svelte.ts`.
+
+**Cache location** (delete to force re-download): `<appDataDir>/assets/` —
+`%APPDATA%\com.nexonauts.recast\assets\` on Windows,
+`~/Library/Application Support/com.nexonauts.recast/assets/` on macOS,
+`~/.local/share/com.nexonauts.recast/assets/` on Linux.
+
 ## 🤝 Contributing
 We welcome community contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to submit pull requests.
 

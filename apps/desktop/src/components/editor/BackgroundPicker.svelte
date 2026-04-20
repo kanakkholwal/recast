@@ -3,9 +3,11 @@
     COLOR_PRESETS,
     GRADIENT_PRESETS,
     WALLPAPERS,
+    wallpaperBackgroundValue,
     type BackgroundType,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
   import {
     Blend,
     FolderOpen,
@@ -42,7 +44,7 @@
   ];
 
   const DEFAULT_BACKGROUND_VALUES: Record<BackgroundType, string> = {
-    wallpaper: WALLPAPERS[0]?.src ?? "",
+    wallpaper: WALLPAPERS[0] ? wallpaperBackgroundValue(WALLPAPERS[0].id) : "",
     color: COLOR_PRESETS[0] ?? "#000000",
     gradient:
       GRADIENT_PRESETS[0]?.value ??
@@ -59,7 +61,7 @@
   function isValidValueForType(type: BackgroundType, value: string) {
     switch (type) {
       case "wallpaper":
-        return WALLPAPERS.some((w) => w.src === value);
+        return WALLPAPERS.some((w) => wallpaperBackgroundValue(w.id) === value);
       case "color":
         return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
       case "gradient":
@@ -175,12 +177,13 @@
         </span>
       </header>
       <div class="grid grid-cols-3 gap-1.5">
-        {#each WALLPAPERS as wallpaper (wallpaper.src)}
-          {@const isSelected = store.backgroundValue === wallpaper.src}
+        {#each WALLPAPERS as wallpaper (wallpaper.id)}
+          {@const wallpaperValue = wallpaperBackgroundValue(wallpaper.id)}
+          {@const isSelected = store.backgroundValue === wallpaperValue}
           <Button
             variant="raw"
             size="raw"
-            onclick={() => applyBackground("wallpaper", wallpaper.src)}
+            onclick={() => applyBackground("wallpaper", wallpaperValue)}
             class={cn(
               "group relative aspect-video overflow-hidden rounded-md border transition-all",
               isSelected
@@ -191,16 +194,11 @@
             aria-label="Use {wallpaper.label} background"
             aria-pressed={isSelected}
           >
-            <Image
-              src={wallpaper.thumb}
+            <LazyExternalImage
+              assetId={wallpaper.id}
+              placeholderSrc={wallpaper.thumb}
               alt={wallpaper.label}
-              layout="constrained"
-              width={160}
-              aspectRatio={16 / 9}
-              objectFit="cover"
-              loading="lazy"
-              decoding="async"
-              class="size-full transition-transform duration-200 group-hover:scale-[1.03]"
+              class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
             />
           </Button>
         {/each}

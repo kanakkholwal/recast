@@ -243,6 +243,28 @@ export function getRecoverableSessions(): Promise<AutosaveState[]> {
 	return invoke<AutosaveState[]>("get_recoverable_sessions");
 }
 
+// ── External asset cache ────────────────────────────────────────────────
+
+export interface AssetInstallFailure {
+	id: string;
+	reason: string;
+}
+
+export interface AssetInstallResult {
+	installed: string[];
+	skipped: string[];
+	failed: AssetInstallFailure[];
+	cacheDir: string;
+}
+
+export function ensureAssetsInstalled(manifestUrl: string): Promise<AssetInstallResult> {
+	return invoke<AssetInstallResult>("ensure_assets_installed", { manifestUrl });
+}
+
+export function getCachedAssetPath(id: string): Promise<string | null> {
+	return invoke<string | null>("get_cached_asset_path", { id });
+}
+
 
 // start recording
  export async function launchRecordingPanel() {

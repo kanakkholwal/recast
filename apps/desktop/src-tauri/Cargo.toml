@@ -35,6 +35,10 @@ zip = { version = "2.2.0", default-features = false, features = ["deflate"] }
 tauri-plugin-os = "2.3.2"
 trash = "5.2"
 tauri-plugin-opener = "2"
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+sha2 = "0.10"
+futures-util = "0.3"
+hex = "0.4"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [

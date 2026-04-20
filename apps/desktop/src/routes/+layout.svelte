@@ -6,10 +6,15 @@
   let { children } = $props();
 
   import Loading from "$components/layout/loading.svelte";
+  import { initAssets } from "$lib/assets";
   import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
   import { Toaster } from "@recast/ui/sonner";
   import { ModeWatcher, setMode } from "@recast/ui/theme";
   import { onMount, tick } from "svelte";
+
+  // Kick off external-asset download (wallpapers etc.) on first paint. Safe in
+  // both browser and Tauri runtimes — no-op in the browser.
+  initAssets();
 
   // Remove the boot splash screen after the app is mounted
   onMount(async () => {

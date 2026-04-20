@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use base64::{engine::general_purpose, Engine as _};
 use parking_lot::Mutex;
 use serde::Serialize;
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::ffmpeg::{
     append_cursor_overlay_to_complex, append_output_filters_to_complex, build_gif_palette_complex,
@@ -392,14 +392,20 @@ pub async fn export_video(
         std::process::id()
     ));
 
+    let asset_cache_dir = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|base| base.join("assets"));
     let export_plan = graph
-        .build_export_plan(
+        .build_export_plan_with(
             SourceVideoMetadata {
                 width: metadata.width,
                 height: metadata.height,
             },
             &static_root(),
             1,
+            asset_cache_dir.as_deref(),
         )
         .map_err(|e| e.to_string())?;
 

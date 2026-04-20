@@ -123,11 +123,12 @@ impl RenderGraph {
             .unwrap_or((0.0, 0.0))
     }
 
-    pub fn build_export_plan(
+    pub fn build_export_plan_with(
         &self,
         source: SourceVideoMetadata,
         static_root: &Path,
         background_input_index: usize,
+        asset_cache_dir: Option<&Path>,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -151,7 +152,7 @@ impl RenderGraph {
                 if matches!(background.background_type.as_str(), "wallpaper" | "image") =>
             {
                 if let Some(background_path) =
-                    resolve_background_path(&background.value, static_root)
+                    resolve_background_path(&background.value, static_root, asset_cache_dir)
                 {
                     extra_inputs.push(background_path);
                     let mut segments = Vec::new();
@@ -369,8 +370,33 @@ where
         })
 }
 
-fn resolve_background_path(value: &str, static_root: &Path) -> Option<PathBuf> {
+fn resolve_background_path(
+    value: &str,
+    static_root: &Path,
+    asset_cache_dir: Option<&Path>,
+) -> Option<PathBuf> {
     if value.is_empty() {
+        return None;
+    }
+
+    // External-asset scheme: `asset:<id>` resolves against the downloaded
+    // manifest cache in the app data dir. Read manifest.lock.json there.
+    if let Some(id) = value.strip_prefix("asset:") {
+        if let Some(dir) = asset_cache_dir {
+            let lock = dir.join("manifest.lock.json");
+            if let Ok(bytes) = std::fs::read(&lock) {
+                if let Ok(manifest) =
+                    serde_json::from_slice::<crate::commands::assets::Manifest>(&bytes)
+                {
+                    if let Some(entry) = manifest.assets.iter().find(|a| a.id == id) {
+                        let path = dir.join(&entry.filename);
+                        if path.exists() {
+                            return Some(path);
+                        }
+                    }
+                }
+            }
+        }
         return None;
     }
 
