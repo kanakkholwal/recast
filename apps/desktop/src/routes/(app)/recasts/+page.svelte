@@ -15,13 +15,13 @@
     type RecordingEntry,
   } from "$lib/ipc";
   import {
+    CopyIcon,
     ExternalLink,
     Film,
     FolderOpen,
     Pencil,
     RefreshCw,
-    Trash2,
-    CopyIcon
+    Trash2
   } from "@lucide/svelte";
 
   import { Button } from "@recast/ui/button";
@@ -239,6 +239,7 @@
     </Button>
   {/snippet}
 </RecastList>
+
 
 {#if renameTarget}
   <RenameDialog

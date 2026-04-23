@@ -708,11 +708,15 @@
               {@const isSelected = region.id === store.selectedZoomRegionId}
               <button
                 type="button"
-                onclick={() => (store.selectedZoomRegionId = region.id)}
+                onclick={(e) => {
+                  e.stopPropagation();
+                  (store.selectedZoomRegionId = region.id)
+                }}
                 in:fly={{ y: 10, duration: 180, easing: cubicOut }}
                 out:fade={{ duration: 140 }}
                 aria-pressed={isSelected}
-                class="absolute overflow-hidden rounded border bg-muted text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring {isSelected ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:border-primary/60'}"
+
+                class="z-50 absolute overflow-hidden rounded border bg-muted text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring {isSelected ? 'border-primary ring-1 ring-primary/40' : 'border-border hover:border-primary/60'}"
                 style="
 									left: {region.start * pixelsPerSecond}px;
 									width: {Math.max((region.end - region.start) * pixelsPerSecond, 56)}px;

@@ -39,8 +39,8 @@
 		"vite": "^7.3.1"
 	},
 	"dependencies": {
+		"@fontsource-variable/geist-mono": "^5.2.7",
 		"@fontsource-variable/google-sans": "^5.2.1",
-		"@fontsource-variable/instrument-sans": "^5.2.8",
 		"@lucide/svelte": "^0.577.0",
 		"@tauri-apps/plugin-dialog": "2.6.0",
 		"@tauri-apps/plugin-opener": "~2.5.3",

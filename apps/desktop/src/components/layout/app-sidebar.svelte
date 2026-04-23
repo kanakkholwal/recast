@@ -61,7 +61,7 @@
         >Workspace</Sidebar.GroupLabel
       >
       <Sidebar.GroupContent>
-        <Sidebar.Menu>
+        <Sidebar.Menu class="gap-2">
           {#each navLinks as navLink (navLink.href)}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton tooltipContent={navLink.title}>
@@ -70,7 +70,7 @@
                     href={navLink.href}
                     {...props}
                     class={cn(
-                      "group flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[12px] font-medium transition-colors",
+                      "group flex items-center gap-2.5 rounded-md p-2 px-3 text-sm font-medium transition-colors",
                       isActive(navLink.href)
                         ? "bg-muted text-foreground"
                         : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",

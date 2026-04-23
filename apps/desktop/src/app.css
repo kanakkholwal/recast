@@ -1,12 +1,16 @@
 @import "tailwindcss";
 @import "@recast/design/index.css";
 
-@import "@fontsource-variable/instrument-sans";
+@import "@fontsource-variable/geist-mono";
+@import "@fontsource-variable/geist";
 
 @source "../node_modules/@recast/ui/src";
 
+
+
 @theme {
-  --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-sans: "Geist Variable", "Inter", "Google Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+  --font-mono: "Geist Mono Variable", "JetBrains Mono", "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
   --color-border-low: color-mix(in srgb, var(--color-border) 40%, transparent);
 
@@ -47,7 +51,7 @@
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans antialiased;
     font-weight: 500;
     font-size: 14px;
     line-height: 1.6;
@@ -81,7 +85,8 @@
     @apply text-foreground/40;
   }
 }
-input[type="number"]:has(class){
+
+input[type="number"]:has(class) {
   -webkit-appearance: textfield;
   appearance: textfield;
   -moz-appearance: textfield;
