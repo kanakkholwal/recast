@@ -676,6 +676,12 @@ pub async fn export_video(
         let finalizing_seen = Arc::new(AtomicBool::new(false));
         let near_end_seen = Arc::new(AtomicBool::new(false));
         let progress_end_seen = Arc::new(AtomicBool::new(false));
+        // Latched the first time the stderr parser parses a progress block.
+        // The watchdog uses this to apply a longer budget during ffmpeg's
+        // cold-start window (filter_complex parse, NVENC surface alloc, VP9
+        // first-pass init) before falling back to the tighter steady-state
+        // timeout once frames start flowing.
+        let first_progress_seen = Arc::new(AtomicBool::new(false));
 
         // Parse stderr line-by-line. Progress blocks (key=value lines) get
         // filtered out; only genuine log output is appended to the 8 KB error
@@ -691,6 +697,7 @@ pub async fn export_video(
         let stderr_finalizing_seen = finalizing_seen.clone();
         let stderr_near_end_seen = near_end_seen.clone();
         let stderr_progress_end_seen = progress_end_seen.clone();
+        let stderr_first_progress_seen = first_progress_seen.clone();
         let encode_started_at = Instant::now();
         let stderr_thread = std::thread::Builder::new()
             .name("recast-export-stderr".into())
@@ -707,13 +714,39 @@ pub async fn export_video(
                         } else {
                             source_duration
                         };
+                        // Watchdog proof-of-life: any parseable progress line
+                        // means ffmpeg is alive. Don't gate this on out_time
+                        // advancing — on Windows/NVENC we regularly see
+                        // back-to-back blocks with unchanged `out_time_us`
+                        // while surfaces flush or a GOP is primed, and
+                        // waiting for advancement starved the watchdog reset.
                         {
+                            let mut guard = stderr_last_progress.lock();
+                            *guard = Instant::now();
+                        }
+                        // First progress line ever → flip the startup-grace
+                        // flag and log it so post-mortems can see how long
+                        // filter_complex/NVENC warmup took.
+                        if !stderr_first_progress_seen.swap(true, Ordering::AcqRel) {
+                            log::info!(
+                                "export: first progress parsed at T+{}ms",
+                                encode_started_at.elapsed().as_millis()
+                            );
+                        }
+                        // UI emit gate: only publish a new pct when out_time
+                        // actually advanced. Redundant emits would spam the
+                        // progress bar with the same value.
+                        let advanced = {
                             let mut last_secs = stderr_last_progress_secs.lock();
                             if progress_secs > *last_secs + 0.01 {
                                 *last_secs = progress_secs;
-                                let mut guard = stderr_last_progress.lock();
-                                *guard = Instant::now();
+                                true
+                            } else {
+                                false
                             }
+                        };
+                        if !advanced {
+                            continue;
                         }
                         let pct = if effective_duration > 0.0 {
                             (progress_secs / effective_duration * 100.0).clamp(0.0, 100.0)
@@ -822,6 +855,7 @@ pub async fn export_video(
         let watchdog_user_kill = killed_by_user.clone();
         let watchdog_near_end_seen = near_end_seen.clone();
         let watchdog_progress_end_seen = progress_end_seen.clone();
+        let watchdog_first_progress_seen = first_progress_seen.clone();
         let watchdog_stop = Arc::new(AtomicBool::new(false));
         let watchdog_stop_flag = watchdog_stop.clone();
         // Share the child with the watchdog via a mutex so it can call kill().
@@ -833,6 +867,13 @@ pub async fn export_video(
             .spawn(move || {
                 const ENCODE_TIMEOUT: Duration = Duration::from_secs(60);
                 const NEAR_END_TIMEOUT: Duration = Duration::from_secs(20);
+                // Startup grace: ffmpeg can take a long time to emit its
+                // first progress block when filter_complex parsing, NVENC
+                // surface allocation, or VP9 first-pass init runs before
+                // the first frame is output. Use a bigger budget until
+                // that first progress line arrives, then fall back to
+                // ENCODE_TIMEOUT for steady state.
+                const FIRST_PROGRESS_TIMEOUT: Duration = Duration::from_secs(120);
                 // `FINALIZING_TIMEOUT` is a *no-file-growth* bound, not a
                 // wall-clock cap on the finalizing phase. While FFmpeg is
                 // legitimately writing the mux trailer the output file grows
@@ -858,20 +899,19 @@ pub async fn export_video(
                         return;
                     }
                     let in_finalizing = watchdog_progress_end_seen.load(Ordering::Acquire);
-                    // File-size growth as a liveness signal. Once FFmpeg has
-                    // emitted `progress=end` it stops writing stderr progress
-                    // lines but keeps writing to the output file during the
-                    // trailer mux. Poll metadata cheaply; if the file is
-                    // growing, we know the process is alive and productive,
-                    // regardless of how long the phase takes.
-                    if in_finalizing {
-                        if let Ok(meta) = std::fs::metadata(&watchdog_output_path) {
-                            let size = meta.len();
-                            if size > last_file_size {
-                                last_file_size = size;
-                                let mut guard = watchdog_last_progress.lock();
-                                *guard = Instant::now();
-                            }
+                    // File-size growth as a liveness signal. Applies in both
+                    // phases: during the encode the output file is already
+                    // being written as GOPs complete, and during finalizing
+                    // the trailer mux continues to grow the file. If the
+                    // file is growing we know ffmpeg is alive and productive,
+                    // regardless of whether the stderr progress thread has
+                    // been able to refresh the stamp yet.
+                    if let Ok(meta) = std::fs::metadata(&watchdog_output_path) {
+                        let size = meta.len();
+                        if size > last_file_size {
+                            last_file_size = size;
+                            let mut guard = watchdog_last_progress.lock();
+                            *guard = Instant::now();
                         }
                     }
                     let elapsed = {
@@ -879,10 +919,13 @@ pub async fn export_video(
                         guard.elapsed()
                     };
                     let near_end = watchdog_near_end_seen.load(Ordering::Acquire);
+                    let first_seen = watchdog_first_progress_seen.load(Ordering::Acquire);
                     let allowed_idle = if in_finalizing {
                         FINALIZING_TIMEOUT
                     } else if near_end {
                         NEAR_END_TIMEOUT
+                    } else if !first_seen {
+                        FIRST_PROGRESS_TIMEOUT
                     } else {
                         ENCODE_TIMEOUT
                     };
@@ -943,13 +986,43 @@ pub async fn export_video(
         watchdog_stop.store(true, Ordering::Release);
         let _ = watchdog_thread.join();
 
+        let expected_output_duration = if duration > 0.0 {
+            duration
+        } else {
+            source_duration
+        };
+
+        // Pipes are closed, which means ffmpeg has finished writing the file.
+        // Probe the output NOW and, if it's usable, emit `success` to the UI
+        // immediately — we should not make the user watch "Writing video
+        // file…" while we wait for the OS to reap the child process. On
+        // Windows that reap can legitimately take hundreds of ms to a couple
+        // of seconds after stdio close. The reap still happens below, but
+        // its only job now is to reap cleanly; its latency no longer blocks
+        // the user-visible completion.
+        let early_success_emitted = if !killed_by_user.load(Ordering::Acquire)
+            && !killed_by_timeout.load(Ordering::Acquire)
+            && progress_end_seen.load(Ordering::Acquire)
+            && completed_export_looks_usable(
+                Path::new(&output_path_str),
+                expected_output_duration,
+            ) {
+            log::info!(
+                "export: pipes closed and output probe ok at T+{}ms; emitting success early and reaping child",
+                encode_started_at.elapsed().as_millis()
+            );
+            emit_export_state(&app, ExportStateEvent::progress(&export_id, 100.0_f64));
+            emit_export_state(&app, ExportStateEvent::success(&export_id, &output_path_str));
+            true
+        } else {
+            false
+        };
+
         // Pull the child back out and wait for its exit status. Stdout has
         // already closed, so FFmpeg should be on its last gasp (trailer write +
         // teardown). A well-behaved exit happens within milliseconds. We still
-        // bound the wait with a hard timeout so the UI can never be stuck in
-        // "Finalizing…" indefinitely if the process refuses to exit — if it
-        // takes longer than POST_CLOSE_TIMEOUT, we force-kill and surface an
-        // error rather than leaving the Promise hanging.
+        // bound the wait with a hard timeout — if it takes longer than
+        // POST_CLOSE_TIMEOUT we force-kill so the ffmpeg process doesn't leak.
         let mut child = {
             let mut guard = child_handle.lock();
             guard.take()
@@ -980,17 +1053,20 @@ pub async fn export_video(
             }
         };
         log::info!(
-            "export: child exited at T+{}ms (status={:?}, forced_exit={})",
+            "export: child exited at T+{}ms (status={:?}, forced_exit={}, early_success_emitted={})",
             encode_started_at.elapsed().as_millis(),
             status.code(),
-            forced_exit
+            forced_exit,
+            early_success_emitted
         );
 
-        let expected_output_duration = if duration > 0.0 {
-            duration
-        } else {
-            source_duration
-        };
+        // If we already told the UI the export succeeded based on the probe
+        // of a fully-written file, the reap outcome (clean exit or forced
+        // kill) is bookkeeping — the file is good either way. Return Ok so
+        // the caller's Promise resolves cleanly.
+        if early_success_emitted {
+            return Ok(output_path_str);
+        }
 
         if forced_exit {
             let output_path = Path::new(&output_path_str);
@@ -1053,12 +1129,34 @@ pub async fn export_video(
             }
 
             let _ = std::fs::remove_file(output_path);
-            let err_msg = if encode_completed {
-                "export failed: ffmpeg reached finalizing but the output file stopped growing for 60s".to_string()
+            let base_msg = if encode_completed {
+                "export failed: ffmpeg reached finalizing but the output file stopped growing for 60s"
             } else if near_end_seen.load(Ordering::Acquire) {
-                "export failed: ffmpeg stopped making progress near the end of the encode".to_string()
+                "export failed: ffmpeg stopped making progress near the end of the encode"
             } else {
-                "export timed out: ffmpeg produced no progress for 60s".to_string()
+                "export timed out: ffmpeg produced no progress for 60s"
+            };
+            // Surface whatever ffmpeg last said so this error is actionable
+            // without needing to re-instrument. The stderr ring buffer holds
+            // up to 8 KB; take the final line (or two) to keep the message
+            // scannable.
+            let stderr_tail = {
+                let guard = stderr_buf.lock();
+                let text = String::from_utf8_lossy(&guard).into_owned();
+                text.lines()
+                    .rev()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .into_iter()
+                    .rev()
+                    .collect::<Vec<_>>()
+                    .join(" | ")
+            };
+            let err_msg = if stderr_tail.is_empty() {
+                base_msg.to_string()
+            } else {
+                format!("{base_msg} — last stderr: {stderr_tail}")
             };
             emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
             return Err(err_msg);

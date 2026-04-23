@@ -239,7 +239,6 @@
   let exportCancelling = $state(false);
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
-  let exportLastProgressAt = $state<number | null>(null);
   let activeExportId = $state<string | null>(null);
   let exportResult = $state<
     | { kind: "success"; path: string }
@@ -289,13 +288,16 @@
           store.exportProgress = Math.max(current, next);
         }
         exportHasProgress = true;
-        exportLastProgressAt = Date.now();
-        // Aggressive flip: at ≥99.5% raw progress the encoder has effectively
-        // finished — only the mux trailer write remains. Don't wait for the
-        // explicit `progress=end` event (which can lag many seconds on Windows
-        // due to stderr pipe buffering) before flipping the UI to the
-        // indeterminate "Finalizing…" state.
-        if (!exportFinalizing && next >= 99.5) {
+        // Previously this block speculatively flipped the UI to "finalizing"
+        // at ≥99.5% raw progress, on the assumption that stderr pipe batching
+        // was hiding the real `progress=end`. With `-progress pipe:2
+        // -stats_period 0.1` the Rust side now emits a real `finalizing`
+        // event within ~100ms of ffmpeg's actual finish, so the speculative
+        // flip was just mislabelling the last second of active encoding as
+        // "Writing video file…". Only a very-near-end safety net remains
+        // below as a last-resort for the rare case where the `finalizing`
+        // event is dropped entirely.
+        if (!exportFinalizing && next >= 99.95) {
           exportFinalizing = true;
         }
         return;
@@ -321,7 +323,6 @@
     store.isExporting = true;
     store.exportProgress = 0;
     exportHasProgress = false;
-    exportLastProgressAt = null;
     exportCancelling = false;
     exportFinalizing = false;
     activeExportId = exportId;
@@ -363,8 +364,7 @@
       store.isExporting = false;
       store.exportProgress = null;
       exportHasProgress = false;
-      exportLastProgressAt = null;
-      exportCancelling = false;
+        exportCancelling = false;
       exportFinalizing = false;
     }
   }
@@ -541,24 +541,12 @@
   $effect(() => {
     if (!store.isExporting) return;
     exportNow = Date.now();
+    // Elapsed-time timer for the export status strip. The Rust side is now
+    // the source of truth for when the UI flips to "finalizing" — it emits
+    // an explicit event on ffmpeg's `progress=end`, typically within ~100ms.
+    // No more client-side speculative flips on progress stalls.
     const timer = setInterval(() => {
-      const now = Date.now();
-      exportNow = now;
-      // Near-end stall fallback: the primary flip happens in handleExportState
-      // the moment a progress event arrives with pct ≥99.5. This block covers
-      // the case where the progress stream dies silently between ~98% and
-      // 99.5% — e.g. very short clips where FFmpeg jumps from 98 → progress=end
-      // without an intermediate tick at 99.5, and the `progress=end` line
-      // itself is buffered. Threshold lowered from 99 → 98 so we catch this.
-      if (
-        !exportFinalizing
-        && exportHasProgress
-        && exportLastProgressAt !== null
-        && (store.exportProgress ?? 0) >= 98
-        && now - exportLastProgressAt > 1500
-      ) {
-        exportFinalizing = true;
-      }
+      exportNow = Date.now();
     }, 500);
     return () => clearInterval(timer);
   });

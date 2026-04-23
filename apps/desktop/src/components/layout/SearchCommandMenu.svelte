@@ -43,10 +43,10 @@
   onclick={() => commandPalette.show()}
   aria-label="Open Command Menu"
   title="Open Command Menu (⌘K)"
-  variant="secondary"
+  variant="raw"
   size="sm"
   class={cn(
-    "border border-border group relative h-8",
+    "border border-border group relative h-8 bg-card",
     iconOnly ? "w-8" : "min-w-8 w-full max-w-xs",
   )}
 >
