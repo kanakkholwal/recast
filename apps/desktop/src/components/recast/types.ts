@@ -18,6 +18,8 @@ export interface RecastAction {
 	onAction: () => void | Promise<void>;
 }
 
+export type RecastLayout = "card" | "row";
+
 export interface RecastListItem {
 	id: string;
 	title: string;
@@ -28,6 +30,7 @@ export interface RecastListItem {
 	keywords?: string[];
 	accessories?: RecastAccessory[];
 	section?: string;
+	layout?: RecastLayout;
 	actions?: RecastAction[];
 	onSelect?: () => void | Promise<void>;
 }

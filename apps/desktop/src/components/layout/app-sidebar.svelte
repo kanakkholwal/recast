@@ -10,6 +10,7 @@
   import type { ComponentProps } from "svelte";
 
   let currentPath = $derived(page.url.pathname);
+
   const navLinks = [
     { title: "Home", href: "/", icon: LayoutDashboard },
     { title: "Recasts", href: "/recasts", icon: Film },
@@ -28,21 +29,21 @@
 
 <Sidebar.Root bind:ref variant="sidebar" collapsible="icon" {...restProps}>
   <Sidebar.Rail class="data-[state=collapsed]:hidden" />
-  <Sidebar.Header class="px-2 py-2">
+  <Sidebar.Header class="gap-3 py-3">
     <Sidebar.MenuItem>
       <a
         href="/"
         class="group flex items-center gap-2.5 transition-opacity hover:opacity-80"
+        data-tauri-drag-region
       >
         <div
           class="flex size-7 shrink-0 items-center justify-center rounded-lg text-primary-foreground"
           data-tauri-drag-region
         >
-          <!-- <Hexagon size={15} class="fill-current" strokeWidth={2.5} /> -->
-           <Logo size="18" color="var(--primary)" />
+          <Logo size="18" color="var(--primary)" />
         </div>
         <h1
-          class="text-[13px] font-semibold tracking-tight group-data-[state=collapsed]:hidden"
+          class="text-[13px] font-semibold tracking-tight text-foreground group-data-[state=collapsed]:hidden"
           data-tauri-drag-region
         >
           Recast
@@ -50,38 +51,44 @@
       </a>
     </Sidebar.MenuItem>
 
-    <Sidebar.MenuItem class="mt-1">
-      <SearchCommandMenu  />
+    <Sidebar.MenuItem>
+      <SearchCommandMenu />
     </Sidebar.MenuItem>
   </Sidebar.Header>
 
   <Sidebar.Content class="scrollbar-hide">
     <Sidebar.Group>
-      <Sidebar.GroupLabel class="text-[10px] font-semibold uppercase tracking-wider"
-        >Workspace</Sidebar.GroupLabel
-      >
+      <Sidebar.GroupLabel class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground group-data-[state=collapsed]:hidden">
+        Workspace
+      </Sidebar.GroupLabel>
       <Sidebar.GroupContent>
-        <Sidebar.Menu class="gap-2">
+        <Sidebar.Menu class="gap-0.5">
           {#each navLinks as navLink (navLink.href)}
+            {@const active = isActive(navLink.href)}
+            {@const Icon = navLink.icon}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton tooltipContent={navLink.title}>
                 {#snippet child({ props })}
                   <a
                     href={navLink.href}
                     {...props}
+                    data-active={active}
                     class={cn(
-                      "group flex items-center gap-2.5 rounded-md p-2 px-3 text-sm font-medium transition-colors",
-                      isActive(navLink.href)
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+                      "group relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
+                      active
+                        ? "bg-card/80 text-foreground ring-1 ring-inset ring-border/50 shadow-(--shadow-craft-inset)"
+                        : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground",
                       "group-data-[state=collapsed]:size-8 group-data-[state=collapsed]:justify-center group-data-[state=collapsed]:p-0",
                     )}
                   >
-                    {#if navLink.icon}
-                      {@const Icon = navLink.icon}
-                      <Icon size={14} class="shrink-0" />
-                    {/if}
+                    <Icon size={14} class="shrink-0" />
                     <span class="group-data-[state=collapsed]:hidden">{navLink.title}</span>
+                    {#if active}
+                      <span
+                        class="absolute top-1/2 left-0 h-3 w-0.5 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary group-data-[state=collapsed]:hidden"
+                        aria-hidden="true"
+                      ></span>
+                    {/if}
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
@@ -92,24 +99,25 @@
     </Sidebar.Group>
   </Sidebar.Content>
 
-  <Sidebar.Footer class="border-t border-border/40 p-2">
+  <Sidebar.Footer class="border-t border-border/30 p-2">
     <Button
       onclick={launchRecordingPanel}
       size="sm"
-      class="group relative h-8 w-full gap-1.5 group-data-[state=collapsed]:size-8 group-data-[state=collapsed]:p-0"
-      title="Launch Recording Panel"
+      class="group h-9 w-full gap-1.5 rounded-lg group-data-[state=collapsed]:size-8 group-data-[state=collapsed]:p-0"
+      title="Launch Recording Panel (⌘⇧R)"
     >
-      <Radio size={14} class="animate-pulse shrink-0" />
-      <span class="group-data-[state=collapsed]:hidden">Launch Panel</span>
+      <Radio size={13} class="shrink-0" />
+      <span class="text-[12px] font-semibold group-data-[state=collapsed]:hidden">
+        Launch Panel
+      </span>
     </Button>
   </Sidebar.Footer>
 </Sidebar.Root>
 
 <style>
-  /* Hide scrollbar for cleaner look */
   .scrollbar-hide {
-    -ms-overflow-style: none; /* IE and Edge */
-    scrollbar-width: none; /* Firefox */
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
   .scrollbar-hide::-webkit-scrollbar {
     display: none;

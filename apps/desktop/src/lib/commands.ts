@@ -77,6 +77,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Recording",
 			icon: Radio,
 			keywords: ["record", "start", "panel", "capture"],
+			shortcut: "⌘⇧R",
 			action: () => launchRecordingPanel(),
 		},
 		{

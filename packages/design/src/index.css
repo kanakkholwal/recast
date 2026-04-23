@@ -5,7 +5,7 @@
 
 :root,
 [data-theme="light"] {
-  --background: hsl(0, 0%, 98%);
+  --background: hsl(193.22deg 11.17% 90.43%);
   --foreground: hsl(0, 0%, 10%);
 
   --card: hsl(0, 0%, 100%);
@@ -49,15 +49,17 @@
 
   --max-app-width: clamp(1280px, 80vw, 1920px);
   --noise-bg: linear-gradient(hsl(40, 30%, 96%), hsl(40, 30%, 96%));
+
+ 
 }
 
 .dark,
 [data-theme="dark"] {
   --primary: hsl(75 100% 50%);
   --primary-foreground: hsl(0 0% 5%);
-  --background: hsl(0 0% 5%);
+  --background: hsl(199.87deg 1.54% 8.84%);
   --foreground: hsl(0 0% 94%);
-  --card: hsl(0 0% 9%);
+  --card: oklch(0.27 0 0);
   --card-foreground: hsl(0 0% 94%);
   --popover: hsl(0 0% 9%);
   --popover-foreground: hsl(0 0% 94%);
@@ -75,6 +77,7 @@
   --ring: var(--primary);
 
   --noise-bg: linear-gradient(#393737, #1b1b1b);
+  
 }
 
 @theme {
@@ -201,7 +204,8 @@
 li:has([class]) {
   list-style: none;
 }
-input[type="number"]:has(class){
+
+input[type="number"]:has(class) {
   -webkit-appearance: textfield;
   appearance: textfield;
   -moz-appearance: textfield;

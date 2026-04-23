@@ -18,10 +18,7 @@
   });
 
   function handleGlobalKeydown(e: KeyboardEvent) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
-      // Don't fire if a RecastList already handles ⌘ + K
-      const target = e.target as HTMLElement | null;
-      if (target?.closest("[data-recast-list]")) return;
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
       e.preventDefault();
       commandPalette.toggle();
     }
@@ -45,12 +42,12 @@
 <Button
   onclick={() => commandPalette.show()}
   aria-label="Open Command Menu"
-  title="Open Command Menu (⌘ + K)"
+  title="Open Command Menu (⌘K)"
   variant="secondary"
   size="sm"
   class={cn(
     "border border-border group relative h-8",
-    iconOnly ? "group-data-[state=collapsed]:w-8" : "w-full max-w-xs",
+    iconOnly ? "w-8" : "min-w-8 w-full max-w-xs",
   )}
 >
   <Search class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />

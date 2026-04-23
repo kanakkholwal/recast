@@ -188,13 +188,14 @@
       iconClass: "text-primary",
       keywords: ["record", "start", "capture", "panel"],
       section: "Quick Actions",
-      accessories: [{ text: "⇧⌘R", variant: "default" }],
+      layout: "row",
       onSelect: () => launchRecordingPanel(),
       actions: [
         {
           id: "launch",
           label: "Launch Panel",
           icon: Radio,
+          shortcut: "⌘⇧R",
           onAction: () => launchRecordingPanel(),
         },
       ],
@@ -206,6 +207,7 @@
       icon: Monitor,
       keywords: ["camera", "webcam", "device", "source", "picker", "video"],
       section: "Quick Actions",
+      layout: "row",
       onSelect: () => openDevicePickerWindow("camera"),
       actions: [
         {
@@ -229,6 +231,7 @@
       icon: Mic,
       keywords: ["microphone", "mic", "audio", "device", "input", "picker"],
       section: "Quick Actions",
+      layout: "row",
       onSelect: () => openDevicePickerWindow("mic"),
       actions: [
         {
@@ -252,6 +255,7 @@
       icon: Camera,
       keywords: ["camera", "webcam", "preview", "test", "floating"],
       section: "Quick Actions",
+      layout: "row",
       onSelect: () => openCameraPreviewWindow(),
       actions: [
         {
@@ -271,6 +275,7 @@
       icon: Film,
       keywords: ["recordings", "recasts", "library", "all"],
       section: "Browse",
+      layout: "row",
       onSelect: () => goto("/recasts"),
       actions: [
         { id: "open", label: "Go to Recordings", icon: Film, onAction: () => goto("/recasts") },
@@ -283,6 +288,7 @@
       icon: Download,
       keywords: ["exports", "rendered", "share"],
       section: "Browse",
+      layout: "row",
       onSelect: () => goto("/exports"),
       actions: [
         { id: "open", label: "Go to Exports", icon: Download, onAction: () => goto("/exports") },
@@ -295,6 +301,7 @@
       icon: SlidersHorizontal,
       keywords: ["profiles", "presets", "config"],
       section: "Browse",
+      layout: "row",
       onSelect: () => goto("/profiles"),
       actions: [
         {
@@ -312,6 +319,7 @@
       icon: SettingsIcon,
       keywords: ["settings", "preferences", "config"],
       section: "Browse",
+      layout: "row",
       onSelect: () => goto("/settings"),
       actions: [
         {
@@ -329,6 +337,7 @@
       icon: FolderOpen,
       keywords: ["folder", "directory", "reveal", "explorer", "finder"],
       section: "Browse",
+      layout: "row",
       onSelect: () => showOutputFolder(),
       actions: [
         {
@@ -352,18 +361,19 @@
       section: "Recent Recordings",
       onSelect: () => openInEditor(entry),
       actions: [
-        { id: "open", label: "Open in Editor",icon:VideotapeIcon, onAction: () => openInEditor(entry) },
+        { id: "open", label: "Open in Editor", icon: VideotapeIcon, onAction: () => openInEditor(entry) },
         {
           id: "show",
           label: "Show in Folder",
           icon: FolderOpen,
+          shortcut: "⌘O",
           onAction: () => openFileLocation(entry.path),
         },
         {
           id: "copy",
           label: "Copy Path",
           shortcut: "⌘⇧C",
-          icon:CopyIcon,
+          icon: CopyIcon,
           onAction: () => copyPath(entry),
         },
       ],
@@ -390,13 +400,14 @@
           id: "show",
           label: "Show in Folder",
           icon: FolderOpen,
+          shortcut: "⌘O",
           onAction: () => openFileLocation(entry.path),
         },
         {
           id: "copy",
           label: "Copy Path",
           shortcut: "⌘⇧C",
-          icon:CopyIcon,
+          icon: CopyIcon,
           onAction: () => copyPath(entry),
         },
       ],

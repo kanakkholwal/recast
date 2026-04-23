@@ -128,6 +128,7 @@
           id: "show",
           label: "Show in Folder",
           icon: FolderOpen,
+          shortcut: "⌘O",
           onAction: () => openFileLocation(entry.path),
         },
         {

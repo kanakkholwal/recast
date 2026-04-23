@@ -1,14 +1,12 @@
 <script lang="ts">
-	import { Command as CommandIcon, Sparkles, X } from "@lucide/svelte";
-	import * as Command from "@recast/ui/command";
+	import PageShell from "$components/layout/PageShell.svelte";
+	import { Search } from "@lucide/svelte";
 	import { cn } from "@recast/ui/utils";
-	import { onMount, type Snippet } from "svelte";
-	import ActionPanel from "./ActionPanel.svelte";
+	import { onMount, tick, type Snippet } from "svelte";
+	import RecastCard from "./RecastCard.svelte";
+	import RecastRow from "./RecastRow.svelte";
 	import TopProgress from "./TopProgress.svelte";
-	import type { RecastAccessory, RecastListItem } from "./types";
-
-	/** localStorage key for the first-visit tip. Global across all RecastList pages. */
-	const KBD_HINT_KEY = "recast-kbd-hint-dismissed";
+	import type { RecastAction, RecastListItem } from "./types";
 
 	interface Props {
 		items: RecastListItem[];
@@ -16,16 +14,15 @@
 		searchPlaceholder?: string;
 		emptyTitle?: string;
 		emptyHint?: string;
-		title?: string;
+		title: string;
 		subtitle?: string;
 		toolbar?: Snippet;
-		class?: string;
 	}
 
 	let {
 		items,
 		isLoading = false,
-		searchPlaceholder = "Search...",
+		searchPlaceholder = "Search…",
 		emptyTitle = "Nothing here",
 		emptyHint = "",
 		title,
@@ -33,28 +30,30 @@
 		toolbar,
 	}: Props = $props();
 
-	let searchValue = $state("");
-	let selectedValue = $state<string>("");
-	let actionPanelOpen = $state(false);
-	let showKbdHint = $state(false);
+	let query = $state("");
+	let searchEl = $state<HTMLInputElement | null>(null);
+	let gridEl = $state<HTMLDivElement | null>(null);
 
-	/** True if any item in the list exposes contextual actions. */
-	const hasAnyActions = $derived(
-		items.some((i) => i.actions && i.actions.length > 0),
-	);
-
-	function dismissHint() {
-		showKbdHint = false;
-		try {
-			localStorage.setItem(KBD_HINT_KEY, "true");
-		} catch {
-			/* ignore — private mode etc. */
-		}
+	function matches(item: RecastListItem, q: string) {
+		if (!q) return true;
+		const haystack = [
+			item.title,
+			item.subtitle ?? "",
+			...(item.keywords ?? []),
+		]
+			.join(" ")
+			.toLowerCase();
+		return haystack.includes(q);
 	}
+
+	const filtered = $derived.by(() => {
+		const q = query.trim().toLowerCase();
+		return items.filter((i) => matches(i, q));
+	});
 
 	const sections = $derived.by(() => {
 		const grouped = new Map<string, RecastListItem[]>();
-		for (const item of items) {
+		for (const item of filtered) {
 			const key = item.section ?? "";
 			if (!grouped.has(key)) grouped.set(key, []);
 			grouped.get(key)!.push(item);
@@ -65,299 +64,258 @@
 		}));
 	});
 
-	const selectedItem = $derived(items.find((i) => i.id === selectedValue));
-	const activeActions = $derived(selectedItem?.actions ?? []);
-
-	function runPrimary(item: RecastListItem) {
-		if (item.onSelect) {
-			item.onSelect();
-		} else if (item.actions && item.actions.length > 0) {
-			item.actions[0].onAction();
-		}
-	}
-
-	function handleKeydown(e: KeyboardEvent) {
-		if (actionPanelOpen) return;
-		// ⌘ + K / Ctrl+K opens action panel for selected item
-		if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-			if (selectedItem && activeActions.length > 0) {
-				e.preventDefault();
-				e.stopPropagation();
-				actionPanelOpen = true;
-			}
-			return;
-		}
-		// ⌘+Enter runs secondary action
-		if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
-			if (selectedItem && activeActions.length >= 2) {
-				e.preventDefault();
-				e.stopPropagation();
-				activeActions[1].onAction();
-			}
-		}
-	}
+	const visibleOrder = $derived(filtered.map((i) => i.id));
 
 	onMount(() => {
-		// Focus the search input on mount for keyboard-first flow
-		const input = document.querySelector<HTMLInputElement>(
-			"[data-recast-list] [data-slot='command-input']",
-		);
-		input?.focus();
-
-		// First-visit hint: show a one-time banner teaching ⌘ + K. Dismissed forever on close.
-		try {
-			if (localStorage.getItem(KBD_HINT_KEY) !== "true") {
-				showKbdHint = true;
-			}
-		} catch {
-			/* ignore */
-		}
+		tick().then(() => searchEl?.focus());
 	});
 
-	function accessoryClass(a: RecastAccessory) {
-		const variants = {
-			default: "bg-muted text-muted-foreground border-border/40",
-			success: "bg-success/10 text-success border-success/20",
-			warning: "bg-warning/10 text-warning border-warning/20",
-			destructive:
-				"bg-destructive/10 text-destructive border-destructive/20",
-			info: "bg-info/10 text-info border-info/20",
-		} as const;
-		return variants[a.variant ?? "default"];
+	function focusCard(id: string) {
+		const el = gridEl?.querySelector<HTMLElement>(
+			`[data-card-id="${CSS.escape(id)}"]`,
+		);
+		el?.focus();
+	}
+
+	function focusFirstCard() {
+		if (visibleOrder.length > 0) focusCard(visibleOrder[0]);
+	}
+
+	function activate(item: RecastListItem) {
+		if (item.onSelect) item.onSelect();
+		else if (item.actions && item.actions.length > 0) item.actions[0].onAction();
+	}
+
+	function handleSearchKeydown(e: KeyboardEvent) {
+		if (e.key === "ArrowDown") {
+			e.preventDefault();
+			focusFirstCard();
+		}
+		if (e.key === "Enter" && filtered.length === 1) {
+			e.preventDefault();
+			activate(filtered[0]);
+		}
+		if (e.key === "Escape" && query) {
+			e.preventDefault();
+			query = "";
+		}
+	}
+
+	function normalizeShortcut(s: string) {
+		return s.replace(/\s+/g, "").toLowerCase();
+	}
+
+	function chordFromEvent(e: KeyboardEvent): string {
+		const parts: string[] = [];
+		if (e.metaKey || e.ctrlKey) parts.push("⌘");
+		if (e.shiftKey) parts.push("⇧");
+		if (e.altKey) parts.push("⌥");
+		const key = e.key;
+		if (key === "Enter") parts.push("↵");
+		else if (key === "Backspace") parts.push("⌫");
+		else if (key === " ") parts.push("space");
+		else parts.push(key.toUpperCase());
+		return normalizeShortcut(parts.join(""));
+	}
+
+	function findActionByChord(
+		actions: RecastAction[] | undefined,
+		chord: string,
+	): RecastAction | undefined {
+		if (!actions) return undefined;
+		return actions.find(
+			(a) => a.shortcut && normalizeShortcut(a.shortcut) === chord,
+		);
+	}
+
+	function currentFocusedItem(): RecastListItem | undefined {
+		const active = document.activeElement as HTMLElement | null;
+		const id = active?.closest<HTMLElement>("[data-card-id]")?.dataset.cardId;
+		if (!id) return undefined;
+		return items.find((i) => i.id === id);
+	}
+
+	function moveFocus(delta: number) {
+		const active = document.activeElement as HTMLElement | null;
+		const id = active?.closest<HTMLElement>("[data-card-id]")?.dataset.cardId;
+		if (!id) return;
+		const idx = visibleOrder.indexOf(id);
+		if (idx === -1) return;
+		const next = Math.max(0, Math.min(visibleOrder.length - 1, idx + delta));
+		focusCard(visibleOrder[next]);
+	}
+
+	function columnsPerRow(): number {
+		if (!gridEl) return 1;
+		const style = window.getComputedStyle(gridEl);
+		const cols = style.gridTemplateColumns.split(" ").filter(Boolean);
+		return Math.max(1, cols.length);
+	}
+
+	function handleGridKeydown(e: KeyboardEvent) {
+		if (e.key === "ArrowRight") {
+			e.preventDefault();
+			moveFocus(1);
+			return;
+		}
+		if (e.key === "ArrowLeft") {
+			e.preventDefault();
+			moveFocus(-1);
+			return;
+		}
+		if (e.key === "ArrowDown") {
+			e.preventDefault();
+			moveFocus(columnsPerRow());
+			return;
+		}
+		if (e.key === "ArrowUp") {
+			e.preventDefault();
+			const cols = columnsPerRow();
+			const active = document.activeElement as HTMLElement | null;
+			const id = active?.closest<HTMLElement>("[data-card-id]")?.dataset
+				.cardId;
+			const idx = id ? visibleOrder.indexOf(id) : -1;
+			if (idx < cols) {
+				searchEl?.focus();
+				return;
+			}
+			moveFocus(-cols);
+			return;
+		}
+		if ((e.metaKey || e.ctrlKey) && e.key.length === 1) {
+			const item = currentFocusedItem();
+			if (!item) return;
+			const chord = chordFromEvent(e);
+			const action = findActionByChord(item.actions, chord);
+			if (action) {
+				e.preventDefault();
+				e.stopPropagation();
+				action.onAction();
+			}
+		}
+		if ((e.metaKey || e.ctrlKey) && e.key === "Backspace") {
+			const item = currentFocusedItem();
+			if (!item) return;
+			const action = findActionByChord(item.actions, "⌘⌫");
+			if (action) {
+				e.preventDefault();
+				e.stopPropagation();
+				action.onAction();
+			}
+		}
 	}
 </script>
 
-<svelte:window onkeydown={handleKeydown} />
+<PageShell {title} {subtitle} {toolbar}>
+	<div class="relative h-full" data-recast-list>
+		<TopProgress active={isLoading} />
 
-<div
-	class="relative flex h-full flex-col bg-background/50 selection:bg-primary/20 selection:text-primary font-sans select-none focus-visible:ring-3 focus-visible:ring-primary/20"
-	data-recast-list
->
-	<TopProgress active={isLoading} />
-
-	{#if title || toolbar}
-		<header
-			class="flex items-center justify-between gap-4 px-8 pt-8 pb-4 shrink-0"
-		>
-			{#if title}
-				<div class="min-w-0 space-y-0.5">
-					<h2
-						class="truncate text-xl font-semibold tracking-tight text-foreground"
-					>
-						{title}
-					</h2>
-					{#if subtitle}
-						<p
-							class="truncate text-[11px] font-medium text-foreground/30 uppercase tracking-[0.15em]"
+		<div class="sticky top-0 z-10 bg-background/90 backdrop-blur-md">
+			<div class="mx-8 my-4">
+				<div class="relative">
+					<Search
+						size={14}
+						class="pointer-events-none absolute top-1/2 left-3.5 -translate-y-1/2 text-muted-foreground"
+					/>
+					<input
+						bind:this={searchEl}
+						bind:value={query}
+						onkeydown={handleSearchKeydown}
+						placeholder={searchPlaceholder}
+						type="text"
+						spellcheck="false"
+						class={cn(
+							"h-10 w-full rounded-xl bg-card/40 pr-3 pl-10 text-[13px] font-medium text-foreground",
+							"ring-1 ring-inset ring-border/50 shadow-(--shadow-craft-inset)",
+							"placeholder:text-muted-foreground/70 outline-none",
+							"transition-colors focus-visible:ring-primary/50 focus-visible:shadow-(--shadow-craft-inset-strong)",
+						)}
+					/>
+					{#if query}
+						<button
+							type="button"
+							onclick={() => {
+								query = "";
+								searchEl?.focus();
+							}}
+							class="absolute top-1/2 right-2 -translate-y-1/2 rounded-md px-2 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 						>
-							{subtitle}
+							esc
+						</button>
+					{/if}
+				</div>
+			</div>
+		</div>
+
+		{#if filtered.length === 0}
+			<div class="flex flex-col items-center justify-center gap-3 px-8 py-24 text-center">
+				<div
+					class="flex size-14 items-center justify-center rounded-2xl bg-card/40 ring-1 ring-inset ring-border/40 text-muted-foreground"
+				>
+					<Search size={22} strokeWidth={1.6} />
+				</div>
+				<div class="space-y-1">
+					<p class="text-[14px] font-semibold text-foreground/85">
+						{query ? "No matches" : emptyTitle}
+					</p>
+					{#if query}
+						<p class="text-[12px] font-medium text-muted-foreground">
+							Try a different search term.
+						</p>
+					{:else if emptyHint}
+						<p class="text-[12px] font-medium text-muted-foreground">
+							{emptyHint}
 						</p>
 					{/if}
 				</div>
-			{/if}
-			{#if toolbar}
-				<div class="flex shrink-0 items-center gap-2">
-					{@render toolbar()}
-				</div>
-			{/if}
-		</header>
-	{/if}
-
-	<!-- Keyboard Hint Banner -->
-	{#if showKbdHint && hasAnyActions}
-		<div
-			class="mx-8 mb-4 flex shrink-0 items-center gap-3 rounded-2xl border border-border-subtle bg-foreground/[0.02] px-4 py-2.5 transition-all duration-300"
-		>
-			<span
-				class="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary shadow-sm"
-			>
-				<Sparkles size={11} />
-			</span>
-			<p
-				class="flex-1 truncate text-[12px] font-medium text-foreground/60"
-			>
-				<span>Select a row and press</span>
-				<kbd
-					class="mx-1.5 rounded-md border border-border-subtle bg-background px-1.5 py-0.5 font-mono text-[10px] font-bold text-foreground/80 shadow-craft-sm"
-					>⌘K</kbd
-				>
-				<span>to manage actions</span>
-			</p>
-			<button
-				onclick={dismissHint}
-				class="shrink-0 size-6 rounded-full flex items-center justify-center text-foreground/20 hover:text-foreground hover:bg-foreground/5 transition-all"
-				aria-label="Dismiss tip"
-			>
-				<X size={12} />
-			</button>
-		</div>
-	{/if}
-
-	<Command.Root
-		class="flex-1 rounded-none border-0 bg-transparent p-0 flex flex-col"
-		bind:value={selectedValue}
-	>
-		<div class="px-8 mb-4">
-			<div class="group/search relative">
-				<Command.Input
-					placeholder={searchPlaceholder}
-					bind:value={searchValue}
-					wrapperClass="bg-transparent h-12! px-3 focus-visible:border-ring focus-visible:ring-primary/50 focus-visible:ring-3"
-					class="h-12 text-[13px] font-medium border-none bg-transparent rounded-xl px-4  transition-all"
-				/>
 			</div>
-		</div>
-
-		<Command.List class="max-h-none flex-1 px-5 py-2 scrollbar-transparent">
-			<Command.Empty>
-				<div
-					class="flex flex-col items-center justify-center gap-3 py-24 text-center"
-				>
-					<div
-						class="size-12 rounded-2xl bg-foreground/2 flex items-center justify-center text-foreground/10"
-					>
-						<CommandIcon size={24} />
-					</div>
-					<div class="space-y-1">
-						<p class="text-[14px] font-semibold text-foreground/80">
-							{emptyTitle}
-						</p>
-						{#if emptyHint}
-							<p
-								class="text-[12px] font-medium text-foreground/30"
+		{:else}
+			<div
+				bind:this={gridEl}
+				onkeydown={handleGridKeydown}
+				role="grid"
+				tabindex="-1"
+				class="px-8 pb-8 outline-none"
+			>
+				{#each sections as section, sIdx (section.heading || sIdx)}
+					{@const layout = section.items[0]?.layout ?? "card"}
+					<section class={cn(sIdx > 0 && "mt-8")}>
+						{#if section.heading}
+							<h2
+								class="mb-3 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground"
 							>
-								{emptyHint}
-							</p>
+								{section.heading}
+							</h2>
 						{/if}
-					</div>
-				</div>
-			</Command.Empty>
-
-			{#each sections as section (section.heading)}
-				<Command.Group
-					heading={section.heading || undefined}
-					class="mb-5 last:mb-0 px-3"
-				>
-					{#each section.items as item (item.id)}
-						{@const Icon = item.icon}
-						<Command.Item
-							value={item.id}
-							keywords={[
-								item.title,
-								...(item.keywords ?? []),
-								item.subtitle ?? "",
-							]}
-							onSelect={() => runPrimary(item)}
-							class="group/recast-item h-11 transition-all duration-200 gap-3.5 rounded-xl px-3 hover:bg-foreground/[0.02] data-[selected=true]:bg-foreground/[0.04] data-[selected=true]:shadow-craft-sm border border-transparent data-[selected=true]:border-border-subtle"
-						>
-							{#if Icon}
-								<span
-									class={cn(
-										"flex size-7 shrink-0 items-center justify-center rounded-[10px] bg-background border border-border-subtle text-foreground/30 group-hover/recast-item:text-foreground/60 data-[selected=true]:text-primary data-[selected=true]:bg-primary/[0.02] transition-all duration-300",
-										item.iconClass,
-									)}
-								>
-									<Icon size={13} />
-								</span>
-							{:else if item.iconImage}
-								<img
-									src={item.iconImage}
-									alt=""
-									class="size-7 shrink-0 rounded-[10px] object-cover border border-border-subtle group-hover/recast-item:scale-[1.05] transition-transform duration-300"
-									draggable="false"
-								/>
-							{/if}
-
-							<div
-								class="flex min-w-0 flex-1 items-baseline gap-2.5"
-							>
-								<span
-									class="truncate text-[13px] font-semibold text-foreground/80 group-hover/recast-item:text-foreground"
-								>
-									{item.title}
-								</span>
-								{#if item.subtitle}
-									<span
-										class="truncate text-[11px] font-medium text-foreground/30"
-									>
-										{item.subtitle}
-									</span>
-								{/if}
+						{#if layout === "row"}
+							<div class="flex flex-col gap-1.5">
+								{#each section.items as item (item.id)}
+									<div data-card-id={item.id} class="min-w-0">
+										<RecastRow
+											{item}
+											onActivate={() => activate(item)}
+										/>
+									</div>
+								{/each}
 							</div>
-
-							{#if item.actions && item.actions.length > 0 && selectedValue === item.id}
-								<span
-									class="invisible-ui opacity-0 group-hover/recast-item:opacity-100 flex items-center gap-1.5 rounded-md border border-border-subtle bg-background px-1.5 py-0.5 font-mono text-[9px] font-bold text-foreground/40 transition-all duration-300 shadow-craft-sm"
-									aria-hidden="true"
-								>
-									<CommandIcon size={9} />
-									K
-								</span>
-							{/if}
-
-							{#if item.accessories && item.accessories.length > 0}
-								<div class="flex shrink-0 items-center gap-2">
-									{#each item.accessories as accessory}
-										{@const AccIcon = accessory.icon}
-										<span
-											class={cn(
-												"inline-flex items-center gap-1.5 rounded-md border px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-tight",
-												accessoryClass(accessory),
-											)}
-											title={accessory.tooltip}
-										>
-											{#if AccIcon}
-												<AccIcon size={10} />
-											{/if}
-											{#if accessory.text}
-												<span>{accessory.text}</span>
-											{/if}
-										</span>
-									{/each}
-								</div>
-							{/if}
-						</Command.Item>
-					{/each}
-				</Command.Group>
-			{/each}
-		</Command.List>
-
-		<footer
-			class="mx-8 mb-6 flex h-10 items-center justify-between gap-4 rounded-full border border-border-subtle bg-foreground/2 backdrop-blur-3xl px-6 text-[9px] font-bold uppercase tracking-[0.15em] text-foreground/30 shrink-0"
-		>
-			<div class="flex items-center gap-8">
-				{#if selectedItem && activeActions.length > 0}
-					<span
-						class="flex items-center gap-2 text-foreground/50 transition-colors"
-					>
-						<kbd class="opacity-50 text-[10px]">↵</kbd>
-						<span>{activeActions[0].label}</span>
-					</span>
-				{/if}
-				{#if hasAnyActions}
-					<span
-						class="flex items-center gap-2 text-primary/60 transition-colors"
-					>
-						<kbd class="opacity-50 text-[10px]">⌘K</kbd>
-						<span>Actions Library</span>
-					</span>
-				{/if}
+						{:else}
+							<div
+								class="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3"
+							>
+								{#each section.items as item, i (item.id)}
+									<div data-card-id={item.id} class="min-w-0">
+										<RecastCard
+											{item}
+											index={i}
+											onActivate={() => activate(item)}
+										/>
+									</div>
+								{/each}
+							</div>
+						{/if}
+					</section>
+				{/each}
 			</div>
-			<div class="flex items-center gap-3">
-				<span class="flex items-center gap-2">
-					<kbd class="opacity-40 text-[10px]">↑↓</kbd>
-					<span>Navigation</span>
-				</span>
-			</div>
-		</footer>
-	</Command.Root>
-
-	{#if selectedItem && activeActions.length > 0}
-		<ActionPanel
-			bind:open={actionPanelOpen}
-			actions={activeActions}
-			title={selectedItem.title}
-			onOpenChange={(v) => (actionPanelOpen = v)}
-		/>
-	{/if}
-</div>
+		{/if}
+	</div>
+</PageShell>

@@ -39,6 +39,9 @@
     font-family: var(--font-sans);
     line-height: 1.6;
   }
+  a:has(href), button:not([disabled]) {
+    cursor: pointer;
+  }
 
   h1,
   h2,

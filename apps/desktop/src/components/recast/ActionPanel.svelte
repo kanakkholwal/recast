@@ -35,7 +35,7 @@
 			<Dialog.Description>Run an action on the selected item</Dialog.Description>
 		</Dialog.Header>
 		
-    <Command.Root class="rounded-[28px] bg-background/80 backdrop-blur-3xl border border-border-subtle overflow-hidden font-sans select-none">
+    <Command.Root class="rounded-[28px] bg-background/80 backdrop-blur-3xl ring-1 ring-inset ring-border/60 shadow-(--shadow-craft-inset-strong) overflow-hidden font-sans select-none">
 			<Command.Input placeholder="Search actions..." class="h-11 border-none bg-transparent text-[13px] font-medium px-5" />
 			<Command.List class="max-h-80 px-2 py-2 scrollbar-transparent">
 				<Command.Empty class="py-12 text-center text-[12px] font-medium text-foreground/40">No actions available</Command.Empty>

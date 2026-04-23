@@ -2,7 +2,8 @@
   import { RecastList, type RecastAccessory, type RecastListItem } from "$components/recast";
   import {
     Camera,
-    CheckCircle2,
+    CircleCheck,
+    Copy,
     Mic,
     Pencil,
     Plus,
@@ -12,6 +13,7 @@
     Volume2,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
+  import * as Dialog from "@recast/ui/dialog";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
@@ -30,6 +32,7 @@
   let profiles = $state<RecordingProfile[]>([]);
   let editingId = $state<string | null>(null);
   let draft = $state<RecordingProfile | null>(null);
+  let nameInputEl = $state<HTMLInputElement | null>(null);
 
   onMount(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -47,21 +50,20 @@
         { id: crypto.randomUUID(), name: "Tutorial", systemAudio: true, microphone: true, camera: false, isDefault: false },
       ];
     }
-    // Edge case: exactly one profile must be marked default. Repair loaded state.
     profiles = ensureExactlyOneDefault(profiles);
     save();
+
+    window.addEventListener("keydown", handleGlobalShortcut);
+    return () => window.removeEventListener("keydown", handleGlobalShortcut);
   });
 
-  /** Guarantees exactly one profile is marked default (when any profiles exist). */
   function ensureExactlyOneDefault(list: RecordingProfile[]): RecordingProfile[] {
     if (list.length === 0) return list;
     const defaults = list.filter((p) => p.isDefault);
     if (defaults.length === 1) return list;
     if (defaults.length === 0) {
-      // None default → promote the first one.
       return list.map((p, i) => (i === 0 ? { ...p, isDefault: true } : p));
     }
-    // Multiple defaults → keep the first, clear the rest.
     let seen = false;
     return list.map((p) => {
       if (p.isDefault && !seen) {
@@ -83,7 +85,6 @@
       systemAudio: true,
       microphone: false,
       camera: false,
-      // First profile auto-becomes default.
       isDefault: profiles.length === 0,
     };
     profiles = [...profiles, profile];
@@ -91,18 +92,28 @@
     startEditing(profile);
   }
 
+  function duplicateProfile(profile: RecordingProfile) {
+    const copy: RecordingProfile = {
+      ...profile,
+      id: crypto.randomUUID(),
+      name: `${profile.name} Copy`,
+      isDefault: false,
+    };
+    profiles = [...profiles, copy];
+    save();
+    toast.success(`Duplicated “${profile.name}”`);
+  }
+
   function deleteProfile(id: string) {
     const victim = profiles.find((p) => p.id === id);
     if (!victim) return;
     const wasDefault = victim.isDefault;
     profiles = profiles.filter((p) => p.id !== id);
-    // If we removed the default, promote the first remaining profile.
     if (wasDefault && profiles.length > 0) {
       profiles = ensureExactlyOneDefault(profiles);
     }
     save();
     toast.success(`Deleted “${victim.name}”`);
-    // If we just deleted the one we were editing, close the editor.
     if (editingId === id) {
       editingId = null;
       draft = null;
@@ -125,11 +136,10 @@
   function startEditing(profile: RecordingProfile) {
     editingId = profile.id;
     draft = { ...profile };
-    setTimeout(() => {
-      const input = document.getElementById("profile-name-input") as HTMLInputElement | null;
-      input?.focus();
-      input?.select();
-    }, 50);
+    queueMicrotask(() => {
+      nameInputEl?.focus();
+      nameInputEl?.select();
+    });
   }
 
   function finishEditing() {
@@ -141,14 +151,12 @@
     const next = { ...draft, name: draft.name.trim() };
     const currentId = editingId;
     if (next.isDefault) {
-      // Applying default to this one unsets all others.
       profiles = profiles.map((p) => ({
         ...(p.id === currentId ? next : p),
         isDefault: p.id === currentId,
       }));
     } else {
       profiles = profiles.map((p) => (p.id === currentId ? next : p));
-      // Edge case: user unchecked default on the only default → keep this one default.
       profiles = ensureExactlyOneDefault(profiles);
     }
     save();
@@ -164,8 +172,6 @@
 
   function toggleDraft(field: "systemAudio" | "microphone" | "camera" | "isDefault") {
     if (!draft) return;
-    // Edge case: don't allow unchecking "default" if this profile is the only default
-    // AND no other profile exists to take over.
     if (field === "isDefault" && draft.isDefault) {
       const otherCandidates = profiles.filter((p) => p.id !== draft!.id);
       if (otherCandidates.length === 0) {
@@ -174,6 +180,16 @@
       }
     }
     draft = { ...draft, [field]: !draft[field] };
+  }
+
+  function handleGlobalShortcut(e: KeyboardEvent) {
+    const meta = e.metaKey || e.ctrlKey;
+    if (!meta || e.shiftKey || e.altKey) return;
+    if (editingId) return;
+    if (e.key.toLowerCase() === "n") {
+      e.preventDefault();
+      addProfile();
+    }
   }
 
   function buildAccessories(profile: RecordingProfile): RecastAccessory[] {
@@ -198,19 +214,30 @@
       iconClass: profile.isDefault ? "text-warning" : undefined,
       keywords: [profile.name, profile.isDefault ? "default" : ""],
       accessories: buildAccessories(profile),
+      layout: "row",
       onSelect: () => startEditing(profile),
       actions: [
         {
           id: "edit",
           label: "Edit Profile…",
           icon: Pencil,
+          shortcut: "⌘R",
           onAction: () => startEditing(profile),
+        },
+        {
+          id: "duplicate",
+          label: "Duplicate",
+          icon: Copy,
+          shortcut: "⌘D",
+          onAction: () => duplicateProfile(profile),
         },
         {
           id: "set-default",
           label: profile.isDefault ? "Already Default" : "Set as Default",
-          icon: CheckCircle2,
-          onAction: () => !profile.isDefault && setDefault(profile.id),
+          icon: CircleCheck,
+          onAction: () => {
+            if (!profile.isDefault) setDefault(profile.id);
+          },
         },
         {
           id: "toggle-audio",
@@ -242,6 +269,12 @@
     })),
   );
 
+  function handleDialogKeydown(e: KeyboardEvent) {
+    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+      e.preventDefault();
+      finishEditing();
+    }
+  }
 </script>
 
 <RecastList
@@ -254,39 +287,73 @@
   emptyHint="Create a profile to save your recording presets."
 >
   {#snippet toolbar()}
-    <Button variant="ghost" size="icon-sm" onclick={addProfile} title="New Profile">
+    <Button variant="ghost" size="icon-sm" onclick={addProfile} title="New Profile (⌘N)">
       <Plus size={14} />
     </Button>
   {/snippet}
 </RecastList>
 
-{#if editingId !== null && draft}
-  <div
-    class="fixed inset-0 z-50 flex items-start justify-center bg-background/60 pt-24 backdrop-blur-sm"
-    role="presentation"
-    onclick={cancelEditing}
-    onkeydown={(e) => e.key === "Escape" && cancelEditing()}
+{#snippet toggleRow(
+  field: "isDefault" | "systemAudio" | "microphone" | "camera",
+  Icon: typeof Star,
+  label: string,
+  hint: string,
+)}
+  <button
+    type="button"
+    onclick={() => toggleDraft(field)}
+    class="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-foreground/4 focus-visible:bg-foreground/4 focus-visible:outline-none"
   >
-    <div
-      role="dialog"
-      tabindex="-1"
-      aria-label="Edit profile"
-      class="w-full max-w-md overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-border"
-      onclick={(e) => e.stopPropagation()}
-      onkeydown={(e) => {
-        e.stopPropagation();
-        if (e.key === "Escape") cancelEditing();
-        if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) finishEditing();
-      }}
+    <span
+      class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/70 ring-1 ring-inset ring-border/40 text-muted-foreground"
     >
-      <header class="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+      <Icon size={14} />
+    </span>
+    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+      <span class="truncate text-[12.5px] font-semibold text-foreground">{label}</span>
+      <span class="truncate text-[11px] font-medium text-muted-foreground">{hint}</span>
+    </span>
+    <span
+      class={cn(
+        "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+        draft?.[field] ? "bg-primary" : "bg-muted ring-1 ring-inset ring-border/50",
+      )}
+    >
+      <span
+        class={cn(
+          "size-4 rounded-full bg-card shadow-sm transition-transform",
+          draft?.[field] ? "translate-x-[1.125rem]" : "translate-x-0.5",
+        )}
+      ></span>
+    </span>
+  </button>
+{/snippet}
+
+{#if editingId !== null && draft}
+  <Dialog.Root
+    open={true}
+    onOpenChange={(v) => {
+      if (!v) cancelEditing();
+    }}
+  >
+    <Dialog.Content
+      showCloseButton={false}
+      class="block! w-[calc(100%-2rem)] gap-0! overflow-hidden rounded-2xl p-0! ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong) sm:max-w-md!"
+    >
+      <header
+        class="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-4"
+      >
         <div class="min-w-0">
-          <h3 class="truncate text-[13px] font-semibold tracking-tight text-foreground">Edit Profile</h3>
-          <p class="truncate text-[11px] text-muted-foreground">Configure what to capture</p>
+          <Dialog.Title class="text-[14px] font-semibold tracking-tight text-foreground">
+            {editingId && profiles.find((p) => p.id === editingId) ? "Edit Profile" : "New Profile"}
+          </Dialog.Title>
+          <Dialog.Description class="mt-0.5 text-[11px] font-medium text-muted-foreground">
+            Configure what to capture during recording.
+          </Dialog.Description>
         </div>
         {#if draft.isDefault}
           <span
-            class="inline-flex shrink-0 items-center gap-1 rounded border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-[10px] font-medium text-warning"
+            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-warning"
           >
             <Star size={11} />
             Default
@@ -294,86 +361,56 @@
         {/if}
       </header>
 
-      {#snippet toggleRow(
-        field: "isDefault" | "systemAudio" | "microphone" | "camera",
-        Icon: typeof Star,
-        label: string,
-        hint: string,
-      )}
-        <Button
-          variant="ghost"
-          size="raw"
-          onclick={() => toggleDraft(field)}
-          class="flex h-auto w-full items-center justify-start gap-4 rounded-none border-b border-border px-4 py-3 text-left font-normal hover:bg-muted/40"
+      <div class="border-b border-border/30 px-5 py-4">
+        <label
+          for="profile-name-input"
+          class="mb-1.5 block text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground"
         >
-          <span class="flex w-28 shrink-0 items-center gap-2 text-[12px] font-medium text-foreground">
-            <Icon size={14} class="text-muted-foreground" />
-            {label}
-          </span>
-          <span class="flex-1 truncate text-[11px] text-muted-foreground">{hint}</span>
-          <span
-            class={cn(
-              "flex h-5 w-9 shrink-0 items-center rounded-full border transition-colors",
-              draft![field] ? "border-primary bg-primary" : "border-border bg-muted",
-            )}
-          >
-            <span
-              class={cn(
-                "size-4 rounded-full bg-background shadow transition-transform",
-                draft![field] ? "translate-x-4" : "translate-x-0.5",
-              )}
-            ></span>
-          </span>
-        </Button>
-      {/snippet}
+          Name
+        </label>
+        <input
+          id="profile-name-input"
+          bind:this={nameInputEl}
+          bind:value={draft.name}
+          onkeydown={handleDialogKeydown}
+          placeholder="My profile"
+          class="h-9 w-full rounded-lg border border-border/50 bg-background px-3 text-[13px] font-medium text-foreground outline-none transition-all placeholder:text-muted-foreground/60 focus:border-primary/60 focus:ring-2 focus:ring-primary/20"
+        />
+      </div>
 
-      <div class="flex flex-col">
-        <!-- Name -->
-        <div class="flex items-center gap-4 border-b border-border px-4 py-3">
-          <label
-            for="profile-name-input"
-            class="w-28 shrink-0 text-[12px] font-medium text-foreground">Name</label
-          >
-          <input
-            id="profile-name-input"
-            bind:value={draft.name}
-            class="h-8 flex-1 rounded-md border border-input bg-input/30 px-2.5 text-[12px] text-foreground outline-none focus:border-primary"
-          />
-        </div>
-
-        {@render toggleRow("isDefault", Star, "Default", "Use this profile automatically on launch")}
-        {@render toggleRow("systemAudio", Volume2, "System Audio", "Capture sounds playing on your device")}
+      <div class="divide-y divide-border/30">
+        {@render toggleRow("isDefault", Star, "Default profile", "Use this profile automatically on launch")}
+        {@render toggleRow("systemAudio", Volume2, "System audio", "Capture sounds playing on your device")}
         {@render toggleRow("microphone", Mic, "Microphone", "Record your voice from the default input")}
         {@render toggleRow("camera", Camera, "Camera", "Overlay webcam feed onto the recording")}
       </div>
 
       <footer
-        class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+        class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
       >
-        <div class="flex items-center gap-1.5">
-          <Button
-            variant="destructive_soft"
-            size="xs"
-            class="gap-1.5"
-            onclick={() => {
-              if (editingId) deleteProfile(editingId);
-            }}
-          >
-            <Trash2 size={12} />
-            Delete
+        <Button
+          variant="destructive_soft"
+          size="xs"
+          class="gap-1.5"
+          onclick={() => {
+            if (editingId) deleteProfile(editingId);
+          }}
+        >
+          <Trash2 size={12} />
+          Delete
+        </Button>
+        <div class="flex items-center gap-2">
+          <Button variant="ghost" size="xs" onclick={cancelEditing}>Cancel</Button>
+          <Button variant="default" size="xs" class="gap-2" onclick={finishEditing}>
+            Save
+            <kbd
+              class="rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1 py-0.5 font-mono text-[9px] font-semibold"
+            >
+              ⌘↵
+            </kbd>
           </Button>
         </div>
-        <div class="flex items-center gap-3">
-          <span class="hidden items-center gap-1 sm:flex">
-            <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">⌘↵</kbd>
-            <span>Save</span>
-          </span>
-          <div class="flex items-center gap-1.5">
-            <Button variant="ghost" size="xs" onclick={cancelEditing}>Cancel</Button>
-            <Button variant="default" size="xs" onclick={finishEditing}>Save</Button>
-          </div>
-        </div>
       </footer>
-    </div>
-  </div>
+    </Dialog.Content>
+  </Dialog.Root>
 {/if}
