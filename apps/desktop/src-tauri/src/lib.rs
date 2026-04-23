@@ -76,6 +76,7 @@ pub fn run() {
             commands::get_audio_devices,
             commands::get_camera_devices,
             commands::autosave_project,
+            commands::save_project_edits,
             commands::clear_autosave,
             commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,

@@ -17,6 +17,7 @@
     generateThumbnails,
     listenToExportState,
     loadEditorDocument,
+    saveProjectEdits,
   } from "$lib/ipc";
   import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
   import { createEditorStore } from "$lib/stores/editor-store.svelte";
@@ -423,6 +424,25 @@
     goto("/");
   }
 
+  let isSaving = $state(false);
+
+  async function handleSave() {
+    if (!documentPath || isSaving || isLoading) return;
+    isSaving = true;
+    try {
+      const editsJson = JSON.stringify(store.toRenderState());
+      const savedAt = await saveProjectEdits(documentPath, editsJson);
+      store.markSaved(savedAt);
+      toast.success("Saved");
+    } catch (err) {
+      const message =
+        typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+      toast.error(`Couldn't save: ${message}`);
+    } finally {
+      isSaving = false;
+    }
+  }
+
   function handleKeydown(e: KeyboardEvent) {
     if (e.defaultPrevented) return;
 
@@ -487,6 +507,13 @@
           }
         }
         break;
+      case "s":
+      case "S":
+        if (e.ctrlKey || e.metaKey) {
+          e.preventDefault();
+          void handleSave();
+        }
+        break;
       case "f":
       case "F":
         if (e.ctrlKey || e.metaKey) return;
@@ -549,6 +576,8 @@
       filename={data.filename}
       onback={handleBack}
       onexport={handleExport}
+      onsave={handleSave}
+      {isSaving}
     />
   </CustomTitlebar>
 

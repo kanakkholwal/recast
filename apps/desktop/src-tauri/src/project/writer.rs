@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
-use zip::ZipWriter;
+use zip::{ZipArchive, ZipWriter};
 
 use crate::project::ProjectMetadata;
 
@@ -84,6 +84,64 @@ fn write_project_inner(path: &Path, request: &ProjectWriteRequest) -> Result<()>
         writer.start_file("camera.mp4", stored)?;
         copy_file(cam_path, &mut writer)?;
     }
+
+    writer.finish()?;
+    Ok(())
+}
+
+/// Rewrite the `edits.json` entry inside an existing `.recast` archive in place,
+/// preserving all other entries (recording.mp4, audio.wav, etc.) by raw-copying
+/// their compressed bytes — no decode/re-encode of media.
+///
+/// The write is atomic: a sibling `.recast.tmp` is produced first and only
+/// renamed over the original on success.
+pub fn update_project_edits(project_path: &Path, edits_json: &str) -> Result<()> {
+    let temp_path = project_path.with_extension("recast.tmp");
+
+    let result = update_project_edits_inner(project_path, &temp_path, edits_json);
+
+    match result {
+        Ok(()) => {
+            if project_path.exists() {
+                fs::remove_file(project_path)
+                    .context("failed to remove old project file before atomic rename")?;
+            }
+            fs::rename(&temp_path, project_path)
+                .context("failed to atomically rename project file")?;
+            Ok(())
+        }
+        Err(e) => {
+            let _ = fs::remove_file(&temp_path);
+            Err(e)
+        }
+    }
+}
+
+fn update_project_edits_inner(
+    project_path: &Path,
+    temp_path: &Path,
+    edits_json: &str,
+) -> Result<()> {
+    let src = File::open(project_path)
+        .with_context(|| format!("failed to open project at {}", project_path.display()))?;
+    let mut archive = ZipArchive::new(src).context("failed to read project archive")?;
+
+    let dst = File::create(temp_path)?;
+    let mut writer = ZipWriter::new(dst);
+    let deflated = SimpleFileOptions::default()
+        .compression_method(CompressionMethod::Deflated)
+        .unix_permissions(0o644);
+
+    for i in 0..archive.len() {
+        let entry = archive.by_index_raw(i)?;
+        if entry.name() == "edits.json" {
+            continue;
+        }
+        writer.raw_copy_file(entry)?;
+    }
+
+    writer.start_file("edits.json", deflated)?;
+    writer.write_all(edits_json.as_bytes())?;
 
     writer.finish()?;
     Ok(())

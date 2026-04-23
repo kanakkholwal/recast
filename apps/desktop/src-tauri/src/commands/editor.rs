@@ -1150,6 +1150,32 @@ pub fn autosave_project(project_path: String, edits_json: String) -> Result<(), 
 }
 
 #[tauri::command]
+pub async fn save_project_edits(
+    project_path: String,
+    edits_json: String,
+) -> Result<u64, String> {
+    let path_for_blocking = project_path.clone();
+    tokio::task::spawn_blocking(move || {
+        crate::project::writer::update_project_edits(
+            Path::new(&path_for_blocking),
+            &edits_json,
+        )
+    })
+    .await
+    .map_err(|e| format!("save task panicked: {e}"))?
+    .map_err(|e| e.to_string())?;
+
+    // Autosave shadow is now redundant — the on-disk project matches memory.
+    crate::project::autosave::clear_autosave(Path::new(&project_path));
+
+    let saved_at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64;
+    Ok(saved_at)
+}
+
+#[tauri::command]
 pub fn clear_autosave(project_path: String) {
     crate::project::autosave::clear_autosave(Path::new(&project_path));
 }

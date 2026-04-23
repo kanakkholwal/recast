@@ -326,6 +326,12 @@ export function createEditorStore() {
 	let undoStack = $state<string[]>([]);
 	let redoStack = $state<string[]>([]);
 
+	// Dirty tracking — flips to true the moment the user makes any undoable edit,
+	// clears when the edits are persisted to the .recast archive (markSaved) or
+	// when a fresh render state is loaded from disk.
+	let isDirty = $state(false);
+	let lastSavedAt = $state<number | null>(null);
+
 	// Timeline zoom
 	let timelineZoom = $state(1); // 1x = fit to width
 
@@ -353,6 +359,12 @@ export function createEditorStore() {
 	function pushUndoState() {
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
+		isDirty = true;
+	}
+
+	function markSaved(savedAtUnixMs: number) {
+		isDirty = false;
+		lastSavedAt = savedAtUnixMs;
 	}
 
 	function undo() {
@@ -634,6 +646,8 @@ export function createEditorStore() {
 		}));
 		selectedAnnotationId = null;
 		annotationTool = null;
+		// A freshly loaded document matches on-disk state — no unsaved edits.
+		isDirty = false;
 	}
 
 	return {
@@ -730,10 +744,14 @@ export function createEditorStore() {
 		get canUndo() { return undoStack.length > 0; },
 		get canRedo() { return redoStack.length > 0; },
 
+		get isDirty() { return isDirty; },
+		get lastSavedAt() { return lastSavedAt; },
+
 		// Methods
 		undo,
 		redo,
 		pushUndoState,
+		markSaved,
 		setBackground,
 		updateCursorSettings,
 		updateAudioSettings,

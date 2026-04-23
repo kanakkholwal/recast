@@ -7,6 +7,7 @@
     LayoutGrid,
     LoaderCircle,
     Redo2,
+    Save,
     Sparkles,
     Trash2,
     Undo2,
@@ -23,9 +24,18 @@
     filename?: string;
     onback?: () => void;
     onexport?: () => void;
+    onsave?: () => void | Promise<void>;
+    isSaving?: boolean;
   }
 
-  let { store, filename = "Recording", onback, onexport }: Props = $props();
+  let {
+    store,
+    filename = "Recording",
+    onback,
+    onexport,
+    onsave,
+    isSaving = false,
+  }: Props = $props();
   let showPresetsMenu = $state(false);
   let exportDialogOpen = $state(false);
 
@@ -169,8 +179,32 @@
     </Tooltip.Root>
   </div>
 
-  <!-- Right: export -->
+  <!-- Right: save + export -->
   <div class="ml-auto flex items-center gap-1">
+    <Tooltip.Root>
+      <Tooltip.Trigger>
+        <Button
+          variant={store.isDirty ? "secondary" : "ghost"}
+          size="xs"
+          class="gap-1 text-[11px]"
+          onclick={() => onsave?.()}
+          disabled={isSaving || (!store.isDirty && !isSaving)}
+          aria-label="Save project"
+        >
+          {#if isSaving}
+            <LoaderCircle size={12} class="animate-spin" />
+            Saving…
+          {:else}
+            <Save size={12} />
+            {store.isDirty ? "Save" : "Saved"}
+          {/if}
+        </Button>
+      </Tooltip.Trigger>
+      <Tooltip.Content>
+        {store.isDirty ? "Save project (Ctrl+S)" : "No unsaved changes"}
+      </Tooltip.Content>
+    </Tooltip.Root>
+
     <Button
       onclick={openExport}
       disabled={store.isExporting}

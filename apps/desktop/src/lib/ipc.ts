@@ -235,6 +235,14 @@ export function autosaveProject(projectPath: string, editsJson: string): Promise
 	return invoke("autosave_project", { projectPath, editsJson });
 }
 
+/**
+ * Persist the current edits back into the `.recast` archive. Returns the
+ * save timestamp (unix ms) so the UI can show "Saved at HH:MM".
+ */
+export function saveProjectEdits(projectPath: string, editsJson: string): Promise<number> {
+	return invoke<number>("save_project_edits", { projectPath, editsJson });
+}
+
 export function clearAutosave(projectPath: string): Promise<void> {
 	return invoke("clear_autosave", { projectPath });
 }
