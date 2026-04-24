@@ -56,9 +56,10 @@
       Search...
     </span>
     <kbd
-      class="group-data-[state=collapsed]:hidden! hidden items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-1 font-mono text-[11px] font-medium text-muted-foreground/70 backdrop-blur-sm sm:inline-flex"
+      class="group-data-[state=collapsed]:hidden! hidden items-center gap-1 rounded-md border border-border/40 bg-background/50 px-2 py-1 font-mono h-5 font-medium text-muted-foreground/70 backdrop-blur-sm sm:inline-flex"
     >
-      <span class="text-xs font-semibold group-data-[state=collapsed]:hidden">⌘</span>K
+      <span class="text-[8px] font-semibold group-data-[state=collapsed]:hidden">⌘</span>
+      <span class="text-[11px]">K</span>
     </kbd>
   {/if}
 </Button>

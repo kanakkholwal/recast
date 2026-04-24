@@ -57,7 +57,7 @@
   const activeTabLabel = $derived(tabs.find((t) => t.id === store.activePanel)?.label ?? "Panel");
 </script>
 
-<aside class="@container/panel flex h-full min-h-0 flex-col bg-card text-[12px]">
+<aside class="@container/panel flex h-full min-h-0 flex-col bg-sidebar text-[12px]">
   <!-- Metadata header row: source specs in Raycast-style pinned badges -->
   <header class="shrink-0 border-b border-border px-3 py-2">
     <div class="flex items-center justify-between gap-2">
