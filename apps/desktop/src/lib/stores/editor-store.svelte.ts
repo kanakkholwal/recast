@@ -186,6 +186,8 @@ export interface EditorRenderState {
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
+	audioSettings: AudioSettings;
+	watermarkSettings: WatermarkSettings;
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -588,6 +590,8 @@ export function createEditorStore() {
 			cursorMotionEasing,
 			annotations: annotations.map(({ id: _id, ...rest }) => rest),
 			shadow: { ...shadow },
+			audioSettings: { ...audioSettings },
+			watermarkSettings: { ...watermarkSettings },
 		};
 	}
 
@@ -631,6 +635,8 @@ export function createEditorStore() {
 			motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
 		}));
 		shadow = state.shadow ?? shadow;
+		audioSettings = state.audioSettings ?? audioSettings;
+		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		annotations = (state.annotations ?? []).map((a) => ({
 			id: generateId(),

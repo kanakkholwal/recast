@@ -22,6 +22,7 @@ use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
+use crate::render::node_types::AudioSettings;
 
 /// True if the line is part of an FFmpeg `-progress` block (key=value metric
 /// lines that FFmpeg emits every `-stats_period` interval). These should be
@@ -131,6 +132,111 @@ fn completed_export_looks_usable(path: &Path, expected_duration: f64) -> bool {
     };
 
     metadata.duration + 0.05 >= min_duration
+}
+
+fn append_audio_to_complex(
+    existing: Option<&str>,
+    audio_inputs: &[usize],
+    settings: &AudioSettings,
+    trim_start: f64,
+    duration: f64,
+) -> Option<(String, String)> {
+    if audio_inputs.is_empty() || settings.muted || settings.volume <= 0.0 {
+        return None;
+    }
+
+    let volume = (settings.volume / 100.0).clamp(0.0, 4.0);
+    let mut segments: Vec<String> = existing
+        .map(|value| value.to_string())
+        .filter(|value| !value.trim().is_empty())
+        .into_iter()
+        .collect();
+    let mut labels = Vec::new();
+
+    for (i, input_index) in audio_inputs.iter().enumerate() {
+        let label = if audio_inputs.len() == 1 {
+            "aout".to_string()
+        } else {
+            format!("aud{i}")
+        };
+        let mut filters = Vec::new();
+        if duration > 0.0 {
+            filters.push(format!(
+                "atrim=start={:.3}:duration={:.3}",
+                trim_start.max(0.0),
+                duration
+            ));
+        } else if trim_start > 0.0 {
+            filters.push(format!("atrim=start={:.3}", trim_start));
+        }
+        filters.push("asetpts=PTS-STARTPTS".to_string());
+        filters.push(format!("volume={volume:.4}"));
+        if settings.fade_in > 0.0 {
+            let fade = if duration > 0.0 {
+                settings.fade_in.min(duration * 0.5)
+            } else {
+                settings.fade_in
+            };
+            if fade > 0.0 {
+                filters.push(format!("afade=t=in:st=0:d={fade:.3}"));
+            }
+        }
+        if duration > 0.0 && settings.fade_out > 0.0 {
+            let fade = settings.fade_out.min(duration * 0.5);
+            let start = (duration - fade).max(0.0);
+            if fade > 0.0 {
+                filters.push(format!("afade=t=out:st={start:.3}:d={fade:.3}"));
+            }
+        }
+        segments.push(format!("[{input_index}:a]{}[{label}]", filters.join(",")));
+        labels.push(format!("[{label}]"));
+    }
+
+    if audio_inputs.len() > 1 {
+        segments.push(format!(
+            "{}amix=inputs={}:duration=longest:dropout_transition=0:normalize=0[aout]",
+            labels.join(""),
+            audio_inputs.len()
+        ));
+    }
+
+    Some((segments.join(";"), "[aout]".into()))
+}
+
+fn append_watermark_to_complex(
+    existing: Option<&str>,
+    current_video_map: &str,
+    watermark_input_index: usize,
+    settings: &crate::render::node_types::WatermarkSettings,
+    canvas_width: u32,
+    _canvas_height: u32,
+) -> (String, String) {
+    let normalized_current = if current_video_map.starts_with('[') {
+        current_video_map.to_string()
+    } else {
+        format!("[{current_video_map}]")
+    };
+    let scale_width = ((canvas_width as f64) * (settings.scale / 100.0).clamp(0.02, 1.0))
+        .round()
+        .max(1.0) as u32;
+    let opacity = (settings.opacity / 100.0).clamp(0.0, 1.0);
+    let inset = settings.inset.max(0.0).round() as i32;
+    let x = match settings.position.as_str() {
+        "top-left" | "bottom-left" => inset.to_string(),
+        _ => format!("W-w-{inset}"),
+    };
+    let y = match settings.position.as_str() {
+        "top-left" | "top-right" => inset.to_string(),
+        _ => format!("H-h-{inset}"),
+    };
+    let stage = format!(
+        "[{watermark_input_index}:v]format=rgba,scale={scale_width}:-1,colorchannelmixer=aa={opacity:.4}[wm];{normalized_current}[wm]overlay=x={x}:y={y}:format=auto[vwm]"
+    );
+    let complex = match existing {
+        Some(existing) if !existing.is_empty() => format!("{existing};{stage}"),
+        _ => stage,
+    };
+    (complex, "[vwm]".into())
 }
 
 const EXPORT_STATE_EVENT: &str = "export-state";
@@ -409,13 +515,39 @@ pub async fn export_video(
         )
         .map_err(|e| e.to_string())?;
 
-    // TEMPORARY: cursor overlay in export is disabled while we diagnose a
-    // reproducible hang + output-corruption issue. Decoding a pre-rendered
-    // alpha VP9 webm and compositing it at 4K was causing FFmpeg to either
-    // stall during the mux trailer or write an unplayable file. Until we have
-    // a reliable path (likely a separate stream-copy remux pass), export runs
-    // without the cursor overlay — the WebGL preview still shows it correctly.
-    let cursor_overlay: Option<crate::render::cursor_export::CursorOverlayResult> = None;
+    let canvas_padding = request.render_state.padding.max(0.0).round() as u32;
+    let canvas_width = metadata.width + canvas_padding * 2;
+    let canvas_height = metadata.height + canvas_padding * 2;
+    let overlay_duration = if duration > 0.0 {
+        duration
+    } else {
+        source_duration
+    };
+    let needs_overlay = request.render_state.cursor_enabled
+        || !request.render_state.annotations.is_empty()
+        || (request.render_state.shadow.enabled && request.render_state.shadow.opacity > 0.0);
+    let cursor_overlay = if needs_overlay && overlay_duration > 0.0 {
+        project
+            .as_ref()
+            .map(|project| {
+                render_cursor_overlay(CursorOverlayRequest {
+                    cursor_track_path: project.cursor_path.clone(),
+                    canvas_width,
+                    canvas_height,
+                    source_width: metadata.width,
+                    source_height: metadata.height,
+                    padding: canvas_padding,
+                    fps: metadata.fps.round().max(1.0) as u32,
+                    duration_secs: overlay_duration,
+                    trim_start,
+                    render_state: request.render_state.clone(),
+                })
+            })
+            .transpose()
+            .map_err(|e| e.to_string())?
+    } else {
+        None
+    };
 
     let mut args = vec![
         "-hide_banner".to_string(),
@@ -459,6 +591,54 @@ pub async fn export_video(
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
 
+    let watermark_path = if request.render_state.watermark_settings.enabled
+        && !request
+            .render_state
+            .watermark_settings
+            .image_path
+            .trim()
+            .is_empty()
+    {
+        let path = PathBuf::from(request.render_state.watermark_settings.image_path.trim());
+        path.exists().then_some(path)
+    } else {
+        None
+    };
+    let watermark_input_index = watermark_path
+        .as_ref()
+        .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
+    if let Some(ref path) = watermark_path {
+        args.extend([
+            "-loop".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            path.to_string_lossy().to_string(),
+        ]);
+    }
+
+    let mut audio_input_indices = Vec::new();
+    let source_has_audio = has_audio(&source_video);
+    if request.format != "gif" && source_has_audio {
+        audio_input_indices.push(0);
+    }
+    if request.format != "gif" {
+        if let Some(project) = project.as_ref() {
+            let mut next_audio_input_index = 1
+                + export_plan.extra_inputs.len()
+                + cursor_overlay_path.is_some() as usize
+                + watermark_path.is_some() as usize;
+            for path in [&project.audio_path, &project.microphone_path]
+                .into_iter()
+                .flatten()
+                .filter(|path| path.exists())
+            {
+                audio_input_indices.push(next_audio_input_index);
+                next_audio_input_index += 1;
+                args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
+            }
+        }
+    }
+
     // Build the final filter_complex string taking cursor overlay into account.
     let (initial_filter_complex, initial_video_map) = (
         export_plan.filter_complex.clone(),
@@ -475,6 +655,19 @@ pub async fn export_video(
         } else {
             (initial_filter_complex, initial_video_map)
         };
+
+    if let Some(watermark_input_index) = watermark_input_index {
+        let (new_complex, new_map) = append_watermark_to_complex(
+            filter_complex_after_cursor.as_deref(),
+            &video_map_after_cursor,
+            watermark_input_index,
+            &request.render_state.watermark_settings,
+            canvas_width,
+            canvas_height,
+        );
+        filter_complex_after_cursor = Some(new_complex);
+        video_map_after_cursor = new_map;
+    }
 
     // For GIF, always route through filter_complex with a palettegen/paletteuse
     // pipeline. Naive single-pass GIF encoding uses a per-frame 256-colour palette
@@ -495,6 +688,22 @@ pub async fn export_video(
         output_filters.push(scale_filter);
     }
 
+    let audio_map = if request.format == "gif" {
+        None
+    } else {
+        append_audio_to_complex(
+            filter_complex_after_cursor.as_deref(),
+            &audio_input_indices,
+            &request.render_state.audio_settings,
+            trim_start,
+            duration,
+        )
+        .map(|(new_complex, map)| {
+            filter_complex_after_cursor = Some(new_complex);
+            map
+        })
+    };
+
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         args.extend([
             "-filter_complex".to_string(),
@@ -506,9 +715,8 @@ pub async fn export_video(
         args.extend(["-map".to_string(), "0:v:0".to_string()]);
     }
 
-    let has_source_audio = has_audio(&source_video) && request.format != "gif";
-    if has_source_audio {
-        args.extend(["-map".to_string(), "0:a?".to_string()]);
+    if let Some(ref audio_map) = audio_map {
+        args.extend(["-map".to_string(), audio_map.clone()]);
     }
 
     if !output_filters.is_empty() && filter_complex_after_cursor.is_none() {
@@ -547,7 +755,7 @@ pub async fn export_video(
                 "-b:v".to_string(),
                 "0".to_string(),
             ]);
-            if has_source_audio {
+            if audio_map.is_some() {
                 args.extend(["-c:a".to_string(), "libopus".to_string()]);
             } else {
                 args.push("-an".to_string());
@@ -599,7 +807,7 @@ pub async fn export_video(
                     ]);
                 }
             }
-            if has_source_audio {
+            if audio_map.is_some() {
                 args.extend([
                     "-c:a".to_string(),
                     "aac".to_string(),
@@ -1256,16 +1464,10 @@ pub fn autosave_project(project_path: String, edits_json: String) -> Result<(), 
 }
 
 #[tauri::command]
-pub async fn save_project_edits(
-    project_path: String,
-    edits_json: String,
-) -> Result<u64, String> {
+pub async fn save_project_edits(project_path: String, edits_json: String) -> Result<u64, String> {
     let path_for_blocking = project_path.clone();
     tokio::task::spawn_blocking(move || {
-        crate::project::writer::update_project_edits(
-            Path::new(&path_for_blocking),
-            &edits_json,
-        )
+        crate::project::writer::update_project_edits(Path::new(&path_for_blocking), &edits_json)
     })
     .await
     .map_err(|e| format!("save task panicked: {e}"))?

@@ -46,6 +46,83 @@ fn default_shadow_color() -> String {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AudioSettings {
+    #[serde(default = "default_audio_volume")]
+    pub volume: f64,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub fade_out: f64,
+}
+
+impl Default for AudioSettings {
+    fn default() -> Self {
+        Self {
+            volume: default_audio_volume(),
+            muted: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+        }
+    }
+}
+
+fn default_audio_volume() -> f64 {
+    100.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WatermarkSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub image_path: String,
+    #[serde(default)]
+    pub image_src: String,
+    #[serde(default = "default_watermark_opacity")]
+    pub opacity: f64,
+    #[serde(default = "default_watermark_scale")]
+    pub scale: f64,
+    #[serde(default = "default_watermark_position")]
+    pub position: String,
+    #[serde(default = "default_watermark_inset")]
+    pub inset: f64,
+}
+
+impl Default for WatermarkSettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            image_path: String::new(),
+            image_src: String::new(),
+            opacity: default_watermark_opacity(),
+            scale: default_watermark_scale(),
+            position: default_watermark_position(),
+            inset: default_watermark_inset(),
+        }
+    }
+}
+
+fn default_watermark_opacity() -> f64 {
+    70.0
+}
+
+fn default_watermark_scale() -> f64 {
+    18.0
+}
+
+fn default_watermark_position() -> String {
+    "bottom-right".into()
+}
+
+fn default_watermark_inset() -> f64 {
+    24.0
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TrimNode {
     pub start: f64,
     pub end: f64,
@@ -163,7 +240,7 @@ pub enum RenderNode {
     Zoom(ZoomNode),
 }
 
-//  Annotations 
+//  Annotations
 //
 // Phase 1 ships `rect` and `ellipse`. `kind` is a tagged union so future
 // arrow/polygon/text/image variants slot in without breaking serialisation

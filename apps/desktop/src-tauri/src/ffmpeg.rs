@@ -31,8 +31,14 @@ const TARGET_TRIPLE: &str = "x86_64-unknown-linux-gnu";
 const TARGET_TRIPLE: &str = "aarch64-unknown-linux-gnu";
 #[cfg(not(any(
     all(windows, any(target_arch = "x86_64", target_arch = "aarch64")),
-    all(target_os = "macos", any(target_arch = "x86_64", target_arch = "aarch64")),
-    all(target_os = "linux", any(target_arch = "x86_64", target_arch = "aarch64"))
+    all(
+        target_os = "macos",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    ),
+    all(
+        target_os = "linux",
+        any(target_arch = "x86_64", target_arch = "aarch64")
+    )
 )))]
 const TARGET_TRIPLE: &str = "";
 

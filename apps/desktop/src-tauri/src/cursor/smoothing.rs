@@ -75,7 +75,7 @@ pub fn detect_idle_periods(
     periods
 }
 
-//  Zoom trigger detection 
+//  Zoom trigger detection
 
 /// A suggested zoom region based on cursor activity.
 #[derive(Debug, Clone, Serialize, Deserialize)]

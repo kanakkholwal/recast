@@ -4,8 +4,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::node_types::{
-    Annotation, BackgroundNode, CursorNode, RenderNode, ShadowSettings, TrimNode, ZoomNode,
-    ZoomRegion,
+    Annotation, AudioSettings, BackgroundNode, CursorNode, RenderNode, ShadowSettings, TrimNode,
+    WatermarkSettings, ZoomNode, ZoomRegion,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,6 +37,10 @@ pub struct RenderState {
     /// Drop shadow cast by the video rect. Preview-only today.
     #[serde(default)]
     pub shadow: ShadowSettings,
+    #[serde(default)]
+    pub audio_settings: AudioSettings,
+    #[serde(default)]
+    pub watermark_settings: WatermarkSettings,
 }
 
 impl Default for RenderState {
@@ -60,6 +64,8 @@ impl Default for RenderState {
             zoom_regions: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
+            audio_settings: AudioSettings::default(),
+            watermark_settings: WatermarkSettings::default(),
         }
     }
 }

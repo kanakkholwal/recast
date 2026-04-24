@@ -25,6 +25,7 @@ use image::RgbaImage;
 
 use crate::cursor::CursorTrack;
 use crate::render::graph::RenderState;
+use crate::render::node_types::{Annotation, AnnotationKind};
 
 /// Input for pre-rendering a cursor overlay track.
 #[derive(Debug, Clone)]
@@ -120,8 +121,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
     // Precompute derived settings (mirrors VideoPreview.svelte's draw loop).
     let cursor_enabled = request.render_state.cursor_enabled;
-    if !cursor_enabled {
-        return Err(anyhow!("cursor not enabled — caller should skip"));
+    let has_annotations = !request.render_state.annotations.is_empty();
+    if !cursor_enabled && !has_annotations {
+        return Err(anyhow!("no overlay features enabled - caller should skip"));
     }
 
     // Cursor radius in canvas pixels. WebGL shader uses:
@@ -216,6 +218,24 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         let t_track_us = trim_start_us + t_out_us;
         let t_out_secs = t_out_us as f64 / 1_000_000.0;
 
+        for annotation in &request.render_state.annotations {
+            draw_annotation(
+                &mut frame,
+                canvas_w,
+                canvas_h,
+                annotation,
+                &request,
+                t_out_secs,
+            );
+        }
+
+        if !cursor_enabled {
+            stdin
+                .write_all(&frame)
+                .context("failed to write cursor frame to ffmpeg stdin")?;
+            continue;
+        }
+
         // Sample cursor position at this timestamp.
         let sample = match interpolate_cursor(&track, t_track_us) {
             Some(s) => s,
@@ -256,9 +276,11 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
         // Apply zoom transform in source-video coordinates.
         let (mut cursor_source_x, mut cursor_source_y) = (sample.x, sample.y);
-        if let Some((scale, _)) = active_zoom_at(&request.render_state.zoom_regions, t_out_secs) {
-            let src_cx = request.source_width as f64 / 2.0;
-            let src_cy = request.source_height as f64 / 2.0;
+        if let Some((scale, center_x, center_y)) =
+            active_zoom_at(&request.render_state.zoom_regions, t_out_secs)
+        {
+            let src_cx = center_x.clamp(0.0, 1.0) * request.source_width as f64;
+            let src_cy = center_y.clamp(0.0, 1.0) * request.source_height as f64;
             cursor_source_x = (cursor_source_x - src_cx) * scale + src_cx;
             cursor_source_y = (cursor_source_y - src_cy) * scale + src_cy;
 
@@ -351,7 +373,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     })
 }
 
-//  Cursor interpolation (mirror of VideoPreview.svelte:317-342) 
+//  Cursor interpolation (mirror of VideoPreview.svelte:317-342)
 
 #[derive(Debug, Clone, Copy)]
 struct InterpolatedCursor {
@@ -423,25 +445,294 @@ fn interpolate_cursor(track: &CursorTrack, timestamp_us: u64) -> Option<Interpol
     })
 }
 
-//  Zoom lookup (mirror of nested_region_expr in graph.rs) 
+//  Zoom lookup (mirror of nested_region_expr in graph.rs)
 
 fn active_zoom_at(
     regions: &[crate::render::node_types::ZoomRegion],
     t_secs: f64,
-) -> Option<(f64, ())> {
+) -> Option<(f64, f64, f64)> {
     // Match the WebGL preview: the first region whose [start, end] contains t.
     for region in regions {
         if t_secs >= region.start && t_secs <= region.end {
-            let scale = region.scale.max(1.0);
+            let scale = region.scale_at(t_secs).max(1.0);
             if scale > 1.0001 {
-                return Some((scale, ()));
+                return Some((scale, region.center_x, region.center_y));
             }
         }
     }
     None
 }
 
-//  Pixel drawing 
+//  Pixel drawing
+
+fn draw_annotation(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    annotation: &Annotation,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+) {
+    let opacity = annotation_opacity(annotation, t_secs);
+    if opacity <= 0.0 {
+        return;
+    }
+
+    let Some((x, y, w, h, radius)) = annotation_box(annotation) else {
+        return;
+    };
+
+    let (x1, y1) = uv_to_canvas(request, x, y, t_secs);
+    let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs);
+    let x = x1.min(x2);
+    let y = y1.min(y2);
+    let w = (x1 - x2).abs();
+    let h = (y1 - y2).abs();
+    if w <= 0.5 || h <= 0.5 {
+        return;
+    }
+
+    if let Some((r, g, b, a)) = parse_css_color(&annotation.fill) {
+        if a > 0.0 {
+            match annotation.kind {
+                AnnotationKind::Rect { .. } => draw_rect(
+                    frame,
+                    width,
+                    height,
+                    x,
+                    y,
+                    w,
+                    h,
+                    radius * request.source_width.min(request.source_height) as f64,
+                    r,
+                    g,
+                    b,
+                    a * opacity,
+                    true,
+                    1.0,
+                ),
+                AnnotationKind::Ellipse { .. } => {
+                    draw_ellipse(frame, width, height, x, y, w, h, r, g, b, a * opacity, true, 1.0)
+                }
+            }
+        }
+    }
+
+    if annotation.stroke.width > 0.0 {
+        if let Some((r, g, b, a)) = parse_css_color(&annotation.stroke.color) {
+            if a > 0.0 {
+                let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+                match annotation.kind {
+                    AnnotationKind::Rect { .. } => draw_rect(
+                        frame,
+                        width,
+                        height,
+                        x,
+                        y,
+                        w,
+                        h,
+                        radius * request.source_width.min(request.source_height) as f64,
+                        r,
+                        g,
+                        b,
+                        a * opacity,
+                        false,
+                        stroke_px,
+                    ),
+                    AnnotationKind::Ellipse { .. } => draw_ellipse(
+                        frame,
+                        width,
+                        height,
+                        x,
+                        y,
+                        w,
+                        h,
+                        r,
+                        g,
+                        b,
+                        a * opacity,
+                        false,
+                        stroke_px,
+                    ),
+                }
+            }
+        }
+    }
+}
+
+fn annotation_box(annotation: &Annotation) -> Option<(f64, f64, f64, f64, f64)> {
+    match annotation.kind {
+        AnnotationKind::Rect { x, y, w, h, radius } => {
+            let left = x.min(x + w);
+            let top = y.min(y + h);
+            Some((left, top, w.abs(), h.abs(), radius.max(0.0)))
+        }
+        AnnotationKind::Ellipse { x, y, w, h } => {
+            let left = x.min(x + w);
+            let top = y.min(y + h);
+            Some((left, top, w.abs(), h.abs(), 0.0))
+        }
+    }
+}
+
+fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
+    if t_secs < annotation.start || t_secs > annotation.end {
+        return 0.0;
+    }
+    let duration = (annotation.end - annotation.start).max(0.0);
+    let ramp_in = annotation.ramp_in.max(0.0).min(duration * 0.5);
+    let ramp_out = annotation.ramp_out.max(0.0).min(duration * 0.5);
+    let hold_start = annotation.start + ramp_in;
+    let hold_end = annotation.end - ramp_out;
+    if ramp_in > 0.0 && t_secs < hold_start {
+        let phase = ((t_secs - annotation.start) / ramp_in).clamp(0.0, 1.0);
+        return annotation.ease_in.y(phase as f32) as f64;
+    }
+    if ramp_out > 0.0 && t_secs > hold_end {
+        let phase = ((annotation.end - t_secs) / ramp_out).clamp(0.0, 1.0);
+        return annotation.ease_out.y(phase as f32) as f64;
+    }
+    1.0
+}
+
+fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> (f64, f64) {
+    let mut uv_x = x;
+    let mut uv_y = y;
+    if let Some((scale, center_x, center_y)) = active_zoom_at(&request.render_state.zoom_regions, t_secs) {
+        uv_x = (uv_x - center_x) * scale + center_x;
+        uv_y = (uv_y - center_y) * scale + center_y;
+    }
+    let source_x = uv_x * request.source_width as f64;
+    let source_y = uv_y * request.source_height as f64;
+    let scale_canvas =
+        request.canvas_width as f64 / (request.source_width + request.padding * 2) as f64;
+    (
+        (request.padding as f64 + source_x) * scale_canvas,
+        (request.padding as f64 + source_y) * scale_canvas,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_rect(
+    buf: &mut [u8],
+    width: usize,
+    height: usize,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    radius: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: f64,
+    fill: bool,
+    stroke: f64,
+) {
+    let x_min = x.floor().max(0.0) as usize;
+    let y_min = y.floor().max(0.0) as usize;
+    let x_max = (x + w).ceil().min(width as f64 - 1.0).max(0.0) as usize;
+    let y_max = (y + h).ceil().min(height as f64 - 1.0).max(0.0) as usize;
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let hx = w * 0.5;
+    let hy = h * 0.5;
+    let rr = radius.min(hx.min(hy)).max(0.0);
+    for py in y_min..=y_max {
+        for px in x_min..=x_max {
+            let sd = rounded_rect_sdf(px as f64 + 0.5 - cx, py as f64 + 0.5 - cy, hx, hy, rr);
+            let coverage = if fill {
+                (1.0 - smoothstep(-1.0, 0.0, sd)).clamp(0.0, 1.0)
+            } else {
+                (1.0 - smoothstep(stroke - 1.0, stroke, sd.abs())).clamp(0.0, 1.0)
+                    * (1.0 - smoothstep(-1.0, 0.0, sd))
+            };
+            blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_ellipse(
+    buf: &mut [u8],
+    width: usize,
+    height: usize,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: f64,
+    fill: bool,
+    stroke: f64,
+) {
+    let x_min = x.floor().max(0.0) as usize;
+    let y_min = y.floor().max(0.0) as usize;
+    let x_max = (x + w).ceil().min(width as f64 - 1.0).max(0.0) as usize;
+    let y_max = (y + h).ceil().min(height as f64 - 1.0).max(0.0) as usize;
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let rx = (w * 0.5).max(0.5);
+    let ry = (h * 0.5).max(0.5);
+    for py in y_min..=y_max {
+        for px in x_min..=x_max {
+            let nx = (px as f64 + 0.5 - cx) / rx;
+            let ny = (py as f64 + 0.5 - cy) / ry;
+            let dist = (nx * nx + ny * ny).sqrt();
+            let edge_px = 1.0 / rx.min(ry);
+            let coverage = if fill {
+                (1.0 - smoothstep(1.0 - edge_px, 1.0, dist)).clamp(0.0, 1.0)
+            } else {
+                let stroke_n = stroke / rx.min(ry);
+                (1.0 - smoothstep(stroke_n - edge_px, stroke_n, (dist - 1.0).abs()))
+                    .clamp(0.0, 1.0)
+            };
+            blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
+        }
+    }
+}
+
+fn rounded_rect_sdf(px: f64, py: f64, hx: f64, hy: f64, r: f64) -> f64 {
+    let qx = px.abs() - hx + r;
+    let qy = py.abs() - hy + r;
+    qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r
+}
+
+fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
+    let t = ((x - edge0) / (edge1 - edge0).max(1e-6)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn blend_pixel(buf: &mut [u8], width: usize, x: usize, y: usize, r: u8, g: u8, b: u8, alpha: f64) {
+    if alpha <= 0.0 {
+        return;
+    }
+    let idx = y * width * 4 + x * 4;
+    let dst_r = buf[idx] as f64 / 255.0;
+    let dst_g = buf[idx + 1] as f64 / 255.0;
+    let dst_b = buf[idx + 2] as f64 / 255.0;
+    let dst_a = buf[idx + 3] as f64 / 255.0;
+    let src_r = r as f64 / 255.0;
+    let src_g = g as f64 / 255.0;
+    let src_b = b as f64 / 255.0;
+    let alpha = alpha.clamp(0.0, 1.0);
+    let out_a = alpha + dst_a * (1.0 - alpha);
+    let (out_r, out_g, out_b) = if out_a > 0.0 {
+        (
+            (src_r * alpha + dst_r * dst_a * (1.0 - alpha)) / out_a,
+            (src_g * alpha + dst_g * dst_a * (1.0 - alpha)) / out_a,
+            (src_b * alpha + dst_b * dst_a * (1.0 - alpha)) / out_a,
+        )
+    } else {
+        (0.0, 0.0, 0.0)
+    };
+    buf[idx] = (out_r * 255.0).round().clamp(0.0, 255.0) as u8;
+    buf[idx + 1] = (out_g * 255.0).round().clamp(0.0, 255.0) as u8;
+    buf[idx + 2] = (out_b * 255.0).round().clamp(0.0, 255.0) as u8;
+    buf[idx + 3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+}
 
 /// Alpha-blend a filled circle into the RGBA buffer using a 1-px smoothstep
 /// edge to match the WebGL shader's `smoothstep(r-1.5, r, dist)` aesthetic.
@@ -525,6 +816,42 @@ fn parse_hex_color(value: &str) -> Option<(u8, u8, u8)> {
     let g = u8::from_str_radix(&trimmed[2..4], 16).ok()?;
     let b = u8::from_str_radix(&trimmed[4..6], 16).ok()?;
     Some((r, g, b))
+}
+
+fn parse_css_color(value: &str) -> Option<(u8, u8, u8, f64)> {
+    let value = value.trim();
+    if value.is_empty() || value.eq_ignore_ascii_case("transparent") {
+        return None;
+    }
+
+    if let Some((r, g, b)) = parse_hex_color(value) {
+        let trimmed = value.trim().trim_start_matches('#');
+        let alpha = if trimmed.len() >= 8 {
+            u8::from_str_radix(&trimmed[6..8], 16).ok()? as f64 / 255.0
+        } else {
+            1.0
+        };
+        return Some((r, g, b, alpha));
+    }
+
+    let lower = value.to_ascii_lowercase();
+    let body = lower
+        .strip_prefix("rgba(")
+        .or_else(|| lower.strip_prefix("rgb("))?
+        .trim_end_matches(')');
+    let parts: Vec<&str> = body.split(',').map(str::trim).collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let r = parts[0].parse::<f64>().ok()?.round().clamp(0.0, 255.0) as u8;
+    let g = parts[1].parse::<f64>().ok()?.round().clamp(0.0, 255.0) as u8;
+    let b = parts[2].parse::<f64>().ok()?.round().clamp(0.0, 255.0) as u8;
+    let a = parts
+        .get(3)
+        .and_then(|value| value.parse::<f64>().ok())
+        .unwrap_or(1.0)
+        .clamp(0.0, 1.0);
+    Some((r, g, b, a))
 }
 
 // Silence unused-import lint if Path is not used elsewhere in this module.

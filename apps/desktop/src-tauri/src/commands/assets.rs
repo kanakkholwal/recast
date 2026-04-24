@@ -171,9 +171,7 @@ fn hydrate_from_lock(dir: &Path) -> Vec<HydratedAsset> {
                 .filter(|p| p.exists());
             HydratedAsset {
                 id: entry.id,
-                path: full
-                    .exists()
-                    .then(|| full.to_string_lossy().to_string()),
+                path: full.exists().then(|| full.to_string_lossy().to_string()),
                 thumb_path: thumb.map(|p| p.to_string_lossy().to_string()),
             }
         })
@@ -267,6 +265,5 @@ pub fn get_cached_asset_path(app: AppHandle, id: String) -> Option<String> {
     let manifest = read_lock(&dir)?;
     let entry = manifest.assets.iter().find(|a| a.id == id)?;
     let path = dir.join(&entry.filename);
-    path.exists()
-        .then(|| path.to_string_lossy().to_string())
+    path.exists().then(|| path.to_string_lossy().to_string())
 }
