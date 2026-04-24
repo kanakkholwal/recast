@@ -42,6 +42,8 @@ pub fn run() {
             app.handle().plugin(tauri_plugin_dialog::init())?;
             app.handle().plugin(tauri_plugin_os::init())?;
 
+            ffmpeg::init(&handle);
+
             // Check FFmpeg availability at startup.
             if let Err(e) = ffmpeg::check_availability() {
                 log::warn!("FFmpeg not available: {e}");

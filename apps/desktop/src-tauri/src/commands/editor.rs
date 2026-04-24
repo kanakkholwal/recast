@@ -515,6 +515,14 @@ pub async fn export_video(
         args.extend(["-vf".to_string(), output_filters.join(",")]);
     }
 
+    // The input-side `-t` above trims the source media, but filtergraph
+    // generators such as `color=...` are infinite by default. Add an
+    // output-side duration cap so background/composite exports stop after the
+    // requested timeline duration instead of encoding forever.
+    if duration > 0.0 {
+        args.extend(["-t".to_string(), format!("{duration:.3}")]);
+    }
+
     if duration <= 0.0 {
         if !export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some() {
             args.push("-shortest".to_string());
