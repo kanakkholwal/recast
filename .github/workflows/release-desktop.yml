@@ -29,7 +29,7 @@ env:
 jobs:
   create-release:
     name: Create GitHub Release
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     outputs:
@@ -97,7 +97,7 @@ jobs:
             rust_target: x86_64-apple-darwin
             tauri_args: --target x86_64-apple-darwin
           - name: linux-x64
-            os: ubuntu-22.04
+            os: ubuntu-24.04
             rust_target: x86_64-unknown-linux-gnu
             tauri_args: ""
           - name: windows-x64
@@ -142,7 +142,7 @@ jobs:
             turbo-${{ matrix.platform.os }}-
 
       - name: Install Linux system dependencies
-        if: matrix.platform.os == 'ubuntu-22.04'
+        if: matrix.platform.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -200,7 +200,7 @@ jobs:
           rm -rf ffmpeg.zip ffprobe.zip ffmpeg-extract
 
       - name: Download FFmpeg sidecars (Linux)
-        if: matrix.platform.os == 'ubuntu-22.04' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        if: matrix.platform.os == 'ubuntu-24.04' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -273,7 +273,7 @@ jobs:
   publish-release:
     name: Publish release
     needs: [create-release, build-desktop]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     steps:
