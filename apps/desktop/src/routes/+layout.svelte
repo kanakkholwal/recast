@@ -37,7 +37,7 @@
 <TooltipProvider>
   <Loading />
   <ModeWatcher />
-  <Toaster position="top-right" richColors />
+  <Toaster position="top-center" richColors />
   <div class="relative flex min-h-screen w-full flex-col bg-background">
     {@render children()}
   </div>

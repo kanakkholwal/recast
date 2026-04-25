@@ -165,6 +165,14 @@ impl RenderGraph {
         // Build the chain that produces the source-video label `[video0]`.
         // When neither zoom nor mask are present, the source can be referenced
         // directly as `[0:v]` (saves a filter pass).
+        //
+        // For the mask paths we MUST normalize pixel formats: alphamerge
+        // expects the main input to already carry an alpha plane (yuva420p)
+        // and the mask input to be a single-plane gray image. Without these
+        // explicit `format=` conversions FFmpeg tends to negotiate yuv420p
+        // (no alpha) on the main input, at which point alphamerge silently
+        // outputs a fully-transparent stream — the visual symptom is a black
+        // background showing through with only the cursor overlay visible.
         let mut prelude_segments: Vec<String> = Vec::new();
         let video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
             (None, None) => "[0:v]".into(),
@@ -174,14 +182,13 @@ impl RenderGraph {
             }
             (None, Some(mask_idx)) => {
                 prelude_segments.push(format!(
-                    "[0:v][{mask_idx}:v]alphamerge[video0]"
+                    "[0:v]format=yuva420p[video0pre];[{mask_idx}:v]format=gray[mask0];[video0pre][mask0]alphamerge[video0]"
                 ));
                 "[video0]".into()
             }
             (Some(zoom_filter), Some(mask_idx)) => {
-                prelude_segments.push(format!("[0:v]{zoom_filter}[video0z]"));
                 prelude_segments.push(format!(
-                    "[video0z][{mask_idx}:v]alphamerge[video0]"
+                    "[0:v]{zoom_filter},format=yuva420p[video0pre];[{mask_idx}:v]format=gray[mask0];[video0pre][mask0]alphamerge[video0]"
                 ));
                 "[video0]".into()
             }

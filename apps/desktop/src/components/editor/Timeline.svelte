@@ -23,7 +23,6 @@
 
   let timelineEl: HTMLDivElement | undefined = $state();
   let isDraggingPlayhead = $state(false);
-  let showTrimHelp = $state(false);
   let showSuggestions = $state(false);
   let timelineWidth = $state(900);
   let activeTrimHandle = $state<"in" | "out" | null>(null);
@@ -401,6 +400,9 @@
     store.trimEnd = duration;
     syncVideoTime();
   }
+  function removeZoomRegion(id: string) {
+    store.removeZoomRegion(id);
+  }
 
   onMount(() => {
     handleResize();
@@ -752,11 +754,15 @@
                       event.stopPropagation();
                       store.removeZoomRegion(region.id);
                     }}
+                    onpointerdown={(event) => {
+                      event.stopPropagation();
+                      store.removeZoomRegion(region.id);
+                    }}
                     onkeydown={(event) => {
+                      event.preventDefault();
+                      event.stopPropagation();
                       if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        store.removeZoomRegion(region.id);
+                        removeZoomRegion(region.id);
                       }
                     }}
                     class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive pointer-events-auto"

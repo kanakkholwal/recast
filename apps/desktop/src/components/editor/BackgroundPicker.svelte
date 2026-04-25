@@ -197,6 +197,7 @@
             <LazyExternalImage
               assetId={wallpaper.id}
               alt={wallpaper.label}
+              tier="thumb"
               class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
             />
           </Button>

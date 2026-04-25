@@ -1,9 +1,8 @@
 <script lang="ts">
   import { resolveAsset } from "$lib/assets";
   import { assetsStore } from "$lib/stores/assets-store.svelte";
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import { Skeleton } from "@recast/ui/skeleton";
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
 
   interface Props {
     /** Asset id from the manifest. */
@@ -21,6 +20,16 @@
     width?: string;
     /** Any CSS length; defaults to undefined (derived from `aspectRatio`). */
     height?: string;
+    /**
+     * Which cached tier to render.
+     *  - `"thumb"`: use the WebP thumbnail only — right for grids and pickers.
+     *  - `"full"`: use the full-resolution file only — right for hero/preview.
+     *  - `"auto"` (default): full-res preferred, thumb as fallback.
+     *
+     * Grids should pass `"thumb"`. Decoding 23×4K PNGs in a thumbnail picker
+     * is what created the original tab-switch jank.
+     */
+    tier?: "thumb" | "full" | "auto";
   }
 
   let {
@@ -30,12 +39,15 @@
     aspectRatio = "16/9",
     width = "100%",
     height,
+    tier = "auto",
   }: Props = $props();
 
   let online = $state(
     typeof navigator !== "undefined" ? navigator.onLine : true,
   );
   let loaded = $state(false);
+  let imgEl: HTMLImageElement | undefined = $state();
+  let lastSrc: string | null = null;
 
   onMount(() => {
     void resolveAsset(assetId);
@@ -49,17 +61,32 @@
     };
   });
 
-  const fullPath = $derived(assetsStore.paths[assetId]);
-  const thumbPath = $derived(assetsStore.thumbPaths[assetId]);
-  const resolvedPath = $derived(fullPath ?? thumbPath);
-  const src = $derived(resolvedPath ? convertFileSrc(resolvedPath) : null);
-  const showOfflineBadge = $derived(!resolvedPath && !online);
+  // Read the pre-converted URL straight from the store so we never call
+  // `convertFileSrc` here — that conversion happens once at `setPath` time.
+  // URL identity is stable across re-renders, which is what stops `<img>`
+  // elements from re-decoding when surrounding state churns.
+  const fullUrl = $derived(assetsStore.urls[assetId]);
+  const thumbUrl = $derived(assetsStore.thumbUrls[assetId]);
+  const src = $derived.by(() => {
+    if (tier === "thumb") return thumbUrl ?? null;
+    if (tier === "full") return fullUrl ?? null;
+    return fullUrl ?? thumbUrl ?? null;
+  });
+  const showOfflineBadge = $derived(!src && !online);
 
-  // Reset the decoded flag when the src swaps (thumb → full-res upgrade) so
-  // the skeleton reappears briefly under the second decode.
+  // When `src` actually changes (initial mount, or thumb→full upgrade), check
+  // whether the rendered <img> is already complete from the WebView image
+  // cache. If yes, promote `loaded` synchronously — `onload` does not refire
+  // for an image that arrived already-decoded, which is the failure mode that
+  // produced the persistent skeleton flicker on tab return.
   $effect(() => {
-    void src;
+    if (src === lastSrc) return;
+    lastSrc = src;
     loaded = false;
+    if (!src) return;
+    void tick().then(() => {
+      if (imgEl && imgEl.complete && imgEl.naturalWidth > 0) loaded = true;
+    });
   });
 
   const boxStyle = $derived(
@@ -79,12 +106,14 @@
 
   {#if src}
     <img
+      bind:this={imgEl}
       {src}
       {alt}
       class="absolute inset-0 size-full transition-opacity duration-200 {className}"
       style="opacity: {loaded ? 1 : 0};"
       loading="lazy"
       decoding="async"
+      draggable="false"
       onload={() => (loaded = true)}
       onerror={() => (loaded = false)}
     />

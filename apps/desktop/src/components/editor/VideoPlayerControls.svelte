@@ -117,6 +117,7 @@
 					size="icon-sm"
 					onclick={togglePlay}
 					aria-label={store.isPlaying ? "Pause" : "Play"}
+					title={store.isPlaying ? "Pause (Space)" : "Play (Space)"}
 				>
 					{#if store.isPlaying}
 						<Pause size={12} fill="currentColor" />
@@ -137,6 +138,7 @@
 					size="icon-sm"
 					onclick={() => stepFrame(-1)}
 					aria-label="Previous frame"
+					title="Previous frame (←)"
 				>
 					<SkipBack size={12} />
 				</Button>
@@ -151,6 +153,7 @@
 					size="icon-sm"
 					onclick={() => stepFrame(1)}
 					aria-label="Next frame"
+					title="Next frame (→)"
 				>
 					<SkipForward size={12} />
 				</Button>
@@ -160,7 +163,7 @@
 	</div>
 
 	<div
-		class="flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-medium text-muted-foreground min-w-[80px] text-center"
+		class="flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-medium text-muted-foreground min-w-20 text-center"
 	>
 		<span class="text-foreground">{currentTimeFormatted}</span>
 		<span class="text-muted-foreground/40">/</span>
@@ -190,6 +193,7 @@
 					onclick={() => (loopEnabled = !loopEnabled)}
 					aria-pressed={loopEnabled}
 					aria-label="Loop playback within trim"
+					title="Loop playback within trim"
 				>
 					<Repeat size={12} />
 				</Button>
@@ -210,6 +214,7 @@
 					aria-label={isFullscreen
 						? "Exit fullscreen"
 						: "Enter fullscreen"}
+					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
 				>
 					{#if isFullscreen}
 						<Minimize2 size={12} />

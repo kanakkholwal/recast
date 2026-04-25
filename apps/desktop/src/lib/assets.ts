@@ -71,12 +71,36 @@ async function runInstall(): Promise<void> {
 			assetsStore.setError(`${first.id}: ${first.reason}`);
 		}
 		assetsStore.setReady(true);
+		warmThumbnailCache();
 	} catch (err) {
 		const msg = err instanceof Error ? err.message : String(err);
 		assetsStore.setError(msg);
 	} finally {
 		assetsStore.setInstalling(false);
 	}
+}
+
+/**
+ * Decode every wallpaper thumbnail into the WebView image cache so the first
+ * opening of the BackgroundPicker grid doesn't have to schedule 6+ decode
+ * tasks at once. Runs at idle priority — never blocks a paint frame, never
+ * touches the network (URLs point at `http://asset.localhost/...` paths
+ * already cached on disk by `ensureAssetsInstalled`).
+ */
+function warmThumbnailCache() {
+	if (typeof window === "undefined") return;
+	const ric =
+		(window as Window & {
+			requestIdleCallback?: (cb: () => void) => number;
+		}).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 0));
+	ric(() => {
+		for (const url of Object.values(assetsStore.thumbUrls)) {
+			if (!url) continue;
+			const img = new Image();
+			img.decoding = "async";
+			img.src = url;
+		}
+	});
 }
 
 /** Kick off an install. Deduped so repeat calls share the in-flight promise. */
