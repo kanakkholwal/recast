@@ -4,6 +4,7 @@
 	  smoothCursorPath,
 	  smoothingStrengthToSigmaMs,
 	} from "$lib/cursor/smoothing";
+	import { CURSOR_STYLES, cursorStyleDataUrl } from "$lib/cursor/styles";
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
@@ -12,6 +13,7 @@
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./AnnotationOverlay.svelte";
 	import FocusOverlay from "./FocusOverlay.svelte";
+	import TextAnnotationLayer from "./TextAnnotationLayer.svelte";
 
 	interface Props {
 		store: EditorStore;
@@ -76,6 +78,28 @@
 	let cursorSamples: CursorSampleJS[] = []; // post-smoothing; read by interpolateCursor
 	let idlePeriods: IdlePeriodJS[] = [];
 	let loadedCursorPath = "";
+
+	// SVG cursor overlay state. Updated each draw() call when the user has
+	// picked a non-`dot` cursor style; consumed by the absolutely-positioned
+	// <img> at the bottom of the markup. Not a $derived — the data is pulled
+	// from the WebGL draw loop where the cursor sample is already evaluated.
+	let svgCursor = $state<{
+		visible: boolean;
+		styleId: import("$lib/cursor/styles").CursorStyle["id"];
+		canvasX: number; // source-pixel space, before padding
+		canvasY: number;
+		compW: number;
+		compH: number;
+		sizePx: number;
+	}>({
+		visible: false,
+		styleId: "dot",
+		canvasX: 0,
+		canvasY: 0,
+		compW: 1,
+		compH: 1,
+		sizePx: 6,
+	});
 	// Signature of the inputs that drive smoothing. Recomputing only when this
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
@@ -783,8 +807,30 @@ void main() {
 				}
 			}
 		}
+		// When the user picks a custom SVG cursor style, the WebGL shader's
+		// dot path is suppressed and the HTML <img> overlay below paints the
+		// cursor instead. The shader still renders the click-highlight halo
+		// because the SVG sprite isn't aware of click state.
+		const usingSvgCursor = cs.enabled && cs.style !== "dot";
+		const overlayVisible = usingSvgCursor && cursorVisible === 1;
 		gl.uniform2f(uniforms.u_cursorPos, cursorPosX, cursorPosY);
-		gl.uniform1f(uniforms.u_cursorVisible, cursorVisible);
+		gl.uniform1f(
+			uniforms.u_cursorVisible,
+			usingSvgCursor ? 0 : cursorVisible,
+		);
+		// Push to reactive state so the HTML overlay updates each frame.
+		const compH_local = meta.height + store.padding * 2;
+		svgCursor = {
+			visible: overlayVisible,
+			styleId: cs.style,
+			// Cursor position in canvas-pixel space, where the canvas is
+			// `compW × compH` source pixels expanded by padding.
+			canvasX: (store.padding + cursorPosX * meta.width),
+			canvasY: (store.padding + cursorPosY * meta.height),
+			compW,
+			compH: compH_local,
+			sizePx: cs.size * 2,
+		};
 		// Match Rust: cursor radius = size * 2 (in source pixels), scaled to canvas
 		const cursorRadiusCanvas = (cs.size * 2 * canvasEl.width) / compW;
 		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
@@ -934,7 +980,30 @@ void main() {
 			class="block max-h-full max-w-full"
 		></canvas>
 		<AnnotationOverlay {store} {videoEl} targetEl={previewRectEl} />
+		<TextAnnotationLayer {store} {videoEl} targetEl={previewRectEl} />
 		<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
+		{#if svgCursor.visible}
+			{@const style = CURSOR_STYLES.find((s) => s.id === svgCursor.styleId)}
+			<!-- Custom SVG cursor: positioned at the cursor sample's
+			     source-pixel coordinates, mapped into the canvas's CSS rect.
+			     The image is offset by `hotspot` so the SVG's tip aligns
+			     with the captured pointer position. Sizing follows `cs.size`
+			     (a 1-5 multiplier) at ~32 px per "size unit". -->
+			<img
+				src={cursorStyleDataUrl(svgCursor.styleId)}
+				alt=""
+				draggable="false"
+				class="pointer-events-none absolute"
+				style="
+					left: {(svgCursor.canvasX / svgCursor.compW) * 100}%;
+					top: {(svgCursor.canvasY / svgCursor.compH) * 100}%;
+					width: {svgCursor.sizePx * 5}%;
+					max-width: 96px;
+					transform: translate(-{((style?.hotspot.x ?? 32) / 64) * 100}%, -{((style?.hotspot.y ?? 32) / 64) * 100}%);
+					filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.5));
+				"
+			/>
+		{/if}
 	</div>
 
 	{#if videoSrc}

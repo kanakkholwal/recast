@@ -11,7 +11,7 @@
 </svelte:head>
 
 <ModeWatcher />
-<Toaster position="top-center" />
+<Toaster position="top-center" duration={5000}/>
 
 <div class="relative flex min-h-screen flex-col overflow-x-hidden">
 	{@render children()}

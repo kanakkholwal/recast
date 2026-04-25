@@ -66,20 +66,60 @@ export interface AnnotationStroke {
 
 export type AnnotationKind =
 	| {
-			kind: "rect";
-			x: number;
-			y: number;
-			w: number;
-			h: number;
-			radius: number; // UV corner radius; 0 = sharp
-	  }
+		kind: "rect";
+		x: number;
+		y: number;
+		w: number;
+		h: number;
+		radius: number; // UV corner radius; 0 = sharp
+	}
 	| {
-			kind: "ellipse";
-			x: number; // UV bounding-box top-left
-			y: number;
-			w: number;
-			h: number;
-	  };
+		kind: "ellipse";
+		x: number; // UV bounding-box top-left
+		y: number;
+		w: number;
+		h: number;
+	}
+	| {
+		kind: "arrow";
+		// Endpoints in UV; the arrow head is drawn at (x2, y2).
+		x1: number;
+		y1: number;
+		x2: number;
+		y2: number;
+		/** Head length as a fraction of line length (0.05–0.4). */
+		headSize: number;
+	}
+	| {
+		// Text overlays render in the WebView only and are rasterized to a
+		// PNG (kind=image) at export time. They never reach the Rust enum.
+		kind: "text";
+		x: number; // UV top-left of bounding box
+		y: number;
+		w: number;
+		h: number;
+		content: string;
+		fontFamily: string; // CSS family name; whitelisted in TextProps
+		/** Font size as a fraction of canvas height (0.02–0.20). */
+		fontSize: number;
+		fontWeight: 400 | 500 | 600 | 700;
+		color: string; // CSS colour
+		align: "left" | "center" | "right";
+		/** Multiplier on font size; default 1.2. */
+		lineHeight: number;
+	}
+	| {
+		// Generic image overlay: a PNG/JPG composited at the UV rect.
+		// Used both for the (deferred) Image tool and as the export
+		// substitute for text annotations after hybrid rasterization.
+		kind: "image";
+		x: number;
+		y: number;
+		w: number;
+		h: number;
+		path: string; // absolute file path or asset URL
+		opacity: number; // 0..1
+	};
 
 export type AnnotationKindName = AnnotationKind["kind"];
 
@@ -103,9 +143,24 @@ export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
 };
 export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
 
+/**
+ * Cursor style id — matches an entry in `lib/cursor/styles.ts`.
+ *  - `dot`: the legacy soft white circle (rendered by the WebGL2 shader and
+ *    the Rust export overlay; what users see by default).
+ *  - Anything else: an SVG cursor sprite drawn by `CursorOverlayLayer` over
+ *    the preview. Preview-only today; export currently falls back to `dot`.
+ */
+export type CursorStyleId =
+	| 'dot'
+	| 'system'
+	| 'minimal'
+	| 'fat-arrow'
+	| 'target';
+
 export interface CursorSettings {
 	enabled: boolean;
 	size: number; // 1-5 scale
+	style: CursorStyleId;
 	smoothing: number; // 0-100 → Gaussian σ in ms (0 = raw capture, 100 ≈ 150 ms)
 	snapToClicks: boolean; // anchor smoothed path to exact click x/y around mouse-down
 	snapWindowMs: number; // half-width (ms) of the snap anchor — 0..200
@@ -197,7 +252,7 @@ export type LayoutMode = 'auto' | 'crop';
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
-export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audio';
+export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audio' | 'info';
 
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 23 }, (_, i) => ({
 	id: `wallpaper${i + 1}`,
@@ -211,6 +266,7 @@ export const GRADIENT_PRESETS = [
 	{ label: 'Lavender', value: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)' },
 	{ label: 'Midnight', value: 'linear-gradient(135deg, #0c3483 0%, #a2b6df 100%)' },
 	{ label: 'Ember', value: 'linear-gradient(135deg, #f83600 0%, #f9d423 100%)' },
+	{ label: 'Sky', value: ' linear-gradient(135deg,#bbd2f9 0%,#99aed1 25%,#7b8aac 50%,#4f699c 75%,#3a4877 100%)' },
 ];
 
 export const COLOR_PRESETS = [
@@ -289,6 +345,7 @@ export function createEditorStore() {
 	let cursorSettings = $state<CursorSettings>({
 		enabled: true,
 		size: 3,
+		style: 'dot',
 		smoothing: 50,
 		snapToClicks: true,
 		snapWindowMs: 80,
@@ -362,6 +419,25 @@ export function createEditorStore() {
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 		isDirty = true;
+	}
+
+	// Coalesced undo: a sequence of small edits that share the same `key`
+	// inside `ttlMs` of each other becomes a single undo entry. Used for
+	// keyboard nudges (e.g. holding ArrowLeft on a trim handle) so a
+	// 30-frame walk-back is one Ctrl+Z press, not thirty.
+	let lastCoalesceKey: string | null = null;
+	let lastCoalesceAt = 0;
+	function pushUndoStateCoalesced(key: string, ttlMs = 500) {
+		const now =
+			typeof performance !== "undefined" ? performance.now() : Date.now();
+		if (lastCoalesceKey === key && now - lastCoalesceAt < ttlMs) {
+			lastCoalesceAt = now;
+			isDirty = true;
+			return;
+		}
+		lastCoalesceKey = key;
+		lastCoalesceAt = now;
+		pushUndoState();
 	}
 
 	function markSaved(savedAtUnixMs: number) {
@@ -527,6 +603,7 @@ export function createEditorStore() {
 		cursorSettings = {
 			enabled: true,
 			size: 3,
+			style: 'dot',
 			smoothing: 50,
 			snapToClicks: true,
 			snapWindowMs: 80,
@@ -676,11 +753,29 @@ export function createEditorStore() {
 		get isPlaying() { return isPlaying; },
 		set isPlaying(v: boolean) { isPlaying = v; },
 
+		// Raw mark fields. Setters intentionally do NOT push undo — callers
+		// (Timeline drag/keyboard handlers) own undo coalescing via
+		// `pushUndoStateCoalesced` so a single drag or held arrow key is one
+		// undo entry, not one-per-pointer-frame.
 		get trimStart() { return trimStart; },
-		set trimStart(v: number) { pushUndoState(); trimStart = v; },
+		set trimStart(v: number) { trimStart = v; isDirty = true; },
 
 		get trimEnd() { return trimEnd; },
-		set trimEnd(v: number) { pushUndoState(); trimEnd = v; },
+		set trimEnd(v: number) { trimEnd = v; isDirty = true; },
+
+		// Convenience accessors using NLE terminology. `outPoint` resolves
+		// the legacy `0 = unset` sentinel against the source duration so
+		// callers never need the `trimEnd || duration` dance.
+		get inPoint() { return Math.max(0, trimStart); },
+		get outPoint() {
+			const d = metadata?.duration ?? 0;
+			return trimEnd > 0 ? Math.min(trimEnd, d) : d;
+		},
+		get clipDuration() {
+			const d = metadata?.duration ?? 0;
+			const out = trimEnd > 0 ? Math.min(trimEnd, d) : d;
+			return Math.max(0, out - Math.max(0, trimStart));
+		},
 
 		get backgroundType() { return backgroundType; },
 		set backgroundType(v: BackgroundType) { pushUndoState(); backgroundType = v; },
@@ -757,6 +852,7 @@ export function createEditorStore() {
 		undo,
 		redo,
 		pushUndoState,
+		pushUndoStateCoalesced,
 		markSaved,
 		setBackground,
 		updateCursorSettings,

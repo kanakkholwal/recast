@@ -1,4 +1,5 @@
 <script lang="ts">
+  import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
   import {
     COLOR_PRESETS,
     GRADIENT_PRESETS,
@@ -7,7 +8,6 @@
     type BackgroundType,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
   import {
     Blend,
     FolderOpen,
@@ -93,7 +93,10 @@
       : DEFAULT_BACKGROUND_VALUES[type];
   }
 
-  function applyBackground(type: BackgroundType, value = getSelectionValue(type)) {
+  function applyBackground(
+    type: BackgroundType,
+    value = getSelectionValue(type),
+  ) {
     // When the user clicks the "Image" tab and there is no valid image yet,
     // jump straight into the file picker instead of setting an empty value
     // (which would leave the preview showing the fallback dark background).
@@ -135,31 +138,41 @@
     paddingValue = store.padding;
     borderRadiusValue = store.borderRadius;
   });
-
 </script>
 
 <div class="flex flex-col gap-5 animate-in fade-in duration-200">
   <!-- Mode switcher: dense icon tabs instead of 2×2 cards -->
   <section>
     <header class="mb-2 flex items-center gap-1.5">
-      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3
+        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
         Canvas
       </h3>
-      <InspectorHint content="Background styling and frame spacing are previewed live in the editor." />
+      <InspectorHint
+        content="Background styling and frame spacing are previewed live in the editor."
+      />
     </header>
-    <div class="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5">
+    <div
+      class="flex items-center gap-0.5 rounded-md bg-muted/60 ring-1 ring-inset ring-border/40 p-0.5"
+    >
       {#each backgroundModes as mode}
         {@const Icon = mode.icon}
         {@const isActive = store.backgroundType === mode.type}
         <Button
-          variant={isActive ? "default_soft" : "ghost"}
+          variant="raw"
           size="xs"
-          class="flex-1 gap-1"
           onclick={() => applyBackground(mode.type)}
           aria-pressed={isActive}
           title={mode.label}
+          class={cn(
+            "flex-1 gap-1",
+            isActive
+              ? "bg-card text-foreground shadow-(--shadow-craft-inset)"
+              : "text-muted-foreground hover:text-foreground",
+          )}
         >
-          <Icon size={11} />
+          <Icon size={11} class={isActive ? "text-primary" : "text-muted-foreground"}/>
           <span class="hidden @[260px]/panel:inline">{mode.label}</span>
         </Button>
       {/each}
@@ -169,7 +182,9 @@
   {#if store.backgroundType === "wallpaper"}
     <section>
       <header class="mb-2 flex items-center justify-between gap-2">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Wallpapers
         </h3>
         <span class="text-[10px] font-mono tabular-nums text-muted-foreground">
@@ -207,10 +222,14 @@
   {:else if store.backgroundType === "color"}
     <section>
       <header class="mb-2 flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Color Fill
         </h3>
-        <InspectorHint content="Solid backgrounds keep attention on the recording itself." />
+        <InspectorHint
+          content="Solid backgrounds keep attention on the recording itself."
+        />
       </header>
       <div class="grid grid-cols-6 gap-1.5">
         {#each COLOR_PRESETS as color}
@@ -232,13 +251,19 @@
         {/each}
       </div>
 
-      <div class="mt-3 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2">
+      <div
+        class="mt-3 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2"
+      >
         <input
           type="color"
           value={store.backgroundValue.startsWith("#")
             ? store.backgroundValue
             : DEFAULT_BACKGROUND_VALUES.color}
-          oninput={(e) => applyBackground("color", (e.currentTarget as HTMLInputElement).value)}
+          oninput={(e) =>
+            applyBackground(
+              "color",
+              (e.currentTarget as HTMLInputElement).value,
+            )}
           class="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent"
           aria-label="Choose a custom background color"
         />
@@ -253,10 +278,14 @@
   {:else if store.backgroundType === "gradient"}
     <section>
       <header class="mb-2 flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Gradients
         </h3>
-        <InspectorHint content="Preset gradient backdrops render live in the preview." />
+        <InspectorHint
+          content="Preset gradient backdrops render live in the preview."
+        />
       </header>
       <div class="grid grid-cols-2 gap-1.5">
         {#each GRADIENT_PRESETS as gradient}
@@ -290,19 +319,30 @@
     <section>
       <header class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             Image Background
           </h3>
-          <InspectorHint content="Imported images fit to cover the full canvas in the editor preview." />
+          <InspectorHint
+            content="Imported images fit to cover the full canvas in the editor preview."
+          />
         </div>
-        <Button variant="outline" size="xs" class="gap-1.5" onclick={pickBackgroundImage}>
+        <Button
+          variant="outline"
+          size="xs"
+          class="gap-1.5"
+          onclick={pickBackgroundImage}
+        >
           <FolderOpen size={11} />
           {store.backgroundValue ? "Replace" : "Choose"}
         </Button>
       </header>
 
       {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
-        <div class="overflow-hidden rounded-md border border-border bg-background">
+        <div
+          class="overflow-hidden rounded-md border border-border bg-background"
+        >
           <Image
             src={getImagePreviewSrc(store.backgroundValue)}
             alt="Selected background"
@@ -328,10 +368,14 @@
   <!-- Finishing controls (always visible) -->
   <section>
     <header class="mb-2 flex items-center gap-1.5">
-      <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <h3
+        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+      >
         Finishing
       </h3>
-      <InspectorHint content="Blur softens image-based backgrounds. Padding controls the space around the video frame." />
+      <InspectorHint
+        content="Blur softens image-based backgrounds. Padding controls the space around the video frame."
+      />
     </header>
 
     <div class="space-y-2.5">
@@ -392,10 +436,14 @@
   <section>
     <header class="mb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Drop shadow
         </h3>
-        <InspectorHint content="Adds depth by casting a soft shadow under the recording onto the canvas background." />
+        <InspectorHint
+          content="Adds depth by casting a soft shadow under the recording onto the canvas background."
+        />
       </div>
       <Button
         variant={store.shadow.enabled ? "default_soft" : "outline"}
@@ -470,13 +518,17 @@
           onchange={(v) => store.updateShadow({ opacity: v })}
         />
 
-        <div class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2">
+        <div
+          class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2"
+        >
           <input
             type="color"
             value={store.shadow.color || "#000000"}
             oninput={(e) => {
               store.pushUndoState();
-              store.updateShadow({ color: (e.currentTarget as HTMLInputElement).value });
+              store.updateShadow({
+                color: (e.currentTarget as HTMLInputElement).value,
+              });
             }}
             class="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent"
             aria-label="Choose shadow color"

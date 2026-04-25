@@ -1,11 +1,17 @@
 <script lang="ts">
   import { SMOOTHING_PRESETS } from "$lib/cursor/smoothing";
+  import { CURSOR_STYLES } from "$lib/cursor/styles";
   import { EASE } from "$lib/easing/cubic-bezier";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import type {
+    CursorStyleId,
+    EditorStore,
+  } from "$lib/stores/editor-store.svelte";
   import {
     Activity,
+    AlertTriangle,
     Eye,
     EyeOff,
+    GitGraph,
     MousePointer,
     Sparkles,
     Target,
@@ -35,6 +41,7 @@
   ];
 
   let { store }: Props = $props();
+  let showTrajectoryMap = $state(false);
 
   function updateCursorSettings(
     updates: Partial<EditorStore["cursorSettings"]>,
@@ -50,16 +57,24 @@
   <section>
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Cursor
         </h3>
-        <InspectorHint content="These controls tune how the captured pointer feels during playback." />
+        <InspectorHint
+          content="These controls tune how the captured pointer feels during playback."
+        />
       </div>
       <Button
         variant={store.cursorSettings.enabled ? "default_soft" : "outline"}
         size="xs"
         class="gap-1.5"
-        onclick={() => updateCursorSettings({ enabled: !store.cursorSettings.enabled }, true)}
+        onclick={() =>
+          updateCursorSettings(
+            { enabled: !store.cursorSettings.enabled },
+            true,
+          )}
         aria-pressed={store.cursorSettings.enabled}
       >
         {#if store.cursorSettings.enabled}
@@ -74,13 +89,77 @@
   </section>
 
   {#if store.cursorSettings.enabled}
+    <!-- Style picker -->
+    <section>
+      <header class="mb-2 flex items-center gap-1.5">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
+          Style
+        </h3>
+        <InspectorHint
+          content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
+        />
+      </header>
+      <div class="grid grid-cols-5 gap-1">
+        {#each CURSOR_STYLES as style (style.id)}
+          {@const isActive = store.cursorSettings.style === style.id}
+          <button
+            type="button"
+            aria-pressed={isActive}
+            onclick={() => {
+              store.pushUndoState();
+              store.updateCursorSettings({ style: style.id as CursorStyleId });
+            }}
+            title={`${style.label} — ${style.description}`}
+            class={cn(
+              "group relative aspect-square overflow-hidden rounded-md border transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
+              isActive
+                ? "border-primary bg-primary/10"
+                : "border-border bg-muted/30 hover:border-foreground/30",
+            )}
+          >
+            <span
+              class="absolute inset-1 flex items-center justify-center text-foreground"
+              aria-hidden="true"
+            >
+              {@html style.svg}
+            </span>
+            <span
+              class="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-center text-[8px] font-medium uppercase tracking-wider {isActive
+                ? 'text-primary'
+                : 'text-muted-foreground'}"
+            >
+              {style.label}
+            </span>
+          </button>
+        {/each}
+      </div>
+      {#if store.cursorSettings.style !== "dot"}
+        <div
+          class="mt-1.5 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400"
+        >
+          <AlertTriangle size={11} class="mt-0.5 shrink-0" />
+          <span>
+            Custom cursor sprites are preview-only today. The exported video
+            still uses the soft dot — switch back to <strong>Soft dot</strong>
+            for an exact match.
+          </span>
+        </div>
+      {/if}
+    </section>
+
     <!-- Pointer feel -->
     <section>
       <header class="mb-2 flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Pointer
         </h3>
-        <InspectorHint content="Size controls how legibly the cursor reads on screen." />
+        <InspectorHint
+          content="Size controls how legibly the cursor reads on screen."
+        />
       </header>
       <div class="space-y-2.5">
         <SliderControl
@@ -106,24 +185,36 @@
     <section>
       <header class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             Mouse smoothing
           </h3>
           <InspectorHint
             content="Gaussian-window smoothing over the captured mouse path. The click-snap option anchors the smoothed curve to the exact press position inside the snap window so buttons still get hit cleanly."
           />
         </div>
-        <Sparkles size={11} class="text-muted-foreground" />
+        <Button
+          size="icon-xs"
+          variant="raw"
+          title="Toggle trajectory map"
+          aria-pressed={showTrajectoryMap}
+          onclick={() => (showTrajectoryMap = !showTrajectoryMap)}
+        >
+          <GitGraph size={11} class="text-muted-foreground" />
+        </Button>
       </header>
 
-      <CursorTrajectoryMap
-        samples={store.cursorSamplesRaw}
-        videoWidth={store.metadata?.width ?? 0}
-        videoHeight={store.metadata?.height ?? 0}
-        smoothing={store.cursorSettings.smoothing}
-        snapToClicks={store.cursorSettings.snapToClicks}
-        snapWindowMs={store.cursorSettings.snapWindowMs}
-      />
+      {#if showTrajectoryMap}
+        <CursorTrajectoryMap
+          samples={store.cursorSamplesRaw}
+          videoWidth={store.metadata?.width ?? 0}
+          videoHeight={store.metadata?.height ?? 0}
+          smoothing={store.cursorSettings.smoothing}
+          snapToClicks={store.cursorSettings.snapToClicks}
+          snapWindowMs={store.cursorSettings.snapWindowMs}
+        />
+      {/if}
 
       <!-- Presets -->
       <div class="mt-2.5 flex flex-wrap gap-1">
@@ -132,7 +223,7 @@
             store.cursorSettings.smoothing === preset.smoothing &&
             store.cursorSettings.snapToClicks === preset.snapToClicks &&
             store.cursorSettings.snapWindowMs === preset.snapWindowMs}
-          <button
+          <Button
             type="button"
             aria-pressed={isActive}
             onclick={() => {
@@ -143,16 +234,18 @@
                 snapWindowMs: preset.snapWindowMs,
               });
             }}
-            class={cn(
-              "h-6 rounded-sm border px-2 text-[10px] font-medium transition-colors",
-              "focus:outline-none focus:ring-1 focus:ring-ring",
-              isActive
-                ? "border-primary bg-primary/10 text-primary"
-                : "border-border bg-background text-muted-foreground hover:text-foreground"
-            )}
+            size="xs"
+            variant={isActive ? "default_soft" : "outline"}
+            // class={cn(
+            //   "h-6 rounded-sm border px-2 text-[10px] font-medium transition-colors",
+            //   "focus:outline-none focus:ring-1 focus:ring-ring",
+            //   isActive
+            //     ? "border-primary bg-primary/10 text-primary"
+            //     : "border-border bg-background text-muted-foreground hover:text-foreground",
+            // )}
           >
             {preset.label}
-          </button>
+          </Button>
         {/each}
       </div>
 
@@ -175,19 +268,29 @@
           {/snippet}
         </SliderControl>
 
-        <div class="flex items-center justify-between gap-2 rounded-md border border-border bg-card/40 px-2 py-1.5">
+        <div
+          class="flex items-center justify-between gap-2 rounded-md border border-border bg-card/40 px-2 py-1.5"
+        >
           <div class="flex items-center gap-1.5">
             <Target size={11} class="text-muted-foreground" />
-            <span class="text-[11px] font-medium text-foreground">Snap to clicks</span>
+            <span class="text-[11px] font-medium text-foreground"
+              >Snap to clicks</span
+            >
             <InspectorHint
               content="Around every mouse-down, pin the smoothed curve to the exact click x/y inside the snap window. Prevents smoothing from rounding the corner off a press target."
             />
           </div>
           <Button
-            variant={store.cursorSettings.snapToClicks ? "default_soft" : "outline"}
+            variant={store.cursorSettings.snapToClicks
+              ? "default_soft"
+              : "outline"}
             size="xs"
             aria-pressed={store.cursorSettings.snapToClicks}
-            onclick={() => updateCursorSettings({ snapToClicks: !store.cursorSettings.snapToClicks }, true)}
+            onclick={() =>
+              updateCursorSettings(
+                { snapToClicks: !store.cursorSettings.snapToClicks },
+                true,
+              )}
           >
             {store.cursorSettings.snapToClicks ? "On" : "Off"}
           </Button>
@@ -203,7 +306,8 @@
             unit="ms"
             description="Half-width of the cosine-ramped anchor around each click."
             onstart={() => store.pushUndoState()}
-            onchange={(next) => store.updateCursorSettings({ snapWindowMs: next })}
+            onchange={(next) =>
+              store.updateCursorSettings({ snapWindowMs: next })}
           >
             {#snippet icon()}
               <Target size={11} />
@@ -217,7 +321,9 @@
     <section>
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             Motion easing
           </h3>
           <InspectorHint
@@ -230,7 +336,9 @@
           class="gap-1.5"
           aria-pressed={!!store.cursorMotionEasing}
           onclick={() =>
-            (store.cursorMotionEasing = store.cursorMotionEasing ? null : { ...EASE })}
+            (store.cursorMotionEasing = store.cursorMotionEasing
+              ? null
+              : { ...EASE })}
         >
           <Waves size={11} />
           {store.cursorMotionEasing ? "On" : "Off"}
@@ -250,13 +358,19 @@
     <section>
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             Click Highlight
           </h3>
-          <InspectorHint content="Useful for tutorials and product demos where click targets should be obvious." />
+          <InspectorHint
+            content="Useful for tutorials and product demos where click targets should be obvious."
+          />
         </div>
         <Button
-          variant={store.cursorSettings.highlightClicks ? "default_soft" : "outline"}
+          variant={store.cursorSettings.highlightClicks
+            ? "default_soft"
+            : "outline"}
           size="xs"
           class="gap-1.5"
           onclick={() =>
@@ -305,7 +419,8 @@
             step={5}
             unit="%"
             onstart={() => store.pushUndoState()}
-            onchange={(next) => store.updateCursorSettings({ highlightOpacity: next })}
+            onchange={(next) =>
+              store.updateCursorSettings({ highlightOpacity: next })}
           />
         </div>
       {/if}
@@ -315,13 +430,19 @@
     <section>
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
-          <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
             Idle Behavior
           </h3>
-          <InspectorHint content="Hide the cursor after inactivity for cleaner sections without interaction." />
+          <InspectorHint
+            content="Hide the cursor after inactivity for cleaner sections without interaction."
+          />
         </div>
         <Button
-          variant={store.cursorSettings.hideWhenIdle ? "default_soft" : "outline"}
+          variant={store.cursorSettings.hideWhenIdle
+            ? "default_soft"
+            : "outline"}
           size="xs"
           onclick={() =>
             updateCursorSettings(
@@ -353,7 +474,8 @@
     >
       <EyeOff size={13} class="shrink-0 text-muted-foreground" />
       <p class="flex-1 text-[11px] text-muted-foreground">
-        Cursor is hidden. Enable it to tune size, smoothing and click highlights.
+        Cursor is hidden. Enable it to tune size, smoothing and click
+        highlights.
       </p>
     </div>
   {/if}

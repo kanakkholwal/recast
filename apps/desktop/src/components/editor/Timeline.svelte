@@ -27,14 +27,102 @@
   let timelineWidth = $state(900);
   let activeTrimHandle = $state<"in" | "out" | null>(null);
 
-  const MIN_TRIM_GAP = 0.1; // seconds
+  // Live drag context for the in/out trim handles. `originalAt` is the value
+  // the handle had at pointer-down — used to display a delta in the tooltip
+  // so users see exactly how many frames they've shaved off.
+  let trimDragContext = $state<{
+    which: "in" | "out";
+    originalAt: number;
+  } | null>(null);
 
   const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0];
   let playbackSpeed = $state(1.0);
 
+  // JKL transport: cycles 1×→2×→4× on each consecutive press, like Avid /
+  // Premiere. K parks playback. We don't drive reverse playback through
+  // <video>'s playbackRate (browsers don't support negative rates reliably);
+  // J instead schedules a rAF loop that decrements currentTime.
+  let shuttleDirection = $state<-1 | 0 | 1>(0);
+  let shuttleSpeedIndex = $state(0);
+  const SHUTTLE_SPEEDS = [1, 2, 4];
+  let reverseFrame = 0;
+
   $effect(() => {
-    if (videoEl) videoEl.playbackRate = playbackSpeed;
+    if (videoEl) {
+      videoEl.playbackRate =
+        shuttleDirection === 1
+          ? SHUTTLE_SPEEDS[shuttleSpeedIndex] * playbackSpeed
+          : playbackSpeed;
+    }
   });
+
+  // Reverse-play loop. Held active only while shuttleDirection === -1.
+  function pumpReverse() {
+    if (shuttleDirection !== -1 || !videoEl) {
+      reverseFrame = 0;
+      return;
+    }
+    const fps = effectiveFps();
+    const step = (SHUTTLE_SPEEDS[shuttleSpeedIndex] / fps) * playbackSpeed;
+    const next = Math.max(store.inPoint, store.currentTime - step);
+    store.currentTime = next;
+    videoEl.currentTime = next;
+    if (next <= store.inPoint) {
+      shuttleDirection = 0;
+      shuttleSpeedIndex = 0;
+      reverseFrame = 0;
+      return;
+    }
+    reverseFrame = requestAnimationFrame(pumpReverse);
+  }
+
+  $effect(() => {
+    if (shuttleDirection === -1 && reverseFrame === 0) {
+      reverseFrame = requestAnimationFrame(pumpReverse);
+    } else if (shuttleDirection !== -1 && reverseFrame !== 0) {
+      cancelAnimationFrame(reverseFrame);
+      reverseFrame = 0;
+    }
+  });
+
+  // Quantization helpers. All trim and playhead writes round to the nearest
+  // frame boundary so preview and export agree on which exact frame is the
+  // first/last kept frame. Sub-frame trim values are the source of off-by-one
+  // mismatches between scrub preview and the rendered MP4.
+  function effectiveFps(): number {
+    const f = store.metadata?.fps ?? 0;
+    return f > 0 ? f : 60;
+  }
+  function quantizeToFrame(time: number): number {
+    const fps = effectiveFps();
+    return Math.round(time * fps) / fps;
+  }
+  function frameStep(): number {
+    return 1 / effectiveFps();
+  }
+  // SMPTE-style HH:MM:SS:FF (or MM:SS:FF for clips < 1 hour). Frame component
+  // is zero-padded so the readout has constant width.
+  function formatTimecode(time: number): string {
+    const fps = effectiveFps();
+    const t = Math.max(0, time);
+    const totalFrames = Math.round(t * fps);
+    const frames = totalFrames % Math.round(fps);
+    const totalSecs = Math.floor(totalFrames / Math.round(fps));
+    const secs = totalSecs % 60;
+    const mins = Math.floor(totalSecs / 60) % 60;
+    const hours = Math.floor(totalSecs / 3600);
+    const ff = String(frames).padStart(2, "0");
+    const ss = String(secs).padStart(2, "0");
+    const mm = String(mins).padStart(2, "0");
+    return hours > 0
+      ? `${String(hours).padStart(2, "0")}:${mm}:${ss}:${ff}`
+      : `${mm}:${ss}:${ff}`;
+  }
+  // Floor on the clip length: at least 2 frames so the trimmed range is
+  // never sub-frame. Scales naturally with fps (60fps → ~33ms; 30fps → ~66ms).
+  function minClipDuration(): number {
+    return 2 * frameStep();
+  }
 
   function zoomTimeline(dir: number) {
     store.timelineZoom = Math.max(0.5, Math.min(5, store.timelineZoom + dir * 0.25));
@@ -56,15 +144,24 @@
     if (duration <= 0) return;
     event.preventDefault();
     event.stopPropagation();
+    // Single undo entry per drag, regardless of how many pointermove events
+    // fire while the user holds the handle.
     store.pushUndoState();
     activeTrimHandle = which;
+    trimDragContext = {
+      which,
+      originalAt: which === "in" ? store.inPoint : store.outPoint,
+    };
+    document.body.style.cursor = "ew-resize";
     (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    updateTrimFromPointer(event.clientX, which);
+    updateTrimFromPointer(event.clientX, which, true);
     const onMove = (e: PointerEvent) => {
-      updateTrimFromPointer(e.clientX, which);
+      updateTrimFromPointer(e.clientX, which, true);
     };
     const onUp = (e: PointerEvent) => {
       activeTrimHandle = null;
+      trimDragContext = null;
+      document.body.style.cursor = "";
       try {
         (event.currentTarget as Element).releasePointerCapture(e.pointerId);
       } catch {
@@ -79,37 +176,60 @@
     window.addEventListener("pointercancel", onUp);
   }
 
-  function updateTrimFromPointer(clientX: number, which: "in" | "out") {
-    const t = clientXToTime(clientX);
-    const effectiveEnd = store.trimEnd || duration;
+  function updateTrimFromPointer(
+    clientX: number,
+    which: "in" | "out",
+    scrub = false,
+  ) {
+    const raw = clientXToTime(clientX);
+    const t = quantizeToFrame(raw);
+    const min = minClipDuration();
     if (which === "in") {
-      const clamped = Math.min(t, Math.max(0, effectiveEnd - MIN_TRIM_GAP));
-      store.trimStart = Math.max(0, clamped);
+      const next = Math.max(0, Math.min(t, store.outPoint - min));
+      store.trimStart = next;
+      // Scrub-while-trim: park playback at the in point so the preview
+      // shows the first kept frame as the user drags.
+      if (scrub) {
+        store.currentTime = next;
+        if (videoEl) videoEl.currentTime = next;
+      }
     } else {
-      const clamped = Math.max(t, Math.min(duration, store.trimStart + MIN_TRIM_GAP));
-      store.trimEnd = Math.min(duration, clamped);
+      const next = Math.min(duration, Math.max(t, store.inPoint + min));
+      store.trimEnd = next;
+      if (scrub) {
+        // Show one frame before the cut (the last kept frame) — that's the
+        // frame the user is actually deciding to keep or discard.
+        const previewAt = Math.max(store.inPoint, next - frameStep());
+        store.currentTime = previewAt;
+        if (videoEl) videoEl.currentTime = previewAt;
+      }
     }
   }
 
   function handleTrimHandleKey(event: KeyboardEvent, which: "in" | "out") {
     if (duration <= 0) return;
-    const step = event.shiftKey
-      ? 1
-      : store.metadata?.fps
-        ? 1 / store.metadata.fps
-        : 1 / 30;
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
     event.stopPropagation();
-    const delta = event.key === "ArrowLeft" ? -step : step;
+    nudgeTrim(which, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
+  }
+
+  // Shared trim-nudge for both the handle's own arrow keys and the global
+  // Alt+[ / Alt+] shortcuts. Direction is ±1; shift switches the unit from
+  // one frame to one second.
+  function nudgeTrim(which: "in" | "out", direction: 1 | -1, second = false) {
+    if (duration <= 0) return;
+    store.pushUndoStateCoalesced(`trim-${which}`, 500);
+    const delta = direction * (second ? 1 : frameStep());
+    const min = minClipDuration();
     if (which === "in") {
-      const effectiveEnd = store.trimEnd || duration;
-      const next = Math.max(0, Math.min(effectiveEnd - MIN_TRIM_GAP, store.trimStart + delta));
+      const next = quantizeToFrame(
+        Math.max(0, Math.min(store.outPoint - min, store.inPoint + delta)),
+      );
       store.trimStart = next;
     } else {
-      const next = Math.max(
-        store.trimStart + MIN_TRIM_GAP,
-        Math.min(duration, (store.trimEnd || duration) + delta),
+      const next = quantizeToFrame(
+        Math.max(store.inPoint + min, Math.min(duration, store.outPoint + delta)),
       );
       store.trimEnd = next;
     }
@@ -123,8 +243,8 @@
     Math.max(duration * pixelsPerSecond, timelineWidth),
   );
   const playheadLeft = $derived(store.currentTime * pixelsPerSecond);
-  const clipLeft = $derived(store.trimStart * pixelsPerSecond);
-  const clipRight = $derived((store.trimEnd || duration) * pixelsPerSecond);
+  const clipLeft = $derived(store.inPoint * pixelsPerSecond);
+  const clipRight = $derived(store.outPoint * pixelsPerSecond);
   const clipWidth = $derived(Math.max(clipRight - clipLeft, 0));
   const thumbnailWidth = $derived(
     store.thumbnailStrip.length > 0
@@ -132,10 +252,7 @@
       : 112,
   );
   const hasTrim = $derived(
-    store.trimStart > 0 ||
-      ((store.metadata?.duration ?? 0) > 0 &&
-        store.trimEnd > 0 &&
-        store.trimEnd < (store.metadata?.duration ?? 0)),
+    duration > 0 && (store.inPoint > 0 || store.outPoint < duration),
   );
   const frameCount = $derived(
     Math.max(
@@ -233,27 +350,25 @@
   function handleTimelineKeydown(event: KeyboardEvent) {
     if (duration <= 0) return;
 
-    const step = event.shiftKey
-      ? 1
-      : store.metadata?.fps
-        ? 1 / store.metadata.fps
-        : 1 / 30;
+    const step = event.shiftKey ? 1 : frameStep();
 
-    if (event.key === "ArrowLeft") {
+    if (event.key === "ArrowLeft" && !event.altKey) {
       event.preventDefault();
-      const next = Math.max(0, store.currentTime - step);
+      const next = quantizeToFrame(Math.max(0, store.currentTime - step));
       store.currentTime = next;
       if (videoEl) videoEl.currentTime = next;
     }
 
-    if (event.key === "ArrowRight") {
+    if (event.key === "ArrowRight" && !event.altKey) {
       event.preventDefault();
-      const next = Math.min(duration, store.currentTime + step);
+      const next = quantizeToFrame(
+        Math.min(duration, store.currentTime + step),
+      );
       store.currentTime = next;
       if (videoEl) videoEl.currentTime = next;
     }
 
-    // Final Cut-style in/out point shortcuts.
+    // Premiere-style in/out point shortcuts.
     if (event.key === "i" || event.key === "I") {
       event.preventDefault();
       if (event.shiftKey) {
@@ -270,6 +385,77 @@
         store.trimEnd = duration;
       } else {
         setTrimPoint("out");
+      }
+    }
+
+    // Alt+[ trims the IN point one frame later (shrinks from the head);
+    // Alt+] trims the OUT point one frame earlier (shrinks from the tail).
+    // Shift+Alt+ switches the unit from one frame to one second. We match
+    // `event.code` because shifted brackets become "{"/"}" on some layouts.
+    if (event.altKey && event.code === "BracketLeft") {
+      event.preventDefault();
+      nudgeTrim("in", 1, event.shiftKey);
+    }
+    if (event.altKey && event.code === "BracketRight") {
+      event.preventDefault();
+      nudgeTrim("out", -1, event.shiftKey);
+    }
+
+    // Home/End jump the playhead to the in/out points (NLE convention).
+    if (event.key === "Home") {
+      event.preventDefault();
+      const t = store.inPoint;
+      store.currentTime = t;
+      if (videoEl) videoEl.currentTime = t;
+    }
+    if (event.key === "End") {
+      event.preventDefault();
+      const t = Math.max(store.inPoint, store.outPoint - frameStep());
+      store.currentTime = t;
+      if (videoEl) videoEl.currentTime = t;
+    }
+
+    // J/K/L transport. K parks playback. L plays forward; consecutive Ls
+    // step the playback rate up through SHUTTLE_SPEEDS. J does the same in
+    // reverse via a rAF-driven loop (browsers don't reliably support
+    // negative <video> playbackRate).
+    if (event.key === "k" || event.key === "K") {
+      event.preventDefault();
+      shuttleDirection = 0;
+      shuttleSpeedIndex = 0;
+      if (videoEl) videoEl.pause();
+      store.isPlaying = false;
+    }
+    if (event.key === "l" || event.key === "L") {
+      event.preventDefault();
+      if (shuttleDirection === 1) {
+        shuttleSpeedIndex = Math.min(
+          SHUTTLE_SPEEDS.length - 1,
+          shuttleSpeedIndex + 1,
+        );
+      } else {
+        shuttleDirection = 1;
+        shuttleSpeedIndex = 0;
+      }
+      if (videoEl) {
+        videoEl.playbackRate =
+          SHUTTLE_SPEEDS[shuttleSpeedIndex] * playbackSpeed;
+        void videoEl.play();
+      }
+      store.isPlaying = true;
+    }
+    if (event.key === "j" || event.key === "J") {
+      event.preventDefault();
+      if (videoEl) videoEl.pause();
+      store.isPlaying = false;
+      if (shuttleDirection === -1) {
+        shuttleSpeedIndex = Math.min(
+          SHUTTLE_SPEEDS.length - 1,
+          shuttleSpeedIndex + 1,
+        );
+      } else {
+        shuttleDirection = -1;
+        shuttleSpeedIndex = 0;
       }
     }
   }
@@ -317,10 +503,9 @@
 
   function addFocusRegion() {
     if (duration <= 0) return;
-    const clipEnd = store.trimEnd || duration;
-    const start = Math.max(store.trimStart, store.currentTime - 0.35);
+    const start = Math.max(store.inPoint, store.currentTime - 0.35);
     const end = Math.min(
-      clipEnd,
+      store.outPoint,
       Math.max(start + 0.8, store.currentTime + 0.85),
     );
     store.addZoomRegion(start, end, 1.8);
@@ -372,30 +557,26 @@
 
   function setTrimPoint(kind: "in" | "out") {
     if (duration <= 0) return;
-    const minGap = 0.1;
+    store.pushUndoState();
+    const min = minClipDuration();
     if (kind === "in") {
-      const nextIn = Math.min(
-        store.currentTime,
-        Math.max(0, (store.trimEnd || duration) - minGap),
+      const nextIn = quantizeToFrame(
+        Math.min(store.currentTime, Math.max(0, store.outPoint - min)),
       );
       store.trimStart = nextIn;
-      if (store.currentTime < nextIn) {
-        store.currentTime = nextIn;
-      }
+      if (store.currentTime < nextIn) store.currentTime = nextIn;
     } else {
-      const nextOut = Math.max(
-        store.currentTime,
-        Math.min(duration, store.trimStart + minGap),
+      const nextOut = quantizeToFrame(
+        Math.max(store.currentTime, Math.min(duration, store.inPoint + min)),
       );
       store.trimEnd = nextOut;
-      if (store.currentTime > nextOut) {
-        store.currentTime = nextOut;
-      }
+      if (store.currentTime > nextOut) store.currentTime = nextOut;
     }
     syncVideoTime();
   }
 
   function resetTrim() {
+    store.pushUndoState();
     store.trimStart = 0;
     store.trimEnd = duration;
     syncVideoTime();
@@ -424,9 +605,10 @@
           <CircleQuestionMark class="size-4" />
         </HoverCardTrigger>
         <HoverCardContent alignOffset={20}>
-          Set <span class="text-foreground">In</span> and
-          <span class="text-foreground">Out</span> at the playhead to shorten the
-          clip. The shaded segment is what will render and export.
+          Move the playhead to where you want the clip to begin or end, then
+          click <span class="text-foreground">Start here</span> or
+          <span class="text-foreground">End here</span>. Anything outside the
+          highlighted region is cut from the export.
         </HoverCardContent>
       </HoverCard>
       <Button
@@ -434,16 +616,20 @@
         size="xs"
         variant="outline"
         onclick={() => setTrimPoint("in")}
+        title="Cut everything before the playhead (keyboard: I)"
       >
-        Set In
+        <span class="hidden sm:inline">Start here</span>
+        <span class="sm:hidden">Start</span>
       </Button>
       <Button
         type="button"
         size="xs"
         variant="outline"
         onclick={() => setTrimPoint("out")}
+        title="Cut everything after the playhead (keyboard: O)"
       >
-        Set Out
+        <span class="hidden sm:inline">End here</span>
+        <span class="sm:hidden">End</span>
       </Button>
       <Button
         type="button"
@@ -474,9 +660,15 @@
         {/if}
       </div>
       {#if hasTrim}
-        <Button type="button" size="xs" variant="outline" onclick={resetTrim}>
+        <Button
+          type="button"
+          size="xs"
+          variant="outline"
+          onclick={resetTrim}
+          title="Restore the full recording — undo all cuts"
+        >
           <Scissors size={12} />
-          Reset Trim
+          Use full clip
         </Button>
       {/if}
     </div>
@@ -543,6 +735,11 @@
       <Badge variant="secondary" class="font-mono text-[10px]">
         {frameCount} frames
       </Badge>
+      {#if hasTrim}
+        <Badge variant="secondary" class="font-mono text-[10px]">
+          Clip {formatTimecode(store.clipDuration)}
+        </Badge>
+      {/if}
 
       <span class="inline-flex items-center gap-1 ml-1">
         <kbd
@@ -641,7 +838,7 @@
             <div
               class="absolute left-2 top-1 rounded border border-border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground backdrop-blur"
             >
-              {hasTrim ? "Trimmed" : "Full clip"}
+              {hasTrim ? "This part exports" : "Full clip"}
             </div>
             <!--
               Trim drag handles. Each is a narrow vertical bar with a larger
@@ -653,21 +850,27 @@
             <div
               role="slider"
               tabindex="0"
-              aria-label="Trim in"
+              aria-label="In point"
               aria-valuemin={0}
               aria-valuemax={duration}
-              aria-valuenow={store.trimStart}
-              aria-valuetext={formatTime(store.trimStart)}
+              aria-valuenow={store.inPoint}
+              aria-valuetext={formatTimecode(store.inPoint)}
               onpointerdown={(e) => startTrimDrag(e, "in")}
               onkeydown={(e) => handleTrimHandleKey(e, "in")}
               class="group absolute inset-y-0 left-0 z-10 w-2 -translate-x-1 cursor-ew-resize focus-visible:outline-none"
             >
               <div class="mx-auto h-full w-1 rounded-l-md bg-primary transition-all group-hover:w-1.5 group-hover:shadow-[0_0_0_2px_rgba(59,130,246,0.3)]"></div>
-              {#if activeTrimHandle === "in"}
+              {#if activeTrimHandle === "in" && trimDragContext}
+                {@const delta = store.inPoint - trimDragContext.originalAt}
                 <div
-                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
+                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
                 >
-                  {formatTime(store.trimStart)}
+                  <span>In {formatTimecode(store.inPoint)}</span>
+                  {#if delta !== 0}
+                    <span class="text-muted-foreground"
+                      >{delta > 0 ? "+" : ""}{Math.round(delta * effectiveFps())} f</span
+                    >
+                  {/if}
                 </div>
               {/if}
             </div>
@@ -675,21 +878,27 @@
             <div
               role="slider"
               tabindex="0"
-              aria-label="Trim out"
+              aria-label="Out point"
               aria-valuemin={0}
               aria-valuemax={duration}
-              aria-valuenow={store.trimEnd || duration}
-              aria-valuetext={formatTime(store.trimEnd || duration)}
+              aria-valuenow={store.outPoint}
+              aria-valuetext={formatTimecode(store.outPoint)}
               onpointerdown={(e) => startTrimDrag(e, "out")}
               onkeydown={(e) => handleTrimHandleKey(e, "out")}
               class="group absolute inset-y-0 right-0 z-10 w-2 translate-x-1 cursor-ew-resize focus-visible:outline-none"
             >
               <div class="mx-auto h-full w-1 rounded-r-md bg-primary transition-all group-hover:w-1.5 group-hover:shadow-[0_0_0_2px_rgba(59,130,246,0.3)]"></div>
-              {#if activeTrimHandle === "out"}
+              {#if activeTrimHandle === "out" && trimDragContext}
+                {@const delta = store.outPoint - trimDragContext.originalAt}
                 <div
-                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
+                  class="pointer-events-none absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
                 >
-                  {formatTime(store.trimEnd || duration)}
+                  <span>Out {formatTimecode(store.outPoint)}</span>
+                  {#if delta !== 0}
+                    <span class="text-muted-foreground"
+                      >{delta > 0 ? "+" : ""}{Math.round(delta * effectiveFps())} f</span
+                    >
+                  {/if}
                 </div>
               {/if}
             </div>
@@ -787,7 +996,7 @@
           <div
             class="absolute left-1/2 top-1 -translate-x-1/2 rounded border border-border bg-foreground px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-background"
           >
-            {formatTime(store.currentTime)}
+            {formatTimecode(store.currentTime)}
           </div>
           <div
             class="mx-auto mt-6 size-2 rounded-full border border-background bg-primary"

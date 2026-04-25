@@ -7,6 +7,7 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+  import { expandTextAnnotations } from "$lib/export/rasterize-text";
   import type { ExportStateEvent } from "$lib/ipc";
   import {
     autosaveProject,
@@ -334,11 +335,28 @@
     // Tauri's IPC layer — that round-trip can lag visibly on some systems
 
     try {
+      // Hybrid-raster pass: replace text annotations with image-kind ones
+      // whose `path` is a base64-encoded PNG. Rust's draw_image consumes
+      // both file paths and `data:` URLs uniformly.
+      const renderState = store.toRenderState();
+      const meta = store.metadata;
+      const canvasW = meta ? meta.width + (renderState.padding ?? 0) * 2 : 0;
+      const canvasH = meta ? meta.height + (renderState.padding ?? 0) * 2 : 0;
+      const expandedAnnotations = await expandTextAnnotations(
+        renderState.annotations,
+        canvasW,
+        canvasH,
+      );
+      const finalRenderState = {
+        ...renderState,
+        annotations: expandedAnnotations,
+      };
+
       const path = await exportVideo(
         documentPath || data.filePath,
         store.exportFormat,
         store.exportQuality,
-        store.toRenderState(),
+        finalRenderState,
         exportId,
       );
       // Safety net: if the export-state success event was missed, fall back to

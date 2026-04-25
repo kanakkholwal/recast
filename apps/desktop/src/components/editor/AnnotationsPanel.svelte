@@ -6,9 +6,24 @@
     type AnnotationKindName,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { Circle, Pencil, Plus, Square, Trash2 } from "@lucide/svelte";
+  import {
+    AlignCenter,
+    AlignLeft,
+    AlignRight,
+    ArrowUpRight,
+    Circle,
+    ImageIcon,
+    Lock,
+    MousePointer2,
+    Pencil,
+    Square,
+    SquareDashedMousePointer,
+    Trash2,
+    Type as TypeIcon,
+  } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
+  import { onDestroy, onMount } from "svelte";
   import BezierEditor from "./BezierEditor.svelte";
   import InspectorHint from "./InspectorHint.svelte";
   import SliderControl from "./SliderControl.svelte";
@@ -23,14 +38,61 @@
     store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
   );
 
-  const tools: { id: AnnotationKindName; label: string; icon: typeof Square }[] = [
-    { id: "rect", label: "Rectangle", icon: Square },
-    { id: "ellipse", label: "Ellipse", icon: Circle },
+  type ToolDef = {
+    id: AnnotationKindName | "select";
+    label: string;
+    icon: typeof Square;
+    hotkey: string;
+    /** Disabled tools are shown for discoverability with a "coming soon" tip. */
+    disabled?: boolean;
+  };
+
+  // Tool palette. Disabled entries (image, polygon, blur) appear so users see
+  // the roadmap; toggling them is a no-op.
+  const tools: ToolDef[] = [
+    { id: "select", label: "Select", icon: MousePointer2, hotkey: "V" },
+    { id: "rect", label: "Rectangle", icon: Square, hotkey: "R" },
+    { id: "ellipse", label: "Ellipse", icon: Circle, hotkey: "O" },
+    { id: "arrow", label: "Arrow", icon: ArrowUpRight, hotkey: "A" },
+    { id: "text", label: "Text", icon: TypeIcon, hotkey: "T" },
+    { id: "image", label: "Image", icon: ImageIcon, hotkey: "I", disabled: true },
   ];
 
-  function toggleTool(id: AnnotationKindName) {
+  function setTool(id: ToolDef["id"], disabled?: boolean) {
+    if (disabled) return;
+    if (id === "select") {
+      store.annotationTool = null;
+      return;
+    }
     store.annotationTool = store.annotationTool === id ? null : id;
   }
+
+  // Tool hotkeys. Suppressed when focus is in an editable element so typing
+  // in a text annotation or any input doesn't switch tools.
+  function isEditableTarget(target: EventTarget | null): boolean {
+    if (!(target instanceof HTMLElement)) return false;
+    if (target.isContentEditable) return true;
+    const tag = target.tagName;
+    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+  }
+
+  function handleHotkey(event: KeyboardEvent) {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    if (isEditableTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    const tool = tools.find((t) => t.hotkey.toLowerCase() === key);
+    if (!tool) return;
+    if (tool.disabled) return;
+    event.preventDefault();
+    setTool(tool.id);
+  }
+
+  onMount(() => {
+    window.addEventListener("keydown", handleHotkey);
+  });
+  onDestroy(() => {
+    window.removeEventListener("keydown", handleHotkey);
+  });
 
   function fmtTime(sec: number): string {
     const s = Math.max(0, sec);
@@ -63,8 +125,33 @@
     });
   }
 
+  function kindLabel(a: Annotation): string {
+    switch (a.kind.kind) {
+      case "rect":
+        return "Rectangle";
+      case "ellipse":
+        return "Ellipse";
+      case "arrow":
+        return "Arrow";
+      case "text":
+        return a.kind.content.trim().slice(0, 32) || "Text";
+      case "image":
+        return "Image";
+    }
+  }
   function kindIcon(a: Annotation): typeof Square {
-    return a.kind.kind === "rect" ? Square : Circle;
+    switch (a.kind.kind) {
+      case "rect":
+        return Square;
+      case "ellipse":
+        return Circle;
+      case "arrow":
+        return ArrowUpRight;
+      case "text":
+        return TypeIcon;
+      case "image":
+        return ImageIcon;
+    }
   }
 
   const STROKE_SWATCHES = [
@@ -77,6 +164,7 @@
     "#06b6d4",
     "#ffffff",
   ];
+
   const FILL_SWATCHES = [
     "transparent",
     "rgba(59,130,246,0.20)",
@@ -88,9 +176,48 @@
     "rgba(255,255,255,0.20)",
   ];
 
+  // Curated text-overlay font whitelist. All variable fonts already loaded
+  // via @fontsource-variable/* in app.css, plus generic system fallbacks.
+  const FONT_FAMILIES = [
+    { value: "'Geist Variable', system-ui, sans-serif", label: "Geist" },
+    {
+      value: "'Geist Mono Variable', ui-monospace, monospace",
+      label: "Geist Mono",
+    },
+    {
+      value: "'Google Sans Variable', system-ui, sans-serif",
+      label: "Google Sans",
+    },
+    { value: "system-ui, sans-serif", label: "System" },
+    { value: "ui-serif, Georgia, serif", label: "Serif" },
+    { value: "ui-monospace, monospace", label: "Monospace" },
+  ];
+
+  const FONT_WEIGHTS: { value: 400 | 500 | 600 | 700; label: string }[] = [
+    { value: 400, label: "R" },
+    { value: 500, label: "M" },
+    { value: 600, label: "SB" },
+    { value: 700, label: "B" },
+  ];
+
   function maxRamp(a: Annotation): number {
     return Math.max(0, (a.end - a.start) * 0.5);
   }
+
+  // Tool status hint shown beneath the palette while a tool is active.
+  const toolHint = $derived.by(() => {
+    switch (store.annotationTool) {
+      case "rect":
+      case "ellipse":
+        return "Drag on the preview to draw a shape.";
+      case "arrow":
+        return "Drag from start to end on the preview.";
+      case "text":
+        return "Drag a box on the preview, then type.";
+      default:
+        return "";
+    }
+  });
 </script>
 
 <div class="flex flex-col gap-5 animate-in fade-in duration-200">
@@ -98,37 +225,62 @@
   <section>
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
           Annotations
         </h3>
-        <InspectorHint content="Draw overlays on the video. Pick a tool, then drag on the preview. Each annotation is anchored in video-space so it follows zoom and crop." />
+        <InspectorHint
+          content="Pick a tool, then drag on the preview. Annotations are anchored in video-space so they follow zoom and crop. Press Esc to cancel placement."
+        />
       </div>
       <Pencil size={11} class="text-muted-foreground" />
     </div>
-    <div class="mt-2 flex flex-wrap gap-1">
+    <div class="mt-2 grid grid-cols-6 gap-1">
       {#each tools as tool (tool.id)}
         {@const Icon = tool.icon}
-        {@const isActive = store.annotationTool === tool.id}
+        {@const isActive =
+          tool.id === "select"
+            ? store.annotationTool === null
+            : store.annotationTool === tool.id}
         <button
           type="button"
           aria-pressed={isActive}
-          onclick={() => toggleTool(tool.id)}
+          aria-disabled={tool.disabled}
+          disabled={tool.disabled}
+          onclick={() => setTool(tool.id, tool.disabled)}
+          title={tool.disabled
+            ? `${tool.label} — coming soon`
+            : `${tool.label} (${tool.hotkey})`}
           class={cn(
-            "flex h-7 items-center gap-1.5 rounded-md border px-2 text-[11px] font-medium transition-colors",
+            "group relative flex h-10 flex-col items-center justify-center gap-0.5 rounded-md border text-[9px] font-medium transition-colors",
             "focus:outline-none focus:ring-1 focus:ring-ring",
-            isActive
-              ? "border-primary bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground",
+            tool.disabled
+              ? "border-dashed border-border text-muted-foreground/40 cursor-not-allowed"
+              : isActive
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border bg-background text-muted-foreground hover:text-foreground",
           )}
         >
-          <Icon size={12} />
-          {tool.label}
+          <Icon size={14} />
+          <span class="leading-none">{tool.label}</span>
+          {#if tool.disabled}
+            <Lock
+              size={8}
+              class="absolute right-0.5 top-0.5 text-muted-foreground/50"
+            />
+          {/if}
         </button>
       {/each}
     </div>
-    {#if store.annotationTool}
+    {#if toolHint}
       <p class="mt-1.5 text-[10px] text-muted-foreground">
-        Drag on the preview to place. <kbd class="rounded border border-border bg-background px-1 font-mono text-[9px]">Esc</kbd> to cancel.
+        {toolHint}
+        <kbd
+          class="ml-1 rounded border border-border bg-background px-1 font-mono text-[9px]"
+          >Esc</kbd
+        >
+        to cancel.
       </p>
     {/if}
   </section>
@@ -138,7 +290,7 @@
     <div
       class="flex flex-col items-center gap-2 rounded-md border border-dashed border-border bg-card/40 px-3 py-6 text-center"
     >
-      <Pencil size={18} class="text-muted-foreground" />
+      <SquareDashedMousePointer size={18} class="text-muted-foreground" />
       <p class="text-[11px] font-medium text-foreground">No annotations yet</p>
       <p class="text-[10px] text-muted-foreground">
         Pick a tool above, then drag on the preview.
@@ -163,7 +315,7 @@
           <Icon size={12} class="shrink-0 text-primary" />
           <div class="flex-1 min-w-0">
             <div class="truncate text-[11px] font-medium text-foreground">
-              {annotation.kind.kind === "rect" ? "Rectangle" : "Ellipse"}
+              {kindLabel(annotation)}
             </div>
             <div class="text-[10px] text-muted-foreground">
               {fmtTime(annotation.start)}–{fmtTime(annotation.end)}
@@ -179,8 +331,10 @@
     {@const a = selected}
     <section class="flex flex-col gap-3 border-t border-border pt-3">
       <header class="flex items-center justify-between gap-2">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Selected
+        <h3
+          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        >
+          {kindLabel(a)}
         </h3>
         <Button
           variant="destructive_soft"
@@ -259,71 +413,90 @@
         />
       </div>
       <div class="flex justify-end">
-        <Button variant="ghost" size="xs" onclick={resetCurves}>Reset curves</Button>
+        <Button variant="ghost" size="xs" onclick={resetCurves}
+          >Reset curves</Button
+        >
       </div>
 
-      <!-- Appearance -->
-      <div class="space-y-2.5 border-t border-border pt-3">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Stroke
-        </h3>
-        <SliderControl
-          label="Width"
-          value={a.stroke.width * 1000}
-          min={0}
-          max={20}
-          step={1}
-          unit="‰"
-          description="Per-mille of video width; 0 disables the stroke."
-          formatValue={(v) => `${v.toFixed(0)}‰`}
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => setStroke({ width: v / 1000 })}
-        />
-        <div class="flex flex-wrap gap-1">
-          {#each STROKE_SWATCHES as swatch (swatch)}
-            {@const isActive = a.stroke.color === swatch}
-            <button
-              type="button"
-              aria-label="Stroke {swatch}"
-              aria-pressed={isActive}
-              onclick={() => setStroke({ color: swatch })}
-              class={cn(
-                "size-5 rounded-full border-2 transition",
-                isActive ? "border-ring ring-1 ring-ring" : "border-border",
-              )}
-              style:background={swatch}
-            ></button>
-          {/each}
+      <!-- Stroke (rect / ellipse / arrow) -->
+      {#if a.kind.kind === "rect" || a.kind.kind === "ellipse" || a.kind.kind === "arrow"}
+        <div class="space-y-2.5 border-t border-border pt-3">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            Stroke
+          </h3>
+          <SliderControl
+            label="Width"
+            value={a.stroke.width * 1000}
+            min={0}
+            max={20}
+            step={1}
+            unit="‰"
+            description="Per-mille of video width; 0 disables the stroke."
+            formatValue={(v) => `${v.toFixed(0)}‰`}
+            onstart={() => store.pushUndoState()}
+            onchange={(v) => setStroke({ width: v / 1000 })}
+          />
+          <div class="flex flex-wrap gap-1">
+            {#each STROKE_SWATCHES as swatch (swatch)}
+              {@const isActive = a.stroke.color === swatch}
+              <button
+                type="button"
+                aria-label="Stroke {swatch}"
+                aria-pressed={isActive}
+                onclick={() => setStroke({ color: swatch })}
+                class={cn(
+                  "size-5 rounded-full border-2 transition",
+                  isActive ? "border-ring ring-1 ring-ring" : "border-border",
+                )}
+                style:background={swatch}
+              ></button>
+            {/each}
+          </div>
         </div>
-      </div>
+      {/if}
 
-      <div class="space-y-2.5 border-t border-border pt-3">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-          Fill
-        </h3>
-        <div class="flex flex-wrap gap-1">
-          {#each FILL_SWATCHES as swatch (swatch)}
-            {@const isActive = a.fill === swatch}
-            <button
-              type="button"
-              aria-label={swatch === "transparent" ? "No fill" : `Fill ${swatch}`}
-              aria-pressed={isActive}
-              onclick={() => updateSelected({ fill: swatch })}
-              class={cn(
-                "size-5 rounded-md border-2 transition",
-                isActive ? "border-ring ring-1 ring-ring" : "border-border",
-                swatch === "transparent" && "bg-background",
-              )}
-              style:background={swatch === "transparent" ? undefined : swatch}
-            >
-              {#if swatch === "transparent"}
-                <span class="block h-full w-full rounded-sm" style="background: repeating-linear-gradient(45deg, var(--color-muted) 0 3px, transparent 3px 6px);"></span>
-              {/if}
-            </button>
-          {/each}
+      <!-- Fill (rect / ellipse only — arrows are stroke-only) -->
+      {#if a.kind.kind === "rect" || a.kind.kind === "ellipse"}
+        <div class="space-y-2.5 border-t border-border pt-3">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            Fill
+          </h3>
+          <div class="flex flex-wrap gap-1">
+            {#each FILL_SWATCHES as swatch (swatch)}
+              {@const isActive = a.fill === swatch}
+              <button
+                type="button"
+                aria-label={swatch === "transparent"
+                  ? "No fill"
+                  : `Fill ${swatch}`}
+                aria-pressed={isActive}
+                onclick={() => updateSelected({ fill: swatch })}
+                class={cn(
+                  "size-5 rounded-md border-2 transition",
+                  isActive ? "border-ring ring-1 ring-ring" : "border-border",
+                  swatch === "transparent" && "bg-background",
+                )}
+                style:background={swatch === "transparent"
+                  ? undefined
+                  : swatch}
+              >
+                {#if swatch === "transparent"}
+                  <span
+                    class="block h-full w-full rounded-sm"
+                    style="background: repeating-linear-gradient(45deg, var(--color-muted) 0 3px, transparent 3px 6px);"
+                  ></span>
+                {/if}
+              </button>
+            {/each}
+          </div>
         </div>
-      </div>
+      {/if}
 
+      <!-- Per-kind specific properties -->
       {#if a.kind.kind === "rect"}
         <SliderControl
           label="Corner radius"
@@ -342,20 +515,217 @@
           }}
         />
       {/if}
+
+      {#if a.kind.kind === "arrow"}
+        <SliderControl
+          label="Head size"
+          value={a.kind.headSize * 100}
+          min={5}
+          max={40}
+          step={1}
+          unit="%"
+          description="Length of the arrowhead as a percentage of the line."
+          formatValue={(v) => `${v.toFixed(0)}%`}
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => {
+            if (a.kind.kind !== "arrow") return;
+            updateSelected({
+              kind: { ...a.kind, headSize: v / 100 },
+            });
+          }}
+        />
+      {/if}
+
+      {#if a.kind.kind === "text"}
+        <div class="space-y-2.5 border-t border-border pt-3">
+          <h3
+            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          >
+            Text
+          </h3>
+
+          <label
+            class="flex flex-col gap-1 text-[10px] text-muted-foreground"
+          >
+            <span>Content</span>
+            <textarea
+              class="rounded-md border border-border bg-background px-2 py-1.5 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              rows={2}
+              value={a.kind.content}
+              onfocus={() => store.pushUndoState()}
+              oninput={(e) => {
+                if (a.kind.kind !== "text") return;
+                updateSelected({
+                  kind: {
+                    ...a.kind,
+                    content: (e.currentTarget as HTMLTextAreaElement).value,
+                  },
+                });
+              }}
+            ></textarea>
+          </label>
+
+          <label
+            class="flex flex-col gap-1 text-[10px] text-muted-foreground"
+          >
+            <span>Font</span>
+            <select
+              class="rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              value={a.kind.fontFamily}
+              onchange={(e) => {
+                if (a.kind.kind !== "text") return;
+                store.pushUndoState();
+                updateSelected({
+                  kind: {
+                    ...a.kind,
+                    fontFamily: (e.currentTarget as HTMLSelectElement).value,
+                  },
+                });
+              }}
+            >
+              {#each FONT_FAMILIES as font (font.value)}
+                <option value={font.value}>{font.label}</option>
+              {/each}
+            </select>
+          </label>
+
+          <SliderControl
+            label="Size"
+            value={a.kind.fontSize * 100}
+            min={2}
+            max={20}
+            step={0.5}
+            unit="%"
+            description="Percentage of canvas height."
+            formatValue={(v) => `${v.toFixed(1)}%`}
+            onstart={() => store.pushUndoState()}
+            onchange={(v) => {
+              if (a.kind.kind !== "text") return;
+              updateSelected({
+                kind: { ...a.kind, fontSize: v / 100 },
+              });
+            }}
+          />
+
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] text-muted-foreground">Weight</span>
+            <div
+              class="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
+            >
+              {#each FONT_WEIGHTS as weight (weight.value)}
+                {@const isActive = a.kind.kind === "text" &&
+                  a.kind.fontWeight === weight.value}
+                <button
+                  type="button"
+                  aria-pressed={isActive}
+                  onclick={() => {
+                    if (a.kind.kind !== "text") return;
+                    store.pushUndoState();
+                    updateSelected({
+                      kind: { ...a.kind, fontWeight: weight.value },
+                    });
+                  }}
+                  class={cn(
+                    "h-6 min-w-6 rounded px-1.5 text-[10px] font-mono",
+                    isActive
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  style="font-weight: {weight.value}"
+                >
+                  {weight.label}
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[10px] text-muted-foreground">Align</span>
+            <div
+              class="flex items-center gap-0.5 rounded-md border border-border bg-muted/30 p-0.5"
+            >
+              {#each [{ id: "left", icon: AlignLeft }, { id: "center", icon: AlignCenter }, { id: "right", icon: AlignRight }] as opt (opt.id)}
+                {@const Icon = opt.icon}
+                {@const isActive = a.kind.kind === "text" &&
+                  a.kind.align === opt.id}
+                <button
+                  type="button"
+                  aria-pressed={isActive}
+                  aria-label={opt.id}
+                  onclick={() => {
+                    if (a.kind.kind !== "text") return;
+                    store.pushUndoState();
+                    updateSelected({
+                      kind: {
+                        ...a.kind,
+                        align: opt.id as "left" | "center" | "right",
+                      },
+                    });
+                  }}
+                  class={cn(
+                    "flex h-6 w-6 items-center justify-center rounded",
+                    isActive
+                      ? "bg-card text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  <Icon size={12} />
+                </button>
+              {/each}
+            </div>
+          </div>
+
+          <div>
+            <p class="text-[10px] text-muted-foreground mb-1">Color</p>
+            <div class="flex flex-wrap gap-1">
+              {#each STROKE_SWATCHES as swatch (swatch)}
+                {@const isActive = a.kind.kind === "text" &&
+                  a.kind.color === swatch}
+                <button
+                  type="button"
+                  aria-label="Color {swatch}"
+                  aria-pressed={isActive}
+                  onclick={() => {
+                    if (a.kind.kind !== "text") return;
+                    store.pushUndoState();
+                    updateSelected({
+                      kind: { ...a.kind, color: swatch },
+                    });
+                  }}
+                  class={cn(
+                    "size-5 rounded-full border-2 transition",
+                    isActive
+                      ? "border-ring ring-1 ring-ring"
+                      : "border-border",
+                  )}
+                  style:background={swatch}
+                ></button>
+              {/each}
+            </div>
+          </div>
+        </div>
+      {/if}
     </section>
   {:else}
-    <section class="rounded-md border border-border bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground">
+    <section
+      class="rounded-md border border-border bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground"
+    >
       Select an annotation to edit its timing, curves, and appearance.
     </section>
   {/if}
 
-  <!-- Phase 2/3 teaser so the missing tools don't look like a bug -->
-  <section class="rounded-md border border-dashed border-border bg-card/30 px-3 py-2.5">
-    <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+  <!-- Roadmap teaser -->
+  <section
+    class="rounded-md border border-dashed border-border bg-card/30 px-3 py-2.5"
+  >
+    <p
+      class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+    >
       Coming next
     </p>
     <p class="mt-1 text-[10px] text-muted-foreground">
-      Arrows, polygons, blur redactions, images, and text (with Google-Fonts picker) land in the next pass.
+      Image overlays (with file picker), polygons, blur redactions, and a
+      Google Fonts picker land in upcoming passes.
     </p>
   </section>
 </div>

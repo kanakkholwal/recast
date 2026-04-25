@@ -286,6 +286,41 @@ pub enum AnnotationKind {
         w: f64,
         h: f64,
     },
+    /// Stroke-only directional callout. The head is drawn at (x2, y2).
+    Arrow {
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        /// Head length as a fraction of line length, clamped 0.05..0.4.
+        #[serde(default = "default_arrow_head_size")]
+        head_size: f64,
+    },
+    /// PNG/JPG overlay composited at the UV rect. Used both for the user's
+    /// Image tool and as the export substitute for text annotations after
+    /// the WebView rasterizes them at export prep.
+    Image {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        path: String,
+        #[serde(default = "default_image_opacity")]
+        opacity: f64,
+    },
+    /// Unknown / unsupported variant. Deserialization fallback so the export
+    /// pipeline doesn't fail if the JS side sends a kind Rust can't render
+    /// (e.g. `text` annotations that weren't pre-rasterized to PNG). Skipped
+    /// silently in the draw loop.
+    #[serde(other)]
+    Unsupported,
+}
+
+fn default_arrow_head_size() -> f64 {
+    0.15
+}
+fn default_image_opacity() -> f64 {
+    1.0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

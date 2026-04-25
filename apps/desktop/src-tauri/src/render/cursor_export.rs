@@ -5,6 +5,7 @@
 //! intermediate `.webm` avoids both the "thousands of PNG files" disk-cost
 //! problem and any pixel-handoff via IPC.
 
+use std::collections::HashMap;
 use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
@@ -12,6 +13,7 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, Context, Result};
+use image::{ImageReader, RgbaImage};
 
 use crate::cursor::CursorTrack;
 use crate::render::graph::RenderState;
@@ -205,6 +207,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let highlight_alpha_base =
         (request.render_state.cursor_highlight_opacity / 100.0).clamp(0.0, 1.0);
 
+    // Pre-decode every image referenced by an Image annotation. The hybrid-
+    // raster pipeline can produce many of these (one per text annotation),
+    // but the count is bounded by the project size — far cheaper to decode
+    // once than to re-decode per frame.
+    let image_cache = build_image_cache(&request.render_state.annotations);
+
     for i in 0..frame_count {
         // Clear frame to transparent.
         frame.fill(0);
@@ -222,6 +230,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 annotation,
                 &request,
                 t_out_secs,
+                &image_cache,
             );
         }
 
@@ -468,12 +477,80 @@ fn draw_annotation(
     annotation: &Annotation,
     request: &CursorOverlayRequest,
     t_secs: f64,
+    image_cache: &HashMap<String, RgbaImage>,
 ) {
     let opacity = annotation_opacity(annotation, t_secs);
     if opacity <= 0.0 {
         return;
     }
 
+    match &annotation.kind {
+        AnnotationKind::Rect { .. } | AnnotationKind::Ellipse { .. } => {
+            draw_shape(frame, width, height, annotation, request, t_secs, opacity);
+        }
+        AnnotationKind::Arrow {
+            x1,
+            y1,
+            x2,
+            y2,
+            head_size,
+        } => {
+            draw_arrow(
+                frame,
+                width,
+                height,
+                annotation,
+                request,
+                t_secs,
+                opacity,
+                *x1,
+                *y1,
+                *x2,
+                *y2,
+                *head_size,
+            );
+        }
+        AnnotationKind::Image {
+            x,
+            y,
+            w,
+            h,
+            path,
+            opacity: img_opacity,
+        } => {
+            if let Some(img) = image_cache.get(path) {
+                draw_image(
+                    frame,
+                    width,
+                    height,
+                    img,
+                    request,
+                    t_secs,
+                    *x,
+                    *y,
+                    *w,
+                    *h,
+                    opacity * img_opacity.clamp(0.0, 1.0),
+                );
+            }
+        }
+        AnnotationKind::Unsupported => {
+            // Silently skip — caller (JS) was supposed to rasterize/replace
+            // before sending. Logged once at deserialize time would be ideal
+            // but there's no hook for that here.
+        }
+    }
+}
+
+fn draw_shape(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    annotation: &Annotation,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    opacity: f64,
+) {
     let Some((x, y, w, h, radius)) = annotation_box(annotation) else {
         return;
     };
@@ -507,9 +584,22 @@ fn draw_annotation(
                     true,
                     1.0,
                 ),
-                AnnotationKind::Ellipse { .. } => {
-                    draw_ellipse(frame, width, height, x, y, w, h, r, g, b, a * opacity, true, 1.0)
-                }
+                AnnotationKind::Ellipse { .. } => draw_ellipse(
+                    frame,
+                    width,
+                    height,
+                    x,
+                    y,
+                    w,
+                    h,
+                    r,
+                    g,
+                    b,
+                    a * opacity,
+                    true,
+                    1.0,
+                ),
+                _ => {}
             }
         }
     }
@@ -550,8 +640,278 @@ fn draw_annotation(
                         false,
                         stroke_px,
                     ),
+                    _ => {}
                 }
             }
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_arrow(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    annotation: &Annotation,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    opacity: f64,
+    x1_uv: f64,
+    y1_uv: f64,
+    x2_uv: f64,
+    y2_uv: f64,
+    head_size: f64,
+) {
+    let stroke_color = parse_css_color(&annotation.stroke.color);
+    let Some((sr, sg, sb, sa)) = stroke_color else {
+        return;
+    };
+    if sa <= 0.0 {
+        return;
+    }
+    let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+
+    let (cx1, cy1) = uv_to_canvas(request, x1_uv, y1_uv, t_secs);
+    let (cx2, cy2) = uv_to_canvas(request, x2_uv, y2_uv, t_secs);
+    let dx = cx2 - cx1;
+    let dy = cy2 - cy1;
+    let line_len = (dx * dx + dy * dy).sqrt();
+    if line_len < 1.0 {
+        return;
+    }
+
+    let head_len = (head_size.clamp(0.05, 0.4) * line_len).max(stroke_px * 2.0);
+    let head_width = head_len * 0.7;
+    // Trim the line so it ends at the base of the head, otherwise the
+    // capsule pokes through the triangle and looks blunt.
+    let ux = dx / line_len;
+    let uy = dy / line_len;
+    let line_end_x = cx2 - ux * head_len;
+    let line_end_y = cy2 - uy * head_len;
+    let base_cx = line_end_x;
+    let base_cy = line_end_y;
+    let nx = -uy;
+    let ny = ux;
+
+    // Capsule line via SDF.
+    let alpha = sa * opacity;
+    draw_capsule(
+        frame, width, height, cx1, cy1, line_end_x, line_end_y, stroke_px, sr, sg, sb, alpha,
+    );
+
+    // Filled arrowhead triangle: tip at (cx2, cy2), base perpendicular.
+    let tip_x = cx2;
+    let tip_y = cy2;
+    let base_left_x = base_cx + nx * head_width * 0.5;
+    let base_left_y = base_cy + ny * head_width * 0.5;
+    let base_right_x = base_cx - nx * head_width * 0.5;
+    let base_right_y = base_cy - ny * head_width * 0.5;
+    draw_triangle_filled(
+        frame, width, height, tip_x, tip_y, base_left_x, base_left_y, base_right_x, base_right_y,
+        sr, sg, sb, alpha,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_image(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    img: &RgbaImage,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    x_uv: f64,
+    y_uv: f64,
+    w_uv: f64,
+    h_uv: f64,
+    alpha: f64,
+) {
+    if w_uv <= 0.0 || h_uv <= 0.0 || alpha <= 0.0 {
+        return;
+    }
+    let (cx1, cy1) = uv_to_canvas(request, x_uv, y_uv, t_secs);
+    let (cx2, cy2) = uv_to_canvas(request, x_uv + w_uv, y_uv + h_uv, t_secs);
+    let dx = cx1.min(cx2);
+    let dy = cy1.min(cy2);
+    let dw = (cx2 - cx1).abs();
+    let dh = (cy2 - cy1).abs();
+    if dw < 1.0 || dh < 1.0 {
+        return;
+    }
+    let (img_w, img_h) = img.dimensions();
+    if img_w == 0 || img_h == 0 {
+        return;
+    }
+    let x_min = dx.floor().max(0.0) as usize;
+    let y_min = dy.floor().max(0.0) as usize;
+    let x_max = (dx + dw).ceil().min(width as f64 - 1.0).max(0.0) as usize;
+    let y_max = (dy + dh).ceil().min(height as f64 - 1.0).max(0.0) as usize;
+    for py in y_min..=y_max {
+        // Map dst pixel back into image space (nearest-neighbour). Bilinear
+        // would look nicer but a single-pass nearest is plenty for screen
+        // recordings where the rasterized text PNG already matches the
+        // intended pixel size to within a few percent.
+        let v = ((py as f64 + 0.5 - dy) / dh).clamp(0.0, 0.999);
+        let sy = (v * img_h as f64) as u32;
+        for px in x_min..=x_max {
+            let u = ((px as f64 + 0.5 - dx) / dw).clamp(0.0, 0.999);
+            let sx = (u * img_w as f64) as u32;
+            let pixel = img.get_pixel(sx, sy);
+            let src_a = pixel[3] as f64 / 255.0 * alpha;
+            if src_a <= 0.0 {
+                continue;
+            }
+            blend_pixel(
+                frame,
+                width,
+                px,
+                py,
+                pixel[0],
+                pixel[1],
+                pixel[2],
+                src_a,
+            );
+        }
+    }
+}
+
+fn build_image_cache(annotations: &[Annotation]) -> HashMap<String, RgbaImage> {
+    use base64::Engine;
+    let mut cache = HashMap::new();
+    for anno in annotations {
+        if let AnnotationKind::Image { path, .. } = &anno.kind {
+            if cache.contains_key(path) {
+                continue;
+            }
+            // Two source forms:
+            //   - `data:image/png;base64,...` — produced by the WebView at
+            //     export prep when text annotations are rasterized in JS.
+            //     Decoded in-memory; no disk roundtrip.
+            //   - file path — user-supplied image overlay, decoded via
+            //     image::ImageReader.
+            let decoded: Result<image::DynamicImage> = if path.starts_with("data:") {
+                let comma = path.find(',').ok_or_else(|| anyhow!("malformed data URL"));
+                comma.and_then(|idx| {
+                    let payload = &path[idx + 1..];
+                    base64::engine::general_purpose::STANDARD
+                        .decode(payload)
+                        .map_err(|e| anyhow!(e))
+                        .and_then(|bytes| image::load_from_memory(&bytes).map_err(|e| anyhow!(e)))
+                })
+            } else {
+                ImageReader::open(path)
+                    .and_then(|r| r.with_guessed_format())
+                    .map_err(|e| anyhow!(e))
+                    .and_then(|r| r.decode().map_err(|e| anyhow!(e)))
+            };
+            match decoded {
+                Ok(img) => {
+                    cache.insert(path.clone(), img.to_rgba8());
+                }
+                Err(e) => {
+                    let preview = if path.len() > 40 { &path[..40] } else { path.as_str() };
+                    log::warn!("failed to decode annotation image ({preview}…): {e}");
+                }
+            }
+        }
+    }
+    cache
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_capsule(
+    buf: &mut [u8],
+    width: usize,
+    height: usize,
+    x1: f64,
+    y1: f64,
+    x2: f64,
+    y2: f64,
+    thickness: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: f64,
+) {
+    if alpha <= 0.0 {
+        return;
+    }
+    let radius = thickness * 0.5;
+    let pad = radius + 2.0;
+    let x_min = (x1.min(x2) - pad).floor().max(0.0) as usize;
+    let y_min = (y1.min(y2) - pad).floor().max(0.0) as usize;
+    let x_max = ((x1.max(x2) + pad).ceil() as i64)
+        .min(width as i64 - 1)
+        .max(0) as usize;
+    let y_max = ((y1.max(y2) + pad).ceil() as i64)
+        .min(height as i64 - 1)
+        .max(0) as usize;
+    let dx = x2 - x1;
+    let dy = y2 - y1;
+    let len_sq = (dx * dx + dy * dy).max(1e-6);
+    for py in y_min..=y_max {
+        for px in x_min..=x_max {
+            let fx = px as f64 + 0.5 - x1;
+            let fy = py as f64 + 0.5 - y1;
+            let t = ((fx * dx + fy * dy) / len_sq).clamp(0.0, 1.0);
+            let cx = t * dx;
+            let cy = t * dy;
+            let dist = ((fx - cx).powi(2) + (fy - cy).powi(2)).sqrt();
+            // 1-pixel anti-aliased edge.
+            let coverage = (1.0 - (dist - (radius - 0.5)).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+            if coverage <= 0.0 {
+                continue;
+            }
+            blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_triangle_filled(
+    buf: &mut [u8],
+    width: usize,
+    height: usize,
+    ax: f64,
+    ay: f64,
+    bx: f64,
+    by: f64,
+    cx: f64,
+    cy: f64,
+    r: u8,
+    g: u8,
+    b: u8,
+    alpha: f64,
+) {
+    if alpha <= 0.0 {
+        return;
+    }
+    let x_min = ax.min(bx).min(cx).floor().max(0.0) as usize;
+    let y_min = ay.min(by).min(cy).floor().max(0.0) as usize;
+    let x_max = ((ax.max(bx).max(cx)).ceil() as i64)
+        .min(width as i64 - 1)
+        .max(0) as usize;
+    let y_max = ((ay.max(by).max(cy)).ceil() as i64)
+        .min(height as i64 - 1)
+        .max(0) as usize;
+    // Edge-function rasterizer; sign indicates which side of an edge a point
+    // lies on. Inside the triangle, all three edge functions agree in sign.
+    let sign = |px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64| -> f64 {
+        (px - bx) * (ay - by) - (ax - bx) * (py - by)
+    };
+    for py in y_min..=y_max {
+        for px in x_min..=x_max {
+            let pcx = px as f64 + 0.5;
+            let pcy = py as f64 + 0.5;
+            let d1 = sign(pcx, pcy, ax, ay, bx, by);
+            let d2 = sign(pcx, pcy, bx, by, cx, cy);
+            let d3 = sign(pcx, pcy, cx, cy, ax, ay);
+            let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
+            let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
+            if has_neg && has_pos {
+                continue;
+            }
+            blend_pixel(buf, width, px, py, r, g, b, alpha);
         }
     }
 }
@@ -568,6 +928,7 @@ fn annotation_box(annotation: &Annotation) -> Option<(f64, f64, f64, f64, f64)> 
             let top = y.min(y + h);
             Some((left, top, w.abs(), h.abs(), 0.0))
         }
+        _ => None,
     }
 }
 
