@@ -18,7 +18,6 @@ pub struct RenderState {
     pub background_blur: f64,
     pub padding: f64,
     /// Corner rounding as a percentage (0..50) of the shorter video edge.
-    /// Currently used in the preview shader only; export applies square corners.
     #[serde(default)]
     pub border_radius: f64,
     pub cursor_enabled: bool,
@@ -135,6 +134,7 @@ impl RenderGraph {
         static_root: &Path,
         background_input_index: usize,
         asset_cache_dir: Option<&Path>,
+        border_radius_mask: Option<PathBuf>,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -152,7 +152,41 @@ impl RenderGraph {
             .map(|node| build_zoom_filter(node, source))
             .filter(|value: &String| !value.is_empty());
 
-        let mut extra_inputs = Vec::new();
+        // The mask, when present, occupies the first extra_input slot so its
+        // input index is deterministic (= background_input_index). The
+        // background image (if any) shifts to the next slot.
+        let mut extra_inputs: Vec<PathBuf> = Vec::new();
+        let mask_input_index = border_radius_mask.as_ref().map(|_| background_input_index);
+        if let Some(path) = border_radius_mask {
+            extra_inputs.push(path);
+        }
+        let bg_image_input_index = background_input_index + extra_inputs.len();
+
+        // Build the chain that produces the source-video label `[video0]`.
+        // When neither zoom nor mask are present, the source can be referenced
+        // directly as `[0:v]` (saves a filter pass).
+        let mut prelude_segments: Vec<String> = Vec::new();
+        let video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
+            (None, None) => "[0:v]".into(),
+            (Some(zoom_filter), None) => {
+                prelude_segments.push(format!("[0:v]{zoom_filter}[video0]"));
+                "[video0]".into()
+            }
+            (None, Some(mask_idx)) => {
+                prelude_segments.push(format!(
+                    "[0:v][{mask_idx}:v]alphamerge[video0]"
+                ));
+                "[video0]".into()
+            }
+            (Some(zoom_filter), Some(mask_idx)) => {
+                prelude_segments.push(format!("[0:v]{zoom_filter}[video0z]"));
+                prelude_segments.push(format!(
+                    "[video0z][{mask_idx}:v]alphamerge[video0]"
+                ));
+                "[video0]".into()
+            }
+        };
+
         let filter_complex = match background {
             Some(background)
                 if matches!(background.background_type.as_str(), "wallpaper" | "image") =>
@@ -161,21 +195,10 @@ impl RenderGraph {
                     resolve_background_path(&background.value, static_root, asset_cache_dir)
                 {
                     extra_inputs.push(background_path);
-                    let mut segments = Vec::new();
-                    if let Some(zoom_filter) = zoom_filter {
-                        segments.push(format!("[0:v]{zoom_filter}[video0]"));
-                    }
-                    // Label must be wrapped in brackets when chained into an
-                    // overlay filter — otherwise FFmpeg parses `[bg]0:voverlay=…`
-                    // as a single filter name.
-                    let video_label = if segments.is_empty() {
-                        "[0:v]".to_string()
-                    } else {
-                        "[video0]".to_string()
-                    };
+                    let mut segments = prelude_segments.clone();
                     let blur_sigma = (background.blur / 8.0).max(0.0);
                     segments.push(format!(
-                        "[{background_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg]"
+                        "[{bg_image_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg]"
                     ));
                     segments.push(format!(
                         "[bg]{video_label}overlay={padding}:{padding}[vout]"
@@ -184,7 +207,8 @@ impl RenderGraph {
                 } else {
                     build_color_background_filter(
                         background,
-                        zoom_filter,
+                        prelude_segments.clone(),
+                        &video_label,
                         canvas_width,
                         canvas_height,
                         padding,
@@ -193,12 +217,23 @@ impl RenderGraph {
             }
             Some(background) => build_color_background_filter(
                 background,
-                zoom_filter,
+                prelude_segments.clone(),
+                &video_label,
                 canvas_width,
                 canvas_height,
                 padding,
             ),
-            None => zoom_filter.map(|value| format!("[0:v]{value}[vout]")),
+            None => {
+                if prelude_segments.is_empty() {
+                    None
+                } else {
+                    // Source is `[video0]`; surface it as `[vout]` so the
+                    // outer pipeline always maps a labelled stream.
+                    let mut segments = prelude_segments.clone();
+                    segments.push(format!("{video_label}null[vout]"));
+                    Some(segments.join(";"))
+                }
+            }
         };
 
         let requires_map = filter_complex.is_some();
@@ -217,7 +252,8 @@ impl RenderGraph {
 
 fn build_color_background_filter(
     background: &BackgroundNode,
-    zoom_filter: Option<String>,
+    prelude_segments: Vec<String>,
+    video_label: &str,
     canvas_width: u32,
     canvas_height: u32,
     padding: u32,
@@ -228,16 +264,7 @@ fn build_color_background_filter(
         _ => "#111111".into(),
     };
 
-    let mut segments = Vec::new();
-    if let Some(zoom_filter) = zoom_filter {
-        segments.push(format!("[0:v]{zoom_filter}[video0]"));
-    }
-    // Label must be wrapped in brackets when chained into an overlay filter.
-    let video_label = if segments.is_empty() {
-        "[0:v]".to_string()
-    } else {
-        "[video0]".to_string()
-    };
+    let mut segments = prelude_segments;
     segments.push(format!(
         "color=c={color}:s={canvas_width}x{canvas_height}[bg]"
     ));

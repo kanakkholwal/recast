@@ -398,3 +398,74 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
     std::fs::rename(&src, &dest).map_err(|e| format!("Rename failed: {e}"))?;
     Ok(dest.to_string_lossy().to_string())
 }
+
+#[derive(Debug, Serialize)]
+pub struct FfmpegDiagnostics {
+    pub ffmpeg_path: String,
+    pub ffprobe_path: String,
+    pub version: Option<String>,
+    pub h264_encoder: String,
+    pub encoders_present: Vec<String>,
+    pub encoders_missing: Vec<String>,
+}
+
+/// Reports the resolved ffmpeg/ffprobe paths, version line, and which of the
+/// encoders the export pipeline depends on are actually available. Surfaced
+/// to the UI so users can include this in bug reports without needing a CLI.
+#[tauri::command]
+pub async fn diagnose_ffmpeg() -> Result<FfmpegDiagnostics, String> {
+    tauri::async_runtime::spawn_blocking(|| {
+        let ffmpeg = crate::ffmpeg::ffmpeg_path().clone();
+        let ffprobe = crate::ffmpeg::ffprobe_path().clone();
+
+        let version = Command::new(&ffmpeg)
+            .arg("-version")
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .and_then(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .next()
+                    .map(|s| s.to_string())
+            });
+
+        // Critical encoders for our export formats.
+        const REQUIRED: &[&str] = &["libx264", "aac", "libvpx-vp9", "libopus"];
+        let mut present: Vec<String> = Vec::new();
+        let mut missing: Vec<String> = Vec::new();
+
+        if let Ok(out) = Command::new(&ffmpeg)
+            .args(["-hide_banner", "-encoders"])
+            .output()
+        {
+            let table = String::from_utf8_lossy(&out.stdout);
+            for &name in REQUIRED {
+                if table.contains(name) {
+                    present.push(name.to_string());
+                } else {
+                    missing.push(name.to_string());
+                }
+            }
+            // Hardware encoder is informational, not required.
+            if table.contains("h264_nvenc") {
+                present.push("h264_nvenc".to_string());
+            }
+        } else {
+            for &name in REQUIRED {
+                missing.push(name.to_string());
+            }
+        }
+
+        Ok(FfmpegDiagnostics {
+            ffmpeg_path: ffmpeg.display().to_string(),
+            ffprobe_path: ffprobe.display().to_string(),
+            version,
+            h264_encoder: crate::ffmpeg::preferred_h264_encoder().to_string(),
+            encoders_present: present,
+            encoders_missing: missing,
+        })
+    })
+    .await
+    .map_err(|e| format!("diagnose_ffmpeg join error: {e}"))?
+}

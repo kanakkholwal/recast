@@ -21,6 +21,10 @@ env:
   RUST_BACKTRACE: "1"
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: "0"
+  # FFmpeg version pinned for reproducible release builds. Bump deliberately;
+  # do NOT track "latest". The Windows build comes from gyan.dev's release
+  # essentials archive; macOS from evermeet.cx; Linux from johnvansickle.com.
+  FFMPEG_VERSION: "7.1"
 
 jobs:
   create-release:
@@ -152,6 +156,85 @@ jobs:
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Cache FFmpeg sidecars
+        id: ffmpeg-cache
+        uses: actions/cache@v4
+        with:
+          path: apps/desktop/src-tauri/binaries
+          key: ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
+
+      - name: Download FFmpeg sidecars (Windows)
+        if: matrix.platform.os == 'windows-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $triple = "${{ matrix.platform.rust_target }}"
+          $dest = "apps/desktop/src-tauri/binaries"
+          New-Item -ItemType Directory -Force -Path $dest | Out-Null
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
+          Invoke-WebRequest -Uri $url -OutFile ffmpeg.zip -UseBasicParsing
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg-extract -Force
+          $bin = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          $probe = Get-ChildItem -Path ffmpeg-extract -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          if (-not $bin -or -not $probe) { throw "ffmpeg/ffprobe not found in archive" }
+          Copy-Item $bin.FullName "$dest/ffmpeg-$triple.exe" -Force
+          Copy-Item $probe.FullName "$dest/ffprobe-$triple.exe" -Force
+          Remove-Item -Recurse -Force ffmpeg.zip, ffmpeg-extract
+
+      - name: Download FFmpeg sidecars (macOS)
+        if: matrix.platform.os == 'macos-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple="${{ matrix.platform.rust_target }}"
+          dest="apps/desktop/src-tauri/binaries"
+          mkdir -p "$dest"
+          # evermeet.cx ships universal2 binaries that work on both arm64 and x64.
+          curl -L "https://evermeet.cx/ffmpeg/getrelease/ffmpeg/zip" -o ffmpeg.zip
+          curl -L "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o ffprobe.zip
+          unzip -o ffmpeg.zip -d ffmpeg-extract
+          unzip -o ffprobe.zip -d ffmpeg-extract
+          cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-$triple"
+          cp ffmpeg-extract/ffprobe "$dest/ffprobe-$triple"
+          chmod +x "$dest/ffmpeg-$triple" "$dest/ffprobe-$triple"
+          rm -rf ffmpeg.zip ffprobe.zip ffmpeg-extract
+
+      - name: Download FFmpeg sidecars (Linux)
+        if: matrix.platform.os == 'ubuntu-22.04' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple="${{ matrix.platform.rust_target }}"
+          dest="apps/desktop/src-tauri/binaries"
+          mkdir -p "$dest"
+          curl -L "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz" -o ffmpeg.tar.xz
+          mkdir -p ffmpeg-extract
+          tar -xf ffmpeg.tar.xz -C ffmpeg-extract --strip-components=1
+          cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-$triple"
+          cp ffmpeg-extract/ffprobe "$dest/ffprobe-$triple"
+          chmod +x "$dest/ffmpeg-$triple" "$dest/ffprobe-$triple"
+          rm -rf ffmpeg.tar.xz ffmpeg-extract
+
+      - name: Verify FFmpeg sidecars (encoders required for export)
+        shell: bash
+        run: |
+          set -euo pipefail
+          triple="${{ matrix.platform.rust_target }}"
+          dest="apps/desktop/src-tauri/binaries"
+          if [[ "${{ matrix.platform.os }}" == "windows-latest" ]]; then
+            bin="$dest/ffmpeg-$triple.exe"
+          else
+            bin="$dest/ffmpeg-$triple"
+          fi
+          [[ -x "$bin" ]] || { echo "::error::ffmpeg sidecar missing or not executable: $bin"; exit 1; }
+          encoders=$("$bin" -hide_banner -encoders)
+          for codec in libx264 aac libvpx-vp9 libopus; do
+            if ! echo "$encoders" | grep -q " $codec "; then
+              echo "::error::Required encoder missing from bundled ffmpeg: $codec"
+              exit 1
+            fi
+          done
+          "$bin" -version | head -n1
 
       - name: Build frontend (via turbo)
         run: pnpm turbo run build --filter=recast-desktop

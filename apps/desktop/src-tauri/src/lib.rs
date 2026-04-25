@@ -84,7 +84,8 @@ pub fn run() {
             commands::suggest_zoom_regions,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
-            commands::hydrate_cached_assets
+            commands::hydrate_cached_assets,
+            commands::diagnose_ffmpeg
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

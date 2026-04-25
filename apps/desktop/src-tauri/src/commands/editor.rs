@@ -22,6 +22,7 @@ use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
+use crate::render::mask_export::{render_border_radius_mask, MaskResult};
 use crate::render::node_types::AudioSettings;
 
 /// True if the line is part of an FFmpeg `-progress` block (key=value metric
@@ -503,6 +504,22 @@ pub async fn export_video(
         .app_data_dir()
         .ok()
         .map(|base| base.join("assets"));
+
+    // Border-radius is stored as a 0..50 percentage of the shorter source edge.
+    // Generate a single-frame alpha mask at source dimensions; the export plan
+    // will alphamerge it onto the (zoomed) source video before background
+    // composition so the rounded corners cut through to the background.
+    let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
+    let border_radius_px = border_radius_pct / 100.0
+        * metadata.width.min(metadata.height) as f64;
+    let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
+        render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
+            .map_err(|e| format!("border-radius mask render failed: {e}"))?
+    } else {
+        None
+    };
+    let border_radius_mask_path = border_radius_mask.as_ref().map(|m| m.path.clone());
+
     let export_plan = graph
         .build_export_plan_with(
             SourceVideoMetadata {
@@ -512,6 +529,7 @@ pub async fn export_video(
             &static_root(),
             1,
             asset_cache_dir.as_deref(),
+            border_radius_mask_path,
         )
         .map_err(|e| e.to_string())?;
 

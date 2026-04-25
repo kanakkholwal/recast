@@ -1,27 +1,17 @@
-//! Pre-renders the editor's cursor overlay as an alpha VP9 video so it can be
-//! muxed onto the main export via a single FFmpeg `overlay` filter.
-//!
-//! This mirrors the cursor rendering done by the WebGL2 preview in
-//! `src/components/editor/VideoPreview.svelte` (cursor dot + click highlight,
-//! with zoom-aware coordinates and idle-hide). Rendering in Rust and encoding
-//! to an intermediate `.webm` file avoids both the "thousands of PNG files"
-//! disk-cost problem and any pixel-handoff via IPC.
-//!
-//! NOTE: this module is currently dormant. `export_video` in
-//! `src/commands/editor.rs` temporarily skips the cursor overlay pass while
-//! we diagnose a hang + corruption issue. The code is kept intact so we can
-//! re-enable it once the root cause is understood.
-
-#![allow(dead_code)]
+//! Pre-renders the editor's cursor overlay (cursor dot + click highlight,
+//! annotations, drop shadow) as an alpha VP9 video so it can be muxed onto the
+//! main export via a single FFmpeg `overlay` filter. Mirrors the WebGL2
+//! preview in `src/components/editor/VideoPreview.svelte`. Encoding to an
+//! intermediate `.webm` avoids both the "thousands of PNG files" disk-cost
+//! problem and any pixel-handoff via IPC.
 
 use std::fs;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{anyhow, Context, Result};
-use image::RgbaImage;
 
 use crate::cursor::CursorTrack;
 use crate::render::graph::RenderState;
@@ -59,6 +49,12 @@ pub struct CursorOverlayResult {
 /// RAII guard that recursively deletes a scratch directory on drop.
 pub struct TempDirGuard {
     path: PathBuf,
+}
+
+impl TempDirGuard {
+    pub fn new(path: PathBuf) -> Self {
+        Self { path }
+    }
 }
 
 impl Drop for TempDirGuard {
@@ -854,10 +850,3 @@ fn parse_css_color(value: &str) -> Option<(u8, u8, u8, f64)> {
     Some((r, g, b, a))
 }
 
-// Silence unused-import lint if Path is not used elsewhere in this module.
-#[allow(dead_code)]
-fn _unused_path_marker(_p: &Path) {}
-
-// Silence unused-import lint.
-#[allow(dead_code)]
-fn _unused_image_marker(_img: &RgbaImage) {}
