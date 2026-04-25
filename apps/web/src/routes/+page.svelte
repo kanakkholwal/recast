@@ -5,7 +5,7 @@
 	  Footer,
 	  Hero,
 	  Navbar,
-	  Section,
+	  Section
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import { Rocket, Terminal, Users } from "lucide-svelte";
@@ -24,11 +24,17 @@
 <main class="bg-background text-foreground/80 selection:bg-primary/10">
 	<Hero />
 
+	<!-- <Section id="screenshots" class="pb-24 md:pb-32 -mt-8 md:-mt-16">
+		<Container>
+			<ScreenshotSlideshow />
+		</Container>
+	</Section> -->
+
 	<Section id="philosophy" class="py-24 md:py-32">
 		<Container>
 			<div class="max-w-3xl">
 				<p
-					class="text-[13px] font-semibold text-foreground/30 uppercase tracking-[0.2em] mb-12"
+					class="text-sm font-semibold text-foreground/30 uppercase tracking-[0.2em] mb-12"
 				>
 					Design Philosophy
 				</p>

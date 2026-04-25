@@ -2,7 +2,7 @@
 	import PageShell from "$components/layout/PageShell.svelte";
 	import { Search } from "@lucide/svelte";
 	import { cn } from "@recast/ui/utils";
-	import { onMount, tick, type Snippet } from "svelte";
+	import { type Snippet } from "svelte";
 	import RecastCard from "./RecastCard.svelte";
 	import RecastRow from "./RecastRow.svelte";
 	import TopProgress from "./TopProgress.svelte";
@@ -66,9 +66,9 @@
 
 	const visibleOrder = $derived(filtered.map((i) => i.id));
 
-	onMount(() => {
-		tick().then(() => searchEl?.focus());
-	});
+	// onMount(() => {
+	// 	tick().then(() => searchEl?.focus());
+	// });
 
 	function focusCard(id: string) {
 		const el = gridEl?.querySelector<HTMLElement>(

@@ -2,13 +2,13 @@
 @import "tailwindcss";
 
 @import "@fontsource-variable/instrument-sans";
-@import "@fontsource-variable/plus-jakarta-sans";
+@import "@fontsource-variable/geist";
 
 @source "../node_modules/@recast/ui/src";
 
 :root {
   --font-sans: "Instrument Sans Variable", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
-  --font-serif: "Plus Jakarta Sans Variable", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  --font-serif: "Geist Variable", ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
   --font-mono: "Geist Mono Variable", "JetBrains Mono", "Source Code Pro", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 
 }

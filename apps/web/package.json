@@ -17,6 +17,7 @@
     "@sveltejs/kit": "^2.50.2",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.2.1",
+    "portless": "^0.10.3",
     "svelte": "^5.51.0",
     "svelte-check": "^4.4.2",
     "tailwindcss": "^4.2.1",
@@ -25,7 +26,6 @@
   },
   "dependencies": {
     "@fontsource-variable/instrument-sans": "^5.2.8",
-    "@fontsource-variable/plus-jakarta-sans": "^5.2.8",
     "@lucide/svelte": "^0.577.0",
     "@sveltejs/adapter-auto": "^6.0.4",
     "bits-ui": "^2.16.3",

@@ -112,9 +112,6 @@ importers:
       '@fontsource-variable/instrument-sans':
         specifier: ^5.2.8
         version: 5.2.8
-      '@fontsource-variable/plus-jakarta-sans':
-        specifier: ^5.2.8
-        version: 5.2.8
       '@lucide/svelte':
         specifier: ^0.577.0
         version: 0.577.0(svelte@5.55.3)
@@ -161,6 +158,9 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.2.1
         version: 4.2.2(vite@7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0))
+      portless:
+        specifier: ^0.10.3
+        version: 0.10.3
       svelte:
         specifier: ^5.51.0
         version: 5.55.3
@@ -407,9 +407,6 @@ packages:
 
   '@fontsource-variable/instrument-sans@5.2.8':
     resolution: {integrity: sha512-mTCaukbdIjjoipj2E3Q5XoZM3ZxJWdzyHevf/LG/0PHlfF9Q85pxOM7B7A9MerFyxmRzz5kVlumgIvgDSG4CPg==}
-
-  '@fontsource-variable/plus-jakarta-sans@5.2.8':
-    resolution: {integrity: sha512-iQecBizIdZxezODNHzOn4SvvRMrZL/S8k4MEXGDynCmUrImVW0VmX+tIAMqnADwH4haXlHSXqMgU6+kcfBQJdw==}
 
   '@img/colour@1.1.0':
     resolution: {integrity: sha512-Td76q7j57o/tLVdgS746cYARfSyxk8iEfRxewL9h4OMzYhbW4TAcppl0mT4eyqXddh6L/jwoM75mo7ixa/pCeQ==}
@@ -1213,6 +1210,12 @@ packages:
     resolution: {integrity: sha512-QP88BAKvMam/3NxH6vj2o21R6MjxZUAd6nlwAS/pnGvN9IVLocLHxGYIzFhg6fUQ+5th6P4dv4eW9jX3DSIj7A==}
     engines: {node: '>=12'}
 
+  portless@0.10.3:
+    resolution: {integrity: sha512-lXbVUsNiwWMKJGMi49HhTMW0lS7u0EzawonDZQ+yglSnHioiQK18Y4Fe0Ilk+TuXej71E/nTOHIFIBjUGvTm9w==}
+    engines: {node: '>=20'}
+    os: [darwin, linux, win32]
+    hasBin: true
+
   postcss@8.5.9:
     resolution: {integrity: sha512-7a70Nsot+EMX9fFU3064K/kdHWZqGVY+BADLyXc8Dfv+mTLLVl6JzJpPaCZ2kQL9gIJvKXSLMHhqdRRjwQeFtw==}
     engines: {node: ^10 || ^12 || >=14}
@@ -1527,8 +1530,6 @@ snapshots:
   '@fontsource-variable/google-sans@5.2.1': {}
 
   '@fontsource-variable/instrument-sans@5.2.8': {}
-
-  '@fontsource-variable/plus-jakarta-sans@5.2.8': {}
 
   '@img/colour@1.1.0': {}
 
@@ -2145,6 +2146,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.4: {}
+
+  portless@0.10.3: {}
 
   postcss@8.5.9:
     dependencies:
