@@ -164,6 +164,7 @@
 }
 
 .scrollbar-transparent {
+   scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color:
     color-mix(in srgb, var(--foreground) 15%, transparent) transparent;
