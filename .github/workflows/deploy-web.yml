@@ -1,0 +1,69 @@
+name: Deploy to Vercel - Recast Web
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'  # Only trigger if changes in this directory
+  pull_request:
+    branches:
+      - main
+    paths:
+      - 'apps/web/**'  # Only trigger if changes in this directory
+  workflow_dispatch: 
+
+env:
+  VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+  VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+  NODE_VERSION: "20"
+  PNPM_VERSION: "10.23.0"
+
+  
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    # Set default working directory for all steps
+    defaults:
+      run:
+        working-directory: apps/web
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+          run_install: false
+
+      - name: Install dependencies
+        run: pnpm install --filter=recast-web
+
+      - name: Run linter (optional)
+        run: pnpm run lint
+        continue-on-error: true
+
+      - name: Run tests (optional)
+        run: pnpm run test
+        continue-on-error: true
+
+      - name: Install Vercel CLI
+        run: pnpm install --global vercel@latest
+        working-directory: .
+
+      - name: Deploy to Vercel (Production)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        run: |
+          vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy to Vercel (Preview)
+        if: github.event_name == 'pull_request' && github.ref == 'refs/heads/main'
+        run: |
+          vercel pull --yes --environment=preview --token=${{ secrets.VERCEL_TOKEN }}
+          vercel build --token=${{ secrets.VERCEL_TOKEN }}
+          vercel deploy --prebuilt --token=${{ secrets.VERCEL_TOKEN }}
