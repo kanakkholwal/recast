@@ -790,7 +790,7 @@ export function createEditorStore() {
 			autoZoomApplied,
 			autoZoomEnabled,
 			cursorMotionEasing,
-			annotations: annotations.map(({ id: _id, ...rest }) => rest),
+			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
 			audioSettings: { ...audioSettings },
 			watermarkSettings: { ...watermarkSettings },

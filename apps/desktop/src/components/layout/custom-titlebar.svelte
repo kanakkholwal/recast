@@ -59,7 +59,7 @@
 
 <div
   class={cn(
-    "group h-10 flex items-center border-b border-border-subtle bg-background/80 backdrop-blur-xl shrink-0 select-none px-4 transition-all duration-300",
+    "group h-10 flex items-center border-b border-border-subtle bg-background/80 backdrop-blur-xl shrink-0 select-none py-1 transition-all duration-300",
     wrapperClass
   )}
 >
