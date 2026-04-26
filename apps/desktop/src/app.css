@@ -84,6 +84,7 @@
   html {
     scroll-behavior: smooth;
     scrollbar-width: thin;
+    scrollbar-gutter: stable;
     @apply selection:bg-primary/15 selection:text-primary;
   }
 

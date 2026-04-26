@@ -31,7 +31,7 @@
   html {
     scroll-behavior: smooth;
     scrollbar-width: thin;
-     scrollbar-gutter: stable;
+    scrollbar-gutter: stable;
     @apply antialiased;
   }
 
@@ -40,7 +40,9 @@
     font-family: var(--font-sans);
     line-height: 1.6;
   }
-  a:has(href), button:not([disabled]) {
+
+  a:has(href),
+  button:not([disabled]) {
     cursor: pointer;
   }
 
