@@ -3,7 +3,14 @@
   import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
   import Logo from "$components/logo.svelte";
   import { launchRecordingPanel } from "$lib/ipc";
-  import { Download, Film, LayoutDashboard, Radio, Settings, SlidersHorizontal } from "@lucide/svelte";
+  import {
+    Download,
+    Film,
+    LayoutDashboard,
+    Radio,
+    Settings,
+    SlidersHorizontal,
+  } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";
   import { cn } from "@recast/ui/utils";
@@ -24,7 +31,10 @@
     return currentPath.startsWith(path);
   }
 
-  let { ref = $bindable(null), ...restProps }: ComponentProps<typeof Sidebar.Root> = $props();
+  let {
+    ref = $bindable(null),
+    ...restProps
+  }: ComponentProps<typeof Sidebar.Root> = $props();
 </script>
 
 <Sidebar.Root bind:ref variant="sidebar" collapsible="icon" {...restProps}>
@@ -33,17 +43,18 @@
     <Sidebar.MenuItem>
       <a
         href="/"
-        class="group flex items-center gap-2.5 transition-opacity hover:opacity-80"
+        class="group flex items-center justify-center gap-2.5 px-2.5 transition-opacity hover:opacity-80 h-12 group-data-[state=collapsed]:px-0"
         data-tauri-drag-region
       >
-        <div
-          class="flex size-7 shrink-0 items-center justify-center rounded-lg text-primary-foreground"
+        <Logo
+          size="32"
+          color="var(--foreground)"
+          fill="var(--background)"
           data-tauri-drag-region
-        >
-          <Logo size="18" color="var(--primary)" />
-        </div>
+          class="shrink-0"
+        />
         <h1
-          class="text-[13px] font-semibold tracking-tight text-foreground group-data-[state=collapsed]:hidden"
+          class="text-2xl font-semibold font-sans tracking-wide text-foreground group-data-[state=collapsed]:hidden"
           data-tauri-drag-region
         >
           Recast
@@ -58,7 +69,9 @@
 
   <Sidebar.Content class="scrollbar-hide">
     <Sidebar.Group>
-      <Sidebar.GroupLabel class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground group-data-[state=collapsed]:hidden">
+      <Sidebar.GroupLabel
+        class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground group-data-[state=collapsed]:hidden"
+      >
         Workspace
       </Sidebar.GroupLabel>
       <Sidebar.GroupContent>
@@ -68,7 +81,11 @@
             {@const Icon = navLink.icon}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton tooltipContent={navLink.title}>
-                {#snippet child({ props })}
+                {#snippet child({
+                  props,
+                }: {
+                  props: ComponentProps<typeof Sidebar.MenuButton>;
+                })}
                   <a
                     href={navLink.href}
                     {...props}
@@ -82,7 +99,9 @@
                     )}
                   >
                     <Icon size={14} class="shrink-0" />
-                    <span class="group-data-[state=collapsed]:hidden">{navLink.title}</span>
+                    <span class="group-data-[state=collapsed]:hidden"
+                      >{navLink.title}</span
+                    >
                     {#if active}
                       <span
                         class="absolute top-1/2 left-0 h-3 w-0.5 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary group-data-[state=collapsed]:hidden"
@@ -107,7 +126,9 @@
       title="Launch Recording Panel (⌘⇧R)"
     >
       <Radio size={13} class="shrink-0" />
-      <span class="text-[12px] font-semibold group-data-[state=collapsed]:hidden">
+      <span
+        class="text-[12px] font-semibold group-data-[state=collapsed]:hidden"
+      >
         Launch Panel
       </span>
     </Button>

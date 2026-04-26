@@ -8,7 +8,6 @@
   } from "$lib/stores/editor-store.svelte";
   import {
     Activity,
-    AlertTriangle,
     Eye,
     EyeOff,
     GitGraph,
@@ -101,7 +100,7 @@
           content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
         />
       </header>
-      <div class="grid grid-cols-5 gap-1">
+      <div class="grid grid-cols-2 gap-1">
         {#each CURSOR_STYLES as style (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
           <button
@@ -135,18 +134,6 @@
           </button>
         {/each}
       </div>
-      {#if store.cursorSettings.style !== "dot"}
-        <div
-          class="mt-1.5 flex items-start gap-1.5 rounded border border-amber-500/30 bg-amber-500/5 px-2 py-1.5 text-[10px] text-amber-600 dark:text-amber-400"
-        >
-          <AlertTriangle size={11} class="mt-0.5 shrink-0" />
-          <span>
-            Custom cursor sprites are preview-only today. The exported video
-            still uses the soft dot — switch back to <strong>Soft dot</strong>
-            for an exact match.
-          </span>
-        </div>
-      {/if}
     </section>
 
     <!-- Pointer feel -->
@@ -176,6 +163,17 @@
             <MousePointer size={11} />
           {/snippet}
         </SliderControl>
+        {#if store.cursorSettings.size !== 2}
+          <div class="flex justify-end">
+            <Button
+              variant="ghost"
+              size="xs"
+              onclick={() => updateCursorSettings({ size: 2 }, true)}
+            >
+              Reset to default
+            </Button>
+          </div>
+        {/if}
       </div>
     </section>
 

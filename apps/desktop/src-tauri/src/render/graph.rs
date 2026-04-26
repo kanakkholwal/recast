@@ -41,6 +41,19 @@ pub struct RenderState {
     pub audio_settings: AudioSettings,
     #[serde(default)]
     pub watermark_settings: WatermarkSettings,
+    // Hybrid-raster cursor sprite. Populated by the JS export trigger
+    // when the active style is non-`dot`; the soft-dot path is unchanged
+    // when these are `None`.
+    #[serde(default)]
+    pub cursor_sprite_rest: Option<String>,
+    #[serde(default)]
+    pub cursor_sprite_press: Option<String>,
+    #[serde(default)]
+    pub cursor_sprite_hotspot_rest: Option<[f64; 2]>,
+    #[serde(default)]
+    pub cursor_sprite_hotspot_press: Option<[f64; 2]>,
+    #[serde(default)]
+    pub cursor_sprite_size_px: Option<f64>,
 }
 
 impl Default for RenderState {
@@ -66,6 +79,11 @@ impl Default for RenderState {
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
             watermark_settings: WatermarkSettings::default(),
+            cursor_sprite_rest: None,
+            cursor_sprite_press: None,
+            cursor_sprite_hotspot_rest: None,
+            cursor_sprite_hotspot_press: None,
+            cursor_sprite_size_px: None,
         }
     }
 }

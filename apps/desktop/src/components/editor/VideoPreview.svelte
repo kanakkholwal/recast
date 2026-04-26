@@ -88,20 +88,24 @@
 	// from the WebGL draw loop where the cursor sample is already evaluated.
 	let svgCursor = $state<{
 		visible: boolean;
+		alpha: number;
 		styleId: import("$lib/cursor/styles").CursorStyle["id"];
-		canvasX: number; // source-pixel space, before padding
+		pressed: boolean;
+		canvasX: number; // source-pixel space, includes padding offset
 		canvasY: number;
 		compW: number;
 		compH: number;
-		sizePx: number;
+		spritePx: number; // sprite size in source pixels — render width = (spritePx/compW)*100%
 	}>({
 		visible: false,
+		alpha: 0,
 		styleId: "dot",
+		pressed: false,
 		canvasX: 0,
 		canvasY: 0,
 		compW: 1,
 		compH: 1,
-		sizePx: 6,
+		spritePx: 32,
 	});
 	// Signature of the inputs that drive smoothing. Recomputing only when this
 	// changes keeps playback cheap even on long recordings.
@@ -519,7 +523,27 @@ void main() {
 		smoothingSignature = sig;
 	}
 
-	//  Cursor interpolation (mirror of cursor::smoothing::interpolate_at) 
+	// Idle hide fade — shared 200ms ramp at each end of an idle period.
+	// Mirrored 1:1 in `cursor_export.rs` so preview and export agree.
+	const CURSOR_IDLE_FADE_US = 200_000;
+	function idleAlphaAt(tsUs: number, idleTimeoutSec: number): number {
+		const thresholdUs = idleTimeoutSec * 1_000_000;
+		for (const period of idlePeriods) {
+			const fadeStart = period.startUs + thresholdUs;
+			if (period.endUs <= fadeStart) continue;
+			const fadeEnd = Math.min(fadeStart + CURSOR_IDLE_FADE_US, period.endUs);
+			const resumeStart = Math.max(period.endUs - CURSOR_IDLE_FADE_US, fadeEnd);
+			if (tsUs < fadeStart || tsUs > period.endUs) continue;
+			if (tsUs >= fadeEnd && tsUs <= resumeStart) return 0;
+			if (tsUs < fadeEnd) {
+				return 1 - (tsUs - fadeStart) / (fadeEnd - fadeStart);
+			}
+			return 1 - (period.endUs - tsUs) / (period.endUs - resumeStart);
+		}
+		return 1;
+	}
+
+	//  Cursor interpolation (mirror of cursor::smoothing::interpolate_at)
 	function interpolateCursor(timestampUs: number) {
 		if (cursorSamples.length === 0) return null;
 		// Binary search
@@ -782,60 +806,68 @@ void main() {
 
 		// Cursor
 		const cs = store.cursorSettings;
-		let cursorVisible = 0;
+		let cursorAlpha = 0;
 		let highlightAlpha = 0;
 		let cursorPosX = 0;
 		let cursorPosY = 0;
+		let cursorPressed = false;
 		if (cs.enabled && cursorSamples.length > 0) {
 			const ts = Math.max(0, playbackTime) * 1_000_000;
 
-			// Idle hide check
-			let isIdle = false;
-			if (cs.hideWhenIdle) {
-				const thresholdUs = cs.idleTimeout * 1_000_000;
-				for (const period of idlePeriods) {
-					if (ts >= period.startUs + thresholdUs && ts <= period.endUs) {
-						isIdle = true;
-						break;
-					}
-				}
-			}
+			// Idle visibility — smooth fade rather than a binary cut. Outside
+			// any idle period the alpha is 1; deep inside it's 0; near each
+			// boundary we linearly ramp over CURSOR_IDLE_FADE_US so the cursor
+			// dissolves in/out instead of popping.
+			const idleA = cs.hideWhenIdle ? idleAlphaAt(ts, cs.idleTimeout) : 1;
 
-			if (!isIdle) {
+			if (idleA > 0) {
 				const pos = interpolateCursor(ts);
 				if (pos && pos.visible) {
-					cursorVisible = 1;
+					cursorAlpha = idleA;
 					cursorPosX = pos.x / meta.width;
 					cursorPosY = pos.y / meta.height;
-					if (cs.highlightClicks && (pos.leftDown || pos.rightDown)) {
-						highlightAlpha = cs.highlightOpacity / 100;
+					cursorPressed = !!(pos.leftDown || pos.rightDown);
+					if (cs.highlightClicks && cursorPressed) {
+						highlightAlpha = (cs.highlightOpacity / 100) * idleA;
 					}
 				}
 			}
 		}
 		// When the user picks a custom SVG cursor style, the WebGL shader's
 		// dot path is suppressed and the HTML <img> overlay below paints the
-		// cursor instead. The shader still renders the click-highlight halo
-		// because the SVG sprite isn't aware of click state.
+		// cursor instead. The shader still renders the click-highlight halo.
 		const usingSvgCursor = cs.enabled && cs.style !== "dot";
-		const overlayVisible = usingSvgCursor && cursorVisible === 1;
+		const overlayVisible = usingSvgCursor && cursorAlpha > 0;
 		gl.uniform2f(uniforms.u_cursorPos, cursorPosX, cursorPosY);
 		gl.uniform1f(
 			uniforms.u_cursorVisible,
-			usingSvgCursor ? 0 : cursorVisible,
+			usingSvgCursor ? 0 : cursorAlpha,
 		);
 		// Push to reactive state so the HTML overlay updates each frame.
+		// We mirror the shader's cursor-zoom math so the SVG tracks the dot
+		// pixel-for-pixel — the shader applies `(uv - center)*scale + center`
+		// to the cursor UV; we do the same here before mapping to canvas px.
+		let svgUvX = cursorPosX;
+		let svgUvY = cursorPosY;
+		if (zoom.scale > 1.0001) {
+			svgUvX = (cursorPosX - zoom.cx) * zoom.scale + zoom.cx;
+			svgUvY = (cursorPosY - zoom.cy) * zoom.scale + zoom.cy;
+		}
 		const compH_local = meta.height + sourcePaddingPx * 2;
+		// Sprite design size in source pixels; the same `* 2` factor the dot
+		// uses for radius, doubled because the sprite is a full-bleed bbox
+		// rather than a centered dot.
+		const spriteSourcePx = cs.size * 16;
 		svgCursor = {
 			visible: overlayVisible,
+			alpha: cursorAlpha,
 			styleId: cs.style,
-			// Cursor position in canvas-pixel space, where the canvas is
-			// `compW × compH` source pixels expanded by padding.
-			canvasX: (sourcePaddingPx + cursorPosX * meta.width),
-			canvasY: (sourcePaddingPx + cursorPosY * meta.height),
+			pressed: cursorPressed,
+			canvasX: sourcePaddingPx + svgUvX * meta.width,
+			canvasY: sourcePaddingPx + svgUvY * meta.height,
 			compW,
 			compH: compH_local,
-			sizePx: cs.size * 2,
+			spritePx: spriteSourcePx,
 		};
 		// Match Rust: cursor radius = size * 2 (in source pixels), scaled to canvas
 		const cursorRadiusCanvas = (cs.size * 2 * canvasEl.width) / compW;
@@ -990,22 +1022,28 @@ void main() {
 		<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 		{#if svgCursor.visible}
 			{@const style = CURSOR_STYLES.find((s) => s.id === svgCursor.styleId)}
+			{@const stateKey = svgCursor.pressed && style?.pressedSvg ? "press" : "rest"}
+			{@const hot =
+				stateKey === "press" && style?.pressedHotspot
+					? style.pressedHotspot
+					: (style?.hotspot ?? { x: 32, y: 32 })}
 			<!-- Custom SVG cursor: positioned at the cursor sample's
 			     source-pixel coordinates, mapped into the canvas's CSS rect.
-			     The image is offset by `hotspot` so the SVG's tip aligns
-			     with the captured pointer position. Sizing follows `cs.size`
-			     (a 1-5 multiplier) at ~32 px per "size unit". -->
+			     The image swaps between rest and press sprites so styles like
+			     macOS show the link-pointing hand while the captured cursor
+			     is held down. Hotspot is offset per state so each sprite's
+			     tip lands on the captured pointer position. -->
 			<img
-				src={cursorStyleDataUrl(svgCursor.styleId)}
+				src={cursorStyleDataUrl(svgCursor.styleId, stateKey)}
 				alt=""
 				draggable="false"
 				class="pointer-events-none absolute"
 				style="
 					left: {(svgCursor.canvasX / svgCursor.compW) * 100}%;
 					top: {(svgCursor.canvasY / svgCursor.compH) * 100}%;
-					width: {svgCursor.sizePx * 5}%;
-					max-width: 96px;
-					transform: translate(-{((style?.hotspot.x ?? 32) / 64) * 100}%, -{((style?.hotspot.y ?? 32) / 64) * 100}%);
+					width: {(svgCursor.spritePx / svgCursor.compW) * 100}%;
+					transform: translate(-{(hot.x / 64) * 100}%, -{(hot.y / 64) * 100}%);
+					opacity: {svgCursor.alpha};
 					filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.5));
 				"
 			/>

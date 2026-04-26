@@ -212,7 +212,22 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     // raster pipeline can produce many of these (one per text annotation),
     // but the count is bounded by the project size — far cheaper to decode
     // once than to re-decode per frame.
-    let image_cache = build_image_cache(&request.render_state.annotations);
+    let mut image_cache = build_image_cache(&request.render_state.annotations);
+    // Pre-decode the cursor sprite (rest + press) once. Same cache so the
+    // same blend_pixel path serves every overlay sprite.
+    const CURSOR_SPRITE_KEY_REST: &str = "__recast_cursor_rest__";
+    const CURSOR_SPRITE_KEY_PRESS: &str = "__recast_cursor_press__";
+    if let Some(url) = &request.render_state.cursor_sprite_rest {
+        if let Some(img) = decode_data_url(url) {
+            image_cache.insert(CURSOR_SPRITE_KEY_REST.into(), img);
+        }
+    }
+    if let Some(url) = &request.render_state.cursor_sprite_press {
+        if let Some(img) = decode_data_url(url) {
+            image_cache.insert(CURSOR_SPRITE_KEY_PRESS.into(), img);
+        }
+    }
+    let cursor_sprite_active = image_cache.contains_key(CURSOR_SPRITE_KEY_REST);
 
     for i in 0..frame_count {
         // Clear frame to transparent.
@@ -261,23 +276,20 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             continue;
         }
 
-        // Idle hide check.
-        if request.render_state.cursor_hide_when_idle {
-            let mut idle = false;
-            for period in &track.idle_periods {
-                if t_track_us >= period.start_us.saturating_add(idle_timeout_us)
-                    && t_track_us <= period.end_us
-                {
-                    idle = true;
-                    break;
-                }
-            }
-            if idle {
-                stdin
-                    .write_all(&frame)
-                    .context("failed to write cursor frame to ffmpeg stdin")?;
-                continue;
-            }
+        // Idle hide — smooth fade rather than a hard cut. Mirrors
+        // `idleAlphaAt` in VideoPreview.svelte; same constants. When the
+        // alpha is exactly 0 we skip the rest of the cursor work for the
+        // frame; partial alpha multiplies through the dot/halo/sprite.
+        let idle_alpha = if request.render_state.cursor_hide_when_idle {
+            cursor_idle_alpha(t_track_us, &track.idle_periods, idle_timeout_us)
+        } else {
+            1.0
+        };
+        if idle_alpha <= 0.0 {
+            stdin
+                .write_all(&frame)
+                .context("failed to write cursor frame to ffmpeg stdin")?;
+            continue;
         }
 
         // Apply zoom transform in source-video coordinates.
@@ -311,7 +323,8 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         let cursor_canvas_x = (request.padding as f64 + cursor_source_x) * scale_canvas;
         let cursor_canvas_y = (request.padding as f64 + cursor_source_y) * scale_canvas;
 
-        // Click highlight (drawn first, underneath cursor dot).
+        // Click highlight halo — drawn underneath the dot/sprite so both
+        // the soft-dot and macOS sprite share the same press indicator.
         let show_highlight =
             request.render_state.cursor_highlight_clicks && (sample.left_down || sample.right_down);
         if show_highlight {
@@ -326,23 +339,69 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 hr,
                 hg,
                 hb,
-                highlight_alpha_base,
+                highlight_alpha_base * idle_alpha,
             );
         }
 
-        // Cursor dot (white, 90% alpha).
-        draw_filled_circle_soft(
-            &mut frame,
-            canvas_w,
-            canvas_h,
-            cursor_canvas_x,
-            cursor_canvas_y,
-            cursor_radius_canvas,
-            255,
-            255,
-            255,
-            0.9,
-        );
+        if cursor_sprite_active {
+            // SVG sprite path — composite the rasterized cursor at the
+            // sample position. Press state picks the alt sprite when
+            // available (falls back to rest in JS if the style has none).
+            let pressed = sample.left_down || sample.right_down;
+            let key = if pressed && image_cache.contains_key(CURSOR_SPRITE_KEY_PRESS) {
+                CURSOR_SPRITE_KEY_PRESS
+            } else {
+                CURSOR_SPRITE_KEY_REST
+            };
+            if let Some(img) = image_cache.get(key) {
+                let hotspot = if pressed {
+                    request
+                        .render_state
+                        .cursor_sprite_hotspot_press
+                        .or(request.render_state.cursor_sprite_hotspot_rest)
+                        .unwrap_or([0.5, 0.5])
+                } else {
+                    request
+                        .render_state
+                        .cursor_sprite_hotspot_rest
+                        .unwrap_or([0.5, 0.5])
+                };
+                // Sprite size: source-pixel design size from JS, mapped to
+                // canvas pixels with the same `scale_canvas` factor used
+                // for the cursor position above.
+                let sprite_source_px = request
+                    .render_state
+                    .cursor_sprite_size_px
+                    .unwrap_or(request.render_state.cursor_size * 16.0);
+                let target_size_px = sprite_source_px * scale_canvas;
+                blit_cursor_sprite(
+                    &mut frame,
+                    canvas_w,
+                    canvas_h,
+                    img,
+                    cursor_canvas_x,
+                    cursor_canvas_y,
+                    target_size_px,
+                    hotspot,
+                    idle_alpha,
+                );
+            }
+        } else {
+            // Soft-dot path (white, 90% alpha) — unchanged behaviour for
+            // projects on the default `dot` style.
+            draw_filled_circle_soft(
+                &mut frame,
+                canvas_w,
+                canvas_h,
+                cursor_canvas_x,
+                cursor_canvas_y,
+                cursor_radius_canvas,
+                255,
+                255,
+                255,
+                0.9 * idle_alpha,
+            );
+        }
 
         stdin
             .write_all(&frame)
@@ -776,47 +835,157 @@ fn draw_image(
     }
 }
 
+/// Smooth idle-fade — mirror of `idleAlphaAt` in VideoPreview.svelte.
+/// Returns 1.0 when the cursor should be fully visible at `t_us`, 0.0
+/// inside an idle period (past the timeout + fade-in), and a linear ramp
+/// across 200 ms at each boundary so the cursor dissolves rather than
+/// blinks. The constants match the JS side exactly.
+fn cursor_idle_alpha(
+    t_us: u64,
+    idle_periods: &[crate::cursor::smoothing::IdlePeriod],
+    idle_timeout_us: u64,
+) -> f64 {
+    const FADE_US: u64 = 200_000;
+    for period in idle_periods {
+        let fade_start = period.start_us.saturating_add(idle_timeout_us);
+        if period.end_us <= fade_start {
+            continue;
+        }
+        let fade_end = (fade_start + FADE_US).min(period.end_us);
+        let resume_start = period.end_us.saturating_sub(FADE_US).max(fade_end);
+        if t_us < fade_start || t_us > period.end_us {
+            continue;
+        }
+        if t_us >= fade_end && t_us <= resume_start {
+            return 0.0;
+        }
+        if t_us < fade_end {
+            let span = (fade_end - fade_start).max(1) as f64;
+            return 1.0 - (t_us - fade_start) as f64 / span;
+        }
+        let span = (period.end_us - resume_start).max(1) as f64;
+        return 1.0 - (period.end_us - t_us) as f64 / span;
+    }
+    1.0
+}
+
+/// Blit an SVG-rasterized cursor sprite at a canvas-pixel position with
+/// bilinear sampling. The sprite is anchored by `hotspot_uv` (0..1 within
+/// the sprite) so the click point lands on (`canvas_x`, `canvas_y`)
+/// regardless of size.
+#[allow(clippy::too_many_arguments)]
+fn blit_cursor_sprite(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    img: &RgbaImage,
+    canvas_x: f64,
+    canvas_y: f64,
+    target_size_px: f64,
+    hotspot_uv: [f64; 2],
+    alpha: f64,
+) {
+    if alpha <= 0.0 || target_size_px < 1.0 {
+        return;
+    }
+    let dst_w = target_size_px;
+    let dst_h = target_size_px;
+    let dx = canvas_x - hotspot_uv[0] * dst_w;
+    let dy = canvas_y - hotspot_uv[1] * dst_h;
+    let (img_w, img_h) = img.dimensions();
+    if img_w == 0 || img_h == 0 {
+        return;
+    }
+    let x_min = dx.floor().max(0.0) as usize;
+    let y_min = dy.floor().max(0.0) as usize;
+    let x_max = (dx + dst_w).ceil().min(width as f64 - 1.0).max(0.0) as usize;
+    let y_max = (dy + dst_h).ceil().min(height as f64 - 1.0).max(0.0) as usize;
+    if x_max < x_min || y_max < y_min {
+        return;
+    }
+    for py in y_min..=y_max {
+        let v = ((py as f64 + 0.5 - dy) / dst_h).clamp(0.0, 0.9999);
+        let sy_f = v * (img_h - 1) as f64;
+        let sy0 = sy_f.floor() as u32;
+        let sy1 = (sy0 + 1).min(img_h - 1);
+        let fy = sy_f - sy0 as f64;
+        for px in x_min..=x_max {
+            let u = ((px as f64 + 0.5 - dx) / dst_w).clamp(0.0, 0.9999);
+            let sx_f = u * (img_w - 1) as f64;
+            let sx0 = sx_f.floor() as u32;
+            let sx1 = (sx0 + 1).min(img_w - 1);
+            let fx = sx_f - sx0 as f64;
+
+            let p00 = img.get_pixel(sx0, sy0).0;
+            let p10 = img.get_pixel(sx1, sy0).0;
+            let p01 = img.get_pixel(sx0, sy1).0;
+            let p11 = img.get_pixel(sx1, sy1).0;
+            let mix = |a: u8, b: u8, c: u8, d: u8| -> f64 {
+                let top = a as f64 * (1.0 - fx) + b as f64 * fx;
+                let bot = c as f64 * (1.0 - fx) + d as f64 * fx;
+                top * (1.0 - fy) + bot * fy
+            };
+            let r = mix(p00[0], p10[0], p01[0], p11[0]);
+            let g = mix(p00[1], p10[1], p01[1], p11[1]);
+            let b = mix(p00[2], p10[2], p01[2], p11[2]);
+            let a = mix(p00[3], p10[3], p01[3], p11[3]) / 255.0 * alpha;
+            if a <= 0.0 {
+                continue;
+            }
+            blend_pixel(frame, width, px, py, r as u8, g as u8, b as u8, a);
+        }
+    }
+}
+
 fn build_image_cache(annotations: &[Annotation]) -> HashMap<String, RgbaImage> {
-    use base64::Engine;
     let mut cache = HashMap::new();
     for anno in annotations {
         if let AnnotationKind::Image { path, .. } = &anno.kind {
             if cache.contains_key(path) {
                 continue;
             }
-            // Two source forms:
-            //   - `data:image/png;base64,...` — produced by the WebView at
-            //     export prep when text annotations are rasterized in JS.
-            //     Decoded in-memory; no disk roundtrip.
-            //   - file path — user-supplied image overlay, decoded via
-            //     image::ImageReader.
-            let decoded: Result<image::DynamicImage> = if path.starts_with("data:") {
-                let comma = path.find(',').ok_or_else(|| anyhow!("malformed data URL"));
-                comma.and_then(|idx| {
-                    let payload = &path[idx + 1..];
-                    base64::engine::general_purpose::STANDARD
-                        .decode(payload)
-                        .map_err(|e| anyhow!(e))
-                        .and_then(|bytes| image::load_from_memory(&bytes).map_err(|e| anyhow!(e)))
-                })
-            } else {
-                ImageReader::open(path)
-                    .and_then(|r| r.with_guessed_format())
-                    .map_err(|e| anyhow!(e))
-                    .and_then(|r| r.decode().map_err(|e| anyhow!(e)))
-            };
-            match decoded {
-                Ok(img) => {
-                    cache.insert(path.clone(), img.to_rgba8());
-                }
-                Err(e) => {
-                    let preview = if path.len() > 40 { &path[..40] } else { path.as_str() };
-                    log::warn!("failed to decode annotation image ({preview}…): {e}");
-                }
+            if let Some(img) = decode_image_path_or_url(path) {
+                cache.insert(path.clone(), img);
             }
         }
     }
     cache
+}
+
+/// Decode either a `data:image/png;base64,...` URL or a filesystem path.
+/// Returns `None` and logs on failure rather than propagating — the caller
+/// (export pipeline) should not abort an entire export over one bad image.
+fn decode_image_path_or_url(path: &str) -> Option<RgbaImage> {
+    use base64::Engine;
+    let decoded: Result<image::DynamicImage> = if path.starts_with("data:") {
+        let comma = path.find(',').ok_or_else(|| anyhow!("malformed data URL"));
+        comma.and_then(|idx| {
+            let payload = &path[idx + 1..];
+            base64::engine::general_purpose::STANDARD
+                .decode(payload)
+                .map_err(|e| anyhow!(e))
+                .and_then(|bytes| image::load_from_memory(&bytes).map_err(|e| anyhow!(e)))
+        })
+    } else {
+        ImageReader::open(path)
+            .and_then(|r| r.with_guessed_format())
+            .map_err(|e| anyhow!(e))
+            .and_then(|r| r.decode().map_err(|e| anyhow!(e)))
+    };
+    match decoded {
+        Ok(img) => Some(img.to_rgba8()),
+        Err(e) => {
+            let preview = if path.len() > 40 { &path[..40] } else { path };
+            log::warn!("failed to decode image ({preview}…): {e}");
+            None
+        }
+    }
+}
+
+/// Convenience wrapper used by the cursor sprite preload — same decode
+/// path as annotations but with a clearer name at the call site.
+fn decode_data_url(url: &str) -> Option<RgbaImage> {
+    decode_image_path_or_url(url)
 }
 
 #[allow(clippy::too_many_arguments)]

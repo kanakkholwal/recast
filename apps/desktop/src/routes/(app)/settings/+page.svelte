@@ -93,7 +93,7 @@
           readonly
           class="h-9 min-w-0 flex-1 truncate rounded-lg border border-border/40 bg-background/60 px-3 text-[12px] font-medium text-muted-foreground outline-none"
         />
-        <Button variant="secondary" size="sm" onclick={pickDirectory} class="h-9 gap-1.5">
+        <Button variant="secondary" size="sm" onclick={pickDirectory}>
           <FolderOpen size={14} />
           <span class="text-[12px] font-medium">Change</span>
         </Button>

@@ -156,12 +156,7 @@ export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
  *  - Anything else: an SVG cursor sprite drawn by `CursorOverlayLayer` over
  *    the preview. Preview-only today; export currently falls back to `dot`.
  */
-export type CursorStyleId =
-	| 'dot'
-	| 'system'
-	| 'minimal'
-	| 'fat-arrow'
-	| 'target';
+export type CursorStyleId = 'dot' | 'macos';
 
 export interface CursorSettings {
 	enabled: boolean;
@@ -289,6 +284,14 @@ export interface EditorRenderState {
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
 	watermarkSettings: WatermarkSettings;
+	// Hybrid-raster cursor sprite — populated only on the export path
+	// (the editor route runs `rasterizeCursorSprites` right before invoking
+	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
+	cursorSpriteRest?: string;          // data:image/png;base64,…
+	cursorSpritePress?: string;         // optional; falls back to rest in Rust
+	cursorSpriteHotspotRest?: [number, number];   // 0..1 sprite UV
+	cursorSpriteHotspotPress?: [number, number];
+	cursorSpriteSizePx?: number;        // sprite render size in source pixels
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -401,7 +404,7 @@ export function createEditorStore() {
 	// Cursor settings
 	let cursorSettings = $state<CursorSettings>({
 		enabled: true,
-		size: 3,
+		size: 2,
 		style: 'dot',
 		smoothing: 50,
 		snapToClicks: true,
@@ -721,7 +724,7 @@ export function createEditorStore() {
 		cursorMotionEasing = null;
 		cursorSettings = {
 			enabled: true,
-			size: 3,
+			size: 2,
 			style: 'dot',
 			smoothing: 50,
 			snapToClicks: true,

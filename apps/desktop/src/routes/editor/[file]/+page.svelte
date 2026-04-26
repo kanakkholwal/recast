@@ -7,6 +7,7 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+  import { rasterizeCursorSprites } from "$lib/export/rasterize-cursor";
   import { expandTextAnnotations } from "$lib/export/rasterize-text";
   import type { ExportStateEvent } from "$lib/ipc";
   import {
@@ -442,9 +443,21 @@
         canvasW,
         canvasH,
       );
+      // Cursor sprite hybrid-raster: rasterize the active style's SVG once
+      // so Rust can blit a real PNG per frame. `dot` returns null and falls
+      // through to the Rust soft-circle path.
+      const cursorSprites = await rasterizeCursorSprites(
+        store.cursorSettings.style,
+        store.cursorSettings.size * 16,
+      );
       const finalRenderState = {
         ...renderState,
         annotations: expandedAnnotations,
+        cursorSpriteRest: cursorSprites?.rest,
+        cursorSpritePress: cursorSprites?.press,
+        cursorSpriteHotspotRest: cursorSprites?.restHotspot,
+        cursorSpriteHotspotPress: cursorSprites?.pressHotspot,
+        cursorSpriteSizePx: cursorSprites?.pixelSize,
       };
 
       const path = await exportVideo(
