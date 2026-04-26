@@ -118,11 +118,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let overlay_path = scratch_dir.join("cursor.webm");
 
     // Precompute derived settings (mirrors VideoPreview.svelte's draw loop).
+    // Note: callers also invoke this overlay pass when only the drop-shadow
+    // is enabled (the shadow draws further down the FFmpeg graph but lives
+    // in the same alpha-VP9 overlay file), so we deliberately allow
+    // both flags to be false here. The frame loop below will simply emit
+    // fully-transparent frames in that case — composited as a no-op.
     let cursor_enabled = request.render_state.cursor_enabled;
-    let has_annotations = !request.render_state.annotations.is_empty();
-    if !cursor_enabled && !has_annotations {
-        return Err(anyhow!("no overlay features enabled - caller should skip"));
-    }
 
     // Cursor radius in canvas pixels. WebGL shader uses:
     //   const cursorRadiusCanvas = (cs.size * 2 * canvasEl.width) / compW;

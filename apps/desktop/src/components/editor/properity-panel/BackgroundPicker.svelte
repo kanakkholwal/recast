@@ -23,8 +23,8 @@
   import { cn } from "@recast/ui/utils";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { Image } from "@unpic/svelte";
-  import InspectorHint from "./InspectorHint.svelte";
-  import SliderControl from "./SliderControl.svelte";
+  import InspectorHint from "../InspectorHint.svelte";
+  import SliderControl from "../_components/SliderControl.svelte";
 
   interface Props {
     store: EditorStore;

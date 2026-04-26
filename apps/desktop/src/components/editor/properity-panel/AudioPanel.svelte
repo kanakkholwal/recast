@@ -1,7 +1,5 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Button } from "@recast/ui/button";
-  import { cn } from "@recast/ui/utils";
   import {
     AudioLines,
     AudioWaveform,
@@ -12,9 +10,11 @@
     VolumeX,
     Waves,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
-  import InspectorHint from "./InspectorHint.svelte";
-  import SliderControl from "./SliderControl.svelte";
+  import InspectorHint from "../InspectorHint.svelte";
+  import SliderControl from "../_components/SliderControl.svelte";
 
   interface Props {
     store: EditorStore;

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
-  import PropertiesPanel from "$components/editor/PropertiesPanel.svelte";
+  import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";

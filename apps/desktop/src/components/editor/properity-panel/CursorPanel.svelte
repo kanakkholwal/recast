@@ -19,10 +19,10 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import BezierEditor from "./BezierEditor.svelte";
-  import CursorTrajectoryMap from "./CursorTrajectoryMap.svelte";
-  import InspectorHint from "./InspectorHint.svelte";
-  import SliderControl from "./SliderControl.svelte";
+  import BezierEditor from "../_components/BezierEditor.svelte";
+  import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
+  import SliderControl from "../_components/SliderControl.svelte";
+  import InspectorHint from "../InspectorHint.svelte";
 
   interface Props {
     store: EditorStore;

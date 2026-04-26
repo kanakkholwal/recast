@@ -24,9 +24,9 @@
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
-  import BezierEditor from "./BezierEditor.svelte";
-  import InspectorHint from "./InspectorHint.svelte";
-  import SliderControl from "./SliderControl.svelte";
+  import BezierEditor from "../_components/BezierEditor.svelte";
+  import InspectorHint from "../InspectorHint.svelte";
+  import SliderControl from "../_components/SliderControl.svelte";
 
   interface Props {
     store: EditorStore;

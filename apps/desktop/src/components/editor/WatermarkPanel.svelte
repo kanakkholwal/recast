@@ -4,7 +4,7 @@
 	import { toast } from "@recast/ui/sonner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import InspectorHint from "./InspectorHint.svelte";
-	import SliderControl from "./SliderControl.svelte";
+	import SliderControl from "./_components/SliderControl.svelte";
 
 	interface Props {
 		store: EditorStore;

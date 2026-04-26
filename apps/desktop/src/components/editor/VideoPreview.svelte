@@ -11,9 +11,9 @@
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
-	import AnnotationOverlay from "./AnnotationOverlay.svelte";
-	import FocusOverlay from "./FocusOverlay.svelte";
-	import TextAnnotationLayer from "./TextAnnotationLayer.svelte";
+	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
+	import FocusOverlay from "./_components/FocusOverlay.svelte";
+	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
 
 	interface Props {
 		store: EditorStore;
