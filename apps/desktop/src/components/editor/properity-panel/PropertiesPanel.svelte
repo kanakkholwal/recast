@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
-  import { cn } from "$lib/utils";
+  import { cn } from "@recast/ui/utils";
   import {
     ImageIcon,
     Info,
