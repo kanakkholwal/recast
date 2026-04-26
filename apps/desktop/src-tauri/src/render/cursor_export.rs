@@ -184,12 +184,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         .stdout(Stdio::null())
         .stderr(Stdio::piped());
 
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        ffmpeg.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::ffmpeg::configure_silent_command(&mut ffmpeg);
 
     let mut child = ffmpeg
         .spawn()

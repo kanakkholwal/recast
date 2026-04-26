@@ -159,11 +159,30 @@ fn is_usable_pair(ffmpeg: &Path, ffprobe: &Path) -> bool {
 }
 
 fn command_succeeds(path: &Path, arg: &str) -> bool {
-    Command::new(path)
-        .arg(arg)
+    let mut command = Command::new(path);
+    command.arg(arg);
+    configure_silent_command(&mut command);
+    command
         .output()
         .map(|output| output.status.success())
         .unwrap_or(false)
+}
+
+/// Apply Windows-specific spawn options that hide the console window.
+/// No-op on non-Windows platforms. Call on every ffmpeg/ffprobe `Command`
+/// before `.spawn()` / `.output()` to prevent black console windows from
+/// flashing on Windows when sidecar binaries are launched.
+pub fn configure_silent_command(cmd: &mut Command) {
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x08000000;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = cmd;
+    }
 }
 
 /// Get the resolved path to the ffmpeg binary.
@@ -182,9 +201,10 @@ pub fn ffprobe_path() -> &'static PathBuf {
 pub fn preferred_h264_encoder() -> &'static str {
     static CACHED: OnceLock<&'static str> = OnceLock::new();
     CACHED.get_or_init(|| {
-        let output = Command::new(ffmpeg_path())
-            .args(["-hide_banner", "-encoders"])
-            .output();
+        let mut command = Command::new(ffmpeg_path());
+        command.args(["-hide_banner", "-encoders"]);
+        configure_silent_command(&mut command);
+        let output = command.output();
         match output {
             Ok(result) if result.status.success() => {
                 let encoders = String::from_utf8_lossy(&result.stdout);
@@ -206,7 +226,10 @@ pub fn preferred_h264_encoder() -> &'static str {
 
 /// Check if ffmpeg is available. Returns an error message if not.
 pub fn check_availability() -> Result<(), String> {
-    let output = Command::new(ffmpeg_path()).arg("-version").output();
+    let mut command = Command::new(ffmpeg_path());
+    command.arg("-version");
+    configure_silent_command(&mut command);
+    let output = command.output();
 
     match output {
         Ok(o) if o.status.success() => Ok(()),

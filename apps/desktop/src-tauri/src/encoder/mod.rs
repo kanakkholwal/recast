@@ -89,11 +89,14 @@ pub fn spawn_encoder_loop(
 
             args.push(config.output_path.to_string_lossy().to_string());
 
-            let mut child = Command::new(crate::ffmpeg::ffmpeg_path())
+            let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+            command
                 .args(&args)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
-                .stderr(Stdio::piped())
+                .stderr(Stdio::piped());
+            crate::ffmpeg::configure_silent_command(&mut command);
+            let mut child = command
                 .spawn()
                 .with_context(|| "failed to start ffmpeg encoder")?;
 

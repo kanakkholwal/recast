@@ -408,22 +408,23 @@ pub fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, Stri
     for index in 0..count {
         let timestamp = index as f64 * interval;
         let thumb_path = temp_dir.join(format!("thumb-{index}.jpg"));
-        let result = Command::new(crate::ffmpeg::ffmpeg_path())
-            .args([
-                "-y",
-                "-ss",
-                &format!("{timestamp:.2}"),
-                "-i",
-                &media_path.to_string_lossy(),
-                "-vframes",
-                "1",
-                "-vf",
-                &format!("scale={scale_width}:-1"),
-                "-q:v",
-                "4",
-                thumb_path.to_string_lossy().as_ref(),
-            ])
-            .output();
+        let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+        command.args([
+            "-y",
+            "-ss",
+            &format!("{timestamp:.2}"),
+            "-i",
+            &media_path.to_string_lossy(),
+            "-vframes",
+            "1",
+            "-vf",
+            &format!("scale={scale_width}:-1"),
+            "-q:v",
+            "4",
+            thumb_path.to_string_lossy().as_ref(),
+        ]);
+        crate::ffmpeg::configure_silent_command(&mut command);
+        let result = command.output();
 
         if let Ok(output) = result {
             if output.status.success() {
@@ -901,12 +902,7 @@ pub async fn export_video(
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        #[cfg(windows)]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x08000000;
-            command.creation_flags(CREATE_NO_WINDOW);
-        }
+        crate::ffmpeg::configure_silent_command(&mut command);
 
         let mut child = command
             .spawn()

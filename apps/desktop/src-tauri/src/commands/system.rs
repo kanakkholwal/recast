@@ -244,12 +244,7 @@ pub fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
         "-i",
         "dummy",
     ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::ffmpeg::configure_silent_command(&mut command);
     let output = command
         .output()
         .map_err(|e| format!("failed to list camera devices: {e}"))?;
@@ -418,27 +413,33 @@ pub async fn diagnose_ffmpeg() -> Result<FfmpegDiagnostics, String> {
         let ffmpeg = crate::ffmpeg::ffmpeg_path().clone();
         let ffprobe = crate::ffmpeg::ffprobe_path().clone();
 
-        let version = Command::new(&ffmpeg)
-            .arg("-version")
-            .output()
-            .ok()
-            .filter(|o| o.status.success())
-            .and_then(|o| {
-                String::from_utf8_lossy(&o.stdout)
-                    .lines()
-                    .next()
-                    .map(|s| s.to_string())
-            });
+        let version = {
+            let mut cmd = Command::new(&ffmpeg);
+            cmd.arg("-version");
+            crate::ffmpeg::configure_silent_command(&mut cmd);
+            cmd.output()
+                .ok()
+                .filter(|o| o.status.success())
+                .and_then(|o| {
+                    String::from_utf8_lossy(&o.stdout)
+                        .lines()
+                        .next()
+                        .map(|s| s.to_string())
+                })
+        };
 
         // Critical encoders for our export formats.
         const REQUIRED: &[&str] = &["libx264", "aac", "libvpx-vp9", "libopus"];
         let mut present: Vec<String> = Vec::new();
         let mut missing: Vec<String> = Vec::new();
 
-        if let Ok(out) = Command::new(&ffmpeg)
-            .args(["-hide_banner", "-encoders"])
-            .output()
-        {
+        let encoders_output = {
+            let mut cmd = Command::new(&ffmpeg);
+            cmd.args(["-hide_banner", "-encoders"]);
+            crate::ffmpeg::configure_silent_command(&mut cmd);
+            cmd.output()
+        };
+        if let Ok(out) = encoders_output {
             let table = String::from_utf8_lossy(&out.stdout);
             for &name in REQUIRED {
                 if table.contains(name) {

@@ -189,12 +189,7 @@ pub fn probe_video_metadata(path: &Path) -> Result<VideoMetadata, String> {
         "-show_streams",
         &path_string,
     ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::ffmpeg::configure_silent_command(&mut command);
     let output = command.output();
 
     match output {
@@ -271,12 +266,7 @@ pub fn has_audio(path: &Path) -> bool {
         "csv=p=0",
         &path.to_string_lossy(),
     ]);
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x08000000;
-        command.creation_flags(CREATE_NO_WINDOW);
-    }
+    crate::ffmpeg::configure_silent_command(&mut command);
     let output = command.output();
 
     matches!(

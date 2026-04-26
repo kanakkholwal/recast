@@ -56,7 +56,8 @@ fn camera_capture_thread(
         format!("video={device_name}")
     };
 
-    let mut child = Command::new(crate::ffmpeg::ffmpeg_path())
+    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+    command
         .args([
             "-y",
             "-f",
@@ -78,7 +79,9 @@ fn camera_capture_thread(
         .arg(config.output_path.to_string_lossy().as_ref())
         .stdin(Stdio::piped())
         .stdout(Stdio::null())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    crate::ffmpeg::configure_silent_command(&mut command);
+    let mut child = command
         .spawn()
         .context("failed to start FFmpeg camera capture")?;
 
