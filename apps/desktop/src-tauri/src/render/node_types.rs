@@ -134,7 +134,8 @@ pub struct BackgroundNode {
     pub background_type: String,
     pub value: String,
     pub blur: f64,
-    pub padding: u32,
+    /// Frame padding as percent of the shorter source edge.
+    pub padding: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

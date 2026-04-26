@@ -7,7 +7,10 @@
 	import { CURSOR_STYLES, cursorStyleDataUrl } from "$lib/cursor/styles";
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
-	import type { EditorStore } from "$lib/stores/editor-store.svelte";
+	import {
+	  framePaddingPixels,
+	  type EditorStore,
+	} from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
@@ -388,10 +391,12 @@ void main() {
 	//  Background loading 
 	async function resolveBackgroundSrc(value: string): Promise<string> {
 		if (!value) return "";
-		// External-asset scheme: prefer the full-res cache, fall back to the
-		// cached thumbnail for a blurry preview while full-res is in-flight.
-		// Returns "" if neither tier is cached — the caller skips the texture
-		// upload and the shader renders the flat background instead.
+		// Defensive: gradient/colour values must never reach convertFileSrc —
+		// the caller already gates on backgroundType, but a stray write that
+		// leaves a CSS gradient in backgroundValue while type briefly reads
+		// "image" would otherwise log "File does not exist at path: linear-
+		// gradient(...)" via the Tauri asset protocol.
+		if (value.includes("gradient(") || value.startsWith("#")) return "";
 		if (value.startsWith("asset:") && !value.startsWith("asset://")) {
 			const id = value.slice("asset:".length);
 			const cached = await resolveAsset(id);
@@ -575,7 +580,7 @@ void main() {
 		// Composition aspect = (video + 2*padding) on each side. Here padding is in
 		// "video pixels"; we choose a render-buffer size that preserves the same
 		// aspect and fits inside the container, capped to keep GPU cost reasonable.
-		const padding = Math.max(0, store.padding);
+		const padding = framePaddingPixels(store.padding, meta);
 		const compW = meta.width + padding * 2;
 		const compH = meta.height + padding * 2;
 
@@ -714,8 +719,9 @@ void main() {
 
 		// Padding maps from "video pixels" to canvas pixels by the buffer scale
 		const meta = store.metadata!;
-		const compW = meta.width + store.padding * 2;
-		const paddingPx = (store.padding / compW) * canvasEl.width;
+		const sourcePaddingPx = framePaddingPixels(store.padding, meta);
+		const compW = meta.width + sourcePaddingPx * 2;
+		const paddingPx = (sourcePaddingPx / compW) * canvasEl.width;
 		gl.uniform1f(uniforms.u_paddingPx, paddingPx);
 
 		// Background
@@ -819,14 +825,14 @@ void main() {
 			usingSvgCursor ? 0 : cursorVisible,
 		);
 		// Push to reactive state so the HTML overlay updates each frame.
-		const compH_local = meta.height + store.padding * 2;
+		const compH_local = meta.height + sourcePaddingPx * 2;
 		svgCursor = {
 			visible: overlayVisible,
 			styleId: cs.style,
 			// Cursor position in canvas-pixel space, where the canvas is
 			// `compW × compH` source pixels expanded by padding.
-			canvasX: (store.padding + cursorPosX * meta.width),
-			canvasY: (store.padding + cursorPosY * meta.height),
+			canvasX: (sourcePaddingPx + cursorPosX * meta.width),
+			canvasY: (sourcePaddingPx + cursorPosY * meta.height),
 			compW,
 			compH: compH_local,
 			sizePx: cs.size * 2,

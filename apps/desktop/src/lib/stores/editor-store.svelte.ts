@@ -38,6 +38,12 @@ export interface ZoomRegion {
 	centerX: number; // UV 0..1 — focus point X; 0.5 = center crop
 	centerY: number; // UV 0..1 — focus point Y; 0.5 = center crop
 	motionBlur: number; // 0..1 — preview motion-blur strength multiplier
+	/**
+	 * Origin of the region. "auto" means added by Smart Auto-Zoom on first
+	 * load; flipped to "manual" the moment the user edits any field so
+	 * "Clear auto zooms" leaves their tweaks alone.
+	 */
+	source: "manual" | "auto";
 }
 
 export const DEFAULT_ZOOM_RAMP = 0.35;
@@ -208,12 +214,49 @@ export interface VideoMetadata {
 	sizeBytes: number;
 }
 
+export const MAX_FRAME_PADDING_PERCENT = 20;
+
+export function clampFramePaddingPercent(value: number): number {
+	if (!Number.isFinite(value)) return 0;
+	return Math.max(0, Math.min(MAX_FRAME_PADDING_PERCENT, value));
+}
+
+export function framePaddingPixels(
+	paddingPercent: number,
+	metadata: Pick<VideoMetadata, 'width' | 'height'> | null | undefined,
+): number {
+	if (!metadata?.width || !metadata?.height) return 0;
+	const shorterEdge = Math.min(metadata.width, metadata.height);
+	const pct = clampFramePaddingPercent(paddingPercent);
+	return (pct / 100) * shorterEdge;
+}
+
+export function normalizeFramePaddingPercent(
+	value: number,
+	metadata: Pick<VideoMetadata, 'width' | 'height'> | null | undefined,
+): number {
+	if (!Number.isFinite(value)) return 0;
+	const nonNegative = Math.max(0, value);
+	if (nonNegative <= MAX_FRAME_PADDING_PERCENT) {
+		return clampFramePaddingPercent(nonNegative);
+	}
+	// Legacy projects stored padding as raw pixels.
+	if (metadata?.width && metadata?.height) {
+		const shorterEdge = Math.min(metadata.width, metadata.height);
+		if (shorterEdge > 0) {
+			return clampFramePaddingPercent((nonNegative / shorterEdge) * 100);
+		}
+	}
+	return 0;
+}
+
 export interface EditorRenderState {
 	trimStart: number;
 	trimEnd: number;
 	backgroundType: BackgroundType;
 	backgroundValue: string;
 	backgroundBlur: number;
+	/** Frame padding as percent of the shorter source edge (0..20). */
 	padding: number;
 	borderRadius: number;
 	cursorEnabled: boolean;
@@ -237,7 +280,10 @@ export interface EditorRenderState {
 		centerX: number;
 		centerY: number;
 		motionBlur: number;
+		source?: "manual" | "auto";
 	}>;
+	autoZoomApplied?: boolean;
+	autoZoomEnabled?: boolean;
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
@@ -259,20 +305,26 @@ export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 23 }, (_, i) =
 	label: `Wallpaper ${i + 1}`,
 }));
 
-export const GRADIENT_PRESETS = [
-	{ label: 'Sunset', value: 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)' },
-	{ label: 'Ocean', value: 'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)' },
-	{ label: 'Forest', value: 'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)' },
-	{ label: 'Lavender', value: 'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)' },
-	{ label: 'Midnight', value: 'linear-gradient(135deg, #0c3483 0%, #a2b6df 100%)' },
-	{ label: 'Ember', value: 'linear-gradient(135deg, #f83600 0%, #f9d423 100%)' },
-	{ label: 'Sky', value: ' linear-gradient(135deg,#bbd2f9 0%,#99aed1 25%,#7b8aac 50%,#4f699c 75%,#3a4877 100%)' },
-];
+const rawGradientPresets: [string, string[]][] = [
+	['Forest', ["#80dbef", "#51b2b9", "#2f8d87", "#216a57", "#134830"]],
+	['Sunset', ["#dcb2b3", "#e9c6be", "#dfad90", "#e9b89e", "#dcc2a8"]],
+	['Ocean', ["#24707e", "#3d9886", "#6ba072", "#9fbb7e", "#c0d09a"]],
+	['Lavender', ["#facac2", "#dca0aa", "#ad667d", "#7b3f62", "#461a48"]],
+	['Beige',["#d5ac9c", "#e6bfa6", "#f1d2ae", "#d0ae85", "#cebc8c"]],
+	['Midnight', ["#cbb8f3", "#9892c9", "#7664ae", "#4d417e", "#2d204b"]],
+	['Ember', ["#f8b3c9", "#f3ac9e", "#f1bf9f", "#f5d4a4", "#d4d294"]],
+	['Sky', ["#bbd2f9", "#99aed1", "#7b8aac", "#4f699c", "#3a4877"]],
+]
+
+export const GRADIENT_PRESETS = rawGradientPresets.map(([label, colors]) => ({
+	label,
+	value: `linear-gradient(135deg, ${colors.map((c, i) => `${c} ${(i / (colors.length - 1)) * 100}%`).join(', ')})`,
+}))
 
 export const COLOR_PRESETS = [
-	'#000000', '#1a1a2e', '#16213e', '#0f3460',
-	'#533483', '#e94560', '#f38181', '#fce38a',
 	'#eaffd0', '#95e1d3', '#ffffff', '#f5f5f5',
+	'#533483', '#e94560', '#f38181', '#fce38a',
+	'#0f3460', '#16213e', '#1a1a2e', '#000000',
 ];
 
 function generateId(): string {
@@ -302,7 +354,7 @@ export function createEditorStore() {
 	let backgroundType = $state<BackgroundType>('wallpaper');
 	let backgroundValue = $state(wallpaperBackgroundValue(WALLPAPERS[0].id));
 	let backgroundBlur = $state(40);
-	let padding = $state(32);
+	let padding = $state(3);
 	let borderRadius = $state(0); // 0..50 (% of shorter video edge)
 
 	// Drop shadow cast by the video rect onto the background.
@@ -331,6 +383,11 @@ export function createEditorStore() {
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
 	let selectedZoomRegionId = $state<string | null>(null);
+	// Smart Auto-Zoom: persisted per-project so we only auto-apply on the
+	// first editor load. `enabled` is the user's preference; `applied` is
+	// the latch that prevents re-running on every reopen.
+	let autoZoomEnabled = $state(true);
+	let autoZoomApplied = $state(false);
 
 	// Which properties-panel tab is active. Overlays (FocusOverlay,
 	// AnnotationOverlay) gate their editing UI on this so users don't interact
@@ -466,7 +523,7 @@ export function createEditorStore() {
 		backgroundType = s.backgroundType;
 		backgroundValue = s.backgroundValue;
 		backgroundBlur = s.backgroundBlur;
-		padding = s.padding;
+		padding = normalizeFramePaddingPercent(s.padding, metadata);
 		borderRadius = s.borderRadius ?? 0;
 		shadow = s.shadow ?? shadow;
 		trimStart = s.trimStart;
@@ -476,6 +533,7 @@ export function createEditorStore() {
 			centerX: r.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: r.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: r.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
+			source: r.source ?? "manual",
 		}));
 		cursorSettings = s.cursorSettings;
 		audioSettings = s.audioSettings ?? audioSettings;
@@ -484,7 +542,12 @@ export function createEditorStore() {
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
 	}
 
-	function addZoomRegion(start: number, end: number, scale = 1.5) {
+	function addZoomRegion(
+		start: number,
+		end: number,
+		scale = 1.5,
+		center?: { x: number; y: number },
+	) {
 		pushUndoState();
 		const region: ZoomRegion = {
 			id: generateId(),
@@ -495,12 +558,57 @@ export function createEditorStore() {
 			easeOut: { ...EASE },
 			rampIn: DEFAULT_ZOOM_RAMP,
 			rampOut: DEFAULT_ZOOM_RAMP,
-			centerX: DEFAULT_ZOOM_CENTER,
-			centerY: DEFAULT_ZOOM_CENTER,
+			centerX: center?.x ?? DEFAULT_ZOOM_CENTER,
+			centerY: center?.y ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
+			source: "manual",
 		};
 		zoomRegions = [...zoomRegions, region];
 		selectedZoomRegionId = region.id;
+		return region.id;
+	}
+
+	/**
+	 * Append an auto-generated zoom region without pushing undo (the caller
+	 * batches all auto-applied regions into a single undo entry). Returns
+	 * the new id so callers can correlate with their suggestion.
+	 */
+	function addAutoZoomRegion(
+		start: number,
+		end: number,
+		scale: number,
+		centerX: number,
+		centerY: number,
+	) {
+		const region: ZoomRegion = {
+			id: generateId(),
+			start,
+			end,
+			scale,
+			easeIn: { ...EASE },
+			easeOut: { ...EASE },
+			rampIn: DEFAULT_ZOOM_RAMP,
+			rampOut: DEFAULT_ZOOM_RAMP,
+			centerX,
+			centerY,
+			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
+			source: "auto",
+		};
+		zoomRegions = [...zoomRegions, region];
+		return region.id;
+	}
+
+	function clearAutoZooms() {
+		const hasAuto = zoomRegions.some((z) => z.source === "auto");
+		if (!hasAuto) return;
+		pushUndoState();
+		zoomRegions = zoomRegions.filter((z) => z.source !== "auto");
+		if (
+			selectedZoomRegionId &&
+			!zoomRegions.find((z) => z.id === selectedZoomRegionId)
+		) {
+			selectedZoomRegionId = null;
+		}
 	}
 
 	function setBackground(selection: BackgroundSelection) {
@@ -535,7 +643,16 @@ export function createEditorStore() {
 	}
 
 	function updateZoomRegion(id: string, updates: Partial<ZoomRegion>) {
-		zoomRegions = zoomRegions.map((z) => (z.id === id ? { ...z, ...updates } : z));
+		zoomRegions = zoomRegions.map((z) => {
+			if (z.id !== id) return z;
+			// First user edit on an auto region detaches it — "Clear auto
+			// zooms" should leave anything they've tweaked alone.
+			const next = { ...z, ...updates };
+			if (z.source === "auto" && updates.source === undefined) {
+				next.source = "manual";
+			}
+			return next;
+		});
 	}
 
 	function selectZoomRegion(id: string | null) {
@@ -583,7 +700,7 @@ export function createEditorStore() {
 		backgroundType = 'wallpaper';
 		backgroundValue = wallpaperBackgroundValue(WALLPAPERS[0].id);
 		backgroundBlur = 40;
-		padding = 32;
+		padding = 3;
 		borderRadius = 0;
 		shadow = {
 			enabled: false,
@@ -596,6 +713,8 @@ export function createEditorStore() {
 		layoutMode = 'auto';
 		zoomRegions = [];
 		selectedZoomRegionId = null;
+		autoZoomEnabled = true;
+		autoZoomApplied = false;
 		annotations = [];
 		selectedAnnotationId = null;
 		annotationTool = null;
@@ -663,7 +782,10 @@ export function createEditorStore() {
 				centerX: region.centerX,
 				centerY: region.centerY,
 				motionBlur: region.motionBlur,
+				source: region.source,
 			})),
+			autoZoomApplied,
+			autoZoomEnabled,
 			cursorMotionEasing,
 			annotations: annotations.map(({ id: _id, ...rest }) => rest),
 			shadow: { ...shadow },
@@ -678,7 +800,7 @@ export function createEditorStore() {
 		backgroundType = state.backgroundType ?? 'color';
 		backgroundValue = state.backgroundValue ?? '#111111';
 		backgroundBlur = state.backgroundBlur ?? 0;
-		padding = state.padding ?? 0;
+		padding = normalizeFramePaddingPercent(state.padding ?? 0, metadata);
 		borderRadius = state.borderRadius ?? 0;
 		cursorSettings = {
 			...cursorSettings,
@@ -710,7 +832,15 @@ export function createEditorStore() {
 			centerX: region.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: region.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
+			source: region.source ?? "manual",
 		}));
+		// Legacy projects predate the auto-zoom flags. Treat them as already
+		// processed so we don't retroactively scatter zooms across footage
+		// the user already finished editing.
+		autoZoomEnabled = state.autoZoomEnabled ?? true;
+		autoZoomApplied =
+			state.autoZoomApplied ??
+			(state.zoomRegions !== undefined ? true : false);
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
@@ -787,7 +917,7 @@ export function createEditorStore() {
 		set backgroundBlur(v: number) { backgroundBlur = v; },
 
 		get padding() { return padding; },
-		set padding(v: number) { padding = v; },
+		set padding(v: number) { padding = clampFramePaddingPercent(v); },
 
 		get borderRadius() { return borderRadius; },
 		set borderRadius(v: number) { borderRadius = v; },
@@ -799,6 +929,12 @@ export function createEditorStore() {
 		set layoutMode(v: LayoutMode) { pushUndoState(); layoutMode = v; },
 
 		get zoomRegions() { return zoomRegions; },
+
+		get autoZoomEnabled() { return autoZoomEnabled; },
+		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; },
+
+		get autoZoomApplied() { return autoZoomApplied; },
+		set autoZoomApplied(v: boolean) { autoZoomApplied = v; isDirty = true; },
 
 		get cursorSamplesRaw() { return cursorSamplesRaw; },
 		set cursorSamplesRaw(v: CursorSampleLike[]) { cursorSamplesRaw = v; },
@@ -860,6 +996,8 @@ export function createEditorStore() {
 		updateWatermarkSettings,
 		updateShadow,
 		addZoomRegion,
+		addAutoZoomRegion,
+		clearAutoZooms,
 		removeZoomRegion,
 		updateZoomRegion,
 		selectZoomRegion,

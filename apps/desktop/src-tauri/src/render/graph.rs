@@ -16,6 +16,7 @@ pub struct RenderState {
     pub background_type: String,
     pub background_value: String,
     pub background_blur: f64,
+    /// Frame padding as percent of the shorter source edge (0..20).
     pub padding: f64,
     /// Corner rounding as a percentage (0..50) of the shorter video edge.
     #[serde(default)]
@@ -99,7 +100,7 @@ impl RenderGraph {
                     background_type: state.background_type.clone(),
                     value: state.background_value.clone(),
                     blur: state.background_blur,
-                    padding: state.padding.max(0.0).round() as u32,
+                    padding: state.padding.max(0.0),
                 }),
                 RenderNode::Cursor(CursorNode {
                     enabled: state.cursor_enabled,
@@ -145,7 +146,9 @@ impl RenderGraph {
             _ => None,
         });
 
-        let padding = background.map(|node| node.padding).unwrap_or_default();
+        let padding = background
+            .map(|node| padding_percent_to_pixels(node.padding, source))
+            .unwrap_or_default();
         let canvas_width = source.width + padding * 2;
         let canvas_height = source.height + padding * 2;
         let zoom_filter = zoom
@@ -255,6 +258,12 @@ impl RenderGraph {
             },
         })
     }
+}
+
+fn padding_percent_to_pixels(padding_percent: f64, source: SourceVideoMetadata) -> u32 {
+    let pct = padding_percent.clamp(0.0, 20.0);
+    let shorter_edge = source.width.min(source.height) as f64;
+    ((shorter_edge * pct) / 100.0).round() as u32
 }
 
 fn build_color_background_filter(

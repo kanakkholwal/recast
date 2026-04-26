@@ -19,9 +19,14 @@
     listenToExportState,
     loadEditorDocument,
     saveProjectEdits,
+    suggestZoomRegions,
   } from "$lib/ipc";
-  import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
-  import { createEditorStore } from "$lib/stores/editor-store.svelte";
+  import { applyAutoZooms } from "$lib/zoom/auto-apply";
+  import {
+    createEditorStore,
+    framePaddingPixels,
+    type VideoMetadata,
+  } from "$lib/stores/editor-store.svelte";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
@@ -226,12 +231,101 @@
       videoEl?.load();
       systemAudioEl?.load();
       micAudioEl?.load();
+      void maybeRunAutoZoom();
     } catch (err) {
       console.error("Failed to load editor document", err);
       error = `Could not load project: ${err}`;
       isLoading = false;
     }
   }
+
+  // Smart Auto-Zoom: on the first load of a recording, place a focus region
+  // at every detected click + settle-after-motion. Persisted via the
+  // `autoZoomApplied` flag on the project document so subsequent reopens
+  // don't repopulate (the user may have intentionally cleared regions).
+  let autoZoomRunning = false;
+
+  async function maybeRunAutoZoom() {
+    if (autoZoomRunning) return;
+    if (!store.autoZoomEnabled || store.autoZoomApplied) return;
+    if (!cursorPath) {
+      // Screen-only recording with no cursor track to analyse — latch the
+      // flag so we don't retry every reopen.
+      store.autoZoomApplied = true;
+      return;
+    }
+    if (store.zoomRegions.length > 0) {
+      // Project already has regions (autosave restored them, or the user
+      // added some manually before the auto-apply ran). Skip silently.
+      store.autoZoomApplied = true;
+      return;
+    }
+    await runAutoZoom({ silentEmpty: true });
+  }
+
+  async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
+    if (autoZoomRunning) return;
+    if (!cursorPath) return;
+    autoZoomRunning = true;
+    try {
+      const suggestions = await suggestZoomRegions(cursorPath);
+      const dur = store.metadata?.duration ?? 0;
+      const w = store.metadata?.width ?? 0;
+      const h = store.metadata?.height ?? 0;
+      const bounds = {
+        start: store.inPoint,
+        end: store.outPoint > 0 ? store.outPoint : dur,
+      };
+      if (bounds.end <= bounds.start) {
+        store.autoZoomApplied = true;
+        return;
+      }
+      // Single coalesced undo entry covering all auto-applied regions.
+      store.pushUndoState();
+      const result = applyAutoZooms(store, suggestions, bounds, w, h);
+      store.autoZoomApplied = true;
+      // Persist immediately so a crash before the 30 s autosave tick doesn't
+      // re-run auto-zoom on next open and double up regions.
+      if (documentPath) {
+        try {
+          await autosaveProject(documentPath, JSON.stringify(store.toRenderState()));
+        } catch (err) {
+          console.warn("Auto-zoom autosave failed:", err);
+        }
+      }
+      if (result.applied > 0) {
+        toast.success(`Added ${result.applied} focus moment${result.applied === 1 ? "" : "s"}`, {
+          description: "Tweak, remove, or turn off in the Focus panel.",
+          action: {
+            label: "Undo",
+            onClick: () => {
+              store.clearAutoZooms();
+              store.autoZoomApplied = false;
+            },
+          },
+        });
+      } else if (!opts.silentEmpty) {
+        toast.info("No focus candidates found");
+      }
+    } catch (err) {
+      console.warn("Auto-zoom failed:", err);
+    } finally {
+      autoZoomRunning = false;
+    }
+  }
+
+  // Re-run is exposed to FocusPanel via a typed CustomEvent on `window` so
+  // the deeply-nested panel doesn't need to thread a prop through every
+  // intermediate component.
+  $effect(() => {
+    function onRerun() {
+      store.clearAutoZooms();
+      store.autoZoomApplied = false;
+      void runAutoZoom({ silentEmpty: false });
+    }
+    window.addEventListener("recast:rerun-auto-zoom", onRerun);
+    return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
+  });
 
   // Export lifecycle UI state — lives in the route, not the store, because the
   // overlay handles success/cancel/error reveals that don't belong in global state.
@@ -340,8 +434,9 @@
       // both file paths and `data:` URLs uniformly.
       const renderState = store.toRenderState();
       const meta = store.metadata;
-      const canvasW = meta ? meta.width + (renderState.padding ?? 0) * 2 : 0;
-      const canvasH = meta ? meta.height + (renderState.padding ?? 0) * 2 : 0;
+      const paddingPx = framePaddingPixels(renderState.padding ?? 0, meta);
+      const canvasW = meta ? meta.width + paddingPx * 2 : 0;
+      const canvasH = meta ? meta.height + paddingPx * 2 : 0;
       const expandedAnnotations = await expandTextAnnotations(
         renderState.annotations,
         canvasW,

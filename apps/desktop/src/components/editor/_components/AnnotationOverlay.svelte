@@ -5,6 +5,7 @@
     AnnotationKind,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import { framePaddingPixels } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount } from "svelte";
 
   interface Props {
@@ -62,7 +63,8 @@
   function compW(): number {
     const meta = store.metadata;
     if (!meta) return 0;
-    return meta.width + store.padding * 2;
+    const paddingPx = framePaddingPixels(store.padding, meta);
+    return meta.width + paddingPx * 2;
   }
 
   /** Canvas device-px rect of the video region (mirror of the shader). */
@@ -71,7 +73,9 @@
     const cw = canvasEl.width;
     const ch = canvasEl.height;
     const total = compW();
-    const padPx = total > 0 ? (store.padding / total) * cw : 0;
+    const meta = store.metadata;
+    const sourcePaddingPx = meta ? framePaddingPixels(store.padding, meta) : 0;
+    const padPx = total > 0 ? (sourcePaddingPx / total) * cw : 0;
     return { x: padPx, y: padPx, w: cw - 2 * padPx, h: ch - 2 * padPx };
   }
 

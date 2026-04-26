@@ -79,9 +79,9 @@
     >
       <Button
         variant="ghost"
-        size="raw"
+        size="icon-sm"
         onclick={handleMinimize}
-        class="size-7 rounded-[10px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all"
+        class="shadow-(--shadow-craft-inset) text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all "
         aria-label="Minimize"
         title="Minimize"
       >
@@ -89,14 +89,14 @@
       </Button>
       <Button
         variant="ghost"
-        size="raw"
+        size="icon-sm"
         onclick={handleToggleMaximize}
-        class="size-7 rounded-[10px] text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all"
+        class="shadow-(--shadow-craft-inset) text-muted-foreground hover:bg-foreground/5 hover:text-foreground transition-all"
         aria-label={isMaximized ? "Restore" : "Maximize"}
         title={isMaximized ? "Restore" : "Maximize"}
       >
         {#if isMaximized}
-          <svg width="10" height="10" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.8">
+          <svg width="10" height="10" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1">
             <rect x="3" y="0.5" width="9" height="9" rx="1.5" />
             <rect x="0.5" y="3" width="9" height="9" rx="1.5" />
           </svg>
@@ -106,9 +106,9 @@
       </Button>
       <Button
         variant="ghost"
-        size="raw"
+        size="icon-sm"
         onclick={handleClose}
-        class="size-7 rounded-[10px] text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive"
+        class="shadow-(--shadow-craft-inset) text-muted-foreground transition-all hover:bg-destructive/10 hover:text-destructive"
         aria-label="Close"
         title="Close"
       >

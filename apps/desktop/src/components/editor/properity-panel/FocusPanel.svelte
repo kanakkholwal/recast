@@ -7,7 +7,8 @@
     type EditorStore,
     type ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
-  import { Crosshair, Plus, Target, Trash2 } from "@lucide/svelte";
+  import { resolveZoomCenter } from "$lib/zoom/auto-apply";
+  import { Crosshair, Plus, Sparkles, Target, Trash2, Wand2 } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import BezierEditor from "../_components/BezierEditor.svelte";
@@ -30,7 +31,22 @@
     const clipEnd = store.trimEnd || duration;
     const start = Math.max(store.trimStart, store.currentTime - 0.35);
     const end = Math.min(clipEnd, Math.max(start + 0.8, store.currentTime + 0.85));
-    store.addZoomRegion(start, end, 1.8);
+    // Look up where the cursor actually was at this moment so the new
+    // region zooms toward the user's pointer rather than dead-centre.
+    const w = store.metadata?.width ?? 0;
+    const h = store.metadata?.height ?? 0;
+    const center = resolveZoomCenter(store.cursorSamplesRaw, store.currentTime, w, h);
+    store.addZoomRegion(start, end, 1.8, center);
+  }
+
+  let hasAutoZooms = $derived(store.zoomRegions.some((r) => r.source === "auto"));
+
+  function rerunAutoZoom() {
+    window.dispatchEvent(new CustomEvent("recast:rerun-auto-zoom"));
+  }
+
+  function clearAuto() {
+    store.clearAutoZooms();
   }
 
   function removeSelected() {
@@ -139,7 +155,7 @@
 
 <div class="flex flex-col gap-5 animate-in fade-in duration-200">
   <!-- Header -->
-  <section>
+  <section class="flex flex-col gap-2">
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
@@ -153,6 +169,38 @@
         <Plus size={11} />
         Add
       </Button>
+    </div>
+
+    <!-- Smart Auto-Zoom controls -->
+    <div class="flex flex-col gap-1.5 rounded-md border border-border bg-card/40 p-2">
+      <label class="flex items-center gap-2 text-[11px] text-foreground">
+        <input
+          type="checkbox"
+          class="size-3 accent-primary"
+          checked={store.autoZoomEnabled}
+          onchange={(e) => (store.autoZoomEnabled = (e.target as HTMLInputElement).checked)}
+        />
+        <Sparkles size={11} class="text-primary" />
+        <span class="flex-1">Smart Auto-Zoom on import</span>
+      </label>
+      <p class="text-[10px] leading-snug text-muted-foreground">
+        Adds a focus moment at every click and settle point when a recording first opens.
+      </p>
+      <div class="flex items-center justify-end gap-1 pt-0.5">
+        {#if hasAutoZooms}
+          <Button variant="ghost" size="xs" onclick={clearAuto}>Clear auto zooms</Button>
+        {/if}
+        <Button
+          variant="secondary"
+          size="xs"
+          class="gap-1.5"
+          onclick={rerunAutoZoom}
+          disabled={!store.cursorPath}
+        >
+          <Wand2 size={11} />
+          Re-run auto-zoom
+        </Button>
+      </div>
     </div>
   </section>
 
@@ -192,8 +240,17 @@
               />
             </svg>
             <div class="flex-1 min-w-0">
-              <div class="truncate text-[11px] font-medium text-foreground">
-                {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(region.end)}
+              <div class="flex items-center gap-1.5 truncate">
+                <span class="truncate text-[11px] font-medium text-foreground">
+                  {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(region.end)}
+                </span>
+                {#if region.source === "auto"}
+                  <span
+                    class="shrink-0 rounded-sm border border-primary/30 bg-primary/10 px-1 text-[9px] font-semibold uppercase tracking-wider text-primary"
+                  >
+                    Auto
+                  </span>
+                {/if}
               </div>
               <div class="text-[10px] text-muted-foreground">
                 {(region.end - region.start).toFixed(2)}s

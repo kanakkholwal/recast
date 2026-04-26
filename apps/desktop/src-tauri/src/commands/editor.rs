@@ -533,7 +533,11 @@ pub async fn export_video(
         )
         .map_err(|e| e.to_string())?;
 
-    let canvas_padding = request.render_state.padding.max(0.0).round() as u32;
+    let canvas_padding = {
+        let pct = request.render_state.padding.clamp(0.0, 20.0);
+        let shorter_edge = metadata.width.min(metadata.height) as f64;
+        ((shorter_edge * pct) / 100.0).round() as u32
+    };
     let canvas_width = metadata.width + canvas_padding * 2;
     let canvas_height = metadata.height + canvas_padding * 2;
     let overlay_duration = if duration > 0.0 {

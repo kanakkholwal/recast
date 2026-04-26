@@ -3,6 +3,7 @@
   import {
     COLOR_PRESETS,
     GRADIENT_PRESETS,
+    MAX_FRAME_PADDING_PERCENT,
     WALLPAPERS,
     wallpaperBackgroundValue,
     type BackgroundType,
@@ -74,6 +75,19 @@
   }
 
   function isValidImageValue(value: string) {
+    if (!value) return false;
+    // Explicitly reject non-image values that might linger in
+    // `backgroundValue` after switching tabs (gradient strings, colour
+    // hex, internal asset ids). Without this guard these slip through to
+    // the `<Image>` element below, which feeds them into convertFileSrc
+    // and triggers a Tauri asset-protocol "file does not exist" error.
+    if (
+      value.includes("gradient(") ||
+      value.startsWith("#") ||
+      value.startsWith("asset:")
+    ) {
+      return false;
+    }
     return (
       value.startsWith("data:") ||
       value.startsWith("http://") ||
@@ -121,6 +135,16 @@
 
   function getImagePreviewSrc(value: string) {
     if (!value) return "";
+    // Mirror isValidImageValue's rejections — feeding a gradient string or
+    // colour hex to convertFileSrc reaches Tauri's asset protocol and
+    // produces "File does not exist" log spam.
+    if (
+      value.includes("gradient(") ||
+      value.startsWith("#") ||
+      value.startsWith("asset:")
+    ) {
+      return "";
+    }
     if (
       value.startsWith("data:") ||
       value.startsWith("http://") ||
@@ -374,7 +398,7 @@
         Finishing
       </h3>
       <InspectorHint
-        content="Blur softens image-based backgrounds. Padding controls the space around the video frame."
+        content="Blur softens image-based backgrounds. Padding controls the space around the video frame as a percentage of frame size."
       />
     </header>
 
@@ -400,9 +424,9 @@
         label="Frame padding"
         bind:value={paddingValue}
         min={0}
-        max={100}
+        max={MAX_FRAME_PADDING_PERCENT}
         step={1}
-        unit="px"
+        unit="%"
         onstart={() => store.pushUndoState()}
         onchange={(next) => {
           store.padding = next;

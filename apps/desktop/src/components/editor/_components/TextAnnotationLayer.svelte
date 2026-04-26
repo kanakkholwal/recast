@@ -4,6 +4,7 @@
     Annotation,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import { framePaddingPixels } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount, tick } from "svelte";
 
   // HTML layer for text annotations only. Lives as a sibling to
@@ -42,7 +43,8 @@
   function compW(): number {
     const meta = store.metadata;
     if (!meta) return 0;
-    return meta.width + store.padding * 2;
+    const paddingPx = framePaddingPixels(store.padding, meta);
+    return meta.width + paddingPx * 2;
   }
 
   /** CSS-px rect (relative to layerEl) of the video region. */
@@ -50,7 +52,9 @@
     const w = layerSize.w;
     const h = layerSize.h;
     const total = compW();
-    const padPx = total > 0 ? (store.padding / total) * w : 0;
+    const meta = store.metadata;
+    const sourcePaddingPx = meta ? framePaddingPixels(store.padding, meta) : 0;
+    const padPx = total > 0 ? (sourcePaddingPx / total) * w : 0;
     return { x: padPx, y: padPx, w: w - 2 * padPx, h: h - 2 * padPx };
   }
 

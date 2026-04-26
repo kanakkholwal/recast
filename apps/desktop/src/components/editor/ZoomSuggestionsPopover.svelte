@@ -1,6 +1,11 @@
 <script lang="ts">
   import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import {
+    findFreeSlot as _findFreeSlot,
+    planPlacement,
+    type Interval,
+  } from "$lib/zoom/auto-apply";
   import { AlertTriangle, Check, MousePointerClick, Sparkles, Wand2, XCircle } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Tooltip from "@recast/ui/tooltip";
@@ -12,13 +17,8 @@
   }
 
   let { store, onclose }: Props = $props();
-
-  // Target window around each trigger. We'll shrink if a neighbour forces it,
-  // but refuse to place anything shorter than MIN_REGION_DURATION — a 200 ms
-  // zoom reads as a flicker, not focus.
-  const IDEAL_HALF_WIDTH = 0.5; // seconds — full 1 s window when unobstructed
-  const MIN_REGION_DURATION = 0.4;
-  const MIN_GAP = 0.05; // guardband so adjacent regions don't visually touch
+  // Re-export to silence unused-import noise in case findFreeSlot is removed below.
+  void _findFreeSlot;
 
   type Status = "idle" | "loading" | "ready" | "error" | "empty";
   let status = $state<Status>("idle");
@@ -69,51 +69,6 @@
     store.currentTime = sug.timestampUs / 1_000_000;
   }
 
-  type Interval = { start: number; end: number };
-
-  /**
-   * Given a sorted list of occupied intervals within [clipStart, clipEnd],
-   * find the free slot that contains `t`. Returns null if `t` is inside an
-   * occupied interval.
-   */
-  function findFreeSlot(
-    occupied: Interval[],
-    clipStart: number,
-    clipEnd: number,
-    t: number,
-  ): Interval | null {
-    if (t < clipStart || t > clipEnd) return null;
-    let a = clipStart;
-    for (const iv of occupied) {
-      // Inside an existing region (with guardband) → blocked.
-      if (t >= iv.start - MIN_GAP && t <= iv.end + MIN_GAP) return null;
-      if (iv.end <= t) {
-        a = iv.end + MIN_GAP;
-      } else {
-        return { start: a, end: iv.start - MIN_GAP };
-      }
-    }
-    return { start: a, end: clipEnd };
-  }
-
-  /**
-   * Compute the placement window for a suggestion given current occupied
-   * intervals. Returns null if there's no room for a meaningful zoom.
-   */
-  function planPlacement(
-    occupied: Interval[],
-    clipStart: number,
-    clipEnd: number,
-    centerSec: number,
-  ): Interval | null {
-    const slot = findFreeSlot(occupied, clipStart, clipEnd, centerSec);
-    if (!slot) return null;
-    const start = Math.max(slot.start, centerSec - IDEAL_HALF_WIDTH);
-    const end = Math.min(slot.end, centerSec + IDEAL_HALF_WIDTH);
-    if (end - start < MIN_REGION_DURATION) return null;
-    return { start, end };
-  }
-
   function currentOccupied(): Interval[] {
     return store.zoomRegions
       .map((z) => ({ start: z.start, end: z.end }))
@@ -153,9 +108,19 @@
     if (!bounds) return;
     const plan = planPlacement(currentOccupied(), bounds.start, bounds.end, sug.timestampUs / 1_000_000);
     if (!plan) return; // blocked — button should already be disabled
-    store.addZoomRegion(plan.start, plan.end, 1.8);
+    store.addZoomRegion(plan.start, plan.end, 1.8, centerOf(sug));
     pending = pending.filter((_, i) => i !== idx);
     if (pending.length === 0) status = "empty";
+  }
+
+  function centerOf(sug: ZoomSuggestion): { x: number; y: number } | undefined {
+    const w = store.metadata?.width ?? 0;
+    const h = store.metadata?.height ?? 0;
+    if (w <= 0 || h <= 0) return undefined;
+    return {
+      x: Math.min(1, Math.max(0, sug.x / w)),
+      y: Math.min(1, Math.max(0, sug.y / h)),
+    };
   }
 
   function dismiss(idx: number) {
@@ -178,7 +143,7 @@
         skipped.push(sug);
         continue;
       }
-      store.addZoomRegion(plan.start, plan.end, 1.8);
+      store.addZoomRegion(plan.start, plan.end, 1.8, centerOf(sug));
       occupied.push(plan);
       occupied.sort((a, b) => a.start - b.start);
     }

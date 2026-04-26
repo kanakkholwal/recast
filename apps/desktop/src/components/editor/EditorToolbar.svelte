@@ -47,9 +47,9 @@
     blur: number;
     layout?: "auto" | "crop";
   }[] = [
-    { label: "Studio", bg: "gradient", value: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", padding: 36, blur: 18, layout: "auto" },
-    { label: "Focus", bg: "color", value: "#0b1120", padding: 24, blur: 0, layout: "auto" },
-    { label: "Spotlight", bg: "wallpaper", value: "asset:wallpaper7", padding: 56, blur: 36, layout: "auto" },
+    { label: "Studio", bg: "gradient", value: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", padding: 3, blur: 18, layout: "auto" },
+    { label: "Focus", bg: "color", value: "#0b1120", padding: 2, blur: 0, layout: "auto" },
+    { label: "Spotlight", bg: "wallpaper", value: "asset:wallpaper7", padding: 5, blur: 36, layout: "auto" },
     { label: "Edge to Edge", bg: "color", value: "#020617", padding: 0, blur: 0, layout: "crop" },
   ];
 
