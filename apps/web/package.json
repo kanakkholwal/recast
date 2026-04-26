@@ -29,7 +29,6 @@
     "@lucide/svelte": "^0.577.0",
     "@sveltejs/adapter-auto": "^6.0.4",
     "bits-ui": "^2.16.3",
-    "clsx": "^2.1.1",
     "lucide-svelte": "latest",
     "mode-watcher": "^1.1.0",
     "svelte-sonner": "^1.1.0",

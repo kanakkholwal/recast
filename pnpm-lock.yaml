@@ -121,9 +121,6 @@ importers:
       bits-ui:
         specifier: ^2.16.3
         version: 2.17.3(@internationalized/date@3.12.0)(@sveltejs/kit@2.57.1(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.55.3)(vite@7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.3)(typescript@5.9.3)(vite@7.3.2(@types/node@25.6.0)(jiti@2.6.1)(lightningcss@1.32.0)))(svelte@5.55.3)
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
       lucide-svelte:
         specifier: latest
         version: 1.0.1(svelte@5.55.3)
