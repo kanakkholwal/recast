@@ -761,8 +761,24 @@ pub async fn export_video(
 
     match request.format.as_str() {
         "gif" => {
+            // Explicit `-c:v gif` + `-f gif` keeps FFmpeg from probing the
+            // output container and falling back to an unrelated codec on
+            // some Windows builds — we've seen the auto-detect path emit
+            // "Could not find tag for codec none" when the filter chain
+            // ends in a labelled output rather than the default sink.
+            // `-vsync 0` (a.k.a. `-fps_mode passthrough`) honours the
+            // exact frame timing produced by the in-graph `fps=` filter
+            // instead of FFmpeg's downstream resampler nudging frames
+            // around, which previously produced 0-byte GIFs when the
+            // composite framerate didn't divide evenly.
             args.extend([
+                "-c:v".to_string(),
+                "gif".to_string(),
+                "-f".to_string(),
+                "gif".to_string(),
                 "-an".to_string(),
+                "-vsync".to_string(),
+                "0".to_string(),
                 "-loop".to_string(),
                 "0".to_string(),
                 output_path.to_string_lossy().to_string(),

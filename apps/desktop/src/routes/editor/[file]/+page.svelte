@@ -131,7 +131,9 @@
   // Apply volume/mute from the store's audio settings to both audio elements.
   $effect(() => {
     const settings = store.audioSettings;
-    const vol = settings.muted ? 0 : Math.max(0, Math.min(1, settings.volume / 100));
+    const vol = settings.muted
+      ? 0
+      : Math.max(0, Math.min(1, settings.volume / 100));
     if (systemAudioEl) systemAudioEl.volume = vol;
     if (micAudioEl) micAudioEl.volume = vol;
   });
@@ -223,8 +225,12 @@
       videoSrc = convertFileSrc(document.mediaPath);
       cursorPath = document.cursorPath ?? null;
       store.cursorPath = cursorPath;
-      systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
-      micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
+      systemAudioSrc = document.audioPath
+        ? convertFileSrc(document.audioPath)
+        : "";
+      micAudioSrc = document.microphonePath
+        ? convertFileSrc(document.microphonePath)
+        : "";
       // Mount the editor body so the <video> element exists before we call load().
       // The video element lives inside VideoPreview, which only renders when !isLoading.
       isLoading = false;
@@ -289,22 +295,28 @@
       // re-run auto-zoom on next open and double up regions.
       if (documentPath) {
         try {
-          await autosaveProject(documentPath, JSON.stringify(store.toRenderState()));
+          await autosaveProject(
+            documentPath,
+            JSON.stringify(store.toRenderState()),
+          );
         } catch (err) {
           console.warn("Auto-zoom autosave failed:", err);
         }
       }
       if (result.applied > 0) {
-        toast.success(`Added ${result.applied} focus moment${result.applied === 1 ? "" : "s"}`, {
-          description: "Tweak, remove, or turn off in the Focus panel.",
-          action: {
-            label: "Undo",
-            onClick: () => {
-              store.clearAutoZooms();
-              store.autoZoomApplied = false;
+        toast.success(
+          `Added ${result.applied} focus moment${result.applied === 1 ? "" : "s"}`,
+          {
+            description: "Tweak, remove, or turn off in the Focus panel.",
+            action: {
+              label: "Undo",
+              onClick: () => {
+                store.clearAutoZooms();
+                store.autoZoomApplied = false;
+              },
             },
           },
-        });
+        );
       } else if (!opts.silentEmpty) {
         toast.info("No focus candidates found");
       }
@@ -336,6 +348,75 @@
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
   let activeExportId = $state<string | null>(null);
+
+  // Preparing-stage substages — surfaced in the dialog so users see the
+  // hybrid-raster work happening rather than a generic spinner.
+  let prepText = $state<"pending" | "running" | "done">("pending");
+  let prepCursor = $state<"pending" | "running" | "done">("pending");
+  let prepSending = $state<"pending" | "running" | "done">("pending");
+  function resetPrep() {
+    prepText = "pending";
+    prepCursor = "pending";
+    prepSending = "pending";
+  }
+
+  // Eased display percentage. Raw FFmpeg progress is jumpy (5–10% jumps,
+  // sticky around 99%), so we lerp the rendered ring toward it with a
+  // cubic-bezier-like response. Rerun on every animation tick while
+  // exporting so the ring never sits stale.
+  let displayPct = $state(0);
+  let easeRafHandle: number | null = null;
+  $effect(() => {
+    if (!store.isExporting) {
+      if (easeRafHandle !== null) {
+        cancelAnimationFrame(easeRafHandle);
+        easeRafHandle = null;
+      }
+      displayPct = 0;
+      return;
+    }
+    let lastTs: number | null = null;
+    function tick(now: number) {
+      const target = exportFinalizing
+        ? 99.5
+        : Math.min(99.5, Math.max(0, store.exportProgress ?? 0));
+      const dt = lastTs === null ? 16 : Math.max(1, Math.min(64, now - lastTs));
+      lastTs = now;
+      // Critically-damped follower with a ~250 ms time constant. The
+      // exponential form is shape-equivalent to a cubic-bezier-ease-out
+      // toward `target` and avoids overshoot at the high end.
+      const tau = 250;
+      const k = 1 - Math.exp(-dt / tau);
+      const next = displayPct + (target - displayPct) * k;
+      // Don't animate backwards on micro-jitter; the underlying export is
+      // monotonic so the ring should feel monotonic too.
+      displayPct = Math.max(displayPct, next);
+      easeRafHandle = requestAnimationFrame(tick);
+    }
+    easeRafHandle = requestAnimationFrame(tick);
+    return () => {
+      if (easeRafHandle !== null) {
+        cancelAnimationFrame(easeRafHandle);
+        easeRafHandle = null;
+      }
+    };
+  });
+
+  function renderStateHasText(): boolean {
+    return store.annotations.some((a) => a.kind.kind === "text");
+  }
+
+  // ETA — only meaningful once we have ≥10% real progress. Computed from
+  // wall-clock-elapsed × (1 − pct) / pct, smoothed by the same ring follower.
+  function exportEtaMs(): number | null {
+    if (!exportHasProgress || exportFinalizing) return null;
+    const pct = store.exportProgress ?? 0;
+    if (pct < 10) return null;
+    const elapsed = exportNow - exportStartedAt;
+    if (elapsed < 250) return null;
+    return (elapsed * (100 - pct)) / pct;
+  }
+
   let exportResult = $state<
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
@@ -350,7 +431,10 @@
         alreadySame = exportResult.path === next.path;
       } else if (next.kind === "error" && exportResult.kind === "error") {
         alreadySame = exportResult.message === next.message;
-      } else if (next.kind === "cancelled" && exportResult.kind === "cancelled") {
+      } else if (
+        next.kind === "cancelled" &&
+        exportResult.kind === "cancelled"
+      ) {
         alreadySame = true;
       }
     }
@@ -425,8 +509,12 @@
     exportResult = null;
     exportStartedAt = Date.now();
     exportNow = exportStartedAt;
+    resetPrep();
 
-    const unlistenExportState = await listenToExportState(exportId, handleExportState);
+    const unlistenExportState = await listenToExportState(
+      exportId,
+      handleExportState,
+    );
     // Tauri's IPC layer — that round-trip can lag visibly on some systems
 
     try {
@@ -438,18 +526,30 @@
       const paddingPx = framePaddingPixels(renderState.padding ?? 0, meta);
       const canvasW = meta ? meta.width + paddingPx * 2 : 0;
       const canvasH = meta ? meta.height + paddingPx * 2 : 0;
-      const expandedAnnotations = await expandTextAnnotations(
-        renderState.annotations,
-        canvasW,
-        canvasH,
-      );
-      // Cursor sprite hybrid-raster: rasterize the active style's SVG once
-      // so Rust can blit a real PNG per frame. `dot` returns null and falls
-      // through to the Rust soft-circle path.
-      const cursorSprites = await rasterizeCursorSprites(
-        store.cursorSettings.style,
-        store.cursorSettings.size * 16,
-      );
+      // Run the two hybrid-raster passes in parallel — they don't depend
+      // on each other and the cursor SVG decode is non-trivial on cold
+      // boot (Image() onload is async even for inline blobs). This trims
+      // perceived "Preparing…" time roughly in half on projects with text.
+      prepText = renderState.annotations.some((a) => a.kind.kind === "text")
+        ? "running"
+        : "done";
+      prepCursor = store.cursorSettings.style !== "dot" ? "running" : "done";
+      const [expandedAnnotations, cursorSprites] = await Promise.all([
+        expandTextAnnotations(renderState.annotations, canvasW, canvasH).then(
+          (r) => {
+            prepText = "done";
+            return r;
+          },
+        ),
+        rasterizeCursorSprites(
+          store.cursorSettings.style,
+          store.cursorSettings.size * 16,
+        ).then((r) => {
+          prepCursor = "done";
+          return r;
+        }),
+      ]);
+      prepSending = "running";
       const finalRenderState = {
         ...renderState,
         annotations: expandedAnnotations,
@@ -460,6 +560,7 @@
         cursorSpriteSizePx: cursorSprites?.pixelSize,
       };
 
+      prepSending = "done";
       const path = await exportVideo(
         documentPath || data.filePath,
         store.exportFormat,
@@ -473,7 +574,12 @@
         setExportResult({ kind: "success", path });
       }
     } catch (err) {
-      const message = typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+      const message =
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : String(err);
       if (!exportResult) {
         if (message.toLowerCase().includes("cancel")) {
           setExportResult({ kind: "cancelled" });
@@ -490,7 +596,7 @@
       store.isExporting = false;
       store.exportProgress = null;
       exportHasProgress = false;
-        exportCancelling = false;
+      exportCancelling = false;
       exportFinalizing = false;
     }
   }
@@ -562,7 +668,11 @@
       toast.success("Saved");
     } catch (err) {
       const message =
-        typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
+        typeof err === "string"
+          ? err
+          : err instanceof Error
+            ? err.message
+            : String(err);
       toast.error(`Couldn't save: ${message}`);
     } finally {
       isSaving = false;
@@ -676,6 +786,31 @@
     }, 500);
     return () => clearInterval(timer);
   });
+
+  const stages = $derived([
+    {
+      label: "Render text overlays",
+      state: prepText,
+      skip: prepText === "done" && !renderStateHasText(),
+    },
+    {
+      label: "Render cursor sprites",
+      state: prepCursor,
+      skip: prepCursor === "done" && store.cursorSettings.style === "dot",
+    },
+    { label: "Hand off to encoder", state: prepSending },
+    {
+      label: exportFinalizing ? "Finalise file" : "Encode frames",
+      state:
+        prepSending !== "done"
+          ? "pending"
+          : exportFinalizing
+            ? "running"
+            : exportHasProgress
+              ? "running"
+              : "pending",
+    },
+  ]);
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -699,12 +834,21 @@
     <EditorSkeleton />
   {:else if error}
     <div class="flex flex-1 items-center justify-center">
-      <div class="animate-in fade-in flex max-w-sm flex-col items-center gap-3 text-center duration-500">
-        <div class="flex size-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive">
+      <div
+        class="animate-in fade-in flex max-w-sm flex-col items-center gap-3 text-center duration-500"
+      >
+        <div
+          class="flex size-10 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive"
+        >
           <span class="text-[18px] font-semibold">!</span>
         </div>
         <p class="text-[12px] text-muted-foreground">{error}</p>
-        <Button variant="outline" size="sm" onclick={handleBack} class="gap-1.5">
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={handleBack}
+          class="gap-1.5"
+        >
           <ArrowLeft size={13} />
           Back to recordings
         </Button>
@@ -718,7 +862,9 @@
           bind:this={previewContainerEl}
           class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background p-3 pb-4"
         >
-          <div class="flex-1 flex min-h-0 w-full items-center justify-center relative">
+          <div
+            class="flex-1 flex min-h-0 w-full items-center justify-center relative"
+          >
             <VideoPreview
               {store}
               bind:videoEl
@@ -732,7 +878,11 @@
               onSeeked={handleVideoSeeked}
             />
           </div>
-          <VideoPlayerControls {store} {videoEl} fullscreenTargetEl={previewContainerEl} />
+          <VideoPlayerControls
+            {store}
+            {videoEl}
+            fullscreenTargetEl={previewContainerEl}
+          />
         </div>
 
         <Timeline {store} {videoEl} />
@@ -786,60 +936,176 @@
           hasn't resolved yet.
         -->
         {#if !exportResult}
-          {@const rawPct = store.exportProgress ?? 0}
-          {@const pct = exportFinalizing ? 99.5 : Math.min(Math.max(rawPct, 0), 99.5)}
-          {@const isWaiting = !exportHasProgress && !exportFinalizing}
-          {@const isIndeterminate = isWaiting || exportFinalizing}
+          {@const isPreparing =
+            prepSending !== "done" && !exportHasProgress && !exportFinalizing}
+          {@const eta = exportEtaMs()}
           {@const exportDuration = getExportDuration()}
           {@const exportRange = getExportRangeLabel()}
+          {@const ringPct = isPreparing
+            ? 0
+            : exportFinalizing
+              ? 100
+              : Math.min(100, Math.max(0, displayPct))}
+          {@const RING_R = 52}
 
           <!-- Header: title + live metadata -->
-          <header class="flex items-center gap-3 border-b border-border px-4 py-3">
-            <div
-              class="flex size-8 shrink-0 items-center justify-center rounded-md border border-primary/20 bg-primary/10"
-            >
-              <div class="size-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent"></div>
-            </div>
+          <header
+            class="flex items-center gap-3 border-b border-border px-4 py-3"
+          >
             <div class="min-w-0 flex-1">
-              <h3 id="export-dialog-title" class="text-[13px] font-semibold tracking-tight text-foreground">
+              <h3
+                id="export-dialog-title"
+                class="text-[13px] font-semibold tracking-tight text-foreground"
+              >
                 {#if exportCancelling}
                   Cancelling export…
                 {:else if exportFinalizing}
-                  Writing video file…
-                {:else if isWaiting}
-                  Preparing export…
+                  Finalising file
+                {:else if isPreparing}
+                  Preparing export
                 {:else}
-                  Exporting video
+                  Encoding video
                 {/if}
               </h3>
               <p class="truncate text-[11px] text-muted-foreground">
                 {store.exportFormat.toUpperCase()} · {store.exportQuality.toUpperCase()}
-                · {formatTime(exportDuration)} clip
-                · {exportRange}
-                {#if exportStartedAt}
-                  · {formatElapsed(exportNow - exportStartedAt)}
-                {/if}
+                · {formatTime(exportDuration)} clip · {exportRange}
               </p>
             </div>
-            <span class="shrink-0 font-mono text-[11px] tabular-nums text-foreground">
-              {#if isWaiting}…{:else if exportFinalizing}—{:else}{pct.toFixed(1)}%{/if}
-            </span>
           </header>
 
-          <!-- Progress track -->
-          <div class="px-4 pt-3">
-            <div class="relative h-1 overflow-hidden rounded-full bg-muted">
-              {#if isIndeterminate}
-                <div
-                  class="animate-recast-indeterminate absolute inset-y-0 left-0 w-1/3 rounded-full bg-primary"
-                ></div>
-              {:else}
-                <div
-                  class="h-full rounded-full bg-primary transition-[width] duration-300"
-                  style="width: {Math.min(100, Math.max(0, pct))}%"
-                ></div>
-              {/if}
+          <!-- Circular progress ring -->
+          <div class="flex flex-col items-center gap-3 px-6 pt-5 pb-2">
+            <div class="relative size-32" aria-live="polite">
+              <svg
+                viewBox="0 0 120 120"
+                class="size-full -rotate-90 overflow-visible"
+              >
+                <!-- Track -->
+                <circle
+                  cx="60"
+                  cy="60"
+                  r={RING_R}
+                  stroke="currentColor"
+                  stroke-width="6"
+                  class="fill-none text-muted"
+                />
+                {#if isPreparing}
+                  <!-- Indeterminate spinner: a 25-unit arc revolving on a
+                       100-unit path. `pathLength="100"` decouples the
+                       dash math from `2πr` so floating-point precision
+                       can't make the ring sit one pixel short of full. -->
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r={RING_R}
+                    pathLength="100"
+                    stroke="currentColor"
+                    stroke-width="6"
+                    stroke-linecap="round"
+                    class="fill-none text-primary origin-center animate-spin"
+                    style="stroke-dasharray: 25 100; animation-duration: 1.2s;"
+                  />
+                {:else}
+                  <!-- Determinate progress with cubic-bezier-eased fill.
+                       Dash values live in inline style so they participate
+                       in the CSS transition; mixing attribute + style for
+                       the same property breaks animation in some engines. -->
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r={RING_R}
+                    pathLength="100"
+                    stroke="currentColor"
+                    stroke-width="6"
+                    stroke-linecap="round"
+                    class="fill-none text-primary"
+                    style="stroke-dasharray: 100; stroke-dashoffset: {100 - ringPct}; transition: stroke-dashoffset 220ms cubic-bezier(0.65, 0, 0.35, 1);"
+                  />
+                  {#if exportFinalizing}
+                    <!-- Pulsing tip while we wait on FFmpeg's mux/move. -->
+                    <circle
+                      cx="60"
+                      cy={60 - RING_R}
+                      r="3.5"
+                      class="fill-primary animate-pulse"
+                    />
+                  {/if}
+                {/if}
+              </svg>
+              <!-- Centre readout: percentage during encoding, dashes
+                   while preparing or finalising. -->
+              <div
+                class="absolute inset-0 flex flex-col items-center justify-center"
+              >
+                {#if isPreparing}
+                  <span
+                    class="text-[11px] uppercase tracking-wider text-muted-foreground"
+                    >Prep</span
+                  >
+                  <span class="text-[10px] text-muted-foreground">…</span>
+                {:else if exportFinalizing}
+                  <span
+                    class="font-mono text-2xl font-semibold tabular-nums text-foreground"
+                    >99%</span
+                  >
+                  <span
+                    class="text-[10px] uppercase tracking-wider text-muted-foreground"
+                    >Finalising</span
+                  >
+                {:else}
+                  <span
+                    class="font-mono text-2xl font-semibold tabular-nums text-foreground"
+                  >
+                    {Math.floor(ringPct)}<span
+                      class="text-base text-muted-foreground">%</span
+                    >
+                  </span>
+                  {#if eta !== null}
+                    <span
+                      class="text-[10px] uppercase tracking-wider text-muted-foreground"
+                      >~{formatElapsed(eta)} left</span
+                    >
+                  {:else if exportStartedAt}
+                    <span
+                      class="text-[10px] uppercase tracking-wider text-muted-foreground"
+                      >{formatElapsed(exportNow - exportStartedAt)} elapsed</span
+                    >
+                  {/if}
+                {/if}
+              </div>
             </div>
+
+            <!-- Stage list — checkmarks for completed substages, a dot
+                 with a subtle pulse for the running one. Collapses to a
+                 single "Encoding…" line once Rust takes over. -->
+            <ul class="flex flex-col gap-0.5 self-stretch text-[11px]">
+              {#each stages as s}
+                {#if !s.skip}
+                  <li class="flex items-center gap-2">
+                    {#if s.state === "done"}
+                      <CheckCircle2 size={11} class="shrink-0 text-success" />
+                      <span
+                        class="text-muted-foreground line-through decoration-muted-foreground/40"
+                        >{s.label}</span
+                      >
+                    {:else if s.state === "running"}
+                      <span
+                        class="flex size-2.5 shrink-0 items-center justify-center"
+                      >
+                        <span
+                          class="size-1.5 animate-pulse rounded-full bg-primary"
+                        ></span>
+                      </span>
+                      <span class="text-foreground">{s.label}</span>
+                    {:else}
+                      <span class="size-2.5 shrink-0"></span>
+                      <span class="text-muted-foreground/60">{s.label}</span>
+                    {/if}
+                  </li>
+                {/if}
+              {/each}
+            </ul>
           </div>
 
           <!-- Footer: kbd hints + cancel -->
@@ -847,7 +1113,10 @@
             class="mt-3 flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
-              <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">esc</kbd>
+              <kbd
+                class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
+                >esc</kbd
+              >
               <span>Cancel</span>
             </span>
             <Button
@@ -862,14 +1131,19 @@
             </Button>
           </footer>
         {:else if exportResult?.kind === "success"}
-          <header class="flex items-center gap-3 border-b border-border px-4 py-3">
+          <header
+            class="flex items-center gap-3 border-b border-border px-4 py-3"
+          >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-success/20 bg-success/10 text-success"
             >
               <CheckCircle2 size={16} />
             </div>
             <div class="min-w-0 flex-1">
-              <h3 id="export-dialog-title" class="text-[13px] font-semibold tracking-tight text-foreground">
+              <h3
+                id="export-dialog-title"
+                class="text-[13px] font-semibold tracking-tight text-foreground"
+              >
                 Export complete
               </h3>
               <p class="truncate text-[11px] text-muted-foreground">
@@ -878,7 +1152,10 @@
             </div>
           </header>
           <div class="px-4 py-3">
-            <p class="truncate font-mono text-[10px] text-muted-foreground" title={exportResult.path}>
+            <p
+              class="truncate font-mono text-[10px] text-muted-foreground"
+              title={exportResult.path}
+            >
               {exportResult.path}
             </p>
           </div>
@@ -886,26 +1163,41 @@
             class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
-              <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">esc</kbd>
+              <kbd
+                class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
+                >esc</kbd
+              >
               <span>Dismiss</span>
             </span>
             <div class="flex items-center gap-1.5">
-              <Button variant="ghost" size="xs" onclick={dismissExportResult}>Dismiss</Button>
-              <Button variant="default" size="xs" class="gap-1.5" onclick={revealExportInFolder}>
+              <Button variant="ghost" size="xs" onclick={dismissExportResult}
+                >Dismiss</Button
+              >
+              <Button
+                variant="default"
+                size="xs"
+                class="gap-1.5"
+                onclick={revealExportInFolder}
+              >
                 <FolderOpen size={11} />
                 Show in Folder
               </Button>
             </div>
           </footer>
         {:else if exportResult?.kind === "cancelled"}
-          <header class="flex items-center gap-3 border-b border-border px-4 py-3">
+          <header
+            class="flex items-center gap-3 border-b border-border px-4 py-3"
+          >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
             >
               <X size={16} />
             </div>
             <div class="min-w-0 flex-1">
-              <h3 id="export-dialog-title" class="text-[13px] font-semibold tracking-tight text-foreground">
+              <h3
+                id="export-dialog-title"
+                class="text-[13px] font-semibold tracking-tight text-foreground"
+              >
                 Export cancelled
               </h3>
               <p class="truncate text-[11px] text-muted-foreground">
@@ -916,31 +1208,49 @@
           <footer
             class="flex h-10 items-center justify-end gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
-            <Button variant="ghost" size="xs" onclick={dismissExportResult}>Dismiss</Button>
-            <Button variant="default" size="xs" onclick={handleExport}>Export again</Button>
+            <Button variant="ghost" size="xs" onclick={dismissExportResult}
+              >Dismiss</Button
+            >
+            <Button variant="default" size="xs" onclick={handleExport}
+              >Export again</Button
+            >
           </footer>
         {:else if exportResult?.kind === "error"}
-          <header class="flex items-center gap-3 border-b border-border px-4 py-3">
+          <header
+            class="flex items-center gap-3 border-b border-border px-4 py-3"
+          >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive"
             >
               <X size={16} />
             </div>
             <div class="min-w-0 flex-1">
-              <h3 id="export-dialog-title" class="text-[13px] font-semibold tracking-tight text-foreground">
+              <h3
+                id="export-dialog-title"
+                class="text-[13px] font-semibold tracking-tight text-foreground"
+              >
                 Export failed
               </h3>
-              <p class="truncate text-[11px] text-muted-foreground">Something went wrong.</p>
+              <p class="truncate text-[11px] text-muted-foreground">
+                Something went wrong.
+              </p>
             </div>
           </header>
-          <div class="max-h-40 overflow-y-auto border-b border-border px-4 py-3">
-            <pre class="whitespace-pre-wrap wrap-break-word font-mono text-[10px] text-destructive">{exportResult.message}</pre>
+          <div
+            class="max-h-40 overflow-y-auto border-b border-border px-4 py-3"
+          >
+            <pre
+              class="whitespace-pre-wrap wrap-break-word font-mono text-[10px] text-destructive">{exportResult.message}</pre>
           </div>
           <footer
             class="flex h-10 items-center justify-end gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
-            <Button variant="ghost" size="xs" onclick={dismissExportResult}>Dismiss</Button>
-            <Button variant="default" size="xs" onclick={handleExport}>Try again</Button>
+            <Button variant="ghost" size="xs" onclick={dismissExportResult}
+              >Dismiss</Button
+            >
+            <Button variant="default" size="xs" onclick={handleExport}
+              >Try again</Button
+            >
           </footer>
         {/if}
       </div>

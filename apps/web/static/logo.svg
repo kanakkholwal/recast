@@ -9,7 +9,7 @@
 <path d="M311.28 311.6V331.6" stroke="black" stroke-width="6" stroke-linecap="round"/>
 <path d="M311.28 311.6H331.28" stroke="black" stroke-width="6" stroke-linecap="round"/>
 <path d="M451.28 251.6L486.28 271.6L451.28 291.6L416.28 271.6L451.28 251.6Z" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
-<path d="M416.28 271.6L451.28 291.6V331.6L416.28 311.6V271.6Z" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M416.28 271.6L45   1.28 291.6V331.6L416.28 311.6V271.6Z" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 <path d="M486.28 271.6L451.28 291.6V331.6L486.28 311.6V271.6Z" stroke="black" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
 <rect x="93.28" y="251.6" width="80" height="80" rx="25" fill="black"/>
 </svg>

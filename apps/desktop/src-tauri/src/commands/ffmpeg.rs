@@ -127,20 +127,19 @@ pub fn build_gif_palette_complex(
     } else {
         format!("[{input_label}]")
     };
-    // The `[b]` leg carries the frames through paletteuse. If the caller has
-    // a scale filter, apply it here (after fps reduction) so the generated
-    // palette matches the pixels that will actually end up in the GIF.
-    let scaled_b = match inline_scale {
-        Some(scale) if !scale.is_empty() => format!("[_gifb]{scale}[_gifbs]"),
+    // Bake fps + scale into a single chain step BEFORE the split. That way
+    // palettegen and paletteuse both consume the same downsampled frames —
+    // generating a palette on full-res input and applying it to scaled
+    // output (the previous shape) wastes palette slots on detail the GIF
+    // can never show, and produces the visible "muddy palette" artefact.
+    // Single linear chain is also far more forgiving of FFmpeg's
+    // filter_complex parser quirks across versions.
+    let scale_clause = match inline_scale {
+        Some(s) if !s.is_empty() => format!(",{s}"),
         _ => String::new(),
     };
-    let (b_label, b_stage) = if scaled_b.is_empty() {
-        ("[_gifb]", String::new())
-    } else {
-        ("[_gifbs]", format!(";{scaled_b}"))
-    };
     let palette_chain = format!(
-        "{normalized_input}fps={fps},split[_gifa][_gifb];[_gifa]palettegen=stats_mode=diff[_gifp]{b_stage};{b_label}[_gifp]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle{final_label}"
+        "{normalized_input}fps={fps}{scale_clause},split[_gifa][_gifb];[_gifa]palettegen=stats_mode=diff[_gifp];[_gifb][_gifp]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle{final_label}"
     );
     let new_complex = match filter_complex {
         Some(existing) if !existing.is_empty() => format!("{existing};{palette_chain}"),
