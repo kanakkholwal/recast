@@ -1,9 +1,17 @@
 //! Pre-renders the editor's cursor overlay (cursor dot + click highlight,
-//! annotations, drop shadow) as an alpha VP9 video so it can be muxed onto the
-//! main export via a single FFmpeg `overlay` filter. Mirrors the WebGL2
-//! preview in `src/components/editor/VideoPreview.svelte`. Encoding to an
-//! intermediate `.webm` avoids both the "thousands of PNG files" disk-cost
-//! problem and any pixel-handoff via IPC.
+//! annotations, drop shadow) as an alpha QTRLE-in-MOV video so it can be muxed
+//! onto the main export via a single FFmpeg `overlay` filter. Mirrors the
+//! WebGL2 preview in `src/components/editor/VideoPreview.svelte`.
+//!
+//! QTRLE (QuickTime Animation, fourcc `rle `) is a lossless RLE codec with
+//! true RGBA alpha support that ships with every FFmpeg build. We previously
+//! used `libvpx-vp9 -pix_fmt yuva420p`, but the gyan.dev Windows builds (and
+//! several Linux distros) silently drop the alpha plane during VP9 encode
+//! — the overlay file ends up `pix_fmt=yuv420p` and decodes opaque, painting
+//! the entire source area black during the final composite. QTRLE round-trips
+//! alpha cleanly and compresses the (mostly transparent) cursor frames very
+//! efficiently. The intermediate file lives in a scratch directory that the
+//! TempDirGuard wipes after export.
 
 use std::collections::HashMap;
 use std::fs;
@@ -115,7 +123,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let guard = TempDirGuard {
         path: scratch_dir.clone(),
     };
-    let overlay_path = scratch_dir.join("cursor.webm");
+    let overlay_path = scratch_dir.join("cursor.mov");
 
     // Precompute derived settings (mirrors VideoPreview.svelte's draw loop).
     // Note: callers also invoke this overlay pass when only the drop-shadow
@@ -146,7 +154,11 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     let bytes_per_frame = canvas_w * canvas_h * 4;
     let mut frame = vec![0u8; bytes_per_frame];
 
-    // Spawn FFmpeg to encode raw RGBA → VP9 with alpha.
+    // Spawn FFmpeg to encode raw RGBA → QTRLE-in-MOV. QTRLE is a lossless
+    // RLE codec with true alpha (`-pix_fmt argb`) that compresses
+    // mostly-transparent frames very efficiently — exactly the shape of a
+    // cursor/annotation overlay. We do NOT use `-crf` / `-b:v` here: QTRLE
+    // is lossless and ignores rate-control flags.
     let mut ffmpeg = Command::new(crate::ffmpeg::ffmpeg_path());
     ffmpeg
         .args([
@@ -165,19 +177,9 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             "-i",
             "-",
             "-c:v",
-            "libvpx-vp9",
+            "qtrle",
             "-pix_fmt",
-            "yuva420p",
-            "-b:v",
-            "0",
-            "-crf",
-            "40",
-            "-deadline",
-            "realtime",
-            "-cpu-used",
-            "5",
-            "-auto-alt-ref",
-            "0",
+            "argb",
         ])
         .arg(overlay_path.to_string_lossy().as_ref())
         .stdin(Stdio::piped())
@@ -417,7 +419,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         ));
     }
 
-    // Sanity check: the webm must exist and be > 0 bytes.
+    // Sanity check: the MOV must exist and be > 0 bytes.
     let meta = fs::metadata(&overlay_path)
         .with_context(|| format!("cursor overlay not written: {}", overlay_path.display()))?;
     if meta.len() == 0 {

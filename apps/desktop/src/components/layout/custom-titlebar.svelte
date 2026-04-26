@@ -59,7 +59,7 @@
 
 <div
   class={cn(
-    "group h-9 flex items-center border-b border-border-subtle bg-background/80 backdrop-blur-xl shrink-0 select-none px-4 transition-all duration-300",
+    "group h-10 flex items-center border-b border-border-subtle bg-background/80 backdrop-blur-xl shrink-0 select-none px-4 transition-all duration-300",
     wrapperClass
   )}
 >
@@ -73,7 +73,7 @@
   <!-- Window controls: outside the drag region so clicks aren't intercepted -->
   {#if isTauri}
     <div 
-      class="shrink-0 flex items-center gap-1 opacity-20 group-hover:opacity-100 transition-opacity duration-300"
+      class="shrink-0 flex items-center gap-1"
       onmousedown={(e) => e.stopPropagation()}
       role="presentation"
     >
