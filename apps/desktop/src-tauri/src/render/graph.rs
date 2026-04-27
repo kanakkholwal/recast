@@ -389,52 +389,68 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: 
         return String::new();
     }
 
-    // Pre-sample each region's scale curve so the filter stays simple math.
-    // FFmpeg's expression evaluator can't call our Rust bezier solver, but a
-    // dense piecewise-linear LUT is visually indistinguishable from the real
-    // curve at 20 Hz (every ~3 frames at 60 fps). Each sample records the
-    // four derived quantities we feed to `crop` so we don't recompute them
-    // inside the filter string.
+    // Pre-sample each region's curve. FFmpeg's expression evaluator can't
+    // call our Rust bezier solver, but a dense piecewise-linear LUT at 20 Hz
+    // is visually indistinguishable from the real curve.
     //
     // `time_offset` (= trim_start) shifts the LUT so its t-values are in
     // OUTPUT-stream coordinates rather than project-timeline coordinates;
     // see `build_export_plan_with` for the rationale.
+    //
+    // Filter shape — IMPORTANT:
+    //   `scale=w='iw*Z(t)':h='ih*Z(t)':eval=frame, crop=W:H:x='X(t)':y='Y(t)'`
+    //
+    // We deliberately do NOT use the more obvious `crop=w='iw/Z':h='ih/Z',
+    // scale=W:H` form, because **ffmpeg's `crop` filter evaluates `w` and
+    // `h` only ONCE at filter init**, where `t = 0`. With the LUT default
+    // returning `iw`/`ih` outside any region, that one-time evaluation
+    // resolves to the source dimensions and the crop is a fixed identity for
+    // the whole export — zoom never visibly applies. `scale=eval=frame`
+    // re-evaluates per frame, and `crop` with literal `w/h` (the constant
+    // source dimensions) doesn't hit the init-only limitation; its `x` and
+    // `y` are evaluated per frame regardless. This was the actual root cause
+    // of "zoom is missing in exported videos" — verified by pixel-diffing
+    // FFmpeg outputs of both filter shapes against an identity baseline.
     let samples_per_region: Vec<Vec<ZoomSample>> = node
         .regions
         .iter()
         // Skip regions whose entire timeline window precedes `trim_start` —
         // their LUT entries would all have negative output-t and never fire.
-        // Pruning shortens the filter string by 5–30% in typical trimmed
-        // projects without changing visible output.
         .filter(|region| region.end > time_offset)
         .map(|region| sample_region(region, source, time_offset))
         .collect();
 
-    // If filtering left us with nothing, skip the prelude entirely — emitting
-    // a no-op `crop=iw:ih:0:0,scale=W:H` would still introduce a real filter
-    // pass that the outer `.filter(|s| !s.is_empty())` would not drop.
+    // If filtering left us with nothing, skip the prelude entirely.
     if samples_per_region.iter().all(|s| s.is_empty()) {
         return String::new();
     }
 
-    let width_expr = build_piecewise_expr(&samples_per_region, "iw", |s| s.width);
-    let height_expr = build_piecewise_expr(&samples_per_region, "ih", |s| s.height);
-    let x_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.x);
-    let y_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.y);
+    // Three time-varying expressions:
+    //   z_expr — multiplicative zoom factor, default 1.0 outside regions.
+    //   x_expr — crop top-left X in POST-SCALE absolute pixels.
+    //   y_expr — crop top-left Y in POST-SCALE absolute pixels.
+    //
+    // Defaults outside any region produce a centred crop on the un-zoomed
+    // source: x = (iw - W) / 2 = 0, y = (ih - H) / 2 = 0 (since iw == W and
+    // ih == H when Z = 1.0). Inside `crop`'s expressions, `iw` is the input
+    // (post-scale) width — so even though we name the constant default `0`,
+    // it remains correct because at Z=1 the post-scale dims equal source.
+    let z_expr = build_piecewise_expr(&samples_per_region, "1", |s| s.scale_factor);
+    let x_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.crop_x);
+    let y_expr = build_piecewise_expr(&samples_per_region, "0", |s| s.crop_y);
 
     format!(
-        "crop=w='{width_expr}':h='{height_expr}':x='{x_expr}':y='{y_expr}',scale={}:{}",
+        "scale=w='iw*({z_expr})':h='ih*({z_expr})':eval=frame,crop={}:{}:x='{x_expr}':y='{y_expr}'",
         source.width, source.height
     )
 }
 
 #[derive(Debug, Clone, Copy)]
 struct ZoomSample {
-    t: f64,
-    width: f64,  // iw / scale
-    height: f64, // ih / scale
-    x: f64,      // (iw - iw/scale) / 2
-    y: f64,      // (ih - ih/scale) / 2
+    t: f64,            // output-stream time (post-trim) at this sample
+    scale_factor: f64, // multiplicative zoom factor (>= 1.0)
+    crop_x: f64,       // crop top-left X in POST-SCALE absolute pixels
+    crop_y: f64,       // crop top-left Y in POST-SCALE absolute pixels
 }
 
 fn sample_region(
@@ -443,17 +459,10 @@ fn sample_region(
     time_offset: f64,
 ) -> Vec<ZoomSample> {
     // Clamp the sampling window to the post-trim portion of the region.
-    // For a region at timeline [1.0, 4.0] with trim_start = 2.0, this
-    // produces samples from timeline t=2.0 onwards (output t=0+) instead
-    // of wasting the first third of the LUT on segments that never fire.
     // `region.scale_at` still receives the true timeline t, so the eased
-    // ramp curve is sampled correctly relative to the original region.
+    // ramp curve is sampled correctly.
     let effective_start = region.start.max(time_offset);
     let duration = (region.end - effective_start).max(0.0);
-    // 20 Hz baseline, capped so very long regions don't explode the filter
-    // string. 200 samples per region over a 10 s region is ~6 KB which
-    // FFmpeg handles fine; past that the LUT is denser than any human eye
-    // needs and we trade some fidelity for parser health.
     let samples = ((duration * 20.0).ceil() as usize).clamp(8, 200);
     let step = if samples > 0 {
         duration / samples as f64
@@ -462,22 +471,24 @@ fn sample_region(
     };
     let iw = source.width as f64;
     let ih = source.height as f64;
+    // Output crop window matches source dimensions — we scale UP by Z(t),
+    // then crop a source-sized window from the upscaled frame.
+    let out_w = iw;
+    let out_h = ih;
     // Focus centre eases from (0.5, 0.5) → (center_x, center_y) across the
-    // ramp, so the crop window drifts smoothly into the focused area rather
-    // than snapping off-centre on the first frame.
+    // ramp, so the crop drifts smoothly into the focused area rather than
+    // snapping off-centre on the first frame.
     let fx_target = region.center_x.clamp(0.0, 1.0);
     let fy_target = region.center_y.clamp(0.0, 1.0);
     let mut out = Vec::with_capacity(samples + 1);
     for i in 0..=samples {
-        // `timeline_t` drives `scale_at` (which works in project-timeline
-        // seconds), while `output_t` is what we emit into the FFmpeg LUT —
-        // `t` inside the filter expression is the output stream's time,
-        // which `-ss <trim_start>` has already reset to start at 0.
+        // `timeline_t` drives `scale_at`; `output_t` is what we emit into
+        // the FFmpeg LUT (t inside the filter is post-trim output time).
         let timeline_t = effective_start + step * i as f64;
         let output_t = timeline_t - time_offset;
         let scale = region.scale_at(timeline_t).max(1.0);
-        // Fractional progress of the zoom from 1.0 → region.scale; drives the
-        // centre lerp so rest frames stay centred.
+        // Fractional progress 1.0 → region.scale; drives the centre lerp so
+        // rest frames stay centred.
         let p = if region.scale > 1.0 {
             ((scale - 1.0) / (region.scale - 1.0)).clamp(0.0, 1.0)
         } else {
@@ -485,17 +496,19 @@ fn sample_region(
         };
         let fx = 0.5 + (fx_target - 0.5) * p;
         let fy = 0.5 + (fy_target - 0.5) * p;
-        let cw = iw / scale;
-        let ch = ih / scale;
-        // Clamp so the crop window never leaves the source frame.
-        let x = ((iw - cw) * fx).clamp(0.0, iw - cw);
-        let y = ((ih - ch) * fy).clamp(0.0, ih - ch);
+        // Post-scale dimensions: iw * Z, ih * Z. Crop a (out_w × out_h)
+        // window such that the focus point (fx, fy) in source UV space
+        // lands at the centre of the cropped frame. Clamp so the window
+        // never leaves the upscaled image.
+        let iw_post = iw * scale;
+        let ih_post = ih * scale;
+        let crop_x = (fx * iw_post - out_w / 2.0).clamp(0.0, (iw_post - out_w).max(0.0));
+        let crop_y = (fy * ih_post - out_h / 2.0).clamp(0.0, (ih_post - out_h).max(0.0));
         out.push(ZoomSample {
             t: output_t,
-            width: cw,
-            height: ch,
-            x,
-            y,
+            scale_factor: scale,
+            crop_x,
+            crop_y,
         });
     }
     out
@@ -744,18 +757,31 @@ mod tests {
     /// Without trim, the LUT t-values are timeline = output, and the filter
     /// must include `between(t,1.0,...)` segments because the zoom region
     /// starts at timeline 1.0.
+    /// The filter MUST be a `scale=eval=frame` + fixed-size `crop` chain.
+    /// The previous `crop=w='<expr>':h='<expr>'` form silently never fired
+    /// because ffmpeg's `crop` evaluates `w`/`h` only ONCE at filter init,
+    /// where `t = 0`; that was the actual root cause of "zoom missing in
+    /// exported videos". This test asserts the new shape directly.
     #[test]
-    fn zoom_filter_no_trim_keeps_timeline_t() {
+    fn zoom_filter_uses_scale_eval_frame_not_crop_wh_lut() {
         let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
+        // Must use scale with eval=frame so width/height re-evaluate per frame.
         assert!(
-            fc.contains("crop=") && fc.contains("scale=1920:1080"),
-            "zoom prelude missing: {fc}"
+            fc.contains("scale=w='iw*(") && fc.contains(":eval=frame"),
+            "zoom must scale via eval=frame: {fc}"
         );
+        // Crop must have LITERAL fixed w/h (=source dims) — anything inside
+        // `crop=w='<expr>'` would hit the init-only evaluation bug again.
+        assert!(
+            fc.contains("crop=1920:1080:"),
+            "crop must use fixed source dimensions, not LUT-driven w/h: {fc}"
+        );
+        // LUT must reference output-stream time at the region start.
         assert!(
             fc.contains("between(t,1.0000"),
-            "expected timeline-t LUT entry at 1.0000: {fc}"
+            "expected output-t LUT entry at 1.0000: {fc}"
         );
     }
 
