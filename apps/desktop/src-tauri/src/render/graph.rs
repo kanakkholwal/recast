@@ -817,9 +817,11 @@ mod tests {
         let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex still emitted");
-        // Color-bg branch always emits its own composite, but the zoom
-        // crop should be skipped now that the only region is pre-trim.
-        assert!(!fc.contains("crop=w="), "pruned zoom should leave no crop filter: {fc}");
+        // Pruned zoom must leave NO scale/crop prelude.
+        assert!(
+            !fc.contains("scale=w='iw*("),
+            "pruned zoom should leave no scale prelude: {fc}"
+        );
         assert!(fc.contains("[vout]"), "rest of plan intact: {fc}");
     }
 
@@ -910,7 +912,7 @@ mod tests {
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("color bg still produces a complex");
         assert!(
-            !fc.contains("crop=w="),
+            !fc.contains("scale=w='iw*("),
             "no zoom prelude expected when all regions are pre-trim: {fc}"
         );
     }
