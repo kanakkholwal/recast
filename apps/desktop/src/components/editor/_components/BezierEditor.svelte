@@ -270,7 +270,7 @@
   </div>
 
   <!-- Numeric inputs -->
-  <div class="grid grid-cols-4 gap-1.5">
+  <div class="grid grid-cols-2 gap-1.5">
     {#each [["x1", value.x1], ["y1", value.y1], ["x2", value.x2], ["y2", value.y2]] as const as [field, v] (field)}
       <label class="flex flex-col gap-0.5">
         <span

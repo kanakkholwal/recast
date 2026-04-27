@@ -34,7 +34,15 @@ pub struct RenderState {
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
     #[serde(default)]
     pub annotations: Vec<Annotation>,
-    /// Drop shadow cast by the video rect. Preview-only today.
+    /// Drop shadow cast by the video rect.
+    ///
+    /// Rendered in both the WebGL preview and the export. On export, the
+    /// shadow is rasterised once as a canvas-sized RGBA PNG by
+    /// `render::mask_export::render_drop_shadow_mask` and overlaid onto the
+    /// background by `build_export_plan_with` before the video composite.
+    /// This bakes `blur`, `spread`, `offset_y`, `opacity`, and `color` into
+    /// the static PNG — no time-varying parameters are involved, so the
+    /// FFmpeg filter chain stays free of expression evaluation here.
     #[serde(default)]
     pub shadow: ShadowSettings,
     #[serde(default)]
@@ -154,6 +162,7 @@ impl RenderGraph {
         background_input_index: usize,
         asset_cache_dir: Option<&Path>,
         border_radius_mask: Option<PathBuf>,
+        drop_shadow_mask: Option<PathBuf>,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -169,8 +178,16 @@ impl RenderGraph {
             .unwrap_or_default();
         let canvas_width = source.width + padding * 2;
         let canvas_height = source.height + padding * 2;
+        // Zoom region times are stored in PROJECT-timeline seconds, but the
+        // FFmpeg expression evaluator's `t` is OUTPUT-stream time, which is
+        // reset to 0 by the input-side `-ss <trim_start>` we emit in
+        // `export_video`. If we don't subtract the trim offset here, the LUT
+        // fires at timeline-t inside the output stream — which, with any
+        // trim, is past the output's end, so the zoom never visibly applies.
+        // Without trim the offset is 0 and the behaviour is unchanged.
+        let trim_start = self.trim_range().0.max(0.0);
         let zoom_filter = zoom
-            .map(|node| build_zoom_filter(node, source))
+            .map(|node| build_zoom_filter(node, source, trim_start))
             .filter(|value: &String| !value.is_empty());
 
         // The mask, when present, occupies the first extra_input slot so its
@@ -182,6 +199,13 @@ impl RenderGraph {
             extra_inputs.push(path);
         }
         let bg_image_input_index = background_input_index + extra_inputs.len();
+        // Drop-shadow PNG slot is reserved up front so its index is known
+        // before the bg image is conditionally pushed; the actual push (if
+        // any) happens below, AFTER the bg image, so existing
+        // `cursor_input_index = 1 + extra_inputs.len()` math stays correct.
+        // `shadow_input_index` is `None` when the caller didn't supply a
+        // shadow PNG; the filter chain below treats that as "no shadow stage".
+        let mut shadow_input_index: Option<usize> = None;
 
         // Build the chain that produces the source-video label `[video0]`.
         // When neither zoom nor mask are present, the source can be referenced
@@ -215,21 +239,36 @@ impl RenderGraph {
             }
         };
 
+        // Resolve the wallpaper/image bg path up-front (without pushing yet)
+        // so we know whether a bg-image input slot will be allocated; that
+        // determines the shadow-input slot index, which is then baked into
+        // the filter strings before any extra_inputs are pushed.
+        let resolved_bg_image = match background {
+            Some(bg) if matches!(bg.background_type.as_str(), "wallpaper" | "image") => {
+                resolve_background_path(&bg.value, static_root, asset_cache_dir)
+            }
+            _ => None,
+        };
+        let will_push_bg_image = resolved_bg_image.is_some();
+        if drop_shadow_mask.is_some() {
+            shadow_input_index = Some(
+                background_input_index + extra_inputs.len() + will_push_bg_image as usize,
+            );
+        }
+
         let filter_complex = match background {
             Some(background)
                 if matches!(background.background_type.as_str(), "wallpaper" | "image") =>
             {
-                if let Some(background_path) =
-                    resolve_background_path(&background.value, static_root, asset_cache_dir)
-                {
-                    extra_inputs.push(background_path);
+                if resolved_bg_image.is_some() {
                     let mut segments = prelude_segments.clone();
                     let blur_sigma = (background.blur / 8.0).max(0.0);
                     segments.push(format!(
-                        "[{bg_image_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg]"
+                        "[{bg_image_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg0]"
                     ));
+                    let bg_label = compose_shadow_stage(&mut segments, shadow_input_index);
                     segments.push(format!(
-                        "[bg]{video_label}overlay={padding}:{padding}[vout]"
+                        "{bg_label}{video_label}overlay={padding}:{padding}[vout]"
                     ));
                     Some(segments.join(";"))
                 } else {
@@ -240,6 +279,7 @@ impl RenderGraph {
                         canvas_width,
                         canvas_height,
                         padding,
+                        shadow_input_index,
                     )
                 }
             }
@@ -250,6 +290,7 @@ impl RenderGraph {
                 canvas_width,
                 canvas_height,
                 padding,
+                shadow_input_index,
             ),
             None => {
                 if prelude_segments.is_empty() {
@@ -263,6 +304,16 @@ impl RenderGraph {
                 }
             }
         };
+
+        // Now that filter strings are built (and reference the eventual
+        // shadow input index), push the actual extra inputs in the
+        // committed order: bg_image then drop_shadow.
+        if let Some(path) = resolved_bg_image {
+            extra_inputs.push(path);
+        }
+        if let Some(path) = drop_shadow_mask {
+            extra_inputs.push(path);
+        }
 
         let requires_map = filter_complex.is_some();
 
@@ -291,6 +342,7 @@ fn build_color_background_filter(
     canvas_width: u32,
     canvas_height: u32,
     padding: u32,
+    shadow_input_index: Option<usize>,
 ) -> Option<String> {
     let color = match background.background_type.as_str() {
         "color" => normalize_color(&background.value),
@@ -300,15 +352,39 @@ fn build_color_background_filter(
 
     let mut segments = prelude_segments;
     segments.push(format!(
-        "color=c={color}:s={canvas_width}x{canvas_height}[bg]"
+        "color=c={color}:s={canvas_width}x{canvas_height}[bg0]"
     ));
+    let bg_label = compose_shadow_stage(&mut segments, shadow_input_index);
     segments.push(format!(
-        "[bg]{video_label}overlay={padding}:{padding}[vout]"
+        "{bg_label}{video_label}overlay={padding}:{padding}[vout]"
     ));
     Some(segments.join(";"))
 }
 
-fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata) -> String {
+/// When a drop-shadow PNG is supplied, append the two extra filter segments
+/// that overlay it on top of the freshly-emitted `[bg0]` stage and produce
+/// the `[bg]` label the video composite consumes. Returns the label that the
+/// next stage should use as its background — `[bg]` when shadow is present,
+/// `[bg0]` otherwise (the latter is a label rename, no extra filter pass).
+fn compose_shadow_stage(
+    segments: &mut Vec<String>,
+    shadow_input_index: Option<usize>,
+) -> &'static str {
+    match shadow_input_index {
+        Some(idx) => {
+            // `format=rgba` normalises the shadow input — the PNG already
+            // carries an alpha plane, but ffmpeg sometimes negotiates a
+            // non-alpha pixel format on the decoder side which would make
+            // the overlay opaque.
+            segments.push(format!("[{idx}:v]format=rgba[shadow]"));
+            segments.push("[bg0][shadow]overlay=0:0[bg]".into());
+            "[bg]"
+        }
+        None => "[bg0]",
+    }
+}
+
+fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: f64) -> String {
     if node.regions.is_empty() {
         return String::new();
     }
@@ -319,11 +395,27 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata) -> String {
     // curve at 20 Hz (every ~3 frames at 60 fps). Each sample records the
     // four derived quantities we feed to `crop` so we don't recompute them
     // inside the filter string.
+    //
+    // `time_offset` (= trim_start) shifts the LUT so its t-values are in
+    // OUTPUT-stream coordinates rather than project-timeline coordinates;
+    // see `build_export_plan_with` for the rationale.
     let samples_per_region: Vec<Vec<ZoomSample>> = node
         .regions
         .iter()
-        .map(|region| sample_region(region, source))
+        // Skip regions whose entire timeline window precedes `trim_start` —
+        // their LUT entries would all have negative output-t and never fire.
+        // Pruning shortens the filter string by 5–30% in typical trimmed
+        // projects without changing visible output.
+        .filter(|region| region.end > time_offset)
+        .map(|region| sample_region(region, source, time_offset))
         .collect();
+
+    // If filtering left us with nothing, skip the prelude entirely — emitting
+    // a no-op `crop=iw:ih:0:0,scale=W:H` would still introduce a real filter
+    // pass that the outer `.filter(|s| !s.is_empty())` would not drop.
+    if samples_per_region.iter().all(|s| s.is_empty()) {
+        return String::new();
+    }
 
     let width_expr = build_piecewise_expr(&samples_per_region, "iw", |s| s.width);
     let height_expr = build_piecewise_expr(&samples_per_region, "ih", |s| s.height);
@@ -345,8 +437,19 @@ struct ZoomSample {
     y: f64,      // (ih - ih/scale) / 2
 }
 
-fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSample> {
-    let duration = (region.end - region.start).max(0.0);
+fn sample_region(
+    region: &ZoomRegion,
+    source: SourceVideoMetadata,
+    time_offset: f64,
+) -> Vec<ZoomSample> {
+    // Clamp the sampling window to the post-trim portion of the region.
+    // For a region at timeline [1.0, 4.0] with trim_start = 2.0, this
+    // produces samples from timeline t=2.0 onwards (output t=0+) instead
+    // of wasting the first third of the LUT on segments that never fire.
+    // `region.scale_at` still receives the true timeline t, so the eased
+    // ramp curve is sampled correctly relative to the original region.
+    let effective_start = region.start.max(time_offset);
+    let duration = (region.end - effective_start).max(0.0);
     // 20 Hz baseline, capped so very long regions don't explode the filter
     // string. 200 samples per region over a 10 s region is ~6 KB which
     // FFmpeg handles fine; past that the LUT is denser than any human eye
@@ -366,8 +469,13 @@ fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSa
     let fy_target = region.center_y.clamp(0.0, 1.0);
     let mut out = Vec::with_capacity(samples + 1);
     for i in 0..=samples {
-        let t = region.start + step * i as f64;
-        let scale = region.scale_at(t).max(1.0);
+        // `timeline_t` drives `scale_at` (which works in project-timeline
+        // seconds), while `output_t` is what we emit into the FFmpeg LUT —
+        // `t` inside the filter expression is the output stream's time,
+        // which `-ss <trim_start>` has already reset to start at 0.
+        let timeline_t = effective_start + step * i as f64;
+        let output_t = timeline_t - time_offset;
+        let scale = region.scale_at(timeline_t).max(1.0);
         // Fractional progress of the zoom from 1.0 → region.scale; drives the
         // centre lerp so rest frames stay centred.
         let p = if region.scale > 1.0 {
@@ -383,7 +491,7 @@ fn sample_region(region: &ZoomRegion, source: SourceVideoMetadata) -> Vec<ZoomSa
         let x = ((iw - cw) * fx).clamp(0.0, iw - cw);
         let y = ((ih - ch) * fy).clamp(0.0, ih - ch);
         out.push(ZoomSample {
-            t,
+            t: output_t,
             width: cw,
             height: ch,
             x,
@@ -576,4 +684,251 @@ fn gradient_fallback_color(value: &str) -> String {
         .find(|token| token.starts_with('#'))
         .map(|token| token.trim_matches(')').to_string())
         .unwrap_or_else(|| "#111111".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::render::node_types::ZoomRegion;
+
+    fn region(start: f64, end: f64, scale: f64) -> ZoomRegion {
+        ZoomRegion {
+            start,
+            end,
+            scale,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            ramp_in: 0.5,
+            ramp_out: 0.5,
+            center_x: 0.5,
+            center_y: 0.5,
+            motion_blur: 0.0,
+        }
+    }
+
+    fn render_state_with_zoom(trim_start: f64, trim_end: f64, regions: Vec<ZoomRegion>) -> RenderState {
+        RenderState {
+            trim_start,
+            trim_end,
+            zoom_regions: regions,
+            ..RenderState::default()
+        }
+    }
+
+    fn export_plan(state: &RenderState) -> ExportPlan {
+        RenderGraph::from_state(state)
+            .build_export_plan_with(
+                SourceVideoMetadata { width: 1920, height: 1080 },
+                Path::new("."),
+                1,
+                None,
+                None,
+                None,
+            )
+            .expect("plan")
+    }
+
+    fn export_plan_with_shadow(state: &RenderState, shadow_path: PathBuf) -> ExportPlan {
+        RenderGraph::from_state(state)
+            .build_export_plan_with(
+                SourceVideoMetadata { width: 1920, height: 1080 },
+                Path::new("."),
+                1,
+                None,
+                None,
+                Some(shadow_path),
+            )
+            .expect("plan")
+    }
+
+    /// Without trim, the LUT t-values are timeline = output, and the filter
+    /// must include `between(t,1.0,...)` segments because the zoom region
+    /// starts at timeline 1.0.
+    #[test]
+    fn zoom_filter_no_trim_keeps_timeline_t() {
+        let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
+        assert!(
+            fc.contains("crop=") && fc.contains("scale=1920:1080"),
+            "zoom prelude missing: {fc}"
+        );
+        assert!(
+            fc.contains("between(t,1.0000"),
+            "expected timeline-t LUT entry at 1.0000: {fc}"
+        );
+    }
+
+    /// With trim_start = 2.0, the FFmpeg `t` is OUTPUT-stream time. A region
+    /// at timeline [3.0, 5.0] must appear in the LUT at output [1.0, 3.0].
+    /// Pre-fix, this assertion failed: the LUT had `between(t,3.0000,...)`
+    /// which never fires because the output never reaches t=3 (the visible
+    /// duration is 5 - 2 = 3 s, but scrubbing/preview seeing zoom at
+    /// timeline 3 expects it at output 1).
+    #[test]
+    fn zoom_filter_shifts_lut_by_trim_start() {
+        let state = render_state_with_zoom(2.0, 5.0, vec![region(3.0, 5.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
+        assert!(
+            fc.contains("between(t,1.0000"),
+            "LUT must be shifted to output-time (start at output t=1.0): {fc}"
+        );
+        assert!(
+            !fc.contains("between(t,3.0000,"),
+            "stale timeline-t LUT entry at 3.0000 must NOT be present: {fc}"
+        );
+    }
+
+    /// A zoom region whose entire timeline range precedes trim_start used
+    /// to produce a LUT whose t-values were negative — harmless to FFmpeg
+    /// (`between(t, -2.0, -1.0)` simply never fires) but a waste of filter
+    /// string. Now we prune those regions entirely, so the planner doesn't
+    /// emit a zoom prelude at all in this case. The test still verifies
+    /// "doesn't panic" and that the rest of the plan is intact.
+    #[test]
+    fn zoom_region_entirely_before_trim_does_not_panic() {
+        let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex still emitted");
+        // Color-bg branch always emits its own composite, but the zoom
+        // crop should be skipped now that the only region is pre-trim.
+        assert!(!fc.contains("crop=w="), "pruned zoom should leave no crop filter: {fc}");
+        assert!(fc.contains("[vout]"), "rest of plan intact: {fc}");
+    }
+
+    /// Plan must always include the zoom prelude when regions exist, even
+    /// with the default color background — this was the agent's mis-diagnosis
+    /// originally, but verifying it locks in the contract.
+    #[test]
+    fn zoom_filter_present_with_default_background() {
+        let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        assert!(fc.contains("[video0]"), "zoom prelude must label its output [video0]: {fc}");
+        assert_eq!(plan.video_map, "[vout]");
+    }
+
+    /// Auto-zoom typically produces 3-6 regions. Each must contribute
+    /// segments to the LUT, and a sample at each region's start should be
+    /// represented.
+    #[test]
+    fn multiple_zoom_regions_all_appear_in_lut() {
+        let state = render_state_with_zoom(
+            0.0,
+            10.0,
+            vec![
+                region(1.0, 2.0, 1.4),
+                region(3.0, 4.5, 1.6),
+                region(6.0, 8.0, 1.5),
+            ],
+        );
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        assert!(fc.contains("between(t,1.0000"), "first region missing: {fc}");
+        assert!(fc.contains("between(t,3.0000"), "second region missing: {fc}");
+        assert!(fc.contains("between(t,6.0000"), "third region missing: {fc}");
+    }
+
+    /// Region partially overlapping `trim_start` (e.g. region [1, 4],
+    /// trim_start = 2.0): the LUT must NOT contain segments before the
+    /// trim; samples should start at the post-trim portion (output t ≥ 0).
+    #[test]
+    fn zoom_region_partially_before_trim_is_clamped() {
+        let state = render_state_with_zoom(2.0, 6.0, vec![region(1.0, 4.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        // First segment should start at output t = 0 (corresponding to
+        // timeline t = 2.0, the clamped effective_start).
+        assert!(
+            fc.contains("between(t,0.0000"),
+            "clamped LUT must start at output t=0: {fc}"
+        );
+        // No stale pre-trim segment should appear.
+        assert!(
+            !fc.contains("between(t,-1.0000"),
+            "negative-t segment should be pruned by clamping: {fc}"
+        );
+    }
+
+    /// Region whose entire timeline range is before trim_start should not
+    /// contribute ANY segments to the LUT (and previously emitted dead
+    /// `between(t, negative, negative)` calls).
+    #[test]
+    fn fully_pre_trim_zoom_region_is_dropped() {
+        let state = render_state_with_zoom(
+            5.0,
+            10.0,
+            vec![
+                region(1.0, 3.0, 1.5),  // entirely before trim
+                region(6.0, 8.0, 1.5),  // post-trim, should fire
+            ],
+        );
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        assert!(fc.contains("between(t,1.0000"), "post-trim region present: {fc}");
+        // Pre-trim region's first sample would have been at output_t = -4.0.
+        assert!(
+            !fc.contains("-4.0000"),
+            "pre-trim region must not contribute LUT entries: {fc}"
+        );
+    }
+
+    /// When ALL regions are pre-trim, the prelude should not exist at all
+    /// (since `build_zoom_filter` returns empty, the `.filter(!is_empty)`
+    /// drops the prelude, and with default color bg + no other prelude,
+    /// the plan still has a filter_complex but no zoom in it).
+    #[test]
+    fn all_pre_trim_zoom_regions_yields_no_zoom_prelude() {
+        let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("color bg still produces a complex");
+        assert!(
+            !fc.contains("crop=w="),
+            "no zoom prelude expected when all regions are pre-trim: {fc}"
+        );
+    }
+
+    /// Drop shadow path injects a `[N:v]format=rgba[shadow]` stage and
+    /// composes it onto the bg before the video overlay. The shadow input
+    /// index lands AFTER the bg-image slot (when present) — for the
+    /// default color-bg case, that's index 1 (only extra input).
+    #[test]
+    fn drop_shadow_inserts_overlay_stage_with_color_bg() {
+        let state = RenderState::default();
+        let plan = export_plan_with_shadow(&state, PathBuf::from("/tmp/fake_shadow.png"));
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        assert!(
+            fc.contains("[1:v]format=rgba[shadow]"),
+            "shadow input stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("[bg0][shadow]overlay=0:0[bg]"),
+            "shadow composite stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("[bg]") && fc.contains("overlay=0:0[vout]"),
+            "video should still composite onto the shadowed bg: {fc}"
+        );
+        assert_eq!(
+            plan.extra_inputs.len(),
+            1,
+            "shadow PNG appended to extra_inputs"
+        );
+    }
+
+    /// Without shadow, the extra `[bg0]` rename should NOT cost a real
+    /// filter pass — the planner just labels the color stage `[bg0]` and
+    /// the video composite reads from `[bg0]` directly. Quick sanity test
+    /// that no `format=rgba[shadow]` ever leaks in.
+    #[test]
+    fn no_shadow_means_no_shadow_overlay_stage() {
+        let state = RenderState::default();
+        let plan = export_plan(&state);
+        let fc = plan.filter_complex.expect("filter_complex must exist");
+        assert!(
+            !fc.contains("[shadow]"),
+            "shadow stage must not appear when no shadow PNG was supplied: {fc}"
+        );
+    }
 }

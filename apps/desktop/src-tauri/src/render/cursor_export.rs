@@ -233,7 +233,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Wall-clock time relative to the trimmed output, mapped to cursor-track time.
         let t_out_us = (i as u64 * 1_000_000) / request.fps as u64;
         let t_track_us = trim_start_us + t_out_us;
-        let t_out_secs = t_out_us as f64 / 1_000_000.0;
+        // `t_track_secs` is the project-timeline time. Annotation/zoom-region
+        // start/end fields are stored in timeline coordinates, so every check
+        // against them must use this value — using output-stream time would
+        // skip annotations whose timeline range falls before/around
+        // `trim_start`, the same class of bug the FFmpeg zoom LUT had.
+        let t_track_secs = t_track_us as f64 / 1_000_000.0;
 
         for annotation in &request.render_state.annotations {
             draw_annotation(
@@ -242,7 +247,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 canvas_h,
                 annotation,
                 &request,
-                t_out_secs,
+                t_track_secs,
                 &image_cache,
             );
         }
@@ -289,10 +294,11 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             continue;
         }
 
-        // Apply zoom transform in source-video coordinates.
+        // Apply zoom transform in source-video coordinates. Zoom regions
+        // index by timeline time (same as the FFmpeg-side LUT).
         let (mut cursor_source_x, mut cursor_source_y) = (sample.x, sample.y);
         if let Some((scale, center_x, center_y)) =
-            active_zoom_at(&request.render_state.zoom_regions, t_out_secs)
+            active_zoom_at(&request.render_state.zoom_regions, t_track_secs)
         {
             let src_cx = center_x.clamp(0.0, 1.0) * request.source_width as f64;
             let src_cy = center_y.clamp(0.0, 1.0) * request.source_height as f64;

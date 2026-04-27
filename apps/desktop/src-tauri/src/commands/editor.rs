@@ -541,6 +541,47 @@ pub async fn export_video(
     };
     let border_radius_mask_path = border_radius_mask.as_ref().map(|m| m.path.clone());
 
+    // Canvas dimensions feed both the drop-shadow rasteriser (which needs
+    // them BEFORE we build the export plan, since the plan references the
+    // shadow as an input) and the cursor overlay further down. Compute them
+    // once here.
+    let canvas_padding = {
+        let pct = request.render_state.padding.clamp(0.0, 20.0);
+        let shorter_edge = metadata.width.min(metadata.height) as f64;
+        ((shorter_edge * pct) / 100.0).round() as u32
+    };
+    let canvas_width = metadata.width + canvas_padding * 2;
+    let canvas_height = metadata.height + canvas_padding * 2;
+
+    // Drop-shadow PNG: rasterised once and overlaid on the background by the
+    // FFmpeg planner. Skipped when the user has disabled the effect or set
+    // opacity to 0 — those gates are also enforced inside
+    // `render_drop_shadow_mask`, but checking here saves the canvas-sized
+    // allocation.
+    let shadow_settings = &request.render_state.shadow;
+    let drop_shadow_mask: Option<MaskResult> =
+        if shadow_settings.enabled && shadow_settings.opacity > 0.0 {
+            crate::render::mask_export::render_drop_shadow_mask(
+                crate::render::mask_export::DropShadowRequest {
+                    canvas_width,
+                    canvas_height,
+                    video_width: metadata.width,
+                    video_height: metadata.height,
+                    padding: canvas_padding,
+                    video_border_radius: border_radius_px,
+                    blur: shadow_settings.blur,
+                    spread: shadow_settings.spread,
+                    offset_y: shadow_settings.offset_y,
+                    opacity: shadow_settings.opacity,
+                    color: shadow_settings.color.clone(),
+                },
+            )
+            .map_err(|e| format!("drop-shadow mask render failed: {e}"))?
+        } else {
+            None
+        };
+    let drop_shadow_mask_path = drop_shadow_mask.as_ref().map(|m| m.path.clone());
+
     let export_plan = graph
         .build_export_plan_with(
             SourceVideoMetadata {
@@ -551,16 +592,9 @@ pub async fn export_video(
             1,
             asset_cache_dir.as_deref(),
             border_radius_mask_path,
+            drop_shadow_mask_path,
         )
         .map_err(|e| e.to_string())?;
-
-    let canvas_padding = {
-        let pct = request.render_state.padding.clamp(0.0, 20.0);
-        let shorter_edge = metadata.width.min(metadata.height) as f64;
-        ((shorter_edge * pct) / 100.0).round() as u32
-    };
-    let canvas_width = metadata.width + canvas_padding * 2;
-    let canvas_height = metadata.height + canvas_padding * 2;
     let overlay_duration = if duration > 0.0 {
         duration
     } else {

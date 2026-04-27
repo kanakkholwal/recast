@@ -177,19 +177,21 @@
   <!-- Label row: icon · label · (description) · value -->
   <div class="flex items-center gap-1.5">
     {#if icon}
-      <span class="shrink-0 text-muted-foreground">
+      <div class="shrink-0 text-muted-foreground">
         {@render icon()}
-      </span>
+      </div>
     {/if}
-    <span class="truncate text-[11px] font-medium text-foreground">{label}</span>
-    {#if description}
-      <span class="truncate text-[10px] text-muted-foreground/70">· {description}</span>
-    {/if}
-    <span
-      class="ml-auto shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground group-hover/slider:text-foreground"
+    <div>
+      <h6 class="truncate text-xs font-medium text-foreground">{label}</h6>
+      {#if description}
+        <p class="truncate text-[10px] text-muted-foreground/70">{description}</p>
+      {/if}
+    </div>
+    <div
+      class="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground group-hover/slider:text-foreground"
     >
       {formattedValue}
-    </span>
+    </div>
   </div>
 
   <!-- svelte-ignore a11y_no_static_element_interactions -->

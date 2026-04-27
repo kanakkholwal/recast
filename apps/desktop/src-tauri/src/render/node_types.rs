@@ -176,8 +176,17 @@ pub struct ZoomRegion {
     /// UV-space focus centre Y.
     #[serde(default = "default_zoom_center")]
     pub center_y: f64,
-    /// Preview motion-blur strength 0..1. Export currently ignores this
-    /// (see graph.rs — FFmpeg `tmix`/`minterpolate` follow-up).
+    /// Preview motion-blur strength 0..1.
+    ///
+    /// **Preview-only by design** — the WebGL preview applies a radial 7-tap
+    /// blur whose direction tracks the per-frame zoom velocity. FFmpeg has
+    /// no faithful equivalent: `tmix` is direction-agnostic temporal
+    /// averaging that ghosts every frame (not just transitions); `boxblur`/
+    /// `gblur` only accept a static sigma set at filter init time. Shipping
+    /// `tmix` would over-blur every frame and look worse than the
+    /// no-motion-blur baseline, so the export silently ignores this field.
+    /// The slider remains useful for preview iteration; users who want
+    /// smoother export motion should tune `easeIn`/`easeOut` instead.
     #[serde(default)]
     pub motion_blur: f64,
 }
