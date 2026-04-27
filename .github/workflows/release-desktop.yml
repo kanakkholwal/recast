@@ -50,34 +50,15 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           tag_name: ${{ steps.resolve_tag.outputs.tag }}
-          name: "Recast ${{ steps.resolve_tag.outputs.tag }}"
-          draft: false
+          name: Recast ${{ steps.resolve_tag.outputs.tag }}
+          draft: true
           prerelease: false
+          generate_release_notes: true
           body: |
-            ## 🎉 Recast Release ${{ steps.resolve_tag.outputs.tag }}
-
-            ### 📦 Available Downloads
-
-            **Windows**: Download the `.msi` installer or `.exe` for your system.
-            **macOS**: Download the `.dmg` for Intel/Apple Silicon Macs.
-            **Linux**: Download the `.AppImage` for universal Linux support.
-
-            ### 🚀 Installation
-            - **Windows**: Run the installer and follow the prompts.
-            - **macOS**: Mount the `.dmg` file and drag Recast to Applications.
-            - **Linux**: Make the AppImage executable and run it.
-
-            ### ⚠️ Important Note on Code Signing
-            These applications are signed with a **self-signed/dummy signing key** for testing purposes. We do not currently have the budget for professional code signing certificates. This means:
-            - You may see security warnings when installing on Windows or macOS
-            - This is normal and expected for open-source projects without commercial signing
-            - The code is safe to use and can be verified from our public repository
-
-            ### 📝 Additional Notes
-            - Visit our [GitHub repository](https://github.com/kanakkholwal/recast) for more details.
-            - Report issues on our [GitHub repository issues page](https://github.com/kanakkholwal/recast/issues).
-
-            **Happy recording! 🎥✨**
+            ## Installation and signing notes
+            These builds may show OS security prompts because code-signing is currently limited.
+            If blocked by OS warnings, install manually and verify from the repository:
+            https://github.com/kanakkholwal/recast
 
   build-desktop:
     name: Build (${{ matrix.platform.name }})

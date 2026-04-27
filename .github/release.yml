@@ -1,0 +1,44 @@
+changelog:
+  exclude:
+    labels:
+      - skip-changelog
+      - internal
+      - ci
+  categories:
+    - title: Desktop Features
+      labels:
+        - desktop:feature
+        - feature
+        - enhancement
+    - title: Desktop Fixes
+      labels:
+        - desktop:fix
+        - fix
+        - bug
+        - bugfix
+    - title: Desktop Performance
+      labels:
+        - desktop:perf
+        - perf
+        - performance
+    - title: Desktop UX and UI
+      labels:
+        - desktop:ux
+        - ux
+        - ui
+    - title: Export and Rendering
+      labels:
+        - desktop:export
+        - export
+        - rendering
+        - ffmpeg
+    - title: Dependencies and Build
+      labels:
+        - desktop:chore
+        - dependencies
+        - build
+        - tauri
+        - rust
+    - title: Other Changes
+      labels:
+        - "*"
