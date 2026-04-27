@@ -42,12 +42,18 @@ pub fn run() {
             app.handle().plugin(tauri_plugin_dialog::init())?;
             app.handle().plugin(tauri_plugin_os::init())?;
 
-            ffmpeg::init(&handle);
-
-            // Check FFmpeg availability at startup.
-            if let Err(e) = ffmpeg::check_availability() {
-                log::warn!("FFmpeg not available: {e}");
-            }
+            // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
+            // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
+            // Doing this on the main thread froze the splash window for up to
+            // a second on Windows. Resolve on a blocking worker; commands that
+            // need the path will block on the OnceLock if they fire first.
+            let resolver_handle = handle.clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                ffmpeg::init(&resolver_handle);
+                if let Err(e) = ffmpeg::check_availability() {
+                    log::warn!("FFmpeg not available: {e}");
+                }
+            });
 
             // Startup: clean up stale temp files and orphaned session artifacts.
             let state = app.state::<AppState>();

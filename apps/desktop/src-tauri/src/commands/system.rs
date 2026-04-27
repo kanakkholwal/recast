@@ -232,7 +232,16 @@ pub struct CameraDeviceInfo {
 
 /// List available camera/video capture devices.
 #[tauri::command]
-pub fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
+pub async fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
+    // dshow device enumeration spawns ffmpeg and can take a few hundred ms
+    // (or several seconds if a webcam is slow to respond). Tauri runs sync
+    // commands on the main thread, which froze the UI; move to a worker.
+    tauri::async_runtime::spawn_blocking(get_camera_devices_blocking)
+        .await
+        .map_err(|e| format!("get_camera_devices join error: {e}"))?
+}
+
+fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
     // Use ffmpeg to list DirectShow video devices on Windows.
     let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
     command.args([

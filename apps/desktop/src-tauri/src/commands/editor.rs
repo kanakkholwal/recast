@@ -322,12 +322,21 @@ fn emit_export_state(app: &AppHandle, event: ExportStateEvent) {
 }
 
 #[tauri::command]
-pub fn get_video_metadata(path: String) -> Result<VideoMetadata, String> {
-    project_or_media_metadata(Path::new(&path))
+pub async fn get_video_metadata(path: String) -> Result<VideoMetadata, String> {
+    // ffprobe spawn off the main thread — see generate_thumbnails for context.
+    tauri::async_runtime::spawn_blocking(move || project_or_media_metadata(Path::new(&path)))
+        .await
+        .map_err(|e| format!("get_video_metadata join error: {e}"))?
 }
 
 #[tauri::command]
-pub fn load_editor_document(path: String) -> Result<EditorDocument, String> {
+pub async fn load_editor_document(path: String) -> Result<EditorDocument, String> {
+    tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path))
+        .await
+        .map_err(|e| format!("load_editor_document join error: {e}"))?
+}
+
+fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     if let Some(project) = open_project_if_needed(&input)? {
         let render_state = fs::read_to_string(&project.edits_path)
@@ -378,7 +387,18 @@ pub fn load_editor_document(path: String) -> Result<EditorDocument, String> {
 }
 
 #[tauri::command]
-pub fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, String> {
+pub async fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, String> {
+    // Sync ffmpeg/ffprobe calls run on Tauri's main thread by default,
+    // freezing the UI (clicks/touch/window-drag) for the duration. Move the
+    // whole pipeline onto a blocking worker so the event loop stays free —
+    // /recasts fires this once per recording in parallel from JS, and the
+    // serialised main-thread ffmpeg spawns produced multi-second freezes.
+    tauri::async_runtime::spawn_blocking(move || generate_thumbnails_blocking(path, count))
+        .await
+        .map_err(|e| format!("generate_thumbnails join error: {e}"))?
+}
+
+fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>, String> {
     let input = PathBuf::from(&path);
     let project = open_project_if_needed(&input)?;
     let media_path = project
