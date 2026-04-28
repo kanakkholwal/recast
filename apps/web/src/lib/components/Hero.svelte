@@ -1,163 +1,119 @@
 <script lang="ts">
-  import { TextLoop } from "$lib/motion-core";
-  import { Button } from "@recast/ui/button";
-  import { fly } from "svelte/transition";
-  import { Container, Section } from ".";
+	import { Container, Eyebrow, Section } from "$lib/components";
+	import { TextLoop } from "$lib/motion-core";
+	import { Button } from "@recast/ui/button";
+	import { ArrowRight, Download, Sparkles } from "lucide-svelte";
 
-  let words = ["recorder.", "creator.", "refiner.", "generator.", "editor."];
-  let currentWordIndex = $state(0);
-  let mounted = $state(false);
-  let prefersReducedMotion = $state(false);
-
-  $effect(() => {
-    mounted = true;
-
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    prefersReducedMotion = mediaQuery.matches;
-    const update = (e: MediaQueryListEvent) =>
-      (prefersReducedMotion = e.matches);
-    mediaQuery.addEventListener("change", update);
-
-    const interval = setInterval(() => {
-      currentWordIndex = (currentWordIndex + 1) % words.length;
-    }, 3000);
-
-    return () => {
-      clearInterval(interval);
-      mediaQuery.removeEventListener("change", update);
-    };
-  });
+	const words = ["recorder.", "creator.", "refiner.", "generator.", "editor."];
+	const platforms = ["macOS", "Windows", "Linux"];
 </script>
 
-<Section class="relative pt-32 pb-16 md:pt-48 md:pb-32 overflow-hidden">
-  <div
-    class="absolute inset-0 bg-grid-pattern opacity-[0.12] pointer-events-none mix-blend-overlay"
-  ></div>
+<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-32">
+	<div class="bg-aurora pointer-events-none absolute inset-0 -z-10 opacity-90"></div>
+	<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-60"></div>
 
-  <Container class="relative z-10">
-    <div class="max-w-6xl">
-      {#if mounted}
-        <!-- Main Heading -->
-        <div
-          class="transform transition-all duration-1000 ease-out {mounted
-            ? 'translate-y-0 opacity-100'
-            : 'translate-y-8 opacity-0'}"
-          in:fly={{
-            y: prefersReducedMotion ? 0 : -10,
-            duration: 800,
-            opacity: 0,
-          }}
-        >
-          <h1
-            class="text-6xl md:text-7xl lg:text-8xl font-semibold tracking-[-0.03em] mb-8 text-foreground leading-[1.15]"
-          >
-            The fastest product <br /> demo
-            <span
-              class="inline-grid overflow-hidden align-bottom text-foreground/40 font-medium italic"
-            >
-              <TextLoop class="text-primary" texts={words} interval={3000} />
-            </span>
-          </h1>
-        </div>
+	<Container class="relative">
+		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
+			<a href="/changelog" class="group inline-block animate-fade-in">
+				<Eyebrow icon={Sparkles} variant="primary">
+					<span>v0.1 beta · what's new</span>
+					<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
+				</Eyebrow>
+			</a>
 
-        <!-- Subheading -->
-        <div
-          class="transform transition-all duration-1000 delay-200 ease-out {mounted
-            ? 'translate-y-0 opacity-100'
-            : 'translate-y-8 opacity-0'}"
-        >
-          <p
-            class="max-w-2xl text-lg md:text-xl text-foreground/50 leading-relaxed mb-12 font-medium font-serif"
-          >
-            Stop wrestling with timeline tools. Recast seamlessly records,
-            refines, and generates polished, startup-ready walkthroughs with
-            cinematic magic.
-          </p>
-        </div>
+			<h1
+				class="text-balance mt-7 animate-fade-up text-5xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
+			>
+				The fastest product&nbsp;demo
+				<span class="inline-grid overflow-hidden align-bottom font-medium italic text-foreground/40">
+					<TextLoop class="text-primary" texts={words} interval={3000} />
+				</span>
+			</h1>
 
-        <div
-          class="flex flex-wrap items-center justify-center gap-4"
-          in:fly={{
-            y: prefersReducedMotion ? 0 : 20,
-            duration: 1000,
-            delay: 300,
-            opacity: 0,
-          }}
-        >
-          <a href="/download">
-            <Button
-              size="lg"
-              class="h-14 px-8 text-[15px] font-semibold bg-foreground text-background hover:bg-foreground/90 rounded-2xl shadow-craft-md transition-all active:scale-95 duration-200"
-            >
-              Download for Desktop
-            </Button>
-          </a>
-          <Button
-            variant="ghost"
-            size="lg"
-            class="h-14 px-8 text-[15px] font-semibold text-foreground/60 hover:text-foreground rounded-2xl transition-colors duration-200"
-          >
-            View Documentation
-          </Button>
-        </div>
-      {/if}
-    </div>
+			<p
+				class="text-pretty mt-7 max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
+				style="animation-delay: 120ms"
+			>
+				Stop wrestling with timeline tools. Recast records, refines, and exports cinematic walkthroughs — locally, in seconds.
+			</p>
 
-    {#if mounted}
-      <div
-        class="mt-20 md:mt-32 relative group mx-auto max-w-5xl"
-        in:fly={{
-          y: prefersReducedMotion ? 0 : 40,
-          duration: 1200,
-          delay: 450,
-          opacity: 0,
-        }}
-      >
-        <div
-          class="craft-card overflow-hidden shadow-craft-xl rounded-[2rem] border border-border/40 bg-background/50 backdrop-blur-3xl ring-1 ring-foreground/5"
-        >
-          <div
-            class="h-12 border-b border-border-low bg-muted/20 flex items-center px-6 gap-2"
-          >
-            <div class="flex gap-2">
-              <div
-                class="size-3 rounded-full bg-border-low transition-colors group-hover:bg-destructive/80"
-              ></div>
-              <div
-                class="size-3 rounded-full bg-border-low transition-colors group-hover:bg-yellow-500/80"
-              ></div>
-              <div
-                class="size-3 rounded-full bg-border-low transition-colors group-hover:bg-green-500/80"
-              ></div>
-            </div>
-          </div>
-          <div class="p-2 bg-linear-to-b from-muted/5 to-background">
-            <img
-              src="/product_preview_hero.png"
-              alt="Recast Product Preview"
-              class="w-full h-auto rounded-xl ring-1 ring-border-low shadow-sm opacity-95 transition-opacity duration-500 group-hover:opacity-100 block object-cover"
-            />
-          </div>
-        </div>
+			<div
+				class="mt-10 flex animate-fade-up flex-col items-center gap-3 sm:flex-row sm:gap-4"
+				style="animation-delay: 240ms"
+			>
+				<Button href="/download" size="lg" class="gap-2.5">
+					<Download class="size-4" />
+					Download Recast
+				</Button>
+				<Button href="/features" variant="ghost" size="lg" class="group/cta gap-2">
+					Explore features
+					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+				</Button>
+			</div>
 
-        <div
-          class="absolute -right-2 top-1/4 md:-right-8 md:top-1/3 p-4 craft-card rounded-2xl shadow-craft-floating invisible-ui transition-all duration-500 translate-x-4 group-hover:translate-x-0"
-        >
-          <div
-            class="flex items-center gap-3 text-sm font-semibold text-foreground/80"
-          >
-            <div class="relative flex h-2.5 w-2.5">
-              <span
-                class="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-50"
-              ></span>
-              <span
-                class="relative inline-flex rounded-full h-2.5 w-2.5 bg-primary"
-              ></span>
-            </div>
-            <span>Zero-lag processing</span>
-          </div>
-        </div>
-      </div>
-    {/if}
-  </Container>
+			<div
+				class="mt-8 flex animate-fade-up items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80"
+				style="animation-delay: 360ms"
+			>
+				<span class="relative flex size-1.5">
+					<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+					<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+				</span>
+				Free during beta · No sign-up
+				<span class="mx-2 hidden h-1 w-1 rounded-full bg-muted-foreground/40 sm:inline-block"></span>
+				<span class="hidden items-center gap-2 sm:inline-flex">
+					{#each platforms as p, i}
+						<span>{p}</span>
+						{#if i < platforms.length - 1}
+							<span class="text-muted-foreground/40">·</span>
+						{/if}
+					{/each}
+				</span>
+			</div>
+		</div>
+
+		<div
+			class="relative mx-auto mt-20 max-w-6xl animate-fade-up"
+			style="animation-delay: 460ms"
+		>
+			<div class="group/preview relative overflow-hidden rounded-2xl border border-border-low bg-card/60 shadow-craft-xl ring-1 ring-foreground/5 backdrop-blur-2xl">
+				<div class="flex h-10 items-center gap-2 border-b border-border-low/70 bg-muted/30 px-4">
+					<div class="flex gap-1.5">
+						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-destructive/70"></span>
+						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-warning/70"></span>
+						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-success/70"></span>
+					</div>
+					<div class="ml-3 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
+						<span class="hidden sm:inline">recast.app</span>
+						<span class="hidden sm:inline">·</span>
+						<span>Untitled recording</span>
+					</div>
+				</div>
+				<div class="bg-linear-to-b from-muted/10 to-background p-1.5 sm:p-2">
+					<img
+						src="/product_preview_hero.png"
+						alt="Recast app preview"
+						loading="eager"
+						decoding="async"
+						class="block w-full rounded-xl object-cover ring-1 ring-border-low"
+					/>
+				</div>
+			</div>
+
+			<div class="absolute -bottom-4 left-4 hidden items-center gap-2.5 rounded-xl border border-border-low bg-background/90 px-3.5 py-2 shadow-craft-floating backdrop-blur-xl sm:flex md:-bottom-5 md:left-8">
+				<span class="relative flex size-2">
+					<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50"></span>
+					<span class="relative inline-flex size-2 rounded-full bg-primary"></span>
+				</span>
+				<span class="text-xs font-semibold text-foreground">Recording · 00:42</span>
+			</div>
+
+			<div class="absolute -top-4 right-4 hidden items-center gap-2 rounded-xl border border-border-low bg-background/90 px-3.5 py-2 shadow-craft-floating backdrop-blur-xl sm:flex md:-top-5 md:right-8">
+				<span class="text-xs font-semibold text-foreground">Cursor smoothed</span>
+				<span class="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
+					Auto
+				</span>
+			</div>
+		</div>
+	</Container>
 </Section>

@@ -1,13 +1,17 @@
 <script lang="ts">
 	import {
 		Container,
+		Eyebrow,
 		FeatureGrid,
 		Footer,
 		Hero,
+		Reveal,
 		Section,
+		SectionHeader,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import {
+		ArrowRight,
 		Download,
 		Play,
 		Rocket,
@@ -15,245 +19,189 @@
 		Users,
 		Wand2,
 	} from "lucide-svelte";
-	import { spring, type Spring } from "svelte/motion";
 
-	let prefersReducedMotion = $state(false);
+	const workflow = [
+		{
+			step: "01",
+			icon: Play,
+			title: "Capture",
+			description:
+				"Native screen capture at full framerate. Window, region, or full screen — with negligible overhead.",
+		},
+		{
+			step: "02",
+			icon: Wand2,
+			title: "Refine",
+			description:
+				"Cursor smoothing, smart padding, and clean backgrounds applied in real time. No timeline required.",
+		},
+		{
+			step: "03",
+			icon: Download,
+			title: "Ship",
+			description:
+				"Hardware-accelerated export in seconds. Or save as .recast and re-edit any time, anywhere.",
+		},
+	];
 
-	const philosophyAnim = spring(0, { stiffness: 0.04, damping: 0.6 });
-	const useCasesAnim = spring(0, { stiffness: 0.04, damping: 0.6 });
-
-	function viewport(element: HTMLElement, store: Spring<number>) {
-		const observer = new IntersectionObserver(
-			(entries) => {
-				if (entries[0].isIntersecting) {
-					store.set(1);
-					observer.disconnect();
-				}
-			},
-			{ threshold: 0.15 },
-		);
-		observer.observe(element);
-		return {
-			destroy() {
-				observer.disconnect();
-			},
-		};
-	}
-
-	$effect(() => {
-		const mediaQuery = window.matchMedia(
-			"(prefers-reduced-motion: reduce)",
-		);
-		prefersReducedMotion = mediaQuery.matches;
-		const update = (e: MediaQueryListEvent) =>
-			(prefersReducedMotion = e.matches);
-		mediaQuery.addEventListener("change", update);
-		return () => mediaQuery.removeEventListener("change", update);
-	});
+	const useCases = [
+		{
+			icon: Terminal,
+			title: "Engineers",
+			description:
+				"Demo PRs, explain bugs, document APIs. Without writing a 2,000-word post.",
+		},
+		{
+			icon: Rocket,
+			title: "Founders",
+			description:
+				"Pixel-perfect product walkthroughs that actually feel premium to investors and users.",
+		},
+		{
+			icon: Users,
+			title: "Teams",
+			description:
+				"Replace asynchronous chaos with crisp, watchable updates that get watched.",
+		},
+	];
 </script>
 
 <svelte:head>
-	<title>Recast — The Native Screen Recorder</title>
+	<title>Recast — The intentional screen recorder</title>
 	<meta
 		name="description"
-		content="Recast captures your screen with cinematic cursor motion, auto-enhanced visuals, and zero-lag export."
+		content="Record, refine, and ship cinematic product walkthroughs — locally, in seconds. Free during beta. macOS, Windows, Linux."
 	/>
 </svelte:head>
 
-<main class="bg-background text-foreground selection:bg-primary/10 font-sans">
+<main class="bg-background text-foreground">
 	<Hero />
 
-	<!-- PHILOSOPHY / WORKFLOW SECTION -->
-	<Section
-		id="workflow"
-		class="py-24 md:py-40 relative z-10 bg-linear-to-b from-background to-muted/20 border-border-low/40"
-	>
+	<Section id="workflow" class="border-t border-border-low/60">
 		<Container>
-			<div
-				class="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-24 items-start"
-				use:viewport={philosophyAnim}
-			>
-				<div
-					class="lg:col-span-5 sticky top-32"
-					style="opacity: {$philosophyAnim}; transform: translateY({prefersReducedMotion
-						? 0
-						: (1 - $philosophyAnim) * 20}px);"
-				>
-					<div
-						class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border-low bg-muted/30 backdrop-blur-md mb-8 shadow-craft-sm"
+			<div class="grid gap-16 lg:grid-cols-12 lg:gap-20">
+				<div class="lg:col-span-5 lg:sticky lg:top-32 lg:self-start">
+					<SectionHeader
+						eyebrow="Crafted workflow"
+						title="Three steps. Zero friction."
+						description="Recast collapses the demo workflow to its essentials — capture, polish, ship — and removes the dead weight in between."
 					>
-						<Wand2 class="size-3 text-foreground/70" />
-						<span
-							class="text-[11px] font-bold uppercase tracking-[0.15em] text-foreground/60"
-							>Crafted Workflow</span
-						>
-					</div>
-					<h2
-						class="text-4xl md:text-5xl lg:text-[3.5rem] font-semibold mb-8 text-foreground tracking-tight leading-[1.1]"
-					>
-						Designed for <br />
-						<span class="text-foreground/40 italic font-serif"
-							>clarity.</span
-						>
-					</h2>
-					<p
-						class="text-xl text-foreground/60 leading-relaxed max-w-md font-medium"
-					>
-						Raw capture is just the beginning. Recast refines your
-						output instantly, adding framing, smoothing, and layout
-						polish in zero clicks.
-					</p>
+						{#snippet actions()}
+							<Button href="/features" variant="ghost" class="gap-2">
+								See it end-to-end
+								<ArrowRight class="size-4" />
+							</Button>
+						{/snippet}
+					</SectionHeader>
 				</div>
 
-				<div class="lg:col-span-7 space-y-8">
-					{#each [{ step: "01", icon: Play, title: "Native Recording", desc: "No proxy layers. Capture any window or screen natively at full framerate with imperceptible overhead." }, { step: "02", icon: Wand2, title: "Cinematic Polish", desc: "Instantly apply velocity-based cursor smoothing, smart padding, and clean layout backgrounds." }, { step: "03", icon: Download, title: "Instant Export", desc: "No timeline rendering. Hardware-accelerated exports finish in seconds, or save as a native .recast project." }] as { step, icon: Icon, title, desc }, i}
-						<div
-							class="group relative overflow-hidden bg-background/40 backdrop-blur-xl border border-border-low p-8 transition-all duration-300 hover:bg-muted/30 shadow-craft-sm hover:shadow-craft-md hover:-translate-y-1 invisible-ui"
-							style="opacity: {Math.max(
-								0,
-								($philosophyAnim - i * 0.15) * 1.25,
-							)}; transform: translateY({prefersReducedMotion
-								? 0
-								: (1 -
-										Math.max(
-											0,
-											($philosophyAnim - i * 0.15) * 1.25,
-										)) *
-									20}px);"
-						>
-							<div class="flex items-start gap-6">
-								<div
-									class="mt-1 flex-shrink-0 size-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-foreground/60 group-hover:bg-primary/5 group-hover:text-primary transition-colors"
-								>
-									<Icon class="size-5" />
+				<ol class="lg:col-span-7 space-y-4">
+					{#each workflow as item, i}
+						{@const Icon = item.icon}
+						<Reveal as="li" delay={i * 100}>
+							<article
+								class="group relative flex gap-5 rounded-2xl border border-border-low bg-card/60 p-6 transition-all duration-300 hover:border-border-strong hover:bg-card hover:shadow-craft-md sm:p-8"
+							>
+								<div class="flex shrink-0 flex-col items-center gap-3">
+									<span
+										class="grid size-12 place-items-center rounded-xl border border-border-low bg-background text-foreground/70 transition-colors group-hover:bg-primary/10 group-hover:text-primary"
+									>
+										<Icon class="size-5" />
+									</span>
+									{#if i < workflow.length - 1}
+										<span class="hidden h-full w-px bg-border-low sm:block"></span>
+									{/if}
 								</div>
-								<div>
-									<div
-										class="text-[12px] font-bold text-foreground/30 mb-2 uppercase tracking-wider"
-									>
-										{step}
-									</div>
-									<h4
-										class="text-2xl font-semibold mb-3 text-foreground tracking-tight"
-									>
-										{title}
-									</h4>
-									<p
-										class="text-foreground/60 leading-relaxed text-[16px]"
-									>
-										{desc}
+								<div class="flex-1">
+									<span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+										Step {item.step}
+									</span>
+									<h3 class="mt-2 text-2xl font-semibold tracking-tight text-foreground">
+										{item.title}
+									</h3>
+									<p class="mt-2.5 text-pretty text-base leading-relaxed text-muted-foreground">
+										{item.description}
 									</p>
 								</div>
-							</div>
-						</div>
+							</article>
+						</Reveal>
 					{/each}
-				</div>
+				</ol>
 			</div>
 		</Container>
 	</Section>
 
 	<FeatureGrid />
 
-	<!-- USE CASES -->
-	<Section id="use-cases" class="py-32">
+	<Section id="use-cases" class="border-t border-border-low/60">
 		<Container>
-			<div
-				class="text-center mb-24 flex flex-col items-center"
-				use:viewport={useCasesAnim}
-				style="opacity: {$useCasesAnim}; transform: translateY({prefersReducedMotion
-					? 0
-					: (1 - $useCasesAnim) * 20}px);"
-			>
-				<h2
-					class="text-4xl md:text-6xl font-semibold mb-6 text-foreground tracking-tight"
-				>
-					Purpose-built.
-				</h2>
-				<p class="text-xl text-foreground/50 max-w-2xl font-medium">
-					Not a bloated editor. Not a laggy cloud recorder. Built
-					precisely for high-fidelity communication.
-				</p>
-			</div>
+			<SectionHeader
+				eyebrow="Purpose-built"
+				title="Made for people who ship."
+				description="Not a bloated editor. Not a laggy cloud recorder. Built for high-fidelity communication."
+				align="center"
+			/>
 
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-				{#each [{ icon: Terminal, title: "Engineers", desc: "Demo PRs, explain complex bugs, and document APIs cleanly without writing a novel." }, { icon: Rocket, title: "Founders", desc: "Create pixel-perfect product walkthroughs that impress investors and users." }, { icon: Users, title: "Teams", desc: "Replace asynchronous chaos with crisp, clear, visual updates that actually get watched." }] as item, i}
-					{@const Icon = item.icon}
-					<div
-						class="group relative overflow-hidden bg-background border border-border-low rounded-[2rem] p-8 shadow-craft-sm hover:shadow-craft-lg transition-all duration-300 hover:-translate-y-1 invisible-ui"
-						style="opacity: {Math.max(
-							0,
-							($useCasesAnim - i * 0.1) * 1.25,
-						)}; transform: translateY({prefersReducedMotion
-							? 0
-							: (1 -
-									Math.max(
-										0,
-										($useCasesAnim - i * 0.1) * 1.25,
-									)) *
-								30}px);"
-					>
-						<div
-							class="absolute -right-8 -top-8 size-32 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"
-						></div>
-						<div
-							class="size-12 rounded-xl bg-muted border border-border flex items-center justify-center mb-10 group-hover:scale-[1.05] group-hover:bg-primary/5 transition-all duration-300"
+			<div class="mt-16 grid grid-cols-1 gap-4 md:grid-cols-3">
+				{#each useCases as useCase, i}
+					{@const Icon = useCase.icon}
+					<Reveal delay={i * 80}>
+						<article
+							class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border-low bg-card/60 p-7 transition-all duration-300 hover:-translate-y-1 hover:border-border-strong hover:shadow-craft-md"
 						>
-							<Icon
-								class="size-5 text-foreground/70 group-hover:text-primary transition-colors"
-							/>
-						</div>
-						<h4
-							class="text-xl font-semibold mb-3 text-foreground tracking-tight"
-						>
-							{item.title}
-						</h4>
-						<p
-							class="text-foreground/60 leading-relaxed text-[15px]"
-						>
-							{item.desc}
-						</p>
-					</div>
+							<div
+								class="pointer-events-none absolute -right-12 -top-12 size-32 rounded-full bg-primary/5 blur-3xl transition-colors duration-500 group-hover:bg-primary/12"
+							></div>
+							<span
+								class="grid size-11 place-items-center rounded-xl border border-border-low bg-background text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:bg-primary/10 group-hover:text-primary"
+							>
+								<Icon class="size-5" />
+							</span>
+							<h3 class="mt-8 text-xl font-semibold tracking-tight text-foreground">
+								{useCase.title}
+							</h3>
+							<p class="mt-2.5 text-pretty text-sm leading-relaxed text-muted-foreground">
+								{useCase.description}
+							</p>
+						</article>
+					</Reveal>
 				{/each}
 			</div>
 		</Container>
 	</Section>
 
-	<!-- CTA Section -->
-	<Section
-		id="cta"
-		class="py-24 md:py-32 bg-background border-t border-border-low"
-	>
+	<Section id="cta" class="border-t border-border-low/60">
 		<Container>
-			<div
-				class="craft-card p-12 md:p-24 text-center relative overflow-hidden group bg-linear-to-b from-muted/10 to-background rounded-[3rem] border border-border-low shadow-craft-lg"
-			>
+			<Reveal>
 				<div
-					class="absolute inset-0 bg-grid-pattern opacity-10 group-hover:opacity-20 transition-opacity duration-1000 mix-blend-overlay"
-				></div>
-				<div
-					class="relative z-10 max-w-2xl mx-auto flex flex-col items-center"
+					class="relative overflow-hidden rounded-3xl border border-border-low bg-card/80 px-6 py-16 text-center shadow-craft-lg sm:px-12 sm:py-20 md:py-24"
 				>
-					<h2
-						class="text-4xl md:text-6xl font-semibold mb-8 text-foreground tracking-tight leading-[1.1]"
-					>
-						Ready to refine your workflow?
-					</h2>
-					<Button
-						size="lg"
-						href="/download"
-						class="h-14 px-10 text-[16px] font-bold bg-foreground text-background hover:scale-[1.02] active:scale-95 transition-all rounded-2xl shadow-craft-xl duration-300"
-					>
-						Download Recast
-					</Button>
-					<p
-						class="mt-6 text-[13px] font-semibold tracking-wide uppercase text-foreground/40"
-					>
-						Free during beta. Windows only for now.
-					</p>
+					<div class="bg-aurora pointer-events-none absolute inset-0 opacity-80"></div>
+					<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 opacity-50"></div>
+
+					<div class="relative mx-auto flex max-w-2xl flex-col items-center gap-7">
+						<Eyebrow variant="primary">Ready when you are</Eyebrow>
+						<h2 class="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl">
+							Refine your next product demo.
+						</h2>
+						<p class="text-pretty text-base text-muted-foreground sm:text-lg">
+							Free during beta. No account required. Three platforms. One opinionated tool.
+						</p>
+						<div class="mt-2 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+							<Button href="/download" size="lg" class="gap-2.5">
+								<Download class="size-4" />
+								Download Recast
+							</Button>
+							<Button href="/features" variant="ghost" size="lg" class="group/cta gap-2">
+								Explore features
+								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+							</Button>
+						</div>
+					</div>
 				</div>
-			</div>
+			</Reveal>
 		</Container>
 	</Section>
-</main>
 
-<Footer />
+	<Footer />
+</main>

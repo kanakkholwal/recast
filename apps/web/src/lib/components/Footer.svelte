@@ -1,51 +1,120 @@
 <script lang="ts">
 	import { Container } from "$lib/components";
 	import Logo from "$lib/logo.svelte";
+	import Github from "@lucide/svelte/icons/github";
+	import Mail from "@lucide/svelte/icons/mail";
+	import Twitter from "@lucide/svelte/icons/twitter";
+
+	type Link = { label: string; href: string; external?: boolean };
+
+	const cols: { title: string; links: Link[] }[] = [
+		{
+			title: "Product",
+			links: [
+				{ label: "Features", href: "/features" },
+				{ label: "Download", href: "/download" },
+				{ label: "Changelog", href: "/changelog" },
+				{ label: "Workflow", href: "/#workflow" },
+			],
+		},
+		{
+			title: "Resources",
+			links: [
+				{ label: "Documentation", href: "#" },
+				{
+					label: "GitHub",
+					href: "https://github.com/kanakkholwal/recast",
+					external: true,
+				},
+				{
+					label: "Releases",
+					href: "https://github.com/kanakkholwal/recast/releases",
+					external: true,
+				},
+			],
+		},
+		{
+			title: "Company",
+			links: [
+				{ label: "Contact", href: "mailto:recast@nexonauts.com" },
+				{
+					label: "X / Twitter",
+					href: "https://x.com/kanakkholwal",
+					external: true,
+				},
+			],
+		},
+	];
+
+	const socials = [
+		{ icon: Github, href: "https://github.com/kanakkholwal/recast", label: "GitHub" },
+		{ icon: Twitter, href: "https://x.com/kanakkholwal", label: "X / Twitter" },
+		{ icon: Mail, href: "mailto:recast@nexonauts.com", label: "Email" },
+	];
 </script>
 
-<footer class="py-20 md:py-32 border-t border-border-low bg-background relative overflow-hidden">
-    <div class="absolute inset-0 bg-linear-to-b from-transparent to-muted/20 pointer-events-none"></div>
-	<Container class="relative z-10">
-		<div class="grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-8 mb-24">
-			<!-- Branding -->
-			<div class="col-span-1 md:col-span-2 space-y-6 lg:pr-12">
-				<div class="flex items-center gap-3">
-                    <div class="size-8 flex items-center justify-center p-1 rounded-xl bg-muted border border-border shadow-craft-sm">
-					    <Logo size="24" />
-                    </div>
-					<span class="text-xl font-bold tracking-tight text-foreground">Recast</span>
-				</div>
-				<p class="text-base text-foreground/50 max-w-sm font-medium leading-relaxed">
-					The intentional screen recorder. Free during beta. No sign-up required. Start creating cinematic, refined screen recordings in seconds.
+<footer class="relative border-t border-border-low/70 bg-background">
+	<div class="bg-aurora absolute inset-x-0 top-0 h-px"></div>
+	<Container class="py-20 md:py-28" as="div">
+		<div class="grid gap-14 md:grid-cols-12">
+			<div class="md:col-span-5">
+				<a href="/" class="inline-flex items-center gap-2.5">
+					<span class="grid size-8 place-items-center rounded-xl bg-foreground p-1 text-background shadow-craft-sm">
+						<Logo size="22" color="transparent" fill="currentColor" />
+					</span>
+					<span class="text-lg font-semibold tracking-tight text-foreground">
+						Recast
+					</span>
+				</a>
+				<p class="mt-6 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
+					The intentional screen recorder. Record, refine, and ship cinematic
+					product walkthroughs — entirely on your machine.
 				</p>
+				<div class="mt-7 flex items-center gap-2">
+					{#each socials as { icon: Icon, href, label }}
+						<a
+							{href}
+							aria-label={label}
+							target={href.startsWith("http") ? "_blank" : undefined}
+							rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
+							class="grid size-9 place-items-center rounded-lg border border-border-low bg-card/50 text-muted-foreground transition-all hover:-translate-y-0.5 hover:border-border-strong hover:bg-card hover:text-foreground"
+						>
+							<Icon class="size-4" />
+						</a>
+					{/each}
+				</div>
 			</div>
 
-			<!-- Links -->
-			<div class="space-y-6">
-				<h4 class="text-sm font-bold text-foreground uppercase tracking-widest">Product</h4>
-				<ul class="space-y-4">
-					<li><a href="/download" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">Download</a></li>
-					<li><a href="/#workflow" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">Capabilities</a></li>
-					<li><a href="/#use-cases" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">Use Cases</a></li>
-				</ul>
-			</div>
-
-			<div class="space-y-6">
-				<h4 class="text-sm font-bold text-foreground uppercase tracking-widest">Connect</h4>
-				<ul class="space-y-4">
-					<li><a href="https://github.com/kanakkholwal/recast" target="_blank" rel="noopener noreferrer" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">GitHub</a></li>
-					<li><a href="https://x.com/kanakkholwal" target="_blank" rel="noopener noreferrer" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">X (Twitter)</a></li>
-					<li><a href="mailto:recast@nexonauts.com" class="text-[15px] font-medium text-foreground/60 hover:text-foreground transition-colors inline-block hover:translate-x-1 duration-300">Contact</a></li>
-				</ul>
+			<div class="grid gap-10 sm:grid-cols-3 md:col-span-7">
+				{#each cols as col}
+					<div>
+						<h4 class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+							{col.title}
+						</h4>
+						<ul class="mt-5 space-y-3.5">
+							{#each col.links as link}
+								<li>
+									<a
+										href={link.href}
+										target={link.external ? "_blank" : undefined}
+										rel={link.external ? "noopener noreferrer" : undefined}
+										class="text-sm font-medium text-foreground/75 transition-colors hover:text-foreground"
+									>
+										{link.label}
+									</a>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/each}
 			</div>
 		</div>
 
-		<!-- Bottom Bar -->
-		<div class="pt-8 border-t border-border-low/50 flex flex-col md:flex-row items-center justify-between gap-6 font-medium">
-			<p class="text-xs text-foreground/30 font-bold uppercase tracking-widest">
-				Built for clarity. Designed for speed.
+		<div class="mt-20 flex flex-col items-start justify-between gap-4 border-t border-border-low/70 pt-8 md:flex-row md:items-center">
+			<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+				Built for clarity · Designed for speed
 			</p>
-			<p class="text-[13px] text-foreground/40">
+			<p class="text-xs text-muted-foreground">
 				© {new Date().getFullYear()} Recast. All rights reserved.
 			</p>
 		</div>

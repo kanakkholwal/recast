@@ -1,8 +1,30 @@
 <script lang="ts">
 	import { cn } from "@recast/ui/utils";
-	let { children, class: className = "" } = $props();
+	import type { Snippet } from "svelte";
+
+	let {
+		children,
+		class: className = "",
+		size = "default",
+		as: Tag = "div",
+	}: {
+		children: Snippet;
+		class?: string;
+		size?: "default" | "narrow" | "wide" | "full";
+		as?: "div" | "section" | "main" | "article" | "header" | "footer";
+	} = $props();
+
+	const sizes = {
+		narrow: "max-w-3xl",
+		default: "max-w-6xl",
+		wide: "max-w-7xl",
+		full: "max-w-none",
+	};
 </script>
 
-<div class={cn("container mx-auto px-6 md:px-12 xl:px-24 max-w-7xl", className)}>
+<svelte:element
+	this={Tag}
+	class={cn("mx-auto w-full px-6 sm:px-8 lg:px-10", sizes[size], className)}
+>
 	{@render children()}
-</div>
+</svelte:element>

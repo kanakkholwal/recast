@@ -1,76 +1,110 @@
 <script lang="ts">
-	import { MousePointer2, Layout, Scissors, WifiOff, FileBox, Zap, ArrowUpRight } from "lucide-svelte";
-	import { Container, Section } from ".";
+	import { Container, Reveal, Section, SectionHeader } from "$lib/components";
+	import { cn } from "@recast/ui/utils";
+	import {
+		FileBox,
+		Layout,
+		MousePointer2,
+		Scissors,
+		WifiOff,
+		Zap,
+		type Icon as LucideIcon,
+	} from "lucide-svelte";
 
-	const features = [
+	type Feature = {
+		title: string;
+		description: string;
+		icon: typeof LucideIcon;
+		span: string;
+		accent?: boolean;
+	};
+
+	const features: Feature[] = [
 		{
-			title: "Cursor Engine",
-			description: "Precision tracking with smooth interpolation.",
+			title: "Cursor engine",
+			description:
+				"Velocity-based smoothing and snap targeting. Cursor paths feel intentional, never twitchy.",
 			icon: MousePointer2,
+			span: "md:col-span-4 md:row-span-2",
+			accent: true,
 		},
 		{
-			title: "Smart Layouts",
-			description: "Auto padding, backgrounds, and framing.",
+			title: "Smart layouts",
+			description: "Auto padding, backgrounds, and framing applied in real time.",
 			icon: Layout,
+			span: "md:col-span-2",
 		},
 		{
-			title: "Lightweight Editor",
-			description: "Trim, tweak, done.",
+			title: "Lightweight editor",
+			description: "Trim, tweak, ship. No timeline gymnastics.",
 			icon: Scissors,
+			span: "md:col-span-2",
 		},
 		{
-			title: "Offline First",
-			description: "No uploads required. runs locally.",
+			title: "Offline first",
+			description:
+				"Recordings, projects, and exports stay on your machine. No accounts, no uploads.",
 			icon: WifiOff,
+			span: "md:col-span-3",
 		},
 		{
-			title: "Project Files (.recast)",
-			description: "Edit anytime without losing data.",
+			title: "Project files (.recast)",
+			description: "Re-editable project artifacts that travel with your repo.",
 			icon: FileBox,
+			span: "md:col-span-3",
 		},
 		{
-			title: "Fast Export",
-			description: "GPU-powered rendering pipeline.",
+			title: "Fast export",
+			description: "GPU-accelerated rendering pipeline. Seconds, not minutes.",
 			icon: Zap,
+			span: "md:col-span-6",
 		},
 	];
 </script>
 
-<Section id="features" class="py-24 md:py-32 bg-background relative border-t border-border-low/50">
+<Section id="features" class="border-t border-border-low/60 bg-background">
 	<Container>
-		<div class="mb-20">
-			<h2 class="text-4xl md:text-5xl font-semibold tracking-tight mb-6 text-foreground">Core engine.</h2>
-			<p class="text-xl text-foreground/50 font-medium">Everything you need. Nothing you don't.</p>
-		</div>
+		<SectionHeader
+			eyebrow="Core engine"
+			title="Everything you need. Nothing you don't."
+			description="Recast is a focused recorder, not a kitchen-sink editor. Six primitives, deeply tuned."
+		/>
 
-		<div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-			{#each features as feature}
-				<div class="group relative overflow-hidden bg-background border border-border-low rounded-[2rem] p-8 shadow-craft-sm hover:shadow-craft-md transition-all duration-300 hover:-translate-y-1 invisible-ui">
-					<div class="absolute -right-12 -top-12 size-32 bg-foreground/5 rounded-full blur-3xl group-hover:bg-primary/5 transition-colors duration-500"></div>
-					
-					<div class="size-12 rounded-2xl bg-muted border border-border flex items-center justify-center mb-8 group-hover:scale-105 group-hover:bg-primary/5 transition-all duration-300 shadow-sm">
-						{#if feature.icon}
-							{@const Icon = feature.icon}
-							<Icon class="size-5 text-foreground/60 group-hover:text-primary transition-colors" />
-						{/if}
-					</div>
-					
-					<div>
-						<h3 class="text-xl font-semibold mb-3 text-foreground tracking-tight">{feature.title}</h3>
-						<p class="text-base text-foreground/50 leading-relaxed font-medium">
-							{feature.description}
-						</p>
-					</div>
-					
-					<div class="mt-8 flex items-center justify-between opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-						<div class="text-[11px] font-bold uppercase tracking-widest text-primary/80">
-							Explore
+		<div class="mt-16 grid grid-cols-1 gap-3 md:grid-cols-6 md:auto-rows-[minmax(180px,1fr)] md:gap-4">
+			{#each features as feature, i}
+				{@const Icon = feature.icon}
+				<Reveal delay={i * 60} class={cn("group", feature.span)}>
+					<article
+						class={cn(
+							"relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-border-low bg-card/80 p-6 transition-all duration-300 hover:border-border-strong hover:shadow-craft-md",
+							feature.accent && "bg-linear-to-br from-primary/8 via-card/80 to-card/80",
+						)}
+					>
+						<div
+							class="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-primary/5 blur-3xl transition-opacity duration-500 group-hover:bg-primary/12"
+						></div>
+
+						<div class="relative flex items-start justify-between">
+							<span
+								class={cn(
+									"grid size-10 place-items-center rounded-xl border border-border-low bg-background/80 text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:text-primary",
+									feature.accent && "bg-primary/10 text-primary",
+								)}
+							>
+								<Icon class="size-5" />
+							</span>
 						</div>
-						<div class="size-6 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-							<ArrowUpRight class="size-3" />
+
+						<div class="relative mt-12">
+							<h3 class="text-lg font-semibold tracking-tight text-foreground">
+								{feature.title}
+							</h3>
+							<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+								{feature.description}
+							</p>
 						</div>
-					</div>
-				</div>
+					</article>
+				</Reveal>
 			{/each}
 		</div>
 	</Container>

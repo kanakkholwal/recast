@@ -27,51 +27,51 @@
   />
   <path
     d="M307.28 271.6H275.28C273.071 271.6 271.28 273.39 271.28 275.6V307.6C271.28 309.809 273.071 311.6 275.28 311.6H307.28C309.489 311.6 311.28 309.809 311.28 307.6V275.6C311.28 273.39 309.489 271.6 307.28 271.6Z"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
   />
   <path
     d="M271.28 271.6V251.6"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
   />
   <path
     d="M271.28 271.6H251.28"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
   />
   <path
     d="M311.28 311.6V331.6"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
   />
   <path
     d="M311.28 311.6H331.28"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
   />
   <path
     d="M451.28 251.6L486.28 271.6L451.28 291.6L416.28 271.6L451.28 251.6Z"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
     d="M416.28 271.6L451.28 291.6V331.6L416.28 311.6V271.6Z"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
     stroke-linejoin="round"
   />
   <path
     d="M486.28 271.6L451.28 291.6V331.6L486.28 311.6V271.6Z"
-    stroke={color}
+    stroke={fill}
     stroke-width="6"
     stroke-linecap="round"
     stroke-linejoin="round"
