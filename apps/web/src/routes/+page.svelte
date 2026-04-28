@@ -1,176 +1,150 @@
 <script lang="ts">
 	import {
-	  Container,
-	  FeatureGrid,
-	  Footer,
-	  Hero,
-	  Navbar,
-	  Section
+		Container,
+		FeatureGrid,
+		Footer,
+		Hero,
+		Section,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
-	import { Rocket, Terminal, Users } from "lucide-svelte";
-	import { spring } from "svelte/motion";
+	import {
+		Download,
+		Play,
+		Rocket,
+		Terminal,
+		Users,
+		Wand2,
+	} from "lucide-svelte";
+	import { spring, type Spring } from "svelte/motion";
 
 	let prefersReducedMotion = $state(false);
 
 	const philosophyAnim = spring(0, { stiffness: 0.04, damping: 0.6 });
-	const workflowAnim = spring(0, { stiffness: 0.04, damping: 0.6 });
 	const useCasesAnim = spring(0, { stiffness: 0.04, damping: 0.6 });
 
-	function viewport(element: HTMLElement, store: ReturnType<typeof spring>) {
-        const observer = new IntersectionObserver((entries) => {
-            if (entries[0].isIntersecting) {
-                store.set(1);
-                observer.disconnect();
-            }
-        }, { threshold: 0.15 });
-        observer.observe(element);
-        return {
-            destroy() { observer.disconnect(); }
-        }
-    }
+	function viewport(element: HTMLElement, store: Spring<number>) {
+		const observer = new IntersectionObserver(
+			(entries) => {
+				if (entries[0].isIntersecting) {
+					store.set(1);
+					observer.disconnect();
+				}
+			},
+			{ threshold: 0.15 },
+		);
+		observer.observe(element);
+		return {
+			destroy() {
+				observer.disconnect();
+			},
+		};
+	}
 
 	$effect(() => {
-		const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+		const mediaQuery = window.matchMedia(
+			"(prefers-reduced-motion: reduce)",
+		);
 		prefersReducedMotion = mediaQuery.matches;
-		const update = (e: MediaQueryListEvent) => (prefersReducedMotion = e.matches);
-		mediaQuery.addEventListener('change', update);
-		return () => mediaQuery.removeEventListener('change', update);
+		const update = (e: MediaQueryListEvent) =>
+			(prefersReducedMotion = e.matches);
+		mediaQuery.addEventListener("change", update);
+		return () => mediaQuery.removeEventListener("change", update);
 	});
 </script>
 
 <svelte:head>
-	<title>Recast — Record. Refine. Share.</title>
+	<title>Recast — The Native Screen Recorder</title>
 	<meta
 		name="description"
 		content="Recast captures your screen with cinematic cursor motion, auto-enhanced visuals, and zero-lag export."
 	/>
 </svelte:head>
 
-<Navbar />
-
-<main class="bg-background text-foreground/80 selection:bg-primary/10">
+<main class="bg-background text-foreground selection:bg-primary/10 font-sans">
 	<Hero />
 
-	<Section id="philosophy" class="py-24 md:py-32">
-		<Container>
-			<div class="max-w-3xl" use:viewport={philosophyAnim}>
-				<p class="text-sm font-semibold text-foreground/30 uppercase tracking-[0.2em] mb-12">
-					Design Philosophy
-				</p>
-
-				<div class="space-y-24">
-					<div
-						class="group craft-block hover:bg-muted/40 dark:hover:bg-white/5 relative bg-background/40 backdrop-blur-sm"
-						style="opacity: {$philosophyAnim}; transform: translateY({prefersReducedMotion ? 0 : (1 - $philosophyAnim) * 30}px);"
-					>
-						<div class="absolute -left-4 top-10 size-1 rounded-full bg-foreground/10 invisible-ui"></div>
-						<h2 class="text-4xl md:text-5xl font-semibold mb-6 text-foreground tracking-tight">
-							Smooth by Default
-						</h2>
-						<p class="text-lg md:text-xl text-foreground/60 leading-relaxed mb-8">
-							No jitter. No awkward cursor jumps. We treat motion
-							as a first-class citizen, ensuring every recording
-							feels intentional and human.
-						</p>
-						<ul class="space-y-4 text-[15px] font-medium text-foreground/50 ml-1">
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 velocity-based cursor smoothing
-							</li>
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 natural click feedback
-							</li>
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 motion that feels human
-							</li>
-						</ul>
-					</div>
-
-					<div
-						class="group craft-block hover:bg-muted/40 dark:hover:bg-white/5 relative ml-0 md:ml-12 border-l border-border/40 pl-8 md:pl-12 bg-background/40 backdrop-blur-sm"
-						style="opacity: {Math.max(0, ($philosophyAnim - 0.2) * 1.25)}; transform: translateY({prefersReducedMotion ? 0 : (1 - Math.max(0, ($philosophyAnim - 0.2) * 1.25)) * 30}px);"
-					>
-						<h2 class="text-4xl md:text-5xl font-semibold mb-6 text-foreground tracking-tight">
-							Edit Without Editing
-						</h2>
-						<p class="text-lg md:text-xl text-foreground/60 leading-relaxed mb-8">
-							Skip timelines. Stay fast. Recast automates the
-							tedious parts of video production so you can focus
-							on the story.
-						</p>
-						<ul class="space-y-4 text-[15px] font-medium text-foreground/50">
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 trim instantly with smart markers
-							</li>
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 auto framing + responsive padding
-							</li>
-							<li class="flex items-center gap-3">
-								<div class="size-1.5 rounded-full bg-primary/40"></div>
-								 clean backgrounds in one click
-							</li>
-						</ul>
-					</div>
-
-					<div
-						class="group craft-block hover:bg-muted/40 dark:hover:bg-white/5 relative ml-0 md:ml-24 border-l border-border/40 pl-8 md:pl-12 bg-background/40 backdrop-blur-sm"
-						style="opacity: {Math.max(0, ($philosophyAnim - 0.4) * 1.66 * 1.25)}; transform: translateY({prefersReducedMotion ? 0 : (1 - Math.max(0, ($philosophyAnim - 0.4) * 1.66 * 1.25)) * 30}px);"
-					>
-						<h2 class="text-4xl md:text-5xl font-semibold mb-6 text-foreground tracking-tight">
-							Export in Seconds
-						</h2>
-						<p class="text-lg md:text-xl text-foreground/60 leading-relaxed mb-8">
-							No waiting. No rendering pain. Pure
-							hardware-accelerated performance that keeps you in
-							the flow.
-						</p>
-						<div class="p-5 craft-card bg-background/60 w-fit group-hover:scale-[1.02] transition-transform duration-300">
-							<div class="flex items-center gap-4 text-sm font-semibold text-foreground/80">
-								<Terminal class="size-4 opacity-50" />
-								<span>4K Hardware Export Alpha</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</Container>
-	</Section>
-
+	<!-- PHILOSOPHY / WORKFLOW SECTION -->
 	<Section
 		id="workflow"
-		class="py-32 bg-muted/20 dark:bg-white/1.5 border-y border-border-low"
+		class="py-24 md:py-40 relative z-10 bg-linear-to-b from-background to-muted/20 border-border-low/40"
 	>
 		<Container>
-			<div class="grid grid-cols-1 lg:grid-cols-2 gap-24 items-start" use:viewport={workflowAnim}>
-				<div class="sticky top-40" style="opacity: {$workflowAnim}; transform: translateX({prefersReducedMotion ? 0 : ($workflowAnim - 1) * 20}px);">
-					<h2 class="text-5xl md:text-6xl lg:text-[4rem] font-semibold mb-8 text-foreground tracking-tight leading-[1.1]">
-						The workflow. <br />
-						<span class="text-foreground/30 italic font-serif">Redefined.</span>
+			<div
+				class="grid grid-cols-1 lg:grid-cols-12 gap-16 lg:gap-24 items-start"
+				use:viewport={philosophyAnim}
+			>
+				<div
+					class="lg:col-span-5 sticky top-32"
+					style="opacity: {$philosophyAnim}; transform: translateY({prefersReducedMotion
+						? 0
+						: (1 - $philosophyAnim) * 20}px);"
+				>
+					<div
+						class="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-border-low bg-muted/30 backdrop-blur-md mb-8 shadow-craft-sm"
+					>
+						<Wand2 class="size-3 text-foreground/70" />
+						<span
+							class="text-[11px] font-bold uppercase tracking-[0.15em] text-foreground/60"
+							>Crafted Workflow</span
+						>
+					</div>
+					<h2
+						class="text-4xl md:text-5xl lg:text-[3.5rem] font-semibold mb-8 text-foreground tracking-tight leading-[1.1]"
+					>
+						Designed for <br />
+						<span class="text-foreground/40 italic font-serif"
+							>clarity.</span
+						>
 					</h2>
-					<p class="text-xl text-foreground/50 leading-relaxed max-w-md font-medium">
+					<p
+						class="text-xl text-foreground/60 leading-relaxed max-w-md font-medium"
+					>
 						Raw capture is just the beginning. Recast refines your
-						output instantly, adding clarity and layout polish.
+						output instantly, adding framing, smoothing, and layout
+						polish in zero clicks.
 					</p>
 				</div>
 
-				<div class="space-y-16">
-					{#each [{ step: "01", title: "Record", desc: "Capture screen, window, or region. We handle the native processing without proxying." }, { step: "02", title: "Enhance", desc: "Recast auto-applies velocity-based cursor smoothing, smart padding, and cleans up backgrounds instantly." }, { step: "03", title: "Share", desc: "Export hardware-accelerated in seconds or save as a local .recast project." }] as { step, title, desc }, i}
-						<div class="group relative pl-12"
-							 style="opacity: {Math.max(0, ($workflowAnim - i * 0.2) * 1.25)}; transform: translateY({prefersReducedMotion ? 0 : (1 - Math.max(0, ($workflowAnim - i * 0.2) * 1.25)) * 20}px);">
-							<div class="absolute left-0 top-1 text-[13px] font-bold text-foreground/20 group-hover:text-primary transition-colors">
-								{step}
+				<div class="lg:col-span-7 space-y-8">
+					{#each [{ step: "01", icon: Play, title: "Native Recording", desc: "No proxy layers. Capture any window or screen natively at full framerate with imperceptible overhead." }, { step: "02", icon: Wand2, title: "Cinematic Polish", desc: "Instantly apply velocity-based cursor smoothing, smart padding, and clean layout backgrounds." }, { step: "03", icon: Download, title: "Instant Export", desc: "No timeline rendering. Hardware-accelerated exports finish in seconds, or save as a native .recast project." }] as { step, icon: Icon, title, desc }, i}
+						<div
+							class="group relative overflow-hidden bg-background/40 backdrop-blur-xl border border-border-low p-8 transition-all duration-300 hover:bg-muted/30 shadow-craft-sm hover:shadow-craft-md hover:-translate-y-1 invisible-ui"
+							style="opacity: {Math.max(
+								0,
+								($philosophyAnim - i * 0.15) * 1.25,
+							)}; transform: translateY({prefersReducedMotion
+								? 0
+								: (1 -
+										Math.max(
+											0,
+											($philosophyAnim - i * 0.15) * 1.25,
+										)) *
+									20}px);"
+						>
+							<div class="flex items-start gap-6">
+								<div
+									class="mt-1 flex-shrink-0 size-12 rounded-2xl bg-muted border border-border flex items-center justify-center text-foreground/60 group-hover:bg-primary/5 group-hover:text-primary transition-colors"
+								>
+									<Icon class="size-5" />
+								</div>
+								<div>
+									<div
+										class="text-[12px] font-bold text-foreground/30 mb-2 uppercase tracking-wider"
+									>
+										{step}
+									</div>
+									<h4
+										class="text-2xl font-semibold mb-3 text-foreground tracking-tight"
+									>
+										{title}
+									</h4>
+									<p
+										class="text-foreground/60 leading-relaxed text-[16px]"
+									>
+										{desc}
+									</p>
+								</div>
 							</div>
-							<h4 class="text-2xl font-semibold mb-3 text-foreground tracking-tight">
-								{title}
-							</h4>
-							<p class="text-foreground/60 leading-relaxed text-[17px]">
-								{desc}
-							</p>
 						</div>
 					{/each}
 				</div>
@@ -180,33 +154,62 @@
 
 	<FeatureGrid />
 
+	<!-- USE CASES -->
 	<Section id="use-cases" class="py-32">
 		<Container>
-			<div class="max-w-2xl mb-24" use:viewport={useCasesAnim}
-				 style="opacity: {$useCasesAnim}; transform: translateY({prefersReducedMotion ? 0 : (1 - $useCasesAnim) * 20}px);">
-				<h2 class="text-5xl md:text-6xl font-semibold mb-8 text-foreground tracking-tight">
-					Use cases.
+			<div
+				class="text-center mb-24 flex flex-col items-center"
+				use:viewport={useCasesAnim}
+				style="opacity: {$useCasesAnim}; transform: translateY({prefersReducedMotion
+					? 0
+					: (1 - $useCasesAnim) * 20}px);"
+			>
+				<h2
+					class="text-4xl md:text-6xl font-semibold mb-6 text-foreground tracking-tight"
+				>
+					Purpose-built.
 				</h2>
-				<p class="text-xl text-foreground/50 border-l-2 border-primary/20 pl-6 py-1">
-					Why Recast? Not a heavy editor. Not a laggy recorder. Simply
-					better output.
+				<p class="text-xl text-foreground/50 max-w-2xl font-medium">
+					Not a bloated editor. Not a laggy cloud recorder. Built
+					precisely for high-fidelity communication.
 				</p>
 			</div>
 
-			<div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-				{#each [{ icon: Terminal, title: "For Developers", desc: "Explain bugs, APIs, and flows clearly without typing a thousand-word pull request." }, { icon: Rocket, title: "For Founders", desc: "Create product demos in minutes. Show your investors exactly what you've built." }, { icon: Users, title: "For Teams", desc: "Replace meetings with async clarity. Share pristine updates that actually get watched." }] as item, i}
+			<div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+				{#each [{ icon: Terminal, title: "Engineers", desc: "Demo PRs, explain complex bugs, and document APIs cleanly without writing a novel." }, { icon: Rocket, title: "Founders", desc: "Create pixel-perfect product walkthroughs that impress investors and users." }, { icon: Users, title: "Teams", desc: "Replace asynchronous chaos with crisp, clear, visual updates that actually get watched." }] as item, i}
 					{@const Icon = item.icon}
 					<div
-						class="group craft-block bg-muted/40 dark:bg-white/2 hover:bg-muted/80 dark:hover:bg-white/5 border border-border-low shadow-craft-sm"
-						style="opacity: {Math.max(0, ($useCasesAnim - i * 0.15) * 1.25)}; transform: translateY({prefersReducedMotion ? 0 : (1 - Math.max(0, ($useCasesAnim - i * 0.15) * 1.25)) * 30}px);"
+						class="group relative overflow-hidden bg-background border border-border-low rounded-[2rem] p-8 shadow-craft-sm hover:shadow-craft-lg transition-all duration-300 hover:-translate-y-1 invisible-ui"
+						style="opacity: {Math.max(
+							0,
+							($useCasesAnim - i * 0.1) * 1.25,
+						)}; transform: translateY({prefersReducedMotion
+							? 0
+							: (1 -
+									Math.max(
+										0,
+										($useCasesAnim - i * 0.1) * 1.25,
+									)) *
+								30}px);"
 					>
-						<div class="size-10 rounded-xl bg-background dark:bg-neutral-900 border border-border-low flex items-center justify-center mb-8 group-hover:scale-110 group-hover:rotate-3 group-hover:bg-primary/5 transition-all duration-300">
-							<Icon class="size-4 text-foreground/70 group-hover:text-primary transition-colors" />
+						<div
+							class="absolute -right-8 -top-8 size-32 bg-primary/5 rounded-full blur-3xl group-hover:bg-primary/10 transition-colors duration-500"
+						></div>
+						<div
+							class="size-12 rounded-xl bg-muted border border-border flex items-center justify-center mb-10 group-hover:scale-[1.05] group-hover:bg-primary/5 transition-all duration-300"
+						>
+							<Icon
+								class="size-5 text-foreground/70 group-hover:text-primary transition-colors"
+							/>
 						</div>
-						<h4 class="text-xl font-semibold mb-3 text-foreground tracking-tight">
+						<h4
+							class="text-xl font-semibold mb-3 text-foreground tracking-tight"
+						>
 							{item.title}
 						</h4>
-						<p class="text-foreground/60 leading-relaxed text-[15px]">
+						<p
+							class="text-foreground/60 leading-relaxed text-[15px]"
+						>
 							{item.desc}
 						</p>
 					</div>
@@ -215,23 +218,37 @@
 		</Container>
 	</Section>
 
-	<Section id="cta" class="py-32">
+	<!-- CTA Section -->
+	<Section
+		id="cta"
+		class="py-24 md:py-32 bg-background border-t border-border-low"
+	>
 		<Container>
-			<div class="craft-card p-16 md:p-24 text-center relative overflow-hidden group bg-linear-to-b from-background to-muted/20">
-				<div class="absolute inset-0 bg-grid-pattern opacity-20 group-hover:opacity-30 transition-opacity duration-1000 mix-blend-overlay"></div>
-				<div class="relative z-10 max-w-2xl mx-auto">
-					<h2 class="text-5xl md:text-7xl font-semibold mb-10 text-foreground tracking-tight leading-[1.1]">
-						Ready to refine?
+			<div
+				class="craft-card p-12 md:p-24 text-center relative overflow-hidden group bg-linear-to-b from-muted/10 to-background rounded-[3rem] border border-border-low shadow-craft-lg"
+			>
+				<div
+					class="absolute inset-0 bg-grid-pattern opacity-10 group-hover:opacity-20 transition-opacity duration-1000 mix-blend-overlay"
+				></div>
+				<div
+					class="relative z-10 max-w-2xl mx-auto flex flex-col items-center"
+				>
+					<h2
+						class="text-4xl md:text-6xl font-semibold mb-8 text-foreground tracking-tight leading-[1.1]"
+					>
+						Ready to refine your workflow?
 					</h2>
 					<Button
 						size="lg"
 						href="/download"
-						class="h-16 px-12 text-[17px] font-bold bg-foreground text-background hover:scale-105 active:scale-95 transition-all rounded-[1rem] shadow-craft-xl duration-300"
+						class="h-14 px-10 text-[16px] font-bold bg-foreground text-background hover:scale-[1.02] active:scale-95 transition-all rounded-2xl shadow-craft-xl duration-300"
 					>
-						Download for Mac
+						Download Recast
 					</Button>
-					<p class="mt-8 text-[13px] font-semibold tracking-wide uppercase text-foreground/30">
-						Free during public beta
+					<p
+						class="mt-6 text-[13px] font-semibold tracking-wide uppercase text-foreground/40"
+					>
+						Free during beta. Windows only for now.
 					</p>
 				</div>
 			</div>
@@ -240,4 +257,3 @@
 </main>
 
 <Footer />
-
