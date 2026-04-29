@@ -1,6 +1,5 @@
 <!doctype html>
 <html lang="en">
-
 <head>
 	<meta charset="utf-8" />
 	<meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -26,20 +25,21 @@
 
 <body data-sveltekit-preload-data="hover">
 	<div id="boot" aria-hidden="true">
-		<div class="boot-wrap">
-			<div class="logo-outer">
-				<div class="logo-inner">
-					<img src="/logo.svg" alt="" class="boot-logo" width="96" height="96" />
-				</div>
-			</div>
+		<div class="boot-bar" role="progressbar" aria-label="Loading Recast">
+			<span class="boot-bar-fill"></span>
+		</div>
 
-			<div class="boot-footer">
-				<div class="loader"><span></span></div>
-				<div class="boot-text">Open Source Screen Recorder</div>
+		<div class="boot-plate">
+			<div class="logo-pop">
+				<img src="/logo.svg" alt="" class="boot-logo" width="64" height="64" />
 			</div>
+			<div class="boot-wordmark">Recast</div>
+			<div class="boot-tag">Open Source Screen Recorder</div>
 		</div>
 
 		<style>
+			/* Mirrors @recast/design tokens. Inlined because this paints before
+			   app.css loads. Keep in sync with packages/design/src/index.css. */
 			#boot {
 				position: fixed;
 				inset: 0;
@@ -47,16 +47,16 @@
 				display: flex;
 				align-items: center;
 				justify-content: center;
-				background: hsl(40 30% 96%);
-				color: hsl(0 0% 9.8%);
-				font-family: "Google Sans", "Geist Variable", "Inter", system-ui, -apple-system, sans-serif;
+				background: hsl(193.22deg 11.17% 90.43%);
+				color: hsl(0, 0%, 10%);
+				font-family: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 				transition: opacity 280ms ease-out;
 				will-change: opacity;
 			}
 
 			html.dark #boot,
 			html[data-theme="dark"] #boot {
-				background: linear-gradient(#393737, #1b1b1b);
+				background: hsl(199.87deg 1.54% 8.84%);
 				color: hsl(0 0% 94%);
 			}
 
@@ -65,21 +65,31 @@
 				pointer-events: none;
 			}
 
-			#boot .boot-wrap {
+			/* Plate: surface lift via --shadow-craft-inset language */
+			#boot .boot-plate {
 				display: flex;
 				flex-direction: column;
 				align-items: center;
-				gap: 48px;
+				gap: 18px;
+				width: 360px;
+				padding: 36px 32px;
+				border-radius: 16px;
+				background: hsl(0, 0%, 100%);
+				animation: boot-plate-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
 			}
 
-			#boot .logo-outer {
-				display: grid;
-				place-items: center;
-				animation: boot-breathe 2.4s ease-in-out 400ms infinite;
-				will-change: transform;
+			html.dark #boot .boot-plate,
+			html[data-theme="dark"] #boot .boot-plate {
+				border-color: hsl(0 0% 12%);
+				background: oklch(0.27 0 0);
+				box-shadow:
+					inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+					inset 0 -1px 0 0 rgba(0, 0, 0, 0.4),
+					0 1px 2px rgba(0, 0, 0, 0.4),
+					0 8px 24px rgba(0, 0, 0, 0.35);
 			}
 
-			#boot .logo-inner {
+			#boot .logo-pop {
 				display: grid;
 				place-items: center;
 				animation: boot-pop 400ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
@@ -87,118 +97,91 @@
 			}
 
 			#boot .boot-logo {
-				width: 260px;
-				max-height: 100px;
+				width: 64px;
+				height: 64px;
 				display: block;
-				filter: drop-shadow(0 10px 30px rgba(0, 0, 0, 0.18));
 			}
 
-			#boot .boot-footer {
-				display: flex;
-				flex-direction: column;
-				align-items: center;
-				gap: 14px;
+			#boot .boot-wordmark {
+				font-size: 14px;
+				font-weight: 600;
+				letter-spacing: -0.01em;
+				line-height: 1;
 			}
 
-			#boot .loader {
-				position: relative;
-				height: 2px;
-				width: 192px;
-				overflow: hidden;
-				border-radius: 999px;
-				background: hsl(220 13% 91%);
-			}
-
-			html.dark #boot .loader,
-			html[data-theme="dark"] #boot .loader {
-				background: hsl(0 0% 18%);
-			}
-
-			#boot .loader span {
-				position: absolute;
-				inset: 0;
-				background: linear-gradient(
-					90deg,
-					transparent,
-					hsl(175.18deg 84.05% 31.96%),
-					transparent
-				);
-				animation: boot-slide 1.2s ease-in-out infinite;
-				opacity: 0.95;
-			}
-
-			html.dark #boot .loader span,
-			html[data-theme="dark"] #boot .loader span {
-				background: linear-gradient(
-					90deg,
-					transparent,
-					hsl(75 100% 50%),
-					transparent
-				);
-			}
-
-			#boot .boot-text {
+			#boot .boot-tag {
+				font-family: "Geist Mono Variable", "Space Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
 				font-size: 10px;
-				letter-spacing: 0.2em;
+				letter-spacing: 0.18em;
 				text-transform: uppercase;
 				color: hsl(220 8.9% 46.1%);
-				font-family: "Space Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-				animation: boot-pulse 2s ease-in-out infinite;
+				line-height: 1;
 			}
 
-			html.dark #boot .boot-text,
-			html[data-theme="dark"] #boot .boot-text {
+			html.dark #boot .boot-tag,
+			html[data-theme="dark"] #boot .boot-tag {
 				color: hsl(0 0% 55%);
 			}
 
+			/* Top progress bar — matches components/layout/loading.svelte (uses --primary) */
+			#boot .boot-bar {
+				position: fixed;
+				top: 0;
+				left: 0;
+				right: 0;
+				height: 3px;
+				overflow: hidden;
+				pointer-events: none;
+			}
+
+			#boot .boot-bar-fill {
+				display: block;
+				height: 100%;
+				width: 100%;
+				transform-origin: left center;
+				transform: scaleX(0.08);
+				background: hsl(175.18deg 84.05% 31.96%);
+				box-shadow:
+					0 0 8px hsl(175.18deg 84.05% 31.96% / 0.6),
+					0 0 2px hsl(175.18deg 84.05% 31.96%);
+				border-radius: 0 2px 2px 0;
+				animation: boot-trickle 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+				will-change: transform;
+			}
+
+			html.dark #boot .boot-bar-fill,
+			html[data-theme="dark"] #boot .boot-bar-fill {
+				background: hsl(75 100% 50%);
+				box-shadow:
+					0 0 8px hsl(75 100% 50% / 0.6),
+					0 0 2px hsl(75 100% 50%);
+			}
+
 			@keyframes boot-pop {
-				from {
-					transform: scale(0.85);
-					opacity: 0;
-				}
-				to {
-					transform: scale(1);
-					opacity: 1;
-				}
+				from { transform: scale(0.88); opacity: 0; }
+				to   { transform: scale(1);    opacity: 1; }
 			}
 
-			@keyframes boot-breathe {
-				0%, 100% {
-					transform: scale(1);
-				}
-				50% {
-					transform: scale(1.04);
-				}
+			@keyframes boot-plate-in {
+				from { transform: translateY(4px); opacity: 0; }
+				to   { transform: translateY(0);   opacity: 1; }
 			}
 
-			@keyframes boot-slide {
-				from {
-					transform: translateX(-100%);
-				}
-				to {
-					transform: translateX(100%);
-				}
-			}
-
-			@keyframes boot-pulse {
-				0%, 100% {
-					opacity: 0.45;
-				}
-				50% {
-					opacity: 1;
-				}
+			@keyframes boot-trickle {
+				0%   { transform: scaleX(0.08); }
+				40%  { transform: scaleX(0.55); }
+				75%  { transform: scaleX(0.82); }
+				100% { transform: scaleX(0.9); }
 			}
 
 			@media (prefers-reduced-motion: reduce) {
-				#boot .logo-outer,
-				#boot .logo-inner,
-				#boot .loader span,
-				#boot .boot-text {
+				#boot .logo-pop,
+				#boot .boot-plate,
+				#boot .boot-bar-fill {
 					animation: none;
 				}
-				#boot .loader span {
-					opacity: 0.6;
-					transform: none;
+				#boot .boot-bar-fill {
+					transform: scaleX(0.7);
 				}
 			}
 		</style>
