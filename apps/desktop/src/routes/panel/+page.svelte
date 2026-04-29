@@ -3,6 +3,8 @@
     getAudioDevices,
     getCameraDevices,
     getDisplays,
+    getLastSource,
+    setLastSource,
     startRecording,
     stopRecording,
     type RecordingOptions,
@@ -13,6 +15,7 @@
     CameraOff,
     ChevronDown,
     Circle,
+    Crop,
     Mic,
     MicOff,
     Monitor,
@@ -29,9 +32,15 @@
   import { onMount } from "svelte";
 
   type TargetSource = {
-    type: "monitor" | "window";
+    type: "monitor" | "window" | "region";
     id: number;
     label: string;
+    region?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
   };
 
   let selectedSource: TargetSource | null = $state(null);
@@ -57,6 +66,21 @@
 
     const unlistenSource = listen<TargetSource>("source-selected", (event) => {
       selectedSource = event.payload;
+      // Persist for next launch.
+      setLastSource({
+        kind:
+          event.payload.type === "monitor"
+            ? "monitor"
+            : event.payload.type === "window"
+              ? "window"
+              : "region",
+        id: event.payload.id,
+        label: event.payload.label,
+        regionX: event.payload.region?.x ?? null,
+        regionY: event.payload.region?.y ?? null,
+        regionWidth: event.payload.region?.width ?? null,
+        regionHeight: event.payload.region?.height ?? null,
+      }).catch(() => {});
     });
 
     // Listen for device selection from picker windows
@@ -87,17 +111,44 @@
       }
     });
 
-    // Load defaults non-blocking
-    getDisplays()
-      .then((displays) => {
-        if (displays.length > 0 && !selectedSource) {
-          const d = displays[0];
+    // Prefer the last-used source from persisted config; fall back to the
+    // primary display if no last source is recorded.
+    getLastSource()
+      .then((last) => {
+        if (last) {
           selectedSource = {
-            type: "monitor",
-            id: d.id,
-            label: d.isPrimary ? "Primary Display" : `Display ${d.id}`,
+            type:
+              last.kind === "window"
+                ? "window"
+                : last.kind === "region"
+                  ? "region"
+                  : "monitor",
+            id: last.id,
+            label: last.label,
+            region:
+              last.kind === "region" &&
+              last.regionWidth != null &&
+              last.regionHeight != null
+                ? {
+                    x: last.regionX ?? 0,
+                    y: last.regionY ?? 0,
+                    width: last.regionWidth,
+                    height: last.regionHeight,
+                  }
+                : undefined,
           };
+          return;
         }
+        return getDisplays().then((displays) => {
+          if (displays.length > 0 && !selectedSource) {
+            const d = displays[0];
+            selectedSource = {
+              type: "monitor",
+              id: d.id,
+              label: d.isPrimary ? "Primary Display" : `Display ${d.id}`,
+            };
+          }
+        });
       })
       .catch(() => {});
 
@@ -238,7 +289,14 @@
         cameraDeviceId: cameraOn ? selectedCameraId : null,
       };
       try {
-        await startRecording(selectedSource.type, selectedSource.id, options);
+        await startRecording(
+          selectedSource.type,
+          selectedSource.id,
+          options,
+          selectedSource.type === "region" && selectedSource.region
+            ? selectedSource.region
+            : null,
+        );
         isRecording = true;
         now = Date.now();
         recordingStartTime = now;
@@ -308,6 +366,12 @@
   >
     {#if selectedSource?.type === "window"}
       <AppWindow
+        size={12}
+        strokeWidth={2}
+        class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
+      />
+    {:else if selectedSource?.type === "region"}
+      <Crop
         size={12}
         strokeWidth={2}
         class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"

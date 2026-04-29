@@ -181,8 +181,13 @@
 
   const monitorSources = $derived(sources.filter((s) => s.type === "monitor"));
   const windowSources = $derived(sources.filter((s) => s.type === "window"));
+  const regionSources = $derived(sources.filter((s) => s.type === "region"));
   const filteredSources = $derived(
-    tab === "monitor" ? monitorSources : windowSources,
+    tab === "monitor"
+      ? monitorSources
+      : tab === "window"
+        ? windowSources
+        : regionSources,
   );
 
   function isSelected(source: TargetSource) {
@@ -225,7 +230,7 @@
   <div class="px-3 pt-3 pb-2 shrink-0">
     <Tabs.Root bind:value={tab} class="w-full">
       <Tabs.List
-        class="grid w-full grid-cols-2 bg-muted/60 border border-border-subtle p-0.5"
+        class="grid w-full grid-cols-3 bg-muted/60 border border-border-subtle p-0.5"
       >
         <Tabs.Trigger
           value="monitor"
@@ -265,14 +270,102 @@
             </span>
           {/if}
         </Tabs.Trigger>
+        <Tabs.Trigger
+          value="region"
+          class="gap-1.5 text-[11px] font-medium text-muted-foreground data-active:bg-background data-active:text-foreground data-active:border-border-subtle data-active:shadow-craft-sm"
+        >
+          <Crop size={12} />
+          Area
+        </Tabs.Trigger>
       </Tabs.List>
     </Tabs.Root>
   </div>
 
   <!-- Content -->
   <div class="flex-1 overflow-y-auto px-3 pb-3 scrollbar-transparent">
-    {#if isFetching}
+    {#if isFetching && tab !== "region"}
       <SourceSelectorSkeleton />
+    {:else if tab === "region"}
+      <div class="flex flex-col gap-2">
+        <button
+          type="button"
+          onclick={openAreaPicker}
+          onmousedown={(e) => e.stopPropagation()}
+          class="group/draw flex h-28 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card/40 hover:bg-muted/50 transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
+        >
+          <Crop size={20} class="text-muted-foreground" />
+          <p class="text-[11px] font-medium text-foreground">
+            Draw an area on screen
+          </p>
+          <p class="text-[10px] text-muted-foreground">
+            Drag to select · Esc to cancel
+          </p>
+        </button>
+
+        {#if lastRegion && !sources.some((s) => s.type === "region")}
+          <button
+            type="button"
+            onclick={() => {
+              if (lastRegion) {
+                sources = [...sources, lastRegion];
+                selectedSource = lastRegion;
+              }
+            }}
+            onmousedown={(e) => e.stopPropagation()}
+            class="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-left hover:bg-muted/50 transition-colors"
+          >
+            <div class="flex flex-col">
+              <span class="text-[11px] font-medium text-foreground"
+                >Use last area</span
+              >
+              <span
+                class="text-[10px] font-mono tabular-nums text-muted-foreground"
+              >
+                {lastRegion.resolution}
+              </span>
+            </div>
+            <span class="text-[10px] text-muted-foreground">Reuse</span>
+          </button>
+        {/if}
+
+        {#each regionSources as source (source.type + source.id + source.label)}
+          {@const selected = isSelected(source)}
+          <button
+            type="button"
+            onclick={() => (selectedSource = source)}
+            ondblclick={confirmSelection}
+            onmousedown={(e) => e.stopPropagation()}
+            class={cn(
+              "flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
+              selected
+                ? "border-primary bg-primary/10"
+                : "border-border bg-card hover:bg-muted/50",
+            )}
+          >
+            <div class="flex flex-col">
+              <span class="text-[11px] font-medium text-foreground"
+                >{source.label}</span
+              >
+              <span
+                class="text-[10px] font-mono tabular-nums text-muted-foreground"
+              >
+                {source.resolution}
+              </span>
+            </div>
+            {#if selected}
+              <span
+                class="size-5 rounded-full bg-primary flex items-center justify-center shadow-craft-sm"
+              >
+                <Check
+                  size={11}
+                  strokeWidth={3}
+                  class="text-primary-foreground"
+                />
+              </span>
+            {/if}
+          </button>
+        {/each}
+      </div>
     {:else if filteredSources.length === 0}
       <div
         class="flex h-32 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card/40"
