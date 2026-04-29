@@ -84,7 +84,7 @@
 						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-success/70"></span>
 					</div>
 					<div class="ml-3 flex items-center gap-2 text-[11px] font-medium text-muted-foreground">
-						<span class="hidden sm:inline">recast.app</span>
+						<span class="hidden sm:inline">recast.nexonauts.com</span>
 						<span class="hidden sm:inline">·</span>
 						<span>Untitled recording</span>
 					</div>

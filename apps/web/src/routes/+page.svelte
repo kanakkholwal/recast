@@ -1,23 +1,23 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		FeatureGrid,
-		Footer,
-		Hero,
-		Reveal,
-		Section,
-		SectionHeader,
+	  Container,
+	  Eyebrow,
+	  FeatureGrid,
+	  Footer,
+	  Hero,
+	  Reveal,
+	  Section,
+	  SectionHeader,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import {
-		ArrowRight,
-		Download,
-		Play,
-		Rocket,
-		Terminal,
-		Users,
-		Wand2,
+	  ArrowRight,
+	  Download,
+	  Play,
+	  Rocket,
+	  Terminal,
+	  Users,
+	  Wand2,
 	} from "lucide-svelte";
 
 	const workflow = [
@@ -67,7 +67,7 @@
 </script>
 
 <svelte:head>
-	<title>Recast — The intentional screen recorder</title>
+	<title>Recast - The intentional screen recorder</title>
 	<meta
 		name="description"
 		content="Record, refine, and ship cinematic product walkthroughs — locally, in seconds. Free during beta. macOS, Windows, Linux."

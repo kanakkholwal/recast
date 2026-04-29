@@ -72,15 +72,26 @@ pub struct EditorDocument {
     pub render_state: RenderState,
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-pub struct AppConfig {
-    pub output_dir: Option<String>,
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LastSource {
+    /// "monitor", "window", or "region"
+    pub kind: String,
+    pub id: u32,
+    pub label: String,
+    /// Present for region selections; virtual desktop coords.
+    pub region_x: Option<i32>,
+    pub region_y: Option<i32>,
+    pub region_width: Option<u32>,
+    pub region_height: Option<u32>,
 }
 
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self { output_dir: None }
-    }
+#[derive(Serialize, Deserialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AppConfig {
+    pub output_dir: Option<String>,
+    #[serde(default)]
+    pub last_source: Option<LastSource>,
 }
 
 #[derive(Deserialize)]

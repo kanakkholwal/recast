@@ -9,7 +9,7 @@ use xcap::{Monitor, Window};
 use super::ffmpeg::{encode_thumbnail_base64, make_thumbnail};
 use serde::Serialize;
 
-use super::types::{AppConfig, AppState, DisplayInfo, WindowInfo};
+use super::types::{AppConfig, AppState, DisplayInfo, LastSource, WindowInfo};
 
 fn config_path(app: &AppHandle) -> PathBuf {
     app.path()
@@ -28,7 +28,7 @@ pub fn load_config(app: &AppHandle) -> AppConfig {
     AppConfig::default()
 }
 
-fn save_config(app: &AppHandle, config: &AppConfig) {
+pub(crate) fn save_config(app: &AppHandle, config: &AppConfig) {
     let path = config_path(app);
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
@@ -73,6 +73,23 @@ pub fn set_output_dir(
     }
     let mut config = state.config.lock();
     config.output_dir = Some(path);
+    save_config(&app, &config);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn get_last_source(state: State<'_, AppState>) -> Result<Option<LastSource>, String> {
+    Ok(state.config.lock().last_source.clone())
+}
+
+#[tauri::command]
+pub fn set_last_source(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    source: LastSource,
+) -> Result<(), String> {
+    let mut config = state.config.lock();
+    config.last_source = Some(source);
     save_config(&app, &config);
     Ok(())
 }

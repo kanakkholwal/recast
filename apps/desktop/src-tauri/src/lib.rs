@@ -69,6 +69,8 @@ pub fn run() {
             commands::set_output_dir,
             commands::get_displays,
             commands::get_windows,
+            commands::get_last_source,
+            commands::set_last_source,
             commands::start_recording,
             commands::stop_recording,
             commands::list_recasts,

@@ -14,4 +14,4 @@
 	{@render children()}
 </div>
 
-<Toaster position="top-center" duration={5000} />
+<Toaster position="bottom-right" duration={5000} />

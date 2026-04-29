@@ -1,9 +1,10 @@
 <script lang="ts">
   import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
-  import { getDisplays, getWindows } from "$lib/ipc";
+  import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
   import {
     AppWindow,
     Check,
+    Crop,
     Monitor as MonitorIcon,
     RefreshCw,
     X,
@@ -11,27 +12,114 @@
   import { Button } from "@recast/ui/button";
   import * as Tabs from "@recast/ui/tabs";
   import { cn } from "@recast/ui/utils";
-  import { emit } from "@tauri-apps/api/event";
+  import { emit, listen } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
 
   type TargetSource = {
-    type: "monitor" | "window";
+    type: "monitor" | "window" | "region";
     id: number;
     label: string;
     appName?: string;
     thumbnail: string | null;
     resolution?: string;
+    region?: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    };
   };
 
   let sources: TargetSource[] = $state([]);
   let selectedSource: TargetSource | null = $state(null);
-  let tab = $state<"monitor" | "window">("monitor");
+  let tab = $state<"monitor" | "window" | "region">("monitor");
   let isFetching = $state(true);
+  // Last region remembered between sessions (loaded from config).
+  let lastRegion = $state<TargetSource | null>(null);
 
   onMount(() => {
     fetchSources();
+
+    // Pick up region drawn by the overlay window.
+    const unlistenRegion = listen<{
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+      label: string;
+    }>("region-selected", (event) => {
+      const { x, y, width, height, label } = event.payload;
+      const region: TargetSource = {
+        type: "region",
+        id: 0,
+        label,
+        thumbnail: null,
+        resolution: `${width} × ${height}`,
+        region: { x, y, width, height },
+      };
+      // Replace any prior region in the list and select it.
+      sources = [...sources.filter((s) => s.type !== "region"), region];
+      lastRegion = region;
+      selectedSource = region;
+      tab = "region";
+    });
+
+    // Hydrate the "remembered" region from persisted config.
+    getLastSource()
+      .then((last) => {
+        if (
+          last &&
+          last.kind === "region" &&
+          last.regionWidth &&
+          last.regionHeight
+        ) {
+          lastRegion = {
+            type: "region",
+            id: 0,
+            label: last.label,
+            thumbnail: null,
+            resolution: `${last.regionWidth} × ${last.regionHeight}`,
+            region: {
+              x: last.regionX ?? 0,
+              y: last.regionY ?? 0,
+              width: last.regionWidth,
+              height: last.regionHeight,
+            },
+          };
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      unlistenRegion.then((fn) => fn());
+    };
   });
+
+  async function openAreaPicker() {
+    const existing = await WebviewWindow.getByLabel("region-picker");
+    if (existing) {
+      await existing.setFocus();
+      return;
+    }
+    // Cover the entire virtual desktop. Tauri will clamp to displays; using
+    // a large width/height ensures multi-monitor setups are fully covered.
+    new WebviewWindow("region-picker", {
+      url: "/select-area",
+      title: "Select Area",
+      width: window.screen.availWidth,
+      height: window.screen.availHeight,
+      x: 0,
+      y: 0,
+      decorations: false,
+      transparent: true,
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      resizable: false,
+      maximized: true,
+    });
+  }
 
   async function fetchSources() {
     isFetching = true;

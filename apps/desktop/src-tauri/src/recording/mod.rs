@@ -34,6 +34,17 @@ pub struct CaptureArea {
 pub enum CaptureKind {
     Display,
     Window,
+    Region,
+}
+
+/// Pixel-space rectangle in virtual desktop coordinates.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RegionRect {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -52,6 +63,10 @@ impl CaptureTarget {
             "window" => resolve_window_target(target_id),
             _ => resolve_display_target(target_id),
         }
+    }
+
+    pub fn resolve_region(rect: RegionRect) -> Result<Self> {
+        resolve_region_target(rect)
     }
 
     pub fn crop_relative_to_source(&self) -> Option<CaptureArea> {
@@ -131,6 +146,67 @@ fn resolve_window_target(target_id: u32) -> Result<CaptureTarget> {
         kind: CaptureKind::Window,
         id: target_id,
         label: window.title().unwrap_or_else(|_| "Window".into()),
+        source,
+        crop,
+    })
+}
+
+fn resolve_region_target(rect: RegionRect) -> Result<CaptureTarget> {
+    if rect.width == 0 || rect.height == 0 {
+        return Err(anyhow!("region must have non-zero width and height"));
+    }
+
+    let center_x = rect.x + (rect.width as i32 / 2);
+    let center_y = rect.y + (rect.height as i32 / 2);
+
+    let monitor = Monitor::all()?
+        .into_iter()
+        .find(|monitor| {
+            let x = monitor.x().unwrap_or_default();
+            let y = monitor.y().unwrap_or_default();
+            let width = monitor.width().unwrap_or_default() as i32;
+            let height = monitor.height().unwrap_or_default() as i32;
+            center_x >= x && center_x < x + width && center_y >= y && center_y < y + height
+        })
+        .context("unable to locate the display containing the selected region")?;
+
+    let monitor_id = monitor.id().unwrap_or_default();
+    let mon_x = monitor.x().unwrap_or_default();
+    let mon_y = monitor.y().unwrap_or_default();
+    let mon_w = monitor.width().unwrap_or_default();
+    let mon_h = monitor.height().unwrap_or_default();
+
+    let source = CaptureArea {
+        x: mon_x,
+        y: mon_y,
+        width: mon_w,
+        height: mon_h,
+    };
+
+    // Clamp the requested region to the source monitor's bounds so that the
+    // encoder crop is never outside the captured frame.
+    let clamped_x = rect.x.max(mon_x).min(mon_x + mon_w as i32);
+    let clamped_y = rect.y.max(mon_y).min(mon_y + mon_h as i32);
+    let max_w = (mon_x + mon_w as i32 - clamped_x).max(0) as u32;
+    let max_h = (mon_y + mon_h as i32 - clamped_y).max(0) as u32;
+    // Encoder libx264 requires even dimensions.
+    let crop_w = (rect.width.min(max_w)) & !1u32;
+    let crop_h = (rect.height.min(max_h)) & !1u32;
+    if crop_w == 0 || crop_h == 0 {
+        return Err(anyhow!("region collapsed to zero after clamping"));
+    }
+
+    let crop = CaptureArea {
+        x: clamped_x,
+        y: clamped_y,
+        width: crop_w,
+        height: crop_h,
+    };
+
+    Ok(CaptureTarget {
+        kind: CaptureKind::Region,
+        id: monitor_id,
+        label: format!("Area {crop_w}×{crop_h}"),
         source,
         crop,
     })

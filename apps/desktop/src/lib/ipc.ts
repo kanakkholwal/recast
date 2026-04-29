@@ -120,12 +120,43 @@ export interface CameraDeviceInfo {
 	name: string;
 }
 
+export interface RegionRect {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
 export function startRecording(
 	targetType: string,
 	targetId: number,
 	options?: RecordingOptions,
+	region?: RegionRect | null,
 ): Promise<void> {
-	return invoke("start_recording", { targetType, targetId, options: options ?? null });
+	return invoke("start_recording", {
+		targetType,
+		targetId,
+		region: region ?? null,
+		options: options ?? null,
+	});
+}
+
+export interface LastSource {
+	kind: "monitor" | "window" | "region";
+	id: number;
+	label: string;
+	regionX?: number | null;
+	regionY?: number | null;
+	regionWidth?: number | null;
+	regionHeight?: number | null;
+}
+
+export function getLastSource(): Promise<LastSource | null> {
+	return invoke<LastSource | null>("get_last_source");
+}
+
+export function setLastSource(source: LastSource): Promise<void> {
+	return invoke("set_last_source", { source });
 }
 
 export function getAudioDevices(): Promise<AudioDeviceInfo[]> {

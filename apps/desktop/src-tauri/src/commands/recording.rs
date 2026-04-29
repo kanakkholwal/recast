@@ -8,7 +8,7 @@ use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry};
 use crate::project::writer::{write_project, ProjectWriteRequest};
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
-use crate::recording::{CaptureTarget, RecordingOptions};
+use crate::recording::{CaptureTarget, RecordingOptions, RegionRect};
 use crate::render::graph::RenderState;
 
 fn recasts_dir(state: &State<'_, AppState>) -> PathBuf {
@@ -27,10 +27,16 @@ fn exports_dir(state: &State<'_, AppState>) -> PathBuf {
 pub fn start_recording(
     target_type: String,
     target_id: u32,
+    region: Option<RegionRect>,
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    let target = CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?;
+    let target = if target_type == "region" {
+        let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
+        CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?
+    } else {
+        CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?
+    };
     let output_dir = get_active_output_dir(&state);
     state
         .recording_manager
