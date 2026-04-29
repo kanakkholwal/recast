@@ -1,6 +1,7 @@
 <script lang="ts">
   import { evalOpacity, evalZoom } from "$lib/annotations/eval";
-  import { uvToCanvas, videoRectPx } from "$lib/annotations/uv";
+  import { canvasToUV, uvToCanvas, videoRectPx } from "$lib/annotations/uv";
+  import { FRAME_ANCHORS, snap, type SnapAnchor } from "$lib/annotations/snap";
   import type {
     Annotation,
     EditorStore,
@@ -36,12 +37,44 @@
   // tick so the cheapest correct path is to rebuild positions per frame.
   let _frame = $state(0);
 
+  // Drag state for text annotations. Text is a sibling HTML element so we
+  // can't piggyback on AnnotationOverlay's pointer flow — we run our own
+  // here, using the same UV math + snap engine so behavior matches.
+  type TextDrag = {
+    id: string;
+    startX: number; // UV
+    startY: number;
+    pointerStartUV: { x: number; y: number };
+    moved: boolean; // true once we cross the click vs drag threshold
+  } | null;
+  let drag: TextDrag = $state(null);
+  // Click-vs-drag threshold in CSS px. Below this the gesture is treated as a
+  // click (select); above it, the gesture commits a move.
+  const CLICK_DRAG_THRESHOLD_PX = 3;
+
   function videoRectCss() {
     return videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding);
   }
 
   function uvToCss(ux: number, uy: number, t: number) {
     return uvToCanvas(ux, uy, videoRectCss(), evalZoom(store.zoomRegions, t));
+  }
+
+  function pointerToUV(e: PointerEvent, t: number) {
+    if (!layerEl) return { x: 0, y: 0 };
+    const rect = layerEl.getBoundingClientRect();
+    return canvasToUV(
+      e.clientX - rect.left,
+      e.clientY - rect.top,
+      videoRectCss(),
+      evalZoom(store.zoomRegions, t),
+    );
+  }
+
+  function pointerToCss(e: PointerEvent) {
+    if (!layerEl) return { x: 0, y: 0 };
+    const rect = layerEl.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
   }
 
   function playbackTime(): number {
@@ -151,12 +184,123 @@
     }
   }
 
-  // Pointer interactions: the layer doesn't itself drag boxes — that stays
-  // on the canvas overlay. We only handle the click-to-select and
-  // double-click-to-edit affordances. Move/resize of text falls back to the
-  // canvas overlay's "body" hit-test when the user clicks on the text rect
-  // outside edit mode (forwarded by setting pointer-events to "none" on the
-  // text element while not editing).
+  /** Build snap anchors from frame edges + every other annotation's box.
+   *  Mirrors the anchor set used by AnnotationOverlay for canvas-rendered
+   *  shapes so dragging text feels identical to dragging a rectangle. */
+  function buildSnapAnchors(excludeId: string | null): SnapAnchor[] {
+    const anchors: SnapAnchor[] = [...FRAME_ANCHORS];
+    for (const a of store.annotations) {
+      if (a.id === excludeId) continue;
+      if (a.hidden) continue;
+      if (a.kind.kind === "arrow") {
+        anchors.push({ axis: "x", value: a.kind.x1 });
+        anchors.push({ axis: "y", value: a.kind.y1 });
+        anchors.push({ axis: "x", value: a.kind.x2 });
+        anchors.push({ axis: "y", value: a.kind.y2 });
+        continue;
+      }
+      const k = a.kind;
+      if (
+        k.kind === "rect" ||
+        k.kind === "ellipse" ||
+        k.kind === "image" ||
+        k.kind === "text"
+      ) {
+        const x = Math.min(k.x, k.x + k.w);
+        const y = Math.min(k.y, k.y + k.h);
+        const w = Math.abs(k.w);
+        const h = Math.abs(k.h);
+        anchors.push({ axis: "x", value: x });
+        anchors.push({ axis: "x", value: x + w / 2 });
+        anchors.push({ axis: "x", value: x + w });
+        anchors.push({ axis: "y", value: y });
+        anchors.push({ axis: "y", value: y + h / 2 });
+        anchors.push({ axis: "y", value: y + h });
+      }
+    }
+    return anchors;
+  }
+
+  function handleTextPointerDown(e: PointerEvent, a: Annotation) {
+    if (editingId === a.id) return; // let contenteditable take the gesture
+    if (a.locked || a.kind.kind !== "text") return;
+    if (e.button !== 0) return;
+    // Don't fight the WebGL canvas / focus overlay — text dragging is only
+    // available on the Annotations tab (matches the rest of the editor's
+    // pointer gating).
+    if (store.activePanel !== "annotations") return;
+
+    e.stopPropagation();
+    e.preventDefault();
+    const target = e.currentTarget as HTMLElement;
+    target.setPointerCapture(e.pointerId);
+
+    const t = playbackTime();
+    const pointerUV = pointerToUV(e, t);
+    const startCss = pointerToCss(e);
+
+    drag = {
+      id: a.id,
+      startX: a.kind.x,
+      startY: a.kind.y,
+      pointerStartUV: pointerUV,
+      moved: false,
+    };
+    // Selecting on press matches Figma/Keynote — the rest of the panel
+    // updates immediately even before the user commits to a drag.
+    store.selectedAnnotationId = a.id;
+    store.pushUndoState();
+
+    // Stash the press position on the element for the threshold check.
+    target.dataset.dragStartX = String(startCss.x);
+    target.dataset.dragStartY = String(startCss.y);
+  }
+
+  function handleTextPointerMove(e: PointerEvent, a: Annotation) {
+    if (!drag || drag.id !== a.id) return;
+    if (a.kind.kind !== "text") return;
+
+    const t = playbackTime();
+    const css = pointerToCss(e);
+    const target = e.currentTarget as HTMLElement;
+    const startX = +(target.dataset.dragStartX ?? "0");
+    const startY = +(target.dataset.dragStartY ?? "0");
+    const moved =
+      Math.hypot(css.x - startX, css.y - startY) >= CLICK_DRAG_THRESHOLD_PX;
+    if (!moved && !drag.moved) return;
+    drag.moved = true;
+
+    const rawUv = pointerToUV(e, t);
+    const dx = rawUv.x - drag.pointerStartUV.x;
+    const dy = rawUv.y - drag.pointerStartUV.y;
+    let nx = drag.startX + dx;
+    let ny = drag.startY + dy;
+
+    // Snap (Alt held bypasses, matching the canvas overlay).
+    if (!e.altKey && store.annotationSnapEnabled) {
+      const anchors = buildSnapAnchors(drag.id);
+      const result = snap(nx, ny, anchors, 0.005, true);
+      nx = result.x;
+      ny = result.y;
+    }
+
+    store.updateAnnotation(a.id, {
+      kind: { ...a.kind, x: nx, y: ny },
+    });
+  }
+
+  function handleTextPointerUp(e: PointerEvent, a: Annotation) {
+    const target = e.currentTarget as HTMLElement;
+    try {
+      target.releasePointerCapture(e.pointerId);
+    } catch {
+      // capture may have already been released by the browser — ignore.
+    }
+    delete target.dataset.dragStartX;
+    delete target.dataset.dragStartY;
+    drag = null;
+    void a;
+  }
 </script>
 
 <div
@@ -170,17 +314,24 @@
       {@const isSelected = a.id === store.selectedAnnotationId}
       {@const isActiveTab = store.activePanel === "annotations"}
       {@const interactive = isActiveTab && !a.locked}
+      {@const isDragging = drag?.id === a.id && drag?.moved}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         data-text-anno-id={a.id}
-        class="absolute origin-top-left whitespace-pre-wrap wrap-break-word"
+        class="absolute origin-top-left select-none whitespace-pre-wrap wrap-break-word"
         class:outline={isSelected && isActiveTab}
         class:outline-1={isSelected && isActiveTab}
         class:outline-dashed={isSelected && isActiveTab && !isEditing}
         class:outline-blue-500={isSelected && isActiveTab}
         class:cursor-text={isEditing}
+        class:cursor-grab={interactive && !isEditing && !isDragging}
+        class:cursor-grabbing={isDragging}
         contenteditable={isEditing}
         style={styleFor(a)}
+        onpointerdown={(e) => handleTextPointerDown(e, a)}
+        onpointermove={(e) => handleTextPointerMove(e, a)}
+        onpointerup={(e) => handleTextPointerUp(e, a)}
+        onpointercancel={(e) => handleTextPointerUp(e, a)}
         ondblclick={(e) => {
           if (!interactive) return;
           e.stopPropagation();
@@ -189,12 +340,20 @@
         onclick={(e) => {
           if (!interactive) return;
           if (isEditing) return;
+          // Suppress the click that tails a successful drag — otherwise the
+          // selection would be reasserted but the gesture would also re-emit
+          // a stray select. The drag is already over by `click` time.
+          if (drag?.id === a.id && drag?.moved) {
+            e.stopPropagation();
+            return;
+          }
           e.stopPropagation();
           store.selectedAnnotationId = a.id;
         }}
         onblur={(e) => commitEditing(a, e.currentTarget as HTMLElement)}
         onkeydown={(e) => handleKeyDown(e, a)}
         style:pointer-events={interactive ? "auto" : "none"}
+        style:touch-action={interactive ? "none" : "auto"}
       >{a.kind.content}</div>
     {/if}
   {/each}

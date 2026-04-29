@@ -56,15 +56,26 @@ jobs:
           generate_release_notes: true
           body: |
             ## Installation and signing notes
-            These builds may show OS security prompts because code-signing is currently limited.
-            If blocked by OS warnings, install manually and verify from the repository:
+            Release assets include GitHub artifact attestations for build provenance.
+            Windows and macOS builds may still show OS security prompts because OS code-signing is not configured.
+            If blocked by OS warnings, verify the release from the repository:
             https://github.com/kanakkholwal/recast
+
+            Verify release integrity with GitHub CLI:
+            ```sh
+            gh release verify ${{ steps.resolve_tag.outputs.tag }} -R kanakkholwal/recast
+            gh release verify-asset ${{ steps.resolve_tag.outputs.tag }} path/to/downloaded-asset -R kanakkholwal/recast
+            gh attestation verify path/to/downloaded-asset -R kanakkholwal/recast
+            ```
 
   build-desktop:
     name: Build (${{ matrix.platform.name }})
     needs: create-release
     permissions:
       contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -228,25 +239,49 @@ jobs:
       - name: Build frontend (via turbo)
         run: pnpm turbo run build --filter=recast-desktop
 
-      - name: Build & publish Tauri app
-        uses: tauri-apps/tauri-action@v0
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          # APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          # APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          # APPLE_ID: ${{ secrets.APPLE_ID }}
-          # APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          # APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: Build Tauri app
+        shell: bash
+        run: pnpm --filter recast-desktop tauri build ${{ matrix.platform.tauri_args }}
+
+      - name: Prepare release assets
+        shell: pwsh
+        run: |
+          $assetDir = "release-assets"
+          New-Item -ItemType Directory -Force -Path $assetDir | Out-Null
+          $bundleRoots = @(
+            "apps/desktop/src-tauri/target/release/bundle",
+            "apps/desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle"
+          )
+          $extensions = @(".AppImage", ".deb", ".dmg", ".exe", ".msi", ".sig", ".json")
+          $assets = @()
+          foreach ($root in $bundleRoots) {
+            if (Test-Path -LiteralPath $root) {
+              $assets += Get-ChildItem -Path $root -Recurse -File | Where-Object {
+                $extensions -contains $_.Extension
+              }
+            }
+          }
+          if (-not $assets) {
+            throw "No release assets found for ${{ matrix.platform.name }}"
+          }
+          foreach ($asset in $assets) {
+            Copy-Item -LiteralPath $asset.FullName -Destination $assetDir -Force
+            Write-Output "Prepared $($asset.Name)"
+          }
+
+      - name: Attest release assets
+        uses: actions/attest@v4
         with:
-          projectPath: ./apps/desktop
-          tagName: ${{ needs.create-release.outputs.tag_name }}
-          releaseId: ${{ needs.create-release.outputs.release_id }}
-          releaseDraft: true
+          subject-path: release-assets/*
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
           prerelease: false
-          args: ${{ matrix.platform.tauri_args }}
+          files: release-assets/*
+          fail_on_unmatched_files: true
 
       - name: Upload build artifacts (debug aid)
         if: always()

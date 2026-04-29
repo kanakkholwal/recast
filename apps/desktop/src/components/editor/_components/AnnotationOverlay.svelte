@@ -68,6 +68,9 @@
   // Active snap guides for the current drag, in UV space. Cleared on
   // pointerup. Capped to 4 simultaneous guides to avoid visual noise.
   let snapGuides: SnapAnchor[] = $state([]);
+  // What's under the pointer, used purely for cursor affordance ("grab" on
+  // body, "nwse-resize" / "ns-resize" / etc on handles). Cleared on leave.
+  let hoverHandle: HandleName | null | "tool" = $state(null);
 
   const HANDLE_RADIUS_PX = 6; // CSS px half-size of resize handles
   const SELECTION_COLOUR = "#3b82f6";
@@ -620,8 +623,32 @@
     return { x: result.x, y: result.y };
   }
 
+  /** Refresh the hover state used for cursor affordance — runs only when no
+   *  drag is in flight so the cursor flips between grab/resize as the user
+   *  passes over annotations. */
+  function refreshHover(pt: { x: number; y: number }, t: number) {
+    if (drag) return;
+    if (store.annotationTool) {
+      hoverHandle = "tool";
+      return;
+    }
+    const selected = store.annotations.find((a) => a.id === store.selectedAnnotationId);
+    if (selected && !selected.locked && !selected.hidden) {
+      const handle = pickHandle(pt, selected, t);
+      if (handle && handle !== "body") {
+        hoverHandle = handle;
+        return;
+      }
+    }
+    const hit = pickAnnotation(pt, t);
+    hoverHandle = hit ? "body" : null;
+  }
+
   function handlePointerMove(e: PointerEvent) {
-    if (!drag) return;
+    if (!drag) {
+      refreshHover(pointerToCanvasPx(e), playbackTime());
+      return;
+    }
     const pt = pointerToCanvasPx(e);
     const t = playbackTime();
     const rawUv = unprojectUV(pt.x, pt.y, t);
@@ -900,12 +927,39 @@
     window.removeEventListener("keydown", handleKeyDown);
   });
 
-  // When the tool changes (or an annotation is selected), change the cursor.
+  // Map a handle name to a CSS resize cursor so dragging from a corner shows
+  // the diagonal arrow, edge handles show the axis arrow, and so on. Body
+  // hovers show "grab" / "grabbing".
+  function cursorForHandle(h: HandleName | "tool" | null): string {
+    if (h === "tool") return "crosshair";
+    switch (h) {
+      case "nw":
+      case "se":
+        return "nwse-resize";
+      case "ne":
+      case "sw":
+        return "nesw-resize";
+      case "n":
+      case "s":
+        return "ns-resize";
+      case "e":
+      case "w":
+        return "ew-resize";
+      case "p1":
+      case "p2":
+        return "crosshair";
+      case "body":
+        return "grab";
+      default:
+        return "default";
+    }
+  }
+
   const canvasCursor = $derived.by(() => {
     if (store.annotationTool) return "crosshair";
     if (drag?.kind === "move") return "grabbing";
-    if (drag?.kind === "resize") return "nwse-resize";
-    return "default";
+    if (drag?.kind === "resize") return cursorForHandle(drag.handle);
+    return cursorForHandle(hoverHandle);
   });
 </script>
 
@@ -916,6 +970,7 @@
   onpointermove={handlePointerMove}
   onpointerup={handlePointerUp}
   onpointercancel={handlePointerUp}
+  onpointerleave={() => (hoverHandle = null)}
   class="absolute inset-0 h-full w-full"
   class:pointer-events-auto={store.activePanel === "annotations" && !store.annotationsGloballyHidden}
   class:pointer-events-none={store.activePanel !== "annotations" || store.annotationsGloballyHidden}
