@@ -104,6 +104,18 @@
       "svelte": "./src/components/ui/hover-card/index.ts",
       "default": "./src/components/ui/hover-card/index.ts"
     },
+    "./eyebrow": {
+      "svelte": "./src/components/ui/eyebrow/index.ts",
+      "default": "./src/components/ui/eyebrow/index.ts"
+    },
+    "./reveal": {
+      "svelte": "./src/components/ui/reveal/index.ts",
+      "default": "./src/components/ui/reveal/index.ts"
+    },
+    "./section-header": {
+      "svelte": "./src/components/ui/section-header/index.ts",
+      "default": "./src/components/ui/section-header/index.ts"
+    },
     "./theme": {
       "svelte": "./src/components/ui/theme.ts",
       "default": "./src/components/ui/theme.ts"

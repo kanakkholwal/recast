@@ -1,25 +1,28 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
 	import type { Snippet } from "svelte";
+	import { cn } from "@recast/ui/utils";
 
-	let {
-		eyebrow,
-		title,
-		description,
-		align = "left",
-		class: className = "",
-		actions,
-	}: {
+	type Props = {
 		eyebrow?: string;
 		title: string;
 		description?: string;
 		align?: "left" | "center";
 		class?: string;
 		actions?: Snippet;
-	} = $props();
+	};
+
+	let {
+		eyebrow,
+		title,
+		description,
+		align = "left",
+		class: className,
+		actions,
+	}: Props = $props();
 </script>
 
 <div
+	data-slot="section-header"
 	class={cn(
 		"flex flex-col gap-5",
 		align === "center" && "items-center text-center mx-auto max-w-2xl",

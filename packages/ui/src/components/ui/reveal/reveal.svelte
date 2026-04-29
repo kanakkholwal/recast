@@ -1,32 +1,47 @@
 <script lang="ts">
-	import { cn } from "@recast/ui/utils";
 	import type { Snippet } from "svelte";
+	import { cn } from "@recast/ui/utils";
 
-	let {
-		children,
-		class: className = "",
-		delay = 0,
-		threshold = 0.15,
-		as: Tag = "div",
-	}: {
+	type Tag = "div" | "section" | "article" | "li" | "header" | "ol" | "ul";
+
+	type Props = {
 		children: Snippet;
 		class?: string;
 		delay?: number;
 		threshold?: number;
-		as?: "div" | "section" | "article" | "li" | "header";
-	} = $props();
+		rootMargin?: string;
+		once?: boolean;
+		as?: Tag;
+	};
+
+	let {
+		children,
+		class: className,
+		delay = 0,
+		threshold = 0.15,
+		rootMargin = "0px 0px -8% 0px",
+		once = true,
+		as: Tag = "div",
+	}: Props = $props();
 
 	let visible = $state(false);
 
 	function reveal(node: HTMLElement) {
+		if (typeof IntersectionObserver === "undefined") {
+			visible = true;
+			return {};
+		}
+
 		const observer = new IntersectionObserver(
 			([entry]) => {
 				if (entry.isIntersecting) {
 					visible = true;
-					observer.disconnect();
+					if (once) observer.disconnect();
+				} else if (!once) {
+					visible = false;
 				}
 			},
-			{ threshold, rootMargin: "0px 0px -8% 0px" },
+			{ threshold, rootMargin },
 		);
 		observer.observe(node);
 		return {
@@ -41,7 +56,9 @@
 	style={`transition-delay: ${delay}ms;`}
 	class={cn(
 		"transition-[opacity,transform] duration-700 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none",
-		visible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4 motion-reduce:translate-y-0 motion-reduce:opacity-100",
+		visible
+			? "opacity-100 translate-y-0"
+			: "opacity-0 translate-y-3 motion-reduce:translate-y-0 motion-reduce:opacity-100",
 		className,
 	)}
 >

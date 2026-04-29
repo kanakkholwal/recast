@@ -22,4 +22,7 @@ export * as Spinner from "./spinner";
 export * as Tabs from "./tabs";
 export * as Textarea from "./textarea";
 export * as Tooltip from "./tooltip";
+export * as Eyebrow from "./eyebrow";
+export * as Reveal from "./reveal";
+export * as SectionHeader from "./section-header";
 

@@ -88,23 +88,26 @@
                 })}
                   <a
                     href={navLink.href}
-                    {...props}
+                    {...(props as Record<string, unknown>)}
                     data-active={active}
                     class={cn(
-                      "group relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-colors",
+                      "group relative flex h-8 items-center gap-2.5 rounded-lg px-2.5 text-[12.5px] font-medium transition-all duration-200",
                       active
                         ? "bg-card/80 text-foreground ring-1 ring-inset ring-border/50 shadow-(--shadow-craft-inset)"
-                        : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground",
+                        : "text-muted-foreground hover:bg-foreground/4 hover:text-foreground active:scale-[0.98]",
                       "group-data-[state=collapsed]:size-8 group-data-[state=collapsed]:justify-center group-data-[state=collapsed]:p-0",
                     )}
                   >
-                    <Icon size={14} class="shrink-0" />
+                    <Icon
+                      size={14}
+                      class="shrink-0 transition-transform duration-200 group-hover:-translate-y-px"
+                    />
                     <span class="group-data-[state=collapsed]:hidden"
                       >{navLink.title}</span
                     >
                     {#if active}
                       <span
-                        class="absolute top-1/2 left-0 h-3 w-0.5 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary group-data-[state=collapsed]:hidden"
+                        class="absolute top-1/2 left-0 h-3 w-0.5 -translate-x-1.5 -translate-y-1/2 rounded-full bg-primary transition-all duration-300 group-data-[state=collapsed]:hidden motion-reduce:transition-none"
                         aria-hidden="true"
                       ></span>
                     {/if}
