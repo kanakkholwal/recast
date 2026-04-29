@@ -65,9 +65,25 @@ export interface ShadowSettings {
 // and crop transforms without re-projection. `kind` is a discriminated union
 // so arrows / polygons / text / image slot in without churn later.
 
+export type AnnotationStrokeStyle = "solid" | "dashed" | "dotted";
+
 export interface AnnotationStroke {
 	width: number; // UV
 	color: string; // CSS colour
+	/** Stroke pattern. Defaults to "solid" for v1 projects (`undefined` ↔ solid). */
+	style?: AnnotationStrokeStyle;
+}
+
+/**
+ * Optional preview-only glow / shadow. Renders in the editor but **not** in
+ * the Rust export pipeline yet — the Annotations tab surfaces this trade-off
+ * with a banner so the user is never surprised at export time.
+ */
+export interface AnnotationGlow {
+	color: string;
+	/** Blur radius in UV (≈ 0..0.05 ≈ 0..27 px at 1080p). */
+	blur: number;
+	opacity: number; // 0..1
 }
 
 export type AnnotationKind =
@@ -140,6 +156,22 @@ export interface Annotation {
 	stroke: AnnotationStroke;
 	fill: string; // CSS colour with alpha; "transparent" disables fill
 	kind: AnnotationKind;
+
+	// v2 envelope. Every field is optional; absence = v1 default. The render
+	// path reads these via `??` defaults so older projects keep loading.
+	/** User-renamed label. Falls back to `kindLabel(a)` when empty. */
+	name?: string;
+	/** Stacking order; higher draws later (on top). Default = insertion order
+	 *  (assigned at creation, monotonically increasing). */
+	zIndex?: number;
+	/** When true, canvas pointer events ignore this annotation. */
+	locked?: boolean;
+	/** When true, the annotation is skipped at draw time entirely. */
+	hidden?: boolean;
+	/** Master opacity 0..1; multiplied with the split-ramp opacity. */
+	opacity?: number;
+	/** Optional glow / soft shadow. Preview only in v2 (Rust glow follows). */
+	glow?: AnnotationGlow;
 }
 
 export const DEFAULT_ANNOTATION_RAMP = 0.2;
@@ -382,6 +414,17 @@ export function createEditorStore() {
 	let annotations = $state<Annotation[]>([]);
 	let selectedAnnotationId = $state<string | null>(null);
 	let annotationTool = $state<AnnotationKindName | null>(null);
+	// Layer-panel hover state — when set, the overlay flashes the matching
+	// annotation so users can find a layer in a busy frame.
+	let hoveredAnnotationId = $state<string | null>(null);
+	// Master visibility toggle (the status rail's eye icon). Independent of
+	// per-annotation `hidden` so it can flip without trampling user state.
+	let annotationsGloballyHidden = $state<boolean>(false);
+	// Snap engine on/off. Default on. Alt held during drag bypasses regardless.
+	let annotationSnapEnabled = $state<boolean>(true);
+	// Monotonic z-index counter so newly created annotations always start
+	// above existing ones and ordering survives reorder operations.
+	let annotationZSeq = 1;
 
 	// Zoom regions
 	let zoomRegions = $state<ZoomRegion[]>([]);
@@ -679,6 +722,8 @@ export function createEditorStore() {
 			stroke: { ...DEFAULT_ANNOTATION_STROKE },
 			fill: DEFAULT_ANNOTATION_FILL,
 			kind,
+			zIndex: annotationZSeq++,
+			opacity: 1,
 		};
 		annotations = [...annotations, annotation];
 		selectedAnnotationId = annotation.id;
@@ -693,6 +738,94 @@ export function createEditorStore() {
 		pushUndoState();
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
+		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
+	}
+
+	/** Sorted view by (zIndex, insertion-order). Higher z draws later. */
+	function annotationsByZ(): Annotation[] {
+		return [...annotations]
+			.map((a, idx) => ({ a, idx, z: a.zIndex ?? idx }))
+			.sort((a, b) => (a.z - b.z) || (a.idx - b.idx))
+			.map((e) => e.a);
+	}
+
+	function toggleAnnotationLock(id: string) {
+		pushUndoState();
+		annotations = annotations.map((a) =>
+			a.id === id ? { ...a, locked: !(a.locked ?? false) } : a,
+		);
+	}
+
+	function toggleAnnotationVisibility(id: string) {
+		pushUndoState();
+		annotations = annotations.map((a) =>
+			a.id === id ? { ...a, hidden: !(a.hidden ?? false) } : a,
+		);
+	}
+
+	function renameAnnotation(id: string, name: string) {
+		const trimmed = name.trim();
+		pushUndoState();
+		annotations = annotations.map((a) =>
+			a.id === id ? { ...a, name: trimmed || undefined } : a,
+		);
+	}
+
+	function duplicateAnnotation(id: string): Annotation | null {
+		const source = annotations.find((a) => a.id === id);
+		if (!source) return null;
+		pushUndoState();
+		const offset = 0.01;
+		const dup: Annotation = JSON.parse(JSON.stringify(source));
+		dup.id = generateId();
+		dup.zIndex = annotationZSeq++;
+		dup.name = source.name ? `${source.name} copy` : undefined;
+		// Nudge the geometry diagonally so the duplicate is visible.
+		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text") {
+			dup.kind = { ...dup.kind, x: dup.kind.x + offset, y: dup.kind.y + offset };
+		} else if (dup.kind.kind === "arrow") {
+			dup.kind = {
+				...dup.kind,
+				x1: dup.kind.x1 + offset,
+				y1: dup.kind.y1 + offset,
+				x2: dup.kind.x2 + offset,
+				y2: dup.kind.y2 + offset,
+			};
+		}
+		annotations = [...annotations, dup];
+		selectedAnnotationId = dup.id;
+		return dup;
+	}
+
+	/**
+	 * Reorder by setting the annotation's `zIndex` relative to its neighbours.
+	 * `direction = 1` brings forward, `-1` sends backward. Multiple steps will
+	 * skip over multiple neighbours.
+	 */
+	function reorderAnnotation(id: string, direction: 1 | -1) {
+		const ordered = annotationsByZ();
+		const idx = ordered.findIndex((a) => a.id === id);
+		if (idx === -1) return;
+		const targetIdx = idx + direction;
+		if (targetIdx < 0 || targetIdx >= ordered.length) return;
+		pushUndoState();
+		// Reassign z values to a strictly-monotonic 1..N sequence with the
+		// pair swapped so the result is stable under repeated reorders.
+		const next = [...ordered];
+		[next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+		const zMap = new Map(next.map((a, i) => [a.id, i + 1]));
+		annotations = annotations.map((a) => ({ ...a, zIndex: zMap.get(a.id) ?? a.zIndex }));
+		annotationZSeq = next.length + 1;
+	}
+
+	/** Move to absolute z-position by id (used by drag-reorder in the layer panel). */
+	function setAnnotationZOrder(orderedIds: string[]) {
+		pushUndoState();
+		const zMap = new Map(orderedIds.map((id, i) => [id, i + 1]));
+		annotations = annotations.map((a) =>
+			zMap.has(a.id) ? { ...a, zIndex: zMap.get(a.id)! } : a,
+		);
+		annotationZSeq = orderedIds.length + 1;
 	}
 
 	function reset() {
@@ -721,6 +854,10 @@ export function createEditorStore() {
 		annotations = [];
 		selectedAnnotationId = null;
 		annotationTool = null;
+		hoveredAnnotationId = null;
+		annotationsGloballyHidden = false;
+		annotationSnapEnabled = true;
+		annotationZSeq = 1;
 		cursorMotionEasing = null;
 		cursorSettings = {
 			enabled: true,
@@ -848,7 +985,7 @@ export function createEditorStore() {
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
-		annotations = (state.annotations ?? []).map((a) => ({
+		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),
 			start: a.start,
 			end: a.end,
@@ -859,9 +996,19 @@ export function createEditorStore() {
 			stroke: a.stroke ?? { ...DEFAULT_ANNOTATION_STROKE },
 			fill: a.fill ?? DEFAULT_ANNOTATION_FILL,
 			kind: a.kind,
+			// v2 fields with sane defaults so v1 projects keep loading.
+			name: a.name,
+			zIndex: a.zIndex ?? idx + 1,
+			locked: a.locked ?? false,
+			hidden: a.hidden ?? false,
+			opacity: a.opacity ?? 1,
+			glow: a.glow,
 		}));
+		annotationZSeq = annotations.length + 1;
 		selectedAnnotationId = null;
 		annotationTool = null;
+		hoveredAnnotationId = null;
+		annotationsGloballyHidden = false;
 		// A freshly loaded document matches on-disk state — no unsaved edits.
 		isDirty = false;
 	}
@@ -952,10 +1099,17 @@ export function createEditorStore() {
 		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
 
 		get annotations() { return annotations; },
+		get annotationsByZ() { return annotationsByZ(); },
 		get selectedAnnotationId() { return selectedAnnotationId; },
 		set selectedAnnotationId(v: string | null) { selectedAnnotationId = v; },
 		get annotationTool() { return annotationTool; },
 		set annotationTool(v: AnnotationKindName | null) { annotationTool = v; },
+		get hoveredAnnotationId() { return hoveredAnnotationId; },
+		set hoveredAnnotationId(v: string | null) { hoveredAnnotationId = v; },
+		get annotationsGloballyHidden() { return annotationsGloballyHidden; },
+		set annotationsGloballyHidden(v: boolean) { annotationsGloballyHidden = v; },
+		get annotationSnapEnabled() { return annotationSnapEnabled; },
+		set annotationSnapEnabled(v: boolean) { annotationSnapEnabled = v; },
 
 		get cursorSettings() { return cursorSettings; },
 		set cursorSettings(v: CursorSettings) { cursorSettings = v; },
@@ -1007,6 +1161,12 @@ export function createEditorStore() {
 		addAnnotation,
 		updateAnnotation,
 		removeAnnotation,
+		toggleAnnotationLock,
+		toggleAnnotationVisibility,
+		renameAnnotation,
+		duplicateAnnotation,
+		reorderAnnotation,
+		setAnnotationZOrder,
 		reset,
 		toRenderState,
 		loadRenderState,

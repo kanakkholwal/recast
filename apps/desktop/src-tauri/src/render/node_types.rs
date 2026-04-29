@@ -257,6 +257,15 @@ pub enum RenderNode {
 // of existing projects. All positions are in video UV space (0..1) so they
 // track zoom/crop without re-projection.
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AnnotationStrokeStyle {
+    #[default]
+    Solid,
+    Dashed,
+    Dotted,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotationStroke {
@@ -264,6 +273,10 @@ pub struct AnnotationStroke {
     pub width: f64,
     /// CSS colour string. `"transparent"` disables stroke.
     pub color: String,
+    /// Stroke pattern. Defaults to `Solid` so v1 projects keep loading
+    /// without their stored stroke object growing a new field.
+    #[serde(default)]
+    pub style: AnnotationStrokeStyle,
 }
 
 impl Default for AnnotationStroke {
@@ -271,8 +284,22 @@ impl Default for AnnotationStroke {
         Self {
             width: 0.004,
             color: "#3b82f6".into(),
+            style: AnnotationStrokeStyle::Solid,
         }
     }
+}
+
+/// Optional preview-only glow / soft shadow. Stored on the wire in v2 so the
+/// preview and any future Rust glow renderer agree on the shape, but the
+/// current Rust pipeline ignores it (the editor surfaces a "preview only"
+/// banner so the user knows export drops the glow).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnnotationGlow {
+    pub color: String,
+    /// Blur radius in UV (≈ 0..0.05).
+    pub blur: f64,
+    pub opacity: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -358,6 +385,28 @@ pub struct Annotation {
     #[serde(default = "default_anno_fill")]
     pub fill: String,
     pub kind: AnnotationKind,
+
+    // v2 envelope — every field defaulted so v1 projects keep loading. Order
+    // matches the TS `Annotation` interface in `editor-store.svelte.ts`.
+    /// User-renamed label. Falls back to a kind-derived label in the UI.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Stacking order; higher draws later (on top). v1 projects start at 0.
+    #[serde(default)]
+    pub z_index: i32,
+    /// When true the canvas overlay ignores pointer hits.
+    #[serde(default)]
+    pub locked: bool,
+    /// When true the renderer skips the annotation entirely.
+    #[serde(default)]
+    pub hidden: bool,
+    /// Master opacity (0..1) multiplied with the split-ramp evaluator output.
+    #[serde(default = "default_opacity_unit")]
+    pub opacity: f64,
+    /// Optional preview-only glow. Carried on the wire so future Rust passes
+    /// don't have to bump the version again, but the current draw path ignores it.
+    #[serde(default)]
+    pub glow: Option<AnnotationGlow>,
 }
 
 fn default_anno_ramp() -> f64 {
@@ -366,4 +415,8 @@ fn default_anno_ramp() -> f64 {
 
 fn default_anno_fill() -> String {
     "rgba(59,130,246,0.20)".into()
+}
+
+fn default_opacity_unit() -> f64 {
+    1.0
 }

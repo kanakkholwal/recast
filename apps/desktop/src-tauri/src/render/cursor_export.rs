@@ -240,7 +240,11 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // `trim_start`, the same class of bug the FFmpeg zoom LUT had.
         let t_track_secs = t_track_us as f64 / 1_000_000.0;
 
-        for annotation in &request.render_state.annotations {
+        // Render in z-order so stacking is deterministic; skip hidden so the
+        // user-toggled visibility flag matches the preview. `z_index` defaults
+        // to 0 for v1 projects, which preserves insertion order via the stable
+        // sort below.
+        for annotation in sorted_visible_annotations(&request.render_state.annotations) {
             draw_annotation(
                 &mut frame,
                 canvas_w,
@@ -667,6 +671,11 @@ fn draw_shape(
         }
     }
 
+    // v2 stroke-style fallback: dashed/dotted patterns require segmenting the
+    // path, which the current SDF-based draw_rect/draw_ellipse can't express.
+    // The preview canvas honors them; export falls back to solid here. See
+    // docs/rfcs/annotations-v2.md (Phase F follow-up). Carrying the field on
+    // the wire so the v2.1 Rust dash impl is a renderer-only change.
     if annotation.stroke.width > 0.0 {
         if let Some((r, g, b, a)) = parse_css_color(&annotation.stroke.color) {
             if a > 0.0 {
@@ -1114,15 +1123,33 @@ fn annotation_opacity(annotation: &Annotation, t_secs: f64) -> f64 {
     let ramp_out = annotation.ramp_out.max(0.0).min(duration * 0.5);
     let hold_start = annotation.start + ramp_in;
     let hold_end = annotation.end - ramp_out;
-    if ramp_in > 0.0 && t_secs < hold_start {
+    let raw = if ramp_in > 0.0 && t_secs < hold_start {
         let phase = ((t_secs - annotation.start) / ramp_in).clamp(0.0, 1.0);
-        return annotation.ease_in.y(phase as f32) as f64;
-    }
-    if ramp_out > 0.0 && t_secs > hold_end {
+        annotation.ease_in.y(phase as f32) as f64
+    } else if ramp_out > 0.0 && t_secs > hold_end {
         let phase = ((annotation.end - t_secs) / ramp_out).clamp(0.0, 1.0);
-        return annotation.ease_out.y(phase as f32) as f64;
-    }
-    1.0
+        annotation.ease_out.y(phase as f32) as f64
+    } else {
+        1.0
+    };
+    // Multiply by the v2 master opacity. Defaults to 1.0 for v1 projects via
+    // the serde fallback so the export stays byte-identical to v1 unless the
+    // user explicitly dialled the master slider.
+    raw * annotation.opacity.clamp(0.0, 1.0)
+}
+
+/// Sort + filter annotations for export. Hidden annotations are dropped; the
+/// rest come back sorted by `(z_index, original_index)` so equal z values
+/// preserve insertion order (stable sort). Mirrors the canvas overlay's
+/// `annotationsByZ` derivation in the editor store.
+fn sorted_visible_annotations(annotations: &[Annotation]) -> Vec<&Annotation> {
+    let mut indexed: Vec<(usize, &Annotation)> = annotations
+        .iter()
+        .enumerate()
+        .filter(|(_, a)| !a.hidden)
+        .collect();
+    indexed.sort_by(|(ai, a), (bi, b)| a.z_index.cmp(&b.z_index).then(ai.cmp(bi)));
+    indexed.into_iter().map(|(_, a)| a).collect()
 }
 
 fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> (f64, f64) {

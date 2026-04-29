@@ -116,6 +116,14 @@
       "svelte": "./src/components/ui/section-header/index.ts",
       "default": "./src/components/ui/section-header/index.ts"
     },
+    "./color-picker": {
+      "svelte": "./src/components/ui/color-picker/index.ts",
+      "default": "./src/components/ui/color-picker/index.ts"
+    },
+    "./popover": {
+      "svelte": "./src/components/ui/popover/index.ts",
+      "default": "./src/components/ui/popover/index.ts"
+    },
     "./theme": {
       "svelte": "./src/components/ui/theme.ts",
       "default": "./src/components/ui/theme.ts"

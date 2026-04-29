@@ -100,7 +100,7 @@
           content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
         />
       </header>
-      <div class="grid grid-cols-2 gap-1">
+      <div class="grid grid-cols-3 gap-1">
         {#each CURSOR_STYLES as style (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
           <button
@@ -112,14 +112,14 @@
             }}
             title={`${style.label} — ${style.description}`}
             class={cn(
-              "group relative aspect-square overflow-hidden rounded-md border transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
+              "group relative aspect-square size-24 overflow-hidden rounded-md bg-muted border transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
               isActive
                 ? "border-primary bg-primary/10"
                 : "border-border bg-muted/30 hover:border-foreground/30",
             )}
           >
             <span
-              class="absolute inset-1 flex items-center justify-center text-foreground"
+              class="absolute inset-1 m-auto flex items-center justify-center text-foreground"
               aria-hidden="true"
             >
               {@html style.svg}
@@ -153,7 +153,7 @@
           label="Cursor size"
           value={store.cursorSettings.size}
           min={1}
-          max={5}
+          max={15}
           step={1}
           unit="x"
           onstart={() => store.pushUndoState()}

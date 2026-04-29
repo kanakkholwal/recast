@@ -1,11 +1,29 @@
 <script lang="ts">
-  import { bezierY } from "$lib/easing/cubic-bezier";
+  import {
+    evalOpacity,
+    evalZoom,
+    type ZoomRegionLike,
+  } from "$lib/annotations/eval";
+  import {
+    handlePositions,
+    hitTestAnnotation,
+    hitTestHandle,
+    pointToSegmentDist,
+    type HandleName,
+  } from "$lib/annotations/hit";
+  import {
+    canvasToUV,
+    normaliseBox,
+    uvToCanvas,
+    videoRectPx,
+    type Rect,
+  } from "$lib/annotations/uv";
+  import { FRAME_ANCHORS, snap, type SnapAnchor } from "$lib/annotations/snap";
   import type {
     Annotation,
     AnnotationKind,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { framePaddingPixels } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount } from "svelte";
 
   interface Props {
@@ -22,9 +40,6 @@
   let resizeObserver: ResizeObserver | null = null;
 
   //  Drag / placement state
-  type HandleName =
-    | "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "body"
-    | "p1" | "p2"; // arrow endpoints
   type DragState =
     | null
     | {
@@ -50,139 +65,37 @@
         anchor: { x: number; y: number };
       };
   let drag: DragState = null;
+  // Active snap guides for the current drag, in UV space. Cleared on
+  // pointerup. Capped to 4 simultaneous guides to avoid visual noise.
+  let snapGuides: SnapAnchor[] = $state([]);
 
   const HANDLE_RADIUS_PX = 6; // CSS px half-size of resize handles
   const SELECTION_COLOUR = "#3b82f6";
+  const HOVER_FLASH_COLOUR = "rgba(59,130,246,0.85)";
+  const SNAP_GUIDE_COLOUR = "rgba(59,130,246,0.7)";
 
-  //  Helpers 
+  //  Helpers — thin wrappers around shared modules so this file just owns
+  //  rendering + interaction state, not geometry math.
 
   function getDpr(): number {
     return window.devicePixelRatio || 1;
   }
 
-  function compW(): number {
-    const meta = store.metadata;
-    if (!meta) return 0;
-    const paddingPx = framePaddingPixels(store.padding, meta);
-    return meta.width + paddingPx * 2;
-  }
-
-  /** Canvas device-px rect of the video region (mirror of the shader). */
-  function videoRectPx(): { x: number; y: number; w: number; h: number } {
+  function rectPx(): Rect {
     if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
-    const cw = canvasEl.width;
-    const ch = canvasEl.height;
-    const total = compW();
-    const meta = store.metadata;
-    const sourcePaddingPx = meta ? framePaddingPixels(store.padding, meta) : 0;
-    const padPx = total > 0 ? (sourcePaddingPx / total) * cw : 0;
-    return { x: padPx, y: padPx, w: cw - 2 * padPx, h: ch - 2 * padPx };
+    return videoRectPx(canvasEl.width, canvasEl.height, store.metadata, store.padding);
   }
 
-  /** Current zoom scale + centre at playback time (mirror of VideoPreview). */
-  function evalZoom(t: number): { scale: number; cx: number; cy: number } {
-    for (const r of store.zoomRegions) {
-      if (t <= r.start || t >= r.end) continue;
-      const duration = Math.max(0, r.end - r.start);
-      const half = duration * 0.5;
-      const rampIn = Math.min(Math.max(0, r.rampIn), half);
-      const rampOut = Math.min(Math.max(0, r.rampOut), half);
-      const holdStart = r.start + rampIn;
-      const holdEnd = r.end - rampOut;
-      const cxTarget = r.centerX ?? 0.5;
-      const cyTarget = r.centerY ?? 0.5;
-      let phase: number;
-      let curve;
-      let atHold = false;
-      if (t < holdStart) {
-        phase = rampIn > 0 ? (t - r.start) / rampIn : 1;
-        curve = r.easeIn;
-      } else if (t > holdEnd) {
-        phase = rampOut > 0 ? (r.end - t) / rampOut : 1;
-        curve = r.easeOut;
-      } else {
-        atHold = true;
-        phase = 1;
-        curve = r.easeIn;
-      }
-      phase = Math.max(0, Math.min(1, phase));
-      const eased = atHold ? 1 : bezierY(curve, phase);
-      return {
-        scale: 1 + (r.scale - 1) * eased,
-        cx: 0.5 + (cxTarget - 0.5) * eased,
-        cy: 0.5 + (cyTarget - 0.5) * eased,
-      };
-    }
-    return { scale: 1, cx: 0.5, cy: 0.5 };
+  function projectUV(ux: number, uy: number, t: number) {
+    return uvToCanvas(ux, uy, rectPx(), evalZoom(zoomRegions(), t));
   }
 
-  /** Annotation opacity at time t via split-ramp (matches Focus semantics). */
-  function evalOpacity(a: Annotation, t: number): number {
-    if (t <= a.start || t >= a.end) return 0;
-    const dur = Math.max(0, a.end - a.start);
-    const half = dur * 0.5;
-    const rampIn = Math.min(Math.max(0, a.rampIn), half);
-    const rampOut = Math.min(Math.max(0, a.rampOut), half);
-    const holdStart = a.start + rampIn;
-    const holdEnd = a.end - rampOut;
-    let phase: number;
-    let curve;
-    if (t < holdStart) {
-      phase = rampIn > 0 ? (t - a.start) / rampIn : 1;
-      curve = a.easeIn;
-    } else if (t > holdEnd) {
-      phase = rampOut > 0 ? (a.end - t) / rampOut : 1;
-      curve = a.easeOut;
-    } else {
-      return 1;
-    }
-    phase = Math.max(0, Math.min(1, phase));
-    return Math.max(0, Math.min(1, bezierY(curve, phase)));
+  function unprojectUV(cx: number, cy: number, t: number) {
+    return canvasToUV(cx, cy, rectPx(), evalZoom(zoomRegions(), t));
   }
 
-  /** Annotation UV → canvas device-px, applying the shader's zoom transform. */
-  function uvToCanvas(ux: number, uy: number, t: number): { x: number; y: number } {
-    const rect = videoRectPx();
-    const zoom = evalZoom(t);
-    const preX = (ux - zoom.cx) * zoom.scale + zoom.cx;
-    const preY = (uy - zoom.cy) * zoom.scale + zoom.cy;
-    return {
-      x: rect.x + preX * rect.w,
-      y: rect.y + preY * rect.h,
-    };
-  }
-
-  /** Canvas device-px → annotation UV (inverse of uvToCanvas). */
-  function canvasToUV(cx: number, cy: number, t: number): { x: number; y: number } {
-    const rect = videoRectPx();
-    if (rect.w <= 0 || rect.h <= 0) return { x: 0, y: 0 };
-    const zoom = evalZoom(t);
-    const preX = (cx - rect.x) / rect.w;
-    const preY = (cy - rect.y) / rect.h;
-    return {
-      x: (preX - zoom.cx) / zoom.scale + zoom.cx,
-      y: (preY - zoom.cy) / zoom.scale + zoom.cy,
-    };
-  }
-
-  /** Normalise bbox so width/height are positive (the user may drag "up-left"). */
-  function normaliseBox(k: AnnotationKind): { x: number; y: number; w: number; h: number } {
-    if (k.kind === "rect" || k.kind === "ellipse" || k.kind === "image") {
-      const x = Math.min(k.x, k.x + k.w);
-      const y = Math.min(k.y, k.y + k.h);
-      return { x, y, w: Math.abs(k.w), h: Math.abs(k.h) };
-    }
-    if (k.kind === "arrow") {
-      const x = Math.min(k.x1, k.x2);
-      const y = Math.min(k.y1, k.y2);
-      return { x, y, w: Math.abs(k.x2 - k.x1), h: Math.abs(k.y2 - k.y1) };
-    }
-    if (k.kind === "text") {
-      const x = Math.min(k.x, k.x + k.w);
-      const y = Math.min(k.y, k.y + k.h);
-      return { x, y, w: Math.abs(k.w), h: Math.abs(k.h) };
-    }
-    return { x: 0, y: 0, w: 0, h: 0 };
+  function zoomRegions(): ZoomRegionLike[] {
+    return store.zoomRegions;
   }
 
   /** True if this annotation should NOT draw on the 2D-canvas overlay. Text
@@ -206,7 +119,7 @@
     return videoEl?.currentTime ?? store.currentTime;
   }
 
-  //  Drawing 
+  //  Drawing
 
   function drawAnnotation(
     ctx: CanvasRenderingContext2D,
@@ -222,9 +135,10 @@
       return;
     }
 
+    const r = rectPx();
     const box = normaliseBox(a.kind);
-    const topLeft = uvToCanvas(box.x, box.y, t);
-    const bottomRight = uvToCanvas(box.x + box.w, box.y + box.h, t);
+    const topLeft = projectUV(box.x, box.y, t);
+    const bottomRight = projectUV(box.x + box.w, box.y + box.h, t);
     const x = topLeft.x;
     const y = topLeft.y;
     const w = bottomRight.x - topLeft.x;
@@ -233,13 +147,11 @@
 
     ctx.save();
     ctx.globalAlpha = opacity;
+    applyGlow(ctx, a);
 
     ctx.beginPath();
     if (a.kind.kind === "rect") {
-      const radius = Math.max(
-        0,
-        a.kind.radius * Math.min(videoRectPx().w, videoRectPx().h),
-      );
+      const radius = Math.max(0, a.kind.radius * Math.min(r.w, r.h));
       if (radius > 0) {
         roundRectPath(ctx, x, y, w, h, radius);
       } else {
@@ -248,8 +160,6 @@
     } else if (a.kind.kind === "ellipse") {
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     } else if (a.kind.kind === "image") {
-      // Image annotations are previewed as a placeholder rect — actual image
-      // loading lands when the user-facing Image tool ships in Phase D.
       ctx.rect(x, y, w, h);
     }
 
@@ -258,8 +168,8 @@
       ctx.fill();
     }
     if (a.stroke.color && a.stroke.color !== "transparent" && a.stroke.width > 0) {
-      const strokePx = Math.max(1, a.stroke.width * videoRectPx().w);
-      ctx.lineWidth = strokePx;
+      const strokePx = Math.max(1, a.stroke.width * r.w);
+      applyStrokeStyle(ctx, a, strokePx);
       ctx.strokeStyle = a.stroke.color;
       ctx.stroke();
     }
@@ -275,20 +185,19 @@
   ) {
     if (a.kind.kind !== "arrow") return;
     const k = a.kind;
-    const p1 = uvToCanvas(k.x1, k.y1, t);
-    const p2 = uvToCanvas(k.x2, k.y2, t);
+    const r = rectPx();
+    const p1 = projectUV(k.x1, k.y1, t);
+    const p2 = projectUV(k.x2, k.y2, t);
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     const len = Math.hypot(dx, dy);
     if (len < 1) return;
 
-    const strokePx = Math.max(2, a.stroke.width * videoRectPx().w);
+    const strokePx = Math.max(2, a.stroke.width * r.w);
     const headLen = Math.max(strokePx * 2, k.headSize * len);
     const headWidth = headLen * 0.7;
     const ux = dx / len;
     const uy = dy / len;
-    // Trim the line at the head's base so the capsule end doesn't poke
-    // through the triangle.
     const lineEndX = p2.x - ux * headLen;
     const lineEndY = p2.y - uy * headLen;
     const nx = -uy;
@@ -296,15 +205,19 @@
 
     ctx.save();
     ctx.globalAlpha = opacity;
+    applyGlow(ctx, a);
     ctx.strokeStyle = a.stroke.color;
     ctx.fillStyle = a.stroke.color;
-    ctx.lineWidth = strokePx;
+    applyStrokeStyle(ctx, a, strokePx);
     ctx.lineCap = "round";
 
     ctx.beginPath();
     ctx.moveTo(p1.x, p1.y);
     ctx.lineTo(lineEndX, lineEndY);
     ctx.stroke();
+
+    // Reset dash before the head fill so it isn't striped.
+    ctx.setLineDash([]);
 
     ctx.beginPath();
     ctx.moveTo(p2.x, p2.y);
@@ -314,6 +227,34 @@
     ctx.fill();
 
     ctx.restore();
+  }
+
+  /** Map AnnotationStroke.style → canvas dash pattern. */
+  function applyStrokeStyle(
+    ctx: CanvasRenderingContext2D,
+    a: Annotation,
+    strokePx: number,
+  ) {
+    ctx.lineWidth = strokePx;
+    const style = a.stroke.style ?? "solid";
+    if (style === "dashed") {
+      ctx.setLineDash([8 * strokePx, 6 * strokePx]);
+    } else if (style === "dotted") {
+      ctx.setLineDash([2 * strokePx, 4 * strokePx]);
+      ctx.lineCap = "round";
+    } else {
+      ctx.setLineDash([]);
+    }
+  }
+
+  /** Apply the optional preview-only glow (rendered before fill/stroke). */
+  function applyGlow(ctx: CanvasRenderingContext2D, a: Annotation) {
+    if (!a.glow) return;
+    const r = rectPx();
+    ctx.shadowColor = a.glow.color;
+    ctx.shadowBlur = Math.max(0, a.glow.blur * r.w);
+    // Canvas shadow respects globalAlpha; pre-multiply to avoid double-darkening.
+    ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, a.glow.opacity));
   }
 
   function roundRectPath(
@@ -341,13 +282,11 @@
   function drawSelection(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
     const dpr = getDpr();
     ctx.save();
+    ctx.setLineDash([]);
 
     if (a.kind.kind === "arrow") {
-      // Two endpoint handles only. No bounding-box dashed border (the arrow
-      // itself indicates selection bounds, and a box would be visually
-      // misleading for a non-rect primitive).
-      const p1 = uvToCanvas(a.kind.x1, a.kind.y1, t);
-      const p2 = uvToCanvas(a.kind.x2, a.kind.y2, t);
+      const p1 = projectUV(a.kind.x1, a.kind.y1, t);
+      const p2 = projectUV(a.kind.x2, a.kind.y2, t);
       const hs = HANDLE_RADIUS_PX * dpr;
       for (const pt of [p1, p2]) {
         ctx.fillStyle = "#ffffff";
@@ -361,8 +300,8 @@
     }
 
     const box = normaliseBox(a.kind);
-    const topLeft = uvToCanvas(box.x, box.y, t);
-    const bottomRight = uvToCanvas(box.x + box.w, box.y + box.h, t);
+    const topLeft = projectUV(box.x, box.y, t);
+    const bottomRight = projectUV(box.x + box.w, box.y + box.h, t);
     const x = topLeft.x;
     const y = topLeft.y;
     const w = bottomRight.x - topLeft.x;
@@ -374,7 +313,6 @@
     ctx.strokeRect(x, y, w, h);
     ctx.setLineDash([]);
 
-    // 8 handles for box-shaped annotations.
     const hs = HANDLE_RADIUS_PX * dpr;
     const handles = handlePositions(x, y, w, h);
     for (const [, pt] of Object.entries(handles)) {
@@ -387,28 +325,39 @@
     ctx.restore();
   }
 
-  function handlePositions(
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-  ): Record<
-    "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w",
-    { x: number; y: number }
-  > {
-    return {
-      nw: { x, y },
-      n: { x: x + w / 2, y },
-      ne: { x: x + w, y },
-      e: { x: x + w, y: y + h / 2 },
-      se: { x: x + w, y: y + h },
-      s: { x: x + w / 2, y: y + h },
-      sw: { x, y: y + h },
-      w: { x, y: y + h / 2 },
-    };
+  /** Hover-flash from the layer panel: pulse a 2px outline around the shape. */
+  function drawHoverFlash(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
+    const dpr = getDpr();
+    ctx.save();
+    ctx.strokeStyle = HOVER_FLASH_COLOUR;
+    ctx.lineWidth = 2 * dpr;
+    ctx.setLineDash([]);
+
+    if (a.kind.kind === "arrow") {
+      const p1 = projectUV(a.kind.x1, a.kind.y1, t);
+      const p2 = projectUV(a.kind.x2, a.kind.y2, t);
+      ctx.beginPath();
+      ctx.moveTo(p1.x, p1.y);
+      ctx.lineTo(p2.x, p2.y);
+      ctx.stroke();
+      ctx.restore();
+      return;
+    }
+
+    const box = normaliseBox(a.kind);
+    const tl = projectUV(box.x, box.y, t);
+    const br = projectUV(box.x + box.w, box.y + box.h, t);
+    const pad = 4 * dpr;
+    ctx.strokeRect(
+      tl.x - pad,
+      tl.y - pad,
+      br.x - tl.x + pad * 2,
+      br.y - tl.y + pad * 2,
+    );
+    ctx.restore();
   }
 
-  //  Frame loop 
+  //  Frame loop
 
   function draw() {
     if (!canvasEl || !store.metadata) return;
@@ -418,18 +367,64 @@
 
     ctx.clearRect(0, 0, canvasEl.width, canvasEl.height);
 
+    if (store.annotationsGloballyHidden) return;
+
     const t = playbackTime();
-    for (const a of store.annotations) {
+    // Iterate by z-order so stacking is deterministic.
+    const ordered = store.annotationsByZ;
+    for (const a of ordered) {
+      if (a.hidden) continue;
       const opacity = evalOpacity(a, t);
       drawAnnotation(ctx, a, opacity, t);
     }
 
-    // Selection adornment only shows on the Annotations tab so the editing
-    // handles don't clutter the preview while the user is on other panels.
+    // Selection adornment + hover-flash only show on the Annotations tab so
+    // the editing handles don't clutter the preview while the user is on
+    // other panels.
     if (store.activePanel === "annotations") {
+      const hover =
+        store.hoveredAnnotationId && store.hoveredAnnotationId !== store.selectedAnnotationId
+          ? store.annotations.find((a) => a.id === store.hoveredAnnotationId)
+          : null;
+      if (hover && !hover.hidden) drawHoverFlash(ctx, hover, t);
+
       const sel = store.annotations.find((a) => a.id === store.selectedAnnotationId);
-      if (sel) drawSelection(ctx, sel, t);
+      if (sel && !sel.hidden) drawSelection(ctx, sel, t);
+
+      if (snapGuides.length > 0) drawSnapGuides(ctx, t);
     }
+  }
+
+  /** Draw the snap guides emitted during the active drag. Two guides max in
+   *  practice (one per axis); the cap in `applySnap` enforces a hard ceiling. */
+  function drawSnapGuides(ctx: CanvasRenderingContext2D, t: number) {
+    const dpr = getDpr();
+    const r = rectPx();
+    if (r.w <= 0 || r.h <= 0) return;
+
+    ctx.save();
+    ctx.strokeStyle = SNAP_GUIDE_COLOUR;
+    ctx.lineWidth = 1 * dpr;
+    ctx.setLineDash([4 * dpr, 3 * dpr]);
+
+    for (const g of snapGuides) {
+      if (g.axis === "x") {
+        const top = uvToCanvas(g.value, 0, r, evalZoom(zoomRegions(), t));
+        const bot = uvToCanvas(g.value, 1, r, evalZoom(zoomRegions(), t));
+        ctx.beginPath();
+        ctx.moveTo(top.x, top.y);
+        ctx.lineTo(bot.x, bot.y);
+        ctx.stroke();
+      } else {
+        const left = uvToCanvas(0, g.value, r, evalZoom(zoomRegions(), t));
+        const right = uvToCanvas(1, g.value, r, evalZoom(zoomRegions(), t));
+        ctx.beginPath();
+        ctx.moveTo(left.x, left.y);
+        ctx.lineTo(right.x, right.y);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
   }
 
   function tick() {
@@ -449,103 +444,42 @@
     }
   }
 
-  //  Pointer interaction 
+  //  Pointer interaction
 
-  function hitTestHandle(
-    pt: { x: number; y: number },
-    a: Annotation,
-    t: number,
-  ): HandleName | null {
+  function pickAnnotation(pt: { x: number; y: number }, t: number) {
     const dpr = getDpr();
-    const slop = HANDLE_RADIUS_PX * dpr + 2 * dpr;
-
-    if (a.kind.kind === "arrow") {
-      const p1 = uvToCanvas(a.kind.x1, a.kind.y1, t);
-      const p2 = uvToCanvas(a.kind.x2, a.kind.y2, t);
-      if (Math.abs(pt.x - p1.x) <= slop && Math.abs(pt.y - p1.y) <= slop) {
-        return "p1";
-      }
-      if (Math.abs(pt.x - p2.x) <= slop && Math.abs(pt.y - p2.y) <= slop) {
-        return "p2";
-      }
-      // Hit on the line itself = move (treat as "body").
-      if (pointToSegmentDist(pt, p1, p2) <= 6 * dpr) return "body";
-      return null;
-    }
-
-    const box = normaliseBox(a.kind);
-    const topLeft = uvToCanvas(box.x, box.y, t);
-    const bottomRight = uvToCanvas(box.x + box.w, box.y + box.h, t);
-    const x = topLeft.x;
-    const y = topLeft.y;
-    const w = bottomRight.x - topLeft.x;
-    const h = bottomRight.y - topLeft.y;
-    const handles = handlePositions(x, y, w, h);
-    for (const [name, p] of Object.entries(handles)) {
-      if (Math.abs(pt.x - p.x) <= slop && Math.abs(pt.y - p.y) <= slop) {
-        return name as HandleName;
-      }
-    }
-    // Body hit (for moving).
-    if (pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h) return "body";
-    return null;
+    return hitTestAnnotation(pt, store.annotationsByZ, {
+      rect: rectPx(),
+      zoomRegions: zoomRegions(),
+      t,
+      handleSlop: HANDLE_RADIUS_PX * dpr + 2 * dpr,
+      lineSlop: 6 * dpr,
+      annotationSlop: 8 * dpr,
+    });
   }
 
-  /** Shortest pixel distance from point `p` to the line segment `a→b`. */
-  function pointToSegmentDist(
-    p: { x: number; y: number },
-    a: { x: number; y: number },
-    b: { x: number; y: number },
-  ): number {
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const lenSq = dx * dx + dy * dy;
-    if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-    const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
-    const cx = a.x + t * dx;
-    const cy = a.y + t * dy;
-    return Math.hypot(p.x - cx, p.y - cy);
-  }
-
-  function hitTestAnnotation(pt: { x: number; y: number }, t: number): Annotation | null {
+  function pickHandle(pt: { x: number; y: number }, a: Annotation, t: number) {
     const dpr = getDpr();
-    // Iterate in reverse (topmost draw last → last-to-first on hit).
-    for (let i = store.annotations.length - 1; i >= 0; i--) {
-      const a = store.annotations[i];
-      if (evalOpacity(a, t) <= 0.05) continue;
-      // Text annotations are HTML elements; let pointer events fall through
-      // to TextAnnotationLayer's own hit-test instead of grabbing them here.
-      if (a.kind.kind === "text") continue;
-      if (a.kind.kind === "arrow") {
-        const p1 = uvToCanvas(a.kind.x1, a.kind.y1, t);
-        const p2 = uvToCanvas(a.kind.x2, a.kind.y2, t);
-        if (pointToSegmentDist(pt, p1, p2) <= 8 * dpr) return a;
-        continue;
-      }
-      const box = normaliseBox(a.kind);
-      const topLeft = uvToCanvas(box.x, box.y, t);
-      const bottomRight = uvToCanvas(box.x + box.w, box.y + box.h, t);
-      if (
-        pt.x >= topLeft.x &&
-        pt.x <= bottomRight.x &&
-        pt.y >= topLeft.y &&
-        pt.y <= bottomRight.y
-      ) {
-        return a;
-      }
-    }
-    return null;
+    return hitTestHandle(pt, a, {
+      rect: rectPx(),
+      zoomRegions: zoomRegions(),
+      t,
+      handleSlop: HANDLE_RADIUS_PX * dpr + 2 * dpr,
+      lineSlop: 6 * dpr,
+      annotationSlop: 8 * dpr,
+    });
   }
 
   function handlePointerDown(e: PointerEvent) {
     if (!canvasEl || !store.metadata) return;
+    if (store.annotationsGloballyHidden) return;
     const pt = pointerToCanvasPx(e);
     const t = playbackTime();
 
     // Selected annotation's handles come first (so you can resize over top of others).
     const selected = store.annotations.find((a) => a.id === store.selectedAnnotationId);
-    if (selected) {
-      const hit = hitTestHandle(pt, selected, t);
+    if (selected && !selected.locked && !selected.hidden) {
+      const hit = pickHandle(pt, selected, t);
       if (hit && hit !== "body") {
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         const box = normaliseBox(selected.kind);
@@ -557,11 +491,14 @@
     }
 
     // Any annotation under the pointer → select and enter move mode.
-    const hitAnno = hitTestAnnotation(pt, t);
+    const hitAnno = pickAnnotation(pt, t);
     if (hitAnno) {
       (e.currentTarget as Element).setPointerCapture(e.pointerId);
       store.selectedAnnotationId = hitAnno.id;
-      const pointerUV = canvasToUV(pt.x, pt.y, t);
+      // Distance-from-segment uses pointToSegmentDist for arrows; reused so
+      // future tools can hit-test against polylines without divergence.
+      void pointToSegmentDist;
+      const pointerUV = unprojectUV(pt.x, pt.y, t);
       if (hitAnno.kind.kind === "arrow") {
         drag = {
           kind: "move",
@@ -590,7 +527,7 @@
     // No hit — if a tool is active, start placing a new annotation.
     const tool = store.annotationTool;
     if (tool) {
-      const anchor = canvasToUV(pt.x, pt.y, t);
+      const anchor = unprojectUV(pt.x, pt.y, t);
       let kind: AnnotationKind;
       switch (tool) {
         case "rect":
@@ -626,7 +563,6 @@
           };
           break;
         case "image":
-          // Image tool is currently disabled in the palette — guard anyway.
           return;
         default:
           return;
@@ -642,11 +578,56 @@
     store.selectedAnnotationId = null;
   }
 
+  /** Build snap anchors from frame edges + every other annotation's box. */
+  function buildSnapAnchors(excludeId: string | null): SnapAnchor[] {
+    const anchors: SnapAnchor[] = [...FRAME_ANCHORS];
+    for (const a of store.annotations) {
+      if (a.id === excludeId) continue;
+      if (a.hidden) continue;
+      if (a.kind.kind === "arrow") {
+        anchors.push({ axis: "x", value: a.kind.x1 });
+        anchors.push({ axis: "y", value: a.kind.y1 });
+        anchors.push({ axis: "x", value: a.kind.x2 });
+        anchors.push({ axis: "y", value: a.kind.y2 });
+        continue;
+      }
+      const box = normaliseBox(a.kind);
+      anchors.push({ axis: "x", value: box.x });
+      anchors.push({ axis: "x", value: box.x + box.w / 2 });
+      anchors.push({ axis: "x", value: box.x + box.w });
+      anchors.push({ axis: "y", value: box.y });
+      anchors.push({ axis: "y", value: box.y + box.h / 2 });
+      anchors.push({ axis: "y", value: box.y + box.h });
+    }
+    return anchors;
+  }
+
+  function applySnap(
+    ux: number,
+    uy: number,
+    dragId: string | null,
+    altHeld: boolean,
+  ): { x: number; y: number } {
+    if (altHeld || !store.annotationSnapEnabled) {
+      snapGuides = [];
+      return { x: ux, y: uy };
+    }
+    const anchors = buildSnapAnchors(dragId);
+    const result = snap(ux, uy, anchors, 0.005, true);
+    // Cap to 4 simultaneous guides (one per axis is the typical case; never
+    // more than 2 from this fn, but keep the cap for safety).
+    snapGuides = result.guides.slice(0, 4);
+    return { x: result.x, y: result.y };
+  }
+
   function handlePointerMove(e: PointerEvent) {
     if (!drag) return;
     const pt = pointerToCanvasPx(e);
     const t = playbackTime();
-    const uv = canvasToUV(pt.x, pt.y, t);
+    const rawUv = unprojectUV(pt.x, pt.y, t);
+    // Alt held bypasses snap, matching Figma. Snap is per-axis so an annotation
+    // can lock to a horizontal guide while still tracking the cursor vertically.
+    const uv = applySnap(rawUv.x, rawUv.y, drag.id, e.altKey);
 
     if (drag.kind === "place") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
@@ -699,7 +680,6 @@
     } else if (drag.kind === "resize") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (!anno) return;
-      // Arrow resize = move one endpoint.
       if (anno.kind.kind === "arrow") {
         if (drag.handle === "p1") {
           store.updateAnnotation(drag.id, {
@@ -749,6 +729,9 @@
   function handlePointerUp(e: PointerEvent) {
     if (!drag) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
+    // Drop snap guides immediately on release so the preview returns to
+    // a clean state on click (no lingering guides between drags).
+    snapGuides = [];
     if (drag.kind === "place") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (anno) {
@@ -757,8 +740,6 @@
             store.removeAnnotation(drag.id);
           }
         } else if (anno.kind.kind === "text") {
-          // For text, allow tiny boxes to expand to a sensible default so a
-          // single click still creates a usable text annotation.
           if (Math.abs(anno.kind.w) < 0.04) {
             store.updateAnnotation(drag.id, {
               kind: { ...anno.kind, w: 0.25 },
@@ -781,8 +762,6 @@
       // shapes on their next click — matches Figma/Keynote behaviour.
       store.annotationTool = null;
     } else if (drag.kind === "resize" || drag.kind === "move") {
-      // Re-normalise box-shaped kinds so stored coordinates always have
-      // positive w/h. Arrows are stored as endpoint pairs and don't need it.
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (
         anno &&
@@ -800,6 +779,33 @@
     drag = null;
   }
 
+  function nudgeBy(dxUV: number, dyUV: number) {
+    const id = store.selectedAnnotationId;
+    if (!id) return;
+    const a = store.annotations.find((x) => x.id === id);
+    if (!a || a.locked || a.hidden) return;
+    if (a.kind.kind === "arrow") {
+      store.updateAnnotation(id, {
+        kind: {
+          ...a.kind,
+          x1: a.kind.x1 + dxUV,
+          y1: a.kind.y1 + dyUV,
+          x2: a.kind.x2 + dxUV,
+          y2: a.kind.y2 + dyUV,
+        },
+      });
+    } else if (
+      a.kind.kind === "rect" ||
+      a.kind.kind === "ellipse" ||
+      a.kind.kind === "text" ||
+      a.kind.kind === "image"
+    ) {
+      store.updateAnnotation(id, {
+        kind: { ...a.kind, x: a.kind.x + dxUV, y: a.kind.y + dyUV },
+      });
+    }
+  }
+
   function handleKeyDown(e: KeyboardEvent) {
     if (e.key === "Escape") {
       if (store.annotationTool) {
@@ -809,17 +815,75 @@
         store.selectedAnnotationId = null;
         e.preventDefault();
       }
+      return;
     }
     if ((e.key === "Delete" || e.key === "Backspace") && store.selectedAnnotationId) {
-      // Don't fight text inputs.
       const target = e.target as HTMLElement | null;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
       e.preventDefault();
       store.removeAnnotation(store.selectedAnnotationId);
+      return;
+    }
+
+    // Z-order shortcuts and duplicate, gated to annotations tab + selection
+    // so they don't fight other editor surfaces.
+    if (
+      store.activePanel === "annotations" &&
+      store.selectedAnnotationId &&
+      (e.metaKey || e.ctrlKey) &&
+      !e.altKey
+    ) {
+      const target = e.target as HTMLElement | null;
+      const inEditable =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (inEditable) return;
+      if (e.key === "]") {
+        e.preventDefault();
+        store.reorderAnnotation(store.selectedAnnotationId, 1);
+        return;
+      }
+      if (e.key === "[") {
+        e.preventDefault();
+        store.reorderAnnotation(store.selectedAnnotationId, -1);
+        return;
+      }
+      if (e.key.toLowerCase() === "d" && !e.shiftKey) {
+        e.preventDefault();
+        store.duplicateAnnotation(store.selectedAnnotationId);
+        return;
+      }
+    }
+
+    // Arrow-key nudge — only when annotations tab is active and a non-locked
+    // annotation is selected. Step is 1 device-px / 10 device-px in UV.
+    if (
+      store.activePanel === "annotations" &&
+      store.selectedAnnotationId &&
+      !e.metaKey &&
+      !e.ctrlKey &&
+      !e.altKey &&
+      ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
+    ) {
+      const target = e.target as HTMLElement | null;
+      const inEditable =
+        target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+      if (inEditable) return;
+      const r = rectPx();
+      if (r.w <= 0 || r.h <= 0) return;
+      const stepX = (e.shiftKey ? 10 : 1) / Math.max(1, r.w);
+      const stepY = (e.shiftKey ? 10 : 1) / Math.max(1, r.h);
+      let dx = 0;
+      let dy = 0;
+      if (e.key === "ArrowLeft") dx = -stepX;
+      if (e.key === "ArrowRight") dx = stepX;
+      if (e.key === "ArrowUp") dy = -stepY;
+      if (e.key === "ArrowDown") dy = stepY;
+      e.preventDefault();
+      nudgeBy(dx, dy);
     }
   }
 
-  //  Lifecycle 
+  //  Lifecycle
 
   onMount(() => {
     tick();
@@ -846,9 +910,6 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<!-- Annotations themselves always render (they're part of the composed
-     preview), but pointer interaction is gated to the Annotations tab so the
-     user can't accidentally drag handles while editing audio/cursor/focus. -->
 <canvas
   bind:this={canvasEl}
   onpointerdown={handlePointerDown}
@@ -856,7 +917,7 @@
   onpointerup={handlePointerUp}
   onpointercancel={handlePointerUp}
   class="absolute inset-0 h-full w-full"
-  class:pointer-events-auto={store.activePanel === "annotations"}
-  class:pointer-events-none={store.activePanel !== "annotations"}
+  class:pointer-events-auto={store.activePanel === "annotations" && !store.annotationsGloballyHidden}
+  class:pointer-events-none={store.activePanel !== "annotations" || store.annotationsGloballyHidden}
   style:cursor={canvasCursor}
 ></canvas>

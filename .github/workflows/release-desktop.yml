@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: "22"
   PNPM_VERSION: "10.23.0"
   RUST_BACKTRACE: "1"
   CARGO_TERM_COLOR: always

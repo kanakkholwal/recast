@@ -25,4 +25,6 @@ export * as Tooltip from "./tooltip";
 export * as Eyebrow from "./eyebrow";
 export * as Reveal from "./reveal";
 export * as SectionHeader from "./section-header";
+export * as ColorPicker from "./color-picker";
+export * as Popover from "./popover";
 

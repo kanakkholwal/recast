@@ -9,7 +9,8 @@ use crate::camera::CameraCaptureConfig;
 pub struct PlatformCameraSession;
 
 impl PlatformCameraSession {
-    pub fn start(_config: CameraCaptureConfig) -> Result<Self> {
+    pub fn start(config: CameraCaptureConfig) -> Result<Self> {
+        let _ = (&config.output_path, config.device_name.as_deref());
         Err(anyhow!("camera capture is not supported on this platform"))
     }
 

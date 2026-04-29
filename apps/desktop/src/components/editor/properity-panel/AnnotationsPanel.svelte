@@ -27,6 +27,9 @@
   import BezierEditor from "../_components/BezierEditor.svelte";
   import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
+  import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
+  import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
+  import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
 
   interface Props {
     store: EditorStore;
@@ -231,10 +234,26 @@
           Annotations
         </h3>
         <InspectorHint
-          content="Pick a tool, then drag on the preview. Annotations are anchored in video-space so they follow zoom and crop. Press Esc to cancel placement."
+          content="Pick a tool, then drag on the preview. Annotations are anchored in video-space so they follow zoom and crop. Press Esc to cancel placement. Hold Alt while dragging to bypass snap."
         />
       </div>
-      <Pencil size={11} class="text-muted-foreground" />
+      <div class="flex items-center gap-1.5">
+        <button
+          type="button"
+          aria-pressed={store.annotationSnapEnabled}
+          onclick={() => (store.annotationSnapEnabled = !store.annotationSnapEnabled)}
+          title="Toggle snap (Alt while dragging bypasses)"
+          class={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+            store.annotationSnapEnabled
+              ? "bg-primary/10 text-primary"
+              : "bg-muted/40 text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Snap
+        </button>
+        <Pencil size={11} class="text-muted-foreground" />
+      </div>
     </div>
     <div class="mt-2 grid grid-cols-6 gap-1">
       {#each tools as tool (tool.id)}
@@ -297,33 +316,7 @@
       </p>
     </div>
   {:else}
-    <section class="flex flex-col gap-1">
-      {#each store.annotations as annotation (annotation.id)}
-        {@const isActive = annotation.id === store.selectedAnnotationId}
-        {@const Icon = kindIcon(annotation)}
-        <button
-          type="button"
-          onclick={() => (store.selectedAnnotationId = annotation.id)}
-          class={cn(
-            "flex items-center gap-2 rounded-md border px-2 py-1.5 text-left transition-colors",
-            "focus:outline-none focus:ring-1 focus:ring-ring",
-            isActive
-              ? "border-primary bg-primary/10"
-              : "border-border bg-card hover:bg-muted/50",
-          )}
-        >
-          <Icon size={12} class="shrink-0 text-primary" />
-          <div class="flex-1 min-w-0">
-            <div class="truncate text-[11px] font-medium text-foreground">
-              {kindLabel(annotation)}
-            </div>
-            <div class="text-[10px] text-muted-foreground">
-              {fmtTime(annotation.start)}–{fmtTime(annotation.end)}
-            </div>
-          </div>
-        </button>
-      {/each}
-    </section>
+    <AnnotationLayerPanel {store} />
   {/if}
 
   <!-- Selected annotation editor -->
@@ -418,83 +411,11 @@
         >
       </div>
 
-      <!-- Stroke (rect / ellipse / arrow) -->
-      {#if a.kind.kind === "rect" || a.kind.kind === "ellipse" || a.kind.kind === "arrow"}
-        <div class="space-y-2.5 border-t border-border pt-3">
-          <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-          >
-            Stroke
-          </h3>
-          <SliderControl
-            label="Width"
-            value={a.stroke.width * 1000}
-            min={0}
-            max={20}
-            step={1}
-            unit="‰"
-            description="Per-mille of video width; 0 disables the stroke."
-            formatValue={(v) => `${v.toFixed(0)}‰`}
-            onstart={() => store.pushUndoState()}
-            onchange={(v) => setStroke({ width: v / 1000 })}
-          />
-          <div class="flex flex-wrap gap-1">
-            {#each STROKE_SWATCHES as swatch (swatch)}
-              {@const isActive = a.stroke.color === swatch}
-              <button
-                type="button"
-                aria-label="Stroke {swatch}"
-                aria-pressed={isActive}
-                onclick={() => setStroke({ color: swatch })}
-                class={cn(
-                  "size-5 rounded-full border-2 transition",
-                  isActive ? "border-ring ring-1 ring-ring" : "border-border",
-                )}
-                style:background={swatch}
-              ></button>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <!-- Appearance: stroke (with style + custom picker), fill, glow, opacity -->
+      <AnnotationAppearance {store} annotation={a} />
 
-      <!-- Fill (rect / ellipse only — arrows are stroke-only) -->
-      {#if a.kind.kind === "rect" || a.kind.kind === "ellipse"}
-        <div class="space-y-2.5 border-t border-border pt-3">
-          <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
-          >
-            Fill
-          </h3>
-          <div class="flex flex-wrap gap-1">
-            {#each FILL_SWATCHES as swatch (swatch)}
-              {@const isActive = a.fill === swatch}
-              <button
-                type="button"
-                aria-label={swatch === "transparent"
-                  ? "No fill"
-                  : `Fill ${swatch}`}
-                aria-pressed={isActive}
-                onclick={() => updateSelected({ fill: swatch })}
-                class={cn(
-                  "size-5 rounded-md border-2 transition",
-                  isActive ? "border-ring ring-1 ring-ring" : "border-border",
-                  swatch === "transparent" && "bg-background",
-                )}
-                style:background={swatch === "transparent"
-                  ? undefined
-                  : swatch}
-              >
-                {#if swatch === "transparent"}
-                  <span
-                    class="block h-full w-full rounded-sm"
-                    style="background: repeating-linear-gradient(45deg, var(--color-muted) 0 3px, transparent 3px 6px);"
-                  ></span>
-                {/if}
-              </button>
-            {/each}
-          </div>
-        </div>
-      {/if}
+      <!-- Geometry: numeric inputs + frame-relative alignment -->
+      <AnnotationGeometry {store} annotation={a} />
 
       <!-- Per-kind specific properties -->
       {#if a.kind.kind === "rect"}

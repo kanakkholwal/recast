@@ -37,6 +37,7 @@ pub struct PlatformMicrophoneSession {
 
 impl PlatformMicrophoneSession {
     pub fn start(config: MicrophoneCaptureConfig) -> Result<Self> {
+        let _ = config.device_id.as_deref();
         Ok(Self {
             config,
             started_at: Instant::now(),

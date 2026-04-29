@@ -15,6 +15,7 @@
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
+	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
 
@@ -1006,20 +1007,41 @@ void main() {
 		requestRedraw();
 		onReady();
 	}
+
+	// True when the user is actively editing annotations AND the global hide
+	// is off. The scrim/ring/canvas-tint key off this single derived so the
+	// visual model lives in one place.
+	const isAnnotationActive = $derived(
+		store.activePanel === "annotations" && !store.annotationsGloballyHidden,
+	);
 </script>
 
 <div
 	bind:this={containerEl}
 	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden"
 >
-	<div bind:this={previewRectEl} class="relative inline-block">
+	<AnnotationStatusRail {store} />
+	<div
+		bind:this={previewRectEl}
+		data-annotations-active={isAnnotationActive}
+		class="group/preview relative inline-block rounded-[inherit] outline-2 outline-offset-2 outline-transparent transition-[box-shadow,outline-color] duration-200 ease-out motion-reduce:transition-none data-[annotations-active=true]:outline-primary/30 data-[annotations-active=true]:shadow-[0_0_0_1px_color-mix(in_srgb,var(--color-primary)_25%,transparent)]"
+	>
 		<canvas
 			bind:this={canvasEl}
-			class="block max-h-full max-w-full"
+			class="block max-h-full max-w-full transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-90"
 		></canvas>
+		<!-- Annotation scrim: subtle primary-tinted darkening sits between the
+			 WebGL composite and the annotation overlay so shapes pop. Stays out
+			 of the way (opacity 0) on every other tab. -->
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-0 bg-foreground/12 mix-blend-multiply opacity-0 transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-100"
+		></div>
 		<AnnotationOverlay {store} {videoEl} targetEl={previewRectEl} />
 		<TextAnnotationLayer {store} {videoEl} targetEl={previewRectEl} />
-		<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
+		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
+			<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
+		</div>
 		{#if svgCursor.visible}
 			{@const style = CURSOR_STYLES.find((s) => s.id === svgCursor.styleId)}
 			{@const stateKey = svgCursor.pressed && style?.pressedSvg ? "press" : "rest"}

@@ -1,10 +1,10 @@
 <script lang="ts">
-  import { bezierY } from "$lib/easing/cubic-bezier";
+  import { evalOpacity, evalZoom } from "$lib/annotations/eval";
+  import { uvToCanvas, videoRectPx } from "$lib/annotations/uv";
   import type {
     Annotation,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { framePaddingPixels } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount, tick } from "svelte";
 
   // HTML layer for text annotations only. Lives as a sibling to
@@ -36,107 +36,18 @@
   // tick so the cheapest correct path is to rebuild positions per frame.
   let _frame = $state(0);
 
-  function getDpr(): number {
-    return window.devicePixelRatio || 1;
+  function videoRectCss() {
+    return videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding);
   }
 
-  function compW(): number {
-    const meta = store.metadata;
-    if (!meta) return 0;
-    const paddingPx = framePaddingPixels(store.padding, meta);
-    return meta.width + paddingPx * 2;
-  }
-
-  /** CSS-px rect (relative to layerEl) of the video region. */
-  function videoRectCss(): { x: number; y: number; w: number; h: number } {
-    const w = layerSize.w;
-    const h = layerSize.h;
-    const total = compW();
-    const meta = store.metadata;
-    const sourcePaddingPx = meta ? framePaddingPixels(store.padding, meta) : 0;
-    const padPx = total > 0 ? (sourcePaddingPx / total) * w : 0;
-    return { x: padPx, y: padPx, w: w - 2 * padPx, h: h - 2 * padPx };
-  }
-
-  /** Mirror of AnnotationOverlay.evalZoom — kept in sync deliberately. */
-  function evalZoom(t: number): { scale: number; cx: number; cy: number } {
-    for (const r of store.zoomRegions) {
-      if (t <= r.start || t >= r.end) continue;
-      const duration = Math.max(0, r.end - r.start);
-      const half = duration * 0.5;
-      const rampIn = Math.min(Math.max(0, r.rampIn), half);
-      const rampOut = Math.min(Math.max(0, r.rampOut), half);
-      const holdStart = r.start + rampIn;
-      const holdEnd = r.end - rampOut;
-      const cxTarget = r.centerX ?? 0.5;
-      const cyTarget = r.centerY ?? 0.5;
-      let phase: number;
-      let curve;
-      let atHold = false;
-      if (t < holdStart) {
-        phase = rampIn > 0 ? (t - r.start) / rampIn : 1;
-        curve = r.easeIn;
-      } else if (t > holdEnd) {
-        phase = rampOut > 0 ? (r.end - t) / rampOut : 1;
-        curve = r.easeOut;
-      } else {
-        atHold = true;
-        phase = 1;
-        curve = r.easeIn;
-      }
-      phase = Math.max(0, Math.min(1, phase));
-      const eased = atHold ? 1 : bezierY(curve, phase);
-      return {
-        scale: 1 + (r.scale - 1) * eased,
-        cx: 0.5 + (cxTarget - 0.5) * eased,
-        cy: 0.5 + (cyTarget - 0.5) * eased,
-      };
-    }
-    return { scale: 1, cx: 0.5, cy: 0.5 };
-  }
-
-  function evalOpacity(a: Annotation, t: number): number {
-    if (t <= a.start || t >= a.end) return 0;
-    const dur = Math.max(0, a.end - a.start);
-    const half = dur * 0.5;
-    const rampIn = Math.min(Math.max(0, a.rampIn), half);
-    const rampOut = Math.min(Math.max(0, a.rampOut), half);
-    const holdStart = a.start + rampIn;
-    const holdEnd = a.end - rampOut;
-    let phase: number;
-    let curve;
-    if (t < holdStart) {
-      phase = rampIn > 0 ? (t - a.start) / rampIn : 1;
-      curve = a.easeIn;
-    } else if (t > holdEnd) {
-      phase = rampOut > 0 ? (a.end - t) / rampOut : 1;
-      curve = a.easeOut;
-    } else {
-      return 1;
-    }
-    phase = Math.max(0, Math.min(1, phase));
-    return Math.max(0, Math.min(1, bezierY(curve, phase)));
-  }
-
-  function uvToCss(ux: number, uy: number, t: number): { x: number; y: number } {
-    const rect = videoRectCss();
-    const zoom = evalZoom(t);
-    const preX = (ux - zoom.cx) * zoom.scale + zoom.cx;
-    const preY = (uy - zoom.cy) * zoom.scale + zoom.cy;
-    return {
-      x: rect.x + preX * rect.w,
-      y: rect.y + preY * rect.h,
-    };
+  function uvToCss(ux: number, uy: number, t: number) {
+    return uvToCanvas(ux, uy, videoRectCss(), evalZoom(store.zoomRegions, t));
   }
 
   function playbackTime(): number {
     return videoEl?.currentTime ?? store.currentTime;
   }
 
-  // Recompute size and request a redraw on every animation frame. This is
-  // cheap because we only emit DOM updates when annotation timings, video
-  // playback, or layer dimensions actually move; Svelte's reactivity handles
-  // diffing.
   function tick_() {
     if (layerEl) {
       const r = layerEl.getBoundingClientRect();
@@ -183,12 +94,14 @@
     const cssW = Math.max(0, br.x - tl.x);
     const cssH = Math.max(0, br.y - tl.y);
     const fontSizePx = k.fontSize * layerSize.h;
+    const z = a.zIndex ?? 0;
     return [
       `left: ${tl.x}px`,
       `top: ${tl.y}px`,
       `width: ${cssW}px`,
       `min-height: ${cssH}px`,
       `opacity: ${opacity}`,
+      `z-index: ${z}`,
       `font-family: ${k.fontFamily}`,
       `font-size: ${fontSizePx}px`,
       `font-weight: ${k.fontWeight}`,
@@ -200,6 +113,7 @@
 
   function startEditing(a: Annotation) {
     if (a.kind.kind !== "text") return;
+    if (a.locked) return;
     store.pushUndoState();
     editingId = a.id;
     void tick().then(() => {
@@ -229,7 +143,7 @@
     editingId = null;
   }
 
-  function handleKeyDown(e: KeyboardEvent, a: Annotation) {
+  function handleKeyDown(e: KeyboardEvent, _a: Annotation) {
     if (e.key === "Escape") {
       e.preventDefault();
       const el = e.currentTarget as HTMLElement;
@@ -248,12 +162,14 @@
 <div
   bind:this={layerEl}
   class="pointer-events-none absolute inset-0 overflow-hidden"
+  class:hidden={store.annotationsGloballyHidden}
 >
-  {#each store.annotations as a (a.id)}
-    {#if a.kind.kind === "text"}
+  {#each store.annotationsByZ as a (a.id)}
+    {#if a.kind.kind === "text" && !a.hidden}
       {@const isEditing = editingId === a.id}
       {@const isSelected = a.id === store.selectedAnnotationId}
       {@const isActiveTab = store.activePanel === "annotations"}
+      {@const interactive = isActiveTab && !a.locked}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
         data-text-anno-id={a.id}
@@ -266,19 +182,19 @@
         contenteditable={isEditing}
         style={styleFor(a)}
         ondblclick={(e) => {
-          if (!isActiveTab) return;
+          if (!interactive) return;
           e.stopPropagation();
           startEditing(a);
         }}
         onclick={(e) => {
-          if (!isActiveTab) return;
+          if (!interactive) return;
           if (isEditing) return;
           e.stopPropagation();
           store.selectedAnnotationId = a.id;
         }}
         onblur={(e) => commitEditing(a, e.currentTarget as HTMLElement)}
         onkeydown={(e) => handleKeyDown(e, a)}
-        style:pointer-events={isActiveTab ? (isEditing ? "auto" : "auto") : "none"}
+        style:pointer-events={interactive ? "auto" : "none"}
       >{a.kind.content}</div>
     {/if}
   {/each}

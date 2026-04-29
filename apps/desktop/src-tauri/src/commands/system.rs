@@ -325,6 +325,10 @@ pub fn open_file_location(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+    }
     Ok(())
 }
 
