@@ -258,7 +258,7 @@
   }
 </script>
 
-<div class="h-full overflow-y-auto scrollbar-transparent">
+<div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
   <div class="mx-auto flex max-w-5xl flex-col gap-8 px-6 py-10">
     <!-- Hero (matches the home page rhythm) -->
     <header

@@ -1,8 +1,7 @@
 <script lang="ts">
-  import type { BackgroundType, EditorStore } from "$lib/stores/editor-store.svelte";
+  import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
     ArrowLeft,
-    ChevronDown,
     Crop,
     LayoutGrid,
     LoaderCircle,
@@ -14,10 +13,12 @@
     Upload,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
+  import { Kbd } from "@recast/ui/kbd";
   import { Separator } from "@recast/ui/separator";
   import * as Tooltip from "@recast/ui/tooltip";
+  import { cn } from "@recast/ui/utils";
   import ExportDialog from "./ExportDialog.svelte";
+  import PresetPicker, { type Preset } from "./PresetPicker.svelte";
 
   interface Props {
     store: EditorStore;
@@ -36,30 +37,23 @@
     onsave,
     isSaving = false,
   }: Props = $props();
-  let showPresetsMenu = $state(false);
+  let showPresetsPicker = $state(false);
   let exportDialogOpen = $state(false);
 
-  const presets: {
-    label: string;
-    bg: BackgroundType;
-    value?: string;
-    padding: number;
-    blur: number;
-    layout?: "auto" | "crop";
-  }[] = [
-    { label: "Studio", bg: "gradient", value: "linear-gradient(135deg, #0f172a 0%, #1d4ed8 100%)", padding: 3, blur: 18, layout: "auto" },
-    { label: "Focus", bg: "color", value: "#0b1120", padding: 2, blur: 0, layout: "auto" },
-    { label: "Spotlight", bg: "wallpaper", value: "asset:wallpaper7", padding: 5, blur: 36, layout: "auto" },
-    { label: "Edge to Edge", bg: "color", value: "#020617", padding: 0, blur: 0, layout: "crop" },
+  const layoutModes: { value: "auto" | "crop"; label: string; icon: typeof LayoutGrid }[] = [
+    { value: "auto", label: "Auto", icon: LayoutGrid },
+    { value: "crop", label: "Crop", icon: Crop },
   ];
 
-  function applyPreset(preset: (typeof presets)[0]) {
+  function applyPreset(preset: Preset) {
     store.pushUndoState();
-    store.setBackground({ type: preset.bg, value: preset.value ?? store.backgroundValue });
+    store.setBackground({
+      type: preset.bg,
+      value: preset.value ?? store.backgroundValue,
+    });
     store.padding = preset.padding;
     store.backgroundBlur = preset.blur;
     if (preset.layout) store.layoutMode = preset.layout;
-    showPresetsMenu = false;
   }
 
   function openExport() {
@@ -72,7 +66,7 @@
   class="flex h-full w-full items-center gap-1.5 px-2 text-[11px]"
   data-tauri-drag-region
 >
-  <!-- Left: back + delete + filename -->
+  <!-- Left: back + filename -->
   <div class="flex items-center gap-0.5">
     <Tooltip.Root>
       <Tooltip.Trigger>
@@ -101,82 +95,107 @@
   <Separator orientation="vertical" class="mx-1 h-3.5" />
 
   <span
-    class="truncate text-[11px] font-medium text-foreground max-w-52"
+    class="truncate text-[11px] font-semibold tracking-tight text-foreground max-w-52"
     title={filename}
     data-tauri-drag-region
   >
     {filename}
   </span>
+  {#if store.isDirty}
+    <span
+      class="size-1.5 rounded-full bg-primary"
+      aria-hidden="true"
+      title="Unsaved changes"
+    ></span>
+  {/if}
 
-  <!-- Center: layout + presets + undo/redo -->
-  <div class="mx-auto flex items-center gap-1" data-tauri-drag-region>
-    <div class="flex items-center gap-0.5 rounded-md border border-border bg-muted/40 p-0.5">
-      <Button
-        variant={store.layoutMode === "auto" ? "secondary" : "ghost"}
-        size="xs"
-        class="gap-1 text-[11px]"
-        onclick={() => (store.layoutMode = "auto")}
-      >
-        <LayoutGrid size={12} />
-        Auto
-      </Button>
-      <Button
-        variant={store.layoutMode === "crop" ? "secondary" : "ghost"}
-        size="xs"
-        class="gap-1 text-[11px]"
-        onclick={() => (store.layoutMode = "crop")}
-      >
-        <Crop size={12} />
-        Crop
-      </Button>
+  <!-- Center: layout segmented + presets + undo/redo -->
+  <div class="mx-auto flex items-center gap-1.5" data-tauri-drag-region>
+    <div
+      class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+      role="radiogroup"
+      aria-label="Layout mode"
+    >
+      {#each layoutModes as m (m.value)}
+        {@const Icon = m.icon}
+        {@const active = store.layoutMode === m.value}
+        <button
+          type="button"
+          role="radio"
+          aria-checked={active}
+          onclick={() => (store.layoutMode = m.value)}
+          class={cn(
+            "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition-all duration-150",
+            active
+              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          <Icon class="size-3" />
+          <span>{m.label}</span>
+        </button>
+      {/each}
     </div>
 
-    <DropdownMenu.Root bind:open={showPresetsMenu}>
-      <DropdownMenu.Trigger>
-        <Button variant="ghost" size="xs" class="gap-1 text-[11px] text-muted-foreground">
+    <Tooltip.Root>
+      <Tooltip.Trigger>
+        <Button
+          variant="ghost"
+          size="xs"
+          class="gap-1.5 text-[11px] text-muted-foreground"
+          onclick={() => (showPresetsPicker = true)}
+        >
           <Sparkles size={12} />
           Presets
-          <ChevronDown size={11} class="transition-transform {showPresetsMenu ? 'rotate-180' : ''}" />
+          <Kbd class="ml-1">⌘P</Kbd>
         </Button>
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Content preventScroll={false}>
-        {#each presets as preset}
-          <DropdownMenu.Item onclick={() => applyPreset(preset)}>{preset.label}</DropdownMenu.Item>
-        {/each}
-      </DropdownMenu.Content>
-    </DropdownMenu.Root>
+      </Tooltip.Trigger>
+      <Tooltip.Content>Browse social & studio presets</Tooltip.Content>
+    </Tooltip.Root>
 
     <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 
-    <Tooltip.Root>
-      <Tooltip.Trigger>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onclick={() => store.undo()}
-          disabled={!store.canUndo}
-          aria-label="Undo"
-        >
-          <Undo2 size={12} />
-        </Button>
-      </Tooltip.Trigger>
-      <Tooltip.Content>Undo (Ctrl+Z)</Tooltip.Content>
-    </Tooltip.Root>
+    <div
+      class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+    >
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          <button
+            type="button"
+            onclick={() => store.undo()}
+            disabled={!store.canUndo}
+            aria-label="Undo"
+            class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+          >
+            <Undo2 size={12} />
+          </button>
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          <span class="inline-flex items-center gap-1.5">
+            Undo <Kbd>Ctrl+Z</Kbd>
+          </span>
+        </Tooltip.Content>
+      </Tooltip.Root>
 
-    <Tooltip.Root>
-      <Tooltip.Trigger>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onclick={() => store.redo()}
-          disabled={!store.canRedo}
-          aria-label="Redo"
-        >
-          <Redo2 size={12} />
-        </Button>
-      </Tooltip.Trigger>
-      <Tooltip.Content>Redo (Ctrl+Shift+Z)</Tooltip.Content>
-    </Tooltip.Root>
+      <Tooltip.Root>
+        <Tooltip.Trigger>
+          <button
+            type="button"
+            onclick={() => store.redo()}
+            disabled={!store.canRedo}
+            aria-label="Redo"
+            class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted-foreground"
+          >
+            <Redo2 size={12} />
+          </button>
+        </Tooltip.Trigger>
+        <Tooltip.Content>
+          <span class="inline-flex items-center gap-1.5">
+            Redo <Kbd>Ctrl+Shift+Z</Kbd>
+          </span>
+        </Tooltip.Content>
+      </Tooltip.Root>
+    </div>
   </div>
 
   <!-- Right: save + export -->
@@ -186,7 +205,7 @@
         <Button
           variant={store.isDirty ? "secondary" : "ghost"}
           size="xs"
-          class="gap-1 text-[11px]"
+          class="gap-1.5 text-[11px]"
           onclick={() => onsave?.()}
           disabled={isSaving || (!store.isDirty && !isSaving)}
           aria-label="Save project"
@@ -201,7 +220,13 @@
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>
-        {store.isDirty ? "Save project (Ctrl+S)" : "No unsaved changes"}
+        {#if store.isDirty}
+          <span class="inline-flex items-center gap-1.5">
+            Save project <Kbd>Ctrl+S</Kbd>
+          </span>
+        {:else}
+          No unsaved changes
+        {/if}
       </Tooltip.Content>
     </Tooltip.Root>
 
@@ -209,7 +234,7 @@
       onclick={openExport}
       disabled={store.isExporting}
       size="xs"
-      class="gap-1 text-[11px]"
+      class="gap-1.5 text-[11px]"
     >
       {#if store.isExporting}
         <LoaderCircle size={12} class="animate-spin" />
@@ -227,4 +252,19 @@
   bind:open={exportDialogOpen}
   onOpenChange={(v) => (exportDialogOpen = v)}
   onConfirm={() => onexport?.()}
+/>
+
+<PresetPicker
+  open={showPresetsPicker}
+  onOpenChange={(v) => (showPresetsPicker = v)}
+  onapply={applyPreset}
+/>
+
+<svelte:window
+  onkeydown={(e) => {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === "p") {
+      e.preventDefault();
+      showPresetsPicker = true;
+    }
+  }}
 />

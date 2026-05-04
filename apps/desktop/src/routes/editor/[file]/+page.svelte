@@ -861,7 +861,7 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background p-2 pb-4"
+          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-2 pt-1.5 pb-1"
         >
           <div
             class="flex-1 flex min-h-0 w-full items-center justify-center relative"
@@ -890,7 +890,9 @@
       </div>
 
       <!-- Right column: properties panel -->
-      <aside class="min-h-0 w-80 shrink-0 border-l border-border xl:w-88">
+      <aside
+        class="min-h-0 w-80 shrink-0 border-l border-border/60 xl:w-88"
+      >
         <PropertiesPanel {store} />
       </aside>
     </div>

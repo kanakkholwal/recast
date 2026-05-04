@@ -47,7 +47,7 @@
 		{/if}
 	</header>
 
-	<div class={cn("flex-1 overflow-y-auto scrollbar-transparent", contentClass)}>
+	<div class={cn("flex-1 overflow-y-auto scrollbar-transparent no-scrollbar", contentClass)}>
 		{@render children()}
 	</div>
 </div>

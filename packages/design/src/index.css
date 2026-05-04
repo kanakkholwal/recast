@@ -201,7 +201,18 @@
 .scrollbar-transparent::-webkit-scrollbar-corner {
   background: hsl(var(--background))
 }
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
 
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    /* IE and Edge */
+    scrollbar-width: none;
+    /* Firefox */
+  }
 li:has([class]) {
   list-style: none;
 }
@@ -211,7 +222,10 @@ input[type="number"]:has(class) {
   appearance: textfield;
   -moz-appearance: textfield;
 }
-
+button[type="button"]:has(class) {
+  all: unset;
+  cursor: pointer;
+}
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;

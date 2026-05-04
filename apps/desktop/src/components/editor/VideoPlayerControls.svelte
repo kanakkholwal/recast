@@ -9,9 +9,9 @@
 	  SkipBack,
 	  SkipForward,
 	} from "@lucide/svelte";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
+	import { Kbd } from "@recast/ui/kbd";
 	import * as Tooltip from "@recast/ui/tooltip";
+	import { cn } from "@recast/ui/utils";
 
 	interface Props {
 		store: EditorStore;
@@ -44,8 +44,7 @@
 		return () => videoEl?.removeEventListener("timeupdate", onTime);
 	});
 
-	// Mirror the browser's fullscreen state so the toggle icon reflects reality
-	// (user pressing Esc, etc.).
+	// Mirror the browser's fullscreen state so the toggle icon reflects reality.
 	$effect(() => {
 		const handler = () => {
 			isFullscreen = !!document.fullscreenElement;
@@ -72,6 +71,10 @@
 	const currentTimeFormatted = $derived(formatTime(store.currentTime));
 	const durationFormatted = $derived(
 		formatTime(store.metadata?.duration ?? 0),
+	);
+	const duration = $derived(store.metadata?.duration ?? 0);
+	const progressPct = $derived(
+		duration > 0 ? Math.min(100, (store.currentTime / duration) * 100) : 0,
 	);
 
 	function togglePlay() {
@@ -106,97 +109,122 @@
 	}
 </script>
 
-<div
-	class="flex h-11 w-full items-center justify-between gap-3 px-2"
->
-	<div class="flex items-center gap-0.5 text-foreground">
+<div class="flex h-10 w-full items-center gap-2 px-2">
+	<!-- Transport pill: play / step -->
+	<div
+		class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+	>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
-				<Button
-					variant="ghost"
-					size="icon-sm"
+				<button
+					type="button"
+					onclick={() => stepFrame(-1)}
+					aria-label="Previous frame"
+					class="cursor-pointer flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+				>
+					<SkipBack size={12} />
+				</button>
+			</Tooltip.Trigger>
+			<Tooltip.Content>
+				<span class="inline-flex items-center gap-1.5">
+					Previous frame <Kbd>←</Kbd>
+				</span>
+			</Tooltip.Content>
+		</Tooltip.Root>
+
+		<Tooltip.Root>
+			<Tooltip.Trigger>
+				<button
+					type="button"
 					onclick={togglePlay}
 					aria-label={store.isPlaying ? "Pause" : "Play"}
-					title={store.isPlaying ? "Pause (Space)" : "Play (Space)"}
+					class="cursor-pointer flex size-7 items-center justify-center rounded-md bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40 transition-transform duration-150 hover:scale-105 active:scale-95"
 				>
 					{#if store.isPlaying}
 						<Pause size={12} fill="currentColor" />
 					{:else}
 						<Play size={12} fill="currentColor" />
 					{/if}
-				</Button>
+				</button>
 			</Tooltip.Trigger>
-			<Tooltip.Content
-				>{store.isPlaying ? "Pause" : "Play"} (Space)</Tooltip.Content
-			>
+			<Tooltip.Content>
+				<span class="inline-flex items-center gap-1.5">
+					{store.isPlaying ? "Pause" : "Play"} <Kbd>Space</Kbd>
+				</span>
+			</Tooltip.Content>
 		</Tooltip.Root>
 
 		<Tooltip.Root>
 			<Tooltip.Trigger>
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					onclick={() => stepFrame(-1)}
-					aria-label="Previous frame"
-					title="Previous frame (←)"
-				>
-					<SkipBack size={12} />
-				</Button>
-			</Tooltip.Trigger>
-			<Tooltip.Content>Previous frame (←)</Tooltip.Content>
-		</Tooltip.Root>
-
-		<Tooltip.Root>
-			<Tooltip.Trigger>
-				<Button
-					variant="ghost"
-					size="icon-sm"
+				<button
+					type="button"
 					onclick={() => stepFrame(1)}
 					aria-label="Next frame"
-					title="Next frame (→)"
+					class="cursor-pointer flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
 				>
 					<SkipForward size={12} />
-				</Button>
+				</button>
 			</Tooltip.Trigger>
-			<Tooltip.Content>Next frame (→)</Tooltip.Content>
+			<Tooltip.Content>
+				<span class="inline-flex items-center gap-1.5">
+					Next frame <Kbd>→</Kbd>
+				</span>
+			</Tooltip.Content>
 		</Tooltip.Root>
 	</div>
 
+	<!-- Time readout -->
 	<div
-		class="flex items-center gap-1.5 font-mono tabular-nums text-[11px] font-medium text-muted-foreground min-w-20 text-center"
+		class="flex items-center gap-1 font-mono tabular-nums text-[11px] font-semibold min-w-32"
 	>
 		<span class="text-foreground">{currentTimeFormatted}</span>
 		<span class="text-muted-foreground/40">/</span>
-		<span>{durationFormatted}</span>
+		<span class="text-muted-foreground">{durationFormatted}</span>
 	</div>
 
-	<!-- Scrubber -->
-	<div class="flex-1">
-		<Input
+	<!-- Scrubber: custom thin track with played overlay -->
+	<div class="relative flex h-7 flex-1 items-center">
+		<div
+			class="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted/80 ring-1 ring-inset ring-border/40"
+			aria-hidden="true"
+		></div>
+		<div
+			class="pointer-events-none absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full bg-primary"
+			style="width: {progressPct}%"
+			aria-hidden="true"
+		></div>
+		<input
 			type="range"
 			min="0"
-			max={store.metadata?.duration ?? 0}
+			max={duration}
 			step="0.01"
 			value={store.currentTime}
 			oninput={handleSeek}
-			class="h-1 w-full cursor-pointer appearance-none rounded-full bg-border focus:outline-none focus:ring-2 focus:ring-primary/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm hover:[&::-webkit-slider-thumb]:scale-110 active:[&::-webkit-slider-thumb]:scale-95 [&::-webkit-slider-thumb]:transition-transform"
+			class="relative z-10 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus:outline-none [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-(--shadow-craft-inset) [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-background [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125 active:[&::-webkit-slider-thumb]:scale-110"
 			aria-label="Video progress"
 		/>
 	</div>
 
-	<div class="flex items-center gap-0.5 text-foreground">
+	<!-- Right: loop + fullscreen -->
+	<div
+		class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+	>
 		<Tooltip.Root>
 			<Tooltip.Trigger>
-				<Button
-					variant={loopEnabled ? "default_soft" : "ghost"}
-					size="icon-sm"
+				<button
+					type="button"
 					onclick={() => (loopEnabled = !loopEnabled)}
 					aria-pressed={loopEnabled}
-					aria-label="Loop playback within trim"
-					title="Loop playback within trim"
+					aria-label="Loop within trim"
+					class={cn(
+						"flex size-6 items-center justify-center rounded-md transition-colors duration-150",
+						loopEnabled
+							? "bg-card text-primary shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
+							: "text-muted-foreground hover:bg-card hover:text-foreground",
+					)}
 				>
 					<Repeat size={12} />
-				</Button>
+				</button>
 			</Tooltip.Trigger>
 			<Tooltip.Content
 				>{loopEnabled ? "Loop on" : "Loop off"}</Tooltip.Content
@@ -205,29 +233,26 @@
 
 		<Tooltip.Root>
 			<Tooltip.Trigger>
-				<Button
-					variant="ghost"
-					size="icon-sm"
+				<button
+					type="button"
 					onclick={toggleFullscreen}
 					disabled={!fullscreenTargetEl}
 					aria-pressed={isFullscreen}
-					aria-label={isFullscreen
-						? "Exit fullscreen"
-						: "Enter fullscreen"}
-					title={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+					aria-label={isFullscreen ? "Exit fullscreen" : "Enter fullscreen"}
+					class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40"
 				>
 					{#if isFullscreen}
 						<Minimize2 size={12} />
 					{:else}
 						<Maximize2 size={12} />
 					{/if}
-				</Button>
+				</button>
 			</Tooltip.Trigger>
-			<Tooltip.Content
-				>{isFullscreen
-					? "Exit fullscreen"
-					: "Fullscreen (F)"}</Tooltip.Content
-			>
+			<Tooltip.Content>
+				<span class="inline-flex items-center gap-1.5">
+					{isFullscreen ? "Exit fullscreen" : "Fullscreen"} <Kbd>F</Kbd>
+				</span>
+			</Tooltip.Content>
 		</Tooltip.Root>
 	</div>
 </div>

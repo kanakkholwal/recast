@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { commandPalette } from "$lib/stores/command-palette.svelte";
   import {
     generateThumbnails,
     getOutputDir,
@@ -10,6 +9,7 @@
     openFileLocation,
     type RecordingEntry,
   } from "$lib/ipc";
+  import { commandPalette } from "$lib/stores/command-palette.svelte";
   import {
     AppWindow,
     ArrowRight,
@@ -255,7 +255,7 @@
   ];
 </script>
 
-<div class="h-full overflow-y-auto scrollbar-transparent">
+<div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
   <div class="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-12 md:py-16">
     <!-- Hero -->
     <header

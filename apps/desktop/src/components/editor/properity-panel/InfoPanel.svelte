@@ -188,13 +188,15 @@
 
 <div class="flex flex-col gap-3 text-xs">
   <!-- Source section -->
-  <section class="rounded-md border border-border bg-card/40">
+  <section
+    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+  >
     <header
-      class="flex items-center justify-between gap-2 border-b border-border px-2.5 py-1.5"
+      class="flex items-center justify-between gap-2 border-b border-border/60 px-2.5 py-1.5"
     >
-      <div class="flex items-center gap-1.5 text-muted-foreground">
+      <div class="flex items-center gap-1.5 text-muted-foreground/80">
         <Video size={11} />
-        <span class="text-[10px] font-semibold uppercase tracking-wider">
+        <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
           Source
         </span>
       </div>
@@ -249,12 +251,14 @@
   </section>
 
   <!-- Project / save state -->
-  <section class="rounded-md border border-border bg-card/40">
+  <section
+    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+  >
     <header
-      class="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5 text-muted-foreground"
+      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
     >
       <Save size={11} />
-      <span class="text-[10px] font-semibold uppercase tracking-wider">
+      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
         Project
       </span>
     </header>
@@ -314,12 +318,14 @@
   </section>
 
   <!-- Edit summary -->
-  <section class="rounded-md border border-border bg-card/40">
+  <section
+    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+  >
     <header
-      class="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5 text-muted-foreground"
+      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
     >
       <Pencil size={11} />
-      <span class="text-[10px] font-semibold uppercase tracking-wider">
+      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
         Edits
       </span>
     </header>
@@ -393,12 +399,14 @@
   </section>
 
   <!-- Files -->
-  <section class="rounded-md border border-border bg-card/40">
+  <section
+    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+  >
     <header
-      class="flex items-center gap-1.5 border-b border-border px-2.5 py-1.5 text-muted-foreground"
+      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
     >
       <FileText size={11} />
-      <span class="text-[10px] font-semibold uppercase tracking-wider">
+      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
         Files
       </span>
     </header>

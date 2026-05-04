@@ -6,6 +6,7 @@
   import { Button } from "@recast/ui/button";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
+  import { cn } from "@recast/ui/utils";
   import {
     HoverCard,
     HoverCardContent,
@@ -595,7 +596,7 @@
 </script>
 
 <div
-  class="shrink-0 select-none border-t border-border bg-card/30 px-3 pb-2 pt-2"
+  class="shrink-0 select-none border-t border-border/60 bg-card/30 px-2 pt-1.5 pb-2"
 >
   <div
     class="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]"
@@ -603,7 +604,11 @@
     <div class="flex items-center gap-1">
       <HoverCard>
         <HoverCardTrigger type="button">
-          <CircleQuestionMark class="size-4" />
+          <span
+            class="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
+          >
+            <CircleQuestionMark class="size-3.5" />
+          </span>
         </HoverCardTrigger>
         <HoverCardContent alignOffset={20}>
           Move the playhead to where you want the clip to begin or end, then
@@ -612,83 +617,102 @@
           highlighted region is cut from the export.
         </HoverCardContent>
       </HoverCard>
-      <Button
-        type="button"
-        size="xs"
-        variant="outline"
-        onclick={() => setTrimPoint("in")}
-        title="Cut everything before the playhead (keyboard: I)"
+
+      <!-- Trim segmented pill -->
+      <div
+        class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
       >
-        <span class="hidden sm:inline">Start here</span>
-        <span class="sm:hidden">Start</span>
-      </Button>
-      <Button
-        type="button"
-        size="xs"
-        variant="outline"
-        onclick={() => setTrimPoint("out")}
-        title="Cut everything after the playhead (keyboard: O)"
-      >
-        <span class="hidden sm:inline">End here</span>
-        <span class="sm:hidden">End</span>
-      </Button>
-      <Button
-        type="button"
-        size="xs"
-        variant="outline"
-        onclick={addFocusRegion}
-      >
-        <Search size={12} />
-        Focus
-      </Button>
-      <div class="relative">
-        <Button
+        <button
           type="button"
-          size="xs"
-          variant="outline"
-          aria-pressed={showSuggestions}
-          onclick={toggleSuggestions}
-          disabled={!store.cursorPath}
-          title={store.cursorPath ? "Suggest focus regions from captured cursor activity" : "No cursor data in this clip"}
+          onclick={() => setTrimPoint("in")}
+          title="Cut everything before the playhead (I)"
+          class="flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
         >
-          <Wand2 size={12} />
-          Suggest
-        </Button>
-        {#if showSuggestions}
-          <div class="absolute left-0 bottom-full z-40 mt-1.5">
-            <ZoomSuggestionsPopover {store} onclose={() => (showSuggestions = false)} />
-          </div>
-        {/if}
-      </div>
-      {#if hasTrim}
-        <Button
+          <span class="hidden sm:inline">Start here</span>
+          <span class="sm:hidden">Start</span>
+          <Kbd class="ml-0.5">I</Kbd>
+        </button>
+        <button
           type="button"
-          size="xs"
-          variant="outline"
+          onclick={() => setTrimPoint("out")}
+          title="Cut everything after the playhead (O)"
+          class="flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+        >
+          <span class="hidden sm:inline">End here</span>
+          <span class="sm:hidden">End</span>
+          <Kbd class="ml-0.5">O</Kbd>
+        </button>
+      </div>
+
+      <!-- Focus / Suggest pill -->
+      <div
+        class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+      >
+        <button
+          type="button"
+          onclick={addFocusRegion}
+          class="flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+        >
+          <Search class="size-3" />
+          Focus
+        </button>
+        <div class="relative">
+          <button
+            type="button"
+            aria-pressed={showSuggestions}
+            onclick={toggleSuggestions}
+            disabled={!store.cursorPath}
+            title={store.cursorPath
+              ? "Suggest focus regions from captured cursor activity"
+              : "No cursor data in this clip"}
+            class={cn(
+              "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold transition-colors duration-150 disabled:opacity-40",
+              showSuggestions
+                ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
+                : "text-muted-foreground hover:bg-card hover:text-foreground",
+            )}
+          >
+            <Wand2 class="size-3" />
+            Suggest
+          </button>
+          {#if showSuggestions}
+            <div class="absolute left-0 bottom-full z-40 mt-1.5">
+              <ZoomSuggestionsPopover
+                {store}
+                onclose={() => (showSuggestions = false)}
+              />
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      {#if hasTrim}
+        <button
+          type="button"
           onclick={resetTrim}
           title="Restore the full recording — undo all cuts"
+          class="flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
         >
-          <Scissors size={12} />
+          <Scissors class="size-3" />
           Use full clip
-        </Button>
+        </button>
       {/if}
     </div>
 
-    <div class="flex items-center gap-2 text-muted-foreground">
+    <div class="flex items-center gap-1.5 text-muted-foreground">
       <!-- Speed menu -->
       <DropdownMenu.Root>
         <DropdownMenu.Trigger>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1 font-mono tabular-nums text-muted-foreground hover:text-foreground"
+          <button
+            type="button"
             aria-label="Playback speed"
+            class="flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 font-mono text-[11px] font-semibold tabular-nums text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
           >
-            <Gauge size={12} />
+            <Gauge class="size-3" />
             {playbackSpeed.toFixed(2).replace(/\.?0+$/, "")}×
-          </Button>
+          </button>
         </DropdownMenu.Trigger>
-        <DropdownMenu.Content align="end">
+        <DropdownMenu.Content size="sm" align="end" class="w-24">
           {#each SPEEDS as speed (speed)}
             <DropdownMenu.Item
               onclick={() => (playbackSpeed = speed)}
@@ -700,56 +724,65 @@
         </DropdownMenu.Content>
       </DropdownMenu.Root>
 
-      <div class="mx-1 h-4 w-px bg-border"></div>
-
-      <div class="flex items-center gap-0.5">
-        <Button
-          variant="ghost"
-          size="icon-sm"
+      <!-- Zoom segmented pill -->
+      <div
+        class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+      >
+        <button
+          type="button"
           onclick={() => zoomTimeline(-1)}
           aria-label="Zoom out timeline"
-          class="text-muted-foreground hover:text-foreground"
+          class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
         >
-          <ZoomOut size={12} />
-        </Button>
-
-        <span class="min-w-8 text-center font-mono tabular-nums text-[10px] font-medium text-foreground">
-          {store.timelineZoom.toFixed(1)}x
+          <ZoomOut class="size-3" />
+        </button>
+        <span
+          class="min-w-9 text-center font-mono text-[10px] font-semibold tabular-nums text-foreground"
+        >
+          {store.timelineZoom.toFixed(1)}×
         </span>
-
-        <Button
-          variant="ghost"
-          size="icon-sm"
+        <button
+          type="button"
           onclick={() => zoomTimeline(1)}
           aria-label="Zoom in timeline"
-          class="text-muted-foreground hover:text-foreground"
+          class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
         >
-          <ZoomIn size={12} />
-        </Button>
+          <ZoomIn class="size-3" />
+        </button>
       </div>
 
-      <div class="mx-1 h-4 w-px bg-border"></div>
+      <!-- Stat chips -->
+      <div class="flex items-center gap-1">
+        <span
+          class="inline-flex h-6 items-center rounded-md border border-border/40 bg-muted/40 px-2 font-mono text-[10px] font-semibold tabular-nums text-foreground"
+        >
+          {aspectRatioLabel}
+        </span>
+        <span
+          class="inline-flex h-6 items-center rounded-md border border-border/40 bg-muted/40 px-2 font-mono text-[10px] font-semibold tabular-nums text-foreground"
+        >
+          {frameCount}f
+        </span>
+        {#if hasTrim}
+          <span
+            class="inline-flex h-6 items-center rounded-md border border-primary/30 bg-primary/10 px-2 font-mono text-[10px] font-semibold tabular-nums text-primary"
+          >
+            {formatTimecode(store.clipDuration)}
+          </span>
+        {/if}
+      </div>
 
-      <Badge variant="secondary" class="font-mono text-[10px]">
-        {aspectRatioLabel}
-      </Badge>
-      <Badge variant="secondary" class="font-mono text-[10px]">
-        {frameCount} frames
-      </Badge>
-      {#if hasTrim}
-        <Badge variant="secondary" class="font-mono text-[10px]">
-          Clip {formatTimecode(store.clipDuration)}
-        </Badge>
-      {/if}
-
-      <span class="inline-flex items-center gap-1 ml-1">
-        <Kbd>Scroll</Kbd>
-        <span>pan</span>
-      </span>
-      <span class="inline-flex items-center gap-1">
-        <Kbd>⌘ Scroll</Kbd>
-        <span>zoom</span>
-      </span>
+      <!-- Kbd hints -->
+      <div class="hidden items-center gap-1.5 pl-1 text-[10px] md:flex">
+        <span class="inline-flex items-center gap-1">
+          <Kbd>Scroll</Kbd>
+          <span>pan</span>
+        </span>
+        <span class="inline-flex items-center gap-1">
+          <Kbd>⌘ Scroll</Kbd>
+          <span>zoom</span>
+        </span>
+      </div>
     </div>
   </div>
 
@@ -761,7 +794,7 @@
     aria-valuemin={0}
     aria-valuemax={duration}
     aria-valuenow={store.currentTime}
-    class="custom-scrollbar relative overflow-x-auto overflow-y-hidden rounded-lg border border-border bg-background/60"
+    class="custom-scrollbar relative overflow-x-auto overflow-y-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
     onpointerdown={handleTimelinePointerDown}
     onpointermove={handleTimelinePointerMove}
     onpointerup={handleTimelinePointerUp}
@@ -773,7 +806,7 @@
       class="relative min-w-full"
       style="width: {totalWidth}px; height: 156px;"
     >
-      <div class="relative h-7 border-b border-border bg-muted/20">
+      <div class="relative h-7 border-b border-border/60 bg-muted/20">
         {#each minorTicks as tick}
           <div
             class="absolute bottom-0 w-px bg-border/50"
@@ -801,7 +834,7 @@
 
       <div class="relative px-2 pb-2 pt-1.5">
         <div
-          class="relative h-12 rounded-md border border-border bg-background"
+          class="relative h-12 rounded-md border border-border/60 bg-background"
         >
           <div
             class="absolute inset-y-0 rounded-md border border-primary/40 bg-primary/5"
@@ -901,7 +934,7 @@
         </div>
 
         <div
-          class="mt-1.5 min-h-9 rounded-md border border-border bg-background/40 px-1.5 py-1.5"
+          class="mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
         >
           {#if store.zoomRegions.length === 0}
             <div
