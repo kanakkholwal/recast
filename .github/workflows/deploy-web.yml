@@ -23,7 +23,9 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    
+    environment: 
+      name: production
+      url: https://recast.nexonauts.com
     # Set default working directory for all steps
     defaults:
       run:
