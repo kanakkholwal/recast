@@ -30,9 +30,9 @@
 				default_soft:
 					"bg-primary/8 text-primary border-primary/10 hover:bg-primary/12 dark:bg-primary/10 dark:hover:bg-primary/20",
 				secondary:
-					"bg-card text-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
+					"border-secondary bg-secondary text-secondary-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
 				outline:
-					"border-border/50 bg-background/40 shadow-craft-sm hover:bg-accent/10 hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
+					"border-accent bg-accent shadow-craft-sm hover:bg-accent/10 hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
 				ghost:
 					"border-transparent hover:bg-muted/40 hover:text-accent-foreground dark:hover:bg-accent/50",
 				link: "text-primary underline-offset-4 hover:underline hover:scale-100",

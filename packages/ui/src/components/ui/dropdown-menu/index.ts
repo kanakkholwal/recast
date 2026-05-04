@@ -16,6 +16,12 @@ import SubTrigger from "./dropdown-menu-sub-trigger.svelte";
 import GroupHeading from "./dropdown-menu-group-heading.svelte";
 import Portal from "./dropdown-menu-portal.svelte";
 
+export type { DropdownMenuSize } from "./context";
+export {
+	dropdownMenuContentSizeVariants,
+	dropdownMenuItemSizeVariants,
+} from "./context";
+
 export {
 	CheckboxGroup,
 	CheckboxItem,

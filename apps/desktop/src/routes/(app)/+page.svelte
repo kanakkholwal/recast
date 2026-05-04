@@ -1,6 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import { RecastList, type RecastListItem } from "$components/recast";
+  import { commandPalette } from "$lib/stores/command-palette.svelte";
   import {
     generateThumbnails,
     getOutputDir,
@@ -11,38 +11,49 @@
     type RecordingEntry,
   } from "$lib/ipc";
   import {
+    AppWindow,
+    ArrowRight,
     Camera,
-    CopyIcon,
+    Crop,
     Download,
     Film,
     FolderOpen,
     Mic,
     Monitor,
     Radio,
-    Settings as SettingsIcon,
-    SlidersHorizontal,
-
-    VideotapeIcon
+    Search,
+    Sparkles,
   } from "@lucide/svelte";
+  import { Button } from "@recast/ui/button";
+  import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
+  import { cn } from "@recast/ui/utils";
   import { listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fade, fly } from "svelte/transition";
 
   let recasts = $state<RecordingEntry[]>([]);
   let exports_ = $state<RecordingEntry[]>([]);
   let isLoading = $state(true);
   let thumbnails = $state<Record<string, string>>({});
   let editorWindow = $state<"navigate" | "new-window">("navigate");
+  let now = $state(Date.now());
   let thumbnailPass = 0;
 
   onMount(() => {
     fetchAll();
-    const stored = localStorage.getItem("recast-editor-window") as "navigate" | "new-window" | null;
+    const stored = localStorage.getItem("recast-editor-window") as
+      | "navigate"
+      | "new-window"
+      | null;
     if (stored) editorWindow = stored;
     const unlisten = listen("refresh-recordings", () => fetchAll());
+    const tick = window.setInterval(() => (now = Date.now()), 60_000);
     return () => {
       unlisten.then((fn) => fn());
+      window.clearInterval(tick);
     };
   });
 
@@ -50,9 +61,9 @@
     isLoading = true;
     try {
       const [r, e] = await Promise.all([listRecasts(), listExports()]);
-      recasts = r.sort((a, b) => b.created - a.created).slice(0, 5);
-      exports_ = e.sort((a, b) => b.created - a.created).slice(0, 5);
-      loadThumbnails([...recasts, ...exports_]);
+      recasts = r.sort((a, b) => b.created - a.created).slice(0, 6);
+      exports_ = e.sort((a, b) => b.created - a.created).slice(0, 6);
+      void loadThumbnails([...recasts, ...exports_]);
     } catch (err) {
       toast.error(`Could not load activity: ${err}`);
     } finally {
@@ -76,6 +87,15 @@
     thumbnails = next;
   }
 
+  const greeting = $derived.by(() => {
+    const h = new Date(now).getHours();
+    if (h < 5) return "Working late";
+    if (h < 12) return "Good morning";
+    if (h < 17) return "Good afternoon";
+    if (h < 21) return "Good evening";
+    return "Good night";
+  });
+
   function formatSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -83,8 +103,7 @@
   }
 
   function formatDate(unix: number) {
-    const now = Date.now() / 1000;
-    const diff = now - unix;
+    const diff = now / 1000 - unix;
     if (diff < 60) return "just now";
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -102,7 +121,9 @@
   async function openInEditor(entry: RecordingEntry) {
     const route = `/editor/${encodeEditorPath(entry.path)}`;
     if (editorWindow === "new-window") {
-      const label = `editor-${encodeEditorPath(entry.path).replace(/[^a-zA-Z0-9]/g, "").slice(0, 48)}`;
+      const label = `editor-${encodeEditorPath(entry.path)
+        .replace(/[^a-zA-Z0-9]/g, "")
+        .slice(0, 48)}`;
       const existing = await WebviewWindow.getByLabel(label);
       if (existing) {
         await existing.setFocus();
@@ -121,15 +142,6 @@
     }
   }
 
-  async function copyPath(entry: RecordingEntry) {
-    try {
-      await navigator.clipboard.writeText(entry.path);
-      toast.success("Path copied");
-    } catch (err) {
-      toast.error(`Copy failed: ${err}`);
-    }
-  }
-
   async function showOutputFolder() {
     try {
       const dir = await getOutputDir();
@@ -139,7 +151,6 @@
     }
   }
 
-  /** Open (or focus) the device-picker window for mic/camera. Mirrors the panel's logic. */
   async function openDevicePickerWindow(type: "mic" | "camera") {
     const label = `device-picker-${type}`;
     const existing = await WebviewWindow.getByLabel(label);
@@ -154,11 +165,12 @@
       height: 340,
       center: true,
       decorations: false,
+      transparent: true,
+      shadow: false,
       resizable: false,
     });
   }
 
-  /** Open (or focus) the floating camera-preview window (always-on-top, transparent). */
   async function openCameraPreviewWindow() {
     const existing = await WebviewWindow.getByLabel("camera-preview");
     if (existing) {
@@ -179,249 +191,354 @@
     });
   }
 
-  const items = $derived<RecastListItem[]>([
-    // Quick actions
+  // Recording modes — each launches the panel; the panel honors the last
+  // chosen source. The mode hint is purely visual prompting today.
+  const modes = [
     {
-      id: "action-launch",
-      title: "Launch Recording Panel",
-      subtitle: "Start a new screen recording",
-      icon: Radio,
-      iconClass: "text-primary",
-      keywords: ["record", "start", "capture", "panel"],
-      section: "Quick Actions",
-      layout: "row",
-      onSelect: () => launchRecordingPanel(),
-      actions: [
-        {
-          id: "launch",
-          label: "Launch Panel",
-          icon: Radio,
-          shortcut: "⌘⇧R",
-          onAction: () => launchRecordingPanel(),
-        },
-      ],
-    },
-    {
-      id: "action-pick-camera",
-      title: "Pick Camera",
-      subtitle: "Choose a webcam device",
+      id: "screen",
+      label: "Full Screen",
+      hint: "Capture an entire display",
       icon: Monitor,
-      keywords: ["camera", "webcam", "device", "source", "picker", "video"],
-      section: "Quick Actions",
-      layout: "row",
-      onSelect: () => openDevicePickerWindow("camera"),
-      actions: [
-        {
-          id: "pick-camera",
-          label: "Open Camera Picker",
-          icon: Camera,
-          onAction: () => openDevicePickerWindow("camera"),
-        },
-        {
-          id: "pick-mic",
-          label: "Open Microphone Picker",
-          icon: Mic,
-          onAction: () => openDevicePickerWindow("mic"),
-        },
-      ],
     },
     {
-      id: "action-pick-microphone",
-      title: "Pick Microphone",
-      subtitle: "Choose an audio input device",
-      icon: Mic,
-      keywords: ["microphone", "mic", "audio", "device", "input", "picker"],
-      section: "Quick Actions",
-      layout: "row",
-      onSelect: () => openDevicePickerWindow("mic"),
-      actions: [
-        {
-          id: "pick-mic",
-          label: "Open Microphone Picker",
-          icon: Mic,
-          onAction: () => openDevicePickerWindow("mic"),
-        },
-        {
-          id: "pick-camera",
-          label: "Open Camera Picker",
-          icon: Camera,
-          onAction: () => openDevicePickerWindow("camera"),
-        },
-      ],
+      id: "window",
+      label: "Window",
+      hint: "Capture a single app window",
+      icon: AppWindow,
     },
     {
-      id: "action-camera-preview",
-      title: "Camera Preview",
-      subtitle: "Test your webcam feed in a floating window",
+      id: "region",
+      label: "Region",
+      hint: "Drag to select an area",
+      icon: Crop,
+    },
+    {
+      id: "camera",
+      label: "Camera",
+      hint: "Webcam-only capture",
       icon: Camera,
-      keywords: ["camera", "webcam", "preview", "test", "floating"],
-      section: "Quick Actions",
-      layout: "row",
-      onSelect: () => openCameraPreviewWindow(),
-      actions: [
-        {
-          id: "preview",
-          label: "Open Camera Preview",
-          icon: Camera,
-          onAction: () => openCameraPreviewWindow(),
-        },
-      ],
     },
+  ] as const;
 
-    // Navigation
+  // Quick actions surfaced as chips below the modes.
+  type QuickAction = {
+    id: string;
+    label: string;
+    icon: typeof Mic;
+    onClick: () => void;
+  };
+  const quickActions: QuickAction[] = [
     {
-      id: "nav-recasts",
-      title: "All Recordings",
-      subtitle: `${recasts.length > 0 ? `${recasts.length}+ recent` : "Browse your recordings"}`,
-      icon: Film,
-      keywords: ["recordings", "recasts", "library", "all"],
-      section: "Browse",
-      layout: "row",
-      onSelect: () => goto("/recasts"),
-      actions: [
-        { id: "open", label: "Go to Recordings", icon: Film, onAction: () => goto("/recasts") },
-      ],
+      id: "preview",
+      label: "Camera preview",
+      icon: Camera,
+      onClick: () => openCameraPreviewWindow(),
     },
     {
-      id: "nav-exports",
-      title: "All Exports",
-      subtitle: "Browse exported videos ready to share",
-      icon: Download,
-      keywords: ["exports", "rendered", "share"],
-      section: "Browse",
-      layout: "row",
-      onSelect: () => goto("/exports"),
-      actions: [
-        { id: "open", label: "Go to Exports", icon: Download, onAction: () => goto("/exports") },
-      ],
+      id: "mic",
+      label: "Pick microphone",
+      icon: Mic,
+      onClick: () => openDevicePickerWindow("mic"),
     },
     {
-      id: "nav-profiles",
-      title: "Recording Profiles",
-      subtitle: "Manage your recording presets",
-      icon: SlidersHorizontal,
-      keywords: ["profiles", "presets", "config"],
-      section: "Browse",
-      layout: "row",
-      onSelect: () => goto("/profiles"),
-      actions: [
-        {
-          id: "open",
-          label: "Go to Profiles",
-          icon: SlidersHorizontal,
-          onAction: () => goto("/profiles"),
-        },
-      ],
+      id: "cam",
+      label: "Pick camera",
+      icon: Camera,
+      onClick: () => openDevicePickerWindow("camera"),
     },
     {
-      id: "nav-settings",
-      title: "Settings",
-      subtitle: "Configure Recast preferences",
-      icon: SettingsIcon,
-      keywords: ["settings", "preferences", "config"],
-      section: "Browse",
-      layout: "row",
-      onSelect: () => goto("/settings"),
-      actions: [
-        {
-          id: "open",
-          label: "Go to Settings",
-          icon: SettingsIcon,
-          onAction: () => goto("/settings"),
-        },
-      ],
-    },
-    {
-      id: "action-show-folder",
-      title: "Show Output Folder",
-      subtitle: "Reveal the recordings directory in Explorer",
+      id: "folder",
+      label: "Show folder",
       icon: FolderOpen,
-      keywords: ["folder", "directory", "reveal", "explorer", "finder"],
-      section: "Browse",
-      layout: "row",
-      onSelect: () => showOutputFolder(),
-      actions: [
-        {
-          id: "show",
-          label: "Show in Folder",
-          icon: FolderOpen,
-          onAction: () => showOutputFolder(),
-        },
-      ],
+      onClick: () => showOutputFolder(),
     },
-
-    // Recent recordings
-    ...recasts.map<RecastListItem>((entry) => ({
-      id: `recast-${entry.path}`,
-      title: entry.filename,
-      subtitle: `${formatSize(entry.sizeBytes)} · ${formatDate(entry.created)}`,
-      icon: Film,
-      iconImage: thumbnails[entry.path],
-      keywords: [entry.filename, "recording", "recent"],
-      accessories: [{ text: ".recast", variant: "info" }],
-      section: "Recent Recordings",
-      onSelect: () => openInEditor(entry),
-      actions: [
-        { id: "open", label: "Open in Editor", icon: VideotapeIcon, onAction: () => openInEditor(entry) },
-        {
-          id: "show",
-          label: "Show in Folder",
-          icon: FolderOpen,
-          shortcut: "⌘O",
-          onAction: () => openFileLocation(entry.path),
-        },
-        {
-          id: "copy",
-          label: "Copy Path",
-          shortcut: "⌘⇧C",
-          icon: CopyIcon,
-          onAction: () => copyPath(entry),
-        },
-      ],
-    })),
-
-    // Recent exports
-    ...exports_.map<RecastListItem>((entry) => ({
-      id: `export-${entry.path}`,
-      title: entry.filename,
-      subtitle: `${formatSize(entry.sizeBytes)} · ${formatDate(entry.created)}`,
-      icon: Download,
-      iconImage: thumbnails[entry.path],
-      keywords: [entry.filename, "export", "recent"],
-      accessories: [
-        {
-          text: entry.filename.split(".").pop()?.toUpperCase() ?? "FILE",
-          variant: "default",
-        },
-      ],
-      section: "Recent Exports",
-      onSelect: () => openFileLocation(entry.path),
-      actions: [
-        {
-          id: "show",
-          label: "Show in Folder",
-          icon: FolderOpen,
-          shortcut: "⌘O",
-          onAction: () => openFileLocation(entry.path),
-        },
-        {
-          id: "copy",
-          label: "Copy Path",
-          shortcut: "⌘⇧C",
-          icon: CopyIcon,
-          onAction: () => copyPath(entry),
-        },
-      ],
-    })),
-  ]);
+  ];
 </script>
 
-<RecastList
-  {items}
-  {isLoading}
-  title="Home"
-  subtitle="Type to search across actions, recordings and exports"
-  searchPlaceholder="What do you want to do?"
-  emptyTitle="No matches"
-  emptyHint="Try a different term — or press ⌘ + K to see everything."
-/>
+<div class="h-full overflow-y-auto scrollbar-transparent">
+  <div class="mx-auto flex max-w-3xl flex-col gap-10 px-6 py-12 md:py-16">
+    <!-- Hero -->
+    <header
+      in:fly={{ y: 12, duration: 360, easing: cubicOut }}
+      class="flex flex-col items-center gap-3 text-center"
+    >
+      <span
+        class="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
+      >
+        <Sparkles class="size-3 text-primary" />
+        Recast
+      </span>
+      <h1
+        class="text-balance text-[34px] font-semibold leading-tight tracking-tight text-foreground md:text-[40px]"
+      >
+        {greeting}.
+        <span class="bg-gradient-to-r from-foreground to-foreground/55 bg-clip-text text-transparent">
+          What do you want to capture?
+        </span>
+      </h1>
+      <p class="max-w-md text-[13px] leading-relaxed text-muted-foreground">
+        Pick a mode below or jump into the panel. Press
+        <Kbd class="mx-0.5 align-middle">
+          <span class="text-[8px] font-semibold">⌘</span>
+          <span class="text-[11px]">K</span>
+        </Kbd>
+        anywhere to search every action.
+      </p>
+    </header>
+
+    <!-- Search bar (opens command palette) -->
+    <button
+      type="button"
+      onclick={() => commandPalette.show()}
+      in:fly={{ y: 12, duration: 360, delay: 60, easing: cubicOut }}
+      class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 text-left shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <Search
+        class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground"
+      />
+      <span class="flex-1 text-[13px] font-medium text-muted-foreground/80">
+        Search actions, recordings, exports…
+      </span>
+      <Kbd>
+        <span class="text-[8px] font-semibold">⌘</span>
+        <span class="text-[11px]">K</span>
+      </Kbd>
+    </button>
+
+    <!-- Recording modes -->
+    <section
+      in:fly={{ y: 12, duration: 360, delay: 120, easing: cubicOut }}
+      class="flex flex-col gap-3"
+    >
+      <div class="flex items-baseline justify-between px-1">
+        <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+          Start a recording
+        </h2>
+        <Button
+          variant="ghost"
+          size="xs"
+          class="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+          onclick={launchRecordingPanel}
+        >
+          Open panel
+          <Kbd class="hidden sm:inline-flex">⌘⇧R</Kbd>
+        </Button>
+      </div>
+      <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {#each modes as mode, i (mode.id)}
+          {@const Icon = mode.icon}
+          <button
+            type="button"
+            onclick={launchRecordingPanel}
+            in:fly={{
+              y: 8,
+              duration: 320,
+              delay: 160 + i * 40,
+              easing: cubicOut,
+            }}
+            class={cn(
+              "group/mode relative flex aspect-[5/4] flex-col items-start justify-between overflow-hidden rounded-xl border border-border/60 bg-card/70 p-3 text-left shadow-(--shadow-craft-inset) backdrop-blur",
+              "transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm",
+              "focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50",
+            )}
+          >
+            <span
+              class="flex size-8 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-colors group-hover/mode:bg-primary/10 group-hover/mode:text-primary"
+            >
+              <Icon class="size-4" />
+            </span>
+            <div class="flex w-full items-end justify-between gap-2">
+              <div class="min-w-0">
+                <div class="truncate text-[12.5px] font-semibold text-foreground">
+                  {mode.label}
+                </div>
+                <div class="truncate text-[10.5px] text-muted-foreground/80">
+                  {mode.hint}
+                </div>
+              </div>
+              <ArrowRight
+                class="size-3.5 shrink-0 text-muted-foreground/50 transition-all duration-200 group-hover/mode:translate-x-0.5 group-hover/mode:text-foreground"
+              />
+            </div>
+          </button>
+        {/each}
+      </div>
+    </section>
+
+    <!-- Primary CTA + quick action chips -->
+    <section
+      in:fly={{ y: 12, duration: 360, delay: 200, easing: cubicOut }}
+      class="flex flex-col gap-3"
+    >
+      <Button
+        onclick={launchRecordingPanel}
+        size="lg"
+        class="group/cta h-12 w-full gap-2 rounded-xl text-[13px] font-semibold"
+      >
+        <Radio class="size-4 transition-transform duration-200 group-hover/cta:rotate-12" />
+        Launch recording panel
+        <Kbd class="ml-1 bg-primary-foreground/15 text-primary-foreground/90">
+          ⌘⇧R
+        </Kbd>
+      </Button>
+      <div class="flex flex-wrap gap-2">
+        {#each quickActions as qa (qa.id)}
+          {@const Icon = qa.icon}
+          <button
+            type="button"
+            onclick={qa.onClick}
+            class="inline-flex h-8 items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-3 text-[11.5px] font-medium text-muted-foreground transition-all duration-200 hover:-translate-y-px hover:border-border hover:bg-card hover:text-foreground hover:shadow-craft-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          >
+            <Icon class="size-3.5" />
+            {qa.label}
+          </button>
+        {/each}
+      </div>
+    </section>
+
+    <!-- Recent strips -->
+    {#if recasts.length > 0 || isLoading}
+      <section class="flex flex-col gap-3">
+        <div class="flex items-baseline justify-between px-1">
+          <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+            Recent recordings
+          </h2>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            onclick={() => goto("/recasts")}
+          >
+            See all
+            <ArrowRight class="size-3" />
+          </Button>
+        </div>
+        <div
+          class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-transparent"
+        >
+          {#if isLoading && recasts.length === 0}
+            {#each Array.from({ length: 4 }) as _, i (i)}
+              <div
+                class="aspect-video w-44 shrink-0 animate-pulse rounded-lg bg-muted/60"
+                style="animation-delay: {i * 100}ms"
+              ></div>
+            {/each}
+          {:else}
+            {#each recasts as entry, i (entry.path)}
+              <button
+                type="button"
+                onclick={() => openInEditor(entry)}
+                in:fade={{ duration: 220, delay: i * 40 }}
+                class="group/card flex w-44 shrink-0 flex-col gap-1.5 rounded-lg p-1 text-left transition-all duration-200 hover:bg-card/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+              >
+                <div
+                  class="relative aspect-video overflow-hidden rounded-md border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset) transition-transform duration-200 group-hover/card:-translate-y-0.5 group-hover/card:shadow-craft-sm"
+                >
+                  {#if thumbnails[entry.path]}
+                    <img
+                      src={thumbnails[entry.path]}
+                      alt=""
+                      class="h-full w-full object-cover"
+                    />
+                  {:else}
+                    <div class="grid h-full w-full place-items-center text-muted-foreground/50">
+                      <Film class="size-5" />
+                    </div>
+                  {/if}
+                </div>
+                <div class="px-1">
+                  <div class="truncate text-[11.5px] font-medium text-foreground">
+                    {entry.filename}
+                  </div>
+                  <div class="truncate text-[10px] text-muted-foreground/70">
+                    {formatSize(entry.sizeBytes)} · {formatDate(entry.created)}
+                  </div>
+                </div>
+              </button>
+            {/each}
+          {/if}
+        </div>
+      </section>
+    {/if}
+
+    {#if exports_.length > 0}
+      <section class="flex flex-col gap-3">
+        <div class="flex items-baseline justify-between px-1">
+          <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
+            Recent exports
+          </h2>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            onclick={() => goto("/exports")}
+          >
+            See all
+            <ArrowRight class="size-3" />
+          </Button>
+        </div>
+        <div
+          class="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 scrollbar-transparent"
+        >
+          {#each exports_ as entry, i (entry.path)}
+            <button
+              type="button"
+              onclick={() => openFileLocation(entry.path)}
+              in:fade={{ duration: 220, delay: i * 40 }}
+              class="group/card flex w-44 shrink-0 flex-col gap-1.5 rounded-lg p-1 text-left transition-all duration-200 hover:bg-card/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+            >
+              <div
+                class="relative aspect-video overflow-hidden rounded-md border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset) transition-transform duration-200 group-hover/card:-translate-y-0.5 group-hover/card:shadow-craft-sm"
+              >
+                {#if thumbnails[entry.path]}
+                  <img
+                    src={thumbnails[entry.path]}
+                    alt=""
+                    class="h-full w-full object-cover"
+                  />
+                {:else}
+                  <div class="grid h-full w-full place-items-center text-muted-foreground/50">
+                    <Download class="size-5" />
+                  </div>
+                {/if}
+                <span
+                  class="absolute right-1 top-1 rounded-sm bg-background/85 px-1 py-px text-[8.5px] font-bold uppercase tracking-wider text-foreground/80 backdrop-blur"
+                >
+                  {entry.filename.split(".").pop() ?? ""}
+                </span>
+              </div>
+              <div class="px-1">
+                <div class="truncate text-[11.5px] font-medium text-foreground">
+                  {entry.filename}
+                </div>
+                <div class="truncate text-[10px] text-muted-foreground/70">
+                  {formatSize(entry.sizeBytes)} · {formatDate(entry.created)}
+                </div>
+              </div>
+            </button>
+          {/each}
+        </div>
+      </section>
+    {/if}
+
+    {#if !isLoading && recasts.length === 0 && exports_.length === 0}
+      <div
+        class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-8 text-center"
+      >
+        <div
+          class="flex size-10 items-center justify-center rounded-xl bg-foreground/5 text-foreground"
+        >
+          <Film class="size-5" />
+        </div>
+        <div>
+          <p class="text-[13px] font-semibold text-foreground">
+            No recordings yet
+          </p>
+          <p class="mt-1 text-[11px] text-muted-foreground">
+            Launch the panel above to capture your first clip.
+          </p>
+        </div>
+      </div>
+    {/if}
+  </div>
+</div>

@@ -83,18 +83,7 @@
           </span>
         {/if}
       </a>
-      {#if open}
-        <div
-          in:fade={{ duration: 180, delay: 100, easing: cubicOut }}
-          out:fade={{ duration: 140, easing: cubicOut }}
-          class="absolute right-1 top-1/2 -translate-y-1/2"
-        >
-          <Sidebar.Trigger
-            class="size-7 rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-            title="Pin / unpin sidebar (⌘B)"
-          />
-        </div>
-      {/if}
+
     </Sidebar.MenuItem>
 
     <Sidebar.MenuItem>
