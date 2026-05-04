@@ -111,7 +111,7 @@
 </script>
 
 <section class="flex flex-col gap-2 border-t border-border pt-3">
-  <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+  <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
     Geometry
   </h3>
 

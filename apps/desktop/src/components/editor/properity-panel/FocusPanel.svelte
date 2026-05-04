@@ -158,7 +158,7 @@
   <section class="flex flex-col gap-2">
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
           Focus regions
         </h3>
         <InspectorHint
@@ -172,7 +172,7 @@
     </div>
 
     <!-- Smart Auto-Zoom controls -->
-    <div class="flex flex-col gap-1.5 rounded-md border border-border bg-card/40 p-2">
+    <div class="flex flex-col gap-1.5 rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur p-2">
       <label class="flex items-center gap-2 text-[11px] text-foreground">
         <input
           type="checkbox"
@@ -268,7 +268,7 @@
     {@const maxRamp = regionMaxRamp(region)}
     <section class="flex flex-col gap-3 border-t border-border pt-3">
       <header class="flex items-center justify-between gap-2">
-        <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+        <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
           Region settings
         </h3>
         <Button
@@ -298,7 +298,7 @@
         <div class="flex items-center justify-between gap-2 pt-1">
           <div class="flex items-center gap-1.5">
             <Crosshair size={11} class="text-muted-foreground" />
-            <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
               Focus point
             </span>
             <InspectorHint

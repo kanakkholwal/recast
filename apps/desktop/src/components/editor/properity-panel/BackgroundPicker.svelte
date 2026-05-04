@@ -169,7 +169,7 @@
   <section>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
-        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
         Canvas
       </h3>
@@ -178,7 +178,7 @@
       />
     </header>
     <div
-      class="flex items-center gap-0.5 rounded-md bg-muted/60 ring-1 ring-inset ring-border/40 p-0.5"
+      class="flex items-center gap-0.5 rounded-lg bg-muted/60 ring-1 ring-inset ring-border/40 p-0.5"
     >
       {#each backgroundModes as mode}
         {@const Icon = mode.icon}
@@ -207,7 +207,7 @@
     <section>
       <header class="mb-2 flex items-center justify-between gap-2">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Wallpapers
         </h3>
@@ -247,7 +247,7 @@
     <section>
       <header class="mb-2 flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Color Fill
         </h3>
@@ -303,7 +303,7 @@
     <section>
       <header class="mb-2 flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Gradients
         </h3>
@@ -344,7 +344,7 @@
       <header class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Image Background
           </h3>
@@ -393,7 +393,7 @@
   <section>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
-        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
         Finishing
       </h3>
@@ -461,7 +461,7 @@
     <header class="mb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Drop shadow
         </h3>

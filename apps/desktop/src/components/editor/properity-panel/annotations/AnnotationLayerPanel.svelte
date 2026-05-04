@@ -118,7 +118,7 @@
 
 <section class="flex flex-col gap-1">
   <header class="flex items-center justify-between">
-    <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
       Layers
     </h3>
     <span class="text-[10px] tabular-nums text-muted-foreground/70">

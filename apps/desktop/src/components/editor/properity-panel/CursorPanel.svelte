@@ -57,7 +57,7 @@
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Cursor
         </h3>
@@ -92,7 +92,7 @@
     <section>
       <header class="mb-2 flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Style
         </h3>
@@ -140,7 +140,7 @@
     <section>
       <header class="mb-2 flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Pointer
         </h3>
@@ -184,7 +184,7 @@
       <header class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Mouse smoothing
           </h3>
@@ -267,7 +267,7 @@
         </SliderControl>
 
         <div
-          class="flex items-center justify-between gap-2 rounded-md border border-border bg-card/40 px-2 py-1.5"
+          class="flex items-center justify-between gap-2 rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur px-2 py-1.5"
         >
           <div class="flex items-center gap-1.5">
             <Target size={11} class="text-muted-foreground" />
@@ -320,7 +320,7 @@
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Motion easing
           </h3>
@@ -357,7 +357,7 @@
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Click Highlight
           </h3>
@@ -429,7 +429,7 @@
       <div class="mb-2 flex items-center justify-between gap-2">
         <div class="flex items-center gap-1.5">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Idle Behavior
           </h3>

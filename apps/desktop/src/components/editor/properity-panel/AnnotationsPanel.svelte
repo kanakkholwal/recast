@@ -230,7 +230,7 @@
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Annotations
         </h3>
@@ -323,7 +323,7 @@
     <section class="flex flex-col gap-3 border-t border-border pt-3">
       <header class="flex items-center justify-between gap-2">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           {kindLabel(a)}
         </h3>
@@ -458,7 +458,7 @@
       {#if a.kind.kind === "text"}
         <div class="space-y-2.5 border-t border-border pt-3">
           <h3
-            class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
           >
             Text
           </h3>
@@ -627,7 +627,7 @@
     </section>
   {:else}
     <section
-      class="rounded-md border border-border bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground"
+      class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur px-3 py-3 text-center text-[10px] text-muted-foreground"
     >
       Select an annotation to edit its timing, curves, and appearance.
     </section>
@@ -638,7 +638,7 @@
     class="rounded-md border border-dashed border-border bg-card/30 px-3 py-2.5"
   >
     <p
-      class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+      class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
     >
       Coming next
     </p>

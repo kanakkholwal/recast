@@ -108,7 +108,7 @@
 
 <section class="flex flex-col gap-3 border-t border-border pt-3">
   <header class="flex items-center justify-between gap-2">
-    <h3 class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+    <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
       Appearance
     </h3>
     <InspectorHint
@@ -207,7 +207,7 @@
   {#if hasFill}
     <!-- Fill -->
     <div class="space-y-2">
-      <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <p class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
         Fill
       </p>
       <div class="flex flex-wrap items-center gap-1">
@@ -280,7 +280,7 @@
   <!-- Glow disclosure -->
   <div class="space-y-2 rounded-md border border-border bg-card/30 p-2">
     <div class="flex items-center justify-between gap-2">
-      <span class="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+      <span class="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
         <Sparkles size={10} />
         Glow
       </span>

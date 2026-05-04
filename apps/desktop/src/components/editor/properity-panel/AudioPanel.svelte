@@ -173,7 +173,7 @@
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Audio
         </h3>
@@ -289,7 +289,7 @@
   <section>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
-        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
         Tracks
       </h3>
@@ -346,7 +346,7 @@
   <section>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
-        class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
         Mix
       </h3>
@@ -377,7 +377,7 @@
     <header class="mb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
-          class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
         >
           Fades
         </h3>
