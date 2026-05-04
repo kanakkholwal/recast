@@ -210,7 +210,7 @@
 	<div class="relative h-full" data-recast-list>
 		<TopProgress active={isLoading} />
 
-		<div class="sticky top-0 z-10 bg-background/90 backdrop-blur-md">
+		<div class="sticky top-0 z-5 bg-background/90 backdrop-blur-md">
 			<div class="mx-8 my-4">
 				<div class="relative">
 					<Search

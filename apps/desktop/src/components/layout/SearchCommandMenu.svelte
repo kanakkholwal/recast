@@ -164,18 +164,14 @@
   variant="raw"
   size="sm"
   class={cn(
-    "border border-border group relative h-8 bg-card",
+    "border border-border/50 group relative h-8 bg-input/60",
     iconOnly ? "w-8" : "min-w-8 w-full max-w-xs",
   )}
 >
   <Search class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />
   {#if !iconOnly}
-    <span
-      class="flex-1 text-left text-xs font-medium group-data-[state=collapsed]:hidden!"
-    >
-      Search...
-    </span>
-    <Kbd class="group-data-[state=collapsed]:hidden! hidden sm:inline-flex">
+    <span class="flex-1 text-left text-xs font-medium">Search…</span>
+    <Kbd class="hidden sm:inline-flex">
       <span class="text-[8px] font-semibold">⌘</span>
       <span class="text-[11px]">K</span>
     </Kbd>
