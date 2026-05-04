@@ -1,17 +1,24 @@
+
 export * as Badge from "./badge";
 export * as Button from "./button";
 export * as ButtonGroup from "./button-group";
 export * as Card from "./card";
 export * as Checkbox from "./checkbox";
+export * as ColorPicker from "./color-picker";
 export * as Command from "./command";
 export * as Dialog from "./dialog";
 export * as Drawer from "./drawer";
 export * as DropdownMenu from "./dropdown-menu";
+export * as Eyebrow from "./eyebrow";
 export * as HoverCard from "./hover-card";
 export * as Input from "./input";
 export * as InputGroup from "./input-group";
+export * as Kbd from "./kbd";
 export * as Label from "./label";
+export * as Popover from "./popover";
 export * as RadioGroup from "./radio-group";
+export * as Reveal from "./reveal";
+export * as SectionHeader from "./section-header";
 export * as Select from "./select";
 export * as Separator from "./separator";
 export * as Sheet from "./sheet";
@@ -22,9 +29,4 @@ export * as Spinner from "./spinner";
 export * as Tabs from "./tabs";
 export * as Textarea from "./textarea";
 export * as Tooltip from "./tooltip";
-export * as Eyebrow from "./eyebrow";
-export * as Reveal from "./reveal";
-export * as SectionHeader from "./section-header";
-export * as ColorPicker from "./color-picker";
-export * as Popover from "./popover";
 

@@ -1,10 +1,10 @@
 <script lang="ts">
+  import { enumerateCameras } from "$lib/camera/browser-devices";
   import {
     getAudioDevices,
     type AudioDeviceInfo,
     type CameraDeviceInfo,
   } from "$lib/ipc";
-  import { enumerateCameras } from "$lib/camera/browser-devices";
   import {
     Camera,
     CameraOff,
@@ -114,7 +114,7 @@
 
 <div
   class={cn(
-    "group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-background/80 backdrop-blur-3xl",
+    "group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-card backdrop-blur-3xl",
     isLoading && "cursor-wait",
   )}
   aria-busy={isLoading}
@@ -138,7 +138,7 @@
     </div>
     <Button
       onclick={closeWindow}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       size="icon-sm"
       variant="ghost"
       class="opacity-0 group-hover/root:opacity-100 transition-opacity"
@@ -255,12 +255,12 @@
 
   <!-- Footer -->
   <footer
-    class="flex items-center justify-between border-t border-border-subtle bg-background/50 px-3 h-11 shrink-0"
+    class="flex items-center justify-between border-t border-border-subtle bg-card/50 px-3 h-11 shrink-0"
   >
     <Button
       onclick={fetchDevices}
       disabled={isLoading}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="ghost"
       size="xs"
       class="gap-1.5"
@@ -271,7 +271,7 @@
     <Button
       onclick={turnOff}
       disabled={isLoading}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="destructive_soft"
       size="xs"
       class="gap-1.5"

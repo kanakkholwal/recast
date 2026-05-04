@@ -5,6 +5,7 @@
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
+  import { Kbd } from "@recast/ui/kbd";
   import {
     HoverCard,
     HoverCardContent,
@@ -742,17 +743,11 @@
       {/if}
 
       <span class="inline-flex items-center gap-1 ml-1">
-        <kbd
-          class="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]"
-          >Scroll</kbd
-        >
+        <Kbd>Scroll</Kbd>
         <span>pan</span>
       </span>
       <span class="inline-flex items-center gap-1">
-        <kbd
-          class="rounded border border-border bg-background px-1 py-0.5 font-mono text-[10px]"
-          >⌘ Scroll</kbd
-        >
+        <Kbd>⌘ Scroll</Kbd>
         <span>zoom</span>
       </span>
     </div>

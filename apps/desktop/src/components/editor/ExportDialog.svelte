@@ -3,6 +3,7 @@
   import { Check, Upload } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
+  import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
 
   interface Props {
@@ -203,7 +204,7 @@
         class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
       >
         <span class="hidden items-center gap-1 sm:flex">
-          <kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">⌘↵</kbd>
+          <Kbd>⌘↵</Kbd>
           <span>Start export</span>
         </span>
         <div class="flex items-center gap-1.5">

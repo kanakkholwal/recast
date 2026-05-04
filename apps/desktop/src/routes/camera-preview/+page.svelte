@@ -281,7 +281,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root relative h-screen w-full min-w-dvw select-none overflow-hidden bg-transparent scroll-m-0 scrollbar-none"
+  class="group/root relative h-screen w-full min-w-dvw select-none overflow-hidden bg-card scroll-m-0 scrollbar-none"
   data-tauri-drag-region
   style="border-radius: {WINDOW_RADIUS}px"
 >

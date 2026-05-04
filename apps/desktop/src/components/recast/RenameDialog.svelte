@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
+	import { Kbd } from "@recast/ui/kbd";
 
 	interface Props {
 		open: boolean;
@@ -128,11 +129,11 @@
 		>
 			<div class="flex items-center gap-3">
 				<span class="flex items-center gap-1">
-					<kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">↵</kbd>
+					<Kbd>↵</Kbd>
 					<span>Save</span>
 				</span>
 				<span class="flex items-center gap-1">
-					<kbd class="rounded border border-border bg-background px-1.5 py-0.5 font-mono">esc</kbd>
+					<Kbd>Esc</Kbd>
 					<span>Cancel</span>
 				</span>
 			</div>

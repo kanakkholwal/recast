@@ -14,6 +14,7 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
+  import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
@@ -403,11 +404,7 @@
           <Button variant="ghost" size="xs" onclick={cancelEditing}>Cancel</Button>
           <Button variant="default" size="xs" class="gap-2" onclick={finishEditing}>
             Save
-            <kbd
-              class="rounded border border-primary-foreground/20 bg-primary-foreground/10 px-1 py-0.5 font-mono text-[9px] font-semibold"
-            >
-              ⌘↵
-            </kbd>
+            <Kbd class="bg-primary-foreground/10 text-primary-foreground/80">⌘↵</Kbd>
           </Button>
         </div>
       </footer>

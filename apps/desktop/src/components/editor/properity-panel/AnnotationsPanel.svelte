@@ -22,6 +22,7 @@
     Type as TypeIcon,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
+  import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
@@ -295,10 +296,7 @@
     {#if toolHint}
       <p class="mt-1.5 text-[10px] text-muted-foreground">
         {toolHint}
-        <kbd
-          class="ml-1 rounded border border-border bg-background px-1 font-mono text-[9px]"
-          >Esc</kbd
-        >
+        <Kbd class="ml-1">Esc</Kbd>
         to cancel.
       </p>
     {/if}

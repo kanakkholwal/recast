@@ -44,6 +44,10 @@
       "svelte": "./src/components/ui/dropdown-menu/index.ts",
       "default": "./src/components/ui/dropdown-menu/index.ts"
     },
+    "./kbd": {
+      "svelte": "./src/components/ui/kbd/index.ts",
+      "default": "./src/components/ui/kbd/index.ts"
+    },
     "./input": {
       "svelte": "./src/components/ui/input/index.ts",
       "default": "./src/components/ui/input/index.ts"

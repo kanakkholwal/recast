@@ -13,8 +13,8 @@
   import * as Tabs from "@recast/ui/tabs";
   import { cn } from "@recast/ui/utils";
   import { emit, listen } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
 
   type TargetSource = {
@@ -200,7 +200,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-background/80 backdrop-blur-3xl"
+  class="group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-card/80 backdrop-blur-3xl"
 >
   <!-- Header -->
   <header
@@ -218,7 +218,7 @@
       variant="ghost"
       size="icon-sm"
       onclick={closeWindow}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       class="opacity-0 group-hover/root:opacity-100 transition-opacity"
       title="Close (Esc)"
     >
@@ -455,12 +455,12 @@
 
   <!-- Footer -->
   <footer
-    class="flex items-center justify-between border-t border-border-subtle bg-background/50 px-3 h-11 shrink-0"
+    class="flex items-center justify-between border-t border-border-subtle bg-card/50 px-3 h-11 shrink-0"
   >
     <Button
       onclick={fetchSources}
       disabled={isFetching}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="ghost"
       size="xs"
       class="gap-1.5"
@@ -472,7 +472,7 @@
     <div class="flex items-center gap-1.5">
       <Button
         onclick={closeWindow}
-        onmousedown={(e) => e.stopPropagation()}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant="ghost"
         size="xs"
       >
@@ -481,7 +481,7 @@
       <Button
         onclick={confirmSelection}
         disabled={!selectedSource}
-        onmousedown={(e) => e.stopPropagation()}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant="default"
         size="xs"
       >

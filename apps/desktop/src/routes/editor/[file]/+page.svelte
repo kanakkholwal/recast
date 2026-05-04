@@ -30,6 +30,7 @@
   import { applyAutoZooms } from "$lib/zoom/auto-apply";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
+  import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy, tick } from "svelte";
@@ -1113,10 +1114,7 @@
             class="mt-3 flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
-              <kbd
-                class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
-                >esc</kbd
-              >
+              <Kbd>Esc</Kbd>
               <span>Cancel</span>
             </span>
             <Button
@@ -1163,10 +1161,7 @@
             class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
-              <kbd
-                class="rounded border border-border bg-background px-1.5 py-0.5 font-mono"
-                >esc</kbd
-              >
+              <Kbd>Esc</Kbd>
               <span>Dismiss</span>
             </span>
             <div class="flex items-center gap-1.5">

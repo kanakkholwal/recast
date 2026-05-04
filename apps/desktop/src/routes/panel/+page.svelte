@@ -388,14 +388,14 @@
 </script>
 
 <div
-  class="group/panel relative mx-auto flex h-dvh overflow-hidden no-scrollbar w-full items-center gap-1 bg-background p-2 backdrop-blur-3xl border border-border-subtle rounded-lg shadow-craft-floating"
+  class="group/panel relative mx-auto flex h-dvh overflow-hidden no-scrollbar w-full items-center gap-1 bg-card p-2 backdrop-blur-3xl border border-border-subtle rounded-lg"
   data-tauri-drag-region
 >
   <ButtonGroup>
     <!-- Record / Stop -->
     <Button
       onclick={toggleRecording}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       size={isRecording ? "sm" : "icon-sm"}
       variant={isRecording ? "destructive" : "default"}
       title={isRecording ? "Stop Recording" : "Start Recording"}
@@ -428,7 +428,7 @@
     size="sm"
     disabled={isRecording}
     onclick={openSourceSelector}
-    onmousedown={(e) => e.stopPropagation()}
+    onmousedown={(e: MouseEvent) => e.stopPropagation()}
     variant="ghost"
     class="group/source hover:scale-none"
   >
@@ -474,7 +474,7 @@
         variant={systemAudioOn ? "default_soft" : "outline"}
         disabled={isRecording}
         onclick={() => (systemAudioOn = !systemAudioOn)}
-        onmousedown={(e) => e.stopPropagation()}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
         title={systemAudioOn ? "System audio: on" : "System audio: off"}
       >
         {#if systemAudioOn}
@@ -490,7 +490,7 @@
         size="icon-sm"
         disabled={isRecording}
         onclick={toggleMic}
-        onmousedown={(e) => e.stopPropagation()}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
         title={micOn ? `Mic: ${selectedMicName}` : "Microphone: off"}
       >
         {#if micOn}
@@ -504,7 +504,7 @@
       <Button
         disabled={isRecording}
         onclick={toggleCamera}
-        onmousedown={(e) => e.stopPropagation()}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant={cameraOn
           ? cameraValidation?.status === "error"
             ? "destructive_soft"
@@ -525,7 +525,7 @@
     <!-- Close -->
     <Button
       onclick={closePanel}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       title="Close"
       size="icon-sm"
       variant="ghost"

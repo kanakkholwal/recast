@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as Command from "@recast/ui/command";
 	import * as Dialog from "@recast/ui/dialog";
+	import { Kbd } from "@recast/ui/kbd";
 	import { cn } from "@recast/ui/utils";
 	import type { RecastAction } from "./types";
 
@@ -21,7 +22,7 @@
 
 <Dialog.Root
 	bind:open
-	onOpenChange={(v) => {
+	onOpenChange={(v: boolean) => {
 		open = v;
 		onOpenChange(v);
 	}}
@@ -35,7 +36,7 @@
 			<Dialog.Description>Run an action on the selected item</Dialog.Description>
 		</Dialog.Header>
 		
-    <Command.Root class="rounded-[28px] bg-background/80 backdrop-blur-3xl ring-1 ring-inset ring-border/60 shadow-(--shadow-craft-inset-strong) overflow-hidden font-sans select-none">
+    <Command.Root class="rounded-[28px] bg-card backdrop-blur-3xl ring-1 ring-inset ring-border/60 shadow-(--shadow-craft-inset-strong) overflow-hidden font-sans select-none">
 			<Command.Input placeholder="Search actions..." class="h-11 border-none bg-transparent text-[13px] font-medium px-5" />
 			<Command.List class="max-h-80 px-2 py-2 scrollbar-transparent">
 				<Command.Empty class="py-12 text-center text-[12px] font-medium text-foreground/40">No actions available</Command.Empty>
@@ -67,15 +68,15 @@
               <div class="flex items-center gap-1.5">
                 {#if i === 0}
                   <Command.Shortcut class="invisible-ui opacity-0 group-data-[selected=true]/action:opacity-100 transition-all duration-300">
-                    <kbd class="rounded-md border border-border-subtle bg-background px-1.5 py-0.5 font-mono text-[9px] font-bold text-foreground/40 shadow-craft-sm">↵</kbd>
+                    <Kbd>↵</Kbd>
                   </Command.Shortcut>
                 {:else if i === 1}
                   <Command.Shortcut class="invisible-ui opacity-0 group-data-[selected=true]/action:opacity-100 transition-all duration-300">
-                    <kbd class="rounded-md border border-border-subtle bg-background px-1.5 py-0.5 font-mono text-[9px] font-bold text-foreground/40 shadow-craft-sm">⌘↵</kbd>
+                    <Kbd>⌘↵</Kbd>
                   </Command.Shortcut>
                 {:else if action.shortcut}
                   <Command.Shortcut class="invisible-ui opacity-0 group-data-[selected=true]/action:opacity-100 transition-all duration-300">
-                    <kbd class="rounded-md border border-border-subtle bg-background px-1.5 py-0.5 font-mono text-[9px] font-bold text-foreground/40 shadow-craft-sm">{action.shortcut}</kbd>
+                    <Kbd>{action.shortcut}</Kbd>
                   </Command.Shortcut>
                 {/if}
               </div>
@@ -90,11 +91,11 @@
 				<span>Available Actions</span>
 				<div class="flex items-center gap-4">
 					<span class="flex items-center gap-1.5">
-						<kbd class="opacity-50 text-[10px]">↵</kbd>
+						<Kbd>↵</Kbd>
 						<span>Run</span>
 					</span>
 					<span class="flex items-center gap-1.5">
-						<kbd class="opacity-50 text-[10px]">esc</kbd>
+						<Kbd>Esc</Kbd>
 						<span>Close</span>
 					</span>
 				</div>
