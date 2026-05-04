@@ -49,6 +49,9 @@
     if (max <= min) return 0;
     return ((value - min) / (max - min)) * 100;
   });
+  const clampedPercentage = $derived(
+    Math.min(100, Math.max(0, percentage)),
+  );
 
   function defaultFormatValue(nextValue: number, nextUnit: string) {
     const formatted =
@@ -173,72 +176,61 @@
   }
 </script>
 
-<div class={cn("group/slider flex flex-col gap-1.5", disabled && "opacity-50")}>
-  <!-- Label row: icon · label · (description) · value -->
-  <div class="flex items-center gap-1.5">
-    {#if icon}
-      <div class="shrink-0 text-muted-foreground">
-        {@render icon()}
-      </div>
-    {/if}
-    <div>
-      <h6 class="truncate text-xs font-medium text-foreground">{label}</h6>
-      {#if description}
-        <p class="truncate text-[10px] text-muted-foreground/70">{description}</p>
-      {/if}
-    </div>
-    <div
-      class="ml-auto shrink-0 font-mono text-xs tabular-nums text-muted-foreground group-hover/slider:text-foreground"
-    >
-      {formattedValue}
-    </div>
-  </div>
-
-  <!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+  bind:this={trackEl}
+  class={cn(
+    "group/slider relative flex h-10 w-full select-none items-center overflow-hidden rounded-sm border border-border/40 bg-card/55 px-1.5 shadow-(--shadow-craft-inset) outline-none transition-colors duration-150",
+    "focus-visible:ring-2 focus-visible:ring-primary/30",
+    disabled
+      ? "cursor-not-allowed opacity-50"
+      : "cursor-ew-resize hover:border-border/60 hover:bg-card/70",
+  )}
+  onpointerdown={handlePointerDown}
+  onpointermove={handlePointerMove}
+  onpointerup={finishPointerInteraction}
+  onpointercancel={finishPointerInteraction}
+  onlostpointercapture={() => finishPointerInteraction()}
+  onkeydown={handleKeydown}
+  role="slider"
+  tabindex={disabled ? -1 : 0}
+  aria-disabled={disabled}
+  aria-valuenow={value}
+  aria-valuemin={min}
+  aria-valuemax={max}
+  aria-valuetext={formattedValue}
+  aria-label={label}
+  title={description}
+>
   <div
-    bind:this={trackEl}
+    class="pointer-events-none absolute inset-y-0.75 left-0.75 rounded-sm bg-foreground/[0.07] shadow-[0_4px_10px_rgba(0,0,0,0.18)]"
+    style:width={clampedPercentage > 0
+      ? `max(calc(${clampedPercentage}% - 6px), 2.1rem)`
+      : "0px"}
+  ></div>
+
+  <div
     class={cn(
-      "group/track relative flex h-4 w-full items-center outline-none",
-      disabled ? "cursor-not-allowed" : "cursor-pointer",
+      "pointer-events-none absolute inset-y-[18%] z-10 w-0.5 rounded-full bg-primary/95 shadow-[0_0_10px_var(--primary)]/30 transition-transform duration-150",
+      "group-hover/slider:scale-y-105",
+      isDragging && "scale-y-110",
     )}
-    onpointerdown={handlePointerDown}
-    onpointermove={handlePointerMove}
-    onpointerup={finishPointerInteraction}
-    onpointercancel={finishPointerInteraction}
-    onlostpointercapture={() => finishPointerInteraction()}
-    onkeydown={handleKeydown}
-    role="slider"
-    tabindex={disabled ? -1 : 0}
-    aria-disabled={disabled}
-    aria-valuenow={value}
-    aria-valuemin={min}
-    aria-valuemax={max}
-    aria-valuetext={formattedValue}
-    aria-label={label}
-  >
-    <!-- Background track (thin, muted) -->
-    <div class="h-0.75 w-full rounded-full bg-muted"></div>
+    style:left={`calc(${clampedPercentage}% - 8px)`}
+  ></div>
 
-    <!-- Filled portion -->
-    <div
-      class="pointer-events-none absolute inset-y-0 left-0 flex items-center transition-[width] duration-75"
-      style="width: {Math.min(100, Math.max(0, percentage))}%"
-    >
-      <div class="h-0.75 w-full rounded-full bg-primary"></div>
-    </div>
-
-    <!-- Thumb -->
-    <div
-      class="pointer-events-none absolute top-1/2 -translate-y-1/2 transition-[left] duration-75"
-      style="left: calc({Math.min(100, Math.max(0, percentage))}% - 6px)"
-    >
-      <div
-        class={cn(
-          "size-3 rounded-full border border-primary bg-background shadow-sm transition-transform duration-150",
-          "group-hover/track:scale-110 group-focus-visible/track:ring-2 group-focus-visible/track:ring-primary/30",
-          isDragging && "scale-110 ring-2 ring-primary/30",
-        )}
-      ></div>
-    </div>
+  <div class="pointer-events-none relative z-10 flex min-w-0 flex-1 items-center gap-1.5 pl-2.5">
+    {#if icon}
+      <span class="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+        {@render icon()}
+      </span>
+    {/if}
+    <span class="truncate text-[12px] font-medium text-muted-foreground">
+      {label}
+    </span>
   </div>
+
+  <span
+    class="pointer-events-none relative z-10 shrink-0 pr-2.5 font-mono text-[12px] font-medium tabular-nums text-primary"
+  >
+    {formattedValue}
+  </span>
 </div>

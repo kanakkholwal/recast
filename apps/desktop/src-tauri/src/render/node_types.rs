@@ -121,6 +121,193 @@ fn default_watermark_inset() -> f64 {
     24.0
 }
 
+fn default_camera_shape() -> String {
+    "rounded".into()
+}
+
+fn default_camera_animation_preset() -> String {
+    "soft".into()
+}
+
+fn default_camera_motion_source() -> String {
+    "manual".into()
+}
+
+fn default_camera_mirror() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraPlacement {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+impl Default for CameraPlacement {
+    fn default() -> Self {
+        Self {
+            x: 0.72,
+            y: 0.08,
+            width: 0.22,
+            height: 0.22,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraMotionSegment {
+    pub start: f64,
+    pub end: f64,
+    pub from_x: f64,
+    pub from_y: f64,
+    pub from_width: f64,
+    pub from_height: f64,
+    pub to_x: f64,
+    pub to_y: f64,
+    pub to_width: f64,
+    pub to_height: f64,
+    #[serde(default)]
+    pub ease_in: Easing,
+    #[serde(default)]
+    pub ease_out: Easing,
+    #[serde(default = "default_camera_motion_source")]
+    pub source: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraOverlaySettings {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_camera_mirror")]
+    pub mirror: bool,
+    #[serde(default = "default_camera_shape")]
+    pub shape: String,
+    #[serde(default = "default_camera_corner_radius")]
+    pub corner_radius: f64,
+    #[serde(default = "default_camera_animation_preset")]
+    pub animation_preset: String,
+    #[serde(default)]
+    pub default_placement: CameraPlacement,
+    #[serde(default)]
+    pub motion_segments: Vec<CameraMotionSegment>,
+}
+
+fn default_camera_corner_radius() -> f64 {
+    0.16
+}
+
+impl Default for CameraOverlaySettings {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mirror: default_camera_mirror(),
+            shape: default_camera_shape(),
+            corner_radius: default_camera_corner_radius(),
+            animation_preset: default_camera_animation_preset(),
+            default_placement: CameraPlacement::default(),
+            motion_segments: Vec::new(),
+        }
+    }
+}
+
+impl CameraOverlaySettings {
+    #[allow(dead_code)]
+    pub fn placement_at(&self, t: f64) -> CameraPlacement {
+        let mut current = self.default_placement.clone();
+        for segment in &self.motion_segments {
+            if t <= segment.start {
+                break;
+            }
+            if t >= segment.end {
+                current = CameraPlacement {
+                    x: segment.to_x,
+                    y: segment.to_y,
+                    width: segment.to_width,
+                    height: segment.to_height,
+                };
+                continue;
+            }
+
+            let duration = (segment.end - segment.start).max(1e-6);
+            let phase = ((t - segment.start) / duration).clamp(0.0, 1.0);
+            let eased = segment.ease_in.y(phase as f32) as f64;
+            return CameraPlacement {
+                x: segment.from_x + (segment.to_x - segment.from_x) * eased,
+                y: segment.from_y + (segment.to_y - segment.from_y) * eased,
+                width: segment.from_width + (segment.to_width - segment.from_width) * eased,
+                height: segment.from_height + (segment.to_height - segment.from_height) * eased,
+            };
+        }
+        current
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
+
+    #[test]
+    fn camera_overlay_uses_default_placement_before_motion() {
+        let overlay = CameraOverlaySettings::default();
+        assert_eq!(overlay.placement_at(0.0), CameraPlacement::default());
+    }
+
+    #[test]
+    fn camera_overlay_interpolates_inside_motion_segment() {
+        let mut overlay = CameraOverlaySettings::default();
+        overlay.motion_segments.push(CameraMotionSegment {
+            start: 0.0,
+            end: 2.0,
+            from_x: 0.1,
+            from_y: 0.2,
+            from_width: 0.2,
+            from_height: 0.2,
+            to_x: 0.5,
+            to_y: 0.6,
+            to_width: 0.3,
+            to_height: 0.3,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            source: "live-recorded".into(),
+        });
+
+        let at_mid = overlay.placement_at(1.0);
+        assert!(at_mid.x > 0.1 && at_mid.x < 0.5);
+        assert!(at_mid.y > 0.2 && at_mid.y < 0.6);
+        assert!(at_mid.width > 0.2 && at_mid.width < 0.3);
+    }
+
+    #[test]
+    fn camera_overlay_uses_last_segment_after_motion() {
+        let mut overlay = CameraOverlaySettings::default();
+        overlay.motion_segments.push(CameraMotionSegment {
+            start: 0.0,
+            end: 1.0,
+            from_x: 0.1,
+            from_y: 0.2,
+            from_width: 0.2,
+            from_height: 0.2,
+            to_x: 0.4,
+            to_y: 0.5,
+            to_width: 0.25,
+            to_height: 0.25,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            source: "manual".into(),
+        });
+
+        let after = overlay.placement_at(3.0);
+        assert_eq!(after.x, 0.4);
+        assert_eq!(after.y, 0.5);
+        assert_eq!(after.width, 0.25);
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TrimNode {

@@ -118,6 +118,31 @@ export interface AudioDeviceInfo {
 export interface CameraDeviceInfo {
 	id: string;
 	name: string;
+	status?: "ready" | "warning" | "error" | "unknown";
+	statusMessage?: string | null;
+}
+
+export interface CameraValidationResult {
+	id: string;
+	name: string;
+	status: "ready" | "warning" | "error" | "unknown";
+	statusMessage?: string | null;
+	probedAtUnixMs: number;
+}
+
+export interface CameraPreviewState {
+	mirror: boolean;
+	shape: "square" | "rectangle" | "rounded" | "circle";
+	cornerRadius: number;
+	animationPreset: "none" | "soft" | "lively";
+	windowX: number;
+	windowY: number;
+	windowWidth: number;
+	windowHeight: number;
+}
+
+export interface RecordingStartResult {
+	warnings: string[];
 }
 
 export interface RegionRect {
@@ -132,8 +157,8 @@ export function startRecording(
 	targetId: number,
 	options?: RecordingOptions,
 	region?: RegionRect | null,
-): Promise<void> {
-	return invoke("start_recording", {
+): Promise<RecordingStartResult> {
+	return invoke<RecordingStartResult>("start_recording", {
 		targetType,
 		targetId,
 		region: region ?? null,
@@ -165,6 +190,14 @@ export function getAudioDevices(): Promise<AudioDeviceInfo[]> {
 
 export function getCameraDevices(): Promise<CameraDeviceInfo[]> {
 	return invoke<CameraDeviceInfo[]>("get_camera_devices");
+}
+
+export function validateCameraSource(deviceId: string): Promise<CameraValidationResult> {
+	return invoke<CameraValidationResult>("validate_camera_source", { deviceId });
+}
+
+export function updateCameraPreviewState(state: CameraPreviewState): Promise<void> {
+	return invoke("update_camera_preview_state", { state });
 }
 
 export function stopRecording(): Promise<string> {

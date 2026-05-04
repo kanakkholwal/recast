@@ -5,10 +5,10 @@ use tauri::State;
 
 use super::ffmpeg::probe_video_metadata;
 use super::system::get_active_output_dir;
-use super::types::{AppState, RecordingEntry};
+use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::project::writer::{write_project, ProjectWriteRequest};
 use crate::project::{ProjectMediaMetadata, ProjectMetadata, ProjectVideoMetadata};
-use crate::recording::{CaptureTarget, RecordingOptions, RegionRect};
+use crate::recording::{CameraPreviewUpdate, CaptureTarget, RecordingOptions, RegionRect};
 use crate::render::graph::RenderState;
 
 fn recasts_dir(state: &State<'_, AppState>) -> PathBuf {
@@ -30,7 +30,7 @@ pub fn start_recording(
     region: Option<RegionRect>,
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
-) -> Result<(), String> {
+) -> Result<RecordingStartResult, String> {
     let target = if target_type == "region" {
         let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
         CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?
@@ -38,10 +38,11 @@ pub fn start_recording(
         CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?
     };
     let output_dir = get_active_output_dir(&state);
-    state
+    let warnings = state
         .recording_manager
         .start(target, output_dir, options.unwrap_or_default())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(RecordingStartResult { warnings })
 }
 
 #[tauri::command]
@@ -77,6 +78,7 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
     };
     let default_render_state = RenderState {
         trim_end: artifacts.stats.duration_ms as f64 / 1000.0,
+        camera_overlay: artifacts.camera_overlay.clone(),
         ..RenderState::default()
     };
     let project_path = write_project(ProjectWriteRequest {
@@ -105,6 +107,17 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
     Ok(project_path.to_string_lossy().to_string())
+}
+
+#[tauri::command]
+pub fn update_camera_preview_state(
+    state: CameraPreviewUpdate,
+    app_state: State<'_, AppState>,
+) -> Result<(), String> {
+    app_state
+        .recording_manager
+        .update_camera_preview_state(state)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

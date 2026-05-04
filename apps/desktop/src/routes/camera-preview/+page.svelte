@@ -1,20 +1,46 @@
 <script lang="ts">
-  import { Circle, RotateCcw, Square, X } from "@lucide/svelte";
+  import {
+    LoaderCircle,
+    Maximize2,
+    RotateCcw,
+    X,
+  } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { listen } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+
+  import {
+    updateCameraPreviewState,
+    validateCameraSource,
+    type CameraPreviewState,
+  } from "$lib/ipc";
+
+  type AspectKey = "1:1" | "4:3" | "16:9";
+  type CameraStatus = "loading" | "live" | "warning" | "failed";
+
+  const ASPECTS: AspectKey[] = ["1:1", "4:3", "16:9"];
+  const ASPECT_RATIO: Record<AspectKey, number> = {
+    "1:1": 1,
+    "4:3": 4 / 3,
+    "16:9": 16 / 9,
+  };
+
+  // Window radius in CSS pixels — matches the rounded-3xl token visually.
+  const WINDOW_RADIUS = 20;
 
   let videoEl: HTMLVideoElement | null = $state(null);
   let stream: MediaStream | null = $state(null);
   let errorMessage: string | null = $state(null);
+  let statusMessage = $state("Connecting to camera…");
+  let status = $state<CameraStatus>("loading");
   let isMirrored = $state(true);
-  let isCircle = $state(false);
+  let aspect = $state<AspectKey>("1:1");
+  let reportTimer: number | null = $state(null);
+  let liveProbeTimer: number | null = $state(null);
+  let videoFrameSeen = $state(false);
+  let isSnapping = false;
 
-  const borderRadius = $derived(isCircle ? 999 : 16);
-
-  // deviceId here is the FFmpeg/DirectShow friendly name (e.g. "Integrated Camera"),
-  // not a browser deviceId — we resolve it via enumerateDevices() labels below.
   const params = new URLSearchParams(window.location.search);
   const deviceName = params.get("deviceId");
 
@@ -25,16 +51,40 @@
   });
 
   onMount(() => {
-    startCamera();
+    document.documentElement.style.background = "transparent";
+    document.body.style.background = "transparent";
 
-    const unlistenPromise = listen("camera-stop", () => {
+    void startCamera();
+    void applyAspect(aspect, { snap: true });
+
+    reportTimer = window.setInterval(() => {
+      void reportPreviewState();
+    }, 350);
+
+    const unlistenStop = listen("camera-stop", () => {
       stopCamera();
       getCurrentWindow().close();
+    });
+    const unlistenStarted = listen<{ startedAtUnixMs: number }>(
+      "camera-recording-started",
+      () => {
+        void reportPreviewState();
+      },
+    );
+    const unlistenStopped = listen("camera-recording-stopped", () => {});
+
+    const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
+      void snapToAspect(payload.width, payload.height);
     });
 
     return () => {
       stopCamera();
-      unlistenPromise.then((fn) => fn());
+      if (reportTimer !== null) window.clearInterval(reportTimer);
+      if (liveProbeTimer !== null) window.clearTimeout(liveProbeTimer);
+      unlistenStop.then((fn) => fn());
+      unlistenStarted.then((fn) => fn());
+      unlistenStopped.then((fn) => fn());
+      unlistenResize.then((fn) => fn());
     };
   });
 
@@ -44,8 +94,6 @@
       (d) => d.kind === "videoinput" && d.label,
     );
 
-    // Labels are empty until the page has been granted camera access at least
-    // once. Prime the permission with a throwaway stream, then re-enumerate.
     if (!labelsPopulated) {
       const probe = await navigator.mediaDevices.getUserMedia({ video: true });
       probe.getTracks().forEach((t) => t.stop());
@@ -63,8 +111,19 @@
   async function startCamera() {
     try {
       errorMessage = null;
-      let videoConstraints: MediaTrackConstraints | true = true;
+      status = "loading";
+      statusMessage = "Connecting to camera…";
 
+      if (deviceName) {
+        const validation = await validateCameraSource(deviceName);
+        if (validation.status === "warning" || validation.status === "error") {
+          status = validation.status === "error" ? "failed" : "warning";
+          statusMessage =
+            validation.statusMessage ?? "Camera source requires validation.";
+        }
+      }
+
+      let videoConstraints: MediaTrackConstraints | true = true;
       if (deviceName) {
         const browserId = await resolveBrowserDeviceId(deviceName);
         if (browserId) {
@@ -76,11 +135,45 @@
         video: videoConstraints,
         audio: false,
       });
+      startLivelinessProbe();
+      window.setTimeout(() => {
+        void reportPreviewState();
+      }, 150);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error("Camera access failed:", e);
       errorMessage = msg;
+      status = "failed";
+      statusMessage = msg;
     }
+  }
+
+  function startLivelinessProbe() {
+    videoFrameSeen = false;
+
+    const markLive = () => {
+      if (!videoEl) return;
+      if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+        videoFrameSeen = true;
+        if (status !== "failed") {
+          status = "live";
+          statusMessage = "Camera live";
+        }
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      markLive();
+      if (videoFrameSeen) window.clearInterval(interval);
+    }, 150);
+
+    liveProbeTimer = window.setTimeout(() => {
+      window.clearInterval(interval);
+      if (!videoFrameSeen && status !== "failed") {
+        status = "warning";
+        statusMessage = "Camera opened but no live frames arrived.";
+      }
+    }, 2200);
   }
 
   function stopCamera() {
@@ -95,12 +188,81 @@
     getCurrentWindow().close();
   }
 
-  function toggleShape() {
-    isCircle = !isCircle;
+  async function applyAspect(
+    next: AspectKey,
+    opts: { snap?: boolean } = {},
+  ) {
+    aspect = next;
+    if (opts.snap) {
+      const win = getCurrentWindow();
+      const size = await win.outerSize();
+      const factor = window.devicePixelRatio || 1;
+      const widthLogical = size.width / factor;
+      const heightLogical = Math.round(widthLogical / ASPECT_RATIO[next]);
+      isSnapping = true;
+      await win.setSize(new LogicalSize(Math.round(widthLogical), heightLogical));
+      window.setTimeout(() => {
+        isSnapping = false;
+      }, 50);
+    }
+    void reportPreviewState();
+  }
+
+  async function snapToAspect(physWidth: number, physHeight: number) {
+    if (isSnapping) return;
+    const factor = window.devicePixelRatio || 1;
+    const w = physWidth / factor;
+    const h = physHeight / factor;
+    const target = ASPECT_RATIO[aspect];
+    const expectedH = Math.round(w / target);
+    if (Math.abs(expectedH - h) <= 1) return;
+    isSnapping = true;
+    try {
+      await getCurrentWindow().setSize(
+        new LogicalSize(Math.round(w), expectedH),
+      );
+    } finally {
+      window.setTimeout(() => {
+        isSnapping = false;
+      }, 50);
+    }
+  }
+
+  function cycleAspect() {
+    const nextIndex = (ASPECTS.indexOf(aspect) + 1) % ASPECTS.length;
+    void applyAspect(ASPECTS[nextIndex], { snap: true });
   }
 
   function toggleMirror() {
     isMirrored = !isMirrored;
+    void reportPreviewState();
+  }
+
+  async function reportPreviewState() {
+    const win = getCurrentWindow();
+    const position = await win.outerPosition();
+    const size = await win.outerSize();
+    const screenWidth = Math.max(window.screen.availWidth || 1, 1);
+    const screenHeight = Math.max(window.screen.availHeight || 1, 1);
+
+    const factor = window.devicePixelRatio || 1;
+    const widthLogical = size.width / factor;
+    // Relative corner radius proportional to shorter side, capped sensibly.
+    const shortLogical = Math.min(widthLogical, size.height / factor);
+    const cornerRadius = Math.min(0.5, WINDOW_RADIUS / Math.max(shortLogical, 1));
+
+    const state: CameraPreviewState = {
+      mirror: isMirrored,
+      shape: "rounded",
+      cornerRadius,
+      animationPreset: status === "warning" ? "lively" : "soft",
+      windowX: Math.max(0, Math.min(1, position.x / screenWidth)),
+      windowY: Math.max(0, Math.min(1, position.y / screenHeight)),
+      windowWidth: Math.max(0.05, Math.min(1, size.width / screenWidth)),
+      windowHeight: Math.max(0.05, Math.min(1, size.height / screenHeight)),
+    };
+
+    await updateCameraPreviewState(state);
   }
 
   function handleKeydown(e: KeyboardEvent) {
@@ -114,61 +276,60 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root relative h-screen w-screen overflow-hidden bg-background select-none"
+  class="group/root relative h-screen w-screen select-none overflow-hidden bg-transparent"
   data-tauri-drag-region
-  style="border-radius: {borderRadius}px"
+  style="border-radius: {WINDOW_RADIUS}px"
 >
-  <!-- Camera feed -->
   <!-- svelte-ignore a11y_media_has_caption -->
   <video
     bind:this={videoEl}
     autoplay
     playsinline
     muted
-    class="h-full w-full object-cover"
-    style="border-radius: {borderRadius}px; transform: {isMirrored
-      ? 'scaleX(-1)'
-      : 'none'}"
+    class="pointer-events-none h-full w-full object-cover"
+    style="transform: {isMirrored ? 'scaleX(-1)' : 'none'}"
   ></video>
 
-  {#if errorMessage}
+  {#if status !== "live" || errorMessage}
     <div
-      class="absolute inset-0 flex items-center justify-center p-4 text-center bg-background/80 backdrop-blur-sm pointer-events-none"
-      style="border-radius: {borderRadius}px"
+      class="absolute inset-0 flex items-center justify-center bg-background/85 p-4 text-center backdrop-blur-md"
     >
-      <p class="text-[11px] font-medium text-foreground leading-relaxed">
-        Camera unavailable<br />
-        <span class="text-muted-foreground">{errorMessage}</span>
-      </p>
+      <div class="space-y-2">
+        {#if status === "loading"}
+          <LoaderCircle size={18} class="mx-auto animate-spin text-muted-foreground" />
+        {/if}
+        <p class="text-[11px] font-semibold text-foreground">
+          {status === "failed" ? "Camera unavailable" : "Camera"}
+        </p>
+        <p class="max-w-[16rem] text-[10px] leading-relaxed text-muted-foreground">
+          {errorMessage ?? statusMessage}
+        </p>
+      </div>
     </div>
   {/if}
 
-  <!-- Floating controls overlay — auto-reveal on hover, matches panel.svelte chrome. -->
   <div
-    class="pointer-events-none absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-0.5 rounded-full border border-border-subtle bg-background/70 backdrop-blur-3xl px-1 py-1 shadow-craft-floating opacity-0 transition-opacity duration-200 group-hover/root:opacity-100 group-hover/root:pointer-events-auto"
+    class="pointer-events-none absolute bottom-3 left-1/2 flex -translate-x-1/2 items-center gap-1 rounded-full border border-border-subtle bg-background/78 px-1 py-1 opacity-0 shadow-craft-floating backdrop-blur-3xl transition-opacity duration-200 group-hover/root:pointer-events-auto group-hover/root:opacity-100"
   >
     <Button
-      onclick={toggleShape}
-      onmousedown={(e) => e.stopPropagation()}
+      onclick={cycleAspect}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="ghost"
-      size="icon-sm"
-      class="size-6 rounded-full"
-      title={isCircle ? "Rounded rectangle" : "Circle"}
+      size="sm"
+      class="h-6 gap-1 rounded-full px-1.5 font-mono text-[10px] tabular-nums"
+      title="Cycle aspect ratio"
     >
-      {#if isCircle}
-        <Square size={11} strokeWidth={2} />
-      {:else}
-        <Circle size={11} strokeWidth={2} />
-      {/if}
+      <Maximize2 size={10} strokeWidth={2} />
+      <span>{aspect}</span>
     </Button>
 
     <Button
       onclick={toggleMirror}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant={isMirrored ? "default_soft" : "ghost"}
       size="icon-sm"
       class="size-6 rounded-full"
-      title={isMirrored ? "Unmirror" : "Mirror"}
+      title={isMirrored ? "Unmirror camera" : "Mirror camera"}
     >
       <RotateCcw size={11} strokeWidth={2} />
     </Button>
@@ -177,7 +338,7 @@
 
     <Button
       onclick={closeWindow}
-      onmousedown={(e) => e.stopPropagation()}
+      onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="destructive_soft"
       size="icon-sm"
       class="size-6 rounded-full"

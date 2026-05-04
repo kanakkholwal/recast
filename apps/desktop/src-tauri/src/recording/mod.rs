@@ -16,6 +16,7 @@ use crate::audio::{
 };
 use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorTrack};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
+use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
 //  Shared types
@@ -232,6 +233,7 @@ pub struct RecordingArtifacts {
     pub audio_path: PathBuf,
     pub microphone_path: Option<PathBuf>,
     pub camera_path: Option<PathBuf>,
+    pub camera_overlay: CameraOverlaySettings,
     pub started_at_unix_ms: u64,
     pub stats: RecordingStats,
 }
@@ -257,6 +259,19 @@ pub struct RecordingOptions {
     pub camera_device_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraPreviewUpdate {
+    pub mirror: bool,
+    pub shape: String,
+    pub corner_radius: f64,
+    pub animation_preset: String,
+    pub window_x: f64,
+    pub window_y: f64,
+    pub window_width: f64,
+    pub window_height: f64,
+}
+
 fn default_true() -> bool {
     true
 }
@@ -277,14 +292,23 @@ impl Default for RecordingOptions {
 
 pub struct RecordingManager {
     session: Mutex<Option<RecordingSession>>,
+    pending_camera_overlay: Mutex<CameraOverlaySettings>,
 }
 
 impl Default for RecordingManager {
     fn default() -> Self {
         Self {
             session: Mutex::new(None),
+            pending_camera_overlay: Mutex::new(CameraOverlaySettings::default()),
         }
     }
+}
+
+#[derive(Clone)]
+struct CameraOverlayTracker {
+    overlay: CameraOverlaySettings,
+    last_placement: Option<CameraPlacement>,
+    last_at_secs: Option<f64>,
 }
 
 struct RecordingSession {
@@ -302,15 +326,96 @@ struct RecordingSession {
     cursor_path: PathBuf,
     started_at: Instant,
     started_at_unix_ms: u64,
+    camera_overlay: CameraOverlayTracker,
 }
 
 impl RecordingManager {
+    pub fn update_camera_preview_state(&self, update: CameraPreviewUpdate) -> Result<()> {
+        let placement = CameraPlacement {
+            x: update.window_x.clamp(0.0, 1.0),
+            y: update.window_y.clamp(0.0, 1.0),
+            width: update.window_width.clamp(0.05, 1.0),
+            height: update.window_height.clamp(0.05, 1.0),
+        };
+
+        {
+            let mut pending = self.pending_camera_overlay.lock();
+            pending.enabled = true;
+            pending.mirror = update.mirror;
+            pending.shape = update.shape.clone();
+            pending.corner_radius = update.corner_radius.clamp(0.0, 0.5);
+            pending.animation_preset = update.animation_preset.clone();
+            pending.default_placement = placement.clone();
+        }
+
+        let mut guard = self.session.lock();
+        if let Some(session) = guard.as_mut() {
+            let tracker = &mut session.camera_overlay;
+            tracker.overlay.enabled = true;
+            tracker.overlay.mirror = update.mirror;
+            tracker.overlay.shape = update.shape;
+            tracker.overlay.corner_radius = update.corner_radius.clamp(0.0, 0.5);
+            tracker.overlay.animation_preset = update.animation_preset;
+
+            let now_secs = session.started_at.elapsed().as_secs_f64();
+            if let (Some(last), Some(last_at)) =
+                (tracker.last_placement.clone(), tracker.last_at_secs)
+            {
+                if placement != last {
+                    let can_extend = tracker
+                        .overlay
+                        .motion_segments
+                        .last()
+                        .map(|segment| {
+                            segment.source == "live-recorded"
+                                && (segment.end - last_at).abs() < 0.01
+                                && now_secs - last_at <= 0.45
+                        })
+                        .unwrap_or(false);
+
+                    if can_extend {
+                        if let Some(segment) = tracker.overlay.motion_segments.last_mut() {
+                            segment.end = now_secs.max(segment.start + 0.001);
+                            segment.to_x = placement.x;
+                            segment.to_y = placement.y;
+                            segment.to_width = placement.width;
+                            segment.to_height = placement.height;
+                        }
+                    } else {
+                        tracker.overlay.motion_segments.push(CameraMotionSegment {
+                            start: last_at,
+                            end: now_secs.max(last_at + 0.001),
+                            from_x: last.x,
+                            from_y: last.y,
+                            from_width: last.width,
+                            from_height: last.height,
+                            to_x: placement.x,
+                            to_y: placement.y,
+                            to_width: placement.width,
+                            to_height: placement.height,
+                            ease_in: Default::default(),
+                            ease_out: Default::default(),
+                            source: "live-recorded".into(),
+                        });
+                    }
+                }
+            } else {
+                tracker.overlay.default_placement = placement.clone();
+            }
+
+            tracker.last_placement = Some(placement);
+            tracker.last_at_secs = Some(now_secs);
+        }
+
+        Ok(())
+    }
+
     pub fn start(
         &self,
         target: CaptureTarget,
         output_dir: PathBuf,
         options: RecordingOptions,
-    ) -> Result<()> {
+    ) -> Result<Vec<String>> {
         let mut guard = self.session.lock();
         if guard.is_some() {
             return Err(anyhow!("recording is already running"));
@@ -330,6 +435,7 @@ impl RecordingManager {
         let started_at = Instant::now();
         let stop_flag = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(180);
+        let mut warnings = Vec::new();
 
         let capture_handle = spawn_capture_loop(
             target.clone(),
@@ -388,12 +494,16 @@ impl RecordingManager {
                 Ok(session) => Some(session),
                 Err(e) => {
                     log::warn!("camera capture unavailable: {e}");
+                    warnings.push(format!("Camera capture unavailable: {e}"));
                     None
                 }
             }
         } else {
             None
         };
+
+        let mut camera_overlay = self.pending_camera_overlay.lock().clone();
+        camera_overlay.enabled = options.camera && camera_session.is_some();
 
         *guard = Some(RecordingSession {
             stop_flag,
@@ -410,8 +520,13 @@ impl RecordingManager {
             cursor_path,
             started_at,
             started_at_unix_ms,
+            camera_overlay: CameraOverlayTracker {
+                last_placement: Some(camera_overlay.default_placement.clone()),
+                last_at_secs: Some(0.0),
+                overlay: camera_overlay,
+            },
         });
-        Ok(())
+        Ok(warnings)
     }
 
     pub fn stop(&self) -> Result<RecordingArtifacts> {
@@ -492,6 +607,7 @@ impl RecordingManager {
             audio_path,
             microphone_path,
             camera_path,
+            camera_overlay: session.camera_overlay.overlay,
             started_at_unix_ms: session.started_at_unix_ms,
             stats,
         })

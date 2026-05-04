@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use tauri::{AppHandle, Manager, State};
 use xcap::{Monitor, Window};
@@ -9,7 +10,10 @@ use xcap::{Monitor, Window};
 use super::ffmpeg::{encode_thumbnail_base64, make_thumbnail};
 use serde::Serialize;
 
-use super::types::{AppConfig, AppState, DisplayInfo, LastSource, WindowInfo};
+use super::types::{
+    AppConfig, AppState, CameraDeviceInfo, CameraValidationResult, DisplayInfo, LastSource,
+    WindowInfo,
+};
 
 fn config_path(app: &AppHandle) -> PathBuf {
     app.path()
@@ -240,13 +244,6 @@ fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<S
     }
 }
 
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-pub struct CameraDeviceInfo {
-    pub id: String,
-    pub name: String,
-}
-
 /// List available camera/video capture devices.
 #[tauri::command]
 pub async fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
@@ -318,19 +315,203 @@ fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
         let Some(end_rel) = line[start + 1..].find('"') else {
             continue;
         };
-        let name = line[start + 1..start + 1 + end_rel].to_string();
+        let name = line[start + 1..start + 1 + end_rel].trim().to_string();
         if name.is_empty() {
             continue;
         }
         if seen.insert(name.clone()) {
+            let (status, status_message) = classify_camera_name(&name);
             devices.push(CameraDeviceInfo {
                 id: name.clone(),
                 name,
+                status,
+                status_message,
             });
         }
     }
 
     Ok(devices)
+}
+
+#[allow(dead_code)]
+fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
+    let mut devices: Vec<CameraDeviceInfo> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut in_video_section = false;
+    for line in stderr.lines() {
+        if line.contains("DirectShow video devices") {
+            in_video_section = true;
+            continue;
+        }
+        if line.contains("DirectShow audio devices") {
+            in_video_section = false;
+            continue;
+        }
+        if line.contains("Alternative name") {
+            continue;
+        }
+
+        let has_video_tag = line.contains("(video)");
+        let has_audio_tag = line.contains("(audio)");
+        let is_video_device = has_video_tag || (in_video_section && !has_audio_tag);
+        if !is_video_device {
+            continue;
+        }
+
+        let Some(start) = line.find('"') else {
+            continue;
+        };
+        let Some(end_rel) = line[start + 1..].find('"') else {
+            continue;
+        };
+        let name = line[start + 1..start + 1 + end_rel].trim().to_string();
+        if name.is_empty() || !seen.insert(name.clone()) {
+            continue;
+        }
+
+        let (status, status_message) = classify_camera_name(&name);
+        devices.push(CameraDeviceInfo {
+            id: name.clone(),
+            name,
+            status,
+            status_message,
+        });
+    }
+    devices
+}
+
+#[tauri::command]
+pub async fn validate_camera_source(device_id: String) -> Result<CameraValidationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let devices = get_camera_devices_blocking()?;
+        let probed_at_unix_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64;
+
+        let Some(device) = devices.into_iter().find(|d| d.id == device_id) else {
+            return Ok(CameraValidationResult {
+                id: device_id.clone(),
+                name: device_id,
+                status: "error".into(),
+                status_message: Some("Camera device is no longer available.".into()),
+                probed_at_unix_ms,
+            });
+        };
+
+        let (status, status_message) = probe_camera_device_health(&device.id)
+            .unwrap_or_else(|| (device.status.clone(), device.status_message.clone()));
+
+        Ok(CameraValidationResult {
+            id: device.id,
+            name: device.name,
+            status,
+            status_message,
+            probed_at_unix_ms,
+        })
+    })
+    .await
+    .map_err(|e| format!("validate_camera_source join error: {e}"))?
+}
+
+fn classify_camera_name(name: &str) -> (String, Option<String>) {
+    let normalized = name.to_ascii_lowercase();
+    if normalized.contains("droidcam")
+        || normalized.contains("epoccam")
+        || normalized.contains("nvidia broadcast")
+    {
+        return (
+            "warning".into(),
+            Some("Virtual camera source may enumerate but produce no frames.".into()),
+        );
+    }
+    if normalized.contains("obs virtual camera") || normalized.contains("snap camera") {
+        return (
+            "unknown".into(),
+            Some("Virtual camera source requires live validation.".into()),
+        );
+    }
+    ("ready".into(), None)
+}
+
+fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>)> {
+    let input = if device_id.starts_with("video=") {
+        device_id.to_string()
+    } else {
+        format!("video={device_id}")
+    };
+
+    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+    command.args([
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-f",
+        "dshow",
+        "-i",
+        &input,
+        "-frames:v",
+        "1",
+        "-f",
+        "null",
+        "-",
+    ]);
+    crate::ffmpeg::configure_silent_command(&mut command);
+    let output = command.output().ok()?;
+    let stderr = String::from_utf8_lossy(&output.stderr).to_ascii_lowercase();
+
+    if output.status.success() {
+        return Some(("ready".into(), None));
+    }
+    if stderr.contains("device not found")
+        || stderr.contains("could not find")
+        || stderr.contains("no such file")
+    {
+        return Some(("error".into(), Some("Camera device was not found.".into())));
+    }
+    if stderr.contains("busy") || stderr.contains("already in use") {
+        return Some((
+            "warning".into(),
+            Some("Camera appears to be busy or unavailable for capture.".into()),
+        ));
+    }
+    Some((
+        "warning".into(),
+        Some("Camera probe failed. Preview validation will confirm liveliness.".into()),
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_camera_devices;
+
+    #[test]
+    fn parses_legacy_ffmpeg_camera_list() {
+        let stderr = r#"
+[dshow @ 0000] DirectShow video devices
+[dshow @ 0000]  "Integrated Camera"
+[dshow @ 0000]  "NVIDIA Broadcast"
+[dshow @ 0000] DirectShow audio devices
+"#;
+        let devices = parse_camera_devices(stderr);
+        assert_eq!(devices.len(), 2);
+        assert_eq!(devices[0].name, "Integrated Camera");
+        assert_eq!(devices[0].status, "ready");
+        assert_eq!(devices[1].status, "warning");
+    }
+
+    #[test]
+    fn parses_inline_video_tags_and_dedupes() {
+        let stderr = r#"
+[dshow @ 0000] "OBS Virtual Camera" (video)
+[dshow @ 0000] "OBS Virtual Camera" (video)
+[dshow @ 0000] "Microphone" (audio)
+"#;
+        let devices = parse_camera_devices(stderr);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].name, "OBS Virtual Camera");
+        assert_eq!(devices[0].status, "unknown");
+    }
 }
 
 #[tauri::command]

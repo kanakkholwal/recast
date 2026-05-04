@@ -7,6 +7,8 @@
     setLastSource,
     startRecording,
     stopRecording,
+    validateCameraSource,
+    type CameraValidationResult,
     type RecordingOptions,
   } from "$lib/ipc";
   import {
@@ -58,6 +60,26 @@
   let selectedMicName = $state("Default");
   let selectedCameraId = $state<string | null>(null);
   let selectedCameraName = $state("Default");
+  let cameraValidation = $state<CameraValidationResult | null>(null);
+
+  async function refreshCameraValidation(deviceId: string | null) {
+    if (!deviceId) {
+      cameraValidation = null;
+      return;
+    }
+
+    try {
+      cameraValidation = await validateCameraSource(deviceId);
+    } catch {
+      cameraValidation = {
+        id: deviceId,
+        name: selectedCameraName,
+        status: "unknown",
+        statusMessage: "Camera validation could not complete.",
+        probedAtUnixMs: Date.now(),
+      };
+    }
+  }
 
   onMount(() => {
     const timer = window.setInterval(() => {
@@ -103,9 +125,11 @@
           cameraOn = true;
           selectedCameraId = id;
           selectedCameraName = name;
+          void refreshCameraValidation(id);
           openCameraPreview(id);
         } else {
           cameraOn = false;
+          cameraValidation = null;
           closeCameraPreview();
         }
       }
@@ -167,6 +191,7 @@
         if (devices.length > 0) {
           selectedCameraId = devices[0].id;
           selectedCameraName = devices[0].name;
+          void refreshCameraValidation(devices[0].id);
         }
       })
       .catch(() => {});
@@ -239,6 +264,7 @@
   }
 
   function closeCameraPreview() {
+    emit("camera-recording-stopped");
     emit("camera-stop");
     WebviewWindow.getByLabel("camera-preview").then(async (existing) => {
       if (existing) await existing.close();
@@ -275,6 +301,7 @@
         await stopRecording();
         isRecording = false;
         recordingStartTime = null;
+        emit("camera-recording-stopped");
         emit("refresh-recordings");
       } catch (e) {
         alert(`Stop failed: ${e}\n\nMake sure ffmpeg is installed.`);
@@ -289,7 +316,7 @@
         cameraDeviceId: cameraOn ? selectedCameraId : null,
       };
       try {
-        await startRecording(
+        const result = await startRecording(
           selectedSource.type,
           selectedSource.id,
           options,
@@ -300,6 +327,12 @@
         isRecording = true;
         now = Date.now();
         recordingStartTime = now;
+        if (cameraOn) {
+          emit("camera-recording-started", { startedAtUnixMs: now });
+        }
+        if (result.warnings.length > 0) {
+          alert(result.warnings.join("\n"));
+        }
       } catch (e) {
         alert(`Recording failed: ${e}`);
       }
@@ -440,9 +473,15 @@
       disabled={isRecording}
       onclick={toggleCamera}
       onmousedown={(e) => e.stopPropagation()}
-      variant={cameraOn ? "default_soft" : "outline"}
+      variant={cameraOn
+        ? cameraValidation?.status === "error"
+          ? "destructive_soft"
+          : "default_soft"
+        : "outline"}
       size="icon-sm"
-      title={cameraOn ? `Camera: ${selectedCameraName}` : "Camera: off"}
+      title={cameraOn
+        ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}`
+        : "Camera: off"}
     >
       {#if cameraOn}
         <Camera size={14} strokeWidth={2} />

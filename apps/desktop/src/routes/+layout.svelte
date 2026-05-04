@@ -3,6 +3,8 @@
   import { TooltipProvider } from "@recast/ui/tooltip";
   import "../app.css";
 
+  import { page } from "$app/state";
+
   let { children } = $props();
 
   import Loading from "$components/layout/loading.svelte";
@@ -11,6 +13,10 @@
   import { Toaster } from "@recast/ui/sonner";
   import { ModeWatcher, setMode } from "@recast/ui/theme";
   import { onMount, tick } from "svelte";
+
+  const isTransparentRoute = $derived(
+    page.url.pathname.startsWith("/camera-preview"),
+  );
 
   // Kick off external-asset download (wallpapers etc.) on first paint. Safe in
   // both browser and Tauri runtimes — no-op in the browser.
@@ -38,7 +44,11 @@
   <Loading />
   <ModeWatcher />
   <Toaster position="top-center" richColors />
-  <div class="relative flex min-h-screen w-full flex-col bg-background">
+  <div
+    class="relative flex min-h-screen min-w-dvw w-full flex-col {isTransparentRoute
+      ? 'bg-transparent'
+      : 'bg-background'}"
+  >
     {@render children()}
   </div>
 </TooltipProvider>

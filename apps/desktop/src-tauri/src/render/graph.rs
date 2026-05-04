@@ -4,8 +4,8 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 use super::node_types::{
-    Annotation, AudioSettings, BackgroundNode, CursorNode, RenderNode, ShadowSettings, TrimNode,
-    WatermarkSettings, ZoomNode, ZoomRegion,
+    Annotation, AudioSettings, BackgroundNode, CameraOverlaySettings, CursorNode, RenderNode,
+    ShadowSettings, TrimNode, WatermarkSettings, ZoomNode, ZoomRegion,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -49,6 +49,8 @@ pub struct RenderState {
     pub audio_settings: AudioSettings,
     #[serde(default)]
     pub watermark_settings: WatermarkSettings,
+    #[serde(default)]
+    pub camera_overlay: CameraOverlaySettings,
     // Hybrid-raster cursor sprite. Populated by the JS export trigger
     // when the active style is non-`dot`; the soft-dot path is unchanged
     // when these are `None`.
@@ -87,6 +89,7 @@ impl Default for RenderState {
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
             watermark_settings: WatermarkSettings::default(),
+            camera_overlay: CameraOverlaySettings::default(),
             cursor_sprite_rest: None,
             cursor_sprite_press: None,
             cursor_sprite_hotspot_rest: None,

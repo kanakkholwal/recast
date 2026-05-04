@@ -232,6 +232,43 @@ export interface WatermarkSettings {
 	inset: number; // pixels
 }
 
+export type CameraOverlayShape = 'square' | 'rectangle' | 'rounded' | 'circle';
+export type CameraOverlayAnimationPreset = 'none' | 'soft' | 'lively';
+export type CameraMotionSource = 'live-recorded' | 'manual';
+
+export interface CameraPlacement {
+	x: number;
+	y: number;
+	width: number;
+	height: number;
+}
+
+export interface CameraMotionSegment {
+	start: number;
+	end: number;
+	fromX: number;
+	fromY: number;
+	fromWidth: number;
+	fromHeight: number;
+	toX: number;
+	toY: number;
+	toWidth: number;
+	toHeight: number;
+	easeIn: Easing;
+	easeOut: Easing;
+	source?: CameraMotionSource;
+}
+
+export interface CameraOverlaySettings {
+	enabled: boolean;
+	mirror: boolean;
+	shape: CameraOverlayShape;
+	cornerRadius: number;
+	animationPreset: CameraOverlayAnimationPreset;
+	defaultPlacement: CameraPlacement;
+	motionSegments: CameraMotionSegment[];
+}
+
 export interface VideoMetadata {
 	duration: number;
 	width: number;
@@ -316,6 +353,7 @@ export interface EditorRenderState {
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
 	watermarkSettings: WatermarkSettings;
+	cameraOverlay: CameraOverlaySettings;
 	// Hybrid-raster cursor sprite — populated only on the export path
 	// (the editor route runs `rasterizeCursorSprites` right before invoking
 	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
@@ -477,6 +515,20 @@ export function createEditorStore() {
 		position: 'bottom-right',
 		inset: 24,
 	});
+	let cameraOverlay = $state<CameraOverlaySettings>({
+		enabled: false,
+		mirror: true,
+		shape: 'rounded',
+		cornerRadius: 0.16,
+		animationPreset: 'soft',
+		defaultPlacement: {
+			x: 0.72,
+			y: 0.08,
+			width: 0.22,
+			height: 0.22,
+		},
+		motionSegments: [],
+	});
 
 	// Export
 	let exportFormat = $state<ExportFormat>('mp4');
@@ -511,6 +563,7 @@ export function createEditorStore() {
 			cursorSettings,
 			audioSettings,
 			watermarkSettings,
+			cameraOverlay,
 			layoutMode,
 			cursorMotionEasing,
 		});
@@ -887,6 +940,20 @@ export function createEditorStore() {
 			position: 'bottom-right',
 			inset: 24,
 		};
+		cameraOverlay = {
+			enabled: false,
+			mirror: true,
+			shape: 'rounded',
+			cornerRadius: 0.16,
+			animationPreset: 'soft',
+			defaultPlacement: {
+				x: 0.72,
+				y: 0.08,
+				width: 0.22,
+				height: 0.22,
+			},
+			motionSegments: [],
+		};
 		exportQuality = 'hd';
 		undoStack = [];
 		redoStack = [];
@@ -931,6 +998,13 @@ export function createEditorStore() {
 			shadow: { ...shadow },
 			audioSettings: { ...audioSettings },
 			watermarkSettings: { ...watermarkSettings },
+			cameraOverlay: {
+				...cameraOverlay,
+				defaultPlacement: { ...cameraOverlay.defaultPlacement },
+				motionSegments: cameraOverlay.motionSegments.map((segment) => ({
+					...segment,
+				})),
+			},
 		};
 	}
 
@@ -984,6 +1058,34 @@ export function createEditorStore() {
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
+		cameraOverlay = {
+			enabled: state.cameraOverlay?.enabled ?? false,
+			mirror: state.cameraOverlay?.mirror ?? true,
+			shape: state.cameraOverlay?.shape ?? 'rounded',
+			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
+			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
+			defaultPlacement: {
+				x: state.cameraOverlay?.defaultPlacement?.x ?? 0.72,
+				y: state.cameraOverlay?.defaultPlacement?.y ?? 0.08,
+				width: state.cameraOverlay?.defaultPlacement?.width ?? 0.22,
+				height: state.cameraOverlay?.defaultPlacement?.height ?? 0.22,
+			},
+			motionSegments: (state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
+				start: segment.start,
+				end: segment.end,
+				fromX: segment.fromX,
+				fromY: segment.fromY,
+				fromWidth: segment.fromWidth,
+				fromHeight: segment.fromHeight,
+				toX: segment.toX,
+				toY: segment.toY,
+				toWidth: segment.toWidth,
+				toHeight: segment.toHeight,
+				easeIn: segment.easeIn ?? { ...EASE },
+				easeOut: segment.easeOut ?? { ...EASE },
+				source: segment.source ?? 'manual',
+			})),
+		};
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),
@@ -1119,6 +1221,9 @@ export function createEditorStore() {
 
 		get watermarkSettings() { return watermarkSettings; },
 		set watermarkSettings(v: WatermarkSettings) { watermarkSettings = v; },
+
+		get cameraOverlay() { return cameraOverlay; },
+		set cameraOverlay(v: CameraOverlaySettings) { cameraOverlay = v; },
 
 		get exportFormat() { return exportFormat; },
 		set exportFormat(v: ExportFormat) { exportFormat = v; },

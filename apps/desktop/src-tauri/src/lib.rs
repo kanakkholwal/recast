@@ -85,6 +85,8 @@ pub fn run() {
             commands::cancel_export,
             commands::get_audio_devices,
             commands::get_camera_devices,
+            commands::validate_camera_source,
+            commands::update_camera_preview_state,
             commands::autosave_project,
             commands::save_project_edits,
             commands::clear_autosave,

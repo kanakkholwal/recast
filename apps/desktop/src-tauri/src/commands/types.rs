@@ -72,6 +72,31 @@ pub struct EditorDocument {
     pub render_state: RenderState,
 }
 
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct RecordingStartResult {
+    pub warnings: Vec<String>,
+}
+
+#[derive(Serialize, Clone, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraDeviceInfo {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub status_message: Option<String>,
+}
+
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraValidationResult {
+    pub id: String,
+    pub name: String,
+    pub status: String,
+    pub status_message: Option<String>,
+    pub probed_at_unix_ms: u64,
+}
+
 #[derive(Serialize, Deserialize, Clone, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct LastSource {

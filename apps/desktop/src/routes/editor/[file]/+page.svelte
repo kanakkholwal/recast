@@ -22,12 +22,12 @@
     saveProjectEdits,
     suggestZoomRegions,
   } from "$lib/ipc";
-  import { applyAutoZooms } from "$lib/zoom/auto-apply";
   import {
     createEditorStore,
     framePaddingPixels,
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
+  import { applyAutoZooms } from "$lib/zoom/auto-apply";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
@@ -860,7 +860,7 @@
       <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           bind:this={previewContainerEl}
-          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background p-3 pb-4"
+          class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background p-2 pb-4"
         >
           <div
             class="flex-1 flex min-h-0 w-full items-center justify-center relative"
