@@ -368,6 +368,7 @@ export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
       height: panelHeight,
       decorations: false,
       transparent: true,
+	  shadow: false,
       alwaysOnTop: true,
       resizable: false,
       skipTaskbar: true,

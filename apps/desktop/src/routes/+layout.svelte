@@ -14,8 +14,14 @@
   import { ModeWatcher, setMode } from "@recast/ui/theme";
   import { onMount, tick } from "svelte";
 
+  const TRANSPARENT_ROUTES = [
+    "/camera-preview",
+    "/device-picker",
+    "/select",
+    "/panel",
+  ];
   const isTransparentRoute = $derived(
-    page.url.pathname.startsWith("/camera-preview"),
+    TRANSPARENT_ROUTES.some((p) => page.url.pathname.startsWith(p)),
   );
 
   // Kick off external-asset download (wallpapers etc.) on first paint. Safe in

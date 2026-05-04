@@ -91,8 +91,9 @@
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
-      if (rect) reset();
-      else cancel();
+      // Esc always exits — users expect the window to close. Use the
+      // explicit "Redraw" button to clear a selection without exiting.
+      cancel();
     } else if (e.key === "Enter" && rect) {
       e.preventDefault();
       confirm();
@@ -110,6 +111,23 @@
         }
       : rect,
   );
+
+  // Toolbar position, clamped to the viewport so it stays reachable when the
+  // selection lands near the bottom or right edge of the virtual desktop.
+  const TOOLBAR_W = 240;
+  const TOOLBAR_H = 36;
+  const toolbarPos = $derived.by(() => {
+    if (!rect) return { left: 0, top: 0 };
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const desiredTop = rect.y + rect.h + 6;
+    const top =
+      desiredTop + TOOLBAR_H + 8 > vh
+        ? Math.max(8, rect.y - TOOLBAR_H - 6)
+        : desiredTop;
+    const left = Math.max(8, Math.min(rect.x, vw - TOOLBAR_W - 8));
+    return { left, top };
+  });
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -125,9 +143,10 @@
 >
   {#if liveRect && liveRect.w > 0 && liveRect.h > 0}
     <!-- Cut-out via box-shadow trick: rect itself is transparent, the dim
-         layer is painted by an outer box-shadow on this element. -->
+         layer is painted by an outer box-shadow on this element.
+         pointer-events: none so clicks inside the rect don't restart a drag. -->
     <div
-      class="absolute border border-primary/90 ring-1 ring-primary/40"
+      class="pointer-events-none absolute border border-primary/90 ring-1 ring-primary/40"
       style="left: {liveRect.x}px; top: {liveRect.y}px; width: {liveRect.w}px; height: {liveRect.h}px; background: transparent; box-shadow: 0 0 0 9999px rgba(0,0,0,0.45);"
     ></div>
 
@@ -155,35 +174,21 @@
   {/if}
 
   {#if rect && !dragging}
-    <!-- Confirm toolbar pinned near rect -->
+    <!-- Confirm toolbar — stop pointer events on the wrapper itself so clicks
+         on its padding don't bubble to the overlay (which would clear the
+         rect mid-click). Position is clamped into the viewport. -->
     <div
-      class="absolute flex items-center gap-1.5 bg-background/95 backdrop-blur border border-border-subtle rounded-md p-1 shadow-craft-floating pointer-events-auto"
-      style="left: {rect.x}px; top: {rect.y + rect.h + 6}px;"
+      role="toolbar"
+      aria-label="Confirm selected area"
+      class="absolute flex items-center gap-1.5 bg-background/95 backdrop-blur border border-border-subtle rounded-md p-1 shadow-craft-floating cursor-default"
+      style="left: {toolbarPos.left}px; top: {toolbarPos.top}px; min-width: {TOOLBAR_W}px;"
+      onpointerdown={(e) => e.stopPropagation()}
+      onpointerup={(e) => e.stopPropagation()}
+      onclick={(e) => e.stopPropagation()}
     >
-      <Button
-        variant="ghost"
-        size="xs"
-        onclick={reset}
-        onpointerdown={(e) => e.stopPropagation()}
-      >
-        Redraw
-      </Button>
-      <Button
-        variant="ghost"
-        size="xs"
-        onclick={cancel}
-        onpointerdown={(e) => e.stopPropagation()}
-      >
-        Cancel
-      </Button>
-      <Button
-        variant="default"
-        size="xs"
-        onclick={confirm}
-        onpointerdown={(e) => e.stopPropagation()}
-      >
-        Use area
-      </Button>
+      <Button variant="ghost" size="xs" onclick={reset}>Redraw</Button>
+      <Button variant="ghost" size="xs" onclick={cancel}>Cancel</Button>
+      <Button variant="default" size="xs" onclick={confirm}>Use area</Button>
     </div>
   {/if}
 </div>

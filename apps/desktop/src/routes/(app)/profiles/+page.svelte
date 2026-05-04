@@ -316,13 +316,13 @@
     <span
       class={cn(
         "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-        draft?.[field] ? "bg-primary" : "bg-muted ring-1 ring-inset ring-border/50",
+        draft?.[field] ? "bg-primary" : "bg-input ring-1 ring-inset ring-border/50",
       )}
     >
       <span
         class={cn(
           "size-4 rounded-full bg-card shadow-sm transition-transform",
-          draft?.[field] ? "translate-x-[1.125rem]" : "translate-x-0.5",
+          draft?.[field] ? "translate-x-4.5" : "translate-x-0.5",
         )}
       ></span>
     </span>

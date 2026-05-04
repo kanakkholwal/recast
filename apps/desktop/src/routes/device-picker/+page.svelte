@@ -1,10 +1,10 @@
 <script lang="ts">
   import {
     getAudioDevices,
-    getCameraDevices,
     type AudioDeviceInfo,
     type CameraDeviceInfo,
   } from "$lib/ipc";
+  import { enumerateCameras } from "$lib/camera/browser-devices";
   import {
     Camera,
     CameraOff,
@@ -39,7 +39,21 @@
   async function fetchDevices() {
     isLoading = true;
     try {
-      devices = isMic ? await getAudioDevices() : await getCameraDevices();
+      if (isMic) {
+        devices = await getAudioDevices();
+      } else {
+        // Source cameras from the WebView's MediaDevices so the deviceId we
+        // pass downstream is one getUserMedia({deviceId:{exact}}) will accept.
+        // Sorted with non-virtual hardware first; the chosen "default" below
+        // therefore prefers a real webcam over Phone Link / OBS Virtual / etc.
+        const cams = await enumerateCameras();
+        devices = cams.map<CameraDeviceInfo>((c) => ({
+          id: c.deviceId,
+          name: c.label,
+          status: c.isVirtual ? "warning" : "ready",
+          statusMessage: c.isVirtual ? "Virtual camera" : null,
+        }));
+      }
       if (!currentSelectedId && devices.length > 0) {
         const def = isMic
           ? (devices as AudioDeviceInfo[]).find((d) => d.isDefault)
@@ -78,7 +92,7 @@
       closeWindow();
       return;
     }
-    if (devices.length === 0) return;
+    if (isLoading || devices.length === 0) return;
     const idx = devices.findIndex((d) => d.id === currentSelectedId);
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -99,7 +113,11 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root flex h-screen w-full flex-col overflow-hidden select-none bg-background/80 backdrop-blur-3xl"
+  class={cn(
+    "group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-background/80 backdrop-blur-3xl",
+    isLoading && "cursor-wait",
+  )}
+  aria-busy={isLoading}
 >
   <!-- Header -->
   <header
@@ -133,12 +151,39 @@
   <!-- Device list -->
   <div class="flex-1 overflow-y-auto px-2 py-2 scrollbar-transparent">
     {#if isLoading}
-      <div class="flex items-center justify-center h-40">
-        <RefreshCw
-          size={16}
-          class="animate-spin text-muted-foreground"
-          strokeWidth={2}
-        />
+      <div
+        class="flex flex-col gap-0.5"
+        role="status"
+        aria-live="polite"
+        aria-label="Scanning {title.toLowerCase()}s"
+      >
+        <div class="mb-1 flex items-center gap-2 px-2 py-1.5">
+          <RefreshCw
+            size={12}
+            class="animate-spin text-muted-foreground"
+            strokeWidth={2}
+          />
+          <span class="text-[11px] font-medium text-muted-foreground">
+            Scanning {title.toLowerCase()}s…
+          </span>
+        </div>
+        {#each Array.from({ length: 3 }) as _, i (i)}
+          <div
+            class="flex animate-pulse items-center gap-2 rounded-md px-2 py-1.5"
+            style="animation-delay: {i * 120}ms"
+          >
+            <div class="size-6 shrink-0 rounded-sm bg-muted/70"></div>
+            <div class="flex-1 space-y-1">
+              <div
+                class="h-2 rounded-sm bg-muted/70"
+                style="width: {[78, 62, 70][i]}%"
+              ></div>
+              {#if i === 0}
+                <div class="h-1.5 w-1/3 rounded-sm bg-muted/50"></div>
+              {/if}
+            </div>
+          </div>
+        {/each}
       </div>
     {:else if devices.length === 0}
       <div
@@ -225,6 +270,7 @@
     </Button>
     <Button
       onclick={turnOff}
+      disabled={isLoading}
       onmousedown={(e) => e.stopPropagation()}
       variant="destructive_soft"
       size="xs"
@@ -239,3 +285,23 @@
     </Button>
   </footer>
 </div>
+
+<style>
+  :global(html) {
+    background: transparent !important;
+    scrollbar-width: none;
+    scrollbar-gutter: auto !important;
+    overflow: hidden;
+  }
+  :global(body) {
+    background: transparent !important;
+    overflow: hidden;
+    margin: 0;
+  }
+  :global(html::-webkit-scrollbar),
+  :global(body::-webkit-scrollbar) {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+</style>

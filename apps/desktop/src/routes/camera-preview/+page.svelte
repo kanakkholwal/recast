@@ -11,6 +11,10 @@
   import { onMount } from "svelte";
 
   import {
+    CameraNotFoundError,
+    openCameraStream,
+  } from "$lib/camera/browser-devices";
+  import {
     updateCameraPreviewState,
     validateCameraSource,
     type CameraPreviewState,
@@ -42,7 +46,9 @@
   let isSnapping = false;
 
   const params = new URLSearchParams(window.location.search);
-  const deviceName = params.get("deviceId");
+  // Accept both legacy DirectShow names (passed as `deviceId` historically)
+  // and real browser MediaDevices ids — `openCameraStream` handles either.
+  const deviceQuery = params.get("deviceId");
 
   $effect(() => {
     if (videoEl && stream) {
@@ -51,8 +57,19 @@
   });
 
   onMount(() => {
-    document.documentElement.style.background = "transparent";
-    document.body.style.background = "transparent";
+    // Make the WebView itself fully see-through so the inner rounded
+    // container is the only thing that paints — the OS window already has
+    // `transparent: true`, so corners outside the radius show the desktop.
+    const html = document.documentElement;
+    const body = document.body;
+    html.style.background = "transparent";
+    html.style.overflow = "hidden";
+    html.style.scrollbarGutter = "auto";
+    (html.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth =
+      "none";
+    body.style.background = "transparent";
+    body.style.overflow = "hidden";
+    body.style.margin = "0";
 
     void startCamera();
     void applyAspect(aspect, { snap: true });
@@ -88,59 +105,47 @@
     };
   });
 
-  async function resolveBrowserDeviceId(name: string): Promise<string | null> {
-    let devices = await navigator.mediaDevices.enumerateDevices();
-    let labelsPopulated = devices.some(
-      (d) => d.kind === "videoinput" && d.label,
-    );
-
-    if (!labelsPopulated) {
-      const probe = await navigator.mediaDevices.getUserMedia({ video: true });
-      probe.getTracks().forEach((t) => t.stop());
-      devices = await navigator.mediaDevices.enumerateDevices();
-    }
-
-    const match = devices.find(
-      (d) =>
-        d.kind === "videoinput" &&
-        (d.label === name || d.label.includes(name)),
-    );
-    return match?.deviceId ?? null;
-  }
-
   async function startCamera() {
     try {
       errorMessage = null;
       status = "loading";
       statusMessage = "Connecting to camera…";
 
-      if (deviceName) {
-        const validation = await validateCameraSource(deviceName);
-        if (validation.status === "warning" || validation.status === "error") {
-          status = validation.status === "error" ? "failed" : "warning";
-          statusMessage =
-            validation.statusMessage ?? "Camera source requires validation.";
+      // Validation is best-effort and only meaningful for DirectShow names;
+      // skip silently if the query is a browser deviceId hash (validation
+      // would always fail on those).
+      if (deviceQuery && !/^[a-f0-9]{40,}$/i.test(deviceQuery)) {
+        try {
+          const validation = await validateCameraSource(deviceQuery);
+          if (validation.status === "warning" || validation.status === "error") {
+            status = validation.status === "error" ? "failed" : "warning";
+            statusMessage =
+              validation.statusMessage ?? "Camera source requires validation.";
+          }
+        } catch {
+          // Non-fatal — preview can still open via browser enumeration.
         }
       }
 
-      let videoConstraints: MediaTrackConstraints | true = true;
-      if (deviceName) {
-        const browserId = await resolveBrowserDeviceId(deviceName);
-        if (browserId) {
-          videoConstraints = { deviceId: { ideal: browserId } };
-        }
-      }
+      const { stream: openedStream, camera } = await openCameraStream(
+        deviceQuery,
+      );
+      stream = openedStream;
+      console.info(
+        `[camera-preview] opened ${camera.label} (virtual=${camera.isVirtual})`,
+      );
 
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: videoConstraints,
-        audio: false,
-      });
       startLivelinessProbe();
       window.setTimeout(() => {
         void reportPreviewState();
       }, 150);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
+      const msg =
+        e instanceof CameraNotFoundError
+          ? e.message
+          : e instanceof Error
+            ? e.message
+            : String(e);
       console.error("Camera access failed:", e);
       errorMessage = msg;
       status = "failed";
@@ -276,7 +281,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root relative h-screen w-screen select-none overflow-hidden bg-transparent"
+  class="group/root relative h-screen w-full min-w-dvw select-none overflow-hidden bg-transparent scroll-m-0 scrollbar-none"
   data-tauri-drag-region
   style="border-radius: {WINDOW_RADIUS}px"
 >
@@ -286,7 +291,7 @@
     autoplay
     playsinline
     muted
-    class="pointer-events-none h-full w-full object-cover"
+    class="pointer-events-none h-full w-full min-w-dvw object-cover"
     style="transform: {isMirrored ? 'scaleX(-1)' : 'none'}"
   ></video>
 
@@ -348,3 +353,26 @@
     </Button>
   </div>
 </div>
+
+<style>
+  /* Force-hide the scrollbar (and its reserved gutter) only for this page so
+     the rounded corners read through to the desktop without a Windows
+     scrollbar slot. The global stylesheet sets `scrollbar-gutter: stable`. */
+  :global(html) {
+    background: transparent !important;
+    scrollbar-width: none;
+    scrollbar-gutter: auto !important;
+    overflow: hidden;
+  }
+  :global(body) {
+    background: transparent !important;
+    overflow: hidden;
+    margin: 0;
+  }
+  :global(html::-webkit-scrollbar),
+  :global(body::-webkit-scrollbar) {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+</style>

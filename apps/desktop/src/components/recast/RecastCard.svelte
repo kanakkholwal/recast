@@ -130,21 +130,21 @@
 				<DropdownMenu.Content
 					align="end"
 					sideOffset={6}
-					class="min-w-56 rounded-xl p-1.5"
+					class="min-w-48 rounded-xl p-1"
 				>
 					{#each primaryActions as action (action.id)}
 						{@const Icon = action.icon}
 						<DropdownMenu.Item
 							onSelect={() => action.onAction()}
-							class="gap-2.5 rounded-lg px-2 py-1.5 text-[12px] font-medium"
+							class="gap-2.5 rounded-lg px-2 py-1.5 font-medium"
 						>
 							{#if Icon}
-								<Icon size={14} class="text-muted-foreground" />
+								<Icon size={14} class="text-muted-foreground size-3" />
 							{/if}
-							<span class="flex-1 truncate">{action.label}</span>
+							<span class="flex-1 truncate text-[11px]">{action.label}</span>
 							{#if action.shortcut}
 								<DropdownMenu.Shortcut
-									class="font-mono text-[10px] tracking-tight text-muted-foreground"
+									class="font-mono text-[10px] tracking-wide text-muted-foreground"
 								>
 									{action.shortcut}
 								</DropdownMenu.Shortcut>
@@ -159,15 +159,15 @@
 						<DropdownMenu.Item
 							variant="destructive"
 							onSelect={() => action.onAction()}
-							class="gap-2.5 rounded-lg px-2 py-1.5 text-[12px] font-medium"
+							class="gap-2.5 rounded-lg px-2 py-1.5 text-[10px] font-medium"
 						>
 							{#if Icon}
-								<Icon size={14} />
+								<Icon size={12} class="text-destructive/60 size-3" />
 							{/if}
-							<span class="flex-1 truncate">{action.label}</span>
+							<span class="flex-1 truncate text-[11px]">{action.label}</span>
 							{#if action.shortcut}
 								<DropdownMenu.Shortcut
-									class="font-mono text-[10px] tracking-tight text-destructive/60"
+									class="font-mono text-[10px] tracking-wide text-destructive/60"
 								>
 									{action.shortcut}
 								</DropdownMenu.Shortcut>

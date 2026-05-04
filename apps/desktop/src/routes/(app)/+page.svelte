@@ -172,6 +172,7 @@
       height: 320,
       decorations: false,
       transparent: true,
+      shadow: false,
       alwaysOnTop: true,
       resizable: true,
       center: true,

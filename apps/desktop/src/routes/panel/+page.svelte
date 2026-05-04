@@ -1,7 +1,7 @@
 <script lang="ts">
+  import { enumerateCameras } from "$lib/camera/browser-devices";
   import {
     getAudioDevices,
-    getCameraDevices,
     getDisplays,
     getLastSource,
     setLastSource,
@@ -68,6 +68,21 @@
       return;
     }
 
+    // Browser MediaDevices ids are 64-char hex hashes; the Rust validator
+    // looks them up against DirectShow names and will always miss those.
+    // Skip validation in that case — `openCameraStream` itself is the source
+    // of truth for whether a browser-id camera will actually open.
+    if (/^[a-f0-9]{40,}$/i.test(deviceId)) {
+      cameraValidation = {
+        id: deviceId,
+        name: selectedCameraName,
+        status: "ready",
+        statusMessage: null,
+        probedAtUnixMs: Date.now(),
+      };
+      return;
+    }
+
     try {
       cameraValidation = await validateCameraSource(deviceId);
     } catch {
@@ -82,6 +97,18 @@
   }
 
   onMount(() => {
+    const html = document.documentElement;
+    const body = document.body;
+    html.style.background = "transparent";
+    html.style.overflow = "hidden";
+    html.style.scrollbarGutter = "auto";
+    (
+      html.style as CSSStyleDeclaration & { scrollbarWidth?: string }
+    ).scrollbarWidth = "none";
+    body.style.background = "transparent";
+    body.style.overflow = "hidden";
+    body.style.margin = "0";
+
     const timer = window.setInterval(() => {
       if (isRecording) now = Date.now();
     }, 1000);
@@ -186,12 +213,14 @@
       })
       .catch(() => {});
 
-    getCameraDevices()
-      .then((devices) => {
-        if (devices.length > 0) {
-          selectedCameraId = devices[0].id;
-          selectedCameraName = devices[0].name;
-          void refreshCameraValidation(devices[0].id);
+    enumerateCameras()
+      .then((cams) => {
+        // Already sorted with non-virtual hardware first, so [0] prefers a
+        // real webcam over Phone Link / OBS Virtual / etc.
+        if (cams.length > 0) {
+          selectedCameraId = cams[0].deviceId;
+          selectedCameraName = cams[0].label;
+          void refreshCameraValidation(cams[0].deviceId);
         }
       })
       .catch(() => {});
@@ -217,6 +246,8 @@
         height: 440,
         center: true,
         decorations: false,
+        transparent: true,
+        shadow: false,
         resizable: false,
       });
     });
@@ -238,6 +269,8 @@
         height: 340,
         center: true,
         decorations: false,
+        transparent: true,
+        shadow: false,
         resizable: false,
       });
     });
@@ -255,6 +288,7 @@
         height: 200,
         decorations: false,
         transparent: true,
+        shadow: false,
         alwaysOnTop: true,
         resizable: true,
         x: 40,
@@ -313,7 +347,9 @@
         microphone: micOn,
         microphoneDeviceId: micOn ? selectedMicId : null,
         camera: cameraOn,
-        cameraDeviceId: cameraOn ? selectedCameraId : null,
+        // Rust feeds this directly to FFmpeg dshow as a DirectShow friendly
+        // name — pass the label, not the browser deviceId hash.
+        cameraDeviceId: cameraOn ? selectedCameraName : null,
       };
       try {
         const result = await startRecording(
@@ -352,7 +388,7 @@
 </script>
 
 <div
-  class="group/panel relative mx-auto flex h-dvh overflow-hidden no-scrollbar w-full items-center gap-1 bg-background/70 p-2 backdrop-blur-3xl border border-border-subtle shadow-craft-floating"
+  class="group/panel relative mx-auto flex h-dvh overflow-hidden no-scrollbar w-full items-center gap-1 bg-background p-2 backdrop-blur-3xl border border-border-subtle rounded-lg shadow-craft-floating"
   data-tauri-drag-region
 >
   <ButtonGroup>
@@ -387,10 +423,9 @@
     <!-- Timer -->
   </ButtonGroup>
 
-
   <!-- Source -->
   <Button
-  size="sm"
+    size="sm"
     disabled={isRecording}
     onclick={openSourceSelector}
     onmousedown={(e) => e.stopPropagation()}
@@ -430,66 +465,63 @@
     {/if}
   </Button>
 
-
- 
-
   <div class="shrink-0 px-1 ml-auto inline-flex items-center gap-1">
-   <!-- Device toggles -->
-  <ButtonGroup>
-    <!-- System audio -->
-    <Button
-      size="icon-sm"
-      variant={systemAudioOn ? "default_soft" : "outline"}
-      disabled={isRecording}
-      onclick={() => (systemAudioOn = !systemAudioOn)}
-      onmousedown={(e) => e.stopPropagation()}
-      title={systemAudioOn ? "System audio: on" : "System audio: off"}
-    >
-      {#if systemAudioOn}
-        <Volume2 size={14} strokeWidth={2} />
-      {:else}
-        <VolumeOff size={14} strokeWidth={2} />
-      {/if}
-    </Button>
+    <!-- Device toggles -->
+    <ButtonGroup>
+      <!-- System audio -->
+      <Button
+        size="icon-sm"
+        variant={systemAudioOn ? "default_soft" : "outline"}
+        disabled={isRecording}
+        onclick={() => (systemAudioOn = !systemAudioOn)}
+        onmousedown={(e) => e.stopPropagation()}
+        title={systemAudioOn ? "System audio: on" : "System audio: off"}
+      >
+        {#if systemAudioOn}
+          <Volume2 size={14} strokeWidth={2} />
+        {:else}
+          <VolumeOff size={14} strokeWidth={2} />
+        {/if}
+      </Button>
 
-    <!-- Mic -->
-    <Button
-      variant={micOn ? "default_soft" : "outline"}
-      size="icon-sm"
-      disabled={isRecording}
-      onclick={toggleMic}
-      onmousedown={(e) => e.stopPropagation()}
-      title={micOn ? `Mic: ${selectedMicName}` : "Microphone: off"}
-    >
-      {#if micOn}
-        <Mic size={14} strokeWidth={2} />
-      {:else}
-        <MicOff size={14} strokeWidth={2} />
-      {/if}
-    </Button>
+      <!-- Mic -->
+      <Button
+        variant={micOn ? "default_soft" : "outline"}
+        size="icon-sm"
+        disabled={isRecording}
+        onclick={toggleMic}
+        onmousedown={(e) => e.stopPropagation()}
+        title={micOn ? `Mic: ${selectedMicName}` : "Microphone: off"}
+      >
+        {#if micOn}
+          <Mic size={14} strokeWidth={2} />
+        {:else}
+          <MicOff size={14} strokeWidth={2} />
+        {/if}
+      </Button>
 
-    <!-- Camera -->
-    <Button
-      disabled={isRecording}
-      onclick={toggleCamera}
-      onmousedown={(e) => e.stopPropagation()}
-      variant={cameraOn
-        ? cameraValidation?.status === "error"
-          ? "destructive_soft"
-          : "default_soft"
-        : "outline"}
-      size="icon-sm"
-      title={cameraOn
-        ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}`
-        : "Camera: off"}
-    >
-      {#if cameraOn}
-        <Camera size={14} strokeWidth={2} />
-      {:else}
-        <CameraOff size={14} strokeWidth={2} />
-      {/if}
-    </Button>
-  </ButtonGroup>
+      <!-- Camera -->
+      <Button
+        disabled={isRecording}
+        onclick={toggleCamera}
+        onmousedown={(e) => e.stopPropagation()}
+        variant={cameraOn
+          ? cameraValidation?.status === "error"
+            ? "destructive_soft"
+            : "default_soft"
+          : "outline"}
+        size="icon-sm"
+        title={cameraOn
+          ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}`
+          : "Camera: off"}
+      >
+        {#if cameraOn}
+          <Camera size={14} strokeWidth={2} />
+        {:else}
+          <CameraOff size={14} strokeWidth={2} />
+        {/if}
+      </Button>
+    </ButtonGroup>
     <!-- Close -->
     <Button
       onclick={closePanel}

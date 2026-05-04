@@ -200,7 +200,7 @@
 <svelte:window onkeydown={handleKeydown} />
 
 <div
-  class="group/root flex h-screen w-full flex-col overflow-hidden select-none bg-background/80 backdrop-blur-3xl"
+  class="group/root flex h-screen w-full flex-col overflow-hidden select-none rounded-2xl border border-border-subtle bg-background/80 backdrop-blur-3xl"
 >
   <!-- Header -->
   <header
@@ -490,3 +490,23 @@
     </div>
   </footer>
 </div>
+
+<style>
+  :global(html) {
+    background: transparent !important;
+    scrollbar-width: none;
+    scrollbar-gutter: auto !important;
+    overflow: hidden;
+  }
+  :global(body) {
+    background: transparent !important;
+    overflow: hidden;
+    margin: 0;
+  }
+  :global(html::-webkit-scrollbar),
+  :global(body::-webkit-scrollbar) {
+    width: 0;
+    height: 0;
+    display: none;
+  }
+</style>
