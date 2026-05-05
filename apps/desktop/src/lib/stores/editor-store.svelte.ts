@@ -202,6 +202,14 @@ export interface CursorSettings {
 	highlightOpacity: number; // 0-100
 	hideWhenIdle: boolean;
 	idleTimeout: number; // seconds
+	/** Motion-blur strength — 0 = off, 1 = strong velocity trail. */
+	motionBlur: number;
+	/** Click-bounce amplitude — 0 = no bounce, 5 = exaggerated squash. */
+	clickBounce: number;
+	/** Bounce/squash duration in ms. */
+	bounceSpeedMs: number;
+	/** Idle sway amplitude — subtle wobble during slow motion. 0 = off, 1 = max. */
+	sway: number;
 }
 
 export interface BackgroundSelection {
@@ -333,6 +341,10 @@ export interface EditorRenderState {
 	cursorHighlightOpacity: number;
 	cursorHideWhenIdle: boolean;
 	cursorIdleTimeout: number;
+	cursorMotionBlur: number;
+	cursorClickBounce: number;
+	cursorBounceSpeedMs: number;
+	cursorSway: number;
 	zoomRegions: Array<{
 		start: number;
 		end: number;
@@ -517,6 +529,10 @@ export function createEditorStore() {
 		highlightOpacity: 40,
 		hideWhenIdle: false,
 		idleTimeout: 3,
+		motionBlur: 0,
+		clickBounce: 0,
+		bounceSpeedMs: 220,
+		sway: 0,
 	});
 
 	// Audio settings
@@ -947,6 +963,10 @@ export function createEditorStore() {
 			highlightOpacity: 40,
 			hideWhenIdle: false,
 			idleTimeout: 3,
+			motionBlur: 0,
+			clickBounce: 0,
+			bounceSpeedMs: 220,
+			sway: 0,
 		};
 		audioSettings = {
 			volume: 100,
@@ -1001,6 +1021,10 @@ export function createEditorStore() {
 			cursorHighlightOpacity: cursorSettings.highlightOpacity,
 			cursorHideWhenIdle: cursorSettings.hideWhenIdle,
 			cursorIdleTimeout: cursorSettings.idleTimeout,
+			cursorMotionBlur: cursorSettings.motionBlur,
+			cursorClickBounce: cursorSettings.clickBounce,
+			cursorBounceSpeedMs: cursorSettings.bounceSpeedMs,
+			cursorSway: cursorSettings.sway,
 			zoomRegions: zoomRegions.map((region) => ({
 				start: region.start,
 				end: region.end,
@@ -1056,6 +1080,11 @@ export function createEditorStore() {
 				state.cursorHideWhenIdle ?? cursorSettings.hideWhenIdle,
 			idleTimeout:
 				state.cursorIdleTimeout ?? cursorSettings.idleTimeout,
+			motionBlur: state.cursorMotionBlur ?? cursorSettings.motionBlur,
+			clickBounce: state.cursorClickBounce ?? cursorSettings.clickBounce,
+			bounceSpeedMs:
+				state.cursorBounceSpeedMs ?? cursorSettings.bounceSpeedMs,
+			sway: state.cursorSway ?? cursorSettings.sway,
 		};
 		zoomRegions = (state.zoomRegions ?? []).map((region) => ({
 			id: generateId(),

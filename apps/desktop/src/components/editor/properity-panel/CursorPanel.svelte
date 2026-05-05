@@ -15,6 +15,7 @@
     Sparkles,
     Target,
     Waves,
+    Wind,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
@@ -207,7 +208,134 @@
             <MousePointer size={11} />
           {/snippet}
         </SliderControl>
-       
+      </div>
+    </section>
+
+    <!-- Cursor animation: bounce, sway, motion blur. Stacked the way Screen
+         Studio's "Cursor" inspector exposes them — each row is a SliderControl
+         with its own icon, so they read as a coherent group. -->
+    <section>
+      <header class="mb-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5">
+          <h3
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Cursor animation
+          </h3>
+          <InspectorHint
+            content="Cinematic touches applied at export. Bounce reacts to clicks, sway adds subtle life at rest, motion blur trails the cursor during fast movement."
+          />
+        </div>
+        {#if store.cursorSettings.clickBounce !== 0 || store.cursorSettings.sway !== 0 || store.cursorSettings.motionBlur !== 0 || store.cursorSettings.bounceSpeedMs !== 220}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-foreground/50"
+            onclick={() =>
+              updateCursorSettings(
+                {
+                  clickBounce: 0,
+                  sway: 0,
+                  motionBlur: 0,
+                  bounceSpeedMs: 220,
+                },
+                true,
+              )}
+            title="Reset all animation knobs"
+          >
+            Reset
+          </Button>
+        {/if}
+      </header>
+      <div class="space-y-2.5">
+        <span
+          class="block"
+          in:fly={{ y: 4, duration: 220, delay: 60, easing: cubicOut }}
+        >
+          <SliderControl
+            label="Click bounce"
+            description="How much the cursor squashes when you click"
+            value={store.cursorSettings.clickBounce}
+            min={0}
+            max={5}
+            step={0.05}
+            unit="x"
+            onstart={() => store.pushUndoState()}
+            onchange={(next) =>
+              store.updateCursorSettings({ clickBounce: next })}
+          >
+            {#snippet icon()}
+              <Activity size={11} />
+            {/snippet}
+          </SliderControl>
+        </span>
+
+        {#if store.cursorSettings.clickBounce > 0}
+          <span
+            class="block"
+            in:fly={{ y: 4, duration: 200, easing: cubicOut }}
+          >
+            <SliderControl
+              label="Bounce speed"
+              description="Length of the bounce window"
+              value={store.cursorSettings.bounceSpeedMs}
+              min={80}
+              max={500}
+              step={10}
+              unit=" ms"
+              onstart={() => store.pushUndoState()}
+              onchange={(next) =>
+                store.updateCursorSettings({ bounceSpeedMs: next })}
+            >
+              {#snippet icon()}
+                <Waves size={11} />
+              {/snippet}
+            </SliderControl>
+          </span>
+        {/if}
+
+        <span
+          class="block"
+          in:fly={{ y: 4, duration: 220, delay: 120, easing: cubicOut }}
+        >
+          <SliderControl
+            label="Cursor sway"
+            description="Subtle wobble during slow motion — disappears as you move faster"
+            value={store.cursorSettings.sway}
+            min={0}
+            max={1}
+            step={0.01}
+            unit="x"
+            onstart={() => store.pushUndoState()}
+            onchange={(next) => store.updateCursorSettings({ sway: next })}
+          >
+            {#snippet icon()}
+              <Wind size={11} />
+            {/snippet}
+          </SliderControl>
+        </span>
+
+        <span
+          class="block"
+          in:fly={{ y: 4, duration: 220, delay: 180, easing: cubicOut }}
+        >
+          <SliderControl
+            label="Motion blur"
+            description="Velocity-proportional trail behind fast cursor movement"
+            value={store.cursorSettings.motionBlur}
+            min={0}
+            max={1}
+            step={0.01}
+            unit="x"
+            onstart={() => store.pushUndoState()}
+            onchange={(next) =>
+              store.updateCursorSettings({ motionBlur: next })}
+          >
+            {#snippet icon()}
+              <Sparkles size={11} />
+            {/snippet}
+          </SliderControl>
+        </span>
       </div>
     </section>
 

@@ -8,6 +8,8 @@ use super::node_types::{
     ShadowSettings, TrimNode, WatermarkSettings, ZoomNode, ZoomRegion,
 };
 
+fn default_bounce_speed_ms() -> f64 { 220.0 }
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderState {
@@ -29,6 +31,21 @@ pub struct RenderState {
     pub cursor_highlight_opacity: f64,
     pub cursor_hide_when_idle: bool,
     pub cursor_idle_timeout: f64,
+    /// Motion-blur strength (0..1). Drives a velocity-proportional alpha trail
+    /// in the export compositor (0 = no trail).
+    #[serde(default)]
+    pub cursor_motion_blur: f64,
+    /// Click-bounce amplitude (0..5). Modulates the cursor sprite scale around
+    /// each mouse-down event for a satisfying "press" feel.
+    #[serde(default)]
+    pub cursor_click_bounce: f64,
+    /// Bounce/squash duration in milliseconds.
+    #[serde(default = "default_bounce_speed_ms")]
+    pub cursor_bounce_speed_ms: f64,
+    /// Idle sway amplitude (0..1). Adds a subtle sinusoidal wobble during
+    /// slow-motion sections so cursors don't feel mechanically rigid.
+    #[serde(default)]
+    pub cursor_sway: f64,
     pub zoom_regions: Vec<ZoomRegion>,
     /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
@@ -84,6 +101,10 @@ impl Default for RenderState {
             cursor_highlight_opacity: 40.0,
             cursor_hide_when_idle: false,
             cursor_idle_timeout: 3.0,
+            cursor_motion_blur: 0.0,
+            cursor_click_bounce: 0.0,
+            cursor_bounce_speed_ms: default_bounce_speed_ms(),
+            cursor_sway: 0.0,
             zoom_regions: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),

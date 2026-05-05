@@ -24,6 +24,7 @@ use anyhow::{anyhow, Context, Result};
 use image::{ImageReader, RgbaImage};
 
 use crate::cursor::CursorTrack;
+use crate::render::cursor_anim::{click_bounce_scale, idle_sway_offset, motion_blur_step_alpha};
 use crate::render::graph::RenderState;
 use crate::render::node_types::{Annotation, AnnotationKind};
 
@@ -109,6 +110,40 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
     if track.samples.is_empty() {
         return Err(anyhow!("cursor track has no samples"));
+    }
+
+    // Pre-compute click rising-edge timestamps (seconds, on the cursor-track
+    // clock) for the bounce curve. We treat any 0→1 transition on either
+    // mouse button as a click impact, deduplicated by sample boundaries.
+    let mut click_events_secs: Vec<f64> = Vec::new();
+    {
+        let mut prev_left = false;
+        let mut prev_right = false;
+        for s in &track.samples {
+            let down_now = s.left_down || s.right_down;
+            let was_down = prev_left || prev_right;
+            if down_now && !was_down {
+                click_events_secs.push(s.timestamp_us as f64 / 1_000_000.0);
+            }
+            prev_left = s.left_down;
+            prev_right = s.right_down;
+        }
+    }
+
+    /// Find the click event nearest `t_secs`. Returns the offset in ms
+    /// (`t - click_t`, signed, negative = click is in the future) or None
+    /// when the track has no clicks.
+    fn nearest_click_offset_ms(events: &[f64], t_secs: f64) -> Option<f64> {
+        let mut best: Option<f64> = None;
+        for &e in events {
+            let dt_ms = (t_secs - e) * 1000.0;
+            match best {
+                None => best = Some(dt_ms),
+                Some(cur) if dt_ms.abs() < cur.abs() => best = Some(dt_ms),
+                _ => {}
+            }
+        }
+        best
     }
 
     // Create a unique scratch directory.
@@ -323,12 +358,92 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             }
         }
 
+        // Cursor-anim: idle sway. Adds a tiny sinusoidal wobble in source-px
+        // for slow-moving cursors. We approximate cursor velocity by sampling
+        // 16 ms in the past and measuring distance — keeps sway alive at rest
+        // and tapers it cleanly during fast gestures.
+        if request.render_state.cursor_sway > 0.0 {
+            let velocity_px_per_s = {
+                let lookback_us = 16_000_u64;
+                let past_us = t_track_us.saturating_sub(lookback_us);
+                if let Some(prev) = interpolate_cursor(&track, past_us) {
+                    let dt = (t_track_us - past_us) as f64 / 1_000_000.0;
+                    if dt > 0.0 {
+                        ((sample.x - prev.x).powi(2) + (sample.y - prev.y).powi(2)).sqrt() / dt
+                    } else { 0.0 }
+                } else { 0.0 }
+            };
+            let (dx, dy) = idle_sway_offset(
+                t_track_us as f64 / 1000.0,
+                request.render_state.cursor_sway,
+                velocity_px_per_s,
+            );
+            cursor_source_x += dx;
+            cursor_source_y += dy;
+        }
+
+        // Cursor-anim: click bounce — modulates a per-frame scale multiplier
+        // applied to both the soft-dot radius and the sprite render size.
+        let bounce_scale = if request.render_state.cursor_click_bounce > 0.0 {
+            if let Some(dt_ms) = nearest_click_offset_ms(&click_events_secs, t_track_secs) {
+                click_bounce_scale(
+                    dt_ms,
+                    request.render_state.cursor_bounce_speed_ms.max(60.0),
+                    request.render_state.cursor_click_bounce,
+                )
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+
         // Map source coords → canvas coords.
         // Video area in the canvas is [padding, padding + source_width].
         let scale_canvas =
             request.canvas_width as f64 / (request.source_width + request.padding * 2) as f64;
         let cursor_canvas_x = (request.padding as f64 + cursor_source_x) * scale_canvas;
         let cursor_canvas_y = (request.padding as f64 + cursor_source_y) * scale_canvas;
+
+        // Per-frame motion-blur trail positions: sample the cursor track at
+        // a few sub-frames into the past at decreasing alpha so the export
+        // shows a velocity-proportional smear that tracks the actual motion
+        // path (not a uniform blur). Strength and step count come from the
+        // render state's motion-blur slider.
+        let mb_strength = request.render_state.cursor_motion_blur.clamp(0.0, 1.0);
+        let mut motion_trail: Vec<(f64, f64, f64)> = Vec::new(); // (canvas_x, canvas_y, alpha)
+        if mb_strength > 0.0 {
+            const TRAIL_STEPS: usize = 6;
+            // 8ms per step keeps the trail visible at 60fps without smearing
+            // into prior gestures.
+            const STEP_DT_US: i64 = 8_000;
+            for i in 1..=TRAIL_STEPS {
+                let alpha = motion_blur_step_alpha(i, TRAIL_STEPS, mb_strength);
+                if alpha <= 0.0 {
+                    continue;
+                }
+                let past_us = t_track_us as i64 - (i as i64) * STEP_DT_US;
+                if past_us < 0 {
+                    continue;
+                }
+                let past_sample = match interpolate_cursor(&track, past_us as u64) {
+                    Some(s) if s.visible => s,
+                    _ => continue,
+                };
+                let (mut px, mut py) = (past_sample.x, past_sample.y);
+                if let Some((scale, cx, cy)) =
+                    active_zoom_at(&request.render_state.zoom_regions, past_us as f64 / 1_000_000.0)
+                {
+                    let scx = cx.clamp(0.0, 1.0) * request.source_width as f64;
+                    let scy = cy.clamp(0.0, 1.0) * request.source_height as f64;
+                    px = (px - scx) * scale + scx;
+                    py = (py - scy) * scale + scy;
+                }
+                let cx = (request.padding as f64 + px) * scale_canvas;
+                let cy = (request.padding as f64 + py) * scale_canvas;
+                motion_trail.push((cx, cy, alpha));
+            }
+        }
 
         // Click highlight halo — drawn underneath the dot/sprite so both
         // the soft-dot and macOS sprite share the same press indicator.
@@ -375,12 +490,28 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 };
                 // Sprite size: source-pixel design size from JS, mapped to
                 // canvas pixels with the same `scale_canvas` factor used
-                // for the cursor position above.
+                // for the cursor position above. Bounce scale modulates
+                // it per-frame so click impacts visually pop.
                 let sprite_source_px = request
                     .render_state
                     .cursor_sprite_size_px
                     .unwrap_or(request.render_state.cursor_size * 16.0);
-                let target_size_px = sprite_source_px * scale_canvas;
+                let target_size_px = sprite_source_px * scale_canvas * bounce_scale;
+                // Motion-blur trail (drawn before the sharp head so the
+                // current position remains crisp on top).
+                for &(tx, ty, talpha) in &motion_trail {
+                    blit_cursor_sprite(
+                        &mut frame,
+                        canvas_w,
+                        canvas_h,
+                        img,
+                        tx,
+                        ty,
+                        target_size_px,
+                        hotspot,
+                        idle_alpha * talpha,
+                    );
+                }
                 blit_cursor_sprite(
                     &mut frame,
                     canvas_w,
@@ -394,15 +525,30 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                 );
             }
         } else {
-            // Soft-dot path (white, 90% alpha) — unchanged behaviour for
-            // projects on the default `dot` style.
+            // Soft-dot path (white, 90% alpha) — bounce scales the radius,
+            // motion-blur draws faint copies behind the head.
+            let bounced_radius = cursor_radius_canvas * bounce_scale;
+            for &(tx, ty, talpha) in &motion_trail {
+                draw_filled_circle_soft(
+                    &mut frame,
+                    canvas_w,
+                    canvas_h,
+                    tx,
+                    ty,
+                    bounced_radius,
+                    255,
+                    255,
+                    255,
+                    0.9 * idle_alpha * talpha,
+                );
+            }
             draw_filled_circle_soft(
                 &mut frame,
                 canvas_w,
                 canvas_h,
                 cursor_canvas_x,
                 cursor_canvas_y,
-                cursor_radius_canvas,
+                bounced_radius,
                 255,
                 255,
                 255,
