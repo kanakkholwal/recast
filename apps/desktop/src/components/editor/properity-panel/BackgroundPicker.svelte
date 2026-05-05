@@ -20,7 +20,13 @@
     Square,
     SquareRoundCorner,
   } from "@lucide/svelte";
+  import {
+    getRecentColors,
+    pushRecentColor,
+  } from "$lib/annotations/recent-colors";
   import { Button } from "@recast/ui/button";
+  import { ColorPicker } from "@recast/ui/color-picker";
+  import * as Popover from "@recast/ui/popover";
   import { cn } from "@recast/ui/utils";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { Image } from "@unpic/svelte";
@@ -54,6 +60,11 @@
   };
 
   let { store }: Props = $props();
+
+  let recents = $state<string[]>(getRecentColors());
+  function rememberColor(color: string) {
+    recents = pushRecentColor(color);
+  }
 
   let blurValue = $state(0);
   let paddingValue = $state(0);
@@ -275,29 +286,52 @@
         {/each}
       </div>
 
-      <div
-        class="mt-3 flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2"
-      >
-        <input
-          type="color"
-          value={store.backgroundValue.startsWith("#")
-            ? store.backgroundValue
-            : DEFAULT_BACKGROUND_VALUES.color}
-          oninput={(e) =>
-            applyBackground(
-              "color",
-              (e.currentTarget as HTMLInputElement).value,
-            )}
-          class="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent"
-          aria-label="Choose a custom background color"
-        />
-        <div class="min-w-0 flex-1">
-          <p class="text-[11px] font-medium text-foreground">Custom color</p>
-          <p class="truncate font-mono text-[10px] text-muted-foreground">
-            {store.backgroundValue.toUpperCase()}
-          </p>
-        </div>
-      </div>
+      <Popover.Root>
+        <Popover.Trigger>
+          {#snippet child({ props })}
+            <button
+              type="button"
+              {...props}
+              aria-label="Custom background color"
+              class="mt-3 flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-2 text-left transition-colors hover:border-ring"
+            >
+              <span
+                class="size-7 shrink-0 rounded border border-input"
+                style:background={
+                  store.backgroundValue.startsWith("#")
+                    ? store.backgroundValue
+                    : DEFAULT_BACKGROUND_VALUES.color
+                }
+              ></span>
+              <span class="min-w-0 flex-1">
+                <span class="block text-[11px] font-medium text-foreground"
+                  >Custom color</span
+                >
+                <span
+                  class="block truncate font-mono text-[10px] text-muted-foreground"
+                >
+                  {store.backgroundValue.toUpperCase()}
+                </span>
+              </span>
+            </button>
+          {/snippet}
+        </Popover.Trigger>
+        <Popover.Content align="start" class="w-auto p-0">
+          <ColorPicker
+            value={
+              store.backgroundValue.startsWith("#")
+                ? store.backgroundValue
+                : DEFAULT_BACKGROUND_VALUES.color
+            }
+            recents={recents}
+            oncommit={(c: string) => {
+              store.pushUndoState();
+              applyBackground("color", c);
+              rememberColor(c);
+            }}
+          />
+        </Popover.Content>
+      </Popover.Root>
     </section>
   {:else if store.backgroundType === "gradient"}
     <section>
@@ -542,28 +576,44 @@
           onchange={(v) => store.updateShadow({ opacity: v })}
         />
 
-        <div
-          class="flex items-center gap-2 rounded-md border border-border bg-background px-2 py-2"
-        >
-          <input
-            type="color"
-            value={store.shadow.color || "#000000"}
-            oninput={(e) => {
-              store.pushUndoState();
-              store.updateShadow({
-                color: (e.currentTarget as HTMLInputElement).value,
-              });
-            }}
-            class="size-7 shrink-0 cursor-pointer rounded border border-input bg-transparent"
-            aria-label="Choose shadow color"
-          />
-          <div class="min-w-0 flex-1">
-            <p class="text-[11px] font-medium text-foreground">Shadow color</p>
-            <p class="truncate font-mono text-[10px] text-muted-foreground">
-              {(store.shadow.color || "#000000").toUpperCase()}
-            </p>
-          </div>
-        </div>
+        <Popover.Root>
+          <Popover.Trigger>
+            {#snippet child({ props })}
+              <button
+                type="button"
+                {...props}
+                aria-label="Choose shadow color"
+                class="flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-2 text-left transition-colors hover:border-ring"
+              >
+                <span
+                  class="size-7 shrink-0 rounded border border-input"
+                  style:background={store.shadow.color || "#000000"}
+                ></span>
+                <span class="min-w-0 flex-1">
+                  <span class="block text-[11px] font-medium text-foreground"
+                    >Shadow color</span
+                  >
+                  <span
+                    class="block truncate font-mono text-[10px] text-muted-foreground"
+                  >
+                    {(store.shadow.color || "#000000").toUpperCase()}
+                  </span>
+                </span>
+              </button>
+            {/snippet}
+          </Popover.Trigger>
+          <Popover.Content align="start" class="w-auto p-0">
+            <ColorPicker
+              value={store.shadow.color || "#000000"}
+              recents={recents}
+              oncommit={(c: string) => {
+                store.pushUndoState();
+                store.updateShadow({ color: c });
+                rememberColor(c);
+              }}
+            />
+          </Popover.Content>
+        </Popover.Root>
       </div>
     {/if}
   </section>

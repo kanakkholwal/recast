@@ -99,7 +99,7 @@ export function projectUv(
  * drag any of the four diagonals while we keep storage canonical.
  */
 export function normaliseBox(k: AnnotationKind): Rect {
-	if (k.kind === "rect" || k.kind === "ellipse" || k.kind === "image" || k.kind === "text") {
+	if (k.kind === "rect" || k.kind === "ellipse" || k.kind === "image" || k.kind === "text" || k.kind === "blur") {
 		const x = Math.min(k.x, k.x + k.w);
 		const y = Math.min(k.y, k.y + k.h);
 		return { x, y, w: Math.abs(k.w), h: Math.abs(k.h) };

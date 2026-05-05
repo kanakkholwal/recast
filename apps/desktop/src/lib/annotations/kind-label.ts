@@ -5,6 +5,7 @@ import type { Annotation, AnnotationKindName } from "$lib/stores/editor-store.sv
 import {
 	ArrowUpRight,
 	Circle,
+	Droplets,
 	ImageIcon,
 	Square,
 	Type as TypeIcon,
@@ -23,6 +24,8 @@ export function kindLabel(a: Annotation): string {
 			return a.kind.content.trim().slice(0, 32) || "Text";
 		case "image":
 			return "Image";
+		case "blur":
+			return "Blur";
 	}
 }
 
@@ -38,6 +41,8 @@ export function defaultKindLabel(kind: AnnotationKindName): string {
 			return "Text";
 		case "image":
 			return "Image";
+		case "blur":
+			return "Blur";
 	}
 }
 
@@ -53,5 +58,7 @@ export function kindIcon(a: Annotation): typeof Square {
 			return TypeIcon;
 		case "image":
 			return ImageIcon;
+		case "blur":
+			return Droplets;
 	}
 }

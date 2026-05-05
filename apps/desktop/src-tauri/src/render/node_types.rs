@@ -532,12 +532,39 @@ pub enum AnnotationKind {
         #[serde(default = "default_image_opacity")]
         opacity: f64,
     },
+    /// Privacy/focus blur applied to the live frame underneath the rect.
+    /// `strength` (0..1) drives a separable box-blur radius; `variant`
+    /// chooses optional tint colour applied over the blurred pixels.
+    Blur {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        #[serde(default = "default_blur_strength")]
+        strength: f64,
+        #[serde(default = "default_blur_variant")]
+        variant: String,
+        #[serde(default = "default_blur_tint", rename = "tintColor")]
+        tint_color: String,
+        #[serde(default)]
+        radius: f64,
+    },
     /// Unknown / unsupported variant. Deserialization fallback so the export
     /// pipeline doesn't fail if the JS side sends a kind Rust can't render
     /// (e.g. `text` annotations that weren't pre-rasterized to PNG). Skipped
     /// silently in the draw loop.
     #[serde(other)]
     Unsupported,
+}
+
+fn default_blur_strength() -> f64 {
+    0.5
+}
+fn default_blur_variant() -> String {
+    "glass".into()
+}
+fn default_blur_tint() -> String {
+    "#000000".into()
 }
 
 fn default_arrow_head_size() -> f64 {

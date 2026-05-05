@@ -164,9 +164,16 @@
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     } else if (a.kind.kind === "image") {
       ctx.rect(x, y, w, h);
+    } else if (a.kind.kind === "blur") {
+      // The actual blurred pixels are rendered by `BlurAnnotationLayer`
+      // (a sibling DOM layer with native `backdrop-filter: blur(Npx)`),
+      // because Canvas2D can't blur pixels behind itself. We deliberately
+      // draw nothing on the canvas for blur — the backdrop-filter is the
+      // visible cue, and selection handles get drawn separately when the
+      // blur is the selected annotation.
     }
 
-    if (a.kind.kind !== "image" && a.fill && a.fill !== "transparent") {
+    if (a.kind.kind !== "image" && a.kind.kind !== "blur" && a.fill && a.fill !== "transparent") {
       ctx.fillStyle = a.fill;
       ctx.fill();
     }
@@ -491,6 +498,37 @@
         e.preventDefault();
         return;
       }
+      if (hit === "body") {
+        // Body of the already-selected annotation → start moving immediately.
+        // We deliberately skip the pickAnnotation path here so the annotation
+        // can be moved during fade-in / fade-out windows where evalOpacity
+        // would otherwise filter it out of the hit-test.
+        (e.currentTarget as Element).setPointerCapture(e.pointerId);
+        const pointerUV = unprojectUV(pt.x, pt.y, t);
+        if (selected.kind.kind === "arrow") {
+          drag = {
+            kind: "move",
+            id: selected.id,
+            startX: selected.kind.x1,
+            startY: selected.kind.y1,
+            startX2: selected.kind.x2,
+            startY2: selected.kind.y2,
+            pointerStartUV: pointerUV,
+          };
+        } else {
+          const box = normaliseBox(selected.kind);
+          drag = {
+            kind: "move",
+            id: selected.id,
+            startX: box.x,
+            startY: box.y,
+            pointerStartUV: pointerUV,
+          };
+        }
+        store.pushUndoState();
+        e.preventDefault();
+        return;
+      }
     }
 
     // Any annotation under the pointer → select and enter move mode.
@@ -563,6 +601,19 @@
             color: "#ffffff",
             align: "left",
             lineHeight: 1.2,
+          };
+          break;
+        case "blur":
+          kind = {
+            kind: "blur",
+            x: anchor.x,
+            y: anchor.y,
+            w: 0,
+            h: 0,
+            strength: 0.5,
+            variant: "glass",
+            tintColor: "#000000",
+            radius: 0.005,
           };
           break;
         case "image":
@@ -667,7 +718,8 @@
         anno.kind.kind === "rect" ||
         anno.kind.kind === "ellipse" ||
         anno.kind.kind === "text" ||
-        anno.kind.kind === "image"
+        anno.kind.kind === "image" ||
+        anno.kind.kind === "blur"
       ) {
         const w = uv.x - drag.anchor.x;
         const h = uv.y - drag.anchor.y;
@@ -696,7 +748,8 @@
         anno.kind.kind === "rect" ||
         anno.kind.kind === "ellipse" ||
         anno.kind.kind === "text" ||
-        anno.kind.kind === "image"
+        anno.kind.kind === "image" ||
+        anno.kind.kind === "blur"
       ) {
         const newX = drag.startX + dx;
         const newY = drag.startY + dy;
@@ -744,7 +797,8 @@
         anno.kind.kind === "rect" ||
         anno.kind.kind === "ellipse" ||
         anno.kind.kind === "text" ||
-        anno.kind.kind === "image"
+        anno.kind.kind === "image" ||
+        anno.kind.kind === "blur"
       ) {
         store.updateAnnotation(drag.id, {
           kind: { ...anno.kind, x: nx, y: ny, w: nw, h: nh },
@@ -762,7 +816,12 @@
     if (drag.kind === "place") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (anno) {
-        if (anno.kind.kind === "rect" || anno.kind.kind === "ellipse" || anno.kind.kind === "image") {
+        if (
+          anno.kind.kind === "rect" ||
+          anno.kind.kind === "ellipse" ||
+          anno.kind.kind === "image" ||
+          anno.kind.kind === "blur"
+        ) {
           if (Math.abs(anno.kind.w) < 0.01 || Math.abs(anno.kind.h) < 0.01) {
             store.removeAnnotation(drag.id);
           }
@@ -795,7 +854,8 @@
         (anno.kind.kind === "rect" ||
           anno.kind.kind === "ellipse" ||
           anno.kind.kind === "text" ||
-          anno.kind.kind === "image")
+          anno.kind.kind === "image" ||
+          anno.kind.kind === "blur")
       ) {
         const box = normaliseBox(anno.kind);
         store.updateAnnotation(drag.id, {
@@ -972,7 +1032,7 @@
   onpointercancel={handlePointerUp}
   onpointerleave={() => (hoverHandle = null)}
   class="absolute inset-0 h-full w-full"
-  class:pointer-events-auto={store.activePanel === "annotations" && !store.annotationsGloballyHidden}
-  class:pointer-events-none={store.activePanel !== "annotations" || store.annotationsGloballyHidden}
+  style:pointer-events={store.annotationsGloballyHidden ? "none" : "auto"}
+  style:touch-action="none"
   style:cursor={canvasCursor}
 ></canvas>

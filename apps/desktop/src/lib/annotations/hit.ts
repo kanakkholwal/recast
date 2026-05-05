@@ -3,7 +3,7 @@
 // container-pixel positions or string handle IDs — no DOM dependencies.
 
 import type { Annotation } from "$lib/stores/editor-store.svelte";
-import { evalOpacity, type ZoomRegionLike } from "./eval";
+import { type ZoomRegionLike } from "./eval";
 import { evalZoom } from "./eval";
 import { normaliseBox, uvToCanvas, type Rect } from "./uv";
 
@@ -134,7 +134,13 @@ export function hitTestAnnotation(
 		if (a.hidden) continue;
 		if (a.locked) continue;
 		if (a.kind.kind === "text") continue;
-		if (evalOpacity(a, opts.t) <= 0.05) continue;
+		// Hit-test against the visibility *window* rather than the per-frame
+		// opacity. The fade-in ramp briefly drops opacity below the old 0.05
+		// threshold right after creation, which previously made fresh
+		// annotations un-selectable until the ramp finished. Skipping by window
+		// keeps selection responsive while still ignoring annotations that
+		// haven't started or have already ended.
+		if (opts.t < a.start || opts.t > a.end) continue;
 
 		if (a.kind.kind === "arrow") {
 			const p1 = uvToCanvas(a.kind.x1, a.kind.y1, opts.rect, zoom);

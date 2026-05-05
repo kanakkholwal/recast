@@ -12,6 +12,7 @@
     AlignRight,
     ArrowUpRight,
     Circle,
+    Droplets,
     ImageIcon,
     Lock,
     MousePointer2,
@@ -21,8 +22,14 @@
     Trash2,
     Type as TypeIcon,
   } from "@lucide/svelte";
+  import {
+    getRecentColors,
+    pushRecentColor,
+  } from "$lib/annotations/recent-colors";
   import { Button } from "@recast/ui/button";
+  import { ColorPicker } from "@recast/ui/color-picker";
   import { Kbd } from "@recast/ui/kbd";
+  import * as Popover from "@recast/ui/popover";
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
@@ -37,6 +44,11 @@
   }
 
   let { store }: Props = $props();
+
+  let recents = $state<string[]>(getRecentColors());
+  function rememberColor(color: string) {
+    recents = pushRecentColor(color);
+  }
 
   const selected = $derived<Annotation | null>(
     store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
@@ -59,6 +71,7 @@
     { id: "ellipse", label: "Ellipse", icon: Circle, hotkey: "O" },
     { id: "arrow", label: "Arrow", icon: ArrowUpRight, hotkey: "A" },
     { id: "text", label: "Text", icon: TypeIcon, hotkey: "T" },
+    { id: "blur", label: "Blur", icon: Droplets, hotkey: "B" },
     { id: "image", label: "Image", icon: ImageIcon, hotkey: "I", disabled: true },
   ];
 
@@ -141,6 +154,8 @@
         return a.kind.content.trim().slice(0, 32) || "Text";
       case "image":
         return "Image";
+      case "blur":
+        return "Blur";
     }
   }
   function kindIcon(a: Annotation): typeof Square {
@@ -155,6 +170,8 @@
         return TypeIcon;
       case "image":
         return ImageIcon;
+      case "blur":
+        return Droplets;
     }
   }
 
@@ -218,6 +235,8 @@
         return "Drag from start to end on the preview.";
       case "text":
         return "Drag a box on the preview, then type.";
+      case "blur":
+        return "Drag a region to obscure — applied at export.";
       default:
         return "";
     }
@@ -433,6 +452,138 @@
             });
           }}
         />
+      {/if}
+
+      {#if a.kind.kind === "blur"}
+        <div class="space-y-2.5 border-t border-border pt-3">
+          <h3
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Blur
+          </h3>
+          <SliderControl
+            label="Strength"
+            value={a.kind.strength * 100}
+            min={0}
+            max={100}
+            step={1}
+            unit="%"
+            description="Controls how much the underlying pixels are softened. Applied at export."
+            formatValue={(v) => `${v.toFixed(0)}%`}
+            onstart={() => store.pushUndoState()}
+            onchange={(v) => {
+              if (a.kind.kind !== "blur") return;
+              updateSelected({ kind: { ...a.kind, strength: v / 100 } });
+            }}
+          />
+          <SliderControl
+            label="Corner radius"
+            value={a.kind.radius * 1000}
+            min={0}
+            max={50}
+            step={1}
+            unit="‰"
+            formatValue={(v) => `${v.toFixed(0)}‰`}
+            onstart={() => store.pushUndoState()}
+            onchange={(v) => {
+              if (a.kind.kind !== "blur") return;
+              updateSelected({ kind: { ...a.kind, radius: v / 1000 } });
+            }}
+          />
+          <div class="space-y-1">
+            <span
+              class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+            >
+              Style
+            </span>
+            <div class="grid grid-cols-4 gap-1">
+              {#each [
+                { id: "glass", label: "Glass", swatch: "bg-gradient-to-br from-white/40 to-blue-200/30" },
+                { id: "white", label: "White", swatch: "bg-white" },
+                { id: "black", label: "Black", swatch: "bg-black" },
+                { id: "color", label: "Color", swatch: "bg-gradient-to-br from-rose-400 via-amber-300 to-emerald-400" },
+              ] as opt (opt.id)}
+                {@const sel = a.kind.kind === "blur" && a.kind.variant === opt.id}
+                <button
+                  type="button"
+                  aria-pressed={sel}
+                  onclick={() => {
+                    if (a.kind.kind !== "blur") return;
+                    store.pushUndoState();
+                    updateSelected({
+                      kind: {
+                        ...a.kind,
+                        variant: opt.id as "glass" | "white" | "black" | "color",
+                      },
+                    });
+                  }}
+                  class={cn(
+                    "group flex flex-col items-center gap-1 rounded-md border px-1 py-1.5 transition-all duration-150",
+                    sel
+                      ? "border-primary/50 bg-primary/8 ring-1 ring-primary/30"
+                      : "border-border/40 bg-background/40 hover:border-border",
+                  )}
+                >
+                  <span
+                    class={cn(
+                      "h-4 w-full rounded border border-border/50",
+                      opt.swatch,
+                    )}
+                  ></span>
+                  <span
+                    class={cn(
+                      "text-[10px] font-semibold",
+                      sel ? "text-primary" : "text-foreground",
+                    )}
+                  >
+                    {opt.label}
+                  </span>
+                </button>
+              {/each}
+            </div>
+          </div>
+          {#if a.kind.variant === "color"}
+            <Popover.Root>
+              <Popover.Trigger>
+                {#snippet child({ props })}
+                  <button
+                    type="button"
+                    {...props}
+                    aria-label="Choose blur tint color"
+                    class="flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-left transition-colors hover:border-ring"
+                  >
+                    <span
+                      class="size-5 shrink-0 rounded border border-input"
+                      style:background={a.kind.tintColor}
+                    ></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-[11px] font-medium text-foreground"
+                        >Tint</span
+                      >
+                      <span
+                        class="block truncate font-mono text-[10px] text-muted-foreground"
+                      >
+                        {a.kind.tintColor.toUpperCase()}
+                      </span>
+                    </span>
+                  </button>
+                {/snippet}
+              </Popover.Trigger>
+              <Popover.Content align="start" class="w-auto p-0">
+                <ColorPicker
+                  value={a.kind.tintColor}
+                  recents={recents}
+                  oncommit={(c: string) => {
+                    if (a.kind.kind !== "blur") return;
+                    store.pushUndoState();
+                    updateSelected({ kind: { ...a.kind, tintColor: c } });
+                    rememberColor(c);
+                  }}
+                />
+              </Popover.Content>
+            </Popover.Root>
+          {/if}
+        </div>
       {/if}
 
       {#if a.kind.kind === "arrow"}

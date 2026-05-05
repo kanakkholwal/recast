@@ -12,9 +12,9 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::ffmpeg::{
-    append_cursor_overlay_to_complex, append_output_filters_to_complex, build_gif_palette_complex,
-    build_output_scale_filter, has_audio, probe_video_metadata, resolve_export_profile,
-    summarize_ffmpeg_error, GifFilterOptions,
+    append_cursor_overlay_to_complex, append_output_filters_to_complex, build_annotation_blur_complex,
+    build_gif_palette_complex, build_output_scale_filter, has_audio, probe_video_metadata,
+    resolve_export_profile, summarize_ffmpeg_error, BlurRegion, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -23,7 +23,7 @@ use crate::project::reader::ProjectOpenResult;
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 use crate::render::mask_export::{render_border_radius_mask, MaskResult};
-use crate::render::node_types::AudioSettings;
+use crate::render::node_types::{AnnotationKind, AudioSettings};
 
 /// True if the line is part of an FFmpeg `-progress` block (key=value metric
 /// lines that FFmpeg emits every `-stats_period` interval). These should be
@@ -741,6 +741,64 @@ pub async fn export_video(
             &request.render_state.watermark_settings,
             canvas_width,
             canvas_height,
+        );
+        filter_complex_after_cursor = Some(new_complex);
+        video_map_after_cursor = new_map;
+    }
+
+    // Annotation blur regions — applied AFTER the cursor overlay so the blur
+    // sits over the composited cursor too (same z-order as in the preview),
+    // but BEFORE GIF palettization so the palette captures the blurred pixels.
+    let blur_regions: Vec<BlurRegion> = request
+        .render_state
+        .annotations
+        .iter()
+        .filter(|a| !a.hidden)
+        .filter_map(|a| match &a.kind {
+            AnnotationKind::Blur {
+                x,
+                y,
+                w,
+                h,
+                strength,
+                variant,
+                tint_color,
+                ..
+            } => {
+                // UV → canvas-pixel rect.
+                let cx = (x * canvas_width as f64).round() as i32;
+                let cy = (y * canvas_height as f64).round() as i32;
+                let cw = (w.abs() * canvas_width as f64).round() as i32;
+                let ch = (h.abs() * canvas_height as f64).round() as i32;
+                if cw < 4 || ch < 4 {
+                    return None;
+                }
+                // Strength 0..1 → kernel radius up to 5% of the shorter edge.
+                let max_dim = canvas_width.min(canvas_height) as f64 * 0.05;
+                let radius = (strength.clamp(0.0, 1.0) * max_dim).round().max(1.0) as u32;
+                let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16)
+                    .unwrap_or(0x000000);
+                Some(BlurRegion {
+                    x: cx,
+                    y: cy,
+                    w: cw,
+                    h: ch,
+                    radius,
+                    start_secs: a.start - trim_start,
+                    end_secs: a.end - trim_start,
+                    variant: variant.as_str(),
+                    tint_rgb,
+                    opacity: a.opacity.clamp(0.0, 1.0),
+                })
+            }
+            _ => None,
+        })
+        .collect();
+    if !blur_regions.is_empty() {
+        let (new_complex, new_map) = build_annotation_blur_complex(
+            filter_complex_after_cursor.as_deref(),
+            &video_map_after_cursor,
+            &blur_regions,
         );
         filter_complex_after_cursor = Some(new_complex);
         video_map_after_cursor = new_map;

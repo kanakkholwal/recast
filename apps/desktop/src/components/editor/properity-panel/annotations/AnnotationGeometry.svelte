@@ -37,7 +37,8 @@
       annotation.kind.kind === "rect" ||
       annotation.kind.kind === "ellipse" ||
       annotation.kind.kind === "text" ||
-      annotation.kind.kind === "image"
+      annotation.kind.kind === "image" ||
+      annotation.kind.kind === "blur"
     ) {
       store.pushUndoState();
       store.updateAnnotation(annotation.id, {
@@ -86,7 +87,8 @@
       annotation.kind.kind !== "rect" &&
       annotation.kind.kind !== "ellipse" &&
       annotation.kind.kind !== "text" &&
-      annotation.kind.kind !== "image"
+      annotation.kind.kind !== "image" &&
+      annotation.kind.kind !== "blur"
     ) {
       return;
     }
@@ -163,7 +165,7 @@
         />
       </label>
     </div>
-  {:else if annotation.kind.kind === "rect" || annotation.kind.kind === "ellipse" || annotation.kind.kind === "text" || annotation.kind.kind === "image"}
+  {:else if annotation.kind.kind === "rect" || annotation.kind.kind === "ellipse" || annotation.kind.kind === "text" || annotation.kind.kind === "image" || annotation.kind.kind === "blur"}
     {@const k = annotation.kind}
     <div class="grid grid-cols-2 gap-2">
       <label class="flex flex-col gap-0.5 text-[10px] text-muted-foreground">

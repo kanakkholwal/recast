@@ -747,6 +747,11 @@ fn draw_annotation(
                 );
             }
         }
+        AnnotationKind::Blur { .. } => {
+            // Blur regions are handled by the main video filter chain
+            // (`build_annotation_blur_complex`) — the alpha overlay carries
+            // no underlying pixels to blur, so this is a deliberate no-op.
+        }
         AnnotationKind::Unsupported => {
             // Silently skip — caller (JS) was supposed to rasterize/replace
             // before sending. Logged once at deserialize time would be ideal

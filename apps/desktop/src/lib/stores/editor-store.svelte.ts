@@ -141,6 +141,25 @@ export type AnnotationKind =
 		h: number;
 		path: string; // absolute file path or asset URL
 		opacity: number; // 0..1
+	}
+	| {
+		// Privacy / focus blur. Applies a box blur (separable, kernel
+		// proportional to `strength`) over the bounding rect, optionally
+		// tinted by `variant`. `glass` = clear blur, white/black tint at
+		// 30% over the blurred pixels, `color` = `tintColor` at 30%.
+		kind: "blur";
+		x: number;
+		y: number;
+		w: number;
+		h: number;
+		/** Blur strength 0..1 — maps to a box-blur radius up to ~5% of the canvas. */
+		strength: number;
+		/** Tint mode applied over the blurred pixels. */
+		variant: "glass" | "white" | "black" | "color";
+		/** Tint colour used when `variant === "color"`. CSS `#rrggbb`. */
+		tintColor: string;
+		/** Corner rounding in UV space. 0 = sharp. */
+		radius: number;
 	};
 
 export type AnnotationKindName = AnnotationKind["kind"];

@@ -15,6 +15,7 @@
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
+	import BlurAnnotationLayer from "./_components/BlurAnnotationLayer.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
@@ -1037,6 +1038,10 @@ void main() {
 			aria-hidden="true"
 			class="pointer-events-none absolute inset-0 bg-foreground/12 mix-blend-multiply opacity-0 transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-100"
 		></div>
+		<!-- Blur layer sits BELOW the canvas overlay so the canvas can draw
+		     selection handles on top of the blurred area. `pointer-events: none`
+		     on this layer means clicks still reach the canvas for hit-testing. -->
+		<BlurAnnotationLayer {store} {videoEl} targetEl={previewRectEl} />
 		<AnnotationOverlay {store} {videoEl} targetEl={previewRectEl} />
 		<TextAnnotationLayer {store} {videoEl} targetEl={previewRectEl} />
 		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
