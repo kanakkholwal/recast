@@ -31,9 +31,13 @@
     videoEl: HTMLVideoElement | null;
     /** The container that wraps the WebGL preview canvas — we stretch to fit. */
     targetEl: HTMLElement | null;
+    /** The WebGL composite canvas. Used as the source for blur annotations,
+     *  so we can blur the actual rendered frame (background + padding +
+     *  shadow + video) rather than just the bare video. */
+    compositeCanvasEl?: HTMLCanvasElement | null;
   }
 
-  let { store, videoEl, targetEl }: Props = $props();
+  let { store, videoEl, targetEl, compositeCanvasEl = null }: Props = $props();
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafHandle: number | null = null;
@@ -130,7 +134,23 @@
     opacity: number,
     t: number,
   ) {
-    if (opacity <= 0) return;
+    // Blur annotations bypass the fade-in/out ramps in preview because:
+    //   1. A fresh blur has start ≈ currentTime, so the linear ramp puts
+    //      opacity at 0 → drawAnnotation would early-return → user sees
+    //      nothing right after creating the blur (the original "flicker
+    //      then disappear" report).
+    //   2. A partially-transparent blur copy mixed over the unblurred
+    //      WebGL canvas underneath reads as flicker mid-ramp, not as a
+    //      smooth fade — Canvas2D's globalAlpha applies to drawImage too.
+    // Privacy blurs are visually all-or-nothing; show full strength as
+    // soon as the playhead is inside the visibility window. The export
+    // pipeline still honours `start`/`end` exactly.
+    const isBlur = a.kind.kind === "blur";
+    if (isBlur) {
+      if (t < a.start || t > a.end) return;
+    } else if (opacity <= 0) {
+      return;
+    }
     if (!isCanvasDrawn(a.kind)) return; // text is rendered by TextAnnotationLayer
 
     if (a.kind.kind === "arrow") {
@@ -149,7 +169,8 @@
     if (w <= 0 || h <= 0) return;
 
     ctx.save();
-    ctx.globalAlpha = opacity;
+    // Blur uses full preview opacity; other kinds honour the fade-ramp value.
+    ctx.globalAlpha = isBlur ? 1 : opacity;
     applyGlow(ctx, a);
 
     ctx.beginPath();
@@ -165,12 +186,79 @@
     } else if (a.kind.kind === "image") {
       ctx.rect(x, y, w, h);
     } else if (a.kind.kind === "blur") {
-      // The actual blurred pixels are rendered by `BlurAnnotationLayer`
-      // (a sibling DOM layer with native `backdrop-filter: blur(Npx)`),
-      // because Canvas2D can't blur pixels behind itself. We deliberately
-      // draw nothing on the canvas for blur — the backdrop-filter is the
-      // visible cue, and selection handles get drawn separately when the
-      // blur is the selected annotation.
+      // Real blur preview: copy the WebGL composite (full background +
+      // padding + video) into the overlay canvas, blurred with the 2D
+      // context's native `filter`. This is reliable across WebView
+      // backends, unlike `backdrop-filter` against a GPU-promoted canvas.
+      // Strength 0..1 maps to 0..32 px to match the export-side cap.
+      const k = a.kind;
+      if (compositeCanvasEl && w > 1 && h > 1) {
+        const blurPx = Math.max(0.001, Math.min(32, k.strength * 32));
+        // Source rect: same UV → canvas-px mapping, but in the WebGL
+        // canvas's own backing-store coordinates. Both canvases share the
+        // same DPR + size factor here because they both stretch to the
+        // same `targetEl`, so we can read `compositeCanvasEl.width/height`
+        // and treat its pixel space as proportional to ours.
+        const srcW = compositeCanvasEl.width;
+        const srcH = compositeCanvasEl.height;
+        const dstW = canvasEl?.width ?? 0;
+        const dstH = canvasEl?.height ?? 0;
+        if (srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
+          const sx = (x / dstW) * srcW;
+          const sy = (y / dstH) * srcH;
+          const sw = (w / dstW) * srcW;
+          const sh = (h / dstH) * srcH;
+          const radius = Math.max(0, k.radius * Math.min(r.w, r.h));
+          ctx.save();
+          ctx.beginPath();
+          if (radius > 0) {
+            roundRectPath(ctx, x, y, w, h, radius);
+          } else {
+            ctx.rect(x, y, w, h);
+          }
+          ctx.clip();
+          // Setting `filter` on the 2D context applies to subsequent draws
+          // — including `drawImage` from another canvas. Browser
+          // implementations promote this to a GPU shader, so the cost is
+          // negligible per blur region.
+          ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
+          try {
+            ctx.drawImage(
+              compositeCanvasEl,
+              sx,
+              sy,
+              sw,
+              sh,
+              x,
+              y,
+              w,
+              h,
+            );
+          } catch {
+            // drawImage can fail mid-frame if the source canvas was
+            // resized between layout and render. Bail silently — the
+            // next animation frame will repaint correctly.
+          }
+          ctx.filter = "none";
+          // Variant tint sits on top of the blurred copy so it reads
+          // as a deliberate privacy treatment rather than just a smudge.
+          let tint: string | null = null;
+          if (k.variant === "white") tint = "rgba(255,255,255,0.30)";
+          else if (k.variant === "black") tint = "rgba(0,0,0,0.30)";
+          else if (k.variant === "color") {
+            const m = /^#?([0-9a-fA-F]{6})$/.exec(k.tintColor.trim());
+            if (m) {
+              const v = parseInt(m[1], 16);
+              tint = `rgba(${(v >> 16) & 0xff},${(v >> 8) & 0xff},${v & 0xff},0.30)`;
+            }
+          }
+          if (tint) {
+            ctx.fillStyle = tint;
+            ctx.fillRect(x, y, w, h);
+          }
+          ctx.restore();
+        }
+      }
     }
 
     if (a.kind.kind !== "image" && a.kind.kind !== "blur" && a.fill && a.fill !== "transparent") {
