@@ -67,8 +67,8 @@
       >
         <Logo
           size="24"
-          color="var(--foreground)"
-          fill="var(--background)"
+          // color="var(--foreground)"
+          // fill="var(--background)"
           class="shrink-0"
           data-tauri-drag-region
         />

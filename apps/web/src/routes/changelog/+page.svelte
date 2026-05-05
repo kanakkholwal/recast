@@ -55,11 +55,8 @@
 	/>
 </svelte:head>
 
-<main class="bg-background text-foreground">
+<main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<div class="bg-aurora pointer-events-none absolute inset-0 -z-10 opacity-90"></div>
-		<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-50"></div>
-
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<Eyebrow icon={Sparkles} variant="primary">Changelog</Eyebrow>
@@ -86,7 +83,7 @@
 	<Section spacing="tight" class="border-t border-border-low/60">
 		<Container size="narrow">
 			{#if data.releases.length === 0}
-				<div class="rounded-2xl border border-border-low bg-card/60 p-10 text-center">
+				<div class="glass-card rounded-2xl p-10 text-center">
 					<h2 class="text-xl font-semibold tracking-tight text-foreground">
 						No releases yet
 					</h2>
@@ -98,10 +95,10 @@
 				<ol class="relative space-y-12 border-l border-border-low/70 pl-6 sm:pl-10">
 					{#each data.releases as release, i}
 						<Reveal as="li" delay={i * 60} class="relative">
-							<span class="absolute -left-[33px] top-1.5 grid size-4 place-items-center rounded-full border border-border-low bg-background sm:-left-[44px]">
+							<span class="glass-chip absolute -left-8.25 top-1.5 grid size-4 place-items-center rounded-full sm:-left-11">
 								<span class="size-1.5 rounded-full bg-primary"></span>
 							</span>
-							<article class="rounded-2xl border border-border-low bg-card/70 p-7 transition-all hover:border-border-strong hover:shadow-craft-sm">
+							<article class="glass-card rounded-2xl p-7 transition-all hover:-translate-y-0.5 hover:shadow-craft-sm">
 								<header class="flex flex-wrap items-center gap-3">
 									<h2 class="text-2xl font-semibold tracking-tight text-foreground">
 										{release.name}

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import {
 	  Container,
-	  Eyebrow,
 	  FeatureGrid,
 	  Footer,
 	  Hero,
@@ -13,11 +12,14 @@
 	import {
 	  ArrowRight,
 	  Download,
+	  FileBox,
 	  Play,
 	  Rocket,
 	  Terminal,
 	  Users,
 	  Wand2,
+	  WifiOff,
+	  Zap,
 	} from "lucide-svelte";
 
 	const workflow = [
@@ -74,7 +76,7 @@
 	/>
 </svelte:head>
 
-<main class="bg-background text-foreground">
+<main class="text-foreground">
 	<Hero />
 
 	<Section id="workflow" class="border-t border-border-low/60">
@@ -100,11 +102,11 @@
 						{@const Icon = item.icon}
 						<Reveal as="li" delay={i * 100}>
 							<article
-								class="group relative flex gap-5 rounded-2xl border border-border-low bg-card/60 p-6 transition-all duration-300 hover:border-border-strong hover:bg-card hover:shadow-craft-md sm:p-8"
+								class="glass-card group relative flex gap-5 rounded-2xl p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-md sm:p-8"
 							>
 								<div class="flex shrink-0 flex-col items-center gap-3">
 									<span
-										class="grid size-12 place-items-center rounded-xl border border-border-low bg-background text-foreground/70 transition-colors group-hover:bg-primary/10 group-hover:text-primary"
+										class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-primary"
 									>
 										<Icon class="size-5" />
 									</span>
@@ -147,13 +149,13 @@
 					{@const Icon = useCase.icon}
 					<Reveal delay={i * 80}>
 						<article
-							class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border-low bg-card/60 p-7 transition-all duration-300 hover:-translate-y-1 hover:border-border-strong hover:shadow-craft-md"
+							class="glass-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-md"
 						>
 							<div
 								class="pointer-events-none absolute -right-12 -top-12 size-32 rounded-full bg-primary/5 blur-3xl transition-colors duration-500 group-hover:bg-primary/12"
 							></div>
 							<span
-								class="grid size-11 place-items-center rounded-xl border border-border-low bg-background text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:bg-primary/10 group-hover:text-primary"
+								class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:text-primary"
 							>
 								<Icon class="size-5" />
 							</span>
@@ -174,20 +176,45 @@
 		<Container>
 			<Reveal>
 				<div
-					class="relative overflow-hidden rounded-3xl border border-border-low bg-card/80 px-6 py-16 text-center shadow-craft-lg sm:px-12 sm:py-20 md:py-24"
+					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
+					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
 				>
-					<div class="bg-aurora pointer-events-none absolute inset-0 opacity-80"></div>
-					<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 opacity-50"></div>
+					<div
+						aria-hidden="true"
+						class="pointer-events-none absolute -top-40 left-1/2 size-[640px] -translate-x-1/2 rounded-full opacity-60"
+						style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 70%);"
+					></div>
+					<div
+						aria-hidden="true"
+						class="pointer-events-none absolute inset-x-0 top-0 h-px"
+						style="background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-foreground) 18%, transparent), transparent);"
+					></div>
 
-					<div class="relative mx-auto flex max-w-2xl flex-col items-center gap-7">
-						<Eyebrow variant="primary">Ready when you are</Eyebrow>
-						<h2 class="text-balance text-4xl font-semibold tracking-tight text-foreground sm:text-5xl md:text-6xl">
-							Refine your next product demo.
+					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
+						<div
+							class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80"
+						>
+							<span class="relative flex size-1.5">
+								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+							</span>
+							v0.1 beta · ready when you are
+						</div>
+
+						<h2
+							class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]"
+						>
+							Refine your next
+							<span class="font-medium italic text-foreground/40">product demo.</span>
 						</h2>
-						<p class="text-pretty text-base text-muted-foreground sm:text-lg">
+
+						<p
+							class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+						>
 							Free during beta. No account required. Three platforms. One opinionated tool.
 						</p>
-						<div class="mt-2 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+
+						<div class="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
 							<Button href="/download" size="lg" class="gap-2.5">
 								<Download class="size-4" />
 								Download Recast
@@ -196,6 +223,27 @@
 								Explore features
 								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 							</Button>
+						</div>
+
+						<div
+							class="mt-14 grid w-full max-w-2xl grid-cols-3 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30"
+						>
+							{#each [{ icon: WifiOff, label: "Offline-first", value: "100%" }, { icon: Zap, label: "Export speed", value: "GPU" }, { icon: FileBox, label: "Project files", value: ".recast" }] as stat}
+								{@const Icon = stat.icon}
+								<div
+									class="flex flex-col items-center gap-1.5 bg-background/40 px-4 py-5 backdrop-blur-md"
+								>
+									<span class="flex items-center gap-1.5 text-muted-foreground">
+										<Icon class="size-3.5" />
+										<span class="text-[10px] font-semibold uppercase tracking-[0.16em]">
+											{stat.label}
+										</span>
+									</span>
+									<span class="font-mono text-lg font-semibold text-foreground">
+										{stat.value}
+									</span>
+								</div>
+							{/each}
 						</div>
 					</div>
 				</div>

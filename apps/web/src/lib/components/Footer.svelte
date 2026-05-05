@@ -53,7 +53,7 @@
 	];
 </script>
 
-<footer class="relative border-t border-border-low/70 bg-background">
+<footer class="relative border-t border-border-low/70">
 	<div class="bg-aurora absolute inset-x-0 top-0 h-px"></div>
 	<Container class="py-20 md:py-28" as="div">
 		<div class="grid gap-14 md:grid-cols-12">
@@ -77,7 +77,7 @@
 							aria-label={label}
 							target={href.startsWith("http") ? "_blank" : undefined}
 							rel={href.startsWith("http") ? "noopener noreferrer" : undefined}
-							class="grid size-9 place-items-center rounded-lg border border-border-low bg-card/50 text-muted-foreground transition-all hover:-translate-y-0.5 hover:border-border-strong hover:bg-card hover:text-foreground"
+							class="glass-chip grid size-9 place-items-center rounded-lg text-muted-foreground transition-all hover:-translate-y-0.5 hover:text-foreground"
 						>
 							<Icon class="size-4" />
 						</a>

@@ -164,7 +164,7 @@
   variant="raw"
   size="sm"
   class={cn(
-    "border border-border/50 group relative h-8 bg-input/60",
+    "border border-foreground/5 group relative h-8 bg-input",
     iconOnly ? "w-8" : "min-w-8 w-full max-w-xs",
   )}
 >

@@ -5,32 +5,32 @@
 
 :root,
 [data-theme="light"] {
-  --background: hsl(193.22deg 11.17% 90.43%);
-  --foreground: hsl(0, 0%, 10%);
+  --background: oklch(92.823% 0.00458 215.437);
+  --foreground: oklch(21.779% 0.00002 271.152);
 
-  --card: hsl(0, 0%, 100%);
-  --card-foreground: hsl(0deg 0% 9.8%);
+  --card: oklch(100% 0.00011 271.152);
+  --card-foreground: oklch(21.342% 0.00002 271.152);
 
-  --popover: hsl(0 0% 100%);
-  --popover-foreground: hsl(0deg 0% 9.8%);
+  --popover: oklch(100% 0.00011 271.152);
+  --popover-foreground: oklch(21.342% 0.00002 271.152);
 
-  --primary: hsl(175.18deg 84.05% 31.96%);
-  --primary-foreground: hsl(0 0% 95%);
+  --primary: oklch(60.651% 0.10453 185.67);
+  --primary-foreground: oklch(96.115% 0.00011 271.152);
 
-  --secondary: hsla(240 4.8% 95.9%);
-  --secondary-foreground: hsla(240 5.9% 10%);
+  --secondary: oklch(96.744% 0.00143 285.225);
+  --secondary-foreground: oklch(21.033% 0.00588 285.832);
 
-  --tertiary: #20adee;
-  --tertiary-foreground: hsl(0deg 0% 92.16%);
+  --tertiary: oklch(70.767% 0.14487 235.831);
+  --tertiary-foreground: oklch(94.007% 0.00011 271.152);
 
-  --muted: hsl(0, 0%, 92%);
-  --muted-foreground: hsl(220 8.9% 46.1%);
+  --muted: oklch(94.007% 0.00011 271.152);
+  --muted-foreground: oklch(55.102% 0.02343 264.389);
 
-  --accent: hsl(344.79deg 33.25% 96.34%);
-  --accent-foreground: hsl(220.9 39.3% 11%);
+  --accent: oklch(96.907% 0.00655 4.663);
+  --accent-foreground: oklch(21.009% 0.03179 264.678);
 
-  --destructive: hsl(0 84.2% 60.2%);
-  --destructive-foreground: hsl(0deg 0% 92.16%);
+  --destructive: oklch(63.681% 0.20784 25.315);
+  --destructive-foreground: oklch(94.007% 0.00011 271.152);
 
   --success: oklch(0.646 0.222 142.495);
   --success-foreground: oklch(0.985 0 0);
@@ -41,42 +41,51 @@
   --info: oklch(0.6 0.118 184.704);
   --info-foreground: oklch(0.985 0 0);
 
-  --border: hsl(0, 0%, 95%);
-  --border-subtle: hsla(0, 0%, 0%, 0.05);
+  --border: oklch(96.115% 0.00011 271.152);
+  --border-subtle: oklch(0% 0 0 / 0.05);
   --input: oklch(.922 0 0);
   --ring: var(--primary);
   --radius: 0.75rem;
 
   --max-app-width: clamp(1280px, 80vw, 1920px);
-  --noise-bg: linear-gradient(hsl(40, 30%, 96%), hsl(40, 30%, 96%));
+  --noise-bg: linear-gradient(oklch(97.357% 0.00561 84.444), oklch(97.357% 0.00561 84.444));
 
  
 }
 
 .dark,
 [data-theme="dark"] {
-  --primary: hsl(75 100% 50%);
-  --primary-foreground: hsl(0 0% 5%);
-  --background: hsl(199.87deg 1.54% 8.84%);
-  --foreground: hsl(0 0% 94%);
+  --primary: oklch(92.249% 0.23442 125.904);
+  --primary-foreground: oklch(15.907% 0.00002 271.152);
+  
+  --background: oklch(20.352% 0.00157 197.844);
+  --foreground: oklch(95.514% 0.00011 271.152);
+  
   --card: oklch(0.27 0 0);
-  --card-foreground: hsl(0 0% 94%);
-  --popover: hsl(0 0% 9%);
-  --popover-foreground: hsl(0 0% 94%);
-  --secondary: hsl(0 0% 14%);
-  --secondary-foreground: hsl(0 0% 94%);
-  --muted: hsl(0 0% 14%);
-  --muted-foreground: hsl(0 0% 55%);
-  --accent: hsl(0 0% 14%);
-  --accent-foreground: hsl(0 0% 94%);
-  --destructive: hsl(0 84% 60%);
-  --destructive-foreground: hsl(0 0% 100%);
-  --border: hsl(0 0% 12%);
-  --border-subtle: hsla(0 0% 100% / 0.05);
-  --input: hsl(0 0% 18%);
+  --card-foreground: oklch(95.514% 0.00011 271.152);
+
+  --popover: oklch(20.463% 0.00002 271.152);
+  --popover-foreground: oklch(95.514% 0.00011 271.152);
+  
+  --secondary: oklch(26.033% 0.00003 271.152);
+  --secondary-foreground: oklch(95.514% 0.00011 271.152);
+  
+  --muted: oklch(26.033% 0.00003 271.152);
+  --muted-foreground: oklch(64.009% 0.00007 271.152);
+  
+  --accent: oklch(26.033% 0.00003 271.152);
+  --accent-foreground: oklch(95.514% 0.00011 271.152);
+  
+  --destructive: oklch(63.575% 0.20881 25.397);
+  --destructive-foreground: oklch(100% 0.00011 271.152);
+  
+  --border: oklch(23.929% 0.00003 271.152);
+  --border-subtle: oklch(100% 0.00011 271.152 / 0.05);
+  
+  --input: oklch(30.118% 0.00003 271.152);
   --ring: var(--primary);
 
-  --noise-bg: linear-gradient(#393737, #1b1b1b);
+  --noise-bg: linear-gradient(oklch(33.881% 0.00279 16.535), oklch(22.213% 0.00003 271.152));
   
 }
 

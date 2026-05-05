@@ -92,11 +92,8 @@
 	/>
 </svelte:head>
 
-<main class="bg-background text-foreground">
+<main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<div class="bg-aurora pointer-events-none absolute inset-0 -z-10 opacity-90"></div>
-		<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-50"></div>
-
 		<Container class="relative">
 			<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 				<Eyebrow icon={Sparkles} variant="primary">
@@ -178,7 +175,7 @@
 		</Container>
 	</Section>
 
-	<Section id="all-platforms" class="border-t border-border-low/60 bg-background">
+	<Section id="all-platforms" class="border-t border-border-low/60">
 		<Container>
 			<SectionHeader
 				eyebrow="All platforms"
@@ -188,7 +185,7 @@
 
 			<div class="mt-12">
 				<Tabs.Root value={activeTab} class="w-full">
-					<Tabs.List class="grid w-full grid-cols-3 rounded-xl border border-border-low bg-card/60 p-1 sm:max-w-md">
+					<Tabs.List class="glass-card grid w-full grid-cols-3 rounded-xl p-1 sm:max-w-md">
 						{#each platforms as p}
 							{@const Icon = p.icon}
 							<Tabs.Trigger
@@ -205,12 +202,12 @@
 						{@const Icon = p.icon}
 						<Tabs.Content value={p.id} class="mt-8">
 							<Reveal>
-								<article class="relative overflow-hidden rounded-2xl border border-border-low bg-card/60 p-8 sm:p-10">
+								<article class="glass-card relative overflow-hidden rounded-2xl p-8 sm:p-10">
 									<div class="pointer-events-none absolute -right-16 -top-16 size-48 rounded-full bg-primary/5 blur-3xl"></div>
 
 									<div class="relative flex flex-col gap-8 sm:flex-row sm:items-start sm:justify-between">
 										<div>
-											<span class="grid size-12 place-items-center rounded-xl border border-border-low bg-background/80 text-foreground/70">
+											<span class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70">
 												<Icon class="size-5" />
 											</span>
 											<h3 class="mt-6 text-2xl font-semibold tracking-tight">
@@ -242,7 +239,7 @@
 				</Tabs.Root>
 			</div>
 
-			<div class="mt-10 flex flex-col items-start gap-2 rounded-2xl border border-border-low bg-muted/30 p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+			<div class="glass-card mt-10 flex flex-col items-start gap-2 rounded-2xl p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
 				<span>
 					Source on
 					<a

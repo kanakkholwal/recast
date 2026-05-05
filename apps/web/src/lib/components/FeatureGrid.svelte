@@ -62,7 +62,7 @@
 	];
 </script>
 
-<Section id="features" class="border-t border-border-low/60 bg-background">
+<Section id="features" class="border-t border-border-low/60">
 	<Container>
 		<SectionHeader
 			eyebrow="Core engine"
@@ -76,8 +76,8 @@
 				<Reveal delay={i * 60} class={cn("group", feature.span)}>
 					<article
 						class={cn(
-							"relative flex h-full flex-col justify-between overflow-hidden rounded-2xl border border-border-low bg-card/80 p-6 transition-all duration-300 hover:border-border-strong hover:shadow-craft-md",
-							feature.accent && "bg-linear-to-br from-primary/8 via-card/80 to-card/80",
+							"glass-card relative flex h-full flex-col justify-between overflow-hidden rounded-2xl p-6 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-md",
+							feature.accent && "bg-linear-to-br from-primary/10 via-transparent to-transparent",
 						)}
 					>
 						<div
@@ -87,8 +87,8 @@
 						<div class="relative flex items-start justify-between">
 							<span
 								class={cn(
-									"grid size-10 place-items-center rounded-xl border border-border-low bg-background/80 text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:text-primary",
-									feature.accent && "bg-primary/10 text-primary",
+									"glass-chip grid size-10 place-items-center rounded-xl text-foreground/70 transition-all duration-300 group-hover:scale-105 group-hover:text-primary",
+									feature.accent && "text-primary",
 								)}
 							>
 								<Icon class="size-5" />

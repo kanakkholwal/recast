@@ -75,7 +75,7 @@
 <Dialog.Root bind:open {onOpenChange}>
   <Dialog.Content
     showCloseButton={false}
-    class="top-[18%] max-w-md translate-y-0 overflow-hidden rounded-xl p-0 ring-1 ring-border sm:max-w-md"
+    class="top-[14%] max-w-md translate-y-0 overflow-hidden rounded-2xl border border-border/60 bg-popover/95 p-0 ring-1 ring-border/40 shadow-2xl backdrop-blur-xl sm:max-w-md"
   >
     <Dialog.Header class="sr-only">
       <Dialog.Title>Export video</Dialog.Title>
@@ -90,48 +90,77 @@
       aria-label="Export settings"
       onkeydown={handleKeydown}
     >
-      <header class="flex items-center gap-2 border-b border-border px-4 py-3">
-        <div class="flex size-7 items-center justify-center rounded-md border border-primary/30 bg-primary/10 text-primary">
+      <header
+        class="flex items-center gap-2.5 border-b border-border/60 px-4 py-3"
+      >
+        <div
+          class="flex size-8 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
+        >
           <Upload size={14} />
         </div>
         <div class="min-w-0 flex-1">
-          <h3 class="text-[13px] font-semibold tracking-tight text-foreground">Export video</h3>
-          <p class="text-[11px] text-muted-foreground">
-            Choose format and quality before saving to disk.
-          </p>
+          <span
+            class="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Export
+          </span>
+          <h3
+            class="text-[14px] font-semibold tracking-tight text-foreground"
+          >
+            Save your recording
+          </h3>
         </div>
       </header>
 
-      <section class="grid grid-cols-2 gap-2 border-b border-border bg-muted/20 px-4 py-3">
-        <div class="rounded-md border border-border bg-background/80 px-3 py-2">
-          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Clip Length
+      <!-- Stat strip -->
+      <section
+        class="grid grid-cols-2 gap-2 border-b border-border/60 bg-muted/20 px-4 py-3"
+      >
+        <div
+          class="overflow-hidden rounded-xl border border-border/60 bg-card/70 px-3 py-2 shadow-(--shadow-craft-inset) backdrop-blur"
+        >
+          <p
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Clip length
           </p>
           <p class="mt-1 font-mono text-[12px] tabular-nums text-foreground">
             {formatTime(clipDuration)}
           </p>
         </div>
-        <div class="rounded-md border border-border bg-background/80 px-3 py-2">
-          <p class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Export Range
+        <div
+          class="overflow-hidden rounded-xl border border-border/60 bg-card/70 px-3 py-2 shadow-(--shadow-craft-inset) backdrop-blur"
+        >
+          <p
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Export range
           </p>
           <p class="mt-1 font-mono text-[12px] tabular-nums text-foreground">
-            {formatTime(store.trimStart)} - {formatTime(clipEnd)}
+            {formatTime(store.trimStart)} – {formatTime(clipEnd)}
           </p>
         </div>
         {#if hasTrim}
           <p class="col-span-2 text-[10px] text-muted-foreground">
-            Source length: <span class="font-mono tabular-nums text-foreground">{formatTime(sourceDuration)}</span>
+            Source length:
+            <span class="font-mono tabular-nums text-foreground"
+              >{formatTime(sourceDuration)}</span
+            >
           </p>
         {/if}
       </section>
 
+      <!-- Format -->
       <section class="flex flex-col gap-2 px-4 pt-4">
         <div class="flex items-center justify-between">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
             Format
           </span>
-          <span class="font-mono text-[10px] tabular-nums text-muted-foreground/70">
+          <span
+            class="font-mono text-[10px] font-semibold tabular-nums text-foreground"
+          >
             {store.exportFormat.toUpperCase()}
           </span>
         </div>
@@ -143,32 +172,44 @@
               onclick={() => setFormat(fmt.value)}
               aria-pressed={selected}
               class={cn(
-                "group flex flex-col items-start gap-0.5 rounded-md border px-2.5 py-2 text-left transition-colors",
+                "group flex flex-col items-start gap-0.5 rounded-lg border px-2.5 py-2 text-left transition-all duration-150",
                 selected
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-card/40 hover:border-border/80 hover:bg-muted/40",
+                  ? "border-primary/40 bg-primary/10 shadow-(--shadow-craft-inset)"
+                  : "border-border/40 bg-muted/40 hover:border-border/60 hover:bg-card",
               )}
             >
               <div class="flex w-full items-center justify-between gap-1">
-                <span class={cn("text-[12px] font-semibold", selected ? "text-primary" : "text-foreground")}>
+                <span
+                  class={cn(
+                    "text-[12px] font-semibold",
+                    selected ? "text-primary" : "text-foreground",
+                  )}
+                >
                   {fmt.label}
                 </span>
                 {#if selected}
                   <Check size={11} class="text-primary" />
                 {/if}
               </div>
-              <span class="text-[10px] leading-tight text-muted-foreground">{fmt.desc}</span>
+              <span class="text-[10px] leading-tight text-muted-foreground">
+                {fmt.desc}
+              </span>
             </button>
           {/each}
         </div>
       </section>
 
+      <!-- Quality -->
       <section class="flex flex-col gap-2 px-4 pb-4 pt-3">
         <div class="flex items-center justify-between">
-          <span class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
             Quality
           </span>
-          <span class="font-mono text-[10px] tabular-nums text-muted-foreground/70">
+          <span
+            class="font-mono text-[10px] font-semibold tabular-nums text-foreground"
+          >
             {store.exportQuality.toUpperCase()}
           </span>
         </div>
@@ -180,17 +221,26 @@
               onclick={() => setQuality(q.value)}
               aria-pressed={selected}
               class={cn(
-                "group flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors",
+                "group flex items-center justify-between gap-2 rounded-lg border px-2.5 py-2 text-left transition-all duration-150",
                 selected
-                  ? "border-primary bg-primary/10"
-                  : "border-border bg-card/40 hover:border-border/80 hover:bg-muted/40",
+                  ? "border-primary/40 bg-primary/10 shadow-(--shadow-craft-inset)"
+                  : "border-border/40 bg-muted/40 hover:border-border/60 hover:bg-card",
               )}
             >
               <div class="flex min-w-0 flex-col gap-0.5">
-                <span class={cn("text-[12px] font-medium", selected ? "text-primary" : "text-foreground")}>
+                <span
+                  class={cn(
+                    "text-[12px] font-semibold",
+                    selected ? "text-primary" : "text-foreground",
+                  )}
+                >
                   {q.label}
                 </span>
-                <span class="truncate text-[10px] leading-tight text-muted-foreground">{q.desc}</span>
+                <span
+                  class="truncate text-[10px] leading-tight text-muted-foreground"
+                >
+                  {q.desc}
+                </span>
               </div>
               {#if selected}
                 <Check size={11} class="shrink-0 text-primary" />
@@ -201,15 +251,20 @@
       </section>
 
       <footer
-        class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+        class="flex h-10 items-center justify-between gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground"
       >
-        <span class="hidden items-center gap-1 sm:flex">
+        <span class="hidden items-center gap-1.5 sm:flex">
           <Kbd>⌘↵</Kbd>
           <span>Start export</span>
         </span>
         <div class="flex items-center gap-1.5">
           <Button variant="ghost" size="xs" onclick={close}>Cancel</Button>
-          <Button variant="default" size="xs" class="gap-1.5" onclick={confirm}>
+          <Button
+            variant="default"
+            size="xs"
+            class="gap-1.5"
+            onclick={confirm}
+          >
             <Upload size={11} />
             Export
           </Button>

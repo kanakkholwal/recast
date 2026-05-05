@@ -519,10 +519,28 @@ fn sample_region(
 
 /// Build one FFmpeg expression that evaluates a per-sample quantity via a
 /// piecewise-linear lookup over all regions, falling back to `default` when
-/// `t` is outside every region. Each segment emits
-/// `if(between(t,ti,tj), vi + (vj-vi)*(t-ti)/(tj-ti), ACC)`. Built as a
-/// right-fold so the innermost if handles the first segment and the outer
-/// ones layer the fallback.
+/// `t` is outside every region.
+///
+/// Emitted as a FLAT SUM rather than nested `if`s:
+///
+///   default + if(between(t,t0,t1), v(t)-default, 0)
+///           + if(between(t,t1,t2), v(t)-default, 0) + ...
+///
+/// At most one segment fires for any given `t` (regions don't overlap and
+/// segments within a region are abutting half-open windows in practice), so
+/// the sum equals the active segment's value or the default when none fire.
+///
+/// Why flat instead of nested: FFmpeg's expression evaluator has a recursion
+/// depth limit and silently fails to parse deeply nested `if(..., if(..., ...))`
+/// chains beyond ~100 levels. With dense per-region sampling (up to 200 samples
+/// each, multiple regions) the right-fold form blew past the limit and the
+/// whole filter graph errored out at export time. Flat addition has effectively
+/// no depth — only string length.
+///
+/// We also merge consecutive segments whose values are both constant and
+/// equal (the "hold" phase between ramp-in/ramp-out, where ~150 samples in a
+/// row carry the same z=1.8 value): a single wider `between(t,t_first,t_last)`
+/// term replaces the run, keeping the expression short.
 fn build_piecewise_expr<F>(
     samples_per_region: &[Vec<ZoomSample>],
     default: &str,
@@ -531,34 +549,75 @@ fn build_piecewise_expr<F>(
 where
     F: Fn(&ZoomSample) -> f64,
 {
-    // Collect every (t_i, v_i, t_{i+1}, v_{i+1}) segment across all regions in
-    // a flat list. Gaps between regions naturally fall through to `default`.
+    let default_val: f64 = default.parse().unwrap_or(0.0);
+
+    // Collect (t_a, v_a, t_b, v_b) segments per region, then merge runs of
+    // consecutive constant-and-equal segments into a single wider one.
     let mut segments: Vec<(f64, f64, f64, f64)> = Vec::new();
     for samples in samples_per_region {
+        let mut run: Option<(f64, f64, f64, f64)> = None;
         for pair in samples.windows(2) {
             let (a, b) = (&pair[0], &pair[1]);
             if b.t <= a.t {
                 continue;
             }
-            segments.push((a.t, field(a), b.t, field(b)));
+            let (va, vb) = (field(a), field(b));
+            let is_const = (va - vb).abs() < 1e-6;
+            match run {
+                Some((ra, rva, rb, rvb))
+                    if is_const
+                        && (rva - rvb).abs() < 1e-6
+                        && (rvb - va).abs() < 1e-6
+                        && (rb - a.t).abs() < 1e-6 =>
+                {
+                    run = Some((ra, rva, b.t, vb));
+                }
+                Some(prev) => {
+                    segments.push(prev);
+                    run = Some((a.t, va, b.t, vb));
+                }
+                None => {
+                    run = Some((a.t, va, b.t, vb));
+                }
+            }
+        }
+        if let Some(prev) = run {
+            segments.push(prev);
         }
     }
 
-    segments
-        .into_iter()
-        .rev()
-        .fold(default.to_string(), |acc, (ta, va, tb, vb)| {
-            // If va == vb, skip the linear-interp arithmetic — keeps strings
-            // shorter during the hold phase where the scale is constant.
-            let value_expr = if (va - vb).abs() < 1e-6 {
-                format!("{va:.4}")
-            } else {
-                let dt = tb - ta;
-                let dv = vb - va;
-                format!("({va:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4})")
-            };
-            format!("if(between(t,{ta:.4},{tb:.4}),{value_expr}, {acc})")
-        })
+    if segments.is_empty() {
+        return default.to_string();
+    }
+
+    let mut terms: Vec<String> = Vec::with_capacity(segments.len());
+    for (ta, va, tb, vb) in segments {
+        let term = if (va - vb).abs() < 1e-6 {
+            // Constant segment: contribution is (va - default).
+            let offset = va - default_val;
+            if offset.abs() < 1e-6 {
+                continue;
+            }
+            // Half-open window [ta, tb) — `gte(t,ta)*lt(t,tb)` is 1 inside,
+            // 0 outside. Using `between` here would double-count at shared
+            // endpoints between adjacent segments because the flat sum can't
+            // short-circuit the way the old nested-if form did.
+            format!("if(gte(t,{ta:.4})*lt(t,{tb:.4}),{offset:.4},0)")
+        } else {
+            let dt = tb - ta;
+            let dv = vb - va;
+            let offset_a = va - default_val;
+            format!(
+                "if(gte(t,{ta:.4})*lt(t,{tb:.4}),({offset_a:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4}),0)"
+            )
+        };
+        terms.push(term);
+    }
+
+    if terms.is_empty() {
+        return default.to_string();
+    }
+    format!("({}+{})", default, terms.join("+"))
 }
 
 fn resolve_background_path(
@@ -783,7 +842,7 @@ mod tests {
         );
         // LUT must reference output-stream time at the region start.
         assert!(
-            fc.contains("between(t,1.0000"),
+            fc.contains("gte(t,1.0000)"),
             "expected output-t LUT entry at 1.0000: {fc}"
         );
     }
@@ -800,11 +859,11 @@ mod tests {
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
         assert!(
-            fc.contains("between(t,1.0000"),
+            fc.contains("gte(t,1.0000)"),
             "LUT must be shifted to output-time (start at output t=1.0): {fc}"
         );
         assert!(
-            !fc.contains("between(t,3.0000,"),
+            !fc.contains("gte(t,3.0000)"),
             "stale timeline-t LUT entry at 3.0000 must NOT be present: {fc}"
         );
     }
@@ -856,9 +915,9 @@ mod tests {
         );
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
-        assert!(fc.contains("between(t,1.0000"), "first region missing: {fc}");
-        assert!(fc.contains("between(t,3.0000"), "second region missing: {fc}");
-        assert!(fc.contains("between(t,6.0000"), "third region missing: {fc}");
+        assert!(fc.contains("gte(t,1.0000)"), "first region missing: {fc}");
+        assert!(fc.contains("gte(t,3.0000)"), "second region missing: {fc}");
+        assert!(fc.contains("gte(t,6.0000)"), "third region missing: {fc}");
     }
 
     /// Region partially overlapping `trim_start` (e.g. region [1, 4],
@@ -872,12 +931,12 @@ mod tests {
         // First segment should start at output t = 0 (corresponding to
         // timeline t = 2.0, the clamped effective_start).
         assert!(
-            fc.contains("between(t,0.0000"),
+            fc.contains("gte(t,0.0000)"),
             "clamped LUT must start at output t=0: {fc}"
         );
         // No stale pre-trim segment should appear.
         assert!(
-            !fc.contains("between(t,-1.0000"),
+            !fc.contains("gte(t,-1.0000)"),
             "negative-t segment should be pruned by clamping: {fc}"
         );
     }
@@ -897,7 +956,9 @@ mod tests {
         );
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
-        assert!(fc.contains("between(t,1.0000"), "post-trim region present: {fc}");
+        // Note: in this state, region [1,3] is pre-trim and dropped, only
+        // region [6,8] survives — its post-trim start is output_t = 1.0.
+        assert!(fc.contains("gte(t,1.0000)"), "post-trim region present: {fc}");
         // Pre-trim region's first sample would have been at output_t = -4.0.
         assert!(
             !fc.contains("-4.0000"),

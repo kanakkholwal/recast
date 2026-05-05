@@ -39,7 +39,7 @@
 			href: "https://github.com/kanakkholwal/recast",
 		}}
 		classes={{
-			root: "shadow-craft-floating ring-1 ring-border-low",
+			root: "border-border/40 bg-card/60 shadow-craft-floating ring-1 ring-border-low/60 backdrop-blur-xl backdrop-saturate-150 supports-[backdrop-filter]:bg-card/40",
 			header: "px-4 py-2",
 		}}
 	>

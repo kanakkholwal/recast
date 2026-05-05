@@ -9,9 +9,6 @@
 </script>
 
 <Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-32">
-	<div class="bg-aurora pointer-events-none absolute inset-0 -z-10 opacity-90"></div>
-	<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-60"></div>
-
 	<Container class="relative">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
 			<a href="/changelog" class="group inline-block animate-fade-in">
@@ -76,8 +73,8 @@
 			class="relative mx-auto mt-20 max-w-6xl animate-fade-up"
 			style="animation-delay: 460ms"
 		>
-			<div class="group/preview relative overflow-hidden rounded-2xl border border-border-low bg-card/60 shadow-craft-xl ring-1 ring-foreground/5 backdrop-blur-2xl">
-				<div class="flex h-10 items-center gap-2 border-b border-border-low/70 bg-muted/30 px-4">
+			<div class="glass-card group/preview relative overflow-hidden rounded-2xl shadow-craft-xl ring-1 ring-foreground/5">
+				<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4 dark:bg-white/3">
 					<div class="flex gap-1.5">
 						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-destructive/70"></span>
 						<span class="size-2.5 rounded-full bg-foreground/15 transition-colors group-hover/preview:bg-warning/70"></span>
@@ -100,7 +97,7 @@
 				</div>
 			</div>
 
-			<div class="absolute -bottom-4 left-4 hidden items-center gap-2.5 rounded-xl border border-border-low bg-background/90 px-3.5 py-2 shadow-craft-floating backdrop-blur-xl sm:flex md:-bottom-5 md:left-8">
+			<div class="glass-chip absolute -bottom-4 left-4 hidden items-center gap-2.5 rounded-xl px-3.5 py-2 shadow-craft-floating sm:flex md:-bottom-5 md:left-8">
 				<span class="relative flex size-2">
 					<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50"></span>
 					<span class="relative inline-flex size-2 rounded-full bg-primary"></span>
@@ -108,7 +105,7 @@
 				<span class="text-xs font-semibold text-foreground">Recording · 00:42</span>
 			</div>
 
-			<div class="absolute -top-4 right-4 hidden items-center gap-2 rounded-xl border border-border-low bg-background/90 px-3.5 py-2 shadow-craft-floating backdrop-blur-xl sm:flex md:-top-5 md:right-8">
+			<div class="glass-chip absolute -top-4 right-4 hidden items-center gap-2 rounded-xl px-3.5 py-2 shadow-craft-floating sm:flex md:-top-5 md:right-8">
 				<span class="text-xs font-semibold text-foreground">Cursor smoothed</span>
 				<span class="rounded-md bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-primary">
 					Auto

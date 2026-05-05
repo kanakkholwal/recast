@@ -790,17 +790,24 @@
 
   const stages = $derived([
     {
+      key: "text" as const,
       label: "Render text overlays",
       state: prepText,
       skip: prepText === "done" && !renderStateHasText(),
     },
     {
+      key: "cursor" as const,
       label: "Render cursor sprites",
       state: prepCursor,
       skip: prepCursor === "done" && store.cursorSettings.style === "dot",
     },
-    { label: "Hand off to encoder", state: prepSending },
     {
+      key: "ship" as const,
+      label: "Hand off to encoder",
+      state: prepSending,
+    },
+    {
+      key: "encode" as const,
       label: exportFinalizing ? "Finalise file" : "Encode frames",
       state:
         prepSending !== "done"
@@ -928,7 +935,7 @@
       aria-labelledby="export-dialog-title"
     >
       <div
-        class="animate-in zoom-in-95 flex w-full max-w-sm flex-col overflow-hidden rounded-xl border border-border bg-popover shadow-2xl ring-1 ring-border duration-150"
+        class="animate-in zoom-in-95 flex w-full max-w-sm flex-col overflow-hidden rounded-2xl border border-border/60 bg-popover/95 shadow-2xl ring-1 ring-border/40 backdrop-blur-xl duration-150"
       >
         <!--
           Inner branch keys on `exportResult` (set by the `export-done` event
@@ -953,7 +960,7 @@
 
           <!-- Header: title + live metadata -->
           <header
-            class="flex items-center gap-3 border-b border-border px-4 py-3"
+            class="flex items-center gap-3 border-b border-border/60 px-4 py-3"
           >
             <div class="min-w-0 flex-1">
               <h3
@@ -1082,7 +1089,7 @@
             <!-- Stage list — checkmarks for completed substages, a dot
                  with a subtle pulse for the running one. Collapses to a
                  single "Encoding…" line once Rust takes over. -->
-            <ul class="flex flex-col gap-0.5 self-stretch text-[11px]">
+            <ul class="flex flex-col gap-1 self-stretch text-[11px]">
               {#each stages as s}
                 {#if !s.skip}
                   <li class="flex items-center gap-2">
@@ -1091,6 +1098,21 @@
                       <span
                         class="text-muted-foreground line-through decoration-muted-foreground/40"
                         >{s.label}</span
+                      >
+                    {:else if s.state === "running" && s.key === "ship"}
+                      <!-- Beam animation: dots travel through a pipe to suggest
+                           the render state being piped to the encoder. -->
+                      <span
+                        class="ship-beam relative flex h-2.5 w-3.5 shrink-0 items-center overflow-hidden rounded-full bg-primary/15"
+                      >
+                        <span class="ship-dot ship-dot-1"></span>
+                        <span class="ship-dot ship-dot-2"></span>
+                        <span class="ship-dot ship-dot-3"></span>
+                      </span>
+                      <span class="text-foreground">{s.label}</span>
+                      <span
+                        class="ml-auto font-mono text-[9px] tabular-nums text-muted-foreground"
+                        >shipping…</span
                       >
                     {:else if s.state === "running"}
                       <span
@@ -1113,7 +1135,7 @@
 
           <!-- Footer: kbd hints + cancel -->
           <footer
-            class="mt-3 flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+            class="mt-3 flex h-10 items-center justify-between gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
               <Kbd>Esc</Kbd>
@@ -1132,7 +1154,7 @@
           </footer>
         {:else if exportResult?.kind === "success"}
           <header
-            class="flex items-center gap-3 border-b border-border px-4 py-3"
+            class="flex items-center gap-3 border-b border-border/60 px-4 py-3"
           >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-success/20 bg-success/10 text-success"
@@ -1160,7 +1182,7 @@
             </p>
           </div>
           <footer
-            class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+            class="flex h-10 items-center justify-between gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <span class="flex items-center gap-1">
               <Kbd>Esc</Kbd>
@@ -1183,7 +1205,7 @@
           </footer>
         {:else if exportResult?.kind === "cancelled"}
           <header
-            class="flex items-center gap-3 border-b border-border px-4 py-3"
+            class="flex items-center gap-3 border-b border-border/60 px-4 py-3"
           >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border bg-muted text-muted-foreground"
@@ -1203,7 +1225,7 @@
             </div>
           </header>
           <footer
-            class="flex h-10 items-center justify-end gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+            class="flex h-10 items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <Button variant="ghost" size="xs" onclick={dismissExportResult}
               >Dismiss</Button
@@ -1214,7 +1236,7 @@
           </footer>
         {:else if exportResult?.kind === "error"}
           <header
-            class="flex items-center gap-3 border-b border-border px-4 py-3"
+            class="flex items-center gap-3 border-b border-border/60 px-4 py-3"
           >
             <div
               class="flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive"
@@ -1234,13 +1256,13 @@
             </div>
           </header>
           <div
-            class="max-h-40 overflow-y-auto border-b border-border px-4 py-3"
+            class="max-h-40 overflow-y-auto border-b border-border/60 px-4 py-3"
           >
             <pre
               class="whitespace-pre-wrap wrap-break-word font-mono text-[10px] text-destructive">{exportResult.message}</pre>
           </div>
           <footer
-            class="flex h-10 items-center justify-end gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+            class="flex h-10 items-center justify-end gap-2 border-t border-border/60 bg-muted/30 px-3 text-[11px] text-muted-foreground"
           >
             <Button variant="ghost" size="xs" onclick={dismissExportResult}
               >Dismiss</Button
@@ -1254,3 +1276,47 @@
     </div>
   {/if}
 </div>
+
+<style>
+  /* Hand-off-to-encoder beam: three dots travel left → right with offset
+     so it reads as data being piped through. Wrapping container clips,
+     dots fade in/out at the track edges. */
+  .ship-beam {
+    box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.3);
+  }
+  .ship-dot {
+    position: absolute;
+    width: 3px;
+    height: 3px;
+    border-radius: 9999px;
+    background: hsl(var(--primary));
+    top: 50%;
+    transform: translate(-50%, -50%);
+    animation: ship-beam-travel 1.1s linear infinite;
+  }
+  .ship-dot-1 {
+    animation-delay: 0s;
+  }
+  .ship-dot-2 {
+    animation-delay: 0.36s;
+  }
+  .ship-dot-3 {
+    animation-delay: 0.72s;
+  }
+  @keyframes ship-beam-travel {
+    0% {
+      left: 0%;
+      opacity: 0;
+    }
+    20% {
+      opacity: 1;
+    }
+    80% {
+      opacity: 1;
+    }
+    100% {
+      left: 100%;
+      opacity: 0;
+    }
+  }
+</style>

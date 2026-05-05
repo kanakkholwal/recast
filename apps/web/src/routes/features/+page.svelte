@@ -111,11 +111,8 @@
 	/>
 </svelte:head>
 
-<main class="bg-background text-foreground">
+<main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
-		<div class="bg-aurora pointer-events-none absolute inset-0 -z-10 opacity-90"></div>
-		<div class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-50"></div>
-
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 text-left md:items-center md:text-center">
 				<Eyebrow icon={Sparkles} variant="primary">Features</Eyebrow>
@@ -138,9 +135,9 @@
 				{#each pillars as pillar, i}
 					{@const Icon = pillar.icon}
 					<Reveal delay={i * 80}>
-						<article class="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border-low bg-card/70 p-8 transition-all duration-300 hover:-translate-y-1 hover:border-border-strong hover:shadow-craft-md">
+						<article class="glass-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-md">
 							<div class="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-primary/8 blur-3xl transition-opacity duration-500 group-hover:bg-primary/14"></div>
-							<span class="grid size-12 place-items-center rounded-xl border border-border-low bg-background text-foreground/70 transition-all group-hover:scale-105 group-hover:bg-primary/10 group-hover:text-primary">
+							<span class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70 transition-all group-hover:scale-105 group-hover:text-primary">
 								<Icon class="size-5" />
 							</span>
 							<h3 class="mt-6 text-xl font-semibold tracking-tight text-foreground">
@@ -151,7 +148,7 @@
 							</p>
 							<ul class="mt-6 flex flex-wrap gap-2">
 								{#each pillar.tags as tag}
-									<li class="rounded-full border border-border-low bg-background/60 px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+									<li class="glass-chip rounded-full px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
 										{tag}
 									</li>
 								{/each}
@@ -163,7 +160,7 @@
 		</Container>
 	</Section>
 
-	<Section class="border-t border-border-low/60 bg-background">
+	<Section class="border-t border-border-low/60">
 		<Container>
 			<SectionHeader
 				eyebrow="Built in"
@@ -175,8 +172,8 @@
 				{#each supports as item, i}
 					{@const Icon = item.icon}
 					<Reveal delay={i * 50}>
-						<article class="group h-full rounded-xl border border-border-low bg-card/60 p-5 transition-all duration-300 hover:border-border-strong hover:bg-card hover:shadow-craft-sm">
-							<span class="grid size-9 place-items-center rounded-lg bg-muted/60 text-foreground/70 transition-colors group-hover:bg-primary/10 group-hover:text-primary">
+						<article class="glass-card group h-full rounded-xl p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-sm">
+							<span class="glass-chip grid size-9 place-items-center rounded-lg text-foreground/70 transition-colors group-hover:text-primary">
 								<Icon class="size-4" />
 							</span>
 							<h4 class="mt-5 text-sm font-semibold tracking-tight text-foreground">
@@ -195,8 +192,8 @@
 	<Section spacing="tight" class="border-t border-border-low/60">
 		<Container>
 			<Reveal>
-				<div class="relative overflow-hidden rounded-3xl border border-border-low bg-card/80 px-6 py-14 text-center shadow-craft-lg sm:px-12 sm:py-20">
-					<div class="bg-aurora pointer-events-none absolute inset-0 opacity-80"></div>
+				<div class="glass-card relative overflow-hidden rounded-3xl px-6 py-14 text-center shadow-craft-lg sm:px-12 sm:py-20">
+					<div class="bg-aurora pointer-events-none absolute inset-0 opacity-60"></div>
 					<div class="relative mx-auto flex max-w-2xl flex-col items-center gap-6">
 						<h2 class="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl">
 							Skip the editor. Ship the demo.
