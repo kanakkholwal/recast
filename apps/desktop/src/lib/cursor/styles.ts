@@ -30,21 +30,32 @@ export interface CursorStyle {
 	pressedHotspot?: { x: number; y: number };
 }
 
-// All sprites are 64×64 viewBox. The macOS shapes are scaled up from the
-// classic 16×16 system cursors so every stroke reads cleanly at the 32–64 px
-// rendered scale users see in playback.
+// All sprites are 64×64 viewBox with the click hotspot annotated per entry.
+// Strokes use round joins/caps and inline filters for soft drop shadows so
+// every variant reads cleanly at the 32–96 px rendered scale users see in
+// playback. Filters are scoped via unique IDs to avoid clashes when multiple
+// sprites end up in the DOM.
 
-// Apple's resting pointer: a tilted arrow with a black fill, white outline,
-// and a 1 px gap on the inside corner. The path is anchored at (8, 6) so
-// `transform: translate(-12.5%, -9.4%)` keeps the tip on the pointer sample.
+// Apple-style resting arrow: deep black core, white halo, soft drop shadow.
+// Hotspot at (8, 6) — the arrow's tip.
 const MACOS_ARROW = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <path
-    d="M8 6 L8 50.4 L19.6 39.2 L25.6 53.6 L31.6 51 L25.8 36.6 L42 36.6 Z"
-    fill="#000" stroke="#fff" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"/>
-  <path
-    d="M8 6 L8 50.4 L19.6 39.2 L25.6 53.6 L31.6 51 L25.8 36.6 L42 36.6 Z"
-    fill="#000"/>
+  <defs>
+    <filter id="cursor-macos-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.6"/>
+      <feOffset dx="0" dy="1.4"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.45"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#cursor-macos-shadow)">
+    <path
+      d="M8 6 L8 50.4 L19.6 39.2 L25.6 53.6 L31.6 51 L25.8 36.6 L42 36.6 Z"
+      fill="#fafafa" stroke="#fafafa" stroke-width="3.6" stroke-linejoin="round" stroke-linecap="round"/>
+    <path
+      d="M8 6 L8 50.4 L19.6 39.2 L25.6 53.6 L31.6 51 L25.8 36.6 L42 36.6 Z"
+      fill="#0a0a0a"/>
+  </g>
 </svg>`;
 
 // Apple's link pointer: a flat hand with the index finger raised. Hotspot
@@ -118,8 +129,89 @@ const MACOS_POINTER = `
 
 const DOT_SWATCH = `
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
-  <circle cx="32" cy="32" r="9" fill="#ffffff"/>
-  <circle cx="32" cy="32" r="11" fill="none" stroke="#fff" stroke-opacity="0.35" stroke-width="3"/>
+  <defs>
+    <radialGradient id="cursor-dot-fill" cx="0.5" cy="0.45" r="0.55">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="0.7" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.55"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="14" fill="#ffffff" fill-opacity="0.18"/>
+  <circle cx="32" cy="32" r="9" fill="url(#cursor-dot-fill)"/>
+</svg>`;
+
+// Windows 11 / Fluent style — white fill with subtle vertical gradient,
+// thin charcoal outline, soft drop shadow. Reads clean against any backdrop.
+// Hotspot at (10, 6).
+const WINDOWS_ARROW = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="cursor-w11-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e6e6"/>
+    </linearGradient>
+    <filter id="cursor-w11-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.8"/>
+      <feOffset dx="0" dy="1.8"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path
+    d="M10 6 L10 49.2 L21.6 38 L27.4 51.4 L33.2 49 L27.6 35.6 L43 35.6 Z"
+    fill="url(#cursor-w11-fill)"
+    stroke="#1c1c1c"
+    stroke-width="2"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    filter="url(#cursor-w11-shadow)"/>
+</svg>`;
+
+// Minimal outline arrow — translucent fill with a crisp white edge. Designed
+// for keynote/demo footage on darker product UIs. Hotspot at (10, 6).
+const OUTLINE_ARROW = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <filter id="cursor-outline-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
+      <feOffset dx="0" dy="1.2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path
+    d="M10 6 L10 49.2 L21.6 38 L27.4 51.4 L33.2 49 L27.6 35.6 L43 35.6 Z"
+    fill="rgba(10,10,10,0.55)"
+    stroke="#ffffff"
+    stroke-width="2.4"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    filter="url(#cursor-outline-shadow)"/>
+</svg>`;
+
+// Precision target reticle — concentric rings with cardinal ticks and a center
+// pip. Useful for design-tool walkthroughs and cursor-as-aim demos. Hotspot at
+// the geometric center (32, 32).
+const TARGET_RETICLE = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <filter id="cursor-target-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
+      <feOffset dx="0" dy="1.2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.4"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <g filter="url(#cursor-target-shadow)" fill="none" stroke-linecap="round">
+    <circle cx="32" cy="32" r="15" stroke="#0a0a0a" stroke-opacity="0.35" stroke-width="4"/>
+    <circle cx="32" cy="32" r="15" stroke="#ffffff" stroke-width="2.2"/>
+    <line x1="32" y1="11" x2="32" y2="20" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="32" y1="44" x2="32" y2="53" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="11" y1="32" x2="20" y2="32" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="44" y1="32" x2="53" y2="32" stroke="#ffffff" stroke-width="2.4"/>
+  </g>
+  <circle cx="32" cy="32" r="2.4" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="2.4" fill="none" stroke="#0a0a0a" stroke-opacity="0.4" stroke-width="0.8"/>
 </svg>`;
 
 export const CURSOR_STYLES: CursorStyle[] = [
@@ -140,6 +232,27 @@ export const CURSOR_STYLES: CursorStyle[] = [
 		pressedSvg: MACOS_POINTER,
 		hotspot: { x: 8, y: 6 },
 		pressedHotspot: { x: 12, y: 4 },
+	},
+	{
+		id: "windows",
+		label: "Windows 11",
+		description: "Fluent-style white arrow with a soft shadow.",
+		svg: WINDOWS_ARROW,
+		hotspot: { x: 10, y: 6 },
+	},
+	{
+		id: "outline",
+		label: "Outline",
+		description: "Crisp white outline with a translucent core — for darker UI captures.",
+		svg: OUTLINE_ARROW,
+		hotspot: { x: 10, y: 6 },
+	},
+	{
+		id: "target",
+		label: "Target",
+		description: "Precision reticle for design-tool walkthroughs.",
+		svg: TARGET_RETICLE,
+		hotspot: { x: 32, y: 32 },
 	},
 ];
 

@@ -31,6 +31,8 @@
   import { toast } from "@recast/ui/sonner";
   import { invoke } from "@tauri-apps/api/core";
   import { onDestroy, onMount } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fly, scale } from "svelte/transition";
 
   interface Props {
     store: EditorStore;
@@ -189,6 +191,7 @@
 <div class="flex flex-col gap-3 text-xs">
   <!-- Source section -->
   <section
+    in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
     class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <header
@@ -252,6 +255,7 @@
 
   <!-- Project / save state -->
   <section
+    in:fly={{ y: 8, duration: 260, delay: 100, easing: cubicOut }}
     class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <header
@@ -266,20 +270,28 @@
       <div class="flex items-center justify-between gap-2">
         <span class="text-muted-foreground">Save status</span>
         <span
-          class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-mono text-[10px] {saveStatus.tone ===
+          class="inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 font-mono text-[10px] {saveStatus.tone ===
           'warning'
-            ? 'bg-amber-500/15 text-amber-500'
+            ? 'bg-warning/15 text-warning ring-1 ring-warning/30'
             : saveStatus.tone === 'ok'
-              ? 'bg-emerald-500/10 text-emerald-500'
-              : 'bg-muted text-muted-foreground'}"
+              ? 'bg-success/10 text-success ring-1 ring-success/30'
+              : 'bg-muted text-muted-foreground ring-1 ring-border'}"
         >
           <span
-            class="size-1.5 rounded-full {saveStatus.tone === 'warning'
-              ? 'bg-amber-500'
-              : saveStatus.tone === 'ok'
-                ? 'bg-emerald-500'
-                : 'bg-muted-foreground'}"
-          ></span>
+            class="relative flex size-1.5"
+            aria-hidden="true"
+          >
+            {#if saveStatus.tone === 'ok'}
+              <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/50 opacity-70"></span>
+            {/if}
+            <span
+              class="relative inline-flex size-1.5 rounded-full {saveStatus.tone === 'warning'
+                ? 'bg-warning'
+                : saveStatus.tone === 'ok'
+                  ? 'bg-success'
+                  : 'bg-muted-foreground'}"
+            ></span>
+          </span>
           {saveStatus.label}
         </span>
       </div>
@@ -319,6 +331,7 @@
 
   <!-- Edit summary -->
   <section
+    in:fly={{ y: 8, duration: 260, delay: 160, easing: cubicOut }}
     class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <header
@@ -400,6 +413,7 @@
 
   <!-- Files -->
   <section
+    in:fly={{ y: 8, duration: 260, delay: 220, easing: cubicOut }}
     class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
   >
     <header

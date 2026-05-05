@@ -188,7 +188,7 @@ export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
  *  - Anything else: an SVG cursor sprite drawn by `CursorOverlayLayer` over
  *    the preview. Preview-only today; export currently falls back to `dot`.
  */
-export type CursorStyleId = 'dot' | 'macos';
+export type CursorStyleId = 'dot' | 'macos' | 'windows' | 'outline' | 'target';
 
 export interface CursorSettings {
 	enabled: boolean;

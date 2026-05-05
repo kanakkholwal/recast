@@ -204,7 +204,7 @@
   <div
     class="pointer-events-none absolute inset-y-0.75 left-0.75 rounded-sm bg-foreground/[0.07] shadow-[0_4px_10px_rgba(0,0,0,0.18)]"
     style:width={clampedPercentage > 0
-      ? `max(calc(${clampedPercentage}% - 6px), 2.1rem)`
+      ? `max(calc(${clampedPercentage}% - 6px), 0.5rem)`
       : "0px"}
   ></div>
 

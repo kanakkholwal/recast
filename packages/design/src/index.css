@@ -1,4 +1,3 @@
-@import "tailwindcss";
 @import "tw-animate-css";
 
 @custom-variant dark (&:where([data-theme="dark"], .dark, .dark *, [data-theme="dark"] *));
@@ -14,8 +13,8 @@
   --popover: oklch(100% 0.00011 271.152);
   --popover-foreground: oklch(21.342% 0.00002 271.152);
 
-  --primary: oklch(60.651% 0.10453 185.67);
-  --primary-foreground: oklch(96.115% 0.00011 271.152);
+  --primary: oklch(76% 0.21 125.904);
+  --primary-foreground: oklch(0.25 0 0);
 
   --secondary: oklch(96.744% 0.00143 285.225);
   --secondary-foreground: oklch(21.033% 0.00588 285.832);

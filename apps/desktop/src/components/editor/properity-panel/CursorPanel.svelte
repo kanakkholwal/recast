@@ -18,6 +18,8 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
+  import { cubicOut } from "svelte/easing";
+  import { fade, fly, scale } from "svelte/transition";
   import BezierEditor from "../_components/BezierEditor.svelte";
   import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
@@ -41,6 +43,10 @@
 
   let { store }: Props = $props();
   let showTrajectoryMap = $state(false);
+
+  const activeStyle = $derived(
+    CURSOR_STYLES.find((s) => s.id === store.cursorSettings.style),
+  );
 
   function updateCursorSettings(
     updates: Partial<EditorStore["cursorSettings"]>,
@@ -90,50 +96,78 @@
   {#if store.cursorSettings.enabled}
     <!-- Style picker -->
     <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Style
-        </h3>
-        <InspectorHint
-          content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
-        />
+      <header class="mb-2 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5">
+          <h3
+            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+          >
+            Style
+          </h3>
+          <InspectorHint
+            content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
+          />
+        </div>
+        {#if activeStyle}
+          <span
+            class="font-mono text-[10px] tracking-tight text-foreground/80"
+          >
+            {activeStyle.label}
+          </span>
+        {/if}
       </header>
-      <div class="grid grid-cols-3 gap-1">
-        {#each CURSOR_STYLES as style (style.id)}
+
+      <div
+        class="grid grid-cols-5 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
+      >
+        {#each CURSOR_STYLES as style, i (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
           <button
+            in:fly={{ y: 6, duration: 240, delay: 60 + i * 35, easing: cubicOut }}
             type="button"
             aria-pressed={isActive}
+            aria-label={`${style.label} cursor`}
             onclick={() => {
               store.pushUndoState();
               store.updateCursorSettings({ style: style.id as CursorStyleId });
             }}
             title={`${style.label} — ${style.description}`}
             class={cn(
-              "group relative aspect-square size-24 overflow-hidden rounded-md bg-muted border transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
+              "group relative aspect-square overflow-hidden rounded-md border transition-all duration-150",
+              "focus:outline-none focus:ring-2 focus:ring-ring/40",
+              "[&_svg]:h-[60%] [&_svg]:w-[60%]",
               isActive
-                ? "border-primary bg-primary/10"
-                : "border-border bg-muted/30 hover:border-foreground/30",
+                ? "border-primary/60 bg-primary/8 text-foreground"
+                : "border-transparent bg-background/40 text-foreground/80 hover:border-border hover:bg-background/80 hover:text-foreground",
             )}
           >
             <span
-              class="absolute inset-1 m-auto flex items-center justify-center text-foreground"
+              class={cn(
+                "absolute inset-0 flex items-center justify-center transition-transform duration-150",
+                isActive
+                  ? "scale-100"
+                  : "scale-90 opacity-85 group-hover:scale-100 group-hover:opacity-100",
+              )}
               aria-hidden="true"
             >
               {@html style.svg}
             </span>
-            <span
-              class="pointer-events-none absolute inset-x-0 bottom-0 truncate bg-background/80 px-1 text-center text-[8px] font-medium uppercase tracking-wider {isActive
-                ? 'text-primary'
-                : 'text-muted-foreground'}"
-            >
-              {style.label}
-            </span>
+            {#if isActive}
+              <span
+                aria-hidden="true"
+                class="pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-primary shadow-[0_0_0_1.5px_color-mix(in_srgb,var(--color-background)_85%,transparent)]"
+              ></span>
+            {/if}
           </button>
         {/each}
       </div>
+
+      {#if activeStyle}
+        <p
+          class="mt-1.5 line-clamp-2 text-[10px] leading-snug text-muted-foreground"
+        >
+          {activeStyle.description}
+        </p>
+      {/if}
     </section>
 
     <!-- Pointer feel -->
@@ -147,6 +181,16 @@
         <InspectorHint
           content="Size controls how legibly the cursor reads on screen."
         />
+         {#if store.cursorSettings.size !== 2}
+            <Button
+              variant="ghost"
+              size="xs"
+              class="ml-auto text-foreground/50"
+              onclick={() => updateCursorSettings({ size: 2 }, true)}
+            >
+              Reset to default
+            </Button>
+        {/if}
       </header>
       <div class="space-y-2.5">
         <SliderControl
@@ -163,17 +207,7 @@
             <MousePointer size={11} />
           {/snippet}
         </SliderControl>
-        {#if store.cursorSettings.size !== 2}
-          <div class="flex justify-end">
-            <Button
-              variant="ghost"
-              size="xs"
-              onclick={() => updateCursorSettings({ size: 2 }, true)}
-            >
-              Reset to default
-            </Button>
-          </div>
-        {/if}
+       
       </div>
     </section>
 
@@ -216,34 +250,32 @@
 
       <!-- Presets -->
       <div class="mt-2.5 flex flex-wrap gap-1">
-        {#each SMOOTHING_PRESETS as preset (preset.id)}
+        {#each SMOOTHING_PRESETS as preset, i (preset.id)}
           {@const isActive =
             store.cursorSettings.smoothing === preset.smoothing &&
             store.cursorSettings.snapToClicks === preset.snapToClicks &&
             store.cursorSettings.snapWindowMs === preset.snapWindowMs}
-          <Button
-            type="button"
-            aria-pressed={isActive}
-            onclick={() => {
-              store.pushUndoState();
-              store.updateCursorSettings({
-                smoothing: preset.smoothing,
-                snapToClicks: preset.snapToClicks,
-                snapWindowMs: preset.snapWindowMs,
-              });
-            }}
-            size="xs"
-            variant={isActive ? "default_soft" : "outline"}
-            // class={cn(
-            //   "h-6 rounded-sm border px-2 text-[10px] font-medium transition-colors",
-            //   "focus:outline-none focus:ring-1 focus:ring-ring",
-            //   isActive
-            //     ? "border-primary bg-primary/10 text-primary"
-            //     : "border-border bg-background text-muted-foreground hover:text-foreground",
-            // )}
+          <span
+            class="inline-flex"
+            in:scale={{ start: 0.92, duration: 220, delay: 80 + i * 30, easing: cubicOut }}
           >
-            {preset.label}
-          </Button>
+            <Button
+              type="button"
+              aria-pressed={isActive}
+              onclick={() => {
+                store.pushUndoState();
+                store.updateCursorSettings({
+                  smoothing: preset.smoothing,
+                  snapToClicks: preset.snapToClicks,
+                  snapWindowMs: preset.snapWindowMs,
+                });
+              }}
+              size="xs"
+              variant={isActive ? "default_soft" : "outline"}
+            >
+              {preset.label}
+            </Button>
+          </span>
         {/each}
       </div>
 
@@ -384,27 +416,32 @@
       </div>
 
       {#if store.cursorSettings.highlightClicks}
-        <div class="grid grid-cols-8 gap-1">
-          {#each highlightColors as color}
+        <div class="grid grid-cols-8 gap-1" in:fade={{ duration: 160 }}>
+          {#each highlightColors as color, i (color)}
             {@const isSelected = store.cursorSettings.highlightColor === color}
-            <Button
-              variant="raw"
-              size="raw"
-              onclick={() =>
-                updateCursorSettings(
-                  { highlightColor: color },
-                  store.cursorSettings.highlightColor !== color,
+            <span
+              class="inline-flex"
+              in:scale={{ start: 0.85, duration: 220, delay: 60 + i * 25, easing: cubicOut }}
+            >
+              <Button
+                variant="raw"
+                size="raw"
+                onclick={() =>
+                  updateCursorSettings(
+                    { highlightColor: color },
+                    store.cursorSettings.highlightColor !== color,
+                  )}
+                aria-label="Use {color} click highlight color"
+                aria-pressed={isSelected}
+                class={cn(
+                  "aspect-square w-full rounded-md border-2 transition-all",
+                  isSelected
+                    ? "border-foreground shadow-sm"
+                    : "border-border/40 hover:border-border",
                 )}
-              aria-label="Use {color} click highlight color"
-              aria-pressed={isSelected}
-              class={cn(
-                "aspect-square rounded-md border-2 transition-all",
-                isSelected
-                  ? "border-foreground shadow-sm"
-                  : "border-border/40 hover:border-border",
-              )}
-              style="background-color: {color}"
-            ></Button>
+                style="background-color: {color}"
+              ></Button>
+            </span>
           {/each}
         </div>
 
