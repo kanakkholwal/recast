@@ -568,6 +568,7 @@
         store.exportQuality,
         finalRenderState,
         exportId,
+        store.exportFormat === "gif" ? store.gifSettings : undefined,
       );
       // Safety net: if the export-state success event was missed, fall back to
       // the Promise result. Don't overwrite if the listener already set it.

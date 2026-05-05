@@ -254,15 +254,23 @@ export function listenToExportState(
 	});
 }
 
+export interface ExportGifSettings {
+	fps: number | null;
+	quality: 'low' | 'medium' | 'high';
+	loop: 'infinite' | 'once' | number;
+	dither: 'bayer' | 'sierra2' | 'none';
+}
+
 export function exportVideo(
 	inputPath: string,
 	format: string,
 	quality: string,
 	renderState: EditorRenderState,
 	exportId: string,
+	gifSettings?: ExportGifSettings,
 ): Promise<string> {
 	return invoke<string>("export_video", {
-		request: { exportId, inputPath, format, quality, renderState },
+		request: { exportId, inputPath, format, quality, renderState, gifSettings },
 	});
 }
 

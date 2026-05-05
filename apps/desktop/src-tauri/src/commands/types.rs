@@ -119,6 +119,59 @@ pub struct AppConfig {
     pub last_source: Option<LastSource>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GifSettings {
+    /// Override frame rate. `None` means use the quality profile's `gif_fps`.
+    #[serde(default)]
+    pub fps: Option<u32>,
+    /// "low" | "medium" | "high" — drives palette size + dither bias.
+    #[serde(default = "default_gif_quality")]
+    pub quality: String,
+    /// "infinite" | "once" | a non-negative integer count.
+    #[serde(default = "default_gif_loop")]
+    pub r#loop: serde_json::Value,
+    /// "bayer" | "sierra2" | "none".
+    #[serde(default = "default_gif_dither")]
+    pub dither: String,
+}
+
+fn default_gif_quality() -> String { "medium".into() }
+fn default_gif_loop() -> serde_json::Value { serde_json::Value::String("infinite".into()) }
+fn default_gif_dither() -> String { "bayer".into() }
+
+impl Default for GifSettings {
+    fn default() -> Self {
+        Self {
+            fps: None,
+            quality: default_gif_quality(),
+            r#loop: default_gif_loop(),
+            dither: default_gif_dither(),
+        }
+    }
+}
+
+impl GifSettings {
+    /// Resolve the FFmpeg `-loop` argument. `0` = infinite, `-1` = play once, `n` = play n times.
+    pub fn ffmpeg_loop_arg(&self) -> i64 {
+        match &self.r#loop {
+            serde_json::Value::String(s) if s == "infinite" => 0,
+            serde_json::Value::String(s) if s == "once" => -1,
+            serde_json::Value::Number(n) => n.as_i64().unwrap_or(0).max(-1),
+            _ => 0,
+        }
+    }
+
+    /// Maximum colours in the generated palette. Caps at 256 (GIF limit).
+    pub fn max_colors(&self) -> u32 {
+        match self.quality.as_str() {
+            "low" => 64,
+            "high" => 256,
+            _ => 128, // "medium"
+        }
+    }
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
@@ -127,6 +180,8 @@ pub struct ExportRequest {
     pub format: String,
     pub quality: String,
     pub render_state: RenderState,
+    #[serde(default)]
+    pub gif_settings: Option<GifSettings>,
 }
 
 #[derive(Clone, Copy)]

@@ -13,6 +13,8 @@
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fly, scale } from "svelte/transition";
   import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
 
@@ -167,9 +169,9 @@
   });
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
+<div class="flex flex-col gap-5">
   <!-- Master + mute -->
-  <section>
+  <section in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}>
     <div class="flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
@@ -228,9 +230,9 @@
           <p
             class="font-mono text-2xl font-medium tabular-nums leading-none {volumeZone ===
             'hot'
-              ? 'text-red-500'
+              ? 'text-destructive'
               : volumeZone === 'boost'
-                ? 'text-amber-500'
+                ? 'text-warning'
                 : 'text-foreground'}"
           >
             {store.audioSettings.volume}<span
@@ -240,9 +242,9 @@
           <p
             class="mt-0.5 font-mono text-[10px] tabular-nums {volumeZone ===
             'hot'
-              ? 'text-red-500'
+              ? 'text-destructive'
               : volumeZone === 'boost'
-                ? 'text-amber-500'
+                ? 'text-warning'
                 : 'text-muted-foreground'}"
           >
             {dbForVolume(store.audioSettings.volume)}
@@ -250,10 +252,11 @@
         </div>
         {#if volumeZone === "boost" || volumeZone === "hot"}
           <span
-            class="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider {volumeZone ===
+            in:scale={{ start: 0.85, duration: 220, easing: cubicOut }}
+            class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider {volumeZone ===
             'hot'
-              ? 'border-red-500/40 bg-red-500/10 text-red-500'
-              : 'border-amber-500/40 bg-amber-500/10 text-amber-500'}"
+              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              : 'border-warning/40 bg-warning/10 text-warning'}"
           >
             <Waves size={10} />
             {volumeZone === "hot" ? "Clipping risk" : "Boost"}
@@ -266,13 +269,13 @@
         class="relative mt-2 h-1.5 overflow-hidden rounded-full bg-background"
       >
         <div
-          class="absolute inset-y-0 left-0 transition-all {volumeZone === 'hot'
-            ? 'bg-red-500'
+          class="absolute inset-y-0 left-0 transition-all duration-300 {volumeZone === 'hot'
+            ? 'bg-destructive'
             : volumeZone === 'boost'
-              ? 'bg-amber-500'
+              ? 'bg-warning'
               : volumeZone === 'low'
-                ? 'bg-emerald-500/70'
-                : 'bg-emerald-500'}"
+                ? 'bg-success/70'
+                : 'bg-success'}"
           style="width: {Math.min(100, (store.audioSettings.volume / 200) * 100)}%"
         ></div>
         <!-- 100% reference tick -->
@@ -286,7 +289,7 @@
   </section>
 
   <!-- Tracks -->
-  <section>
+  <section in:fly={{ y: 8, duration: 260, delay: 100, easing: cubicOut }}>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
         class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
@@ -298,11 +301,12 @@
       />
     </header>
     <ul class="flex flex-col gap-1">
-      {#each tracks as track (track.id)}
+      {#each tracks as track, i (track.id)}
         {@const Icon = track.icon}
         <li
+          in:fly={{ y: 6, duration: 240, delay: 140 + i * 50, easing: cubicOut }}
           class={cn(
-            "flex items-center gap-2 rounded-md border border-border bg-background/40 px-2.5 py-1.5",
+            "flex items-center gap-2 rounded-md border border-border/60 bg-background/40 px-2.5 py-1.5 shadow-(--shadow-craft-inset) transition-opacity",
             track.state === "muted" && "opacity-60",
           )}
         >
@@ -331,7 +335,7 @@
               class={cn(
                 "size-1.5 rounded-full",
                 track.state === "live"
-                  ? "bg-emerald-500"
+                  ? "bg-success"
                   : "bg-muted-foreground",
               )}
             ></span>
@@ -343,7 +347,7 @@
   </section>
 
   <!-- Mix -->
-  <section>
+  <section in:fly={{ y: 8, duration: 260, delay: 160, easing: cubicOut }}>
     <header class="mb-2 flex items-center gap-1.5">
       <h3
         class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
@@ -373,7 +377,7 @@
   </section>
 
   <!-- Fades -->
-  <section>
+  <section in:fly={{ y: 8, duration: 260, delay: 220, easing: cubicOut }}>
     <header class="mb-2 flex items-center justify-between gap-2">
       <div class="flex items-center gap-1.5">
         <h3
@@ -432,23 +436,28 @@
 
     <!-- Presets -->
     <div class="mt-2 flex items-center gap-1">
-      {#each FADE_PRESETS as preset (preset.label)}
+      {#each FADE_PRESETS as preset, i (preset.label)}
         {@const isActive = isPresetActive(preset)}
-        <Button
-          variant="raw"
-          size="xs"
-          aria-pressed={isActive}
-          onclick={() => applyPreset(preset)}
-          class={cn(
-            "flex-1 gap-1 border text-[10px]",
-            isActive
-              ? "border-primary bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground",
-          )}
-          title="Set fade in to {preset.in.toFixed(2)}s and fade out to {preset.out.toFixed(2)}s"
+        <span
+          class="flex flex-1"
+          in:scale={{ start: 0.92, duration: 220, delay: 280 + i * 35, easing: cubicOut }}
         >
-          {preset.label}
-        </Button>
+          <Button
+            variant="raw"
+            size="xs"
+            aria-pressed={isActive}
+            onclick={() => applyPreset(preset)}
+            class={cn(
+              "flex-1 gap-1 rounded-md border text-[10px] transition-colors",
+              isActive
+                ? "border-primary/60 bg-primary/10 text-primary ring-1 ring-primary/30"
+                : "border-border/60 bg-background text-muted-foreground hover:border-border hover:text-foreground",
+            )}
+            title="Set fade in to {preset.in.toFixed(2)}s and fade out to {preset.out.toFixed(2)}s"
+          >
+            {preset.label}
+          </Button>
+        </span>
       {/each}
     </div>
 

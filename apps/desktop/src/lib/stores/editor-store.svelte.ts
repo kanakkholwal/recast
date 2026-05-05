@@ -367,6 +367,28 @@ export interface EditorRenderState {
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
 export type ExportQuality = 'small' | 'hd' | '4k' | 'source';
 
+/** GIF dithering algorithm. Trades file size against gradient quality. */
+export type GifDither = 'bayer' | 'sierra2' | 'none';
+/** GIF quality preset — controls palette size + dither bias. */
+export type GifQuality = 'low' | 'medium' | 'high';
+/** GIF loop behavior. `infinite` writes Netscape loop=0, `once` writes loop=-1, `n` writes loop=n. */
+export type GifLoop = 'infinite' | 'once' | number;
+
+export interface GifSettings {
+	/** Output frame rate. `null` = inherit from quality profile. */
+	fps: number | null;
+	quality: GifQuality;
+	loop: GifLoop;
+	dither: GifDither;
+}
+
+export const DEFAULT_GIF_SETTINGS: GifSettings = {
+	fps: null,
+	quality: 'medium',
+	loop: 'infinite',
+	dither: 'bayer',
+};
+
 export type LayoutMode = 'auto' | 'crop';
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
@@ -533,6 +555,7 @@ export function createEditorStore() {
 	// Export
 	let exportFormat = $state<ExportFormat>('mp4');
 	let exportQuality = $state<ExportQuality>('hd');
+	let gifSettings = $state<GifSettings>({ ...DEFAULT_GIF_SETTINGS });
 	let exportProgress = $state<number | null>(null);
 	let isExporting = $state(false);
 
@@ -1230,6 +1253,12 @@ export function createEditorStore() {
 
 		get exportQuality() { return exportQuality; },
 		set exportQuality(v: ExportQuality) { exportQuality = v; },
+
+		get gifSettings() { return gifSettings; },
+		set gifSettings(v: GifSettings) { gifSettings = v; },
+		updateGifSettings(updates: Partial<GifSettings>) {
+			gifSettings = { ...gifSettings, ...updates };
+		},
 
 		get exportProgress() { return exportProgress; },
 		set exportProgress(v: number | null) { exportProgress = v; },

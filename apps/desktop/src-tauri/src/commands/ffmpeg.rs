@@ -115,10 +115,29 @@ pub fn append_cursor_overlay_to_complex(
 /// Returns the extended `filter_complex` string and the new output label to
 /// pass to `-map`. Any inline scale filter is baked into the `paletteuse` leg
 /// so we don't double-sample.
+/// Per-export GIF tuning passed in from the editor UI. Mirrors `GifSettings`
+/// on the JS side but expressed as primitive Rust types so the filter builder
+/// stays free of `serde_json::Value` parsing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct GifFilterOptions<'a> {
+    /// Output frame rate. Caller resolves overrides vs. quality profile defaults.
+    pub fps: u32,
+    /// 1..=256. Capped to GIF's maximum palette size.
+    pub max_colors: u32,
+    /// "bayer" | "sierra2" | "none".
+    pub dither: &'a str,
+}
+
+impl<'a> Default for GifFilterOptions<'a> {
+    fn default() -> Self {
+        Self { fps: 15, max_colors: 128, dither: "bayer" }
+    }
+}
+
 pub fn build_gif_palette_complex(
     filter_complex: Option<&str>,
     input_label: &str,
-    fps: u32,
+    options: GifFilterOptions<'_>,
     inline_scale: Option<&str>,
 ) -> (String, String) {
     let final_label = "[vgif]";
@@ -138,14 +157,176 @@ pub fn build_gif_palette_complex(
         Some(s) if !s.is_empty() => format!(",{s}"),
         _ => String::new(),
     };
+    // Clamp + render the dither argument. `none` is FFmpeg's literal disable,
+    // bayer takes a `bayer_scale`, sierra2 ships without further knobs.
+    let dither_clause = match options.dither {
+        "none" => "dither=none".to_string(),
+        "sierra2" => "dither=sierra2".to_string(),
+        _ => "dither=bayer:bayer_scale=5".to_string(),
+    };
+    let max_colors = options.max_colors.clamp(2, 256);
+    let fps = options.fps.max(1);
     let palette_chain = format!(
-        "{normalized_input}fps={fps}{scale_clause},split[_gifa][_gifb];[_gifa]palettegen=stats_mode=diff[_gifp];[_gifb][_gifp]paletteuse=dither=bayer:bayer_scale=5:diff_mode=rectangle{final_label}"
+        "{normalized_input}fps={fps}{scale_clause},split[_gifa][_gifb];[_gifa]palettegen=max_colors={max_colors}:stats_mode=diff[_gifp];[_gifb][_gifp]paletteuse={dither_clause}:diff_mode=rectangle{final_label}"
     );
     let new_complex = match filter_complex {
         Some(existing) if !existing.is_empty() => format!("{existing};{palette_chain}"),
         _ => palette_chain,
     };
     (new_complex, final_label.to_string())
+}
+
+#[cfg(test)]
+mod gif_tests {
+    use super::*;
+
+    #[test]
+    fn includes_fps_and_default_palette() {
+        let (complex, label) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 12, max_colors: 128, dither: "bayer" },
+            None,
+        );
+        assert_eq!(label, "[vgif]");
+        assert!(complex.starts_with("[vout]fps=12"), "got: {complex}");
+        assert!(complex.contains("max_colors=128"));
+        assert!(complex.contains("dither=bayer:bayer_scale=5"));
+        assert!(complex.contains("paletteuse"));
+        assert!(complex.contains("[vgif]"));
+    }
+
+    #[test]
+    fn appends_to_existing_filter_complex() {
+        let (complex, _) = build_gif_palette_complex(
+            Some("[0:v]hflip[vout]"),
+            "[vout]",
+            GifFilterOptions::default(),
+            None,
+        );
+        assert!(complex.starts_with("[0:v]hflip[vout];"));
+        assert!(complex.contains("[vout]fps=15"));
+    }
+
+    #[test]
+    fn bakes_inline_scale_before_split() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 18, max_colors: 256, dither: "bayer" },
+            Some("scale=w=720:h=-1"),
+        );
+        let split_idx = complex.find("split").expect("split present");
+        let scale_idx = complex.find("scale=").expect("scale present");
+        assert!(scale_idx < split_idx, "scale must come before split: {complex}");
+    }
+
+    #[test]
+    fn sierra2_emits_bare_dither_arg() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 15, max_colors: 128, dither: "sierra2" },
+            None,
+        );
+        assert!(complex.contains("dither=sierra2"), "got: {complex}");
+        assert!(!complex.contains("bayer_scale"));
+    }
+
+    #[test]
+    fn dither_none_disables_dither() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 15, max_colors: 128, dither: "none" },
+            None,
+        );
+        assert!(complex.contains("dither=none"));
+    }
+
+    #[test]
+    fn unknown_dither_falls_back_to_bayer() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 15, max_colors: 128, dither: "wat" },
+            None,
+        );
+        assert!(complex.contains("dither=bayer:bayer_scale=5"));
+    }
+
+    #[test]
+    fn fps_zero_clamps_to_one() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 0, max_colors: 128, dither: "bayer" },
+            None,
+        );
+        assert!(complex.contains("fps=1"), "got: {complex}");
+    }
+
+    #[test]
+    fn max_colors_clamped_to_gif_palette() {
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 15, max_colors: 9999, dither: "bayer" },
+            None,
+        );
+        assert!(complex.contains("max_colors=256"));
+
+        let (complex, _) = build_gif_palette_complex(
+            None,
+            "vout",
+            GifFilterOptions { fps: 15, max_colors: 1, dither: "bayer" },
+            None,
+        );
+        assert!(complex.contains("max_colors=2"));
+    }
+}
+
+#[cfg(test)]
+mod gif_settings_tests {
+    use super::super::types::GifSettings;
+    use serde_json::json;
+
+    #[test]
+    fn loop_infinite_to_zero() {
+        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!("infinite"), dither: "bayer".into() };
+        assert_eq!(s.ffmpeg_loop_arg(), 0);
+    }
+
+    #[test]
+    fn loop_once_to_minus_one() {
+        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!("once"), dither: "bayer".into() };
+        assert_eq!(s.ffmpeg_loop_arg(), -1);
+    }
+
+    #[test]
+    fn loop_numeric_passthrough() {
+        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!(3), dither: "bayer".into() };
+        assert_eq!(s.ffmpeg_loop_arg(), 3);
+    }
+
+    #[test]
+    fn loop_negative_clamped_to_minus_one() {
+        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!(-5), dither: "bayer".into() };
+        assert_eq!(s.ffmpeg_loop_arg(), -1);
+    }
+
+    #[test]
+    fn quality_to_max_colors() {
+        let mut s = GifSettings::default();
+        s.quality = "low".into();
+        assert_eq!(s.max_colors(), 64);
+        s.quality = "medium".into();
+        assert_eq!(s.max_colors(), 128);
+        s.quality = "high".into();
+        assert_eq!(s.max_colors(), 256);
+        s.quality = "garbage".into();
+        assert_eq!(s.max_colors(), 128);
+    }
 }
 
 pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {

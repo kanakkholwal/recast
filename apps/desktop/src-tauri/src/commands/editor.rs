@@ -14,10 +14,10 @@ use tauri::{AppHandle, Emitter, Manager, State};
 use super::ffmpeg::{
     append_cursor_overlay_to_complex, append_output_filters_to_complex, build_gif_palette_complex,
     build_output_scale_filter, has_audio, probe_video_metadata, resolve_export_profile,
-    summarize_ffmpeg_error,
+    summarize_ffmpeg_error, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
-use super::types::{AppState, EditorDocument, ExportRequest, VideoMetadata};
+use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
 use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
@@ -752,11 +752,18 @@ pub async fn export_video(
     // scale into the palette chain means we don't need a separate `-vf` or a
     // post-hoc merge step for GIFs.
     let mut output_filters: Vec<String> = Vec::new();
+    let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
     if request.format == "gif" {
+        let resolved_fps = gif_settings.fps.unwrap_or(profile.gif_fps);
+        let gif_options = GifFilterOptions {
+            fps: resolved_fps,
+            max_colors: gif_settings.max_colors(),
+            dither: gif_settings.dither.as_str(),
+        };
         let (gif_complex, gif_map) = build_gif_palette_complex(
             filter_complex_after_cursor.as_deref(),
             &video_map_after_cursor,
-            profile.gif_fps,
+            gif_options,
             output_scale_filter.as_deref(),
         );
         filter_complex_after_cursor = Some(gif_complex);
@@ -835,7 +842,7 @@ pub async fn export_video(
                 "-vsync".to_string(),
                 "0".to_string(),
                 "-loop".to_string(),
-                "0".to_string(),
+                gif_settings.ffmpeg_loop_arg().to_string(),
                 output_path.to_string_lossy().to_string(),
             ]);
         }

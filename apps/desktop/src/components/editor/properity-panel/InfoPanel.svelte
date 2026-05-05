@@ -357,15 +357,16 @@
       </div>
       {#if totalAnnotations > 0}
         <div
-          class="grid grid-cols-5 gap-1 rounded border border-border/60 bg-background/40 p-1"
+          class="grid grid-cols-5 gap-1 rounded-md border border-border/60 bg-background/40 p-1 shadow-(--shadow-craft-inset)"
         >
-          {#each KIND_META as kind (kind.id)}
+          {#each KIND_META as kind, i (kind.id)}
             {@const Icon = kind.icon}
             {@const count = annotationCounts[kind.id] ?? 0}
             <div
-              class="flex flex-col items-center gap-0.5 rounded px-1 py-1 {count >
+              in:scale={{ start: 0.85, duration: 220, delay: 180 + i * 30, easing: cubicOut }}
+              class="flex flex-col items-center gap-0.5 rounded-sm px-1 py-1 transition-colors {count >
               0
-                ? 'text-foreground'
+                ? 'bg-primary/8 text-primary ring-1 ring-primary/20'
                 : 'text-muted-foreground/50'}"
               title="{kind.label}: {count}"
             >
