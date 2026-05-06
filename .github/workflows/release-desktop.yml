@@ -16,7 +16,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  NODE_VERSION: "22"
+  NODE_VERSION: "24"
   PNPM_VERSION: "10.23.0"
   RUST_BACKTRACE: "1"
   CARGO_TERM_COLOR: always
@@ -25,6 +25,7 @@ env:
   # do NOT track "latest". The Windows build comes from gyan.dev's release
   # essentials archive; macOS from evermeet.cx; Linux from johnvansickle.com.
   FFMPEG_VERSION: "7.1"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   create-release:
