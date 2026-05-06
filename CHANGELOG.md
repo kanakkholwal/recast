@@ -5,8 +5,15 @@ All notable changes to Recast are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-The in-app source of truth is [`apps/desktop/src/constants/changelog.ts`](apps/desktop/src/constants/changelog.ts).
-Keep this file in sync with that module on every release.
+This file is the **canonical source for GitHub release notes**: the
+`Release Desktop App` workflow runs `scripts/extract-changelog.mjs <tag>` and
+uses the matching `## [<version>]` section as the release body. Entries with no
+matching section fall back to GitHub's auto-generated notes.
+
+The in-app changelog mirrors this file via
+[`apps/desktop/src/constants/changelog.ts`](apps/desktop/src/constants/changelog.ts).
+On every release, update both. Headings must follow the literal form
+`## [<version>] — <date>` so the extractor can find them.
 
 ## [0.1.2-beta] — 2026-05-06
 

@@ -44,6 +44,52 @@ jobs:
         shell: bash
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      - name: Build release body from CHANGELOG.md
+        id: build_body
+        shell: bash
+        env:
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          body_file="$(mktemp)"
+
+          if node scripts/extract-changelog.mjs "$version" --out changelog-section.md > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "## What's new in ${TAG}"
+              echo
+              cat changelog-section.md
+              echo
+            } > "$body_file"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No CHANGELOG.md section for ${version}; falling back to auto-generated notes."
+            : > "$body_file"
+          fi
+
+          {
+            echo "## Installation and signing notes"
+            echo "Release assets include GitHub artifact attestations for build provenance."
+            echo "Windows and macOS builds may still show OS security prompts because OS code-signing is not configured."
+            echo "If blocked by OS warnings, verify the release from the repository:"
+            echo "https://github.com/kanakkholwal/recast"
+            echo
+            echo "Verify release integrity with GitHub CLI:"
+            echo '```sh'
+            echo "gh release verify ${TAG} -R kanakkholwal/recast"
+            echo "gh release verify-asset ${TAG} path/to/downloaded-asset -R kanakkholwal/recast"
+            echo "gh attestation verify path/to/downloaded-asset -R kanakkholwal/recast"
+            echo '```'
+          } >> "$body_file"
+
+          # Pass body as a multi-line GH Actions output.
+          {
+            echo "body<<__BODY_EOF__"
+            cat "$body_file"
+            echo "__BODY_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Create or reuse draft release
         id: create_release
         uses: softprops/action-gh-release@v2
@@ -54,20 +100,10 @@ jobs:
           name: Recast ${{ steps.resolve_tag.outputs.tag }}
           draft: true
           prerelease: false
-          generate_release_notes: true
-          body: |
-            ## Installation and signing notes
-            Release assets include GitHub artifact attestations for build provenance.
-            Windows and macOS builds may still show OS security prompts because OS code-signing is not configured.
-            If blocked by OS warnings, verify the release from the repository:
-            https://github.com/kanakkholwal/recast
-
-            Verify release integrity with GitHub CLI:
-            ```sh
-            gh release verify ${{ steps.resolve_tag.outputs.tag }} -R kanakkholwal/recast
-            gh release verify-asset ${{ steps.resolve_tag.outputs.tag }} path/to/downloaded-asset -R kanakkholwal/recast
-            gh attestation verify path/to/downloaded-asset -R kanakkholwal/recast
-            ```
+          # Auto-generate "what's changed" only when the changelog has no section
+          # for this tag; otherwise the curated CHANGELOG entry wins.
+          generate_release_notes: ${{ steps.build_body.outputs.found != 'true' }}
+          body: ${{ steps.build_body.outputs.body }}
 
   build-desktop:
     name: Build (${{ matrix.platform.name }})
