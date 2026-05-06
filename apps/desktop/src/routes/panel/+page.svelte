@@ -18,6 +18,7 @@
     ChevronDown,
     Circle,
     Crop,
+    GripVertical,
     Mic,
     MicOff,
     Monitor,
@@ -387,10 +388,30 @@
   );
 </script>
 
+<!-- Outer wrapper: fills the (oversized) Tauri window. Padding gives the
+     inner panel's drop-shadow room to render without being clipped at the
+     window edge. The window itself is transparent so this padding shows
+     the desktop through. -->
 <div
-  class="group/panel relative mx-auto flex h-dvh overflow-hidden no-scrollbar w-full items-center gap-1 bg-card p-2 backdrop-blur-3xl border border-border-subtle rounded-lg"
+  class="flex h-dvh w-dvw items-center justify-center px-4 py-3"
   data-tauri-drag-region
 >
+<div
+  class="group/panel relative flex h-11 overflow-hidden no-scrollbar w-full items-center gap-1 bg-card/95 p-2 pl-1 backdrop-blur-3xl border border-border/60 rounded-lg ring-1 ring-foreground/5"
+  data-tauri-drag-region
+>
+  <!-- Drag handle: explicit affordance for moving the panel. The whole bar
+       is a Tauri drag region, but users don't know that without a visible
+       grip. Hover lifts opacity so it doesn't compete visually at rest. -->
+  <div
+    data-tauri-drag-region
+    class="flex h-7 w-4 shrink-0 cursor-grab items-center justify-center rounded text-muted-foreground/40 transition-colors hover:bg-muted/40 hover:text-muted-foreground active:cursor-grabbing"
+    title="Drag to move"
+    aria-label="Drag panel"
+  >
+    <GripVertical size={12} strokeWidth={2} class="pointer-events-none" />
+  </div>
+
   <ButtonGroup>
     <!-- Record / Stop -->
     <Button
@@ -533,4 +554,5 @@
       <X size={10} strokeWidth={2} class="shrink-0 text-destructive" />
     </Button>
   </div>
+</div>
 </div>

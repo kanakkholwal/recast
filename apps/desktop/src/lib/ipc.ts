@@ -367,8 +367,10 @@ export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
       return;
     }
 
-    const panelWidth = 460;
-    const panelHeight = 44;
+    // Window is sized larger than the visible panel so the CSS drop shadow
+    // has room to paint without being clipped by the window bounds.
+    const panelWidth = 520;
+    const panelHeight = 72;
     const panelWin = new WebviewWindow("recording-panel", {
       url: "/panel",
       title: "Recast Panel",
@@ -386,3 +388,33 @@ export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
 
     panelWin.once("tauri://error", (e) => console.error(e));
   }
+
+// Floating webcam preview window. Mirrors `launchRecordingPanel` — same
+// pattern (label-dedupe + Tauri error listener) so it stays consistent and we
+// don't end up with route-level navigation when WebviewWindow construction
+// fails silently.
+export async function openCameraPreviewWindow() {
+  const existing = await WebviewWindow.getByLabel("camera-preview");
+  if (existing) {
+    await existing.setFocus();
+    return;
+  }
+
+  const previewSize = 320;
+  const previewWin = new WebviewWindow("camera-preview", {
+    url: "/camera-preview",
+    title: "Camera",
+    width: previewSize,
+    height: previewSize,
+    decorations: false,
+    transparent: true,
+    shadow: false,
+    alwaysOnTop: true,
+    resizable: true,
+    skipTaskbar: true,
+    x: Math.round(window.screen.availWidth - previewSize - 40),
+    y: Math.round(window.screen.availHeight - previewSize - 40),
+  });
+
+  previewWin.once("tauri://error", (e) => console.error(e));
+}

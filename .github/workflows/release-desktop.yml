@@ -195,9 +195,19 @@ jobs:
           curl -L "https://evermeet.cx/ffmpeg/getrelease/ffprobe/zip" -o ffprobe.zip
           unzip -o ffmpeg.zip -d ffmpeg-extract
           unzip -o ffprobe.zip -d ffmpeg-extract
+          # Copy the universal binary into the CI sidecars for the requested
+          # triple and also the alternate macOS triple. This ensures the build
+          # succeeds even if the tauri bundler resolves a different target
+          # triple (runner arch vs requested target) at bundle time.
           cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-$triple"
           cp ffmpeg-extract/ffprobe "$dest/ffprobe-$triple"
-          chmod +x "$dest/ffmpeg-$triple" "$dest/ffprobe-$triple"
+          # Also write both common macOS triples so the bundler never misses
+          # a sidecar when it expects the other triple.
+          cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-aarch64-apple-darwin" || true
+          cp ffmpeg-extract/ffprobe "$dest/ffprobe-aarch64-apple-darwin" || true
+          cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-x86_64-apple-darwin" || true
+          cp ffmpeg-extract/ffprobe "$dest/ffprobe-x86_64-apple-darwin" || true
+          chmod +x "$dest"/ffmpeg-* "$dest"/ffprobe-* || true
           rm -rf ffmpeg.zip ffprobe.zip ffmpeg-extract
 
       - name: Download FFmpeg sidecars (Linux)
@@ -236,9 +246,6 @@ jobs:
             fi
           done
           "$bin" -version | head -n1
-
-      - name: Build frontend (via turbo)
-        run: pnpm turbo run build --filter=recast-desktop
 
       - name: Build Tauri app
         shell: bash

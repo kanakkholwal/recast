@@ -137,17 +137,21 @@
     // Blur annotations bypass the fade-in/out ramps in preview because:
     //   1. A fresh blur has start ≈ currentTime, so the linear ramp puts
     //      opacity at 0 → drawAnnotation would early-return → user sees
-    //      nothing right after creating the blur (the original "flicker
-    //      then disappear" report).
+    //      nothing right after creating the blur.
     //   2. A partially-transparent blur copy mixed over the unblurred
-    //      WebGL canvas underneath reads as flicker mid-ramp, not as a
-    //      smooth fade — Canvas2D's globalAlpha applies to drawImage too.
-    // Privacy blurs are visually all-or-nothing; show full strength as
-    // soon as the playhead is inside the visibility window. The export
-    // pipeline still honours `start`/`end` exactly.
+    //      WebGL canvas reads as flicker, not a smooth fade — Canvas2D's
+    //      globalAlpha applies to drawImage too.
+    // Plus: while a blur is the *selected* annotation, always render it
+    // even outside its [start, end] window. The user is actively editing
+    // it; floating-point drift between `a.start` (captured at creation
+    // time from `store.currentTime`) and `t` (from `videoEl.currentTime`
+    // on the next animation frame) was making fresh blurs flicker on the
+    // first few frames after placement. The export pipeline still honours
+    // `start`/`end` exactly.
     const isBlur = a.kind.kind === "blur";
+    const isSelected = a.id === store.selectedAnnotationId;
     if (isBlur) {
-      if (t < a.start || t > a.end) return;
+      if (!isSelected && (t < a.start || t > a.end)) return;
     } else if (opacity <= 0) {
       return;
     }

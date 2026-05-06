@@ -97,6 +97,22 @@ pub fn run() {
             commands::hydrate_cached_assets,
             commands::diagnose_ffmpeg
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            // Closing the main window must exit the whole app — auxiliary
+            // windows (camera-preview, recording-panel, editor-*, region-picker,
+            // …) would otherwise keep the process alive after the user thinks
+            // they've quit.
+            if let tauri::RunEvent::WindowEvent {
+                label,
+                event: tauri::WindowEvent::CloseRequested { .. },
+                ..
+            } = &event
+            {
+                if label == "main" {
+                    app_handle.exit(0);
+                }
+            }
+        });
 }

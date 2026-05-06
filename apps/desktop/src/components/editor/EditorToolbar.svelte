@@ -8,9 +8,8 @@
     Redo2,
     Save,
     Sparkles,
-    Trash2,
     Undo2,
-    Upload,
+    Upload
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
@@ -75,20 +74,6 @@
         </Button>
       </Tooltip.Trigger>
       <Tooltip.Content>Back to recordings</Tooltip.Content>
-    </Tooltip.Root>
-
-    <Tooltip.Root>
-      <Tooltip.Trigger>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          class="text-muted-foreground/60 hover:text-destructive"
-          aria-label="Delete"
-        >
-          <Trash2 size={12} />
-        </Button>
-      </Tooltip.Trigger>
-      <Tooltip.Content>Delete recording</Tooltip.Content>
     </Tooltip.Root>
   </div>
 

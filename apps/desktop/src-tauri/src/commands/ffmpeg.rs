@@ -302,6 +302,7 @@ mod blur_tests {
             variant,
             tint_rgb: 0xff00aa,
             opacity: 1.0,
+            strength: 1.0,
         }
     }
 
@@ -314,7 +315,8 @@ mod blur_tests {
 
     #[test]
     fn single_region_emits_split_crop_overlay() {
-        let regs = [region_with("glass", 1.0, 3.5)];
+        // strength low enough to skip the high-strength glass redaction wash.
+        let regs = [BlurRegion { strength: 0.4, ..region_with("glass", 1.0, 3.5) }];
         let (chain, label) = build_annotation_blur_complex(None, "vout", &regs);
         // Split appears first to fork main/source streams.
         assert!(chain.contains("split[blur_main_0][blur_src_0]"), "chain: {chain}");
@@ -331,7 +333,8 @@ mod blur_tests {
 
     #[test]
     fn white_and_black_variants_emit_drawbox() {
-        for (variant, expected_color) in &[("white", "white@0.300"), ("black", "black@0.300")] {
+        // strength=1.0 (test default) → base_alpha = 0.95.
+        for (variant, expected_color) in &[("white", "white@0.950"), ("black", "black@0.950")] {
             let regs = [region_with(variant, 0.0, 2.0)];
             let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
             assert!(chain.contains("drawbox"), "missing drawbox for {variant}");
@@ -356,13 +359,17 @@ mod blur_tests {
             ..region_with("white", 0.0, 1.0)
         }];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
-        // 0.30 * 0.5 = 0.150
-        assert!(chain.contains("white@0.150"), "chain: {chain}");
+        // strength=1.0 (default) → 0.95 base; opacity 0.5 → 0.475.
+        assert!(chain.contains("white@0.475"), "chain: {chain}");
     }
 
     #[test]
     fn unknown_variant_treated_as_glass() {
-        let regs = [region_with("alien", 0.0, 1.0)];
+        // strength low enough that the glass redaction wash doesn't kick in.
+        let regs = [BlurRegion {
+            strength: 0.4,
+            ..region_with("alien", 0.0, 1.0)
+        }];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
         assert!(!chain.contains("drawbox"), "chain: {chain}");
     }
@@ -378,13 +385,13 @@ mod blur_tests {
     }
 
     #[test]
-    fn radius_huge_clamps_to_64() {
+    fn radius_huge_clamps_to_127() {
         let regs = [BlurRegion {
             radius: 9999,
             ..region_with("glass", 0.0, 1.0)
         }];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
-        assert!(chain.contains("boxblur=luma_radius=64"));
+        assert!(chain.contains("boxblur=luma_radius=127"));
     }
 
     #[test]
@@ -485,8 +492,13 @@ mod export_retention_tests {
                     let cw = (w.abs() * canvas_w as f64).round() as i32;
                     let ch = (h.abs() * canvas_h as f64).round() as i32;
                     if cw < 4 || ch < 4 { return None; }
-                    let max_dim = canvas_w.min(canvas_h) as f64 * 0.05;
-                    let radius = (strength.clamp(0.0, 1.0) * max_dim).round().max(1.0) as u32;
+                    // 12% of the short edge gives a redaction-grade cap:
+                    // 1080p → ~130, clamped to FFmpeg boxblur's hard max of
+                    // 127. The previous 5% cap left text readable.
+                    let max_dim = canvas_w.min(canvas_h) as f64 * 0.12;
+                    let radius = (strength.clamp(0.0, 1.0) * max_dim)
+                        .round()
+                        .clamp(1.0, 127.0) as u32;
                     let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0);
                     Some(BlurRegion {
                         x: cx,
@@ -499,6 +511,7 @@ mod export_retention_tests {
                         variant: variant.as_str(),
                         tint_rgb,
                         opacity: a.opacity.clamp(0.0, 1.0),
+                        strength: strength.clamp(0.0, 1.0),
                     })
                 }
                 _ => None,
@@ -536,8 +549,8 @@ mod export_retention_tests {
         assert_eq!(r.y, 270, "0.25 * 1080");
         assert_eq!(r.w, 960);
         assert_eq!(r.h, 540);
-        // strength=1.0 + 1080 short edge → 5% = 54 → clamped to 64.
-        assert!(r.radius >= 54 && r.radius <= 64, "radius={}", r.radius);
+        // strength=1.0 + 1080 short edge → 12% = 129.6 → clamped to 127.
+        assert!(r.radius == 127, "radius={}", r.radius);
         assert!((r.start_secs - 1.0).abs() < 1e-9);
         assert!((r.end_secs - 4.0).abs() < 1e-9);
 
@@ -806,6 +819,10 @@ pub struct BlurRegion<'a> {
     pub tint_rgb: u32,
     /// 0..=1 master opacity baked into the colour overlay.
     pub opacity: f64,
+    /// 0..=1 — the original blur strength. The tint pass scales its alpha
+    /// by this so high strength → near-opaque box (true redaction). The
+    /// preview applies the same scaling.
+    pub strength: f64,
 }
 
 /// Build a filter_complex chain that crops each `BlurRegion` out of the
@@ -858,9 +875,12 @@ pub fn build_annotation_blur_complex(
         // Crop + box-blur the source copy. Clamp radius into FFmpeg's
         // accepted range (1..127) and ensure at least 1 to keep the
         // filter literal.
-        let radius = region.radius.clamp(1, 64);
+        // boxblur's true max is 127; clamping to 64 was leaving redaction
+        // visibly readable at 1080p+. luma_power=3 stacks three passes →
+        // effective σ ≈ radius, so at radius=127 a region is fully obliterated.
+        let radius = region.radius.clamp(1, 127);
         let mut tail = format!(
-            "{src_label}crop={w}:{h}:{x}:{y},boxblur=luma_radius={r}:luma_power=2:chroma_radius={r}:chroma_power=2",
+            "{src_label}crop={w}:{h}:{x}:{y},boxblur=luma_radius={r}:luma_power=3:chroma_radius={r}:chroma_power=3",
             w = region.w.max(2),
             h = region.h.max(2),
             x = region.x.max(0),
@@ -871,17 +891,31 @@ pub fn build_annotation_blur_complex(
         // Tint variants overlay a translucent solid colour over the
         // already-blurred crop using `drawbox` with `t=fill`. `glass`
         // skips the tint pass entirely.
+        // Tint alpha tracks strength: 0.15 → 0.95 across the slider, so the
+        // strength control doubles as a redaction dial. Master opacity still
+        // multiplies on top. Mirrors the preview side in BlurAnnotationLayer.
         let opacity = region.opacity.clamp(0.0, 1.0);
+        let strength = region.strength.clamp(0.0, 1.0);
+        let base_alpha = 0.15 + 0.80 * strength;
         let tint_rgba = match region.variant {
-            "white" => Some(format!("white@{:.3}", 0.30 * opacity)),
-            "black" => Some(format!("black@{:.3}", 0.30 * opacity)),
+            "white" => Some(format!("white@{:.3}", base_alpha * opacity)),
+            "black" => Some(format!("black@{:.3}", base_alpha * opacity)),
             "color" => {
                 let r = ((region.tint_rgb >> 16) & 0xff) as u8;
                 let g = ((region.tint_rgb >> 8) & 0xff) as u8;
                 let b = (region.tint_rgb & 0xff) as u8;
-                Some(format!("0x{r:02x}{g:02x}{b:02x}@{:.3}", 0.30 * opacity))
+                Some(format!(
+                    "0x{r:02x}{g:02x}{b:02x}@{:.3}",
+                    base_alpha * opacity
+                ))
             }
-            _ => None, // "glass" or unknown → no tint
+            // glass: pile a faint grey wash on past strength=0.6 so the
+            // glass variant also redacts when pushed hard.
+            _ if strength > 0.6 => Some(format!(
+                "gray@{:.3}",
+                ((strength - 0.6) * 0.6) * opacity
+            )),
+            _ => None,
         };
         if let Some(rgba) = tint_rgba {
             tail.push_str(&format!(

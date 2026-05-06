@@ -99,21 +99,33 @@
     const h = Math.abs(br.y - tl.y);
     if (w < 1 || h < 1) return "display: none;";
 
-    // 0..1 → 0..32 px. The slider's mental model: 50% strength ≈ 16px blur,
-    // which reads as "obviously obscured" against most UI captures.
-    const blurPx = Math.max(0, Math.min(32, k.strength * 32));
+    // 0..1 → 0..96 px (CSS), with an ease-in curve so the bottom of the
+    // slider stays subtle while the top reaches redaction-grade. CSS
+    // backdrop-filter is roughly Gaussian, so 96px ≈ σ40 — comparable to
+    // FFmpeg boxblur(127, power=3) used at export.
+    const t01 = Math.max(0, Math.min(1, k.strength));
+    const blurPx = Math.pow(t01, 0.7) * 96;
     const radiusPx = Math.max(
       0,
       k.radius * Math.min(layerSize.w, layerSize.h),
     );
 
-    // Variant tint: layered on top of the backdrop-blur so it reads as a
-    // semantic privacy treatment, not just a soft smudge.
+    // Variant tint scales with strength so the slider doubles as a
+    // legibility cut: at strength=0 the tint disappears, at strength=1 it
+    // covers ~95% (effectively a redaction box). Browsers also clamp very
+    // large backdrop-filter radii internally, so the rising tint is what
+    // actually guarantees redaction at the high end of the slider.
+    const tintAlpha = 0.15 + 0.80 * t01;
     let tint = "transparent";
-    if (k.variant === "white") tint = "rgba(255,255,255,0.30)";
-    else if (k.variant === "black") tint = "rgba(0,0,0,0.30)";
-    else if (k.variant === "color") tint = hexToRgba(k.tintColor, 0.30);
-    // glass = no tint, the blur alone reads.
+    if (k.variant === "white") tint = `rgba(255,255,255,${tintAlpha.toFixed(3)})`;
+    else if (k.variant === "black") tint = `rgba(0,0,0,${tintAlpha.toFixed(3)})`;
+    else if (k.variant === "color") tint = hexToRgba(k.tintColor, tintAlpha);
+    // glass = blur only. Add a faint mid-grey wash that grows past
+    // strength=0.6 so the glass variant also redacts when pushed hard,
+    // while staying invisible at low strengths.
+    else if (k.variant === "glass" && t01 > 0.6) {
+      tint = `rgba(128,128,128,${((t01 - 0.6) * 0.6).toFixed(3)})`;
+    }
 
     const filter = `blur(${blurPx.toFixed(2)}px)`;
     return [

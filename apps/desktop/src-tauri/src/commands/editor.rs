@@ -773,9 +773,14 @@ pub async fn export_video(
                 if cw < 4 || ch < 4 {
                     return None;
                 }
-                // Strength 0..1 → kernel radius up to 5% of the shorter edge.
-                let max_dim = canvas_width.min(canvas_height) as f64 * 0.05;
-                let radius = (strength.clamp(0.0, 1.0) * max_dim).round().max(1.0) as u32;
+                // Strength 0..1 → kernel radius up to 12% of the shorter edge,
+                // clamped at FFmpeg boxblur's hard max of 127. Mirrors
+                // ffmpeg.rs::make_blur_region — both paths must agree so the
+                // export and editor previews match.
+                let max_dim = canvas_width.min(canvas_height) as f64 * 0.12;
+                let radius = (strength.clamp(0.0, 1.0) * max_dim)
+                    .round()
+                    .clamp(1.0, 127.0) as u32;
                 let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16)
                     .unwrap_or(0x000000);
                 Some(BlurRegion {
@@ -789,6 +794,7 @@ pub async fn export_video(
                     variant: variant.as_str(),
                     tint_rgb,
                     opacity: a.opacity.clamp(0.0, 1.0),
+                    strength: strength.clamp(0.0, 1.0),
                 })
             }
             _ => None,

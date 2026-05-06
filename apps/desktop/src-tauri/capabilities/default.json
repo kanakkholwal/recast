@@ -9,7 +9,8 @@
     "recording-panel",
     "editor-*",
     "device-picker-*",
-    "camera-preview"
+    "camera-preview",
+    "region-picker"
   ],
   "permissions": [
     "core:default",

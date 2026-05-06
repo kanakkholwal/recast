@@ -6,6 +6,7 @@
     launchRecordingPanel,
     listExports,
     listRecasts,
+    openCameraPreviewWindow,
     openFileLocation,
     type RecordingEntry,
   } from "$lib/ipc";
@@ -168,26 +169,6 @@
       transparent: true,
       shadow: false,
       resizable: false,
-    });
-  }
-
-  async function openCameraPreviewWindow() {
-    const existing = await WebviewWindow.getByLabel("camera-preview");
-    if (existing) {
-      await existing.setFocus();
-      return;
-    }
-    new WebviewWindow("camera-preview", {
-      url: "/camera-preview",
-      title: "Camera",
-      width: 320,
-      height: 320,
-      decorations: false,
-      transparent: true,
-      shadow: false,
-      alwaysOnTop: true,
-      resizable: true,
-      center: true,
     });
   }
 

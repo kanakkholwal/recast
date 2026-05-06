@@ -1,7 +1,11 @@
+<script module lang="ts">
+  const baseClass =
+    "group cursor-pointer inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground";
+
+</script>
 <script lang="ts">
   import { isTauriApp } from "$lib/runtime/tauri";
   import { Minus, Square, X } from "@lucide/svelte";
-  import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import type { Snippet } from "svelte";
   import { onMount } from "svelte";
@@ -85,21 +89,21 @@
         onclick={handleMinimize}
         aria-label="Minimize"
         title="Minimize"
-        class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+        class={cn(baseClass)}
       >
-        <Minus size={11} />
+        <Minus size={14} />
       </button>
       <button
         type="button"
         onclick={handleToggleMaximize}
         aria-label={isMaximized ? "Restore" : "Maximize"}
         title={isMaximized ? "Restore" : "Maximize"}
-        class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+        class={cn(baseClass)}
       >
         {#if isMaximized}
           <svg
-            width="10"
-            height="10"
+            width="14"
+            height="14"
             viewBox="0 0 13 13"
             fill="none"
             stroke="currentColor"
@@ -109,7 +113,7 @@
             <rect x="0.5" y="3" width="9" height="9" rx="1.5" />
           </svg>
         {:else}
-          <Square size={10} />
+          <Square size={14} />
         {/if}
       </button>
       <button
@@ -117,9 +121,9 @@
         onclick={handleClose}
         aria-label="Close"
         title="Close"
-        class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-destructive/15 hover:text-destructive"
+        class={cn(baseClass,"hover:bg-destructive/15 hover:text-destructive")}
       >
-        <X size={12} />
+        <X size={16} />
       </button>
     </div>
   {/if}

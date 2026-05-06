@@ -205,7 +205,7 @@
                 </div>
               </div>
               <div
-                class="flex items-center gap-1 rounded-xl bg-muted/60 p-1 ring-1 ring-inset ring-border/40"
+                class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
                 role="radiogroup"
                 aria-label="Theme"
               >
@@ -263,7 +263,7 @@
                 </div>
               </div>
               <div
-                class="flex items-center gap-1 rounded-xl bg-muted/60 p-1 ring-1 ring-inset ring-border/40"
+                class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
                 role="radiogroup"
                 aria-label="Window behavior"
               >
