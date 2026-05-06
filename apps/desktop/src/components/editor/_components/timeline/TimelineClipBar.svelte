@@ -2,10 +2,12 @@
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { fade } from "svelte/transition";
   import {
+    formatTimeByMode,
     formatTimecode,
     frameStep,
     minClipDuration,
     quantizeToFrame,
+    type TimeMode,
   } from "./timeline-helpers";
 
   // Clip bar with thumbnails and the in/out trim handles. Owns its own
@@ -22,6 +24,7 @@
     clipWidth: number;
     hasTrim: boolean;
     thumbnailWidth: number;
+    timeMode: TimeMode;
     clientXToTime: (clientX: number) => number;
   }
 
@@ -34,6 +37,7 @@
     clipWidth,
     hasTrim,
     thumbnailWidth,
+    timeMode,
     clientXToTime,
   }: Props = $props();
 
@@ -143,6 +147,11 @@
 </script>
 
 <div class="relative h-12 rounded-md border border-border/60 bg-background">
+  <span
+    class="pointer-events-none absolute left-1.5 top-1 z-20 rounded-sm bg-foreground/10 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-foreground/80"
+  >
+    Clip
+  </span>
   <div
     class="absolute inset-y-0 rounded-md border border-primary/40 bg-primary/5"
     style="left: {clipLeft}px; width: {clipWidth}px;"
@@ -170,8 +179,10 @@
       {/if}
     </div>
 
+    <!-- Export-status badge. Anchored top-right so it doesn't fight the
+         outer "Clip" lane label, which sits top-left. -->
     <div
-      class="absolute left-2 top-1 rounded border border-border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground backdrop-blur"
+      class="absolute right-2 top-1 rounded border border-border bg-background/80 px-1.5 py-0.5 font-mono text-[9px] text-muted-foreground backdrop-blur"
     >
       {hasTrim ? "This part exports" : "Full clip"}
     </div>
@@ -203,7 +214,7 @@
         <div
           class="pointer-events-none absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
         >
-          <span>In {formatTimecode(store.inPoint, fps)}</span>
+          <span>In {formatTimeByMode(store.inPoint, timeMode, fps)}</span>
           {#if delta !== 0}
             <span class="text-muted-foreground"
               >{delta > 0 ? "+" : ""}{Math.round(delta * fps)} f</span
@@ -233,7 +244,7 @@
         <div
           class="pointer-events-none absolute bottom-full left-1/2 mb-1 flex -translate-x-1/2 items-center gap-1.5 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm"
         >
-          <span>Out {formatTimecode(store.outPoint, fps)}</span>
+          <span>Out {formatTimeByMode(store.outPoint, timeMode, fps)}</span>
           {#if delta !== 0}
             <span class="text-muted-foreground"
               >{delta > 0 ? "+" : ""}{Math.round(delta * fps)} f</span

@@ -3,8 +3,10 @@
   import {
     CircleQuestionMark,
     Gauge,
+    Maximize2,
     Scissors,
     Search,
+    Target,
     Wand2,
     ZoomIn,
     ZoomOut,
@@ -18,7 +20,7 @@
   import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
   import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
-  import { formatTimecode } from "./timeline-helpers";
+  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
   // Top control bar: trim setters, focus/suggest, speed, timeline-zoom and
   // stat chips. Stateless beyond `showSuggestions` and `playbackSpeed` which
@@ -34,6 +36,8 @@
     showSuggestions: boolean;
     playbackSpeed: number;
     speeds: readonly number[];
+    timeMode: TimeMode;
+    hasSelectedRegion: boolean;
     onSetTrim: (kind: "in" | "out") => void;
     onAddFocusRegion: () => void;
     onToggleSuggestions: () => void;
@@ -41,6 +45,9 @@
     onResetTrim: () => void;
     onZoomTimeline: (dir: number) => void;
     onSelectSpeed: (speed: number) => void;
+    onCycleTimeMode: () => void;
+    onZoomToFit: () => void;
+    onZoomToSelection: () => void;
   }
 
   let {
@@ -53,6 +60,8 @@
     showSuggestions,
     playbackSpeed,
     speeds,
+    timeMode,
+    hasSelectedRegion,
     onSetTrim,
     onAddFocusRegion,
     onToggleSuggestions,
@@ -60,6 +69,9 @@
     onResetTrim,
     onZoomTimeline,
     onSelectSpeed,
+    onCycleTimeMode,
+    onZoomToFit,
+    onZoomToSelection,
   }: Props = $props();
   // duration is part of the formatTimecode contract via store.clipDuration;
   // also referenced for fps-aware aria fallbacks.
@@ -189,7 +201,9 @@
       </DropdownMenu.Content>
     </DropdownMenu.Root>
 
-    <!-- Zoom segmented pill -->
+    <!-- Zoom segmented pill: out / level / in / fit-to-clip /
+         fit-to-selection. The trailing two buttons are NLE staples and
+         resolve the most common scrubbing complaint ("I lost my place"). -->
     <div
       class="flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
     >
@@ -214,7 +228,40 @@
       >
         <ZoomIn class="size-3" />
       </button>
+      <button
+        type="button"
+        onclick={onZoomToFit}
+        aria-label="Zoom to fit"
+        title="Fit the entire clip in view"
+        class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+      >
+        <Maximize2 class="size-3" />
+      </button>
+      <button
+        type="button"
+        onclick={onZoomToSelection}
+        disabled={!hasSelectedRegion}
+        aria-label="Zoom to selection"
+        title={hasSelectedRegion
+          ? "Zoom in on the selected focus region"
+          : "Select a focus region first"}
+        class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40"
+      >
+        <Target class="size-3" />
+      </button>
     </div>
+
+    <!-- Time-mode pill: cycles smpte → seconds → frames. Persistent state
+         lives in the parent so the format applies everywhere at once. -->
+    <button
+      type="button"
+      onclick={onCycleTimeMode}
+      aria-label="Cycle time display mode"
+      title="Click to cycle: timecode / seconds / frames"
+      class="flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 font-mono text-[10px] font-semibold uppercase tracking-wide text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground"
+    >
+      {timeMode === "smpte" ? "TC" : timeMode === "seconds" ? "SEC" : "FR"}
+    </button>
 
     <!-- Stat chips -->
     <div class="flex items-center gap-1">
@@ -232,7 +279,7 @@
         <span
           class="inline-flex h-6 items-center rounded-md border border-primary/30 bg-primary/10 px-2 font-mono text-[10px] font-semibold tabular-nums text-primary"
         >
-          {formatTimecode(store.clipDuration, fps)}
+          {formatTimeByMode(store.clipDuration, timeMode, fps)}
         </span>
       {/if}
     </div>

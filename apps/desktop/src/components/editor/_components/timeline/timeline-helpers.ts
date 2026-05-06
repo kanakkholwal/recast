@@ -42,6 +42,35 @@ export function formatTimecode(time: number, fps: number): string {
 		: `${mm}:${ss}:${ff}`;
 }
 
+// Display modes the timeline supports. Stored as a discriminated string so
+// it round-trips cleanly through component props.
+//   smpte   — HH:MM:SS:FF (full editorial timecode)
+//   seconds — M:SS.cs   (decimal seconds, useful at low zoom)
+//   frames  — Nf        (raw frame count, useful for frame-precision work)
+export type TimeMode = "smpte" | "seconds" | "frames";
+
+export function formatFrames(time: number, fps: number): string {
+	const frames = Math.max(0, Math.round(time * fps));
+	return `${frames}f`;
+}
+
+// Single entry-point for all timeline labels. Sub-views call this with the
+// active TimeMode so the format flips everywhere at once.
+export function formatTimeByMode(
+	time: number,
+	mode: TimeMode,
+	fps: number,
+): string {
+	switch (mode) {
+		case "smpte":
+			return formatTimecode(time, fps);
+		case "seconds":
+			return formatTime(time);
+		case "frames":
+			return formatFrames(time, fps);
+	}
+}
+
 export function formatTime(seconds: number): string {
 	const mins = Math.floor(seconds / 60);
 	const secs = Math.floor(seconds % 60);

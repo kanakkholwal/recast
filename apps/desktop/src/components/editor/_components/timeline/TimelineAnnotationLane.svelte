@@ -1,12 +1,12 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
   import type { TimeMode } from "./timeline-helpers";
   import { buildSnapTargets, type SnapTarget } from "./timeline-snap";
-  import ZoomLayerCard from "./ZoomLayerCard.svelte";
+  import AnnotationLayerCard from "./AnnotationLayerCard.svelte";
 
-  // Lane that hosts zoom-region cards. The lane builds the snap target list
-  // (playhead + in/out + duration + neighbours) and renders a vertical
-  // guide whenever any card reports an active snap during drag/resize.
+  // Annotation lane — sister of TimelineZoomLane. Same lifted-state pattern
+  // for the snap guide so visual feedback during a drag is consistent
+  // between lanes.
 
   interface Props {
     store: EditorStore;
@@ -14,8 +14,7 @@
     fps: number;
     duration: number;
     timeMode: TimeMode;
-    onCopy: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
-    onDuplicate: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
+    onDuplicate: (annotation: Annotation) => void;
   }
 
   let {
@@ -24,12 +23,9 @@
     fps,
     duration,
     timeMode,
-    onCopy,
     onDuplicate,
   }: Props = $props();
 
-  // Lifted from each card so the lane can paint a single guide line at the
-  // active target. Last writer wins — only one card drags at a time.
   let activeSnap = $state<SnapTarget | null>(null);
 
   function targetsFor(excludeId: string): SnapTarget[] {
@@ -40,7 +36,7 @@
       duration,
       regions: store.zoomRegions,
       annotations: store.annotations,
-      excludeRegionId: excludeId,
+      excludeAnnotationId: excludeId,
     });
   }
 </script>
@@ -48,49 +44,41 @@
 <div
   class="relative mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
 >
-  <!-- Lane label, anchored at the scroll origin so it stays visible while
-       the user scrolls horizontally. The negative left puts it just inside
-       the timeline scroll container's clipped edge. -->
   <span
-    class="pointer-events-none absolute left-1.5 top-1 z-10 rounded-sm bg-primary/15 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-primary"
+    class="pointer-events-none absolute left-1.5 top-1 z-10 rounded-sm bg-amber-500/20 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400"
   >
-    Focus
+    Notes
   </span>
-  {#if store.zoomRegions.length === 0}
+  {#if store.annotations.length === 0}
     <div
       class="flex h-6 items-center justify-center text-[10px] text-muted-foreground"
     >
-      Add a focus region to punch in during playback
+      Annotations you draw on the preview appear here as draggable layers
     </div>
   {:else}
-    {#each store.zoomRegions as region, index (region.id)}
-      <ZoomLayerCard
+    {#each store.annotations as annotation, index (annotation.id)}
+      <AnnotationLayerCard
         {store}
-        {region}
+        {annotation}
         {index}
         {pixelsPerSecond}
         {fps}
         {duration}
-        snapTargets={targetsFor(region.id)}
+        snapTargets={targetsFor(annotation.id)}
         {timeMode}
         onSnapChange={(snap) => (activeSnap = snap)}
-        {onCopy}
         {onDuplicate}
       />
     {/each}
   {/if}
 
   {#if activeSnap}
-    <!-- Snap guide. Anchored to the lane container, but drawn full-height
-         using a tall element with negative offsets so it visually crosses
-         the clip bar above too — the same affordance Premiere/Final Cut
-         use to confirm a snap. -->
     <div
-      class="pointer-events-none absolute -top-14 z-40 h-42.5 w-px bg-primary/80"
+      class="pointer-events-none absolute -top-25 z-40 h-50 w-px bg-amber-500/80"
       style="left: {activeSnap.time * pixelsPerSecond + 6}px;"
     ></div>
     <div
-      class="pointer-events-none absolute -top-14 z-40 -translate-x-1/2 rounded border border-primary/60 bg-primary px-1 py-0.5 font-mono text-[9px] text-primary-foreground shadow-craft-sm"
+      class="pointer-events-none absolute -top-25 z-40 -translate-x-1/2 rounded border border-amber-500/60 bg-amber-500 px-1 py-0.5 font-mono text-[9px] text-amber-50 shadow-craft-sm"
       style="left: {activeSnap.time * pixelsPerSecond + 6}px;"
     >
       {snapLabel(activeSnap.kind)}
@@ -101,8 +89,6 @@
 <script lang="ts" module>
   import type { SnapKind } from "./timeline-snap";
 
-  // User-facing label for the snap badge. Kept as a top-level helper so
-  // each card render doesn't allocate a fresh closure.
   function snapLabel(kind: SnapKind): string {
     switch (kind) {
       case "playhead":
