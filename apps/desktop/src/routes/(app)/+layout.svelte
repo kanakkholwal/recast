@@ -2,13 +2,26 @@
   import { page } from "$app/state";
   import AppSidebar from "$components/layout/app-sidebar.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+  import WhatsNewDialog from "$components/whats-new-dialog.svelte";
   import { config } from "$constants/app";
+  import { whatsNew } from "$lib/stores/whats-new.svelte";
   import * as Sidebar from "@recast/ui/sidebar";
+  import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
 
   let { children } = $props();
   let routeKey = $derived(page.url.pathname);
+
+  // Show the "What's new" dialog once per release. Skip if the user is already
+  // landing on the dedicated changelog page so we don't double-surface it.
+  onMount(() => {
+    if (page.url.pathname.startsWith("/whats-new")) {
+      whatsNew.markSeen();
+      return;
+    }
+    whatsNew.autoOpenIfStale();
+  });
 </script>
 
 <Sidebar.Provider class="h-full min-h-full fixed inset-0">
@@ -64,3 +77,5 @@
     </main>
   </Sidebar.Inset>
 </Sidebar.Provider>
+
+<WhatsNewDialog />

@@ -11,6 +11,7 @@
     Moon,
     Navigation,
     Settings as SettingsIcon,
+    Sparkles,
     Sun,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -326,6 +327,16 @@
               </div>
             </div>
             <div class="flex flex-wrap gap-2">
+              <Button
+                href="/whats-new"
+                variant="outline"
+                size="sm"
+                class="h-8 gap-1.5"
+              >
+                <Sparkles class="size-3.5 text-primary" />
+                <span class="text-[11.5px]">What's new</span>
+                <ArrowUpRight class="size-3 text-muted-foreground" />
+              </Button>
               <Button
                 href={config.website}
                 target="_blank"
