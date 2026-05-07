@@ -84,9 +84,13 @@
 
   const isSelected = $derived(region.id === store.selectedZoomRegionId);
   const left = $derived(region.start * pixelsPerSecond);
+  // Hard floor of 32px keeps even sub-frame regions clickable. Below 80px
+  // the card collapses to icon+label only; below 56px to icon only.
   const width = $derived(
-    Math.max((region.end - region.start) * pixelsPerSecond, 56),
+    Math.max((region.end - region.start) * pixelsPerSecond, 32),
   );
+  const showThumb = $derived(width >= 110);
+  const showSubtitle = $derived(width >= 130);
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
     if (duration <= 0) return;
@@ -262,7 +266,7 @@
 <div
   in:fly={{ y: 10, duration: 180, easing: cubicOut }}
   out:fade={{ duration: 140 }}
-  class="absolute z-50 overflow-visible select-none"
+  class="group/card absolute z-20 overflow-visible select-none"
   style="
     left: {left}px;
     width: {width}px;
@@ -271,7 +275,9 @@
   "
 >
   <!-- Card body. We split the visual rectangle from the move hit-target
-       so the resize edges can sit on top with their own cursor. -->
+       so the resize edges can sit on top with their own cursor.
+       Selected state earns a 2-px left accent bar via box-shadow inset
+       so it reads as "this is the active layer" without jiggling layout. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <button
     type="button"
@@ -284,9 +290,9 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded border bg-muted text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-primary ring-1 ring-primary/40 cursor-grabbing'
-      : 'border-border hover:border-primary/60 cursor-grab'} {drag?.mode === 'move'
+    class="absolute inset-0 overflow-hidden rounded border bg-card/85 text-left backdrop-blur-sm transition-all duration-150 hover:bg-card hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
+      ? 'border-primary cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-primary)] hover:shadow-[inset_3px_0_0_0_var(--color-primary)]'
+      : 'border-border hover:border-primary/50 cursor-grab'} {drag?.mode === 'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
@@ -303,11 +309,11 @@
       />
     </svg>
     <div
-      class="relative flex h-full items-center gap-1.5 px-2 pl-1 pr-3"
+      class="relative flex h-full items-center gap-1.5 px-1.5"
       id={`zoom-region-${region.id}`}
       aria-label={`Focus region from ${formatTimeByMode(region.start, timeMode, fps)} to ${formatTimeByMode(region.end, timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
-      {#if cardThumb}
+      {#if showThumb && cardThumb}
         <img
           src={cardThumb}
           alt=""
@@ -317,10 +323,14 @@
         />
       {/if}
       <div class="min-w-0 flex-1 pointer-events-none">
-        <p class="text-[10px] font-semibold leading-tight text-foreground">Focus</p>
-        <p class="text-[9px] leading-tight text-muted-foreground">
-          {region.scale.toFixed(1)}x · {formatTimeByMode(region.start, timeMode, fps)}
+        <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
+          {region.scale.toFixed(1)}× Focus
         </p>
+        {#if showSubtitle}
+          <p class="truncate text-[9px] leading-tight text-muted-foreground">
+            {formatTimeByMode(region.start, timeMode, fps)}
+          </p>
+        {/if}
       </div>
       <span
         role="button"
@@ -329,7 +339,9 @@
         onclick={onRemove}
         onpointerdown={(e) => e.stopPropagation()}
         onkeydown={onRemove}
-        class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive pointer-events-auto"
+        class="pointer-events-auto flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground opacity-0 transition-all hover:border-destructive hover:text-destructive group-hover/card:opacity-100 focus:opacity-100 {isSelected
+          ? 'opacity-100'
+          : ''}"
         aria-label="Remove focus region"
       >
         <X size={9} strokeWidth={2.5} />

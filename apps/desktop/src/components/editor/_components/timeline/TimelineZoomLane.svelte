@@ -48,11 +48,11 @@
 <div
   class="relative mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
 >
-  <!-- Lane label, anchored at the scroll origin so it stays visible while
-       the user scrolls horizontally. The negative left puts it just inside
-       the timeline scroll container's clipped edge. -->
+  <!-- Lane label. position:sticky pins it to the visible left edge of the
+       horizontally-scrolling timeline so it never gets scrolled away or
+       covered by a card sitting at t≈0. z-index sits above cards. -->
   <span
-    class="pointer-events-none absolute left-1.5 top-1 z-10 rounded-sm bg-primary/15 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-primary"
+    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center rounded-sm bg-primary/15 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-primary backdrop-blur-sm"
   >
     Focus
   </span>

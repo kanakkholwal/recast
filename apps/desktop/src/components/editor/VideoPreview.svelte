@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { resolveAsset } from "$lib/assets";
+	import { computeCanvasGeometry } from "$lib/canvas-geometry";
 	import {
 	  smoothCursorPath,
 	  smoothingStrengthToSigmaMs,
@@ -7,10 +8,7 @@
 	import { CURSOR_STYLES, cursorStyleDataUrl } from "$lib/cursor/styles";
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
-	import {
-	  framePaddingPixels,
-	  type EditorStore,
-	} from "$lib/stores/editor-store.svelte";
+	import { type EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
@@ -129,7 +127,12 @@ uniform sampler2D u_video;
 uniform sampler2D u_background;
 
 uniform vec2 u_canvasSize;        // pixels
-uniform float u_paddingPx;        // pixels of padding inside canvas
+// Source-video rectangle inside the canvas. Replaces the v1 single
+// u_paddingPx so we can letterbox/pillarbox to a target aspect ratio
+// (the bars between the comp and the canvas edge are filled by the
+// background).
+uniform vec2 u_videoOrigin;       // pixels — top-left of source video
+uniform vec2 u_videoSize;         // pixels — source video w/h
 uniform int u_bgType;             // 0=color, 1=gradient, 2=image
 uniform vec4 u_bgColor;           // [0..1]
 uniform vec4 u_gradStart;
@@ -195,9 +198,9 @@ float sdRoundRect(vec2 p, vec2 hs, float r) {
 void main() {
 	vec2 canvasPx = v_uv * u_canvasSize;
 
-	vec2 videoMin = vec2(u_paddingPx);
-	vec2 videoMax = u_canvasSize - vec2(u_paddingPx);
-	vec2 videoSize = max(videoMax - videoMin, vec2(1.0));
+	vec2 videoMin = u_videoOrigin;
+	vec2 videoMax = u_videoOrigin + u_videoSize;
+	vec2 videoSize = max(u_videoSize, vec2(1.0));
 
 	vec4 color = sampleBackground(v_uv);
 
@@ -346,7 +349,8 @@ void main() {
 			"u_video",
 			"u_background",
 			"u_canvasSize",
-			"u_paddingPx",
+			"u_videoOrigin",
+			"u_videoSize",
 			"u_bgType",
 			"u_bgColor",
 			"u_gradStart",
@@ -602,12 +606,18 @@ void main() {
 		const meta = store.metadata;
 		if (!meta.width || !meta.height) return false;
 
-		// Composition aspect = (video + 2*padding) on each side. Here padding is in
-		// "video pixels"; we choose a render-buffer size that preserves the same
-		// aspect and fits inside the container, capped to keep GPU cost reasonable.
-		const padding = framePaddingPixels(store.padding, meta);
-		const compW = meta.width + padding * 2;
-		const compH = meta.height + padding * 2;
+		// Final canvas geometry (source + padding + optional letterbox bars
+		// to satisfy the chosen output aspect). The shader receives the
+		// source-video rectangle directly, so anything outside that rect
+		// renders with the background.
+		const geom = computeCanvasGeometry(
+			meta.width,
+			meta.height,
+			store.padding,
+			store.outputAspect,
+		);
+		const compW = geom.canvasW;
+		const compH = geom.canvasH;
 
 		const cw = containerEl.clientWidth;
 		const ch = containerEl.clientHeight;
@@ -742,12 +752,28 @@ void main() {
 
 		gl.uniform2f(uniforms.u_canvasSize, canvasEl.width, canvasEl.height);
 
-		// Padding maps from "video pixels" to canvas pixels by the buffer scale
+		// Map source-pixel geometry into canvas-pixel space using the
+		// current render-buffer scale. The canvas can be smaller than
+		// `geom.canvasW` (DPR cap, max-dim cap), so we scale uniformly.
 		const meta = store.metadata!;
-		const sourcePaddingPx = framePaddingPixels(store.padding, meta);
-		const compW = meta.width + sourcePaddingPx * 2;
-		const paddingPx = (sourcePaddingPx / compW) * canvasEl.width;
-		gl.uniform1f(uniforms.u_paddingPx, paddingPx);
+		const geom = computeCanvasGeometry(
+			meta.width,
+			meta.height,
+			store.padding,
+			store.outputAspect,
+		);
+		const sx = canvasEl.width / Math.max(1, geom.canvasW);
+		const sy = canvasEl.height / Math.max(1, geom.canvasH);
+		gl.uniform2f(
+			uniforms.u_videoOrigin,
+			geom.videoX * sx,
+			geom.videoY * sy,
+		);
+		gl.uniform2f(
+			uniforms.u_videoSize,
+			geom.videoW * sx,
+			geom.videoH * sy,
+		);
 
 		// Background
 		const bgType = store.backgroundType;
@@ -781,8 +807,9 @@ void main() {
 		// (0..50). Convert to canvas pixels using the same scale as padding.
 		const shorterEdge = Math.min(meta.width, meta.height);
 		const radiusSource = ((store.borderRadius ?? 0) / 100) * shorterEdge;
-		// Same video-pixel → canvas-pixel scale as the padding calculation.
-		const radiusPx = (radiusSource / compW) * canvasEl.width;
+		// `sx` already converts source-pixel sizes to canvas-pixel sizes
+		// (computed against `geom.canvasW`), so a raw multiply is correct.
+		const radiusPx = radiusSource * sx;
 		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
 
 		// Zoom — eased per-frame scale + focus centre + motion-blur strength.
@@ -854,24 +881,24 @@ void main() {
 			svgUvX = (cursorPosX - zoom.cx) * zoom.scale + zoom.cx;
 			svgUvY = (cursorPosY - zoom.cy) * zoom.scale + zoom.cy;
 		}
-		const compH_local = meta.height + sourcePaddingPx * 2;
-		// Sprite design size in source pixels; the same `* 2` factor the dot
-		// uses for radius, doubled because the sprite is a full-bleed bbox
-		// rather than a centered dot.
+		// SVG-cursor overlay coordinates are expressed as percentages of
+		// the canvas (so the <img> repositions correctly across container
+		// sizes). We project the source-pixel cursor position into the
+		// canvas via the geometry helper, then divide by canvas dims.
 		const spriteSourcePx = cs.size * 16;
 		svgCursor = {
 			visible: overlayVisible,
 			alpha: cursorAlpha,
 			styleId: cs.style,
 			pressed: cursorPressed,
-			canvasX: sourcePaddingPx + svgUvX * meta.width,
-			canvasY: sourcePaddingPx + svgUvY * meta.height,
-			compW,
-			compH: compH_local,
+			canvasX: geom.videoX + svgUvX * geom.videoW,
+			canvasY: geom.videoY + svgUvY * geom.videoH,
+			compW: geom.canvasW,
+			compH: geom.canvasH,
 			spritePx: spriteSourcePx,
 		};
-		// Match Rust: cursor radius = size * 2 (in source pixels), scaled to canvas
-		const cursorRadiusCanvas = (cs.size * 2 * canvasEl.width) / compW;
+		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
+		const cursorRadiusCanvas = cs.size * 2 * sx;
 		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
 		gl.uniform4fv(uniforms.u_cursorColor, [1, 1, 1, 0.9]);
 		const [hr, hg, hb] = hexToRgba(cs.highlightColor || "#3b82f6");
@@ -883,7 +910,7 @@ void main() {
 		// sizes. Same source-pixel → canvas-pixel factor as padding/radius.
 		const shadow = store.shadow;
 		if (shadow.enabled && shadow.opacity > 0) {
-			const vpToCanvas = canvasEl.width / compW;
+			const vpToCanvas = sx;
 			gl.uniform1i(uniforms.u_shadowEnabled, 1);
 			gl.uniform1f(uniforms.u_shadowBlurPx, Math.max(0.5, shadow.blur * vpToCanvas));
 			gl.uniform1f(uniforms.u_shadowSpreadPx, Math.max(0, shadow.spread * vpToCanvas));

@@ -88,6 +88,8 @@ pub fn append_cursor_overlay_to_complex(
     filter_complex: Option<&str>,
     current_video_map: &str,
     cursor_input_index: usize,
+    overlay_x: u32,
+    overlay_y: u32,
 ) -> (String, String) {
     let out_label = "[vcursor]";
     let normalized_current = if current_video_map.starts_with('[') {
@@ -97,10 +99,10 @@ pub fn append_cursor_overlay_to_complex(
     };
     let new_complex = match filter_complex {
         Some(existing) if !existing.is_empty() => format!(
-            "{existing};{normalized_current}[{cursor_input_index}:v]overlay=0:0:format=auto{out_label}"
+            "{existing};{normalized_current}[{cursor_input_index}:v]overlay={overlay_x}:{overlay_y}:format=auto{out_label}"
         ),
         _ => format!(
-            "{normalized_current}[{cursor_input_index}:v]overlay=0:0:format=auto{out_label}"
+            "{normalized_current}[{cursor_input_index}:v]overlay={overlay_x}:{overlay_y}:format=auto{out_label}"
         ),
     };
     (new_complex, out_label.to_string())
@@ -134,9 +136,20 @@ impl<'a> Default for GifFilterOptions<'a> {
     }
 }
 
-pub fn build_gif_palette_complex(
+/// Pass-2 chain for the 2-pass GIF export. Pass 1 ran palettegen separately
+/// and wrote `palette.png`; the caller wires that file in as a regular FFmpeg
+/// input at `palette_input_index`, and this builder emits a paletteuse-only
+/// stage referencing it.
+///
+/// Single-pass `palettegen→paletteuse` was stalling the UI: palettegen has to
+/// consume every input frame before emitting its one palette frame, so the
+/// encoder's `out_time_us` stays at 0 for the entire palette phase and the
+/// progress bar never moved off 0%. With the palette pre-baked, paletteuse is
+/// a per-frame lookup — frames stream out in real time and progress advances.
+pub fn build_gif_paletteuse_external_complex(
     filter_complex: Option<&str>,
     input_label: &str,
+    palette_input_index: usize,
     options: GifFilterOptions<'_>,
     inline_scale: Option<&str>,
 ) -> (String, String) {
@@ -146,86 +159,150 @@ pub fn build_gif_palette_complex(
     } else {
         format!("[{input_label}]")
     };
-    // Bake fps + scale into a single chain step BEFORE the split. That way
-    // palettegen and paletteuse both consume the same downsampled frames —
-    // generating a palette on full-res input and applying it to scaled
-    // output (the previous shape) wastes palette slots on detail the GIF
-    // can never show, and produces the visible "muddy palette" artefact.
-    // Single linear chain is also far more forgiving of FFmpeg's
-    // filter_complex parser quirks across versions.
     let scale_clause = match inline_scale {
         Some(s) if !s.is_empty() => format!(",{s}"),
         _ => String::new(),
     };
-    // Clamp + render the dither argument. `none` is FFmpeg's literal disable,
-    // bayer takes a `bayer_scale`, sierra2 ships without further knobs.
     let dither_clause = match options.dither {
         "none" => "dither=none".to_string(),
         "sierra2" => "dither=sierra2".to_string(),
         _ => "dither=bayer:bayer_scale=5".to_string(),
     };
-    let max_colors = options.max_colors.clamp(2, 256);
     let fps = options.fps.max(1);
-    let palette_chain = format!(
-        "{normalized_input}fps={fps}{scale_clause},split[_gifa][_gifb];[_gifa]palettegen=max_colors={max_colors}:stats_mode=diff[_gifp];[_gifb][_gifp]paletteuse={dither_clause}:diff_mode=rectangle{final_label}"
+    // Pin input chain to GIF fps + output scale, then pair with the pre-baked
+    // palette via paletteuse. Two filter stages because paletteuse takes two
+    // input pads and we need a labelled intermediate to feed it.
+    let chain = format!(
+        "{normalized_input}fps={fps}{scale_clause}[_gifv];[_gifv][{palette_input_index}:v]paletteuse={dither_clause}:diff_mode=rectangle{final_label}"
     );
     let new_complex = match filter_complex {
-        Some(existing) if !existing.is_empty() => format!("{existing};{palette_chain}"),
-        _ => palette_chain,
+        Some(existing) if !existing.is_empty() => format!("{existing};{chain}"),
+        _ => chain,
     };
     (new_complex, final_label.to_string())
+}
+
+/// Build the `-vf` filter for the GIF palette pre-pass (pass 1 of the 2-pass
+/// GIF export). Drives a standalone FFmpeg invocation that consumes the source
+/// at the GIF target fps + scale and writes the resulting palette to a single
+/// PNG. Kept separate from the pipeline filter_complex because the pre-pass
+/// only needs a flat `-vf` chain — no overlay inputs, no labelled pads.
+pub fn build_gif_palette_prepass_filter(
+    options: GifFilterOptions<'_>,
+    inline_scale: Option<&str>,
+) -> String {
+    let scale_clause = match inline_scale {
+        Some(s) if !s.is_empty() => format!(",{s}"),
+        _ => String::new(),
+    };
+    let max_colors = options.max_colors.clamp(2, 256);
+    let fps = options.fps.max(1);
+    format!(
+        "fps={fps}{scale_clause},palettegen=max_colors={max_colors}:stats_mode=diff"
+    )
 }
 
 #[cfg(test)]
 mod gif_tests {
     use super::*;
 
+    // --- pre-pass `-vf` builder (pass 1: source → palette PNG) ---
+
     #[test]
-    fn includes_fps_and_default_palette() {
-        let (complex, label) = build_gif_palette_complex(
+    fn prepass_filter_includes_fps_and_palettegen() {
+        let vf = build_gif_palette_prepass_filter(
+            GifFilterOptions { fps: 12, max_colors: 128, dither: "bayer" },
+            None,
+        );
+        assert!(vf.starts_with("fps=12"), "got: {vf}");
+        assert!(vf.contains("palettegen"));
+        assert!(vf.contains("max_colors=128"));
+        assert!(vf.contains("stats_mode=diff"));
+    }
+
+    #[test]
+    fn prepass_filter_bakes_scale_before_palettegen() {
+        let vf = build_gif_palette_prepass_filter(
+            GifFilterOptions { fps: 18, max_colors: 256, dither: "bayer" },
+            Some("scale=w=720:h=-1"),
+        );
+        let scale_idx = vf.find("scale=").expect("scale present");
+        let pg_idx = vf.find("palettegen").expect("palettegen present");
+        assert!(scale_idx < pg_idx, "scale must come before palettegen: {vf}");
+    }
+
+    #[test]
+    fn prepass_filter_clamps_max_colors_and_fps() {
+        let vf = build_gif_palette_prepass_filter(
+            GifFilterOptions { fps: 0, max_colors: 9999, dither: "bayer" },
+            None,
+        );
+        assert!(vf.contains("fps=1"), "got: {vf}");
+        assert!(vf.contains("max_colors=256"), "got: {vf}");
+
+        let vf = build_gif_palette_prepass_filter(
+            GifFilterOptions { fps: 15, max_colors: 1, dither: "bayer" },
+            None,
+        );
+        assert!(vf.contains("max_colors=2"), "got: {vf}");
+    }
+
+    // --- pass-2 paletteuse-only chain (palette wired in as external input) ---
+
+    #[test]
+    fn paletteuse_chain_references_palette_input_index() {
+        let (complex, label) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            3,
             GifFilterOptions { fps: 12, max_colors: 128, dither: "bayer" },
             None,
         );
         assert_eq!(label, "[vgif]");
         assert!(complex.starts_with("[vout]fps=12"), "got: {complex}");
-        assert!(complex.contains("max_colors=128"));
+        assert!(complex.contains("[3:v]paletteuse"), "got: {complex}");
         assert!(complex.contains("dither=bayer:bayer_scale=5"));
-        assert!(complex.contains("paletteuse"));
         assert!(complex.contains("[vgif]"));
+        assert!(
+            !complex.contains("palettegen"),
+            "pass 2 must not regenerate palette: {complex}"
+        );
     }
 
     #[test]
-    fn appends_to_existing_filter_complex() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_appends_to_existing_filter_complex() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             Some("[0:v]hflip[vout]"),
             "[vout]",
+            5,
             GifFilterOptions::default(),
             None,
         );
         assert!(complex.starts_with("[0:v]hflip[vout];"));
         assert!(complex.contains("[vout]fps=15"));
+        assert!(complex.contains("[5:v]paletteuse"));
     }
 
     #[test]
-    fn bakes_inline_scale_before_split() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_bakes_inline_scale_before_paletteuse() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            2,
             GifFilterOptions { fps: 18, max_colors: 256, dither: "bayer" },
             Some("scale=w=720:h=-1"),
         );
-        let split_idx = complex.find("split").expect("split present");
         let scale_idx = complex.find("scale=").expect("scale present");
-        assert!(scale_idx < split_idx, "scale must come before split: {complex}");
+        let pu_idx = complex.find("paletteuse").expect("paletteuse present");
+        assert!(scale_idx < pu_idx, "scale must come before paletteuse: {complex}");
     }
 
     #[test]
-    fn sierra2_emits_bare_dither_arg() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_sierra2_emits_bare_dither_arg() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            1,
             GifFilterOptions { fps: 15, max_colors: 128, dither: "sierra2" },
             None,
         );
@@ -234,10 +311,11 @@ mod gif_tests {
     }
 
     #[test]
-    fn dither_none_disables_dither() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_dither_none_disables_dither() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            1,
             GifFilterOptions { fps: 15, max_colors: 128, dither: "none" },
             None,
         );
@@ -245,10 +323,11 @@ mod gif_tests {
     }
 
     #[test]
-    fn unknown_dither_falls_back_to_bayer() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_unknown_dither_falls_back_to_bayer() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            1,
             GifFilterOptions { fps: 15, max_colors: 128, dither: "wat" },
             None,
         );
@@ -256,33 +335,15 @@ mod gif_tests {
     }
 
     #[test]
-    fn fps_zero_clamps_to_one() {
-        let (complex, _) = build_gif_palette_complex(
+    fn paletteuse_chain_fps_zero_clamps_to_one() {
+        let (complex, _) = build_gif_paletteuse_external_complex(
             None,
             "vout",
+            1,
             GifFilterOptions { fps: 0, max_colors: 128, dither: "bayer" },
             None,
         );
         assert!(complex.contains("fps=1"), "got: {complex}");
-    }
-
-    #[test]
-    fn max_colors_clamped_to_gif_palette() {
-        let (complex, _) = build_gif_palette_complex(
-            None,
-            "vout",
-            GifFilterOptions { fps: 15, max_colors: 9999, dither: "bayer" },
-            None,
-        );
-        assert!(complex.contains("max_colors=256"));
-
-        let (complex, _) = build_gif_palette_complex(
-            None,
-            "vout",
-            GifFilterOptions { fps: 15, max_colors: 1, dither: "bayer" },
-            None,
-        );
-        assert!(complex.contains("max_colors=2"));
     }
 }
 
@@ -949,12 +1010,35 @@ pub fn build_annotation_blur_complex(
     (combined, current_in)
 }
 
+/// Lines that should NOT count as part of the error context. We pipe
+/// progress to stderr (`-progress pipe:2 -stats_period 0.1`) so it
+/// streams in tens of times per second; without filtering, the last few
+/// stderr lines are always progress noise and the real diagnostic gets
+/// evicted.
+fn is_progress_line(line: &str) -> bool {
+    const PROGRESS_KEYS: &[&str] = &[
+        "frame=",
+        "fps=",
+        "stream_",
+        "bitrate=",
+        "total_size=",
+        "out_time_us=",
+        "out_time_ms=",
+        "out_time=",
+        "dup_frames=",
+        "drop_frames=",
+        "speed=",
+        "progress=",
+    ];
+    PROGRESS_KEYS.iter().any(|k| line.starts_with(k))
+}
+
 pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
     let text = String::from_utf8_lossy(stderr);
     let lines: Vec<&str> = text
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
+        .filter(|line| !line.is_empty() && !is_progress_line(line))
         .collect();
 
     if lines.is_empty() {
@@ -963,7 +1047,7 @@ pub fn summarize_ffmpeg_error(stderr: &[u8]) -> String {
         lines
             .iter()
             .rev()
-            .take(8)
+            .take(12)
             .copied()
             .collect::<Vec<_>>()
             .into_iter()

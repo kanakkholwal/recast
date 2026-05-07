@@ -33,13 +33,17 @@ use crate::render::node_types::{Annotation, AnnotationKind};
 pub struct CursorOverlayRequest {
     /// Path to the cursor.json track file (from `.recast` project).
     pub cursor_track_path: PathBuf,
-    /// Canvas dimensions (source video + padding × 2).
+    /// Comp dimensions (= source + padding × 2). The overlay PNG is
+    /// rendered at these dimensions even when the final canvas is larger
+    /// (aspect-changing preset). The caller composites it at the comp's
+    /// offset inside the canvas via the FFmpeg overlay filter, so we
+    /// don't pipe gigabytes of RGBA through stdin for a tall 9:16 canvas.
     pub canvas_width: u32,
     pub canvas_height: u32,
     /// Source video dimensions (without padding).
     pub source_width: u32,
     pub source_height: u32,
-    /// Padding in source pixels around the video area.
+    /// Padding around the source video inside the comp.
     pub padding: u32,
     /// Output framerate for the overlay video (matches source video fps).
     pub fps: u32,

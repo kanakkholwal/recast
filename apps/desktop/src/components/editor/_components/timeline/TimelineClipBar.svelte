@@ -148,7 +148,7 @@
 
 <div class="relative h-12 rounded-md border border-border/60 bg-background">
   <span
-    class="pointer-events-none absolute left-1.5 top-1 z-20 rounded-sm bg-foreground/10 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-foreground/80"
+    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center rounded-sm bg-foreground/10 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-foreground/80 backdrop-blur-sm"
   >
     Clip
   </span>

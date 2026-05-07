@@ -20,6 +20,11 @@ pub struct RenderState {
     pub background_blur: f64,
     /// Frame padding as percent of the shorter source edge (0..20).
     pub padding: f64,
+    /// Final-canvas aspect: "source" (default) or one of the preset
+    /// labels ("16:9", "9:16", "1:1", "1.91:1"). Anything we don't
+    /// recognise falls back to source-matched.
+    #[serde(default)]
+    pub output_aspect: Option<String>,
     /// Corner rounding as a percentage (0..50) of the shorter video edge.
     #[serde(default)]
     pub border_radius: f64,
@@ -92,6 +97,7 @@ impl Default for RenderState {
             background_value: "#111111".into(),
             background_blur: 0.0,
             padding: 0.0,
+            output_aspect: None,
             border_radius: 0.0,
             cursor_enabled: true,
             cursor_size: 3.0,
@@ -117,6 +123,88 @@ impl Default for RenderState {
             cursor_sprite_hotspot_press: None,
             cursor_sprite_size_px: None,
         }
+    }
+}
+
+/// Final-canvas geometry, mirroring `lib/canvas-geometry.ts` exactly. The
+/// preview and the export must agree on the same numbers — if they
+/// diverge the rendered file won't match what the user previews.
+#[derive(Debug, Clone, Copy)]
+pub struct CanvasGeometry {
+    pub canvas_w: u32,
+    pub canvas_h: u32,
+    pub video_x: u32,
+    pub video_y: u32,
+    pub video_w: u32,
+    pub video_h: u32,
+    pub padding_px: u32,
+    pub comp_x: u32,
+    pub comp_y: u32,
+    pub comp_w: u32,
+    pub comp_h: u32,
+}
+
+/// Parse the OutputAspect tag into a width/height ratio. `None` keeps
+/// the canvas aligned to source dims (the v1 default).
+fn parse_aspect_ratio(label: Option<&str>) -> Option<f64> {
+    match label.unwrap_or("source") {
+        "16:9" => Some(16.0 / 9.0),
+        "9:16" => Some(9.0 / 16.0),
+        "1:1" => Some(1.0),
+        "1.91:1" => Some(1.91),
+        _ => None,
+    }
+}
+
+pub fn compute_canvas_geometry(
+    src_w: u32,
+    src_h: u32,
+    padding_pct: f64,
+    output_aspect: Option<&str>,
+) -> CanvasGeometry {
+    let pct = padding_pct.clamp(0.0, 20.0);
+    let shorter = src_w.min(src_h) as f64;
+    let padding_px = ((shorter * pct) / 100.0).round() as u32;
+
+    let comp_w = src_w + padding_px * 2;
+    let comp_h = src_h + padding_px * 2;
+
+    let mut canvas_w = comp_w;
+    let mut canvas_h = comp_h;
+    if let Some(target) = parse_aspect_ratio(output_aspect) {
+        if comp_w > 0 && comp_h > 0 {
+            let comp_aspect = comp_w as f64 / comp_h as f64;
+            if comp_aspect > target {
+                // Comp is wider than target → extend HEIGHT.
+                canvas_h = ((comp_w as f64) / target).round() as u32;
+            } else if comp_aspect < target {
+                // Comp is narrower → extend WIDTH.
+                canvas_w = ((comp_h as f64) * target).round() as u32;
+            }
+        }
+    }
+
+    // Even alignment so H.264 / pad filter behave.
+    canvas_w = (canvas_w + 1) & !1;
+    canvas_h = (canvas_h + 1) & !1;
+
+    let comp_x = canvas_w.saturating_sub(comp_w) / 2;
+    let comp_y = canvas_h.saturating_sub(comp_h) / 2;
+    let video_x = comp_x + padding_px;
+    let video_y = comp_y + padding_px;
+
+    CanvasGeometry {
+        canvas_w,
+        canvas_h,
+        video_x,
+        video_y,
+        video_w: src_w,
+        video_h: src_h,
+        padding_px,
+        comp_x,
+        comp_y,
+        comp_w,
+        comp_h,
     }
 }
 
@@ -187,6 +275,7 @@ impl RenderGraph {
         asset_cache_dir: Option<&Path>,
         border_radius_mask: Option<PathBuf>,
         drop_shadow_mask: Option<PathBuf>,
+        canvas: CanvasGeometry,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -197,11 +286,14 @@ impl RenderGraph {
             _ => None,
         });
 
-        let padding = background
-            .map(|node| padding_percent_to_pixels(node.padding, source))
-            .unwrap_or_default();
-        let canvas_width = source.width + padding * 2;
-        let canvas_height = source.height + padding * 2;
+        // Canvas geometry is computed by the caller so the same value
+        // feeds the cursor overlay PNG and drop-shadow PNG. video_x/y
+        // already include any letterbox offset from an aspect preset.
+        let canvas_width = canvas.canvas_w;
+        let canvas_height = canvas.canvas_h;
+        let video_x = canvas.video_x;
+        let video_y = canvas.video_y;
+        let _ = background.map(|n| n.padding); // ack — read through canvas now
         // Zoom region times are stored in PROJECT-timeline seconds, but the
         // FFmpeg expression evaluator's `t` is OUTPUT-stream time, which is
         // reset to 0 by the input-side `-ss <trim_start>` we emit in
@@ -290,9 +382,14 @@ impl RenderGraph {
                     segments.push(format!(
                         "[{bg_image_input_index}:v]scale={canvas_width}:{canvas_height}:force_original_aspect_ratio=increase,crop={canvas_width}:{canvas_height},boxblur={blur_sigma}[bg0]"
                     ));
-                    let bg_label = compose_shadow_stage(&mut segments, shadow_input_index);
+                    let bg_label = compose_shadow_stage(
+                        &mut segments,
+                        shadow_input_index,
+                        canvas.comp_x,
+                        canvas.comp_y,
+                    );
                     segments.push(format!(
-                        "{bg_label}{video_label}overlay={padding}:{padding}[vout]"
+                        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
                     ));
                     Some(segments.join(";"))
                 } else {
@@ -302,7 +399,10 @@ impl RenderGraph {
                         &video_label,
                         canvas_width,
                         canvas_height,
-                        padding,
+                        video_x,
+                        video_y,
+                        canvas.comp_x,
+                        canvas.comp_y,
                         shadow_input_index,
                     )
                 }
@@ -313,7 +413,10 @@ impl RenderGraph {
                 &video_label,
                 canvas_width,
                 canvas_height,
-                padding,
+                video_x,
+                video_y,
+                canvas.comp_x,
+                canvas.comp_y,
                 shadow_input_index,
             ),
             None => {
@@ -365,7 +468,10 @@ fn build_color_background_filter(
     video_label: &str,
     canvas_width: u32,
     canvas_height: u32,
-    padding: u32,
+    video_x: u32,
+    video_y: u32,
+    shadow_overlay_x: u32,
+    shadow_overlay_y: u32,
     shadow_input_index: Option<usize>,
 ) -> Option<String> {
     let color = match background.background_type.as_str() {
@@ -378,9 +484,14 @@ fn build_color_background_filter(
     segments.push(format!(
         "color=c={color}:s={canvas_width}x{canvas_height}[bg0]"
     ));
-    let bg_label = compose_shadow_stage(&mut segments, shadow_input_index);
+    let bg_label = compose_shadow_stage(
+        &mut segments,
+        shadow_input_index,
+        shadow_overlay_x,
+        shadow_overlay_y,
+    );
     segments.push(format!(
-        "{bg_label}{video_label}overlay={padding}:{padding}[vout]"
+        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
     ));
     Some(segments.join(";"))
 }
@@ -390,9 +501,16 @@ fn build_color_background_filter(
 /// the `[bg]` label the video composite consumes. Returns the label that the
 /// next stage should use as its background — `[bg]` when shadow is present,
 /// `[bg0]` otherwise (the latter is a label rename, no extra filter pass).
+///
+/// The shadow PNG is sized to comp dims (= source + padding × 2), not the
+/// final canvas. We overlay it at the comp's (x, y) offset inside the
+/// canvas so an aspect-changing preset still drops the shadow under the
+/// source video and not into the letterbox bars.
 fn compose_shadow_stage(
     segments: &mut Vec<String>,
     shadow_input_index: Option<usize>,
+    overlay_x: u32,
+    overlay_y: u32,
 ) -> &'static str {
     match shadow_input_index {
         Some(idx) => {
@@ -401,7 +519,7 @@ fn compose_shadow_stage(
             // non-alpha pixel format on the decoder side which would make
             // the overlay opaque.
             segments.push(format!("[{idx}:v]format=rgba[shadow]"));
-            segments.push("[bg0][shadow]overlay=0:0[bg]".into());
+            segments.push(format!("[bg0][shadow]overlay={overlay_x}:{overlay_y}[bg]"));
             "[bg]"
         }
         None => "[bg0]",
@@ -811,6 +929,10 @@ mod tests {
         }
     }
 
+    fn test_canvas() -> CanvasGeometry {
+        compute_canvas_geometry(1920, 1080, 0.0, None)
+    }
+
     fn export_plan(state: &RenderState) -> ExportPlan {
         RenderGraph::from_state(state)
             .build_export_plan_with(
@@ -820,6 +942,7 @@ mod tests {
                 None,
                 None,
                 None,
+                test_canvas(),
             )
             .expect("plan")
     }
@@ -833,6 +956,7 @@ mod tests {
                 None,
                 None,
                 Some(shadow_path),
+                test_canvas(),
             )
             .expect("plan")
     }

@@ -45,7 +45,7 @@
   class="relative mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
 >
   <span
-    class="pointer-events-none absolute left-1.5 top-1 z-10 rounded-sm bg-amber-500/20 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400"
+    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center rounded-sm bg-amber-500/20 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-amber-700 backdrop-blur-sm dark:text-amber-400"
   >
     Notes
   </span>

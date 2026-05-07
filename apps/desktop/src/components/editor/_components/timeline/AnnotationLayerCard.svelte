@@ -63,9 +63,13 @@
 
   const isSelected = $derived(annotation.id === store.selectedAnnotationId);
   const left = $derived(annotation.start * pixelsPerSecond);
+  // 28px lets a single icon stay grabbable even on a one-frame annotation.
+  // Subtitle (start time) appears once the card is wide enough to fit it
+  // alongside the kind label.
   const width = $derived(
-    Math.max((annotation.end - annotation.start) * pixelsPerSecond, 56),
+    Math.max((annotation.end - annotation.start) * pixelsPerSecond, 28),
   );
+  const showSubtitle = $derived(width >= 110);
   const Icon = $derived(kindIcon(annotation));
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
@@ -216,7 +220,7 @@
 <div
   in:fly={{ y: 10, duration: 180, easing: cubicOut }}
   out:fade={{ duration: 140 }}
-  class="absolute z-50 overflow-visible select-none"
+  class="group/card absolute z-20 overflow-visible select-none"
   style="
     left: {left}px;
     width: {width}px;
@@ -233,15 +237,15 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded border bg-card/80 text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-amber-500/80 ring-1 ring-amber-500/30 cursor-grabbing'
+    class="absolute inset-0 overflow-hidden rounded border bg-card/85 text-left backdrop-blur-sm transition-all duration-150 hover:bg-card hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
+      ? 'border-amber-500/80 cursor-grabbing shadow-[inset_3px_0_0_0_rgba(245,158,11,0.9)] hover:shadow-[inset_3px_0_0_0_rgba(245,158,11,0.9)]'
       : 'border-amber-500/40 hover:border-amber-500/70 cursor-grab'} {drag?.mode ===
     'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
     <div
-      class="relative flex h-full items-center gap-1.5 px-2"
+      class="relative flex h-full items-center gap-1.5 px-1.5"
       id={`annotation-region-${annotation.id}`}
       aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(annotation.start, timeMode, fps)} to ${formatTimeByMode(annotation.end, timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
@@ -254,9 +258,11 @@
         <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
           {kindLabel(annotation)}
         </p>
-        <p class="text-[9px] leading-tight text-muted-foreground">
-          {formatTimeByMode(annotation.start, timeMode, fps)}
-        </p>
+        {#if showSubtitle}
+          <p class="truncate text-[9px] leading-tight text-muted-foreground">
+            {formatTimeByMode(annotation.start, timeMode, fps)}
+          </p>
+        {/if}
       </div>
       <span
         role="button"
@@ -264,7 +270,9 @@
         onclick={onRemove}
         onpointerdown={(e) => e.stopPropagation()}
         onkeydown={onRemove}
-        class="flex h-4 w-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground transition-colors hover:border-destructive hover:text-destructive pointer-events-auto"
+        class="pointer-events-auto flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground opacity-0 transition-all hover:border-destructive hover:text-destructive group-hover/card:opacity-100 focus:opacity-100 {isSelected
+          ? 'opacity-100'
+          : ''}"
         aria-label="Remove annotation"
       >
         <X size={9} strokeWidth={2.5} />

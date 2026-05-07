@@ -344,6 +344,18 @@ export function normalizeFramePaddingPercent(
 export interface EditorRenderState {
 	trimStart: number;
 	trimEnd: number;
+	/**
+	 * Final-canvas aspect. Optional/absent = 'source' (the v1 default), so
+	 * older project files keep loading. The Rust pipeline letterboxes the
+	 * source-plus-padding inside this canvas via the chosen background.
+	 */
+	outputAspect?: OutputAspect;
+	/**
+	 * Id of the most recently applied preset (matches `Preset.id` in
+	 * `PresetPicker.svelte`). Display-only; the actual canvas/background
+	 * effects are stored in the individual fields above.
+	 */
+	lastAppliedPresetId?: string | null;
 	backgroundType: BackgroundType;
 	backgroundValue: string;
 	backgroundBlur: number;
@@ -422,6 +434,33 @@ export const DEFAULT_GIF_SETTINGS: GifSettings = {
 
 export type LayoutMode = 'auto' | 'crop';
 
+/**
+ * Final-canvas aspect ratio. `source` keeps the canvas matched to the
+ * source video plus padding (the v1 behaviour). The other values reframe
+ * the final canvas to a target ratio — the source video stays centred,
+ * and the chosen background fills the new horizontal/vertical bars.
+ *
+ * Strings are kept human-readable so they round-trip through the preset
+ * picker (`preset.aspect`) and the project JSON without translation.
+ */
+export type OutputAspect = 'source' | '16:9' | '9:16' | '1:1' | '1.91:1';
+
+/** Parse an OutputAspect to a width/height ratio. Returns null for `source`. */
+export function aspectRatio(a: OutputAspect): number | null {
+	switch (a) {
+		case 'source':
+			return null;
+		case '16:9':
+			return 16 / 9;
+		case '9:16':
+			return 9 / 16;
+		case '1:1':
+			return 1;
+		case '1.91:1':
+			return 1.91;
+	}
+}
+
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
 export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audio' | 'info';
@@ -495,6 +534,16 @@ export function createEditorStore() {
 
 	// Layout
 	let layoutMode = $state<LayoutMode>('auto');
+
+	// Final-canvas aspect. `source` means "follow the input video"; any other
+	// value reframes the canvas via letterbox/pillarbox bars. The preset
+	// picker writes this when the user picks an Instagram/YouTube/X preset.
+	let outputAspect = $state<OutputAspect>('source');
+
+	// Id of the most recently applied preset. Pure UI affordance — lets the
+	// toolbar surface "Story · 9:16" so users see, per project, what's in
+	// effect. Cleared when the user resets back to source.
+	let lastAppliedPresetId = $state<string | null>(null);
 
 	// Raw cursor samples, shared between the preview (which runs the actual
 	// compositor) and the Cursor panel (which needs them for the trajectory
@@ -623,6 +672,8 @@ export function createEditorStore() {
 			watermarkSettings,
 			cameraOverlay,
 			layoutMode,
+			outputAspect,
+			lastAppliedPresetId,
 			cursorMotionEasing,
 		});
 	}
@@ -696,6 +747,8 @@ export function createEditorStore() {
 		audioSettings = s.audioSettings ?? audioSettings;
 		watermarkSettings = s.watermarkSettings ?? watermarkSettings;
 		layoutMode = s.layoutMode;
+		outputAspect = s.outputAspect ?? 'source';
+		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
 	}
 
@@ -958,6 +1011,8 @@ export function createEditorStore() {
 			color: '#000000',
 		};
 		layoutMode = 'auto';
+		outputAspect = 'source';
+		lastAppliedPresetId = null;
 		zoomRegions = [];
 		selectedZoomRegionId = null;
 		autoZoomEnabled = true;
@@ -1025,6 +1080,8 @@ export function createEditorStore() {
 		return {
 			trimStart,
 			trimEnd,
+			outputAspect,
+			lastAppliedPresetId,
 			backgroundType,
 			backgroundValue,
 			backgroundBlur,
@@ -1077,6 +1134,8 @@ export function createEditorStore() {
 	function loadRenderState(state: Partial<EditorRenderState>) {
 		trimStart = state.trimStart ?? 0;
 		trimEnd = state.trimEnd ?? metadata?.duration ?? 0;
+		outputAspect = state.outputAspect ?? 'source';
+		lastAppliedPresetId = state.lastAppliedPresetId ?? null;
 		backgroundType = state.backgroundType ?? 'color';
 		backgroundValue = state.backgroundValue ?? '#111111';
 		backgroundBlur = state.backgroundBlur ?? 0;
@@ -1250,6 +1309,10 @@ export function createEditorStore() {
 
 		get layoutMode() { return layoutMode; },
 		set layoutMode(v: LayoutMode) { pushUndoState(); layoutMode = v; },
+		get outputAspect() { return outputAspect; },
+		set outputAspect(v: OutputAspect) { pushUndoState(); outputAspect = v; },
+		get lastAppliedPresetId() { return lastAppliedPresetId; },
+		set lastAppliedPresetId(v: string | null) { lastAppliedPresetId = v; },
 
 		get zoomRegions() { return zoomRegions; },
 

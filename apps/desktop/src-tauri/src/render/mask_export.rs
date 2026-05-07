@@ -89,13 +89,15 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
 /// preview's `vpToCanvas` factor is 1.0 here because we render directly at
 /// canvas resolution).
 pub struct DropShadowRequest {
-    /// Canvas dimensions = `source + padding * 2` on each axis.
+    /// Comp dimensions (= source + padding × 2). The PNG is rendered at
+    /// these dims even when the final canvas is larger (aspect preset);
+    /// the caller composites it at the comp's offset within the canvas.
     pub canvas_width: u32,
     pub canvas_height: u32,
     /// Video-rect dimensions.
     pub video_width: u32,
     pub video_height: u32,
-    /// Padding around the video rect inside the canvas.
+    /// Padding around the video rect inside the comp.
     pub padding: u32,
     /// Border radius in pixels applied to the video rect (preview also adds
     /// `spread * 0.5` so the shadow has slightly softer corners than the

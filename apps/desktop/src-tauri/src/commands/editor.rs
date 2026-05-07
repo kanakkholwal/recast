@@ -13,8 +13,9 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::ffmpeg::{
     append_cursor_overlay_to_complex, append_output_filters_to_complex, build_annotation_blur_complex,
-    build_gif_palette_complex, build_output_scale_filter, has_audio, probe_video_metadata,
-    resolve_export_profile, summarize_ffmpeg_error, BlurRegion, GifFilterOptions,
+    build_gif_palette_prepass_filter, build_gif_paletteuse_external_complex,
+    build_output_scale_filter, has_audio, probe_video_metadata, resolve_export_profile,
+    summarize_ffmpeg_error, BlurRegion, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -466,6 +467,176 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
     Ok(thumbnails)
 }
 
+/// Pass 1 of the 2-pass GIF export. Consumes the source at the GIF's target
+/// fps + scale and writes a single palette PNG. The main encode pass then
+/// reads that palette as an external input and runs paletteuse on every
+/// frame, which streams in real time so the progress bar actually moves.
+///
+/// Single-pass `palettegen → paletteuse` was stalling the UI: palettegen has
+/// to consume every input frame before emitting its one output, so the
+/// encoder's `out_time_us` stayed at 0 the entire palette phase and the bar
+/// sat at 0% while only the elapsed counter ticked.
+fn run_gif_palette_prepass(
+    app: &AppHandle,
+    export_id: &str,
+    source_path: &Path,
+    palette_path: &Path,
+    trim_start: f64,
+    duration: f64,
+    source_duration: f64,
+    options: GifFilterOptions<'_>,
+    output_scale_filter: Option<&str>,
+    cancel_flag: Arc<AtomicBool>,
+    progress_offset: f64,
+    progress_scale: f64,
+) -> Result<(), String> {
+    let mut args: Vec<String> = vec![
+        "-hide_banner".to_string(),
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-progress".to_string(),
+        "pipe:2".to_string(),
+        "-stats_period".to_string(),
+        "0.1".to_string(),
+    ];
+    if trim_start > 0.0 {
+        args.extend(["-ss".to_string(), format!("{trim_start:.3}")]);
+    }
+    if duration > 0.0 {
+        args.extend(["-t".to_string(), format!("{duration:.3}")]);
+    }
+    args.extend([
+        "-i".to_string(),
+        source_path.to_string_lossy().to_string(),
+    ]);
+
+    let vf = build_gif_palette_prepass_filter(options, output_scale_filter);
+    args.extend([
+        "-vf".to_string(),
+        vf,
+        "-frames:v".to_string(),
+        "1".to_string(),
+        "-an".to_string(),
+        palette_path.to_string_lossy().to_string(),
+    ]);
+
+    log::info!("export gif palette pre-pass args: {}", args.join(" "));
+
+    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+    command
+        .args(&args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    crate::ffmpeg::configure_silent_command(&mut command);
+
+    let mut child = command
+        .spawn()
+        .map_err(|e| format!("failed to start ffmpeg palette pre-pass: {e}"))?;
+    let mut stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| "ffmpeg palette stdout pipe missing".to_string())?;
+    let stderr = child
+        .stderr
+        .take()
+        .ok_or_else(|| "ffmpeg palette stderr pipe missing".to_string())?;
+
+    let stderr_buf: Arc<Mutex<Vec<u8>>> = Arc::new(Mutex::new(Vec::new()));
+    let stderr_buf_writer = stderr_buf.clone();
+    let app_for_emit = app.clone();
+    let export_id_for_emit = export_id.to_string();
+    let effective_duration = if duration > 0.0 { duration } else { source_duration };
+
+    let stderr_thread = std::thread::Builder::new()
+        .name("recast-export-palette-stderr".into())
+        .spawn(move || {
+            let reader = std::io::BufReader::new(stderr);
+            let mut last_emitted = -1.0_f64;
+            for line in reader.lines().map_while(Result::ok) {
+                if let Some(progress_secs) = parse_ffmpeg_progress_seconds(&line) {
+                    if effective_duration > 0.0 {
+                        let raw_pct =
+                            (progress_secs / effective_duration * 100.0).clamp(0.0, 100.0);
+                        let scaled = progress_offset + progress_scale * raw_pct;
+                        if scaled > last_emitted + 0.5 {
+                            last_emitted = scaled;
+                            emit_export_state(
+                                &app_for_emit,
+                                ExportStateEvent::progress(&export_id_for_emit, scaled),
+                            );
+                        }
+                    }
+                    continue;
+                }
+                if line.trim() == "progress=end" || is_ffmpeg_progress_key_line(&line) {
+                    continue;
+                }
+                let mut guard = stderr_buf_writer.lock();
+                guard.extend_from_slice(line.as_bytes());
+                guard.push(b'\n');
+                if guard.len() > 8192 {
+                    let overflow = guard.len() - 8192;
+                    guard.drain(0..overflow);
+                }
+            }
+        })
+        .map_err(|e| format!("failed to spawn palette stderr drain: {e}"))?;
+
+    let stdout_thread = std::thread::Builder::new()
+        .name("recast-export-palette-stdout".into())
+        .spawn(move || {
+            let mut buf = [0u8; 4096];
+            loop {
+                match stdout.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+            }
+        })
+        .map_err(|e| format!("failed to spawn palette stdout drain: {e}"))?;
+
+    // Poll cancel_flag while waiting for the child so a user cancel kills the
+    // palette pre-pass mid-run instead of waiting for it to finish first.
+    let exit_status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {
+                if cancel_flag.load(Ordering::Acquire) {
+                    let _ = child.kill();
+                    break Err("export cancelled".to_string());
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+            Err(e) => break Err(format!("ffmpeg palette wait error: {e}")),
+        }
+    };
+
+    let _ = stderr_thread.join();
+    let _ = stdout_thread.join();
+
+    match exit_status {
+        Ok(status) => {
+            if !status.success() {
+                let stderr_bytes = stderr_buf.lock().clone();
+                return Err(format!(
+                    "export failed (palette pre-pass):\n{}",
+                    summarize_ffmpeg_error(&stderr_bytes)
+                ));
+            }
+            match std::fs::metadata(palette_path) {
+                Ok(meta) if meta.len() > 0 => Ok(()),
+                Ok(_) => Err("export failed: palette pre-pass wrote empty file".into()),
+                Err(e) => Err(format!(
+                    "export failed: palette pre-pass output missing: {e}"
+                )),
+            }
+        }
+        Err(e) => Err(e),
+    }
+}
+
 #[tauri::command]
 pub async fn export_video(
     app: AppHandle,
@@ -541,17 +712,25 @@ pub async fn export_video(
     };
     let border_radius_mask_path = border_radius_mask.as_ref().map(|m| m.path.clone());
 
-    // Canvas dimensions feed both the drop-shadow rasteriser (which needs
-    // them BEFORE we build the export plan, since the plan references the
-    // shadow as an input) and the cursor overlay further down. Compute them
-    // once here.
-    let canvas_padding = {
-        let pct = request.render_state.padding.clamp(0.0, 20.0);
-        let shorter_edge = metadata.width.min(metadata.height) as f64;
-        ((shorter_edge * pct) / 100.0).round() as u32
-    };
-    let canvas_width = metadata.width + canvas_padding * 2;
-    let canvas_height = metadata.height + canvas_padding * 2;
+    // Canvas geometry feeds the drop-shadow rasteriser, the cursor
+    // overlay PNG, and the FFmpeg filter graph. Compute once.
+    //
+    // Cursor and drop-shadow PNGs are rendered at COMP dims (= source +
+    // padding * 2), not the final canvas dims. They're composited at the
+    // comp's offset inside the canvas via FFmpeg overlay. Doing it the
+    // other way piped a 1984×3528 RGBA stream for a 9:16 of 1080p
+    // (~28 MB/frame at 60fps), which stalled the cursor sub-encode.
+    let canvas_geom = crate::render::graph::compute_canvas_geometry(
+        metadata.width,
+        metadata.height,
+        request.render_state.padding,
+        request.render_state.output_aspect.as_deref(),
+    );
+    let canvas_width = canvas_geom.canvas_w;
+    let canvas_height = canvas_geom.canvas_h;
+    let canvas_padding = canvas_geom.padding_px;
+    let comp_width = canvas_geom.comp_w;
+    let comp_height = canvas_geom.comp_h;
 
     // Drop-shadow PNG: rasterised once and overlaid on the background by the
     // FFmpeg planner. Skipped when the user has disabled the effect or set
@@ -563,8 +742,8 @@ pub async fn export_video(
         if shadow_settings.enabled && shadow_settings.opacity > 0.0 {
             crate::render::mask_export::render_drop_shadow_mask(
                 crate::render::mask_export::DropShadowRequest {
-                    canvas_width,
-                    canvas_height,
+                    canvas_width: comp_width,
+                    canvas_height: comp_height,
                     video_width: metadata.width,
                     video_height: metadata.height,
                     padding: canvas_padding,
@@ -593,6 +772,7 @@ pub async fn export_video(
             asset_cache_dir.as_deref(),
             border_radius_mask_path,
             drop_shadow_mask_path,
+            canvas_geom,
         )
         .map_err(|e| e.to_string())?;
     let overlay_duration = if duration > 0.0 {
@@ -609,8 +789,8 @@ pub async fn export_video(
             .map(|project| {
                 render_cursor_overlay(CursorOverlayRequest {
                     cursor_track_path: project.cursor_path.clone(),
-                    canvas_width,
-                    canvas_height,
+                    canvas_width: comp_width,
+                    canvas_height: comp_height,
                     source_width: metadata.width,
                     source_height: metadata.height,
                     padding: canvas_padding,
@@ -727,6 +907,8 @@ pub async fn export_video(
                 initial_filter_complex.as_deref(),
                 &initial_video_map,
                 cursor_input_index,
+                canvas_geom.comp_x,
+                canvas_geom.comp_y,
             );
             (Some(new_complex), new_map)
         } else {
@@ -810,31 +992,124 @@ pub async fn export_video(
         video_map_after_cursor = new_map;
     }
 
-    // For GIF, always route through filter_complex with a palettegen/paletteuse
-    // pipeline. Naive single-pass GIF encoding uses a per-frame 256-colour palette
-    // which produces heavy banding and dithered noise. Baking fps + any output
-    // scale into the palette chain means we don't need a separate `-vf` or a
-    // post-hoc merge step for GIFs.
+    // For GIF, route through a 2-pass pipeline. Pass 1 here (synchronous,
+    // before the main spawn_blocking) generates the palette PNG so the main
+    // pass can use a paletteuse-only chain. The single-pass alternative
+    // (`split→palettegen/paletteuse` in one filter graph) buffers every input
+    // frame inside palettegen before emitting the palette, so the encoder's
+    // `out_time_us` stays at 0 the entire palette phase — the UI sat at 0%
+    // while only the elapsed counter moved. Splitting the passes lets us
+    // emit real progress: pre-pass owns 0..40%, main pass owns 40..100%.
     let mut output_filters: Vec<String> = Vec::new();
     let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
-    if request.format == "gif" {
+    let mut palette_temp_path: Option<PathBuf> = None;
+    let (progress_offset, progress_scale) = if request.format == "gif" {
         let resolved_fps = gif_settings.fps.unwrap_or(profile.gif_fps);
-        let gif_options = GifFilterOptions {
+        let gif_max_colors = gif_settings.max_colors();
+        // `GifFilterOptions` holds a `&str` for dither, so we can't build the
+        // struct here and then move it into a `'static` spawn_blocking closure.
+        // Stash the owned String, reconstruct the struct inside each closure.
+        let gif_dither_owned: String = gif_settings.dither.clone();
+
+        let palette_path = output_dir.join(format!(
+            "recast_palette_{stamp_nanos}_{}.png",
+            std::process::id()
+        ));
+
+        let app_for_prepass = app.clone();
+        let export_id_for_prepass = export_id.clone();
+        let source_for_prepass = source_video.clone();
+        let palette_for_prepass = palette_path.clone();
+        let cancel_for_prepass = cancel_flag.clone();
+        let scale_for_prepass = output_scale_filter.clone();
+        let dither_for_prepass = gif_dither_owned.clone();
+        let prepass_result = tokio::task::spawn_blocking(move || {
+            let inner_options = GifFilterOptions {
+                fps: resolved_fps,
+                max_colors: gif_max_colors,
+                dither: dither_for_prepass.as_str(),
+            };
+            run_gif_palette_prepass(
+                &app_for_prepass,
+                &export_id_for_prepass,
+                &source_for_prepass,
+                &palette_for_prepass,
+                trim_start,
+                duration,
+                source_duration,
+                inner_options,
+                scale_for_prepass.as_deref(),
+                cancel_for_prepass,
+                0.0,
+                0.4,
+            )
+        })
+        .await;
+
+        match prepass_result {
+            Ok(Ok(())) => {}
+            Ok(Err(err_msg)) => {
+                state.export_cancel.lock().remove(&export_id);
+                let _ = std::fs::remove_file(&palette_path);
+                if cancel_flag.load(Ordering::Acquire) {
+                    emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
+                    return Err("export cancelled".to_string());
+                }
+                emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
+                return Err(err_msg);
+            }
+            Err(join_err) => {
+                state.export_cancel.lock().remove(&export_id);
+                let _ = std::fs::remove_file(&palette_path);
+                let err_msg = format!("export task failed (palette pre-pass): {join_err}");
+                emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
+                return Err(err_msg);
+            }
+        }
+
+        if cancel_flag.load(Ordering::Acquire) {
+            state.export_cancel.lock().remove(&export_id);
+            let _ = std::fs::remove_file(&palette_path);
+            emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
+            return Err("export cancelled".to_string());
+        }
+
+        // Wire the palette PNG in as the last FFmpeg input. GIF mode skips
+        // audio inputs entirely, so input ordering up to this point is:
+        //   0=source, 1..=extra_inputs, [cursor], [watermark]
+        // Palette appends after that.
+        let palette_input_index = 1
+            + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize;
+        args.extend([
+            "-i".to_string(),
+            palette_path.to_string_lossy().to_string(),
+        ]);
+
+        let pass2_options = GifFilterOptions {
             fps: resolved_fps,
-            max_colors: gif_settings.max_colors(),
-            dither: gif_settings.dither.as_str(),
+            max_colors: gif_max_colors,
+            dither: gif_dither_owned.as_str(),
         };
-        let (gif_complex, gif_map) = build_gif_palette_complex(
+        let (gif_complex, gif_map) = build_gif_paletteuse_external_complex(
             filter_complex_after_cursor.as_deref(),
             &video_map_after_cursor,
-            gif_options,
+            palette_input_index,
+            pass2_options,
             output_scale_filter.as_deref(),
         );
         filter_complex_after_cursor = Some(gif_complex);
         video_map_after_cursor = gif_map;
-    } else if let Some(scale_filter) = output_scale_filter {
-        output_filters.push(scale_filter);
-    }
+        palette_temp_path = Some(palette_path);
+
+        (40.0_f64, 0.6_f64)
+    } else {
+        if let Some(scale_filter) = output_scale_filter {
+            output_filters.push(scale_filter);
+        }
+        (0.0_f64, 1.0_f64)
+    };
 
     let audio_map = if request.format == "gif" {
         None
@@ -1145,9 +1420,15 @@ pub async fn export_video(
                                 encode_started_at.elapsed().as_millis()
                             );
                         }
+                        // For 2-pass GIF the pre-pass owns 0..40% and this
+                        // pass owns 40..100%; for everything else it's 0..100.
+                        // Scaling here (vs. at every progress emit site) keeps
+                        // the 100% terminal emits below honest — they always
+                        // mean "done", not "60% done because we're in pass 2".
+                        let scaled_pct = progress_offset + progress_scale * pct;
                         emit_export_state(
                             &stderr_app,
-                            ExportStateEvent::progress(&stderr_export_id, pct),
+                            ExportStateEvent::progress(&stderr_export_id, scaled_pct),
                         );
                         continue;
                     }
@@ -1586,6 +1867,9 @@ pub async fn export_video(
     // leave a stale cancel token installed that would poison the next export.
     drop(cursor_overlay);
     state.export_cancel.lock().remove(&export_id);
+    if let Some(p) = palette_temp_path.as_ref() {
+        let _ = std::fs::remove_file(p);
+    }
 
     match task_result {
         Ok(inner) => inner,

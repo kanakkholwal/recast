@@ -9,7 +9,8 @@
     Save,
     Sparkles,
     Undo2,
-    Upload
+    Upload,
+    X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
@@ -17,7 +18,7 @@
   import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";
   import ExportDialog from "./ExportDialog.svelte";
-  import PresetPicker, { type Preset } from "./PresetPicker.svelte";
+  import PresetPicker, { PRESETS, type Preset } from "./PresetPicker.svelte";
 
   interface Props {
     store: EditorStore;
@@ -53,7 +54,49 @@
     store.padding = preset.padding;
     store.backgroundBlur = preset.blur;
     if (preset.layout) store.layoutMode = preset.layout;
+    // Map the preset's aspect string onto the store's OutputAspect. Anything
+    // we don't recognise (e.g. "Source") falls back to the source-matched
+    // canvas, the v1 default.
+    const aspectMap: Record<
+      string,
+      import("$lib/stores/editor-store.svelte").OutputAspect
+    > = {
+      "16:9": "16:9",
+      "9:16": "9:16",
+      "1:1": "1:1",
+      "1.91:1": "1.91:1",
+    };
+    store.outputAspect = aspectMap[preset.aspect] ?? "source";
+    // Remember which preset was applied so the toolbar can surface it as
+    // a chip — purely a UI affordance; the visual effects above are what
+    // actually drive the renderer.
+    store.lastAppliedPresetId = preset.id;
   }
+
+  // Drop the active preset back to the source-matched canvas without
+  // touching background / padding / blur — leaves the user's tweaks alone
+  // but removes any letterbox bars. Visual mirror of `applyPreset` so undo
+  // collapses the whole gesture into a single stack entry.
+  function clearPreset() {
+    if (
+      store.outputAspect === "source" &&
+      store.lastAppliedPresetId === null
+    ) {
+      return;
+    }
+    store.pushUndoState();
+    store.outputAspect = "source";
+    store.lastAppliedPresetId = null;
+  }
+
+  // Resolve the chip label from the persisted preset id. If the id no
+  // longer exists in PRESETS (e.g. removed across versions) we fall back
+  // to the raw aspect string so users still see something useful.
+  const activePreset = $derived.by(() => {
+    const id = store.lastAppliedPresetId;
+    if (!id) return null;
+    return PRESETS.find((p) => p.id === id) ?? null;
+  });
 
   function openExport() {
     if (store.isExporting) return;
@@ -137,6 +180,57 @@
       </Tooltip.Trigger>
       <Tooltip.Content>Browse social & studio presets</Tooltip.Content>
     </Tooltip.Root>
+
+    <!-- Active-preset chip. Only renders when a preset has been applied
+         (per-project state). Click the body to re-open the picker; click
+         the trailing × to drop back to source aspect. -->
+    {#if activePreset || store.outputAspect !== "source"}
+      <div
+        class="flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 pl-1.5 pr-0.5 text-[11px] font-semibold text-primary"
+      >
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            <button
+              type="button"
+              onclick={() => (showPresetsPicker = true)}
+              class="flex h-full items-center gap-1.5 cursor-pointer"
+              aria-label="Change preset"
+            >
+              {#if activePreset}
+                <span class="text-[10px] uppercase tracking-wider text-primary/70">
+                  {activePreset.category}
+                </span>
+                <span class="text-foreground">{activePreset.label}</span>
+              {/if}
+              <span
+                class="inline-flex h-4 items-center rounded border border-primary/40 bg-background/60 px-1 font-mono text-[9px] font-semibold text-primary"
+              >
+                {store.outputAspect === "source"
+                  ? "Source"
+                  : store.outputAspect}
+              </span>
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>Change preset</Tooltip.Content>
+        </Tooltip.Root>
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            <button
+              type="button"
+              onclick={clearPreset}
+              aria-label="Reset to source aspect"
+              class="ml-0.5 flex size-5 cursor-pointer items-center justify-center rounded text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary"
+            >
+              <X size={10} strokeWidth={2.5} />
+            </button>
+          </Tooltip.Trigger>
+          <Tooltip.Content>
+            Reset to source aspect (drops letterbox bars; keeps your other
+            tweaks)
+          </Tooltip.Content>
+        </Tooltip.Root>
+      </div>
+    {/if}
 
     <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 

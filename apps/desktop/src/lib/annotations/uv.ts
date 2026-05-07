@@ -3,9 +3,11 @@
 // to avoid drift when zoom/padding change — that's the only correctness
 // invariant that matters here.
 
+import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import {
 	framePaddingPixels,
 	type AnnotationKind,
+	type OutputAspect,
 	type VideoMetadata,
 } from "$lib/stores/editor-store.svelte";
 import { evalZoom, type ZoomRegionLike, type ZoomTransform } from "./eval";
@@ -29,26 +31,41 @@ export function compositionWidth(
 
 /**
  * Device-pixel rect of the actual video region inside a canvas/element of
- * dimensions `containerW × containerH`. The padding band lives in the same
- * coordinate space as the canvas; subtracting it gives the video's window.
+ * dimensions `containerW × containerH`. The container's aspect tracks the
+ * configured `outputAspect` (the editor preview keeps the canvas matched
+ * to the canvas geometry), so this maps source-pixel offsets through
+ * `containerW / canvasW` linearly.
+ *
+ * `outputAspect` is optional so existing callers that only know the v1
+ * "source matches input" model keep working — they pass nothing and get
+ * the old uniform-padding behaviour.
  */
 export function videoRectPx(
 	containerW: number,
 	containerH: number,
 	metadata: Pick<VideoMetadata, "width" | "height"> | null | undefined,
 	paddingPercent: number,
+	outputAspect: OutputAspect = "source",
 ): Rect {
 	if (!metadata || containerW <= 0 || containerH <= 0) {
 		return { x: 0, y: 0, w: containerW, h: containerH };
 	}
-	const total = compositionWidth(metadata, paddingPercent);
-	const sourcePadPx = framePaddingPixels(paddingPercent, metadata);
-	const padPx = total > 0 ? (sourcePadPx / total) * containerW : 0;
+	const geom = computeCanvasGeometry(
+		metadata.width,
+		metadata.height,
+		paddingPercent,
+		outputAspect,
+	);
+	if (geom.canvasW <= 0 || geom.canvasH <= 0) {
+		return { x: 0, y: 0, w: containerW, h: containerH };
+	}
+	const sx = containerW / geom.canvasW;
+	const sy = containerH / geom.canvasH;
 	return {
-		x: padPx,
-		y: padPx,
-		w: containerW - 2 * padPx,
-		h: containerH - 2 * padPx,
+		x: geom.videoX * sx,
+		y: geom.videoY * sy,
+		w: geom.videoW * sx,
+		h: geom.videoH * sy,
 	};
 }
 
