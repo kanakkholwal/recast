@@ -1,9 +1,9 @@
 <script lang="ts">
+  import type { RegionRect } from "$lib/ipc";
   import { Button } from "@recast/ui/button";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-  import type { RegionRect } from "$lib/ipc";
 
   // The overlay window is created at virtual desktop origin, sized to span all
   // monitors. Pointer coords from the window therefore equal virtual-desktop
@@ -180,11 +180,11 @@
     <div
       role="toolbar"
       aria-label="Confirm selected area"
+      tabindex="0"
       class="absolute flex items-center gap-1.5 bg-background/95 backdrop-blur border border-border-subtle rounded-md p-1 shadow-craft-floating cursor-default"
       style="left: {toolbarPos.left}px; top: {toolbarPos.top}px; min-width: {TOOLBAR_W}px;"
       onpointerdown={(e) => e.stopPropagation()}
       onpointerup={(e) => e.stopPropagation()}
-      onclick={(e) => e.stopPropagation()}
     >
       <Button variant="ghost" size="xs" onclick={reset}>Redraw</Button>
       <Button variant="ghost" size="xs" onclick={cancel}>Cancel</Button>

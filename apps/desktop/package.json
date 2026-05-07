@@ -1,7 +1,7 @@
 {
 	"name": "recast-desktop",
 	"private": true,
-	"version": "0.1.2-beta",
+	"version": "0.1.3-beta",
 	"type": "module",
 	"scripts": {
 		"ui:dev": "vite dev",

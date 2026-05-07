@@ -1,6 +1,7 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import pkg from './package.json' with { type: 'json' };
 
 
 
@@ -9,6 +10,10 @@ export default defineConfig({
 		tailwindcss(),
 		sveltekit()
 	],
+	define: {
+		__NAME__: `"${pkg.name}"`,
+		__VERSION__: `"${pkg.version}"`,
+	},
 	clearScreen: false,
 	server: {
 		port: 4421,

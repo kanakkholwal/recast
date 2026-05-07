@@ -15,6 +15,31 @@ The in-app changelog mirrors this file via
 On every release, update both. Headings must follow the literal form
 `## [<version>] — <date>` so the extractor can find them.
 
+## [0.1.3-beta] — 2026-05-07
+
+### Added
+- Active-preset chip in the editor toolbar with a reset-to-source affordance.
+- Per-project preset persistence: applied preset and output aspect round-trip
+  with undo/redo and project autosave.
+
+### Changed
+- GIF export now uses a 2-pass palettegen → paletteuse pipeline, so the
+  progress bar advances in real time instead of sitting at 0% while only the
+  elapsed counter ticked.
+- Presets actually resize the canvas to their target aspect (16:9, 9:16,
+  1:1, 1.91:1) end-to-end through the preview, FFmpeg filter graph, cursor
+  overlay, and drop-shadow rasteriser.
+- Stronger blur annotation: redacts content even at full strength, with
+  scaled tint opacity and an optional gray wash above 0.6 strength.
+- FFmpeg error reporting filters out progress noise so real diagnostic
+  lines reach the failure toast.
+
+### Fixed
+- Region picker "Use area" / "Cancel" buttons now work; closing the main
+  window exits the app instead of leaving aux windows holding the process.
+- Quick action no longer opens the camera preview inside the recording
+  panel window.
+
 ## [0.1.2-beta] — 2026-05-06
 
 ### Added
