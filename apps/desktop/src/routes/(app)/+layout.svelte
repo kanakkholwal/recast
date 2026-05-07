@@ -8,7 +8,7 @@
   import * as Sidebar from "@recast/ui/sidebar";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
+  import { fade } from "svelte/transition";
 
   let { children } = $props();
   let routeKey = $derived(page.url.pathname);
@@ -65,15 +65,9 @@
       <div class="h-full flex-1" data-tauri-drag-region></div>
     </CustomTitlebar>
     <main class="flex-1 overflow-hidden no-scrollbar">
-      {#key routeKey}
-        <div
-          in:fly={{ y: 6, duration: 240, easing: cubicOut, delay: 60 }}
-          out:fade={{ duration: 120 }}
-          class="h-full motion-reduce:animate-none"
-        >
-          {@render children()}
-        </div>
-      {/key}
+      <div class="h-full">
+        {@render children()}
+      </div>
     </main>
   </Sidebar.Inset>
 </Sidebar.Provider>

@@ -62,6 +62,7 @@
 </script>
 
 <div
+  data-recast-titlebar
   class={cn(
     "group h-10 flex items-center gap-1 border-b border-border/60 bg-background/70 backdrop-blur-xl shrink-0 select-none px-1 py-1 transition-all duration-300",
     wrapperClass

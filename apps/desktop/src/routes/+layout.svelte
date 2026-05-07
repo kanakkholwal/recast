@@ -3,6 +3,7 @@
   import { TooltipProvider } from "@recast/ui/tooltip";
   import "../app.css";
 
+  import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";
 
   let { children } = $props();
@@ -23,6 +24,30 @@
   const isTransparentRoute = $derived(
     TRANSPARENT_ROUTES.some((p) => page.url.pathname.startsWith(p)),
   );
+
+  // Native macOS-style page transitions via the View Transitions API.
+  // Skipped for overlay/secondary windows (transparent routes) and when the
+  // user prefers reduced motion — CSS handles the reduced-motion case too.
+  onNavigate((navigation) => {
+    if (typeof document === "undefined") return;
+    if (!("startViewTransition" in document)) return;
+
+    const to = navigation.to?.url.pathname ?? "";
+    const from = navigation.from?.url.pathname ?? "";
+    const isOverlay = (p: string) =>
+      TRANSPARENT_ROUTES.some((r) => p.startsWith(r));
+    if (isOverlay(to) || isOverlay(from)) return;
+
+    document.documentElement.dataset.navDirection =
+      to.length >= from.length ? "forward" : "back";
+
+    return new Promise((resolve) => {
+      document.startViewTransition(async () => {
+        resolve();
+        await navigation.complete;
+      });
+    });
+  });
 
   // Kick off external-asset download (wallpapers etc.) on first paint. Safe in
   // both browser and Tauri runtimes — no-op in the browser.

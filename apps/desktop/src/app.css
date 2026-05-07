@@ -200,3 +200,72 @@ input[type="number"]:has(class) {
 	appearance: textfield;
 	-moz-appearance: textfield;
 }
+
+/*
+ * Page transitions — View Transitions API
+ *
+ * Apple-like motion: subtle cross-fade with a hair of depth (scale + Y nudge),
+ * shaped by the SF spring curve. Direction comes from `data-nav-direction` on
+ * <html>, set in the root layout's onNavigate hook.
+ */
+::view-transition-old(root),
+::view-transition-new(root) {
+	animation-duration: 280ms;
+	animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+	animation-fill-mode: both;
+	mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+	animation-name: recast-page-out;
+}
+::view-transition-new(root) {
+	animation-name: recast-page-in;
+}
+
+[data-nav-direction="back"]::view-transition-old(root) {
+	animation-name: recast-page-out-back;
+}
+[data-nav-direction="back"]::view-transition-new(root) {
+	animation-name: recast-page-in-back;
+}
+
+@keyframes recast-page-in {
+	from { opacity: 0; transform: translateY(4px) scale(0.992); }
+	to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes recast-page-out {
+	from { opacity: 1; transform: translateY(0) scale(1); }
+	to   { opacity: 0; transform: translateY(-2px) scale(1.004); }
+}
+@keyframes recast-page-in-back {
+	from { opacity: 0; transform: translateY(-4px) scale(1.008); }
+	to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes recast-page-out-back {
+	from { opacity: 1; transform: translateY(0) scale(1); }
+	to   { opacity: 0; transform: translateY(2px) scale(0.996); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	::view-transition-old(root),
+	::view-transition-new(root) {
+		animation: none !important;
+	}
+}
+
+/*
+ * Persistent chrome — sidebar + titlebar shouldn't morph during page swaps.
+ * Naming them takes them out of the default `root` snapshot so only the page
+ * body cross-fades, exactly like a native macOS pane swap.
+ */
+[data-sidebar="sidebar"] {
+	view-transition-name: recast-sidebar;
+}
+[data-recast-titlebar] {
+	view-transition-name: recast-titlebar;
+}
+::view-transition-group(recast-sidebar),
+::view-transition-group(recast-titlebar) {
+	animation-duration: 0.01ms;
+}
