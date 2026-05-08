@@ -12,6 +12,7 @@
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
+	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import CameraOverlay from "./_components/CameraOverlay.svelte";
@@ -1364,13 +1365,17 @@ void main() {
 		<!-- Camera overlay sits ABOVE the cursor SVG so the bubble
 		     never gets visually clipped behind a cursor that wanders
 		     into its corner. The component owns its own video element
-		     and stays in sync with the screen video via store.currentTime. -->
+		     and stays in sync with the screen video via store.currentTime.
+		     TODO(camera-recording): gated behind CAMERA_OVERLAY_UI_ENABLED. See
+		     apps/desktop/docs/camera-recording-todo.md. -->
+		{#if CAMERA_OVERLAY_UI_ENABLED}
 		<CameraOverlay
 			{store}
 			{videoEl}
 			{cameraSrc}
 			targetEl={previewRectEl}
 		/>
+		{/if}
 	</div>
 
 	{#if videoSrc}

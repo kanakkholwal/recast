@@ -1,5 +1,11 @@
 <script lang="ts">
+  import { platform } from "@tauri-apps/plugin-os";
+
   import { enumerateCameras } from "$lib/camera/browser-devices";
+
+  // Wayland (KWin in particular) can trap focus on undecorated transparent
+  // alwaysOnTop windows — drop the flag on Linux. See ipc.ts for context.
+  const IS_LINUX = platform() === "linux";
   import {
     getAudioDevices,
     getDisplays,
@@ -290,7 +296,7 @@
         decorations: false,
         transparent: true,
         shadow: false,
-        alwaysOnTop: true,
+        alwaysOnTop: !IS_LINUX,
         resizable: true,
         x: 40,
         y: 40,

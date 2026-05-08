@@ -12,6 +12,15 @@ import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { platform } from "@tauri-apps/plugin-os";
+
+// `alwaysOnTop` works fine on Windows (DWM handles z-order cleanly) but on
+// some Linux compositors (notably KWin under Wayland) an undecorated,
+// transparent, always-on-top window can hold input focus in a way the user
+// can't break out of — clicks pass through to it instead of the main window
+// behind, so close/minimize/maximize on the main window stop working. Drop
+// the flag on Linux until we have a proper compositor-side fix.
+const IS_LINUX = platform() === "linux";
 
 //  Types matching Rust structs 
 
@@ -379,7 +388,7 @@ export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
       decorations: false,
       transparent: true,
 	  shadow: false,
-      alwaysOnTop: true,
+      alwaysOnTop: !IS_LINUX,
       resizable: false,
       skipTaskbar: true,
       x: Math.round(window.screen.availWidth / 2 - panelWidth / 2),
@@ -421,7 +430,7 @@ export async function openCameraPreviewWindow() {
     decorations: false,
     transparent: true,
     shadow: false,
-    alwaysOnTop: true,
+    alwaysOnTop: !IS_LINUX,
     resizable: true,
     skipTaskbar: true,
     x: Math.round(window.screen.availWidth - previewSize - 40),

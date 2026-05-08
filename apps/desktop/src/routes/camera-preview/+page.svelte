@@ -33,6 +33,24 @@
   // Window radius in CSS pixels — matches the rounded-3xl token visually.
   const WINDOW_RADIUS = 20;
 
+  // Resize bounds, expressed as fractions of the primary screen's available
+  // logical dimensions. The cap exists because an oversized live preview
+  // (a) covers content the user is recording, and (b) makes the eventual
+  // composited bubble look ridiculous if the user accidentally records at
+  // that size. 25% of either axis is comfortably visible without dominating
+  // the frame.
+  const MAX_SCREEN_FRACTION = 0.25;
+  // Floor: small enough to tuck into a corner, large enough that the live
+  // feed remains intelligible. ~120 logical px ≈ a thumbnail.
+  const MIN_LOGICAL_SIZE = 120;
+
+  // Cached max logical size for the current screen — recomputed on mount and
+  // whenever a resize crosses screens. Used by the aspect-snap helpers to
+  // clamp the box before calling setSize, since the OS-level max-size only
+  // bounds drag-resize and not our programmatic snap-to-aspect calls.
+  let maxLogicalW = $state(640);
+  let maxLogicalH = $state(360);
+
   let videoEl: HTMLVideoElement | null = $state(null);
   let stream: MediaStream | null = $state(null);
   let errorMessage: string | null = $state(null);
@@ -71,6 +89,7 @@
     body.style.overflow = "hidden";
     body.style.margin = "0";
 
+    void applySizeConstraints();
     void startCamera();
     void applyAspect(aspect, { snap: true });
 
@@ -193,6 +212,50 @@
     getCurrentWindow().close();
   }
 
+  /**
+   * Compute and apply OS-level min/max size constraints based on the
+   * primary screen's available logical dimensions. Called once on mount.
+   * The OS handles drag-resize clamping for free once these are set; the
+   * aspect-snap helpers do their own arithmetic clamp on top so that
+   * programmatic setSize calls (cycling aspect) can't punch past the cap.
+   */
+  async function applySizeConstraints() {
+    const screenW = Math.max(window.screen.availWidth || 1920, 320);
+    const screenH = Math.max(window.screen.availHeight || 1080, 320);
+    maxLogicalW = Math.floor(screenW * MAX_SCREEN_FRACTION);
+    maxLogicalH = Math.floor(screenH * MAX_SCREEN_FRACTION);
+
+    const win = getCurrentWindow();
+    try {
+      await win.setMinSize(new LogicalSize(MIN_LOGICAL_SIZE, MIN_LOGICAL_SIZE));
+      await win.setMaxSize(new LogicalSize(maxLogicalW, maxLogicalH));
+    } catch (e) {
+      console.warn("camera preview size constraints failed:", e);
+    }
+  }
+
+  /**
+   * Fit a box of (w, h) with the given width/height ratio inside
+   * (maxLogicalW, maxLogicalH) without breaking the ratio. Returns the
+   * largest box that satisfies both bounds. Used by both `applyAspect`
+   * (cycling aspect) and `snapToAspect` (height-snap after drag-resize)
+   * since either path can derive a height that exceeds maxH on tall
+   * aspects, or a width that exceeds maxW after a height-only drag.
+   */
+  function fitInsideMax(w: number, h: number, ratio: number): [number, number] {
+    let outW = w;
+    let outH = h;
+    if (outW > maxLogicalW) {
+      outW = maxLogicalW;
+      outH = outW / ratio;
+    }
+    if (outH > maxLogicalH) {
+      outH = maxLogicalH;
+      outW = outH * ratio;
+    }
+    return [Math.round(outW), Math.round(outH)];
+  }
+
   async function applyAspect(
     next: AspectKey,
     opts: { snap?: boolean } = {},
@@ -203,9 +266,14 @@
       const size = await win.outerSize();
       const factor = window.devicePixelRatio || 1;
       const widthLogical = size.width / factor;
-      const heightLogical = Math.round(widthLogical / ASPECT_RATIO[next]);
+      const ratio = ASPECT_RATIO[next];
+      const [clampedW, clampedH] = fitInsideMax(
+        widthLogical,
+        widthLogical / ratio,
+        ratio,
+      );
       isSnapping = true;
-      await win.setSize(new LogicalSize(Math.round(widthLogical), heightLogical));
+      await win.setSize(new LogicalSize(clampedW, clampedH));
       window.setTimeout(() => {
         isSnapping = false;
       }, 50);
@@ -219,12 +287,16 @@
     const w = physWidth / factor;
     const h = physHeight / factor;
     const target = ASPECT_RATIO[aspect];
-    const expectedH = Math.round(w / target);
-    if (Math.abs(expectedH - h) <= 1) return;
+    const expectedH = w / target;
+    const [clampedW, clampedH] = fitInsideMax(w, expectedH, target);
+    if (
+      Math.abs(clampedH - h) <= 1 &&
+      Math.abs(clampedW - w) <= 1
+    ) return;
     isSnapping = true;
     try {
       await getCurrentWindow().setSize(
-        new LogicalSize(Math.round(w), expectedH),
+        new LogicalSize(clampedW, clampedH),
       );
     } finally {
       window.setTimeout(() => {

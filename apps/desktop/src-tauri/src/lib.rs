@@ -105,6 +105,13 @@ pub fn run() {
             // windows (camera-preview, recording-panel, editor-*, region-picker,
             // …) would otherwise keep the process alive after the user thinks
             // they've quit.
+            //
+            // We close auxiliaries explicitly before `exit(0)` because on
+            // Linux/Wayland the close-event delivery is racy: `exit(0)` can
+            // tear the app down before the WM has finished delivering close
+            // events to the aux windows, which on some compositors leaves
+            // their surfaces lingering or blocks the main window's own close.
+            // Explicit close-then-exit is deterministic on every platform.
             if let tauri::RunEvent::WindowEvent {
                 label,
                 event: tauri::WindowEvent::CloseRequested { .. },
@@ -112,6 +119,11 @@ pub fn run() {
             } = &event
             {
                 if label == "main" {
+                    for (aux_label, window) in app_handle.webview_windows() {
+                        if aux_label != "main" {
+                            let _ = window.close();
+                        }
+                    }
                     app_handle.exit(0);
                 }
             }

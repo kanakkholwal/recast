@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
   import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
   import {
     ImageIcon,
@@ -31,12 +32,17 @@
     label: string;
     icon: typeof ImageIcon;
   };
+  // TODO(camera-recording): re-add the Camera tab when CAMERA_OVERLAY_UI_ENABLED
+  // flips back to true. The CameraPanel component itself is intact.
+  // See apps/desktop/docs/camera-recording-todo.md.
   const tabs: TabType[] = [
     { id: "background", label: "Background", icon: ImageIcon },
     { id: "focus", label: "Focus", icon: Target },
     { id: "annotations", label: "Annotations", icon: Pencil },
     { id: "cursor", label: "Cursor", icon: MousePointer },
-    { id: "camera", label: "Camera", icon: Video },
+    ...(CAMERA_OVERLAY_UI_ENABLED
+      ? [{ id: "camera" as PanelTab, label: "Camera", icon: Video }]
+      : []),
     { id: "audio", label: "Audio", icon: Volume2 },
     { id: "info", label: "Info", icon: Info },
   ];
@@ -137,12 +143,14 @@
       <CursorPanel {store} />
     </Tabs.Content>
 
+    {#if CAMERA_OVERLAY_UI_ENABLED}
     <Tabs.Content
       value="camera"
       class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
     >
       <CameraPanel {store} {cameraPath} />
     </Tabs.Content>
+    {/if}
 
     <Tabs.Content
       value="audio"

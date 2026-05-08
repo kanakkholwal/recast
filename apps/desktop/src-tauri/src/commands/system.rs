@@ -51,12 +51,30 @@ pub fn get_active_output_dir(state: &State<'_, AppState>) -> PathBuf {
     }
 }
 
+/// True on Linux + Wayland. xcap's per-source `capture_image()` triggers
+/// an `xdg-desktop-portal.ScreenCast` permission dialog *per source* on
+/// Wayland — calling it across every monitor/window during the picker hot
+/// path raises N consecutive dialogs and can stall the calling thread for
+/// seconds while the user dismisses each one. We deliberately skip the
+/// thumbnail entirely in that case; the picker remains usable from text
+/// labels alone, and we'll revisit this once we wire PipeWire directly
+/// (see `apps/desktop/docs/linux-native-recording.md` once written).
+fn is_wayland() -> bool {
+    cfg!(target_os = "linux") && std::env::var_os("WAYLAND_DISPLAY").is_some()
+}
+
 fn capture_monitor_thumbnail(monitor: &Monitor) -> Option<String> {
+    if is_wayland() {
+        return None;
+    }
     let shot = monitor.capture_image().ok()?;
     encode_thumbnail_base64(&make_thumbnail(&shot))
 }
 
 fn capture_window_thumbnail(window: &Window) -> Option<String> {
+    if is_wayland() {
+        return None;
+    }
     let shot = window.capture_image().ok()?;
     encode_thumbnail_base64(&make_thumbnail(&shot))
 }
@@ -98,46 +116,61 @@ pub fn set_last_source(
     Ok(())
 }
 
+// `get_displays` and `get_windows` are async + spawn_blocking because xcap's
+// underlying calls (`Monitor::all`, `Window::all`, `capture_image`) can stall
+// for hundreds of ms or longer on Linux/Wayland (portal handshake, compositor
+// IPC). Tauri runs sync commands directly on the GTK main thread on Linux —
+// any blocking work there freezes the entire window: close/minimize/maximize
+// stop responding because the WM can't deliver events. Pushing both onto a
+// blocking worker keeps the GTK loop free even if xcap hangs.
 #[tauri::command]
-pub fn get_displays() -> Result<Vec<DisplayInfo>, String> {
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    Ok(monitors
-        .iter()
-        .map(|monitor| DisplayInfo {
-            id: monitor.id().unwrap_or_default(),
-            name: monitor.name().unwrap_or_default(),
-            x: monitor.x().unwrap_or_default(),
-            y: monitor.y().unwrap_or_default(),
-            width: monitor.width().unwrap_or_default(),
-            height: monitor.height().unwrap_or_default(),
-            is_primary: monitor.is_primary().unwrap_or_default(),
-            thumbnail: capture_monitor_thumbnail(monitor),
-        })
-        .collect())
+pub async fn get_displays() -> Result<Vec<DisplayInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<DisplayInfo>, String> {
+        let monitors = Monitor::all().map_err(|e| e.to_string())?;
+        Ok(monitors
+            .iter()
+            .map(|monitor| DisplayInfo {
+                id: monitor.id().unwrap_or_default(),
+                name: monitor.name().unwrap_or_default(),
+                x: monitor.x().unwrap_or_default(),
+                y: monitor.y().unwrap_or_default(),
+                width: monitor.width().unwrap_or_default(),
+                height: monitor.height().unwrap_or_default(),
+                is_primary: monitor.is_primary().unwrap_or_default(),
+                thumbnail: capture_monitor_thumbnail(monitor),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("get_displays join error: {e}"))?
 }
 
 #[tauri::command]
-pub fn get_windows() -> Result<Vec<WindowInfo>, String> {
-    let windows = Window::all().map_err(|e| e.to_string())?;
-    Ok(windows
-        .iter()
-        .filter(|window| {
-            !window.is_minimized().unwrap_or(false)
-                && !window.title().unwrap_or_default().is_empty()
-        })
-        .map(|window| WindowInfo {
-            id: window.id().unwrap_or_default(),
-            pid: window.pid().unwrap_or_default(),
-            app_name: window.app_name().unwrap_or_default(),
-            title: window.title().unwrap_or_default(),
-            x: window.x().unwrap_or_default(),
-            y: window.y().unwrap_or_default(),
-            width: window.width().unwrap_or_default(),
-            height: window.height().unwrap_or_default(),
-            is_minimized: window.is_minimized().unwrap_or_default(),
-            thumbnail: capture_window_thumbnail(window),
-        })
-        .collect())
+pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
+    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<WindowInfo>, String> {
+        let windows = Window::all().map_err(|e| e.to_string())?;
+        Ok(windows
+            .iter()
+            .filter(|window| {
+                !window.is_minimized().unwrap_or(false)
+                    && !window.title().unwrap_or_default().is_empty()
+            })
+            .map(|window| WindowInfo {
+                id: window.id().unwrap_or_default(),
+                pid: window.pid().unwrap_or_default(),
+                app_name: window.app_name().unwrap_or_default(),
+                title: window.title().unwrap_or_default(),
+                x: window.x().unwrap_or_default(),
+                y: window.y().unwrap_or_default(),
+                width: window.width().unwrap_or_default(),
+                height: window.height().unwrap_or_default(),
+                is_minimized: window.is_minimized().unwrap_or_default(),
+                thumbnail: capture_window_thumbnail(window),
+            })
+            .collect())
+    })
+    .await
+    .map_err(|e| format!("get_windows join error: {e}"))?
 }
 
 #[derive(Serialize, Clone)]
