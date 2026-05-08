@@ -10,10 +10,7 @@
 
 <ModeWatcher />
 
-<div
-	aria-hidden="true"
-	class="pointer-events-none fixed inset-0 -z-10 bg-ambient"
-></div>
+
 <div
 	aria-hidden="true"
 	class="bg-grid bg-grid-fade pointer-events-none fixed inset-0 -z-10 opacity-30"

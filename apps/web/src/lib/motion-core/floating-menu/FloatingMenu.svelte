@@ -172,7 +172,7 @@
 			const isTablet = width >= 768 && width < 1024;
 
 			let maxWidthOpen = "75%";
-			let maxWidthInitial = "50%";
+			let maxWidthInitial = "60%";
 
 			if (isMobile) {
 				maxWidthOpen = "100%";
@@ -279,7 +279,7 @@
 	{@attach attachContainerRef}
 	data-slot="root"
 	class={cn(
-		"fixed top-2 left-1/2 z-50 w-full max-w-[95vw] -translate-x-1/2 rounded-md border border-border bg-card text-card-foreground shadow-craft-floating md:top-4 md:max-w-[70vw] lg:max-w-[50vw]",
+		"fixed top-2 left-1/2 z-50 w-full max-w-[95vw] -translate-x-1/2 rounded-md border border-border bg-card text-card-foreground shadow-craft-floating md:top-4 md:max-w-[70dvw] lg:max-w-[60dvw]",
 		className,
 		classes?.root,
 	)}

@@ -87,6 +87,7 @@ pub fn run() {
             commands::get_camera_devices,
             commands::validate_camera_source,
             commands::update_camera_preview_state,
+            commands::exclude_window_from_capture,
             commands::autosave_project,
             commands::save_project_edits,
             commands::clear_autosave,

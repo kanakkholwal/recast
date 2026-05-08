@@ -12,10 +12,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::ffmpeg::{
-    append_cursor_overlay_to_complex, append_output_filters_to_complex, build_annotation_blur_complex,
+    append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
+    append_output_filters_to_complex, build_annotation_blur_complex,
     build_gif_palette_prepass_filter, build_gif_paletteuse_external_complex,
     build_output_scale_filter, has_audio, probe_video_metadata, resolve_export_profile,
-    summarize_ffmpeg_error, BlurRegion, GifFilterOptions,
+    summarize_ffmpeg_error, BlurRegion, CameraOverlayParams, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -873,6 +874,98 @@ pub async fn export_video(
         ]);
     }
 
+    //  Camera overlay
+    //
+    // Composite the project's `camera.mp4` onto the screen video at the
+    // bubble's UV-space placement. Coordinates mirror `CameraOverlay.svelte`
+    // exactly so preview and export agree to the pixel:
+    //   - bubble_w == bubble_h (Phase 1 enforces 1:1 in CSS)
+    //   - dimensions derived from `video_w` so the bubble is square in
+    //     screen pixels regardless of source aspect
+    //   - position offset by `video_x/video_y` so padding doesn't bias the
+    //     placement
+    //
+    // Shape clipping is done via a one-shot rounded-rect alpha mask
+    // rendered at bubble dimensions and `alphamerge`d with the camera
+    // stream. Square shape skips the mask entirely.
+    let camera_overlay_settings = &request.render_state.camera_overlay;
+    let camera_path = if camera_overlay_settings.enabled {
+        project
+            .as_ref()
+            .and_then(|p| p.camera_path.clone())
+            .filter(|p| p.exists())
+    } else {
+        None
+    };
+    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> =
+        if let Some(ref path) = camera_path {
+            let p = &camera_overlay_settings.default_placement;
+            // Use video_w as the size base so the bubble is square in
+            // screen pixels (matches `aspect-ratio: 1` in the preview).
+            let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
+                .round()
+                .max(2.0) as u32;
+            let bubble_h = bubble_w;
+            // Clamp into the canvas so an out-of-range placement (legacy
+            // project, manual JSON edit) still produces a valid overlay.
+            let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
+            let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
+            let bubble_x = ((canvas_geom.video_x as f64
+                + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
+                .round() as u32)
+                .min(max_x);
+            let bubble_y = ((canvas_geom.video_y as f64
+                + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
+                .round() as u32)
+                .min(max_y);
+            Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
+        } else {
+            None
+        };
+
+    // Pre-render the rounded-rect mask matching the bubble's shape. Square
+    // shape needs no mask (mask_input_index stays None and the filter chain
+    // skips the alphamerge stage).
+    let camera_mask: Option<MaskResult> = if let Some(&(_, _, _, bw, bh)) = camera_bubble.as_ref() {
+        let radius_px = match camera_overlay_settings.shape.as_str() {
+            "circle" => bw as f64 / 2.0,
+            "square" | "rectangle" => 0.0,
+            _ => camera_overlay_settings.corner_radius * bw as f64,
+        };
+        if radius_px > 0.5 {
+            crate::render::mask_export::render_border_radius_mask(bw, bh, radius_px)
+                .map_err(|e| format!("camera mask render failed: {e}"))?
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let camera_mask_path = camera_mask.as_ref().map(|m| m.path.clone());
+
+    let camera_input_index = camera_bubble.as_ref().map(|_| {
+        1 + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+    });
+    if let Some((ref path, _, _, _, _)) = camera_bubble {
+        args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
+    }
+    let camera_mask_input_index = camera_mask_path.as_ref().map(|_| {
+        1 + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+            + camera_input_index.is_some() as usize
+    });
+    if let Some(ref path) = camera_mask_path {
+        args.extend([
+            "-loop".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            path.to_string_lossy().to_string(),
+        ]);
+    }
+
     let mut audio_input_indices = Vec::new();
     let source_has_audio = has_audio(&source_video);
     if request.format != "gif" && source_has_audio {
@@ -883,7 +976,9 @@ pub async fn export_video(
             let mut next_audio_input_index = 1
                 + export_plan.extra_inputs.len()
                 + cursor_overlay_path.is_some() as usize
-                + watermark_path.is_some() as usize;
+                + watermark_path.is_some() as usize
+                + camera_input_index.is_some() as usize
+                + camera_mask_input_index.is_some() as usize;
             for path in [&project.audio_path, &project.microphone_path]
                 .into_iter()
                 .flatten()
@@ -923,6 +1018,29 @@ pub async fn export_video(
             &request.render_state.watermark_settings,
             canvas_width,
             canvas_height,
+        );
+        filter_complex_after_cursor = Some(new_complex);
+        video_map_after_cursor = new_map;
+    }
+
+    // Camera overlay: composited after the watermark so the speaker bubble
+    // sits on top of any branding mark and below the annotation blur (which
+    // a user might want to apply over their own face).
+    if let (Some(cam_idx), Some((_, bx, by, bw, bh))) =
+        (camera_input_index, camera_bubble.as_ref())
+    {
+        let (new_complex, new_map) = append_camera_overlay_to_complex(
+            filter_complex_after_cursor.as_deref(),
+            &video_map_after_cursor,
+            &CameraOverlayParams {
+                camera_input_index: cam_idx,
+                mask_input_index: camera_mask_input_index,
+                bubble_x: *bx,
+                bubble_y: *by,
+                bubble_w: *bw,
+                bubble_h: *bh,
+                mirror: camera_overlay_settings.mirror,
+            },
         );
         filter_complex_after_cursor = Some(new_complex);
         video_map_after_cursor = new_map;

@@ -296,6 +296,77 @@ export interface CameraOverlaySettings {
 	motionSegments: CameraMotionSegment[];
 }
 
+/**
+ * The 8 standard camera-bubble positions plus `custom` for free-drag.
+ * Used by `CameraPanel` for the preset chip row, and by
+ * `cameraPresetFromPlacement` to identify which chip should be highlighted
+ * after a drag-snap.
+ */
+export type CameraPositionPreset =
+	| 'top-left' | 'top-center' | 'top-right'
+	| 'left-center' | 'right-center'
+	| 'bottom-left' | 'bottom-center' | 'bottom-right'
+	| 'custom';
+
+/** Default size (16% of frame) and inset (2% margin) for preset placements. */
+export const CAMERA_DEFAULT_SIZE = 0.16;
+export const CAMERA_PRESET_INSET = 0.02;
+
+/**
+ * Resolve a preset name to a normalized {x, y, width, height}. The bubble
+ * is square by default (Phase 1 ships rounded 1:1 only); width == height.
+ * x/y are the top-left corner of the bubble in 0..1 UV.
+ *
+ * `custom` returns the current bottom-right placement as a sane fallback —
+ * the panel never actually invokes this with `custom`; that branch exists
+ * so callers don't have to special-case the union.
+ */
+export function cameraPlacementFromPreset(
+	preset: CameraPositionPreset,
+	size: number = CAMERA_DEFAULT_SIZE,
+	inset: number = CAMERA_PRESET_INSET,
+): CameraPlacement {
+	const near = inset;
+	const far = 1 - size - inset;
+	const center = (1 - size) / 2;
+	const xByCol: Record<string, number> = { left: near, center, right: far };
+	const yByRow: Record<string, number> = { top: near, center, bottom: far };
+	if (preset === 'custom') {
+		return { x: far, y: far, width: size, height: size };
+	}
+	const [row, col] = preset.split('-') as [string, string];
+	return {
+		x: xByCol[col] ?? far,
+		y: yByRow[row] ?? far,
+		width: size,
+		height: size,
+	};
+}
+
+/**
+ * Inverse of `cameraPlacementFromPreset` — find which preset (if any) the
+ * given placement matches within a 0.5% tolerance. Returns `custom` for
+ * free-drag positions. Used by the panel to highlight the active chip.
+ */
+export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPreset {
+	const presets: CameraPositionPreset[] = [
+		'top-left', 'top-center', 'top-right',
+		'left-center', 'right-center',
+		'bottom-left', 'bottom-center', 'bottom-right',
+	];
+	const tolerance = 0.005;
+	for (const preset of presets) {
+		const ref = cameraPlacementFromPreset(preset, p.width);
+		if (
+			Math.abs(p.x - ref.x) < tolerance &&
+			Math.abs(p.y - ref.y) < tolerance
+		) {
+			return preset;
+		}
+	}
+	return 'custom';
+}
+
 export interface VideoMetadata {
 	duration: number;
 	width: number;
@@ -474,7 +545,7 @@ export function aspectRatio(a: OutputAspect): number | null {
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
-export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'audio' | 'info';
+export type PanelTab = 'background' | 'focus' | 'annotations' | 'cursor' | 'camera' | 'audio' | 'info';
 
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 23 }, (_, i) => ({
 	id: `wallpaper${i + 1}`,
@@ -632,18 +703,19 @@ export function createEditorStore() {
 		position: 'bottom-right',
 		inset: 24,
 	});
+	// Camera overlay defaults — Phase 1 spec:
+	// - Bottom-right corner at 16% size, 1:1 aspect
+	// - Rounded shape (16% corner radius)
+	// - Mirrored on (matches the recording-time webcam preview)
+	// - Soft drop shadow (applied unconditionally in the overlay component)
+	// Position uses normalized 0..1 UV so it survives output-aspect changes.
 	let cameraOverlay = $state<CameraOverlaySettings>({
 		enabled: false,
 		mirror: true,
 		shape: 'rounded',
 		cornerRadius: 0.16,
 		animationPreset: 'soft',
-		defaultPlacement: {
-			x: 0.72,
-			y: 0.08,
-			width: 0.22,
-			height: 0.22,
-		},
+		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 		motionSegments: [],
 	});
 
@@ -892,6 +964,15 @@ export function createEditorStore() {
 		shadow = { ...shadow, ...updates };
 	}
 
+	/**
+	 * Patch the camera overlay settings. Mirrors `updateCursorSettings`
+	 * shape — callers handle their own `pushUndoState` so coalesced
+	 * interactions (drag, slider) can batch into a single undo entry.
+	 */
+	function updateCameraOverlay(updates: Partial<CameraOverlaySettings>) {
+		cameraOverlay = { ...cameraOverlay, ...updates };
+	}
+
 	function removeZoomRegion(id: string) {
 		pushUndoState();
 		zoomRegions = zoomRegions.filter((z) => z.id !== id);
@@ -1109,12 +1190,7 @@ export function createEditorStore() {
 			shape: 'rounded',
 			cornerRadius: 0.16,
 			animationPreset: 'soft',
-			defaultPlacement: {
-				x: 0.72,
-				y: 0.08,
-				width: 0.22,
-				height: 0.22,
-			},
+			defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 			motionSegments: [],
 		};
 		exportQuality = 'hd';
@@ -1237,6 +1313,11 @@ export function createEditorStore() {
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
+		// Camera overlay defaults match the Phase 1 spec: bottom-right at
+		// 16% size. Older projects stored top-right at 22%; the explicit
+		// `?? `-fallbacks below preserve those if present, only swapping in
+		// the new defaults when the field is absent on the loaded state.
+		const fallbackPlacement = cameraPlacementFromPreset('bottom-right');
 		cameraOverlay = {
 			enabled: state.cameraOverlay?.enabled ?? false,
 			mirror: state.cameraOverlay?.mirror ?? true,
@@ -1244,10 +1325,10 @@ export function createEditorStore() {
 			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
 			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
 			defaultPlacement: {
-				x: state.cameraOverlay?.defaultPlacement?.x ?? 0.72,
-				y: state.cameraOverlay?.defaultPlacement?.y ?? 0.08,
-				width: state.cameraOverlay?.defaultPlacement?.width ?? 0.22,
-				height: state.cameraOverlay?.defaultPlacement?.height ?? 0.22,
+				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
+				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
+				width: state.cameraOverlay?.defaultPlacement?.width ?? fallbackPlacement.width,
+				height: state.cameraOverlay?.defaultPlacement?.height ?? fallbackPlacement.height,
 			},
 			motionSegments: (state.cameraOverlay?.motionSegments ?? []).map((segment) => ({
 				start: segment.start,
@@ -1447,6 +1528,7 @@ export function createEditorStore() {
 		updateAudioSettings,
 		updateWatermarkSettings,
 		updateShadow,
+		updateCameraOverlay,
 		addZoomRegion,
 		addAutoZoomRegion,
 		clearAutoZooms,

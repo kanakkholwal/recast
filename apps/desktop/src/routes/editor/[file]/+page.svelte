@@ -54,6 +54,8 @@
   let systemAudioSrc = $state("");
   let micAudioSrc = $state("");
   let cursorPath = $state<string | null>(null);
+  let cameraPath = $state<string | null>(null);
+  let cameraSrc = $state("");
   let documentPath = $state("");
   let isLoading = $state(true);
   let error = $state("");
@@ -209,6 +211,8 @@
     systemAudioSrc = "";
     micAudioSrc = "";
     cursorPath = null;
+    cameraPath = null;
+    cameraSrc = "";
     videoEl?.pause();
     systemAudioEl?.pause();
     micAudioEl?.pause();
@@ -232,6 +236,8 @@
       micAudioSrc = document.microphonePath
         ? convertFileSrc(document.microphonePath)
         : "";
+      cameraPath = document.cameraPath ?? null;
+      cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
       // Mount the editor body so the <video> element exists before we call load().
       // The video element lives inside VideoPreview, which only renders when !isLoading.
       isLoading = false;
@@ -879,6 +885,7 @@
               bind:videoEl
               {videoSrc}
               {cursorPath}
+              {cameraSrc}
               onTimeUpdate={handleTimeUpdate}
               onEnded={handleVideoEnded}
               onLoadedMetadata={handleVideoLoadedMetadata}
@@ -901,7 +908,7 @@
       <aside
         class="min-h-0 w-80 shrink-0 border-l border-border/60 xl:w-88"
       >
-        <PropertiesPanel {store} />
+        <PropertiesPanel {store} {cameraPath} />
       </aside>
     </div>
   {/if}

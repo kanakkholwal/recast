@@ -1,4 +1,5 @@
 <script lang="ts">
+  import Logo from "$components/logo.svelte";
   import { config } from "$constants/app";
   import { getOutputDir, setOutputDir } from "$lib/ipc";
   import {
@@ -315,7 +316,7 @@
               <div
                 class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40"
               >
-                <SettingsIcon class="size-4" />
+                <Logo class="size-4" />
               </div>
               <div class="min-w-0 flex-1">
                 <div class="text-[13px] font-semibold text-foreground">

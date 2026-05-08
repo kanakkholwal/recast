@@ -108,6 +108,88 @@ pub fn append_cursor_overlay_to_complex(
     (new_complex, out_label.to_string())
 }
 
+/// Parameters for `append_camera_overlay_to_complex`.
+///
+/// All pixel values are in **canvas pixels** (= source + padding × 2 with
+/// any letterbox bars), matching the coordinate space of every other overlay
+/// in the export filter graph.
+#[derive(Debug, Clone, Copy)]
+pub struct CameraOverlayParams {
+    /// FFmpeg input index of the camera.mp4 stream.
+    pub camera_input_index: usize,
+    /// FFmpeg input index of the rounded-rect alpha mask, or `None` when
+    /// the user picked the square shape (mask not needed).
+    pub mask_input_index: Option<usize>,
+    /// Top-left of the bubble in canvas pixels.
+    pub bubble_x: u32,
+    pub bubble_y: u32,
+    /// Bubble dimensions in canvas pixels. Phase 1 enforces 1:1 in CSS, so
+    /// width == height — but the function takes both for forward
+    /// compatibility with non-square shapes.
+    pub bubble_w: u32,
+    pub bubble_h: u32,
+    /// Horizontally flip the camera so the rendered bubble matches what the
+    /// user saw in the recording-time webcam preview (Phase 1 default: on).
+    pub mirror: bool,
+}
+
+/// Append a camera-overlay stage to an existing filter_complex string.
+///
+/// Filter chain emitted (with mask):
+/// ```text
+///   [N:v] hflip?, scale=W:H, format=yuva420p     → [cam_pre]
+///   [M:v] format=gray                            → [cam_mask]
+///   [cam_pre][cam_mask] alphamerge               → [cam_shaped]
+///   [main][cam_shaped] overlay=X:Y               → [vcamera]
+/// ```
+/// Without a mask (square shape) the `format`/`alphamerge` stage is skipped
+/// — the camera is overlaid as a flat rectangle.
+pub fn append_camera_overlay_to_complex(
+    filter_complex: Option<&str>,
+    current_video_map: &str,
+    params: &CameraOverlayParams,
+) -> (String, String) {
+    let out_label = "[vcamera]";
+    let normalized_current = if current_video_map.starts_with('[') {
+        current_video_map.to_string()
+    } else {
+        format!("[{current_video_map}]")
+    };
+
+    let CameraOverlayParams {
+        camera_input_index: cam,
+        mask_input_index,
+        bubble_x: bx,
+        bubble_y: by,
+        bubble_w: bw,
+        bubble_h: bh,
+        mirror,
+    } = *params;
+    let hflip = if mirror { "hflip," } else { "" };
+
+    // Use unique labels (`vcam_pre`, `vcam_mask`, `vcam_shaped`) so this
+    // stage can compose with cursor / watermark / blur stages without label
+    // collisions.
+    let cam_chain = match mask_input_index {
+        Some(mask_idx) => format!(
+            "[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_pre];\
+             [{mask_idx}:v]format=gray[vcam_mask];\
+             [vcam_pre][vcam_mask]alphamerge[vcam_shaped]"
+        ),
+        None => format!("[{cam}:v]{hflip}scale={bw}:{bh}[vcam_shaped]"),
+    };
+
+    let overlay = format!(
+        "{normalized_current}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}"
+    );
+
+    let new_complex = match filter_complex {
+        Some(existing) if !existing.is_empty() => format!("{existing};{cam_chain};{overlay}"),
+        _ => format!("{cam_chain};{overlay}"),
+    };
+    (new_complex, out_label.to_string())
+}
+
 /// Wrap the current video chain in a palettegen/paletteuse pipeline so GIF
 /// exports have a stable, dithered palette instead of FFmpeg's naive
 /// per-frame 256-colour quantization (which produces heavy banding and noise).

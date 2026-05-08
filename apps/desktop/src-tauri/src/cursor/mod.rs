@@ -146,11 +146,44 @@ impl ClickTracker {
     }
 }
 
-/// Spawn a thread that samples cursor state at ~125 Hz until the stop flag is set.
-/// Post-capture, computes idle periods and zoom triggers.
+/// Pixel-space rectangle of the recorded frame inside the virtual desktop.
+/// `GetCursorPos` returns coordinates in virtual-desktop space (with each
+/// monitor offset by its position in the display arrangement); the recorded
+/// video is in frame-relative pixel space (0..width, 0..height). Without
+/// this conversion, recording a secondary monitor or a cropped region puts
+/// every cursor sample outside the [0..frame] range, and the editor
+/// renders the cursor at clamped/wrapped positions for the entire video.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorCaptureFrame {
+    /// Top-left of the recorded frame, in virtual-desktop pixels.
+    pub origin_x: i32,
+    pub origin_y: i32,
+    /// Recorded frame size in pixels.
+    pub width: u32,
+    pub height: u32,
+}
+
+/// Spawn a thread that samples cursor state at 125 Hz until the stop flag
+/// is set. Post-capture, computes idle periods and zoom triggers.
+///
+/// The capture loop:
+/// - Uses deadline-based scheduling (not `thread::sleep(8ms)` which drifts
+///   under load) so sample cadence stays uniform across long recordings.
+///   Falls back to a fresh baseline if we fall more than one period behind,
+///   which prevents burst catch-up after a long pause.
+/// - Converts cursor coordinates from virtual-desktop space to
+///   frame-relative pixel space using `frame.origin_*`. Samples whose
+///   cursor lies outside the frame are recorded with `visible = false` so
+///   the editor's `if (pos.visible)` gate hides the cursor cleanly when
+///   the user moves the mouse off the captured area, instead of rendering
+///   it at a clamped edge.
+/// - Logs at most one warning when `GetCursorPos` starts failing
+///   (rare — mostly UAC / secure-desktop transitions) so silent gaps in
+///   the track are observable in the recording log.
 pub fn spawn_cursor_capture(
     stop_flag: Arc<AtomicBool>,
     clock: Instant,
+    frame: CursorCaptureFrame,
 ) -> Result<thread::JoinHandle<CursorTrack>> {
     thread::Builder::new()
         .name("recast-cursor".into())
@@ -158,40 +191,87 @@ pub fn spawn_cursor_capture(
             let mut track = CursorTrack::default();
             let mut previous: Option<(CursorState, u64)> = None;
             let mut click_tracker = ClickTracker::new();
+            let mut platform_failure_logged = false;
+
+            const SAMPLE_PERIOD: Duration = Duration::from_micros(8_000); // 125 Hz
+            let start = Instant::now();
+            let mut next_tick = start + SAMPLE_PERIOD;
+            let frame_w = frame.width as i32;
+            let frame_h = frame.height as i32;
 
             while !stop_flag.load(Ordering::Acquire) {
                 let now_us = clock.elapsed().as_micros() as u64;
-                if let Some(current) = sample_cursor_state() {
-                    let (velocity_x, velocity_y) = previous
-                        .map(|(prev, prev_ts)| {
-                            let delta_t =
-                                ((now_us.saturating_sub(prev_ts)).max(1)) as f32 / 1_000_000.0;
-                            (
-                                (current.x - prev.x) as f32 / delta_t,
-                                (current.y - prev.y) as f32 / delta_t,
-                            )
-                        })
-                        .unwrap_or((0.0, 0.0));
+                match sample_cursor_state() {
+                    Some(raw) => {
+                        // Map virtual-desktop coords to frame-relative coords.
+                        // We keep the math in i32 so cursors that wander off
+                        // the captured area produce negative / over-range x/y
+                        // — but we record `visible = false` for those so the
+                        // editor doesn't draw a cursor outside the frame.
+                        let mapped_x = raw.x - frame.origin_x;
+                        let mapped_y = raw.y - frame.origin_y;
+                        let on_frame = mapped_x >= 0
+                            && mapped_y >= 0
+                            && mapped_x < frame_w
+                            && mapped_y < frame_h;
+                        let current = CursorState {
+                            x: mapped_x,
+                            y: mapped_y,
+                            visible: raw.visible && on_frame,
+                            left_down: raw.left_down,
+                            right_down: raw.right_down,
+                        };
 
-                    // Track clicks with duration.
-                    if let Some((prev, _)) = previous {
-                        click_tracker.update(now_us, &current, &prev, &mut track.clicks);
+                        let (velocity_x, velocity_y) = previous
+                            .map(|(prev, prev_ts): (CursorState, u64)| {
+                                let delta_t =
+                                    ((now_us.saturating_sub(prev_ts)).max(1)) as f32 / 1_000_000.0;
+                                (
+                                    (current.x - prev.x) as f32 / delta_t,
+                                    (current.y - prev.y) as f32 / delta_t,
+                                )
+                            })
+                            .unwrap_or((0.0, 0.0));
+
+                        if let Some((prev, _)) = previous {
+                            click_tracker.update(now_us, &current, &prev, &mut track.clicks);
+                        }
+
+                        track.samples.push(CursorSample {
+                            timestamp_us: now_us,
+                            x: current.x,
+                            y: current.y,
+                            velocity_x,
+                            velocity_y,
+                            visible: current.visible,
+                            left_down: current.left_down,
+                            right_down: current.right_down,
+                        });
+                        previous = Some((current, now_us));
                     }
-
-                    track.samples.push(CursorSample {
-                        timestamp_us: now_us,
-                        x: current.x,
-                        y: current.y,
-                        velocity_x,
-                        velocity_y,
-                        visible: current.visible,
-                        left_down: current.left_down,
-                        right_down: current.right_down,
-                    });
-                    previous = Some((current, now_us));
+                    None => {
+                        if !platform_failure_logged {
+                            log::warn!(
+                                "cursor capture: sample_cursor_state() returned None; \
+                                 cursor track will have gaps until the platform recovers"
+                            );
+                            platform_failure_logged = true;
+                        }
+                    }
                 }
 
-                thread::sleep(Duration::from_millis(8));
+                // Deadline-based sleep: target the next tick exactly,
+                // independent of how long the sampling itself took.
+                let now = Instant::now();
+                if next_tick > now {
+                    thread::sleep(next_tick - now);
+                } else if now > next_tick + SAMPLE_PERIOD {
+                    // Fell more than one period behind (system stall, GC,
+                    // etc.). Reset the baseline so we don't fire a burst
+                    // of catch-up samples on the next recovery.
+                    next_tick = now;
+                }
+                next_tick += SAMPLE_PERIOD;
             }
 
             // Post-capture analysis: detect idle periods and zoom triggers.

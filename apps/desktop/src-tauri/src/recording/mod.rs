@@ -14,7 +14,7 @@ use xcap::{Monitor, Window};
 use crate::audio::{
     AudioCaptureConfig, AudioCaptureSession, MicrophoneCaptureConfig, MicrophoneCaptureSession,
 };
-use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorTrack};
+use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
@@ -437,18 +437,27 @@ impl RecordingManager {
         let pipeline = RecordingPipeline::new(180);
         let mut warnings = Vec::new();
 
+        // The capture pacer and the encoder MUST agree on the same fps:
+        // the pacer emits exactly `RECORDING_FPS` frames per real-time
+        // second, and the encoder declares that as `-framerate` to FFmpeg.
+        // Together they guarantee that 1 second of wall-clock recording
+        // produces 1 second of video PTS — the invariant the cursor track
+        // (timestamped in wall-clock μs) relies on for sync.
+        const RECORDING_FPS: u32 = 60;
+
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
             pipeline.clone(),
             started_at,
+            RECORDING_FPS,
         )?;
 
         let encoder_handle = spawn_encoder_loop(
             EncoderConfig {
                 width: target.source.width,
                 height: target.source.height,
-                fps: 60,
+                fps: RECORDING_FPS,
                 crop: target.crop_relative_to_source(),
                 output_path: recording_path.clone(),
             },
@@ -456,7 +465,23 @@ impl RecordingManager {
             pipeline.clone(),
         )?;
 
-        let cursor_handle = spawn_cursor_capture(stop_flag.clone(), started_at)?;
+        // Cursor coordinates need to be remapped from virtual-desktop space
+        // (where `GetCursorPos` returns them) to the recorded frame's
+        // pixel space. The encoder crops the captured DXGI texture to the
+        // `crop` rectangle, so the recorded video's (0, 0) corresponds to
+        // virtual-desktop (`crop.x`, `crop.y`). Without this remap, every
+        // sample lives outside the [0..frame] range whenever the user
+        // records a secondary monitor or a region.
+        let cursor_handle = spawn_cursor_capture(
+            stop_flag.clone(),
+            started_at,
+            CursorCaptureFrame {
+                origin_x: target.crop.x,
+                origin_y: target.crop.y,
+                width: target.crop.width,
+                height: target.crop.height,
+            },
+        )?;
 
         // Start system audio capture. If it fails, log and continue.
         let audio_session = match AudioCaptureSession::start(AudioCaptureConfig {

@@ -393,9 +393,21 @@ export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
 // pattern (label-dedupe + Tauri error listener) so it stays consistent and we
 // don't end up with route-level navigation when WebviewWindow construction
 // fails silently.
+//
+// IMPORTANT: this window MUST be excluded from screen capture, otherwise
+// DXGI Desktop Duplication captures it as part of the desktop and bakes
+// the camera bubble into the recorded screen video. We invoke
+// `exclude_window_from_capture` (Windows: SetWindowDisplayAffinity with
+// WDA_EXCLUDEFROMCAPTURE) on the `tauri://created` event — earlier than
+// that and the HWND isn't reachable yet.
 export async function openCameraPreviewWindow() {
   const existing = await WebviewWindow.getByLabel("camera-preview");
   if (existing) {
+    // Re-apply the exclusion in case the window was reused after a crash
+    // or stop/restart cycle that dropped the affinity.
+    invoke("exclude_window_from_capture", { label: "camera-preview" }).catch(
+      (err) => console.warn("camera preview exclusion (existing) failed:", err),
+    );
     await existing.setFocus();
     return;
   }
@@ -417,4 +429,19 @@ export async function openCameraPreviewWindow() {
   });
 
   previewWin.once("tauri://error", (e) => console.error(e));
+  previewWin.once("tauri://created", async () => {
+    try {
+      await invoke("exclude_window_from_capture", {
+        label: "camera-preview",
+      });
+    } catch (err) {
+      // Non-fatal: the preview will still appear, but its pixels will
+      // leak into screen captures. Surface to the console so users
+      // diagnosing "why is my face in the recording?" can find it.
+      console.warn(
+        "Failed to exclude camera-preview from screen capture:",
+        err,
+      );
+    }
+  });
 }

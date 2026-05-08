@@ -244,6 +244,63 @@ fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<S
     }
 }
 
+/// Mark a Tauri window as excluded from screen capture.
+///
+/// On Windows this calls `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
+/// which tells the OS compositor to render the window to the user but
+/// substitute a black box (or skip it entirely on supported APIs) when any
+/// process captures the desktop — including DXGI Desktop Duplication, which
+/// is what Recast itself uses for screen recording.
+///
+/// This is the fix for the "I can see my own camera bubble inside the
+/// recorded video" bug: the floating webcam preview window we open during
+/// recording IS part of the desktop, so without this exclusion DXGI
+/// captures its pixels into the screen frame just like any other window.
+///
+/// Requires Windows 10 v2004+ (build 19041) for `WDA_EXCLUDEFROMCAPTURE`.
+/// Older Windows versions silently fall back to `WDA_MONITOR` (renders as
+/// a black box rather than excluded entirely) — still better than the
+/// preview leaking into the recording.
+///
+/// No-op on non-Windows platforms.
+#[tauri::command]
+pub fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), String> {
+    let window = app
+        .get_webview_window(&label)
+        .ok_or_else(|| format!("window '{label}' not found"))?;
+    #[cfg(windows)]
+    {
+        use windows::Win32::Foundation::HWND;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
+        };
+        let hwnd_raw = window
+            .hwnd()
+            .map_err(|e| format!("hwnd lookup failed for '{label}': {e}"))?;
+        // Tauri's `hwnd()` returns a `windows::Win32::Foundation::HWND`
+        // already, but the inner pointer type may differ between Tauri's
+        // pinned `windows` version and ours. Reconstruct from the raw
+        // pointer to be version-agnostic.
+        let hwnd = HWND(hwnd_raw.0 as *mut std::ffi::c_void);
+        unsafe {
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE).map_err(|e| {
+                format!("SetWindowDisplayAffinity failed for '{label}': {e}")
+            })?;
+        }
+        log::info!("excluded window '{label}' from screen capture");
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        // Other platforms have their own per-OS exclusion APIs (macOS:
+        // CGSWindowSetSharingState; Linux: no portable equivalent). Phase 1
+        // ships Windows-only since the recording pipeline is Windows-only
+        // today; revisit if the platform matrix expands.
+        let _ = window;
+        Ok(())
+    }
+}
+
 /// List available camera/video capture devices.
 #[tauri::command]
 pub async fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {

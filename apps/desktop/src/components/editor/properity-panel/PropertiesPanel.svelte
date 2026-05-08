@@ -6,6 +6,7 @@
     MousePointer,
     Pencil,
     Target,
+    Video,
     Volume2,
   } from "@lucide/svelte";
   import * as Tabs from "@recast/ui/tabs";
@@ -14,12 +15,16 @@
   import AnnotationsPanel from "./AnnotationsPanel.svelte";
   import AudioPanel from "./AudioPanel.svelte";
   import BackgroundPicker from "./BackgroundPicker.svelte";
+  import CameraPanel from "./CameraPanel.svelte";
   import CursorPanel from "./CursorPanel.svelte";
   import FocusPanel from "./FocusPanel.svelte";
   import InfoPanel from "./InfoPanel.svelte";
 
   interface Props {
     store: EditorStore;
+    /** Path to camera.mp4 in this project, or null when no camera was
+     *  recorded. Forwarded to CameraPanel for its empty state. */
+    cameraPath?: string | null;
   }
   type TabType = {
     id: PanelTab;
@@ -31,11 +36,12 @@
     { id: "focus", label: "Focus", icon: Target },
     { id: "annotations", label: "Annotations", icon: Pencil },
     { id: "cursor", label: "Cursor", icon: MousePointer },
+    { id: "camera", label: "Camera", icon: Video },
     { id: "audio", label: "Audio", icon: Volume2 },
     { id: "info", label: "Info", icon: Info },
   ];
 
-  let { store }: Props = $props();
+  let { store, cameraPath = null }: Props = $props();
 
   // Switch to Focus when a zoom region is selected from the timeline.
   $effect(() => {
@@ -129,6 +135,13 @@
       class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
     >
       <CursorPanel {store} />
+    </Tabs.Content>
+
+    <Tabs.Content
+      value="camera"
+      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
+    >
+      <CameraPanel {store} {cameraPath} />
     </Tabs.Content>
 
     <Tabs.Content

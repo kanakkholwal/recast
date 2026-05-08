@@ -14,6 +14,7 @@
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
+	import CameraOverlay from "./_components/CameraOverlay.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
 
@@ -22,6 +23,10 @@
 		videoEl: HTMLVideoElement | null;
 		videoSrc: string;
 		cursorPath: string | null;
+		/** convertFileSrc(camera.mp4) for this project, or empty when no
+		 *  camera was recorded. Forwarded to CameraOverlay; the overlay
+		 *  renders nothing when this is empty. */
+		cameraSrc?: string;
 		onTimeUpdate: () => void;
 		onEnded: () => void;
 		onLoadedMetadata: () => void;
@@ -35,6 +40,7 @@
 		videoEl = $bindable(null),
 		videoSrc,
 		cursorPath,
+		cameraSrc = "",
 		onTimeUpdate,
 		onEnded,
 		onLoadedMetadata,
@@ -1355,6 +1361,16 @@ void main() {
 				/>
 			</div>
 		{/if}
+		<!-- Camera overlay sits ABOVE the cursor SVG so the bubble
+		     never gets visually clipped behind a cursor that wanders
+		     into its corner. The component owns its own video element
+		     and stays in sync with the screen video via store.currentTime. -->
+		<CameraOverlay
+			{store}
+			{videoEl}
+			{cameraSrc}
+			targetEl={previewRectEl}
+		/>
 	</div>
 
 	{#if videoSrc}

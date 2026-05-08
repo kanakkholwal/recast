@@ -47,7 +47,37 @@ fn camera_capture_thread(
     config: CameraCaptureConfig,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<PathBuf> {
-    let device_name = config.device_name.as_deref().unwrap_or("video=default");
+    // Resolve the device name. The JS recording panel defaults its
+    // `selectedCameraName` state to the literal string "Default" before
+    // the device list comes back from `get_camera_devices` — and that
+    // string would be passed through here as `video=Default`, which
+    // DirectShow rejects (no device is literally named "Default"). When
+    // we get an empty / "default" / unspecified name, enumerate real
+    // devices and pick the first one, instead of letting FFmpeg fail
+    // immediately with a cryptic stderr.
+    let resolved_name = match config.device_name.as_deref() {
+        None => None,
+        Some(s) => {
+            let trimmed = s.trim();
+            let lower = trimmed.to_ascii_lowercase();
+            // Strip the optional "video=" prefix the JS side sometimes adds
+            // before comparing, so "video=Default" maps to the same fallback.
+            let stripped = lower
+                .strip_prefix("video=")
+                .map(|s| s.trim())
+                .unwrap_or(lower.as_str());
+            if stripped.is_empty() || stripped == "default" {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+    };
+    let device_name = match resolved_name {
+        Some(name) => name,
+        None => first_available_camera()
+            .context("no camera device available — check that a webcam is connected and not in use by another app")?,
+    };
 
     // Build the DirectShow input specifier.
     let input = if device_name.starts_with("video=") {
@@ -102,8 +132,66 @@ fn camera_capture_thread(
     // Gracefully stop FFmpeg by writing "q" to stdin (FFmpeg's quit command).
     graceful_stop(&mut child);
 
-    log::info!("camera capture finished: {}", config.output_path.display());
+    // Validate the output file actually got written. FFmpeg can exit
+    // cleanly (status 0) yet produce a missing or empty MP4 if the
+    // `q` arrived before any frame made it through the encoder, or if
+    // the device produced no frames in the first place. Without this
+    // check, the recording-finalize step would happily write an empty
+    // entry into the .recast archive and the editor would later fail
+    // to play back the camera track or surface a confusing empty state.
+    let metadata = std::fs::metadata(&config.output_path)
+        .with_context(|| format!("camera output missing: {}", config.output_path.display()))?;
+    // 1 KB is well below any real MP4 (the moov atom alone runs hundreds
+    // of bytes for an empty file) but above zero. A real recording is
+    // always at least tens of KB.
+    if metadata.len() < 1024 {
+        return Err(anyhow!(
+            "camera output is too small ({} bytes) — capture likely produced no frames",
+            metadata.len()
+        ));
+    }
+
+    log::info!(
+        "camera capture finished: {} ({} bytes)",
+        config.output_path.display(),
+        metadata.len()
+    );
     Ok(config.output_path)
+}
+
+/// Enumerate DirectShow video devices and return the first one's friendly
+/// name. Used as the fallback when the user enabled the camera but didn't
+/// pick a specific device.
+fn first_available_camera() -> Result<String> {
+    let output = Command::new(crate::ffmpeg::ffmpeg_path())
+        .args(["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .stdin(Stdio::null())
+        .output()
+        .context("failed to invoke ffmpeg for device enumeration")?;
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // FFmpeg's dshow listing format: lines like
+    //   [dshow @ 000001234] "Logitech HD Pro Webcam C920" (video)
+    // We want the first quoted name on a line that ends with "(video)".
+    for line in stderr.lines() {
+        let trimmed = line.trim();
+        if !trimmed.ends_with("(video)") {
+            continue;
+        }
+        if let Some(start) = trimmed.find('"') {
+            let after_quote = &trimmed[start + 1..];
+            if let Some(end) = after_quote.find('"') {
+                let name = after_quote[..end].trim();
+                if !name.is_empty() {
+                    return Ok(name.to_string());
+                }
+            }
+        }
+    }
+    Err(anyhow!(
+        "no DirectShow video devices found; ensure a webcam is connected and accessible"
+    ))
 }
 
 /// Send "q" to FFmpeg's stdin for graceful shutdown, then wait with timeout.
