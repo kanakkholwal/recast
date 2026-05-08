@@ -167,6 +167,54 @@ const WINDOWS_ARROW = `
     filter="url(#cursor-w11-shadow)"/>
 </svg>`;
 
+// Windows 11 link pointer: white-filled hand with charcoal outline matching
+// the WINDOWS_ARROW palette. Hotspot at the index fingertip (12, 4).
+const WINDOWS_POINTER = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <linearGradient id="cursor-w11p-fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e6e6e6"/>
+    </linearGradient>
+    <filter id="cursor-w11p-shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.8"/>
+      <feOffset dx="0" dy="1.8"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.5"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path
+    d="
+      M12 4
+      C 14 4, 16 5.6, 16 8
+      L 16 28
+      L 18 28 L 18 22
+      C 18 20.4, 19.6 19, 21.2 19
+      C 22.8 19, 24.4 20.4, 24.4 22
+      L 24.4 28 L 26.4 28 L 26.4 24
+      C 26.4 22.4, 28 21, 29.6 21
+      C 31.2 21, 32.8 22.4, 32.8 24
+      L 32.8 28 L 34.8 28 L 34.8 26
+      C 34.8 24.4, 36.4 23, 38 23
+      C 39.6 23, 41.2 24.4, 41.2 26
+      L 41.2 42
+      C 41.2 50, 36.4 56, 28 56
+      L 24 56
+      C 17.6 56, 12 50, 12 44
+      L 12 36 L 9.6 32
+      C 8.4 30.4, 8.8 28, 10.4 26.8
+      C 12 25.6, 14 26, 15.2 27.6
+      L 16 28.6 L 16 8
+      C 16 5.6, 13 4, 12 4
+      Z"
+    fill="url(#cursor-w11p-fill)"
+    stroke="#1c1c1c"
+    stroke-width="2"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    filter="url(#cursor-w11p-shadow)"/>
+</svg>`;
+
 // Minimal outline arrow — translucent fill with a crisp white edge. Designed
 // for keynote/demo footage on darker product UIs. Hotspot at (10, 6).
 const OUTLINE_ARROW = `
@@ -187,6 +235,50 @@ const OUTLINE_ARROW = `
     stroke-linejoin="round"
     stroke-linecap="round"
     filter="url(#cursor-outline-shadow)"/>
+</svg>`;
+
+// Outline link pointer: translucent dark fill with crisp white edge to match
+// the OUTLINE_ARROW treatment. Hotspot at the index fingertip (12, 4).
+const OUTLINE_POINTER = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <filter id="cursor-outlinep-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
+      <feOffset dx="0" dy="1.2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.55"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+  <path
+    d="
+      M12 4
+      C 14 4, 16 5.6, 16 8
+      L 16 28
+      L 18 28 L 18 22
+      C 18 20.4, 19.6 19, 21.2 19
+      C 22.8 19, 24.4 20.4, 24.4 22
+      L 24.4 28 L 26.4 28 L 26.4 24
+      C 26.4 22.4, 28 21, 29.6 21
+      C 31.2 21, 32.8 22.4, 32.8 24
+      L 32.8 28 L 34.8 28 L 34.8 26
+      C 34.8 24.4, 36.4 23, 38 23
+      C 39.6 23, 41.2 24.4, 41.2 26
+      L 41.2 42
+      C 41.2 50, 36.4 56, 28 56
+      L 24 56
+      C 17.6 56, 12 50, 12 44
+      L 12 36 L 9.6 32
+      C 8.4 30.4, 8.8 28, 10.4 26.8
+      C 12 25.6, 14 26, 15.2 27.6
+      L 16 28.6 L 16 8
+      C 16 5.6, 13 4, 12 4
+      Z"
+    fill="rgba(10,10,10,0.55)"
+    stroke="#ffffff"
+    stroke-width="2.4"
+    stroke-linejoin="round"
+    stroke-linecap="round"
+    filter="url(#cursor-outlinep-shadow)"/>
 </svg>`;
 
 // Precision target reticle — concentric rings with cardinal ticks and a center
@@ -214,6 +306,40 @@ const TARGET_RETICLE = `
   <circle cx="32" cy="32" r="2.4" fill="none" stroke="#0a0a0a" stroke-opacity="0.4" stroke-width="0.8"/>
 </svg>`;
 
+// Target reticle — pressed state. Structurally identical to the rest sprite
+// (same ring radius, same tick lengths) so the swap reads as a tap pulse on
+// the centre pip rather than a different cursor. Adds a soft radial glow
+// behind the pip and bumps the pip radius from 2.4 → 3.4 — the pair gives
+// the click a quick "lit up" feel that survives 60-frame demo footage.
+// Hotspot stays at the geometric center (32, 32).
+const TARGET_RETICLE_PRESS = `
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64">
+  <defs>
+    <filter id="cursor-target-press-shadow" x="-25%" y="-25%" width="150%" height="150%">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="1.4"/>
+      <feOffset dx="0" dy="1.2"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.4"/></feComponentTransfer>
+      <feMerge><feMergeNode/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <radialGradient id="cursor-target-press-glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.7"/>
+      <stop offset="0.5" stop-color="#ffffff" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="32" cy="32" r="9" fill="url(#cursor-target-press-glow)"/>
+  <g filter="url(#cursor-target-press-shadow)" fill="none" stroke-linecap="round">
+    <circle cx="32" cy="32" r="15" stroke="#0a0a0a" stroke-opacity="0.35" stroke-width="4"/>
+    <circle cx="32" cy="32" r="15" stroke="#ffffff" stroke-width="2.2"/>
+    <line x1="32" y1="11" x2="32" y2="20" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="32" y1="44" x2="32" y2="53" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="11" y1="32" x2="20" y2="32" stroke="#ffffff" stroke-width="2.4"/>
+    <line x1="44" y1="32" x2="53" y2="32" stroke="#ffffff" stroke-width="2.4"/>
+  </g>
+  <circle cx="32" cy="32" r="3.4" fill="#ffffff"/>
+  <circle cx="32" cy="32" r="3.4" fill="none" stroke="#0a0a0a" stroke-opacity="0.45" stroke-width="0.9"/>
+</svg>`;
+
 export const CURSOR_STYLES: CursorStyle[] = [
 	{
 		id: "dot",
@@ -236,23 +362,29 @@ export const CURSOR_STYLES: CursorStyle[] = [
 	{
 		id: "windows",
 		label: "Windows 11",
-		description: "Fluent-style white arrow with a soft shadow.",
+		description: "Fluent-style white arrow that turns into the link pointer on click.",
 		svg: WINDOWS_ARROW,
+		pressedSvg: WINDOWS_POINTER,
 		hotspot: { x: 10, y: 6 },
+		pressedHotspot: { x: 12, y: 4 },
 	},
 	{
 		id: "outline",
 		label: "Outline",
-		description: "Crisp white outline with a translucent core — for darker UI captures.",
+		description: "Crisp white outline that turns into the link pointer on click.",
 		svg: OUTLINE_ARROW,
+		pressedSvg: OUTLINE_POINTER,
 		hotspot: { x: 10, y: 6 },
+		pressedHotspot: { x: 12, y: 4 },
 	},
 	{
 		id: "target",
 		label: "Target",
-		description: "Precision reticle for design-tool walkthroughs.",
+		description: "Precision reticle that locks on with a glow on click.",
 		svg: TARGET_RETICLE,
+		pressedSvg: TARGET_RETICLE_PRESS,
 		hotspot: { x: 32, y: 32 },
+		pressedHotspot: { x: 32, y: 32 },
 	},
 ];
 

@@ -24,7 +24,10 @@ use anyhow::{anyhow, Context, Result};
 use image::{ImageReader, RgbaImage};
 
 use crate::cursor::CursorTrack;
-use crate::render::cursor_anim::{click_bounce_scale, idle_sway_offset, motion_blur_step_alpha};
+use crate::render::cursor_anim::{
+    build_press_events_from_iter, click_anchor_at, click_bounce_scale, idle_sway_offset,
+    motion_blur_step_alpha, press_state_at,
+};
 use crate::render::graph::RenderState;
 use crate::render::node_types::{Annotation, AnnotationKind};
 
@@ -133,6 +136,24 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             prev_right = s.right_down;
         }
     }
+
+    // Pre-compute the full press-event list (down/up timestamps + click
+    // anchor x/y). Drives the sprite preroll, visibility boost, click-
+    // impact scale, AND the always-on click-anchor snap that ensures the
+    // visual click lands on the captured target regardless of smoothing.
+    // Mirrors `rebuildPressEvents` in VideoPreview.svelte. Built from raw
+    // samples so neither timing nor position can drift with smoothing.
+    let press_events = build_press_events_from_iter(
+        track.samples.iter().map(|s| {
+            (
+                s.timestamp_us,
+                s.x as f64,
+                s.y as f64,
+                s.left_down,
+                s.right_down,
+            )
+        }),
+    );
 
     /// Find the click event nearest `t_secs`. Returns the offset in ms
     /// (`t - click_t`, signed, negative = click is in the future) or None
@@ -321,15 +342,24 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
             continue;
         }
 
+        // Per-frame click state — sprite-key preroll, visibility boost,
+        // click-impact scale. Pulled once and reused below; mirrors the
+        // preview's pressStateAt so a frame at this timestamp looks the
+        // same in the editor and the rendered MP4.
+        let press = press_state_at(t_track_us as i64, &press_events);
+
         // Idle hide — smooth fade rather than a hard cut. Mirrors
-        // `idleAlphaAt` in VideoPreview.svelte; same constants. When the
-        // alpha is exactly 0 we skip the rest of the cursor work for the
-        // frame; partial alpha multiplies through the dot/halo/sprite.
-        let idle_alpha = if request.render_state.cursor_hide_when_idle {
+        // `idleAlphaAt` in VideoPreview.svelte; same constants. The press
+        // window can override an idle-zero so a click that lands deep in
+        // an idle stretch still gets its anticipation + impact + recovery
+        // visible (e.g. a viewer can see "user reaches in, clicks, leaves"
+        // even though the cursor was hidden moments before).
+        let idle_alpha_raw = if request.render_state.cursor_hide_when_idle {
             cursor_idle_alpha(t_track_us, &track.idle_periods, idle_timeout_us)
         } else {
             1.0
         };
+        let idle_alpha = idle_alpha_raw.max(press.visible_alpha);
         if idle_alpha <= 0.0 {
             stdin
                 .write_all(&frame)
@@ -340,6 +370,16 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         // Apply zoom transform in source-video coordinates. Zoom regions
         // index by timeline time (same as the FFmpeg-side LUT).
         let (mut cursor_source_x, mut cursor_source_y) = (sample.x, sample.y);
+        // Always-on click-anchor snap. Cosine ramp pulls the rendered
+        // cursor through the captured click target inside the snap
+        // window, so the click impact lands exactly where the user
+        // clicked regardless of any smoothing applied upstream. Done
+        // pre-zoom so the anchor x/y is in the same source-pixel space
+        // as the captured sample.
+        if let Some((ax, ay, w)) = click_anchor_at(t_track_us as i64, &press_events) {
+            cursor_source_x = cursor_source_x * (1.0 - w) + ax * w;
+            cursor_source_y = cursor_source_y * (1.0 - w) + ay * w;
+        }
         if let Some((scale, center_x, center_y)) =
             active_zoom_at(&request.render_state.zoom_regions, t_track_secs)
         {
@@ -388,7 +428,14 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
         // Cursor-anim: click bounce — modulates a per-frame scale multiplier
         // applied to both the soft-dot radius and the sprite render size.
-        let bounce_scale = if request.render_state.cursor_click_bounce > 0.0 {
+        //
+        // The baseline `press.scale` (anticipation lift → impact snap →
+        // bounce-back) is always on so every click reads as a deliberate
+        // tap. The user-tunable `cursor_click_bounce` knob is composed on
+        // top via the legacy `click_bounce_scale` curve when set — it adds
+        // extra squash/overshoot for cinematic demos without flattening the
+        // baseline impact when it's at zero.
+        let user_bounce_factor = if request.render_state.cursor_click_bounce > 0.0 {
             if let Some(dt_ms) = nearest_click_offset_ms(&click_events_secs, t_track_secs) {
                 click_bounce_scale(
                     dt_ms,
@@ -401,6 +448,7 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
         } else {
             1.0
         };
+        let bounce_scale = press.scale * user_bounce_factor;
 
         // Map source coords → canvas coords.
         // Video area in the canvas is [padding, padding + source_width].
@@ -471,9 +519,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
 
         if cursor_sprite_active {
             // SVG sprite path — composite the rasterized cursor at the
-            // sample position. Press state picks the alt sprite when
-            // available (falls back to rest in JS if the style has none).
-            let pressed = sample.left_down || sample.right_down;
+            // sample position. The preroll-aware `pressed_sprite` flag
+            // swaps to the alt sprite ~320 ms before the click so the
+            // pointer-hand telegraphs the impending press; the actual
+            // click halo (below) still keys on the literal sample state
+            // so the ring fires on the audio-sync frame.
+            let pressed = press.pressed_sprite;
             let key = if pressed && image_cache.contains_key(CURSOR_SPRITE_KEY_PRESS) {
                 CURSOR_SPRITE_KEY_PRESS
             } else {

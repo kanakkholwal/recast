@@ -86,6 +86,19 @@ pub struct RenderState {
     pub cursor_sprite_hotspot_press: Option<[f64; 2]>,
     #[serde(default)]
     pub cursor_sprite_size_px: Option<f64>,
+    /// Catch-all for any JS-only settings (e.g. `cursorStyle`,
+    /// `layoutMode`, `lastAppliedPresetId`, `cursorMotionEasing`,
+    /// `cursorSnapToClicks`, `cursorSnapWindowMs`, `autoZoomEnabled`,
+    /// `autoZoomApplied`) that JS owns but Rust never reads. The Rust
+    /// load path deserialises `edits.json` through this struct and then
+    /// re-serialises it back to JS — without this catch-all every field
+    /// not declared above would be silently dropped on a project reopen,
+    /// resetting the user's tweaks to defaults. `#[serde(flatten)]` slurps
+    /// all unrecognised keys at this level into the map and emits them
+    /// on serialisation, so JS-only settings round-trip cleanly without
+    /// every new editor toggle needing a mirror Rust field.
+    #[serde(flatten, default)]
+    pub passthrough: serde_json::Map<String, serde_json::Value>,
 }
 
 impl Default for RenderState {
@@ -122,6 +135,7 @@ impl Default for RenderState {
             cursor_sprite_hotspot_rest: None,
             cursor_sprite_hotspot_press: None,
             cursor_sprite_size_px: None,
+            passthrough: serde_json::Map::new(),
         }
     }
 }

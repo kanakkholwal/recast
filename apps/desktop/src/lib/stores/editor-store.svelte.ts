@@ -364,6 +364,12 @@ export interface EditorRenderState {
 	borderRadius: number;
 	cursorEnabled: boolean;
 	cursorSize: number;
+	/**
+	 * User-picked cursor sprite style (`dot` / `macos` / `windows` /
+	 * `outline` / `target`). Optional for backwards compatibility — projects
+	 * saved before this field landed default to `dot` on load.
+	 */
+	cursorStyle?: CursorStyleId;
 	cursorSmoothing: number;
 	cursorSnapToClicks: boolean;
 	cursorSnapWindowMs: number;
@@ -397,6 +403,11 @@ export interface EditorRenderState {
 	audioSettings: AudioSettings;
 	watermarkSettings: WatermarkSettings;
 	cameraOverlay: CameraOverlaySettings;
+	/**
+	 * Editor layout mode (`auto` / column-stacked variants etc.). Optional
+	 * for backwards compatibility — pre-field projects keep their default.
+	 */
+	layoutMode?: LayoutMode;
 	// Hybrid-raster cursor sprite — populated only on the export path
 	// (the editor route runs `rasterizeCursorSprites` right before invoking
 	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
@@ -657,6 +668,11 @@ export function createEditorStore() {
 	let timelineZoom = $state(1); // 1x = fit to width
 
 	function getSettingsSnapshot(): string {
+		// Captures every undoable state field. Anything left out here
+		// silently survives a `pushUndoState` call but isn't restored on
+		// undo — the user sees the unrelated edits revert while their
+		// annotation/camera tweak stays put. Keep this list in sync with
+		// `applySnapshot` so they round-trip 1:1.
 		return JSON.stringify({
 			backgroundType,
 			backgroundValue,
@@ -667,6 +683,9 @@ export function createEditorStore() {
 			trimStart,
 			trimEnd,
 			zoomRegions,
+			autoZoomEnabled,
+			autoZoomApplied,
+			annotations,
 			cursorSettings,
 			audioSettings,
 			watermarkSettings,
@@ -743,9 +762,36 @@ export function createEditorStore() {
 			motionBlur: r.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
 			source: r.source ?? "manual",
 		}));
+		autoZoomEnabled = s.autoZoomEnabled ?? autoZoomEnabled;
+		autoZoomApplied = s.autoZoomApplied ?? autoZoomApplied;
+		// Annotation undo: restore the captured array. Each entry already
+		// carries its own id from the snapshot — we keep them so refs from
+		// `selectedAnnotationId` etc. survive the undo cleanly.
+		if (Array.isArray(s.annotations)) {
+			annotations = s.annotations.map((a: Annotation) => ({ ...a }));
+			annotationZSeq = annotations.length + 1;
+			if (selectedAnnotationId && !annotations.find((a) => a.id === selectedAnnotationId)) {
+				selectedAnnotationId = null;
+			}
+			if (hoveredAnnotationId && !annotations.find((a) => a.id === hoveredAnnotationId)) {
+				hoveredAnnotationId = null;
+			}
+		}
 		cursorSettings = s.cursorSettings;
 		audioSettings = s.audioSettings ?? audioSettings;
 		watermarkSettings = s.watermarkSettings ?? watermarkSettings;
+		// Camera overlay was previously captured in the snapshot but not
+		// restored here, which silently destroyed camera-overlay edits on
+		// undo. Deep-copy so subsequent mutations don't alias the snapshot.
+		if (s.cameraOverlay) {
+			cameraOverlay = {
+				...s.cameraOverlay,
+				defaultPlacement: { ...s.cameraOverlay.defaultPlacement },
+				motionSegments: (s.cameraOverlay.motionSegments ?? []).map(
+					(seg: CameraOverlaySettings["motionSegments"][number]) => ({ ...seg }),
+				),
+			};
+		}
 		layoutMode = s.layoutMode;
 		outputAspect = s.outputAspect ?? 'source';
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
@@ -1089,6 +1135,7 @@ export function createEditorStore() {
 			borderRadius,
 			cursorEnabled: cursorSettings.enabled,
 			cursorSize: cursorSettings.size,
+			cursorStyle: cursorSettings.style,
 			cursorSmoothing: cursorSettings.smoothing,
 			cursorSnapToClicks: cursorSettings.snapToClicks,
 			cursorSnapWindowMs: cursorSettings.snapWindowMs,
@@ -1128,6 +1175,7 @@ export function createEditorStore() {
 					...segment,
 				})),
 			},
+			layoutMode,
 		};
 	}
 
@@ -1145,6 +1193,7 @@ export function createEditorStore() {
 			...cursorSettings,
 			enabled: state.cursorEnabled ?? cursorSettings.enabled,
 			size: state.cursorSize ?? cursorSettings.size,
+			style: state.cursorStyle ?? cursorSettings.style,
 			smoothing: state.cursorSmoothing ?? cursorSettings.smoothing,
 			snapToClicks: state.cursorSnapToClicks ?? cursorSettings.snapToClicks,
 			snapWindowMs: state.cursorSnapWindowMs ?? cursorSettings.snapWindowMs,
@@ -1217,6 +1266,7 @@ export function createEditorStore() {
 			})),
 		};
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
+		layoutMode = state.layoutMode ?? layoutMode;
 		annotations = (state.annotations ?? []).map((a, idx) => ({
 			id: generateId(),
 			start: a.start,

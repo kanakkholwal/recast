@@ -90,6 +90,7 @@
 		alpha: number;
 		styleId: import("$lib/cursor/styles").CursorStyle["id"];
 		pressed: boolean;
+		scale: number; // JS-driven press impact curve — see pressStateAt
 		canvasX: number; // source-pixel space, includes padding offset
 		canvasY: number;
 		compW: number;
@@ -100,6 +101,7 @@
 		alpha: 0,
 		styleId: "dot",
 		pressed: false,
+		scale: 1,
 		canvasX: 0,
 		canvasY: 0,
 		compW: 1,
@@ -109,6 +111,207 @@
 	// Signature of the inputs that drive smoothing. Recomputing only when this
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
+
+	// Press-event model — drives every aspect of click feedback.
+	//
+	// The captured cursor track tells us, per ~8 ms sample, whether the
+	// physical mouse button was held. We collapse that into one event per
+	// click ({downUs, upUs}) read straight from the RAW samples — never the
+	// smoothed array. Smoothing reshapes x/y for cinematic motion, but it
+	// must NEVER nudge click timing: the rendered video has to land its
+	// visual press on the exact frame the audio click sound plays.
+	//
+	// Around each event we run a deterministic, time-based animation:
+	//
+	//   downUs - PREROLL ───── downUs ───── max(upUs, downUs+MIN_HOLD)
+	//        │ pointer sprite appears
+	//        │ cursor fades in (overrides idle-hide)
+	//        │ scale eases 1.00 → 1+LIFT (anticipation)
+	//                            │ click frame: scale snaps to 1-PUNCH
+	//                            │ recovery: 1-PUNCH → 1+BOUNCE → 1
+	//                                                            │ sprite returns to rest
+	//                                                            │ cursor fades back to idleAlpha
+	//
+	// The snap at downUs is intentional — it's the visual analogue of the
+	// audible click. Smooth crossfade through the click moment would feel
+	// mushy and desync from the audio.
+	// Each event carries the captured click position (downX, downY in source
+	// pixels) so the visualization can pin the cursor to that point during
+	// the impact frame — see `clickAnchorAt` below.
+	type PressEvent = {
+		downUs: number;
+		upUs: number;
+		downX: number;
+		downY: number;
+	};
+	let pressEvents: PressEvent[] = [];
+
+	const PRESS_MIN_HOLD_US = 320_000; // minimum down-window from the click frame
+	const PRESS_LINGER_US = 320_000; // pressed sprite holds this long past release
+	const PRESS_PREROLL_US = 320_000; // pointer sprite visible this long before click
+	const PRESS_VIS_RAMP_US = 180_000; // cursor visibility ramp-in / ramp-out
+	const PRESS_POSTROLL_US = 320_000; // visibility holds this long after sprite settles
+	const PRESS_ANTICIP_US = 140_000; // anticipation lift duration
+	const PRESS_RECOVERY_US = 380_000; // recovery duration after click snap
+	const PRESS_LIFT = 0.04; // anticipation peak: scale = 1 + LIFT
+	const PRESS_PUNCH = 0.16; // click compression: scale = 1 - PUNCH
+	const PRESS_BOUNCE = 0.03; // recovery overshoot above 1
+	// Always-on click snap — cosine ramp pulls the rendered cursor x/y
+	// through the captured click anchor inside ±CLICK_SNAP_HALF_US so the
+	// impact frame ALWAYS lands on the click target, regardless of the
+	// user's smoothing strength or snap-to-clicks toggle. Outside the
+	// window the cursor follows the regular (raw or smoothed) path.
+	const CLICK_SNAP_HALF_US = 200_000;
+
+	function rebuildPressEvents() {
+		pressEvents = [];
+		// Source: raw samples. Smoothing only reshapes x/y — click timing
+		// AND click position stay anchored to what the OS captured.
+		const samples = cursorSamplesRaw;
+		if (samples.length === 0) return;
+		let inPress = false;
+		let downUs = 0;
+		let downX = 0;
+		let downY = 0;
+		for (let i = 0; i < samples.length; i++) {
+			const s = samples[i];
+			const down = s.leftDown || s.rightDown;
+			if (down && !inPress) {
+				inPress = true;
+				downUs = s.timestampUs;
+				downX = s.x;
+				downY = s.y;
+			} else if (!down && inPress) {
+				inPress = false;
+				pressEvents.push({ downUs, upUs: s.timestampUs, downX, downY });
+			}
+		}
+		if (inPress) {
+			pressEvents.push({
+				downUs,
+				upUs: samples[samples.length - 1].timestampUs,
+				downX,
+				downY,
+			});
+		}
+	}
+
+	// Active click anchor + cosine falloff weight at tsUs, or null when
+	// outside any click-snap window. Linear scan; press events << 500
+	// typically. Picks the closest event when two snap windows overlap so
+	// double-clicks still snap cleanly to each successive target.
+	function clickAnchorAt(
+		tsUs: number,
+	): { x: number; y: number; weight: number } | null {
+		let bestEv: PressEvent | null = null;
+		let bestAbsDt = Infinity;
+		for (let i = 0; i < pressEvents.length; i++) {
+			const ev = pressEvents[i];
+			if (tsUs < ev.downUs - CLICK_SNAP_HALF_US) break;
+			if (tsUs > ev.downUs + CLICK_SNAP_HALF_US) continue;
+			const absDt = Math.abs(tsUs - ev.downUs);
+			if (absDt < bestAbsDt) {
+				bestAbsDt = absDt;
+				bestEv = ev;
+			}
+		}
+		if (!bestEv) return null;
+		// Cosine ramp: 1 at the click frame, 0 at the window edge.
+		const weight = 0.5 + 0.5 * Math.cos((bestAbsDt / CLICK_SNAP_HALF_US) * Math.PI);
+		return { x: bestEv.downX, y: bestEv.downY, weight };
+	}
+
+	// 3t² - 2t³ smoothstep — clamped, C1-continuous, cheap. Used for the
+	// visibility ramps and the easing inside each scale phase.
+	function smoothStep01(t: number): number {
+		if (t <= 0) return 0;
+		if (t >= 1) return 1;
+		return t * t * (3 - 2 * t);
+	}
+
+	// All click-relative state for a given moment. Linear scan — recordings
+	// rarely carry more than a few hundred clicks, and the per-frame cost is
+	// dominated by WebGL state setup anyway. When two events' influence
+	// windows overlap (sub-300 ms double-clicks), we pick the one whose
+	// downUs is closest to tsUs — this hands the curve to the upcoming
+	// click as soon as we're nearer to it than to the previous one, so the
+	// pointer sprite, anticipation lift, and impact snap all track the
+	// click the viewer is actually about to perceive.
+	function pressStateAt(tsUs: number): {
+		pressedSprite: boolean; // swap to the press SVG sprite
+		visibleAlpha: number; // 0..1 boost on top of idleAlpha (overrides idle-hide)
+		scale: number; // applied directly to the sprite transform
+	} {
+		let bestEv: PressEvent | null = null;
+		let bestHoldEnd = 0;
+		let bestVisStart = 0;
+		let bestVisEnd = 0;
+		let bestAbsDt = Infinity;
+		for (let i = 0; i < pressEvents.length; i++) {
+			const ev = pressEvents[i];
+			// holdEnd = the latest of:
+			//   - release + LINGER  → the pressed sprite tails the actual release
+			//                         so even long holds get a visible post-release dwell
+			//   - down + MIN_HOLD   → flash clicks (single-sample presses) still
+			//                         show the pressed sprite for a readable beat
+			const holdEnd = Math.max(
+				ev.upUs + PRESS_LINGER_US,
+				ev.downUs + PRESS_MIN_HOLD_US,
+			);
+			const visStart = ev.downUs - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;
+			const visEnd = holdEnd + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US;
+			// Events are sorted by downUs ascending, so once we're before
+			// an event's window we're before every later event's window too.
+			if (tsUs < visStart) break;
+			if (tsUs > visEnd) continue;
+			const absDt = Math.abs(tsUs - ev.downUs);
+			if (absDt < bestAbsDt) {
+				bestEv = ev;
+				bestHoldEnd = holdEnd;
+				bestVisStart = visStart;
+				bestVisEnd = visEnd;
+				bestAbsDt = absDt;
+			}
+		}
+		if (!bestEv) return { pressedSprite: false, visibleAlpha: 0, scale: 1 };
+
+		// Visibility: smooth ramp in, hold full, smooth ramp out.
+		let visibleAlpha = 1;
+		if (tsUs < bestEv.downUs - PRESS_PREROLL_US) {
+			visibleAlpha = smoothStep01((tsUs - bestVisStart) / PRESS_VIS_RAMP_US);
+		} else if (tsUs > bestHoldEnd + PRESS_POSTROLL_US) {
+			visibleAlpha = smoothStep01((bestVisEnd - tsUs) / PRESS_VIS_RAMP_US);
+		}
+
+		// Pressed sprite: from preroll start through the held window.
+		const pressedSprite =
+			tsUs >= bestEv.downUs - PRESS_PREROLL_US && tsUs <= bestHoldEnd;
+
+		// Scale curve — three phases keyed on `dt = tsUs - downUs`.
+		//   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT (smooth lift)
+		//   dt = 0:              snap to 1-PUNCH (click frame — sync point)
+		//   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
+		let scale = 1;
+		const dt = tsUs - bestEv.downUs;
+		if (dt >= -PRESS_ANTICIP_US && dt < 0) {
+			const u = (dt + PRESS_ANTICIP_US) / PRESS_ANTICIP_US;
+			scale = 1 + PRESS_LIFT * smoothStep01(u);
+		} else if (dt >= 0 && dt < PRESS_RECOVERY_US) {
+			const u = dt / PRESS_RECOVERY_US;
+			if (u < 0.6) {
+				// 1-PUNCH → 1+BOUNCE
+				const v = u / 0.6;
+				scale =
+					1 - PRESS_PUNCH + (PRESS_PUNCH + PRESS_BOUNCE) * smoothStep01(v);
+			} else {
+				// 1+BOUNCE → 1
+				const v = (u - 0.6) / 0.4;
+				scale = 1 + PRESS_BOUNCE - PRESS_BOUNCE * smoothStep01(v);
+			}
+		}
+
+		return { pressedSprite, visibleAlpha, scale };
+	}
 
 	//  Shaders 
 	const VERT_SRC = `#version 300 es
@@ -498,12 +701,17 @@ void main() {
 			smoothingSignature = "";
 			// Publish raw samples for the Cursor panel's trajectory minimap.
 			store.cursorSamplesRaw = cursorSamplesRaw;
+			// Press events come from raw samples — smoothing-independent.
+			// Rebuild once per track load; the result is keyed by sample
+			// timestamps, which never move regardless of smoothing settings.
+			rebuildPressEvents();
 			ensureSmoothingCurrent();
 		} catch (err) {
 			console.warn("Cursor track load failed:", err);
 			cursorSamplesRaw = [];
 			cursorSamples = [];
 			idlePeriods = [];
+			pressEvents = [];
 		}
 	}
 
@@ -839,6 +1047,7 @@ void main() {
 		let cursorPosX = 0;
 		let cursorPosY = 0;
 		let cursorPressed = false;
+		let cursorScale = 1;
 		if (cs.enabled && cursorSamples.length > 0) {
 			const ts = Math.max(0, playbackTime) * 1_000_000;
 
@@ -847,16 +1056,43 @@ void main() {
 			// boundary we linearly ramp over CURSOR_IDLE_FADE_US so the cursor
 			// dissolves in/out instead of popping.
 			const idleA = cs.hideWhenIdle ? idleAlphaAt(ts, cs.idleTimeout) : 1;
+			// Press window can override idle-hide: even mid-idle, the cursor
+			// fades back in around an upcoming click so the viewer sees
+			// "intent → click → release" rather than a cursor materialising
+			// out of nowhere on the frame the click sound plays.
+			const press = pressStateAt(ts);
+			const baseAlpha = Math.max(idleA, press.visibleAlpha);
 
-			if (idleA > 0) {
+			if (baseAlpha > 0) {
 				const pos = interpolateCursor(ts);
 				if (pos && pos.visible) {
-					cursorAlpha = idleA;
-					cursorPosX = pos.x / meta.width;
-					cursorPosY = pos.y / meta.height;
-					cursorPressed = !!(pos.leftDown || pos.rightDown);
-					if (cs.highlightClicks && cursorPressed) {
-						highlightAlpha = (cs.highlightOpacity / 100) * idleA;
+					cursorAlpha = baseAlpha;
+					// Always-on click anchor snap. With strong smoothing and
+					// snapToClicks off, the smoothed x/y at the click frame
+					// can drift several pixels from the actual click target,
+					// making the impact land in the wrong place. Blend the
+					// rendered position toward the captured click anchor in
+					// a ±200 ms cosine window so the click impact ALWAYS
+					// sits on the captured click target, then unblends as
+					// the cursor moves on.
+					let posX = pos.x;
+					let posY = pos.y;
+					const anchor = clickAnchorAt(ts);
+					if (anchor) {
+						posX = posX * (1 - anchor.weight) + anchor.x * anchor.weight;
+						posY = posY * (1 - anchor.weight) + anchor.y * anchor.weight;
+					}
+					cursorPosX = posX / meta.width;
+					cursorPosY = posY / meta.height;
+					cursorPressed = press.pressedSprite;
+					cursorScale = press.scale;
+					// Highlight halo follows the ACTUAL captured click state
+					// (not the preroll), so the WebGL ring fires on the same
+					// frame as the audio click sound, regardless of how long
+					// the SVG sprite has been telegraphing the press.
+					const actualPressActive = !!(pos.leftDown || pos.rightDown);
+					if (cs.highlightClicks && actualPressActive) {
+						highlightAlpha = (cs.highlightOpacity / 100) * baseAlpha;
 					}
 				}
 			}
@@ -891,6 +1127,7 @@ void main() {
 			alpha: cursorAlpha,
 			styleId: cs.style,
 			pressed: cursorPressed,
+			scale: cursorScale,
 			canvasX: geom.videoX + svgUvX * geom.videoW,
 			canvasY: geom.videoY + svgUvY * geom.videoH,
 			compW: geom.canvasW,
@@ -898,7 +1135,11 @@ void main() {
 			spritePx: spriteSourcePx,
 		};
 		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
-		const cursorRadiusCanvas = cs.size * 2 * sx;
+		// Multiplied by the press scale curve so the soft-dot pulses on
+		// click in lockstep with the SVG sprite — matches `bounce_scale`
+		// on the dot path in cursor_export.rs so preview and rendered MP4
+		// agree even on the default style.
+		const cursorRadiusCanvas = cs.size * 2 * sx * cursorScale;
 		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
 		gl.uniform4fv(uniforms.u_cursorColor, [1, 1, 1, 0.9]);
 		const [hr, hg, hb] = hexToRgba(cs.highlightColor || "#3b82f6");
@@ -1081,26 +1322,38 @@ void main() {
 				stateKey === "press" && style?.pressedHotspot
 					? style.pressedHotspot
 					: (style?.hotspot ?? { x: 32, y: 32 })}
-			<!-- Custom SVG cursor: positioned at the cursor sample's
-			     source-pixel coordinates, mapped into the canvas's CSS rect.
-			     The image swaps between rest and press sprites so styles like
-			     macOS show the link-pointing hand while the captured cursor
-			     is held down. Hotspot is offset per state so each sprite's
-			     tip lands on the captured pointer position. -->
-			<img
-				src={cursorStyleDataUrl(svgCursor.styleId, stateKey)}
-				alt=""
-				draggable="false"
+			{@const hotPctX = (hot.x / 64) * 100}
+			{@const hotPctY = (hot.y / 64) * 100}
+			<!-- Custom SVG cursor.
+			     - Wrapper owns `left/top/width/opacity` so cursor motion and the
+			       visibility ramp stay instantaneous frame-by-frame.
+			     - Inner img owns the press transform: `scale` is computed in JS
+			       per frame (anticipation lift → click-frame snap → recovery),
+			       NOT via a CSS transition. A CSS transition would lag the
+			       impact behind the captured click and desync from the audio.
+			     - `transform-origin` is set to the hotspot so the scale change
+			       keeps the cursor's tip pinned to the captured pointer. -->
+			<div
 				class="pointer-events-none absolute"
 				style="
 					left: {(svgCursor.canvasX / svgCursor.compW) * 100}%;
 					top: {(svgCursor.canvasY / svgCursor.compH) * 100}%;
 					width: {(svgCursor.spritePx / svgCursor.compW) * 100}%;
-					transform: translate(-{(hot.x / 64) * 100}%, -{(hot.y / 64) * 100}%);
 					opacity: {svgCursor.alpha};
-					filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.5));
 				"
-			/>
+			>
+				<img
+					src={cursorStyleDataUrl(svgCursor.styleId, stateKey)}
+					alt=""
+					draggable="false"
+					class="block w-full will-change-transform"
+					style="
+						transform: translate(-{hotPctX}%, -{hotPctY}%) scale({svgCursor.scale});
+						transform-origin: {hotPctX}% {hotPctY}%;
+						filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 0.5));
+					"
+				/>
+			</div>
 		{/if}
 	</div>
 

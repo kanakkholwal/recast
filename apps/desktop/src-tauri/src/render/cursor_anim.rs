@@ -2,6 +2,212 @@
 //! motion-blur trail alpha). Kept free of FFmpeg/render-state types so the
 //! curves can be unit-tested in isolation.
 
+/// One captured click — wall-clock μs of the rising edge (`down_us`) and the
+/// falling edge (`up_us`), plus the cursor (x, y) at the rising edge in
+/// SOURCE pixels. Built from the raw cursor track samples in
+/// `cursor_export.rs`. Smoothing must NEVER reshape these — the rendered
+/// click impact has to land on the same frame the audio click sound plays
+/// AND on the captured click target, regardless of smoothing settings.
+#[derive(Debug, Clone, Copy)]
+pub struct PressEvent {
+    pub down_us: u64,
+    pub up_us: u64,
+    pub down_x: f64,
+    pub down_y: f64,
+}
+
+/// Per-frame press state — visibility boost, sprite key, scale impact.
+///
+/// `visible_alpha` is *additive on top of* the regular `idle_alpha`: even if
+/// idle-hide would zero the cursor, an upcoming click pulls it back into
+/// view so the viewer sees "intent → click → release" rather than a cursor
+/// teleporting in on the impact frame.
+///
+/// `pressed_sprite` flips on at `down_us - PRESS_PREROLL_US` so the link-pointer
+/// (or per-style alt sprite) telegraphs the click before it lands.
+///
+/// `scale` is a multiplier applied to the rendered sprite size — three
+/// phases keyed on `dt = ts - down_us`:
+///   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT  (smooth lift, anticipation)
+///   dt = 0:              snap to 1-PUNCH  (click frame — the sync point)
+///   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
+#[derive(Debug, Clone, Copy)]
+pub struct PressFrameState {
+    pub pressed_sprite: bool,
+    pub visible_alpha: f64,
+    pub scale: f64,
+}
+
+impl PressFrameState {
+    pub const NONE: Self = Self {
+        pressed_sprite: false,
+        visible_alpha: 0.0,
+        scale: 1.0,
+    };
+}
+
+// MUST mirror the constants in apps/desktop/src/components/editor/VideoPreview.svelte
+// (`PRESS_*_US`, `PRESS_LIFT`, `PRESS_PUNCH`, `PRESS_BOUNCE`). Drift here
+// means preview and export disagree on click feel.
+const PRESS_MIN_HOLD_US: i64 = 320_000;
+const PRESS_LINGER_US: i64 = 320_000;
+const PRESS_PREROLL_US: i64 = 320_000;
+const PRESS_VIS_RAMP_US: i64 = 180_000;
+const PRESS_POSTROLL_US: i64 = 320_000;
+const PRESS_ANTICIP_US: i64 = 140_000;
+const PRESS_RECOVERY_US: i64 = 380_000;
+const PRESS_LIFT: f64 = 0.04;
+const PRESS_PUNCH: f64 = 0.16;
+const PRESS_BOUNCE: f64 = 0.03;
+/// Always-on click-snap half-window in μs — see `click_anchor_at`.
+pub const CLICK_SNAP_HALF_US: i64 = 200_000;
+
+#[inline]
+fn smooth_step_01(t: f64) -> f64 {
+    if t <= 0.0 {
+        return 0.0;
+    }
+    if t >= 1.0 {
+        return 1.0;
+    }
+    t * t * (3.0 - 2.0 * t)
+}
+
+/// All click-relative state for a given moment. Picks the press event whose
+/// `down_us` is closest to `ts_us` among those whose influence window
+/// contains it — for sub-300 ms double-clicks this hands the curve to the
+/// upcoming click as soon as we're nearer to it than to the previous one.
+///
+/// `events` MUST be sorted ascending by `down_us`.
+pub fn press_state_at(ts_us: i64, events: &[PressEvent]) -> PressFrameState {
+    let mut best: Option<(PressEvent, i64, i64, i64, i64)> = None; // (ev, hold_end, vis_start, vis_end, abs_dt)
+    for &ev in events {
+        let down = ev.down_us as i64;
+        let up = ev.up_us as i64;
+        // holdEnd: latest of (release + LINGER) and (down + MIN_HOLD) so
+        // both flash clicks and long holds get a visible post-release dwell
+        // on the pressed sprite. Mirrors VideoPreview.svelte's pressStateAt.
+        let hold_end = (up + PRESS_LINGER_US).max(down + PRESS_MIN_HOLD_US);
+        let vis_start = down - PRESS_PREROLL_US - PRESS_VIS_RAMP_US;
+        let vis_end = hold_end + PRESS_POSTROLL_US + PRESS_VIS_RAMP_US;
+        if ts_us < vis_start {
+            break; // events sorted; later ones also fail
+        }
+        if ts_us > vis_end {
+            continue;
+        }
+        let abs_dt = (ts_us - down).abs();
+        match best {
+            Some((_, _, _, _, cur_abs_dt)) if abs_dt >= cur_abs_dt => {}
+            _ => best = Some((ev, hold_end, vis_start, vis_end, abs_dt)),
+        }
+    }
+    let Some((ev, hold_end, vis_start, vis_end, _)) = best else {
+        return PressFrameState::NONE;
+    };
+    let down = ev.down_us as i64;
+
+    let mut visible_alpha = 1.0;
+    if ts_us < down - PRESS_PREROLL_US {
+        visible_alpha = smooth_step_01((ts_us - vis_start) as f64 / PRESS_VIS_RAMP_US as f64);
+    } else if ts_us > hold_end + PRESS_POSTROLL_US {
+        visible_alpha = smooth_step_01((vis_end - ts_us) as f64 / PRESS_VIS_RAMP_US as f64);
+    }
+
+    let pressed_sprite = ts_us >= down - PRESS_PREROLL_US && ts_us <= hold_end;
+
+    let mut scale = 1.0;
+    let dt = ts_us - down;
+    if dt >= -PRESS_ANTICIP_US && dt < 0 {
+        let u = (dt + PRESS_ANTICIP_US) as f64 / PRESS_ANTICIP_US as f64;
+        scale = 1.0 + PRESS_LIFT * smooth_step_01(u);
+    } else if dt >= 0 && dt < PRESS_RECOVERY_US {
+        let u = dt as f64 / PRESS_RECOVERY_US as f64;
+        if u < 0.6 {
+            let v = u / 0.6;
+            scale = 1.0 - PRESS_PUNCH + (PRESS_PUNCH + PRESS_BOUNCE) * smooth_step_01(v);
+        } else {
+            let v = (u - 0.6) / 0.4;
+            scale = 1.0 + PRESS_BOUNCE - PRESS_BOUNCE * smooth_step_01(v);
+        }
+    }
+
+    PressFrameState {
+        pressed_sprite,
+        visible_alpha,
+        scale,
+    }
+}
+
+/// Build the press-event list from the cursor track's raw samples.
+/// Pairs each rising edge with the next falling edge; an unmatched final
+/// rising edge is closed at the last sample's timestamp. Captures the
+/// (x, y) at the rising edge for the always-on click-anchor snap.
+pub fn build_press_events_from_iter<I>(samples: I) -> Vec<PressEvent>
+where
+    I: IntoIterator<Item = (u64, f64, f64, bool, bool)>,
+{
+    let mut events = Vec::new();
+    let mut in_press = false;
+    let mut down_us = 0_u64;
+    let mut down_x = 0.0_f64;
+    let mut down_y = 0.0_f64;
+    let mut last_ts = 0_u64;
+    for (ts, x, y, left, right) in samples {
+        last_ts = ts;
+        let down = left || right;
+        if down && !in_press {
+            in_press = true;
+            down_us = ts;
+            down_x = x;
+            down_y = y;
+        } else if !down && in_press {
+            in_press = false;
+            events.push(PressEvent {
+                down_us,
+                up_us: ts,
+                down_x,
+                down_y,
+            });
+        }
+    }
+    if in_press {
+        events.push(PressEvent {
+            down_us,
+            up_us: last_ts,
+            down_x,
+            down_y,
+        });
+    }
+    events
+}
+
+/// Active click anchor + cosine falloff weight at `ts_us`. Returns `None`
+/// when outside any snap window. `events` MUST be sorted ascending by
+/// `down_us`. Picks the closest event when two snap windows overlap so
+/// double-clicks each pull the cursor to their respective targets.
+pub fn click_anchor_at(ts_us: i64, events: &[PressEvent]) -> Option<(f64, f64, f64)> {
+    let mut best: Option<(PressEvent, i64)> = None;
+    for &ev in events {
+        let down = ev.down_us as i64;
+        if ts_us < down - CLICK_SNAP_HALF_US {
+            break;
+        }
+        if ts_us > down + CLICK_SNAP_HALF_US {
+            continue;
+        }
+        let abs_dt = (ts_us - down).abs();
+        match best {
+            Some((_, cur_abs_dt)) if abs_dt >= cur_abs_dt => {}
+            _ => best = Some((ev, abs_dt)),
+        }
+    }
+    let (ev, abs_dt) = best?;
+    let weight =
+        0.5 + 0.5 * (abs_dt as f64 / CLICK_SNAP_HALF_US as f64 * std::f64::consts::PI).cos();
+    Some((ev.down_x, ev.down_y, weight))
+}
+
 /// Map a click-bounce sample to a sprite scale multiplier.
 ///
 /// `t_ms` is the signed offset (in ms) from the *nearest* click event:
