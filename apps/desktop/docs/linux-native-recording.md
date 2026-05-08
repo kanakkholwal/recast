@@ -1,10 +1,15 @@
-# Linux Native Recording — Wayland (Phase 1b)
+# Linux Native Recording — Wayland (Phase 1b) + X11 (Phase 2)
 
 > Status: **implementation written, untested on Linux.** Build host is
 > Windows. The Rust code under `cfg(target_os = "linux")` has not been
 > compiled or run yet — first iteration will happen on a Linux machine.
+>
+> Both the Wayland (PipeWire portal) and X11 (xcb GetImage) backends are
+> implemented; runtime dispatch picks one based on session env vars.
 
 ## What's in place
+
+### Wayland (Phase 1b)
 
 - **xdg-desktop-portal ScreenCast** handshake via `ashpd 0.10`.
 - **PipeWire stream** consumption via `pipewire 0.9`, on a dedicated
@@ -17,6 +22,18 @@
   becomes the source picker. Our in-app picker is still shown but its
   selection is overridden by whatever the user picks in the portal
   dialog.
+
+### X11 (Phase 2)
+
+- **xcb GetImage** capture against the root window via `x11rb 0.13`.
+- Connection held open across the recording so we don't pay
+  setup-latency per frame (xcap reconnected each call — that's why our
+  Linux fallback used to feel slow).
+- Source picker stays in-app on X11 (no portal involved); existing
+  xcap-based monitor/window enumeration provides the source list.
+- XShm fast path is **not yet wired** — feature flag is enabled in
+  Cargo.toml so the dependency is present but the shared-memory
+  handshake is a TODO. ~2–3× speedup pending.
 
 ## Build prerequisites on Linux
 
@@ -32,7 +49,9 @@ sudo apt install \
 ```
 
 `pipewire-rs` builds against the system `libpipewire-0.3.so`, so the dev
-headers must be present. The pkg-config name is `libpipewire-0.3`.
+headers must be present. The pkg-config name is `libpipewire-0.3`. The
+X11 path uses `x11rb` which is pure-Rust (no extra system headers
+needed beyond what xcap already requires).
 
 For Ubuntu 22.04, PipeWire 0.3 is the system default since 22.10; check
 with `pkg-config --modversion libpipewire-0.3`. Anything 0.3.40+ should
@@ -42,10 +61,11 @@ work with the `pipewire = "0.8"` crate.
 
 | File | Role |
 |------|------|
-| [`src-tauri/Cargo.toml`](../src-tauri/Cargo.toml) | Linux-only `[target.'cfg(target_os = "linux")']` deps: `ashpd`, `pipewire` |
-| [`src-tauri/src/capture/platform/mod.rs`](../src-tauri/src/capture/platform/mod.rs) | Dispatch: Wayland → `linux_wayland`, otherwise → `fallback` |
+| [`src-tauri/Cargo.toml`](../src-tauri/Cargo.toml) | Linux-only `[target.'cfg(target_os = "linux")']` deps: `ashpd`, `pipewire`, `x11rb` |
+| [`src-tauri/src/capture/platform/mod.rs`](../src-tauri/src/capture/platform/mod.rs) | Dispatch: Wayland → `linux_wayland`, X11 → `linux_x11`, otherwise → `fallback` |
 | [`src-tauri/src/capture/platform/linux_wayland.rs`](../src-tauri/src/capture/platform/linux_wayland.rs) | Portal handshake + PipeWire main loop + `CaptureSource` impl |
-| [`src-tauri/src/commands/recording.rs`](../src-tauri/src/commands/recording.rs) | Pre-negotiates portal stream before spawning capture threads |
+| [`src-tauri/src/capture/platform/linux_x11.rs`](../src-tauri/src/capture/platform/linux_x11.rs) | xcb GetImage `CaptureSource` impl |
+| [`src-tauri/src/commands/recording.rs`](../src-tauri/src/commands/recording.rs) | Pre-negotiates portal stream before spawning capture threads (Wayland only) |
 
 ## Lifecycle
 
@@ -140,7 +160,14 @@ time on Linux. Keep this list ranked when working through it.
 
 ## What's deliberately not done
 
-- **X11 native backend** — Phase 2.
+- **XShm fast path on X11** — `x11rb` feature is enabled but the
+  shmget→Attach→GetImage flow isn't implemented yet. Plain GetImage is
+  fine at 1080p; matters at 4K.
+- **XComposite for occluded window capture on X11** — current X11 path
+  captures the visible portion of the root window, so a window covered
+  by another window will record the front-most pixels in the obscured
+  region. Fix: enable `x11rb` `composite` feature, redirect the target
+  window to off-screen storage, GetImage from that pixmap.
 - **Linux audio capture** — recording audio on Linux still goes through
   whatever the existing `audio/platform/fallback.rs` does. PipeWire
   audio is a separate follow-up; cleanest is to capture an audio node

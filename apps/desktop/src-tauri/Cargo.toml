@@ -73,3 +73,8 @@ ashpd = { version = "0.10", default-features = false, features = ["tokio"] }
 # both `links = "pipewire-0.3"` → cargo-resolution failure. Keep this
 # pinned to the same major as xcap or bump them together.
 pipewire = "0.9"
+# Pure-Rust X11 client. xcap also depends on x11rb so the version line
+# is shared — keeping these in lockstep avoids resolution churn. The
+# `shm` feature lets us upgrade to XShm later for the perf win without
+# touching Cargo.toml again; we only use plain `GetImage` for MVP.
+x11rb = { version = "0.13", features = ["shm"] }
