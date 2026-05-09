@@ -15,6 +15,38 @@ The in-app changelog mirrors this file via
 On every release, update both. Headings must follow the literal form
 `## [<version>] — <date>` so the extractor can find them.
 
+## [Unreleased]
+
+### Added
+- Linux screen capture: a Wayland-native pipeline using `xdg-desktop-portal`
+  + PipeWire, and a parallel X11 native capture path. Linux recording docs
+  refreshed alongside the new backends.
+- Recording profiles: per-project capture profiles with dynamic capability
+  combinations, device awareness, and a profile-management UI in the
+  desktop app.
+- Camera overlay in the editor: composite the recorded camera track over
+  the screen video with position presets, size, shape, and mirror toggles.
+  Gated behind a `CAMERA_OVERLAY_UI_ENABLED` feature flag.
+- Cursor: mouse-press events feed into the recorded timeline and a refreshed
+  set of cursor styles ships with the editor.
+- Native macOS-style page transitions via the View Transitions API, with a
+  smoother titlebar handoff.
+- Web download page redesigned with new icons and a features grid.
+
+### Changed
+- Command palette (⌘K) extracted into a global `CommandPaletteHost` mounted
+  at the root layout, so the shortcut and dialog work on every route —
+  including the editor — not only on routes that render the sidebar.
+- Properties panel: shared `PanelSection` primitive replaces ~30 ad-hoc
+  section headers, drops repeated panel-name titles, normalises gap to
+  `gap-4`, and standardises toggle / reset placement across Background,
+  Focus, Annotations, Cursor, Audio, Camera, and Info panels.
+- Design tokens: introduced a Framer-inspired vocabulary (`canvas`,
+  `surface-1/2`, `ink`, `ink-muted`, `hairline`, gradient spotlight cards,
+  elevation shadows) layered on top of the existing shadcn tokens. Primary
+  color and font stack preserved; legacy surface tokens stayed on their
+  original values.
+
 ## [0.1.3-beta] — 2026-05-07
 
 ### Added
