@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Dialog as DialogPrimitive } from "bits-ui";
-	import { cn } from "@recast/ui/utils";
+	import { CRAFT_OVERLAY_BACKDROP_ANIMATION, cn } from "@recast/ui/utils";
 
 	let {
 		ref = $bindable(null),
@@ -12,6 +12,6 @@
 <DialogPrimitive.Overlay
 	bind:ref
 	data-slot="dialog-overlay"
-	class={cn("data-open:animate-in data-closed:animate-out data-closed:fade-out-0 data-open:fade-in-0 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 isolate z-50", className)}
+	class={cn(CRAFT_OVERLAY_BACKDROP_ANIMATION, "bg-black/10 supports-backdrop-filter:backdrop-blur-xs fixed inset-0 isolate z-50", className)}
 	{...restProps}
 />

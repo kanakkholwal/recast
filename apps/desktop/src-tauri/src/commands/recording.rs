@@ -31,6 +31,49 @@ pub fn start_recording(
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
 ) -> Result<RecordingStartResult, String> {
+    // On Wayland the compositor refuses direct framebuffer access — the
+    // user-supplied target_type/target_id/region are essentially advisory
+    // because the *real* source is whatever the user picks in the
+    // xdg-desktop-portal dialog. We negotiate the portal stream up front
+    // (this blocks while the dialog is on screen), use the portal's
+    // returned dimensions as authoritative, and stash the stream handle
+    // for the capture thread to pick up. See
+    // `capture::platform::linux_wayland` for the full lifecycle.
+    #[cfg(target_os = "linux")]
+    let target = {
+        if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+            let stream = crate::capture::platform::linux_wayland::acquire_portal_stream()
+                .map_err(|e| format!("Wayland portal handshake failed: {e:#}"))?;
+            let kind = if target_type == "window" {
+                crate::recording::CaptureKind::Window
+            } else if target_type == "region" {
+                crate::recording::CaptureKind::Region
+            } else {
+                crate::recording::CaptureKind::Display
+            };
+            let area = crate::recording::CaptureArea {
+                x: 0,
+                y: 0,
+                width: stream.width,
+                height: stream.height,
+            };
+            let target = CaptureTarget {
+                kind,
+                id: target_id,
+                label: "Wayland portal".to_string(),
+                source: area,
+                crop: area,
+            };
+            crate::capture::platform::linux_wayland::stash_portal_stream(stream);
+            target
+        } else if target_type == "region" {
+            let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
+            CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?
+        } else {
+            CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?
+        }
+    };
+    #[cfg(not(target_os = "linux"))]
     let target = if target_type == "region" {
         let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
         CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?

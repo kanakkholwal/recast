@@ -27,6 +27,8 @@ export const KIND_META: Record<
 };
 
 // Newest release first. The first entry's `version` is shown as the "latest".
+// In-flight (unreleased) changes live only in CHANGELOG.md under
+// `[Unreleased]`. They migrate here once the version is bumped and tagged.
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
 		version: "0.1.3-beta",

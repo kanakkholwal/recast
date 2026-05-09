@@ -8,8 +8,8 @@
 			variant: "default" as const,
 			links: [
 				{ label: "Features", href: "/features" },
-				{ label: "Workflow", href: "/#workflow" },
-				{ label: "Use cases", href: "/#use-cases" },
+				{ label: "Editor", href: "/#editor" },
+				{ label: ".recast format", href: "/#format" },
 			],
 		},
 		{

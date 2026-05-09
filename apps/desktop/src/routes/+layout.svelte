@@ -8,6 +8,7 @@
 
   let { children } = $props();
 
+  import CommandPaletteHost from "$components/layout/CommandPaletteHost.svelte";
   import Loading from "$components/layout/loading.svelte";
   import { initAssets } from "$lib/assets";
   import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
@@ -18,6 +19,7 @@
   const TRANSPARENT_ROUTES = [
     "/camera-preview",
     "/device-picker",
+    "/profile-picker",
     "/select",
     "/panel",
   ];
@@ -74,7 +76,16 @@
 <TooltipProvider>
   <Loading />
   <ModeWatcher />
-  <Toaster position="top-center" richColors />
+  <!-- Overlay windows (panel, camera-preview, pickers) are too small to host
+       a Sonner toast without overflow. Gate the Toaster out of those routes so
+       downstream code that calls `toast.*` is just a no-op there — the main
+       window keeps its toaster as usual. -->
+  {#if !isTransparentRoute}
+    <Toaster position="top-center" />
+    <!-- Command palette host: owns the ⌘K shortcut + dialog so they work on
+         every route (editor included), not just the (app) sidebar layout. -->
+    <CommandPaletteHost />
+  {/if}
   <div
     class="relative flex min-h-screen min-w-dvw w-full flex-col {isTransparentRoute
       ? 'bg-transparent'

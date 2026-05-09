@@ -1,7 +1,10 @@
 <script lang="ts">
   import { platform } from "@tauri-apps/plugin-os";
 
-  import { enumerateCameras } from "$lib/camera/browser-devices";
+  import {
+    enumerateCameras,
+    type BrowserCamera,
+  } from "$lib/camera/browser-devices";
 
   // Wayland (KWin in particular) can trap focus on undecorated transparent
   // alwaysOnTop windows — drop the flag on Linux. See ipc.ts for context.
@@ -14,9 +17,16 @@
     startRecording,
     stopRecording,
     validateCameraSource,
+    type AudioDeviceInfo,
     type CameraValidationResult,
     type RecordingOptions,
   } from "$lib/ipc";
+  import {
+    resolveCamera,
+    resolveMic,
+    type RecordingProfile,
+  } from "$lib/profiles";
+  import { profilesStore } from "$lib/stores/profiles.svelte";
   import {
     AppWindow,
     Camera,
@@ -28,6 +38,7 @@
     Mic,
     MicOff,
     Monitor,
+    SlidersHorizontal as SlidersIcon,
     Square,
     Volume2,
     VolumeOff,
@@ -68,6 +79,31 @@
   let selectedCameraId = $state<string | null>(null);
   let selectedCameraName = $state("Default");
   let cameraValidation = $state<CameraValidationResult | null>(null);
+
+  // Inline notice surface. The panel window is too narrow for a Sonner toast,
+  // so resolution outcomes (fallback / missing device / fresh profile applied)
+  // are surfaced via button tooltips and a transient profile-button highlight.
+  // micWarning / cameraWarning persist in tooltips until the next apply or
+  // manual toggle so the user can hover later to see what got swapped.
+  let micWarning = $state<string | null>(null);
+  let cameraWarning = $state<string | null>(null);
+
+  // Available device lists, refreshed each time we resolve a profile so the
+  // resolver works against current hardware (USB devices come and go).
+  let mics = $state<AudioDeviceInfo[]>([]);
+  let cameras = $state<BrowserCamera[]>([]);
+
+  // Which profile is currently driving the panel state, if any. Manual toggle
+  // overrides don't clear this — the chip is just a "last applied" marker.
+  let activeProfileId = $state<string | null>(null);
+  // Briefly highlights the profile-switcher button after a successful apply
+  // so the user gets a confirmation cue without us popping a toast.
+  let profileFlash = $state(false);
+  let profileFlashTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const activeProfile = $derived(
+    activeProfileId ? profilesStore.findById(activeProfileId) : null,
+  );
 
   async function refreshCameraValidation(deviceId: string | null) {
     if (!deviceId) {
@@ -169,6 +205,14 @@
       }
     });
 
+    // Profile picker (separate Tauri window, like device-picker) emits this
+    // when the user confirms a selection. We resolve the id against the store
+    // and apply through the same path as ⌘1-⌘8 shortcuts.
+    const unlistenProfile = listen<{ id: string }>("profile-selected", (event) => {
+      const target = profilesStore.findById(event.payload.id);
+      if (target) handleProfileSwitch(target);
+    });
+
     // Prefer the last-used source from persisted config; fall back to the
     // primary display if no last source is recorded.
     getLastSource()
@@ -210,34 +254,146 @@
       })
       .catch(() => {});
 
-    getAudioDevices()
-      .then((devices) => {
-        const def = devices.find((d) => d.isDefault);
-        if (def) {
-          selectedMicId = def.id;
-          selectedMicName = def.name;
-        }
-      })
-      .catch(() => {});
+    profilesStore.hydrate();
 
-    enumerateCameras()
-      .then((cams) => {
-        // Already sorted with non-virtual hardware first, so [0] prefers a
-        // real webcam over Phone Link / OBS Virtual / etc.
-        if (cams.length > 0) {
-          selectedCameraId = cams[0].deviceId;
-          selectedCameraName = cams[0].label;
-          void refreshCameraValidation(cams[0].deviceId);
-        }
-      })
-      .catch(() => {});
+    void initDevicesAndProfile();
+
+    window.addEventListener("keydown", handleGlobalShortcut);
 
     return () => {
       window.clearInterval(timer);
+      if (profileFlashTimer) clearTimeout(profileFlashTimer);
       unlistenSource.then((fn) => fn());
       unlistenDevice.then((fn) => fn());
+      unlistenProfile.then((fn) => fn());
+      window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });
+
+  /**
+   * Load audio + video devices, then apply the user's default profile if the
+   * profile system is enabled. When profiles are off, fall back to the legacy
+   * behavior (default mic, first non-virtual camera, all toggles off except
+   * system audio).
+   */
+  async function initDevicesAndProfile() {
+    const [audioDevices, videoDevices] = await Promise.all([
+      getAudioDevices().catch(() => [] as AudioDeviceInfo[]),
+      enumerateCameras().catch(() => [] as BrowserCamera[]),
+    ]);
+    mics = audioDevices;
+    cameras = videoDevices;
+
+    // Always seed the "current" mic/camera selection with system defaults,
+    // even when applying a profile — that way if the user manually toggles
+    // mic/camera on later (without the profile), we have something to use.
+    const defaultMic = audioDevices.find((d) => d.isDefault) ?? audioDevices[0];
+    if (defaultMic) {
+      selectedMicId = defaultMic.id;
+      selectedMicName = defaultMic.name;
+    }
+    const defaultCam =
+      videoDevices.find((c) => !c.isVirtual) ?? videoDevices[0];
+    if (defaultCam) {
+      selectedCameraId = defaultCam.deviceId;
+      selectedCameraName = defaultCam.label;
+      void refreshCameraValidation(defaultCam.deviceId);
+    }
+
+    if (!profilesStore.enabled) return;
+    const def = profilesStore.default();
+    if (!def) return;
+    applyProfile(def);
+  }
+
+  /**
+   * Apply a profile to the panel state — toggles + device selections —
+   * resolving devices against the current hardware list. Fallback / missing
+   * outcomes are recorded into `micWarning` / `cameraWarning` so the device
+   * button tooltips surface them on hover (Sonner toasts would overflow the
+   * 44px-tall panel window).
+   */
+  function applyProfile(profile: RecordingProfile) {
+    systemAudioOn = profile.systemAudio;
+
+    // ---- Microphone
+    const micResult = resolveMic(profile, mics);
+    if (micResult.kind === "matched") {
+      micOn = true;
+      selectedMicId = micResult.device.id;
+      selectedMicName = micResult.device.name;
+      micWarning = null;
+    } else if (micResult.kind === "fallback") {
+      micOn = true;
+      selectedMicId = micResult.device.id;
+      selectedMicName = micResult.device.name;
+      micWarning = `“${micResult.requestedLabel}” unavailable — using “${micResult.device.name}”`;
+    } else if (micResult.kind === "missing") {
+      micOn = false;
+      micWarning = `“${profile.name}” wants a mic but none is available`;
+    } else {
+      micOn = false;
+      micWarning = null;
+    }
+
+    // ---- Camera
+    const camResult = resolveCamera(profile, cameras);
+    if (camResult.kind === "matched") {
+      cameraOn = true;
+      selectedCameraId = camResult.device.deviceId;
+      selectedCameraName = camResult.device.label;
+      cameraWarning = null;
+      void refreshCameraValidation(camResult.device.deviceId);
+      openCameraPreview(camResult.device.deviceId);
+    } else if (camResult.kind === "fallback") {
+      cameraOn = true;
+      selectedCameraId = camResult.device.deviceId;
+      selectedCameraName = camResult.device.label;
+      cameraWarning = `“${camResult.requestedLabel}” unavailable — using “${camResult.device.label}”`;
+      void refreshCameraValidation(camResult.device.deviceId);
+      openCameraPreview(camResult.device.deviceId);
+    } else if (camResult.kind === "missing") {
+      cameraOn = false;
+      cameraValidation = null;
+      cameraWarning = `“${profile.name}” wants a camera but none is available`;
+      closeCameraPreview();
+    } else {
+      if (cameraOn) closeCameraPreview();
+      cameraOn = false;
+      cameraValidation = null;
+      cameraWarning = null;
+    }
+
+    activeProfileId = profile.id;
+  }
+
+  function handleProfileSwitch(profile: RecordingProfile) {
+    if (isRecording) return;
+    applyProfile(profile);
+    // Brief 1.4s highlight on the profile button so the user gets a
+    // visual confirmation without a toast.
+    if (profileFlashTimer) clearTimeout(profileFlashTimer);
+    profileFlash = true;
+    profileFlashTimer = setTimeout(() => {
+      profileFlash = false;
+      profileFlashTimer = null;
+    }, 1400);
+  }
+
+  function handleGlobalShortcut(e: KeyboardEvent) {
+    if (isRecording) return;
+    const meta = e.metaKey || e.ctrlKey;
+    if (!meta || e.shiftKey || e.altKey) return;
+    if (!profilesStore.enabled) return;
+    const digit = parseInt(e.key, 10);
+    if (Number.isFinite(digit) && digit >= 1 && digit <= 8) {
+      const profile = profilesStore.profiles[digit - 1];
+      if (profile) {
+        e.preventDefault();
+        handleProfileSwitch(profile);
+      }
+    }
+  }
 
   function openSourceSelector() {
     if (isRecording) return;
@@ -251,6 +407,27 @@
         title: "Select Source",
         width: 560,
         height: 440,
+        center: true,
+        decorations: false,
+        transparent: true,
+        shadow: false,
+        resizable: false,
+      });
+    });
+  }
+
+  function openProfilePicker() {
+    if (isRecording) return;
+    WebviewWindow.getByLabel("profile-picker").then(async (existing) => {
+      if (existing) {
+        await existing.setFocus();
+        return;
+      }
+      new WebviewWindow("profile-picker", {
+        url: `/profile-picker?selected=${activeProfileId ?? ""}`,
+        title: "Switch profile",
+        width: 320,
+        height: 380,
         center: true,
         decorations: false,
         transparent: true,
@@ -319,6 +496,7 @@
 
   function toggleMic() {
     if (isRecording) return;
+    micWarning = null;
     if (micOn) {
       micOn = false;
     } else {
@@ -328,6 +506,7 @@
 
   function toggleCamera() {
     if (isRecording) return;
+    cameraWarning = null;
     if (cameraOn) {
       cameraOn = false;
       closeCameraPreview();
@@ -493,6 +672,26 @@
   </Button>
 
   <div class="shrink-0 px-1 ml-auto inline-flex items-center gap-1">
+    <!-- Profile switcher button. Opens a separate Tauri window (like the
+         device-pickers) instead of a popover — the panel window is too
+         short to host an in-place dropdown without changing its height,
+         and resizing the panel mid-flow looks wrong. -->
+    {#if profilesStore.enabled && profilesStore.profiles.length > 0}
+      <Button
+        size="icon-sm"
+        variant={profileFlash ? "default_soft" : "ghost"}
+        disabled={isRecording}
+        onclick={openProfilePicker}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
+        title={activeProfile
+          ? `Profile: ${activeProfile.name} — click to switch`
+          : "Switch profile"}
+        aria-label="Switch profile"
+      >
+        <SlidersIcon size={13} strokeWidth={2} />
+      </Button>
+    {/if}
+
     <!-- Device toggles -->
     <ButtonGroup>
       <!-- System audio -->
@@ -511,14 +710,26 @@
         {/if}
       </Button>
 
-      <!-- Mic -->
+      <!-- Mic. `micWarning` is set by `applyProfile` when a saved mic was
+           missing or got swapped — surfaced in the tooltip rather than a
+           toast so the panel stays minimal. -->
       <Button
-        variant={micOn ? "default_soft" : "outline"}
+        variant={micOn
+          ? micWarning
+            ? "destructive_soft"
+            : "default_soft"
+          : micWarning
+            ? "destructive_soft"
+            : "outline"}
         size="icon-sm"
         disabled={isRecording}
         onclick={toggleMic}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
-        title={micOn ? `Mic: ${selectedMicName}` : "Microphone: off"}
+        title={micOn
+          ? `Mic: ${selectedMicName}${micWarning ? ` — ${micWarning}` : ""}`
+          : micWarning
+            ? `Microphone: off — ${micWarning}`
+            : "Microphone: off"}
       >
         {#if micOn}
           <Mic size={14} strokeWidth={2} />
@@ -527,20 +738,26 @@
         {/if}
       </Button>
 
-      <!-- Camera -->
+      <!-- Camera. `cameraWarning` (from profile apply) and `cameraValidation`
+           (from device probe) both surface in the tooltip; whichever is
+           present wins the destructive_soft tint. -->
       <Button
         disabled={isRecording}
         onclick={toggleCamera}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant={cameraOn
-          ? cameraValidation?.status === "error"
+          ? cameraValidation?.status === "error" || cameraWarning
             ? "destructive_soft"
             : "default_soft"
-          : "outline"}
+          : cameraWarning
+            ? "destructive_soft"
+            : "outline"}
         size="icon-sm"
         title={cameraOn
-          ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}`
-          : "Camera: off"}
+          ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}${cameraWarning ? ` — ${cameraWarning}` : ""}`
+          : cameraWarning
+            ? `Camera: off — ${cameraWarning}`
+            : "Camera: off"}
       >
         {#if cameraOn}
           <Camera size={14} strokeWidth={2} />

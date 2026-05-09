@@ -19,8 +19,27 @@ use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init());
+
+    // JS-injecting plugins (dialog, os) MUST be added on the Builder before
+    // any window is created — registering them later via `app.handle().plugin()`
+    // inside `setup()` is too late: the WebView has already loaded the bundle
+    // without the plugin's init script, so `window.__TAURI_OS_PLUGIN_INTERNALS__`
+    // is undefined and synchronous calls like `platform()` throw at module
+    // evaluation time, taking the whole frontend down. The Rust-only log plugin
+    // can stay inside `setup()`.
+    if cfg!(debug_assertions) {
+        builder = builder.plugin(
+            tauri_plugin_log::Builder::default()
+                .level(log::LevelFilter::Info)
+                .build(),
+        );
+    }
+
+    builder
         .setup(|app| {
             let handle = app.handle();
             let config = load_config(&handle);
@@ -31,16 +50,6 @@ pub fn run() {
                 config: Mutex::new(config),
                 export_cancel: Mutex::new(HashMap::new()),
             });
-
-            if cfg!(debug_assertions) {
-                app.handle().plugin(
-                    tauri_plugin_log::Builder::default()
-                        .level(log::LevelFilter::Info)
-                        .build(),
-                )?;
-            }
-            app.handle().plugin(tauri_plugin_dialog::init())?;
-            app.handle().plugin(tauri_plugin_os::init())?;
 
             // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
             // up to 4 candidate locations, each spawn taking ~100–300 ms cold.

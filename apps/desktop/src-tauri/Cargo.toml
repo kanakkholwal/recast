@@ -56,3 +56,25 @@ windows = { version = "0.58.0", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
+
+# Native Wayland screen-capture stack. The portal (`ashpd`) negotiates
+# permission and hands us a PipeWire node ID + file descriptor; `pipewire`
+# attaches to that node and pulls BGRA frames. Both are Linux-only crates
+# with C system-library dependencies (`libpipewire-0.3-dev`,
+# `libdbus-1-dev`) — the build host needs those packages installed.
+#
+# `default-features = false` for ashpd so we don't pull in the gtk3/gtk4
+# integration crates we don't need; we just want the raw portal client.
+# The `tokio` feature picks the tokio runtime to match Tauri's own.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.10", default-features = false, features = ["tokio"] }
+# Must match the major version `xcap` pulls in transitively (it uses
+# pipewire for Wayland source enumeration). Two different major versions
+# both `links = "pipewire-0.3"` → cargo-resolution failure. Keep this
+# pinned to the same major as xcap or bump them together.
+pipewire = "0.9"
+# Pure-Rust X11 client. xcap also depends on x11rb so the version line
+# is shared — keeping these in lockstep avoids resolution churn. The
+# `shm` feature lets us upgrade to XShm later for the perf win without
+# touching Cargo.toml again; we only use plain `GetImage` for MVP.
+x11rb = { version = "0.13", features = ["shm"] }

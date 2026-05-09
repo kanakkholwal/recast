@@ -12,8 +12,8 @@
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import BezierEditor from "../_components/BezierEditor.svelte";
-  import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -153,26 +153,20 @@
   }
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
-  <!-- Header -->
-  <section class="flex flex-col gap-2">
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-          Focus regions
-        </h3>
-        <InspectorHint
-          content="Each region zooms in on the clip with your own ease-in and ease-out curves. Use split ramps to hold at full zoom before releasing."
-        />
-      </div>
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  <PanelSection
+    title="Regions"
+    hint="Each region zooms in on the clip with your own ease-in and ease-out curves. Use split ramps to hold at full zoom before releasing."
+    flush
+  >
+    {#snippet action()}
       <Button variant="secondary" size="xs" class="gap-1.5" onclick={addRegion}>
         <Plus size={11} />
         Add
       </Button>
-    </div>
-
+    {/snippet}
     <!-- Smart Auto-Zoom controls -->
-    <div class="flex flex-col gap-1.5 rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur p-2">
+    <div class="flex flex-col gap-1.5 rounded-md border border-border/60 bg-card/40 p-2">
       <label class="flex items-center gap-2 text-[11px] text-foreground">
         <input
           type="checkbox"
@@ -198,11 +192,11 @@
           disabled={!store.cursorPath}
         >
           <Wand2 size={11} />
-          Re-run auto-zoom
+          Re-run
         </Button>
       </div>
     </div>
-  </section>
+  </PanelSection>
 
   <!-- Region list -->
   {#if store.zoomRegions.length === 0}
@@ -266,23 +260,19 @@
   {#if selected}
     {@const region = selected}
     {@const maxRamp = regionMaxRamp(region)}
-    <section class="flex flex-col gap-3 border-t border-border pt-3">
-      <header class="flex items-center justify-between gap-2">
-        <h3 class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-          Region settings
-        </h3>
-        <Button
-          variant="destructive_soft"
-          size="xs"
-          class="gap-1.5"
-          onclick={removeSelected}
-        >
-          <Trash2 size={11} />
-          Delete
-        </Button>
-      </header>
-
-      <div class="space-y-2.5">
+    <div class="flex flex-col gap-3 border-t border-border pt-3">
+      <PanelSection title="Settings">
+        {#snippet action()}
+          <Button
+            variant="destructive_soft"
+            size="xs"
+            class="gap-1.5"
+            onclick={removeSelected}
+          >
+            <Trash2 size={11} />
+            Delete
+          </Button>
+        {/snippet}
         <SliderControl
           label="Scale"
           value={region.scale}
@@ -294,17 +284,13 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ scale: v })}
         />
+      </PanelSection>
 
-        <div class="flex items-center justify-between gap-2 pt-1">
-          <div class="flex items-center gap-1.5">
-            <Crosshair size={11} class="text-muted-foreground" />
-            <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-              Focus point
-            </span>
-            <InspectorHint
-              content="Drag the rectangle on the preview, or use the sliders. Values are 0..1 across the frame (0.5 = center)."
-            />
-          </div>
+      <PanelSection
+        title="Focus point"
+        hint="Drag the rectangle on the preview, or use the sliders. Values are 0..1 across the frame (0.5 = center)."
+      >
+        {#snippet action()}
           <Button
             variant="ghost"
             size="xs"
@@ -313,9 +299,10 @@
               region.centerY === 0.5 &&
               region.motionBlur === DEFAULT_ZOOM_MOTION_BLUR}
           >
+            <Crosshair size={11} class="mr-1" />
             Recenter
           </Button>
-        </div>
+        {/snippet}
         <SliderControl
           label="Focus X"
           value={region.centerX}
@@ -347,7 +334,9 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ motionBlur: v / 100 })}
         />
+      </PanelSection>
 
+      <PanelSection title="Timing">
         <SliderControl
           label="Start"
           value={region.start}
@@ -392,43 +381,42 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampOut: v })}
         />
-      </div>
+      </PanelSection>
 
-      <div class="grid grid-cols-2 gap-3">
-        <BezierEditor
-          label="Ease in"
-          value={region.easeIn}
-          onchange={(v) => updateSelected({ easeIn: v }, true)}
-          showPresets={false}
-          size={140}
-        />
-        <BezierEditor
-          label="Ease out"
-          value={region.easeOut}
-          onchange={(v) => updateSelected({ easeOut: v }, true)}
-          showPresets={false}
-          size={140}
-        />
-      </div>
-
-      <div class="flex flex-col gap-1.5">
-        <span class="text-[11px] font-medium text-foreground">Apply preset to both</span>
-        <div class="flex flex-wrap gap-1">
-          {#each EASING_PRESETS as preset (preset.id)}
-            <button
-              type="button"
-              onclick={() => applyPresetToBoth(preset.value)}
-              class="h-6 rounded-sm border border-border bg-background px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            >
-              {preset.label}
-            </button>
-          {/each}
+      <PanelSection title="Easing" flush>
+        {#snippet action()}
+          <Button variant="ghost" size="xs" onclick={resetCurves}>Reset</Button>
+        {/snippet}
+        <div class="flex flex-col gap-2">
+          <div class="grid grid-cols-2 gap-3">
+            <BezierEditor
+              label="Ease in"
+              value={region.easeIn}
+              onchange={(v) => updateSelected({ easeIn: v }, true)}
+              showPresets={false}
+              size={140}
+            />
+            <BezierEditor
+              label="Ease out"
+              value={region.easeOut}
+              onchange={(v) => updateSelected({ easeOut: v }, true)}
+              showPresets={false}
+              size={140}
+            />
+          </div>
+          <div class="flex flex-wrap gap-1">
+            {#each EASING_PRESETS as preset (preset.id)}
+              <button
+                type="button"
+                onclick={() => applyPresetToBoth(preset.value)}
+                class="h-6 rounded-sm border border-border bg-background px-2 text-[10px] font-medium text-muted-foreground transition-colors hover:text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              >
+                {preset.label}
+              </button>
+            {/each}
+          </div>
         </div>
-      </div>
-
-      <div class="flex justify-end">
-        <Button variant="ghost" size="xs" onclick={resetCurves}>Reset curves</Button>
-      </div>
-    </section>
+      </PanelSection>
+    </div>
   {/if}
 </div>

@@ -9,6 +9,7 @@
     "recording-panel",
     "editor-*",
     "device-picker-*",
+    "profile-picker",
     "camera-preview",
     "region-picker"
   ],

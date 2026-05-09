@@ -9,6 +9,7 @@
     MoreHorizontal,
     Pencil,
     Plus,
+    Power,
     Search,
     SlidersHorizontal as SlidersIcon,
     Sparkles,
@@ -23,178 +24,194 @@
   import * as Dialog from "@recast/ui/dialog";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
+  import * as Select from "@recast/ui/select";
   import { toast } from "@recast/ui/sonner";
+  import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
 
-  interface RecordingProfile {
-    id: string;
-    name: string;
-    systemAudio: boolean;
-    microphone: boolean;
-    camera: boolean;
-    isDefault: boolean;
-  }
+  import {
+    enumerateCameras,
+    type BrowserCamera,
+  } from "$lib/camera/browser-devices";
+  import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
+  import type { RecordingProfile } from "$lib/profiles";
+  import { profilesStore } from "$lib/stores/profiles.svelte";
 
-  const STORAGE_KEY = "recast-recording-profiles";
-
-  let profiles = $state<RecordingProfile[]>([]);
-  let editingId = $state<string | null>(null);
+  // mode = 'create' means draft is not yet in the store; mode = 'edit' means
+  // draft mirrors an existing entry. Persistence only happens on Save.
+  let mode = $state<"create" | "edit" | null>(null);
   let draft = $state<RecordingProfile | null>(null);
   let nameInputEl = $state<HTMLInputElement | null>(null);
   let query = $state("");
 
+  // Device lists are loaded once on mount and refreshed each time the dialog
+  // opens (devices come and go between recordings). Camera enumeration may
+  // trigger a permission probe so we deliberately keep it off the critical
+  // mount path — re-fetch when the user actually needs to pick.
+  let mics = $state<AudioDeviceInfo[]>([]);
+  let cameras = $state<BrowserCamera[]>([]);
+  let devicesLoading = $state(false);
+
+  // Device-aware combination math: cap is 2 × (2+#mics) × (2+#cams) — each
+  // attached mic / camera unlocks a new "audio + this mic + that cam" slot.
+  // With zero mics + zero cams, this collapses to the original 2³ = 8.
+  const totalCombinations = $derived(
+    profilesStore.maxCombinations(mics, cameras),
+  );
+  const remainingSlots = $derived(profilesStore.freeSlots(mics, cameras));
+  const isFull = $derived(remainingSlots === 0);
+
   onMount(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        profiles = JSON.parse(stored);
-      } catch {
-        profiles = [];
-      }
-    }
-    if (profiles.length === 0) {
-      profiles = [
-        {
-          id: crypto.randomUUID(),
-          name: "Screen Only",
-          systemAudio: true,
-          microphone: false,
-          camera: false,
-          isDefault: true,
-        },
-        {
-          id: crypto.randomUUID(),
-          name: "Presentation",
-          systemAudio: true,
-          microphone: true,
-          camera: true,
-          isDefault: false,
-        },
-        {
-          id: crypto.randomUUID(),
-          name: "Tutorial",
-          systemAudio: true,
-          microphone: true,
-          camera: false,
-          isDefault: false,
-        },
-      ];
-    }
-    profiles = ensureExactlyOneDefault(profiles);
-    save();
+    profilesStore.hydrate();
+    void loadDevices();
 
     window.addEventListener("keydown", handleGlobalShortcut);
     return () => window.removeEventListener("keydown", handleGlobalShortcut);
   });
 
-  function ensureExactlyOneDefault(
-    list: RecordingProfile[],
-  ): RecordingProfile[] {
-    if (list.length === 0) return list;
-    const defaults = list.filter((p) => p.isDefault);
-    if (defaults.length === 1) return list;
-    if (defaults.length === 0) {
-      return list.map((p, i) => (i === 0 ? { ...p, isDefault: true } : p));
+  async function loadDevices() {
+    devicesLoading = true;
+    try {
+      const [audioDevices, videoDevices] = await Promise.all([
+        getAudioDevices().catch(() => [] as AudioDeviceInfo[]),
+        enumerateCameras().catch(() => [] as BrowserCamera[]),
+      ]);
+      mics = audioDevices;
+      cameras = videoDevices;
+    } finally {
+      devicesLoading = false;
     }
-    let seen = false;
-    return list.map((p) => {
-      if (p.isDefault && !seen) {
-        seen = true;
-        return p;
-      }
-      return p.isDefault ? { ...p, isDefault: false } : p;
-    });
-  }
-
-  function save() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(profiles));
   }
 
   function addProfile() {
-    const profile: RecordingProfile = {
+    if (isFull) {
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
+      return;
+    }
+    const combo = profilesStore.nextFreeCombo(mics, cameras);
+    if (!combo) {
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
+      return;
+    }
+    // Resolve device labels for any specific id the combo picked, so the
+    // dropdown opens pre-filled and the saved profile carries an identity.
+    const micDevice = combo.micDeviceId
+      ? mics.find((m) => m.id === combo.micDeviceId)
+      : null;
+    const camDevice = combo.cameraDeviceId
+      ? cameras.find((c) => c.deviceId === combo.cameraDeviceId)
+      : null;
+    const draftProfile: RecordingProfile = {
       id: crypto.randomUUID(),
-      name: `Profile ${profiles.length + 1}`,
-      systemAudio: true,
-      microphone: false,
-      camera: false,
-      isDefault: profiles.length === 0,
+      name: `Profile ${profilesStore.profiles.length + 1}`,
+      systemAudio: combo.systemAudio,
+      microphone: combo.microphone,
+      micDeviceId: combo.micDeviceId,
+      micLabel: micDevice?.name ?? null,
+      camera: combo.camera,
+      cameraDeviceId: combo.cameraDeviceId,
+      cameraLabel: camDevice?.label ?? null,
+      isDefault: profilesStore.profiles.length === 0,
     };
-    profiles = [...profiles, profile];
-    save();
-    startEditing(profile);
+    openDialog("create", draftProfile);
   }
 
   function duplicateProfile(profile: RecordingProfile) {
+    if (isFull) {
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
+      return;
+    }
+    // Open as a draft — user must change capabilities before Save (the
+    // duplicate-signature check would otherwise reject it).
     const copy: RecordingProfile = {
       ...profile,
       id: crypto.randomUUID(),
       name: `${profile.name} Copy`,
       isDefault: false,
     };
-    profiles = [...profiles, copy];
-    save();
-    toast.success(`Duplicated "${profile.name}"`);
+    openDialog("create", copy);
   }
 
-  function deleteProfile(id: string) {
-    const victim = profiles.find((p) => p.id === id);
-    if (!victim) return;
-    const wasDefault = victim.isDefault;
-    profiles = profiles.filter((p) => p.id !== id);
-    if (wasDefault && profiles.length > 0) {
-      profiles = ensureExactlyOneDefault(profiles);
-    }
-    save();
-    toast.success(`Deleted "${victim.name}"`);
-    if (editingId === id) {
-      editingId = null;
-      draft = null;
-    }
-  }
-
-  function setDefault(id: string) {
-    profiles = profiles.map((p) => ({ ...p, isDefault: p.id === id }));
-    save();
-    toast.success("Default profile updated");
-  }
-
-  function startEditing(profile: RecordingProfile) {
-    editingId = profile.id;
-    draft = { ...profile };
+  function openDialog(next: "create" | "edit", profile: RecordingProfile) {
+    mode = next;
+    draft = profile;
+    void loadDevices();
     queueMicrotask(() => {
       nameInputEl?.focus();
       nameInputEl?.select();
     });
   }
 
+  function deleteProfile(id: string) {
+    const victim = profilesStore.findById(id);
+    if (!victim) return;
+    profilesStore.remove(id);
+    toast.success(`Deleted "${victim.name}"`);
+    if (draft?.id === id) {
+      mode = null;
+      draft = null;
+    }
+  }
+
+  function setDefault(id: string) {
+    profilesStore.setDefault(id);
+    toast.success("Default profile updated");
+  }
+
+  function startEditing(profile: RecordingProfile) {
+    openDialog("edit", { ...profile });
+  }
+
   function finishEditing() {
-    if (!editingId || !draft) return;
-    if (!draft.name.trim()) {
+    if (!mode || !draft) return;
+    const trimmed = draft.name.trim();
+    if (!trimmed) {
       toast.error("Name cannot be empty");
       return;
     }
-    const next = { ...draft, name: draft.name.trim() };
-    const currentId = editingId;
-    if (next.isDefault) {
-      profiles = profiles.map((p) => ({
-        ...(p.id === currentId ? next : p),
-        isDefault: p.id === currentId,
-      }));
-    } else {
-      profiles = profiles.map((p) => (p.id === currentId ? next : p));
-      profiles = ensureExactlyOneDefault(profiles);
+    const next: RecordingProfile = { ...draft, name: trimmed };
+    // If a capability is off, clear the matching device pointers so we don't
+    // persist stale identity that won't be applied anyway.
+    if (!next.microphone) {
+      next.micDeviceId = null;
+      next.micLabel = null;
     }
-    save();
-    toast.success("Profile saved");
-    editingId = null;
+    if (!next.camera) {
+      next.cameraLabel = null;
+      next.cameraDeviceId = null;
+    }
+
+    const conflict = profilesStore.duplicateOf(next);
+    if (conflict) {
+      toast.error(
+        `"${conflict.name}" already uses this combination — change a toggle or device`,
+      );
+      return;
+    }
+
+    if (mode === "create") {
+      profilesStore.insert(next);
+      toast.success("Profile created");
+    } else {
+      profilesStore.update(next);
+      toast.success("Profile saved");
+    }
+
+    mode = null;
     draft = null;
   }
 
   function cancelEditing() {
-    editingId = null;
+    mode = null;
     draft = null;
   }
 
@@ -203,19 +220,52 @@
   ) {
     if (!draft) return;
     if (field === "isDefault" && draft.isDefault) {
-      const others = profiles.filter((p) => p.id !== draft!.id);
+      const others = profilesStore.profiles.filter(
+        (p) => p.id !== draft!.id,
+      );
       if (others.length === 0) {
         toast.info("At least one profile must be default");
         return;
       }
     }
-    draft = { ...draft, [field]: !draft[field] };
+    const nextValue = !draft[field];
+    draft = { ...draft, [field]: nextValue };
+
+    // When turning a device-bound capability ON, prefill the saved device
+    // from the current default so the dropdown isn't blank.
+    if (field === "microphone" && nextValue && !draft.micDeviceId) {
+      const def = mics.find((d) => d.isDefault) ?? mics[0];
+      if (def) draft = { ...draft, micDeviceId: def.id, micLabel: def.name };
+    }
+    if (field === "camera" && nextValue && !draft.cameraDeviceId) {
+      const def = cameras.find((c) => !c.isVirtual) ?? cameras[0];
+      if (def)
+        draft = {
+          ...draft,
+          cameraDeviceId: def.deviceId,
+          cameraLabel: def.label,
+        };
+    }
+  }
+
+  function setMicSelection(id: string) {
+    if (!draft) return;
+    const dev = mics.find((m) => m.id === id);
+    if (!dev) return;
+    draft = { ...draft, micDeviceId: dev.id, micLabel: dev.name };
+  }
+
+  function setCameraSelection(id: string) {
+    if (!draft) return;
+    const dev = cameras.find((c) => c.deviceId === id);
+    if (!dev) return;
+    draft = { ...draft, cameraDeviceId: dev.deviceId, cameraLabel: dev.label };
   }
 
   function handleGlobalShortcut(e: KeyboardEvent) {
     const meta = e.metaKey || e.ctrlKey;
     if (!meta || e.shiftKey || e.altKey) return;
-    if (editingId) return;
+    if (mode) return;
     if (e.key.toLowerCase() === "n") {
       e.preventDefault();
       addProfile();
@@ -229,10 +279,17 @@
     }
   }
 
+  function enableProfileSystem() {
+    profilesStore.setEnabled(true);
+    toast.success("Profiles enabled");
+  }
+
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return profiles;
-    return profiles.filter((p) => p.name.toLowerCase().includes(q));
+    if (!q) return profilesStore.profiles;
+    return profilesStore.profiles.filter((p) =>
+      p.name.toLowerCase().includes(q),
+    );
   });
 
   // Capability metadata for the per-card chip rail and dialog toggles.
@@ -251,8 +308,12 @@
   function summarize(profile: RecordingProfile): string {
     const parts = [
       profile.systemAudio && "System audio",
-      profile.microphone && "Mic",
-      profile.camera && "Camera",
+      profile.microphone &&
+        (profile.micLabel ? `Mic: ${profile.micLabel}` : "Mic"),
+      profile.camera &&
+        (profile.cameraLabel
+          ? `Cam: ${profile.cameraLabel}`
+          : "Camera"),
     ].filter(Boolean) as string[];
     return parts.length === 0 ? "Silent capture" : parts.join(" · ");
   }
@@ -278,31 +339,108 @@
           <span
             class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
           >
-            {profiles.length === 0
+            {profilesStore.profiles.length === 0
               ? "No profiles yet"
-              : profiles.length === 1
+              : profilesStore.profiles.length === 1
                 ? "1 recording preset"
-                : `${profiles.length} recording presets`}
+                : `${profilesStore.profiles.length} recording presets`}
           </span>
         </h1>
-        <Button
-          onclick={addProfile}
-          size="sm"
-          class="h-9 shrink-0 gap-1.5"
-          title="New profile (⌘N)"
-        >
-          <Plus size={13} />
-          New profile
-          <Kbd class="bg-primary-foreground/15 text-primary-foreground/90"
-            >⌘N</Kbd
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <!--
+                Wrap a span around the disabled button so pointer events still
+                reach the trigger — disabled native buttons swallow hover.
+              -->
+              <span {...props as Record<string, unknown>} class="shrink-0">
+                <Button
+                  onclick={addProfile}
+                  size="sm"
+                  class="h-9 gap-1.5"
+                  disabled={isFull}
+                >
+                  <Plus size={13} />
+                  New profile
+                  <Kbd
+                    class="bg-primary-foreground/15 text-primary-foreground/90"
+                    >⌘N</Kbd
+                  >
+                </Button>
+              </span>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            side="bottom"
+            class="max-w-xs text-[11px] leading-relaxed"
           >
-        </Button>
+            {#if isFull}
+              <div class="flex flex-col gap-1">
+                <span class="font-semibold text-foreground"
+                  >No combinations left</span
+                >
+                <span class="text-muted-foreground">
+                  Profiles are unique by audio · mic · camera, including which
+                  specific device is picked. All {totalCombinations} combinations
+                  for your current devices are taken — plug in another mic or
+                  camera, or edit an existing profile to free a slot.
+                </span>
+              </div>
+            {:else}
+              New profile <Kbd
+                class="bg-foreground/10 text-foreground/80 ml-1">⌘N</Kbd
+              >
+            {/if}
+          </Tooltip.Content>
+        </Tooltip.Root>
       </div>
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
         Save what to capture — system audio, mic, camera — and pick the default
         that loads on launch.
+        {#if profilesStore.profiles.length > 0}
+          <span class="text-muted-foreground/70">
+            {remainingSlots === 0
+              ? `All ${totalCombinations} combinations in use.`
+              : `${remainingSlots} of ${totalCombinations} combinations free.`}
+          </span>
+        {/if}
       </p>
     </header>
+
+    <!-- Disabled banner: profiles still configurable, but the recording
+         panel won't auto-apply them until the system is re-enabled. -->
+    {#if !profilesStore.enabled}
+      <div
+        in:fly={{ y: 8, duration: 240, easing: cubicOut }}
+        class="flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 shadow-(--shadow-craft-inset)"
+        role="status"
+      >
+        <span
+          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning ring-1 ring-inset ring-warning/30"
+          aria-hidden="true"
+        >
+          <Power size={14} />
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="text-[12.5px] font-semibold text-foreground">
+            Profiles are off
+          </div>
+          <div class="text-[11px] text-muted-foreground">
+            The recording panel won't auto-apply a default profile or show the
+            switcher. Edits here are still saved for when you re-enable.
+          </div>
+        </div>
+        <Button
+          onclick={enableProfileSystem}
+          variant="secondary"
+          size="sm"
+          class="h-8 shrink-0 gap-1.5"
+        >
+          <Power class="size-3.5" />
+          <span class="text-[11.5px]">Enable</span>
+        </Button>
+      </div>
+    {/if}
 
     <!-- Hero search bar (matches home page) -->
     <label
@@ -432,7 +570,10 @@
                       <Kbd>⌘R</Kbd>
                     </DropdownMenu.Shortcut>
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={() => duplicateProfile(profile)}>
+                  <DropdownMenu.Item
+                    disabled={isFull}
+                    onSelect={() => duplicateProfile(profile)}
+                  >
                     <Copy class="size-3" /> Duplicate
                     <DropdownMenu.Shortcut>
                       <Kbd>⌘D</Kbd>
@@ -508,31 +649,33 @@
         {/each}
 
         <!-- "New profile" call-to-card always at the end of the grid -->
-        <button
-          type="button"
-          onclick={addProfile}
-          in:fly={{
-            y: 8,
-            duration: 240,
-            delay: Math.min(filtered.length * 40, 280),
-            easing: cubicOut,
-          }}
-          class="group/add flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-        >
-          <span
-            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-colors group-hover/add:bg-primary/10 group-hover/add:text-primary"
+        {#if !isFull}
+          <button
+            type="button"
+            onclick={addProfile}
+            in:fly={{
+              y: 8,
+              duration: 240,
+              delay: Math.min(filtered.length * 40, 280),
+              easing: cubicOut,
+            }}
+            class="group/add flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           >
-            <Plus class="size-4" />
-          </span>
-          <div>
-            <div class="text-[12.5px] font-semibold text-foreground">
-              New profile
+            <span
+              class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-colors group-hover/add:bg-primary/10 group-hover/add:text-primary"
+            >
+              <Plus class="size-4" />
+            </span>
+            <div>
+              <div class="text-[12.5px] font-semibold text-foreground">
+                New profile
+              </div>
+              <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
+                Save another preset
+              </div>
             </div>
-            <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
-              Save another preset
-            </div>
-          </div>
-        </button>
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -581,7 +724,80 @@
   </button>
 {/snippet}
 
-{#if editingId !== null && draft}
+{#snippet deviceRow(
+  Icon: typeof Mic,
+  label: string,
+  hint: string,
+  options: { value: string; label: string }[],
+  selected: string | null,
+  onSelect: (id: string) => void,
+  emptyHint: string,
+)}
+  {@const currentLabel = options.find((o) => o.value === selected)?.label}
+  <div class="flex flex-col gap-2 px-5 py-3 bg-muted/15">
+    <div class="flex items-center gap-3">
+      <span
+        class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground ring-1 ring-inset ring-border/40"
+        aria-hidden="true"
+      >
+        <Icon size={14} />
+      </span>
+      <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span class="truncate text-[11.5px] font-semibold text-foreground/80">
+          {label}
+        </span>
+        <span
+          class="truncate text-[10.5px] font-medium text-muted-foreground/80"
+        >
+          {hint}
+        </span>
+      </span>
+    </div>
+    {#if options.length === 0}
+      <div
+        class="flex h-9 items-center justify-center rounded-lg border border-dashed border-border/60 bg-background/40 text-[11px] font-medium text-muted-foreground"
+      >
+        {devicesLoading ? "Loading devices…" : emptyHint}
+      </div>
+    {:else}
+      <Select.Root
+        type="single"
+        value={selected ?? undefined}
+        onValueChange={(v) => {
+          if (typeof v === "string" && v.length > 0) onSelect(v);
+        }}
+      >
+        <Select.Trigger
+          class="h-9! w-full justify-between rounded-lg border border-border/50 bg-background/70 px-3 text-[11.5px] font-medium text-foreground hover:bg-background hover:border-border focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
+          aria-label={label}
+        >
+          <span
+            data-slot="select-value"
+            class="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <Icon class="size-3.5 shrink-0 text-muted-foreground" />
+            <span class="truncate">
+              {currentLabel ?? "Select a device…"}
+            </span>
+          </span>
+        </Select.Trigger>
+        <Select.Content sideOffset={6} class="max-h-64">
+          {#each options as opt (opt.value)}
+            <Select.Item
+              value={opt.value}
+              label={opt.label}
+              class="text-[11.5px]"
+            >
+              <span class="truncate pr-4">{opt.label}</span>
+            </Select.Item>
+          {/each}
+        </Select.Content>
+      </Select.Root>
+    {/if}
+  </div>
+{/snippet}
+
+{#if mode !== null && draft}
   <Dialog.Root
     open={true}
     onOpenChange={(v) => {
@@ -599,9 +815,7 @@
           <Dialog.Title
             class="text-[14px] font-semibold tracking-tight text-foreground"
           >
-            {editingId && profiles.find((p) => p.id === editingId)
-              ? "Edit Profile"
-              : "New Profile"}
+            {mode === "edit" ? "Edit Profile" : "New Profile"}
           </Dialog.Title>
           <Dialog.Description
             class="mt-0.5 text-[11px] font-medium text-muted-foreground"
@@ -655,28 +869,60 @@
           "Microphone",
           "Record your voice from the default input",
         )}
+        {#if draft.microphone}
+          {@render deviceRow(
+            Mic,
+            "Microphone device",
+            "If unavailable at recording time, the system default is used.",
+            mics.map((m) => ({
+              value: m.id,
+              label: m.name + (m.isDefault ? " (default)" : ""),
+            })),
+            draft.micDeviceId,
+            setMicSelection,
+            "No microphones detected",
+          )}
+        {/if}
         {@render toggleRow(
           "camera",
           Camera,
           "Camera",
           "Overlay webcam feed onto the recording",
         )}
+        {#if draft.camera}
+          {@render deviceRow(
+            Camera,
+            "Camera device",
+            "Saved by name; falls back to first non-virtual cam if missing.",
+            cameras.map((c) => ({
+              value: c.deviceId,
+              label: c.label + (c.isVirtual ? " (virtual)" : ""),
+            })),
+            draft.cameraDeviceId,
+            setCameraSelection,
+            "No cameras detected",
+          )}
+        {/if}
       </div>
 
       <footer
         class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
       >
-        <Button
-          variant="destructive_soft"
-          size="xs"
-          class="gap-1.5"
-          onclick={() => {
-            if (editingId) deleteProfile(editingId);
-          }}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
+        {#if mode === "edit"}
+          <Button
+            variant="destructive_soft"
+            size="xs"
+            class="gap-1.5"
+            onclick={() => {
+              if (draft) deleteProfile(draft.id);
+            }}
+          >
+            <Trash2 size={12} />
+            Delete
+          </Button>
+        {:else}
+          <span></span>
+        {/if}
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="xs" onclick={cancelEditing}
             >Cancel</Button

@@ -470,12 +470,6 @@ impl RenderGraph {
     }
 }
 
-fn padding_percent_to_pixels(padding_percent: f64, source: SourceVideoMetadata) -> u32 {
-    let pct = padding_percent.clamp(0.0, 20.0);
-    let shorter_edge = source.width.min(source.height) as f64;
-    ((shorter_edge * pct) / 100.0).round() as u32
-}
-
 fn build_color_background_filter(
     background: &BackgroundNode,
     prelude_segments: Vec<String>,

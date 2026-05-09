@@ -4,16 +4,26 @@
 	import { Button } from "@recast/ui/button";
 	import { ArrowRight, Download, Sparkles } from "lucide-svelte";
 
-	const words = ["recorder.", "creator.", "refiner.", "generator.", "editor."];
+	const words = [
+		"expensive.",
+		"cinematic.",
+		"intentional.",
+		"effortless.",
+		"hand-edited.",
+	];
 	const platforms = ["macOS", "Windows", "Linux"];
 </script>
 
-<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-32">
+<Section spacing="none" class="hero-atmosphere relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">
+	<div aria-hidden="true" class="hero-aurora pointer-events-none absolute inset-0 -z-10"></div>
+	<div aria-hidden="true" class="hero-clouds pointer-events-none absolute inset-x-0 top-0 -z-10 h-160"></div>
+	<div aria-hidden="true" class="hero-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"></div>
+
 	<Container class="relative">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
 			<a href="/changelog" class="group inline-block animate-fade-in">
 				<Eyebrow icon={Sparkles} variant="primary">
-					<span>v0.1 beta · what's new</span>
+					<span>what's new</span>
 					<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
 				</Eyebrow>
 			</a>
@@ -21,9 +31,11 @@
 			<h1
 				class="text-balance mt-7 animate-fade-up text-5xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
 			>
-				The fastest product&nbsp;demo
-				<span class="inline-grid overflow-hidden align-bottom font-medium italic text-foreground/40">
-					<TextLoop class="text-primary" texts={words} interval={3000} />
+				Demos that look
+				<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
+					<span class="inline-grid overflow-hidden">
+						<TextLoop class="text-primary" texts={words} interval={3000} />
+					</span>
 				</span>
 			</h1>
 
@@ -31,7 +43,7 @@
 				class="text-pretty mt-7 max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
 				style="animation-delay: 120ms"
 			>
-				Stop wrestling with timeline tools. Recast records, refines, and exports cinematic walkthroughs — locally, in seconds.
+				The native screen recorder for founders, indie hackers, and product engineers who'd rather ship than open a timeline.
 			</p>
 
 			<div
@@ -40,10 +52,10 @@
 			>
 				<Button href="/download" size="lg" class="gap-2.5">
 					<Download class="size-4" />
-					Download Recast
+					Get started
 				</Button>
-				<Button href="/features" variant="ghost" size="lg" class="group/cta gap-2">
-					Explore features
+				<Button href="/features" variant="outline" size="lg" class="group/cta gap-2">
+					See a demo
 					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 				</Button>
 			</div>
@@ -114,3 +126,43 @@
 		</div>
 	</Container>
 </Section>
+
+<style>
+	.hero-aurora {
+		background:
+			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 70%),
+			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%),
+			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 70%);
+	}
+
+	:global(.dark) .hero-aurora {
+		background:
+			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 75%),
+			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 75%),
+			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 75%);
+	}
+
+	.hero-clouds {
+		background:
+			radial-gradient(ellipse 40% 20% at 25% 30%, color-mix(in srgb, white 18%, transparent), transparent 75%),
+			radial-gradient(ellipse 35% 18% at 75% 18%, color-mix(in srgb, white 14%, transparent), transparent 75%);
+		filter: blur(50px);
+		opacity: 0.5;
+	}
+
+	:global(.dark) .hero-clouds {
+		background:
+			radial-gradient(ellipse 40% 20% at 25% 30%, color-mix(in srgb, var(--color-foreground) 5%, transparent), transparent 75%),
+			radial-gradient(ellipse 35% 18% at 75% 18%, color-mix(in srgb, var(--color-foreground) 4%, transparent), transparent 75%);
+		filter: blur(50px);
+		opacity: 0.4;
+	}
+
+	.hero-grid {
+		background-image:
+			linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px),
+			linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px);
+		background-size: 64px 64px;
+		mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+	}
+</style>

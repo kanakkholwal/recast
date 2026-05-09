@@ -30,8 +30,8 @@
   import { cn } from "@recast/ui/utils";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { Image } from "@unpic/svelte";
-  import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -175,19 +175,13 @@
   });
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <!-- Mode switcher: dense icon tabs instead of 2×2 cards -->
-  <section>
-    <header class="mb-2 flex items-center gap-1.5">
-      <h3
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Canvas
-      </h3>
-      <InspectorHint
-        content="Background styling and frame spacing are previewed live in the editor."
-      />
-    </header>
+  <PanelSection
+    title="Canvas"
+    hint="Background styling and frame spacing are previewed live in the editor."
+    flush
+  >
     <div
       class="flex items-center gap-0.5 rounded-lg bg-muted/60 ring-1 ring-inset ring-border/40 p-0.5"
     >
@@ -212,20 +206,15 @@
         </Button>
       {/each}
     </div>
-  </section>
+  </PanelSection>
 
   {#if store.backgroundType === "wallpaper"}
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Wallpapers
-        </h3>
-        <span class="text-[10px] font-mono tabular-nums text-muted-foreground">
+    <PanelSection title="Wallpapers" flush>
+      {#snippet action()}
+        <span class="font-mono text-[10px] tabular-nums text-muted-foreground">
           {WALLPAPERS.length}
         </span>
-      </header>
+      {/snippet}
       <div class="grid grid-cols-3 gap-1.5">
         {#each WALLPAPERS as wallpaper (wallpaper.id)}
           {@const wallpaperValue = wallpaperBackgroundValue(wallpaper.id)}
@@ -253,19 +242,13 @@
           </Button>
         {/each}
       </div>
-    </section>
+    </PanelSection>
   {:else if store.backgroundType === "color"}
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Color Fill
-        </h3>
-        <InspectorHint
-          content="Solid backgrounds keep attention on the recording itself."
-        />
-      </header>
+    <PanelSection
+      title="Color"
+      hint="Solid backgrounds keep attention on the recording itself."
+      flush
+    >
       <div class="grid grid-cols-6 gap-1.5">
         {#each COLOR_PRESETS as color}
           {@const isSelected = store.backgroundValue === color}
@@ -293,10 +276,10 @@
               type="button"
               {...props}
               aria-label="Custom background color"
-              class="mt-3 flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-2 text-left transition-colors hover:border-ring"
+              class="mt-2 flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-left transition-colors hover:border-ring"
             >
               <span
-                class="size-7 shrink-0 rounded border border-input"
+                class="size-6 shrink-0 rounded border border-input"
                 style:background={
                   store.backgroundValue.startsWith("#")
                     ? store.backgroundValue
@@ -305,7 +288,7 @@
               ></span>
               <span class="min-w-0 flex-1">
                 <span class="block text-[11px] font-medium text-foreground"
-                  >Custom color</span
+                  >Custom</span
                 >
                 <span
                   class="block truncate font-mono text-[10px] text-muted-foreground"
@@ -332,19 +315,13 @@
           />
         </Popover.Content>
       </Popover.Root>
-    </section>
+    </PanelSection>
   {:else if store.backgroundType === "gradient"}
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Gradients
-        </h3>
-        <InspectorHint
-          content="Preset gradient backdrops render live in the preview."
-        />
-      </header>
+    <PanelSection
+      title="Gradients"
+      hint="Preset gradient backdrops render live in the preview."
+      flush
+    >
       <div class="grid grid-cols-2 gap-1.5">
         {#each GRADIENT_PRESETS as gradient}
           {@const isSelected = store.backgroundValue === gradient.value}
@@ -372,20 +349,14 @@
           </Button>
         {/each}
       </div>
-    </section>
+    </PanelSection>
   {:else}
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Image Background
-          </h3>
-          <InspectorHint
-            content="Imported images fit to cover the full canvas in the editor preview."
-          />
-        </div>
+    <PanelSection
+      title="Image"
+      hint="Imported images fit to cover the full canvas."
+      flush
+    >
+      {#snippet action()}
         <Button
           variant="outline"
           size="xs"
@@ -395,8 +366,7 @@
           <FolderOpen size={11} />
           {store.backgroundValue ? "Replace" : "Choose"}
         </Button>
-      </header>
-
+      {/snippet}
       {#if store.backgroundValue && isValidImageValue(store.backgroundValue)}
         <div
           class="overflow-hidden rounded-md border border-border bg-background"
@@ -420,89 +390,73 @@
           No image selected
         </div>
       {/if}
-    </section>
+    </PanelSection>
   {/if}
 
   <!-- Finishing controls (always visible) -->
-  <section>
-    <header class="mb-2 flex items-center gap-1.5">
-      <h3
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Finishing
-      </h3>
-      <InspectorHint
-        content="Blur softens image-based backgrounds. Padding controls the space around the video frame as a percentage of frame size."
-      />
-    </header>
+  <PanelSection
+    title="Finishing"
+    hint="Blur softens image-based backgrounds. Padding controls the space around the video frame as a percentage of frame size."
+  >
+    <SliderControl
+      label="Background blur"
+      bind:value={blurValue}
+      min={0}
+      max={100}
+      step={1}
+      unit="%"
+      onstart={() => store.pushUndoState()}
+      onchange={(next) => {
+        store.backgroundBlur = next;
+      }}
+    >
+      {#snippet icon()}
+        <Blend size={11} />
+      {/snippet}
+    </SliderControl>
 
-    <div class="space-y-2.5">
-      <SliderControl
-        label="Background blur"
-        bind:value={blurValue}
-        min={0}
-        max={100}
-        step={1}
-        unit="%"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => {
-          store.backgroundBlur = next;
-        }}
-      >
-        {#snippet icon()}
-          <Blend size={11} />
-        {/snippet}
-      </SliderControl>
+    <SliderControl
+      label="Frame padding"
+      bind:value={paddingValue}
+      min={0}
+      max={MAX_FRAME_PADDING_PERCENT}
+      step={1}
+      unit="%"
+      onstart={() => store.pushUndoState()}
+      onchange={(next) => {
+        store.padding = next;
+      }}
+    >
+      {#snippet icon()}
+        <LayoutTemplate size={11} />
+      {/snippet}
+    </SliderControl>
 
-      <SliderControl
-        label="Frame padding"
-        bind:value={paddingValue}
-        min={0}
-        max={MAX_FRAME_PADDING_PERCENT}
-        step={1}
-        unit="%"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => {
-          store.padding = next;
-        }}
-      >
-        {#snippet icon()}
-          <LayoutTemplate size={11} />
-        {/snippet}
-      </SliderControl>
-
-      <SliderControl
-        label="Corner radius"
-        bind:value={borderRadiusValue}
-        min={0}
-        max={50}
-        step={1}
-        unit="%"
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => {
-          store.borderRadius = next;
-        }}
-      >
-        {#snippet icon()}
-          <SquareRoundCorner size={11} />
-        {/snippet}
-      </SliderControl>
-    </div>
-  </section>
+    <SliderControl
+      label="Corner radius"
+      bind:value={borderRadiusValue}
+      min={0}
+      max={50}
+      step={1}
+      unit="%"
+      onstart={() => store.pushUndoState()}
+      onchange={(next) => {
+        store.borderRadius = next;
+      }}
+    >
+      {#snippet icon()}
+        <SquareRoundCorner size={11} />
+      {/snippet}
+    </SliderControl>
+  </PanelSection>
 
   <!-- Drop shadow — casts a soft shadow under the video rect onto the background. -->
-  <section>
-    <header class="mb-2 flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Drop shadow
-        </h3>
-        <InspectorHint
-          content="Adds depth by casting a soft shadow under the recording onto the canvas background."
-        />
-      </div>
+  <PanelSection
+    title="Drop shadow"
+    hint="Adds depth by casting a soft shadow under the recording onto the canvas background."
+    flush
+  >
+    {#snippet action()}
       <Button
         variant={store.shadow.enabled ? "default_soft" : "outline"}
         size="xs"
@@ -516,7 +470,7 @@
         <Square size={11} />
         {store.shadow.enabled ? "On" : "Off"}
       </Button>
-    </header>
+    {/snippet}
 
     {#if store.shadow.enabled}
       <div class="space-y-2.5">
@@ -616,5 +570,5 @@
         </Popover.Root>
       </div>
     {/if}
-  </section>
+  </PanelSection>
 </div>

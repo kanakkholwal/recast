@@ -10,20 +10,16 @@
     Clock,
     Copy,
     Disc3,
-    FileText,
     Film,
     FolderOpen,
     Gauge,
     HardDrive,
     ImageIcon,
     MousePointer,
-    Pencil,
-    Save,
     Scissors,
     Square,
     Stamp,
     Type as TypeIcon,
-    Video,
     Volume2,
     VolumeX
   } from "@lucide/svelte";
@@ -33,6 +29,7 @@
   import { onDestroy, onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly, scale } from "svelte/transition";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -188,29 +185,17 @@
   }
 </script>
 
-<div class="flex flex-col gap-3 text-xs">
-  <!-- Source section -->
-  <section
-    in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-  >
-    <header
-      class="flex items-center justify-between gap-2 border-b border-border/60 px-2.5 py-1.5"
-    >
-      <div class="flex items-center gap-1.5 text-muted-foreground/80">
-        <Video size={11} />
-        <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
-          Source
-        </span>
-      </div>
+<div class="flex flex-col gap-4 text-xs" in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}>
+  <PanelSection title="Source" flush>
+    {#snippet action()}
       <span
         class="truncate font-mono text-[10px] text-foreground"
         title={store.videoPath}
       >
         {basename(store.videoPath)}
       </span>
-    </header>
-    <dl class="grid grid-cols-2 gap-x-2 gap-y-1.5 px-2.5 py-2">
+    {/snippet}
+    <dl class="grid grid-cols-2 gap-x-2 gap-y-1.5">
       <div class="flex items-center gap-1.5 text-muted-foreground">
         <Clock size={10} />
         <span>Duration</span>
@@ -251,22 +236,10 @@
         {formatBytes(store.metadata?.sizeBytes)}
       </dd>
     </dl>
-  </section>
+  </PanelSection>
 
-  <!-- Project / save state -->
-  <section
-    in:fly={{ y: 8, duration: 260, delay: 100, easing: cubicOut }}
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-  >
-    <header
-      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
-    >
-      <Save size={11} />
-      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
-        Project
-      </span>
-    </header>
-    <div class="space-y-1.5 px-2.5 py-2">
+  <PanelSection title="Project" flush>
+    <div class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
         <span class="text-muted-foreground">Save status</span>
         <span
@@ -327,22 +300,10 @@
         </span>
       </div>
     </div>
-  </section>
+  </PanelSection>
 
-  <!-- Edit summary -->
-  <section
-    in:fly={{ y: 8, duration: 260, delay: 160, easing: cubicOut }}
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-  >
-    <header
-      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
-    >
-      <Pencil size={11} />
-      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
-        Edits
-      </span>
-    </header>
-    <div class="space-y-1.5 px-2.5 py-2">
+  <PanelSection title="Edits" flush>
+    <div class="space-y-1.5">
       <div class="flex items-center justify-between gap-2">
         <span class="text-muted-foreground">Focus regions</span>
         <span class="font-mono tabular-nums text-foreground">
@@ -410,22 +371,10 @@
         </span>
       </div>
     </div>
-  </section>
+  </PanelSection>
 
-  <!-- Files -->
-  <section
-    in:fly={{ y: 8, duration: 260, delay: 220, easing: cubicOut }}
-    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-  >
-    <header
-      class="flex items-center gap-1.5 border-b border-border/60 px-2.5 py-1.5 text-muted-foreground/80"
-    >
-      <FileText size={11} />
-      <span class="text-[10px] font-bold uppercase tracking-[0.15em]">
-        Files
-      </span>
-    </header>
-    <div class="space-y-2 px-2.5 py-2">
+  <PanelSection title="Files" flush>
+    <div class="space-y-2">
       <div class="space-y-1">
         <div class="flex items-center justify-between gap-2">
           <span class="text-muted-foreground">Recording</span>
@@ -482,5 +431,5 @@
         </div>
       {/if}
     </div>
-  </section>
+  </PanelSection>
 </div>
