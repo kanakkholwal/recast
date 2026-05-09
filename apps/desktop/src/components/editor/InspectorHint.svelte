@@ -21,7 +21,7 @@
 			<CircleHelp size={11} />
 		</Button>
 	</Tooltip.Trigger>
-	<Tooltip.Content class="max-w-56 text-[11px] leading-relaxed">
+	<Tooltip.Content class="max-w-56 text-[11px] leading-relaxed" >
 		{content}
 	</Tooltip.Content>
 </Tooltip.Root>

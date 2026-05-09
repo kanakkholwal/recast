@@ -15,8 +15,8 @@
   import { onDestroy, onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly, scale } from "svelte/transition";
-  import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -169,20 +169,14 @@
   });
 </script>
 
-<div class="flex flex-col gap-5">
-  <!-- Master + mute -->
-  <section in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}>
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Audio
-        </h3>
-        <InspectorHint
-          content="Volume affects editor playback and export. Fades are applied during export. Press M to toggle mute."
-        />
-      </div>
+<div class="flex flex-col gap-4" in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}>
+  <!-- Master gain readout + mute -->
+  <PanelSection
+    title="Master"
+    hint="Volume affects editor playback and export. Fades are applied during export. Press M to toggle mute."
+    flush
+  >
+    {#snippet action()}
       <div class="flex items-center gap-1">
         <Button
           variant="ghost"
@@ -213,11 +207,11 @@
           {/if}
         </Button>
       </div>
-    </div>
+    {/snippet}
 
     <!-- Big readout: master gain + dB -->
     <div
-      class="mt-2 rounded-md border border-border bg-card/60 px-3 py-2.5"
+      class="rounded-md border border-border bg-card/60 px-3 py-2.5"
       class:opacity-50={store.audioSettings.muted}
     >
       <div class="flex items-end justify-between gap-2">
@@ -286,20 +280,13 @@
         ></div>
       </div>
     </div>
-  </section>
+  </PanelSection>
 
-  <!-- Tracks -->
-  <section in:fly={{ y: 8, duration: 260, delay: 100, easing: cubicOut }}>
-    <header class="mb-2 flex items-center gap-1.5">
-      <h3
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Tracks
-      </h3>
-      <InspectorHint
-        content="System audio and microphone share the master gain today. Per-track levels land in the next audio pass."
-      />
-    </header>
+  <PanelSection
+    title="Tracks"
+    hint="System audio and microphone share the master gain today. Per-track levels land in the next audio pass."
+    flush
+  >
     <ul class="flex flex-col gap-1">
       {#each tracks as track, i (track.id)}
         {@const Icon = track.icon}
@@ -344,20 +331,12 @@
         </li>
       {/each}
     </ul>
-  </section>
+  </PanelSection>
 
-  <!-- Mix -->
-  <section in:fly={{ y: 8, duration: 260, delay: 160, easing: cubicOut }}>
-    <header class="mb-2 flex items-center gap-1.5">
-      <h3
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Mix
-      </h3>
-      <InspectorHint
-        content="Mute preserves the chosen volume so the toggle restores the previous level."
-      />
-    </header>
+  <PanelSection
+    title="Mix"
+    hint="Mute preserves the chosen volume so the toggle restores the previous level."
+  >
     <SliderControl
       label="Output volume"
       value={store.audioSettings.volume}
@@ -374,28 +353,19 @@
         <AudioLines size={11} />
       {/snippet}
     </SliderControl>
-  </section>
+  </PanelSection>
 
-  <!-- Fades -->
-  <section in:fly={{ y: 8, duration: 260, delay: 220, easing: cubicOut }}>
-    <header class="mb-2 flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Fades
-        </h3>
-        <InspectorHint
-          content="Fades are export-side only — playback stays responsive while you edit."
-        />
-      </div>
-      <span
-        class="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
-      >
+  <PanelSection
+    title="Fades"
+    hint="Fades are export-side only — playback stays responsive while you edit."
+    flush
+  >
+    {#snippet action()}
+      <span class="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
         <AudioWaveform size={10} />
-        Envelope preview
+        Envelope
       </span>
-    </header>
+    {/snippet}
 
     <!-- Envelope visualization -->
     <div class="rounded-md border border-border bg-background/60 p-2">
@@ -485,5 +455,5 @@
         formatValue={(v) => `${v.toFixed(2)}s`}
       />
     </div>
-  </section>
+  </PanelSection>
 </div>

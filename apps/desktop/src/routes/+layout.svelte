@@ -8,6 +8,7 @@
 
   let { children } = $props();
 
+  import CommandPaletteHost from "$components/layout/CommandPaletteHost.svelte";
   import Loading from "$components/layout/loading.svelte";
   import { initAssets } from "$lib/assets";
   import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
@@ -81,6 +82,9 @@
        window keeps its toaster as usual. -->
   {#if !isTransparentRoute}
     <Toaster position="top-center" />
+    <!-- Command palette host: owns the ⌘K shortcut + dialog so they work on
+         every route (editor included), not just the (app) sidebar layout. -->
+    <CommandPaletteHost />
   {/if}
   <div
     class="relative flex min-h-screen min-w-dvw w-full flex-col {isTransparentRoute

@@ -14,7 +14,7 @@
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import SliderControl from "../_components/SliderControl.svelte";
-  import InspectorHint from "../InspectorHint.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -114,52 +114,41 @@
   ];
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
-  <!-- Header row: label + visibility toggle. Visibility is independent of
-       whether a camera was recorded — even with a track, users can hide the
-       overlay for a screen-only export pass. -->
-  <section>
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Camera
-        </h3>
-        <InspectorHint
-          content="Composite the recorded camera track onto the screen video at render time. Position, size, and shape apply to both the editor preview and the exported MP4."
-        />
-      </div>
-      {#if hasCamera}
-        <Button
-          variant={store.cameraOverlay.enabled ? "default_soft" : "outline"}
-          size="xs"
-          class="gap-1.5"
-          onclick={() => {
-            store.pushUndoState();
-            store.updateCameraOverlay({
-              enabled: !store.cameraOverlay.enabled,
-            });
-          }}
-          aria-pressed={store.cameraOverlay.enabled}
-        >
-          {#if store.cameraOverlay.enabled}
-            <Eye size={11} />
-            Visible
-          {:else}
-            <EyeOff size={11} />
-            Hidden
-          {/if}
-        </Button>
-      {/if}
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  {#if hasCamera}
+    <!-- Visibility toggle bar (no section title — panel name is in header) -->
+    <div class="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card/40 px-2.5 py-1.5">
+      <span class="text-[11px] text-muted-foreground">
+        Composite the camera track onto the screen video.
+      </span>
+      <Button
+        variant={store.cameraOverlay.enabled ? "default_soft" : "outline"}
+        size="xs"
+        class="gap-1.5"
+        onclick={() => {
+          store.pushUndoState();
+          store.updateCameraOverlay({
+            enabled: !store.cameraOverlay.enabled,
+          });
+        }}
+        aria-pressed={store.cameraOverlay.enabled}
+      >
+        {#if store.cameraOverlay.enabled}
+          <Eye size={11} />
+          Visible
+        {:else}
+          <EyeOff size={11} />
+          Hidden
+        {/if}
+      </Button>
     </div>
-  </section>
+  {/if}
 
   {#if !hasCamera}
     <!-- Empty state — panel still appears in the tab strip so the layout is
          predictable across recordings, but the controls collapse to a hint
          the user can act on next time they record. -->
-    <section
+    <div
       class="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-3"
     >
       <div
@@ -175,26 +164,19 @@
         panel. Position, size, and shape can be tweaked here once a camera
         track is captured.
       </p>
-    </section>
+    </div>
   {:else if store.cameraOverlay.enabled}
-    <!-- Position presets: 3×3 grid mirroring the spatial position so the
-         user can pick by location, not by reading labels. -->
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Position
-        </h3>
-        <InspectorHint
-          content="Pick a corner or edge anchor. Drag the bubble in the preview for a custom position."
-        />
-        <span
-          class="ml-auto font-mono text-[10px] tracking-tight text-foreground/80"
-        >
+    <!-- Position presets: 3×3 grid mirroring spatial position. -->
+    <PanelSection
+      title="Position"
+      hint="Pick a corner or edge anchor. Drag the bubble in the preview for a custom position."
+      flush
+    >
+      {#snippet action()}
+        <span class="font-mono text-[10px] tracking-tight text-foreground/80">
           {activePreset === "custom" ? "Custom" : labelFor(activePreset)}
         </span>
-      </header>
+      {/snippet}
       <div
         class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
@@ -233,21 +215,12 @@
           {/if}
         {/each}
       </div>
-    </section>
+    </PanelSection>
 
-    <!-- Size: bound to 8..32% so the bubble can never get tiny enough to
-         be unreadable nor large enough to dominate the frame. -->
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Size
-        </h3>
-        <InspectorHint
-          content="Bubble width as a percentage of the frame. Height matches width — Phase 1 ships 1:1 only."
-        />
-      </header>
+    <PanelSection
+      title="Size"
+      hint="Bubble width as a percentage of the frame. Height matches width — Phase 1 ships 1:1 only."
+    >
       <SliderControl
         label="Bubble size"
         value={Math.round(store.cameraOverlay.defaultPlacement.width * 100)}
@@ -258,21 +231,13 @@
         onstart={() => store.pushUndoState()}
         onchange={(next) => setSize(next / 100)}
       />
-    </section>
+    </PanelSection>
 
-    <!-- Shape: drives the border-radius of the bubble. Square is 0; rounded
-         is the saved cornerRadius (default 16%); circle is 50% (1:1 only). -->
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Shape
-        </h3>
-        <InspectorHint
-          content="Circle for talking-head puck, rounded for app-style overlay, square for a sharp cut."
-        />
-      </header>
+    <PanelSection
+      title="Shape"
+      hint="Circle for talking-head puck, rounded for app-style overlay, square for a sharp cut."
+      flush
+    >
       <div class="grid grid-cols-3 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)">
         {#each shapeOptions as opt (opt.id)}
           {@const isActive = store.cameraOverlay.shape === opt.id}
@@ -295,22 +260,14 @@
           </button>
         {/each}
       </div>
-    </section>
+    </PanelSection>
 
-    <!-- Mirror: defaults on. Matches the recording-time webcam preview so
-         the user's gestures land on the same side they did during recording. -->
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Mirror
-          </h3>
-          <InspectorHint
-            content="On (default): the bubble matches what you see in a webcam preview. Off: the bubble shows you as others see you — text behind you reads correctly."
-          />
-        </div>
+    <PanelSection
+      title="Mirror"
+      hint="On (default): the bubble matches what you see in a webcam preview. Off: the bubble shows you as others see you — text behind you reads correctly."
+      flush
+    >
+      {#snippet action()}
         <Button
           variant={store.cameraOverlay.mirror ? "default_soft" : "outline"}
           size="xs"
@@ -326,7 +283,7 @@
           <FlipHorizontal size={11} />
           {store.cameraOverlay.mirror ? "On" : "Off"}
         </Button>
-      </header>
-    </section>
+      {/snippet}
+    </PanelSection>
   {/if}
 </div>

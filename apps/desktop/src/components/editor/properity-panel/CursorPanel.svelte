@@ -25,6 +25,7 @@
   import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
   import InspectorHint from "../InspectorHint.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -58,65 +59,46 @@
   }
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
-  <!-- Header row: label + enabled toggle -->
-  <section>
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Cursor
-        </h3>
-        <InspectorHint
-          content="These controls tune how the captured pointer feels during playback."
-        />
-      </div>
-      <Button
-        variant={store.cursorSettings.enabled ? "default_soft" : "outline"}
-        size="xs"
-        class="gap-1.5"
-        onclick={() =>
-          updateCursorSettings(
-            { enabled: !store.cursorSettings.enabled },
-            true,
-          )}
-        aria-pressed={store.cursorSettings.enabled}
-      >
-        {#if store.cursorSettings.enabled}
-          <Eye size={11} />
-          Visible
-        {:else}
-          <EyeOff size={11} />
-          Hidden
-        {/if}
-      </Button>
-    </div>
-  </section>
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  <!-- Visibility toggle (no section title — panel name is shown in the header) -->
+  <div class="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card/40 px-2.5 py-1.5">
+    <span class="text-[11px] text-muted-foreground">
+      Tune how the captured pointer feels during playback.
+    </span>
+    <Button
+      variant={store.cursorSettings.enabled ? "default_soft" : "outline"}
+      size="xs"
+      class="gap-1.5"
+      onclick={() =>
+        updateCursorSettings(
+          { enabled: !store.cursorSettings.enabled },
+          true,
+        )}
+      aria-pressed={store.cursorSettings.enabled}
+    >
+      {#if store.cursorSettings.enabled}
+        <Eye size={11} />
+        Visible
+      {:else}
+        <EyeOff size={11} />
+        Hidden
+      {/if}
+    </Button>
+  </div>
 
   {#if store.cursorSettings.enabled}
-    <!-- Style picker -->
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Style
-          </h3>
-          <InspectorHint
-            content="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
-          />
-        </div>
+    <PanelSection
+      title="Style"
+      hint="Pick a cursor sprite. The default soft dot ships through both preview and export. Other styles show in the editor preview today; export still uses the soft dot until the cursor sprite raster lands in the export overlay."
+      flush
+    >
+      {#snippet action()}
         {#if activeStyle}
-          <span
-            class="font-mono text-[10px] tracking-tight text-foreground/80"
-          >
+          <span class="font-mono text-[10px] tracking-tight text-foreground/80">
             {activeStyle.label}
           </span>
         {/if}
-      </header>
-
+      {/snippet}
       <div
         class="grid grid-cols-5 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
@@ -169,68 +151,48 @@
           {activeStyle.description}
         </p>
       {/if}
-    </section>
+    </PanelSection>
 
-    <!-- Pointer feel -->
-    <section>
-      <header class="mb-2 flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Pointer
-        </h3>
-        <InspectorHint
-          content="Size controls how legibly the cursor reads on screen."
-        />
-         {#if store.cursorSettings.size !== 2}
-            <Button
-              variant="ghost"
-              size="xs"
-              class="ml-auto text-foreground/50"
-              onclick={() => updateCursorSettings({ size: 2 }, true)}
-            >
-              Reset to default
-            </Button>
-        {/if}
-      </header>
-      <div class="space-y-2.5">
-        <SliderControl
-          label="Cursor size"
-          value={store.cursorSettings.size}
-          min={1}
-          max={15}
-          step={1}
-          unit="x"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ size: next })}
-        >
-          {#snippet icon()}
-            <MousePointer size={11} />
-          {/snippet}
-        </SliderControl>
-      </div>
-    </section>
-
-    <!-- Cursor animation: bounce, sway, motion blur. Stacked the way Screen
-         Studio's "Cursor" inspector exposes them — each row is a SliderControl
-         with its own icon, so they read as a coherent group. -->
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+    <PanelSection
+      title="Pointer"
+      hint="Size controls how legibly the cursor reads on screen."
+    >
+      {#snippet action()}
+        {#if store.cursorSettings.size !== 2}
+          <Button
+            variant="ghost"
+            size="xs"
+            onclick={() => updateCursorSettings({ size: 2 }, true)}
           >
-            Cursor animation
-          </h3>
-          <InspectorHint
-            content="Cinematic touches applied at export. Bounce reacts to clicks, sway adds subtle life at rest, motion blur trails the cursor during fast movement."
-          />
-        </div>
+            Reset
+          </Button>
+        {/if}
+      {/snippet}
+      <SliderControl
+        label="Cursor size"
+        value={store.cursorSettings.size}
+        min={1}
+        max={15}
+        step={1}
+        unit="x"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCursorSettings({ size: next })}
+      >
+        {#snippet icon()}
+          <MousePointer size={11} />
+        {/snippet}
+      </SliderControl>
+    </PanelSection>
+
+    <PanelSection
+      title="Animation"
+      hint="Cinematic touches applied at export. Bounce reacts to clicks, sway adds subtle life at rest, motion blur trails the cursor during fast movement."
+    >
+      {#snippet action()}
         {#if store.cursorSettings.clickBounce !== 0 || store.cursorSettings.sway !== 0 || store.cursorSettings.motionBlur !== 0 || store.cursorSettings.bounceSpeedMs !== 220}
           <Button
             variant="ghost"
             size="xs"
-            class="text-foreground/50"
             onclick={() =>
               updateCursorSettings(
                 {
@@ -246,8 +208,7 @@
             Reset
           </Button>
         {/if}
-      </header>
-      <div class="space-y-2.5">
+      {/snippet}
         <span
           class="block"
           in:fly={{ y: 4, duration: 220, delay: 60, easing: cubicOut }}
@@ -336,24 +297,14 @@
             {/snippet}
           </SliderControl>
         </span>
-      </div>
-    </section>
+    </PanelSection>
 
-    <!-- Mouse smoothing: post-recording Gaussian path smoothing + click snap.
-         This is the Screen Studio-style polish that turns a twitchy raw
-         capture into something that looks intentional. -->
-    <section>
-      <header class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Mouse smoothing
-          </h3>
-          <InspectorHint
-            content="Gaussian-window smoothing over the captured mouse path. The click-snap option anchors the smoothed curve to the exact press position inside the snap window so buttons still get hit cleanly."
-          />
-        </div>
+    <PanelSection
+      title="Smoothing"
+      hint="Gaussian-window smoothing over the captured mouse path. The click-snap option anchors the smoothed curve to the exact press position inside the snap window so buttons still get hit cleanly."
+      flush
+    >
+      {#snippet action()}
         <Button
           size="icon-xs"
           variant="raw"
@@ -363,51 +314,52 @@
         >
           <GitGraph size={11} class="text-muted-foreground" />
         </Button>
-      </header>
+      {/snippet}
 
-      {#if showTrajectoryMap}
-        <CursorTrajectoryMap
-          samples={store.cursorSamplesRaw}
-          videoWidth={store.metadata?.width ?? 0}
-          videoHeight={store.metadata?.height ?? 0}
-          smoothing={store.cursorSettings.smoothing}
-          snapToClicks={store.cursorSettings.snapToClicks}
-          snapWindowMs={store.cursorSettings.snapWindowMs}
-        />
-      {/if}
+      <div class="flex flex-col gap-2.5">
+        {#if showTrajectoryMap}
+          <CursorTrajectoryMap
+            samples={store.cursorSamplesRaw}
+            videoWidth={store.metadata?.width ?? 0}
+            videoHeight={store.metadata?.height ?? 0}
+            smoothing={store.cursorSettings.smoothing}
+            snapToClicks={store.cursorSettings.snapToClicks}
+            snapWindowMs={store.cursorSettings.snapWindowMs}
+          />
+        {/if}
 
-      <!-- Presets -->
-      <div class="mt-2.5 flex flex-wrap gap-1">
-        {#each SMOOTHING_PRESETS as preset, i (preset.id)}
-          {@const isActive =
-            store.cursorSettings.smoothing === preset.smoothing &&
-            store.cursorSettings.snapToClicks === preset.snapToClicks &&
-            store.cursorSettings.snapWindowMs === preset.snapWindowMs}
-          <span
-            class="inline-flex"
-            in:scale={{ start: 0.92, duration: 220, delay: 80 + i * 30, easing: cubicOut }}
-          >
-            <Button
-              type="button"
-              aria-pressed={isActive}
-              onclick={() => {
-                store.pushUndoState();
-                store.updateCursorSettings({
-                  smoothing: preset.smoothing,
-                  snapToClicks: preset.snapToClicks,
-                  snapWindowMs: preset.snapWindowMs,
-                });
-              }}
-              size="xs"
-              variant={isActive ? "default_soft" : "outline"}
+        <!-- Presets -->
+        <div class="flex flex-wrap gap-1">
+          {#each SMOOTHING_PRESETS as preset, i (preset.id)}
+            {@const isActive =
+              store.cursorSettings.smoothing === preset.smoothing &&
+              store.cursorSettings.snapToClicks === preset.snapToClicks &&
+              store.cursorSettings.snapWindowMs === preset.snapWindowMs}
+            <span
+              class="inline-flex"
+              in:scale={{ start: 0.92, duration: 220, delay: 80 + i * 30, easing: cubicOut }}
             >
-              {preset.label}
-            </Button>
-          </span>
-        {/each}
-      </div>
+              <Button
+                type="button"
+                aria-pressed={isActive}
+                onclick={() => {
+                  store.pushUndoState();
+                  store.updateCursorSettings({
+                    smoothing: preset.smoothing,
+                    snapToClicks: preset.snapToClicks,
+                    snapWindowMs: preset.snapWindowMs,
+                  });
+                }}
+                size="xs"
+                variant={isActive ? "default_soft" : "outline"}
+              >
+                {preset.label}
+              </Button>
+            </span>
+          {/each}
+        </div>
 
-      <div class="mt-3 space-y-2.5">
+        <div class="space-y-2.5">
         <SliderControl
           label="Smoothing"
           value={store.cursorSettings.smoothing}
@@ -472,22 +424,16 @@
             {/snippet}
           </SliderControl>
         {/if}
-      </div>
-    </section>
-
-    <!-- Custom motion easing: reshapes the per-sample lerp in the preview. -->
-    <section>
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Motion easing
-          </h3>
-          <InspectorHint
-            content="Reshape how the cursor interpolates between captured samples. Default (linear) preserves the raw trajectory. Ease-out curves decelerate into rest for a more deliberate feel."
-          />
         </div>
+      </div>
+    </PanelSection>
+
+    <PanelSection
+      title="Motion easing"
+      hint="Reshape how the cursor interpolates between captured samples. Default (linear) preserves the raw trajectory. Ease-out curves decelerate into rest for a more deliberate feel."
+      flush
+    >
+      {#snippet action()}
         <Button
           variant={store.cursorMotionEasing ? "default_soft" : "outline"}
           size="xs"
@@ -501,7 +447,7 @@
           <Waves size={11} />
           {store.cursorMotionEasing ? "On" : "Off"}
         </Button>
-      </div>
+      {/snippet}
       {#if store.cursorMotionEasing}
         <BezierEditor
           value={store.cursorMotionEasing}
@@ -510,21 +456,14 @@
           size={160}
         />
       {/if}
-    </section>
+    </PanelSection>
 
-    <!-- Click highlight -->
-    <section>
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Click Highlight
-          </h3>
-          <InspectorHint
-            content="Useful for tutorials and product demos where click targets should be obvious."
-          />
-        </div>
+    <PanelSection
+      title="Click highlight"
+      hint="Useful for tutorials and product demos where click targets should be obvious."
+      flush
+    >
+      {#snippet action()}
         <Button
           variant={store.cursorSettings.highlightClicks
             ? "default_soft"
@@ -541,7 +480,7 @@
           <Activity size={11} />
           {store.cursorSettings.highlightClicks ? "On" : "Off"}
         </Button>
-      </div>
+      {/snippet}
 
       {#if store.cursorSettings.highlightClicks}
         <div class="grid grid-cols-8 gap-1" in:fade={{ duration: 160 }}>
@@ -587,21 +526,14 @@
           />
         </div>
       {/if}
-    </section>
+    </PanelSection>
 
-    <!-- Idle behavior -->
-    <section>
-      <div class="mb-2 flex items-center justify-between gap-2">
-        <div class="flex items-center gap-1.5">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Idle Behavior
-          </h3>
-          <InspectorHint
-            content="Hide the cursor after inactivity for cleaner sections without interaction."
-          />
-        </div>
+    <PanelSection
+      title="Idle"
+      hint="Hide the cursor after inactivity for cleaner sections without interaction."
+      flush
+    >
+      {#snippet action()}
         <Button
           variant={store.cursorSettings.hideWhenIdle
             ? "default_soft"
@@ -616,8 +548,7 @@
         >
           {store.cursorSettings.hideWhenIdle ? "On" : "Off"}
         </Button>
-      </div>
-
+      {/snippet}
       {#if store.cursorSettings.hideWhenIdle}
         <SliderControl
           label="Idle timeout"
@@ -630,7 +561,7 @@
           onchange={(next) => store.updateCursorSettings({ idleTimeout: next })}
         />
       {/if}
-    </section>
+    </PanelSection>
   {:else}
     <div
       class="flex items-center gap-2 rounded-md border border-dashed border-border bg-muted/20 px-3 py-2.5"

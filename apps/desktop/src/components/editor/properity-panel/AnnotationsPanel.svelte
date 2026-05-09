@@ -33,11 +33,11 @@
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
-  import InspectorHint from "../InspectorHint.svelte";
   import SliderControl from "../_components/SliderControl.svelte";
   import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
   import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
   import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
+  import PanelSection from "./PanelSection.svelte";
 
   interface Props {
     store: EditorStore;
@@ -243,39 +243,30 @@
   });
 </script>
 
-<div class="flex flex-col gap-5 animate-in fade-in duration-200">
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <!-- Tool palette -->
-  <section>
-    <div class="flex items-center justify-between gap-2">
-      <div class="flex items-center gap-1.5">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Annotations
-        </h3>
-        <InspectorHint
-          content="Pick a tool, then drag on the preview. Annotations are anchored in video-space so they follow zoom and crop. Press Esc to cancel placement. Hold Alt while dragging to bypass snap."
-        />
-      </div>
-      <div class="flex items-center gap-1.5">
-        <button
-          type="button"
-          aria-pressed={store.annotationSnapEnabled}
-          onclick={() => (store.annotationSnapEnabled = !store.annotationSnapEnabled)}
-          title="Toggle snap (Alt while dragging bypasses)"
-          class={cn(
-            "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
-            store.annotationSnapEnabled
-              ? "bg-primary/10 text-primary"
-              : "bg-muted/40 text-muted-foreground hover:text-foreground",
-          )}
-        >
-          Snap
-        </button>
-        <Pencil size={11} class="text-muted-foreground" />
-      </div>
-    </div>
-    <div class="mt-2 grid grid-cols-6 gap-1">
+  <PanelSection
+    title="Tools"
+    hint="Pick a tool, then drag on the preview. Annotations are anchored in video-space so they follow zoom and crop. Press Esc to cancel placement. Hold Alt while dragging to bypass snap."
+    flush
+  >
+    {#snippet action()}
+      <button
+        type="button"
+        aria-pressed={store.annotationSnapEnabled}
+        onclick={() => (store.annotationSnapEnabled = !store.annotationSnapEnabled)}
+        title="Toggle snap (Alt while dragging bypasses)"
+        class={cn(
+          "rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider transition-colors",
+          store.annotationSnapEnabled
+            ? "bg-primary/10 text-primary"
+            : "bg-muted/40 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        Snap
+      </button>
+    {/snippet}
+    <div class="grid grid-cols-6 gap-1">
       {#each tools as tool (tool.id)}
         {@const Icon = tool.icon}
         {@const isActive =
@@ -319,7 +310,7 @@
         to cancel.
       </p>
     {/if}
-  </section>
+  </PanelSection>
 
   <!-- Annotation list -->
   {#if store.annotations.length === 0}
@@ -339,26 +330,19 @@
   <!-- Selected annotation editor -->
   {#if selected}
     {@const a = selected}
-    <section class="flex flex-col gap-3 border-t border-border pt-3">
-      <header class="flex items-center justify-between gap-2">
-        <h3
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          {kindLabel(a)}
-        </h3>
-        <Button
-          variant="destructive_soft"
-          size="xs"
-          class="gap-1.5"
-          onclick={() => store.removeAnnotation(a.id)}
-        >
-          <Trash2 size={11} />
-          Delete
-        </Button>
-      </header>
-
-      <!-- Timing -->
-      <div class="space-y-2.5">
+    <div class="flex flex-col gap-3 border-t border-border pt-3">
+      <PanelSection title={kindLabel(a)}>
+        {#snippet action()}
+          <Button
+            variant="destructive_soft"
+            size="xs"
+            class="gap-1.5"
+            onclick={() => store.removeAnnotation(a.id)}
+          >
+            <Trash2 size={11} />
+            Delete
+          </Button>
+        {/snippet}
         <SliderControl
           label="Start"
           value={a.start}
@@ -403,30 +387,30 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampOut: v })}
         />
-      </div>
+      </PanelSection>
 
       <!-- Fade curves -->
-      <div class="grid grid-cols-2 gap-3">
-        <BezierEditor
-          label="Fade in"
-          value={a.easeIn}
-          onchange={(v) => updateSelected({ easeIn: v }, true)}
-          showPresets={false}
-          size={130}
-        />
-        <BezierEditor
-          label="Fade out"
-          value={a.easeOut}
-          onchange={(v) => updateSelected({ easeOut: v }, true)}
-          showPresets={false}
-          size={130}
-        />
-      </div>
-      <div class="flex justify-end">
-        <Button variant="ghost" size="xs" onclick={resetCurves}
-          >Reset curves</Button
-        >
-      </div>
+      <PanelSection title="Fade curves" flush>
+        {#snippet action()}
+          <Button variant="ghost" size="xs" onclick={resetCurves}>Reset</Button>
+        {/snippet}
+        <div class="grid grid-cols-2 gap-3">
+          <BezierEditor
+            label="Fade in"
+            value={a.easeIn}
+            onchange={(v) => updateSelected({ easeIn: v }, true)}
+            showPresets={false}
+            size={130}
+          />
+          <BezierEditor
+            label="Fade out"
+            value={a.easeOut}
+            onchange={(v) => updateSelected({ easeOut: v }, true)}
+            showPresets={false}
+            size={130}
+          />
+        </div>
+      </PanelSection>
 
       <!-- Appearance: stroke (with style + custom picker), fill, glow, opacity -->
       <AnnotationAppearance {store} annotation={a} />
@@ -455,12 +439,7 @@
       {/if}
 
       {#if a.kind.kind === "blur"}
-        <div class="space-y-2.5 border-t border-border pt-3">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Blur
-          </h3>
+        <PanelSection title="Blur">
           <SliderControl
             label="Strength"
             value={a.kind.strength * 100}
@@ -583,7 +562,7 @@
               </Popover.Content>
             </Popover.Root>
           {/if}
-        </div>
+        </PanelSection>
       {/if}
 
       {#if a.kind.kind === "arrow"}
@@ -607,13 +586,7 @@
       {/if}
 
       {#if a.kind.kind === "text"}
-        <div class="space-y-2.5 border-t border-border pt-3">
-          <h3
-            class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-          >
-            Text
-          </h3>
-
+        <PanelSection title="Text">
           <label
             class="flex flex-col gap-1 text-[10px] text-muted-foreground"
           >
@@ -773,29 +746,12 @@
               {/each}
             </div>
           </div>
-        </div>
+        </PanelSection>
       {/if}
-    </section>
-  {:else}
-    <section
-      class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur px-3 py-3 text-center text-[10px] text-muted-foreground"
-    >
+    </div>
+  {:else if store.annotations.length > 0}
+    <p class="rounded-md border border-dashed border-border bg-card/40 px-3 py-3 text-center text-[10px] text-muted-foreground">
       Select an annotation to edit its timing, curves, and appearance.
-    </section>
+    </p>
   {/if}
-
-  <!-- Roadmap teaser -->
-  <section
-    class="rounded-md border border-dashed border-border bg-card/30 px-3 py-2.5"
-  >
-    <p
-      class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-    >
-      Coming next
-    </p>
-    <p class="mt-1 text-[10px] text-muted-foreground">
-      Image overlays (with file picker), polygons, blur redactions, and a
-      Google Fonts picker land in upcoming passes.
-    </p>
-  </section>
 </div>

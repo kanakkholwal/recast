@@ -1,7 +1,7 @@
 <script lang="ts">
+  import InspectorHint from "$components/editor/InspectorHint.svelte";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
-    CircleQuestionMark,
     Gauge,
     Maximize2,
     Scissors,
@@ -9,14 +9,9 @@
     Target,
     Wand2,
     ZoomIn,
-    ZoomOut,
+    ZoomOut
   } from "@lucide/svelte";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import {
-    HoverCard,
-    HoverCardContent,
-    HoverCardTrigger,
-  } from "@recast/ui/hover-card";
   import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
   import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
@@ -76,27 +71,15 @@
   // duration is part of the formatTimecode contract via store.clipDuration;
   // also referenced for fps-aware aria fallbacks.
   void duration;
+  let trimHint = `Set trim points to exclude parts of the clip from export, or add focus regions to highlight important moments. You can also ask Trace to suggest focus regions based on where you moved the cursor.`;
 </script>
 
 <div
   class="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]"
 >
   <div class="flex items-center gap-1">
-    <HoverCard>
-      <HoverCardTrigger type="button">
-        <span
-          class="flex size-6 items-center justify-center rounded-md text-muted-foreground/70 transition-colors hover:bg-muted/60 hover:text-foreground"
-        >
-          <CircleQuestionMark class="size-3.5" />
-        </span>
-      </HoverCardTrigger>
-      <HoverCardContent alignOffset={20}>
-        Move the playhead to where you want the clip to begin or end, then
-        click <span class="text-foreground">Start here</span> or
-        <span class="text-foreground">End here</span>. Anything outside the
-        highlighted region is cut from the export.
-      </HoverCardContent>
-    </HoverCard>
+  <InspectorHint content={trimHint}/>
+ 
 
     <!-- Trim segmented pill -->
     <div

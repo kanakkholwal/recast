@@ -66,6 +66,9 @@
   const activeTabLabel = $derived(
     tabs.find((t) => t.id === store.activePanel)?.label ?? "Panel",
   );
+
+  const tabContentClass =
+    "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
 </script>
 
 <aside
@@ -73,7 +76,7 @@
 >
   <Tabs.Root
     value={store.activePanel}
-    onValueChange={(v) => {
+    onValueChange={(v: string) => {
       store.activePanel = v as PanelTab;
     }}
     class="flex min-h-0 flex-1 flex-col"
@@ -115,53 +118,33 @@
       </span>
     </div>
 
-    <Tabs.Content
-      value="background"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+    <Tabs.Content value="background" class={tabContentClass}>
       <BackgroundPicker {store} />
     </Tabs.Content>
 
-    <Tabs.Content
-      value="focus"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+    <Tabs.Content value="focus" class={tabContentClass}>
       <FocusPanel {store} />
     </Tabs.Content>
 
-    <Tabs.Content
-      value="annotations"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+    <Tabs.Content value="annotations" class={tabContentClass}>
       <AnnotationsPanel {store} />
     </Tabs.Content>
 
-    <Tabs.Content
-      value="cursor"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+    <Tabs.Content value="cursor" class={tabContentClass}>
       <CursorPanel {store} />
     </Tabs.Content>
 
     {#if CAMERA_OVERLAY_UI_ENABLED}
-    <Tabs.Content
-      value="camera"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
-      <CameraPanel {store} {cameraPath} />
-    </Tabs.Content>
+      <Tabs.Content value="camera" class={tabContentClass}>
+        <CameraPanel {store} {cameraPath} />
+      </Tabs.Content>
     {/if}
 
-    <Tabs.Content
-      value="audio"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+    <Tabs.Content value="audio" class={tabContentClass}>
       <AudioPanel {store} />
     </Tabs.Content>
-    <Tabs.Content
-      value="info"
-      class="min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent"
-    >
+
+    <Tabs.Content value="info" class={tabContentClass}>
       <InfoPanel {store} />
     </Tabs.Content>
   </Tabs.Root>

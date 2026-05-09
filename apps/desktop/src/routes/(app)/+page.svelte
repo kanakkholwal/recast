@@ -88,14 +88,7 @@
     thumbnails = next;
   }
 
-  const greeting = $derived.by(() => {
-    const h = new Date(now).getHours();
-    if (h < 5) return "Working late";
-    if (h < 12) return "Good morning";
-    if (h < 17) return "Good afternoon";
-    if (h < 21) return "Good evening";
-    return "Good night";
-  });
+
 
   function formatSize(bytes: number) {
     if (bytes < 1024) return `${bytes} B`;
@@ -252,8 +245,7 @@
       <h1
         class="text-balance text-[34px] font-semibold leading-tight tracking-tight text-foreground md:text-[40px]"
       >
-        {greeting}.
-        <span class="bg-gradient-to-r from-foreground to-foreground/55 bg-clip-text text-transparent">
+        <span class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent">
           What do you want to capture?
         </span>
       </h1>
