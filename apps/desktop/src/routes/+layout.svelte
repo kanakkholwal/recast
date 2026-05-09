@@ -75,7 +75,13 @@
 <TooltipProvider>
   <Loading />
   <ModeWatcher />
-  <Toaster position="top-center" />
+  <!-- Overlay windows (panel, camera-preview, pickers) are too small to host
+       a Sonner toast without overflow. Gate the Toaster out of those routes so
+       downstream code that calls `toast.*` is just a no-op there — the main
+       window keeps its toaster as usual. -->
+  {#if !isTransparentRoute}
+    <Toaster position="top-center" />
+  {/if}
   <div
     class="relative flex min-h-screen min-w-dvw w-full flex-col {isTransparentRoute
       ? 'bg-transparent'

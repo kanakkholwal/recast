@@ -41,33 +41,109 @@ interface RecordingProfileV1 {
 export const PROFILES_STORAGE_KEY = "recast-recording-profiles";
 export const PROFILES_ENABLED_STORAGE_KEY = "recast-profiles-enabled";
 
-/** 3 capability toggles ⇒ 2³ unique combinations. */
-export const MAX_PROFILES = 8;
+/** Sentinel slot for "use system default at recording time" — distinct from
+ *  any specific device id, and distinct from "off". */
+const DEFAULT_SLOT = "default";
+const OFF_SLOT = "off";
 
-/** Capability fingerprint — uniqueness key for dedup. Device IDs are not
- *  part of this on purpose: two profiles with the same on/off shape but
- *  different mics is user-confusion masquerading as flexibility. */
-export function capSig(
-	p: Pick<RecordingProfile, "systemAudio" | "microphone" | "camera">,
-): string {
-	return `${+p.systemAudio}${+p.microphone}${+p.camera}`;
-}
-
-/** First on/off combo (walking 0–7) that no profile in `list` already uses,
- *  or null when all 8 are taken. */
-export function firstFreeCombo(list: RecordingProfile[]): {
+/** Public profile combo shape: each side is the on/off + device identity.
+ *  `null` deviceId with kind=true means "use system default at runtime". */
+export type ProfileCombo = {
 	systemAudio: boolean;
 	microphone: boolean;
+	micDeviceId: string | null;
 	camera: boolean;
-} | null {
+	cameraDeviceId: string | null;
+};
+
+function micSlot(
+	p: Pick<RecordingProfile, "microphone" | "micDeviceId">,
+): string {
+	if (!p.microphone) return OFF_SLOT;
+	return p.micDeviceId ?? DEFAULT_SLOT;
+}
+function camSlot(
+	p: Pick<RecordingProfile, "camera" | "cameraDeviceId">,
+): string {
+	if (!p.camera) return OFF_SLOT;
+	return p.cameraDeviceId ?? DEFAULT_SLOT;
+}
+
+/**
+ * Capability fingerprint — uniqueness key for dedup, **including** device
+ * identity. Two profiles with the same on/off shape but different mic/cam
+ * IDs are intentionally distinct presets (e.g. "Studio" with the Yeti vs
+ * "Mobile" with AirPods is two valid profiles).
+ *
+ * Slot vocabulary: `off` (capability disabled), `default` (enabled but no
+ * specific device pinned — runtime picks the system default), or a literal
+ * device id.
+ */
+export function capSig(p: RecordingProfile): string {
+	return `${+p.systemAudio}|${micSlot(p)}|${camSlot(p)}`;
+}
+
+/**
+ * Total possible profile slots given currently-attached devices.
+ * Math: `2 (sysAudio) × (2 + #mics) × (2 + #cams)` — each kind's slot space
+ * is { off, default, ...each specific device }. With 0 mics and 0 cams this
+ * collapses to 2³ = 8, matching the original boolean-only model.
+ */
+export function maxCombinations(micCount: number, camCount: number): number {
+	return 2 * (2 + micCount) * (2 + camCount);
+}
+
+interface DeviceLite {
+	id: string;
+	name: string;
+}
+interface CameraLite {
+	deviceId: string;
+	label: string;
+}
+
+/**
+ * First combo (walking the full cartesian product of currently-attached
+ * devices) that no profile in `list` already uses. Returns null when every
+ * attainable slot is taken.
+ *
+ * Walk order is intentional: the first new profile a user creates gets a
+ * "system audio + default mic + default cam" template, then "+ off cam",
+ * etc. Specific device ids come last so a fresh user with one mic doesn't
+ * land on the literal-id slot before exhausting the off/default slots.
+ */
+export function firstFreeCombo(
+	list: RecordingProfile[],
+	mics: DeviceLite[],
+	cams: CameraLite[],
+): ProfileCombo | null {
 	const taken = new Set(list.map(capSig));
-	for (let i = 0; i < 8; i++) {
-		const combo = {
-			systemAudio: !!(i & 4),
-			microphone: !!(i & 2),
-			camera: !!(i & 1),
-		};
-		if (!taken.has(capSig(combo))) return combo;
+
+	const micOptions: { slot: string; id: string | null }[] = [
+		{ slot: OFF_SLOT, id: null },
+		{ slot: DEFAULT_SLOT, id: null },
+		...mics.map((m) => ({ slot: m.id, id: m.id })),
+	];
+	const camOptions: { slot: string; id: string | null }[] = [
+		{ slot: OFF_SLOT, id: null },
+		{ slot: DEFAULT_SLOT, id: null },
+		...cams.map((c) => ({ slot: c.deviceId, id: c.deviceId })),
+	];
+
+	for (const sa of [true, false]) {
+		for (const mic of micOptions) {
+			for (const cam of camOptions) {
+				const sig = `${+sa}|${mic.slot}|${cam.slot}`;
+				if (taken.has(sig)) continue;
+				return {
+					systemAudio: sa,
+					microphone: mic.slot !== OFF_SLOT,
+					micDeviceId: mic.id,
+					camera: cam.slot !== OFF_SLOT,
+					cameraDeviceId: cam.id,
+				};
+			}
+		}
 	}
 	return null;
 }

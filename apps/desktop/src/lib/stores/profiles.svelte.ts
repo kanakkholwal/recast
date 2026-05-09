@@ -8,17 +8,27 @@
  */
 
 import {
-	MAX_PROFILES,
 	capSig,
 	ensureExactlyOneDefault,
 	findDefaultProfile,
 	firstFreeCombo,
 	loadProfiles,
 	loadProfilesEnabled,
+	maxCombinations,
 	persistProfiles,
 	persistProfilesEnabled,
+	type ProfileCombo,
 	type RecordingProfile,
 } from "$lib/profiles";
+
+interface DeviceLite {
+	id: string;
+	name: string;
+}
+interface CameraLite {
+	deviceId: string;
+	label: string;
+}
 
 function createProfilesStore() {
 	let profiles = $state<RecordingProfile[]>([]);
@@ -67,14 +77,40 @@ function createProfilesStore() {
 			return profiles.find((p) => p.id === id) ?? null;
 		},
 
-		/** Number of unique capability combinations remaining. */
-		freeSlots(): number {
-			return Math.max(0, MAX_PROFILES - profiles.length);
+		/** Theoretical max profiles given currently-attached devices. */
+		maxCombinations(mics: DeviceLite[], cams: CameraLite[]): number {
+			return maxCombinations(mics.length, cams.length);
 		},
 
-		/** First on/off combo not yet in use. Null when full. */
-		nextFreeCombo() {
-			return firstFreeCombo(profiles);
+		/** Slots in the device-aware cartesian that are not yet used by any
+		 *  profile. Returns 0 when every attainable combo is taken. */
+		freeSlots(mics: DeviceLite[], cams: CameraLite[]): number {
+			const max = maxCombinations(mics.length, cams.length);
+			const taken = new Set(profiles.map(capSig));
+			// Count attainable signatures that aren't yet taken. We can't just
+			// subtract `profiles.length` because saved profiles may reference
+			// devices that are no longer attached — those don't consume a slot
+			// in the *current* cartesian.
+			let count = 0;
+			const micOpts = ["off", "default", ...mics.map((m) => m.id)];
+			const camOpts = ["off", "default", ...cams.map((c) => c.deviceId)];
+			for (const sa of [1, 0]) {
+				for (const mic of micOpts) {
+					for (const cam of camOpts) {
+						if (!taken.has(`${sa}|${mic}|${cam}`)) count++;
+					}
+				}
+			}
+			// Bound to [0, max] in case `taken` happens to overlap nothing.
+			return Math.min(max, Math.max(0, count));
+		},
+
+		/** First combo not yet in use against the current device cartesian. */
+		nextFreeCombo(
+			mics: DeviceLite[],
+			cams: CameraLite[],
+		): ProfileCombo | null {
+			return firstFreeCombo(profiles, mics, cams);
 		},
 
 		/** Returns the profile that already uses `next`'s capability set

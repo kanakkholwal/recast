@@ -97,7 +97,7 @@ Status colors are **only** for status — never decorative. The mapping is fixed
 | User-initiated removal | `--destructive` | `toast.success` (not error — the action succeeded) | "Deleted *Presentation*" |
 | Action failed | `--destructive` | `toast.error` | "Recording failed: …" |
 | Soft warning, fallback applied | `--warning` | `toast.warning` | "Camera *Yeti* unavailable — using *Default*" |
-| Capacity / blocking info | `--info` | `toast.info` | "All 8 capability combinations are in use" |
+| Capacity / blocking info | `--info` | `toast.info` | "All N capability combinations are in use" |
 | Recording in progress | `--destructive` | n/a (live UI) | Stop button, recording dot |
 
 ### Dark mode
@@ -146,7 +146,7 @@ Top-level routes inside the `(app)` group follow this pattern:
 2. **Hero h1** — gradient-clipped, balanced, two short lines max. May include a
    right-aligned action button (e.g. "New profile").
 3. **Hero supporting copy** — single line, `text-muted-foreground`. Optionally
-   appends meta info (e.g. "5 of 8 combinations free.").
+   appends meta info (e.g. "5 of 18 combinations free.").
 4. **Search / filter bar** *(if listing)* — 12-tall pill with a Lucide icon.
 5. **Sections** — each with an uppercase microlabel + one-line description in
    the left margin, content card on the right. Use `gap-8` between sections.

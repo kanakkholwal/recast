@@ -46,7 +46,6 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
-  import { toast } from "@recast/ui/sonner";
   import { emit, listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -81,6 +80,14 @@
   let selectedCameraName = $state("Default");
   let cameraValidation = $state<CameraValidationResult | null>(null);
 
+  // Inline notice surface. The panel window is too narrow for a Sonner toast,
+  // so resolution outcomes (fallback / missing device / fresh profile applied)
+  // are surfaced via button tooltips and a transient profile-button highlight.
+  // micWarning / cameraWarning persist in tooltips until the next apply or
+  // manual toggle so the user can hover later to see what got swapped.
+  let micWarning = $state<string | null>(null);
+  let cameraWarning = $state<string | null>(null);
+
   // Available device lists, refreshed each time we resolve a profile so the
   // resolver works against current hardware (USB devices come and go).
   let mics = $state<AudioDeviceInfo[]>([]);
@@ -89,6 +96,10 @@
   // Which profile is currently driving the panel state, if any. Manual toggle
   // overrides don't clear this — the chip is just a "last applied" marker.
   let activeProfileId = $state<string | null>(null);
+  // Briefly highlights the profile-switcher button after a successful apply
+  // so the user gets a confirmation cue without us popping a toast.
+  let profileFlash = $state(false);
+  let profileFlashTimer: ReturnType<typeof setTimeout> | null = null;
 
   const activeProfile = $derived(
     activeProfileId ? profilesStore.findById(activeProfileId) : null,
@@ -251,6 +262,7 @@
 
     return () => {
       window.clearInterval(timer);
+      if (profileFlashTimer) clearTimeout(profileFlashTimer);
       unlistenSource.then((fn) => fn());
       unlistenDevice.then((fn) => fn());
       unlistenProfile.then((fn) => fn());
@@ -291,69 +303,65 @@
     if (!profilesStore.enabled) return;
     const def = profilesStore.default();
     if (!def) return;
-    applyProfile(def, { silent: false });
+    applyProfile(def);
   }
 
   /**
    * Apply a profile to the panel state — toggles + device selections —
-   * resolving devices against the current hardware list. Surfaces fallback
-   * decisions as warning toasts so the user knows the profile didn't apply
-   * verbatim. `silent: true` suppresses the toasts (useful when the user
-   * just changed something else and the profile is being re-applied).
+   * resolving devices against the current hardware list. Fallback / missing
+   * outcomes are recorded into `micWarning` / `cameraWarning` so the device
+   * button tooltips surface them on hover (Sonner toasts would overflow the
+   * 44px-tall panel window).
    */
-  function applyProfile(
-    profile: RecordingProfile,
-    opts: { silent?: boolean } = {},
-  ) {
-    const silent = opts.silent ?? false;
+  function applyProfile(profile: RecordingProfile) {
     systemAudioOn = profile.systemAudio;
 
     // ---- Microphone
     const micResult = resolveMic(profile, mics);
-    if (micResult.kind === "matched" || micResult.kind === "fallback") {
+    if (micResult.kind === "matched") {
       micOn = true;
       selectedMicId = micResult.device.id;
       selectedMicName = micResult.device.name;
-      if (!silent && micResult.kind === "fallback") {
-        toast.warning(
-          `Mic “${micResult.requestedLabel}” unavailable — using “${micResult.device.name}”.`,
-        );
-      }
+      micWarning = null;
+    } else if (micResult.kind === "fallback") {
+      micOn = true;
+      selectedMicId = micResult.device.id;
+      selectedMicName = micResult.device.name;
+      micWarning = `“${micResult.requestedLabel}” unavailable — using “${micResult.device.name}”`;
     } else if (micResult.kind === "missing") {
       micOn = false;
-      if (!silent) {
-        toast.error(
-          `“${profile.name}” wants a microphone but none is available.`,
-        );
-      }
+      micWarning = `“${profile.name}” wants a mic but none is available`;
     } else {
       micOn = false;
+      micWarning = null;
     }
 
     // ---- Camera
     const camResult = resolveCamera(profile, cameras);
-    if (camResult.kind === "matched" || camResult.kind === "fallback") {
+    if (camResult.kind === "matched") {
       cameraOn = true;
       selectedCameraId = camResult.device.deviceId;
       selectedCameraName = camResult.device.label;
+      cameraWarning = null;
       void refreshCameraValidation(camResult.device.deviceId);
       openCameraPreview(camResult.device.deviceId);
-      if (!silent && camResult.kind === "fallback") {
-        toast.warning(
-          `Camera “${camResult.requestedLabel}” unavailable — using “${camResult.device.label}”.`,
-        );
-      }
+    } else if (camResult.kind === "fallback") {
+      cameraOn = true;
+      selectedCameraId = camResult.device.deviceId;
+      selectedCameraName = camResult.device.label;
+      cameraWarning = `“${camResult.requestedLabel}” unavailable — using “${camResult.device.label}”`;
+      void refreshCameraValidation(camResult.device.deviceId);
+      openCameraPreview(camResult.device.deviceId);
     } else if (camResult.kind === "missing") {
       cameraOn = false;
       cameraValidation = null;
+      cameraWarning = `“${profile.name}” wants a camera but none is available`;
       closeCameraPreview();
-      if (!silent) {
-        toast.error(`“${profile.name}” wants a camera but none is available.`);
-      }
     } else {
       if (cameraOn) closeCameraPreview();
       cameraOn = false;
       cameraValidation = null;
+      cameraWarning = null;
     }
 
     activeProfileId = profile.id;
@@ -361,14 +369,15 @@
 
   function handleProfileSwitch(profile: RecordingProfile) {
     if (isRecording) return;
-    const wasActive = profile.id === activeProfileId;
     applyProfile(profile);
-    if (!wasActive) {
-      // applyProfile only toasts on warnings/errors — surface a positive
-      // confirmation here so the user knows the switch landed even when it
-      // applied cleanly.
-      toast.success(`Applied “${profile.name}”`);
-    }
+    // Brief 1.4s highlight on the profile button so the user gets a
+    // visual confirmation without a toast.
+    if (profileFlashTimer) clearTimeout(profileFlashTimer);
+    profileFlash = true;
+    profileFlashTimer = setTimeout(() => {
+      profileFlash = false;
+      profileFlashTimer = null;
+    }, 1400);
   }
 
   function handleGlobalShortcut(e: KeyboardEvent) {
@@ -487,6 +496,7 @@
 
   function toggleMic() {
     if (isRecording) return;
+    micWarning = null;
     if (micOn) {
       micOn = false;
     } else {
@@ -496,6 +506,7 @@
 
   function toggleCamera() {
     if (isRecording) return;
+    cameraWarning = null;
     if (cameraOn) {
       cameraOn = false;
       closeCameraPreview();
@@ -668,7 +679,7 @@
     {#if profilesStore.enabled && profilesStore.profiles.length > 0}
       <Button
         size="icon-sm"
-        variant="ghost"
+        variant={profileFlash ? "default_soft" : "ghost"}
         disabled={isRecording}
         onclick={openProfilePicker}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
@@ -699,14 +710,26 @@
         {/if}
       </Button>
 
-      <!-- Mic -->
+      <!-- Mic. `micWarning` is set by `applyProfile` when a saved mic was
+           missing or got swapped — surfaced in the tooltip rather than a
+           toast so the panel stays minimal. -->
       <Button
-        variant={micOn ? "default_soft" : "outline"}
+        variant={micOn
+          ? micWarning
+            ? "destructive_soft"
+            : "default_soft"
+          : micWarning
+            ? "destructive_soft"
+            : "outline"}
         size="icon-sm"
         disabled={isRecording}
         onclick={toggleMic}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
-        title={micOn ? `Mic: ${selectedMicName}` : "Microphone: off"}
+        title={micOn
+          ? `Mic: ${selectedMicName}${micWarning ? ` — ${micWarning}` : ""}`
+          : micWarning
+            ? `Microphone: off — ${micWarning}`
+            : "Microphone: off"}
       >
         {#if micOn}
           <Mic size={14} strokeWidth={2} />
@@ -715,20 +738,26 @@
         {/if}
       </Button>
 
-      <!-- Camera -->
+      <!-- Camera. `cameraWarning` (from profile apply) and `cameraValidation`
+           (from device probe) both surface in the tooltip; whichever is
+           present wins the destructive_soft tint. -->
       <Button
         disabled={isRecording}
         onclick={toggleCamera}
         onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant={cameraOn
-          ? cameraValidation?.status === "error"
+          ? cameraValidation?.status === "error" || cameraWarning
             ? "destructive_soft"
             : "default_soft"
-          : "outline"}
+          : cameraWarning
+            ? "destructive_soft"
+            : "outline"}
         size="icon-sm"
         title={cameraOn
-          ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}`
-          : "Camera: off"}
+          ? `Camera: ${selectedCameraName}${cameraValidation?.statusMessage ? ` — ${cameraValidation.statusMessage}` : ""}${cameraWarning ? ` — ${cameraWarning}` : ""}`
+          : cameraWarning
+            ? `Camera: off — ${cameraWarning}`
+            : "Camera: off"}
       >
         {#if cameraOn}
           <Camera size={14} strokeWidth={2} />

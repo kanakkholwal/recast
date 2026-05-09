@@ -3,7 +3,6 @@
     Camera,
     CameraOff,
     CheckCircle2,
-    ChevronDown,
     Copy,
     Mic,
     MicOff,
@@ -56,8 +55,14 @@
   let cameras = $state<BrowserCamera[]>([]);
   let devicesLoading = $state(false);
 
-  const remainingSlots = $derived(profilesStore.freeSlots());
-  const isFull = $derived(profilesStore.freeSlots() === 0);
+  // Device-aware combination math: cap is 2 × (2+#mics) × (2+#cams) — each
+  // attached mic / camera unlocks a new "audio + this mic + that cam" slot.
+  // With zero mics + zero cams, this collapses to the original 2³ = 8.
+  const totalCombinations = $derived(
+    profilesStore.maxCombinations(mics, cameras),
+  );
+  const remainingSlots = $derived(profilesStore.freeSlots(mics, cameras));
+  const isFull = $derived(remainingSlots === 0);
 
   onMount(() => {
     profilesStore.hydrate();
@@ -83,24 +88,36 @@
 
   function addProfile() {
     if (isFull) {
-      toast.info("All 8 capability combinations are in use");
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
       return;
     }
-    const combo = profilesStore.nextFreeCombo();
+    const combo = profilesStore.nextFreeCombo(mics, cameras);
     if (!combo) {
-      toast.info("All 8 capability combinations are in use");
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
       return;
     }
+    // Resolve device labels for any specific id the combo picked, so the
+    // dropdown opens pre-filled and the saved profile carries an identity.
+    const micDevice = combo.micDeviceId
+      ? mics.find((m) => m.id === combo.micDeviceId)
+      : null;
+    const camDevice = combo.cameraDeviceId
+      ? cameras.find((c) => c.deviceId === combo.cameraDeviceId)
+      : null;
     const draftProfile: RecordingProfile = {
       id: crypto.randomUUID(),
       name: `Profile ${profilesStore.profiles.length + 1}`,
       systemAudio: combo.systemAudio,
       microphone: combo.microphone,
-      micDeviceId: null,
-      micLabel: null,
+      micDeviceId: combo.micDeviceId,
+      micLabel: micDevice?.name ?? null,
       camera: combo.camera,
-      cameraLabel: null,
-      cameraDeviceId: null,
+      cameraDeviceId: combo.cameraDeviceId,
+      cameraLabel: camDevice?.label ?? null,
       isDefault: profilesStore.profiles.length === 0,
     };
     openDialog("create", draftProfile);
@@ -108,7 +125,9 @@
 
   function duplicateProfile(profile: RecordingProfile) {
     if (isFull) {
-      toast.info("All 8 capability combinations are in use");
+      toast.info(
+        `All ${totalCombinations} capability combinations are in use`,
+      );
       return;
     }
     // Open as a draft — user must change capabilities before Save (the
@@ -174,7 +193,7 @@
     const conflict = profilesStore.duplicateOf(next);
     if (conflict) {
       toast.error(
-        `"${conflict.name}" already uses this combination — change a toggle`,
+        `"${conflict.name}" already uses this combination — change a toggle or device`,
       );
       return;
     }
@@ -361,10 +380,10 @@
                   >No combinations left</span
                 >
                 <span class="text-muted-foreground">
-                  Profiles are unique by their capability set (system audio ·
-                  mic · camera). All 8 combinations of those three toggles are
-                  already used — edit or delete an existing profile to free a
-                  slot.
+                  Profiles are unique by audio · mic · camera, including which
+                  specific device is picked. All {totalCombinations} combinations
+                  for your current devices are taken — plug in another mic or
+                  camera, or edit an existing profile to free a slot.
                 </span>
               </div>
             {:else}
@@ -381,8 +400,8 @@
         {#if profilesStore.profiles.length > 0}
           <span class="text-muted-foreground/70">
             {remainingSlots === 0
-              ? "All 8 combinations in use."
-              : `${remainingSlots} of 8 combinations free.`}
+              ? `All ${totalCombinations} combinations in use.`
+              : `${remainingSlots} of ${totalCombinations} combinations free.`}
           </span>
         {/if}
       </p>
@@ -706,6 +725,7 @@
 {/snippet}
 
 {#snippet deviceRow(
+  Icon: typeof Mic,
   label: string,
   hint: string,
   options: { value: string; label: string }[],
@@ -713,40 +733,62 @@
   onSelect: (id: string) => void,
   emptyHint: string,
 )}
-  <div class="flex items-center gap-3 px-5 py-3">
-    <span
-      class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground/70 ring-1 ring-inset ring-border/40"
-      aria-hidden="true"
-    >
-      <ChevronDown size={12} />
-    </span>
-    <span class="flex min-w-0 flex-1 flex-col gap-0.5">
-      <span class="truncate text-[11.5px] font-semibold text-foreground/80">
-        {label}
+  {@const currentLabel = options.find((o) => o.value === selected)?.label}
+  <div class="flex flex-col gap-2 px-5 py-3 bg-muted/15">
+    <div class="flex items-center gap-3">
+      <span
+        class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground ring-1 ring-inset ring-border/40"
+        aria-hidden="true"
+      >
+        <Icon size={14} />
       </span>
-      <span class="truncate text-[10.5px] font-medium text-muted-foreground/80">
-        {hint}
+      <span class="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span class="truncate text-[11.5px] font-semibold text-foreground/80">
+          {label}
+        </span>
+        <span
+          class="truncate text-[10.5px] font-medium text-muted-foreground/80"
+        >
+          {hint}
+        </span>
       </span>
-    </span>
+    </div>
     {#if options.length === 0}
-      <span class="text-[10.5px] font-medium text-muted-foreground/70">
-        {devicesLoading ? "Loading…" : emptyHint}
-      </span>
+      <div
+        class="flex h-9 items-center justify-center rounded-lg border border-dashed border-border/60 bg-background/40 text-[11px] font-medium text-muted-foreground"
+      >
+        {devicesLoading ? "Loading devices…" : emptyHint}
+      </div>
     {:else}
       <Select.Root
         type="single"
         value={selected ?? undefined}
-        onValueChange={(v) => v && onSelect(v)}
+        onValueChange={(v) => {
+          if (typeof v === "string" && v.length > 0) onSelect(v);
+        }}
       >
-        <Select.Trigger class="h-8 max-w-45 text-[11.5px]" size="sm">
-          <span data-slot="select-value" class="truncate">
-            {options.find((o) => o.value === selected)?.label ?? "Select…"}
+        <Select.Trigger
+          class="h-9! w-full justify-between rounded-lg border border-border/50 bg-background/70 px-3 text-[11.5px] font-medium text-foreground hover:bg-background hover:border-border focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/20"
+          aria-label={label}
+        >
+          <span
+            data-slot="select-value"
+            class="flex min-w-0 flex-1 items-center gap-2"
+          >
+            <Icon class="size-3.5 shrink-0 text-muted-foreground" />
+            <span class="truncate">
+              {currentLabel ?? "Select a device…"}
+            </span>
           </span>
         </Select.Trigger>
-        <Select.Content>
+        <Select.Content sideOffset={6} class="max-h-64">
           {#each options as opt (opt.value)}
-            <Select.Item value={opt.value} label={opt.label}>
-              <span class="truncate">{opt.label}</span>
+            <Select.Item
+              value={opt.value}
+              label={opt.label}
+              class="text-[11.5px]"
+            >
+              <span class="truncate pr-4">{opt.label}</span>
             </Select.Item>
           {/each}
         </Select.Content>
@@ -829,6 +871,7 @@
         )}
         {#if draft.microphone}
           {@render deviceRow(
+            Mic,
             "Microphone device",
             "If unavailable at recording time, the system default is used.",
             mics.map((m) => ({
@@ -848,6 +891,7 @@
         )}
         {#if draft.camera}
           {@render deviceRow(
+            Camera,
             "Camera device",
             "Saved by name; falls back to first non-virtual cam if missing.",
             cameras.map((c) => ({
