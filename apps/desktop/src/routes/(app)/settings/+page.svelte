@@ -12,6 +12,7 @@
     Moon,
     Navigation,
     Settings as SettingsIcon,
+    SlidersHorizontal as SlidersIcon,
     Sparkles,
     Sun,
   } from "@lucide/svelte";
@@ -23,6 +24,8 @@
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
 
+  import { profilesStore } from "$lib/stores/profiles.svelte";
+
   type Theme = "light" | "dark" | "system";
   type EditorBehavior = "navigate" | "new-window";
 
@@ -32,6 +35,7 @@
 
   onMount(() => {
     fetchSettings();
+    profilesStore.hydrate();
     const storedTheme = localStorage.getItem("mode-watcher-mode") as
       | Theme
       | null;
@@ -41,6 +45,14 @@
     ) as EditorBehavior | null;
     if (storedEditor) editorWindow = storedEditor;
   });
+
+  function toggleProfilesEnabled() {
+    const next = !profilesStore.enabled;
+    profilesStore.setEnabled(next);
+    toast.success(
+      next ? "Profiles enabled" : "Profiles disabled",
+    );
+  }
 
   async function fetchSettings() {
     try {
@@ -293,10 +305,91 @@
           </div>
         </section>
 
+        <!-- Recording profiles -->
+        <section
+          id="settings-profiles"
+          in:fade={{ duration: 200, delay: 220 }}
+          class="flex flex-col gap-3"
+        >
+          <div class="px-1">
+            <h2
+              class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+            >
+              Recording profiles
+            </h2>
+            <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+              Save preset combinations of audio, mic, and camera.
+            </p>
+          </div>
+          <div
+            class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+          >
+            <div class="flex items-center justify-between gap-3 px-4 py-3">
+              <div class="min-w-0">
+                <div class="text-[12px] font-semibold text-foreground">
+                  Use profile system
+                </div>
+                <div class="text-[11px] text-muted-foreground">
+                  {profilesStore.enabled
+                    ? "Recording panel auto-applies the default profile and shows a switcher."
+                    : "Recording panel resets to manual toggles every launch."}
+                </div>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-label="Use profile system"
+                aria-checked={profilesStore.enabled}
+                onclick={toggleProfilesEnabled}
+                class={cn(
+                  "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                  profilesStore.enabled
+                    ? "bg-primary"
+                    : "bg-input ring-1 ring-inset ring-border/50",
+                )}
+              >
+                <span
+                  class={cn(
+                    "size-4 rounded-full bg-card shadow-sm transition-transform",
+                    profilesStore.enabled ? "translate-x-4.5" : "translate-x-0.5",
+                  )}
+                ></span>
+              </button>
+            </div>
+            {#if profilesStore.enabled}
+              <div
+                class="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-3"
+              >
+                <div class="min-w-0">
+                  <div class="text-[12px] font-semibold text-foreground">
+                    Manage profiles
+                  </div>
+                  <div class="text-[11px] text-muted-foreground">
+                    {profilesStore.profiles.length === 0
+                      ? "No profiles yet."
+                      : profilesStore.profiles.length === 1
+                        ? "1 profile saved."
+                        : `${profilesStore.profiles.length} profiles saved.`}
+                  </div>
+                </div>
+                <Button
+                  href="/profiles"
+                  variant="secondary"
+                  size="sm"
+                  class="h-8 gap-1.5"
+                >
+                  <SlidersIcon class="size-3.5" />
+                  <span class="text-[11.5px]">Open profiles</span>
+                </Button>
+              </div>
+            {/if}
+          </div>
+        </section>
+
         <!-- About -->
         <section
           id="settings-about"
-          in:fade={{ duration: 200, delay: 240 }}
+          in:fade={{ duration: 200, delay: 260 }}
           class="flex flex-col gap-3"
         >
           <div class="px-1">

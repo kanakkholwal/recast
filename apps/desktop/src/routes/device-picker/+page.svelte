@@ -118,6 +118,7 @@
     isLoading && "cursor-wait",
   )}
   aria-busy={isLoading}
+  data-tauri-drag-region
 >
   <!-- Header -->
   <header
@@ -255,6 +256,7 @@
 
   <!-- Footer -->
   <footer
+    data-tauri-drag-region
     class="flex items-center justify-between border-t border-border-subtle bg-card/50 px-3 h-11 shrink-0"
   >
     <Button

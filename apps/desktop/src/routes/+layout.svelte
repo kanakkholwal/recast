@@ -18,6 +18,7 @@
   const TRANSPARENT_ROUTES = [
     "/camera-preview",
     "/device-picker",
+    "/profile-picker",
     "/select",
     "/panel",
   ];
@@ -74,7 +75,7 @@
 <TooltipProvider>
   <Loading />
   <ModeWatcher />
-  <Toaster position="top-center" richColors />
+  <Toaster position="top-center" />
   <div
     class="relative flex min-h-screen min-w-dvw w-full flex-col {isTransparentRoute
       ? 'bg-transparent'
