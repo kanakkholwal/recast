@@ -1,0 +1,106 @@
+name: Recording issue
+description: Capture, audio, microphone, camera, cursor, or device-permissions problems while recording.
+title: "[recording]: "
+labels: ["bug", "desktop:fix", "area:recording", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template for problems that occur while **starting, performing, or stopping a recording**. For export/encoding failures after recording, use the **Export & rendering issue** template instead.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What went wrong
+    validations:
+      required: true
+  - type: dropdown
+    id: capture-type
+    attributes:
+      label: Capture mode
+      multiple: true
+      options:
+        - Full screen
+        - Window
+        - Region / area
+        - Webcam only
+        - Microphone only
+        - System audio
+        - Cursor highlight / click effects
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Recording profile used
+      description: From the Profiles panel.
+      options:
+        - Default
+        - Custom (describe below)
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+    validations:
+      required: true
+  - type: textarea
+    id: displays
+    attributes:
+      label: Display setup
+      description: Number of monitors, resolutions, refresh rates, scaling (HiDPI / Retina), and which display you were capturing.
+      placeholder: "2 monitors: 3840x2160@120Hz (200% scaling, primary) + 1920x1080@60Hz"
+    validations:
+      required: true
+  - type: textarea
+    id: audio-devices
+    attributes:
+      label: Audio devices
+      description: Microphone and system-audio devices selected, if relevant.
+  - type: textarea
+    id: permissions
+    attributes:
+      label: OS permissions granted
+      description: |
+        On macOS: Screen Recording, Microphone, Camera, Accessibility (for cursor capture).
+        On Windows: any UAC prompts or device-access dialogs.
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and the captured file (if produced)
+      description: Attach the resulting recording (or a portion) if one was produced. Logs paths in the Bug report template.
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I confirmed all required OS permissions are granted.
+          required: true

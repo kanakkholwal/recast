@@ -1,0 +1,94 @@
+name: Export & rendering issue
+description: Problems with export, encoding, FFmpeg, or the rendered output (artifacts, audio sync, color, file corruption).
+title: "[export]: "
+labels: ["bug", "desktop:export", "ffmpeg", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For preview / WebGL2 rendering glitches inside the editor, use **UX/UI issue**. This template is for the **export pipeline** (FFmpeg sidecar, encoders, output file).
+  - type: textarea
+    id: summary
+    attributes:
+      label: What went wrong
+    validations:
+      required: true
+  - type: dropdown
+    id: stage
+    attributes:
+      label: When does the problem occur?
+      options:
+        - Export fails to start
+        - Export progresses but errors mid-way
+        - Export completes but the output file is broken
+        - Output plays but has artifacts (audio/video sync, color, glitches)
+    validations:
+      required: true
+  - type: dropdown
+    id: codec
+    attributes:
+      label: Encoder / container
+      multiple: true
+      options:
+        - libx264 (H.264)
+        - VP9 (libvpx-vp9)
+        - NVENC (H.264/HEVC)
+        - AAC audio
+        - Opus audio
+        - MP4
+        - WebM
+        - GIF
+        - Other / not sure
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Export settings
+      description: Resolution, bitrate / quality preset, framerate, hardware acceleration, and any custom flags.
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: gpu
+    attributes:
+      label: GPU
+      placeholder: "NVIDIA RTX 4070 / Apple M2 Pro / Intel Arc A380"
+  - type: textarea
+    id: ffmpeg-output
+    attributes:
+      label: FFmpeg / export log
+      description: Paste the export log or the relevant FFmpeg stderr. Wrap in a ```` ```log ```` block.
+      render: shell
+  - type: textarea
+    id: sample
+    attributes:
+      label: Sample output file (if any)
+      description: Attach a short reproduction clip or the broken output.
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues.
+          required: true
+        - label: I tried with hardware acceleration both on and off (where applicable).
+          required: false

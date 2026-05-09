@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or discussion
+    url: https://github.com/kanakkholwal/recast/discussions
+    about: Ask a question, share an idea, or discuss usage. Issues are for tracked bugs and feature work.
+  - name: Security vulnerability
+    url: https://github.com/kanakkholwal/recast/security/advisories/new
+    about: Report a security issue privately. Do NOT open a public issue.
+  - name: Verify a release build
+    url: https://github.com/kanakkholwal/recast/releases
+    about: Use `gh attestation verify` against any downloaded asset. See the release notes for the exact command.

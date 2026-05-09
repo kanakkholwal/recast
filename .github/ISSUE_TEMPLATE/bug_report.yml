@@ -1,0 +1,94 @@
+name: Bug report
+description: Something works incorrectly in the desktop app or web surface.
+title: "[bug]: "
+labels: ["bug", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. For recording-specific problems use the **Recording issue** template; for export/encoding problems use **Export & rendering issue**; for crashes use **Crash report**.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One or two sentences describing the bug.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Be specific. Include the project file, recording profile, or settings used if relevant.
+      placeholder: |
+        1. Open Recast
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      description: From the app's About screen, or the installer filename.
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where does this happen?
+      options:
+        - Desktop app
+        - Web (recast.nexonauts.com)
+        - Both
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: "Windows 11 23H2 / macOS 14.5 / Ubuntu 24.04"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or recordings
+      description: |
+        Drag-and-drop attachments here. Tauri logs live at:
+        - Windows: `%APPDATA%\com.nexonauts.recast\logs`
+        - macOS: `~/Library/Logs/com.nexonauts.recast`
+        - Linux: `~/.config/com.nexonauts.recast/logs`
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I'm running the latest release (or have noted the version above).
+          required: true

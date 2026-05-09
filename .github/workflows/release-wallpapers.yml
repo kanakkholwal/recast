@@ -29,6 +29,7 @@ concurrency:
 env:
   NODE_VERSION: "20"
   PNPM_VERSION: "10.23.0"
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
   release-wallpapers:

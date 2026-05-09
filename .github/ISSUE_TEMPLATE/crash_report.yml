@@ -1,0 +1,83 @@
+name: Crash report
+description: The desktop app crashed, hung, or was killed by the OS.
+title: "[crash]: "
+labels: ["bug", "crash", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For native crashes, **the stack trace is the most important thing you can attach**. See the log paths in the textarea below.
+  - type: textarea
+    id: summary
+    attributes:
+      label: What were you doing when it crashed?
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Crash type
+      options:
+        - Hard crash (window disappeared / process exited)
+        - Hang (UI froze, had to force-quit)
+        - Killed by the OS (out-of-memory, etc.)
+        - Tauri webview crashed but the app stayed open
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: Is it reproducible?
+      options:
+        - Yes, every time
+        - Yes, sometimes
+        - Once — can't reproduce
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce (if known)
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and crash dumps
+      description: |
+        Please attach app logs and any OS-level crash dump.
+
+        **Recast logs:**
+        - Windows: `%APPDATA%\com.nexonauts.recast\logs`
+        - macOS: `~/Library/Logs/com.nexonauts.recast`
+        - Linux: `~/.config/com.nexonauts.recast/logs`
+
+        **OS crash reports:**
+        - Windows: Event Viewer → Windows Logs → Application
+        - macOS: Console.app → Crash Reports, or `~/Library/Logs/DiagnosticReports`
+        - Linux: `journalctl --user -b` or `coredumpctl list`
+    validations:
+      required: true

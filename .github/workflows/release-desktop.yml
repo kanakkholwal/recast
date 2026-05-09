@@ -38,22 +38,40 @@ jobs:
       tag_name: ${{ steps.resolve_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
       - name: Resolve tag
         id: resolve_tag
         shell: bash
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
-      - name: Build release body from CHANGELOG.md
-        id: build_body
+      - name: Resolve previous tag for compare link
+        id: prev_tag
         shell: bash
         env:
           TAG: ${{ steps.resolve_tag.outputs.tag }}
         run: |
           set -euo pipefail
+          # Fetch the full tag history so `git describe` can find the prior tag.
+          git fetch --tags --force --quiet
+          prev=$(git describe --tags --abbrev=0 --match 'v*' "${TAG}^" 2>/dev/null || true)
+          echo "prev=${prev}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release body from CHANGELOG.md
+        id: build_body
+        shell: bash
+        env:
+          TAG: ${{ steps.resolve_tag.outputs.tag }}
+          PREV_TAG: ${{ steps.prev_tag.outputs.prev }}
+          REPO: kanakkholwal/recast
+        run: |
+          set -euo pipefail
           version="${TAG#v}"
           body_file="$(mktemp)"
 
+          # 1. What's new — curated CHANGELOG section, or fall back to GH auto-notes.
           if node scripts/extract-changelog.mjs "$version" --out changelog-section.md > /dev/null 2>&1; then
             echo "found=true" >> "$GITHUB_OUTPUT"
             {
@@ -68,19 +86,68 @@ jobs:
             : > "$body_file"
           fi
 
+          # 2. Downloads — point users at the right asset for their platform.
           {
-            echo "## Installation and signing notes"
-            echo "Release assets include GitHub artifact attestations for build provenance."
-            echo "Windows and macOS builds may still show OS security prompts because OS code-signing is not configured."
-            echo "If blocked by OS warnings, verify the release from the repository:"
-            echo "https://github.com/kanakkholwal/recast"
+            echo "## Downloads"
             echo
-            echo "Verify release integrity with GitHub CLI:"
+            echo "| Platform | Asset |"
+            echo "| --- | --- |"
+            echo "| Windows 10/11 (x64) — installer | \`recast_${version}_x64-setup.exe\` or \`recast_${version}_x64_en-US.msi\` |"
+            echo "| Windows 10/11 (x64) — Store package | \`recast_${version}_x64.msix\` |"
+            echo "| macOS (Apple Silicon) | \`recast_${version}_aarch64.dmg\` |"
+            echo "| macOS (Intel) | \`recast_${version}_x64.dmg\` |"
+            echo "| Linux (x64) — universal | \`recast_${version}_amd64.AppImage\` |"
+            echo "| Linux (x64) — Debian/Ubuntu | \`recast_${version}_amd64.deb\` |"
+            echo
+            echo "All assets ship with [GitHub artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) for build provenance."
+            echo
+          } >> "$body_file"
+
+          # 3. System requirements.
+          {
+            echo "## System requirements"
+            echo
+            echo "- **Windows**: Windows 10 1809+ or Windows 11, x64. WebView2 Runtime (bundled by the installer)."
+            echo "- **macOS**: macOS 11 Big Sur or later. Universal screen recording, microphone, and accessibility permissions are required at first launch."
+            echo "- **Linux**: glibc 2.35+ (Ubuntu 22.04 / Fedora 36 / Debian 12 or newer). PipeWire 0.3+ recommended for system audio capture."
+            echo
+          } >> "$body_file"
+
+          # 4. Verifying the download.
+          {
+            echo "## Verifying the download"
+            echo
+            echo "Recast builds are not yet OS-code-signed, so Windows SmartScreen and macOS Gatekeeper may show warnings. You can verify the build came from this repository's CI using the GitHub CLI:"
+            echo
             echo '```sh'
-            echo "gh release verify ${TAG} -R kanakkholwal/recast"
-            echo "gh release verify-asset ${TAG} path/to/downloaded-asset -R kanakkholwal/recast"
-            echo "gh attestation verify path/to/downloaded-asset -R kanakkholwal/recast"
+            echo "# Confirm the asset was produced by this release's workflow run."
+            echo "gh attestation verify path/to/downloaded-asset -R ${REPO}"
             echo '```'
+            echo
+            echo "**macOS** — if Gatekeeper blocks the app on first launch:"
+            echo '```sh'
+            echo "xattr -dr com.apple.quarantine /Applications/Recast.app"
+            echo '```'
+            echo
+            echo "**Windows** — if SmartScreen blocks the installer, click *More info → Run anyway* after verifying the attestation above."
+            echo
+          } >> "$body_file"
+
+          # 5. Full changelog — compare link.
+          if [[ -n "${PREV_TAG}" ]]; then
+            {
+              echo "## Full changelog"
+              echo
+              echo "**Compare:** https://github.com/${REPO}/compare/${PREV_TAG}...${TAG}"
+              echo
+            } >> "$body_file"
+          fi
+
+          # 6. Issues / feedback footer.
+          {
+            echo "---"
+            echo
+            echo "Found a bug or have a feature request? [Open an issue](https://github.com/${REPO}/issues/new/choose)."
           } >> "$body_file"
 
           # Pass body as a multi-line GH Actions output.
