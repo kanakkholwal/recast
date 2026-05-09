@@ -107,7 +107,7 @@
 	<title>Features — Recast</title>
 	<meta
 		name="description"
-		content="Recast features in depth: cursor engine, smart layouts, lightweight editor, GPU export, and more."
+		content="The cursor engine, smart layouts, native capture, and lightweight editor that turn raw screen captures into demos worth shipping."
 	/>
 </svelte:head>
 
@@ -118,12 +118,14 @@
 				<Eyebrow icon={Sparkles} variant="primary">Features</Eyebrow>
 				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
 					Everything Recast
-					<span class="inline-grid overflow-hidden align-bottom font-medium italic text-foreground/40">
-						<TextLoop class="text-primary" texts={verbs} interval={2800} />
+					<span class="mt-2 flex justify-start font-medium italic text-foreground/40 md:justify-center">
+						<span class="inline-grid overflow-hidden">
+							<TextLoop class="text-primary" texts={verbs} interval={2800} />
+						</span>
 					</span>
 				</h1>
 				<p class="text-pretty max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
-					A focused recorder, not a kitchen-sink editor. Three pillars do most of the work; the rest stays out of your way.
+					A focused recorder, not a kitchen-sink editor. Three pillars do the heavy lifting; the rest stays out of your way.
 				</p>
 			</div>
 		</Container>
@@ -189,21 +191,48 @@
 		</Container>
 	</Section>
 
-	<Section spacing="tight" class="border-t border-border-low/60">
+	<Section id="cta" class="border-t border-border-low/60">
 		<Container>
 			<Reveal>
-				<div class="glass-card relative overflow-hidden rounded-3xl px-6 py-14 text-center shadow-craft-lg sm:px-12 sm:py-20">
-					<div class="bg-aurora pointer-events-none absolute inset-0 opacity-60"></div>
-					<div class="relative mx-auto flex max-w-2xl flex-col items-center gap-6">
-						<h2 class="text-balance text-3xl font-semibold tracking-tight text-foreground sm:text-4xl md:text-5xl">
-							Skip the editor. Ship the demo.
+				<div
+					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
+					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
+				>
+					<div
+						aria-hidden="true"
+						class="pointer-events-none absolute -top-40 left-1/2 size-160 -translate-x-1/2 rounded-full opacity-60"
+						style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%);"
+					></div>
+					<div
+						aria-hidden="true"
+						class="pointer-events-none absolute inset-x-0 top-0 h-px"
+						style="background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-foreground) 18%, transparent), transparent);"
+					></div>
+
+					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
+						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
+							<span class="relative flex size-1.5">
+								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+							</span>
+							v0.1 beta · ready when you are
+						</div>
+
+						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
+							Skip the editor.
+							<span class="block font-medium italic text-foreground/40">Ship the demo.</span>
 						</h2>
-						<div class="flex flex-col gap-3 sm:flex-row sm:gap-4">
+
+						<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Free during beta. No account required. Three platforms. One opinionated tool.
+						</p>
+
+						<div class="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
 							<Button href="/download" size="lg" class="gap-2.5">
 								<Download class="size-4" />
 								Download Recast
 							</Button>
-							<Button href="/changelog" variant="ghost" size="lg" class="gap-2 group/cta">
+							<Button href="/changelog" variant="outline" size="lg" class="group/cta gap-2">
 								See what's new
 								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 							</Button>

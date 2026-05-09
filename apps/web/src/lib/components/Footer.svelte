@@ -14,7 +14,7 @@
 				{ label: "Features", href: "/features" },
 				{ label: "Download", href: "/download" },
 				{ label: "Changelog", href: "/changelog" },
-				{ label: "Workflow", href: "/#workflow" },
+				{ label: "Editor", href: "/#editor" },
 			],
 		},
 		{
@@ -67,8 +67,8 @@
 					</span>
 				</a>
 				<p class="mt-6 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
-					The intentional screen recorder. Record, refine, and ship cinematic
-					product walkthroughs — entirely on your machine.
+					The native screen recorder for founders, indie hackers, and product
+					engineers who'd rather ship than open a timeline.
 				</p>
 				<div class="mt-7 flex items-center gap-2">
 					{#each socials as { icon: Icon, href, label }}
@@ -112,7 +112,7 @@
 
 		<div class="mt-20 flex flex-col items-start justify-between gap-4 border-t border-border-low/70 pt-8 md:flex-row md:items-center">
 			<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-				Built for clarity · Designed for speed
+				Skip the editor · Ship the demo
 			</p>
 			<p class="text-xs text-muted-foreground">
 				© {new Date().getFullYear()} Recast. All rights reserved.

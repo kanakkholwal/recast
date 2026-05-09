@@ -24,6 +24,7 @@
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
+  import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
@@ -39,12 +40,44 @@
   }
 
   const STORAGE_KEY = "recast-recording-profiles";
+  // 3 capability toggles ⇒ 2³ unique combinations.
+  const MAX_PROFILES = 8;
 
   let profiles = $state<RecordingProfile[]>([]);
-  let editingId = $state<string | null>(null);
+  // mode = 'create' means draft is not yet in `profiles`; mode = 'edit' means
+  // draft mirrors an existing entry. Persistence only happens on Save.
+  let mode = $state<"create" | "edit" | null>(null);
   let draft = $state<RecordingProfile | null>(null);
   let nameInputEl = $state<HTMLInputElement | null>(null);
   let query = $state("");
+
+  function capSig(
+    p: Pick<RecordingProfile, "systemAudio" | "microphone" | "camera">,
+  ): string {
+    return `${+p.systemAudio}${+p.microphone}${+p.camera}`;
+  }
+
+  // First capability combo that no existing profile uses, walking 0–7.
+  // Returns null when all 8 are taken.
+  function firstFreeCombo(): {
+    systemAudio: boolean;
+    microphone: boolean;
+    camera: boolean;
+  } | null {
+    const taken = new Set(profiles.map(capSig));
+    for (let i = 0; i < 8; i++) {
+      const combo = {
+        systemAudio: !!(i & 4),
+        microphone: !!(i & 2),
+        camera: !!(i & 1),
+      };
+      if (!taken.has(capSig(combo))) return combo;
+    }
+    return null;
+  }
+
+  const remainingSlots = $derived(MAX_PROFILES - profiles.length);
+  const isFull = $derived(profiles.length >= MAX_PROFILES);
 
   onMount(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -114,29 +147,48 @@
   }
 
   function addProfile() {
-    const profile: RecordingProfile = {
+    if (isFull) {
+      toast.info("All 8 capability combinations are in use");
+      return;
+    }
+    const combo = firstFreeCombo();
+    if (!combo) {
+      toast.info("All 8 capability combinations are in use");
+      return;
+    }
+    const draftProfile: RecordingProfile = {
       id: crypto.randomUUID(),
       name: `Profile ${profiles.length + 1}`,
-      systemAudio: true,
-      microphone: false,
-      camera: false,
+      ...combo,
       isDefault: profiles.length === 0,
     };
-    profiles = [...profiles, profile];
-    save();
-    startEditing(profile);
+    mode = "create";
+    draft = draftProfile;
+    queueMicrotask(() => {
+      nameInputEl?.focus();
+      nameInputEl?.select();
+    });
   }
 
   function duplicateProfile(profile: RecordingProfile) {
+    if (isFull) {
+      toast.info("All 8 capability combinations are in use");
+      return;
+    }
+    // Open as a draft — user must change capabilities before Save (the
+    // duplicate-signature check would otherwise reject it).
     const copy: RecordingProfile = {
       ...profile,
       id: crypto.randomUUID(),
       name: `${profile.name} Copy`,
       isDefault: false,
     };
-    profiles = [...profiles, copy];
-    save();
-    toast.success(`Duplicated "${profile.name}"`);
+    mode = "create";
+    draft = copy;
+    queueMicrotask(() => {
+      nameInputEl?.focus();
+      nameInputEl?.select();
+    });
   }
 
   function deleteProfile(id: string) {
@@ -149,8 +201,8 @@
     }
     save();
     toast.success(`Deleted "${victim.name}"`);
-    if (editingId === id) {
-      editingId = null;
+    if (draft?.id === id) {
+      mode = null;
       draft = null;
     }
   }
@@ -162,7 +214,7 @@
   }
 
   function startEditing(profile: RecordingProfile) {
-    editingId = profile.id;
+    mode = "edit";
     draft = { ...profile };
     queueMicrotask(() => {
       nameInputEl?.focus();
@@ -171,30 +223,53 @@
   }
 
   function finishEditing() {
-    if (!editingId || !draft) return;
-    if (!draft.name.trim()) {
+    if (!mode || !draft) return;
+    const trimmed = draft.name.trim();
+    if (!trimmed) {
       toast.error("Name cannot be empty");
       return;
     }
-    const next = { ...draft, name: draft.name.trim() };
-    const currentId = editingId;
-    if (next.isDefault) {
-      profiles = profiles.map((p) => ({
-        ...(p.id === currentId ? next : p),
-        isDefault: p.id === currentId,
-      }));
-    } else {
-      profiles = profiles.map((p) => (p.id === currentId ? next : p));
-      profiles = ensureExactlyOneDefault(profiles);
+    const next: RecordingProfile = { ...draft, name: trimmed };
+    const sig = capSig(next);
+    const conflict = profiles.find(
+      (p) => p.id !== next.id && capSig(p) === sig,
+    );
+    if (conflict) {
+      toast.error(
+        `"${conflict.name}" already uses this combination — change a toggle`,
+      );
+      return;
     }
-    save();
-    toast.success("Profile saved");
-    editingId = null;
+
+    if (mode === "create") {
+      // Persist for the first time.
+      const inserted = next.isDefault
+        ? [...profiles.map((p) => ({ ...p, isDefault: false })), next]
+        : [...profiles, next];
+      profiles = ensureExactlyOneDefault(inserted);
+      save();
+      toast.success("Profile created");
+    } else {
+      const currentId = next.id;
+      if (next.isDefault) {
+        profiles = profiles.map((p) => ({
+          ...(p.id === currentId ? next : p),
+          isDefault: p.id === currentId,
+        }));
+      } else {
+        profiles = profiles.map((p) => (p.id === currentId ? next : p));
+        profiles = ensureExactlyOneDefault(profiles);
+      }
+      save();
+      toast.success("Profile saved");
+    }
+
+    mode = null;
     draft = null;
   }
 
   function cancelEditing() {
-    editingId = null;
+    mode = null;
     draft = null;
   }
 
@@ -215,7 +290,7 @@
   function handleGlobalShortcut(e: KeyboardEvent) {
     const meta = e.metaKey || e.ctrlKey;
     if (!meta || e.shiftKey || e.altKey) return;
-    if (editingId) return;
+    if (mode) return;
     if (e.key.toLowerCase() === "n") {
       e.preventDefault();
       addProfile();
@@ -285,22 +360,64 @@
                 : `${profiles.length} recording presets`}
           </span>
         </h1>
-        <Button
-          onclick={addProfile}
-          size="sm"
-          class="h-9 shrink-0 gap-1.5"
-          title="New profile (⌘N)"
-        >
-          <Plus size={13} />
-          New profile
-          <Kbd class="bg-primary-foreground/15 text-primary-foreground/90"
-            >⌘N</Kbd
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <!--
+                Wrap a span around the disabled button so pointer events still
+                reach the trigger — disabled native buttons swallow hover.
+              -->
+              <span {...props as Record<string, unknown>} class="shrink-0">
+                <Button
+                  onclick={addProfile}
+                  size="sm"
+                  class="h-9 gap-1.5"
+                  disabled={isFull}
+                >
+                  <Plus size={13} />
+                  New profile
+                  <Kbd
+                    class="bg-primary-foreground/15 text-primary-foreground/90"
+                    >⌘N</Kbd
+                  >
+                </Button>
+              </span>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content
+            side="bottom"
+            class="max-w-xs text-[11px] leading-relaxed"
           >
-        </Button>
+            {#if isFull}
+              <div class="flex flex-col gap-1">
+                <span class="font-semibold text-foreground"
+                  >No combinations left</span
+                >
+                <span class="text-muted-foreground">
+                  Profiles are unique by their capability set (system audio ·
+                  mic · camera). All 8 combinations of those three toggles are
+                  already used — edit or delete an existing profile to free a
+                  slot.
+                </span>
+              </div>
+            {:else}
+              New profile <Kbd
+                class="bg-foreground/10 text-foreground/80 ml-1">⌘N</Kbd
+              >
+            {/if}
+          </Tooltip.Content>
+        </Tooltip.Root>
       </div>
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
         Save what to capture — system audio, mic, camera — and pick the default
         that loads on launch.
+        {#if profiles.length > 0}
+          <span class="text-muted-foreground/70">
+            {remainingSlots === 0
+              ? "All 8 combinations in use."
+              : `${remainingSlots} of 8 combinations free.`}
+          </span>
+        {/if}
       </p>
     </header>
 
@@ -432,7 +549,10 @@
                       <Kbd>⌘R</Kbd>
                     </DropdownMenu.Shortcut>
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={() => duplicateProfile(profile)}>
+                  <DropdownMenu.Item
+                    disabled={isFull}
+                    onSelect={() => duplicateProfile(profile)}
+                  >
                     <Copy class="size-3" /> Duplicate
                     <DropdownMenu.Shortcut>
                       <Kbd>⌘D</Kbd>
@@ -508,31 +628,33 @@
         {/each}
 
         <!-- "New profile" call-to-card always at the end of the grid -->
-        <button
-          type="button"
-          onclick={addProfile}
-          in:fly={{
-            y: 8,
-            duration: 240,
-            delay: Math.min(filtered.length * 40, 280),
-            easing: cubicOut,
-          }}
-          class="group/add flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-        >
-          <span
-            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-colors group-hover/add:bg-primary/10 group-hover/add:text-primary"
+        {#if !isFull}
+          <button
+            type="button"
+            onclick={addProfile}
+            in:fly={{
+              y: 8,
+              duration: 240,
+              delay: Math.min(filtered.length * 40, 280),
+              easing: cubicOut,
+            }}
+            class="group/add flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           >
-            <Plus class="size-4" />
-          </span>
-          <div>
-            <div class="text-[12.5px] font-semibold text-foreground">
-              New profile
+            <span
+              class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-colors group-hover/add:bg-primary/10 group-hover/add:text-primary"
+            >
+              <Plus class="size-4" />
+            </span>
+            <div>
+              <div class="text-[12.5px] font-semibold text-foreground">
+                New profile
+              </div>
+              <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
+                Save another preset
+              </div>
             </div>
-            <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
-              Save another preset
-            </div>
-          </div>
-        </button>
+          </button>
+        {/if}
       </div>
     {/if}
   </div>
@@ -581,7 +703,7 @@
   </button>
 {/snippet}
 
-{#if editingId !== null && draft}
+{#if mode !== null && draft}
   <Dialog.Root
     open={true}
     onOpenChange={(v) => {
@@ -599,9 +721,7 @@
           <Dialog.Title
             class="text-[14px] font-semibold tracking-tight text-foreground"
           >
-            {editingId && profiles.find((p) => p.id === editingId)
-              ? "Edit Profile"
-              : "New Profile"}
+            {mode === "edit" ? "Edit Profile" : "New Profile"}
           </Dialog.Title>
           <Dialog.Description
             class="mt-0.5 text-[11px] font-medium text-muted-foreground"
@@ -666,17 +786,21 @@
       <footer
         class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
       >
-        <Button
-          variant="destructive_soft"
-          size="xs"
-          class="gap-1.5"
-          onclick={() => {
-            if (editingId) deleteProfile(editingId);
-          }}
-        >
-          <Trash2 size={12} />
-          Delete
-        </Button>
+        {#if mode === "edit"}
+          <Button
+            variant="destructive_soft"
+            size="xs"
+            class="gap-1.5"
+            onclick={() => {
+              if (draft) deleteProfile(draft.id);
+            }}
+          >
+            <Trash2 size={12} />
+            Delete
+          </Button>
+        {:else}
+          <span></span>
+        {/if}
         <div class="flex items-center gap-2">
           <Button variant="ghost" size="xs" onclick={cancelEditing}
             >Cancel</Button

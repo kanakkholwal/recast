@@ -16,9 +16,13 @@
 		ArrowDownToLine,
 		ChevronDown,
 		Download,
+		FileBox,
 		Monitor,
+		ShieldCheck,
 		Sparkles,
 		Terminal,
+		WifiOff,
+		Zap,
 	} from "lucide-svelte";
 	import type { PageData } from "./$types";
 
@@ -82,18 +86,38 @@
 	];
 
 	let activeTab = $derived(detectedOS !== "Unknown" ? detectedOS : "macOS");
+
+	const detectedIcon = $derived(
+		detectedOS === "macOS"
+			? Apple
+			: detectedOS === "Windows"
+				? Monitor
+				: detectedOS === "Linux"
+					? Terminal
+					: Download,
+	);
+
+	const ships = [
+		{ icon: WifiOff, label: "Offline-first", value: "Stays on disk" },
+		{ icon: Zap, label: "GPU export", value: "Hardware-encoded" },
+		{ icon: FileBox, label: "Open format", value: ".recast project" },
+		{ icon: ShieldCheck, label: "Open source", value: "MIT licensed" },
+	];
 </script>
 
 <svelte:head>
 	<title>Download Recast — macOS, Windows, Linux</title>
 	<meta
 		name="description"
-		content="Download Recast for macOS, Windows, or Linux. Free during beta. The intentional screen recorder."
+		content="Download Recast for macOS, Windows, or Linux. Free during beta. The native screen recorder for makers shipping every week."
 	/>
 </svelte:head>
 
 <main class="text-foreground">
-	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
+	<Section spacing="none" class="dl-atmosphere relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
+		<div aria-hidden="true" class="dl-aurora pointer-events-none absolute inset-0 -z-10"></div>
+		<div aria-hidden="true" class="dl-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"></div>
+
 		<Container class="relative">
 			<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 				<Eyebrow icon={Sparkles} variant="primary">
@@ -102,7 +126,7 @@
 
 				<h1 class="text-balance mt-7 animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
 					Get Recast for
-					<span class="font-medium italic text-foreground/40">
+					<span class="mt-2 block font-medium italic text-foreground/40">
 						{detectedOS !== "Unknown" ? detectedOS : "your desktop"}.
 					</span>
 				</h1>
@@ -111,7 +135,7 @@
 					class="text-pretty mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg"
 					style="animation-delay: 120ms"
 				>
-					Free during beta. No sign-up. Three platforms. One opinionated tool.
+					Free during beta. No sign-up. The native screen recorder for founders, indie hackers, and product engineers who'd rather ship than open a timeline.
 				</p>
 
 				<div
@@ -119,40 +143,73 @@
 					style="animation-delay: 240ms"
 				>
 					{#if primary?.link}
+						{@const OSIcon = detectedIcon}
 						<div
-							class="flex items-stretch overflow-hidden rounded-xl bg-foreground text-background shadow-craft-xl ring-1 ring-foreground/20 transition-transform hover:scale-[1.01] active:scale-[0.99]"
+							class="dl-cta group/dl flex items-stretch overflow-hidden rounded-2xl bg-foreground text-background shadow-craft-xl ring-1 ring-foreground/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-floating active:translate-y-0"
 						>
 							<a
 								href={primary.link}
-								class="flex h-12 items-center gap-3 px-6 text-sm font-semibold transition-colors hover:bg-background/10 sm:px-8 sm:text-base"
+								class="flex items-center gap-3.5 px-5 py-3 transition-colors hover:bg-background/8 sm:gap-4 sm:px-6 sm:py-3.5"
 							>
-								<Download class="size-4" />
-								Download for {detectedOS}
-								<span class="hidden text-xs font-medium opacity-60 sm:inline">
-									· {primary.label}
+								<span class="grid size-10 place-items-center rounded-xl bg-background/10 ring-1 ring-background/15 sm:size-11">
+									<OSIcon class="size-5" />
 								</span>
+								<span class="flex flex-col items-start leading-tight">
+									<span class="text-sm font-semibold sm:text-base">
+										Download for {detectedOS}
+									</span>
+									<span class="mt-0.5 font-mono text-[11px] font-medium opacity-60">
+										{primary.label}
+									</span>
+								</span>
+								<ArrowDownToLine class="ml-1 size-4 opacity-70 transition-transform group-hover/dl:translate-y-0.5 sm:ml-2" />
 							</a>
 							{#if secondary.length}
 								<DropdownMenu.Root>
 									<DropdownMenu.Trigger
-										class="grid w-12 place-items-center border-l border-background/15 transition-colors hover:bg-background/10"
+										class="group/menu grid w-12 shrink-0 place-items-center border-l border-background/15 transition-colors hover:bg-background/8 sm:w-14"
 										aria-label="Other architectures"
 									>
-										<ChevronDown class="size-4 opacity-80" />
+										<ChevronDown
+											class="size-4 opacity-80 transition-transform duration-200 ease-[cubic-bezier(0.625,0.05,0,1)] group-data-[state=open]/menu:rotate-180"
+										/>
 									</DropdownMenu.Trigger>
-									<DropdownMenu.Content align="end" class="w-60 rounded-xl p-1 shadow-craft-lg">
-										<DropdownMenu.Label class="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
-											Other architectures
+									<DropdownMenu.Content
+										align="end"
+										sideOffset={10}
+										class="w-72 rounded-xl p-2 shadow-craft-lg"
+									>
+										<DropdownMenu.Label
+											class="px-2.5 pt-1 pb-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground"
+										>
+											Other builds for {detectedOS}
 										</DropdownMenu.Label>
-										<DropdownMenu.Separator />
 										{#each secondary as opt}
+											{@const fmt = opt.label.match(/\(([^)]+)\)$/)?.[1] ?? ""}
+											{@const name = opt.label.replace(/\s*\([^)]+\)$/, "")}
 											<DropdownMenu.Item
-												class="cursor-pointer rounded-lg py-2 text-sm font-medium"
+												class="group/item flex cursor-pointer items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-medium transition-colors duration-200 ease-[cubic-bezier(0.625,0.05,0,1)]"
 												onclick={() => opt.link && (window.location.href = opt.link)}
 											>
-												{opt.label}
+												<span class="flex items-center gap-2.5">
+													<span class="grid size-8 place-items-center rounded-lg bg-foreground/5 ring-1 ring-foreground/5 transition-colors duration-200 group-hover/item:bg-primary/10 group-hover/item:ring-primary/20">
+														<OSIcon class="size-4 opacity-70 transition-opacity group-hover/item:opacity-100" />
+													</span>
+													<span class="text-foreground/85">{name}</span>
+												</span>
+												<span class="font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground/80">
+													{fmt}
+												</span>
 											</DropdownMenu.Item>
 										{/each}
+										<DropdownMenu.Separator class="my-1.5" />
+										<a
+											href="#all-platforms"
+											class="flex items-center justify-between gap-3 rounded-lg px-2 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+										>
+											<span>All platforms & checksums</span>
+											<ArrowDownToLine class="size-3.5 opacity-60" />
+										</a>
 									</DropdownMenu.Content>
 								</DropdownMenu.Root>
 							{/if}
@@ -172,6 +229,22 @@
 					</a>
 				</div>
 			</div>
+
+			<!-- Ships with every build -->
+			<Reveal>
+				<div class="mx-auto mt-20 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-4">
+					{#each ships as ship}
+						{@const Icon = ship.icon}
+						<div class="flex flex-col gap-2 bg-background/60 p-5 backdrop-blur-md">
+							<Icon class="size-4 text-primary" />
+							<div>
+								<div class="text-sm font-semibold text-foreground">{ship.label}</div>
+								<div class="mt-0.5 text-xs text-muted-foreground">{ship.value}</div>
+							</div>
+						</div>
+					{/each}
+				</div>
+			</Reveal>
 		</Container>
 	</Section>
 
@@ -239,27 +312,32 @@
 				</Tabs.Root>
 			</div>
 
-			<div class="glass-card mt-10 flex flex-col items-start gap-2 rounded-2xl p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-				<span>
-					Source on
-					<a
-						href="https://github.com/kanakkholwal/recast"
-						target="_blank"
-						rel="noopener noreferrer"
-						class="font-semibold text-foreground hover:text-primary"
-					>
-						GitHub →
-					</a>
-				</span>
+			<div class="glass-card mt-10 flex flex-col items-start gap-3 rounded-2xl p-5 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between sm:p-6">
+				<div class="flex items-center gap-2.5">
+					<span class="glass-chip grid size-8 place-items-center rounded-lg text-foreground/70">
+						<ShieldCheck class="size-4" />
+					</span>
+					<span>
+						Source on
+						<a
+							href="https://github.com/kanakkholwal/recast"
+							target="_blank"
+							rel="noopener noreferrer"
+							class="font-semibold text-foreground transition-colors hover:text-primary"
+						>
+							GitHub →
+						</a>
+					</span>
+				</div>
 				<span class="font-mono text-xs">
 					Verify checksums on the
 					<a
 						href="https://github.com/kanakkholwal/recast/releases/latest"
 						target="_blank"
 						rel="noopener noreferrer"
-						class="font-semibold text-foreground hover:text-primary"
+						class="font-semibold text-foreground transition-colors hover:text-primary"
 					>
-						release page
+						release page →
 					</a>
 				</span>
 			</div>
@@ -268,3 +346,45 @@
 
 	<Footer />
 </main>
+
+<style>
+	.dl-aurora {
+		background:
+			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 70%),
+			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%),
+			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 70%);
+	}
+
+	:global(.dark) .dl-aurora {
+		background:
+			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 75%),
+			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 75%),
+			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 75%);
+	}
+
+	.dl-grid {
+		background-image:
+			linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px),
+			linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px);
+		background-size: 64px 64px;
+		mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
+	}
+
+	.dl-cta {
+		box-shadow:
+			inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent),
+			inset 0 -1px 0 0 color-mix(in srgb, black 18%, transparent),
+			0 1px 2px rgba(0, 0, 0, 0.06),
+			0 8px 24px -8px rgba(0, 0, 0, 0.18),
+			0 18px 40px -12px rgba(0, 0, 0, 0.22);
+	}
+
+	.dl-cta:hover {
+		box-shadow:
+			inset 0 1px 0 0 color-mix(in srgb, white 18%, transparent),
+			inset 0 -1px 0 0 color-mix(in srgb, black 18%, transparent),
+			0 2px 4px rgba(0, 0, 0, 0.08),
+			0 14px 32px -8px rgba(0, 0, 0, 0.22),
+			0 24px 56px -12px rgba(0, 0, 0, 0.28);
+	}
+</style>

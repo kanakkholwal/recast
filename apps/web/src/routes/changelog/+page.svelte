@@ -61,10 +61,13 @@
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<Eyebrow icon={Sparkles} variant="primary">Changelog</Eyebrow>
 				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
-					Every release, in order.
+					Every release,
+					<span class="mt-2 block font-medium italic text-foreground/40">
+						in order.
+					</span>
 				</h1>
 				<p class="text-pretty max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
-					Pulled live from GitHub releases. The latest is at the top.
+					Pulled live from GitHub releases. Newest at the top — every fix, feature, and refinement we've shipped.
 				</p>
 				<div class="flex animate-fade-up gap-3" style="animation-delay: 240ms">
 					<Button
