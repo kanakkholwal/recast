@@ -25,7 +25,7 @@
 //      array reflects the new section immediately.
 //
 // What it does NOT do:
-//   - Does not write source-file versions. The 0.1.5 placeholder
+//   - Does not write source-file versions. The 0.0.0-dev placeholder
 //     strategy means tauri.conf.json / Cargo.toml / package.json stay at
 //     the placeholder; the release workflow rewrites them from the git tag.
 //   - Does not commit, tag, or push. The maintainer reviews the diff and

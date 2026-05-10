@@ -1,7 +1,7 @@
 {
 	"name": "recast-desktop",
 	"private": true,
-	"version": "0.1.5",
+	"version": "0.0.0-dev",
 	"type": "module",
 	"scripts": {
 		"sync:changelog": "node ../../scripts/sync-desktop-changelog.mjs",
