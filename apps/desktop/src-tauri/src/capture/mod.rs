@@ -1,4 +1,4 @@
-mod platform;
+pub mod platform;
 
 use std::time::Duration;
 

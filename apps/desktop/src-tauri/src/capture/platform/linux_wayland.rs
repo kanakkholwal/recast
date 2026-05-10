@@ -104,7 +104,10 @@ pub fn acquire_portal_stream() -> Result<PortalStream> {
 }
 
 async fn portal_handshake_async() -> Result<PortalStream> {
-    use ashpd::desktop::screencast::{CursorMode, PersistMode, Screencast, SourceType};
+    use ashpd::desktop::{
+        screencast::{CursorMode, Screencast, SourceType},
+        PersistMode,
+    };
 
     let proxy = Screencast::new()
         .await
@@ -281,24 +284,30 @@ fn pipewire_capture_loop(
     frame_queue: Arc<crossbeam_queue::ArrayQueue<Vec<u8>>>,
     stop_flag: Arc<AtomicBool>,
 ) -> Result<()> {
+    // pipewire-rs 0.9 split the wrappers into a borrowed "view" type and
+    // owning Rc/Box forms — the bare `MainLoop`/`Context`/`Stream` types no
+    // longer have constructors. We use the Rc forms so the main loop can be
+    // cloned into the stop-flag timer closure below; `StreamBox` is fine
+    // for the stream itself because it lives entirely on this thread.
     use pipewire as pw;
-    use pw::context::Context;
-    use pw::main_loop::MainLoop;
+    use pw::context::ContextRc;
+    use pw::main_loop::MainLoopRc;
     use pw::properties::properties;
-    use pw::stream::{Stream, StreamFlags};
+    use pw::stream::{StreamBox, StreamFlags};
 
     pw::init();
 
-    let main_loop = MainLoop::new(None).context("failed to create pipewire main loop")?;
-    let context = Context::new(&main_loop).context("failed to create pipewire context")?;
+    let main_loop = MainLoopRc::new(None).context("failed to create pipewire main loop")?;
+    let context =
+        ContextRc::new(&main_loop, None).context("failed to create pipewire context")?;
     let core = context
-        .connect_fd(stream.fd, None)
+        .connect_fd_rc(stream.fd, None)
         .context("failed to connect to pipewire daemon over portal fd")?;
 
     // The portal drives source selection and stream lifecycle, but our
     // node IS a regular pipewire node — give it sensible role properties
     // so other tools (e.g. `pw-top`) can identify it.
-    let pw_stream = Stream::new(
+    let pw_stream = StreamBox::new(
         &core,
         "recast-screen",
         properties! {
