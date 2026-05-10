@@ -357,17 +357,20 @@ jobs:
           TAG: ${{ needs.create-release.outputs.tag_name }}
         run: |
           set -euo pipefail
-          # The repo's source files carry "0.0.0-dev" as a placeholder so local
-          # `tauri build` artifacts are obviously dev-stamped. Releases are
-          # cut by tag, and this step is the single source of truth that
-          # rewrites the placeholder into the real version before bundling.
-          # Strip leading "v" so "v1.2.3" -> "1.2.3"; Tauri/Cargo want SemVer.
+          # The repo's source files carry "0.0.0-0" as a placeholder so local
+          # `tauri build` artifacts are obviously dev-stamped. The "-0"
+          # numeric pre-release is required by the Windows MSI bundler,
+          # which rejects non-numeric or >65535 pre-release identifiers.
+          # Releases are cut by tag, and this step is the single source of
+          # truth that rewrites the placeholder into the real version
+          # before bundling. Strip leading "v" so "v1.2.3" -> "1.2.3";
+          # Tauri/Cargo want SemVer.
           version="${TAG#v}"
           if [[ -z "$version" ]]; then
             echo "::error::Resolved empty version from tag '${TAG}'"
             exit 1
           fi
-          if [[ "$version" == "0.0.0-dev" ]]; then
+          if [[ "$version" == "0.0.0-0" ]]; then
             echo "::error::Refusing to release with the dev placeholder version. Tag '${TAG}' resolved to '${version}'."
             exit 1
           fi

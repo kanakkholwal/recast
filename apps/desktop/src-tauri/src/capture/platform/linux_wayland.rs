@@ -295,7 +295,28 @@ fn pipewire_capture_loop(
     use pw::properties::properties;
     use pw::stream::{StreamBox, StreamFlags};
 
+    // RAII guard so any early return via `?` between here and the explicit
+    // cleanup below still calls pw::deinit(). On the success path we
+    // disable() the guard before the manual drop sequence so deinit runs
+    // exactly once, after the wrappers are dropped in the required order.
+    struct PwInitGuard {
+        active: bool,
+    }
+    impl PwInitGuard {
+        fn disable(&mut self) {
+            self.active = false;
+        }
+    }
+    impl Drop for PwInitGuard {
+        fn drop(&mut self) {
+            if self.active {
+                pipewire::deinit();
+            }
+        }
+    }
+
     pw::init();
+    let mut pw_guard = PwInitGuard { active: true };
 
     let main_loop = MainLoopRc::new(None).context("failed to create pipewire main loop")?;
     let context =
@@ -403,7 +424,9 @@ fn pipewire_capture_loop(
     main_loop.run();
 
     // The Drop handler order matters: stream first, then core, then
-    // context, then main_loop. pw::deinit must be the last call.
+    // context, then main_loop. pw::deinit must be the last call. We
+    // disable the guard so its Drop impl doesn't double-deinit.
+    pw_guard.disable();
     drop(_listener);
     drop(timer);
     drop(pw_stream);

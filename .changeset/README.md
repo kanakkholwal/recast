@@ -39,7 +39,7 @@ sentence, written in the imperative present tense.
 ```sh
 # 1. Promote pending changesets into a new CHANGELOG.md section + sync
 #    apps/desktop/src/constants/changelog.ts. Pass an explicit version so the
-#    placeholder in source files (0.0.0-dev) doesn't drive the bump.
+#    placeholder in source files (0.0.0-0) doesn't drive the bump.
 pnpm release:prepare 0.1.6
 
 # 2. Review the diff, commit, push, then tag.
@@ -50,7 +50,7 @@ git push origin main --tags
 ```
 
 The `release-desktop.yml` workflow takes over once the tag lands — it bundles
-artifacts as `recast_0.1.6_*` (sync-from-tag overrides the `0.0.0-dev`
+artifacts as `recast_0.1.6_*` (sync-from-tag overrides the `0.0.0-0`
 placeholder in `tauri.conf.json`/`Cargo.toml`/`package.json`) and uses the new
 `CHANGELOG.md` section as the GitHub release body via
 `scripts/extract-changelog.mjs`.
@@ -63,6 +63,6 @@ placeholder in `tauri.conf.json`/`Cargo.toml`/`package.json`) and uses the new
   have a Keep-a-Changelog-shaped `CHANGELOG.md` that drives both the GitHub
   release body and the in-app "What's new". `release:prepare` preserves that
   shape and additionally regenerates the desktop's typed changelog data.
-- Source-file versions live as the `0.0.0-dev` placeholder so local builds
+- Source-file versions live as the `0.0.0-0` placeholder so local builds
   never look like a release. The git tag is the single source of truth at
   release time.

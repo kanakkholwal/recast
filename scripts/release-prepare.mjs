@@ -25,7 +25,7 @@
 //      array reflects the new section immediately.
 //
 // What it does NOT do:
-//   - Does not write source-file versions. The 0.0.0-dev placeholder
+//   - Does not write source-file versions. The 0.0.0-0 placeholder
 //     strategy means tauri.conf.json / Cargo.toml / package.json stay at
 //     the placeholder; the release workflow rewrites them from the git tag.
 //   - Does not commit, tag, or push. The maintainer reviews the diff and
@@ -44,6 +44,11 @@ const REPO_ROOT = resolve(__dirname, "..");
 const CHANGELOG_PATH = join(REPO_ROOT, "CHANGELOG.md");
 const CHANGESETS_DIR = join(REPO_ROOT, ".changeset");
 const SYNC_SCRIPT = join(__dirname, "sync-desktop-changelog.mjs");
+
+// Official SemVer 2.0.0 regex (semver.org). Anchored, so trailing junk like
+// "1.2.3foo" or invalid pre-release identifiers are rejected.
+const SEMVER_RE =
+	/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 const KIND_VALUES = new Set(["added", "changed", "fixed", "deprecated"]);
 const KIND_ORDER = ["added", "changed", "fixed", "deprecated"];
@@ -303,7 +308,7 @@ async function main() {
 		stderr.write("error: version argument required (e.g. `pnpm release:prepare 0.1.6`)\n");
 		exit(1);
 	}
-	if (!/^\d+\.\d+\.\d+/.test(version)) {
+	if (!SEMVER_RE.test(version)) {
 		stderr.write(`error: "${version}" doesn't look like SemVer\n`);
 		exit(1);
 	}
@@ -364,19 +369,19 @@ async function main() {
 	await writeFile(CHANGELOG_PATH, next, "utf8");
 	stdout.write(`wrote new section [${version}] to CHANGELOG.md\n`);
 
-	for (const c of changesets) {
-		await rm(c.file);
-		stdout.write(`removed ${c.name}\n`);
-	}
-
 	const sync = spawnSync(process.execPath, [SYNC_SCRIPT], {
 		stdio: "inherit",
 	});
 	if (sync.status !== 0) {
 		stderr.write(
-			"error: sync-desktop-changelog.mjs failed; CHANGELOG.md was updated but desktop constants were not.\n",
+			"error: sync-desktop-changelog.mjs failed; CHANGELOG.md was updated but desktop constants were not. Changesets left in place so this run can be retried.\n",
 		);
 		exit(sync.status ?? 1);
+	}
+
+	for (const c of changesets) {
+		await rm(c.file);
+		stdout.write(`removed ${c.name}\n`);
 	}
 
 	stdout.write(
