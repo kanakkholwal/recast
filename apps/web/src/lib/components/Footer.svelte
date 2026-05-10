@@ -42,6 +42,11 @@
 					href: "https://x.com/kanakkholwal",
 					external: true,
 				},
+				{
+					label: "Discord",
+					href: "https://discord.gg/rBCuqRsb5",
+					external: true,
+				},
 			],
 		},
 	];
