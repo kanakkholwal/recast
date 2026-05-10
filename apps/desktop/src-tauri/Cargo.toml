@@ -1,6 +1,6 @@
 [package]
 name = "recast"
-version = "0.0.1"
+version = "0.1.5"
 description = "A light weight app to record your screen."
 authors = ["kanak kholwal"]
 license = ""

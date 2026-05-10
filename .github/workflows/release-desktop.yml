@@ -351,6 +351,59 @@ jobs:
           done
           "$bin" -version | head -n1
 
+      - name: Sync version from tag
+        shell: bash
+        env:
+          TAG: ${{ needs.create-release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          # Strip leading "v" so "v1.2.3" -> "1.2.3". Tauri/Cargo both want SemVer.
+          version="${TAG#v}"
+          if [[ -z "$version" ]]; then
+            echo "::error::Resolved empty version from tag '${TAG}'"
+            exit 1
+          fi
+          echo "Syncing build manifests to version ${version}"
+
+          conf="apps/desktop/src-tauri/tauri.conf.json"
+          cargo="apps/desktop/src-tauri/Cargo.toml"
+          pkg="apps/desktop/package.json"
+
+          # tauri.conf.json — this drives the bundled artifact filenames
+          # (e.g. recast_${version}_x64_en-US.msi).
+          node -e "
+            const fs = require('fs');
+            const p = process.argv[1];
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            j.version = process.argv[2];
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          " "$conf" "$version"
+
+          # package.json — keep the workspace version aligned with the release.
+          node -e "
+            const fs = require('fs');
+            const p = process.argv[1];
+            const j = JSON.parse(fs.readFileSync(p, 'utf8'));
+            j.version = process.argv[2];
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + '\n');
+          " "$pkg" "$version"
+
+          # Cargo.toml — only the [package] version line, leave dep versions alone.
+          # The [package] section is the first table in the file and the first
+          # `version = "..."` line we encounter belongs to it.
+          awk -v ver="$version" '
+            BEGIN { done = 0 }
+            !done && /^version[[:space:]]*=[[:space:]]*"[^"]*"/ {
+              print "version = \"" ver "\""
+              done = 1
+              next
+            }
+            { print }
+          ' "$cargo" > "$cargo.tmp" && mv "$cargo.tmp" "$cargo"
+
+          echo "tauri.conf.json version: $(node -p "require('./$conf').version")"
+          grep -m1 '^version' "$cargo"
+
       - name: Build Tauri app
         shell: bash
         run: pnpm --filter recast-desktop tauri build ${{ matrix.platform.tauri_args }}
