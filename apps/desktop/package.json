@@ -1,11 +1,12 @@
 {
 	"name": "recast-desktop",
 	"private": true,
-	"version": "0.1.3-beta",
+	"version": "0.0.0-0",
 	"type": "module",
 	"scripts": {
-		"ui:dev": "vite dev",
-		"ui:build": "vite build",
+		"sync:changelog": "node ../../scripts/sync-desktop-changelog.mjs",
+		"ui:dev": "pnpm sync:changelog && vite dev",
+		"ui:build": "pnpm sync:changelog && vite build",
 		"ui:preview": "vite preview",
 		"tauri": "tauri",
 		"dev": "tauri dev",

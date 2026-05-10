@@ -1,0 +1,70 @@
+name: Performance issue
+description: App is slow, sluggish, drops frames, uses excessive CPU/GPU/RAM, or has high latency.
+title: "[perf]: "
+labels: ["desktop:perf", "performance", "needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's slow
+      description: Be precise — "scrubbing the timeline at 4K stutters" beats "the app is slow".
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Where do you see the slowdown?
+      multiple: true
+      options:
+        - App startup
+        - Recording (frame drops, capture latency)
+        - Editor preview / playback
+        - Timeline scrubbing
+        - Export
+        - Thumbnails / library
+        - General UI responsiveness
+    validations:
+      required: true
+  - type: textarea
+    id: measurements
+    attributes:
+      label: Measurements
+      description: |
+        If possible, include numbers: FPS observed vs. expected, CPU/GPU/RAM usage, export wall-clock time, file sizes, recording duration.
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: textarea
+    id: hardware
+    attributes:
+      label: Hardware
+      description: CPU, GPU, RAM, storage type (SSD/HDD/NVMe), and display resolution + refresh rate.
+    validations:
+      required: true
+  - type: textarea
+    id: profiling
+    attributes:
+      label: Profiling data (optional)
+      description: Chrome DevTools traces, OS profilers, or screen recordings showing the issue.

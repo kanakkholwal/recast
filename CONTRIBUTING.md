@@ -39,6 +39,91 @@ To work on Recast locally, please make sure you've fulfilled the following prere
    # Run standard linters and spellcheck here
    ```
 
+## 📰 Changelog & Release Notes
+
+Every user-visible change ships with a **changeset** — a small markdown file
+in `.changeset/` describing what changed and how big the bump is. We use these
+to assemble `CHANGELOG.md`, the GitHub release body, the desktop app's
+"What's new" panel, and the web `/changelog` page from a single source.
+
+### When to add one
+
+| Change                                                        | Changeset? |
+| ------------------------------------------------------------- | ---------- |
+| New feature, behavior change, or bug fix users will notice    | ✅ Yes     |
+| Performance / UX polish that's worth advertising              | ✅ Yes     |
+| Refactor, internal tooling, dependency bumps, test-only edits | ❌ No      |
+| Docs-only edits (this file, READMEs)                          | ❌ No      |
+
+When in doubt, add one.
+
+### How to add one
+
+From the repo root, run:
+
+```bash
+pnpm changeset
+```
+
+The interactive prompt asks:
+
+1. **Which package?** Pick `recast-desktop`. The other workspace packages
+   (`recast-web`, `@recast/design`, `@recast/ui`) are intentionally ignored
+   in `.changeset/config.json` — they're not separately released.
+2. **Bump kind?** `patch` for fixes, `minor` for new features, `major` for
+   breaking changes (rare in beta).
+3. **Summary?** One sentence in the imperative present tense, written for an
+   end user — _"Region picker buttons work again"_, not _"Fix isVisible
+   mutation in RegionPicker.svelte"_.
+
+That generates a file like `.changeset/short-pandas-dance.md`. **Open it and
+add a `kind:` line** so the release script knows which Keep-a-Changelog
+section the entry belongs in:
+
+```markdown
+---
+"recast-desktop": minor
+kind: added
+---
+
+Active-preset chip in the editor toolbar with reset-to-source.
+```
+
+`kind` is one of `added`, `changed`, `fixed`, `deprecated`. Default is
+`changed` if you forget — better to set it explicitly.
+
+### Tips for good entries
+
+- **Write for users, not reviewers.** _"GIF export progress now advances in
+  real time"_ beats _"Switch GIF pipeline to 2-pass palettegen"_.
+- **One sentence, no period soup.** Backticks for code identifiers, em-dashes
+  for asides, no trailing "in this PR".
+- **One change per changeset.** If your PR ships two distinct things, add two
+  files via `pnpm changeset` twice.
+- **Highlights are optional.** If a release deserves a top-of-section
+  callout, add a `### Highlights` block manually in `CHANGELOG.md` after the
+  release is cut — the desktop dialog renders it as the punchy bullet row.
+
+### What happens to your changeset
+
+You don't manage versions or `CHANGELOG.md` directly — the maintainer runs
+`pnpm release:prepare <version>` periodically, which:
+
+1. Consumes every `.changeset/*.md`,
+2. Merges them into a new `## [<version>] — <date>` section in
+   `CHANGELOG.md`,
+3. Regenerates `apps/desktop/src/constants/changelog.ts` so the desktop
+   app's "What's new" panel reflects the section,
+4. Deletes the consumed changeset files.
+
+Once the resulting commit is tagged `vX.Y.Z`, the
+[`Release Desktop App`](.github/workflows/release-desktop.yml) workflow
+builds artifacts, uses your changeset's section as the GitHub release body,
+and the web `/changelog` page picks it up from the GitHub Releases API.
+
+For the maintainer-side details, see
+[`.changeset/README.md`](.changeset/README.md).
+
 ## 📋 Reporting Bugs
 
 When logging a bug in our GitHub Issue tracker, please include:

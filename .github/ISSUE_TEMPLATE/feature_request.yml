@@ -1,0 +1,56 @@
+name: Feature request
+description: Propose new functionality or an enhancement to existing functionality.
+title: "[feat]: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What can't you do today, or what's painful? Describe the user need, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How you'd like Recast to behave. UI sketches and references to other apps welcome.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you've tried, or other shapes this feature could take.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Which surface
+      multiple: true
+      options:
+        - Desktop — recording
+        - Desktop — editor / timeline
+        - Desktop — export
+        - Desktop — library / projects
+        - Desktop — settings / profiles
+        - Web (recast.nexonauts.com)
+        - CLI / automation
+    validations:
+      required: true
+  - type: dropdown
+    id: importance
+    attributes:
+      label: How blocking is this for you?
+      options:
+        - Nice to have
+        - Would significantly improve my workflow
+        - I can't use Recast for my use case without it
+    validations:
+      required: true
+  - type: checkboxes
+    id: prereqs
+    attributes:
+      label: Pre-flight
+      options:
+        - label: I searched existing issues and discussions for this idea.
+          required: true

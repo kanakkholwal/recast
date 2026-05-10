@@ -1,0 +1,69 @@
+name: UX / UI issue
+description: Visual glitches, layout problems, accessibility issues, keyboard / shortcut bugs, or design inconsistencies.
+title: "[ux]: "
+labels: ["desktop:ux", "ui", "needs-triage"]
+body:
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's wrong
+      description: Screenshots or short screen recordings make this 10× faster to triage.
+    validations:
+      required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of issue
+      multiple: true
+      options:
+        - Visual glitch / rendering artifact
+        - Layout broken at certain window sizes
+        - Inconsistent styling vs. rest of app
+        - Keyboard shortcut wrong / missing / conflicting
+        - Command palette (⌘K) issue
+        - Accessibility (contrast, screen reader, focus order)
+        - Dark / light theme issue
+        - Localization / i18n
+    validations:
+      required: true
+  - type: textarea
+    id: where
+    attributes:
+      label: Where in the app
+      description: Route/screen, panel, or component. Reference paths like `apps/desktop/src/routes/...` if you know them.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+    validations:
+      required: true
+  - type: input
+    id: app-version
+    attributes:
+      label: Recast version
+      placeholder: "v1.2.3"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS (Apple Silicon)
+        - macOS (Intel)
+        - Linux
+    validations:
+      required: true
+  - type: input
+    id: display
+    attributes:
+      label: Display / scaling
+      placeholder: "3840x2160 @ 200% scaling"
+  - type: textarea
+    id: media
+    attributes:
+      label: Screenshot / recording
