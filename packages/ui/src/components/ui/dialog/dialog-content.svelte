@@ -14,6 +14,7 @@
 		portalProps,
 		children,
 		showCloseButton = true,
+		preventScroll = false,
 		...restProps
 	}: WithoutChildrenOrChild<DialogPrimitive.ContentProps> & {
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof DialogPortal>>;
@@ -27,6 +28,7 @@
 	<DialogPrimitive.Content
 		bind:ref
 		data-slot="dialog-content"
+		{preventScroll}
 		class={cn(
 			CRAFT_OVERLAY_ANIMATION,
 			"bg-popover text-popover-foreground ring-foreground/10 grid max-w-[calc(100%-2rem)] gap-4 rounded-xl p-4 text-sm ring-1 sm:max-w-sm fixed top-1/2 left-1/2 z-50 w-full -translate-x-1/2 -translate-y-1/2 outline-none",

@@ -19,6 +19,7 @@
 		showCloseButton = true,
 		portalProps,
 		children,
+		preventScroll = false,
 		...restProps
 	}: WithoutChildrenOrChild<SheetPrimitive.ContentProps> & {
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof SheetPortal>>;
@@ -34,6 +35,7 @@
 		bind:ref
 		data-slot="sheet-content"
 		data-side={side}
+		{preventScroll}
 		class={cn(
 			"bg-popover text-popover-foreground fixed z-50 flex flex-col gap-4 bg-clip-padding text-sm shadow-lg",
 			"duration-300 data-closed:duration-200 ease-[cubic-bezier(0.625,0.05,0,1)]",
