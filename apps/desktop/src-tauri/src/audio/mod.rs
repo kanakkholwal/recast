@@ -2,6 +2,8 @@ mod platform;
 pub mod wav;
 
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 
 use anyhow::Result;
 
@@ -10,6 +12,9 @@ use anyhow::Result;
 pub struct AudioCaptureConfig {
     /// Path to write the WAV output file.
     pub output_path: PathBuf,
+    /// When set, capture continues draining the device but stops writing
+    /// samples — keeps the WAV gap-free across recording pauses.
+    pub pause_flag: Arc<AtomicBool>,
 }
 
 /// Handle to a running system audio capture session.
@@ -37,6 +42,9 @@ pub struct MicrophoneCaptureConfig {
     pub output_path: PathBuf,
     /// Specific device ID to capture from (None = system default microphone).
     pub device_id: Option<String>,
+    /// When set, capture continues draining the device but stops writing
+    /// samples — keeps the WAV gap-free across recording pauses.
+    pub pause_flag: Arc<AtomicBool>,
 }
 
 /// Handle to a running microphone capture session.

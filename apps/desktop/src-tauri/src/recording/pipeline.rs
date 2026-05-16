@@ -106,6 +106,7 @@ impl RecordingPipeline {
 pub fn spawn_capture_loop(
     target: CaptureTarget,
     stop_flag: Arc<std::sync::atomic::AtomicBool>,
+    pause_flag: Arc<std::sync::atomic::AtomicBool>,
     pipeline: RecordingPipeline,
     clock: Instant,
     target_fps: u32,
@@ -141,8 +142,24 @@ pub fn spawn_capture_loop(
                 data: last_frame.clone(),
             });
             let mut next_tick = Instant::now() + frame_period;
+            let mut was_paused = false;
 
             while !stop_flag.load(Ordering::Acquire) {
+                // While paused, emit nothing — the encoder is frame-count
+                // based, so a span with no frames pushed simply doesn't
+                // exist in the output video.
+                if pause_flag.load(Ordering::Acquire) {
+                    was_paused = true;
+                    thread::sleep(Duration::from_millis(20));
+                    continue;
+                }
+                if was_paused {
+                    // Resuming: rebase the pacer so the paused span isn't
+                    // treated as lag and "caught up" with a burst of frames.
+                    next_tick = Instant::now() + frame_period;
+                    was_paused = false;
+                }
+
                 // Non-blocking drain: pull at most a few frames DXGI may
                 // have queued between ticks so we emit the freshest pixels.
                 // Capped at 4 because the XCap fallback ignores the

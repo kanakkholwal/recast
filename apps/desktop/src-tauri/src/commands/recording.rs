@@ -161,6 +161,21 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
 }
 
 #[tauri::command]
+pub fn pause_recording(state: State<'_, AppState>) -> Result<(), String> {
+    state.recording_manager.pause().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn resume_recording(state: State<'_, AppState>) -> Result<(), String> {
+    state.recording_manager.resume().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn is_recording_paused(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.recording_manager.is_paused())
+}
+
+#[tauri::command]
 pub fn update_camera_preview_state(
     state: CameraPreviewUpdate,
     app_state: State<'_, AppState>,

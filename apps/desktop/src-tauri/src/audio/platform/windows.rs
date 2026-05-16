@@ -206,7 +206,9 @@ fn capture_microphone_thread(
                 break;
             }
 
-            if frames_available > 0 {
+            // Drain the device every iteration, but only write samples when
+            // the recording isn't paused — so the WAV has no paused span.
+            if frames_available > 0 && !config.pause_flag.load(Ordering::Acquire) {
                 let byte_count = frames_available as usize * block_align as usize;
 
                 if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 {
@@ -414,7 +416,9 @@ fn capture_loopback_thread(
                 break;
             }
 
-            if frames_available > 0 {
+            // Drain the device every iteration, but only write samples when
+            // the recording isn't paused — so the WAV has no paused span.
+            if frames_available > 0 && !config.pause_flag.load(Ordering::Acquire) {
                 let byte_count = frames_available as usize * block_align as usize;
 
                 if flags & AUDCLNT_BUFFERFLAGS_SILENT.0 as u32 != 0 {
