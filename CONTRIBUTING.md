@@ -13,18 +13,58 @@ Recast is a highly-optimized monorepo relying on four core technical pillars:
 
 ## 🛠 Local Development Setup
 
-To work on Recast locally, please make sure you've fulfilled the following prerequisites:
+### Quick start (recommended)
+
+We ship a one-shot setup script that bootstraps everything a contributor
+needs to build and run the desktop app. It detects your OS and architecture,
+auto-installs the missing toolchains (Node.js, pnpm, Rust, and the Tauri
+OS-level prerequisites), downloads the FFmpeg + ffprobe sidecar binaries into
+`apps/desktop/src-tauri/binaries/`, installs workspace dependencies, and
+produces a debug build to verify the toolchain.
+
+```bash
+git clone https://github.com/kanakkholwal/recast.git
+cd recast
+```
+
+**Windows** (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+```
+
+**macOS / Linux**:
+
+```bash
+bash scripts/setup.sh
+```
+
+Once Node.js is installed you can also re-run it via `pnpm setup:ffmpeg`.
+Useful flags (forward with `pnpm setup:ffmpeg -- <flag>`):
+
+- `--skip-build` / `-SkipBuild` — stop after install + FFmpeg download.
+- `--skip-toolchains` / `-SkipToolchains` — only verify toolchains, don't install.
+
+When it finishes, start the desktop app with hot-reloading:
+
+```bash
+pnpm --filter recast-desktop dev
+```
+
+### Manual setup
+
+If you'd rather set things up by hand, or the script doesn't cover your
+environment:
 
 1. Install **Node.js** (v18+) and **pnpm** (v9+).
 2. Install **Rust** (v1.70+) and [Tauri OS-Specific Prerequisites](https://v2.tauri.app/start/prerequisites/) (such as C++ build tools for Windows or webkit2gtk for Linux).
-3. Clone the repo and install dependencies:
+3. Provide the **FFmpeg sidecar binaries** — see
+   [`apps/desktop/src-tauri/binaries/README.md`](apps/desktop/src-tauri/binaries/README.md)
+   for the required target-triple file names. These are gitignored because of
+   their size, so each contributor downloads them locally.
+4. Install dependencies and start the dev server:
    ```bash
-   git clone https://github.com/kanakkholwal/recast.git
-   cd recast
    pnpm install
-   ```
-4. Start a development server. For instance, to work on the desktop app with hot-reloading:
-   ```bash
    pnpm turbo run dev --filter=recast-desktop
    ```
 
