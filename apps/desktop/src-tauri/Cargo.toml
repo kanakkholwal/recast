@@ -39,6 +39,7 @@ reqwest = { version = "0.12", default-features = false, features = ["stream", "r
 sha2 = "0.10"
 futures-util = "0.3"
 hex = "0.4"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [

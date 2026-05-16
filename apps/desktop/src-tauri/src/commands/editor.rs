@@ -688,17 +688,15 @@ pub async fn export_video(
         "webm" => "webm",
         _ => "mp4",
     };
-    // Nanosecond-resolution + PID suffix so back-to-back exports (or two editor
-    // windows exporting at once) can't collide on the same second and overwrite
-    // each other's output / trigger cleanup of the wrong file on failure.
-    let stamp_nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let output_path = output_dir.join(format!(
-        "recast_export_{stamp_nanos}_{}.{extension}",
-        std::process::id()
-    ));
+    // Name the export after its source recording, with a Finder/Explorer-style
+    // counter suffix (` (1)`, ` (2)`, …) when the same recording is exported
+    // more than once — so exports stay searchable and easy to correlate.
+    let source_stem = input_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Recast_export".to_string());
+    let output_path = super::unique_path(&output_dir, &source_stem, extension);
 
     let asset_cache_dir = app
         .path()
@@ -1137,8 +1135,14 @@ pub async fn export_video(
         // Stash the owned String, reconstruct the struct inside each closure.
         let gif_dither_owned: String = gif_settings.dither.clone();
 
+        // Transient 2-pass palette file — unique per run so concurrent exports
+        // don't clobber each other's palette.
+        let palette_stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
         let palette_path = output_dir.join(format!(
-            "recast_palette_{stamp_nanos}_{}.png",
+            "recast_palette_{palette_stamp}_{}.png",
             std::process::id()
         ));
 
