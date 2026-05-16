@@ -95,7 +95,7 @@ if ($SkipToolchains) {
   Write-Warn "-SkipToolchains set; only verifying."
 }
 
-if (-not (Test-Cmd 'winget')) {
+if (-not $SkipToolchains -and -not (Test-Cmd 'winget')) {
   Fail "winget is required for auto-install. Update 'App Installer' from the Microsoft Store, or re-run with -SkipToolchains after installing Node/Rust/VS Build Tools manually."
 }
 
@@ -161,7 +161,7 @@ if ((Test-Path $wv2Key) -or (Test-Path ($wv2Key -replace 'WOW6432Node\\',''))) {
 Write-Step "Enabling pnpm (corepack)"
 $env:COREPACK_ENABLE_DOWNLOAD_PROMPT = '0'
 if (-not (Test-Cmd 'pnpm')) {
-  & corepack enable pnpm 2>$null
+  if (Test-Cmd 'corepack') { & corepack enable pnpm 2>$null }
   Sync-Path
   if (-not (Test-Cmd 'pnpm')) {
     Write-Info "corepack unavailable; installing pnpm via npm ..."

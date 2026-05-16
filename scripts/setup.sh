@@ -162,7 +162,7 @@ else
 fi
 
 # Rust
-if has rustc; then
+if has rustc && has cargo; then
   ok "Rust $(rustc --version)"
 elif [ "$SKIP_TOOLCHAINS" -eq 1 ]; then
   fail "Rust not found. Install it from https://rustup.rs/"
@@ -171,22 +171,22 @@ else
   curl --proto '=https' --tlsv1.2 -fsSL https://sh.rustup.rs | sh -s -- -y
   # shellcheck disable=SC1090,SC1091
   [ -f "$HOME/.cargo/env" ] && . "$HOME/.cargo/env"
-  has rustc || fail "Rust installed but not on PATH; open a new terminal and re-run."
+  has rustc && has cargo || fail "Rust/cargo installed but not on PATH; open a new terminal and re-run."
   ok "Rust $(rustc --version)"
 fi
 
 # pnpm via corepack (version resolved from packageManager in package.json).
 step "Enabling pnpm (corepack)"
 export COREPACK_ENABLE_DOWNLOAD_PROMPT=0
-if ! has pnpm; then
-  # corepack enable writes shims next to `node`; that dir may need sudo.
-  corepack enable pnpm 2>/dev/null \
-    || sudo corepack enable pnpm 2>/dev/null \
-    || npm install -g pnpm 2>/dev/null \
-    || sudo npm install -g pnpm \
-    || true
-  hash -r 2>/dev/null || true
-fi
+# Always enable the Corepack shim so the pinned package.json#packageManager
+# version takes precedence, even if a global pnpm is already installed.
+# corepack enable writes shims next to `node`; that dir may need sudo.
+corepack enable pnpm 2>/dev/null \
+  || sudo corepack enable pnpm 2>/dev/null \
+  || npm install -g pnpm 2>/dev/null \
+  || sudo npm install -g pnpm \
+  || true
+hash -r 2>/dev/null || true
 has pnpm || fail "pnpm not available after corepack. Run 'corepack enable pnpm' in a new terminal, then re-run."
 ok "pnpm $(cd "$REPO_ROOT" && pnpm --version)"
 
