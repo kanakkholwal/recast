@@ -15,9 +15,9 @@
 </script>
 
 <Section spacing="none" class="hero-atmosphere relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">
-	<div aria-hidden="true" class="hero-aurora pointer-events-none absolute inset-0 -z-10"></div>
+	<!-- <div aria-hidden="true" class="hero-aurora pointer-events-none absolute inset-0 -z-10"></div>
 	<div aria-hidden="true" class="hero-clouds pointer-events-none absolute inset-x-0 top-0 -z-10 h-160"></div>
-	<div aria-hidden="true" class="hero-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"></div>
+	<div aria-hidden="true" class="hero-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"></div> -->
 
 	<Container class="relative">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">

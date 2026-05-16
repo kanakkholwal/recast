@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use chrono::{Local, TimeZone};
 use tauri::State;
 
 use super::ffmpeg::probe_video_metadata;
@@ -92,7 +93,14 @@ pub fn start_recording(
 pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
     let artifacts = state.recording_manager.stop().map_err(|e| e.to_string())?;
     let dest = recasts_dir(&state);
-    let final_path = dest.join(format!("recast_{}.recast", artifacts.started_at_unix_ms));
+    // Human-readable, sortable, searchable name (local time of capture) —
+    // e.g. `Recast_2026-05-16_14-30-22.recast`.
+    let stamp = Local
+        .timestamp_millis_opt(artifacts.started_at_unix_ms as i64)
+        .single()
+        .unwrap_or_else(Local::now)
+        .format("%Y-%m-%d_%H-%M-%S");
+    let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
     let recording_meta = probe_video_metadata(&artifacts.recording_path)?;
     let metadata = ProjectMetadata {
         schema_version: 1,

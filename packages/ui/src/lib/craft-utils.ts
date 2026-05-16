@@ -21,16 +21,16 @@ export const CRAFT_EASE = "cubic-bezier(0.625, 0.05, 0, 1)";
  * Apply to any bits-ui *.Content component.
  */
 export const CRAFT_OVERLAY_ANIMATION = [
-	"data-open:animate-in data-closed:animate-out",
-	"data-open:fade-in-0 data-closed:fade-out-0",
-	"data-open:zoom-in-[0.98] data-closed:zoom-out-[0.98]",
+	"data-[state=open]:animate-in data-[state=closed]:animate-out",
+	"data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+	"data-[state=open]:zoom-in-[0.98] data-[state=closed]:zoom-out-[0.98]",
 	"data-[side=bottom]:slide-in-from-top-1",
 	"data-[side=top]:slide-in-from-bottom-1",
 	"data-[side=left]:slide-in-from-right-1",
 	"data-[side=right]:slide-in-from-left-1",
 	"data-[side=inline-start]:slide-in-from-right-1",
 	"data-[side=inline-end]:slide-in-from-left-1",
-	"duration-200 data-closed:duration-150 ease-[cubic-bezier(0.625,0.05,0,1)]",
+	"duration-200 data-[state=closed]:duration-150 ease-[cubic-bezier(0.625,0.05,0,1)]",
 ].join(" ");
 
 /**
@@ -38,9 +38,9 @@ export const CRAFT_OVERLAY_ANIMATION = [
  * Pure fade, no scale or slide.
  */
 export const CRAFT_OVERLAY_BACKDROP_ANIMATION = [
-	"data-open:animate-in data-closed:animate-out",
-	"data-open:fade-in-0 data-closed:fade-out-0",
-	"duration-200 data-closed:duration-150 ease-[cubic-bezier(0.625,0.05,0,1)]",
+	"data-[state=open]:animate-in data-[state=closed]:animate-out",
+	"data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
+	"duration-200 data-[state=closed]:duration-150 ease-[cubic-bezier(0.625,0.05,0,1)]",
 ].join(" ");
 
 /**
