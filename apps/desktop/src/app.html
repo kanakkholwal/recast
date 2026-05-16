@@ -25,16 +25,24 @@
 
 <body data-sveltekit-preload-data="hover">
 	<div id="boot" aria-hidden="true">
-		<div class="boot-bar" role="progressbar" aria-label="Loading Recast">
-			<span class="boot-bar-fill"></span>
-		</div>
-
 		<div class="boot-plate">
 			<div class="logo-pop">
 				<img src="/logo.svg" alt="" class="boot-logo" width="64" height="64" />
 			</div>
 			<div class="boot-wordmark">Recast</div>
 			<div class="boot-tag">Open Source Screen Recorder</div>
+
+			<!-- Rotating, app-themed status messages -->
+			<div class="boot-status">
+				<span>Warming up the lens</span>
+				<span>Tuning the recorder</span>
+				<span>Polishing pixels</span>
+				<span>Setting the stage</span>
+				<span>Almost ready</span>
+			</div>
+
+			<!-- Small indeterminate shimmer loader (primary color) -->
+			<div class="boot-loader" role="progressbar" aria-label="Loading Recast"></div>
 		</div>
 
 		<style>
@@ -52,12 +60,17 @@
 				font-family: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 				transition: opacity 280ms ease-out;
 				will-change: opacity;
+				/* Primary color — mirrors --primary in packages/design/src/index.css */
+				--boot-accent: hsl(175.18deg 84.05% 31.96%);
+				--boot-track: hsl(175.18deg 84.05% 31.96% / 0.16);
 			}
 
 			html.dark #boot,
 			html[data-theme="dark"] #boot {
 				background: hsl(199.87deg 1.54% 8.84%);
 				color: hsl(0 0% 94%);
+				--boot-accent: hsl(75 100% 50%);
+				--boot-track: hsl(75 100% 50% / 0.16);
 			}
 
 			#boot.boot-leaving {
@@ -114,38 +127,79 @@
 				color: hsl(0 0% 55%);
 			}
 
-			/* Top progress bar — matches components/layout/loading.svelte (uses --primary) */
-			#boot .boot-bar {
-				position: fixed;
-				top: 0;
-				left: 0;
-				right: 0;
-				height: 3px;
-				overflow: hidden;
-				pointer-events: none;
+			/* Rotating status messages — one shows at a time, CSS-cycled */
+			#boot .boot-status {
+				position: relative;
+				width: 100%;
+				height: 15px;
+				margin-top: 2px;
 			}
 
-			#boot .boot-bar-fill {
-				display: block;
+			#boot .boot-status span {
+				position: absolute;
+				inset: 0;
+				display: flex;
+				align-items: center;
+				justify-content: center;
+				font-size: 12.5px;
+				letter-spacing: -0.005em;
+				color: hsl(220 8.9% 46.1%);
+				opacity: 0;
+				animation: boot-status-cycle 10s infinite;
+				will-change: opacity, transform;
+			}
+
+			html.dark #boot .boot-status span,
+			html[data-theme="dark"] #boot .boot-status span {
+				color: hsl(0 0% 60%);
+			}
+
+			#boot .boot-status span:nth-child(1) { animation-delay: 0s; }
+			#boot .boot-status span:nth-child(2) { animation-delay: 2s; }
+			#boot .boot-status span:nth-child(3) { animation-delay: 4s; }
+			#boot .boot-status span:nth-child(4) { animation-delay: 6s; }
+			#boot .boot-status span:nth-child(5) { animation-delay: 8s; }
+
+			/* Small indeterminate shimmer loader (uses --primary) */
+			#boot .boot-loader {
+				position: relative;
+				width: 132px;
+				height: 3px;
+				border-radius: 999px;
+				background: var(--boot-track);
+				overflow: hidden;
+			}
+
+			#boot .boot-loader::after {
+				content: "";
+				position: absolute;
+				top: 0;
+				left: 0;
 				height: 100%;
-				width: 100%;
-				transform-origin: left center;
-				transform: scaleX(0.08);
-				background: hsl(175.18deg 84.05% 31.96%);
-				box-shadow:
-					0 0 8px hsl(175.18deg 84.05% 31.96% / 0.6),
-					0 0 2px hsl(175.18deg 84.05% 31.96%);
-				border-radius: 0 2px 2px 0;
-				animation: boot-trickle 1.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+				width: 40%;
+				border-radius: inherit;
+				background: linear-gradient(
+					90deg,
+					transparent,
+					var(--boot-accent),
+					transparent
+				);
+				box-shadow: 0 0 6px var(--boot-accent);
+				animation: boot-shimmer 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 				will-change: transform;
 			}
 
-			html.dark #boot .boot-bar-fill,
-			html[data-theme="dark"] #boot .boot-bar-fill {
-				background: hsl(75 100% 50%);
-				box-shadow:
-					0 0 8px hsl(75 100% 50% / 0.6),
-					0 0 2px hsl(75 100% 50%);
+			@keyframes boot-shimmer {
+				from { transform: translateX(-120%); }
+				to   { transform: translateX(350%); }
+			}
+
+			@keyframes boot-status-cycle {
+				0%   { opacity: 0; transform: translateY(4px); }
+				3%   { opacity: 1; transform: translateY(0); }
+				17%  { opacity: 1; transform: translateY(0); }
+				20%  { opacity: 0; transform: translateY(-4px); }
+				100% { opacity: 0; transform: translateY(-4px); }
 			}
 
 			@keyframes boot-pop {
@@ -158,21 +212,26 @@
 				to   { transform: translateY(0);   opacity: 1; }
 			}
 
-			@keyframes boot-trickle {
-				0%   { transform: scaleX(0.08); }
-				40%  { transform: scaleX(0.55); }
-				75%  { transform: scaleX(0.82); }
-				100% { transform: scaleX(0.9); }
-			}
-
 			@media (prefers-reduced-motion: reduce) {
 				#boot .logo-pop,
 				#boot .boot-plate,
-				#boot .boot-bar-fill {
+				#boot .boot-loader::after {
 					animation: none;
 				}
-				#boot .boot-bar-fill {
-					transform: scaleX(0.7);
+				/* Show only the first message, statically. */
+				#boot .boot-status span {
+					animation: none;
+				}
+				#boot .boot-status span:nth-child(1) {
+					opacity: 1;
+					transform: none;
+				}
+				/* Static partial fill instead of a sweep. */
+				#boot .boot-loader::after {
+					width: 100%;
+					background: var(--boot-accent);
+					box-shadow: none;
+					opacity: 0.85;
 				}
 			}
 		</style>

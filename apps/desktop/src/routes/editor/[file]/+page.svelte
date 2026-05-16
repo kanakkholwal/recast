@@ -34,6 +34,7 @@
   import { toast } from "@recast/ui/sonner";
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy, tick } from "svelte";
+  import { fade } from "svelte/transition";
 
   interface Props {
     data: {
@@ -355,6 +356,18 @@
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
   let activeExportId = $state<string | null>(null);
+
+  // Rotating, encode-themed status messages shown below the progress ring —
+  // gives the wait some personality (à la an AI assistant's "thinking" line).
+  const ENCODE_MESSAGES = [
+    "Crunching frames",
+    "Encoding pixels",
+    "Weaving the timeline",
+    "Tuning the colours",
+    "Squeezing the bitrate",
+    "Polishing every frame",
+  ];
+  let encodeMessageIndex = $state(0);
 
   // Preparing-stage substages — surfaced in the dialog so users see the
   // hybrid-raster work happening rather than a generic spinner.
@@ -795,6 +808,18 @@
     return () => clearInterval(timer);
   });
 
+  // Cycle the encode status messages while an export is running.
+  $effect(() => {
+    if (!store.isExporting) {
+      encodeMessageIndex = 0;
+      return;
+    }
+    const timer = setInterval(() => {
+      encodeMessageIndex = (encodeMessageIndex + 1) % ENCODE_MESSAGES.length;
+    }, 2600);
+    return () => clearInterval(timer);
+  });
+
   const stages = $derived([
     {
       key: "text" as const,
@@ -1094,6 +1119,23 @@
               </div>
             </div>
 
+            <!-- Rotating, encode-themed status line — shimmer sweep + fade
+                 between messages so the wait feels alive. Shown only while
+                 frames are actually encoding. -->
+            {#if !isPreparing && !exportFinalizing && !exportCancelling}
+              <div class="relative h-4 self-stretch" aria-live="polite">
+                {#key encodeMessageIndex}
+                  <span
+                    in:fade={{ duration: 320 }}
+                    out:fade={{ duration: 320 }}
+                    class="export-shimmer absolute inset-0 flex items-center justify-center text-[11px] font-medium tracking-tight"
+                  >
+                    {ENCODE_MESSAGES[encodeMessageIndex]}…
+                  </span>
+                {/key}
+              </div>
+            {/if}
+
             <!-- Stage list — checkmarks for completed substages, a dot
                  with a subtle pulse for the running one. Collapses to a
                  single "Encoding…" line once Rust takes over. -->
@@ -1311,6 +1353,39 @@
   .ship-dot-3 {
     animation-delay: 0.72s;
   }
+  /* Rotating encode status line: a primary-tinted highlight sweeps across
+     muted text for a subtle shimmer. The text itself crossfades via Svelte
+     transitions when the message changes. */
+  .export-shimmer {
+    background: linear-gradient(
+      100deg,
+      var(--muted-foreground) 0%,
+      var(--muted-foreground) 38%,
+      var(--primary) 50%,
+      var(--muted-foreground) 62%,
+      var(--muted-foreground) 100%
+    );
+    background-size: 220% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: export-shimmer-sweep 2.4s linear infinite;
+  }
+  @keyframes export-shimmer-sweep {
+    from {
+      background-position: 160% 0;
+    }
+    to {
+      background-position: -160% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .export-shimmer {
+      animation: none;
+      background-position: 50% 0;
+    }
+  }
+
   @keyframes ship-beam-travel {
     0% {
       left: 0%;

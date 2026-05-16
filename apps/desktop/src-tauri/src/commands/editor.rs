@@ -428,7 +428,15 @@ fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>,
     let scale_width = if count <= 2 { 480 } else { 240 };
 
     for index in 0..count {
-        let timestamp = index as f64 * interval;
+        // A single thumbnail is a poster frame: sample ~25% into the clip
+        // rather than at 0s, since the first frame of a screen recording is
+        // routinely black/blank. Multi-frame requests (the editor's timeline
+        // strip) keep the even spread starting at 0.
+        let timestamp = if count == 1 {
+            meta.duration * 0.25
+        } else {
+            index as f64 * interval
+        };
         let thumb_path = temp_dir.join(format!("thumb-{index}.jpg"));
         let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
         command.args([

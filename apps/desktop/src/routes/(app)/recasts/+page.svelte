@@ -10,6 +10,7 @@
     type RecordingEntry,
   } from "$lib/ipc";
   import {
+    Check,
     Clock,
     CopyIcon,
     ExternalLink,
@@ -17,6 +18,7 @@
     FolderOpen,
     Grid3x3,
     List,
+    ListChecks,
     MoreHorizontal,
     Pencil,
     Play,
@@ -38,6 +40,7 @@
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
+  import { SvelteSet } from "svelte/reactivity";
   import { fade, fly } from "svelte/transition";
 
   let entries = $state<RecordingEntry[]>([]);
@@ -51,6 +54,12 @@
   let sort = $state<"recent" | "name" | "size">("recent");
   let renameTarget = $state<RecordingEntry | null>(null);
   let deleteTarget = $state<RecordingEntry | null>(null);
+
+  // Multi-select: a toolbar "Select" toggle flips the page into selection
+  // mode, where clicking a card checks it instead of opening the editor.
+  let selectMode = $state(false);
+  let bulkDeleteOpen = $state(false);
+  const selected = new SvelteSet<string>();
 
   onMount(() => {
     fetchRecasts();
@@ -212,6 +221,57 @@
   const totalSize = $derived(
     entries.reduce((sum, e) => sum + e.sizeBytes, 0),
   );
+
+  const selectedCount = $derived(selected.size);
+  const allFilteredSelected = $derived(
+    filtered.length > 0 && filtered.every((e) => selected.has(e.path)),
+  );
+
+  function exitSelectMode() {
+    selectMode = false;
+    selected.clear();
+  }
+
+  function toggleSelectMode() {
+    if (selectMode) exitSelectMode();
+    else selectMode = true;
+  }
+
+  function toggleSelected(path: string) {
+    if (selected.has(path)) selected.delete(path);
+    else selected.add(path);
+  }
+
+  function toggleSelectAll() {
+    if (allFilteredSelected) selected.clear();
+    else for (const e of filtered) selected.add(e.path);
+  }
+
+  async function handleBulkDelete() {
+    const paths = [...selected];
+    const results = await Promise.allSettled(
+      paths.map((p) => deleteFile(p)),
+    );
+    const deleted = new Set<string>();
+    results.forEach((r, i) => {
+      if (r.status === "fulfilled") deleted.add(paths[i]);
+    });
+    entries = entries.filter((e) => !deleted.has(e.path));
+    if (deleted.size > 0) {
+      const nextThumbs = { ...thumbnails };
+      for (const p of deleted) delete nextThumbs[p];
+      thumbnails = nextThumbs;
+    }
+    const failed = paths.length - deleted.size;
+    if (failed > 0) {
+      toast.error(`Moved ${deleted.size} to trash · ${failed} failed`);
+    } else {
+      toast.success(
+        `Moved ${deleted.size} recording${deleted.size === 1 ? "" : "s"} to trash`,
+      );
+    }
+    exitSelectMode();
+  }
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -285,6 +345,21 @@
           {query ? `Results for “${query}”` : "All recordings"}
         </h2>
         <div class="flex items-center gap-1.5">
+          <Button
+            variant={selectMode ? "secondary" : "ghost"}
+            size="xs"
+            class={cn(
+              "h-7 gap-1 text-[11px]",
+              !selectMode && "text-muted-foreground hover:text-foreground",
+            )}
+            onclick={toggleSelectMode}
+            disabled={entries.length === 0}
+            title="Select multiple recordings"
+          >
+            <ListChecks size={11} />
+            {selectMode ? "Done" : "Select"}
+          </Button>
+
           <DropdownMenu.Root>
             <DropdownMenu.Trigger>
               {#snippet child({ props })}
@@ -390,16 +465,38 @@
     {:else if view === "grid"}
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {#each filtered as entry, i (entry.path)}
+          {@const isSelected = selected.has(entry.path)}
           <div
             in:fade={{ duration: 200, delay: Math.min(i * 30, 240) }}
             class="group/card relative flex flex-col gap-2"
           >
             <button
               type="button"
-              onclick={() => openInEditor(entry)}
-              class="relative aspect-video overflow-hidden rounded-xl border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset) transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+              onclick={() =>
+                selectMode ? toggleSelected(entry.path) : openInEditor(entry)}
+              class={cn(
+                "relative aspect-video overflow-hidden rounded-xl border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset) transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+                selectMode
+                  ? "cursor-pointer"
+                  : "hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm",
+                isSelected && "border-primary ring-2 ring-primary",
+              )}
               title={entry.filename}
             >
+              {#if selectMode}
+                <div class="absolute left-1.5 top-1.5 z-10">
+                  <span
+                    class={cn(
+                      "flex size-5 items-center justify-center rounded-md border backdrop-blur-md transition-all",
+                      isSelected
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border/70 bg-background/80",
+                    )}
+                  >
+                    {#if isSelected}<Check size={12} />{/if}
+                  </span>
+                </div>
+              {/if}
               {#if thumbnails[entry.path]}
                 <img
                   src={thumbnails[entry.path]}
@@ -413,18 +510,20 @@
                   <Film class="size-6" />
                 </div>
               {/if}
-              <div
-                class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
-              ></div>
-              <div
-                class="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
-              >
-                <span
-                  class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
+              {#if !selectMode}
+                <div
+                  class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
+                ></div>
+                <div
+                  class="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
                 >
-                  <Play class="size-4 translate-x-px" />
-                </span>
-              </div>
+                  <span
+                    class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
+                  >
+                    <Play class="size-4 translate-x-px" />
+                  </span>
+                </div>
+              {/if}
               <Badge
                 variant="secondary"
                 class="absolute right-1.5 top-1.5 h-4 px-1 text-[8.5px] font-bold uppercase tracking-wider backdrop-blur"
@@ -442,6 +541,7 @@
                   {formatSize(entry.sizeBytes)} · {relativeDate(entry.created)}
                 </div>
               </div>
+              {#if !selectMode}
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   {#snippet child({ props })}
@@ -497,6 +597,7 @@
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Root>
+              {/if}
             </div>
           </div>
         {/each}
@@ -505,15 +606,34 @@
       <!-- List view: each row is a Card with leading thumbnail + metadata + dropdown -->
       <div class="flex flex-col gap-1">
         {#each filtered as entry, i (entry.path)}
+          {@const isSelected = selected.has(entry.path)}
           <div
             in:fade={{ duration: 180, delay: Math.min(i * 20, 200) }}
-            class="group/row flex items-center gap-3 rounded-lg border border-transparent px-2 py-1.5 transition-colors hover:border-border/40 hover:bg-card/60"
+            class={cn(
+              "group/row flex items-center gap-3 rounded-lg border px-2 py-1.5 transition-colors",
+              isSelected
+                ? "border-primary/50 bg-primary/5"
+                : "border-transparent hover:border-border/40 hover:bg-card/60",
+            )}
           >
             <button
               type="button"
-              onclick={() => openInEditor(entry)}
+              onclick={() =>
+                selectMode ? toggleSelected(entry.path) : openInEditor(entry)}
               class="flex flex-1 items-center gap-3 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
             >
+              {#if selectMode}
+                <span
+                  class={cn(
+                    "flex size-5 shrink-0 items-center justify-center rounded-md border transition-all",
+                    isSelected
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-border/70 bg-background/80",
+                  )}
+                >
+                  {#if isSelected}<Check size={12} />{/if}
+                </span>
+              {/if}
               <div
                 class="relative aspect-video w-20 shrink-0 overflow-hidden rounded-md border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset)"
               >
@@ -541,6 +661,7 @@
               </div>
             </button>
 
+            {#if !selectMode}
             <DropdownMenu.Root>
               <DropdownMenu.Trigger>
                 {#snippet child({ props })}
@@ -583,6 +704,7 @@
                 </DropdownMenu.Item>
               </DropdownMenu.Content>
             </DropdownMenu.Root>
+            {/if}
           </div>
         {/each}
       </div>
@@ -590,6 +712,65 @@
     </div>
   </div>
 </div>
+
+<!-- Floating bulk-action bar — visible whenever selection mode is on. -->
+{#if selectMode}
+  <div
+    in:fly={{ y: 24, duration: 220, easing: cubicOut }}
+    out:fly={{ y: 24, duration: 160, easing: cubicOut }}
+    class="fixed inset-x-0 bottom-6 z-40 flex justify-center px-6"
+  >
+    <div
+      class="flex items-center gap-1.5 rounded-2xl border border-border bg-card/95 p-1.5 px-5 shadow-2xl ring-1 ring-border/40 backdrop-blur-xl"
+    >
+      <span class="text-[12px] font-medium tabular-nums text-foreground">
+        {selectedCount} selected
+      </span>
+      <div class="mx-1 h-4 w-px bg-border/60"></div>
+      <Button
+        variant="ghost"
+        size="xs"
+        class="h-7 text-[11px]"
+        onclick={toggleSelectAll}
+        disabled={filtered.length === 0}
+      >
+        {allFilteredSelected ? "Clear all" : "Select all"}
+      </Button>
+      <Button
+        variant="destructive"
+        size="xs"
+        class="h-7 gap-1.5 text-[11px]"
+        onclick={() => (bulkDeleteOpen = true)}
+        disabled={selectedCount === 0}
+      >
+        <Trash2 size={12} />
+        Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
+      </Button>
+      <Button
+        variant="ghost"
+        size="xs"
+        class="h-7 text-[11px] text-muted-foreground hover:text-foreground"
+        onclick={exitSelectMode}
+      >
+        Cancel
+      </Button>
+    </div>
+  </div>
+{/if}
+
+{#if bulkDeleteOpen}
+  <ConfirmDialog
+    open={true}
+    title={`Move ${selectedCount} recording${selectedCount === 1 ? "" : "s"} to trash?`}
+    description="The selected recordings will be sent to the recycle bin. You can restore them from there if needed."
+    confirmLabel="Move to Trash"
+    variant="destructive"
+    onConfirm={handleBulkDelete}
+    onOpenChange={(v) => {
+      if (!v) bulkDeleteOpen = false;
+    }}
+  />
+{/if}
 
 {#if renameTarget}
   <RenameDialog
