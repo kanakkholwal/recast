@@ -10,6 +10,8 @@ use std::time::{Duration, Instant};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::recording::RecordingClock;
+
 use platform::sample_cursor_state;
 use smoothing::{detect_idle_periods, detect_zoom_triggers, IdlePeriod, ZoomTrigger};
 
@@ -182,7 +184,7 @@ pub struct CursorCaptureFrame {
 ///   the track are observable in the recording log.
 pub fn spawn_cursor_capture(
     stop_flag: Arc<AtomicBool>,
-    clock: Instant,
+    clock: RecordingClock,
     frame: CursorCaptureFrame,
 ) -> Result<thread::JoinHandle<CursorTrack>> {
     thread::Builder::new()
@@ -200,7 +202,15 @@ pub fn spawn_cursor_capture(
             let frame_h = frame.height as i32;
 
             while !stop_flag.load(Ordering::Acquire) {
-                let now_us = clock.elapsed().as_micros() as u64;
+                // While paused, stop sampling. The effective clock is frozen
+                // anyway; skipping keeps the track free of a run of
+                // identically-timestamped samples.
+                if clock.is_paused() {
+                    thread::sleep(SAMPLE_PERIOD);
+                    next_tick = Instant::now() + SAMPLE_PERIOD;
+                    continue;
+                }
+                let now_us = clock.effective_elapsed().as_micros() as u64;
                 match sample_cursor_state() {
                     Some(raw) => {
                         // Map virtual-desktop coords to frame-relative coords.

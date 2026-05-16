@@ -13,6 +13,8 @@
     getAudioDevices,
     getDisplays,
     getLastSource,
+    pauseRecording,
+    resumeRecording,
     setLastSource,
     startRecording,
     stopRecording,
@@ -35,6 +37,8 @@
     Circle,
     Crop,
     GripVertical,
+    Pause,
+    Play,
     Mic,
     MicOff,
     Monitor,
@@ -46,6 +50,7 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { emit, listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -67,6 +72,18 @@
   let isRecording = $state(false);
   let recordingStartTime: number | null = $state(null);
   let now = $state(Date.now());
+
+  // Pause state. `pausedAccumMs` banks completed pauses; `pausedSince` marks
+  // an in-progress pause — the elapsed timer subtracts both so it freezes.
+  let isPaused = $state(false);
+  let pausedAccumMs = $state(0);
+  let pausedSince: number | null = $state(null);
+
+  // While paused, re-prompt every 5 minutes — the camera keeps recording
+  // through a pause, so a forgotten pause quietly wastes disk.
+  const PAUSE_PROMPT_INTERVAL_MS = 5 * 60 * 1000;
+  let pausePromptOpen = $state(false);
+  let lastPausePromptAt: number | null = $state(null);
 
   // Device toggles
   let systemAudioOn = $state(true);
@@ -260,12 +277,21 @@
 
     window.addEventListener("keydown", handleGlobalShortcut);
 
+    // Intercept the window close while a recording is live so it gets
+    // finalized & saved instead of lost.
+    const closeReq = getCurrentWindow().onCloseRequested((event) => {
+      if (!isRecording) return;
+      event.preventDefault();
+      void finalizeAndClose();
+    });
+
     return () => {
       window.clearInterval(timer);
       if (profileFlashTimer) clearTimeout(profileFlashTimer);
       unlistenSource.then((fn) => fn());
       unlistenDevice.then((fn) => fn());
       unlistenProfile.then((fn) => fn());
+      closeReq.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });
@@ -521,6 +547,9 @@
         await stopRecording();
         isRecording = false;
         recordingStartTime = null;
+        isPaused = false;
+        pausedAccumMs = 0;
+        pausedSince = null;
         emit("camera-recording-stopped");
         emit("refresh-recordings");
       } catch (e) {
@@ -549,6 +578,9 @@
         isRecording = true;
         now = Date.now();
         recordingStartTime = now;
+        isPaused = false;
+        pausedAccumMs = 0;
+        pausedSince = null;
         if (cameraOn) {
           emit("camera-recording-started", { startedAtUnixMs: now });
         }
@@ -561,11 +593,83 @@
     }
   }
 
-  const elapsed = $derived(
-    isRecording && recordingStartTime
-      ? Math.floor((now - recordingStartTime) / 1000)
-      : 0,
-  );
+  async function togglePause() {
+    if (!isRecording) return;
+    try {
+      if (isPaused) {
+        await resumeRecording();
+        if (pausedSince !== null) pausedAccumMs += Date.now() - pausedSince;
+        pausedSince = null;
+        isPaused = false;
+      } else {
+        await pauseRecording();
+        pausedSince = Date.now();
+        isPaused = true;
+      }
+    } catch (e) {
+      alert(`Pause/resume failed: ${e}`);
+    }
+  }
+
+  // Pause-timeout nudge: once a pause crosses 5 minutes (and every 5 min
+  // after, if dismissed) ask the user to resume. Never auto-stops.
+  $effect(() => {
+    if (!isPaused || pausedSince === null) {
+      lastPausePromptAt = null;
+      return;
+    }
+    if (pausePromptOpen) return;
+    const since = lastPausePromptAt ?? pausedSince;
+    if (now - since >= PAUSE_PROMPT_INTERVAL_MS) {
+      void promptPauseTimeout();
+    }
+  });
+
+  async function promptPauseTimeout() {
+    pausePromptOpen = true;
+    try {
+      const resume = await ask(
+        "This recording has been paused for 5 minutes.\n\n" +
+          "Resume now? (Use Stop on the panel to finish and save.)",
+        {
+          title: "Recast — recording paused",
+          kind: "warning",
+          okLabel: "Resume",
+          cancelLabel: "Not now",
+        },
+      );
+      if (resume && isPaused) {
+        await togglePause();
+      } else {
+        // Stay paused — re-arm so we prompt again in another 5 minutes.
+        lastPausePromptAt = Date.now();
+      }
+    } catch {
+      lastPausePromptAt = Date.now();
+    } finally {
+      pausePromptOpen = false;
+    }
+  }
+
+  // Closing the panel mid-recording must not lose the take: finalize first
+  // (which trims out any paused spans), then let the window close.
+  async function finalizeAndClose() {
+    try {
+      if (isRecording) await stopRecording();
+    } catch (e) {
+      console.error("finalize-on-close failed:", e);
+    }
+    emit("refresh-recordings");
+    await getCurrentWindow().destroy();
+  }
+
+  // Elapsed excludes paused time so the timer freezes while paused.
+  const elapsed = $derived.by(() => {
+    if (!isRecording || recordingStartTime === null) return 0;
+    const livePause = pausedSince !== null ? now - pausedSince : 0;
+    const ms = now - recordingStartTime - pausedAccumMs - livePause;
+    return Math.max(0, Math.floor(ms / 1000));
+  });
   const timer = $derived(
     `${Math.floor(elapsed / 60)
       .toString()
@@ -618,7 +722,9 @@
       {/if}
       {#if isRecording}
         <span
-          class="shrink-0 font-mono text-[13px] font-semibold tabular-nums text-foreground tracking-tight"
+          class="shrink-0 font-mono text-[13px] font-semibold tabular-nums tracking-tight"
+          class:text-foreground={!isPaused}
+          class:text-muted-foreground={isPaused}
           data-tauri-drag-region
         >
           {timer}
@@ -626,7 +732,22 @@
       {/if}
     </Button>
 
-    <!-- Timer -->
+    <!-- Pause / Resume -->
+    {#if isRecording}
+      <Button
+        onclick={togglePause}
+        onmousedown={(e: MouseEvent) => e.stopPropagation()}
+        size="icon-sm"
+        variant={isPaused ? "default" : "secondary"}
+        title={isPaused ? "Resume Recording" : "Pause Recording"}
+      >
+        {#if isPaused}
+          <Play size={13} strokeWidth={0} fill="currentColor" />
+        {:else}
+          <Pause size={13} strokeWidth={0} fill="currentColor" />
+        {/if}
+      </Button>
+    {/if}
   </ButtonGroup>
 
   <!-- Source -->

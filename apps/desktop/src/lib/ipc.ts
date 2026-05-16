@@ -213,6 +213,18 @@ export function stopRecording(): Promise<string> {
 	return invoke<string>("stop_recording");
 }
 
+export function pauseRecording(): Promise<void> {
+	return invoke<void>("pause_recording");
+}
+
+export function resumeRecording(): Promise<void> {
+	return invoke<void>("resume_recording");
+}
+
+export function isRecordingPaused(): Promise<boolean> {
+	return invoke<boolean>("is_recording_paused");
+}
+
 export function listRecasts(): Promise<RecordingEntry[]> {
 	return invoke<RecordingEntry[]>("list_recasts");
 }

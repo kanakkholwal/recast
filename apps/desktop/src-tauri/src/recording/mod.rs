@@ -1,10 +1,10 @@
 pub mod pipeline;
 
-use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread::JoinHandle;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context, Result};
 use parking_lot::Mutex;
@@ -18,6 +18,87 @@ use crate::cursor::{spawn_cursor_capture, write_cursor_track, CursorCaptureFrame
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
+
+//  Pause-aware recording clock
+
+/// A wall-clock timer that can be paused. `effective_elapsed` reports elapsed
+/// time *minus* every interval spent paused, so all capture tracks (video
+/// pacer, cursor, audio) stay on one gap-free timeline across pause/resume.
+#[derive(Clone)]
+pub struct RecordingClock {
+    start: Instant,
+    /// Total time (µs) spent in completed pause intervals.
+    paused_total_us: Arc<AtomicU64>,
+    /// `Some(instant)` while a pause is currently in progress.
+    paused_since: Arc<Mutex<Option<Instant>>>,
+    /// Completed pause intervals as `(start_us, end_us)` offsets from
+    /// `start`, in *real* wall-clock time — used to cut paused spans out
+    /// of the continuously-recorded camera video.
+    pause_intervals: Arc<Mutex<Vec<(u64, u64)>>>,
+}
+
+impl RecordingClock {
+    fn new(start: Instant) -> Self {
+        Self {
+            start,
+            paused_total_us: Arc::new(AtomicU64::new(0)),
+            paused_since: Arc::new(Mutex::new(None)),
+            pause_intervals: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
+
+    /// Wall-clock time since start, excluding all paused intervals.
+    pub fn effective_elapsed(&self) -> Duration {
+        let raw = self.start.elapsed();
+        let banked = Duration::from_micros(self.paused_total_us.load(Ordering::Acquire));
+        let live = self
+            .paused_since
+            .lock()
+            .map(|since| since.elapsed())
+            .unwrap_or_default();
+        raw.saturating_sub(banked).saturating_sub(live)
+    }
+
+    pub fn is_paused(&self) -> bool {
+        self.paused_since.lock().is_some()
+    }
+
+    /// Begin a pause interval. Idempotent — a second call while already
+    /// paused is a no-op.
+    fn pause(&self) {
+        let mut slot = self.paused_since.lock();
+        if slot.is_none() {
+            *slot = Some(Instant::now());
+        }
+    }
+
+    /// End the current pause interval, banking its duration and recording
+    /// it in `pause_intervals`. No-op if not currently paused.
+    fn resume(&self) {
+        let mut slot = self.paused_since.lock();
+        if let Some(since) = slot.take() {
+            let dur = since.elapsed();
+            let start_us = since.duration_since(self.start).as_micros() as u64;
+            let end_us = start_us + dur.as_micros() as u64;
+            self.paused_total_us
+                .fetch_add(dur.as_micros() as u64, Ordering::AcqRel);
+            self.pause_intervals.lock().push((start_us, end_us));
+        }
+    }
+
+    /// All pause intervals as real-time `(start_us, end_us)` offsets from
+    /// recording start. Includes an in-progress pause (closed at "now"),
+    /// so it's correct even when called after a stop-while-paused.
+    pub fn pause_intervals(&self) -> Vec<(u64, u64)> {
+        let mut list = self.pause_intervals.lock().clone();
+        if let Some(since) = *self.paused_since.lock() {
+            let start_us = since.duration_since(self.start).as_micros() as u64;
+            let end_us = start_us + since.elapsed().as_micros() as u64;
+            list.push((start_us, end_us));
+        }
+        list
+    }
+}
 
 //  Shared types
 
@@ -313,6 +394,8 @@ struct CameraOverlayTracker {
 
 struct RecordingSession {
     stop_flag: Arc<AtomicBool>,
+    /// Set while the recording is paused — capture/audio threads skip work.
+    pause_flag: Arc<AtomicBool>,
     capture_handle: JoinHandle<Result<()>>,
     encoder_handle: JoinHandle<Result<()>>,
     cursor_handle: JoinHandle<CursorTrack>,
@@ -324,7 +407,8 @@ struct RecordingSession {
     target: CaptureTarget,
     recording_path: PathBuf,
     cursor_path: PathBuf,
-    started_at: Instant,
+    /// Pause-aware clock — source of truth for all sync-relevant timing.
+    clock: RecordingClock,
     started_at_unix_ms: u64,
     camera_overlay: CameraOverlayTracker,
 }
@@ -357,7 +441,7 @@ impl RecordingManager {
             tracker.overlay.corner_radius = update.corner_radius.clamp(0.0, 0.5);
             tracker.overlay.animation_preset = update.animation_preset;
 
-            let now_secs = session.started_at.elapsed().as_secs_f64();
+            let now_secs = session.clock.effective_elapsed().as_secs_f64();
             if let (Some(last), Some(last_at)) =
                 (tracker.last_placement.clone(), tracker.last_at_secs)
             {
@@ -433,7 +517,9 @@ impl RecordingManager {
         let microphone_path = output_dir.join(format!("{stem}.microphone.wav"));
         let camera_path = output_dir.join(format!("{stem}.camera.mp4"));
         let started_at = Instant::now();
+        let clock = RecordingClock::new(started_at);
         let stop_flag = Arc::new(AtomicBool::new(false));
+        let pause_flag = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(180);
         let mut warnings = Vec::new();
 
@@ -448,6 +534,7 @@ impl RecordingManager {
         let capture_handle = spawn_capture_loop(
             target.clone(),
             stop_flag.clone(),
+            pause_flag.clone(),
             pipeline.clone(),
             started_at,
             RECORDING_FPS,
@@ -474,7 +561,7 @@ impl RecordingManager {
         // records a secondary monitor or a region.
         let cursor_handle = spawn_cursor_capture(
             stop_flag.clone(),
-            started_at,
+            clock.clone(),
             CursorCaptureFrame {
                 origin_x: target.crop.x,
                 origin_y: target.crop.y,
@@ -486,6 +573,7 @@ impl RecordingManager {
         // Start system audio capture. If it fails, log and continue.
         let audio_session = match AudioCaptureSession::start(AudioCaptureConfig {
             output_path: audio_path.clone(),
+            pause_flag: pause_flag.clone(),
         }) {
             Ok(session) => Some(session),
             Err(e) => {
@@ -499,6 +587,7 @@ impl RecordingManager {
             match MicrophoneCaptureSession::start(MicrophoneCaptureConfig {
                 output_path: microphone_path.clone(),
                 device_id: options.microphone_device_id.clone(),
+                pause_flag: pause_flag.clone(),
             }) {
                 Ok(session) => Some(session),
                 Err(e) => {
@@ -532,6 +621,7 @@ impl RecordingManager {
 
         *guard = Some(RecordingSession {
             stop_flag,
+            pause_flag,
             capture_handle,
             encoder_handle,
             cursor_handle,
@@ -543,7 +633,7 @@ impl RecordingManager {
             target,
             recording_path,
             cursor_path,
-            started_at,
+            clock,
             started_at_unix_ms,
             camera_overlay: CameraOverlayTracker {
                 last_placement: Some(camera_overlay.default_placement.clone()),
@@ -583,13 +673,13 @@ impl RecordingManager {
                 Ok(path) => path,
                 Err(e) => {
                     log::warn!("audio capture stop failed, writing silence: {e}");
-                    let duration = session.started_at.elapsed().as_secs_f64();
+                    let duration = session.clock.effective_elapsed().as_secs_f64();
                     crate::audio::wav::write_silence_wav(&session.audio_path, 48_000, 2, duration)?;
                     session.audio_path
                 }
             }
         } else {
-            let duration = session.started_at.elapsed().as_secs_f64();
+            let duration = session.clock.effective_elapsed().as_secs_f64();
             crate::audio::wav::write_silence_wav(&session.audio_path, 48_000, 2, duration)?;
             session.audio_path
         };
@@ -620,9 +710,25 @@ impl RecordingManager {
             None
         };
 
+        // The camera records continuously through pauses; cut the paused
+        // spans out so the camera video matches the pause-free screen
+        // timeline. Best-effort — on failure keep the untrimmed file.
+        let camera_path = match camera_path {
+            Some(path) => {
+                let intervals = session.clock.pause_intervals();
+                if !intervals.is_empty() {
+                    if let Err(e) = trim_video_pause_intervals(&path, &intervals) {
+                        log::warn!("camera pause-trim failed, keeping untrimmed file: {e}");
+                    }
+                }
+                Some(path)
+            }
+            None => None,
+        };
+
         let stats = build_stats(
             &session.pipeline,
-            session.started_at.elapsed().as_millis() as u64,
+            session.clock.effective_elapsed().as_millis() as u64,
         );
 
         Ok(RecordingArtifacts {
@@ -637,6 +743,98 @@ impl RecordingManager {
             stats,
         })
     }
+
+    /// Pause the active recording. Capture, cursor, and audio threads stop
+    /// producing samples; the pause-aware clock freezes. Idempotent.
+    pub fn pause(&self) -> Result<()> {
+        let guard = self.session.lock();
+        let session = guard.as_ref().context("recording is not running")?;
+        if session.clock.is_paused() {
+            return Ok(());
+        }
+        session.pause_flag.store(true, Ordering::Release);
+        session.clock.pause();
+        Ok(())
+    }
+
+    /// Resume a paused recording. Idempotent.
+    pub fn resume(&self) -> Result<()> {
+        let guard = self.session.lock();
+        let session = guard.as_ref().context("recording is not running")?;
+        if !session.clock.is_paused() {
+            return Ok(());
+        }
+        // Bank the pause duration before letting threads run again so they
+        // wake into a correct clock.
+        session.clock.resume();
+        session.pause_flag.store(false, Ordering::Release);
+        Ok(())
+    }
+
+    /// Whether a recording is currently active and paused.
+    pub fn is_paused(&self) -> bool {
+        self.session
+            .lock()
+            .as_ref()
+            .map(|s| s.clock.is_paused())
+            .unwrap_or(false)
+    }
+}
+
+/// Re-encode `path` in place, dropping every frame inside one of the
+/// `intervals` (real-time `(start_us, end_us)` offsets from recording start)
+/// and re-stamping the survivors onto a gap-free timeline. Used to cut
+/// recording-pause spans out of the continuously-captured camera video.
+fn trim_video_pause_intervals(path: &Path, intervals: &[(u64, u64)]) -> Result<()> {
+    let keep = {
+        let terms: Vec<String> = intervals
+            .iter()
+            .map(|(s, e)| {
+                format!(
+                    "between(t,{:.3},{:.3})",
+                    *s as f64 / 1_000_000.0,
+                    *e as f64 / 1_000_000.0
+                )
+            })
+            .collect();
+        format!("not({})", terms.join("+"))
+    };
+    // `select` drops paused frames; `setpts=N/FRAME_RATE/TB` re-times the
+    // survivors so the gaps close instead of becoming frozen frames.
+    let vf = format!("select='{keep}',setpts=N/FRAME_RATE/TB");
+    let tmp = path.with_extension("trim.mp4");
+    let in_path = path.to_string_lossy().to_string();
+    let out_path = tmp.to_string_lossy().to_string();
+
+    let mut command = std::process::Command::new(crate::ffmpeg::ffmpeg_path());
+    command.args([
+        "-y",
+        "-i",
+        in_path.as_str(),
+        "-vf",
+        vf.as_str(),
+        "-an",
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-pix_fmt",
+        "yuv420p",
+        out_path.as_str(),
+    ]);
+    crate::ffmpeg::configure_silent_command(&mut command);
+    let output = command
+        .output()
+        .context("failed to run ffmpeg for camera pause-trim")?;
+    if !output.status.success() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(anyhow!(
+            "ffmpeg camera trim failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+    std::fs::rename(&tmp, path).context("failed to swap in the trimmed camera file")?;
+    Ok(())
 }
 
 fn build_stats(pipeline: &RecordingPipeline, duration_ms: u64) -> RecordingStats {
