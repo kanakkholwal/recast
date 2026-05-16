@@ -280,7 +280,8 @@
     // Intercept the window close while a recording is live so it gets
     // finalized & saved instead of lost.
     const closeReq = getCurrentWindow().onCloseRequested((event) => {
-      if (!isRecording) return;
+      // Already finalizing (or nothing to finalize) — let the close proceed.
+      if (isClosing || !isRecording) return;
       event.preventDefault();
       void finalizeAndClose();
     });
@@ -652,15 +653,19 @@
   }
 
   // Closing the panel mid-recording must not lose the take: finalize first
-  // (which trims out any paused spans), then let the window close.
+  // (which trims out any paused spans), then re-issue the close. The
+  // `isClosing` guard lets that second close pass straight through.
+  let isClosing = false;
   async function finalizeAndClose() {
+    isClosing = true;
     try {
       if (isRecording) await stopRecording();
     } catch (e) {
       console.error("finalize-on-close failed:", e);
     }
     emit("refresh-recordings");
-    await getCurrentWindow().destroy();
+    closeCameraPreview();
+    getCurrentWindow().close();
   }
 
   // Elapsed excludes paused time so the timer freezes while paused.

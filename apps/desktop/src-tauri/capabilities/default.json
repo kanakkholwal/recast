@@ -17,6 +17,7 @@
     "core:default",
     "core:window:allow-create",
     "core:window:allow-close",
+    "core:window:allow-destroy",
     "core:window:allow-set-size",
     "core:window:allow-set-focus",
     "core:window:allow-center",
