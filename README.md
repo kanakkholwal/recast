@@ -49,10 +49,20 @@ git clone https://github.com/kanakkholwal/recast.git
 cd recast
 ```
 
-2. Install workspace dependencies:
+2. Run the one-shot setup script. It detects your OS, auto-installs any
+missing prerequisites above, downloads the FFmpeg sidecar binaries, installs
+workspace dependencies, and produces a debug build of the desktop app:
+
 ```sh
-pnpm install
+# Windows (PowerShell)
+powershell -ExecutionPolicy Bypass -File scripts/setup.ps1
+
+# macOS / Linux
+bash scripts/setup.sh
 ```
+
+Prefer to set things up by hand? Just run `pnpm install` and follow the
+[manual setup steps in CONTRIBUTING.md](CONTRIBUTING.md#-local-development-setup).
 
 ### Developing
 

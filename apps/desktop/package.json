@@ -11,6 +11,7 @@
 		"tauri": "tauri",
 		"dev": "tauri dev",
 		"build": "tauri build",
+		"build:debug": "tauri build --debug",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch",

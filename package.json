@@ -9,6 +9,7 @@
     "turbo": "^2.9.6"
   },
   "scripts": {
+    "setup:ffmpeg": "node scripts/setup.mjs",
     "dev": "turbo dev",
     "build": "turbo build",
     "check": "turbo check",
