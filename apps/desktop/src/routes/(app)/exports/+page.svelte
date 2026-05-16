@@ -34,6 +34,7 @@
   import { Skeleton } from "@recast/ui/skeleton";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
+  import { morph } from "$lib/morph";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { SvelteSet } from "svelte/reactivity";
@@ -188,6 +189,26 @@
   const allFilteredSelected = $derived(
     filtered.length > 0 && filtered.every((e) => selected.has(e.path)),
   );
+
+  // Grid and list share one keyed {#each}. Touching `view` here gives the
+  // each block a reason to re-run on a layout toggle (returning a fresh
+  // array each time), which is what makes `animate:morph` fire.
+  const displayed = $derived.by(() => {
+    void view;
+    return filtered.slice();
+  });
+
+  function activateEntry(entry: RecordingEntry) {
+    if (selectMode) toggleSelected(entry.path);
+    else openFileLocation(entry.path);
+  }
+
+  function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activateEntry(entry);
+    }
+  }
 
   function exitSelectMode() {
     selectMode = false;
@@ -424,29 +445,64 @@
             </p>
           </div>
         </div>
-      {:else if view === "grid"}
-        <div class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-          {#each filtered as entry, i (entry.path)}
+      {:else}
+        <!-- Grid and list share one keyed {#each} so each card is the same
+             DOM node in both layouts and can morph between them. -->
+        <div
+          class={view === "grid"
+            ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
+            : "flex flex-col gap-1.5"}
+        >
+          {#each displayed as entry, i (entry.path)}
             {@const isSelected = selected.has(entry.path)}
             <div
-              in:fade={{ duration: 200, delay: Math.min(i * 30, 240) }}
-              class="group/card relative flex flex-col gap-2"
+              in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
+              animate:morph={{ duration: 340 }}
+              role="button"
+              tabindex="0"
+              aria-label={entry.filename}
+              title={entry.filename}
+              onclick={() => activateEntry(entry)}
+              onkeydown={(e) => handleCardKeydown(e, entry)}
+              class={cn(
+                "group/card relative flex cursor-pointer overflow-hidden border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:ring-ring/60",
+                view === "grid"
+                  ? "flex-col rounded-xl"
+                  : "flex-row items-center gap-3 rounded-lg p-1.5",
+                isSelected
+                  ? "border-primary/60 bg-primary/5"
+                  : "border-border/40 bg-card/40 hover:border-border hover:bg-card/70 hover:shadow-craft-sm",
+              )}
             >
-              <button
-                type="button"
-                onclick={() =>
-                  selectMode
-                    ? toggleSelected(entry.path)
-                    : openFileLocation(entry.path)}
+              <!-- Thumbnail -->
+              <div
                 class={cn(
-                  "relative aspect-video overflow-hidden rounded-xl border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset) transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
-                  selectMode
-                    ? "cursor-pointer"
-                    : "hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm",
-                  isSelected && "border-primary ring-2 ring-primary",
+                  "relative shrink-0 overflow-hidden bg-muted/40",
+                  view === "grid"
+                    ? "aspect-video w-full"
+                    : "aspect-video w-22 rounded-md",
                 )}
-                title={entry.filename}
               >
+                {#if thumbnails[entry.path]}
+                  <img
+                    src={thumbnails[entry.path]}
+                    alt=""
+                    draggable="false"
+                    class="size-full object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
+                  />
+                {:else}
+                  <div
+                    class="grid size-full place-items-center text-muted-foreground/50"
+                  >
+                    <Play
+                      class={cn(
+                        "translate-x-px",
+                        view === "grid" ? "size-6" : "size-4",
+                      )}
+                    />
+                  </div>
+                {/if}
+
                 {#if selectMode}
                   <div class="absolute left-1.5 top-1.5 z-10">
                     <span
@@ -460,26 +516,9 @@
                       {#if isSelected}<Check size={12} />{/if}
                     </span>
                   </div>
-                {/if}
-                {#if thumbnails[entry.path]}
-                  <img
-                    src={thumbnails[entry.path]}
-                    alt=""
-                    class="h-full w-full object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
-                  />
-                {:else}
+                {:else if view === "grid"}
                   <div
-                    class="grid h-full w-full place-items-center text-muted-foreground/50"
-                  >
-                    <Play class="size-6 translate-x-px" />
-                  </div>
-                {/if}
-                {#if !selectMode}
-                  <div
-                    class="pointer-events-none absolute inset-0 bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
-                  ></div>
-                  <div
-                    class="pointer-events-none absolute inset-0 grid place-items-center opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
+                    class="pointer-events-none absolute inset-0 grid place-items-center bg-linear-to-t from-black/40 via-transparent to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
                   >
                     <span
                       class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
@@ -488,173 +527,86 @@
                     </span>
                   </div>
                 {/if}
+
                 <Badge
                   variant="secondary"
                   class="absolute right-1.5 top-1.5 h-4 px-1 text-[8.5px] font-bold uppercase tracking-wider backdrop-blur"
                 >
                   {getExtension(entry.filename)}
                 </Badge>
-              </button>
-
-              <div class="flex items-start justify-between gap-2 px-1">
-                <div class="min-w-0 flex-1">
-                  <div class="truncate text-[12px] font-semibold text-foreground">
-                    {entry.filename}
-                  </div>
-                  <div class="truncate text-[10.5px] text-muted-foreground/80">
-                    {formatSize(entry.sizeBytes)} · {relativeDate(entry.created)}
-                  </div>
-                </div>
-                {#if !selectMode}
-                <DropdownMenu.Root>
-                  <DropdownMenu.Trigger>
-                    {#snippet child({ props })}
-                      <Button
-                        {...props as Record<string, unknown>}
-                        variant="ghost"
-                        size="icon-sm"
-                        class="-mr-1 size-6 opacity-0 transition-opacity duration-200 group-hover/card:opacity-100 focus-visible:opacity-100"
-                        title="More actions"
-                      >
-                        <MoreHorizontal size={13} />
-                      </Button>
-                    {/snippet}
-                  </DropdownMenu.Trigger>
-                  <DropdownMenu.Content align="end" size="sm" class="w-44">
-                    <DropdownMenu.Item
-                      onSelect={() => openFileLocation(entry.path)}
-                    >
-                      <FolderOpen /> Show in folder
-                      <DropdownMenu.Shortcut>
-                        <Kbd>⌘O</Kbd>
-                      </DropdownMenu.Shortcut>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
-                      <Pencil /> Rename…
-                      <DropdownMenu.Shortcut>
-                        <Kbd>⌘R</Kbd>
-                      </DropdownMenu.Shortcut>
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Item onSelect={() => copyPath(entry)}>
-                      <CopyIcon /> Copy path
-                    </DropdownMenu.Item>
-                    <DropdownMenu.Separator />
-                    <DropdownMenu.Item
-                      onSelect={() => (deleteTarget = entry)}
-                      class="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                    >
-                      <Trash2 /> Move to trash
-                    </DropdownMenu.Item>
-                  </DropdownMenu.Content>
-                </DropdownMenu.Root>
-                {/if}
               </div>
-            </div>
-          {/each}
-        </div>
-      {:else}
-        <div class="flex flex-col gap-1">
-          {#each filtered as entry, i (entry.path)}
-            {@const isSelected = selected.has(entry.path)}
-            <div
-              in:fade={{ duration: 180, delay: Math.min(i * 20, 200) }}
-              class={cn(
-                "group/row flex items-center gap-3 rounded-lg border px-2 py-1.5 transition-colors",
-                isSelected
-                  ? "border-primary/50 bg-primary/5"
-                  : "border-transparent hover:border-border/40 hover:bg-card/60",
-              )}
-            >
-              <button
-                type="button"
-                onclick={() =>
-                  selectMode
-                    ? toggleSelected(entry.path)
-                    : openFileLocation(entry.path)}
-                class="flex flex-1 items-center gap-3 rounded-lg text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
-              >
-                {#if selectMode}
-                  <span
-                    class={cn(
-                      "flex size-5 shrink-0 items-center justify-center rounded-md border transition-all",
-                      isSelected
-                        ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border/70 bg-background/80",
-                    )}
-                  >
-                    {#if isSelected}<Check size={12} />{/if}
-                  </span>
-                {/if}
-                <div
-                  class="relative aspect-video w-20 shrink-0 overflow-hidden rounded-md border border-border/40 bg-muted/40 shadow-(--shadow-craft-inset)"
-                >
-                  {#if thumbnails[entry.path]}
-                    <img
-                      src={thumbnails[entry.path]}
-                      alt=""
-                      class="h-full w-full object-cover"
-                    />
-                  {:else}
-                    <div
-                      class="grid h-full w-full place-items-center text-muted-foreground/50"
-                    >
-                      <Play class="size-4 translate-x-px" />
-                    </div>
-                  {/if}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-1.5">
-                    <span
-                      class="truncate text-[12.5px] font-semibold text-foreground"
-                    >
-                      {entry.filename}
-                    </span>
-                    <Badge variant="secondary" class="h-4 shrink-0 px-1 text-[9px]">
-                      {getExtension(entry.filename)}
-                    </Badge>
-                  </div>
-                  <div class="truncate text-[10.5px] text-muted-foreground/80">
-                    {formatSize(entry.sizeBytes)} · {formatDate(entry.created)}
-                  </div>
-                </div>
-              </button>
 
+              <!-- Info -->
+              <div
+                class={cn(
+                  "flex min-w-0 flex-1 flex-col gap-0.5",
+                  view === "grid" && "px-3 py-2.5",
+                )}
+              >
+                <div class="truncate text-[12.5px] font-semibold text-foreground">
+                  {entry.filename}
+                </div>
+                <div class="truncate text-[10.5px] text-muted-foreground/80">
+                  {formatSize(entry.sizeBytes)} · {relativeDate(entry.created)}
+                </div>
+              </div>
+
+              <!-- Actions -->
               {#if !selectMode}
-              <DropdownMenu.Root>
-                <DropdownMenu.Trigger>
-                  {#snippet child({ props })}
-                    <Button
-                      {...props as Record<string, unknown>}
-                      variant="ghost"
-                      size="icon-sm"
-                      class="size-7 opacity-0 transition-opacity duration-150 group-hover/row:opacity-100 focus-visible:opacity-100"
-                      title="More actions"
-                    >
-                      <MoreHorizontal size={14} />
-                    </Button>
-                  {/snippet}
-                </DropdownMenu.Trigger>
-                <DropdownMenu.Content align="end" size="sm" class="w-44">
-                  <DropdownMenu.Item
-                    onSelect={() => openFileLocation(entry.path)}
-                  >
-                    <FolderOpen /> Show in folder
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
-                    <Pencil /> Rename…
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Item onSelect={() => copyPath(entry)}>
-                    <CopyIcon /> Copy path
-                  </DropdownMenu.Item>
-                  <DropdownMenu.Separator />
-                  <DropdownMenu.Item
-                    onSelect={() => (deleteTarget = entry)}
-                    class="text-destructive focus:bg-destructive/10 focus:text-destructive"
-                  >
-                    <Trash2 /> Move to trash
-                  </DropdownMenu.Item>
-                </DropdownMenu.Content>
-              </DropdownMenu.Root>
+                <div
+                  role="presentation"
+                  onclick={(e) => e.stopPropagation()}
+                  onkeydown={(e) => e.stopPropagation()}
+                  class={view === "grid"
+                    ? "absolute right-2 top-2"
+                    : "shrink-0 pr-1"}
+                >
+                  <DropdownMenu.Root>
+                    <DropdownMenu.Trigger>
+                      {#snippet child({ props })}
+                        <Button
+                          {...props as Record<string, unknown>}
+                          variant="ghost"
+                          size="icon-sm"
+                          class={cn(
+                            "size-7 opacity-0 transition-opacity duration-200 group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100",
+                            view === "grid" &&
+                              "border border-border/60 bg-background/80 text-foreground/70 backdrop-blur-md hover:bg-background hover:text-foreground",
+                          )}
+                          title="More actions"
+                        >
+                          <MoreHorizontal size={14} />
+                        </Button>
+                      {/snippet}
+                    </DropdownMenu.Trigger>
+                    <DropdownMenu.Content align="end" size="sm" class="w-44">
+                      <DropdownMenu.Item
+                        onSelect={() => openFileLocation(entry.path)}
+                      >
+                        <FolderOpen /> Show in folder
+                        <DropdownMenu.Shortcut>
+                          <Kbd>⌘O</Kbd>
+                        </DropdownMenu.Shortcut>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
+                        <Pencil /> Rename…
+                        <DropdownMenu.Shortcut>
+                          <Kbd>⌘R</Kbd>
+                        </DropdownMenu.Shortcut>
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Item onSelect={() => copyPath(entry)}>
+                        <CopyIcon /> Copy path
+                      </DropdownMenu.Item>
+                      <DropdownMenu.Separator />
+                      <DropdownMenu.Item
+                        onSelect={() => (deleteTarget = entry)}
+                        class="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                      >
+                        <Trash2 /> Move to trash
+                      </DropdownMenu.Item>
+                    </DropdownMenu.Content>
+                  </DropdownMenu.Root>
+                </div>
               {/if}
             </div>
           {/each}
