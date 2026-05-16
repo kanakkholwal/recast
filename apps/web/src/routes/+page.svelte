@@ -242,7 +242,7 @@
 							</div>
 							<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
 								<img
-									src="/screenshots/preview_homescreen.png"
+									src="/screenshots/preview_area_selection.png"
 									alt="Recast quick start"
 									loading="lazy"
 									decoding="async"
