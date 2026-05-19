@@ -107,7 +107,7 @@
 	<title>Features — Recast</title>
 	<meta
 		name="description"
-		content="The cursor engine, smart layouts, native capture, and lightweight editor that turn raw screen captures into demos worth shipping."
+		content="The cursor engine, smart layouts, and native capture that auto-polish raw screen captures into shareable demos — built for solo founders."
 	/>
 </svelte:head>
 
@@ -125,7 +125,7 @@
 					</span>
 				</h1>
 				<p class="text-pretty max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
-					A focused recorder, not a kitchen-sink editor. Three pillars do the heavy lifting; the rest stays out of your way.
+					Record, auto-polish, share. A focused recorder — not a kitchen-sink editor — that turns raw captures into demos worth shipping.
 				</p>
 			</div>
 		</Container>
@@ -224,7 +224,7 @@
 						</h2>
 
 						<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Free during beta. No account required. Three platforms. One opinionated tool.
+							Free forever. No account required. Three platforms. One opinionated tool.
 						</p>
 
 						<div class="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
