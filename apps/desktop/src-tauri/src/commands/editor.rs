@@ -647,6 +647,46 @@ fn run_gif_palette_prepass(
     }
 }
 
+/// Resolve the render state's silence/manual cuts into post-trim stream
+/// seconds (the input is seeked by `-ss trim_start`, so the filtergraph's `t`
+/// starts at 0 = `trim_start`). Cuts are clamped to the kept `[trim_start,
+/// trim_end]` window, sorted, and overlaps merged.
+fn collect_export_cuts(
+    render_state: &crate::render::graph::RenderState,
+    trim_start: f64,
+    trim_end: f64,
+) -> Vec<(f64, f64)> {
+    let mut cuts: Vec<(f64, f64)> = render_state
+        .cuts
+        .iter()
+        .filter_map(|c| {
+            let lo = c.start.max(trim_start) - trim_start;
+            let hi = c.end.min(trim_end) - trim_start;
+            (hi - lo > 0.01).then_some((lo.max(0.0), hi))
+        })
+        .collect();
+    cuts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, f64)> = Vec::with_capacity(cuts.len());
+    for cut in cuts {
+        match merged.last_mut() {
+            Some(last) if cut.0 <= last.1 + 0.001 => last.1 = last.1.max(cut.1),
+            _ => merged.push(cut),
+        }
+    }
+    merged
+}
+
+/// Build a `select`/`aselect` expression that *keeps* every frame outside the
+/// cut ranges: `not(between(t,a,b)+between(t,c,d)+…)`. Single-quoted at the
+/// call site so the inner commas survive the filtergraph parser.
+fn build_cut_select_expr(cuts: &[(f64, f64)]) -> String {
+    let terms: Vec<String> = cuts
+        .iter()
+        .map(|(a, b)| format!("between(t,{a:.3},{b:.3})"))
+        .collect();
+    format!("not({})", terms.join("+"))
+}
+
 #[tauri::command]
 pub async fn export_video(
     app: AppHandle,
@@ -1236,7 +1276,7 @@ pub async fn export_video(
         (0.0_f64, 1.0_f64)
     };
 
-    let audio_map = if request.format == "gif" {
+    let mut audio_map = if request.format == "gif" {
         None
     } else {
         append_audio_to_complex(
@@ -1251,6 +1291,50 @@ pub async fn export_video(
             map
         })
     };
+
+    // Silence/manual cuts — drop the cut ranges from the middle of the
+    // timeline. `select`/`aselect` discard the cut frames and `setpts`/
+    // `asetpts` re-stitch the survivors into a gapless stream. This runs at
+    // the *end* of the chain: everything upstream (zoom, cursor, blur) was
+    // computed on the continuous post-trim timeline and stays correct —
+    // select only removes frames, it never reinterprets time. GIF has its own
+    // paletteuse tail, so cuts there would need separate handling; skipped.
+    let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
+    if !export_cuts.is_empty() && request.format != "gif" {
+        let select_expr = build_cut_select_expr(&export_cuts);
+        let (mut complex, video_label) = match filter_complex_after_cursor.take() {
+            Some(existing) => (existing, video_map_after_cursor.clone()),
+            None => {
+                // No filtergraph yet: seed one and fold in any pending
+                // output-side filters (e.g. a quality downscale) so they
+                // aren't lost now that `-vf` no longer applies.
+                let mut seed = String::new();
+                let prefix = if output_filters.is_empty() {
+                    String::new()
+                } else {
+                    format!("{},", output_filters.join(","))
+                };
+                output_filters.clear();
+                seed.push_str(&format!("[0:v:0]{prefix}"));
+                (seed, String::new())
+            }
+        };
+        if !complex.is_empty() && !complex.ends_with(';') && !video_label.is_empty() {
+            complex.push(';');
+        }
+        complex.push_str(&video_label);
+        complex.push_str(&format!(
+            "select='{select_expr}',setpts=N/FRAME_RATE/TB[vcut]"
+        ));
+        video_map_after_cursor = "[vcut]".to_string();
+        if let Some(amap) = audio_map.take() {
+            complex.push_str(&format!(
+                ";{amap}aselect='{select_expr}',asetpts=N/SR/TB[acut]"
+            ));
+            audio_map = Some("[acut]".to_string());
+        }
+        filter_complex_after_cursor = Some(complex);
+    }
 
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         args.extend([

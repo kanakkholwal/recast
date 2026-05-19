@@ -953,6 +953,20 @@ void main() {
 		// (shouldn't happen inside draw but keeps the types honest).
 		const playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
 
+		// Skip over removed (silence) cut ranges during forward playback. The
+		// rVFC loop runs per-frame so the jump is near-instant. We only act
+		// while playing — scrubbing into a cut is allowed so the user can
+		// still inspect what was removed.
+		if (videoEl && store.isPlaying && store.cuts.length > 0) {
+			const cut = store.cuts.find(
+				(c) => playbackTime >= c.start && playbackTime < c.end - 0.02,
+			);
+			if (cut) {
+				videoEl.currentTime = cut.end;
+				return;
+			}
+		}
+
 		// Make sure the latest video frame is in the texture before sampling
 		if (!uploadVideoFrame()) return;
 

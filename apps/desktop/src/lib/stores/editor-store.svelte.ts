@@ -5,6 +5,7 @@
 
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
+import { totalCutDuration, type CutSource, type TimelineCut } from '../timeline/cuts';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
 
@@ -468,6 +469,8 @@ export interface EditorRenderState {
 	}>;
 	autoZoomApplied?: boolean;
 	autoZoomEnabled?: boolean;
+	/** Silence / manual cuts removed from the timeline. */
+	cuts?: TimelineCut[];
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
@@ -586,6 +589,11 @@ export function createEditorStore() {
 	// Video source
 	let videoPath = $state('');
 	let cursorPath = $state<string | null>(null);
+	// Raw on-disk media paths (the extracted recording / audio tracks), needed
+	// by Rust-side analysis commands such as silence detection.
+	let recordingPath = $state<string | null>(null);
+	let audioPath = $state<string | null>(null);
+	let microphonePath = $state<string | null>(null);
 	let metadata = $state<VideoMetadata | null>(null);
 	let thumbnailStrip = $state<string[]>([]);
 
@@ -596,6 +604,9 @@ export function createEditorStore() {
 	// Trim
 	let trimStart = $state(0);
 	let trimEnd = $state(0); // will be set to duration on load
+
+	// Silence / manual cuts — removed ranges, in original-recording seconds.
+	let cuts = $state<TimelineCut[]>([]);
 
 	// Background
 	let backgroundType = $state<BackgroundType>('wallpaper');
@@ -755,6 +766,7 @@ export function createEditorStore() {
 			trimStart,
 			trimEnd,
 			zoomRegions,
+			cuts,
 			autoZoomEnabled,
 			autoZoomApplied,
 			annotations,
@@ -836,6 +848,7 @@ export function createEditorStore() {
 		}));
 		autoZoomEnabled = s.autoZoomEnabled ?? autoZoomEnabled;
 		autoZoomApplied = s.autoZoomApplied ?? autoZoomApplied;
+		cuts = (s.cuts ?? []).map((c: TimelineCut) => ({ ...c }));
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot — we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1142,6 +1155,7 @@ export function createEditorStore() {
 		lastAppliedPresetId = null;
 		zoomRegions = [];
 		selectedZoomRegionId = null;
+		cuts = [];
 		autoZoomEnabled = true;
 		autoZoomApplied = false;
 		annotations = [];
@@ -1198,6 +1212,36 @@ export function createEditorStore() {
 		redoStack = [];
 	}
 
+	/**
+	 * Add a removed range. Returns the new cut id, or null if the range is
+	 * too short to be meaningful. Each call is its own undo entry — callers
+	 * accepting several silence suggestions at once should batch with their
+	 * own `pushUndoState` and use the lower-level array if needed.
+	 */
+	function addCut(
+		start: number,
+		end: number,
+		source: CutSource = 'silence',
+	): string | null {
+		if (end - start <= 0.01) return null;
+		pushUndoState();
+		const cut: TimelineCut = { id: generateId(), start, end, source };
+		cuts = [...cuts, cut].sort((a, b) => a.start - b.start);
+		return cut.id;
+	}
+
+	function removeCut(id: string) {
+		if (!cuts.some((c) => c.id === id)) return;
+		pushUndoState();
+		cuts = cuts.filter((c) => c.id !== id);
+	}
+
+	function clearCuts() {
+		if (cuts.length === 0) return;
+		pushUndoState();
+		cuts = [];
+	}
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1239,6 +1283,7 @@ export function createEditorStore() {
 			})),
 			autoZoomApplied,
 			autoZoomEnabled,
+			cuts: cuts.map((cut) => ({ ...cut })),
 			cursorMotionEasing,
 			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
@@ -1310,6 +1355,12 @@ export function createEditorStore() {
 		autoZoomApplied =
 			state.autoZoomApplied ??
 			(state.zoomRegions !== undefined ? true : false);
+		cuts = (state.cuts ?? []).map((c) => ({
+			id: c.id ?? generateId(),
+			start: c.start,
+			end: c.end,
+			source: c.source ?? 'silence',
+		}));
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
@@ -1384,6 +1435,15 @@ export function createEditorStore() {
 		get cursorPath() { return cursorPath; },
 		set cursorPath(v: string | null) { cursorPath = v; },
 
+		get recordingPath() { return recordingPath; },
+		set recordingPath(v: string | null) { recordingPath = v; },
+
+		get audioPath() { return audioPath; },
+		set audioPath(v: string | null) { audioPath = v; },
+
+		get microphonePath() { return microphonePath; },
+		set microphonePath(v: string | null) { microphonePath = v; },
+
 		get metadata() { return metadata; },
 		set metadata(v: VideoMetadata | null) { metadata = v; },
 
@@ -1446,6 +1506,10 @@ export function createEditorStore() {
 		set lastAppliedPresetId(v: string | null) { lastAppliedPresetId = v; },
 
 		get zoomRegions() { return zoomRegions; },
+
+		// Silence / manual cuts.
+		get cuts() { return cuts; },
+		get cutDuration() { return totalCutDuration(cuts); },
 
 		get autoZoomEnabled() { return autoZoomEnabled; },
 		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; },
@@ -1535,6 +1599,9 @@ export function createEditorStore() {
 		removeZoomRegion,
 		updateZoomRegion,
 		selectZoomRegion,
+		addCut,
+		removeCut,
+		clearCuts,
 		addAnnotation,
 		updateAnnotation,
 		removeAnnotation,

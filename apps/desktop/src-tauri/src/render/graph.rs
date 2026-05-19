@@ -12,6 +12,18 @@ fn default_bounce_speed_ms() -> f64 {
     220.0
 }
 
+/// A removed range on the timeline (a silence cut or a manual cut), in
+/// original-recording seconds. The export drops these via `select`/`aselect`.
+/// Unknown JS-side fields (`id`, `source`) round-trip through `extra`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CutRange {
+    pub start: f64,
+    pub end: f64,
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RenderState {
@@ -54,6 +66,9 @@ pub struct RenderState {
     #[serde(default)]
     pub cursor_sway: f64,
     pub zoom_regions: Vec<ZoomRegion>,
+    /// User-accepted silence/manual cuts removed from the timeline.
+    #[serde(default)]
+    pub cuts: Vec<CutRange>,
     /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
     #[serde(default)]
@@ -127,6 +142,7 @@ impl Default for RenderState {
             cursor_bounce_speed_ms: default_bounce_speed_ms(),
             cursor_sway: 0.0,
             zoom_regions: Vec::new(),
+            cuts: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),

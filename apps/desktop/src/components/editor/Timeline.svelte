@@ -3,6 +3,7 @@
     EditorStore,
     ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
+  import { Scissors } from "@lucide/svelte";
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
@@ -621,6 +622,33 @@
           onDuplicate={duplicateAnnotation}
         />
       </div>
+
+      <!-- Silence/manual cut bands — removed ranges shown as dimmed,
+           hatched overlays. The band body is click-through so scrubbing
+           still works; the centred pill restores the segment. -->
+      {#if store.cuts.length > 0}
+        <div class="pointer-events-none absolute inset-x-0 top-7 bottom-2 z-20">
+          {#each store.cuts as cut (cut.id)}
+            <div
+              class="absolute top-0 bottom-0 overflow-hidden rounded-sm border-x border-destructive/50 bg-destructive/15"
+              style="left: {cut.start * pixelsPerSecond}px; width: {Math.max(
+                2,
+                (cut.end - cut.start) * pixelsPerSecond,
+              )}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--destructive) 18%, transparent) 5px, color-mix(in srgb, var(--destructive) 18%, transparent) 10px);"
+            >
+              <button
+                type="button"
+                onclick={() => store.removeCut(cut.id)}
+                title="Restore this segment ({(cut.end - cut.start).toFixed(1)}s)"
+                class="pointer-events-auto absolute left-1/2 top-1 flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap rounded bg-destructive px-1 py-0.5 text-[8px] font-bold text-destructive-foreground transition-transform hover:scale-105"
+              >
+                <Scissors class="size-2.5" />
+                {(cut.end - cut.start).toFixed(1)}s
+              </button>
+            </div>
+          {/each}
+        </div>
+      {/if}
 
       <TimelinePlayhead
         currentTime={store.currentTime}

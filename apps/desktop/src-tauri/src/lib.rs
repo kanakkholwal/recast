@@ -10,6 +10,7 @@ pub mod ffmpeg;
 mod project;
 mod recording;
 mod render;
+mod silence;
 
 use commands::system::load_config;
 use commands::types::AppState;
@@ -107,6 +108,7 @@ pub fn run() {
             commands::clear_autosave,
             commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,
+            silence::detect_silence,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,

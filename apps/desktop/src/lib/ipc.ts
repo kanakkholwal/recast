@@ -324,6 +324,54 @@ export function suggestZoomRegions(cursorPath: string): Promise<ZoomSuggestion[]
 	return invoke<ZoomSuggestion[]>("suggest_zoom_regions", { cursorPath });
 }
 
+//  Silence detection
+
+/** Tunable thresholds for `detectSilence`; omit any field to use the default. */
+export interface SilenceDetectOptions {
+	/** Audio dBFS floor — at or below this, audio counts as silent. */
+	noiseDb?: number;
+	/** Minimum continuous silent-audio run (seconds). */
+	minAudioSilence?: number;
+	/** freezedetect noise tolerance (dB). */
+	freezeNoiseDb?: number;
+	/** Minimum continuous frozen-video run (seconds). */
+	minFreeze?: number;
+	/** Minimum length of a returned silence segment (seconds). */
+	minSegment?: number;
+	/** Adjacent segments closer than this merge into one (seconds). */
+	mergeGap?: number;
+}
+
+/** A detected silence range, in original-recording seconds. */
+export interface SilenceSegment {
+	start: number;
+	end: number;
+	/** 0..1 — how strongly this range warrants a cut. */
+	confidence: number;
+	micSilent: boolean;
+	systemSilent: boolean;
+	screenStatic: boolean;
+}
+
+/**
+ * Analyse a recording for silence — ranges with no microphone speech, no
+ * system audio, and no visible screen motion (camera feed ignored). Backed by
+ * `detect_silence` (FFmpeg `silencedetect` + `freezedetect`) in Rust.
+ */
+export function detectSilence(
+	videoPath: string,
+	audioPath?: string | null,
+	microphonePath?: string | null,
+	options?: SilenceDetectOptions,
+): Promise<SilenceSegment[]> {
+	return invoke<SilenceSegment[]>("detect_silence", {
+		videoPath,
+		audioPath: audioPath ?? null,
+		microphonePath: microphonePath ?? null,
+		options: options ?? null,
+	});
+}
+
 //  Autosave / Recovery commands 
 
 export function autosaveProject(projectPath: string, editsJson: string): Promise<void> {

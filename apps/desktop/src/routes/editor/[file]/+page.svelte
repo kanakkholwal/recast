@@ -231,6 +231,10 @@
       videoSrc = convertFileSrc(document.mediaPath);
       cursorPath = document.cursorPath ?? null;
       store.cursorPath = cursorPath;
+      // Raw on-disk media paths for Rust-side analysis (silence detection).
+      store.recordingPath = document.mediaPath;
+      store.audioPath = document.audioPath ?? null;
+      store.microphonePath = document.microphonePath ?? null;
       systemAudioSrc = document.audioPath
         ? convertFileSrc(document.audioPath)
         : "";
