@@ -11,6 +11,8 @@
   "scripts": {
     "setup:ffmpeg": "node scripts/setup.mjs",
     "dev": "turbo dev",
+    "dev:desktop": "turbo dev --filter=recast-desktop",
+    "dev:web": "turbo dev --filter=recast-web",
     "build": "turbo build",
     "check": "turbo check",
     "prepare:assets-wallpapers": "node scripts/prepare-backgrounds.mjs",

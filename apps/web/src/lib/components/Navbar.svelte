@@ -8,8 +8,8 @@
 			variant: "default" as const,
 			links: [
 				{ label: "Features", href: "/features" },
-				{ label: "Editor", href: "/#editor" },
-				{ label: ".recast format", href: "/#format" },
+				{ label: "Pricing", href: "/pricing" },
+				{ label: "For gamers", href: "/gamers" },
 			],
 		},
 		{

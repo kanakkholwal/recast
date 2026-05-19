@@ -280,9 +280,15 @@ Reuse this exact structure on every page that needs a closing CTA:
 
 | Route | Sections |
 | --- | --- |
-| `/` | `#modern`, `#conversion`, `#editor`, `#format`, `#intelligent`, `#cta` |
+| `/` | `#why`, `#record`, `#polish`, `#share`, `#founders`, `#pricing-teaser`, `#cta` |
+| `/pricing` | hero, plan cards (Free / Cloud waitlist), comparison table |
+| `/gamers` | hero, flow, use cases, why-vs-OBS, `#cta` |
 | `/features` | pillars, supports, `#cta` |
 | `/download` | hero, `#all-platforms` |
 | `/changelog` | hero, release timeline |
+
+The homepage spine is **Record → Auto-polish → Share** (see `POSITIONING.md`).
+Recast Cloud is not shipped — the `#share` section and `/pricing` Cloud card
+sell a waitlist, never a live product.
 
 Keep navbar/footer links in sync with these anchors. Stale anchors are silent UX bugs.

@@ -12,9 +12,10 @@
 			title: "Product",
 			links: [
 				{ label: "Features", href: "/features" },
+				{ label: "Pricing", href: "/pricing" },
+				{ label: "For gamers", href: "/gamers" },
 				{ label: "Download", href: "/download" },
 				{ label: "Changelog", href: "/changelog" },
-				{ label: "Editor", href: "/#editor" },
 			],
 		},
 		{
@@ -72,8 +73,9 @@
 					</span>
 				</a>
 				<p class="mt-6 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
-					The native screen recorder for founders, indie hackers, and product
-					engineers who'd rather ship than open a timeline.
+					Turns a raw screen capture into a polished, shareable demo —
+					automatically. Built for solo founders who'd rather ship than open a
+					timeline.
 				</p>
 				<div class="mt-7 flex items-center gap-2">
 					{#each socials as { icon: Icon, href, label }}

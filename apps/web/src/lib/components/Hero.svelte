@@ -2,7 +2,9 @@
 	import { Container, Eyebrow, Section } from "$lib/components";
 	import { TextLoop } from "$lib/motion-core";
 	import { Button } from "@recast/ui/button";
-	import { ArrowRight, Download, Sparkles } from "lucide-svelte";
+	import { ArrowRight, Download, MousePointer2, Share2, Sparkles, Video } from "lucide-svelte";
+	import { cubicOut } from "svelte/easing";
+	import { blur, fly } from "svelte/transition";
 
 	const words = [
 		"expensive.",
@@ -12,16 +14,20 @@
 		"hand-edited.",
 	];
 	const platforms = ["macOS", "Windows", "Linux"];
+	const steps = [
+		{ icon: Video, label: "Record" },
+		{ icon: MousePointer2, label: "Auto-polish" },
+		{ icon: Share2, label: "Share" },
+	];
+
+	/** Svelte native transition — snappy in, lands gently. */
+	const rise = (delay: number) => ({ y: 16, duration: 720, delay, easing: cubicOut });
 </script>
 
 <Section spacing="none" class="hero-atmosphere relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">
-	<!-- <div aria-hidden="true" class="hero-aurora pointer-events-none absolute inset-0 -z-10"></div>
-	<div aria-hidden="true" class="hero-clouds pointer-events-none absolute inset-x-0 top-0 -z-10 h-160"></div>
-	<div aria-hidden="true" class="hero-grid pointer-events-none absolute inset-0 -z-10 opacity-[0.35]"></div> -->
-
 	<Container class="relative">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
-			<a href="/changelog" class="group inline-block animate-fade-in">
+			<a href="/changelog" class="group inline-block" in:blur={{ duration: 600, amount: 6 }}>
 				<Eyebrow icon={Sparkles} variant="primary">
 					<span>what's new</span>
 					<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
@@ -29,7 +35,8 @@
 			</a>
 
 			<h1
-				class="text-balance mt-7 animate-fade-up text-5xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
+				class="text-balance mt-7 text-5xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
+				in:fly={rise(80)}
 			>
 				Demos that look
 				<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
@@ -40,35 +47,53 @@
 			</h1>
 
 			<p
-				class="text-pretty mt-7 max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
-				style="animation-delay: 120ms"
+				class="text-pretty mt-7 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
+				in:fly={rise(200)}
 			>
-				The native screen recorder for founders, indie hackers, and product engineers who'd rather ship than open a timeline.
+				Recast turns a raw screen capture into a polished, ready-to-share demo —
+				automatically. Built for solo founders who'd rather ship than open a timeline.
 			</p>
 
+			<!-- Record → Auto-polish → Share -->
 			<div
-				class="mt-10 flex animate-fade-up flex-col items-center gap-3 sm:flex-row sm:gap-4"
-				style="animation-delay: 240ms"
+				class="mt-8 flex items-center gap-2 text-xs font-semibold text-muted-foreground"
+				in:fly={rise(300)}
+			>
+				{#each steps as step, i}
+					{@const Icon = step.icon}
+					<span class="glass-chip flex items-center gap-1.5 rounded-full px-3 py-1.5">
+						<Icon class="size-3.5 text-primary" />
+						{step.label}
+					</span>
+					{#if i < steps.length - 1}
+						<ArrowRight class="size-3.5 text-muted-foreground/40" />
+					{/if}
+				{/each}
+			</div>
+
+			<div
+				class="mt-9 flex flex-col items-center gap-3 sm:flex-row sm:gap-4"
+				in:fly={rise(380)}
 			>
 				<Button href="/download" size="lg" class="gap-2.5">
 					<Download class="size-4" />
-					Get started
+					Download free
 				</Button>
 				<Button href="/features" variant="outline" size="lg" class="group/cta gap-2">
-					See a demo
+					See how it works
 					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 				</Button>
 			</div>
 
 			<div
-				class="mt-8 flex animate-fade-up items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80"
-				style="animation-delay: 360ms"
+				class="mt-8 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80"
+				in:fly={rise(460)}
 			>
 				<span class="relative flex size-1.5">
 					<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
 					<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
 				</span>
-				Free during beta · No sign-up
+				Free forever · No sign-up
 				<span class="mx-2 hidden h-1 w-1 rounded-full bg-muted-foreground/40 sm:inline-block"></span>
 				<span class="hidden items-center gap-2 sm:inline-flex">
 					{#each platforms as p, i}
@@ -81,10 +106,7 @@
 			</div>
 		</div>
 
-		<div
-			class="relative mx-auto mt-20 max-w-6xl animate-fade-up"
-			style="animation-delay: 460ms"
-		>
+		<div class="relative mx-auto mt-20 max-w-6xl" in:fly={rise(560)}>
 			<div class="glass-card group/preview relative overflow-hidden rounded-2xl shadow-craft-xl ring-1 ring-foreground/5">
 				<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4 dark:bg-white/3">
 					<div class="flex gap-1.5">
@@ -128,41 +150,17 @@
 </Section>
 
 <style>
-	.hero-aurora {
+	:global(.hero-atmosphere) {
 		background:
 			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 70%),
 			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%),
 			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 70%);
 	}
 
-	:global(.dark) .hero-aurora {
+	:global(.dark .hero-atmosphere) {
 		background:
 			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 75%),
 			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 75%),
 			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 75%);
-	}
-
-	.hero-clouds {
-		background:
-			radial-gradient(ellipse 40% 20% at 25% 30%, color-mix(in srgb, white 18%, transparent), transparent 75%),
-			radial-gradient(ellipse 35% 18% at 75% 18%, color-mix(in srgb, white 14%, transparent), transparent 75%);
-		filter: blur(50px);
-		opacity: 0.5;
-	}
-
-	:global(.dark) .hero-clouds {
-		background:
-			radial-gradient(ellipse 40% 20% at 25% 30%, color-mix(in srgb, var(--color-foreground) 5%, transparent), transparent 75%),
-			radial-gradient(ellipse 35% 18% at 75% 18%, color-mix(in srgb, var(--color-foreground) 4%, transparent), transparent 75%);
-		filter: blur(50px);
-		opacity: 0.4;
-	}
-
-	.hero-grid {
-		background-image:
-			linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px),
-			linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px, transparent 1px);
-		background-size: 64px 64px;
-		mask-image: radial-gradient(ellipse 70% 60% at 50% 30%, black 30%, transparent 75%);
 	}
 </style>
