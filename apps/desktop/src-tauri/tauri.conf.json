@@ -63,7 +63,7 @@
     "linux": {
       "appimage": {}
     },
-    "createUpdaterArtifacts": false
+    "createUpdaterArtifacts": true
   },
   "plugins": {
     "updater": {
@@ -71,7 +71,7 @@
       "endpoints": [
         "https://github.com/kanakkholwal/recast/releases/latest/download/latest.json"
       ],
-      "dialog": true
+      "dialog": false
     }
   }
 }

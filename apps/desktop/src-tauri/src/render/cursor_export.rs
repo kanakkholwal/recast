@@ -143,17 +143,15 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
     // visual click lands on the captured target regardless of smoothing.
     // Mirrors `rebuildPressEvents` in VideoPreview.svelte. Built from raw
     // samples so neither timing nor position can drift with smoothing.
-    let press_events = build_press_events_from_iter(
-        track.samples.iter().map(|s| {
-            (
-                s.timestamp_us,
-                s.x as f64,
-                s.y as f64,
-                s.left_down,
-                s.right_down,
-            )
-        }),
-    );
+    let press_events = build_press_events_from_iter(track.samples.iter().map(|s| {
+        (
+            s.timestamp_us,
+            s.x as f64,
+            s.y as f64,
+            s.left_down,
+            s.right_down,
+        )
+    }));
 
     /// Find the click event nearest `t_secs`. Returns the offset in ms
     /// (`t - click_t`, signed, negative = click is in the future) or None
@@ -414,8 +412,12 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                     let dt = (t_track_us - past_us) as f64 / 1_000_000.0;
                     if dt > 0.0 {
                         ((sample.x - prev.x).powi(2) + (sample.y - prev.y).powi(2)).sqrt() / dt
-                    } else { 0.0 }
-                } else { 0.0 }
+                    } else {
+                        0.0
+                    }
+                } else {
+                    0.0
+                }
             };
             let (dx, dy) = idle_sway_offset(
                 t_track_us as f64 / 1000.0,
@@ -483,9 +485,10 @@ pub fn render_cursor_overlay(request: CursorOverlayRequest) -> Result<CursorOver
                     _ => continue,
                 };
                 let (mut px, mut py) = (past_sample.x, past_sample.y);
-                if let Some((scale, cx, cy)) =
-                    active_zoom_at(&request.render_state.zoom_regions, past_us as f64 / 1_000_000.0)
-                {
+                if let Some((scale, cx, cy)) = active_zoom_at(
+                    &request.render_state.zoom_regions,
+                    past_us as f64 / 1_000_000.0,
+                ) {
                     let scx = cx.clamp(0.0, 1.0) * request.source_width as f64;
                     let scy = cy.clamp(0.0, 1.0) * request.source_height as f64;
                     px = (px - scx) * scale + scx;
@@ -764,17 +767,7 @@ fn draw_annotation(
             head_size,
         } => {
             draw_arrow(
-                frame,
-                width,
-                height,
-                annotation,
-                request,
-                t_secs,
-                opacity,
-                *x1,
-                *y1,
-                *x2,
-                *y2,
+                frame, width, height, annotation, request, t_secs, opacity, *x1, *y1, *x2, *y2,
                 *head_size,
             );
         }
@@ -985,8 +978,19 @@ fn draw_arrow(
     let base_right_x = base_cx - nx * head_width * 0.5;
     let base_right_y = base_cy - ny * head_width * 0.5;
     draw_triangle_filled(
-        frame, width, height, tip_x, tip_y, base_left_x, base_left_y, base_right_x, base_right_y,
-        sr, sg, sb, alpha,
+        frame,
+        width,
+        height,
+        tip_x,
+        tip_y,
+        base_left_x,
+        base_left_y,
+        base_right_x,
+        base_right_y,
+        sr,
+        sg,
+        sb,
+        alpha,
     );
 }
 
@@ -1039,16 +1043,7 @@ fn draw_image(
             if src_a <= 0.0 {
                 continue;
             }
-            blend_pixel(
-                frame,
-                width,
-                px,
-                py,
-                pixel[0],
-                pixel[1],
-                pixel[2],
-                src_a,
-            );
+            blend_pixel(frame, width, px, py, pixel[0], pixel[1], pixel[2], src_a);
         }
     }
 }
@@ -1361,7 +1356,9 @@ fn sorted_visible_annotations(annotations: &[Annotation]) -> Vec<&Annotation> {
 fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> (f64, f64) {
     let mut uv_x = x;
     let mut uv_y = y;
-    if let Some((scale, center_x, center_y)) = active_zoom_at(&request.render_state.zoom_regions, t_secs) {
+    if let Some((scale, center_x, center_y)) =
+        active_zoom_at(&request.render_state.zoom_regions, t_secs)
+    {
         uv_x = (uv_x - center_x) * scale + center_x;
         uv_y = (uv_y - center_y) * scale + center_y;
     }
@@ -1449,8 +1446,7 @@ fn draw_ellipse(
                 (1.0 - smoothstep(1.0 - edge_px, 1.0, dist)).clamp(0.0, 1.0)
             } else {
                 let stroke_n = stroke / rx.min(ry);
-                (1.0 - smoothstep(stroke_n - edge_px, stroke_n, (dist - 1.0).abs()))
-                    .clamp(0.0, 1.0)
+                (1.0 - smoothstep(stroke_n - edge_px, stroke_n, (dist - 1.0).abs())).clamp(0.0, 1.0)
             };
             blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
         }
@@ -1616,4 +1612,3 @@ fn parse_css_color(value: &str) -> Option<(u8, u8, u8, f64)> {
         .clamp(0.0, 1.0);
     Some((r, g, b, a))
 }
-

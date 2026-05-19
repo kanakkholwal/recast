@@ -515,10 +515,7 @@ fn run_gif_palette_prepass(
     if duration > 0.0 {
         args.extend(["-t".to_string(), format!("{duration:.3}")]);
     }
-    args.extend([
-        "-i".to_string(),
-        source_path.to_string_lossy().to_string(),
-    ]);
+    args.extend(["-i".to_string(), source_path.to_string_lossy().to_string()]);
 
     let vf = build_gif_palette_prepass_filter(options, output_scale_filter);
     args.extend([
@@ -556,7 +553,11 @@ fn run_gif_palette_prepass(
     let stderr_buf_writer = stderr_buf.clone();
     let app_for_emit = app.clone();
     let export_id_for_emit = export_id.to_string();
-    let effective_duration = if duration > 0.0 { duration } else { source_duration };
+    let effective_duration = if duration > 0.0 {
+        duration
+    } else {
+        source_duration
+    };
 
     let stderr_thread = std::thread::Builder::new()
         .name("recast-export-palette-stderr".into())
@@ -709,8 +710,7 @@ pub async fn export_video(
     // will alphamerge it onto the (zoomed) source video before background
     // composition so the rounded corners cut through to the background.
     let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
-    let border_radius_px = border_radius_pct / 100.0
-        * metadata.width.min(metadata.height) as f64;
+    let border_radius_px = border_radius_pct / 100.0 * metadata.width.min(metadata.height) as f64;
     let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
         render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
             .map_err(|e| format!("border-radius mask render failed: {e}"))?
@@ -903,31 +903,30 @@ pub async fn export_video(
     } else {
         None
     };
-    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> =
-        if let Some(ref path) = camera_path {
-            let p = &camera_overlay_settings.default_placement;
-            // Use video_w as the size base so the bubble is square in
-            // screen pixels (matches `aspect-ratio: 1` in the preview).
-            let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
-                .round()
-                .max(2.0) as u32;
-            let bubble_h = bubble_w;
-            // Clamp into the canvas so an out-of-range placement (legacy
-            // project, manual JSON edit) still produces a valid overlay.
-            let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
-            let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
-            let bubble_x = ((canvas_geom.video_x as f64
-                + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
-                .round() as u32)
-                .min(max_x);
-            let bubble_y = ((canvas_geom.video_y as f64
-                + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
-                .round() as u32)
-                .min(max_y);
-            Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
-        } else {
-            None
-        };
+    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> = if let Some(ref path) = camera_path {
+        let p = &camera_overlay_settings.default_placement;
+        // Use video_w as the size base so the bubble is square in
+        // screen pixels (matches `aspect-ratio: 1` in the preview).
+        let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
+            .round()
+            .max(2.0) as u32;
+        let bubble_h = bubble_w;
+        // Clamp into the canvas so an out-of-range placement (legacy
+        // project, manual JSON edit) still produces a valid overlay.
+        let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
+        let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
+        let bubble_x = ((canvas_geom.video_x as f64
+            + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
+            .round() as u32)
+            .min(max_x);
+        let bubble_y = ((canvas_geom.video_y as f64
+            + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
+            .round() as u32)
+            .min(max_y);
+        Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
+    } else {
+        None
+    };
 
     // Pre-render the rounded-rect mask matching the bubble's shape. Square
     // shape needs no mask (mask_input_index stays None and the filter chain
@@ -1032,8 +1031,7 @@ pub async fn export_video(
     // Camera overlay: composited after the watermark so the speaker bubble
     // sits on top of any branding mark and below the annotation blur (which
     // a user might want to apply over their own face).
-    if let (Some(cam_idx), Some((_, bx, by, bw, bh))) =
-        (camera_input_index, camera_bubble.as_ref())
+    if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
         let (new_complex, new_map) = append_camera_overlay_to_complex(
             filter_complex_after_cursor.as_deref(),
@@ -1087,8 +1085,8 @@ pub async fn export_video(
                 let radius = (strength.clamp(0.0, 1.0) * max_dim)
                     .round()
                     .clamp(1.0, 127.0) as u32;
-                let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16)
-                    .unwrap_or(0x000000);
+                let tint_rgb =
+                    u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
                 Some(BlurRegion {
                     x: cx,
                     y: cy,
@@ -1212,10 +1210,7 @@ pub async fn export_video(
             + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
             + watermark_path.is_some() as usize;
-        args.extend([
-            "-i".to_string(),
-            palette_path.to_string_lossy().to_string(),
-        ]);
+        args.extend(["-i".to_string(), palette_path.to_string_lossy().to_string()]);
 
         let pass2_options = GifFilterOptions {
             fps: resolved_fps,

@@ -1,9 +1,11 @@
 <script lang="ts">
   import { page } from "$app/state";
   import AppSidebar from "$components/layout/app-sidebar.svelte";
+  import CornerNotifications from "$components/corner-notifications.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import WhatsNewDialog from "$components/whats-new-dialog.svelte";
   import { config } from "$constants/app";
+  import { updater } from "$lib/stores/updater.svelte";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
   import * as Sidebar from "@recast/ui/sidebar";
   import { onMount } from "svelte";
@@ -13,14 +15,16 @@
   let { children } = $props();
   let routeKey = $derived(page.url.pathname);
 
-  // Show the "What's new" dialog once per release. Skip if the user is already
-  // landing on the dedicated changelog page so we don't double-surface it.
+  // On boot: surface the "What's new" corner card once per release (skip if
+  // the user already landed on the changelog page), and kick off the
+  // background update check. Both render as non-blocking bottom-right cards.
   onMount(() => {
     if (page.url.pathname.startsWith("/whats-new")) {
       whatsNew.markSeen();
-      return;
+    } else {
+      whatsNew.evaluateOnBoot();
     }
-    whatsNew.autoOpenIfStale();
+    updater.init();
   });
 </script>
 
@@ -73,3 +77,4 @@
 </Sidebar.Provider>
 
 <WhatsNewDialog />
+<CornerNotifications />

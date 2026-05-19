@@ -15,7 +15,6 @@ import {
 	Radio,
 	Settings,
 	SlidersHorizontal,
-	Sparkles,
 	Sun,
 } from "@lucide/svelte";
 import { toast } from "@recast/ui/sonner";
@@ -69,16 +68,6 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			keywords: ["settings", "preferences", "config"],
 			action: () => goto("/settings"),
 		},
-		{
-			id: "nav.whats-new",
-			title: "What's New",
-			description: "See the latest release notes",
-			category: "Navigation",
-			icon: Sparkles,
-			keywords: ["changelog", "release", "updates", "notes"],
-			action: () => goto("/whats-new"),
-		},
-
 		// Recording
 		{
 			id: "rec.launch-panel",

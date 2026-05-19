@@ -115,9 +115,7 @@ pub fn spawn_capture_loop(
         .name("recast-capture".into())
         .spawn(move || {
             let mut source = create_capture_source(&target)?;
-            let frame_period = Duration::from_micros(
-                1_000_000_u64 / target_fps.max(1) as u64,
-            );
+            let frame_period = Duration::from_micros(1_000_000_u64 / target_fps.max(1) as u64);
 
             // Wait for the very first frame so the encoder isn't fed an
             // empty pipeline at t=0. DXGI returns the current desktop

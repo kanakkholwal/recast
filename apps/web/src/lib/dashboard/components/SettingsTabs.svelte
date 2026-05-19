@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { cn } from "@recast/ui/utils";
-	import { Cloud, Settings2, User } from "lucide-svelte";
+	import { Cloud, Settings2, User } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { crossfade, fade } from "svelte/transition";
 

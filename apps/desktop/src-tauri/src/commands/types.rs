@@ -136,9 +136,15 @@ pub struct GifSettings {
     pub dither: String,
 }
 
-fn default_gif_quality() -> String { "medium".into() }
-fn default_gif_loop() -> serde_json::Value { serde_json::Value::String("infinite".into()) }
-fn default_gif_dither() -> String { "bayer".into() }
+fn default_gif_quality() -> String {
+    "medium".into()
+}
+fn default_gif_loop() -> serde_json::Value {
+    serde_json::Value::String("infinite".into())
+}
+fn default_gif_dither() -> String {
+    "bayer".into()
+}
 
 impl Default for GifSettings {
     fn default() -> Self {

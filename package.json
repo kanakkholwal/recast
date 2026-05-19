@@ -14,6 +14,8 @@
     "dev:desktop": "turbo dev --filter=recast-desktop",
     "dev:web": "turbo dev --filter=recast-web",
     "build": "turbo build",
+    "build:desktop": "turbo build --filter=recast-desktop",
+    "build:web": "turbo build --filter=recast-web",
     "check": "turbo check",
     "prepare:assets-wallpapers": "node scripts/prepare-backgrounds.mjs",
     "changeset": "changeset",

@@ -79,3 +79,7 @@ pipewire = "0.9"
 # `shm` feature lets us upgrade to XShm later for the perf win without
 # touching Cargo.toml again; we only use plain `GetImage` for MVP.
 x11rb = { version = "0.13", features = ["shm"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

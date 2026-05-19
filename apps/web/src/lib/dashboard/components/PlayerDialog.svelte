@@ -5,7 +5,7 @@
 		formatRelative,
 	} from "$lib/dashboard/format";
 	import type { Recording } from "$lib/dashboard/store.svelte";
-	import { Clock, Cloud, MonitorPlay, Video, X } from "lucide-svelte";
+	import { Clock, Cloud, MonitorPlay, Video, X } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, scale } from "svelte/transition";
 
@@ -20,7 +20,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
 
-<div class="fixed inset-0 z-[100] grid place-items-center p-4 sm:p-8">
+<div class="fixed inset-0 z-100 grid place-items-center p-4 sm:p-8">
 	<button
 		type="button"
 		aria-label="Close player"

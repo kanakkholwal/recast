@@ -19,7 +19,7 @@
 		Pencil,
 		Play,
 		Trash2,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 
 	let {
 		recording,

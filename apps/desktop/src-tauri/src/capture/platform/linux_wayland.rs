@@ -208,13 +208,9 @@ impl WaylandCaptureSource {
         let thread_handle = thread::Builder::new()
             .name("recast-pipewire".into())
             .spawn(move || {
-                if let Err(e) = pipewire_capture_loop(
-                    stream,
-                    width,
-                    height,
-                    frames_for_thread,
-                    stop_for_thread,
-                ) {
+                if let Err(e) =
+                    pipewire_capture_loop(stream, width, height, frames_for_thread, stop_for_thread)
+                {
                     log::error!("pipewire capture loop terminated: {e:#}");
                 }
             })
@@ -319,8 +315,7 @@ fn pipewire_capture_loop(
     let mut pw_guard = PwInitGuard { active: true };
 
     let main_loop = MainLoopRc::new(None).context("failed to create pipewire main loop")?;
-    let context =
-        ContextRc::new(&main_loop, None).context("failed to create pipewire context")?;
+    let context = ContextRc::new(&main_loop, None).context("failed to create pipewire context")?;
     let core = context
         .connect_fd_rc(stream.fd, None)
         .context("failed to connect to pipewire daemon over portal fd")?;
@@ -343,9 +338,13 @@ fn pipewire_capture_loop(
     let _listener = pw_stream
         .add_local_listener_with_user_data(())
         .process(move |stream, _user_data| {
-            let Some(mut buffer) = stream.dequeue_buffer() else { return };
+            let Some(mut buffer) = stream.dequeue_buffer() else {
+                return;
+            };
             let datas = buffer.datas_mut();
-            let Some(data) = datas.first_mut() else { return };
+            let Some(data) = datas.first_mut() else {
+                return;
+            };
 
             // The buffer's chunk metadata tells us the actual valid byte
             // count for this frame, which can be smaller than the mapped
@@ -457,9 +456,7 @@ fn build_format_param(width: u32, height: u32) -> Vec<u8> {
     use pipewire::spa::param::video::VideoFormat;
     use pipewire::spa::param::ParamType;
     use pipewire::spa::pod::serialize::PodSerializer;
-    use pipewire::spa::pod::{
-        ChoiceValue, Object, Property, PropertyFlags, Value,
-    };
+    use pipewire::spa::pod::{ChoiceValue, Object, Property, PropertyFlags, Value};
     use pipewire::spa::utils::{
         Choice, ChoiceEnum, ChoiceFlags, Fraction, Id, Rectangle, SpaTypes,
     };
@@ -521,10 +518,7 @@ fn build_format_param(width: u32, height: u32) -> Vec<u8> {
                     ChoiceEnum::Range {
                         default: Fraction { num: 60, denom: 1 },
                         min: Fraction { num: 0, denom: 1 },
-                        max: Fraction {
-                            num: 240,
-                            denom: 1,
-                        },
+                        max: Fraction { num: 240, denom: 1 },
                     },
                 ))),
             },

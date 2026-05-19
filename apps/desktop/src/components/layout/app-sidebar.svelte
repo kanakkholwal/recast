@@ -9,7 +9,6 @@
     LayoutDashboard,
     Radio,
     Settings,
-    Sparkles,
     SlidersHorizontal,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -41,7 +40,6 @@
     { title: "Recasts", href: "/recasts", icon: Film },
     { title: "Exports", href: "/exports", icon: Download },
     { title: "Profiles", href: "/profiles", icon: SlidersHorizontal },
-    { title: "What's new", href: "/whats-new", icon: Sparkles },
     { title: "Settings", href: "/settings", icon: Settings },
   ];
 

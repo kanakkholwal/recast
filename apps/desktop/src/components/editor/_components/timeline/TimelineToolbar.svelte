@@ -24,7 +24,6 @@
   interface Props {
     store: EditorStore;
     fps: number;
-    duration: number;
     hasTrim: boolean;
     aspectRatioLabel: string;
     frameCount: number;
@@ -48,7 +47,6 @@
   let {
     store,
     fps,
-    duration,
     hasTrim,
     aspectRatioLabel,
     frameCount,
@@ -68,9 +66,6 @@
     onZoomToFit,
     onZoomToSelection,
   }: Props = $props();
-  // duration is part of the formatTimecode contract via store.clipDuration;
-  // also referenced for fps-aware aria fallbacks.
-  void duration;
   let trimHint = `Set trim points to exclude parts of the clip from export, or add focus regions to highlight important moments. You can also ask Trace to suggest focus regions based on where you moved the cursor.`;
 </script>
 

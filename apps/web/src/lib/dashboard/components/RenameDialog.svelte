@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Recording } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
-	import { Check } from "lucide-svelte";
+	import { Check } from "@lucide/svelte";
+	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, scale } from "svelte/transition";
 
@@ -15,7 +16,8 @@
 		onsave: (title: string) => void;
 	} = $props();
 
-	let value = $state(recording.title);
+	// Seed once — the dialog is freshly mounted per rename, so no need to react.
+	let value = $state(untrack(() => recording.title));
 
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -27,7 +29,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
 
-<div class="fixed inset-0 z-[100] grid place-items-center p-4">
+<div class="fixed inset-0 z-100 grid place-items-center p-4">
 	<button
 		type="button"
 		aria-label="Cancel"

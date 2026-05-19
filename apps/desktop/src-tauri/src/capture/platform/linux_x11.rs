@@ -68,12 +68,11 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     // desktop, so these coordinates pass through directly.
     let x = i16::try_from(target.crop.x)
         .context("X11 capture: crop.x out of i16 range — multi-monitor with extreme offset?")?;
-    let y = i16::try_from(target.crop.y)
-        .context("X11 capture: crop.y out of i16 range")?;
+    let y = i16::try_from(target.crop.y).context("X11 capture: crop.y out of i16 range")?;
     let width = u16::try_from(target.crop.width)
         .context("X11 capture: crop.width exceeds u16 — display larger than 65535 px?")?;
-    let height = u16::try_from(target.crop.height)
-        .context("X11 capture: crop.height exceeds u16")?;
+    let height =
+        u16::try_from(target.crop.height).context("X11 capture: crop.height exceeds u16")?;
 
     Ok(Box::new(X11CaptureSource {
         conn,

@@ -3,7 +3,7 @@
 	import { settingsStore } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { Check, Cloud, Database, Eye, EyeOff, Plug } from "lucide-svelte";
+	import { Check, Cloud, Database, Eye, EyeOff, Plug } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly, slide } from "svelte/transition";
 

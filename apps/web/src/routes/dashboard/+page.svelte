@@ -1,18 +1,19 @@
 <script lang="ts">
-	import { formatBytes } from "$lib/dashboard/format";
 	import PlayerDialog from "$lib/dashboard/components/PlayerDialog.svelte";
 	import RecordingCard from "$lib/dashboard/components/RecordingCard.svelte";
 	import RenameDialog from "$lib/dashboard/components/RenameDialog.svelte";
 	import StatCard from "$lib/dashboard/components/StatCard.svelte";
+	import { formatBytes } from "$lib/dashboard/format";
 	import {
-		recordingsStore,
-		settingsStore,
-		type Recording,
-		type RecordingSource,
+	  recordingsStore,
+	  settingsStore,
+	  type Recording,
+	  type RecordingSource,
 	} from "$lib/dashboard/store.svelte";
+	import { Cloud, Film, HardDrive, Search, Upload, Video, X } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
+	import * as Select from "@recast/ui/select";
 	import { toast } from "@recast/ui/sonner";
-	import { Cloud, Film, HardDrive, Search, Upload, Video, X } from "lucide-svelte";
 	import { flip } from "svelte/animate";
 	import { cubicOut } from "svelte/easing";
 	import { fly, scale } from "svelte/transition";
@@ -21,7 +22,7 @@
 
 	let query = $state("");
 	let activeFilter = $state<RecordingSource | "all">("all");
-	let sortKey = $state<SortKey>("recent");
+	let sortKey = $state<string>("recent");
 
 	let playing = $state<Recording | null>(null);
 	let renaming = $state<Recording | null>(null);
@@ -69,6 +70,9 @@
 	]);
 
 	const hasRecordings = $derived(recordingsStore.items.length > 0);
+	const sortLabel = $derived(
+		sorts.find((s) => s.value === sortKey)?.label ?? "Sort",
+	);
 
 	function readDuration(url: string): Promise<number> {
 		return new Promise((resolve) => {
@@ -221,15 +225,19 @@
 			{/each}
 		</div>
 
-		<select
-			bind:value={sortKey}
-			aria-label="Sort recordings"
-			class="rounded-lg border border-border-low/60 bg-card/40 px-3 py-2 text-xs font-semibold text-foreground outline-none transition-colors hover:border-border-low focus:border-primary/60"
-		>
-			{#each sorts as s (s.value)}
-				<option value={s.value}>{s.label}</option>
-			{/each}
-		</select>
+		<Select.Root type="single" bind:value={sortKey}>
+			<Select.Trigger
+				aria-label="Sort recordings"
+				class="w-40 border-border-low/60 bg-card/40 text-xs font-semibold hover:border-border-low"
+			>
+				{sortLabel}
+			</Select.Trigger>
+			<Select.Content class="p-1">
+				{#each sorts as s (s.value)}
+					<Select.Item value={s.value} label={s.label}>{s.label}</Select.Item>
+				{/each}
+			</Select.Content>
+		</Select.Root>
 	</div>
 </div>
 

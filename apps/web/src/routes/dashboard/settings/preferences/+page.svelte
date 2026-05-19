@@ -3,7 +3,7 @@
 	import { recordingsStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { RotateCcw, Settings2 } from "lucide-svelte";
+	import { RotateCcw, Settings2 } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

@@ -4,7 +4,7 @@
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import Github from "@lucide/svelte/icons/github";
-	import { ArrowRight } from "lucide-svelte";
+	import { ArrowRight } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

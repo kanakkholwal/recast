@@ -15,7 +15,7 @@
 		LogOut,
 		Settings,
 		User,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 	import type { ComponentProps } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { crossfade, fade, fly } from "svelte/transition";

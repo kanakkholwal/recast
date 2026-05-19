@@ -316,9 +316,8 @@ pub fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), 
         // pointer to be version-agnostic.
         let hwnd = HWND(hwnd_raw.0 as *mut std::ffi::c_void);
         unsafe {
-            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE).map_err(|e| {
-                format!("SetWindowDisplayAffinity failed for '{label}': {e}")
-            })?;
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
+                .map_err(|e| format!("SetWindowDisplayAffinity failed for '{label}': {e}"))?;
         }
         log::info!("excluded window '{label}' from screen capture");
         Ok(())
