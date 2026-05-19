@@ -9,6 +9,7 @@
     renameFile,
     type RecordingEntry,
   } from "$lib/ipc";
+  import { morph } from "$lib/morph";
   import {
     Check,
     Clock,
@@ -33,10 +34,10 @@
   import { ButtonGroup } from "@recast/ui/button-group";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
+  import * as Select from "@recast/ui/select";
   import { Skeleton } from "@recast/ui/skeleton";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
-  import { morph } from "$lib/morph";
   import { listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
@@ -381,40 +382,42 @@
             {selectMode ? "Done" : "Select"}
           </Button>
 
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger>
-              {#snippet child({ props })}
-                <Button
-                  {...props as Record<string, unknown>}
-                  variant="ghost"
-                  size="xs"
-                  class="h-7 gap-1 text-[11px] text-muted-foreground hover:text-foreground"
-                >
-                  <SortAsc size={11} />
-                  {sort === "recent"
-                    ? "Recent"
-                    : sort === "name"
-                      ? "Name"
-                      : "Size"}
-                </Button>
-              {/snippet}
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Content align="end" size="sm" class="w-36">
-              <DropdownMenu.Item onSelect={() => (sort = "recent")}>
-                <Clock class="text-muted-foreground" /> Recent
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => (sort = "name")}>
-                <SortAsc class="text-muted-foreground" /> Name
-              </DropdownMenu.Item>
-              <DropdownMenu.Item onSelect={() => (sort = "size")}>
-                <Film class="text-muted-foreground" /> Size
-              </DropdownMenu.Item>
-            </DropdownMenu.Content>
-          </DropdownMenu.Root>
+          <Select.Root
+            type="single"
+            value={sort}
+            onValueChange={(v: string) => {
+              if (v === "recent" || v === "name" || v === "size") sort = v;
+            }}
+          >
+            <Select.Trigger
+              size="sm"
+              class="h-7 gap-1 rounded-lg border-border/50 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+              aria-label="Sort recordings"
+            >
+              <span data-slot="select-value" class="flex items-center gap-1">
+                <SortAsc size={11} />
+                {sort === "recent" ? "Recent" : sort === "name" ? "Name" : "Size"}
+              </span>
+            </Select.Trigger>
+            <Select.Content align="end" sideOffset={6} class="w-36 p-1">
+              <Select.Item value="recent" label="Recent" class="text-[11.5px]">
+             <Clock class="size-3 text-muted-foreground" /> 
+             Recent
+              </Select.Item>
+              <Select.Item value="name" label="Name" class="text-[11.5px]">
+                <SortAsc class="size-3 text-muted-foreground" />
+                 Name
+              </Select.Item>
+              <Select.Item value="size" label="Size" class="text-[11.5px]">
+                <Film class="size-3 text-muted-foreground" />
+                 Size
+              </Select.Item>
+            </Select.Content>
+          </Select.Root>
 
           <ButtonGroup>
             <Button
-              variant={view === "grid" ? "secondary" : "outline"}
+              variant={view === "grid" ? "secondary" : "ghost"}
               size="icon-sm"
               onclick={() => (view = "grid")}
               title="Grid view"
@@ -422,7 +425,7 @@
               <Grid3x3 size={12} />
             </Button>
             <Button
-              variant={view === "list" ? "secondary" : "outline"}
+              variant={view === "list" ? "secondary" : "ghost"}
               size="icon-sm"
               onclick={() => (view = "list")}
               title="List view"

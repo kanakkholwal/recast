@@ -312,6 +312,8 @@ export interface ZoomSuggestion {
 	x: number;
 	y: number;
 	reason: ZoomSuggestionReason;
+	/** Confidence in [0,1] — how strongly this moment warrants a zoom. */
+	score?: number;
 }
 
 /**

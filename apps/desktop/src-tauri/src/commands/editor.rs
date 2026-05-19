@@ -2062,9 +2062,12 @@ pub fn get_recoverable_sessions() -> Vec<crate::project::autosave::AutosaveState
 }
 
 /// Analyse a captured cursor track and return the list of moments that would
-/// make good auto-focus candidates (mouse-down events + settle-after-motion).
-/// Reuses the existing `detect_zoom_triggers` helper — falls back to on-the-fly
-/// recomputation if the project was saved before trigger persistence landed.
+/// make good auto-focus candidates (scored, clustered, density-limited).
+///
+/// Always recomputes via `detect_zoom_triggers` rather than trusting the
+/// `zoom_triggers` persisted in the track — clips recorded before a detector
+/// improvement would otherwise keep serving stale (often far noisier)
+/// suggestions. Detection is cheap (µs over the in-memory track).
 #[tauri::command]
 pub fn suggest_zoom_regions(
     cursor_path: String,
@@ -2072,9 +2075,6 @@ pub fn suggest_zoom_regions(
     let bytes = fs::read(Path::new(&cursor_path)).map_err(|e| format!("read cursor track: {e}"))?;
     let track: crate::cursor::CursorTrack =
         serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
-    if !track.zoom_triggers.is_empty() {
-        return Ok(track.zoom_triggers);
-    }
     Ok(crate::cursor::smoothing::detect_zoom_triggers(
         &track.samples,
         &track.clicks,
