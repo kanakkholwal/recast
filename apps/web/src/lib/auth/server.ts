@@ -1,3 +1,4 @@
+import { dev } from "$app/environment";
 import { env } from "$env/dynamic/private";
 import {
 	checkout,
@@ -7,41 +8,61 @@ import {
 } from "@polar-sh/better-auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { tryGetPolarClient } from "$lib/billing/polar";
+import { magicLink } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
+import { sendEmail } from "$lib/auth/email";
 import { polarProductIdFor } from "$lib/billing/plans";
+import { tryGetPolarClient } from "$lib/billing/polar";
 import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
 import { getDb } from "$lib/db";
+import { user as userTable } from "$lib/db/schema";
 import * as schema from "$lib/db/schema";
 
 /**
- * Better Auth instance — lazy.
+ * Better Auth instance — singleton, lazy-built on first request so the
+ * Drizzle adapter doesn't open a Postgres connection at module load time
+ * (matters for `pnpm build` in environments where DATABASE_URL is set at
+ * runtime, not build time).
  *
- * Loading is gated on DATABASE_URL + BETTER_AUTH_SECRET because the Drizzle
- * adapter requires a real DB to construct. Until both are set, every server
- * helper (`hooks.server.ts`, the catch-all auth route, etc.) treats auth as
- * "not configured" and lets the placeholder client (src/lib/auth/client.ts)
- * keep driving the dev UI.
- *
- * Wiring expectation:
- *   1. Set DATABASE_URL, BETTER_AUTH_SECRET, BETTER_AUTH_URL in .env
- *   2. Run `pnpm db:push` (or `db:generate` + `db:migrate`) to create tables
- *   3. For billing: set POLAR_ACCESS_TOKEN + POLAR_WEBHOOK_SECRET
- *      + POLAR_PRODUCT_ID_PRO
- *
- * Once env is set, swap the client at src/lib/auth/client.ts to:
- *   import { createAuthClient } from "better-auth/svelte";
- *   import { polarClient } from "@polar-sh/better-auth/client";
- *   export const authClient = createAuthClient({ plugins: [polarClient()] });
+ * Required env: DATABASE_URL, BETTER_AUTH_SECRET.
+ * Optional env: BETTER_AUTH_URL, GITHUB_*, GOOGLE_*, POLAR_*, RESEND_API_KEY.
  */
 
 function createAuth() {
+	const secret = env.BETTER_AUTH_SECRET;
+	if (!secret) {
+		throw new Error(
+			"BETTER_AUTH_SECRET is not set. Generate one with `openssl rand -base64 32`.",
+		);
+	}
+
 	return betterAuth({
-		secret: env.BETTER_AUTH_SECRET as string,
+		secret,
 		baseURL: env.BETTER_AUTH_URL ?? env.PUBLIC_APP_URL,
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
+		// Custom field exposed on the user row — see src/lib/db/schema/auth.ts.
+		user: {
+			additionalFields: {
+				role: { type: "string", defaultValue: "active", required: false },
+			},
+		},
 		emailAndPassword: {
 			enabled: true,
+			// In production, public sign-up is closed — the waitlist endpoint
+			// creates user rows directly. Dev keeps signup open for iteration.
+			disableSignUp: !dev,
 			requireEmailVerification: false,
+			sendResetPassword: async ({ user, url }) => {
+				if (await isOnWaitlist(user.email)) return;
+				await sendEmail({
+					to: user.email,
+					subject: "Reset your Recast password",
+					text:
+						`Hi${user.name ? ` ${user.name}` : ""},\n\n` +
+						`Click the link below to set a new password:\n${url}\n\n` +
+						`If you didn't ask for this, you can ignore the email.`,
+				});
+			},
 		},
 		socialProviders: buildSocialProviders(),
 		plugins: buildPlugins(),
@@ -52,15 +73,18 @@ type AuthInstance = ReturnType<typeof createAuth>;
 
 let cached: AuthInstance | null = null;
 
-export function getAuth(): AuthInstance | null {
+export function getAuth(): AuthInstance {
 	if (cached) return cached;
-	if (!env.DATABASE_URL || !env.BETTER_AUTH_SECRET) return null;
 	cached = createAuth();
 	return cached;
 }
 
 function buildSocialProviders() {
 	const providers: Record<string, { clientId: string; clientSecret: string }> = {};
+	// Social sign-in is dev-only for now — production gates this at the UI
+	// level (SocialButtons.svelte) and here so misconfigured client IDs
+	// can't accidentally enable a path.
+	if (!dev) return providers;
 	if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
 		providers.github = {
 			clientId: env.GITHUB_CLIENT_ID,
@@ -77,52 +101,77 @@ function buildSocialProviders() {
 }
 
 function buildPlugins() {
+	const linkPlugin = magicLink({
+		// Existing-users-only — waitlist sign-up is the only way to get a row.
+		disableSignUp: true,
+		expiresIn: 60 * 10,
+		sendMagicLink: async ({ email, url }) => {
+			if (await isOnWaitlist(email)) return;
+			await sendEmail({
+				to: email,
+				subject: "Your Recast sign-in link",
+				text:
+					`Click the link below to sign in to Recast:\n\n${url}\n\n` +
+					`The link expires in 10 minutes. If you didn't ask for it, ignore this email.`,
+			});
+		},
+	});
+
 	const polarClient = tryGetPolarClient();
 	const proProductId = polarProductIdFor("pro");
 	const webhookSecret = env.POLAR_WEBHOOK_SECRET;
 
-	// All-or-nothing: the Polar plugin needs the client, a product to sell,
-	// and a webhook secret to verify incoming events. Skip the plugin entirely
-	// if any piece is missing so the auth surface still mounts cleanly.
-	if (!polarClient || !proProductId || !webhookSecret) return [];
+	const polarPlugins =
+		polarClient && proProductId && webhookSecret
+			? [
+					polar({
+						client: polarClient,
+						createCustomerOnSignUp: true,
+						use: [
+							checkout({
+								products: [{ productId: proProductId, slug: "pro" }],
+								successUrl: "/dashboard?upgraded=1",
+								authenticatedUsersOnly: true,
+							}),
+							portal(),
+							webhooks({
+								secret: webhookSecret,
+								onSubscriptionActive: async (payload) =>
+									handleSubscriptionEvent(payload),
+								onSubscriptionUpdated: async (payload) =>
+									handleSubscriptionEvent(payload),
+								onSubscriptionCanceled: async (payload) => {
+									const userId = extractUserId(payload);
+									if (userId) await downgradeToFree(userId);
+								},
+								onSubscriptionRevoked: async (payload) => {
+									const userId = extractUserId(payload);
+									if (userId) await downgradeToFree(userId);
+								},
+							}),
+						],
+					}),
+				]
+			: [];
 
-	return [
-		polar({
-			client: polarClient,
-			createCustomerOnSignUp: true,
-			use: [
-				checkout({
-					products: [{ productId: proProductId, slug: "pro" }],
-					successUrl: "/dashboard?upgraded=1",
-					authenticatedUsersOnly: true,
-				}),
-				portal(),
-				webhooks({
-					secret: webhookSecret,
-					onSubscriptionActive: async (payload) =>
-						handleSubscriptionEvent(payload),
-					onSubscriptionUpdated: async (payload) =>
-						handleSubscriptionEvent(payload),
-					onSubscriptionCanceled: async (payload) => {
-						const userId = extractUserId(payload);
-						if (userId) await downgradeToFree(userId);
-					},
-					onSubscriptionRevoked: async (payload) => {
-						const userId = extractUserId(payload);
-						if (userId) await downgradeToFree(userId);
-					},
-				}),
-			],
-		}),
-	];
+	return [linkPlugin, ...polarPlugins];
 }
 
 /**
- * Polar webhook payloads carry the subscription record under `.data`. The
- * pieces we actually need (customer id, subscription id, status, period
- * end) sit in well-known places — extract defensively so a Polar payload
- * tweak doesn't break our sync.
+ * Returns true if the user with this email exists and is still on the
+ * waitlist. Magic link + password reset both short-circuit on this so
+ * waitlisted users can't slip in via either path before being activated.
  */
+async function isOnWaitlist(email: string): Promise<boolean> {
+	const db = getDb();
+	const rows = await db
+		.select({ role: userTable.role })
+		.from(userTable)
+		.where(eq(userTable.email, email))
+		.limit(1);
+	return rows[0]?.role === "waitlist";
+}
+
 async function handleSubscriptionEvent(payload: unknown): Promise<void> {
 	const data = (payload as { data?: Record<string, unknown> })?.data ?? {};
 	const userId = extractUserId(payload);
@@ -147,7 +196,6 @@ async function handleSubscriptionEvent(payload: unknown): Promise<void> {
 		userId,
 		polarCustomerId,
 		polarSubscriptionId,
-		// We only sell one paid plan today — anything active maps to "pro".
 		plan: "pro",
 		status,
 		currentPeriodEnd,
@@ -157,7 +205,6 @@ async function handleSubscriptionEvent(payload: unknown): Promise<void> {
 
 function extractUserId(payload: unknown): string | null {
 	const data = (payload as { data?: Record<string, unknown> })?.data ?? {};
-	// @polar-sh/better-auth sets `customerExternalId` matching our user.id.
 	const v =
 		data.customerExternalId ??
 		data.customer_external_id ??

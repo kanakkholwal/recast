@@ -29,11 +29,16 @@
 //!   N" device. Multi-monitor users who selected a secondary display in
 //!   the in-app picker get the primary instead. Mapping xcap monitor
 //!   IDs to AVFoundation indices is a follow-up.
-//! - **No region capture.** `target.crop.{x,y}` are ignored;
-//!   AVFoundation captures the whole screen and `-vf scale=W:H` resizes
-//!   to the requested dims. Cropping in software is straightforward
-//!   (`-vf crop=...,scale=...`) but the picker doesn't surface
-//!   region+display selection yet on macOS.
+//! - **Retina coordinate scaling.** Region / window crops use the
+//!   coordinates the in-app picker (xcap) reports. On Apple Silicon
+//!   Macs with Retina scaling, xcap may report logical coordinates
+//!   while AVFoundation delivers in physical pixels (2× on standard
+//!   Retina). When that happens the cropped region lands in the wrong
+//!   place. The encoder still gets a correctly-sized frame because of
+//!   the trailing `scale` step, so the recording is never visually
+//!   broken — just possibly off-position. Proper fix would query
+//!   `CGDisplayPixelsWide` / `CGDisplayBounds` to compute the scale
+//!   factor before cropping.
 //! - **Permissions.** First record requires Screen Recording consent in
 //!   System Settings → Privacy & Security. FFmpeg will spawn but
 //!   produce zero frames until granted; the encoder's empty-output
@@ -63,7 +68,13 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
          ensure Screen Recording is granted in System Settings → \
          Privacy & Security and that FFmpeg has avfoundation support",
     )?;
-    let source = MacosCaptureSource::start(screen_index, target.crop.width, target.crop.height)?;
+    let source = MacosCaptureSource::start(
+        screen_index,
+        target.crop.x.max(0) as u32,
+        target.crop.y.max(0) as u32,
+        target.crop.width,
+        target.crop.height,
+    )?;
     Ok(Box::new(source))
 }
 
@@ -76,7 +87,13 @@ struct MacosCaptureSource {
 }
 
 impl MacosCaptureSource {
-    fn start(screen_index: u32, width: u32, height: u32) -> Result<Self> {
+    fn start(
+        screen_index: u32,
+        crop_x: u32,
+        crop_y: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<Self> {
         // The pacer in `recording/pipeline.rs` runs at a fixed
         // `target_fps`. Asking AVFoundation for a slightly higher rate
         // (60) leaves slack for the pacer's MAX_DRAIN to pick the
@@ -86,9 +103,28 @@ impl MacosCaptureSource {
         // capture audio here (audio comes from `audio/platform/ffmpeg_unix.rs`),
         // so the audio side stays empty.
         let input = format!("{screen_index}:");
-        // Force the output frame geometry to match what the encoder
-        // expects, regardless of the screen's native resolution.
-        let scale_filter = format!("scale={width}:{height}");
+        // Bug fix (Mac tester report — "lights the whole window"): the
+        // previous filter was `scale=W:H` only, which made AVFoundation
+        // capture the *entire display* and then squish it down to the
+        // selected region's dimensions. A user picking a window or a
+        // region therefore got the whole desktop crammed into the
+        // recording frame, which reads as "the whole window lights up"
+        // in the playback.
+        //
+        // Fix: `crop=W:H:X:Y` selects the actual pixel rectangle the
+        // user wanted, then the trailing `scale=W:H` is a defensive
+        // identity on the common path but rescues the output when the
+        // capture geometry doesn't exactly match (Retina, multi-monitor
+        // virtual desktop, etc.). The scale step is cheap when the
+        // input already equals the target — FFmpeg's swscale fast-
+        // paths the no-op.
+        //
+        // For full-display capture, crop_x and crop_y are zero and
+        // width/height match the full screen — the crop filter is
+        // effectively a passthrough.
+        let filter = format!(
+            "crop={width}:{height}:{crop_x}:{crop_y},scale={width}:{height}"
+        );
         let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
         command
             .args([
@@ -108,7 +144,7 @@ impl MacosCaptureSource {
                 "-i",
                 &input,
                 "-vf",
-                &scale_filter,
+                &filter,
                 "-pix_fmt",
                 "bgra",
                 "-f",
@@ -219,27 +255,18 @@ fn read_child_stderr(child: &mut Child) -> String {
 }
 
 /// First AVFoundation "Capture screen N" device index. Cached for the
-/// process lifetime because the listing is stable and the FFmpeg probe
-/// it runs costs ~200 ms cold.
+/// process lifetime — the underlying device listing is shared with the
+/// camera and audio-loopback probes via
+/// `ffmpeg::cached_avfoundation_devices`, so the FFmpeg listing spawn
+/// runs at most once per app launch regardless of which subsystem
+/// needs it first.
 fn first_screen_index() -> Result<u32> {
     static CACHED: OnceLock<Option<u32>> = OnceLock::new();
     let cached = CACHED.get_or_init(|| {
-        let output = Command::new(crate::ffmpeg::ffmpeg_path())
-            .args([
-                "-hide_banner",
-                "-f",
-                "avfoundation",
-                "-list_devices",
-                "true",
-                "-i",
-                "",
-            ])
-            .stdout(Stdio::null())
-            .stderr(Stdio::piped())
-            .stdin(Stdio::null())
-            .output()
-            .ok()?;
-        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = crate::ffmpeg::cached_avfoundation_devices();
+        if stderr.is_empty() {
+            return None;
+        }
         let mut in_video = false;
         for line in stderr.lines() {
             if line.contains("video devices:") {

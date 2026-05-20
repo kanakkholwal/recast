@@ -4,13 +4,12 @@ import postgres from "postgres";
 import * as schema from "./schema";
 
 /**
- * Lazy Postgres client. We don't open a connection at module load so the dev
- * server still boots when DATABASE_URL is missing — the auth UI placeholder
- * keeps working without persistence until you wire a real database.
+ * Postgres client — lazy on first call, cached afterward. Throws if
+ * `DATABASE_URL` isn't set; auth and the API surface are mandatory now, so
+ * misconfig should fail loudly rather than silently degrade.
  *
- * `prepare: false` matches Neon / pgbouncer's transaction-pooled mode; safe
- * default for any Postgres host. Drop it once you switch to a dedicated
- * connection pool.
+ * `prepare: false` is compatible with Neon / pgbouncer's transaction-pooled
+ * mode. Drop it on a dedicated pool if you switch hosts.
  */
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
@@ -28,13 +27,6 @@ export function getDb(): Db {
 	const client = postgres(url, { prepare: false });
 	cached = drizzle(client, { schema });
 	return cached;
-}
-
-/** Returns the singleton db if env is configured, otherwise null. Use this
- *  from request handlers that should 503 gracefully instead of throwing. */
-export function tryGetDb(): Db | null {
-	if (!env.DATABASE_URL) return null;
-	return getDb();
 }
 
 export { schema };

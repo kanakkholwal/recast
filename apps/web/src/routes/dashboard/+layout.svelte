@@ -7,14 +7,10 @@
 
 	let { children, data } = $props();
 
-	// Hydrate the dashboard's local store with the real signed-in user when
-	// auth is wired. In placeholder mode (`data.user === null`) we keep
-	// whatever's in localStorage so the dev experience is untouched.
+	// Hydrate the dashboard's local store with the real signed-in user.
 	onMount(() => {
-		if (data?.user) {
-			settingsStore.value.profile.name = data.user.name || data.user.email;
-			settingsStore.value.profile.email = data.user.email;
-		}
+		settingsStore.value.profile.name = data.user.name || data.user.email;
+		settingsStore.value.profile.email = data.user.email;
 	});
 </script>
 

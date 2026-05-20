@@ -12,6 +12,12 @@ export const user = pgTable("user", {
 	email: text("email").notNull().unique(),
 	emailVerified: boolean("email_verified").notNull().default(false),
 	image: text("image"),
+	/**
+	 * Application role. `waitlist` users have a row but no credentials —
+	 * magic link + password reset are gated until an admin flips this to
+	 * `active`. Surfaced to Better Auth via `additionalFields` in server.ts.
+	 */
+	role: text("role").notNull().default("active"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

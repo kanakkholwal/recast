@@ -1302,6 +1302,15 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	/** Wipe all dismissed silence ranges so the next detection pass surfaces
+	 *  every candidate again. Used by the popover's "Reset dismissed" button
+	 *  when the user wants to reconsider previously-rejected suggestions. */
+	function clearDismissedSilences() {
+		if (dismissedSilences.length === 0) return;
+		dismissedSilences = [];
+		isDirty = true;
+	}
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1689,6 +1698,7 @@ export function createEditorStore() {
 		updateCut,
 		mergeCuts,
 		dismissSilence,
+		clearDismissedSilences,
 		addAnnotation,
 		updateAnnotation,
 		removeAnnotation,

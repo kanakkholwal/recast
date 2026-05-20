@@ -1,3 +1,6 @@
 {
-	"recommendations": ["svelte.svelte-vscode"]
+	"recommendations": [
+		"svelte.svelte-vscode"
+	],
+	"js/ts.tsdk.path": "node_modules\\typescript\\lib"
 }

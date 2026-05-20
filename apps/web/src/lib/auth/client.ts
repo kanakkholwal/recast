@@ -1,30 +1,30 @@
 import { polarClient } from "@polar-sh/better-auth";
+import { magicLinkClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/svelte";
 
 /**
- * Better Auth client. Backed by the server at /api/auth/* (mounted by
- * src/routes/api/auth/[...all]/+server.ts, configured in src/lib/auth/server.ts).
+ * Better Auth client. Backed by /api/auth/* (mounted by
+ * src/routes/api/auth/[...all]/+server.ts, configured in
+ * src/lib/auth/server.ts).
  *
- * The Polar client plugin adds `authClient.checkout({ slug: "pro" })` and
- * `authClient.customer.portal()` for upgrade flows.
+ * Methods we use:
+ *   authClient.signIn.email({ email, password, rememberMe })
+ *   authClient.signIn.magicLink({ email, callbackURL })
+ *   authClient.signIn.social({ provider, callbackURL })   // dev only
+ *   authClient.signOut()
+ *   authClient.requestPasswordReset({ email, redirectTo })
+ *   authClient.resetPassword({ newPassword, token })
  *
- * Every call returns `{ data, error }` — callers handle navigation/toasts
- * themselves. Examples:
- *
- *   const { error } = await authClient.signIn.email({ email, password });
- *   if (error) toast.error(error.message);
- *   else goto("/dashboard");
- *
- *   await authClient.signOut();   // session cleared — navigate manually
+ * Polar (billing) adds:
+ *   authClient.checkout({ slug: "pro" })
+ *   authClient.customer.portal()
  *
  * Reactive session: `authClient.useSession()` returns a Svelte store with
- * `data` / `isPending` / `error` for components that need to know who's
- * signed in.
+ * `data` / `isPending` / `error`.
  */
 export const authClient = createAuthClient({
-	plugins: [polarClient()],
+	plugins: [magicLinkClient(), polarClient()],
 });
 
-/** Providers we expose social buttons for. Add to `authClient` provider list
- *  in `src/lib/auth/server.ts` when expanding. */
+/** Providers we expose social buttons for (dev only). */
 export type SocialProvider = "github" | "google";

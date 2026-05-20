@@ -14,11 +14,12 @@
 
 | Subsystem | Windows | Linux | macOS |
 |---|---|---|---|
-| Screen capture | ✅ DXGI Desktop Duplication | ⚠️ Wayland (portal+PipeWire) & X11 written, **untested** | ❌ xcap fallback only (slow, per-frame reconnect) |
-| System audio (loopback) | ✅ WASAPI | ❌ stub — writes silence | ❌ stub — writes silence |
-| Microphone | ✅ WASAPI | ❌ stub — writes silence | ❌ stub — writes silence |
-| Camera / webcam | ✅ FFmpeg DirectShow | ❌ stub — returns error | ❌ stub — returns error |
-| Cursor sampling | ✅ Win32 GetCursorPos | ❌ stub — returns `None` | ❌ stub — returns `None` |
+| Screen capture | ✅ DXGI Desktop Duplication | ⚠️ Wayland (portal+PipeWire, F1 fix landed) & X11 written, awaiting hardware test | ✅ FFmpeg AVFoundation (replaces xcap) |
+| System audio (loopback) | ✅ WASAPI | ✅ FFmpeg pulse `.monitor` (silence fallback if no PA) | ⚠️ BlackHole/Soundflower/Loopback/VB-Cable if installed; silence + log otherwise. SCKit native loopback is scaffolded but **deferred pending API verification** (see below) |
+| Microphone | ✅ WASAPI | ✅ FFmpeg pulse `default` | ✅ FFmpeg avfoundation `:0` |
+| Camera / webcam | ✅ FFmpeg DirectShow | ✅ FFmpeg V4L2 | ✅ FFmpeg AVFoundation |
+| Cursor sampling | ✅ Win32 GetCursorPos | ✅ device_query (xcb) | ✅ device_query (CoreGraphics) |
+| Reveal in file manager | ✅ `explorer /select,` | ✅ D-Bus `FileManager1.ShowItems` + xdg-open fallback | ✅ `open -R` |
 | Audio device list | ✅ WASAPI enumerate | ❌ empty list | ❌ empty list |
 | Camera device list | ✅ FFmpeg `-list_devices` | ❌ empty list | ❌ empty list |
 | Window capture-exclusion | ✅ `SetWindowDisplayAffinity` | ❌ no-op | ❌ no-op |
@@ -72,60 +73,159 @@ Ordered by **value-per-effort** — cheapest, highest-confidence wins first.
 - **Exit criteria:** Linux screen recording verified at target FPS on both
   session types.
 
-### Phase 2 — Cursor sampling *(low effort, big UX payoff)*
-- macOS: `cursor/platform/macos.rs` — `CGEventSource` mouse location +
-  `CGEventSourceButtonState` for click state.
-- Linux: `cursor/platform/linux.rs` — X11 `XQueryPointer` (via `x11rb`);
-  Wayland has no global pointer query, so fall back to capturing pointer
-  position from the PipeWire stream metadata or accept no cursor track on
-  Wayland (document the limitation).
-- Update `cursor/platform/mod.rs` dispatch.
-- **Exit criteria:** zoom-trigger / idle detection works on macOS & X11.
+### Phase 2 — Cursor sampling *(done 2026-05-19)*
+Landed via a single shared file `cursor/platform/device_query_impl.rs`
+backed by the `device_query` crate (CoreGraphics on macOS, xcb on Linux).
+Dispatched from `cursor/platform/mod.rs` for `target_os = "macos"` and
+`"linux"`; the existing `fallback.rs` stays for other targets. Pointer
+state is sampled at 125 Hz by `cursor::spawn_cursor_capture`, identical to
+the Windows backend's contract.
 
-### Phase 3 — Camera capture *(medium effort, reuses FFmpeg)*
-- macOS: FFmpeg `-f avfoundation` input; enumerate via
-  `-f avfoundation -list_devices true`.
-- Linux: FFmpeg `-f v4l2` input; enumerate `/dev/video*`.
-- Replace `camera/platform/fallback.rs` error stub with `macos.rs` /
-  `linux.rs` that mirror `windows.rs` (DirectShow) structure.
-- Wire device enumeration in `commands/system.rs`.
-- **Exit criteria:** webcam overlay records on all platforms.
+**Caveats** (documented in the impl file):
+- No cursor *visibility* signal — `device_query` doesn't expose
+  `CGCursorIsVisible` / X11 hide state, so `visible` is always `true`.
+  The cursor capture loop's frame-bounds check still hides the cursor
+  when it leaves the recorded area, so editor behaviour stays correct.
+- On Wayland, pointer queries go through XWayland (present on every
+  mainstream Wayland distro). Coords match the compositor 1:1 at
+  integer scaling; under HiDPI / fractional scaling the editor's
+  *stylized* cursor may be slightly offset from the user's actual
+  cursor. The recording itself shows the cursor correctly because the
+  portal stream uses `CursorMode::Embedded`. True Wayland-native
+  tracking (libei or PipeWire cursor metadata) is the long-term fix.
+- `DeviceState` is cached in `thread_local!` so the X11/CoreGraphics
+  handle is opened once, not per-sample.
 
-### Phase 4 — Audio capture *(high effort, the hard part)*
-- macOS system audio: macOS has **no built-in loopback**. Options:
-  (a) `ScreenCaptureKit` audio tap (macOS 13+, no extra install — preferred);
-  (b) ship/instruct a virtual device (BlackHole). Recommend ScreenCaptureKit.
-- macOS microphone: `AVCaptureSession` / CoreAudio `AudioUnit`.
-- Linux system audio + mic: PipeWire — capture an audio node the same way
-  `linux_wayland.rs` consumes the video stream (the portal can also grant
-  audio). ALSA/PulseAudio fallback for non-PipeWire systems.
-- Replace `audio/platform/fallback.rs` stubs; wire device enumeration.
-- **Exit criteria:** real system audio + mic tracks on macOS & Linux.
+**Exit criteria:** zoom-trigger / idle detection works on macOS and Linux
+X11 — verified once CI compile-checks the build and a real machine
+records a session.
 
-### Phase 5 — macOS screen capture *(high effort)*
-- Implement `capture/platform/macos.rs` using **ScreenCaptureKit**
-  (`SCStream`) — the modern, performant API (macOS 12.3+). Drop the xcap
-  fallback for macOS.
-- Coordinate with Phase 4: ScreenCaptureKit delivers video **and** audio in
-  one stream, so Phases 4 (macOS) and 5 may be done together.
-- **Exit criteria:** macOS screen recording at target FPS, no xcap.
+### Phase 3 — Camera capture *(done 2026-05-19)*
+Landed as one shared file
+[`camera/platform/ffmpeg_unix.rs`](../src-tauri/src/camera/platform/ffmpeg_unix.rs)
+covering macOS (AVFoundation) and Linux (V4L2). Mirrors the existing
+`windows.rs` thread/stop-flag/graceful-stop structure exactly so the
+upstream `PlatformCameraSession` contract is unchanged. Same 1280×720@30
+defaults, same MP4 sanity check, same `q`-then-kill shutdown sequence.
 
-### Phase 6 — OS integration polish *(low effort, scattered)*
-- Window capture-exclusion: macOS `NSWindow.sharingType = .none`; Linux —
-  no portable API, leave no-op + document.
-- Reveal-in-explorer: macOS `open -R`; Linux `xdg-open` on parent dir (or
-  D-Bus `org.freedesktop.FileManager1.ShowItems` for true select).
-- Permissions UX: macOS requires Screen Recording, Microphone, and Camera
-  TCC prompts — add first-run permission checks and a settings deep-link
-  (`x-apple.systempreferences:`). Linux portal handles its own consent.
+Device resolution falls back to the first available device when the JS
+panel sends "Default"/empty (matches the Windows path). Listing logic:
+- macOS — parses FFmpeg's `-list_devices true` stderr, skips the
+  "Capture screen N" pseudo-devices.
+- Linux — picks the lowest-numbered `/dev/video*` node up to 16.
 
-### Phase 7 — Packaging, signing & distribution
-- macOS: Developer ID signing + **notarization** + stapling for the `.dmg`;
-  hardened runtime entitlements for screen/audio/camera.
-- Linux: verify AppImage + `.deb`; confirm PipeWire/portal runtime deps are
-  declared, not bundled.
-- Windows: already configured (MSI/NSIS + timestamp signing).
-- Add all three to release CI.
+**Not done** (follow-up): wiring `commands/system.rs::get_camera_devices`
+for macOS/Linux so the in-app picker populates instead of leaning on
+the auto-first-device fallback.
+
+### Phase 4 — Audio capture *(done 2026-05-19, with documented caveat)*
+Landed as one shared file
+[`audio/platform/ffmpeg_unix.rs`](../src-tauri/src/audio/platform/ffmpeg_unix.rs).
+FFmpeg streams raw PCM (`s16le` 48 kHz stereo) to stdout; the capture
+thread copies it into the existing `WavWriter`, honouring `pause_flag`
+exactly the way WASAPI does — drains the pipe always, only writes
+samples when not paused. A stop-watcher thread sends FFmpeg a graceful
+`q` on `stop_flag`, escalating to kill on timeout.
+
+**Loopback sources (three-tier resolution chain, top tier deferred):**
+- **macOS — ScreenCaptureKit** (`audio/platform/macos_sckit.rs`): the
+  only built-in macOS API for system audio without a virtual driver,
+  and the path every modern recorder uses. **Currently a placeholder
+  that returns `Err` so the chain falls through.** First attempt used
+  the `screencapturekit` crate but the assumed module layout
+  (`sc_content_filter`, `sc_stream`, ...) doesn't match the current
+  crates.io release, and iterating blind from a non-macOS dev host
+  burns CI cycles without signal. The file documents exactly what
+  needs to happen to wire it (verify crate's current API or switch to
+  `objc2-screen-capture-kit`, then implement `try_start` against
+  `SCShareableContent`/`SCStream`/`CMSampleBuffer`). When wired this
+  will share the Screen Recording TCC prompt with Phase 5 video, so
+  there is no second permission cost.
+- **macOS — BlackHole / virtual driver** (FFmpeg avfoundation): scans
+  for BlackHole / Soundflower / Loopback / VB-Cable and routes through
+  FFmpeg if present. Today's effective macOS loopback path.
+- **Linux** — `pactl get-default-sink` → `<sink>.monitor` via FFmpeg's
+  `-f pulse` input. Works on any PulseAudio or pipewire-pulse install.
+- **Silence + actionable warning** — final degrade when no tier
+  succeeds; the macOS message names BlackHole specifically.
+
+**Microphone:** AVFoundation `:0` (macOS) or `pulse default` (Linux); a
+user-supplied device id falls through if non-empty/non-"default". Mic
+failure surfaces as an error — there's no silent fallback for an
+explicitly-enabled mic.
+
+**Not done** (follow-up): `commands/system.rs::get_audio_devices` for
+macOS/Linux so the mic picker enumerates instead of always defaulting.
+
+### Phase 5 — macOS screen capture *(done 2026-05-19, with planned 5b)*
+Landed as
+[`capture/platform/macos.rs`](../src-tauri/src/capture/platform/macos.rs)
+using FFmpeg AVFoundation as a `CaptureSource`. A single long-lived
+FFmpeg subprocess streams raw BGRA frames over stdout; `capture_next()`
+reads exactly one frame's worth of bytes per call (same shape as
+`X11CaptureSource`). The pacer's `MAX_DRAIN` cap keeps the
+"always-Some" behaviour in check.
+
+`-vf scale=W:H` forces output dimensions to match what the encoder
+expects, regardless of the screen's native resolution; `-capture_cursor 1`
+matches the Wayland path's `CursorMode::Embedded`. macOS no longer hits
+the xcap fallback at all.
+
+**Known limitations:**
+- First "Capture screen" device only — multi-monitor users get the
+  primary display; mapping xcap monitor IDs to AVFoundation indices is
+  a follow-up.
+- No region capture on macOS; the in-app picker's region selector
+  doesn't propagate. AVFoundation captures full screen; `-vf scale=…`
+  matches dims. Cropping can be added with `-vf crop=…` later.
+- First record requires Screen Recording consent in
+  System Settings → Privacy & Security. FFmpeg will spawn but produce
+  zero frames until granted; surface this via the capture-source error
+  path.
+
+**Phase 5b (deferred):** ScreenCaptureKit *video* source. The audio
+half of SCKit is now wired (see Phase 4), so the Screen Recording TCC
+prompt the user sees on first record already grants SCKit access; a
+future iteration can swap the FFmpeg AVFoundation video source for an
+SCKit `SCStream` video output without re-prompting. Wins: lower
+latency, per-window/per-app filtering, native HiDPI handling. Cost:
+non-trivial objc2 plumbing around `CMSampleBuffer` video frame
+extraction → BGRA conversion. The FFmpeg backend is the production
+bridge until 5b lands.
+
+### Phase 6 — OS integration polish *(reveal landed 2026-05-19)*
+- **Reveal in file manager — landed.** `commands/system.rs::open_file_location`
+  now branches: Windows `explorer /select,`, macOS `open -R`, Linux
+  tries D-Bus `org.freedesktop.FileManager1.ShowItems` via `gdbus` and
+  falls back to `xdg-open` on the parent directory if D-Bus is
+  unavailable (covers GNOME/KDE/XFCE/Cinnamon natively).
+- **Window capture-exclusion — deferred.** macOS would use
+  `NSWindow.sharingType = .none`; Linux has no portable API. Both stay
+  no-op until there is a user-visible need.
+- **Permissions UX — deferred.** macOS Screen Recording / Microphone /
+  Camera TCC prompts surface implicitly on first attempt (the user gets
+  an OS dialog). A polished first-run flow with deep-links to System
+  Settings is a follow-up; right now the capture error messages name
+  the relevant Settings pane.
+
+### Phase 7 — Packaging, signing & distribution *(release path already wired)*
+[`release-desktop.yml`](../../../.github/workflows/release-desktop.yml)
+already builds and bundles MSI/NSIS (Windows), DMG + updater bundle
+(macOS), and AppImage + `.deb` (Linux) on every `v*` tag. The
+per-push CI gate added in Phase 0
+([`ci-desktop.yml`](../../../.github/workflows/ci-desktop.yml)) keeps
+each OS compiling on every change.
+
+**Still missing for a real macOS public ship:**
+- Developer ID signing + **notarization** + stapling for the DMG and
+  updater bundle (currently produces unsigned DMGs the README warns
+  users to `xattr -dr com.apple.quarantine` past).
+- Hardened-runtime entitlements declaring `com.apple.security.device.camera`,
+  `device.microphone`, and the screen-capture entitlement.
+
+These are credential/identity tasks, not code tasks — outside the scope
+of cross-platform code parity, but they gate a "no warnings" macOS
+download experience.
 
 ---
 
@@ -183,33 +283,32 @@ catch bugs before the first Linux run. Findings ranked by first-run risk.
 > (`git checkout -- apps/desktop/docs/linux-native-recording.md`) if its
 > diagrams are still wanted.
 
-### F1 — CRITICAL · No PipeWire `param_changed` handler
-`linux_wayland.rs::pipewire_capture_loop` registers only a `.process()`
-listener. It never registers `.param_changed()`, so it never reads the
-**actually negotiated** stream format. It assumes:
-- the negotiated frame size equals the portal-reported size, and
-- the pixel format is BGRA/BGRx.
+### F1 — CRITICAL *(fixed 2026-05-19)* · PipeWire format negotiation
+`linux_wayland.rs::pipewire_capture_loop` originally registered only a
+`.process()` listener and assumed the portal-reported size + BGRA format
+matched what PipeWire actually streamed. But `build_format_param` offered
+`VideoSize` as a **Range (1×1 … 7680×4320)**, so the compositor was free
+to pick a different size — every frame would then fail the
+`slice.len() < total` check and be silently dropped → **black / zero-length
+recording with no error**.
 
-But `build_format_param` offers `VideoSize` as a **Range (1×1 … 7680×4320)**
-and the framerate as a range — the compositor is free to pick a size that
-differs from what the portal dialog reported. When it does, every frame
-fails the `slice.len() < total` check in `process()` and is silently
-dropped → **a recording that is black / zero-length with no error**.
-Likewise an RGBA negotiation produces colour-swapped frames.
+**Fix landed** as two layers in [linux_wayland.rs](../src-tauri/src/capture/platform/linux_wayland.rs):
+1. `build_format_param` now pins `VideoSize` to a fixed `Rectangle`
+   instead of a Range, so PipeWire either honours the portal-reported
+   dims or fails the stream connection (an observable failure replaces a
+   silent one).
+2. A `.param_changed()` listener parses the negotiated `VideoInfoRaw`
+   and stashes the real geometry in a shared `Arc<Mutex<…>>` that
+   `process()` reads each tick. With (1) in place the negotiated dims
+   should always match portal dims; if they ever don't, the log line
+   says so loudly and `process()` adapts.
 
-**Fix (do before first Linux run):** add a `.param_changed()` listener that
-parses the `SPA_PARAM_Format` POD into `VideoInfoRaw`, and store the real
-`width`/`height`/`format` in shared state the `process()` closure and
-`WaylandCaptureSource::{width,height}()` read. This is exactly what the
-upstream `pipewire-rs/examples/screencast.rs` does — its omission here is
-the single most likely cause of a failed first run. Pin BGRA only (drop the
-Range, offer a fixed size) *or* honour whatever comes back; do not assume.
-
-### F2 — HIGH · Encoder configured from portal size, not negotiated size
-Same root cause as F1. `WaylandCaptureSource::{width,height}()` return the
-portal-reported size; `pipeline.rs` feeds those to the encoder as the input
-geometry. If F1's negotiated size differs, the encoder is misconfigured even
-if frames were not dropped. Fixed by F1 (read negotiated size).
+### F2 — HIGH *(resolved by F1 fix)* · Encoder size mismatch
+Same root cause as F1; with F1's fixed-size pin the encoder's
+portal-reported dims will always equal PipeWire's negotiated dims, so
+this no longer exists. If F1's `param_changed` warning ever fires, the
+encoder will still be wrong for that recording — but at that point the
+log makes it visible instead of silently producing a broken file.
 
 ### F3 — MEDIUM · X11 frame buffer size was unvalidated *(fixed 2026-05-19)*
 `linux_x11.rs::capture_next` handed `GetImage`'s reply straight downstream

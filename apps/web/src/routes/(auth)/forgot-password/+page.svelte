@@ -16,7 +16,7 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		loading = true;
-		const { error } = await authClient.forgetPassword({
+		const { error } = await authClient.requestPasswordReset({
 			email,
 			redirectTo: "/reset-password",
 		});

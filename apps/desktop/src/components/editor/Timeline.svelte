@@ -547,7 +547,6 @@
   <TimelineToolbar
     {store}
     fps={effectiveFps()}
-    {duration}
     {hasTrim}
     {aspectRatioLabel}
     {frameCount}

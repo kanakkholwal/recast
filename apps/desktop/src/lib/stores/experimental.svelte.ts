@@ -59,6 +59,18 @@ function createExperimentalStore() {
 	// the load() guard handles the SSR/no-window edge cases.
 	let flags = $state<Record<ExperimentalFlag, boolean>>(load());
 
+	// Cross-window sync. Tauri v2 webviews share localStorage origin, so a
+	// write from the settings window fires a `storage` event in any editor
+	// windows that were already open. Re-read on match so the flag flip is
+	// reflected without a reload. Same-window writes don't fire `storage`,
+	// but `setEnabled` updates the rune directly — both paths covered.
+	if (typeof window !== "undefined") {
+		window.addEventListener("storage", (e) => {
+			if (e.key !== STORAGE_KEY) return;
+			flags = load();
+		});
+	}
+
 	return {
 		get silenceDetection() {
 			return flags.silenceDetection;

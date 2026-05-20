@@ -187,8 +187,17 @@ fn format_input_arg(device: &str) -> String {
 
 #[cfg(target_os = "macos")]
 fn first_available_camera() -> Result<String> {
-    let stderr = list_avfoundation_devices()
-        .context("failed to invoke ffmpeg for avfoundation device enumeration")?;
+    // Shared cached probe — see `ffmpeg::cached_avfoundation_devices`.
+    // Pre-caching: audio loopback detection and the screen-index lookup
+    // also call this, so the probe runs once per app launch regardless
+    // of which subsystem needs it first.
+    let stderr = crate::ffmpeg::cached_avfoundation_devices();
+    if stderr.is_empty() {
+        return Err(anyhow!(
+            "AVFoundation device listing returned no output — \
+             ffmpeg may be missing avfoundation support, or the probe failed"
+        ));
+    }
     // AVFoundation's listing format on stderr:
     //   [AVFoundation indev @ 0x...] AVFoundation video devices:
     //   [AVFoundation indev @ 0x...] [0] FaceTime HD Camera
@@ -224,25 +233,6 @@ fn first_available_camera() -> Result<String> {
         "no AVFoundation video camera found; ensure a webcam is connected and \
          the app has Camera permission in System Settings → Privacy & Security"
     ))
-}
-
-#[cfg(target_os = "macos")]
-fn list_avfoundation_devices() -> Result<String> {
-    let output = Command::new(crate::ffmpeg::ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-f",
-            "avfoundation",
-            "-list_devices",
-            "true",
-            "-i",
-            "",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null())
-        .output()?;
-    Ok(String::from_utf8_lossy(&output.stderr).into_owned())
 }
 
 /// Extract the FFmpeg device index from the LAST `[N]` bracket on a

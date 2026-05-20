@@ -385,7 +385,14 @@ fn detect_loopback_source() -> Option<PcmSource> {
     // may have installed: BlackHole (most common today), Soundflower
     // (legacy), VB-Cable (Windows port that also runs on macOS), or
     // anything named "loopback".
-    let stderr = list_avfoundation_devices().ok()?;
+    //
+    // Uses the shared cached AVFoundation listing so the camera +
+    // audio + screen-index probes share one FFmpeg spawn per process,
+    // not one per subsystem per recording.
+    let stderr = crate::ffmpeg::cached_avfoundation_devices();
+    if stderr.is_empty() {
+        return None;
+    }
     let mut in_audio = false;
     for line in stderr.lines() {
         if line.contains("video devices:") {
@@ -494,25 +501,6 @@ fn loopback_unavailable_message() -> &'static str {
     "system-audio loopback not available — `pactl` did not return a default \
      sink. Ensure PulseAudio (or pipewire-pulse) is running, or install \
      pulseaudio-utils. Recording silence on the system-audio track."
-}
-
-#[cfg(target_os = "macos")]
-fn list_avfoundation_devices() -> Result<String> {
-    let output = Command::new(crate::ffmpeg::ffmpeg_path())
-        .args([
-            "-hide_banner",
-            "-f",
-            "avfoundation",
-            "-list_devices",
-            "true",
-            "-i",
-            "",
-        ])
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped())
-        .stdin(Stdio::null())
-        .output()?;
-    Ok(String::from_utf8_lossy(&output.stderr).into_owned())
 }
 
 #[cfg(target_os = "macos")]

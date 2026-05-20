@@ -10,6 +10,7 @@
     AlertTriangle,
     Check,
     Eye,
+    RotateCcw,
     Scissors,
     Sparkles,
     VolumeX,
@@ -206,6 +207,14 @@
     status = "empty";
   }
 
+  // Reverts the user's accumulated "dismiss" decisions for this project so
+  // previously-rejected suggestions can be re-surfaced. Re-runs detection
+  // immediately so the popover repopulates without a manual click.
+  function resetDismissedAndRescan() {
+    store.clearDismissedSilences();
+    void loadSuggestions();
+  }
+
   const bulkCount = $derived(
     pending.filter((s) => !isBlocked(s) && s.confidence >= BULK_MIN_CONFIDENCE)
       .length,
@@ -270,7 +279,21 @@
       <Sparkles size={14} class="text-muted-foreground/70" />
       <p class="font-medium text-foreground">No silence to remove</p>
       <p>Nothing left to review on this clip.</p>
-      <Button variant="ghost" size="xs" onclick={loadSuggestions} class="mt-1">Re-scan</Button>
+      <div class="mt-1 flex items-center gap-1">
+        <Button variant="ghost" size="xs" onclick={loadSuggestions}>Re-scan</Button>
+        {#if store.dismissedSilences.length > 0}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="gap-1.5"
+            onclick={resetDismissedAndRescan}
+            title="Bring back {store.dismissedSilences.length} previously dismissed suggestion{store.dismissedSilences.length === 1 ? '' : 's'}"
+          >
+            <RotateCcw size={11} />
+            Reset dismissed ({store.dismissedSilences.length})
+          </Button>
+        {/if}
+      </div>
     </div>
   {:else if status === "ready"}
     <div class="flex items-center justify-between gap-2 border-b border-border px-3 py-1.5 text-[10px] text-muted-foreground">
@@ -278,6 +301,18 @@
         {pending.length} found · {formatDuration(totalRecoverable)} recoverable
       </span>
       <div class="flex items-center gap-1">
+        {#if store.dismissedSilences.length > 0}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="gap-1"
+            onclick={resetDismissedAndRescan}
+            title="Bring back {store.dismissedSilences.length} previously dismissed suggestion{store.dismissedSilences.length === 1 ? '' : 's'}"
+          >
+            <RotateCcw size={10} />
+            Reset ({store.dismissedSilences.length})
+          </Button>
+        {/if}
         <Button variant="ghost" size="xs" onclick={dismissAll}>Dismiss all</Button>
         <Button
           variant="default"
