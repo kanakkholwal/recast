@@ -339,8 +339,6 @@ export interface SilenceDetectOptions {
 	minAudioSilence?: number;
 	/** Minimum length of a returned silence segment (seconds). */
 	minSegment?: number;
-	/** Adjacent segments closer than this merge into one (seconds). */
-	mergeGap?: number;
 }
 
 /** A detected silence range, in original-recording seconds. */

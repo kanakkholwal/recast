@@ -37,9 +37,6 @@ pub struct SilenceOptions {
     /// Minimum length of a returned silence segment (seconds).
     #[serde(default = "d_min_segment")]
     pub min_segment: f64,
-    /// Adjacent candidate segments closer than this merge into one (seconds).
-    #[serde(default = "d_merge_gap")]
-    pub merge_gap: f64,
 }
 
 fn d_flatness_db() -> f64 {
@@ -51,9 +48,6 @@ fn d_min_audio_silence() -> f64 {
 fn d_min_segment() -> f64 {
     1.0
 }
-fn d_merge_gap() -> f64 {
-    0.4
-}
 
 impl Default for SilenceOptions {
     fn default() -> Self {
@@ -61,7 +55,6 @@ impl Default for SilenceOptions {
             flatness_db: d_flatness_db(),
             min_audio_silence: d_min_audio_silence(),
             min_segment: d_min_segment(),
-            merge_gap: d_merge_gap(),
         }
     }
 }
@@ -91,10 +84,15 @@ const FRAME_MS: f64 = 50.0;
 /// Cursor counts as idle once it stays within this radius for this long.
 const CURSOR_IDLE_MIN_US: u64 = 300_000;
 const CURSOR_IDLE_RADIUS_PX: f64 = 8.0;
-/// Where the noise floor sits in the frame-energy distribution. The 20th
-/// percentile is robust to silence/speech ratio: even a mostly-talking
-/// recording has a bottom 20% that is the room tone.
-const PERCENTILE_FLOOR: f64 = 0.20;
+/// Where the noise floor sits in the frame-energy distribution. The 5th
+/// percentile is conservative: it remains inside the genuine background
+/// even on a recording that is mostly speech (the 20th percentile crept
+/// up into quiet-syllable territory and made `audio_flat` swallow speech).
+const PERCENTILE_FLOOR: f64 = 0.05;
+/// Hard ceiling — a frame above this is never "silent" regardless of how
+/// close it sits to the estimated floor. Guards against pathological
+/// percentile bias on very noisy recordings.
+const ABS_QUIET_DBFS: f64 = -28.0;
 
 //  Command
 
@@ -168,16 +166,15 @@ fn detect_blocking(
     let frame_db: Vec<f64> = samples.chunks(frame_size).map(frame_rms_db).collect();
 
     // Audio-flat runs: stretches whose envelope stays within `flatness_db`
-    // of the recording's own noise floor. Defines candidates that are both
-    // minimal *and* consistent — the noisy-background problem disappears
-    // because the floor itself moves with the recording.
+    // of the recording's own noise floor *and* below an absolute quiet
+    // ceiling. We deliberately do NOT merge_close these — bridging a short
+    // gap would silently swallow a speech burst between two flat runs.
     let audio_flat = flat_intervals(
         &frame_db,
         frame_dur,
         opts.min_audio_silence,
         opts.flatness_db,
     );
-    let audio_flat = merge_close(audio_flat, opts.merge_gap);
 
     // Cursor-idle intervals. A missing track is treated as "idle everywhere"
     // so the feature still works without cursor data, but the segment's
@@ -208,8 +205,10 @@ fn detect_blocking(
     };
 
     // Both constraints must hold — the user's spec, intentionally strict.
+    // No `merge_close` here either: a gap between two intersected ranges
+    // means at least one of {audio quiet, cursor still} *failed* in that
+    // gap, and bridging would mark a region as silent that isn't.
     let mut candidates = intersect(&audio_flat, &cursor_idle);
-    candidates = merge_close(candidates, opts.merge_gap);
     candidates.retain(|iv| iv.1 - iv.0 >= opts.min_segment);
 
     Ok(candidates
@@ -249,7 +248,13 @@ fn frame_rms_db(chunk: &[i16]) -> f64 {
 }
 
 /// Find runs of frames whose energy sits within `tol_db` of the recording's
-/// estimated noise floor. Returns intervals in seconds.
+/// estimated noise floor *and* below an absolute quiet ceiling. Returns
+/// intervals in seconds.
+///
+/// The dual gate matters on recordings that are mostly speech: the
+/// percentile-based floor drifts upward into quiet-syllable territory there,
+/// and a relative-only check would happily mark speech as silence. The hard
+/// `ABS_QUIET_DBFS` ceiling rejects any frame that simply isn't quiet.
 fn flat_intervals(
     frame_db: &[f64],
     frame_dur: f64,
@@ -268,12 +273,31 @@ fn flat_intervals(
     let floor = finite[idx.min(finite.len() - 1)];
     let cap = floor + tol_db;
 
+    // Per-frame bg decision: close to the noise floor AND below the absolute
+    // quiet ceiling. Both must hold.
+    let raw_mask: Vec<bool> = frame_db
+        .iter()
+        .map(|v| *v <= cap && *v <= ABS_QUIET_DBFS)
+        .collect();
+
+    // 3-frame majority smoothing — kills single-frame jitter (an isolated
+    // envelope spike inside a silent stretch, or a one-frame bg fleck inside
+    // speech) without bridging a real burst, which is always longer than the
+    // 100 ms smoothing window.
+    let mask: Vec<bool> = (0..raw_mask.len())
+        .map(|i| {
+            let a = if i > 0 { raw_mask[i - 1] } else { false };
+            let b = raw_mask[i];
+            let c = if i + 1 < raw_mask.len() { raw_mask[i + 1] } else { false };
+            (a as u8 + b as u8 + c as u8) >= 2
+        })
+        .collect();
+
     let mut out = Vec::new();
     let mut run_start: Option<usize> = None;
-    let n = frame_db.len();
+    let n = mask.len();
     for i in 0..n {
-        let is_bg = frame_db[i] <= cap;
-        match (is_bg, run_start) {
+        match (mask[i], run_start) {
             (true, None) => run_start = Some(i),
             (false, Some(s)) => {
                 let st = s as f64 * frame_dur;
@@ -312,22 +336,6 @@ fn intersect(a: &[Interval], b: &[Interval]) -> Vec<Interval> {
             i += 1;
         } else {
             j += 1;
-        }
-    }
-    out
-}
-
-/// Merge intervals separated by a gap smaller than `gap`.
-fn merge_close(mut intervals: Vec<Interval>, gap: f64) -> Vec<Interval> {
-    if intervals.is_empty() {
-        return intervals;
-    }
-    intervals.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(std::cmp::Ordering::Equal));
-    let mut out: Vec<Interval> = Vec::with_capacity(intervals.len());
-    for iv in intervals {
-        match out.last_mut() {
-            Some(last) if iv.0 - last.1 <= gap => last.1 = last.1.max(iv.1),
-            _ => out.push(iv),
         }
     }
     out

@@ -63,7 +63,11 @@
     </span>
     <button
       type="button"
-      onclick={() => (store.focusEnabled = !store.focusEnabled)}
+      onpointerdown={(e) => e.stopPropagation()}
+      onclick={(e) => {
+        e.stopPropagation();
+        store.focusEnabled = !store.focusEnabled;
+      }}
       title={store.focusEnabled
         ? "Disable focus (zoom regions stay; preview & export ignore them)"
         : "Enable focus"}

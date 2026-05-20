@@ -42,14 +42,12 @@
       flatnessDb: 3,
       minAudioSilence: 1,
       minSegment: 1.5,
-      mergeGap: 0.3,
     },
     balanced: {},
     aggressive: {
       flatnessDb: 8,
       minAudioSilence: 0.4,
       minSegment: 0.6,
-      mergeGap: 0.5,
     },
   };
   const SENSITIVITY_OPTIONS: Array<{ id: Sensitivity; label: string }> = [

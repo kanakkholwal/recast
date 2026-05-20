@@ -612,9 +612,55 @@ pub fn open_file_location(path: String) -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     {
-        let _ = path;
+        // `open -R` is the Finder equivalent of `explorer /select,` —
+        // it opens Finder and highlights the file in its containing
+        // folder. Detached spawn; we never wait on Finder.
+        Command::new("open")
+            .args(["-R", &path])
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        // No portable "reveal" — the closest cross-DE option is the
+        // D-Bus FileManager1 interface, supported by Nautilus, Dolphin,
+        // Nemo, Caja, and Thunar. Try that first via `gdbus`, then fall
+        // back to opening the parent directory with `xdg-open`. Both
+        // paths are best-effort: if neither tool is present we still
+        // succeed at the IPC level so the UI doesn't surface a hard
+        // failure for what is a quality-of-life shortcut.
+        let p = std::path::Path::new(&path);
+        let uri = format!("file://{}", p.display());
+        let reveal = Command::new("gdbus")
+            .args([
+                "call",
+                "--session",
+                "--dest",
+                "org.freedesktop.FileManager1",
+                "--object-path",
+                "/org/freedesktop/FileManager1",
+                "--method",
+                "org.freedesktop.FileManager1.ShowItems",
+                &format!("[\"{uri}\"]"),
+                "",
+            ])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .stdin(std::process::Stdio::null())
+            .status();
+        let revealed = matches!(reveal, Ok(s) if s.success());
+        if !revealed {
+            // Couldn't reveal — open the containing folder.
+            let parent = p
+                .parent()
+                .unwrap_or_else(|| std::path::Path::new("."));
+            let _ = Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
 }

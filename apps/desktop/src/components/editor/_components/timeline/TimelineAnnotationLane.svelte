@@ -56,7 +56,11 @@
     </span>
     <button
       type="button"
-      onclick={() => (store.annotationsGloballyHidden = !store.annotationsGloballyHidden)}
+      onpointerdown={(e) => e.stopPropagation()}
+      onclick={(e) => {
+        e.stopPropagation();
+        store.annotationsGloballyHidden = !store.annotationsGloballyHidden;
+      }}
       title={store.annotationsGloballyHidden
         ? "Enable notes"
         : "Disable notes (annotations stay; preview & export ignore them)"}
