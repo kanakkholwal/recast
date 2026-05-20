@@ -5,6 +5,7 @@
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
+	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -15,8 +16,17 @@
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
 		loading = true;
-		await authClient.forgetPassword({ email, redirectTo: "/reset-password" });
+		const { error } = await authClient.forgetPassword({
+			email,
+			redirectTo: "/reset-password",
+		});
 		loading = false;
+		if (error) {
+			toast.error(error.message ?? "Couldn't send the reset email.");
+			return;
+		}
+		// We tell the user the link was sent regardless of whether the email
+		// exists — standard pattern, prevents account enumeration.
 		sent = true;
 	}
 </script>

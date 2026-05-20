@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from "$app/navigation";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
@@ -8,6 +9,7 @@
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
+	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";
 	import { slide } from "svelte/transition";
 
@@ -53,8 +55,13 @@
 		e.preventDefault();
 		if (!canSubmit) return;
 		loading = true;
-		await authClient.signUp.email({ name, email, password });
+		const { error } = await authClient.signUp.email({ name, email, password });
 		loading = false;
+		if (error) {
+			toast.error(error.message ?? "Couldn't create your account.");
+			return;
+		}
+		await goto("/dashboard");
 	}
 </script>
 

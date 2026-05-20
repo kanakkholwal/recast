@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
@@ -6,6 +7,7 @@
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
+	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";
 	import { slide } from "svelte/transition";
 
@@ -28,8 +30,17 @@
 		e.preventDefault();
 		if (!canSubmit) return;
 		loading = true;
-		await authClient.resetPassword({ newPassword: password, token });
+		const { error } = await authClient.resetPassword({
+			newPassword: password,
+			token,
+		});
 		loading = false;
+		if (error) {
+			toast.error(error.message ?? "Couldn't reset your password.");
+			return;
+		}
+		toast.success("Password updated — sign in with your new password.");
+		await goto("/login");
 	}
 </script>
 

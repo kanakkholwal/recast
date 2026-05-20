@@ -24,8 +24,4 @@
 	</a>
 
 	{@render children()}
-
-	<p class="absolute bottom-6 left-1/2 -translate-x-1/2 text-center text-[11px] text-muted-foreground/80">
-		Local development only · authentication is not yet wired up
-	</p>
 </div>

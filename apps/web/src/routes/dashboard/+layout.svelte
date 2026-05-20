@@ -1,9 +1,21 @@
 <script lang="ts">
 	import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
 	import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
+	import { settingsStore } from "$lib/dashboard/store.svelte";
 	import * as Sidebar from "@recast/ui/sidebar";
+	import { onMount } from "svelte";
 
-	let { children } = $props();
+	let { children, data } = $props();
+
+	// Hydrate the dashboard's local store with the real signed-in user when
+	// auth is wired. In placeholder mode (`data.user === null`) we keep
+	// whatever's in localStorage so the dev experience is untouched.
+	onMount(() => {
+		if (data?.user) {
+			settingsStore.value.profile.name = data.user.name || data.user.email;
+			settingsStore.value.profile.email = data.user.email;
+		}
+	});
 </script>
 
 <Sidebar.Provider>

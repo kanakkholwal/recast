@@ -8,17 +8,18 @@
 
 	let { children } = $props();
 
-	// The dashboard and auth screens ship their own shells — keep the
-	// marketing chrome off them.
-	const authPaths = new Set([
+	// The dashboard, auth, and waitlist screens ship their own focused
+	// shells — keep the marketing chrome off them.
+	const chromelessPaths = new Set([
 		"/login",
 		"/signup",
 		"/forgot-password",
 		"/reset-password",
+		"/waitlist",
 	]);
 	const isChromeless = $derived(
 		page.url.pathname.startsWith("/dashboard") ||
-			authPaths.has(page.url.pathname),
+			chromelessPaths.has(page.url.pathname),
 	);
 </script>
 

@@ -1,4 +1,7 @@
 <script lang="ts">
+	import { dev } from "$app/environment";
+	import { goto } from "$app/navigation";
+	import { page } from "$app/state";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
@@ -8,6 +11,7 @@
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
+	import { toast } from "@recast/ui/sonner";
 
 	let email = $state("");
 	let password = $state("");
@@ -15,11 +19,22 @@
 	let showPassword = $state(false);
 	let loading = $state(false);
 
+	const next = $derived(page.url.searchParams.get("next") || "/dashboard");
+
 	async function signIn(e: SubmitEvent) {
 		e.preventDefault();
 		loading = true;
-		await authClient.signIn.email({ email, password, rememberMe });
+		const { error } = await authClient.signIn.email({
+			email,
+			password,
+			rememberMe,
+		});
 		loading = false;
+		if (error) {
+			toast.error(error.message ?? "Sign in failed. Check your credentials.");
+			return;
+		}
+		await goto(next);
 	}
 </script>
 
@@ -97,9 +112,16 @@
 	</form>
 
 	{#snippet footer()}
-		Don't have an account?
-		<a href="/signup" class="font-semibold text-foreground hover:text-primary">
-			Sign up
-		</a>
+		{#if dev}
+			Don't have an account?
+			<a href="/signup" class="font-semibold text-foreground hover:text-primary">
+				Sign up
+			</a>
+		{:else}
+			Need an account?
+			<a href="/waitlist" class="font-semibold text-foreground hover:text-primary">
+				Join the waitlist
+			</a>
+		{/if}
 	{/snippet}
 </AuthCard>

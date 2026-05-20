@@ -34,7 +34,7 @@
 </script>
 
 <svelte:head>
-	<title>Home — Recast Dashboard</title>
+	<title>Home - Recast Dashboard</title>
 </svelte:head>
 
 <!-- Welcome -->

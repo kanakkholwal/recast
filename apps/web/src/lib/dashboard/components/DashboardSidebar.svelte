@@ -45,8 +45,9 @@
 		fallback: (node) => fade(node, { duration: 120 }),
 	});
 
-	function signOut() {
-		authClient.signOut();
+	async function signOut() {
+		await authClient.signOut();
+		await goto("/login");
 	}
 </script>
 
