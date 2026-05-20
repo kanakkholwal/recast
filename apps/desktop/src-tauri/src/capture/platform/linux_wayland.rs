@@ -334,9 +334,78 @@ fn pipewire_capture_loop(
     )
     .context("failed to create pipewire stream")?;
 
+    // F1 (audit Appendix A): without a `param_changed` handler, the stream
+    // dimensions assumed by `process()` were the portal-reported ones —
+    // but the compositor was free to negotiate a different size against
+    // the Range we offered, silently dropping every frame on the
+    // `slice.len() < total` check. We fix it two ways: (1) pin the size
+    // in `build_format_param` so renegotiation cannot happen, and
+    // (2) read the actually negotiated geometry here as a defence in
+    // depth + diagnostic — if a future compositor honours the request
+    // loosely, the log will say so and `process()` will still use the
+    // right dims.
+    #[derive(Clone, Copy)]
+    struct NegotiatedFormat {
+        width: u32,
+        height: u32,
+    }
+    let negotiated: Arc<Mutex<Option<NegotiatedFormat>>> = Arc::new(Mutex::new(None));
+
+    let portal_w: u32 = width;
+    let portal_h: u32 = height;
+    let nego_for_param = negotiated.clone();
+    let nego_for_process = negotiated.clone();
     let queue_cb = frame_queue.clone();
+
     let _listener = pw_stream
         .add_local_listener_with_user_data(())
+        .param_changed(move |_stream, _user_data, id, param| {
+            // Stream emits several param kinds (Buffers, IO, Meta, ...);
+            // only Format carries the geometry we care about.
+            if id != pipewire::spa::param::ParamType::Format.as_raw() {
+                return;
+            }
+            let Some(pod) = param else { return };
+            let mut info = pipewire::spa::param::video::VideoInfoRaw::new();
+            if info.parse(pod).is_err() {
+                log::warn!(
+                    "pipewire param_changed: failed to parse Format pod; \
+                     keeping portal-reported {}x{} as the working geometry",
+                    portal_w,
+                    portal_h
+                );
+                return;
+            }
+            let size = info.size();
+            if size.width != portal_w || size.height != portal_h {
+                // With the size pinned in build_format_param this branch
+                // should be unreachable. If it ever fires, the
+                // compositor is renegotiating against our preference and
+                // the encoder (configured for portal dims at this point)
+                // will produce cropped or stretched output until the
+                // next recording. Log loudly so the next iteration knows
+                // to investigate the compositor's source caps.
+                log::warn!(
+                    "pipewire negotiated {}x{} differs from portal-reported {}x{} — \
+                     encoder is already configured for the portal size; \
+                     output will be cropped or stretched.",
+                    size.width,
+                    size.height,
+                    portal_w,
+                    portal_h
+                );
+            }
+            log::info!(
+                "pipewire stream format negotiated: {}x{} (format = {:?})",
+                size.width,
+                size.height,
+                info.format()
+            );
+            *nego_for_param.lock() = Some(NegotiatedFormat {
+                width: size.width,
+                height: size.height,
+            });
+        })
         .process(move |stream, _user_data| {
             let Some(mut buffer) = stream.dequeue_buffer() else {
                 return;
@@ -344,6 +413,17 @@ fn pipewire_capture_loop(
             let datas = buffer.datas_mut();
             let Some(data) = datas.first_mut() else {
                 return;
+            };
+
+            // Prefer the negotiated dims (set by param_changed above);
+            // before the first negotiation completes, fall back to the
+            // portal-reported size. With size pinned in build_format_param
+            // these should always agree by the time frames flow.
+            let (width, height) = {
+                let g = nego_for_process.lock();
+                g.as_ref()
+                    .map(|n| (n.width, n.height))
+                    .unwrap_or((portal_w, portal_h))
             };
 
             // The buffer's chunk metadata tells us the actual valid byte
@@ -386,7 +466,7 @@ fn pipewire_capture_loop(
             let _ = queue_cb.push(frame);
         })
         .register()
-        .context("failed to register pipewire process listener")?;
+        .context("failed to register pipewire stream listener")?;
 
     // Periodic timer to check the stop flag and quit the loop. PipeWire's
     // main loop only exits cleanly when called from inside its own
@@ -492,23 +572,15 @@ fn build_format_param(width: u32, height: u32) -> Vec<u8> {
             Property {
                 key: FormatProperties::VideoSize.as_raw(),
                 flags: PropertyFlags::empty(),
-                // Range with our portal-supplied dimensions as the
-                // default and tight bounds — compositor will pick the
-                // exact size it streams at.
-                value: Value::Choice(ChoiceValue::Rectangle(Choice(
-                    ChoiceFlags::empty(),
-                    ChoiceEnum::Range {
-                        default: Rectangle { width, height },
-                        min: Rectangle {
-                            width: 1,
-                            height: 1,
-                        },
-                        max: Rectangle {
-                            width: 7680,
-                            height: 4320,
-                        },
-                    },
-                ))),
+                // Fixed (not Range): the portal already told us the
+                // source dimensions, so we pin them here. With Range,
+                // the compositor was free to negotiate a different
+                // size — Audit F1 — which silently dropped every frame
+                // on the slice.len() check downstream. Locking the size
+                // means PipeWire either matches or errors out the stream
+                // connection; both outcomes are observable, unlike the
+                // silent failure mode.
+                value: Value::Rectangle(Rectangle { width, height }),
             },
             Property {
                 key: FormatProperties::VideoFramerate.as_raw(),

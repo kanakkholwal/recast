@@ -153,10 +153,10 @@
         type="button"
         aria-pressed={showSilence}
         onclick={() => (showSilence = !showSilence)}
-        disabled={!store.recordingPath}
-        title={store.recordingPath
+        disabled={!store.audioPath && !store.microphonePath}
+        title={store.audioPath || store.microphonePath
           ? "Find and remove silent gaps in this recording"
-          : "No recording media to analyse"}
+          : "This clip has no audio track to analyse"}
         class={cn(
           "flex h-6 items-center gap-1 rounded-md border border-border/40 px-2 text-[11px] font-semibold transition-colors duration-150 disabled:opacity-40",
           showSilence

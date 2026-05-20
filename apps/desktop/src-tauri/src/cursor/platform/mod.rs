@@ -1,7 +1,14 @@
 #[cfg(windows)]
 mod windows;
 
-#[cfg(not(windows))]
+// macOS and Linux share one impl backed by the `device_query` crate,
+// which wraps CoreGraphics and xcb respectively. Keeping them on a
+// single file avoids two near-identical wrappers and one shared module
+// for one shared abstraction.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod device_query_impl;
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 mod fallback;
 
 use super::CursorState;
@@ -13,7 +20,11 @@ pub fn sample_cursor_state() -> Option<CursorState> {
     {
         windows::sample_cursor_state()
     }
-    #[cfg(not(windows))]
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        device_query_impl::sample_cursor_state()
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         fallback::sample_cursor_state()
     }

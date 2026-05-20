@@ -591,9 +591,14 @@
         }),
       ]);
       prepSending = "running";
+      // Honor the per-lane "enable" toggles. The underlying data is preserved
+      // on the store; here we just hand the export pipeline the active set,
+      // so toggling a lane off bypasses its effect in the rendered file.
       const finalRenderState = {
         ...renderState,
-        annotations: expandedAnnotations,
+        annotations: store.annotationsGloballyHidden ? [] : expandedAnnotations,
+        zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
+        cuts: store.cutsEnabled ? renderState.cuts : [],
         cursorSpriteRest: cursorSprites?.rest,
         cursorSpritePress: cursorSprites?.press,
         cursorSpriteHotspotRest: cursorSprites?.restHotspot,

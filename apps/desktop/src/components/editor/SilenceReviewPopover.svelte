@@ -39,19 +39,15 @@
   const SENSITIVITY_KEY = "recast-silence-sensitivity";
   const PRESETS: Record<Sensitivity, SilenceDetectOptions> = {
     relaxed: {
-      noiseDb: -38,
+      flatnessDb: 3,
       minAudioSilence: 1,
-      freezeNoiseDb: -52,
-      minFreeze: 0.8,
       minSegment: 1.5,
       mergeGap: 0.3,
     },
     balanced: {},
     aggressive: {
-      noiseDb: -24,
+      flatnessDb: 8,
       minAudioSilence: 0.4,
-      freezeNoiseDb: -38,
-      minFreeze: 0.35,
       minSegment: 0.6,
       mergeGap: 0.5,
     },
@@ -96,18 +92,18 @@
   });
 
   async function loadSuggestions() {
-    if (!store.recordingPath) {
+    if (!store.audioPath && !store.microphonePath) {
       status = "error";
-      errorMsg = "This clip has no recording media to analyse.";
+      errorMsg = "This clip has no audio track to analyse.";
       return;
     }
     status = "loading";
     errorMsg = null;
     try {
       const result = await detectSilence(
-        store.recordingPath,
         store.audioPath,
         store.microphonePath,
+        store.cursorPath,
         PRESETS[sensitivity],
       );
       // Drop anything already removed by a cut, or previously dismissed,
@@ -346,7 +342,7 @@
                   · {[
                     seg.micSilent && "mic",
                     seg.systemSilent && "audio",
-                    seg.screenStatic && "screen",
+                    seg.cursorIdle && "cursor",
                   ]
                     .filter(Boolean)
                     .join(" + ")}

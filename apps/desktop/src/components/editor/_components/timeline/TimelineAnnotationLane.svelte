@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
+  import { Eye, EyeOff } from "@lucide/svelte";
   import type { TimeMode } from "./timeline-helpers";
   import { buildSnapTargets, type SnapTarget } from "./timeline-snap";
   import AnnotationLayerCard from "./AnnotationLayerCard.svelte";
@@ -42,13 +43,35 @@
 </script>
 
 <div
-  class="relative mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
+  class="relative mt-1.5 min-h-9 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-opacity"
+  class:opacity-50={store.annotationsGloballyHidden}
 >
-  <span
-    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center rounded-sm bg-amber-500/20 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-amber-700 backdrop-blur-sm dark:text-amber-400"
+  <div
+    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center gap-1"
   >
-    Notes
-  </span>
+    <span
+      class="inline-flex items-center rounded-sm bg-amber-500/20 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-amber-700 backdrop-blur-sm dark:text-amber-400"
+    >
+      Notes
+    </span>
+    <button
+      type="button"
+      onclick={() => (store.annotationsGloballyHidden = !store.annotationsGloballyHidden)}
+      title={store.annotationsGloballyHidden
+        ? "Enable notes"
+        : "Disable notes (annotations stay; preview & export ignore them)"}
+      aria-label={store.annotationsGloballyHidden
+        ? "Enable notes"
+        : "Disable notes"}
+      class="pointer-events-auto flex size-4 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+    >
+      {#if !store.annotationsGloballyHidden}
+        <Eye class="size-2.5" />
+      {:else}
+        <EyeOff class="size-2.5" />
+      {/if}
+    </button>
+  </div>
   {#if store.annotations.length === 0}
     <div
       class="flex h-6 items-center justify-center text-[10px] text-muted-foreground"

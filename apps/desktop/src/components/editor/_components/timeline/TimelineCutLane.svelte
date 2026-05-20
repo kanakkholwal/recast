@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import type { TimelineCut } from "$lib/timeline/cuts";
-  import { Scissors, X } from "@lucide/svelte";
+  import { Eye, EyeOff, Scissors, X } from "@lucide/svelte";
 
   // Lane that hosts cut bands — the ranges removed from the timeline.
   // Drag empty lane space to carve a new cut; drag a band's edges to
@@ -159,7 +159,8 @@
   onpointermove={onMove}
   onpointerup={onUp}
   onpointercancel={onUp}
-  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
+  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-opacity"
+  class:opacity-50={!store.cutsEnabled}
 >
   {#if waveformPath}
     <svg
@@ -173,12 +174,32 @@
     </svg>
   {/if}
 
-  <span
-    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center gap-1 rounded-sm bg-destructive/15 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-destructive backdrop-blur-sm"
+  <div
+    class="pointer-events-none sticky left-1.5 top-1 z-50 inline-flex w-fit items-center gap-1"
   >
-    <Scissors class="size-2" />
-    Cuts
-  </span>
+    <span
+      class="inline-flex items-center gap-1 rounded-sm bg-destructive/15 px-1.5 py-px font-mono text-[8px] font-bold uppercase tracking-wider text-destructive backdrop-blur-sm"
+    >
+      <Scissors class="size-2" />
+      Cuts
+    </span>
+    <button
+      type="button"
+      onpointerdown={(e) => e.stopPropagation()}
+      onclick={() => (store.cutsEnabled = !store.cutsEnabled)}
+      title={store.cutsEnabled
+        ? "Disable cuts (cuts stay; playback & export ignore them)"
+        : "Enable cuts"}
+      aria-label={store.cutsEnabled ? "Disable cuts" : "Enable cuts"}
+      class="pointer-events-auto flex size-4 items-center justify-center rounded text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+    >
+      {#if store.cutsEnabled}
+        <Eye class="size-2.5" />
+      {:else}
+        <EyeOff class="size-2.5" />
+      {/if}
+    </button>
+  </div>
 
   {#if store.cuts.length === 0}
     <div

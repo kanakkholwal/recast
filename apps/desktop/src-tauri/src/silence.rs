@@ -40,15 +40,6 @@ pub struct SilenceOptions {
     /// Adjacent candidate segments closer than this merge into one (seconds).
     #[serde(default = "d_merge_gap")]
     pub merge_gap: f64,
-
-    // -- Legacy fields, kept so existing preset payloads round-trip. The
-    //    detector no longer uses an absolute audio floor or freezedetect.
-    #[serde(default = "d_noise_db_legacy")]
-    pub noise_db: f64,
-    #[serde(default = "d_freeze_noise_db_legacy")]
-    pub freeze_noise_db: f64,
-    #[serde(default = "d_min_freeze_legacy")]
-    pub min_freeze: f64,
 }
 
 fn d_flatness_db() -> f64 {
@@ -63,15 +54,6 @@ fn d_min_segment() -> f64 {
 fn d_merge_gap() -> f64 {
     0.4
 }
-fn d_noise_db_legacy() -> f64 {
-    -30.0
-}
-fn d_freeze_noise_db_legacy() -> f64 {
-    -45.0
-}
-fn d_min_freeze_legacy() -> f64 {
-    0.5
-}
 
 impl Default for SilenceOptions {
     fn default() -> Self {
@@ -80,9 +62,6 @@ impl Default for SilenceOptions {
             min_audio_silence: d_min_audio_silence(),
             min_segment: d_min_segment(),
             merge_gap: d_merge_gap(),
-            noise_db: d_noise_db_legacy(),
-            freeze_noise_db: d_freeze_noise_db_legacy(),
-            min_freeze: d_min_freeze_legacy(),
         }
     }
 }

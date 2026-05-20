@@ -328,14 +328,15 @@ export function suggestZoomRegions(cursorPath: string): Promise<ZoomSuggestion[]
 
 /** Tunable thresholds for `detectSilence`; omit any field to use the default. */
 export interface SilenceDetectOptions {
-	/** Audio dBFS floor — at or below this, audio counts as silent. */
-	noiseDb?: number;
-	/** Minimum continuous silent-audio run (seconds). */
+	/**
+	 * Frames must sit within this many dB of the recording's own noise floor
+	 * to count as background. The floor is estimated per-recording, so this
+	 * is relative to whatever level "background" sits at — a noisy room and a
+	 * dead-quiet one both detect sensibly.
+	 */
+	flatnessDb?: number;
+	/** Minimum continuous flat-audio run (seconds). */
 	minAudioSilence?: number;
-	/** freezedetect noise tolerance (dB). */
-	freezeNoiseDb?: number;
-	/** Minimum continuous frozen-video run (seconds). */
-	minFreeze?: number;
 	/** Minimum length of a returned silence segment (seconds). */
 	minSegment?: number;
 	/** Adjacent segments closer than this merge into one (seconds). */
@@ -350,24 +351,25 @@ export interface SilenceSegment {
 	confidence: number;
 	micSilent: boolean;
 	systemSilent: boolean;
-	screenStatic: boolean;
+	/** Cursor track was present and confirmed idle over the range. */
+	cursorIdle: boolean;
 }
 
 /**
- * Analyse a recording for silence — ranges with no microphone speech, no
- * system audio, and no visible screen motion (camera feed ignored). Backed by
- * `detect_silence` (FFmpeg `silencedetect` + `freezedetect`) in Rust.
+ * Analyse a recording for silence — ranges where the audio envelope is flat
+ * near its own noise floor AND the cursor isn't moving. Both constraints
+ * must hold. Implementation lives in `silence.rs` (Rust).
  */
 export function detectSilence(
-	videoPath: string,
 	audioPath?: string | null,
 	microphonePath?: string | null,
+	cursorPath?: string | null,
 	options?: SilenceDetectOptions,
 ): Promise<SilenceSegment[]> {
 	return invoke<SilenceSegment[]>("detect_silence", {
-		videoPath,
 		audioPath: audioPath ?? null,
 		microphonePath: microphonePath ?? null,
+		cursorPath: cursorPath ?? null,
 		options: options ?? null,
 	});
 }

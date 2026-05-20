@@ -471,6 +471,14 @@ export interface EditorRenderState {
 	autoZoomEnabled?: boolean;
 	/** Silence / manual cuts removed from the timeline. */
 	cuts?: TimelineCut[];
+	/** Whether cuts apply in preview/export (false = bypassed but preserved). */
+	cutsEnabled?: boolean;
+	/** Whether zoom regions apply in preview/export. */
+	focusEnabled?: boolean;
+	/** Whether annotations render in preview/export. Negation of the
+	 * pre-existing `annotationsGloballyHidden` flag — surfaced here so all
+	 * three lane toggles round-trip through the project file. */
+	annotationsEnabled?: boolean;
 	/** Silence suggestions the user dismissed — kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
@@ -615,6 +623,12 @@ export function createEditorStore() {
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
+	// Per-lane "enable" toggles. When off, the lane greys out, its effect is
+	// bypassed in preview, and the data is excluded from the export pipeline.
+	// The underlying data (cuts, zoom regions) is preserved either way so the
+	// toggle is fully reversible.
+	let cutsEnabled = $state(true);
+	let focusEnabled = $state(true);
 
 	// Background
 	let backgroundType = $state<BackgroundType>('wallpaper');
@@ -1164,6 +1178,8 @@ export function createEditorStore() {
 		zoomRegions = [];
 		selectedZoomRegionId = null;
 		cuts = [];
+		cutsEnabled = true;
+		focusEnabled = true;
 		dismissedSilences = [];
 		autoZoomEnabled = true;
 		autoZoomApplied = false;
@@ -1328,6 +1344,9 @@ export function createEditorStore() {
 			autoZoomApplied,
 			autoZoomEnabled,
 			cuts: cuts.map((cut) => ({ ...cut })),
+			cutsEnabled,
+			focusEnabled,
+			annotationsEnabled: !annotationsGloballyHidden,
 			dismissedSilences: dismissedSilences.map((d) => ({ ...d })),
 			cursorMotionEasing,
 			annotations: annotations.map((annotation) => ({ ...annotation })),
@@ -1410,6 +1429,11 @@ export function createEditorStore() {
 			start: d.start,
 			end: d.end,
 		}));
+		cutsEnabled = state.cutsEnabled ?? true;
+		focusEnabled = state.focusEnabled ?? true;
+		if (state.annotationsEnabled !== undefined) {
+			annotationsGloballyHidden = !state.annotationsEnabled;
+		}
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
@@ -1563,6 +1587,13 @@ export function createEditorStore() {
 		get cuts() { return cuts; },
 		get cutDuration() { return totalCutDuration(cuts); },
 		get dismissedSilences() { return dismissedSilences; },
+
+		// Lane "enable" toggles — bypass the lane's effect in preview/export
+		// while keeping the underlying data intact.
+		get cutsEnabled() { return cutsEnabled; },
+		set cutsEnabled(v: boolean) { cutsEnabled = v; isDirty = true; },
+		get focusEnabled() { return focusEnabled; },
+		set focusEnabled(v: boolean) { focusEnabled = v; isDirty = true; },
 
 		get autoZoomEnabled() { return autoZoomEnabled; },
 		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; },
