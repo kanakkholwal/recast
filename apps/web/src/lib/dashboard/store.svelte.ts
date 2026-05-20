@@ -10,7 +10,7 @@ import { browser } from "$app/environment";
 
 export type RecordingSource = "cloud" | "local";
 
-export type Recording = {
+export type Recast = {
 	id: string;
 	title: string;
 	durationSec: number;
@@ -41,7 +41,7 @@ function sample(name: string) {
 
 const DAY = 86_400_000;
 
-function seedRecordings(): Recording[] {
+function seedRecordings(): Recast[] {
 	const now = Date.now();
 	return [
 		{ id: "rec_walkthrough", title: "Series A — product walkthrough", durationSec: 252, createdAt: now - 1 * DAY, sizeBytes: 191_000_000, source: "cloud", provider: "Cloudinary", views: 48, ...sample("BigBuckBunny") },
@@ -65,7 +65,7 @@ function readJSON<T>(key: string, fallback: T): T {
 
 /** Blob URLs don't survive a reload — fall back to sample media so the
  *  recording stays playable rather than becoming a dead entry. */
-function reconcile(r: Recording): Recording {
+function reconcile(r: Recast): Recast {
 	if (r.videoUrl?.startsWith("blob:")) {
 		return { ...r, ...sample("WeAreGoingOnBubbles"), posterUrl: "" };
 	}
@@ -73,10 +73,10 @@ function reconcile(r: Recording): Recording {
 }
 
 class RecordingsStore {
-	items = $state<Recording[]>([]);
+	items = $state<Recast[]>([]);
 
 	constructor() {
-		const stored = readJSON<Recording[] | null>(REC_KEY, null);
+		const stored = readJSON<Recast[] | null>(REC_KEY, null);
 		this.items = (stored ?? seedRecordings()).map(reconcile);
 	}
 
@@ -92,7 +92,7 @@ class RecordingsStore {
 		return this.items.filter((r) => r.source === "cloud").length;
 	}
 
-	add(rec: Recording) {
+	add(rec: Recast) {
 		this.items = [rec, ...this.items];
 		this.persist();
 	}
@@ -179,5 +179,5 @@ class SettingsStore {
 	}
 }
 
-export const recordingsStore = new RecordingsStore();
+export const recastsStore = new RecordingsStore();
 export const settingsStore = new SettingsStore();

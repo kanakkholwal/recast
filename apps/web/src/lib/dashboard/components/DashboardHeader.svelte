@@ -6,13 +6,21 @@
 		return s.charAt(0).toUpperCase() + s.slice(1);
 	}
 
+	const sectionMap: Record<string, string> = {
+		recasts: "Recasts",
+		analytics: "Analytics",
+		settings: "Settings",
+	};
+
 	// Breadcrumb derived from the route — "Settings / Profile" etc.
 	const crumb = $derived.by(() => {
 		const parts = page.url.pathname.split("/").filter(Boolean); // ["dashboard", ...]
-		if (parts[1] === "settings") {
-			return { section: "Settings", sub: parts[2] ? titleCase(parts[2]) : null };
-		}
-		return { section: "Recordings", sub: null };
+		if (parts.length <= 1) return { section: "Home", sub: null };
+		const second = parts[1]!;
+		const section = sectionMap[second] ?? titleCase(second);
+		// Only settings has deeper routes (Profile / Integrations / Preferences).
+		const sub = second === "settings" && parts[2] ? titleCase(parts[2]) : null;
+		return { section, sub };
 	});
 </script>
 

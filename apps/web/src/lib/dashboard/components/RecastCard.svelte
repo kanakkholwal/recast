@@ -5,7 +5,7 @@
 		formatDuration,
 		formatRelative,
 	} from "$lib/dashboard/format";
-	import type { Recording } from "$lib/dashboard/store.svelte";
+	import type { Recast } from "$lib/dashboard/store.svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import {
 		Clock,
@@ -22,14 +22,14 @@
 	} from "@lucide/svelte";
 
 	let {
-		recording,
+		recast,
 		onplay,
 		onrename,
 		oncopylink,
 		ontogglesource,
 		ondelete,
 	}: {
-		recording: Recording;
+		recast: Recast;
 		onplay: () => void;
 		onrename: () => void;
 		oncopylink: () => void;
@@ -38,7 +38,7 @@
 	} = $props();
 
 	let posterFailed = $state(false);
-	const showPoster = $derived(!!recording.posterUrl && !posterFailed);
+	const showPoster = $derived(!!recast.posterUrl && !posterFailed);
 </script>
 
 <article
@@ -48,12 +48,12 @@
 	<button
 		type="button"
 		onclick={onplay}
-		aria-label="Play {recording.title}"
+		aria-label="Play {recast.title}"
 		class="relative block h-44 w-full shrink-0 overflow-hidden bg-foreground/5"
 	>
 		{#if showPoster}
 			<img
-				src={recording.posterUrl}
+				src={recast.posterUrl}
 				alt=""
 				loading="lazy"
 				onerror={() => (posterFailed = true)}
@@ -77,18 +77,18 @@
 		<!-- Duration -->
 		<span class="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground backdrop-blur-sm">
 			<Clock class="size-3" />
-			{formatDuration(recording.durationSec)}
+			{formatDuration(recast.durationSec)}
 		</span>
 
 		<!-- Source -->
 		<span
 			class="absolute left-2 top-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm
-				{recording.source === 'cloud'
+				{recast.source === 'cloud'
 				? 'bg-primary/90 text-background'
 				: 'bg-background/85 text-muted-foreground'}"
 		>
-			{#if recording.source === "cloud"}
-				<Cloud class="size-3" />{recording.provider}
+			{#if recast.source === "cloud"}
+				<Cloud class="size-3" />{recast.provider}
 			{:else}
 				<MonitorPlay class="size-3" />Local
 			{/if}
@@ -98,18 +98,18 @@
 	<!-- Meta -->
 	<div class="flex flex-1 items-start gap-2 p-4">
 		<div class="min-w-0 flex-1">
-			<h3 class="truncate text-sm font-semibold text-foreground" title={recording.title}>
-				{recording.title}
+			<h3 class="truncate text-sm font-semibold text-foreground" title={recast.title}>
+				{recast.title}
 			</h3>
 			<p class="mt-1 text-xs text-muted-foreground">
-				{formatRelative(recording.createdAt)} · {formatBytes(recording.sizeBytes)}{#if recording.source === "cloud"} · {formatCount(recording.views)} views{/if}
+				{formatRelative(recast.createdAt)} · {formatBytes(recast.sizeBytes)}{#if recast.source === "cloud"} · {formatCount(recast.views)} views{/if}
 			</p>
 		</div>
 
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger
 				class="grid size-7 shrink-0 place-items-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-foreground/8 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-				aria-label="Recording options"
+				aria-label="Recast options"
 			>
 				<MoreHorizontal class="size-4" />
 			</DropdownMenu.Trigger>
@@ -127,7 +127,7 @@
 					Copy link
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={ontogglesource}>
-					{#if recording.source === "cloud"}
+					{#if recast.source === "cloud"}
 						<HardDrive class="size-4 text-muted-foreground" />
 						Move to local
 					{:else}

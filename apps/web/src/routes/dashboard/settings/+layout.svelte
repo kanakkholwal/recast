@@ -13,7 +13,7 @@
 <header in:fly={{ y: 12, duration: 500, easing: cubicOut }}>
 	<h1 class="text-2xl font-semibold tracking-tight text-foreground">Settings</h1>
 	<p class="mt-1 text-sm text-muted-foreground">
-		Manage your profile, integrations, and recording defaults.
+		Manage your profile, integrations, and recast defaults.
 	</p>
 </header>
 

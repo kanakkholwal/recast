@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Recording } from "$lib/dashboard/store.svelte";
+	import type { Recast } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
 	import { Check } from "@lucide/svelte";
 	import { untrack } from "svelte";
@@ -7,17 +7,17 @@
 	import { fade, scale } from "svelte/transition";
 
 	let {
-		recording,
+		recast,
 		onclose,
 		onsave,
 	}: {
-		recording: Recording;
+		recast: Recast;
 		onclose: () => void;
 		onsave: (title: string) => void;
 	} = $props();
 
 	// Seed once — the dialog is freshly mounted per rename, so no need to react.
-	let value = $state(untrack(() => recording.title));
+	let value = $state(untrack(() => recast.title));
 
 	function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -43,7 +43,7 @@
 		class="glass-card relative z-10 w-full max-w-sm rounded-2xl p-6 shadow-craft-xl"
 		transition:scale={{ start: 0.96, duration: 240, easing: cubicOut }}
 	>
-		<h2 class="text-sm font-semibold text-foreground">Rename recording</h2>
+		<h2 class="text-sm font-semibold text-foreground">Rename recast</h2>
 		<!-- svelte-ignore a11y_autofocus -->
 		<input
 			type="text"

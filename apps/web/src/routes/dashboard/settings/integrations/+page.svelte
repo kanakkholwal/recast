@@ -41,7 +41,7 @@
 		<SettingsSection
 			icon={Cloud}
 			title="Cloudinary"
-			description="Upload and serve your recordings from your own Cloudinary account."
+			description="Upload and serve your recasts from your own Cloudinary account."
 			accent
 		>
 			{#snippet badge()}
@@ -143,7 +143,7 @@
 			{/snippet}
 
 			<div class="grid gap-4 opacity-55 sm:grid-cols-2">
-				{#each [{ label: "Bucket name", ph: "recast-recordings" }, { label: "Region", ph: "us-east-1" }, { label: "Access key ID", ph: "AKIA…" }, { label: "Secret access key", ph: "••••••••" }] as field (field.label)}
+				{#each [{ label: "Bucket name", ph: "recast-recasts" }, { label: "Region", ph: "us-east-1" }, { label: "Access key ID", ph: "AKIA…" }, { label: "Secret access key", ph: "••••••••" }] as field (field.label)}
 					<label class="flex flex-col gap-1.5">
 						<span class="text-xs font-semibold text-foreground/85">{field.label}</span>
 						<input

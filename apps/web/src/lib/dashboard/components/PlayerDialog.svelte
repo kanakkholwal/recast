@@ -4,16 +4,16 @@
 		formatDuration,
 		formatRelative,
 	} from "$lib/dashboard/format";
-	import type { Recording } from "$lib/dashboard/store.svelte";
+	import type { Recast } from "$lib/dashboard/store.svelte";
 	import { Clock, Cloud, MonitorPlay, Video, X } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, scale } from "svelte/transition";
 
 	let {
-		recording,
+		recast,
 		onclose,
 	}: {
-		recording: Recording;
+		recast: Recast;
 		onclose: () => void;
 	} = $props();
 </script>
@@ -36,7 +36,7 @@
 		<header class="flex items-center gap-3 border-b border-border-low/50 px-4 py-3">
 			<Video class="size-4 shrink-0 text-primary" />
 			<span class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-				{recording.title}
+				{recast.title}
 			</span>
 			<button
 				type="button"
@@ -50,8 +50,8 @@
 
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
-			src={recording.videoUrl}
-			poster={recording.posterUrl || undefined}
+			src={recast.videoUrl}
+			poster={recast.posterUrl || undefined}
 			controls
 			autoplay
 			class="aspect-video w-full bg-black"
@@ -60,13 +60,13 @@
 		<footer class="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-xs text-muted-foreground">
 			<span class="flex items-center gap-1.5">
 				<Clock class="size-3.5" />
-				{formatDuration(recording.durationSec)}
+				{formatDuration(recast.durationSec)}
 			</span>
-			<span>{formatBytes(recording.sizeBytes)}</span>
-			<span>{formatRelative(recording.createdAt)}</span>
+			<span>{formatBytes(recast.sizeBytes)}</span>
+			<span>{formatRelative(recast.createdAt)}</span>
 			<span class="flex items-center gap-1.5">
-				{#if recording.source === "cloud"}
-					<Cloud class="size-3.5 text-primary" />{recording.provider}
+				{#if recast.source === "cloud"}
+					<Cloud class="size-3.5 text-primary" />{recast.provider}
 				{:else}
 					<MonitorPlay class="size-3.5" />Local
 				{/if}

@@ -10,8 +10,10 @@
 	import { cn } from "@recast/ui/utils";
 	import {
 		ArrowUpRight,
+		BarChart3,
 		ChevronsUpDown,
 		Film,
+		LayoutDashboard,
 		LogOut,
 		Settings,
 		User,
@@ -26,7 +28,9 @@
 	const profile = $derived(settingsStore.value.profile);
 
 	const nav = [
-		{ title: "Recordings", href: "/dashboard", icon: Film, exact: true },
+		{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
+		{ title: "Recasts", href: "/dashboard/recasts", icon: Film, exact: false },
+		{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, exact: false },
 		{ title: "Settings", href: "/dashboard/settings", icon: Settings, exact: false },
 	];
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-	import { recordingsStore, settingsStore } from "$lib/dashboard/store.svelte";
+	import { recastsStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { RotateCcw, Settings2 } from "@lucide/svelte";
@@ -15,8 +15,8 @@
 	}
 
 	function resetData() {
-		recordingsStore.reset();
-		toast.success("Sample recordings restored.");
+		recastsStore.reset();
+		toast.success("Sample recasts restored.");
 	}
 </script>
 
@@ -25,14 +25,14 @@
 		<SettingsSection
 			icon={Settings2}
 			title="Preferences"
-			description="Defaults applied to new recordings."
+			description="Defaults applied to new recasts."
 		>
 			<div class="flex flex-col gap-4">
 				<label class="flex items-center justify-between gap-4">
 					<span class="text-sm">
 						<span class="font-medium text-foreground">Default destination</span>
 						<span class="block text-xs text-muted-foreground">
-							Where uploaded recordings land.
+							Where uploaded recasts land.
 						</span>
 					</span>
 					<select
@@ -49,7 +49,7 @@
 					<span class="text-sm">
 						<span class="font-medium text-foreground">Auto-upload to cloud</span>
 						<span class="block text-xs text-muted-foreground">
-							Push new recordings to Cloudinary automatically.
+							Push new recasts to Cloudinary automatically.
 						</span>
 					</span>
 					<input
@@ -70,7 +70,7 @@
 		<div>
 			<h2 class="text-sm font-semibold text-foreground">Sample data</h2>
 			<p class="mt-0.5 text-xs text-muted-foreground">
-				Restore the default recordings library on this device.
+				Restore the default recasts library on this device.
 			</p>
 		</div>
 		<Button variant="outline" size="sm" class="gap-2" onclick={resetData}>
