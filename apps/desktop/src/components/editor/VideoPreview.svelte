@@ -9,6 +9,7 @@
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
+	import { experimentalStore } from "$lib/stores/experimental.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
@@ -964,6 +965,7 @@ void main() {
 		if (
 			videoEl &&
 			store.isPlaying &&
+			experimentalStore.silenceDetection &&
 			store.cutsEnabled &&
 			store.cuts.length > 0
 		) {

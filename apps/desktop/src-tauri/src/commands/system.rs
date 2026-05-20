@@ -653,9 +653,7 @@ pub fn open_file_location(path: String) -> Result<(), String> {
         let revealed = matches!(reveal, Ok(s) if s.success());
         if !revealed {
             // Couldn't reveal — open the containing folder.
-            let parent = p
-                .parent()
-                .unwrap_or_else(|| std::path::Path::new("."));
+            let parent = p.parent().unwrap_or_else(|| std::path::Path::new("."));
             let _ = Command::new("xdg-open")
                 .arg(parent)
                 .spawn()

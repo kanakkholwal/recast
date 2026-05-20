@@ -89,15 +89,14 @@ x11rb = { version = "0.13", features = ["shm"] }
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 device_query = "2.1"
 
-# ScreenCaptureKit (macOS 13+) is the only built-in API for system-audio
-# loopback on macOS — every modern recorder uses it. The Rust crate
-# wraps `SCStream` / `SCContentFilter` / `SCStreamConfiguration` and the
-# `CMSampleBuffer` audio extraction. On macOS 11/12 or when SCKit fails
-# (Screen Recording permission denied, etc.) the audio module falls
-# through to BlackHole detection and ultimately silence. See
-# `audio/platform/macos_sckit.rs`.
-[target.'cfg(target_os = "macos")'.dependencies]
-screencapturekit = "0.3"
+# NOTE: a `screencapturekit` dep was added here in a previous round to
+# wire macOS system-audio loopback natively. It was removed when the
+# crate's module layout on the current crates.io release turned out to
+# differ from what the integration assumed, and verifying the right API
+# names from a non-macOS dev host is not viable. The placeholder lives
+# in `audio/platform/macos_sckit.rs` and will be re-instated alongside
+# the integration when API verification is possible (see that file's
+# "What needs to happen next" comment block).
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

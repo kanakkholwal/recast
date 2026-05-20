@@ -306,7 +306,18 @@ fn pipewire_capture_loop(
     impl Drop for PwInitGuard {
         fn drop(&mut self) {
             if self.active {
-                pipewire::deinit();
+                // SAFETY: `pipewire::deinit()` is `unsafe` because it
+                // touches the libpipewire global state and must pair
+                // exactly once with `pw::init()`. `PwInitGuard.active`
+                // is the boolean that enforces "exactly once": we set
+                // it to true after init succeeds and the success path
+                // explicitly disables the guard before calling deinit
+                // manually — so the only way this Drop reaches deinit
+                // is if we're on an error path between init and the
+                // explicit cleanup. The init counter is balanced.
+                unsafe {
+                    pipewire::deinit();
+                }
             }
         }
     }
@@ -479,12 +490,17 @@ fn pipewire_capture_loop(
             main_loop_for_timer.quit();
         }
     });
-    timer
-        .update_timer(
-            Some(Duration::from_millis(100)),
-            Some(Duration::from_millis(100)),
-        )
-        .context("failed to arm pipewire stop-flag timer")?;
+    // `Timer::update_timer` returns pipewire-rs's `SpaResult`, which is
+    // a thin wrapper around the SPA integer error code and does not
+    // implement `?`-propagation in 0.9. Log the result for visibility
+    // and continue — if the timer fails to arm, the worst case is the
+    // shutdown watchdog (which polls the stop flag elsewhere) takes a
+    // bit longer to notice; capture itself is unaffected.
+    let timer_result = timer.update_timer(
+        Some(Duration::from_millis(100)),
+        Some(Duration::from_millis(100)),
+    );
+    log::debug!("pipewire stop-flag timer armed (result: {timer_result:?})");
 
     let format_param_bytes = build_format_param(width, height);
     let format_pod = pipewire::spa::pod::Pod::from_bytes(&format_param_bytes)
@@ -512,7 +528,12 @@ fn pipewire_capture_loop(
     drop(core);
     drop(context);
     drop(main_loop);
-    pw::deinit();
+    // SAFETY: paired with `pw::init()` at the top of this function;
+    // `PwInitGuard` was disabled above so this is the single matching
+    // deinit on the success path.
+    unsafe {
+        pw::deinit();
+    }
 
     Ok(())
 }

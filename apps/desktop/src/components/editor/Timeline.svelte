@@ -3,6 +3,7 @@
     EditorStore,
     ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
@@ -585,7 +586,7 @@
   >
     <div
       class="relative min-w-full"
-      style="width: {totalWidth}px; height: 250px;"
+      style="width: {totalWidth}px; height: {experimentalStore.silenceDetection ? 250 : 204}px;"
     >
       <TimelineRuler {duration} {pixelsPerSecond} />
 
@@ -622,7 +623,9 @@
           onDuplicate={duplicateAnnotation}
         />
 
-        <TimelineCutLane {store} {pixelsPerSecond} {duration} />
+        {#if experimentalStore.silenceDetection}
+          <TimelineCutLane {store} {pixelsPerSecond} {duration} />
+        {/if}
       </div>
 
       <TimelinePlayhead
@@ -631,6 +634,7 @@
         {pixelsPerSecond}
         isDragging={isDraggingPlayhead}
         {timeMode}
+        tall={experimentalStore.silenceDetection}
       />
     </div>
   </div>

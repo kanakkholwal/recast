@@ -28,6 +28,7 @@
     framePaddingPixels,
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { applyAutoZooms } from "$lib/zoom/auto-apply";
   import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -598,7 +599,10 @@
         ...renderState,
         annotations: store.annotationsGloballyHidden ? [] : expandedAnnotations,
         zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
-        cuts: store.cutsEnabled ? renderState.cuts : [],
+        cuts:
+          experimentalStore.silenceDetection && store.cutsEnabled
+            ? renderState.cuts
+            : [],
         cursorSpriteRest: cursorSprites?.rest,
         cursorSpritePress: cursorSprites?.press,
         cursorSpriteHotspotRest: cursorSprites?.restHotspot,

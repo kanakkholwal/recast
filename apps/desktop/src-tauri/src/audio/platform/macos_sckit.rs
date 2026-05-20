@@ -1,226 +1,85 @@
-//! macOS system-audio loopback via ScreenCaptureKit.
+//! macOS system-audio loopback via ScreenCaptureKit — **placeholder**.
 //!
-//! ScreenCaptureKit (macOS 13.0+) provides the only built-in path for
-//! capturing system audio on macOS without a virtual driver. This is
-//! what Loom, CleanShot X, OBS, Riverside, and every other modern
-//! macOS recorder use. The Rust wrapper crate (`screencapturekit`)
-//! exposes the underlying Objective-C types; we configure an audio-only
-//! `SCStream`, attach an output handler, and copy each
-//! `CMSampleBuffer`'s PCM payload into the existing `WavWriter`.
+//! ## Status
 //!
-//! ## Permissions
+//! Integration is **deferred pending API verification**. The first
+//! attempt at wiring the `screencapturekit` crate used module paths
+//! (`sc_content_filter`, `sc_stream`, `sc_output_handler`, ...) that
+//! exist in some published versions but not in the current one on
+//! crates.io. The crate's module layout has shifted across 0.2 / 0.3
+//! releases and the only reliable way to write this against the
+//! current API is to read its docs on docs.rs while having an actual
+//! macOS host to compile against — neither of which the Windows dev
+//! host can do, and trying to keep guessing module paths spends CI
+//! cycles for no signal.
 //!
-//! SCKit — even audio-only — requires the **Screen Recording**
-//! entitlement on macOS 13+. The first system-audio attempt prompts
-//! the user via TCC; we surface a clear error if denied so the caller
-//! falls through to the BlackHole / silence chain.
+//! ## Behaviour now
 //!
-//! ## Sample format
+//! `try_start` always returns `Err`. The caller in
+//! `audio/platform/ffmpeg_unix.rs::PlatformAudioSession::start` reacts
+//! to that by falling through to the existing virtual-driver
+//! detection: BlackHole / Soundflower / Loopback / VB-Cable on macOS,
+//! `pactl` monitor source on Linux. macOS users with such a driver
+//! installed therefore still get loopback; users without one get
+//! silence + the existing actionable warning that names installable
+//! drivers.
 //!
-//! SCKit delivers Float32 interleaved by default at the system's mix
-//! sample rate (typically 48 kHz). We pin the request to 48 kHz / 2 ch
-//! / Float32 and write WAV `bits=32` so the format chunk declares
-//! `WAVE_FORMAT_IEEE_FLOAT` instead of integer PCM.
+//! ## What needs to happen next
 //!
-//! ## Excludes-current-process
+//! 1. Verify the `screencapturekit` crate's current module paths
+//!    against docs.rs (or pick a different crate — `objc2-screen-capture-kit`
+//!    is the more stable lower-level option in the `objc2` ecosystem).
+//! 2. Reinstate the `screencapturekit` (or alternative) dep in
+//!    `Cargo.toml` under `[target.'cfg(target_os = "macos")']`.
+//! 3. Implement `try_start` to:
+//!    - call `SCShareableContent` to get a display,
+//!    - build an `SCContentFilter` (display variant),
+//!    - configure `SCStreamConfiguration` with `captures_audio = true`,
+//!      `excludes_current_process_audio = true`, 48 kHz / 2 ch float32,
+//!    - register an audio output handler that copies each
+//!      `CMSampleBuffer`'s PCM payload into the shared `WavWriter`,
+//!      honouring `pause_flag` exactly like the FFmpeg/WASAPI paths.
+//! 4. Verify on macOS 13+ with Screen Recording permission granted.
+//! 5. Confirm graceful failure on macOS 11/12 (SCKit unavailable) and
+//!    Screen Recording denied so the BlackHole fallback still kicks in.
 //!
-//! We set `excludes_current_process_audio = true` so the recorded
-//! track does not include Recast's own audio output (e.g. UI sound
-//! effects, preview playback). This is the recommended default for any
-//! recorder that also plays audio.
-//!
-//! ## API-drift notes
-//!
-//! The `screencapturekit` crate has moved fast across 0.2/0.3
-//! releases. The integration below targets the 0.3 series and uses the
-//! high-level types so a minor version bump should be a localised
-//! patch rather than a structural rewrite. If a future bump breaks
-//! compilation, the symbols most likely to need rename are
-//! `SCContentFilter::new(InitParams::Display(…))`, the output handler
-//! trait method, and `CMSampleBuffer::get_av_audio_buffer_list()`.
+//! The shape of `ScKitLoopback` (constructor returning `Result`, owned
+//! WAV writer behind `Arc<Mutex<Option<...>>>`, separate `stop()`) is
+//! preserved so the eventual implementation drops in without touching
+//! the caller.
 
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use anyhow::{anyhow, Context, Result};
-use parking_lot::Mutex;
-
-use crate::audio::wav::WavWriter;
-
-const SAMPLE_RATE: u32 = 48_000;
-const CHANNELS: u16 = 2;
-// SCKit emits IEEE float32 PCM. Setting bits=32 tells our WavWriter to
-// stamp the WAV format chunk as `WAVE_FORMAT_IEEE_FLOAT` instead of
-// integer PCM — matches what the Windows WASAPI backend does for its
-// 32-bit-float mix format path.
-const BITS: u16 = 32;
+use anyhow::{anyhow, Result};
 
 pub struct ScKitLoopback {
-    stream: screencapturekit::sc_stream::SCStream,
-    // The WAV writer is shared between the output-handler callback
-    // thread (where SCKit invokes us) and this struct's `stop()` (the
-    // recording's owning thread). `Option<…>` so `stop()` can `take()`
-    // and finalise it exactly once, even if the callback fires again
-    // after stop is called.
-    writer: Arc<Mutex<Option<WavWriter>>>,
-    output_path: PathBuf,
+    // No fields while this is a placeholder — kept as a unit-shaped
+    // struct rather than a `()` alias so the caller's match arm and
+    // `stop()` signature stay stable when the real implementation
+    // lands.
+    _placeholder: (),
 }
 
 impl ScKitLoopback {
-    /// Try to start a ScreenCaptureKit audio stream. Returns `Err` on
-    /// any failure (macOS < 13, no displays, Screen Recording denied,
-    /// SCKit framework error) so the caller can fall through to the
-    /// BlackHole / silence chain.
-    pub fn try_start(output_path: PathBuf, pause_flag: Arc<AtomicBool>) -> Result<Self> {
-        use screencapturekit::{
-            sc_content_filter::{InitParams, SCContentFilter},
-            sc_error_handler::StreamErrorHandler,
-            sc_output_handler::{SCStreamOutputType, StreamOutput},
-            sc_shareable_content::SCShareableContent,
-            sc_stream::SCStream,
-            sc_stream_configuration::SCStreamConfiguration,
-        };
-
-        // SCShareableContent enumerates capturable resources. On
-        // macOS < 13 or when Screen Recording is not granted, the
-        // underlying SCKit call returns nil and the wrapper produces
-        // an empty content struct — we'll fall through on the
-        // "no displays" branch below, which matches the runtime
-        // signature we want.
-        let shareable = SCShareableContent::current();
-        let display = shareable
-            .displays
-            .into_iter()
-            .next()
-            .ok_or_else(|| {
-                anyhow!(
-                    "SCKit reported no displays — macOS < 13, or Screen Recording \
-                     permission has not been granted to Recast in \
-                     System Settings → Privacy & Security."
-                )
-            })?;
-        // The SCKit audio tap is attached to a content filter. For
-        // full-system audio we filter on a whole display; SCKit will
-        // capture every process's audio output (minus our own — see
-        // excludes_current_process_audio below).
-        let filter = SCContentFilter::new(InitParams::Display(display));
-
-        let mut config = SCStreamConfiguration::default();
-        config.captures_audio = true;
-        // Don't capture Recast's own audio (UI sounds, preview
-        // playback) — every modern recorder defaults this on.
-        config.excludes_current_process_audio = true;
-        // Request 48 kHz stereo to match the WAV we'll write. SCKit
-        // resamples if the system mix differs.
-        config.sample_rate = SAMPLE_RATE as i64;
-        config.channel_count = CHANNELS as i64;
-
-        let writer = Arc::new(Mutex::new(Some(
-            WavWriter::new(&output_path, SAMPLE_RATE, CHANNELS, BITS)
-                .context("failed to create SCKit loopback WAV writer")?,
-        )));
-
-        struct ErrHandler;
-        impl StreamErrorHandler for ErrHandler {
-            fn on_error(&self) {
-                // SCKit fires this asynchronously; we can't fail the
-                // recording from here. The WAV will simply stop
-                // growing — the editor's silence-trim / duration
-                // detector will spot the gap downstream.
-                log::error!("ScreenCaptureKit audio stream errored");
-            }
-        }
-
-        struct AudioHandler {
-            writer: Arc<Mutex<Option<WavWriter>>>,
-            pause_flag: Arc<AtomicBool>,
-        }
-        impl StreamOutput for AudioHandler {
-            fn did_output_sample_buffer(
-                &self,
-                sample_buffer: screencapturekit::cm_sample_buffer::CMSampleBuffer,
-                output_type: SCStreamOutputType,
-            ) {
-                if output_type != SCStreamOutputType::Audio {
-                    return;
-                }
-                if self.pause_flag.load(Ordering::Acquire) {
-                    // Pause-aware (matches WASAPI/FFmpeg path): drop
-                    // the sample buffer on the floor so the WAV stays
-                    // gap-free across recording pauses. SCKit will
-                    // keep delivering buffers — we just don't write
-                    // them.
-                    return;
-                }
-                // Extract PCM bytes from the audio buffer list. The
-                // SCKit Rust wrapper exposes the underlying
-                // CoreMedia `CMSampleBufferGetAudioBufferList…` via a
-                // safe accessor; each `AudioBuffer` carries a raw
-                // `&[u8]` of interleaved float32 stereo for one
-                // delivery window (~10 ms by default).
-                let buffer_list = match sample_buffer.get_av_audio_buffer_list() {
-                    Ok(b) => b,
-                    Err(e) => {
-                        log::warn!("SCKit: failed to access audio buffer list: {e:?}");
-                        return;
-                    }
-                };
-                let mut slot = self.writer.lock();
-                let Some(writer) = slot.as_mut() else { return };
-                for audio_buffer in buffer_list.buffers() {
-                    let data = audio_buffer.data();
-                    if let Err(e) = writer.write_samples(data) {
-                        log::warn!("SCKit: WAV write failed: {e}");
-                        break;
-                    }
-                }
-            }
-        }
-
-        let handler = AudioHandler {
-            writer: writer.clone(),
-            pause_flag: pause_flag.clone(),
-        };
-
-        let mut stream = SCStream::new(&filter, &config, ErrHandler);
-        stream.add_output_handler(handler, SCStreamOutputType::Audio);
-        stream.start_capture().context(
-            "SCKit start_capture failed — ensure Screen Recording is granted to Recast \
-             in System Settings → Privacy & Security",
-        )?;
-
-        log::info!(
-            "ScreenCaptureKit loopback started ({} Hz, {} ch, float32), output: {}",
-            SAMPLE_RATE,
-            CHANNELS,
-            output_path.display()
-        );
-
-        Ok(Self {
-            stream,
-            writer,
-            output_path,
-        })
+    /// Always returns `Err` while the real SCKit integration is
+    /// pending — the caller treats that as "skip SCKit, try the
+    /// virtual-driver chain next".
+    pub fn try_start(_output_path: PathBuf, _pause_flag: Arc<AtomicBool>) -> Result<Self> {
+        Err(anyhow!(
+            "ScreenCaptureKit integration deferred — falling back to \
+             virtual-driver detection (BlackHole / Soundflower / etc.)"
+        ))
     }
 
+    /// Unreachable while `try_start` always errs. Kept so the type's
+    /// public surface matches what the caller would expect once the
+    /// real implementation lands.
     pub fn stop(self) -> Result<PathBuf> {
-        // `stop_capture` blocks until SCKit acknowledges; subsequent
-        // `did_output_sample_buffer` calls won't fire. We then take
-        // the writer out of the shared slot and finalise it. The
-        // double-step (stop SCKit, then finalise WAV) avoids the
-        // race where a late callback writes to a half-finalised file.
-        let _ = self.stream.stop_capture();
-        let mut slot = self.writer.lock();
-        if let Some(writer) = slot.take() {
-            writer
-                .finish()
-                .context("failed to finalise SCKit loopback WAV")?;
-        }
-        log::info!(
-            "ScreenCaptureKit loopback finished: {}",
-            self.output_path.display()
-        );
-        Ok(self.output_path)
+        unreachable!(
+            "ScKitLoopback::stop must not be called against the placeholder — \
+             try_start always returns Err so no session ever exists"
+        )
     }
 }

@@ -181,10 +181,10 @@ fn detect_blocking(
     // `cursor_idle` flag and score reflect the unverified state.
     let (cursor_idle, has_cursor) = match cursor_path {
         Some(p) if Path::new(p).exists() => {
-            let bytes = std::fs::read(Path::new(p))
-                .map_err(|e| format!("read cursor track: {e}"))?;
-            let track: crate::cursor::CursorTrack = serde_json::from_slice(&bytes)
-                .map_err(|e| format!("parse cursor track: {e}"))?;
+            let bytes =
+                std::fs::read(Path::new(p)).map_err(|e| format!("read cursor track: {e}"))?;
+            let track: crate::cursor::CursorTrack =
+                serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
             let periods = crate::cursor::smoothing::detect_idle_periods(
                 &track.samples,
                 CURSOR_IDLE_MIN_US,
@@ -255,12 +255,7 @@ fn frame_rms_db(chunk: &[i16]) -> f64 {
 /// percentile-based floor drifts upward into quiet-syllable territory there,
 /// and a relative-only check would happily mark speech as silence. The hard
 /// `ABS_QUIET_DBFS` ceiling rejects any frame that simply isn't quiet.
-fn flat_intervals(
-    frame_db: &[f64],
-    frame_dur: f64,
-    min_dur: f64,
-    tol_db: f64,
-) -> Vec<Interval> {
+fn flat_intervals(frame_db: &[f64], frame_dur: f64, min_dur: f64, tol_db: f64) -> Vec<Interval> {
     if frame_db.is_empty() {
         return Vec::new();
     }
@@ -288,7 +283,11 @@ fn flat_intervals(
         .map(|i| {
             let a = if i > 0 { raw_mask[i - 1] } else { false };
             let b = raw_mask[i];
-            let c = if i + 1 < raw_mask.len() { raw_mask[i + 1] } else { false };
+            let c = if i + 1 < raw_mask.len() {
+                raw_mask[i + 1]
+            } else {
+                false
+            };
             (a as u8 + b as u8 + c as u8) >= 2
         })
         .collect();
@@ -393,11 +392,7 @@ pub async fn extract_waveform(
 ) -> Result<Vec<f32>, String> {
     let buckets = buckets.unwrap_or(2000).clamp(64, 8000);
     tokio::task::spawn_blocking(move || {
-        waveform_blocking(
-            audio_path.as_deref(),
-            microphone_path.as_deref(),
-            buckets,
-        )
+        waveform_blocking(audio_path.as_deref(), microphone_path.as_deref(), buckets)
     })
     .await
     .map_err(|e| format!("waveform task panicked: {e}"))?

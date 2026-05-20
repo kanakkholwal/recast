@@ -122,13 +122,7 @@ impl PlatformAudioSession {
                 let thread_handle = thread::Builder::new()
                     .name("recast-audio-loopback".into())
                     .spawn(move || {
-                        run_pcm_capture(
-                            output_path,
-                            source,
-                            pause_flag,
-                            flag_for_thread,
-                            label,
-                        )
+                        run_pcm_capture(output_path, source, pause_flag, flag_for_thread, label)
                     })
                     .context("failed to spawn loopback capture thread")?;
                 log::info!(
@@ -143,10 +137,7 @@ impl PlatformAudioSession {
                 })
             }
             None => {
-                log::warn!(
-                    "{}",
-                    loopback_unavailable_message()
-                );
+                log::warn!("{}", loopback_unavailable_message());
                 Ok(Self {
                     backend: LoopbackBackend::Silence {
                         output_path: config.output_path,
@@ -409,9 +400,15 @@ fn detect_loopback_source() -> Option<PcmSource> {
             continue;
         }
         let lower = line.to_ascii_lowercase();
-        let is_loopback = ["blackhole", "soundflower", "loopback", "vb-cable", "vb cable"]
-            .iter()
-            .any(|n| lower.contains(n));
+        let is_loopback = [
+            "blackhole",
+            "soundflower",
+            "loopback",
+            "vb-cable",
+            "vb cable",
+        ]
+        .iter()
+        .any(|n| lower.contains(n));
         if !is_loopback {
             continue;
         }
