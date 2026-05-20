@@ -16,6 +16,7 @@
     clearAutosave,
     createExportId,
     exportVideo,
+    extractWaveform,
     generateThumbnails,
     listenToExportState,
     loadEditorDocument,
@@ -182,6 +183,20 @@
     }
   }
 
+  // Decode the audio peak envelope for the timeline waveform. Best-effort
+  // and fully async — the editor is usable before it resolves.
+  async function loadWaveform() {
+    try {
+      store.waveform = await extractWaveform(
+        store.audioPath,
+        store.microphonePath,
+      );
+    } catch (err) {
+      console.warn("Waveform extraction failed", err);
+      store.waveform = [];
+    }
+  }
+
   function handleVideoLoadedMetadata() {
     if (!videoEl) return;
     mergeVideoMetadata({
@@ -235,6 +250,8 @@
       store.recordingPath = document.mediaPath;
       store.audioPath = document.audioPath ?? null;
       store.microphonePath = document.microphonePath ?? null;
+      store.waveform = [];
+      void loadWaveform();
       systemAudioSrc = document.audioPath
         ? convertFileSrc(document.audioPath)
         : "";

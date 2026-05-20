@@ -372,6 +372,23 @@ export function detectSilence(
 	});
 }
 
+/**
+ * Decode a recording's audio (mic + system mixed) into a compact peak
+ * envelope — `buckets` normalised values in [0,1] — for drawing a waveform
+ * on the timeline. Returns an empty array when the clip has no audio.
+ */
+export function extractWaveform(
+	audioPath?: string | null,
+	microphonePath?: string | null,
+	buckets?: number,
+): Promise<number[]> {
+	return invoke<number[]>("extract_waveform", {
+		audioPath: audioPath ?? null,
+		microphonePath: microphonePath ?? null,
+		buckets: buckets ?? null,
+	});
+}
+
 //  Autosave / Recovery commands 
 
 export function autosaveProject(projectPath: string, editsJson: string): Promise<void> {

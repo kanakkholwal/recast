@@ -1,5 +1,9 @@
 <script lang="ts">
-  import { detectSilence, type SilenceSegment } from "$lib/ipc";
+  import {
+    detectSilence,
+    type SilenceDetectOptions,
+    type SilenceSegment,
+  } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { overlapsAny } from "$lib/timeline/cuts";
   import {
@@ -29,13 +33,65 @@
   // left for the user to judge individually.
   const BULK_MIN_CONFIDENCE = 0.5;
 
+  // Detection sensitivity. "Balanced" uses the Rust-side defaults; the other
+  // two trade recall against false positives. Persisted across sessions.
+  type Sensitivity = "relaxed" | "balanced" | "aggressive";
+  const SENSITIVITY_KEY = "recast-silence-sensitivity";
+  const PRESETS: Record<Sensitivity, SilenceDetectOptions> = {
+    relaxed: {
+      noiseDb: -38,
+      minAudioSilence: 1,
+      freezeNoiseDb: -52,
+      minFreeze: 0.8,
+      minSegment: 1.5,
+      mergeGap: 0.3,
+    },
+    balanced: {},
+    aggressive: {
+      noiseDb: -24,
+      minAudioSilence: 0.4,
+      freezeNoiseDb: -38,
+      minFreeze: 0.35,
+      minSegment: 0.6,
+      mergeGap: 0.5,
+    },
+  };
+  const SENSITIVITY_OPTIONS: Array<{ id: Sensitivity; label: string }> = [
+    { id: "relaxed", label: "Relaxed" },
+    { id: "balanced", label: "Balanced" },
+    { id: "aggressive", label: "Aggressive" },
+  ];
+
+  function loadSensitivity(): Sensitivity {
+    const v =
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem(SENSITIVITY_KEY)
+        : null;
+    return v === "relaxed" || v === "aggressive" ? v : "balanced";
+  }
+
+  let sensitivity = $state<Sensitivity>(loadSensitivity());
+
+  function setSensitivity(next: Sensitivity) {
+    if (next === sensitivity) return;
+    sensitivity = next;
+    try {
+      localStorage.setItem(SENSITIVITY_KEY, next);
+    } catch {
+      // localStorage unavailable — sensitivity just won't persist.
+    }
+    // The load effect re-runs because it reads `sensitivity`.
+  }
+
   type Status = "idle" | "loading" | "ready" | "error" | "empty";
   let status = $state<Status>("idle");
   let errorMsg = $state<string | null>(null);
   // Suggestions the user hasn't yet cut or dismissed.
   let pending = $state<SilenceSegment[]>([]);
 
+  // Re-runs whenever `sensitivity` changes (it is read below).
   $effect(() => {
+    void sensitivity;
     void loadSuggestions();
   });
 
@@ -52,11 +108,17 @@
         store.recordingPath,
         store.audioPath,
         store.microphonePath,
+        PRESETS[sensitivity],
       );
-      // Drop anything already removed by an existing cut.
-      pending = result.filter(
-        (s) => !overlapsAny(store.cuts, s.start, s.end),
-      );
+      // Drop anything already removed by a cut, or previously dismissed,
+      // then surface the strongest candidates first.
+      pending = result
+        .filter(
+          (s) =>
+            !overlapsAny(store.cuts, s.start, s.end) &&
+            !overlapsAny(store.dismissedSilences, s.start, s.end),
+        )
+        .sort((a, b) => b.confidence - a.confidence);
       status = pending.length === 0 ? "empty" : "ready";
     } catch (err) {
       console.error("Failed to detect silence", err);
@@ -93,6 +155,18 @@
     return "Uncertain";
   }
 
+  function confidenceTextClass(c: number): string {
+    if (c >= 0.66) return "text-emerald-500";
+    if (c >= 0.4) return "text-amber-500";
+    return "text-muted-foreground";
+  }
+
+  function confidenceBarClass(c: number): string {
+    if (c >= 0.66) return "bg-emerald-500";
+    if (c >= 0.4) return "bg-amber-500";
+    return "bg-muted-foreground/60";
+  }
+
   function previewAt(seg: SilenceSegment) {
     store.currentTime = seg.start;
   }
@@ -114,6 +188,7 @@
   }
 
   function dismiss(seg: SilenceSegment) {
+    store.dismissSilence(seg.start, seg.end);
     pending = pending.filter((s) => s !== seg);
     if (pending.length === 0) status = "empty";
   }
@@ -132,6 +207,7 @@
   }
 
   function dismissAll() {
+    for (const seg of pending) store.dismissSilence(seg.start, seg.end);
     pending = [];
     status = "empty";
   }
@@ -162,6 +238,28 @@
       Close
     </Button>
   </header>
+
+  <div class="flex items-center gap-1.5 border-b border-border px-3 py-1.5">
+    <span class="text-[10px] font-medium text-muted-foreground">Sensitivity</span>
+    <div
+      class="ml-auto flex items-center gap-0.5 rounded-md bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+    >
+      {#each SENSITIVITY_OPTIONS as opt (opt.id)}
+        <button
+          type="button"
+          onclick={() => setSensitivity(opt.id)}
+          class={cn(
+            "rounded px-1.5 py-0.5 text-[10px] font-semibold transition-colors",
+            sensitivity === opt.id
+              ? "bg-card text-foreground shadow-(--shadow-craft-inset)"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          {opt.label}
+        </button>
+      {/each}
+    </div>
+  </div>
 
   {#if status === "loading"}
     <div class="flex items-center justify-center gap-2 px-3 py-6 text-[11px] text-muted-foreground">
@@ -234,17 +332,16 @@
                     Overlaps a focus or annotation
                   </span>
                 {:else}
-                  <span
-                    class={cn(
-                      "font-medium",
-                      seg.confidence >= 0.66
-                        ? "text-emerald-500"
-                        : seg.confidence >= 0.4
-                          ? "text-amber-500"
-                          : "text-muted-foreground",
-                    )}
-                  >
-                    {confidenceLabel(seg.confidence)}
+                  <span class="inline-flex items-center gap-1 align-middle">
+                    <span class="inline-block h-1 w-6 overflow-hidden rounded-full bg-muted">
+                      <span
+                        class={cn("block h-full rounded-full", confidenceBarClass(seg.confidence))}
+                        style="width: {Math.round(seg.confidence * 100)}%"
+                      ></span>
+                    </span>
+                    <span class={cn("font-medium", confidenceTextClass(seg.confidence))}>
+                      {confidenceLabel(seg.confidence)}
+                    </span>
                   </span>
                   · {[
                     seg.micSilent && "mic",

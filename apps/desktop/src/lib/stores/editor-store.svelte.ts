@@ -471,6 +471,8 @@ export interface EditorRenderState {
 	autoZoomEnabled?: boolean;
 	/** Silence / manual cuts removed from the timeline. */
 	cuts?: TimelineCut[];
+	/** Silence suggestions the user dismissed — kept so they don't resurface. */
+	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
@@ -596,6 +598,9 @@ export function createEditorStore() {
 	let microphonePath = $state<string | null>(null);
 	let metadata = $state<VideoMetadata | null>(null);
 	let thumbnailStrip = $state<string[]>([]);
+	// Audio peak envelope (0..1 per bucket) for the timeline waveform.
+	// Transient — recomputed on document load, never persisted.
+	let waveform = $state<number[]>([]);
 
 	// Playback
 	let currentTime = $state(0);
@@ -607,6 +612,9 @@ export function createEditorStore() {
 
 	// Silence / manual cuts — removed ranges, in original-recording seconds.
 	let cuts = $state<TimelineCut[]>([]);
+	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
+	// project reopen doesn't resurface ranges they already rejected.
+	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
 
 	// Background
 	let backgroundType = $state<BackgroundType>('wallpaper');
@@ -1156,6 +1164,7 @@ export function createEditorStore() {
 		zoomRegions = [];
 		selectedZoomRegionId = null;
 		cuts = [];
+		dismissedSilences = [];
 		autoZoomEnabled = true;
 		autoZoomApplied = false;
 		annotations = [];
@@ -1242,6 +1251,41 @@ export function createEditorStore() {
 		cuts = [];
 	}
 
+	/**
+	 * Resize a cut. Does NOT push undo — callers (the cut lane's drag
+	 * handlers) own coalescing via `pushUndoStateCoalesced` so a whole drag
+	 * is one undo entry.
+	 */
+	function updateCut(id: string, start: number, end: number) {
+		cuts = cuts.map((c) => (c.id === id ? { ...c, start, end } : c));
+	}
+
+	/**
+	 * Merge overlapping or touching cuts into one, keeping the earliest id so
+	 * the lane's keyed `{#each}` stays stable. Called at the end of a
+	 * create/resize drag — never mid-drag, which would yank the dragged card.
+	 */
+	function mergeCuts() {
+		const sorted = [...cuts].sort((a, b) => a.start - b.start);
+		const merged: TimelineCut[] = [];
+		for (const c of sorted) {
+			const last = merged[merged.length - 1];
+			if (last && c.start <= last.end + 0.001) {
+				last.end = Math.max(last.end, c.end);
+				if (c.source === 'manual') last.source = 'manual';
+			} else {
+				merged.push({ ...c });
+			}
+		}
+		cuts = merged;
+	}
+
+	/** Record a dismissed silence range so detection won't suggest it again. */
+	function dismissSilence(start: number, end: number) {
+		dismissedSilences = [...dismissedSilences, { start, end }];
+		isDirty = true;
+	}
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1284,6 +1328,7 @@ export function createEditorStore() {
 			autoZoomApplied,
 			autoZoomEnabled,
 			cuts: cuts.map((cut) => ({ ...cut })),
+			dismissedSilences: dismissedSilences.map((d) => ({ ...d })),
 			cursorMotionEasing,
 			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
@@ -1360,6 +1405,10 @@ export function createEditorStore() {
 			start: c.start,
 			end: c.end,
 			source: c.source ?? 'silence',
+		}));
+		dismissedSilences = (state.dismissedSilences ?? []).map((d) => ({
+			start: d.start,
+			end: d.end,
 		}));
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
@@ -1450,6 +1499,9 @@ export function createEditorStore() {
 		get thumbnailStrip() { return thumbnailStrip; },
 		set thumbnailStrip(v: string[]) { thumbnailStrip = v; },
 
+		get waveform() { return waveform; },
+		set waveform(v: number[]) { waveform = v; },
+
 		get currentTime() { return currentTime; },
 		set currentTime(v: number) { currentTime = v; },
 
@@ -1510,6 +1562,7 @@ export function createEditorStore() {
 		// Silence / manual cuts.
 		get cuts() { return cuts; },
 		get cutDuration() { return totalCutDuration(cuts); },
+		get dismissedSilences() { return dismissedSilences; },
 
 		get autoZoomEnabled() { return autoZoomEnabled; },
 		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; },
@@ -1602,6 +1655,9 @@ export function createEditorStore() {
 		addCut,
 		removeCut,
 		clearCuts,
+		updateCut,
+		mergeCuts,
+		dismissSilence,
 		addAnnotation,
 		updateAnnotation,
 		removeAnnotation,

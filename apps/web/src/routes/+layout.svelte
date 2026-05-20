@@ -8,13 +8,23 @@
 
 	let { children } = $props();
 
-	// The dashboard ships its own shell — keep the marketing chrome off it.
-	const isDashboard = $derived(page.url.pathname.startsWith("/dashboard"));
+	// The dashboard and auth screens ship their own shells — keep the
+	// marketing chrome off them.
+	const authPaths = new Set([
+		"/login",
+		"/signup",
+		"/forgot-password",
+		"/reset-password",
+	]);
+	const isChromeless = $derived(
+		page.url.pathname.startsWith("/dashboard") ||
+			authPaths.has(page.url.pathname),
+	);
 </script>
 
 <ModeWatcher />
 
-{#if !isDashboard}
+{#if !isChromeless}
 	<div
 		aria-hidden="true"
 		class="bg-grid bg-grid-fade pointer-events-none fixed inset-0 -z-10 opacity-30"

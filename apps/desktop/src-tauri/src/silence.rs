@@ -1,70 +1,61 @@
 //! Silence detection for the editor timeline.
 //!
-//! Finds time ranges where the recording has *nothing meaningful happening*:
-//! no microphone speech, no system audio, and no visible screen motion. The
-//! camera feed is deliberately ignored — a talking head on screen does not
-//! make the screen "active".
+//! A range counts as silence when **both** of the following hold for at least
+//! `min_segment` seconds:
 //!
-//! Detection leans on FFmpeg's battle-tested filters rather than hand-rolled
-//! DSP:
-//!   - `silencedetect` over each audio track (mic + system) → silent runs.
-//!   - `freezedetect` over the screen video → frozen (static) runs.
+//!   1. The audio envelope is *flat and minimal* — frames sit within
+//!      `flatness_db` of the recording's own estimated noise floor. This is
+//!      explicitly relative, not an absolute dB threshold: a quiet hum in a
+//!      noisy room reads as "background" because the floor itself adapts.
+//!   2. The mouse cursor is *idle* — the cursor track shows no meaningful
+//!      movement over the same range.
 //!
-//! A candidate silence segment is the **interval intersection** of all three
-//! signals — silent on mic AND silent on system audio AND frozen on screen.
-//! Requiring agreement across every signal is what keeps quiet-but-meaningful
-//! moments (narration over a static slide; a silent screen recording of a
-//! video playing) from being flagged.
-//!
-//! Everything streams through FFmpeg one decode pass at a time, so memory and
-//! compute stay flat regardless of recording length.
+//! Background-noise suppression is intentionally out of scope here. So is
+//! pixel-level screen-motion detection (blinking carets and ticking clocks
+//! made `freezedetect` too noisy to be useful as a hard gate).
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde::{Deserialize, Serialize};
 
-/// Tunable detection thresholds. Every field has a sensible default so the
-/// frontend may send a partial object (or nothing at all).
+//  Options / output
+
+/// Detection thresholds. Every field has a default so the frontend may send
+/// a partial object — or nothing at all.
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SilenceOptions {
-    /// Audio level (dBFS) at or below which audio counts as silent.
-    /// Higher (less negative) = more aggressive. -30 dB ≈ "quiet room".
-    #[serde(default = "d_noise_db")]
-    pub noise_db: f64,
-    /// Minimum continuous silent-audio run for `silencedetect` to register.
+    /// Frames must sit within this many dB of the recording's noise floor
+    /// to count as background. Smaller = stricter (only very flat
+    /// stretches register); larger = more aggressive.
+    #[serde(default = "d_flatness_db")]
+    pub flatness_db: f64,
+    /// Minimum continuous flat-audio run for a candidate (seconds).
     #[serde(default = "d_min_audio_silence")]
     pub min_audio_silence: f64,
-    /// `freezedetect` noise tolerance (dB) — how much frame-to-frame change
-    /// still counts as "frozen". Compression noise and a blinking caret sit
-    /// well under -45 dB.
-    #[serde(default = "d_freeze_noise_db")]
-    pub freeze_noise_db: f64,
-    /// Minimum continuous frozen-video run for `freezedetect` to register.
-    #[serde(default = "d_min_freeze")]
-    pub min_freeze: f64,
-    /// Minimum length of a returned silence segment. Shorter dead air is not
-    /// worth a cut and tends to read as a stutter.
+    /// Minimum length of a returned silence segment (seconds).
     #[serde(default = "d_min_segment")]
     pub min_segment: f64,
-    /// Adjacent candidate segments closer than this merge into one — a tiny
-    /// blip between two long silences should not split the cut.
+    /// Adjacent candidate segments closer than this merge into one (seconds).
     #[serde(default = "d_merge_gap")]
     pub merge_gap: f64,
+
+    // -- Legacy fields, kept so existing preset payloads round-trip. The
+    //    detector no longer uses an absolute audio floor or freezedetect.
+    #[serde(default = "d_noise_db_legacy")]
+    pub noise_db: f64,
+    #[serde(default = "d_freeze_noise_db_legacy")]
+    pub freeze_noise_db: f64,
+    #[serde(default = "d_min_freeze_legacy")]
+    pub min_freeze: f64,
 }
 
-fn d_noise_db() -> f64 {
-    -30.0
+fn d_flatness_db() -> f64 {
+    5.0
 }
 fn d_min_audio_silence() -> f64 {
     0.6
-}
-fn d_freeze_noise_db() -> f64 {
-    -45.0
-}
-fn d_min_freeze() -> f64 {
-    0.5
 }
 fn d_min_segment() -> f64 {
     1.0
@@ -72,16 +63,26 @@ fn d_min_segment() -> f64 {
 fn d_merge_gap() -> f64 {
     0.4
 }
+fn d_noise_db_legacy() -> f64 {
+    -30.0
+}
+fn d_freeze_noise_db_legacy() -> f64 {
+    -45.0
+}
+fn d_min_freeze_legacy() -> f64 {
+    0.5
+}
 
 impl Default for SilenceOptions {
     fn default() -> Self {
         Self {
-            noise_db: d_noise_db(),
+            flatness_db: d_flatness_db(),
             min_audio_silence: d_min_audio_silence(),
-            freeze_noise_db: d_freeze_noise_db(),
-            min_freeze: d_min_freeze(),
             min_segment: d_min_segment(),
             merge_gap: d_merge_gap(),
+            noise_db: d_noise_db_legacy(),
+            freeze_noise_db: d_freeze_noise_db_legacy(),
+            min_freeze: d_min_freeze_legacy(),
         }
     }
 }
@@ -92,214 +93,228 @@ impl Default for SilenceOptions {
 pub struct SilenceSegment {
     pub start: f64,
     pub end: f64,
-    /// 0..1 — how strongly this range warrants a cut. Drives which
-    /// suggestions are pre-selected vs. shown as "uncertain" in the UI.
+    /// 0..1 — how strongly this range warrants a cut.
     pub confidence: f32,
-    /// Microphone track was present and confirmed silent over this range.
+    /// Microphone track was present and contributed to the audio analysis.
     pub mic_silent: bool,
-    /// System-audio track was present and confirmed silent over this range.
+    /// System-audio track was present and contributed to the audio analysis.
     pub system_silent: bool,
-    /// Screen video was confirmed frozen over this range.
-    pub screen_static: bool,
+    /// Cursor track was present and confirmed idle over the range.
+    pub cursor_idle: bool,
 }
 
 type Interval = (f64, f64);
 
-/// Analyse a recording and return candidate silence segments.
-///
-/// `video_path` is required (the screen-motion signal). `audio_path` /
-/// `microphone_path` are optional — a missing track is treated as silent
-/// everywhere, so a screen-only recording still produces useful results from
-/// the freeze signal alone (with a confidence penalty applied).
+// 8 kHz mono is plenty for envelope detection — speech and dynamics live well
+// below half that.
+const RATE: u32 = 8000;
+const FRAME_MS: f64 = 50.0;
+/// Cursor counts as idle once it stays within this radius for this long.
+const CURSOR_IDLE_MIN_US: u64 = 300_000;
+const CURSOR_IDLE_RADIUS_PX: f64 = 8.0;
+/// Where the noise floor sits in the frame-energy distribution. The 20th
+/// percentile is robust to silence/speech ratio: even a mostly-talking
+/// recording has a bottom 20% that is the room tone.
+const PERCENTILE_FLOOR: f64 = 0.20;
+
+//  Command
+
 #[tauri::command]
 pub async fn detect_silence(
-    video_path: String,
     audio_path: Option<String>,
     microphone_path: Option<String>,
+    cursor_path: Option<String>,
     options: Option<SilenceOptions>,
 ) -> Result<Vec<SilenceSegment>, String> {
     let opts = options.unwrap_or_default();
     tokio::task::spawn_blocking(move || {
-        detect_blocking(&video_path, audio_path.as_deref(), microphone_path.as_deref(), opts)
+        detect_blocking(
+            audio_path.as_deref(),
+            microphone_path.as_deref(),
+            cursor_path.as_deref(),
+            opts,
+        )
     })
     .await
     .map_err(|e| format!("silence-detection task panicked: {e}"))?
 }
 
 fn detect_blocking(
-    video_path: &str,
     audio_path: Option<&str>,
     microphone_path: Option<&str>,
+    cursor_path: Option<&str>,
     opts: SilenceOptions,
 ) -> Result<Vec<SilenceSegment>, String> {
-    // Screen-motion pass. This stderr also carries the input `Duration:` line,
-    // which we use to close any silence/freeze run that lasts to EOF.
-    let video_stderr = ffmpeg_stderr(&[
-        "-hide_banner".into(),
-        "-nostats".into(),
-        "-i".into(),
-        video_path.into(),
-        "-vf".into(),
-        format!(
-            "freezedetect=n={:.1}dB:d={:.3}",
-            opts.freeze_noise_db, opts.min_freeze
-        ),
-        "-an".into(),
-        "-f".into(),
-        "null".into(),
-        "-".into(),
-    ])?;
-    let total = parse_duration(&video_stderr).unwrap_or(0.0);
-    if total <= 0.0 {
-        return Err("could not determine recording duration".into());
+    let inputs: Vec<&str> = [audio_path, microphone_path]
+        .into_iter()
+        .flatten()
+        .filter(|p| Path::new(p).exists())
+        .collect();
+    if inputs.is_empty() {
+        return Err("no audio track available to analyse".into());
     }
-    let freeze = parse_freeze_intervals(&video_stderr, total);
 
-    // Audio passes. A missing track is "silent everywhere".
-    let mic = match microphone_path {
-        Some(p) if Path::new(p).exists() => Some(detect_audio_silence(p, &opts)?),
-        _ => None,
+    // Decode the mixed audio to mono s16le at our analysis rate.
+    let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostats".into()];
+    for p in &inputs {
+        args.push("-i".into());
+        args.push((*p).to_string());
+    }
+    if inputs.len() > 1 {
+        args.push("-filter_complex".into());
+        args.push(format!("amix=inputs={}:normalize=0", inputs.len()));
+    }
+    args.extend([
+        "-ac".into(),
+        "1".into(),
+        "-ar".into(),
+        RATE.to_string(),
+        "-f".into(),
+        "s16le".into(),
+        "-".into(),
+    ]);
+    let pcm = ffmpeg_stdout(&args)?;
+    let samples: Vec<i16> = pcm
+        .chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    if samples.len() < 2 {
+        return Ok(Vec::new());
+    }
+    let total = samples.len() as f64 / RATE as f64;
+
+    // Per-frame RMS in dBFS.
+    let frame_size = (RATE as f64 * FRAME_MS / 1000.0).round() as usize;
+    let frame_dur = FRAME_MS / 1000.0;
+    let frame_db: Vec<f64> = samples.chunks(frame_size).map(frame_rms_db).collect();
+
+    // Audio-flat runs: stretches whose envelope stays within `flatness_db`
+    // of the recording's own noise floor. Defines candidates that are both
+    // minimal *and* consistent — the noisy-background problem disappears
+    // because the floor itself moves with the recording.
+    let audio_flat = flat_intervals(
+        &frame_db,
+        frame_dur,
+        opts.min_audio_silence,
+        opts.flatness_db,
+    );
+    let audio_flat = merge_close(audio_flat, opts.merge_gap);
+
+    // Cursor-idle intervals. A missing track is treated as "idle everywhere"
+    // so the feature still works without cursor data, but the segment's
+    // `cursor_idle` flag and score reflect the unverified state.
+    let (cursor_idle, has_cursor) = match cursor_path {
+        Some(p) if Path::new(p).exists() => {
+            let bytes = std::fs::read(Path::new(p))
+                .map_err(|e| format!("read cursor track: {e}"))?;
+            let track: crate::cursor::CursorTrack = serde_json::from_slice(&bytes)
+                .map_err(|e| format!("parse cursor track: {e}"))?;
+            let periods = crate::cursor::smoothing::detect_idle_periods(
+                &track.samples,
+                CURSOR_IDLE_MIN_US,
+                CURSOR_IDLE_RADIUS_PX,
+            );
+            let ivs: Vec<Interval> = periods
+                .into_iter()
+                .map(|p| {
+                    (
+                        p.start_us as f64 / 1_000_000.0,
+                        p.end_us as f64 / 1_000_000.0,
+                    )
+                })
+                .collect();
+            (ivs, true)
+        }
+        _ => (vec![(0.0, total)], false),
     };
-    let system = match audio_path {
-        Some(p) if Path::new(p).exists() => Some(detect_audio_silence(p, &opts)?),
-        _ => None,
-    };
-    let has_audio = mic.is_some() || system.is_some();
 
-    let full = vec![(0.0, total)];
-    let mic_iv = mic.clone().unwrap_or_else(|| full.clone());
-    let system_iv = system.clone().unwrap_or_else(|| full.clone());
+    // Both constraints must hold — the user's spec, intentionally strict.
+    let mut candidates = intersect(&audio_flat, &cursor_idle);
+    candidates = merge_close(candidates, opts.merge_gap);
+    candidates.retain(|iv| iv.1 - iv.0 >= opts.min_segment);
 
-    // Silence = silent on mic AND on system audio AND frozen on screen.
-    let mut candidate = intersect(&intersect(&mic_iv, &system_iv), &freeze);
-    candidate = merge_close(candidate, opts.merge_gap);
-    candidate.retain(|iv| iv.1 - iv.0 >= opts.min_segment);
-
-    let segments = candidate
+    Ok(candidates
         .into_iter()
         .map(|seg| SilenceSegment {
             start: round3(seg.0),
             end: round3(seg.1),
-            confidence: score(seg, &mic_iv, &system_iv, &freeze, has_audio),
-            mic_silent: mic.is_some(),
-            system_silent: system.is_some(),
-            screen_static: true,
+            confidence: score(seg, has_cursor),
+            mic_silent: microphone_path
+                .map(|p| Path::new(p).exists())
+                .unwrap_or(false),
+            system_silent: audio_path.map(|p| Path::new(p).exists()).unwrap_or(false),
+            cursor_idle: has_cursor,
         })
-        .collect();
-    Ok(segments)
+        .collect())
 }
 
-fn detect_audio_silence(path: &str, opts: &SilenceOptions) -> Result<Vec<Interval>, String> {
-    let stderr = ffmpeg_stderr(&[
-        "-hide_banner".into(),
-        "-nostats".into(),
-        "-i".into(),
-        path.into(),
-        "-af".into(),
-        format!(
-            "silencedetect=noise={:.1}dB:d={:.3}",
-            opts.noise_db, opts.min_audio_silence
-        ),
-        "-vn".into(),
-        "-f".into(),
-        "null".into(),
-        "-".into(),
-    ])?;
-    let total = parse_duration(&stderr).unwrap_or(f64::MAX);
-    Ok(parse_silence_intervals(&stderr, total))
-}
+//  Audio analysis
 
-/// Spawn ffmpeg, discard stdout, return the full stderr text. ffmpeg writes
-/// `silencedetect` / `freezedetect` results and the input banner to stderr.
-fn ffmpeg_stderr(args: &[String]) -> Result<String, String> {
-    let mut cmd = Command::new(crate::ffmpeg::ffmpeg_path());
-    cmd.args(args)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::piped());
-    crate::ffmpeg::configure_silent_command(&mut cmd);
-    let output = cmd
-        .output()
-        .map_err(|e| format!("failed to run ffmpeg for analysis: {e}"))?;
-    Ok(String::from_utf8_lossy(&output.stderr).into_owned())
-}
-
-//  stderr parsing
-
-/// Pull the value after a `key:` token on a log line, parsed as seconds.
-fn value_after(line: &str, key: &str) -> Option<f64> {
-    let idx = line.find(key)? + key.len();
-    line[idx..]
-        .split_whitespace()
-        .next()
-        .and_then(|t| t.trim_end_matches([',', '|']).parse::<f64>().ok())
-}
-
-/// Parse `Duration: HH:MM:SS.ss` from ffmpeg's input banner.
-fn parse_duration(stderr: &str) -> Option<f64> {
-    for line in stderr.lines() {
-        let trimmed = line.trim_start();
-        if let Some(rest) = trimmed.strip_prefix("Duration:") {
-            let token = rest.trim().split(',').next()?.trim();
-            let mut parts = token.split(':');
-            let h: f64 = parts.next()?.parse().ok()?;
-            let m: f64 = parts.next()?.parse().ok()?;
-            let s: f64 = parts.next()?.parse().ok()?;
-            return Some(h * 3600.0 + m * 60.0 + s);
-        }
+fn frame_rms_db(chunk: &[i16]) -> f64 {
+    if chunk.is_empty() {
+        return -120.0;
     }
-    None
+    let sum_sq: f64 = chunk
+        .iter()
+        .map(|s| {
+            let v = *s as f64;
+            v * v
+        })
+        .sum();
+    let rms = (sum_sq / chunk.len() as f64).sqrt();
+    if rms > 1e-6 {
+        20.0 * (rms / 32768.0).log10()
+    } else {
+        -120.0
+    }
 }
 
-/// Parse `silence_start` / `silence_end` pairs. A `silence_start` with no
-/// matching `silence_end` ran to EOF and is closed at `total`.
-fn parse_silence_intervals(stderr: &str, total: f64) -> Vec<Interval> {
+/// Find runs of frames whose energy sits within `tol_db` of the recording's
+/// estimated noise floor. Returns intervals in seconds.
+fn flat_intervals(
+    frame_db: &[f64],
+    frame_dur: f64,
+    min_dur: f64,
+    tol_db: f64,
+) -> Vec<Interval> {
+    if frame_db.is_empty() {
+        return Vec::new();
+    }
+    let mut finite: Vec<f64> = frame_db.iter().copied().filter(|v| v.is_finite()).collect();
+    if finite.is_empty() {
+        return Vec::new();
+    }
+    finite.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let idx = ((finite.len() as f64) * PERCENTILE_FLOOR).floor() as usize;
+    let floor = finite[idx.min(finite.len() - 1)];
+    let cap = floor + tol_db;
+
     let mut out = Vec::new();
-    let mut open: Option<f64> = None;
-    for line in stderr.lines() {
-        if !line.contains("silencedetect") {
-            continue;
-        }
-        if let Some(start) = value_after(line, "silence_start:") {
-            open = Some(start.max(0.0));
-        } else if let Some(end) = value_after(line, "silence_end:") {
-            if let Some(start) = open.take() {
-                push_interval(&mut out, start, end);
+    let mut run_start: Option<usize> = None;
+    let n = frame_db.len();
+    for i in 0..n {
+        let is_bg = frame_db[i] <= cap;
+        match (is_bg, run_start) {
+            (true, None) => run_start = Some(i),
+            (false, Some(s)) => {
+                let st = s as f64 * frame_dur;
+                let en = i as f64 * frame_dur;
+                if en - st >= min_dur {
+                    out.push((st, en));
+                }
+                run_start = None;
             }
+            _ => {}
         }
     }
-    if let Some(start) = open {
-        push_interval(&mut out, start, total);
+    if let Some(s) = run_start {
+        let st = s as f64 * frame_dur;
+        let en = n as f64 * frame_dur;
+        if en - st >= min_dur {
+            out.push((st, en));
+        }
     }
     out
-}
-
-/// Parse `freeze_start` / `freeze_end` pairs from `freezedetect` metadata logs.
-fn parse_freeze_intervals(stderr: &str, total: f64) -> Vec<Interval> {
-    let mut out = Vec::new();
-    let mut open: Option<f64> = None;
-    for line in stderr.lines() {
-        if !line.contains("freezedetect") {
-            continue;
-        }
-        if let Some(start) = value_after(line, "freeze_start:") {
-            open = Some(start.max(0.0));
-        } else if let Some(end) = value_after(line, "freeze_end:") {
-            if let Some(start) = open.take() {
-                push_interval(&mut out, start, end);
-            }
-        }
-    }
-    if let Some(start) = open {
-        push_interval(&mut out, start, total);
-    }
-    out
-}
-
-fn push_interval(out: &mut Vec<Interval>, start: f64, end: f64) {
-    if end > start {
-        out.push((start, end));
-    }
 }
 
 //  Interval algebra
@@ -341,42 +356,126 @@ fn merge_close(mut intervals: Vec<Interval>, gap: f64) -> Vec<Interval> {
 
 //  Confidence
 
-/// Smallest distance from a segment's edges to the edges of whichever signal
-/// interval contains it — a large margin means the segment sits comfortably
-/// inside a solidly silent run rather than on a knife-edge.
-fn containing_margin(seg: Interval, intervals: &[Interval]) -> f64 {
-    intervals
-        .iter()
-        .filter(|iv| iv.0 <= seg.0 + 1e-6 && iv.1 + 1e-6 >= seg.1)
-        .map(|iv| (seg.0 - iv.0).min(iv.1 - seg.1))
-        .fold(0.0_f64, f64::max)
-}
-
-fn score(
-    seg: Interval,
-    mic: &[Interval],
-    system: &[Interval],
-    freeze: &[Interval],
-    has_audio: bool,
-) -> f32 {
+fn score(seg: Interval, has_cursor: bool) -> f32 {
     let len = seg.1 - seg.0;
-    // Longer dead air is both more obviously cuttable and lower-risk.
     let len_score = (len / 4.0).min(1.0);
-    // Robustness: how far each signal extends past the segment on its
-    // tightest side. Near-threshold flecks score low.
-    let margin = containing_margin(seg, mic)
-        .min(containing_margin(seg, system))
-        .min(containing_margin(seg, freeze));
-    let margin_score = (margin / 1.0).min(1.0);
-    let mut c = 0.45 + 0.35 * len_score + 0.20 * margin_score;
-    // No audio track at all means we are leaning entirely on screen-freeze —
-    // weaker evidence, so never let these read as high-confidence.
-    if !has_audio {
-        c -= 0.25;
+    let mut c = 0.45 + 0.40 * len_score;
+    // Verified-idle cursor is a real second-source confirmation; an
+    // unverified cursor (track missing) gets none.
+    if has_cursor {
+        c += 0.15;
     }
     c.clamp(0.0, 1.0) as f32
 }
 
 fn round3(v: f64) -> f64 {
     (v * 1000.0).round() / 1000.0
+}
+
+//  ffmpeg I/O
+
+/// Spawn ffmpeg and return its raw stdout bytes.
+fn ffmpeg_stdout(args: &[String]) -> Result<Vec<u8>, String> {
+    let mut cmd = Command::new(crate::ffmpeg::ffmpeg_path());
+    cmd.args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    crate::ffmpeg::configure_silent_command(&mut cmd);
+    let output = cmd
+        .output()
+        .map_err(|e| format!("failed to run ffmpeg: {e}"))?;
+    if !output.status.success() {
+        return Err("ffmpeg exited with an error while decoding audio".into());
+    }
+    Ok(output.stdout)
+}
+
+//  Waveform extraction (the timeline-display backing data)
+
+/// Decode a recording's audio to a compact peak envelope for the timeline.
+///
+/// Mic + system audio are mixed (if both exist), downsampled to a low rate,
+/// and reduced to `buckets` normalised peak values in [0,1]. The result is
+/// purely visual — it lets the user *see* where the silence is.
+#[tauri::command]
+pub async fn extract_waveform(
+    audio_path: Option<String>,
+    microphone_path: Option<String>,
+    buckets: Option<usize>,
+) -> Result<Vec<f32>, String> {
+    let buckets = buckets.unwrap_or(2000).clamp(64, 8000);
+    tokio::task::spawn_blocking(move || {
+        waveform_blocking(
+            audio_path.as_deref(),
+            microphone_path.as_deref(),
+            buckets,
+        )
+    })
+    .await
+    .map_err(|e| format!("waveform task panicked: {e}"))?
+}
+
+fn waveform_blocking(
+    audio_path: Option<&str>,
+    microphone_path: Option<&str>,
+    buckets: usize,
+) -> Result<Vec<f32>, String> {
+    // Visual fidelity only — 4 kHz mono is plenty for an envelope and keeps
+    // even hour-long recordings to a bounded buffer.
+    const WAVE_RATE: u32 = 4000;
+
+    let inputs: Vec<&str> = [audio_path, microphone_path]
+        .into_iter()
+        .flatten()
+        .filter(|p| Path::new(p).exists())
+        .collect();
+    if inputs.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let mut args: Vec<String> = vec!["-hide_banner".into(), "-nostats".into()];
+    for input in &inputs {
+        args.push("-i".into());
+        args.push((*input).to_string());
+    }
+    if inputs.len() > 1 {
+        args.push("-filter_complex".into());
+        args.push(format!("amix=inputs={}:normalize=0", inputs.len()));
+    }
+    args.extend([
+        "-ac".into(),
+        "1".into(),
+        "-ar".into(),
+        WAVE_RATE.to_string(),
+        "-f".into(),
+        "s16le".into(),
+        "-".into(),
+    ]);
+
+    let pcm = ffmpeg_stdout(&args)?;
+    let samples: Vec<i16> = pcm
+        .chunks_exact(2)
+        .map(|c| i16::from_le_bytes([c[0], c[1]]))
+        .collect();
+    if samples.len() < 2 {
+        return Ok(Vec::new());
+    }
+
+    let n = buckets.min(samples.len()).max(1);
+    let per = samples.len() as f64 / n as f64;
+    let mut out = vec![0f32; n];
+    for (i, bucket) in out.iter_mut().enumerate() {
+        let lo = (i as f64 * per) as usize;
+        let hi = (((i + 1) as f64 * per) as usize)
+            .min(samples.len())
+            .max(lo + 1);
+        let peak = samples[lo..hi]
+            .iter()
+            .map(|s| (*s as i32).unsigned_abs())
+            .max()
+            .unwrap_or(0);
+        *bucket = (peak as f32 / 32768.0).min(1.0);
+    }
+    Ok(out)
 }

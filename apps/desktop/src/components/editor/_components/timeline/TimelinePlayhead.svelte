@@ -40,7 +40,7 @@
       class="mx-auto mt-6 size-2 rounded-full border border-background bg-primary"
     ></div>
     <div
-      class="mx-auto h-45 w-px bg-primary/60 pointer-events-none"
+      class="mx-auto h-57 w-px bg-primary/60 pointer-events-none"
       id="timeline-control"
     ></div>
   </div>

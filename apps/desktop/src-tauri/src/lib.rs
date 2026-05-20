@@ -109,6 +109,7 @@ pub fn run() {
             commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,
             silence::detect_silence,
+            silence::extract_waveform,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,

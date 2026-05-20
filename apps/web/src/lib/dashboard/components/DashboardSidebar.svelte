@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
+	import { authClient } from "$lib/auth/client";
 	import { settingsStore } from "$lib/dashboard/store.svelte";
 	import Logo from "$lib/logo.svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import * as Sidebar from "@recast/ui/sidebar";
 	import { useSidebar } from "@recast/ui/sidebar";
-	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
 	import {
 		ArrowUpRight,
@@ -42,7 +42,7 @@
 	});
 
 	function signOut() {
-		toast.info("Auth isn't wired up yet — this is a local-dev placeholder.");
+		authClient.signOut();
 	}
 </script>
 

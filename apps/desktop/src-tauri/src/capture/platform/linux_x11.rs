@@ -126,6 +126,26 @@ impl CaptureSource for X11CaptureSource {
         // 32bpp visuals. Our encoder treats the pixels as BGRA either
         // way — the alpha byte is irrelevant for screen video, so a
         // garbage X byte is fine.
+        //
+        // Guard the buffer geometry before handing it downstream: the
+        // encoder reads exactly width*height*4 bytes. If the X server
+        // packs depth-24 at 24 bits-per-pixel, or pads scanlines to a
+        // wider `bitmap_pad`, the reply is a different length and the
+        // encoder would either panic or render smeared/striped frames.
+        // Fail loudly here instead — the message tells the next
+        // iteration exactly what to add a swap/repack path for.
+        let expected = self.width as usize * self.height as usize * 4;
+        if reply.data.len() != expected {
+            return Err(anyhow!(
+                "X11 GetImage returned {} bytes, expected {} for {}x{} BGRA — \
+                 the X server is not delivering packed 32-bit pixels; a \
+                 stride-repack path is needed for this display",
+                reply.data.len(),
+                expected,
+                self.width,
+                self.height
+            ));
+        }
         Ok(Some(reply.data))
     }
 
