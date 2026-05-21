@@ -15,6 +15,11 @@ on:
   push:
     tags:
       - "wallpapers-v*"
+    paths:
+      - "assets/backgrounds/wallpapers/**"
+      - "assets/backgrounds/thumbs/**"
+      - "assets/manifest.json"
+      - ".github/workflows/release-wallpapers.yml"
   workflow_dispatch:
     inputs:
       tag:
