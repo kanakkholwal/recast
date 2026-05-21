@@ -53,6 +53,14 @@ jobs:
         run: pnpm run test
         continue-on-error: true
 
+      # Database migrations
+      - name: Apply DB migrations (Production only)
+        if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+        run: pnpm db:migrate
+
       - name: Install Vercel CLI
         run: pnpm install --global vercel@latest
         working-directory: .
