@@ -128,6 +128,14 @@
       "svelte": "./src/components/ui/color-picker/index.ts",
       "default": "./src/components/ui/color-picker/index.ts"
     },
+    "./color-field": {
+      "svelte": "./src/components/ui/color-field/index.ts",
+      "default": "./src/components/ui/color-field/index.ts"
+    },
+    "./slider-control": {
+      "svelte": "./src/components/ui/slider-control/index.ts",
+      "default": "./src/components/ui/slider-control/index.ts"
+    },
     "./popover": {
       "svelte": "./src/components/ui/popover/index.ts",
       "default": "./src/components/ui/popover/index.ts"

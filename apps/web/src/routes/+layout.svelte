@@ -19,6 +19,7 @@
 	]);
 	const isChromeless = $derived(
 		page.url.pathname.startsWith("/dashboard") ||
+			page.url.pathname.startsWith("/admin") ||
 			chromelessPaths.has(page.url.pathname),
 	);
 </script>

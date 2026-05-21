@@ -13,7 +13,6 @@
 			links: [
 				{ label: "Features", href: "/features" },
 				{ label: "Pricing", href: "/pricing" },
-				{ label: "For gamers", href: "/gamers" },
 				{ label: "Download", href: "/download" },
 				{ label: "Changelog", href: "/changelog" },
 			],

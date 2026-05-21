@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
+	import {
+	  ChevronLeft,
+	  ChevronRight,
+	  Crown,
+	  Search,
+	  ShieldOff,
+	} from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import * as Select from "@recast/ui/select";
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
-	import {
-		ChevronLeft,
-		ChevronRight,
-		Crown,
-		Search,
-		ShieldOff,
-	} from "@lucide/svelte";
 
 	let { data } = $props();
 
@@ -73,7 +73,7 @@
 </header>
 
 <form
-	class="mb-4 flex flex-wrap items-center gap-2"
+	class="mb-4 flex flex-wrap items-center gap-2 bg-card/40 p-2 rounded-lg"
 	onsubmit={(e) => {
 		e.preventDefault();
 		applyFilters();

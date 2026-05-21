@@ -17,9 +17,7 @@
 	  Check,
 	  Cloud,
 	  Download,
-	  Gamepad2,
 	  Highlighter,
-	  ImageIcon,
 	  Layout,
 	  Link2,
 	  Lock,
@@ -129,7 +127,7 @@
 			title: "Smart zoom on clicks",
 			description:
 				"Recast watches your cursor, reads clicks and dwell, and zooms toward the moment that matters. You set zero keyframes.",
-			image: "/screenshots/preview_cursor.png",
+			image: "/screenshots/preview_zoom.png",
 		},
 		{
 			kind: "auto",
@@ -145,7 +143,7 @@
 			title: "Cursor smoothing",
 			description:
 				"Velocity-aware easing kills the jitter, with optional snap-to-target so the path lands where you meant to point.",
-			image: null,
+			image: "/screenshots/preview_cursor.png",
 		},
 		{
 			kind: "manual",
@@ -372,13 +370,12 @@
 		</Container>
 	</Section>
 
-	<!-- Inside-the-editor tour. The auto-polish section above promises "the
-	     editing happens while you record" — this section is the honest
-	     follow-up: here's exactly what's automatic and what's a knob you can
-	     reach for. Auto vs Manual chips read at a glance; the dashed image
-	     slots are explicit placeholders so the layout is final before the
-	     screenshots land. -->
-	<Section id="editor" class="border-t border-border-low/60">
+	<!-- Inside-the-editor tour. Horizontal scroll rail (not a grid) so each
+	     feature gets full-width attention; the screenshots/icons are tilted
+	     in 3D space so the section reads as a tools showcase, not a spec
+	     sheet. Cards extend past the Container's max-width on both edges,
+	     fading into the background to suggest "scroll for more". -->
+	<Section id="editor" class="overflow-hidden border-t border-border-low/60">
 		<Container>
 			<SectionHeader
 				eyebrow="What's in the editor"
@@ -386,71 +383,132 @@
 				description="Smart defaults cover most of what a demo needs. When you want to nudge something, the timeline is small, friendly, and deliberately not a real editor. Drag, drop, done."
 				align="center"
 			/>
+		</Container>
 
+		<div class="relative mt-14">
+			<!-- Edge fades. Anchored to the viewport so the rail dissolves into
+			     the page background instead of ending in a hard cut. -->
 			<div
-				class="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2"
+				class="pointer-events-none absolute inset-y-0 left-0 z-20 w-16 bg-linear-to-r from-background to-transparent sm:w-28"
+			></div>
+			<div
+				class="pointer-events-none absolute inset-y-0 right-0 z-20 w-16 bg-linear-to-l from-background to-transparent sm:w-28"
+			></div>
+
+			<!-- The rail. `--rail-inset` keeps the first card aligned with the
+			     Container gutter on wide viewports while letting later cards
+			     flow off-screen. `scrollbar-hide` keeps the chrome clean — the
+			     edge fades + drag cursor already telegraph scrollability. -->
+			<div
+				class="editor-rail flex snap-x snap-mandatory gap-5 overflow-x-auto py-10 sm:gap-7"
+				style="--rail-inset: max(1.25rem, calc((100vw - 80rem) / 2 + 1.25rem)); padding-inline: var(--rail-inset);"
 			>
 				{#each editorFeatures as feature, i}
 					{@const Icon = feature.icon}
 					{@const chip = kindChip[feature.kind]}
-					<Reveal variant="morph" delay={i * 70} class="h-full">
+					<Reveal variant="morph" delay={i * 60} class="snap-center shrink-0">
 						<article
-							class="glass-card group/feat flex h-full flex-col overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg"
+							class="group/feat relative flex w-[280px] flex-col gap-5 sm:w-[320px]"
 						>
-							<!-- Screenshot slot. Renders an <img> when a path is wired
-							     up; otherwise a clearly-marked dashed placeholder so a
-							     real screenshot can drop in later without layout drift. -->
-							{#if feature.image}
+							<!-- Tilted visual. 3D perspective on the wrapper, the inner
+							     plate carries the rotation so hover can soften it. -->
+							<div
+								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/[0.05] via-foreground/[0.02] to-transparent shadow-craft-lg transition-shadow duration-500 group-hover/feat:shadow-craft-xl"
+								style="perspective: 1200px;"
+							>
+								<!-- Dot grid backdrop. Faint, decorative — the techy vibe. -->
 								<div
-									class="relative aspect-video overflow-hidden border-b border-border-low/40 bg-foreground/[0.02]"
-								>
-									<img
-										src={feature.image}
-										alt={feature.title}
-										loading="lazy"
-										decoding="async"
-										class="block size-full object-cover transition-transform duration-500 group-hover/feat:scale-[1.02]"
-									/>
-								</div>
-							{:else}
-								<div
-									class="relative flex aspect-video items-center justify-center border-b border-dashed border-border-low/60 bg-foreground/[0.015]"
 									aria-hidden="true"
-								>
-									<div
-										aria-hidden="true"
-										class="pointer-events-none absolute inset-0 opacity-[0.45]"
-										style="background-image: linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px); background-size: 24px 24px;"
-									></div>
-									<div class="relative flex flex-col items-center gap-2 text-muted-foreground/55">
-										<ImageIcon class="size-5" />
-										<span class="font-mono text-[10px] font-semibold uppercase tracking-[0.18em]">
-											Screenshot
-										</span>
-									</div>
-								</div>
-							{/if}
+									class="pointer-events-none absolute inset-0 opacity-50"
+									style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 8%, transparent) 1px, transparent 1px); background-size: 16px 16px;"
+								></div>
 
-							<div class="flex flex-1 flex-col gap-3 p-6">
+								<!-- Per-card primary glow blob. Sits behind the icon/image. -->
+								<div
+									aria-hidden="true"
+									class="pointer-events-none absolute -bottom-12 left-1/2 size-48 -translate-x-1/2 rounded-full opacity-70"
+									style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 75%);"
+								></div>
+
+								<!-- Corner accents. Tiny CRT-ish brackets to frame the
+								     plate without surrounding it in a full border. -->
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute left-3 top-3 size-3 border-l border-t border-foreground/30"
+								></span>
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute right-3 top-3 size-3 border-r border-t border-foreground/30"
+								></span>
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute bottom-3 left-3 size-3 border-b border-l border-foreground/30"
+								></span>
+								<span
+									aria-hidden="true"
+									class="pointer-events-none absolute bottom-3 right-3 size-3 border-b border-r border-foreground/30"
+								></span>
+
+								{#if feature.image}
+									<!-- Real screenshot in a tilted plate. Hover eases the
+									     tilt down so the user can see the image flatter. -->
+									<div
+										class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low/60 shadow-craft-md transition-transform duration-500 group-hover/feat:scale-[1.02]"
+										style="transform: perspective(900px) rotateX(6deg) rotateY(-10deg); transform-origin: 50% 70%;"
+									>
+										<img
+											src={feature.image}
+											alt={feature.title}
+											loading="lazy"
+											decoding="async"
+											class="block size-full object-cover"
+										/>
+									</div>
+								{:else}
+									<!-- Icon-as-hero placeholder. The feature's own glyph
+									     sits centred and tilted, so a card without a
+									     screenshot still carries identity instead of a "no
+									     image" hole. -->
+									<div
+										class="absolute inset-0 grid place-items-center"
+										style="transform: perspective(900px) rotateX(8deg) rotateY(-10deg); transform-origin: 50% 70%;"
+									>
+										<div
+											class="relative grid size-28 place-items-center rounded-2xl border border-border-low/60 bg-card/40 shadow-craft-md backdrop-blur-sm"
+										>
+											<Icon
+												class="size-12 text-foreground/85 drop-shadow-[0_4px_12px_color-mix(in_srgb,var(--color-primary)_35%,transparent)]"
+											/>
+										</div>
+									</div>
+								{/if}
+
+								<!-- Mono tag pinned bottom-left, like a chip label on a
+								     dev tool. Carries the feature kind for skimmability. -->
+								<span
+									class={cn(
+										"absolute bottom-3 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-background/70 px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset backdrop-blur",
+										chip.ring,
+									)}
+								>
+									<span class={cn("size-1.5 rounded-full", chip.dot)}></span>
+									{chip.label}
+								</span>
+							</div>
+
+							<!-- Card content sits below the visual, no enclosing card.
+							     Lets the rail feel airier than a tile grid would. -->
+							<div class="flex flex-col gap-2 px-1">
 								<div class="flex items-center gap-2">
 									<span
-										class="glass-chip grid size-9 place-items-center rounded-lg text-foreground/80 transition-colors group-hover/feat:text-primary"
+										class="glass-chip grid size-7 place-items-center rounded-md text-foreground/80 transition-colors group-hover/feat:text-primary"
 									>
-										<Icon class="size-4" />
+										<Icon class="size-3.5" />
 									</span>
-									<span
-										class={cn(
-											"inline-flex items-center gap-1.5 rounded-full bg-background/40 px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
-											chip.ring,
-										)}
-									>
-										<span class={cn("size-1.5 rounded-full", chip.dot)}></span>
-										{chip.label}
-									</span>
+									<h3 class="text-[15px] font-semibold tracking-tight text-foreground">
+										{feature.title}
+									</h3>
 								</div>
-								<h3 class="text-base font-semibold tracking-tight text-foreground">
-									{feature.title}
-								</h3>
 								<p class="text-sm leading-relaxed text-muted-foreground">
 									{feature.description}
 								</p>
@@ -459,9 +517,11 @@
 					</Reveal>
 				{/each}
 			</div>
+		</div>
 
+		<Container>
 			<Reveal variant="up" delay={150}>
-				<p class="mx-auto mt-10 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground">
+				<p class="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground">
 					Plus trim &amp; cut, background &amp; padding, drop shadow, watermark, custom export presets, and a focus mode that hides everything but the frame. Nothing locked behind a "Pro" tier.
 				</p>
 			</Reveal>
@@ -592,34 +652,6 @@
 		</Container>
 	</Section>
 
-	<!-- Also great for gamers -->
-	<Section spacing="tight" class="border-t border-border-low/60">
-		<Container>
-			<Reveal variant="blur">
-				<a
-					href="/gamers"
-					class="glass-card group flex flex-col items-start gap-6 overflow-hidden rounded-2xl p-7 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg sm:flex-row sm:items-center sm:gap-8 sm:p-9"
-				>
-					<span class="glass-chip grid size-14 shrink-0 place-items-center rounded-2xl text-primary">
-						<Gamepad2 class="size-6" />
-					</span>
-					<div class="flex-1">
-						<h3 class="text-xl font-semibold tracking-tight text-foreground">
-							Also great for gamers.
-						</h3>
-						<p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-							Same engine, retuned for clips and highlights. Capture your run, auto-polish the montage, ship it straight to Discord.
-						</p>
-					</div>
-					<span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
-						See the gamer setup
-						<ArrowRight class="size-4 transition-transform group-hover:translate-x-0.5" />
-					</span>
-				</a>
-			</Reveal>
-		</Container>
-	</Section>
-
 	<!-- Pricing teaser -->
 	<Section id="pricing-teaser" class="border-t border-border-low/60">
 		<Container>
@@ -728,3 +760,21 @@
 
 	<Footer />
 </main>
+
+<style>
+	/* Editor-tour rail: hide the scrollbar (edge fades + drag cursor already
+	   telegraph scrollability) and lean on grab/grabbing cursors so the rail
+	   reads as draggable on first encounter. */
+	.editor-rail {
+		scrollbar-width: none;
+		-ms-overflow-style: none;
+		cursor: grab;
+		scroll-behavior: smooth;
+	}
+	.editor-rail::-webkit-scrollbar {
+		display: none;
+	}
+	.editor-rail:active {
+		cursor: grabbing;
+	}
+</style>
