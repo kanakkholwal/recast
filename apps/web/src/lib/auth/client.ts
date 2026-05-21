@@ -1,5 +1,5 @@
 import { polarClient } from "@polar-sh/better-auth";
-import { magicLinkClient } from "better-auth/client/plugins";
+import { adminClient, magicLinkClient } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/svelte";
 
 /**
@@ -23,7 +23,7 @@ import { createAuthClient } from "better-auth/svelte";
  * `data` / `isPending` / `error`.
  */
 export const authClient = createAuthClient({
-	plugins: [magicLinkClient(), polarClient()],
+	plugins: [magicLinkClient(), adminClient(), polarClient()],
 });
 
 /** Providers we expose social buttons for (dev only). */

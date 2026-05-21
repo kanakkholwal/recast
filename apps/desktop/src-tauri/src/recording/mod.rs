@@ -19,6 +19,14 @@ use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
 
+/// Frames per second emitted by the capture pacer and declared to the encoder.
+/// The pacer emits exactly this many frames per real-time second, and the
+/// encoder hands FFmpeg the same number as `-framerate`. Together they
+/// guarantee 1 second of wall-clock recording → 1 second of video PTS — the
+/// invariant the cursor track (timestamped in wall-clock μs) relies on for
+/// sync.
+pub const RECORDING_FPS: u32 = 60;
+
 //  Pause-aware recording clock
 
 /// A wall-clock timer that can be paused. `effective_elapsed` reports elapsed
@@ -421,24 +429,18 @@ impl RecordingManager {
             width: update.window_width.clamp(0.05, 1.0),
             height: update.window_height.clamp(0.05, 1.0),
         };
+        let corner_radius = update.corner_radius.clamp(0.0, 0.5);
 
-        {
-            let mut pending = self.pending_camera_overlay.lock();
-            pending.enabled = true;
-            pending.mirror = update.mirror;
-            pending.shape = update.shape.clone();
-            pending.corner_radius = update.corner_radius.clamp(0.0, 0.5);
-            pending.animation_preset = update.animation_preset.clone();
-            pending.default_placement = placement.clone();
-        }
-
+        // Active session is the source of truth during recording. Pending is
+        // snapshotted into the session at `start()` and persisted back at
+        // `stop()`, so we don't double-write on every preview tick.
         let mut guard = self.session.lock();
         if let Some(session) = guard.as_mut() {
             let tracker = &mut session.camera_overlay;
             tracker.overlay.enabled = true;
             tracker.overlay.mirror = update.mirror;
             tracker.overlay.shape = update.shape;
-            tracker.overlay.corner_radius = update.corner_radius.clamp(0.0, 0.5);
+            tracker.overlay.corner_radius = corner_radius;
             tracker.overlay.animation_preset = update.animation_preset;
 
             let now_secs = session.clock.effective_elapsed().as_secs_f64();
@@ -489,8 +491,19 @@ impl RecordingManager {
 
             tracker.last_placement = Some(placement);
             tracker.last_at_secs = Some(now_secs);
+            return Ok(());
         }
+        drop(guard);
 
+        // Pre-recording: keep pending in sync so `start()` snapshots the
+        // user's latest preview state into the new session.
+        let mut pending = self.pending_camera_overlay.lock();
+        pending.enabled = true;
+        pending.mirror = update.mirror;
+        pending.shape = update.shape;
+        pending.corner_radius = corner_radius;
+        pending.animation_preset = update.animation_preset;
+        pending.default_placement = placement;
         Ok(())
     }
 
@@ -522,14 +535,6 @@ impl RecordingManager {
         let pause_flag = Arc::new(AtomicBool::new(false));
         let pipeline = RecordingPipeline::new(180);
         let mut warnings = Vec::new();
-
-        // The capture pacer and the encoder MUST agree on the same fps:
-        // the pacer emits exactly `RECORDING_FPS` frames per real-time
-        // second, and the encoder declares that as `-framerate` to FFmpeg.
-        // Together they guarantee that 1 second of wall-clock recording
-        // produces 1 second of video PTS — the invariant the cursor track
-        // (timestamped in wall-clock μs) relies on for sync.
-        const RECORDING_FPS: u32 = 60;
 
         let capture_handle = spawn_capture_loop(
             target.clone(),
@@ -730,6 +735,19 @@ impl RecordingManager {
             &session.pipeline,
             session.clock.effective_elapsed().as_millis() as u64,
         );
+
+        // Persist the user's latest overlay settings (mirror, shape, corner
+        // radius, etc.) back to pending so the next recording inherits them.
+        // Don't copy motion_segments — those are session-local.
+        {
+            let final_overlay = &session.camera_overlay.overlay;
+            let mut pending = self.pending_camera_overlay.lock();
+            pending.mirror = final_overlay.mirror;
+            pending.shape = final_overlay.shape.clone();
+            pending.corner_radius = final_overlay.corner_radius;
+            pending.animation_preset = final_overlay.animation_preset.clone();
+            pending.default_placement = final_overlay.default_placement.clone();
+        }
 
         Ok(RecordingArtifacts {
             capture_target: session.target,

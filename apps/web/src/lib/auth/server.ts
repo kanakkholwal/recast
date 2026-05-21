@@ -7,7 +7,7 @@ import {
 } from "@polar-sh/better-auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink } from "better-auth/plugins";
+import { admin, magicLink } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
 import { sendEmail } from "$lib/auth/email";
 import { polarProductIdFor } from "$lib/billing/plans";
@@ -36,10 +36,11 @@ function createAuth() {
 		secret: env.BETTER_AUTH_SECRET,
 		baseURL: env.BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL,
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
-		// Custom field exposed on the user row — see src/lib/db/schema/auth.ts.
+		// `status` is an app-owned column, separate from the plugin-owned
+		// `role`. Surfaces on session.user so the dashboard load can read it.
 		user: {
 			additionalFields: {
-				role: { type: "string", defaultValue: "active", required: false },
+				status: { type: "string", defaultValue: "active", required: false },
 			},
 		},
 		emailAndPassword: {
@@ -98,6 +99,15 @@ function buildSocialProviders() {
 }
 
 function buildPlugins() {
+	// Admin plugin — owns `role`, `banned`, `banReason`, `banExpires` on
+	// user and `impersonatedBy` on session. Endpoints live under
+	// /api/auth/admin/* with built-in 403 for non-admins.
+	const adminPlugin = admin({
+		defaultRole: "user",
+		adminRoles: ["admin"],
+		impersonationSessionDuration: 60 * 60, // 1h
+	});
+
 	const linkPlugin = magicLink({
 		// Existing-users-only — waitlist sign-up is the only way to get a row.
 		disableSignUp: true,
@@ -151,22 +161,23 @@ function buildPlugins() {
 				]
 			: [];
 
-	return [linkPlugin, ...polarPlugins];
+	return [adminPlugin, linkPlugin, ...polarPlugins];
 }
 
 /**
- * Returns true if the user with this email exists and is still on the
- * waitlist. Magic link + password reset both short-circuit on this so
- * waitlisted users can't slip in via either path before being activated.
+ * Returns true if the user with this email exists and is still pending
+ * waitlist approval. Magic link + password reset both short-circuit on
+ * this so pending users can't slip in via either path before being
+ * activated (admin flips status: pending → active in /admin/waitlist).
  */
 async function isOnWaitlist(email: string): Promise<boolean> {
 	const db = getDb();
 	const rows = await db
-		.select({ role: userTable.role })
+		.select({ status: userTable.status })
 		.from(userTable)
 		.where(eq(userTable.email, email))
 		.limit(1);
-	return rows[0]?.role === "waitlist";
+	return rows[0]?.status === "pending";
 }
 
 async function handleSubscriptionEvent(payload: unknown): Promise<void> {

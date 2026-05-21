@@ -521,6 +521,7 @@
 						{@const Icon = p.icon}
 						{@const guide = installSteps[p.id]}
 						{@const anchorId = p.id === "macOS" ? "macos-first-launch" : `install-${p.id.toLowerCase()}`}
+						{@const stab = stabilityCopy[p.stability]}
 						<Tabs.Content value={p.id} class="mt-8">
 							<Reveal>
 								<article class="glass-card relative overflow-hidden rounded-2xl p-8 sm:p-10">
@@ -535,17 +536,16 @@
 												<h3 class="text-2xl font-semibold tracking-tight">
 													{p.title}
 												</h3>
-												{@const s = stabilityCopy[p.stability]}
 												<span
 													class={cn(
 														"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ring-1 ring-inset",
-														s.chip,
+														stab.chip,
 													)}
 													title={p.stability === "stable"
 														? "This is the build I use daily."
 														: "Early port — please file issues on GitHub when something breaks."}
 												>
-													<span class={cn("size-1.5 rounded-full", s.dot)}></span>
+													<span class={cn("size-1.5 rounded-full", stab.dot)}></span>
 													{p.stability === "stable" ? "Stable" : "Beta"}
 												</span>
 											</div>

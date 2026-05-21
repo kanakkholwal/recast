@@ -18,6 +18,7 @@
 		LogOut,
 		Moon,
 		Settings,
+		Shield,
 		Sun,
 		User,
 	} from "@lucide/svelte";
@@ -29,6 +30,11 @@
 	const open = $derived(sidebar.state === "expanded");
 	const currentPath = $derived(page.url.pathname);
 	const profile = $derived(settingsStore.value.profile);
+	// Surfaced by /dashboard/+layout.server.ts; falls back to "user" if absent
+	// so the conditional below safely returns false on unauthenticated pages.
+	const isAdmin = $derived(
+		(page.data?.user as { role?: string } | undefined)?.role === "admin",
+	);
 
 	const nav = [
 		{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
@@ -246,6 +252,12 @@
 					<Settings class="size-4 text-muted-foreground" />
 					Settings
 				</DropdownMenu.Item>
+				{#if isAdmin}
+					<DropdownMenu.Item onclick={() => goto("/admin")}>
+						<Shield class="size-4 text-primary" />
+						Admin dashboard
+					</DropdownMenu.Item>
+				{/if}
 				<DropdownMenu.Item onclick={() => goto("/")}>
 					<ArrowUpRight class="size-4 text-muted-foreground" />
 					Back to site

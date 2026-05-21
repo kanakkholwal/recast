@@ -73,9 +73,9 @@
 					</span>
 				</a>
 				<p class="mt-6 max-w-sm text-pretty text-sm leading-relaxed text-muted-foreground">
-					Turns a raw screen capture into a polished, shareable demo —
-					automatically. Built for solo founders who'd rather ship than open a
-					timeline.
+					Turns a raw screen capture into a polished, shareable demo while you
+					record. The timeline is there when you want it. Most of the time, you
+					won't need it.
 				</p>
 				<div class="mt-7 flex items-center gap-2">
 					{#each socials as { icon: Icon, href, label }}
@@ -119,7 +119,7 @@
 
 		<div class="mt-20 flex flex-col items-start justify-between gap-4 border-t border-border-low/70 pt-8 md:flex-row md:items-center">
 			<p class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-				Skip the editor · Ship the demo
+				Record once · Ship the demo
 			</p>
 			<p class="text-xs text-muted-foreground">
 				© {new Date().getFullYear()} Recast. All rights reserved.

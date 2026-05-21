@@ -2,7 +2,7 @@ import { redirect } from "@sveltejs/kit";
 import { getAuth } from "$lib/auth/server";
 import type { LayoutServerLoad } from "./$types";
 
-type SessionUser = { id: string; name?: string | null; email: string };
+type SessionUser = { id: string; name?: string | null; email: string; role?: string | null };
 type SessionShape = { user: SessionUser };
 
 /**
@@ -23,6 +23,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			id: session.user.id,
 			name: session.user.name ?? "",
 			email: session.user.email,
+			role: session.user.role ?? "user",
 		},
 	};
 };

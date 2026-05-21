@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use chrono::{Local, TimeZone};
 use tauri::State;
 
-use super::ffmpeg::probe_video_metadata;
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::project::writer::{write_project, ProjectWriteRequest};
@@ -101,24 +100,19 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
         .unwrap_or_else(Local::now)
         .format("%Y-%m-%d_%H-%M-%S");
     let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
-    let recording_meta = probe_video_metadata(&artifacts.recording_path)?;
+    // The recording pipeline is the authoritative source for these values
+    // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
+    // Spawning ffprobe here just to confirm what we already know was
+    // adding 100–300ms to every stop, right when the UI wants to transition.
     let metadata = ProjectMetadata {
         schema_version: 1,
         created_at_unix_ms: artifacts.started_at_unix_ms,
         capture_target: artifacts.capture_target.clone(),
         stats: artifacts.stats.clone(),
         video: ProjectVideoMetadata {
-            width: if recording_meta.width > 0 {
-                recording_meta.width
-            } else {
-                artifacts.capture_target.crop.width
-            },
-            height: if recording_meta.height > 0 {
-                recording_meta.height
-            } else {
-                artifacts.capture_target.crop.height
-            },
-            fps: recording_meta.fps.round().max(1.0) as u32,
+            width: artifacts.capture_target.crop.width,
+            height: artifacts.capture_target.crop.height,
+            fps: crate::recording::RECORDING_FPS,
             duration_ms: artifacts.stats.duration_ms,
         },
         media: Some(ProjectMediaMetadata {

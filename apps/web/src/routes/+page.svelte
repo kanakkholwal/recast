@@ -9,13 +9,17 @@
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
+	import { cn } from "@recast/ui/utils";
 	import {
 	  ArrowRight,
 	  BarChart3,
+	  Camera,
 	  Check,
 	  Cloud,
 	  Download,
 	  Gamepad2,
+	  Highlighter,
+	  ImageIcon,
 	  Layout,
 	  Link2,
 	  Lock,
@@ -26,6 +30,8 @@
 	  Scissors,
 	  Search,
 	  Sparkles,
+	  Target,
+	  VolumeX,
 	  X,
 	  Zap,
 	} from "lucide-svelte";
@@ -56,7 +62,7 @@
 			}
 			joined = true;
 		} catch {
-			toast.error("Network error — try again.");
+			toast.error("Network error. Try again in a moment.");
 		} finally {
 			loading = false;
 		}
@@ -67,19 +73,19 @@
 			icon: Rocket,
 			title: "For solo founders",
 			description:
-				"Investor walkthroughs and product demos that look funded — recorded between two meetings, no editor in sight.",
+				"Investor walkthroughs and product demos that look funded. Record one between two meetings, ship it before the third.",
 		},
 		{
 			icon: Sparkles,
 			title: "For indie hackers",
 			description:
-				"Launch videos, changelog clips, and Twitter cuts shipped on your own schedule, fully offline.",
+				"Launch videos, changelog clips, and Twitter cuts on your own schedule. Fully offline. Ship at midnight, fix typos at 2 AM, nobody knows.",
 		},
 		{
 			icon: MonitorPlay,
 			title: "For solopreneurs",
 			description:
-				"Onboarding videos and support replies that answer once and convert forever.",
+				"Onboarding videos and support replies that answer once and convert forever. Make it once. Let it work while you sleep.",
 		},
 	];
 
@@ -87,7 +93,7 @@
 	const contrast = [
 		{ os: "A raw .mp4 dumped on your desktop", recast: "A polished demo, framed and padded" },
 		{ os: "A jittery, distracting cursor", recast: "Cursor smoothed and snapped to targets" },
-		{ os: "You, manually trimming in iMovie", recast: "Trim, zoom, and background — built in" },
+		{ os: "You, manually trimming in iMovie", recast: "Trim, zoom, and backgrounds, all built in" },
 		{ os: "Drag the file into Drive and hope", recast: "One link, with watch analytics" },
 	];
 
@@ -101,15 +107,91 @@
 	const shareFeatures = [
 		{ icon: Link2, title: "One shareable link", description: "Send a demo without uploads, exports, or attachments." },
 		{ icon: BarChart3, title: "Watch analytics", description: "See who watched, how far they got, and what they replayed." },
-		{ icon: Lock, title: "Password & expiry", description: "Lock investor demos down — or let them expire on their own." },
+		{ icon: Lock, title: "Password & expiry", description: "Lock investor demos down, or set them to expire on their own." },
 	];
+
+	// "Inside the editor" — honest tour of every tool a non-editor user will
+	// actually touch. Each card is tagged `auto` (it happens for you) or
+	// `manual` (you reach for it when you want control). The placeholder slot
+	// renders a dashed empty frame today so the layout is finalised before the
+	// real screenshots land — flip `image` to a path under /static when ready.
+	type FeatureKind = "auto" | "manual";
+	const editorFeatures: Array<{
+		kind: FeatureKind;
+		icon: typeof Target;
+		title: string;
+		description: string;
+		image: string | null;
+	}> = [
+		{
+			kind: "auto",
+			icon: Target,
+			title: "Smart zoom on clicks",
+			description:
+				"Recast watches your cursor, reads clicks and dwell, and zooms toward the moment that matters. You set zero keyframes.",
+			image: "/screenshots/preview_cursor.png",
+		},
+		{
+			kind: "auto",
+			icon: VolumeX,
+			title: "Silence trimming",
+			description:
+				"Detects dead-air segments (quiet audio + still cursor) and offers them up as one-click cuts. Toggle them off any time.",
+			image: null,
+		},
+		{
+			kind: "auto",
+			icon: MousePointer2,
+			title: "Cursor smoothing",
+			description:
+				"Velocity-aware easing kills the jitter, with optional snap-to-target so the path lands where you meant to point.",
+			image: null,
+		},
+		{
+			kind: "manual",
+			icon: Zap,
+			title: "Zoom regions on the timeline",
+			description:
+				"Drag any moment to add a focus region. The auto picks are just a starting point. Every position, scale, and easing is yours to tweak.",
+			image: null,
+		},
+		{
+			kind: "manual",
+			icon: Highlighter,
+			title: "Annotations & blur",
+			description:
+				"Drop arrows, rectangles, text, or a privacy blur straight on the frame. Layers live on the timeline alongside everything else.",
+			image: null,
+		},
+		{
+			kind: "manual",
+			icon: Camera,
+			title: "Camera bubble",
+			description:
+				"Record yourself in a draggable bubble with shape, border, and follow-the-cursor motion. No second app. No green screen.",
+			image: null,
+		},
+	];
+
+	const kindChip: Record<FeatureKind, { label: string; dot: string; ring: string }> = {
+		auto: {
+			label: "Automatic",
+			dot: "bg-emerald-500",
+			ring: "text-emerald-600 ring-emerald-500/25 dark:text-emerald-400",
+		},
+		manual: {
+			label: "Manual",
+			dot: "bg-primary",
+			ring: "text-primary ring-primary/25",
+		},
+	};
 </script>
 
 <svelte:head>
 	<title>Recast</title>
 	<meta
 		name="description"
-		content="Recast turns a raw screen capture into a polished, shareable demo — automatically. The recorder for solo founders who'd rather ship than open a timeline. macOS, Windows, Linux."
+		content="Recast turns a raw screen capture into a polished, shareable demo. Smart auto-edits + a friendly timeline anyone can drive. macOS, Windows, Linux."
 	/>
 </svelte:head>
 
@@ -166,7 +248,7 @@
 			<SectionHeader
 				eyebrow="Why not the built-in recorder"
 				title="Your OS recorder stops at a file."
-				description="Every laptop ships a screen recorder. None of them ship a demo. That gap — between a raw capture and something worth sending — is the entire job Recast does for you."
+				description="Every laptop ships a screen recorder. None of them ship a demo. The space between a raw capture and something worth sending is the entire job Recast does for you."
 				align="center"
 			/>
 
@@ -200,9 +282,9 @@
 			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
 				<div class="lg:col-span-5">
 					<SectionHeader
-						eyebrow="Step 1 — Record"
+						eyebrow="Step 1 · Record"
 						title="Hit record. That's the whole setup."
-						description="Region, window, or full screen — start capturing with one shortcut. No projects to configure, no codecs to pick, no accounts to create."
+						description="Pick a region, a window, or your full screen, then start capturing with one shortcut. No projects to configure. No codecs to pick. No account to create."
 					/>
 					<div class="mt-10 flex items-center gap-3">
 						<Button href="/download" class="gap-2">
@@ -242,9 +324,9 @@
 	<Section id="polish" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
 		<Container>
 			<SectionHeader
-				eyebrow="Step 2 — Auto-polish"
+				eyebrow="Step 2 · Auto-polish"
 				title="The editing happens while you record."
-				description="Cursor smoothing, padding, backgrounds, and zoom land as the bytes hit disk. By the time you stop recording, your demo is already polished — no timeline gymnastics required."
+				description="Cursor smoothing, padding, backgrounds, zoom, and silence cuts happen while you record. By the time you stop, the demo is mostly done. Open the timeline only when you want to nudge something, and even then, it's the lightest editor you've ever opened."
 				align="center"
 			/>
 
@@ -274,7 +356,7 @@
 							<span class="size-2.5 rounded-full bg-foreground/15"></span>
 							<span class="size-2.5 rounded-full bg-foreground/15"></span>
 						</div>
-						<span class="ml-3 text-[11px] font-medium text-muted-foreground">Recast — Editor</span>
+						<span class="ml-3 text-[11px] font-medium text-muted-foreground">Recast · Editor</span>
 					</div>
 					<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
 						<img
@@ -290,15 +372,111 @@
 		</Container>
 	</Section>
 
+	<!-- Inside-the-editor tour. The auto-polish section above promises "the
+	     editing happens while you record" — this section is the honest
+	     follow-up: here's exactly what's automatic and what's a knob you can
+	     reach for. Auto vs Manual chips read at a glance; the dashed image
+	     slots are explicit placeholders so the layout is final before the
+	     screenshots land. -->
+	<Section id="editor" class="border-t border-border-low/60">
+		<Container>
+			<SectionHeader
+				eyebrow="What's in the editor"
+				title="Every tool you need. None of the learning curve."
+				description="Smart defaults cover most of what a demo needs. When you want to nudge something, the timeline is small, friendly, and deliberately not a real editor. Drag, drop, done."
+				align="center"
+			/>
+
+			<div
+				class="mx-auto mt-14 grid max-w-5xl grid-cols-1 gap-4 sm:grid-cols-2"
+			>
+				{#each editorFeatures as feature, i}
+					{@const Icon = feature.icon}
+					{@const chip = kindChip[feature.kind]}
+					<Reveal variant="morph" delay={i * 70} class="h-full">
+						<article
+							class="glass-card group/feat flex h-full flex-col overflow-hidden rounded-2xl transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg"
+						>
+							<!-- Screenshot slot. Renders an <img> when a path is wired
+							     up; otherwise a clearly-marked dashed placeholder so a
+							     real screenshot can drop in later without layout drift. -->
+							{#if feature.image}
+								<div
+									class="relative aspect-video overflow-hidden border-b border-border-low/40 bg-foreground/[0.02]"
+								>
+									<img
+										src={feature.image}
+										alt={feature.title}
+										loading="lazy"
+										decoding="async"
+										class="block size-full object-cover transition-transform duration-500 group-hover/feat:scale-[1.02]"
+									/>
+								</div>
+							{:else}
+								<div
+									class="relative flex aspect-video items-center justify-center border-b border-dashed border-border-low/60 bg-foreground/[0.015]"
+									aria-hidden="true"
+								>
+									<div
+										aria-hidden="true"
+										class="pointer-events-none absolute inset-0 opacity-[0.45]"
+										style="background-image: linear-gradient(to right, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px), linear-gradient(to bottom, color-mix(in srgb, var(--color-foreground) 4%, transparent) 1px, transparent 1px); background-size: 24px 24px;"
+									></div>
+									<div class="relative flex flex-col items-center gap-2 text-muted-foreground/55">
+										<ImageIcon class="size-5" />
+										<span class="font-mono text-[10px] font-semibold uppercase tracking-[0.18em]">
+											Screenshot
+										</span>
+									</div>
+								</div>
+							{/if}
+
+							<div class="flex flex-1 flex-col gap-3 p-6">
+								<div class="flex items-center gap-2">
+									<span
+										class="glass-chip grid size-9 place-items-center rounded-lg text-foreground/80 transition-colors group-hover/feat:text-primary"
+									>
+										<Icon class="size-4" />
+									</span>
+									<span
+										class={cn(
+											"inline-flex items-center gap-1.5 rounded-full bg-background/40 px-2 py-0.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
+											chip.ring,
+										)}
+									>
+										<span class={cn("size-1.5 rounded-full", chip.dot)}></span>
+										{chip.label}
+									</span>
+								</div>
+								<h3 class="text-base font-semibold tracking-tight text-foreground">
+									{feature.title}
+								</h3>
+								<p class="text-sm leading-relaxed text-muted-foreground">
+									{feature.description}
+								</p>
+							</div>
+						</article>
+					</Reveal>
+				{/each}
+			</div>
+
+			<Reveal variant="up" delay={150}>
+				<p class="mx-auto mt-10 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground">
+					Plus trim &amp; cut, background &amp; padding, drop shadow, watermark, custom export presets, and a focus mode that hides everything but the frame. Nothing locked behind a "Pro" tier.
+				</p>
+			</Reveal>
+		</Container>
+	</Section>
+
 	<!-- Step 3 — Share (Recast Cloud — waitlist) -->
 	<Section id="share" class="border-t border-border-low/60">
 		<Container>
 			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
 				<div class="lg:col-span-6">
 					<SectionHeader
-						eyebrow="Step 3 — Share"
+						eyebrow="Step 3 · Share"
 						title="Send a link, not a 200 MB file."
-						description="Recast Cloud turns a finished demo into a hosted link with watch analytics built in. Skip the export-upload-attach dance entirely."
+						description="Recast Cloud turns a finished demo into a hosted link with watch analytics built in. No export-upload-attach dance, no Drive permissions emailed back and forth."
 					/>
 
 					<ul class="mt-10 space-y-3.5">
@@ -336,8 +514,8 @@
 									Get early access.
 								</h3>
 								<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-									The app is free and shipping today. Cloud sharing is in the works —
-									join the waitlist and we'll hand you a spot first.
+									The app is free and shipping today. Cloud sharing is on the way.
+									Drop your email and we'll save you a spot before the public list opens.
 								</p>
 
 								{#if joined}
@@ -349,7 +527,7 @@
 											<Check class="size-4" />
 										</span>
 										<span class="text-sm font-medium text-foreground">
-											You're on the list — we'll be in touch.
+											You're on the list. We'll be in touch.
 										</span>
 									</div>
 								{:else}
@@ -373,7 +551,7 @@
 								{/if}
 
 								<p class="mt-4 text-xs text-muted-foreground">
-									Free tier includes <span class="font-semibold text-foreground">10 shareable links</span> — no card, ever.
+									Free tier includes <span class="font-semibold text-foreground">10 shareable links</span>. No card, ever.
 								</p>
 							</div>
 						</div>
@@ -389,7 +567,7 @@
 			<SectionHeader
 				eyebrow="Built for founders"
 				title="Shaped for the people shipping solo."
-				description="Recast is opinionated where it matters and out of your way everywhere else — because your time goes to the product, not the timeline."
+				description="Opinionated where it matters, out of your way everywhere else. Auto-polish for the 80 % case, a minimal timeline for the moments you actually want to control."
 				align="center"
 			/>
 
@@ -430,7 +608,7 @@
 							Also great for gamers.
 						</h3>
 						<p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-							Same engine, built for clips and highlights — capture your run, auto-polish the montage, share it to Discord.
+							Same engine, retuned for clips and highlights. Capture your run, auto-polish the montage, ship it straight to Discord.
 						</p>
 					</div>
 					<span class="inline-flex items-center gap-2 text-sm font-semibold text-foreground">
@@ -456,7 +634,7 @@
 							<span class="text-sm text-muted-foreground">forever</span>
 						</div>
 						<p class="mt-3 text-sm leading-relaxed text-muted-foreground">
-							Record, auto-polish, edit, and export — fully offline, no account. The whole recorder, no asterisk.
+							Record, auto-polish, edit, and export, all of it offline and without an account. The whole recorder, no asterisk.
 						</p>
 						<div class="mt-7">
 							<Button href="/download" variant="outline" class="gap-2">
@@ -481,7 +659,7 @@
 							<span class="text-sm text-muted-foreground">+ analytics</span>
 						</div>
 						<p class="relative mt-3 text-sm leading-relaxed text-muted-foreground">
-							Hosted links, watch analytics, custom branding, and password-protected demos. Coming soon — pricing on the way.
+							Hosted links, watch analytics, custom branding, and password-protected demos. Coming soon. Pricing follows.
 						</p>
 						<div class="relative mt-7">
 							<Button href="/pricing" class="group/cta gap-2">
@@ -524,12 +702,12 @@
 						</div>
 
 						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
-							Skip the editor.
-							<span class="block font-medium italic text-foreground/40">Ship the demo.</span>
+							A demo, not a project.
+							<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
 						</h2>
 
 						<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Free forever. No account required. Three platforms. One opinionated tool.
+							Free forever. No account. Three platforms. A timeline you'll actually want to open.
 						</p>
 
 						<div class="mt-10 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">

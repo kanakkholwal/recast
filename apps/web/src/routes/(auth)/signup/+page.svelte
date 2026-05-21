@@ -71,7 +71,7 @@
 
 <AuthCard
 	title="Create your account"
-	description="Start recording demos that look expensive — without an editor."
+	description="Record once. Ship a demo, not a draft."
 >
 	<SocialButtons />
 

@@ -6,12 +6,19 @@
 	import { cubicOut } from "svelte/easing";
 	import { blur, fly } from "svelte/transition";
 
+	// Concrete artifacts the target audience actually makes, ordered so the
+	// loop opens with the broadest noun (demo) and rotates through the
+	// segment-specific outputs (investor walkthrough = founders, launch video
+	// = indie hackers, changelog clip = devrels, onboarding tour = product
+	// engineers / solopreneurs). Naming outputs instead of style adjectives
+	// (the old "cinematic / hand-edited" loop) plants category + audience in
+	// the same beat and makes the TextLoop animation land on real value.
 	const words = [
-		"expensive.",
-		"cinematic.",
-		"intentional.",
-		"effortless.",
-		"hand-edited.",
+		"demo.",
+		"launch video.",
+		"changelog clip.",
+		"investor walkthrough.",
+		"onboarding tour.",
 	];
 	const platforms = ["macOS", "Windows", "Linux"];
 	const steps = [
@@ -38,8 +45,9 @@
 				class="text-balance mt-7 text-5xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
 				in:fly={rise(80)}
 			>
-				Demos that look
+				Record once.
 				<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
+					<span class="whitespace-nowrap">Ship a&nbsp;</span>
 					<span class="inline-grid overflow-hidden">
 						<TextLoop class="text-primary" texts={words} interval={3000} />
 					</span>
@@ -50,8 +58,9 @@
 				class="text-pretty mt-7 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
 				in:fly={rise(200)}
 			>
-				Recast turns a raw screen capture into a polished, ready-to-share demo —
-				automatically. Built for solo founders who'd rather ship than open a timeline.
+				Smart zoom, cursor smoothing, and silence cuts happen while you
+				record. By the time you stop, the demo is mostly done. The timeline
+				is there when you want it. Most of the time, you won't need it.
 			</p>
 
 			<!-- Record → Auto-polish → Share -->

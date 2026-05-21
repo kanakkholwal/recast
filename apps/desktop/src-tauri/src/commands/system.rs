@@ -149,23 +149,29 @@ pub async fn get_displays() -> Result<Vec<DisplayInfo>, String> {
 pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<WindowInfo>, String> {
         let windows = Window::all().map_err(|e| e.to_string())?;
+        // Each xcap accessor hits the compositor/WM. The old filter + map
+        // called `.is_minimized()` and `.title()` twice each per window.
+        // Snapshot once into a local struct, then filter + map cheaply.
         Ok(windows
             .iter()
-            .filter(|window| {
-                !window.is_minimized().unwrap_or(false)
-                    && !window.title().unwrap_or_default().is_empty()
-            })
-            .map(|window| WindowInfo {
-                id: window.id().unwrap_or_default(),
-                pid: window.pid().unwrap_or_default(),
-                app_name: window.app_name().unwrap_or_default(),
-                title: window.title().unwrap_or_default(),
-                x: window.x().unwrap_or_default(),
-                y: window.y().unwrap_or_default(),
-                width: window.width().unwrap_or_default(),
-                height: window.height().unwrap_or_default(),
-                is_minimized: window.is_minimized().unwrap_or_default(),
-                thumbnail: capture_window_thumbnail(window),
+            .filter_map(|window| {
+                let is_minimized = window.is_minimized().unwrap_or_default();
+                let title = window.title().unwrap_or_default();
+                if is_minimized || title.is_empty() {
+                    return None;
+                }
+                Some(WindowInfo {
+                    id: window.id().unwrap_or_default(),
+                    pid: window.pid().unwrap_or_default(),
+                    app_name: window.app_name().unwrap_or_default(),
+                    title,
+                    x: window.x().unwrap_or_default(),
+                    y: window.y().unwrap_or_default(),
+                    width: window.width().unwrap_or_default(),
+                    height: window.height().unwrap_or_default(),
+                    is_minimized,
+                    thumbnail: capture_window_thumbnail(window),
+                })
             })
             .collect())
     })
