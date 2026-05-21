@@ -58,7 +58,6 @@
   let status = $state<CameraStatus>("loading");
   let isMirrored = $state(true);
   let aspect = $state<AspectKey>("1:1");
-  let reportTimer: number | null = $state(null);
   let liveProbeTimer: number | null = $state(null);
   let videoFrameSeen = $state(false);
   let isSnapping = false;
@@ -93,10 +92,6 @@
     void startCamera();
     void applyAspect(aspect, { snap: true });
 
-    reportTimer = window.setInterval(() => {
-      void reportPreviewState();
-    }, 350);
-
     const unlistenStop = listen("camera-stop", () => {
       stopCamera();
       getCurrentWindow().close();
@@ -109,18 +104,26 @@
     );
     const unlistenStopped = listen("camera-recording-stopped", () => {});
 
+    // Event-driven preview state push: only fire on actual window changes
+    // (move/resize) or user toggles (aspect/mirror). Replaces the old 350ms
+    // poll that did three IPC round-trips/sec into a Rust mutex even when
+    // nothing changed.
     const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
       void snapToAspect(payload.width, payload.height);
+      void reportPreviewState();
+    });
+    const unlistenMove = getCurrentWindow().onMoved(() => {
+      void reportPreviewState();
     });
 
     return () => {
       stopCamera();
-      if (reportTimer !== null) window.clearInterval(reportTimer);
       if (liveProbeTimer !== null) window.clearTimeout(liveProbeTimer);
       unlistenStop.then((fn) => fn());
       unlistenStarted.then((fn) => fn());
       unlistenStopped.then((fn) => fn());
       unlistenResize.then((fn) => fn());
+      unlistenMove.then((fn) => fn());
     };
   });
 

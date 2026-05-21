@@ -4,7 +4,6 @@ use std::path::PathBuf;
 use chrono::{Local, TimeZone};
 use tauri::State;
 
-use super::ffmpeg::probe_video_metadata;
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::project::writer::{write_project, ProjectWriteRequest};
@@ -101,24 +100,19 @@ pub fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
         .unwrap_or_else(Local::now)
         .format("%Y-%m-%d_%H-%M-%S");
     let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
-    let recording_meta = probe_video_metadata(&artifacts.recording_path)?;
+    // The recording pipeline is the authoritative source for these values
+    // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
+    // Spawning ffprobe here just to confirm what we already know was
+    // adding 100–300ms to every stop, right when the UI wants to transition.
     let metadata = ProjectMetadata {
         schema_version: 1,
         created_at_unix_ms: artifacts.started_at_unix_ms,
         capture_target: artifacts.capture_target.clone(),
         stats: artifacts.stats.clone(),
         video: ProjectVideoMetadata {
-            width: if recording_meta.width > 0 {
-                recording_meta.width
-            } else {
-                artifacts.capture_target.crop.width
-            },
-            height: if recording_meta.height > 0 {
-                recording_meta.height
-            } else {
-                artifacts.capture_target.crop.height
-            },
-            fps: recording_meta.fps.round().max(1.0) as u32,
+            width: artifacts.capture_target.crop.width,
+            height: artifacts.capture_target.crop.height,
+            fps: crate::recording::RECORDING_FPS,
             duration_ms: artifacts.stats.duration_ms,
         },
         media: Some(ProjectMediaMetadata {
@@ -188,21 +182,17 @@ pub fn update_camera_preview_state(
 
 #[tauri::command]
 pub fn list_recasts(state: State<'_, AppState>) -> Result<Vec<RecordingEntry>, String> {
-    list_files_by_ext(&recasts_dir(&state), "recast")
+    list_files_by_ext(&recasts_dir(&state), &["recast"])
 }
 
 #[tauri::command]
 pub fn list_exports(state: State<'_, AppState>) -> Result<Vec<RecordingEntry>, String> {
-    let dir = exports_dir(&state);
-    let mut entries = Vec::new();
-    for ext in &["mp4", "webm", "gif"] {
-        entries.extend(list_files_by_ext(&dir, ext).unwrap_or_default());
-    }
-    entries.sort_by(|a, b| b.created.cmp(&a.created));
-    Ok(entries)
+    list_files_by_ext(&exports_dir(&state), &["mp4", "webm", "gif"])
 }
 
-fn list_files_by_ext(dir: &PathBuf, ext: &str) -> Result<Vec<RecordingEntry>, String> {
+/// One pass over `dir`, collecting any file whose extension is in `exts`.
+/// Sorts newest-first by mtime.
+fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> Result<Vec<RecordingEntry>, String> {
     let mut entries = Vec::new();
     let read = match fs::read_dir(dir) {
         Ok(r) => r,
@@ -215,7 +205,7 @@ fn list_files_by_ext(dir: &PathBuf, ext: &str) -> Result<Vec<RecordingEntry>, St
             .extension()
             .and_then(|v| v.to_str())
             .unwrap_or_default();
-        if file_ext != ext {
+        if !exts.iter().any(|wanted| *wanted == file_ext) {
             continue;
         }
         if let Ok(meta) = entry.metadata() {

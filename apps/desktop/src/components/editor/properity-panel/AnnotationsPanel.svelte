@@ -27,13 +27,12 @@
     pushRecentColor,
   } from "$lib/annotations/recent-colors";
   import { Button } from "@recast/ui/button";
-  import { ColorPicker } from "@recast/ui/color-picker";
+  import { ColorField } from "@recast/ui/color-field";
   import { Kbd } from "@recast/ui/kbd";
-  import * as Popover from "@recast/ui/popover";
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
-  import SliderControl from "../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
   import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
   import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
   import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
@@ -523,45 +522,17 @@
           </div>
           {#if a.kind.kind === "blur" && a.kind.variant === "color"}
             {@const tintColor = a.kind.tintColor}
-            <Popover.Root>
-              <Popover.Trigger>
-                {#snippet child({ props })}
-                  <button
-                    type="button"
-                    {...props}
-                    aria-label="Choose blur tint color"
-                    class="flex w-full items-center gap-2 rounded-md border border-border bg-background px-2 py-1.5 text-left transition-colors hover:border-ring"
-                  >
-                    <span
-                      class="size-5 shrink-0 rounded border border-input"
-                      style:background={tintColor}
-                    ></span>
-                    <span class="min-w-0 flex-1">
-                      <span class="block text-[11px] font-medium text-foreground"
-                        >Tint</span
-                      >
-                      <span
-                        class="block truncate font-mono text-[10px] text-muted-foreground"
-                      >
-                        {tintColor.toUpperCase()}
-                      </span>
-                    </span>
-                  </button>
-                {/snippet}
-              </Popover.Trigger>
-              <Popover.Content align="start" class="w-auto p-0">
-                <ColorPicker
-                  value={tintColor}
-                  recents={recents}
-                  oncommit={(c: string) => {
-                    if (a.kind.kind !== "blur") return;
-                    store.pushUndoState();
-                    updateSelected({ kind: { ...a.kind, tintColor: c } });
-                    rememberColor(c);
-                  }}
-                />
-              </Popover.Content>
-            </Popover.Root>
+            <ColorField
+              label="Tint"
+              value={tintColor}
+              {recents}
+              oncommit={(c: string) => {
+                if (a.kind.kind !== "blur") return;
+                store.pushUndoState();
+                updateSelected({ kind: { ...a.kind, tintColor: c } });
+                rememberColor(c);
+              }}
+            />
           {/if}
         </PanelSection>
       {/if}

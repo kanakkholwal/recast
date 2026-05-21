@@ -1,5 +1,4 @@
 import { dev } from "$app/environment";
-import { env } from "$env/dynamic/private";
 import {
 	checkout,
 	polar,
@@ -8,7 +7,7 @@ import {
 } from "@polar-sh/better-auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { magicLink } from "better-auth/plugins";
+import { admin, magicLink } from "better-auth/plugins";
 import { eq } from "drizzle-orm";
 import { sendEmail } from "$lib/auth/email";
 import { polarProductIdFor } from "$lib/billing/plans";
@@ -17,6 +16,8 @@ import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
 import { getDb } from "$lib/db";
 import { user as userTable } from "$lib/db/schema";
 import * as schema from "$lib/db/schema";
+import { serverEnv } from "$lib/env/server";
+import { publicEnv } from "$lib/env/public";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the
@@ -29,21 +30,17 @@ import * as schema from "$lib/db/schema";
  */
 
 function createAuth() {
-	const secret = env.BETTER_AUTH_SECRET;
-	if (!secret) {
-		throw new Error(
-			"BETTER_AUTH_SECRET is not set. Generate one with `openssl rand -base64 32`.",
-		);
-	}
+	const env = serverEnv();
 
 	return betterAuth({
-		secret,
-		baseURL: env.BETTER_AUTH_URL ?? env.PUBLIC_APP_URL,
+		secret: env.BETTER_AUTH_SECRET,
+		baseURL: env.BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL,
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
-		// Custom field exposed on the user row — see src/lib/db/schema/auth.ts.
+		// `status` is an app-owned column, separate from the plugin-owned
+		// `role`. Surfaces on session.user so the dashboard load can read it.
 		user: {
 			additionalFields: {
-				role: { type: "string", defaultValue: "active", required: false },
+				status: { type: "string", defaultValue: "active", required: false },
 			},
 		},
 		emailAndPassword: {
@@ -85,6 +82,7 @@ function buildSocialProviders() {
 	// level (SocialButtons.svelte) and here so misconfigured client IDs
 	// can't accidentally enable a path.
 	if (!dev) return providers;
+	const env = serverEnv();
 	if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
 		providers.github = {
 			clientId: env.GITHUB_CLIENT_ID,
@@ -101,6 +99,15 @@ function buildSocialProviders() {
 }
 
 function buildPlugins() {
+	// Admin plugin — owns `role`, `banned`, `banReason`, `banExpires` on
+	// user and `impersonatedBy` on session. Endpoints live under
+	// /api/auth/admin/* with built-in 403 for non-admins.
+	const adminPlugin = admin({
+		defaultRole: "user",
+		adminRoles: ["admin"],
+		impersonationSessionDuration: 60 * 60, // 1h
+	});
+
 	const linkPlugin = magicLink({
 		// Existing-users-only — waitlist sign-up is the only way to get a row.
 		disableSignUp: true,
@@ -119,7 +126,7 @@ function buildPlugins() {
 
 	const polarClient = tryGetPolarClient();
 	const proProductId = polarProductIdFor("pro");
-	const webhookSecret = env.POLAR_WEBHOOK_SECRET;
+	const webhookSecret = serverEnv().POLAR_WEBHOOK_SECRET;
 
 	const polarPlugins =
 		polarClient && proProductId && webhookSecret
@@ -154,22 +161,23 @@ function buildPlugins() {
 				]
 			: [];
 
-	return [linkPlugin, ...polarPlugins];
+	return [adminPlugin, linkPlugin, ...polarPlugins];
 }
 
 /**
- * Returns true if the user with this email exists and is still on the
- * waitlist. Magic link + password reset both short-circuit on this so
- * waitlisted users can't slip in via either path before being activated.
+ * Returns true if the user with this email exists and is still pending
+ * waitlist approval. Magic link + password reset both short-circuit on
+ * this so pending users can't slip in via either path before being
+ * activated (admin flips status: pending → active in /admin/waitlist).
  */
 async function isOnWaitlist(email: string): Promise<boolean> {
 	const db = getDb();
 	const rows = await db
-		.select({ role: userTable.role })
+		.select({ status: userTable.status })
 		.from(userTable)
 		.where(eq(userTable.email, email))
 		.limit(1);
-	return rows[0]?.role === "waitlist";
+	return rows[0]?.status === "pending";
 }
 
 async function handleSubscriptionEvent(payload: unknown): Promise<void> {

@@ -163,7 +163,18 @@ fn camera_capture_thread(
 /// name. Used as the fallback when the user enabled the camera but didn't
 /// pick a specific device.
 fn first_available_camera() -> Result<String> {
-    let output = Command::new(crate::ffmpeg::ffmpeg_path())
+    // Audit fix (Windows tester report — "freezes the whole window /
+    // FFmpeg being initiated again and again"): this spawn was the
+    // ONLY remaining FFmpeg spawn site without `configure_silent_command`.
+    // Without it, every recording-start that hit this fallback (camera
+    // enabled but no specific device picked → "Default") flashed a CMD
+    // console window for the ~200–500 ms that DirectShow enumeration
+    // takes, which on Windows steals foreground focus from the webview
+    // and reads as "the whole window freezes". Every other ffmpeg/ffprobe
+    // spawn site already calls `configure_silent_command`; this was the
+    // last hold-out.
+    let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
+    command
         .args([
             "-hide_banner",
             "-list_devices",
@@ -175,7 +186,9 @@ fn first_available_camera() -> Result<String> {
         ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
-        .stdin(Stdio::null())
+        .stdin(Stdio::null());
+    crate::ffmpeg::configure_silent_command(&mut command);
+    let output = command
         .output()
         .context("failed to invoke ffmpeg for device enumeration")?;
     let stderr = String::from_utf8_lossy(&output.stderr);

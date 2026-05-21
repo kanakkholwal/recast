@@ -23,7 +23,7 @@
   import { tick } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly, scale, slide } from "svelte/transition";
-  import SliderControl from "./_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
 
   interface Props {
     store: EditorStore;

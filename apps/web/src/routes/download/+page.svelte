@@ -1,29 +1,33 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		Reveal,
-		Section,
-		SectionHeader,
+	  Container,
+	  Eyebrow,
+	  Footer,
+	  Reveal,
+	  Section,
+	  SectionHeader,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
+	import * as Collapsible from "@recast/ui/collapsible";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import * as Tabs from "@recast/ui/tabs";
 	import { cn } from "@recast/ui/utils";
 	import {
-		Apple,
-		ArrowDownToLine,
-		ChevronDown,
-		Download,
-		FileBox,
-		Monitor,
-		ShieldCheck,
-		Sparkles,
-		Terminal,
-		TriangleAlert,
-		WifiOff,
-		Zap,
+	  Apple,
+	  ArrowDownToLine,
+	  CheckCircle2,
+	  ChevronDown,
+	  Download,
+	  FileBox,
+	  Info,
+	  LifeBuoy,
+	  Monitor,
+	  ShieldCheck,
+	  Sparkles,
+	  Terminal,
+	  TriangleAlert,
+	  WifiOff,
+	  Zap,
 	} from "lucide-svelte";
 	import type { PageData } from "./$types";
 
@@ -65,26 +69,60 @@
 		detectedOS !== "Unknown" ? platformAssets[detectedOS].slice(1) : [],
 	);
 
-	const platforms = [
+	// Per-platform shipping confidence. Surfaces the honest state of the
+	// builds: Windows is the daily-driver, macOS/Linux are early ports. The
+	// global heads-up card below the hero plus the per-tab chip both read
+	// from this so the messaging stays in sync.
+	type Stability = "stable" | "beta";
+	const platforms: Array<{
+		id: Exclude<OS, "Unknown">;
+		icon: typeof Apple;
+		title: string;
+		subtitle: string;
+		stability: Stability;
+	}> = [
 		{
-			id: "macOS" as const,
+			id: "macOS",
 			icon: Apple,
 			title: "macOS",
 			subtitle: "Requires macOS 12.0 or later",
+			stability: "beta",
 		},
 		{
-			id: "Windows" as const,
+			id: "Windows",
 			icon: Monitor,
 			title: "Windows",
 			subtitle: "Requires Windows 10 or later",
+			stability: "stable",
 		},
 		{
-			id: "Linux" as const,
+			id: "Linux",
 			icon: Terminal,
 			title: "Linux",
 			subtitle: "Debian, Ubuntu, Fedora, Arch",
+			stability: "beta",
 		},
 	];
+
+	const stabilityCopy: Record<
+		Stability,
+		{ label: string; dot: string; chip: string }
+	> = {
+		stable: {
+			label: "Stable",
+			dot: "bg-emerald-500",
+			chip:
+				"bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
+		},
+		beta: {
+			label: "Beta · expect rough edges",
+			dot: "bg-amber-500",
+			chip:
+				"bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-400",
+		},
+	};
+
+	const ISSUES_URL = "https://github.com/kanakkholwal/recast/issues/new";
 
 	let activeTab = $derived(detectedOS !== "Unknown" ? detectedOS : "macOS");
 
@@ -104,6 +142,141 @@
 		{ icon: FileBox, label: "Open format", value: ".recast project" },
 		{ icon: ShieldCheck, label: "Open source", value: "MIT licensed" },
 	];
+
+	// Per-platform install instructions. Step `code` is a copy-paste-ready
+	// shell command; `hint` is small print rendered under the body.
+	type InstallStep = { title: string; body: string; code?: string; hint?: string };
+	type Faq = { title: string; body: string; code?: string };
+	type PlatformGuide = { intro: string; steps: InstallStep[]; faqs: Faq[] };
+
+	const installSteps: Record<Exclude<OS, "Unknown">, PlatformGuide> = {
+		macOS: {
+			intro:
+				"We're not yet Apple-notarized, so Gatekeeper needs one Terminal command on first launch. After that, Recast opens normally from Launchpad.",
+			steps: [
+				{
+					title: "Pick the right build",
+					body:
+						"Apple Silicon for M1/M2/M3/M4 Macs. Intel for older models. Check via   → About This Mac if you're unsure.",
+				},
+				{
+					title: "Drag Recast into Applications",
+					body:
+						"Open the downloaded .dmg, then drag Recast.app into your Applications folder. Eject the disk image when you're done.",
+				},
+				{
+					title: "Clear the quarantine attribute",
+					body:
+						"Open Terminal and run this once. macOS will trust Recast afterwards.",
+					code: "xattr -dr com.apple.quarantine /Applications/Recast.app",
+					hint: "Disappears as soon as we ship a notarized build.",
+				},
+				{
+					title: "Grant capture permissions",
+					body:
+						"On first launch, System Settings → Privacy & Security will prompt for Screen Recording, Microphone, and Camera. Enable the ones you intend to record from.",
+				},
+			],
+			faqs: [
+				{
+					title: "“Recast is damaged and can't be opened”",
+					body:
+						"Not actually damaged — that's the un-notarized Gatekeeper error. Step 3 above fixes it.",
+				},
+				{
+					title: "Permissions don't stick after enabling",
+					body:
+						"Fully quit Recast (⌘Q), toggle the permission off and on under Privacy & Security, then relaunch.",
+				},
+			],
+		},
+		Windows: {
+			intro:
+				"Windows SmartScreen flags new publishers as 'Unknown'. One click past the warning and you're in — this goes away once we sign with an EV certificate.",
+			steps: [
+				{
+					title: "Pick the right installer",
+					body:
+						".exe is the typical install. Use the .msi if your IT department's group policy requires MSI packages.",
+				},
+				{
+					title: "Run the installer",
+					body:
+						"Double-click the downloaded file. If UAC asks, allow it to run.",
+				},
+				{
+					title: "Bypass SmartScreen",
+					body:
+						"If you see 'Windows protected your PC', click More info, then Run anyway. The publisher will read as 'Unknown' until we add code signing.",
+				},
+				{
+					title: "Finish setup",
+					body:
+						"Pick an install location and let the wizard finish. Recast launches from the Start menu — pin it to the taskbar while you're at it.",
+				},
+			],
+			faqs: [
+				{
+					title: "Antivirus flags Recast as suspicious",
+					body:
+						"False positive — fresh unsigned binaries trip heuristic scanners until they age. Add Recast.exe to your antivirus's allowlist.",
+				},
+				{
+					title: "Capture is empty or black",
+					body:
+						"Update your GPU drivers (NVIDIA/AMD/Intel) and make sure Recast isn't running in compatibility mode. Right-click the shortcut → Properties → Compatibility → uncheck everything.",
+				},
+			],
+		},
+		Linux: {
+			intro:
+				"Three packages cover most distros. Pick by your package manager — AppImage works on anything.",
+			steps: [
+				{
+					title: "Pick your package",
+					body:
+						"AppImage = portable (any distro, no install). .deb = Debian, Ubuntu, Mint. .rpm = Fedora, RHEL, openSUSE.",
+				},
+				{
+					title: "AppImage — mark executable & run",
+					body:
+						"Give it execute permission, then double-click or run from the terminal.",
+					code: "chmod +x Recast-*.AppImage\n./Recast-*.AppImage",
+					hint: "Some distros need libfuse2: sudo apt install libfuse2.",
+				},
+				{
+					title: ".deb — install with apt",
+					body: "apt resolves any missing dependencies for you.",
+					code: "sudo apt install ./recast_*.deb",
+				},
+				{
+					title: ".rpm — install with dnf",
+					body: "Use zypper on openSUSE: sudo zypper install ./recast-*.rpm.",
+					code: "sudo dnf install ./recast-*.rpm",
+				},
+				{
+					title: "Wayland — enable the portal",
+					body:
+						"Recast uses xdg-desktop-portal for screen capture under Wayland. Most distros bundle it; if capture is empty, install the portal and the matching backend (GNOME or KDE).",
+					code: "sudo apt install xdg-desktop-portal xdg-desktop-portal-gnome",
+				},
+			],
+			faqs: [
+				{
+					title: "AppImage won't launch",
+					body:
+						"Missing FUSE library on newer Ubuntu / Debian.",
+					code: "sudo apt install libfuse2",
+				},
+				{
+					title: "No audio device shows up",
+					body:
+						"Recast captures via PipeWire. Make sure pipewire-pulse is installed so your default sink is exposed.",
+					code: "sudo apt install pipewire-pulse",
+				},
+			],
+		},
+	};
 </script>
 
 <svelte:head>
@@ -245,9 +418,67 @@
 				</div>
 			</div>
 
+			<!-- Honest platform-stability heads-up. Windows is the build I daily-
+			     drive; macOS and Linux are early ports that haven't seen the same
+			     mileage. Surface it before the user clicks any download so the
+			     expectation is set up-front and the GitHub issues link is right
+			     there when they hit something. -->
+			<Reveal>
+				<div
+					class="mx-auto mt-16 max-w-3xl rounded-2xl border border-amber-500/25 bg-amber-500/[0.04] p-5 backdrop-blur-md sm:p-6"
+				>
+					<div class="flex items-start gap-4">
+						<span
+							class="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400"
+						>
+							<TriangleAlert class="size-4" />
+						</span>
+						<div class="min-w-0 flex-1">
+							<h3 class="text-sm font-semibold tracking-tight text-foreground">
+								Heads up — platform stability
+							</h3>
+							<p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+								Windows is the build I use daily and the most polished today.
+								<span class="font-semibold text-foreground/85">
+									macOS and Linux are early ports
+								</span>
+								— please don't expect feature parity yet, and reach for the
+								Windows build if you have the choice.
+							</p>
+							<div class="mt-3 flex flex-wrap items-center gap-1.5">
+								{#each platforms as p}
+									{@const s = stabilityCopy[p.stability]}
+									<span
+										class={cn(
+											"inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] ring-1 ring-inset",
+											s.chip,
+										)}
+									>
+										<span class={cn("size-1.5 rounded-full", s.dot)}></span>
+										{p.title} · {p.stability === "stable" ? "Stable" : "Beta"}
+									</span>
+								{/each}
+							</div>
+							<p class="mt-3 text-xs leading-relaxed text-muted-foreground">
+								Hit a bug or papercut? Please file it on
+								<a
+									href={ISSUES_URL}
+									target="_blank"
+									rel="noopener noreferrer"
+									class="font-semibold text-foreground underline decoration-foreground/30 decoration-1 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary/60"
+								>
+									GitHub Issues
+								</a>
+								— I read every one and reply personally.
+							</p>
+						</div>
+					</div>
+				</div>
+			</Reveal>
+
 			<!-- Ships with every build -->
 			<Reveal>
-				<div class="mx-auto mt-20 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-4">
+				<div class="mx-auto mt-12 grid max-w-4xl grid-cols-2 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-4">
 					{#each ships as ship}
 						{@const Icon = ship.icon}
 						<div class="flex flex-col gap-2 bg-background/60 p-5 backdrop-blur-md">
@@ -288,6 +519,9 @@
 
 					{#each platforms as p}
 						{@const Icon = p.icon}
+						{@const guide = installSteps[p.id]}
+						{@const anchorId = p.id === "macOS" ? "macos-first-launch" : `install-${p.id.toLowerCase()}`}
+						{@const stab = stabilityCopy[p.stability]}
 						<Tabs.Content value={p.id} class="mt-8">
 							<Reveal>
 								<article class="glass-card relative overflow-hidden rounded-2xl p-8 sm:p-10">
@@ -298,9 +532,23 @@
 											<span class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70">
 												<Icon class="size-5" />
 											</span>
-											<h3 class="mt-6 text-2xl font-semibold tracking-tight">
-												{p.title}
-											</h3>
+											<div class="mt-6 flex flex-wrap items-center gap-3">
+												<h3 class="text-2xl font-semibold tracking-tight">
+													{p.title}
+												</h3>
+												<span
+													class={cn(
+														"inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] ring-1 ring-inset",
+														stab.chip,
+													)}
+													title={p.stability === "stable"
+														? "This is the build I use daily."
+														: "Early port — please file issues on GitHub when something breaks."}
+												>
+													<span class={cn("size-1.5 rounded-full", stab.dot)}></span>
+													{p.stability === "stable" ? "Stable" : "Beta"}
+												</span>
+											</div>
 											<p class="mt-1.5 text-sm text-muted-foreground">
 												{p.subtitle}
 											</p>
@@ -321,54 +569,122 @@
 										</div>
 									</div>
 
-									<!-- macOS-only first-launch block. We're not yet Apple-notarized,
-									     so Gatekeeper refuses a freshly-downloaded DMG with "is
-									     damaged and can't be opened" (especially on Apple Silicon
-									     where ad-hoc signatures aren't trusted). The literal error
-									     text is included verbatim so search engines surface this
-									     page when users paste the message into Google. -->
-									{#if p.id === "macOS"}
-										<div
-											id="macos-first-launch"
-											class="relative mt-8 rounded-2xl border border-amber-500/25 bg-amber-500/4 p-5 sm:p-6"
-										>
-											<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+									<!-- Setup steps — same shape for every platform so adding a new
+									     OS is a data change, not a layout one. macOS preserves the
+									     `#macos-first-launch` anchor that the hero CTA links to. -->
+									<div id={anchorId} class="relative mt-10">
+										<div class="flex flex-wrap items-center justify-between gap-3">
+											<div class="flex items-center gap-2.5">
 												<span
-													class="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400"
+													class="grid size-8 place-items-center rounded-lg bg-foreground/5 text-foreground/70 ring-1 ring-foreground/5"
 												>
-													<TriangleAlert class="size-4" />
+													<Info class="size-4" />
 												</span>
-												<div class="flex-1 space-y-3">
-													<div>
-														<h4 class="text-sm font-semibold text-foreground">
-															First launch on macOS
-														</h4>
-														<p
-															class="mt-1 text-sm leading-relaxed text-muted-foreground"
-														>
-															If macOS shows
-															<em class="not-italic font-medium text-foreground/85"
-																>"Recast" is damaged and can't be opened</em
-															>, the download is fine — we're not yet
-															Apple-notarized. Drag Recast.app into your
-															<span class="font-mono text-foreground/90">Applications</span>
-															folder, then run this once in Terminal:
+												<h4 class="text-sm font-semibold tracking-tight text-foreground">
+													Install on {p.title}
+												</h4>
+											</div>
+											<span class="font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+												{guide.steps.length} steps
+											</span>
+										</div>
+										<p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+											{guide.intro}
+										</p>
+
+										<ol class="relative mt-6 space-y-3">
+											{#each guide.steps as step, idx}
+												<li
+													class="group/step relative flex gap-4 rounded-2xl border border-border-low/50 bg-foreground/1.5 p-4 transition-colors hover:bg-foreground/3 sm:p-5"
+												>
+													<span
+														class="relative z-10 grid size-8 shrink-0 place-items-center rounded-lg bg-foreground text-background font-mono text-[12px] font-semibold tabular-nums shadow-craft-sm"
+													>
+														{idx + 1}
+													</span>
+													<div class="min-w-0 flex-1 space-y-2.5">
+														<div class="text-sm font-semibold tracking-tight text-foreground">
+															{step.title}
+														</div>
+														<p class="text-sm leading-relaxed text-muted-foreground">
+															{step.body}
 														</p>
+														{#if step.code}
+															<pre
+																class="overflow-x-auto rounded-lg border border-border-low/60 bg-foreground/4 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code>{step.code}</code></pre>
+														{/if}
+														{#if step.hint}
+															<p class="flex items-start gap-1.5 text-[11px] leading-relaxed text-muted-foreground/80">
+																<CheckCircle2 class="mt-0.5 size-3 shrink-0 text-primary/70" />
+																<span>{step.hint}</span>
+															</p>
+														{/if}
 													</div>
-													<pre
-														class="overflow-x-auto rounded-lg border border-border-low/50 bg-foreground/4 px-3 py-2.5 font-mono text-xs text-foreground"><code>xattr -dr com.apple.quarantine /Applications/Recast.app</code></pre>
-													<p class="text-xs text-muted-foreground/80">
-														After that, open Recast normally from Launchpad or
-														Applications. The Terminal step will go away once we
-														ship a notarized build. First launch will also prompt
-														for Screen Recording, Microphone, and Camera permission
-														in System Settings → Privacy & Security — grant the
-														ones you intend to record from.
-													</p>
+												</li>
+											{/each}
+										</ol>
+
+										<!-- Troubleshooting — surfaces the common Google searches
+										     ("Recast is damaged", "AppImage won't launch") so users
+										     don't bounce out to file an issue. -->
+										{#if guide.faqs.length}
+											<div class="mt-8">
+												<div class="flex items-center gap-2.5">
+													<span
+														class="grid size-8 place-items-center rounded-lg bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/15 dark:text-amber-400"
+													>
+														<LifeBuoy class="size-4" />
+													</span>
+													<h4 class="text-sm font-semibold tracking-tight text-foreground">
+														If something goes wrong
+													</h4>
+												</div>
+												<div class="mt-4 grid gap-3 sm:grid-cols-2">
+													{#each guide.faqs as faq}
+														<Collapsible.Root
+															class="group/faq rounded-xl border border-border-low/50 bg-foreground/1.5 p-4 transition-colors hover:bg-foreground/3 data-[state=open]:border-border-low/70"
+														>
+															<Collapsible.Trigger
+																class="flex w-full cursor-pointer items-start justify-between gap-3 text-left"
+															>
+																<span class="text-sm font-medium text-foreground">
+																	{faq.title}
+																</span>
+																<ChevronDown
+																	class="mt-0.5 size-4 shrink-0 text-muted-foreground transition-transform duration-200 group-data-[state=open]/faq:rotate-180"
+																/>
+															</Collapsible.Trigger>
+															<Collapsible.Content>
+																<div class="mt-3 space-y-2.5">
+																	<p class="text-sm leading-relaxed text-muted-foreground">
+																		{faq.body}
+																	</p>
+																	{#if faq.code}
+																		<pre
+																			class="overflow-x-auto rounded-lg border border-border-low/60 bg-foreground/4 px-3 py-2.5 font-mono text-xs leading-relaxed text-foreground"><code>{faq.code}</code></pre>
+																	{/if}
+																</div>
+															</Collapsible.Content>
+														</Collapsible.Root>
+													{/each}
 												</div>
 											</div>
-										</div>
-									{/if}
+										{/if}
+
+										{#if p.id === "macOS"}
+											<div
+												class="mt-6 flex items-start gap-3 rounded-xl border border-amber-500/25 bg-amber-500/4 p-4 text-xs leading-relaxed text-muted-foreground"
+											>
+												<TriangleAlert class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+												<span>
+													<span class="font-semibold text-foreground">Heads up:</span>
+													until we ship Apple notarization, step 3 above is required
+													— pasting <span class="font-mono text-foreground/85">"Recast is damaged"</span>
+													into Google brought you here.
+												</span>
+											</div>
+										{/if}
+									</div>
 								</article>
 							</Reveal>
 						</Tabs.Content>

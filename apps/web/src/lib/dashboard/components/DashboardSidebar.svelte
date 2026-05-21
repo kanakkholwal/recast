@@ -7,6 +7,7 @@
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import * as Sidebar from "@recast/ui/sidebar";
 	import { useSidebar } from "@recast/ui/sidebar";
+	import { mode, toggleMode } from "@recast/ui/theme";
 	import { cn } from "@recast/ui/utils";
 	import {
 		ArrowUpRight,
@@ -15,7 +16,10 @@
 		Film,
 		LayoutDashboard,
 		LogOut,
+		Moon,
 		Settings,
+		Shield,
+		Sun,
 		User,
 	} from "@lucide/svelte";
 	import type { ComponentProps } from "svelte";
@@ -26,6 +30,11 @@
 	const open = $derived(sidebar.state === "expanded");
 	const currentPath = $derived(page.url.pathname);
 	const profile = $derived(settingsStore.value.profile);
+	// Surfaced by /dashboard/+layout.server.ts; falls back to "user" if absent
+	// so the conditional below safely returns false on unauthenticated pages.
+	const isAdmin = $derived(
+		(page.data?.user as { role?: string } | undefined)?.role === "admin",
+	);
 
 	const nav = [
 		{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
@@ -160,7 +169,49 @@
 		</Sidebar.Group>
 	</Sidebar.Content>
 
-	<Sidebar.Footer class="border-t border-border/30 p-2">
+	<Sidebar.Footer class="gap-1 border-t border-border/30 p-2">
+		<button
+			type="button"
+			onclick={toggleMode}
+			aria-label={mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+			title={mode.current === "dark" ? "Light mode" : "Dark mode"}
+			class={cn(
+				"group/theme relative flex h-9 items-center gap-2.5 overflow-hidden rounded-lg text-[12.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-foreground/5 hover:text-foreground",
+				open ? "px-2.5" : "size-8 justify-center self-center p-0",
+			)}
+		>
+			<span class="relative grid size-3.5 place-items-center">
+				{#if mode.current === "dark"}
+					<span
+						class="absolute grid place-items-center transition-transform duration-300 group-hover/theme:rotate-45"
+						in:fly={{ y: 4, duration: 180, easing: cubicOut }}
+						out:fade={{ duration: 120 }}
+					>
+						<Sun class="size-3.5" />
+					</span>
+				{:else}
+					<span
+						class="absolute grid place-items-center transition-transform duration-300 group-hover/theme:-rotate-12"
+						in:fly={{ y: -4, duration: 180, easing: cubicOut }}
+						out:fade={{ duration: 120 }}
+					>
+						<Moon class="size-3.5" />
+					</span>
+				{/if}
+			</span>
+			{#if open}
+				<span
+					in:fly={{ x: -6, duration: 220, easing: cubicOut, delay: 40 }}
+					out:fade={{ duration: 160, easing: cubicOut }}
+					class="truncate"
+				>
+					{mode.current === "dark" ? "Light mode" : "Dark mode"}
+				</span>
+			{/if}
+		</button>
+
+		<div class="my-1 h-px bg-border/30"></div>
+
 		<DropdownMenu.Root>
 			<DropdownMenu.Trigger
 				class={cn(
@@ -201,6 +252,12 @@
 					<Settings class="size-4 text-muted-foreground" />
 					Settings
 				</DropdownMenu.Item>
+				{#if isAdmin}
+					<DropdownMenu.Item onclick={() => goto("/admin")}>
+						<Shield class="size-4 text-primary" />
+						Admin dashboard
+					</DropdownMenu.Item>
+				{/if}
 				<DropdownMenu.Item onclick={() => goto("/")}>
 					<ArrowUpRight class="size-4 text-muted-foreground" />
 					Back to site

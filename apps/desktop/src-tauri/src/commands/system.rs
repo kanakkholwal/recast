@@ -149,23 +149,29 @@ pub async fn get_displays() -> Result<Vec<DisplayInfo>, String> {
 pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
     tauri::async_runtime::spawn_blocking(|| -> Result<Vec<WindowInfo>, String> {
         let windows = Window::all().map_err(|e| e.to_string())?;
+        // Each xcap accessor hits the compositor/WM. The old filter + map
+        // called `.is_minimized()` and `.title()` twice each per window.
+        // Snapshot once into a local struct, then filter + map cheaply.
         Ok(windows
             .iter()
-            .filter(|window| {
-                !window.is_minimized().unwrap_or(false)
-                    && !window.title().unwrap_or_default().is_empty()
-            })
-            .map(|window| WindowInfo {
-                id: window.id().unwrap_or_default(),
-                pid: window.pid().unwrap_or_default(),
-                app_name: window.app_name().unwrap_or_default(),
-                title: window.title().unwrap_or_default(),
-                x: window.x().unwrap_or_default(),
-                y: window.y().unwrap_or_default(),
-                width: window.width().unwrap_or_default(),
-                height: window.height().unwrap_or_default(),
-                is_minimized: window.is_minimized().unwrap_or_default(),
-                thumbnail: capture_window_thumbnail(window),
+            .filter_map(|window| {
+                let is_minimized = window.is_minimized().unwrap_or_default();
+                let title = window.title().unwrap_or_default();
+                if is_minimized || title.is_empty() {
+                    return None;
+                }
+                Some(WindowInfo {
+                    id: window.id().unwrap_or_default(),
+                    pid: window.pid().unwrap_or_default(),
+                    app_name: window.app_name().unwrap_or_default(),
+                    title,
+                    x: window.x().unwrap_or_default(),
+                    y: window.y().unwrap_or_default(),
+                    width: window.width().unwrap_or_default(),
+                    height: window.height().unwrap_or_default(),
+                    is_minimized,
+                    thumbnail: capture_window_thumbnail(window),
+                })
             })
             .collect())
     })
@@ -363,66 +369,9 @@ fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
 
     // ffmpeg prints device list to stderr (it "fails" because "dummy" isn't a real input).
     let stderr = String::from_utf8_lossy(&output.stderr);
-    let mut devices: Vec<CameraDeviceInfo> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-
-    // Two output formats to handle:
-    //   FFmpeg ≤6.x:   section header "DirectShow video devices" followed by lines
-    //                  like `[dshow @ ...]  "Integrated Camera"`
-    //   FFmpeg 7.x+:   no section headers, each device tagged inline:
-    //                  `[dshow @ ...] "Integrated Camera" (video)`
-    let mut in_video_section = false;
-    for line in stderr.lines() {
-        if line.contains("DirectShow video devices") {
-            in_video_section = true;
-            continue;
-        }
-        if line.contains("DirectShow audio devices") {
-            in_video_section = false;
-            continue;
-        }
-
-        // Skip the `Alternative name "@device_pnp_..."` lines — those are the
-        // raw PnP identifiers, not friendly names.
-        if line.contains("Alternative name") {
-            continue;
-        }
-
-        let has_video_tag = line.contains("(video)");
-        let has_audio_tag = line.contains("(audio)");
-        // A line is a video device if FFmpeg tagged it as such OR we're in
-        // the legacy video section header and it isn't explicitly audio.
-        let is_video_device = has_video_tag || (in_video_section && !has_audio_tag);
-        if !is_video_device {
-            continue;
-        }
-
-        // Extract device name between the first pair of double quotes.
-        let Some(start) = line.find('"') else {
-            continue;
-        };
-        let Some(end_rel) = line[start + 1..].find('"') else {
-            continue;
-        };
-        let name = line[start + 1..start + 1 + end_rel].trim().to_string();
-        if name.is_empty() {
-            continue;
-        }
-        if seen.insert(name.clone()) {
-            let (status, status_message) = classify_camera_name(&name);
-            devices.push(CameraDeviceInfo {
-                id: name.clone(),
-                name,
-                status,
-                status_message,
-            });
-        }
-    }
-
-    Ok(devices)
+    Ok(parse_camera_devices(&stderr))
 }
 
-#[allow(dead_code)]
 fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
     let mut devices: Vec<CameraDeviceInfo> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();

@@ -175,10 +175,15 @@
   }
 
   async function loadThumbnailStrip(path: string) {
+    // Skip when we don't have a usable duration yet — bumping the token
+    // would cancel any genuinely in-flight strip, and generateThumbnails
+    // against a 0-duration source just yields black frames.
+    const duration = store.metadata?.duration ?? 0;
+    if (duration <= 0) return;
+
     const token = ++thumbnailToken;
     try {
-      const count =
-        store.metadata?.duration && store.metadata.duration > 60 ? 12 : 8;
+      const count = duration > 60 ? 12 : 8;
       const strip = await generateThumbnails(path, count);
       if (token === thumbnailToken) {
         store.thumbnailStrip = strip;
@@ -194,6 +199,14 @@
   // Decode the audio peak envelope for the timeline waveform. Best-effort
   // and fully async — the editor is usable before it resolves.
   async function loadWaveform() {
+    // Sub-5s clips don't benefit from a waveform strip — the timeline is
+    // too narrow to show anything readable, and the FFmpeg pass to decode
+    // peaks costs more than the result is worth at that scale.
+    const duration = store.metadata?.duration ?? 0;
+    if (duration > 0 && duration < 5) {
+      store.waveform = [];
+      return;
+    }
     try {
       store.waveform = await extractWaveform(
         store.audioPath,

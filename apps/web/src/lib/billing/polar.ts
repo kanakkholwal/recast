@@ -1,5 +1,5 @@
-import { env } from "$env/dynamic/private";
 import { Polar } from "@polar-sh/sdk";
+import { serverEnv } from "$lib/env/server";
 
 /**
  * Lazy Polar SDK client. Throws if POLAR_ACCESS_TOKEN isn't set so misconfig
@@ -10,20 +10,20 @@ let cached: Polar | null = null;
 
 export function getPolarClient(): Polar {
 	if (cached) return cached;
-	const accessToken = env.POLAR_ACCESS_TOKEN;
-	if (!accessToken) {
+	const { POLAR_ACCESS_TOKEN, POLAR_SERVER } = serverEnv();
+	if (!POLAR_ACCESS_TOKEN) {
 		throw new Error(
 			"POLAR_ACCESS_TOKEN is not set. Add it to .env (use a sandbox token while testing).",
 		);
 	}
 	cached = new Polar({
-		accessToken,
-		server: env.POLAR_SERVER === "production" ? "production" : "sandbox",
+		accessToken: POLAR_ACCESS_TOKEN,
+		server: POLAR_SERVER,
 	});
 	return cached;
 }
 
 export function tryGetPolarClient(): Polar | null {
-	if (!env.POLAR_ACCESS_TOKEN) return null;
+	if (!serverEnv().POLAR_ACCESS_TOKEN) return null;
 	return getPolarClient();
 }

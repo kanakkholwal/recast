@@ -60,12 +60,33 @@
 				class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-[1.04]"
 			/>
 		{:else}
-			<div class="absolute inset-0 bg-linear-to-br from-primary/25 via-tertiary/15 to-transparent"></div>
-			<div class="bg-grid bg-grid-fade absolute inset-0 opacity-40"></div>
+			<!-- Empty-poster state. Inherits the techy framing from the home
+			     editor-tour rail: dot grid + primary glow blob + corner
+			     brackets + a glass-tile icon. Reads as "ready for a frame"
+			     instead of "missing image". -->
+			<div
+				aria-hidden="true"
+				class="absolute inset-0 opacity-60"
+				style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 8%, transparent) 1px, transparent 1px); background-size: 16px 16px;"
+			></div>
+			<div
+				aria-hidden="true"
+				class="pointer-events-none absolute -bottom-10 left-1/2 size-44 -translate-x-1/2 rounded-full opacity-70"
+				style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 75%);"
+			></div>
 			<div class="absolute inset-0 grid place-items-center">
-				<Film class="size-8 text-foreground/25" />
+				<span class="grid size-16 place-items-center rounded-xl border border-border-low/60 bg-background/55 shadow-craft-sm backdrop-blur-sm">
+					<Film class="size-7 text-foreground/70 drop-shadow-[0_4px_12px_color-mix(in_srgb,var(--color-primary)_35%,transparent)]" />
+				</span>
 			</div>
 		{/if}
+
+		<!-- CRT-style corner brackets. Always-on accent that ties the card to
+		     the marketing rail's visual language without obscuring posters. -->
+		<span aria-hidden="true" class="pointer-events-none absolute left-2 top-2 z-10 size-2.5 border-l border-t border-foreground/35"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute right-2 top-2 z-10 size-2.5 border-r border-t border-foreground/35"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute bottom-2 left-2 z-10 size-2.5 border-b border-l border-foreground/35"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute bottom-2 right-2 z-10 size-2.5 border-b border-r border-foreground/35"></span>
 
 		<!-- Play overlay -->
 		<span class="absolute inset-0 grid place-items-center bg-background/35 opacity-0 backdrop-blur-[1px] transition-opacity duration-300 group-hover/card:opacity-100">
@@ -74,18 +95,19 @@
 			</span>
 		</span>
 
-		<!-- Duration -->
-		<span class="absolute bottom-2 right-2 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold text-foreground backdrop-blur-sm">
+		<!-- Duration. Mono-tag style matches the editor-tour chips. -->
+		<span class="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
 			<Clock class="size-3" />
 			{formatDuration(recast.durationSec)}
 		</span>
 
-		<!-- Source -->
+		<!-- Source. Same mono-tag rhythm as the duration chip; primary tint
+		     for cloud, neutral for local. -->
 		<span
-			class="absolute left-2 top-2 flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider backdrop-blur-sm
+			class="absolute left-2.5 top-2.5 z-20 flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset backdrop-blur-sm
 				{recast.source === 'cloud'
-				? 'bg-primary/90 text-background'
-				: 'bg-background/85 text-muted-foreground'}"
+				? 'bg-primary/90 text-background ring-primary/40'
+				: 'bg-background/85 text-muted-foreground ring-border-low/50'}"
 		>
 			{#if recast.source === "cloud"}
 				<Cloud class="size-3" />{recast.provider}

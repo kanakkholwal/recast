@@ -28,6 +28,10 @@
       "svelte": "./src/components/ui/checkbox/index.ts",
       "default": "./src/components/ui/checkbox/index.ts"
     },
+    "./collapsible": {
+      "svelte": "./src/components/ui/collapsible/index.ts",
+      "default": "./src/components/ui/collapsible/index.ts"
+    },
     "./command": {
       "svelte": "./src/components/ui/command/index.ts",
       "default": "./src/components/ui/command/index.ts"
@@ -123,6 +127,14 @@
     "./color-picker": {
       "svelte": "./src/components/ui/color-picker/index.ts",
       "default": "./src/components/ui/color-picker/index.ts"
+    },
+    "./color-field": {
+      "svelte": "./src/components/ui/color-field/index.ts",
+      "default": "./src/components/ui/color-field/index.ts"
+    },
+    "./slider-control": {
+      "svelte": "./src/components/ui/slider-control/index.ts",
+      "default": "./src/components/ui/slider-control/index.ts"
     },
     "./popover": {
       "svelte": "./src/components/ui/popover/index.ts",

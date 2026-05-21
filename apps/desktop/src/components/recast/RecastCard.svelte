@@ -74,18 +74,39 @@
 			></div>
 		{:else if item.icon}
 			{@const Icon = item.icon}
+			<!-- Icon-as-hero placeholder. Borrows the editor-tour rail's techy
+			     framing (dot grid + primary glow + glass tile) so a thumbnail-
+			     less recording reads as "ready for a frame" instead of empty. -->
+			<div
+				aria-hidden="true"
+				class="absolute inset-0 opacity-60"
+				style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 8%, transparent) 1px, transparent 1px); background-size: 14px 14px;"
+			></div>
+			<div
+				aria-hidden="true"
+				class="pointer-events-none absolute -bottom-8 left-1/2 size-36 -translate-x-1/2 rounded-full opacity-70"
+				style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 75%);"
+			></div>
 			<div class="absolute inset-0 flex items-center justify-center">
 				<span
 					class={cn(
-						"flex size-12 items-center justify-center rounded-2xl bg-background/70 ring-1 ring-inset ring-border/50 text-foreground/50",
-						"transition-all duration-300 group-hover/card:scale-[1.05] group-hover/card:text-foreground/80",
+						"flex size-14 items-center justify-center rounded-xl bg-card/55 ring-1 ring-inset ring-border/60 text-foreground/70 backdrop-blur-sm shadow-craft-sm",
+						"transition-all duration-300 group-hover/card:scale-[1.05] group-hover/card:text-foreground",
 						item.iconClass,
 					)}
 				>
-					<Icon size={22} />
+					<Icon size={22} class="drop-shadow-[0_4px_10px_color-mix(in_srgb,var(--color-primary)_30%,transparent)]" />
 				</span>
 			</div>
 		{/if}
+
+		<!-- CRT-style corner brackets. Always-on accent that ties recording
+		     tiles to the marketing rail's visual language. Sized smaller than
+		     the web card because the desktop tile is denser. -->
+		<span aria-hidden="true" class="pointer-events-none absolute left-1.5 top-1.5 z-10 size-2 border-l border-t border-foreground/30"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute right-1.5 top-1.5 z-10 size-2 border-r border-t border-foreground/30"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute bottom-1.5 left-1.5 z-10 size-2 border-b border-l border-foreground/30"></span>
+		<span aria-hidden="true" class="pointer-events-none absolute bottom-1.5 right-1.5 z-10 size-2 border-b border-r border-foreground/30"></span>
 
 		{#if item.accessories && item.accessories.length > 0}
 			<div

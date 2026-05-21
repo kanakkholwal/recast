@@ -4,6 +4,10 @@ import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
  * Better Auth core tables. Names and shapes follow the documented schema —
  * don't rename columns without also re-running `betterAuth.cli` migrations,
  * or the adapter won't find them.
+ *
+ * `role`, `banned`, `banReason`, `banExpires` are owned by Better Auth's
+ * `admin` plugin; the plugin manages them through the admin API endpoints.
+ * `status` is application-owned (waitlist gating, kept separate from `role`).
  */
 
 export const user = pgTable("user", {
@@ -12,12 +16,19 @@ export const user = pgTable("user", {
 	email: text("email").notNull().unique(),
 	emailVerified: boolean("email_verified").notNull().default(false),
 	image: text("image"),
+	/** Managed by `better-auth/plugins/admin`. Defaults: "user" | "admin". */
+	role: text("role").notNull().default("user"),
 	/**
-	 * Application role. `waitlist` users have a row but no credentials —
-	 * magic link + password reset are gated until an admin flips this to
-	 * `active`. Surfaced to Better Auth via `additionalFields` in server.ts.
+	 * Application status, separate from `role`. `pending` = on the waitlist
+	 * and not yet activated; magic link + password reset short-circuit when
+	 * this is `pending`. Flip to `active` from the admin dashboard
+	 * (or `/admin/waitlist` for bulk approve).
 	 */
-	role: text("role").notNull().default("active"),
+	status: text("status").notNull().default("active"),
+	/** Admin plugin ban fields — managed via /admin/ban-user. */
+	banned: boolean("banned"),
+	banReason: text("ban_reason"),
+	banExpires: timestamp("ban_expires"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
@@ -31,6 +42,12 @@ export const session = pgTable("session", {
 	userId: text("user_id")
 		.notNull()
 		.references(() => user.id, { onDelete: "cascade" }),
+	/**
+	 * Admin plugin impersonation marker. When set, this session was created
+	 * by an admin calling /admin/impersonate-user; `stopImpersonating()`
+	 * restores the original admin session.
+	 */
+	impersonatedBy: text("impersonated_by"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

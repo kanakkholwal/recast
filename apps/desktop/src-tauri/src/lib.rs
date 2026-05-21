@@ -59,12 +59,27 @@ pub fn run() {
             // Doing this on the main thread froze the splash window for up to
             // a second on Windows. Resolve on a blocking worker; commands that
             // need the path will block on the OnceLock if they fire first.
+            //
+            // We also pre-warm `preferred_h264_encoder()` here (one extra
+            // `ffmpeg -encoders` spawn, also ~200–300 ms cold). Without this,
+            // the encoder probe ran *during the first recording-start*,
+            // delaying the start_recording command by that much — the Windows
+            // tester report described it as "the whole window freezes
+            // suddenly". Pre-warming on the same blocking worker that
+            // resolves FFmpeg paths fixes the first-recording case without
+            // adding any extra spawn for subsequent recordings (the result is
+            // cached behind an OnceLock).
             let resolver_handle = handle.clone();
             tauri::async_runtime::spawn_blocking(move || {
                 ffmpeg::init(&resolver_handle);
                 if let Err(e) = ffmpeg::check_availability() {
                     log::warn!("FFmpeg not available: {e}");
                 }
+                // Touch the OnceLock so the encoder probe runs here, not
+                // during the user's first recording. Result is ignored —
+                // the function logs internally and falls back to libx264
+                // on probe failure.
+                let _ = ffmpeg::preferred_h264_encoder();
             });
 
             // Startup: clean up stale temp files and orphaned session artifacts.

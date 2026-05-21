@@ -1,4 +1,4 @@
-import { env } from "$env/dynamic/private";
+import { serverEnv } from "$lib/env/server";
 
 /**
  * Outbound mail. Wired to Resend in production; logs to stdout otherwise so
@@ -6,7 +6,7 @@ import { env } from "$env/dynamic/private";
  *
  * Set `RESEND_API_KEY` + `EMAIL_FROM` to send real mail. Swap to your
  * provider of choice (Postmark, Loops, AWS SES) by replacing the body of
- * `deliver()` — every caller goes through this single helper.
+ * this helper — every caller goes through it.
  */
 
 export type EmailMessage = {
@@ -17,8 +17,7 @@ export type EmailMessage = {
 };
 
 export async function sendEmail(msg: EmailMessage): Promise<void> {
-	const apiKey = env.RESEND_API_KEY;
-	const from = env.EMAIL_FROM ?? "Recast <hello@recast.nexonauts.com>";
+	const { RESEND_API_KEY: apiKey, EMAIL_FROM: from } = serverEnv();
 
 	if (!apiKey) {
 		console.log("\n[email — no provider configured]");

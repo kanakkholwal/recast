@@ -59,7 +59,34 @@ impl RecordingPipeline {
     pub fn push(&self, frame: VideoFrame) {
         self.stats.captured_frames.fetch_add(1, Ordering::Relaxed);
         if self.queue.push(frame).is_err() {
-            self.stats.dropped_frames.fetch_add(1, Ordering::Relaxed);
+            // The queue (capacity 180 ≈ 3 s at 60 fps) is full — the
+            // encoder is falling behind the pacer. Increment the
+            // counter and surface the condition in the log so a
+            // recording that comes out choppy has a paper trail.
+            //
+            // We log loudly on the first drop of each session so the
+            // problem is visible the moment it starts, then dampen to
+            // once per ~5 s of sustained dropping (every 300th drop at
+            // 60 fps) to avoid flooding the log if the encoder stays
+            // behind. The atomic `fetch_add` returns the PRE-increment
+            // value, so we treat `0` as "this is the first drop".
+            let prev = self.stats.dropped_frames.fetch_add(1, Ordering::Relaxed);
+            if prev == 0 {
+                log::warn!(
+                    "recording pipeline: frame queue saturated — frames are being \
+                     dropped. The encoder is not keeping up with the capture rate. \
+                     This will surface as choppy / time-compressed playback. Likely \
+                     causes: hardware encoder unavailable (libx264 software fallback \
+                     at high resolution), disk I/O contention, or CPU pressure from \
+                     another app."
+                );
+            } else if prev % 300 == 299 {
+                // prev=299 ⇒ this drop is the 300th; prev=599 ⇒ 600th; …
+                log::warn!(
+                    "recording pipeline: {} frames dropped total (queue capacity 180)",
+                    prev + 1
+                );
+            }
         }
     }
 

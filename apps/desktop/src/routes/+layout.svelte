@@ -81,7 +81,11 @@
        downstream code that calls `toast.*` is just a no-op there — the main
        window keeps its toaster as usual. -->
   {#if !isTransparentRoute}
-    <Toaster position="top-center" />
+    <!-- Position/styling defaults live in @recast/ui/sonner so every
+         consumer (desktop, web) gets the same bottom-right glass-card
+         notification language matching the auto-updater stack. Override
+         here only if a specific route needs a different placement. -->
+    <Toaster />
     <!-- Command palette host: owns the ⌘K shortcut + dialog so they work on
          every route (editor included), not just the (app) sidebar layout. -->
     <CommandPaletteHost />
