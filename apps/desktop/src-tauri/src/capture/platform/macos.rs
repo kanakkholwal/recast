@@ -87,13 +87,7 @@ struct MacosCaptureSource {
 }
 
 impl MacosCaptureSource {
-    fn start(
-        screen_index: u32,
-        crop_x: u32,
-        crop_y: u32,
-        width: u32,
-        height: u32,
-    ) -> Result<Self> {
+    fn start(screen_index: u32, crop_x: u32, crop_y: u32, width: u32, height: u32) -> Result<Self> {
         // The pacer in `recording/pipeline.rs` runs at a fixed
         // `target_fps`. Asking AVFoundation for a slightly higher rate
         // (60) leaves slack for the pacer's MAX_DRAIN to pick the
@@ -122,9 +116,7 @@ impl MacosCaptureSource {
         // For full-display capture, crop_x and crop_y are zero and
         // width/height match the full screen — the crop filter is
         // effectively a passthrough.
-        let filter = format!(
-            "crop={width}:{height}:{crop_x}:{crop_y},scale={width}:{height}"
-        );
+        let filter = format!("crop={width}:{height}:{crop_x}:{crop_y},scale={width}:{height}");
         let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
         command
             .args([
