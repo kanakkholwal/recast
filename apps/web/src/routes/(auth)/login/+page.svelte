@@ -103,12 +103,12 @@
 		</div>
 	{:else}
 		<Tabs.Root bind:value={method} class="w-full">
-			<Tabs.List variant="line" class="mb-5 w-full justify-stretch">
-				<Tabs.Trigger value="link" class="flex-1 gap-1.5">
+			<Tabs.List variant="soft" class="mb-5 grid w-full grid-cols-2 gap-1 p-1">
+				<Tabs.Trigger value="link" class="gap-1.5">
 					<Wand2 class="size-3.5" />
 					Magic link
 				</Tabs.Trigger>
-				<Tabs.Trigger value="password" class="flex-1">
+				<Tabs.Trigger value="password">
 					Password
 				</Tabs.Trigger>
 			</Tabs.List>

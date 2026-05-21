@@ -1,4 +1,4 @@
-import { env } from "$env/dynamic/private";
+import { serverEnv } from "$lib/env/server";
 
 /**
  * Source of truth for plan limits. Server-side gates (analytics, watermark,
@@ -58,7 +58,7 @@ export const PLANS: Record<PlanId, Plan> = {
 export function polarProductIdFor(plan: PlanId): string | null {
 	switch (plan) {
 		case "pro":
-			return env.POLAR_PRODUCT_ID_PRO ?? null;
+			return serverEnv().POLAR_PRODUCT_ID_PRO ?? null;
 		case "free":
 			return null;
 	}

@@ -1,5 +1,4 @@
 import { dev } from "$app/environment";
-import { env } from "$env/dynamic/private";
 import {
 	checkout,
 	polar,
@@ -17,6 +16,8 @@ import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
 import { getDb } from "$lib/db";
 import { user as userTable } from "$lib/db/schema";
 import * as schema from "$lib/db/schema";
+import { serverEnv } from "$lib/env/server";
+import { publicEnv } from "$lib/env/public";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the
@@ -29,16 +30,11 @@ import * as schema from "$lib/db/schema";
  */
 
 function createAuth() {
-	const secret = env.BETTER_AUTH_SECRET;
-	if (!secret) {
-		throw new Error(
-			"BETTER_AUTH_SECRET is not set. Generate one with `openssl rand -base64 32`.",
-		);
-	}
+	const env = serverEnv();
 
 	return betterAuth({
-		secret,
-		baseURL: env.BETTER_AUTH_URL ?? env.PUBLIC_APP_URL,
+		secret: env.BETTER_AUTH_SECRET,
+		baseURL: env.BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL,
 		database: drizzleAdapter(getDb(), { provider: "pg", schema }),
 		// Custom field exposed on the user row — see src/lib/db/schema/auth.ts.
 		user: {
@@ -85,6 +81,7 @@ function buildSocialProviders() {
 	// level (SocialButtons.svelte) and here so misconfigured client IDs
 	// can't accidentally enable a path.
 	if (!dev) return providers;
+	const env = serverEnv();
 	if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
 		providers.github = {
 			clientId: env.GITHUB_CLIENT_ID,
@@ -119,7 +116,7 @@ function buildPlugins() {
 
 	const polarClient = tryGetPolarClient();
 	const proProductId = polarProductIdFor("pro");
-	const webhookSecret = env.POLAR_WEBHOOK_SECRET;
+	const webhookSecret = serverEnv().POLAR_WEBHOOK_SECRET;
 
 	const polarPlugins =
 		polarClient && proProductId && webhookSecret

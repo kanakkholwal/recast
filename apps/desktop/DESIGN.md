@@ -232,18 +232,30 @@ inside `Tooltip.Trigger`'s `child` snippet so hover still fires:
 ### Toaster
 
 Mounted once in [+layout.svelte](src/routes/+layout.svelte). Use the
-`@recast/ui/sonner` wrapper, which themes Sonner with our tokens:
+`@recast/ui/sonner` wrapper, which pins position, geometry, and theming so
+toasts share the same visual language as the bottom-right corner
+notifications (auto-updater, what's-new):
 
 ```svelte
-<Toaster position="top-center" />
+<Toaster />
 ```
 
-**Do not** pass `richColors` — it overrides the popover-token theming with
-Sonner's stock saturated palette and clashes with the muted desktop UI. Variant
-mapping uses our tokens (`--success`, `--destructive`, `--warning`, `--info`)
-internally; if you need a status hue, call the matching `toast.success` /
-`toast.error` / `toast.warning` / `toast.info`. Never hand-style toasts via
-`className` to inject a hex.
+Defaults baked into the wrapper:
+
+- `position="bottom-right"`, `offset={16}` — stacks upward, away from the
+  custom corner notifications they share space with.
+- `closeButton` — every toast gets a top-right `X`, matching the corner cards.
+- 320 px card, `rounded-xl border border-border bg-card shadow-lg ring-1
+  ring-black/5`, identical to the updater card.
+- Icons rendered inside a `size-8 rounded-lg` badge; the badge tints per
+  variant (`success`, `destructive`, `warning`, `info`), the card body
+  stays neutral.
+
+**Do not** pass `richColors` — it overrides the token theming with Sonner's
+stock saturated palette and clashes with the muted desktop UI. If you need a
+status hue, call the matching `toast.success` / `toast.error` /
+`toast.warning` / `toast.info`. Never hand-style toasts via `className` to
+inject a hex.
 
 ### Dialog rhythm
 

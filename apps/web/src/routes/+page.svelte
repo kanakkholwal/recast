@@ -8,6 +8,7 @@
 		SectionHeader,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
+	import { toast } from "@recast/ui/sonner";
 	import {
 		ArrowRight,
 		BarChart3,
@@ -34,9 +35,31 @@
 	// Step 3 — Share waitlist (Recast Cloud not shipped yet)
 	let email = $state("");
 	let joined = $state(false);
-	function joinWaitlist(e: SubmitEvent) {
+	let loading = $state(false);
+	async function joinWaitlist(e: SubmitEvent) {
 		e.preventDefault();
-		if (email.trim()) joined = true;
+		if (!email.trim()) return;
+		loading = true;
+		try {
+			const res = await fetch("/api/waitlist", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email, source: "home-cloud" }),
+			});
+			const data = (await res.json().catch(() => ({}))) as {
+				ok?: boolean;
+				error?: string;
+			};
+			if (!data.ok) {
+				toast.error(data.error ?? "Couldn't join the waitlist.");
+				return;
+			}
+			joined = true;
+		} catch {
+			toast.error("Network error — try again.");
+		} finally {
+			loading = false;
+		}
 	}
 
 	const founderUse = [
@@ -342,8 +365,8 @@
 											placeholder="founder@startup.com"
 											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
 										/>
-										<Button type="submit" class="gap-2">
-											Join waitlist
+										<Button type="submit" disabled={loading} class="gap-2">
+											{loading ? "Joining…" : "Join waitlist"}
 											<ArrowRight class="size-4" />
 										</Button>
 									</form>

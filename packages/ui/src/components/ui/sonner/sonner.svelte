@@ -6,6 +6,7 @@
 		CheckCircle2,
 		Info,
 		Loader2,
+		X,
 	} from "@lucide/svelte";
 	import {
 		Toaster as Sonner,
@@ -18,53 +19,82 @@
 <!--
   Recast desktop/web Sonner theming.
 
-  The bare svelte-sonner ships saturated reds/greens/yellows ("rich colors")
-  that clash with our muted glass UI. We pin every per-variant background,
-  border and text variable to design tokens so toasts read as part of the same
-  surface family as Popover and Dialog. Per-variant colors come from
-  --success / --destructive / --warning / --info; never re-style toasts via
-  className from a caller — call the matching `toast.success` / `.error` /
-  `.warning` / `.info` instead.
+  Visual contract: each toast is a 320px-wide card that *visually matches*
+  the bottom-right corner notifications (auto-updater, what's-new) so the
+  app has a single notification language. Same border, same shadow, same
+  icon-badge geometry — variant is conveyed only by the badge tint.
 
-  Icons are Lucide only (the rest of the app is Lucide-only by design rule),
-  sized at 16px so they line up with the 14px label baseline.
+  Position is bottom-right by default; consumers can still override via
+  the `<Toaster position="...">` prop. Sonner's stack grows upward from
+  the bottom, so toasts naturally pile on top of any persistent corner
+  notification without forcing a layout coordination layer.
+
+  Icons are Lucide only (the rest of the app is Lucide-only by design
+  rule). Sonner renders our snippet inside its `[data-icon]` element, so
+  `classes.icon` styles the *badge* and the snippet just supplies the
+  glyph that sits inside it.
 -->
 <Sonner
 	theme={mode.current}
+	position="bottom-right"
+	offset={16}
+	mobileOffset={16}
+	closeButton
+	gap={8}
 	class="toaster group"
 	style="
-    --normal-bg: var(--color-popover);
-    --normal-text: var(--color-popover-foreground);
-    --normal-border: color-mix(in srgb, var(--color-border) 80%, transparent);
+    --normal-bg: var(--color-card);
+    --normal-text: var(--color-foreground);
+    --normal-border: var(--color-border);
 
-    --success-bg: color-mix(in srgb, var(--color-success) 10%, var(--color-popover));
+    --success-bg: var(--color-card);
     --success-text: var(--color-foreground);
-    --success-border: color-mix(in srgb, var(--color-success) 35%, transparent);
+    --success-border: var(--color-border);
 
-    --error-bg: color-mix(in srgb, var(--color-destructive) 10%, var(--color-popover));
+    --error-bg: var(--color-card);
     --error-text: var(--color-foreground);
-    --error-border: color-mix(in srgb, var(--color-destructive) 35%, transparent);
+    --error-border: var(--color-border);
 
-    --warning-bg: color-mix(in srgb, var(--color-warning) 12%, var(--color-popover));
+    --warning-bg: var(--color-card);
     --warning-text: var(--color-foreground);
-    --warning-border: color-mix(in srgb, var(--color-warning) 35%, transparent);
+    --warning-border: var(--color-border);
 
-    --info-bg: color-mix(in srgb, var(--color-info) 10%, var(--color-popover));
+    --info-bg: var(--color-card);
     --info-text: var(--color-foreground);
-    --info-border: color-mix(in srgb, var(--color-info) 30%, transparent);
+    --info-border: var(--color-border);
+
+    /* Pin the close button to the top-right corner *inside* the card. Sonner's
+       default is a floating circle that sits half-outside the top-left edge
+       (--toast-close-button-start: 0, transform: translate(-35%, -35%)) — we
+       override every var that drives its position so it lands at top-right,
+       inset 8px on each axis, matching the &lt;X&gt; affordance on the
+       auto-updater / what's-new corner cards. */
+    --toast-close-button-start: unset;
+    --toast-close-button-end: 0;
+    --toast-close-button-transform: translate(-8px, 8px);
   "
 	toastOptions={{
 		classes: {
 			toast:
-				"!rounded-xl !backdrop-blur-md !shadow-[0_8px_24px_-8px_rgba(0,0,0,0.18),0_2px_4px_-2px_rgba(0,0,0,0.08)] !ring-1 !ring-inset !ring-border/40",
-			title: "!text-[12.5px] !font-semibold !tracking-tight",
-			description: "!text-[11px] !text-muted-foreground !leading-relaxed",
+				"!w-[320px] !rounded-xl !border !border-border !bg-card !shadow-lg !ring-1 !ring-black/5 !p-3 !gap-3",
+			content: "!gap-0.5",
+			title:
+				"!text-[12.5px] !font-semibold !leading-tight !text-foreground !tracking-tight",
+			description: "!text-[11.5px] !text-muted-foreground !leading-snug",
+			icon:
+				"!size-8 !shrink-0 !flex !items-center !justify-center !rounded-lg !bg-primary/10 !text-primary !ring-1 !ring-inset !ring-primary/20 !m-0",
+			closeButton:
+				"!size-5 !rounded-md !border-0 !bg-transparent !text-muted-foreground/70 hover:!bg-foreground/5 hover:!text-foreground",
 			actionButton: "!text-[11px] !font-semibold",
 			cancelButton: "!text-[11px] !text-muted-foreground",
-			success: "[&_[data-icon]]:!text-success",
-			error: "[&_[data-icon]]:!text-destructive",
-			warning: "[&_[data-icon]]:!text-warning",
-			info: "[&_[data-icon]]:!text-info",
+			success:
+				"[&_[data-icon]]:!bg-success/10 [&_[data-icon]]:!text-success [&_[data-icon]]:!ring-success/25",
+			error:
+				"[&_[data-icon]]:!bg-destructive/10 [&_[data-icon]]:!text-destructive [&_[data-icon]]:!ring-destructive/25",
+			warning:
+				"[&_[data-icon]]:!bg-warning/10 [&_[data-icon]]:!text-warning [&_[data-icon]]:!ring-warning/25",
+			info:
+				"[&_[data-icon]]:!bg-info/10 [&_[data-icon]]:!text-info [&_[data-icon]]:!ring-info/25",
 		},
 	}}
 	{...restProps}
@@ -83,5 +113,8 @@
 	{/snippet}
 	{#snippet warningIcon()}
 		<AlertTriangle class="size-4" />
+	{/snippet}
+	{#snippet closeIcon()}
+		<X class="size-3" />
 	{/snippet}
 </Sonner>
