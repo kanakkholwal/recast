@@ -106,23 +106,9 @@ jobs:
 
       - name: Install Linux system dependencies
         if: matrix.platform.os == 'ubuntu-24.04'
-        run: |
-          # Kept in lockstep with release-desktop.yml. The `pipewire` crate
-          # 0.9.x generates bindings against PipeWire >= 1.4; Ubuntu 24.04
-          # ships 1.0.5, so the pipewire-upstream PPA supplies the newer
-          # libspa/libpipewire headers the build needs.
-          sudo add-apt-repository -y ppa:pipewire-debian/pipewire-upstream
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            libssl-dev \
-            libgtk-3-dev \
-            libgbm-dev \
-            libpipewire-0.3-dev \
-            libspa-0.2-dev
+        # Shared with release-desktop.yml. See the script for the
+        # PipeWire/libspa header version trap that the PPA resolves.
+        run: bash scripts/release/install-linux-deps.sh
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile
