@@ -44,8 +44,12 @@ pub fn render_border_radius_mask(
         .unwrap_or_default()
         .as_millis();
     let scratch_dir = std::env::temp_dir().join(format!("recast-export-mask-{ts}-{counter}"));
-    fs::create_dir_all(&scratch_dir)
-        .with_context(|| format!("failed to create mask scratch dir {}", scratch_dir.display()))?;
+    fs::create_dir_all(&scratch_dir).with_context(|| {
+        format!(
+            "failed to create mask scratch dir {}",
+            scratch_dir.display()
+        )
+    })?;
     let guard = TempDirGuard::new(scratch_dir.clone());
     let mask_path = scratch_dir.join("border_radius_mask.png");
 
@@ -135,8 +139,7 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis();
-    let scratch_dir =
-        std::env::temp_dir().join(format!("recast-export-shadow-{ts}-{counter}"));
+    let scratch_dir = std::env::temp_dir().join(format!("recast-export-shadow-{ts}-{counter}"));
     fs::create_dir_all(&scratch_dir).with_context(|| {
         format!(
             "failed to create drop-shadow scratch dir {}",
@@ -183,19 +186,13 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
             // No `1 - videoCoverage` clip here: the FFmpeg side overlays
             // the video AFTER this shadow layer, so the video physically
             // covers any shadow underneath the rect — no need to mask.
-            let alpha = (coverage * opacity_norm * 255.0)
-                .round()
-                .clamp(0.0, 255.0) as u8;
+            let alpha = (coverage * opacity_norm * 255.0).round().clamp(0.0, 255.0) as u8;
             img.put_pixel(x, y, Rgba([sr, sg, sb, alpha]));
         }
     }
 
-    img.save(&mask_path).with_context(|| {
-        format!(
-            "failed to write drop-shadow mask {}",
-            mask_path.display()
-        )
-    })?;
+    img.save(&mask_path)
+        .with_context(|| format!("failed to write drop-shadow mask {}", mask_path.display()))?;
 
     Ok(Some(MaskResult {
         path: mask_path,

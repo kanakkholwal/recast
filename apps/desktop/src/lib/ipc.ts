@@ -312,6 +312,8 @@ export interface ZoomSuggestion {
 	x: number;
 	y: number;
 	reason: ZoomSuggestionReason;
+	/** Confidence in [0,1] — how strongly this moment warrants a zoom. */
+	score?: number;
 }
 
 /**
@@ -320,6 +322,71 @@ export interface ZoomSuggestion {
  */
 export function suggestZoomRegions(cursorPath: string): Promise<ZoomSuggestion[]> {
 	return invoke<ZoomSuggestion[]>("suggest_zoom_regions", { cursorPath });
+}
+
+//  Silence detection
+
+/** Tunable thresholds for `detectSilence`; omit any field to use the default. */
+export interface SilenceDetectOptions {
+	/**
+	 * Frames must sit within this many dB of the recording's own noise floor
+	 * to count as background. The floor is estimated per-recording, so this
+	 * is relative to whatever level "background" sits at — a noisy room and a
+	 * dead-quiet one both detect sensibly.
+	 */
+	flatnessDb?: number;
+	/** Minimum continuous flat-audio run (seconds). */
+	minAudioSilence?: number;
+	/** Minimum length of a returned silence segment (seconds). */
+	minSegment?: number;
+}
+
+/** A detected silence range, in original-recording seconds. */
+export interface SilenceSegment {
+	start: number;
+	end: number;
+	/** 0..1 — how strongly this range warrants a cut. */
+	confidence: number;
+	micSilent: boolean;
+	systemSilent: boolean;
+	/** Cursor track was present and confirmed idle over the range. */
+	cursorIdle: boolean;
+}
+
+/**
+ * Analyse a recording for silence — ranges where the audio envelope is flat
+ * near its own noise floor AND the cursor isn't moving. Both constraints
+ * must hold. Implementation lives in `silence.rs` (Rust).
+ */
+export function detectSilence(
+	audioPath?: string | null,
+	microphonePath?: string | null,
+	cursorPath?: string | null,
+	options?: SilenceDetectOptions,
+): Promise<SilenceSegment[]> {
+	return invoke<SilenceSegment[]>("detect_silence", {
+		audioPath: audioPath ?? null,
+		microphonePath: microphonePath ?? null,
+		cursorPath: cursorPath ?? null,
+		options: options ?? null,
+	});
+}
+
+/**
+ * Decode a recording's audio (mic + system mixed) into a compact peak
+ * envelope — `buckets` normalised values in [0,1] — for drawing a waveform
+ * on the timeline. Returns an empty array when the clip has no audio.
+ */
+export function extractWaveform(
+	audioPath?: string | null,
+	microphonePath?: string | null,
+	buckets?: number,
+): Promise<number[]> {
+	return invoke<number[]>("extract_waveform", {
+		audioPath: audioPath ?? null,
+		microphonePath: microphonePath ?? null,
+		buckets: buckets ?? null,
+	});
 }
 
 //  Autosave / Recovery commands 

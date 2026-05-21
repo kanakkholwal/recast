@@ -521,7 +521,8 @@
               {/each}
             </div>
           </div>
-          {#if a.kind.variant === "color"}
+          {#if a.kind.kind === "blur" && a.kind.variant === "color"}
+            {@const tintColor = a.kind.tintColor}
             <Popover.Root>
               <Popover.Trigger>
                 {#snippet child({ props })}
@@ -533,7 +534,7 @@
                   >
                     <span
                       class="size-5 shrink-0 rounded border border-input"
-                      style:background={a.kind.tintColor}
+                      style:background={tintColor}
                     ></span>
                     <span class="min-w-0 flex-1">
                       <span class="block text-[11px] font-medium text-foreground"
@@ -542,7 +543,7 @@
                       <span
                         class="block truncate font-mono text-[10px] text-muted-foreground"
                       >
-                        {a.kind.tintColor.toUpperCase()}
+                        {tintColor.toUpperCase()}
                       </span>
                     </span>
                   </button>
@@ -550,7 +551,7 @@
               </Popover.Trigger>
               <Popover.Content align="start" class="w-auto p-0">
                 <ColorPicker
-                  value={a.kind.tintColor}
+                  value={tintColor}
                   recents={recents}
                   oncommit={(c: string) => {
                     if (a.kind.kind !== "blur") return;

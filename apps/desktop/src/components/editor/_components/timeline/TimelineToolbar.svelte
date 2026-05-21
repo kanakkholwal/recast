@@ -1,5 +1,6 @@
 <script lang="ts">
   import InspectorHint from "$components/editor/InspectorHint.svelte";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
     Gauge,
@@ -7,6 +8,7 @@
     Scissors,
     Search,
     Target,
+    VolumeX,
     Wand2,
     ZoomIn,
     ZoomOut
@@ -14,6 +16,7 @@
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
+  import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
   import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
   import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
@@ -24,7 +27,6 @@
   interface Props {
     store: EditorStore;
     fps: number;
-    duration: number;
     hasTrim: boolean;
     aspectRatioLabel: string;
     frameCount: number;
@@ -48,7 +50,6 @@
   let {
     store,
     fps,
-    duration,
     hasTrim,
     aspectRatioLabel,
     frameCount,
@@ -68,10 +69,11 @@
     onZoomToFit,
     onZoomToSelection,
   }: Props = $props();
-  // duration is part of the formatTimecode contract via store.clipDuration;
-  // also referenced for fps-aware aria fallbacks.
-  void duration;
   let trimHint = `Set trim points to exclude parts of the clip from export, or add focus regions to highlight important moments. You can also ask Trace to suggest focus regions based on where you moved the cursor.`;
+
+  // Silence-review popover state. Kept local — unlike the focus-suggest
+  // popover it needs no keyboard integration, so the parent stays unaware.
+  let showSilence = $state(false);
 </script>
 
 <div
@@ -145,6 +147,42 @@
         {/if}
       </div>
     </div>
+
+    <!-- Remove-silence: scans audio + screen motion for dead air. Gated
+         behind the experimental flag so first-run users don't see the
+         in-progress UI; opt-in lives in Settings → Experimental. -->
+    {#if experimentalStore.silenceDetection}
+      <div class="relative">
+        <button
+          type="button"
+          aria-pressed={showSilence}
+          onclick={() => (showSilence = !showSilence)}
+          disabled={!store.audioPath && !store.microphonePath}
+          title={store.audioPath || store.microphonePath
+            ? "Find and remove silent gaps in this recording"
+            : "This clip has no audio track to analyse"}
+          class={cn(
+            "flex h-6 items-center gap-1 rounded-md border border-border/40 px-2 text-[11px] font-semibold transition-colors duration-150 disabled:opacity-40",
+            showSilence
+              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
+              : "bg-muted/40 text-muted-foreground hover:bg-card hover:text-foreground",
+          )}
+        >
+          <VolumeX class="size-3" />
+          Remove silence
+          {#if store.cuts.length > 0}
+            <span class="rounded bg-primary/15 px-1 text-[9px] font-bold text-primary">
+              {store.cuts.length}
+            </span>
+          {/if}
+        </button>
+        {#if showSilence}
+          <div class="absolute left-0 bottom-full z-40 mb-1.5">
+            <SilenceReviewPopover {store} onclose={() => (showSilence = false)} />
+          </div>
+        {/if}
+      </div>
+    {/if}
 
     {#if hasTrim}
       <button

@@ -9,6 +9,7 @@
 	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
+	import { experimentalStore } from "$lib/stores/experimental.svelte";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
@@ -953,6 +954,32 @@ void main() {
 		// (shouldn't happen inside draw but keeps the types honest).
 		const playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
 
+		// Skip over removed (silence) cut ranges during forward playback. A
+		// lookahead window initiates the seek *before* the playhead reaches
+		// the cut, which hides the video element's seek latency — without it
+		// the user sees a brief lag right at the cut boundary as the decoder
+		// jumps. Scrubbing into a cut is still allowed (this block only
+		// fires during `isPlaying`) so the user can inspect what was removed.
+		// Toggling `cutsEnabled` off bypasses the skip entirely.
+		const CUT_SKIP_LOOKAHEAD = 0.15;
+		if (
+			videoEl &&
+			store.isPlaying &&
+			experimentalStore.silenceDetection &&
+			store.cutsEnabled &&
+			store.cuts.length > 0
+		) {
+			const cut = store.cuts.find(
+				(c) =>
+					playbackTime + CUT_SKIP_LOOKAHEAD >= c.start &&
+					playbackTime < c.end - 0.02,
+			);
+			if (cut) {
+				videoEl.currentTime = cut.end;
+				return;
+			}
+		}
+
 		// Make sure the latest video frame is in the texture before sampling
 		if (!uploadVideoFrame()) return;
 
@@ -1028,7 +1055,9 @@ void main() {
 		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
 
 		// Zoom — eased per-frame scale + focus centre + motion-blur strength.
-		const zoom = evaluateZoomAt(playbackTime);
+		const zoom = store.focusEnabled
+			? evaluateZoomAt(playbackTime)
+			: { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
 		gl.uniform2f(uniforms.u_zoomCenter, zoom.cx, zoom.cy);
 		gl.uniform1f(uniforms.u_zoomScale, zoom.scale);
 

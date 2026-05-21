@@ -515,10 +515,7 @@ fn run_gif_palette_prepass(
     if duration > 0.0 {
         args.extend(["-t".to_string(), format!("{duration:.3}")]);
     }
-    args.extend([
-        "-i".to_string(),
-        source_path.to_string_lossy().to_string(),
-    ]);
+    args.extend(["-i".to_string(), source_path.to_string_lossy().to_string()]);
 
     let vf = build_gif_palette_prepass_filter(options, output_scale_filter);
     args.extend([
@@ -556,7 +553,11 @@ fn run_gif_palette_prepass(
     let stderr_buf_writer = stderr_buf.clone();
     let app_for_emit = app.clone();
     let export_id_for_emit = export_id.to_string();
-    let effective_duration = if duration > 0.0 { duration } else { source_duration };
+    let effective_duration = if duration > 0.0 {
+        duration
+    } else {
+        source_duration
+    };
 
     let stderr_thread = std::thread::Builder::new()
         .name("recast-export-palette-stderr".into())
@@ -646,6 +647,46 @@ fn run_gif_palette_prepass(
     }
 }
 
+/// Resolve the render state's silence/manual cuts into post-trim stream
+/// seconds (the input is seeked by `-ss trim_start`, so the filtergraph's `t`
+/// starts at 0 = `trim_start`). Cuts are clamped to the kept `[trim_start,
+/// trim_end]` window, sorted, and overlaps merged.
+fn collect_export_cuts(
+    render_state: &crate::render::graph::RenderState,
+    trim_start: f64,
+    trim_end: f64,
+) -> Vec<(f64, f64)> {
+    let mut cuts: Vec<(f64, f64)> = render_state
+        .cuts
+        .iter()
+        .filter_map(|c| {
+            let lo = c.start.max(trim_start) - trim_start;
+            let hi = c.end.min(trim_end) - trim_start;
+            (hi - lo > 0.01).then_some((lo.max(0.0), hi))
+        })
+        .collect();
+    cuts.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut merged: Vec<(f64, f64)> = Vec::with_capacity(cuts.len());
+    for cut in cuts {
+        match merged.last_mut() {
+            Some(last) if cut.0 <= last.1 + 0.001 => last.1 = last.1.max(cut.1),
+            _ => merged.push(cut),
+        }
+    }
+    merged
+}
+
+/// Build a `select`/`aselect` expression that *keeps* every frame outside the
+/// cut ranges: `not(between(t,a,b)+between(t,c,d)+…)`. Single-quoted at the
+/// call site so the inner commas survive the filtergraph parser.
+fn build_cut_select_expr(cuts: &[(f64, f64)]) -> String {
+    let terms: Vec<String> = cuts
+        .iter()
+        .map(|(a, b)| format!("between(t,{a:.3},{b:.3})"))
+        .collect();
+    format!("not({})", terms.join("+"))
+}
+
 #[tauri::command]
 pub async fn export_video(
     app: AppHandle,
@@ -709,8 +750,7 @@ pub async fn export_video(
     // will alphamerge it onto the (zoomed) source video before background
     // composition so the rounded corners cut through to the background.
     let border_radius_pct = request.render_state.border_radius.clamp(0.0, 50.0);
-    let border_radius_px = border_radius_pct / 100.0
-        * metadata.width.min(metadata.height) as f64;
+    let border_radius_px = border_radius_pct / 100.0 * metadata.width.min(metadata.height) as f64;
     let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
         render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
             .map_err(|e| format!("border-radius mask render failed: {e}"))?
@@ -903,31 +943,30 @@ pub async fn export_video(
     } else {
         None
     };
-    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> =
-        if let Some(ref path) = camera_path {
-            let p = &camera_overlay_settings.default_placement;
-            // Use video_w as the size base so the bubble is square in
-            // screen pixels (matches `aspect-ratio: 1` in the preview).
-            let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
-                .round()
-                .max(2.0) as u32;
-            let bubble_h = bubble_w;
-            // Clamp into the canvas so an out-of-range placement (legacy
-            // project, manual JSON edit) still produces a valid overlay.
-            let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
-            let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
-            let bubble_x = ((canvas_geom.video_x as f64
-                + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
-                .round() as u32)
-                .min(max_x);
-            let bubble_y = ((canvas_geom.video_y as f64
-                + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
-                .round() as u32)
-                .min(max_y);
-            Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
-        } else {
-            None
-        };
+    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> = if let Some(ref path) = camera_path {
+        let p = &camera_overlay_settings.default_placement;
+        // Use video_w as the size base so the bubble is square in
+        // screen pixels (matches `aspect-ratio: 1` in the preview).
+        let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
+            .round()
+            .max(2.0) as u32;
+        let bubble_h = bubble_w;
+        // Clamp into the canvas so an out-of-range placement (legacy
+        // project, manual JSON edit) still produces a valid overlay.
+        let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
+        let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
+        let bubble_x = ((canvas_geom.video_x as f64
+            + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
+            .round() as u32)
+            .min(max_x);
+        let bubble_y = ((canvas_geom.video_y as f64
+            + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
+            .round() as u32)
+            .min(max_y);
+        Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
+    } else {
+        None
+    };
 
     // Pre-render the rounded-rect mask matching the bubble's shape. Square
     // shape needs no mask (mask_input_index stays None and the filter chain
@@ -1032,8 +1071,7 @@ pub async fn export_video(
     // Camera overlay: composited after the watermark so the speaker bubble
     // sits on top of any branding mark and below the annotation blur (which
     // a user might want to apply over their own face).
-    if let (Some(cam_idx), Some((_, bx, by, bw, bh))) =
-        (camera_input_index, camera_bubble.as_ref())
+    if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
         let (new_complex, new_map) = append_camera_overlay_to_complex(
             filter_complex_after_cursor.as_deref(),
@@ -1087,8 +1125,8 @@ pub async fn export_video(
                 let radius = (strength.clamp(0.0, 1.0) * max_dim)
                     .round()
                     .clamp(1.0, 127.0) as u32;
-                let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16)
-                    .unwrap_or(0x000000);
+                let tint_rgb =
+                    u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
                 Some(BlurRegion {
                     x: cx,
                     y: cy,
@@ -1212,10 +1250,7 @@ pub async fn export_video(
             + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
             + watermark_path.is_some() as usize;
-        args.extend([
-            "-i".to_string(),
-            palette_path.to_string_lossy().to_string(),
-        ]);
+        args.extend(["-i".to_string(), palette_path.to_string_lossy().to_string()]);
 
         let pass2_options = GifFilterOptions {
             fps: resolved_fps,
@@ -1241,7 +1276,7 @@ pub async fn export_video(
         (0.0_f64, 1.0_f64)
     };
 
-    let audio_map = if request.format == "gif" {
+    let mut audio_map = if request.format == "gif" {
         None
     } else {
         append_audio_to_complex(
@@ -1256,6 +1291,50 @@ pub async fn export_video(
             map
         })
     };
+
+    // Silence/manual cuts — drop the cut ranges from the middle of the
+    // timeline. `select`/`aselect` discard the cut frames and `setpts`/
+    // `asetpts` re-stitch the survivors into a gapless stream. This runs at
+    // the *end* of the chain: everything upstream (zoom, cursor, blur) was
+    // computed on the continuous post-trim timeline and stays correct —
+    // select only removes frames, it never reinterprets time. GIF has its own
+    // paletteuse tail, so cuts there would need separate handling; skipped.
+    let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
+    if !export_cuts.is_empty() && request.format != "gif" {
+        let select_expr = build_cut_select_expr(&export_cuts);
+        let (mut complex, video_label) = match filter_complex_after_cursor.take() {
+            Some(existing) => (existing, video_map_after_cursor.clone()),
+            None => {
+                // No filtergraph yet: seed one and fold in any pending
+                // output-side filters (e.g. a quality downscale) so they
+                // aren't lost now that `-vf` no longer applies.
+                let mut seed = String::new();
+                let prefix = if output_filters.is_empty() {
+                    String::new()
+                } else {
+                    format!("{},", output_filters.join(","))
+                };
+                output_filters.clear();
+                seed.push_str(&format!("[0:v:0]{prefix}"));
+                (seed, String::new())
+            }
+        };
+        if !complex.is_empty() && !complex.ends_with(';') && !video_label.is_empty() {
+            complex.push(';');
+        }
+        complex.push_str(&video_label);
+        complex.push_str(&format!(
+            "select='{select_expr}',setpts=N/FRAME_RATE/TB[vcut]"
+        ));
+        video_map_after_cursor = "[vcut]".to_string();
+        if let Some(amap) = audio_map.take() {
+            complex.push_str(&format!(
+                ";{amap}aselect='{select_expr}',asetpts=N/SR/TB[acut]"
+            ));
+            audio_map = Some("[acut]".to_string());
+        }
+        filter_complex_after_cursor = Some(complex);
+    }
 
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         args.extend([
@@ -2067,9 +2146,12 @@ pub fn get_recoverable_sessions() -> Vec<crate::project::autosave::AutosaveState
 }
 
 /// Analyse a captured cursor track and return the list of moments that would
-/// make good auto-focus candidates (mouse-down events + settle-after-motion).
-/// Reuses the existing `detect_zoom_triggers` helper — falls back to on-the-fly
-/// recomputation if the project was saved before trigger persistence landed.
+/// make good auto-focus candidates (scored, clustered, density-limited).
+///
+/// Always recomputes via `detect_zoom_triggers` rather than trusting the
+/// `zoom_triggers` persisted in the track — clips recorded before a detector
+/// improvement would otherwise keep serving stale (often far noisier)
+/// suggestions. Detection is cheap (µs over the in-memory track).
 #[tauri::command]
 pub fn suggest_zoom_regions(
     cursor_path: String,
@@ -2077,9 +2159,6 @@ pub fn suggest_zoom_regions(
     let bytes = fs::read(Path::new(&cursor_path)).map_err(|e| format!("read cursor track: {e}"))?;
     let track: crate::cursor::CursorTrack =
         serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
-    if !track.zoom_triggers.is_empty() {
-        return Ok(track.zoom_triggers);
-    }
     Ok(crate::cursor::smoothing::detect_zoom_triggers(
         &track.samples,
         &track.clicks,

@@ -23,7 +23,9 @@
 	} = $props();
 
 	// Propagate size to descendant Item / CheckboxItem / RadioItem / SubTrigger.
-	setDropdownMenuSize(size);
+	$effect(() => {
+		setDropdownMenuSize(size);
+	});
 </script>
 
 <DropdownMenuPortal {...portalProps}>

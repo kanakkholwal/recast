@@ -7,7 +7,14 @@ pub mod linux_wayland;
 #[cfg(target_os = "linux")]
 mod linux_x11;
 
-#[cfg(not(windows))]
+#[cfg(target_os = "macos")]
+mod macos;
+
+// `fallback` (xcap-backed) is the last-resort on Linux (when neither
+// `WAYLAND_DISPLAY` nor `DISPLAY` is set) and on any future target we
+// haven't ported yet. macOS now has a native FFmpeg-avfoundation
+// backend so it no longer needs the slow fallback path.
+#[cfg(not(any(windows, target_os = "macos")))]
 mod fallback;
 
 use anyhow::Result;
@@ -19,6 +26,10 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     #[cfg(windows)]
     {
         windows::create_source(target)
+    }
+    #[cfg(target_os = "macos")]
+    {
+        macos::create_source(target)
     }
     #[cfg(target_os = "linux")]
     {
@@ -58,7 +69,7 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
         }
         fallback::create_source(target)
     }
-    #[cfg(not(any(windows, target_os = "linux")))]
+    #[cfg(not(any(windows, target_os = "linux", target_os = "macos")))]
     {
         fallback::create_source(target)
     }

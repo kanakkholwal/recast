@@ -5,6 +5,7 @@
 
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
+import { totalCutDuration, type CutSource, type TimelineCut } from '../timeline/cuts';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
 
@@ -468,6 +469,18 @@ export interface EditorRenderState {
 	}>;
 	autoZoomApplied?: boolean;
 	autoZoomEnabled?: boolean;
+	/** Silence / manual cuts removed from the timeline. */
+	cuts?: TimelineCut[];
+	/** Whether cuts apply in preview/export (false = bypassed but preserved). */
+	cutsEnabled?: boolean;
+	/** Whether zoom regions apply in preview/export. */
+	focusEnabled?: boolean;
+	/** Whether annotations render in preview/export. Negation of the
+	 * pre-existing `annotationsGloballyHidden` flag — surfaced here so all
+	 * three lane toggles round-trip through the project file. */
+	annotationsEnabled?: boolean;
+	/** Silence suggestions the user dismissed — kept so they don't resurface. */
+	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
@@ -586,8 +599,16 @@ export function createEditorStore() {
 	// Video source
 	let videoPath = $state('');
 	let cursorPath = $state<string | null>(null);
+	// Raw on-disk media paths (the extracted recording / audio tracks), needed
+	// by Rust-side analysis commands such as silence detection.
+	let recordingPath = $state<string | null>(null);
+	let audioPath = $state<string | null>(null);
+	let microphonePath = $state<string | null>(null);
 	let metadata = $state<VideoMetadata | null>(null);
 	let thumbnailStrip = $state<string[]>([]);
+	// Audio peak envelope (0..1 per bucket) for the timeline waveform.
+	// Transient — recomputed on document load, never persisted.
+	let waveform = $state<number[]>([]);
 
 	// Playback
 	let currentTime = $state(0);
@@ -596,6 +617,18 @@ export function createEditorStore() {
 	// Trim
 	let trimStart = $state(0);
 	let trimEnd = $state(0); // will be set to duration on load
+
+	// Silence / manual cuts — removed ranges, in original-recording seconds.
+	let cuts = $state<TimelineCut[]>([]);
+	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
+	// project reopen doesn't resurface ranges they already rejected.
+	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
+	// Per-lane "enable" toggles. When off, the lane greys out, its effect is
+	// bypassed in preview, and the data is excluded from the export pipeline.
+	// The underlying data (cuts, zoom regions) is preserved either way so the
+	// toggle is fully reversible.
+	let cutsEnabled = $state(true);
+	let focusEnabled = $state(true);
 
 	// Background
 	let backgroundType = $state<BackgroundType>('wallpaper');
@@ -755,6 +788,7 @@ export function createEditorStore() {
 			trimStart,
 			trimEnd,
 			zoomRegions,
+			cuts,
 			autoZoomEnabled,
 			autoZoomApplied,
 			annotations,
@@ -836,6 +870,7 @@ export function createEditorStore() {
 		}));
 		autoZoomEnabled = s.autoZoomEnabled ?? autoZoomEnabled;
 		autoZoomApplied = s.autoZoomApplied ?? autoZoomApplied;
+		cuts = (s.cuts ?? []).map((c: TimelineCut) => ({ ...c }));
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot — we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1142,6 +1177,10 @@ export function createEditorStore() {
 		lastAppliedPresetId = null;
 		zoomRegions = [];
 		selectedZoomRegionId = null;
+		cuts = [];
+		cutsEnabled = true;
+		focusEnabled = true;
+		dismissedSilences = [];
 		autoZoomEnabled = true;
 		autoZoomApplied = false;
 		annotations = [];
@@ -1198,6 +1237,80 @@ export function createEditorStore() {
 		redoStack = [];
 	}
 
+	/**
+	 * Add a removed range. Returns the new cut id, or null if the range is
+	 * too short to be meaningful. Each call is its own undo entry — callers
+	 * accepting several silence suggestions at once should batch with their
+	 * own `pushUndoState` and use the lower-level array if needed.
+	 */
+	function addCut(
+		start: number,
+		end: number,
+		source: CutSource = 'silence',
+	): string | null {
+		if (end - start <= 0.01) return null;
+		pushUndoState();
+		const cut: TimelineCut = { id: generateId(), start, end, source };
+		cuts = [...cuts, cut].sort((a, b) => a.start - b.start);
+		return cut.id;
+	}
+
+	function removeCut(id: string) {
+		if (!cuts.some((c) => c.id === id)) return;
+		pushUndoState();
+		cuts = cuts.filter((c) => c.id !== id);
+	}
+
+	function clearCuts() {
+		if (cuts.length === 0) return;
+		pushUndoState();
+		cuts = [];
+	}
+
+	/**
+	 * Resize a cut. Does NOT push undo — callers (the cut lane's drag
+	 * handlers) own coalescing via `pushUndoStateCoalesced` so a whole drag
+	 * is one undo entry.
+	 */
+	function updateCut(id: string, start: number, end: number) {
+		cuts = cuts.map((c) => (c.id === id ? { ...c, start, end } : c));
+	}
+
+	/**
+	 * Merge overlapping or touching cuts into one, keeping the earliest id so
+	 * the lane's keyed `{#each}` stays stable. Called at the end of a
+	 * create/resize drag — never mid-drag, which would yank the dragged card.
+	 */
+	function mergeCuts() {
+		const sorted = [...cuts].sort((a, b) => a.start - b.start);
+		const merged: TimelineCut[] = [];
+		for (const c of sorted) {
+			const last = merged[merged.length - 1];
+			if (last && c.start <= last.end + 0.001) {
+				last.end = Math.max(last.end, c.end);
+				if (c.source === 'manual') last.source = 'manual';
+			} else {
+				merged.push({ ...c });
+			}
+		}
+		cuts = merged;
+	}
+
+	/** Record a dismissed silence range so detection won't suggest it again. */
+	function dismissSilence(start: number, end: number) {
+		dismissedSilences = [...dismissedSilences, { start, end }];
+		isDirty = true;
+	}
+
+	/** Wipe all dismissed silence ranges so the next detection pass surfaces
+	 *  every candidate again. Used by the popover's "Reset dismissed" button
+	 *  when the user wants to reconsider previously-rejected suggestions. */
+	function clearDismissedSilences() {
+		if (dismissedSilences.length === 0) return;
+		dismissedSilences = [];
+		isDirty = true;
+	}
+
 	function toRenderState(): EditorRenderState {
 		return {
 			trimStart,
@@ -1239,6 +1352,11 @@ export function createEditorStore() {
 			})),
 			autoZoomApplied,
 			autoZoomEnabled,
+			cuts: cuts.map((cut) => ({ ...cut })),
+			cutsEnabled,
+			focusEnabled,
+			annotationsEnabled: !annotationsGloballyHidden,
+			dismissedSilences: dismissedSilences.map((d) => ({ ...d })),
 			cursorMotionEasing,
 			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
@@ -1310,6 +1428,21 @@ export function createEditorStore() {
 		autoZoomApplied =
 			state.autoZoomApplied ??
 			(state.zoomRegions !== undefined ? true : false);
+		cuts = (state.cuts ?? []).map((c) => ({
+			id: c.id ?? generateId(),
+			start: c.start,
+			end: c.end,
+			source: c.source ?? 'silence',
+		}));
+		dismissedSilences = (state.dismissedSilences ?? []).map((d) => ({
+			start: d.start,
+			end: d.end,
+		}));
+		cutsEnabled = state.cutsEnabled ?? true;
+		focusEnabled = state.focusEnabled ?? true;
+		if (state.annotationsEnabled !== undefined) {
+			annotationsGloballyHidden = !state.annotationsEnabled;
+		}
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
@@ -1384,11 +1517,23 @@ export function createEditorStore() {
 		get cursorPath() { return cursorPath; },
 		set cursorPath(v: string | null) { cursorPath = v; },
 
+		get recordingPath() { return recordingPath; },
+		set recordingPath(v: string | null) { recordingPath = v; },
+
+		get audioPath() { return audioPath; },
+		set audioPath(v: string | null) { audioPath = v; },
+
+		get microphonePath() { return microphonePath; },
+		set microphonePath(v: string | null) { microphonePath = v; },
+
 		get metadata() { return metadata; },
 		set metadata(v: VideoMetadata | null) { metadata = v; },
 
 		get thumbnailStrip() { return thumbnailStrip; },
 		set thumbnailStrip(v: string[]) { thumbnailStrip = v; },
+
+		get waveform() { return waveform; },
+		set waveform(v: number[]) { waveform = v; },
 
 		get currentTime() { return currentTime; },
 		set currentTime(v: number) { currentTime = v; },
@@ -1446,6 +1591,18 @@ export function createEditorStore() {
 		set lastAppliedPresetId(v: string | null) { lastAppliedPresetId = v; },
 
 		get zoomRegions() { return zoomRegions; },
+
+		// Silence / manual cuts.
+		get cuts() { return cuts; },
+		get cutDuration() { return totalCutDuration(cuts); },
+		get dismissedSilences() { return dismissedSilences; },
+
+		// Lane "enable" toggles — bypass the lane's effect in preview/export
+		// while keeping the underlying data intact.
+		get cutsEnabled() { return cutsEnabled; },
+		set cutsEnabled(v: boolean) { cutsEnabled = v; isDirty = true; },
+		get focusEnabled() { return focusEnabled; },
+		set focusEnabled(v: boolean) { focusEnabled = v; isDirty = true; },
 
 		get autoZoomEnabled() { return autoZoomEnabled; },
 		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; },
@@ -1535,6 +1692,13 @@ export function createEditorStore() {
 		removeZoomRegion,
 		updateZoomRegion,
 		selectZoomRegion,
+		addCut,
+		removeCut,
+		clearCuts,
+		updateCut,
+		mergeCuts,
+		dismissSilence,
+		clearDismissedSilences,
 		addAnnotation,
 		updateAnnotation,
 		removeAnnotation,

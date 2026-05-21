@@ -10,6 +10,7 @@ pub mod ffmpeg;
 mod project;
 mod recording;
 mod render;
+mod silence;
 
 use commands::system::load_config;
 use commands::types::AppState;
@@ -20,6 +21,8 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let mut builder = tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init());
@@ -105,6 +108,8 @@ pub fn run() {
             commands::clear_autosave,
             commands::get_recoverable_sessions,
             commands::suggest_zoom_regions,
+            silence::detect_silence,
+            silence::extract_waveform,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
             commands::hydrate_cached_assets,

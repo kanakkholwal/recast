@@ -103,7 +103,34 @@ jobs:
             echo
           } >> "$body_file"
 
-          # 3. System requirements.
+          # 3. macOS first-launch — this section is placed prominently so
+          # users who hit the "is damaged" error find the one-liner fix
+          # without scrolling. The literal error string is included so
+          # search engines surface this release page when users paste it
+          # into Google. Builds are not yet Apple-notarized; until that
+          # changes the quarantine attribute on a downloaded DMG triggers
+          # Gatekeeper to refuse the app with that exact wording, which
+          # reads like the download itself is corrupt — it isn't.
+          {
+            echo "## First launch on macOS"
+            echo
+            echo "If you see"
+            echo
+            echo "> \"Recast\" is damaged and can't be opened. You should move it to the Trash."
+            echo
+            echo "**the download is fine** — macOS is just blocking the app because we haven't signed and notarized this build with Apple yet. Strip the quarantine attribute once, then open normally:"
+            echo
+            echo '```sh'
+            echo "xattr -dr com.apple.quarantine /Applications/Recast.app"
+            echo '```'
+            echo
+            echo "After that, first launch will prompt for **Screen Recording**, **Microphone**, and **Camera** permission in System Settings → Privacy & Security. Grant the ones you intend to record from and restart the app."
+            echo
+            echo "Once we ship a notarized build (tracked under [Phase 7 of the cross-platform plan](https://github.com/${REPO}/blob/main/apps/desktop/docs/cross-platform-support-plan.md#phase-7--packaging-signing--distribution-release-path-already-wired)) this step will go away."
+            echo
+          } >> "$body_file"
+
+          # 4. System requirements.
           {
             echo "## System requirements"
             echo
@@ -113,20 +140,14 @@ jobs:
             echo
           } >> "$body_file"
 
-          # 4. Verifying the download.
+          # 5. Verifying the download (provenance + Windows SmartScreen).
           {
             echo "## Verifying the download"
             echo
-            echo "Recast builds are not yet OS-code-signed, so Windows SmartScreen and macOS Gatekeeper may show warnings. You can verify the build came from this repository's CI using the GitHub CLI:"
+            echo "Every asset ships with a [GitHub artifact attestation](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) so you can confirm the build came from this repository's CI:"
             echo
             echo '```sh'
-            echo "# Confirm the asset was produced by this release's workflow run."
             echo "gh attestation verify path/to/downloaded-asset -R ${REPO}"
-            echo '```'
-            echo
-            echo "**macOS** — if Gatekeeper blocks the app on first launch:"
-            echo '```sh'
-            echo "xattr -dr com.apple.quarantine /Applications/Recast.app"
             echo '```'
             echo
             echo "**Windows** — if SmartScreen blocks the installer, click *More info → Run anyway* after verifying the attestation above."
@@ -417,7 +438,50 @@ jobs:
 
       - name: Build Tauri app
         shell: bash
+        env:
+          # Signs the updater artifacts (.sig files) so the running app can
+          # verify a download against the pubkey baked into tauri.conf.json.
+          # Add these as repository secrets — without them `tauri build` still
+          # succeeds but produces unsigned bundles the updater will reject.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm --filter recast-desktop tauri build ${{ matrix.platform.tauri_args }}
+
+      - name: Tag macOS updater bundle with arch
+        # The macOS updater bundle is emitted as `recast.app.tar.gz` with no
+        # arch in the name, so the arm64 and x64 matrix jobs would collide on
+        # the release and in latest.json. Rename each to match the dmg naming
+        # convention (recast_<version>_<arch>...) before assets are collected.
+        if: matrix.platform.os == 'macos-latest'
+        shell: bash
+        env:
+          TAG: ${{ needs.create-release.outputs.tag_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          case "${{ matrix.platform.rust_target }}" in
+            aarch64-*) arch=aarch64 ;;
+            x86_64-*)  arch=x64 ;;
+            *) echo "::error::Unknown macOS target ${{ matrix.platform.rust_target }}"; exit 1 ;;
+          esac
+          found=0
+          for base in \
+            "apps/desktop/src-tauri/target/release/bundle/macos" \
+            "apps/desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle/macos"; do
+            [ -d "$base" ] || continue
+            for f in "$base"/*.app.tar.gz "$base"/*.app.tar.gz.sig; do
+              [ -e "$f" ] || continue
+              name="$(basename "$f")"
+              case "$name" in *"_${arch}.app.tar.gz"*) continue ;; esac
+              newname="${name/.app.tar.gz/_${version}_${arch}.app.tar.gz}"
+              mv "$f" "$base/$newname"
+              echo "Renamed $name -> $newname"
+              found=1
+            done
+          done
+          if [[ "$found" -ne 1 ]]; then
+            echo "::warning::No macOS updater bundle found to rename — is createUpdaterArtifacts enabled?"
+          fi
 
       - name: Package MSIX (Windows)
         if: matrix.platform.os == 'windows-latest'
@@ -524,7 +588,9 @@ jobs:
             "apps/desktop/src-tauri/target/release/bundle",
             "apps/desktop/src-tauri/target/${{ matrix.platform.rust_target }}/release/bundle"
           )
-          $extensions = @(".AppImage", ".deb", ".dmg", ".exe", ".msi", ".msix", ".sig", ".json")
+          # `.gz` covers the macOS updater bundle (recast.app.tar.gz); `.sig`
+          # covers the updater signatures emitted alongside every bundle.
+          $extensions = @(".AppImage", ".deb", ".dmg", ".exe", ".msi", ".msix", ".sig", ".json", ".gz")
           $assets = @()
           foreach ($root in $bundleRoots) {
             if (Test-Path -LiteralPath $root) {
@@ -555,6 +621,19 @@ jobs:
           files: release-assets/*
           fail_on_unmatched_files: true
 
+      - name: Upload updater signatures for manifest
+        # The generate-manifest job assembles latest.json from these `.sig`
+        # files. Only the signatures are needed — the manifest references the
+        # bundles by their release-asset URL. If signing secrets are unset no
+        # `.sig` files exist; the manifest job then fails loudly with a clear
+        # message rather than publishing a broken updater endpoint.
+        uses: actions/upload-artifact@v4
+        with:
+          name: updater-sigs-${{ matrix.platform.name }}
+          path: release-assets/*.sig
+          if-no-files-found: warn
+          retention-days: 1
+
       - name: Upload build artifacts (debug aid)
         if: always()
         uses: actions/upload-artifact@v4
@@ -566,9 +645,49 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  generate-manifest:
+    name: Generate updater manifest
+    needs: [create-release, build-desktop]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Download updater signatures
+        uses: actions/download-artifact@v4
+        with:
+          pattern: updater-sigs-*
+          path: updater-sigs
+          merge-multiple: true
+
+      - name: Generate latest.json
+        run: |
+          node scripts/generate-latest-json.mjs \
+            --tag "${{ needs.create-release.outputs.tag_name }}" \
+            --repo "${{ github.repository }}" \
+            --dir updater-sigs \
+            --out latest.json
+          echo "----- latest.json -----"
+          cat latest.json
+
+      - name: Upload latest.json to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.create-release.outputs.tag_name }}
+          draft: true
+          prerelease: false
+          files: latest.json
+          fail_on_unmatched_files: true
+
   publish-release:
     name: Publish release
-    needs: [create-release, build-desktop]
+    needs: [create-release, build-desktop, generate-manifest]
     runs-on: ubuntu-24.04
     permissions:
       contents: write

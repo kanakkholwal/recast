@@ -242,7 +242,7 @@ pub fn click_bounce_scale(t_ms: f64, duration_ms: f64, amplitude: f64) -> f64 {
     if n < 0.0 {
         // Anticipation lobe — small inward dip easing toward 0.
         let p = 1.0 + n; // 0 → 1 as we approach the click
-        // Smooth ease-in (cubic) keeps the dip subtle.
+                         // Smooth ease-in (cubic) keeps the dip subtle.
         let dip = 0.25 * amp * (1.0 - (1.0 - p).powi(3));
         return 1.0 - dip;
     }
@@ -333,7 +333,10 @@ mod tests {
     #[test]
     fn bounce_settles_back_toward_one() {
         let near_end = click_bounce_scale(190.0, 200.0, 1.0);
-        assert!((near_end - 1.0).abs() < 0.02, "expected near-1 settle, got {near_end}");
+        assert!(
+            (near_end - 1.0).abs() < 0.02,
+            "expected near-1 settle, got {near_end}"
+        );
     }
 
     #[test]

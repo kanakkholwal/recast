@@ -195,6 +195,55 @@ pub fn ffprobe_path() -> &'static PathBuf {
     &resolve().ffprobe
 }
 
+/// Cached AVFoundation device listing (macOS only).
+///
+/// `ffmpeg -f avfoundation -list_devices true -i ""` is the only way to
+/// enumerate AVFoundation video + audio devices, and the probe is
+/// expensive: spawning FFmpeg, loading the framework, and walking the
+/// device list takes ~200–500 ms cold. Three subsystems need this
+/// output (camera enumeration, audio loopback detection, and the screen
+/// capture's "first screen index" lookup), and before this helper each
+/// of them ran its own private listing — so every recording start
+/// spawned FFmpeg twice or three times just to list devices, on top of
+/// the actual capture processes. That showed up as a burst of
+/// short-lived FFmpeg children in Activity Monitor and as a visible
+/// stutter on slower Macs.
+///
+/// Caching the output once per process collapses that to a single
+/// probe at the first device-list need. The downside is brand-new
+/// devices plugged in *after* launch won't appear until restart; for a
+/// recorder app where the device picker runs on the JS side anyway,
+/// this is an acceptable trade.
+#[cfg(target_os = "macos")]
+pub fn cached_avfoundation_devices() -> &'static str {
+    static CACHED: OnceLock<String> = OnceLock::new();
+    CACHED.get_or_init(|| {
+        let mut command = Command::new(ffmpeg_path());
+        // The empty `-i ""` is intentional: AVFoundation listing requires
+        // the format flag, and FFmpeg refuses to start without an input,
+        // so we hand it an empty one and let it fail. The device list
+        // gets printed to stderr *before* the failure, which is what we
+        // care about.
+        command.args([
+            "-hide_banner",
+            "-f",
+            "avfoundation",
+            "-list_devices",
+            "true",
+            "-i",
+            "",
+        ]);
+        configure_silent_command(&mut command);
+        match command.output() {
+            Ok(out) => String::from_utf8_lossy(&out.stderr).into_owned(),
+            Err(e) => {
+                log::warn!("avfoundation device list probe failed: {e}");
+                String::new()
+            }
+        }
+    })
+}
+
 /// Detect the best available H.264 encoder on the system.
 /// Prefers hardware NVENC when available, falling back to libx264.
 /// Cached for the process lifetime — `ffmpeg -encoders` costs ~200–300ms cold.

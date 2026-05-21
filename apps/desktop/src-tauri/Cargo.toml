@@ -79,3 +79,25 @@ pipewire = "0.9"
 # `shm` feature lets us upgrade to XShm later for the perf win without
 # touching Cargo.toml again; we only use plain `GetImage` for MVP.
 x11rb = { version = "0.13", features = ["shm"] }
+
+# Cross-platform pointer + button sampling for the cursor-capture thread.
+# `device_query` wraps CoreGraphics on macOS and xcb on Linux behind one
+# API, sparing us two separate `unsafe` FFI implementations. On Wayland
+# sessions it falls back through XWayland (present on every mainstream
+# distro). True Wayland-native pointer tracking would need libei and is
+# out of scope — see the cross-platform plan, Phase 2 caveats.
+[target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
+device_query = "2.1"
+
+# NOTE: a `screencapturekit` dep was added here in a previous round to
+# wire macOS system-audio loopback natively. It was removed when the
+# crate's module layout on the current crates.io release turned out to
+# differ from what the integration assumed, and verifying the right API
+# names from a non-macOS dev host is not viable. The placeholder lives
+# in `audio/platform/macos_sckit.rs` and will be re-instated alongside
+# the integration when API verification is possible (see that file's
+# "What needs to happen next" comment block).
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"

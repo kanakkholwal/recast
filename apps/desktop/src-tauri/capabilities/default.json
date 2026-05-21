@@ -33,6 +33,8 @@
     "core:event:default",
     "dialog:default",
     "os:default",
-    "opener:default"
+    "opener:default",
+    "updater:default",
+    "process:default"
   ]
 }

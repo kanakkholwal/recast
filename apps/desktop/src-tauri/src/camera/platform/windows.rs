@@ -164,7 +164,15 @@ fn camera_capture_thread(
 /// pick a specific device.
 fn first_available_camera() -> Result<String> {
     let output = Command::new(crate::ffmpeg::ffmpeg_path())
-        .args(["-hide_banner", "-list_devices", "true", "-f", "dshow", "-i", "dummy"])
+        .args([
+            "-hide_banner",
+            "-list_devices",
+            "true",
+            "-f",
+            "dshow",
+            "-i",
+            "dummy",
+        ])
         .stdout(Stdio::null())
         .stderr(Stdio::piped())
         .stdin(Stdio::null())

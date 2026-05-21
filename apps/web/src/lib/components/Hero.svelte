@@ -24,7 +24,7 @@
 	const rise = (delay: number) => ({ y: 16, duration: 720, delay, easing: cubicOut });
 </script>
 
-<Section spacing="none" class="hero-atmosphere relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">
+<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">
 	<Container class="relative">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
 			<a href="/changelog" class="group inline-block" in:blur={{ duration: 600, amount: 6 }}>
@@ -148,19 +148,3 @@
 		</div>
 	</Container>
 </Section>
-
-<style>
-	:global(.hero-atmosphere) {
-		background:
-			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 70%),
-			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 70%),
-			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 8%, transparent), transparent 70%);
-	}
-
-	:global(.dark .hero-atmosphere) {
-		background:
-			radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--color-primary) 7%, transparent), transparent 75%),
-			radial-gradient(ellipse 60% 40% at 18% 8%, color-mix(in srgb, var(--color-primary) 4%, transparent), transparent 75%),
-			radial-gradient(ellipse 60% 40% at 82% 8%, color-mix(in srgb, var(--color-primary) 5%, transparent), transparent 75%);
-	}
-</style>

@@ -5,6 +5,7 @@
   import {
     ArrowUpRight,
     ExternalLink,
+    FlaskConical,
     FolderOpen,
     Github,
     Globe,
@@ -24,6 +25,11 @@
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
 
+  import {
+    FLAG_META,
+    experimentalStore,
+    type ExperimentalFlag,
+  } from "$lib/stores/experimental.svelte";
   import { profilesStore } from "$lib/stores/profiles.svelte";
 
   type Theme = "light" | "dark" | "system";
@@ -52,6 +58,12 @@
     toast.success(
       next ? "Profiles enabled" : "Profiles disabled",
     );
+  }
+
+  function toggleExperimental(key: ExperimentalFlag, label: string) {
+    const next = !experimentalStore.isEnabled(key);
+    experimentalStore.setEnabled(key, next);
+    toast.success(next ? `${label} enabled` : `${label} disabled`);
   }
 
   async function fetchSettings() {
@@ -383,6 +395,68 @@
                 </Button>
               </div>
             {/if}
+          </div>
+        </section>
+
+        <!-- Experimental features -->
+        <section
+          id="settings-experimental"
+          in:fade={{ duration: 200, delay: 240 }}
+          class="flex flex-col gap-3"
+        >
+          <div class="px-1">
+            <h2
+              class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+            >
+              <FlaskConical class="size-3 text-primary" />
+              Experimental
+            </h2>
+            <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+              Unfinished features hidden by default — opt in if you want to try
+              them. They may move, break, or disappear.
+            </p>
+          </div>
+          <div
+            class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+          >
+            {#each FLAG_META as flag, i (flag.key)}
+              {@const on = experimentalStore.isEnabled(flag.key)}
+              <div
+                class={cn(
+                  "flex items-center justify-between gap-3 px-4 py-3",
+                  i > 0 && "border-t border-border/40",
+                )}
+              >
+                <div class="min-w-0">
+                  <div class="text-[12px] font-semibold text-foreground">
+                    {flag.label}
+                  </div>
+                  <div class="text-[11px] text-muted-foreground">
+                    {flag.description}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={flag.label}
+                  aria-checked={on}
+                  onclick={() => toggleExperimental(flag.key, flag.label)}
+                  class={cn(
+                    "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                    on
+                      ? "bg-primary"
+                      : "bg-input ring-1 ring-inset ring-border/50",
+                  )}
+                >
+                  <span
+                    class={cn(
+                      "size-4 rounded-full bg-card shadow-sm transition-transform",
+                      on ? "translate-x-4.5" : "translate-x-0.5",
+                    )}
+                  ></span>
+                </button>
+              </div>
+            {/each}
           </div>
         </section>
 

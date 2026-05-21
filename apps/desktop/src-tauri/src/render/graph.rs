@@ -8,7 +8,21 @@ use super::node_types::{
     ShadowSettings, TrimNode, WatermarkSettings, ZoomNode, ZoomRegion,
 };
 
-fn default_bounce_speed_ms() -> f64 { 220.0 }
+fn default_bounce_speed_ms() -> f64 {
+    220.0
+}
+
+/// A removed range on the timeline (a silence cut or a manual cut), in
+/// original-recording seconds. The export drops these via `select`/`aselect`.
+/// Unknown JS-side fields (`id`, `source`) round-trip through `extra`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CutRange {
+    pub start: f64,
+    pub end: f64,
+    #[serde(flatten, default)]
+    pub extra: serde_json::Map<String, serde_json::Value>,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,6 +66,9 @@ pub struct RenderState {
     #[serde(default)]
     pub cursor_sway: f64,
     pub zoom_regions: Vec<ZoomRegion>,
+    /// User-accepted silence/manual cuts removed from the timeline.
+    #[serde(default)]
+    pub cuts: Vec<CutRange>,
     /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
     #[serde(default)]
@@ -125,6 +142,7 @@ impl Default for RenderState {
             cursor_bounce_speed_ms: default_bounce_speed_ms(),
             cursor_sway: 0.0,
             zoom_regions: Vec::new(),
+            cuts: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
@@ -308,13 +326,13 @@ impl RenderGraph {
         let video_x = canvas.video_x;
         let video_y = canvas.video_y;
         let _ = background.map(|n| n.padding); // ack — read through canvas now
-        // Zoom region times are stored in PROJECT-timeline seconds, but the
-        // FFmpeg expression evaluator's `t` is OUTPUT-stream time, which is
-        // reset to 0 by the input-side `-ss <trim_start>` we emit in
-        // `export_video`. If we don't subtract the trim offset here, the LUT
-        // fires at timeline-t inside the output stream — which, with any
-        // trim, is past the output's end, so the zoom never visibly applies.
-        // Without trim the offset is 0 and the behaviour is unchanged.
+                                               // Zoom region times are stored in PROJECT-timeline seconds, but the
+                                               // FFmpeg expression evaluator's `t` is OUTPUT-stream time, which is
+                                               // reset to 0 by the input-side `-ss <trim_start>` we emit in
+                                               // `export_video`. If we don't subtract the trim offset here, the LUT
+                                               // fires at timeline-t inside the output stream — which, with any
+                                               // trim, is past the output's end, so the zoom never visibly applies.
+                                               // Without trim the offset is 0 and the behaviour is unchanged.
         let trim_start = self.trim_range().0.max(0.0);
         let zoom_filter = zoom
             .map(|node| build_zoom_filter(node, source, trim_start))
@@ -381,9 +399,8 @@ impl RenderGraph {
         };
         let will_push_bg_image = resolved_bg_image.is_some();
         if drop_shadow_mask.is_some() {
-            shadow_input_index = Some(
-                background_input_index + extra_inputs.len() + will_push_bg_image as usize,
-            );
+            shadow_input_index =
+                Some(background_input_index + extra_inputs.len() + will_push_bg_image as usize);
         }
 
         let filter_complex = match background {
@@ -928,7 +945,11 @@ mod tests {
         }
     }
 
-    fn render_state_with_zoom(trim_start: f64, trim_end: f64, regions: Vec<ZoomRegion>) -> RenderState {
+    fn render_state_with_zoom(
+        trim_start: f64,
+        trim_end: f64,
+        regions: Vec<ZoomRegion>,
+    ) -> RenderState {
         RenderState {
             trim_start,
             trim_end,
@@ -944,7 +965,10 @@ mod tests {
     fn export_plan(state: &RenderState) -> ExportPlan {
         RenderGraph::from_state(state)
             .build_export_plan_with(
-                SourceVideoMetadata { width: 1920, height: 1080 },
+                SourceVideoMetadata {
+                    width: 1920,
+                    height: 1080,
+                },
                 Path::new("."),
                 1,
                 None,
@@ -958,7 +982,10 @@ mod tests {
     fn export_plan_with_shadow(state: &RenderState, shadow_path: PathBuf) -> ExportPlan {
         RenderGraph::from_state(state)
             .build_export_plan_with(
-                SourceVideoMetadata { width: 1920, height: 1080 },
+                SourceVideoMetadata {
+                    width: 1920,
+                    height: 1080,
+                },
                 Path::new("."),
                 1,
                 None,
@@ -981,7 +1008,9 @@ mod tests {
     fn zoom_filter_uses_scale_eval_frame_not_crop_wh_lut() {
         let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
         let plan = export_plan(&state);
-        let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
+        let fc = plan
+            .filter_complex
+            .expect("filter_complex must exist when zoom present");
         // Must use scale with eval=frame so width/height re-evaluate per frame.
         assert!(
             fc.contains("scale=w='iw*(") && fc.contains(":eval=frame"),
@@ -1010,7 +1039,9 @@ mod tests {
     fn zoom_filter_shifts_lut_by_trim_start() {
         let state = render_state_with_zoom(2.0, 5.0, vec![region(3.0, 5.0, 1.5)]);
         let plan = export_plan(&state);
-        let fc = plan.filter_complex.expect("filter_complex must exist when zoom present");
+        let fc = plan
+            .filter_complex
+            .expect("filter_complex must exist when zoom present");
         assert!(
             fc.contains("gte(t,1.0000)"),
             "LUT must be shifted to output-time (start at output t=1.0): {fc}"
@@ -1048,7 +1079,10 @@ mod tests {
         let state = render_state_with_zoom(0.0, 5.0, vec![region(1.0, 4.0, 1.5)]);
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
-        assert!(fc.contains("[video0]"), "zoom prelude must label its output [video0]: {fc}");
+        assert!(
+            fc.contains("[video0]"),
+            "zoom prelude must label its output [video0]: {fc}"
+        );
         assert_eq!(plan.video_map, "[vout]");
     }
 
@@ -1103,15 +1137,18 @@ mod tests {
             5.0,
             10.0,
             vec![
-                region(1.0, 3.0, 1.5),  // entirely before trim
-                region(6.0, 8.0, 1.5),  // post-trim, should fire
+                region(1.0, 3.0, 1.5), // entirely before trim
+                region(6.0, 8.0, 1.5), // post-trim, should fire
             ],
         );
         let plan = export_plan(&state);
         let fc = plan.filter_complex.expect("filter_complex must exist");
         // Note: in this state, region [1,3] is pre-trim and dropped, only
         // region [6,8] survives — its post-trim start is output_t = 1.0.
-        assert!(fc.contains("gte(t,1.0000)"), "post-trim region present: {fc}");
+        assert!(
+            fc.contains("gte(t,1.0000)"),
+            "post-trim region present: {fc}"
+        );
         // Pre-trim region's first sample would have been at output_t = -4.0.
         assert!(
             !fc.contains("-4.0000"),
@@ -1127,7 +1164,9 @@ mod tests {
     fn all_pre_trim_zoom_regions_yields_no_zoom_prelude() {
         let state = render_state_with_zoom(5.0, 10.0, vec![region(1.0, 3.0, 1.5)]);
         let plan = export_plan(&state);
-        let fc = plan.filter_complex.expect("color bg still produces a complex");
+        let fc = plan
+            .filter_complex
+            .expect("color bg still produces a complex");
         assert!(
             !fc.contains("scale=w='iw*("),
             "no zoom prelude expected when all regions are pre-trim: {fc}"

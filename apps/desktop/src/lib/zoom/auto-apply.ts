@@ -13,11 +13,21 @@ import type { CursorSampleLike } from "$lib/cursor/smoothing";
 import type { ZoomSuggestion } from "$lib/ipc";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 
-// Target window around each trigger. Shrinks if a neighbour forces it, but
-// never shorter than MIN_REGION_DURATION — a 200 ms zoom reads as a flicker.
-export const IDEAL_HALF_WIDTH = 0.5; // seconds — full 1 s window when unobstructed
-export const MIN_REGION_DURATION = 0.4;
-export const MIN_GAP = 0.05; // guardband so adjacent regions don't visually touch
+// A zoom reads well when it is *already* at full scale by the time the
+// action happens and then holds long enough for the viewer to register it.
+// So the window around a trigger is asymmetric: a short lead-in before the
+// trigger, a long hold after. With the default 0.35 s ramps that leaves a
+// comfortable ~2 s plateau at full zoom — a 1 s symmetric window only held
+// ~0.3 s and read as a nervous flicker.
+export const ZOOM_LEAD_IN = 0.6; // seconds of window before the trigger
+export const ZOOM_HOLD = 2.4; // seconds of window after the trigger
+// Shrinks if a neighbour forces it, but never below this — anything shorter
+// barely clears the ramps and reads as a flicker.
+export const MIN_REGION_DURATION = 1.2;
+export const MIN_GAP = 0.08; // guardband so adjacent regions don't visually touch
+// Default scale for auto-placed zooms. 1.8× crops aggressively and feels
+// claustrophobic; ~1.6× keeps surrounding context visible.
+export const AUTO_ZOOM_SCALE = 1.6;
 
 export interface Interval {
 	start: number;
@@ -50,7 +60,9 @@ export function findFreeSlot(
 
 /**
  * Compute the placement window for a suggestion given current occupied
- * intervals. Returns null if there's no room for a meaningful zoom.
+ * intervals. The window is anchored asymmetrically around `centerSec` (the
+ * trigger moment): `ZOOM_LEAD_IN` before, `ZOOM_HOLD` after. Returns null if
+ * there's no room for a meaningful zoom.
  */
 export function planPlacement(
 	occupied: Interval[],
@@ -60,8 +72,8 @@ export function planPlacement(
 ): Interval | null {
 	const slot = findFreeSlot(occupied, clipStart, clipEnd, centerSec);
 	if (!slot) return null;
-	const start = Math.max(slot.start, centerSec - IDEAL_HALF_WIDTH);
-	const end = Math.min(slot.end, centerSec + IDEAL_HALF_WIDTH);
+	const start = Math.max(slot.start, centerSec - ZOOM_LEAD_IN);
+	const end = Math.min(slot.end, centerSec + ZOOM_HOLD);
 	if (end - start < MIN_REGION_DURATION) return null;
 	return { start, end };
 }
@@ -133,7 +145,7 @@ export function applyAutoZooms(
 	clipBounds: Interval,
 	canvasW: number,
 	canvasH: number,
-	scale = 1.8,
+	scale = AUTO_ZOOM_SCALE,
 ): AutoZoomResult {
 	const occupied: Interval[] = store.zoomRegions
 		.map((z) => ({ start: z.start, end: z.end }))

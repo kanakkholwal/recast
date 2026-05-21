@@ -21,6 +21,7 @@
 		ShieldCheck,
 		Sparkles,
 		Terminal,
+		TriangleAlert,
 		WifiOff,
 		Zap,
 	} from "lucide-svelte";
@@ -227,6 +228,20 @@
 					>
 						Not on {detectedOS !== "Unknown" ? detectedOS : "this OS"}? See all platforms ↓
 					</a>
+
+					<!-- macOS users get a one-time Gatekeeper workaround. Surface it
+					     up here so they see it BEFORE downloading and don't bounce
+					     off the "is damaged" error. Anchors to the full instructions
+					     in the macOS tab below. -->
+					{#if detectedOS === "macOS"}
+						<a
+							href="#macos-first-launch"
+							class="mt-1 inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-[0.16em] text-amber-600 transition-colors hover:text-amber-500 dark:text-amber-400"
+						>
+							<TriangleAlert class="size-3" />
+							macOS first launch needs a one-time Terminal step
+						</a>
+					{/if}
 				</div>
 			</div>
 
@@ -305,6 +320,55 @@
 											{/each}
 										</div>
 									</div>
+
+									<!-- macOS-only first-launch block. We're not yet Apple-notarized,
+									     so Gatekeeper refuses a freshly-downloaded DMG with "is
+									     damaged and can't be opened" (especially on Apple Silicon
+									     where ad-hoc signatures aren't trusted). The literal error
+									     text is included verbatim so search engines surface this
+									     page when users paste the message into Google. -->
+									{#if p.id === "macOS"}
+										<div
+											id="macos-first-launch"
+											class="relative mt-8 rounded-2xl border border-amber-500/25 bg-amber-500/4 p-5 sm:p-6"
+										>
+											<div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:gap-4">
+												<span
+													class="grid size-9 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600 dark:text-amber-400"
+												>
+													<TriangleAlert class="size-4" />
+												</span>
+												<div class="flex-1 space-y-3">
+													<div>
+														<h4 class="text-sm font-semibold text-foreground">
+															First launch on macOS
+														</h4>
+														<p
+															class="mt-1 text-sm leading-relaxed text-muted-foreground"
+														>
+															If macOS shows
+															<em class="not-italic font-medium text-foreground/85"
+																>"Recast" is damaged and can't be opened</em
+															>, the download is fine — we're not yet
+															Apple-notarized. Drag Recast.app into your
+															<span class="font-mono text-foreground/90">Applications</span>
+															folder, then run this once in Terminal:
+														</p>
+													</div>
+													<pre
+														class="overflow-x-auto rounded-lg border border-border-low/50 bg-foreground/4 px-3 py-2.5 font-mono text-xs text-foreground"><code>xattr -dr com.apple.quarantine /Applications/Recast.app</code></pre>
+													<p class="text-xs text-muted-foreground/80">
+														After that, open Recast normally from Launchpad or
+														Applications. The Terminal step will go away once we
+														ship a notarized build. First launch will also prompt
+														for Screen Recording, Microphone, and Camera permission
+														in System Settings → Privacy & Security — grant the
+														ones you intend to record from.
+													</p>
+												</div>
+											</div>
+										</div>
+									{/if}
 								</article>
 							</Reveal>
 						</Tabs.Content>

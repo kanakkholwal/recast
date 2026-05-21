@@ -68,12 +68,11 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     // desktop, so these coordinates pass through directly.
     let x = i16::try_from(target.crop.x)
         .context("X11 capture: crop.x out of i16 range — multi-monitor with extreme offset?")?;
-    let y = i16::try_from(target.crop.y)
-        .context("X11 capture: crop.y out of i16 range")?;
+    let y = i16::try_from(target.crop.y).context("X11 capture: crop.y out of i16 range")?;
     let width = u16::try_from(target.crop.width)
         .context("X11 capture: crop.width exceeds u16 — display larger than 65535 px?")?;
-    let height = u16::try_from(target.crop.height)
-        .context("X11 capture: crop.height exceeds u16")?;
+    let height =
+        u16::try_from(target.crop.height).context("X11 capture: crop.height exceeds u16")?;
 
     Ok(Box::new(X11CaptureSource {
         conn,
@@ -127,6 +126,26 @@ impl CaptureSource for X11CaptureSource {
         // 32bpp visuals. Our encoder treats the pixels as BGRA either
         // way — the alpha byte is irrelevant for screen video, so a
         // garbage X byte is fine.
+        //
+        // Guard the buffer geometry before handing it downstream: the
+        // encoder reads exactly width*height*4 bytes. If the X server
+        // packs depth-24 at 24 bits-per-pixel, or pads scanlines to a
+        // wider `bitmap_pad`, the reply is a different length and the
+        // encoder would either panic or render smeared/striped frames.
+        // Fail loudly here instead — the message tells the next
+        // iteration exactly what to add a swap/repack path for.
+        let expected = self.width as usize * self.height as usize * 4;
+        if reply.data.len() != expected {
+            return Err(anyhow!(
+                "X11 GetImage returned {} bytes, expected {} for {}x{} BGRA — \
+                 the X server is not delivering packed 32-bit pixels; a \
+                 stride-repack path is needed for this display",
+                reply.data.len(),
+                expected,
+                self.width,
+                self.height
+            ));
+        }
         Ok(Some(reply.data))
     }
 

@@ -11,6 +11,10 @@
     pixelsPerSecond: number;
     isDragging: boolean;
     timeMode: TimeMode;
+    /** When false (cut lane hidden), the playhead guide line is shortened
+     *  so it stops at the bottom of the annotation lane instead of dangling
+     *  into empty space. */
+    tall?: boolean;
   }
 
   let {
@@ -19,6 +23,7 @@
     pixelsPerSecond,
     isDragging,
     timeMode,
+    tall = true,
   }: Props = $props();
 
   const playheadLeft = $derived(currentTime * pixelsPerSecond);
@@ -40,7 +45,9 @@
       class="mx-auto mt-6 size-2 rounded-full border border-background bg-primary"
     ></div>
     <div
-      class="mx-auto h-45 w-px bg-primary/60 pointer-events-none"
+      class="mx-auto w-px bg-primary/60 pointer-events-none"
+      class:h-57={tall}
+      class:h-45={!tall}
       id="timeline-control"
     ></div>
   </div>

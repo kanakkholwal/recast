@@ -16,6 +16,7 @@
     clearAutosave,
     createExportId,
     exportVideo,
+    extractWaveform,
     generateThumbnails,
     listenToExportState,
     loadEditorDocument,
@@ -27,8 +28,16 @@
     framePaddingPixels,
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { applyAutoZooms } from "$lib/zoom/auto-apply";
-  import { ArrowLeft, CheckCircle2, FolderOpen, X } from "@lucide/svelte";
+  import {
+    ArrowLeft,
+    CheckCircle2,
+    FlaskConical,
+    FolderOpen,
+    VolumeX,
+    X,
+  } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
@@ -182,6 +191,20 @@
     }
   }
 
+  // Decode the audio peak envelope for the timeline waveform. Best-effort
+  // and fully async — the editor is usable before it resolves.
+  async function loadWaveform() {
+    try {
+      store.waveform = await extractWaveform(
+        store.audioPath,
+        store.microphonePath,
+      );
+    } catch (err) {
+      console.warn("Waveform extraction failed", err);
+      store.waveform = [];
+    }
+  }
+
   function handleVideoLoadedMetadata() {
     if (!videoEl) return;
     mergeVideoMetadata({
@@ -231,6 +254,15 @@
       videoSrc = convertFileSrc(document.mediaPath);
       cursorPath = document.cursorPath ?? null;
       store.cursorPath = cursorPath;
+      // Raw on-disk media paths for Rust-side analysis (silence detection).
+      store.recordingPath = document.mediaPath;
+      store.audioPath = document.audioPath ?? null;
+      store.microphonePath = document.microphonePath ?? null;
+      store.waveform = [];
+      // Waveform decode is only consumed by the cut lane (experimental).
+      // Skip the ffmpeg roundtrip when the feature is off; the $effect below
+      // back-fills it if the user flips the flag on later.
+      if (experimentalStore.silenceDetection) void loadWaveform();
       systemAudioSrc = document.audioPath
         ? convertFileSrc(document.audioPath)
         : "";
@@ -570,9 +602,17 @@
         }),
       ]);
       prepSending = "running";
+      // Honor the per-lane "enable" toggles. The underlying data is preserved
+      // on the store; here we just hand the export pipeline the active set,
+      // so toggling a lane off bypasses its effect in the rendered file.
       const finalRenderState = {
         ...renderState,
-        annotations: expandedAnnotations,
+        annotations: store.annotationsGloballyHidden ? [] : expandedAnnotations,
+        zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
+        cuts:
+          experimentalStore.silenceDetection && store.cutsEnabled
+            ? renderState.cuts
+            : [],
         cursorSpriteRest: cursorSprites?.rest,
         cursorSpritePress: cursorSprites?.press,
         cursorSpriteHotspotRest: cursorSprites?.restHotspot,
@@ -795,6 +835,16 @@
     videoEl.muted = true;
   });
 
+  // Back-fill the waveform if the experimental flag flips on after the
+  // document loaded with it off. The decode is one-shot per recording, so
+  // only fire when we actually have audio paths and no peaks yet.
+  $effect(() => {
+    if (!experimentalStore.silenceDetection) return;
+    if (store.waveform.length > 0) return;
+    if (!store.audioPath && !store.microphonePath) return;
+    void loadWaveform();
+  });
+
   $effect(() => {
     if (!store.isExporting) return;
     exportNow = Date.now();
@@ -869,6 +919,35 @@
       {isSaving}
     />
   </CustomTitlebar>
+
+  <!-- Cuts-detected banner: project has accepted silence/manual cuts but the
+       experimental flag is off, so the cut lane is hidden and the cuts will
+       be silently ignored on export. Surface that loudly with an inline
+       opt-in so users sharing projects across machines don't lose work. -->
+  {#if !isLoading && !error && store.cuts.length > 0 && !experimentalStore.silenceDetection}
+    <div
+      class="flex items-center gap-2.5 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11px] text-amber-700 dark:text-amber-300"
+      role="status"
+    >
+      <FlaskConical class="size-3.5 shrink-0" />
+      <VolumeX class="size-3.5 shrink-0" />
+      <span class="min-w-0 flex-1 truncate">
+        This project has {store.cuts.length} silence cut{store.cuts.length === 1
+          ? ""
+          : "s"} — currently hidden and skipped on export. Enable
+        <span class="font-semibold">Silence detection</span> to use them.
+      </span>
+      <Button
+        variant="outline"
+        size="xs"
+        class="h-6 shrink-0 border-amber-500/40 bg-amber-500/10 text-amber-700 hover:bg-amber-500/20 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100"
+        onclick={() =>
+          experimentalStore.setEnabled("silenceDetection", true)}
+      >
+        Enable
+      </Button>
+    </div>
+  {/if}
 
   {#if isLoading}
     <EditorSkeleton />

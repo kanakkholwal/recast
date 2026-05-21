@@ -179,9 +179,8 @@ pub fn append_camera_overlay_to_complex(
         None => format!("[{cam}:v]{hflip}scale={bw}:{bh}[vcam_shaped]"),
     };
 
-    let overlay = format!(
-        "{normalized_current}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}"
-    );
+    let overlay =
+        format!("{normalized_current}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}");
 
     let new_complex = match filter_complex {
         Some(existing) if !existing.is_empty() => format!("{existing};{cam_chain};{overlay}"),
@@ -214,7 +213,11 @@ pub struct GifFilterOptions<'a> {
 
 impl<'a> Default for GifFilterOptions<'a> {
     fn default() -> Self {
-        Self { fps: 15, max_colors: 128, dither: "bayer" }
+        Self {
+            fps: 15,
+            max_colors: 128,
+            dither: "bayer",
+        }
     }
 }
 
@@ -279,9 +282,7 @@ pub fn build_gif_palette_prepass_filter(
     };
     let max_colors = options.max_colors.clamp(2, 256);
     let fps = options.fps.max(1);
-    format!(
-        "fps={fps}{scale_clause},palettegen=max_colors={max_colors}:stats_mode=diff"
-    )
+    format!("fps={fps}{scale_clause},palettegen=max_colors={max_colors}:stats_mode=diff")
 }
 
 #[cfg(test)]
@@ -293,7 +294,11 @@ mod gif_tests {
     #[test]
     fn prepass_filter_includes_fps_and_palettegen() {
         let vf = build_gif_palette_prepass_filter(
-            GifFilterOptions { fps: 12, max_colors: 128, dither: "bayer" },
+            GifFilterOptions {
+                fps: 12,
+                max_colors: 128,
+                dither: "bayer",
+            },
             None,
         );
         assert!(vf.starts_with("fps=12"), "got: {vf}");
@@ -305,25 +310,40 @@ mod gif_tests {
     #[test]
     fn prepass_filter_bakes_scale_before_palettegen() {
         let vf = build_gif_palette_prepass_filter(
-            GifFilterOptions { fps: 18, max_colors: 256, dither: "bayer" },
+            GifFilterOptions {
+                fps: 18,
+                max_colors: 256,
+                dither: "bayer",
+            },
             Some("scale=w=720:h=-1"),
         );
         let scale_idx = vf.find("scale=").expect("scale present");
         let pg_idx = vf.find("palettegen").expect("palettegen present");
-        assert!(scale_idx < pg_idx, "scale must come before palettegen: {vf}");
+        assert!(
+            scale_idx < pg_idx,
+            "scale must come before palettegen: {vf}"
+        );
     }
 
     #[test]
     fn prepass_filter_clamps_max_colors_and_fps() {
         let vf = build_gif_palette_prepass_filter(
-            GifFilterOptions { fps: 0, max_colors: 9999, dither: "bayer" },
+            GifFilterOptions {
+                fps: 0,
+                max_colors: 9999,
+                dither: "bayer",
+            },
             None,
         );
         assert!(vf.contains("fps=1"), "got: {vf}");
         assert!(vf.contains("max_colors=256"), "got: {vf}");
 
         let vf = build_gif_palette_prepass_filter(
-            GifFilterOptions { fps: 15, max_colors: 1, dither: "bayer" },
+            GifFilterOptions {
+                fps: 15,
+                max_colors: 1,
+                dither: "bayer",
+            },
             None,
         );
         assert!(vf.contains("max_colors=2"), "got: {vf}");
@@ -337,7 +357,11 @@ mod gif_tests {
             None,
             "vout",
             3,
-            GifFilterOptions { fps: 12, max_colors: 128, dither: "bayer" },
+            GifFilterOptions {
+                fps: 12,
+                max_colors: 128,
+                dither: "bayer",
+            },
             None,
         );
         assert_eq!(label, "[vgif]");
@@ -371,12 +395,19 @@ mod gif_tests {
             None,
             "vout",
             2,
-            GifFilterOptions { fps: 18, max_colors: 256, dither: "bayer" },
+            GifFilterOptions {
+                fps: 18,
+                max_colors: 256,
+                dither: "bayer",
+            },
             Some("scale=w=720:h=-1"),
         );
         let scale_idx = complex.find("scale=").expect("scale present");
         let pu_idx = complex.find("paletteuse").expect("paletteuse present");
-        assert!(scale_idx < pu_idx, "scale must come before paletteuse: {complex}");
+        assert!(
+            scale_idx < pu_idx,
+            "scale must come before paletteuse: {complex}"
+        );
     }
 
     #[test]
@@ -385,7 +416,11 @@ mod gif_tests {
             None,
             "vout",
             1,
-            GifFilterOptions { fps: 15, max_colors: 128, dither: "sierra2" },
+            GifFilterOptions {
+                fps: 15,
+                max_colors: 128,
+                dither: "sierra2",
+            },
             None,
         );
         assert!(complex.contains("dither=sierra2"), "got: {complex}");
@@ -398,7 +433,11 @@ mod gif_tests {
             None,
             "vout",
             1,
-            GifFilterOptions { fps: 15, max_colors: 128, dither: "none" },
+            GifFilterOptions {
+                fps: 15,
+                max_colors: 128,
+                dither: "none",
+            },
             None,
         );
         assert!(complex.contains("dither=none"));
@@ -410,7 +449,11 @@ mod gif_tests {
             None,
             "vout",
             1,
-            GifFilterOptions { fps: 15, max_colors: 128, dither: "wat" },
+            GifFilterOptions {
+                fps: 15,
+                max_colors: 128,
+                dither: "wat",
+            },
             None,
         );
         assert!(complex.contains("dither=bayer:bayer_scale=5"));
@@ -422,7 +465,11 @@ mod gif_tests {
             None,
             "vout",
             1,
-            GifFilterOptions { fps: 0, max_colors: 128, dither: "bayer" },
+            GifFilterOptions {
+                fps: 0,
+                max_colors: 128,
+                dither: "bayer",
+            },
             None,
         );
         assert!(complex.contains("fps=1"), "got: {complex}");
@@ -459,10 +506,16 @@ mod blur_tests {
     #[test]
     fn single_region_emits_split_crop_overlay() {
         // strength low enough to skip the high-strength glass redaction wash.
-        let regs = [BlurRegion { strength: 0.4, ..region_with("glass", 1.0, 3.5) }];
+        let regs = [BlurRegion {
+            strength: 0.4,
+            ..region_with("glass", 1.0, 3.5)
+        }];
         let (chain, label) = build_annotation_blur_complex(None, "vout", &regs);
         // Split appears first to fork main/source streams.
-        assert!(chain.contains("split[blur_main_0][blur_src_0]"), "chain: {chain}");
+        assert!(
+            chain.contains("split[blur_main_0][blur_src_0]"),
+            "chain: {chain}"
+        );
         // Crop dimensions are baked from the region rect.
         assert!(chain.contains("crop=320:180:100:80"));
         // Box blur radius matches the input.
@@ -490,7 +543,10 @@ mod blur_tests {
 
     #[test]
     fn color_variant_emits_hex_drawbox() {
-        let regs = [BlurRegion { tint_rgb: 0x3b82f6, ..region_with("color", 0.0, 1.0) }];
+        let regs = [BlurRegion {
+            tint_rgb: 0x3b82f6,
+            ..region_with("color", 0.0, 1.0)
+        }];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
         assert!(chain.contains("0x3b82f6@"), "chain: {chain}");
     }
@@ -545,8 +601,14 @@ mod blur_tests {
             region_with("color", 4.0, 6.0),
         ];
         let (chain, label) = build_annotation_blur_complex(None, "vout", &regs);
-        assert!(chain.contains("[blur_step_0]"), "first step label missing: {chain}");
-        assert!(chain.contains("[blur_step_1]"), "second step label missing: {chain}");
+        assert!(
+            chain.contains("[blur_step_0]"),
+            "first step label missing: {chain}"
+        );
+        assert!(
+            chain.contains("[blur_step_1]"),
+            "second step label missing: {chain}"
+        );
         // Last region's overlay output is the final label.
         assert_eq!(label, "[vblur]");
         assert!(chain.contains("[vblur]"));
@@ -570,7 +632,10 @@ mod blur_tests {
         // a zero-length window).
         let regs = [region_with("glass", 5.0, 1.0)];
         let (chain, _) = build_annotation_blur_complex(None, "vout", &regs);
-        assert!(chain.contains("between(t\\,5.0000\\,5.0000)"), "chain: {chain}");
+        assert!(
+            chain.contains("between(t\\,5.0000\\,5.0000)"),
+            "chain: {chain}"
+        );
     }
 
     #[test]
@@ -622,19 +687,33 @@ mod export_retention_tests {
         serde_json::from_str(&json).expect("RenderState parses")
     }
 
-    fn make_blur_region<'a>(annos: &'a [crate::render::node_types::Annotation], canvas_w: u32, canvas_h: u32, trim_start: f64) -> Vec<BlurRegion<'a>> {
+    fn make_blur_region<'a>(
+        annos: &'a [crate::render::node_types::Annotation],
+        canvas_w: u32,
+        canvas_h: u32,
+        trim_start: f64,
+    ) -> Vec<BlurRegion<'a>> {
         annos
             .iter()
             .filter(|a| !a.hidden)
             .filter_map(|a| match &a.kind {
                 AnnotationKind::Blur {
-                    x, y, w, h, strength, variant, tint_color, ..
+                    x,
+                    y,
+                    w,
+                    h,
+                    strength,
+                    variant,
+                    tint_color,
+                    ..
                 } => {
                     let cx = (x * canvas_w as f64).round() as i32;
                     let cy = (y * canvas_h as f64).round() as i32;
                     let cw = (w.abs() * canvas_w as f64).round() as i32;
                     let ch = (h.abs() * canvas_h as f64).round() as i32;
-                    if cw < 4 || ch < 4 { return None; }
+                    if cw < 4 || ch < 4 {
+                        return None;
+                    }
                     // 12% of the short edge gives a redaction-grade cap:
                     // 1080p → ~130, clamped to FFmpeg boxblur's hard max of
                     // 127. The previous 5% cap left text readable.
@@ -642,7 +721,8 @@ mod export_retention_tests {
                     let radius = (strength.clamp(0.0, 1.0) * max_dim)
                         .round()
                         .clamp(1.0, 127.0) as u32;
-                    let tint_rgb = u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0);
+                    let tint_rgb =
+                        u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0);
                     Some(BlurRegion {
                         x: cx,
                         y: cy,
@@ -724,7 +804,10 @@ mod export_retention_tests {
         }]"##;
         let render_state = build_render_state_json(annotations);
         let regions = make_blur_region(&render_state.annotations, 1920, 1080, 0.0);
-        assert!(regions.is_empty(), "hidden annotations must not generate filter regions");
+        assert!(
+            regions.is_empty(),
+            "hidden annotations must not generate filter regions"
+        );
     }
 
     #[test]
@@ -846,7 +929,16 @@ mod blur_serde_tests {
         }"##;
         let parsed: Annotation = serde_json::from_str(json).expect("blur parses");
         match parsed.kind {
-            AnnotationKind::Blur { x, y, w, h, strength, variant, tint_color, radius } => {
+            AnnotationKind::Blur {
+                x,
+                y,
+                w,
+                h,
+                strength,
+                variant,
+                tint_color,
+                radius,
+            } => {
                 assert!((x - 0.1).abs() < 1e-9);
                 assert!((y - 0.2).abs() < 1e-9);
                 assert!((w - 0.3).abs() < 1e-9);
@@ -874,7 +966,13 @@ mod blur_serde_tests {
         }"##;
         let parsed: Annotation = serde_json::from_str(json).expect("blur parses with defaults");
         match parsed.kind {
-            AnnotationKind::Blur { strength, variant, tint_color, radius, .. } => {
+            AnnotationKind::Blur {
+                strength,
+                variant,
+                tint_color,
+                radius,
+                ..
+            } => {
                 assert!((strength - 0.5).abs() < 1e-9);
                 assert_eq!(variant, "glass");
                 assert_eq!(tint_color, "#000000");
@@ -906,25 +1004,45 @@ mod gif_settings_tests {
 
     #[test]
     fn loop_infinite_to_zero() {
-        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!("infinite"), dither: "bayer".into() };
+        let s = GifSettings {
+            fps: None,
+            quality: "medium".into(),
+            r#loop: json!("infinite"),
+            dither: "bayer".into(),
+        };
         assert_eq!(s.ffmpeg_loop_arg(), 0);
     }
 
     #[test]
     fn loop_once_to_minus_one() {
-        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!("once"), dither: "bayer".into() };
+        let s = GifSettings {
+            fps: None,
+            quality: "medium".into(),
+            r#loop: json!("once"),
+            dither: "bayer".into(),
+        };
         assert_eq!(s.ffmpeg_loop_arg(), -1);
     }
 
     #[test]
     fn loop_numeric_passthrough() {
-        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!(3), dither: "bayer".into() };
+        let s = GifSettings {
+            fps: None,
+            quality: "medium".into(),
+            r#loop: json!(3),
+            dither: "bayer".into(),
+        };
         assert_eq!(s.ffmpeg_loop_arg(), 3);
     }
 
     #[test]
     fn loop_negative_clamped_to_minus_one() {
-        let s = GifSettings { fps: None, quality: "medium".into(), r#loop: json!(-5), dither: "bayer".into() };
+        let s = GifSettings {
+            fps: None,
+            quality: "medium".into(),
+            r#loop: json!(-5),
+            dither: "bayer".into(),
+        };
         assert_eq!(s.ffmpeg_loop_arg(), -1);
     }
 
@@ -1054,16 +1172,11 @@ pub fn build_annotation_blur_complex(
             }
             // glass: pile a faint grey wash on past strength=0.6 so the
             // glass variant also redacts when pushed hard.
-            _ if strength > 0.6 => Some(format!(
-                "gray@{:.3}",
-                ((strength - 0.6) * 0.6) * opacity
-            )),
+            _ if strength > 0.6 => Some(format!("gray@{:.3}", ((strength - 0.6) * 0.6) * opacity)),
             _ => None,
         };
         if let Some(rgba) = tint_rgba {
-            tail.push_str(&format!(
-                ",drawbox=x=0:y=0:w=iw:h=ih:color={rgba}:t=fill"
-            ));
+            tail.push_str(&format!(",drawbox=x=0:y=0:w=iw:h=ih:color={rgba}:t=fill"));
         }
         tail.push_str(&blur_label);
         lines.push(tail);

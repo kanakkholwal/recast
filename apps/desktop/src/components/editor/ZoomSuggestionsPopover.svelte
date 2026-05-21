@@ -2,6 +2,7 @@
   import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
+    AUTO_ZOOM_SCALE,
     findFreeSlot as _findFreeSlot,
     planPlacement,
     type Interval,
@@ -108,7 +109,7 @@
     if (!bounds) return;
     const plan = planPlacement(currentOccupied(), bounds.start, bounds.end, sug.timestampUs / 1_000_000);
     if (!plan) return; // blocked — button should already be disabled
-    store.addZoomRegion(plan.start, plan.end, 1.8, centerOf(sug));
+    store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
     pending = pending.filter((_, i) => i !== idx);
     if (pending.length === 0) status = "empty";
   }
@@ -143,7 +144,7 @@
         skipped.push(sug);
         continue;
       }
-      store.addZoomRegion(plan.start, plan.end, 1.8, centerOf(sug));
+      store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
       occupied.push(plan);
       occupied.sort((a, b) => a.start - b.start);
     }
