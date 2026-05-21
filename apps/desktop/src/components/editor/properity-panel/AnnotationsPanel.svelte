@@ -33,7 +33,7 @@
   import { cn } from "@recast/ui/utils";
   import { onDestroy, onMount } from "svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
-  import SliderControl from "../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
   import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
   import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
   import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";

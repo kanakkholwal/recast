@@ -66,7 +66,7 @@ impl RecordingPipeline {
             //
             // We log loudly on the first drop of each session so the
             // problem is visible the moment it starts, then dampen to
-            // once per ~1 s of sustained dropping (every 60th drop at
+            // once per ~5 s of sustained dropping (every 300th drop at
             // 60 fps) to avoid flooding the log if the encoder stays
             // behind. The atomic `fetch_add` returns the PRE-increment
             // value, so we treat `0` as "this is the first drop".
@@ -80,8 +80,8 @@ impl RecordingPipeline {
                      at high resolution), disk I/O contention, or CPU pressure from \
                      another app."
                 );
-            } else if prev % 60 == 59 {
-                // prev=59 ⇒ this drop is the 60th; prev=119 ⇒ 120th; …
+            } else if prev % 300 == 299 {
+                // prev=299 ⇒ this drop is the 300th; prev=599 ⇒ 600th; …
                 log::warn!(
                     "recording pipeline: {} frames dropped total (queue capacity 180)",
                     prev + 1

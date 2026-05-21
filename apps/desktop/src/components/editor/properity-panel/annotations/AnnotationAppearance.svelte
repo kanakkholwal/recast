@@ -15,7 +15,7 @@
   import * as Popover from "@recast/ui/popover";
   import { cn } from "@recast/ui/utils";
   import InspectorHint from "../../InspectorHint.svelte";
-  import SliderControl from "../../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
 
   interface Props {
     store: EditorStore;

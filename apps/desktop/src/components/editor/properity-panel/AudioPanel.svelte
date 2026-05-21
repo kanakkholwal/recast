@@ -15,7 +15,7 @@
   import { onDestroy, onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly, scale } from "svelte/transition";
-  import SliderControl from "../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {

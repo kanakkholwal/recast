@@ -13,7 +13,7 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import SliderControl from "../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {

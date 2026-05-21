@@ -23,7 +23,7 @@
   import { fade, fly, scale } from "svelte/transition";
   import BezierEditor from "../_components/BezierEditor.svelte";
   import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
-  import SliderControl from "../_components/SliderControl.svelte";
+  import { SliderControl } from "@recast/ui/slider-control";
   import InspectorHint from "../InspectorHint.svelte";
   import PanelSection from "./PanelSection.svelte";
 

@@ -98,8 +98,12 @@ impl RecordingClock {
     /// recording start. Includes an in-progress pause (closed at "now"),
     /// so it's correct even when called after a stop-while-paused.
     pub fn pause_intervals(&self) -> Vec<(u64, u64)> {
-        let mut list = self.pause_intervals.lock().clone();
-        if let Some(since) = *self.paused_since.lock() {
+        let in_progress = *self.paused_since.lock();
+        let stored = self.pause_intervals.lock();
+        let mut list = Vec::with_capacity(stored.len() + in_progress.is_some() as usize);
+        list.extend_from_slice(&stored);
+        drop(stored);
+        if let Some(since) = in_progress {
             let start_us = since.duration_since(self.start).as_micros() as u64;
             let end_us = start_us + since.elapsed().as_micros() as u64;
             list.push((start_us, end_us));
