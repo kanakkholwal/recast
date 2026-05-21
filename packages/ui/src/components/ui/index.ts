@@ -4,6 +4,7 @@ export * as Button from "./button";
 export * as ButtonGroup from "./button-group";
 export * as Card from "./card";
 export * as Checkbox from "./checkbox";
+export * as Collapsible from "./collapsible";
 export * as ColorPicker from "./color-picker";
 export * as Command from "./command";
 export * as Dialog from "./dialog";

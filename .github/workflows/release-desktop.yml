@@ -312,3 +312,25 @@ jobs:
           tag_name: ${{ needs.create-release.outputs.tag_name }}
           draft: false
           prerelease: false
+
+  publish-homebrew-cask:
+    name: Publish Homebrew Cask
+    # Runs after the release is public so the DMGs are downloadable
+    # from the release URL the cask formula will reference. The script
+    # itself no-ops when HOMEBREW_TAP_TOKEN is unset, so this job is
+    # safe to keep enabled before the tap is bootstrapped — it just
+    # surfaces a `::notice::` and exits 0. See
+    # `scripts/release/HOMEBREW_TAP_SETUP.md`.
+    needs: [create-release, publish-release]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Update Homebrew Cask formula
+        env:
+          TAG: ${{ needs.create-release.outputs.tag_name }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: bash scripts/release/update-homebrew-cask.sh

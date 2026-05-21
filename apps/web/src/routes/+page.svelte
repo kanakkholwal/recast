@@ -1,36 +1,36 @@
 <script lang="ts">
 	import {
-		Container,
-		Footer,
-		Hero,
-		Reveal,
-		Section,
-		SectionHeader,
+	  Container,
+	  Footer,
+	  Hero,
+	  Reveal,
+	  Section,
+	  SectionHeader,
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import {
-		ArrowRight,
-		BarChart3,
-		Check,
-		Cloud,
-		Download,
-		Gamepad2,
-		Layout,
-		Link2,
-		Lock,
-		MonitorPlay,
-		MousePointer2,
-		Play,
-		Rocket,
-		Scissors,
-		Search,
-		Sparkles,
-		X,
-		Zap,
+	  ArrowRight,
+	  BarChart3,
+	  Check,
+	  Cloud,
+	  Download,
+	  Gamepad2,
+	  Layout,
+	  Link2,
+	  Lock,
+	  MonitorPlay,
+	  MousePointer2,
+	  Play,
+	  Rocket,
+	  Scissors,
+	  Search,
+	  Sparkles,
+	  X,
+	  Zap,
 	} from "lucide-svelte";
-	import { fly, slide } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";
+	import { fly, slide } from "svelte/transition";
 
 	// Step 3 — Share waitlist (Recast Cloud not shipped yet)
 	let email = $state("");
@@ -106,7 +106,7 @@
 </script>
 
 <svelte:head>
-	<title>Recast — Turn a screen capture into a demo that ships itself</title>
+	<title>Recast</title>
 	<meta
 		name="description"
 		content="Recast turns a raw screen capture into a polished, shareable demo — automatically. The recorder for solo founders who'd rather ship than open a timeline. macOS, Windows, Linux."
