@@ -1,7 +1,7 @@
 import { dev } from "$app/environment";
 import { haveIBeenPwned } from "better-auth/plugins";
 
-import { sendEmail } from "$lib/auth/email";
+import { sendTemplatedEmail } from "$lib/email";
 import { polarProductIdFor } from "$lib/billing/plans";
 import { tryGetPolarClient } from "$lib/billing/polar";
 import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
@@ -59,13 +59,13 @@ function createAuth() {
 			requireEmailVerification: false,
 			sendResetPassword: async ({ user, url }) => {
 				if (await isOnWaitlist(user.email)) return;
-				await sendEmail({
+				await sendTemplatedEmail({
 					to: user.email,
-					subject: "Reset your Recast password",
-					text:
-						`Hi${user.name ? ` ${user.name}` : ""},\n\n` +
-						`Click the link below to set a new password:\n${url}\n\n` +
-						`If you didn't ask for this, you can ignore the email.`,
+					template: "reset-password",
+					data: {
+						url,
+						firstName: user.name?.split(/\s+/)[0] ?? null,
+					},
 				});
 			},
 		},
@@ -138,12 +138,20 @@ function buildPlugins() {
 		expiresIn: 60 * 10,
 		sendMagicLink: async ({ email, url }) => {
 			if (await isOnWaitlist(email)) return;
-			await sendEmail({
+			// Look up the user's name so the template can address them.
+			const db = getDb();
+			const [row] = await db
+				.select({ name: userTable.name })
+				.from(userTable)
+				.where(eq(userTable.email, email))
+				.limit(1);
+			await sendTemplatedEmail({
 				to: email,
-				subject: "Your Recast sign-in link",
-				text:
-					`Click the link below to sign in to Recast:\n\n${url}\n\n` +
-					`The link expires in 10 minutes. If you didn't ask for it, ignore this email.`,
+				template: "magic-link",
+				data: {
+					url,
+					firstName: row?.name?.split(/\s+/)[0] ?? null,
+				},
 			});
 		},
 	});
@@ -230,17 +238,15 @@ function buildPlugins() {
 		sendInvitationEmail: async ({ email, organization: org, inviter, id }) => {
 			const base = serverEnv().BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL;
 			const acceptUrl = `${base.replace(/\/$/, "")}/accept-invitation?id=${id}`;
-			const inviterName = inviter.user.name || inviter.user.email;
-			await sendEmail({
+			await sendTemplatedEmail({
 				to: email,
-				subject: `${inviterName} invited you to ${org.name} on Recast`,
-				text:
-					`${inviterName} (${inviter.user.email}) invited you to join the\n` +
-					`team "${org.name}" on Recast.\n\n` +
-					`Open the link below to accept (you'll need to sign in with this\n` +
-					`email address):\n\n${acceptUrl}\n\n` +
-					`If you didn't expect this invite, you can ignore the email — it\n` +
-					`expires in 7 days.`,
+				template: "team-invitation",
+				data: {
+					url: acceptUrl,
+					teamName: org.name,
+					inviterName: inviter.user.name || inviter.user.email,
+					inviterEmail: inviter.user.email,
+				},
 			});
 		},
 	});

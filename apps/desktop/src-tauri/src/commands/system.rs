@@ -245,7 +245,7 @@ fn get_audio_devices_linux() -> Vec<AudioDeviceInfo> {
     };
     let text = String::from_utf8_lossy(&output.stdout);
     let mut devices = Vec::new();
-    for (idx, line) in text.lines().enumerate() {
+    for line in text.lines() {
         // Format: `<id>\t<name>\t<driver>\t<sample_spec>\t<state>`
         let mut cols = line.split('\t');
         let _ = cols.next();
@@ -253,10 +253,14 @@ fn get_audio_devices_linux() -> Vec<AudioDeviceInfo> {
         if name.ends_with(".monitor") {
             continue;
         }
+        // First *surviving* (non-monitor) source becomes the default. Using
+        // the pre-filter enumerate index here would let a leading `.monitor`
+        // row eat the only default slot.
+        let is_default = devices.is_empty();
         devices.push(AudioDeviceInfo {
             id: name.to_string(),
             name: name.to_string(),
-            is_default: idx == 0,
+            is_default,
         });
     }
     devices

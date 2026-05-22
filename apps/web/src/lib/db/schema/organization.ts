@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
 import { user } from "./auth";
 
 /**
@@ -42,6 +42,10 @@ export const member = pgTable(
 	(t) => [
 		index("member_org_idx").on(t.organizationId),
 		index("member_user_idx").on(t.userId),
+		// One row per (org, user) pair. Prevents duplicate memberships from
+		// botched invite-accept retries or concurrent addMember races — both
+		// the seat-count cap and role updates require this to be unambiguous.
+		unique("member_organization_user_key").on(t.organizationId, t.userId),
 	],
 );
 

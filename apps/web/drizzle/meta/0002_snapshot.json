@@ -274,7 +274,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "session_active_org_idx": {
+          "name": "session_active_org_idx",
+          "columns": [
+            {
+              "expression": "active_organization_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {
         "session_user_id_user_id_fk": {
           "name": "session_user_id_user_id_fk",
@@ -287,6 +303,19 @@
             "id"
           ],
           "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "session_active_organization_id_organization_id_fk": {
+          "name": "session_active_organization_id_organization_id_fk",
+          "tableFrom": "session",
+          "tableTo": "organization",
+          "columnsFrom": [
+            "active_organization_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
           "onUpdate": "no action"
         }
       },
@@ -776,7 +805,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "member_organization_user_key": {
+          "name": "member_organization_user_key",
+          "nullsNotDistinct": false,
+          "columns": [
+            "organization_id",
+            "user_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false
