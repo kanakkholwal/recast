@@ -64,6 +64,10 @@
       "svelte": "./src/components/ui/label/index.ts",
       "default": "./src/components/ui/label/index.ts"
     },
+    "./nav-progress": {
+      "svelte": "./src/components/ui/nav-progress/index.ts",
+      "default": "./src/components/ui/nav-progress/index.ts"
+    },
     "./radio-group": {
       "svelte": "./src/components/ui/radio-group/index.ts",
       "default": "./src/components/ui/radio-group/index.ts"

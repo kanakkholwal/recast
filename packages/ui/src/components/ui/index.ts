@@ -16,6 +16,7 @@ export * as Input from "./input";
 export * as InputGroup from "./input-group";
 export * as Kbd from "./kbd";
 export * as Label from "./label";
+export * as NavProgress from "./nav-progress";
 export * as Popover from "./popover";
 export * as RadioGroup from "./radio-group";
 export * as Reveal from "./reveal";

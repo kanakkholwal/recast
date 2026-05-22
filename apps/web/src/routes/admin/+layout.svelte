@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from "$app/state";
+	import { NavProgress } from "@recast/ui/nav-progress";
 	import { cn } from "@recast/ui/utils";
 	import {
 		ArrowLeft,
@@ -34,6 +35,9 @@
 	<title>Admin — Recast</title>
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
+
+<!-- Top-of-page navigation indicator, shared with the desktop app. -->
+<NavProgress />
 
 <div class="min-h-screen bg-background text-foreground">
 	<!-- Impersonation indicator lives in the root layout (ImpersonationBanner)

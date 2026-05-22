@@ -25,6 +25,12 @@
 	let inviteEmail = $state("");
 	let inviteRole = $state<"member" | "admin">("member");
 
+	// Owner-editable profile fields. Seeded once from server data so the
+	// inputs don't snap back during form submission.
+	let teamName = $state(untrack(() => data.org.name));
+	let teamSlug = $state(untrack(() => data.org.slug));
+	let teamLogo = $state(untrack(() => data.org.logo ?? ""));
+
 	const canManage = $derived(
 		data.viewer.role === "owner" || data.viewer.role === "admin",
 	);
@@ -71,6 +77,88 @@
 		{/if}
 	</div>
 </header>
+
+{#if isOwner}
+	<section class="glass-card mb-6 rounded-xl p-5">
+		<header class="mb-4 flex items-center gap-2.5">
+			<span class="glass-chip grid size-8 place-items-center rounded-lg text-primary">
+				<Wrench class="size-4" />
+			</span>
+			<div>
+				<h2 class="text-sm font-semibold tracking-tight">Team profile</h2>
+				<p class="text-[11px] text-muted-foreground">
+					Only the owner sees this. Plan changes happen in admin tooling.
+				</p>
+			</div>
+		</header>
+
+		<form
+			method="POST"
+			action="?/updateProfile"
+			class="grid gap-3 sm:grid-cols-[88px_1fr]"
+			use:enhance={() =>
+				async ({ result, update }) => {
+					if (result.type === "success") toast.success("Team updated.");
+					else if (result.type === "failure")
+						toast.error(String(result.data?.error));
+					await update();
+				}}
+		>
+			<div class="row-span-3 flex justify-center sm:justify-start">
+				<div class="relative grid size-20 place-items-center overflow-hidden rounded-2xl bg-foreground/6 text-foreground/70 ring-1 ring-border/40">
+					{#if teamLogo}
+						<img
+							src={teamLogo}
+							alt="Team logo preview"
+							class="size-full object-cover"
+							onerror={(e) => {
+								(e.currentTarget as HTMLImageElement).style.display = "none";
+							}}
+						/>
+					{:else}
+						<Image class="size-6 opacity-50" />
+					{/if}
+				</div>
+			</div>
+
+			<Label class="block">
+				<span class="mb-1 block text-xs font-semibold text-foreground/85">Name</span>
+				<Input bind:value={teamName} name="name" class="h-9" required />
+			</Label>
+
+			<Label class="block">
+				<span class="mb-1 block text-xs font-semibold text-foreground/85">Slug</span>
+				<Input
+					bind:value={teamSlug}
+					name="slug"
+					class="h-9 font-mono lowercase"
+					pattern="[a-z0-9][a-z0-9-]+[a-z0-9]"
+					required
+				/>
+				<span class="mt-1 block text-[10px] text-muted-foreground">
+					Used in URLs. Lowercase letters, numbers, hyphens. Must be unique.
+				</span>
+			</Label>
+
+			<Label class="block">
+				<span class="mb-1 block text-xs font-semibold text-foreground/85">
+					Logo URL <span class="font-normal text-muted-foreground">(optional)</span>
+				</span>
+				<Input
+					bind:value={teamLogo}
+					name="logo"
+					type="url"
+					placeholder="https://…"
+					class="h-9"
+				/>
+			</Label>
+
+			<div class="sm:col-start-2">
+				<Button type="submit" size="sm">Save changes</Button>
+			</div>
+		</form>
+	</section>
+{/if}
 
 <div class="grid gap-6 lg:grid-cols-3">
 	<!-- Members -->
