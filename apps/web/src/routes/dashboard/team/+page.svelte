@@ -196,11 +196,21 @@
 									onValueChange={(v) => {
 										const form = document.activeElement?.closest("form");
 										if (!form) return;
-										const input = document.createElement("input");
-										input.type = "hidden";
-										input.name = "role";
+										// Reuse the existing hidden input if there is one, append
+										// a fresh one otherwise. Two role inputs would serialize
+										// the stale first value because `FormData.get` returns the
+										// earliest entry — which is exactly what the user just
+										// changed away from.
+										let input = form.querySelector<HTMLInputElement>(
+											'input[type="hidden"][name="role"]',
+										);
+										if (!input) {
+											input = document.createElement("input");
+											input.type = "hidden";
+											input.name = "role";
+											form.appendChild(input);
+										}
 										input.value = String(v);
-										form.appendChild(input);
 										(form as HTMLFormElement).requestSubmit();
 									}}
 								>

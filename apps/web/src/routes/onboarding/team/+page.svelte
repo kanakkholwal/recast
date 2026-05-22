@@ -26,39 +26,53 @@
 	);
 	let creating = $state(false);
 	let acceptingId = $state<string | null>(null);
+	/** Either action in flight — prevents create + accept racing each other. */
+	const busy = $derived(creating || acceptingId !== null);
 
 	async function createTeam(e: SubmitEvent) {
 		e.preventDefault();
-		if (!teamName.trim() || creating) return;
+		if (!teamName.trim() || busy) return;
 		creating = true;
 		const slug = `${teamName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Math.random().toString(36).slice(2, 8)}`;
-		const { error } = await authClient.organization.create({
-			name: teamName.trim(),
-			slug,
-		});
-		creating = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't create the team.");
-			return;
+		try {
+			const { error } = await authClient.organization.create({
+				name: teamName.trim(),
+				slug,
+			});
+			if (error) {
+				toast.error(error.message ?? "Couldn't create the team.");
+				return;
+			}
+			toast.success(`Welcome to ${teamName}.`);
+			await goto("/dashboard");
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't create the team.");
+		} finally {
+			// Always release — a thrown rejection (network drop, abort) must
+			// not leave the button permanently disabled.
+			creating = false;
 		}
-		toast.success(`Welcome to ${teamName}.`);
-		await goto("/dashboard");
 	}
 
 	async function acceptInvite(id: string) {
-		if (acceptingId) return;
+		if (busy) return;
 		acceptingId = id;
-		const { error } = await authClient.organization.acceptInvitation({
-			invitationId: id,
-		});
-		acceptingId = null;
-		if (error) {
-			toast.error(error.message ?? "Couldn't accept the invitation.");
-			return;
+		try {
+			const { error } = await authClient.organization.acceptInvitation({
+				invitationId: id,
+			});
+			if (error) {
+				toast.error(error.message ?? "Couldn't accept the invitation.");
+				return;
+			}
+			toast.success("Invitation accepted.");
+			await invalidateAll();
+			await goto("/dashboard");
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't accept the invitation.");
+		} finally {
+			acceptingId = null;
 		}
-		toast.success("Invitation accepted.");
-		await invalidateAll();
-		await goto("/dashboard");
 	}
 </script>
 

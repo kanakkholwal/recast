@@ -11,6 +11,18 @@ import {
 } from "$lib/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
 
+/** Confirm the org id from the URL is still a real row before any mutation
+ *  + audit-log writes. A stale tab submitting against a deleted team must not
+ *  silently succeed and leave a phantom entry behind. */
+async function ensureTeamExists(id: string): Promise<boolean> {
+	const [row] = await getDb()
+		.select({ id: organizationTable.id })
+		.from(organizationTable)
+		.where(eq(organizationTable.id, id))
+		.limit(1);
+	return Boolean(row);
+}
+
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const db = getDb();
@@ -53,6 +65,7 @@ export const actions: Actions = {
 		if (!["free", "pro", "enterprise"].includes(plan)) {
 			return fail(400, { error: "Invalid plan" });
 		}
+		if (!(await ensureTeamExists(id))) error(404, "Team not found");
 		await getDb()
 			.update(organizationTable)
 			.set({ plan })
@@ -72,6 +85,7 @@ export const actions: Actions = {
 		const id = event.params.id;
 		const name = String(fd.get("name") ?? "").trim();
 		if (!name) return fail(400, { error: "Name required" });
+		if (!(await ensureTeamExists(id))) error(404, "Team not found");
 		await getDb()
 			.update(organizationTable)
 			.set({ name })

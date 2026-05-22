@@ -40,6 +40,14 @@ async function loadActiveOrg(headers: Headers) {
 	return { userId: session.user.id, orgId, myRole: me.role };
 }
 
+/** Manager-only gate. `loadActiveOrg` only proves membership; mutating
+ *  actions also need owner/admin role. Better Auth's `auth.api.*` enforces
+ *  this internally, but checking here lets us return a clean SvelteKit
+ *  form failure instead of a thrown APIError. */
+function isManager(role: string): boolean {
+	return role === "owner" || role === "admin";
+}
+
 export const load: PageServerLoad = async ({ request }) => {
 	const { userId, orgId, myRole } = await loadActiveOrg(request.headers);
 	const db = getDb();
@@ -130,7 +138,8 @@ export const actions: Actions = {
 	},
 
 	invite: async ({ request }) => {
-		const { orgId } = await loadActiveOrg(request.headers);
+		const { orgId, myRole } = await loadActiveOrg(request.headers);
+		if (!isManager(myRole)) return fail(403, { error: "Forbidden" });
 		const fd = await request.formData();
 		const email = String(fd.get("email") ?? "").trim().toLowerCase();
 		const role = String(fd.get("role") ?? "member") as "member" | "admin";
@@ -150,7 +159,8 @@ export const actions: Actions = {
 	},
 
 	cancelInvite: async ({ request }) => {
-		await loadActiveOrg(request.headers);
+		const { myRole } = await loadActiveOrg(request.headers);
+		if (!isManager(myRole)) return fail(403, { error: "Forbidden" });
 		const fd = await request.formData();
 		const id = String(fd.get("id") ?? "");
 		if (!id) return fail(400, { error: "Missing invite id" });
@@ -162,7 +172,8 @@ export const actions: Actions = {
 	},
 
 	updateRole: async ({ request }) => {
-		const { orgId } = await loadActiveOrg(request.headers);
+		const { orgId, myRole } = await loadActiveOrg(request.headers);
+		if (!isManager(myRole)) return fail(403, { error: "Forbidden" });
 		const fd = await request.formData();
 		const memberId = String(fd.get("memberId") ?? "");
 		const role = String(fd.get("role") ?? "") as "owner" | "admin" | "member";
@@ -177,7 +188,8 @@ export const actions: Actions = {
 	},
 
 	removeMember: async ({ request }) => {
-		const { orgId } = await loadActiveOrg(request.headers);
+		const { orgId, myRole } = await loadActiveOrg(request.headers);
+		if (!isManager(myRole)) return fail(403, { error: "Forbidden" });
 		const fd = await request.formData();
 		const memberIdOrEmail = String(fd.get("memberIdOrEmail") ?? "");
 		if (!memberIdOrEmail) return fail(400, { error: "Missing member" });

@@ -38,16 +38,25 @@
 	async function stop() {
 		if (stopping) return;
 		stopping = true;
-		const { error } = await authClient.admin.stopImpersonating();
-		stopping = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't stop impersonating.");
-			return;
+		// Wrapped in try/finally so a thrown rejection (network drop, aborted
+		// fetch) can't strand the button in a permanently-disabled state.
+		try {
+			const { error } = await authClient.admin.stopImpersonating();
+			if (error) {
+				toast.error(error.message ?? "Couldn't stop impersonating.");
+				return;
+			}
+			// Hard reload so every server load re-runs against the restored
+			// admin cookie. SvelteKit's `invalidateAll()` would leave the same
+			// module instances around and we want a clean slate.
+			window.location.href = "/admin";
+		} catch (err) {
+			toast.error(
+				(err as Error)?.message ?? "Couldn't stop impersonating.",
+			);
+		} finally {
+			stopping = false;
 		}
-		// Hard reload so every server load re-runs against the restored admin
-		// cookie. SvelteKit's `invalidateAll()` would leave the same module
-		// instances around and we want a clean slate.
-		window.location.href = "/admin";
 	}
 </script>
 
