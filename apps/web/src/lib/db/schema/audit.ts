@@ -44,6 +44,8 @@ export const AUDIT_ACTIONS = [
 	"user.stop_impersonate",
 	"session.revoke",
 	"waitlist.approve",
+	"team.update_plan",
+	"team.rename",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

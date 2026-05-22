@@ -194,10 +194,72 @@ pub fn get_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
     {
         get_audio_devices_windows()
     }
-    #[cfg(not(windows))]
+    #[cfg(target_os = "macos")]
+    {
+        Ok(get_audio_devices_macos())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(get_audio_devices_linux())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
     {
         Ok(Vec::new())
     }
+}
+
+/// macOS audio input devices via the cached AVFoundation listing in
+/// `ffmpeg.rs`. We reuse the already-collected stderr (one probe per
+/// process) instead of spawning FFmpeg again — see
+/// `cached_avfoundation_devices` for the caching rationale.
+///
+/// AVFoundation lacks a "system default" concept comparable to WASAPI's
+/// `eConsole` endpoint, so `is_default` flags the first device — which
+/// is what FFmpeg picks when `-i :0` is passed without an explicit index.
+#[cfg(target_os = "macos")]
+fn get_audio_devices_macos() -> Vec<AudioDeviceInfo> {
+    let stderr = crate::ffmpeg::cached_avfoundation_devices();
+    parse_avfoundation_section(stderr, AvfSection::Audio)
+        .into_iter()
+        .enumerate()
+        .map(|(idx, (id, name))| AudioDeviceInfo {
+            id,
+            name,
+            is_default: idx == 0,
+        })
+        .collect()
+}
+
+/// Linux audio input devices via `pactl list short sources`. Returns
+/// PulseAudio source names (e.g. `alsa_input.pci-0000_00_1f.3.analog-stereo`)
+/// as IDs. `.monitor` sources are filtered out — those are loopback
+/// sinks, not microphones, and would confuse a mic picker.
+#[cfg(target_os = "linux")]
+fn get_audio_devices_linux() -> Vec<AudioDeviceInfo> {
+    let output = match std::process::Command::new("pactl")
+        .args(["list", "short", "sources"])
+        .output()
+    {
+        Ok(out) if out.status.success() => out,
+        _ => return Vec::new(),
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut devices = Vec::new();
+    for (idx, line) in text.lines().enumerate() {
+        // Format: `<id>\t<name>\t<driver>\t<sample_spec>\t<state>`
+        let mut cols = line.split('\t');
+        let _ = cols.next();
+        let Some(name) = cols.next() else { continue };
+        if name.ends_with(".monitor") {
+            continue;
+        }
+        devices.push(AudioDeviceInfo {
+            id: name.to_string(),
+            name: name.to_string(),
+            is_default: idx == 0,
+        });
+    }
+    devices
 }
 
 #[cfg(windows)]
@@ -342,16 +404,37 @@ pub fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), 
 /// List available camera/video capture devices.
 #[tauri::command]
 pub async fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
-    // dshow device enumeration spawns ffmpeg and can take a few hundred ms
-    // (or several seconds if a webcam is slow to respond). Tauri runs sync
-    // commands on the main thread, which froze the UI; move to a worker.
+    // Device enumeration can take a few hundred ms (or several seconds if a
+    // webcam is slow to respond on Windows dshow). Tauri runs sync commands
+    // on the main thread, which froze the UI; move to a worker.
     tauri::async_runtime::spawn_blocking(get_camera_devices_blocking)
         .await
         .map_err(|e| format!("get_camera_devices join error: {e}"))?
 }
 
 fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
-    // Use ffmpeg to list DirectShow video devices on Windows.
+    #[cfg(windows)]
+    {
+        get_camera_devices_windows()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        Ok(get_camera_devices_macos())
+    }
+    #[cfg(target_os = "linux")]
+    {
+        Ok(get_camera_devices_linux())
+    }
+    #[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
+    {
+        Ok(Vec::new())
+    }
+}
+
+#[cfg(windows)]
+fn get_camera_devices_windows() -> Result<Vec<CameraDeviceInfo>, String> {
+    // ffmpeg DirectShow listing is the only way to enumerate dshow names
+    // that match what the capture pipeline opens.
     let mut command = Command::new(crate::ffmpeg::ffmpeg_path());
     command.args([
         "-hide_banner",
@@ -372,6 +455,165 @@ fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
     Ok(parse_camera_devices(&stderr))
 }
 
+/// macOS cameras from the cached AVFoundation listing. The AVFoundation
+/// video section includes screen-capture pseudo-devices ("Capture screen 0",
+/// "Capture screen 1") that aren't real cameras — filter those so the UI
+/// picker doesn't surface them.
+#[cfg(target_os = "macos")]
+fn get_camera_devices_macos() -> Vec<CameraDeviceInfo> {
+    let stderr = crate::ffmpeg::cached_avfoundation_devices();
+    parse_avfoundation_section(stderr, AvfSection::Video)
+        .into_iter()
+        .filter(|(_, name)| !name.to_ascii_lowercase().starts_with("capture screen"))
+        .map(|(id, name)| {
+            let (status, status_message) = classify_camera_name(&name);
+            CameraDeviceInfo {
+                id,
+                name,
+                status,
+                status_message,
+            }
+        })
+        .collect()
+}
+
+/// Linux cameras via /dev/video* scan + sysfs name lookup. Friendly names
+/// live in `/sys/class/video4linux/videoN/name`; the device node path is
+/// what the V4L2 input expects, so we return that as the ID.
+///
+/// V4L2 exposes capture *and* output devices under the same prefix. We
+/// only want capture devices (cameras); each video node's `device_caps`
+/// in sysfs has the V4L2_CAP_VIDEO_CAPTURE bit (0x00000001) set. Read
+/// that bit and skip nodes that don't have it.
+#[cfg(target_os = "linux")]
+fn get_camera_devices_linux() -> Vec<CameraDeviceInfo> {
+    let entries = match std::fs::read_dir("/dev") {
+        Ok(r) => r,
+        Err(_) => return Vec::new(),
+    };
+    let mut nodes: Vec<std::path::PathBuf> = entries
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !name.starts_with("video") {
+                return None;
+            }
+            // Only numeric suffixes — skip "video-output" etc. that some drivers expose.
+            if !name[5..].chars().all(|c| c.is_ascii_digit()) {
+                return None;
+            }
+            Some(entry.path())
+        })
+        .collect();
+    // Sort by node number so /dev/video0 comes first, /dev/video10 after /dev/video2.
+    nodes.sort_by_key(|p| {
+        p.file_name()
+            .and_then(|s| s.to_str())
+            .and_then(|s| s[5..].parse::<u32>().ok())
+            .unwrap_or(u32::MAX)
+    });
+
+    let mut devices = Vec::new();
+    for node in nodes {
+        let Some(file_name) = node.file_name().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // Skip non-capture devices (V4L2 output, metadata, etc.) — we only
+        // want webcams. The capture-capability bit is V4L2_CAP_VIDEO_CAPTURE.
+        let caps_path = format!("/sys/class/video4linux/{file_name}/device_caps");
+        if let Ok(caps_text) = std::fs::read_to_string(&caps_path) {
+            let caps =
+                u32::from_str_radix(caps_text.trim().trim_start_matches("0x"), 16).unwrap_or(0);
+            if caps & 0x0000_0001 == 0 {
+                continue;
+            }
+        }
+        let name = std::fs::read_to_string(format!("/sys/class/video4linux/{file_name}/name"))
+            .map(|s| s.trim().to_string())
+            .ok()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| file_name.to_string());
+        let id = node.to_string_lossy().to_string();
+        let (status, status_message) = classify_camera_name(&name);
+        devices.push(CameraDeviceInfo {
+            id,
+            name,
+            status,
+            status_message,
+        });
+    }
+    devices
+}
+
+/// AVFoundation listing sections. The `-list_devices true` probe prints
+/// two — video first, then audio — each marked with a header line we
+/// match on.
+#[cfg(target_os = "macos")]
+#[derive(Clone, Copy)]
+enum AvfSection {
+    Video,
+    Audio,
+}
+
+/// Parse `cached_avfoundation_devices`'s stderr for one section.
+///
+/// AVFoundation lines look like:
+/// ```text
+/// [AVFoundation indev @ 0x…] AVFoundation video devices:
+/// [AVFoundation indev @ 0x…] [0] FaceTime HD Camera
+/// [AVFoundation indev @ 0x…] [1] Capture screen 0
+/// [AVFoundation indev @ 0x…] AVFoundation audio devices:
+/// [AVFoundation indev @ 0x…] [0] MacBook Air Microphone
+/// ```
+///
+/// Returns `(id, name)` pairs where `id` is the numeric AVFoundation index
+/// (matches what the capture pipeline passes to FFmpeg as `-i N:M`) and
+/// `name` is the user-readable string after the index.
+#[cfg(target_os = "macos")]
+fn parse_avfoundation_section(stderr: &str, section: AvfSection) -> Vec<(String, String)> {
+    let (in_marker, other_marker) = match section {
+        AvfSection::Video => ("AVFoundation video devices", "AVFoundation audio devices"),
+        AvfSection::Audio => ("AVFoundation audio devices", "AVFoundation video devices"),
+    };
+    let mut in_section = false;
+    let mut out = Vec::new();
+    for line in stderr.lines() {
+        if line.contains(in_marker) {
+            in_section = true;
+            continue;
+        }
+        if line.contains(other_marker) {
+            in_section = false;
+            continue;
+        }
+        if !in_section {
+            continue;
+        }
+        // Each device line has `[N]` (the numeric index in square brackets)
+        // somewhere after the `[AVFoundation indev @ …]` prefix. Find the
+        // *last* `[` to skip the prefix.
+        let Some(idx_open) = line.rfind('[') else {
+            continue;
+        };
+        let Some(idx_close_rel) = line[idx_open + 1..].find(']') else {
+            continue;
+        };
+        let inside = &line[idx_open + 1..idx_open + 1 + idx_close_rel];
+        // Must be purely numeric — skip the prefix `[AVFoundation indev @ …]`.
+        if inside.is_empty() || !inside.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        let name = line[idx_open + 1 + idx_close_rel + 1..].trim().to_string();
+        if name.is_empty() {
+            continue;
+        }
+        out.push((inside.to_string(), name));
+    }
+    out
+}
+
+#[cfg(any(windows, test))]
 fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
     let mut devices: Vec<CameraDeviceInfo> = Vec::new();
     let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
@@ -437,8 +679,16 @@ pub async fn validate_camera_source(device_id: String) -> Result<CameraValidatio
             });
         };
 
+        // Deep liveliness probe is Windows-only — it spawns FFmpeg with
+        // `-f dshow` against the device ID. On macOS/Linux we trust the
+        // enumeration's classification (which already flags known
+        // virtual-camera quirks) since AVFoundation / V4L2 don't have a
+        // cheap equivalent to dshow's "open and grab one frame" check.
+        #[cfg(windows)]
         let (status, status_message) = probe_camera_device_health(&device.id)
             .unwrap_or_else(|| (device.status.clone(), device.status_message.clone()));
+        #[cfg(not(windows))]
+        let (status, status_message) = (device.status.clone(), device.status_message.clone());
 
         Ok(CameraValidationResult {
             id: device.id,
@@ -472,6 +722,7 @@ fn classify_camera_name(name: &str) -> (String, Option<String>) {
     ("ready".into(), None)
 }
 
+#[cfg(windows)]
 fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>)> {
     let input = if device_id.starts_with("video=") {
         device_id.to_string()

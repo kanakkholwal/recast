@@ -9,6 +9,7 @@
 	import { useSidebar } from "@recast/ui/sidebar";
 	import { mode, toggleMode } from "@recast/ui/theme";
 	import { cn } from "@recast/ui/utils";
+	import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
 	import {
 		ArrowUpRight,
 		BarChart3,
@@ -21,6 +22,7 @@
 		Shield,
 		Sun,
 		User,
+		Users,
 	} from "@lucide/svelte";
 	import type { ComponentProps } from "svelte";
 	import { cubicOut } from "svelte/easing";
@@ -40,8 +42,26 @@
 		{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
 		{ title: "Recasts", href: "/dashboard/recasts", icon: Film, exact: false },
 		{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, exact: false },
+		{ title: "Team", href: "/dashboard/team", icon: Users, exact: false },
 		{ title: "Settings", href: "/dashboard/settings", icon: Settings, exact: false },
 	];
+
+	// /dashboard/+layout.server.ts surfaces these. Falls back to safe defaults
+	// if rendered outside that load (e.g. during route transition).
+	type Membership = {
+		organizationId: string;
+		name: string;
+		role: string;
+		plan: string;
+	};
+	type ActiveOrg = { id: string; name: string; role: string; plan: string };
+	const memberships = $derived(
+		((page.data as { memberships?: Membership[] }).memberships ?? []) as Membership[],
+	);
+	const activeOrg = $derived(
+		((page.data as { activeOrganization?: ActiveOrg }).activeOrganization ??
+			null) as ActiveOrg | null,
+	);
 
 	function isActive(href: string, exact: boolean) {
 		return exact ? currentPath === href : currentPath.startsWith(href);
@@ -90,6 +110,20 @@
 				</span>
 			{/if}
 		</a>
+
+		{#if activeOrg}
+			<div class="mt-1 border-t border-border/30 pt-2">
+				<OrgSwitcher
+					memberships={memberships.map((m) => ({
+						organizationId: m.organizationId,
+						name: m.name,
+						role: m.role,
+						plan: m.plan,
+					}))}
+					active={activeOrg}
+				/>
+			</div>
+		{/if}
 	</Sidebar.Header>
 
 	<Sidebar.Content class="scrollbar-hide">

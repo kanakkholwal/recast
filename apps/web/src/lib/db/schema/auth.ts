@@ -48,6 +48,12 @@ export const session = pgTable("session", {
 	 * restores the original admin session.
 	 */
 	impersonatedBy: text("impersonated_by"),
+	/**
+	 * Active organization for this session — managed by Better Auth's
+	 * `organization` plugin via `setActiveOrganization`. Dashboard data
+	 * scopes to this id.
+	 */
+	activeOrganizationId: text("active_organization_id"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

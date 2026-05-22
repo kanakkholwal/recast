@@ -42,35 +42,131 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ## [Unreleased]
 
+## [0.1.8] — 2026-05-22
+
 ### Added
-- Linux screen capture: a Wayland-native pipeline using `xdg-desktop-portal`
-  + PipeWire, and a parallel X11 native capture path. Linux recording docs
-  refreshed alongside the new backends.
-- Recording profiles: per-project capture profiles with dynamic capability
-  combinations, device awareness, and a profile-management UI in the
-  desktop app.
-- Camera overlay in the editor: composite the recorded camera track over
-  the screen video with position presets, size, shape, and mirror toggles.
-  Gated behind a `CAMERA_OVERLAY_UI_ENABLED` feature flag.
-- Cursor: mouse-press events feed into the recorded timeline and a refreshed
-  set of cursor styles ships with the editor.
-- Native macOS-style page transitions via the View Transitions API, with a
-  smoother titlebar handoff.
-- Web download page redesigned with new icons and a features grid.
+- Pause and resume during recording with controls in the recording panel and
+  a clearer status indicator, so a notification or knock at the door no longer
+  forces a restart.
+- Auto-updater and "What's new" notifications in the bottom-right corner of
+  the editor, so release prompts and changelog nudges stay out of the way of
+  the timeline.
+- Silence detection (phase 1, opt-in under Settings → Experimental): finds
+  dead-air segments by combining waveform analysis with cursor idleness, then
+  offers one-click cuts you can review or dismiss.
+- Dashboard route with a local-storage-backed data layer for recordings and
+  exports, plus first analytics hooks.
+- Web auth foundation: magic-link sign-in and password-reset flows backed by
+  Better Auth + Drizzle, plus a public waitlist endpoint for Recast Cloud.
+- macOS and Linux platform modules for audio and camera capture, paving the
+  way for full feature parity with the Windows build.
+- Homebrew Cask publishing workflow and matching install instructions for
+  macOS alongside the existing `.dmg`, `.deb`, `.AppImage`, and `.exe`
+  artifacts.
 
 ### Changed
-- Command palette (⌘K) extracted into a global `CommandPaletteHost` mounted
-  at the root layout, so the shortcut and dialog work on every route —
-  including the editor — not only on routes that render the sidebar.
+- Smart-zoom suggestions: new scoring model that clusters clicks, weighs
+  dwell time, and dedupes same-spot triggers, so auto-applied focus regions
+  land on the moments that actually matter instead of every mouse-down.
+- Toaster restyled to share visual language with the bottom-right update
+  notifications: same card geometry, same close affordance, same icon-badge
+  variants. Sits in `bottom-right` everywhere instead of `top-center`.
+- Marketing site: hero copy rewritten to honestly describe the timeline
+  ("the lightest editor you've used") instead of pretending it doesn't
+  exist; new editor-tour rail showcases the auto and manual tools side by
+  side. Features, gamers, pricing pages refreshed too.
+- Recordings library cards (web + desktop) picked up techy framing —
+  dot-grid placeholders, primary glow, CRT-style corner brackets — so an
+  empty thumbnail reads as "ready for a frame" instead of an empty hole.
+
+### Fixed
+- Window-freeze regression on recording start: every FFmpeg/ffprobe spawn
+  site now uses `configure_silent_command` on Windows so the console flash
+  no longer steals focus and reads as "the whole window is frozen".
+- Closing the recorder window while a recording is in flight no longer
+  drops the capture; the app prompts and resolves the save first.
+
+## [0.1.7] — 2026-05-16
+
+### Added
+- Bulk-select mode for recordings and exports, with a floating action bar
+  for delete and a single-tap "select all".
+- Morph animations when toggling between grid and list views on the
+  recordings and exports pages — same items, no jarring re-flow.
+- One-shot setup scripts (`setup.ps1` / `setup.sh`) so first-time
+  contributors can bring the whole monorepo up with a single command on
+  Windows or macOS/Linux.
+
+### Changed
+- Export filenames now suffix duplicates with `(1)`, `(2)`, ... via a
+  shared `unique_path` helper, so re-exporting the same recording keeps
+  both files instead of silently overwriting the previous one.
+- Quick-start docs screenshot refreshed to show region selection.
+
+### Fixed
+- Hero CTA region: removed an unused background layer that was painting a
+  stray gradient behind the headline on some viewport widths.
+
+## [0.1.6] — 2026-05-10
+
+### Added
+- Version-sync release scripts: every build manifest validates against the
+  release tag and fails fast if a `0.0.0-dev` placeholder slips through.
+- GitHub issue templates for bug reports, feature requests, and
+  performance issues.
+
+### Changed
+- Dialog and Sheet components default `preventScroll={false}` so a closed
+  dialog can no longer leak `pointer-events: none` onto the document body
+  inside Tauri — the root cause of the earlier "the whole window is dead"
+  reports.
+
+### Fixed
+- Resolved an intermittent pointer-blockage bug in the Dialog component
+  that froze interactions after closing a modal.
+- Version placeholders unified across files so dev and release builds no
+  longer disagree about who they are.
+
+## [0.1.5] — 2026-05-09
+
+### Added
+- Linux screen capture: a Wayland-native pipeline using
+  `xdg-desktop-portal` + PipeWire, and a parallel X11 native capture
+  path. Linux recording docs refreshed alongside the new backends.
+- Recording profiles: per-launch capture profiles with dynamic capability
+  combinations, device awareness, and a management UI in Settings.
+- Command palette (⌘K) extracted into a global `CommandPaletteHost`
+  mounted at the root layout, so the shortcut and dialog work on every
+  route — including the editor — not only on routes that render the
+  sidebar.
+- Web download page redesigned with new platform icons and a feature
+  grid.
+
+### Changed
 - Properties panel: shared `PanelSection` primitive replaces ~30 ad-hoc
   section headers, drops repeated panel-name titles, normalises gap to
   `gap-4`, and standardises toggle / reset placement across Background,
   Focus, Annotations, Cursor, Audio, Camera, and Info panels.
 - Design tokens: introduced a Framer-inspired vocabulary (`canvas`,
   `surface-1/2`, `ink`, `ink-muted`, `hairline`, gradient spotlight cards,
-  elevation shadows) layered on top of the existing shadcn tokens. Primary
-  color and font stack preserved; legacy surface tokens stayed on their
-  original values.
+  elevation shadows) layered on top of the existing shadcn tokens.
+  Primary colour and font stack preserved.
+
+## [0.1.4] — 2026-05-08
+
+### Added
+- Camera overlay in the editor: composite the recorded camera track over
+  the screen video with position presets, size, shape, and mirror
+  toggles. Gated behind a `CAMERA_OVERLAY_UI_ENABLED` feature flag.
+- Cursor: mouse-press events feed into the recorded timeline, and a
+  refreshed set of cursor styles ships with the editor.
+- Native macOS-style page transitions via the View Transitions API, with
+  a smoother titlebar handoff between routes.
+
+### Changed
+- Canvas geometry and aspect-ratio handling: editor geometry helpers now
+  carry the chosen aspect end-to-end (preview, composite, drop-shadow)
+  without per-call ad-hoc math.
 
 ## [0.1.3-beta] — 2026-05-07
 
