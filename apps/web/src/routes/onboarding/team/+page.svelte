@@ -143,7 +143,7 @@
 							</div>
 							<Button
 								size="sm"
-								disabled={acceptingId === inv.id}
+								disabled={busy}
 								onclick={() => acceptInvite(inv.id)}
 								class="gap-1.5"
 							>
@@ -183,7 +183,7 @@
 				</Label>
 				<Button
 					type="submit"
-					disabled={creating || !teamName.trim()}
+					disabled={busy || !teamName.trim()}
 					class="group/cta w-full gap-2"
 				>
 					{creating ? "Creating…" : "Create team"}

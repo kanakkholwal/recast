@@ -35,6 +35,11 @@
 
 	let visible = $state(false);
 	let trickleInterval: ReturnType<typeof setInterval> | null = null;
+	// Bumped on every effect run. Deferred completion work (the `.then` and
+	// `setTimeout` below) captures the value at schedule time and bails if a
+	// newer navigation has started — otherwise stale callbacks can hide the
+	// bar mid-way through a chained navigation.
+	let navGeneration = 0;
 
 	function startTrickle() {
 		if (trickleInterval) return;
@@ -55,6 +60,7 @@
 
 	$effect(() => {
 		const active = navigating.to !== null;
+		const token = ++navGeneration;
 		if (active) {
 			visible = true;
 			progress.set(minimum, { duration: 0 });
@@ -62,7 +68,10 @@
 		} else {
 			stopTrickle();
 			progress.set(1, { duration: duration * 0.5 }).then(() => {
+				// Bail if a newer navigation started between schedule and resolve.
+				if (token !== navGeneration) return;
 				setTimeout(() => {
+					if (token !== navGeneration) return;
 					visible = false;
 					progress.set(0, { duration: 0 });
 				}, 200);
