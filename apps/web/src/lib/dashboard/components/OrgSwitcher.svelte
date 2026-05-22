@@ -44,15 +44,22 @@
 	async function setActive(id: string) {
 		if (switching || id === active.id) return;
 		switching = id;
-		const { error } = await authClient.organization.setActive({
-			organizationId: id,
-		});
-		switching = null;
-		if (error) {
-			toast.error(error.message ?? "Couldn't switch team.");
-			return;
+		try {
+			const { error } = await authClient.organization.setActive({
+				organizationId: id,
+			});
+			if (error) {
+				toast.error(error.message ?? "Couldn't switch team.");
+				return;
+			}
+			await invalidateAll();
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't switch team.");
+		} finally {
+			// Always clear — a thrown rejection must not strand the row in
+			// the "switching…" pseudo-loading state.
+			switching = null;
 		}
-		await invalidateAll();
 	}
 
 	function initials(name: string) {

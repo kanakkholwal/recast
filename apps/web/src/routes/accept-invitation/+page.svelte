@@ -18,35 +18,51 @@
 
 	let accepting = $state(false);
 	let rejecting = $state(false);
+	/** Either action in flight — prevents accept + reject racing each other. */
+	const busy = $derived(accepting || rejecting);
 
 	async function accept() {
-		if (accepting) return;
+		if (busy) return;
 		accepting = true;
-		const { error } = await authClient.organization.acceptInvitation({
-			invitationId: data.invite.id,
-		});
-		accepting = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't accept the invitation.");
-			return;
+		try {
+			const { error } = await authClient.organization.acceptInvitation({
+				invitationId: data.invite.id,
+			});
+			if (error) {
+				toast.error(error.message ?? "Couldn't accept the invitation.");
+				return;
+			}
+			toast.success(`Welcome to ${data.invite.orgName}.`);
+			await goto("/dashboard");
+		} catch (err) {
+			toast.error(
+				(err as Error)?.message ?? "Couldn't accept the invitation.",
+			);
+		} finally {
+			accepting = false;
 		}
-		toast.success(`Welcome to ${data.invite.orgName}.`);
-		await goto("/dashboard");
 	}
 
 	async function reject() {
-		if (rejecting) return;
+		if (busy) return;
 		rejecting = true;
-		const { error } = await authClient.organization.rejectInvitation({
-			invitationId: data.invite.id,
-		});
-		rejecting = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't decline the invitation.");
-			return;
+		try {
+			const { error } = await authClient.organization.rejectInvitation({
+				invitationId: data.invite.id,
+			});
+			if (error) {
+				toast.error(error.message ?? "Couldn't decline the invitation.");
+				return;
+			}
+			toast.message("Invitation declined.");
+			await goto("/");
+		} catch (err) {
+			toast.error(
+				(err as Error)?.message ?? "Couldn't decline the invitation.",
+			);
+		} finally {
+			rejecting = false;
 		}
-		toast.message("Invitation declined.");
-		await goto("/");
 	}
 
 	const blocked = $derived(
@@ -134,14 +150,14 @@
 				</div>
 			{:else}
 				<div class="flex flex-col gap-2.5">
-					<Button onclick={accept} disabled={accepting || blocked} class="group/cta w-full gap-2">
+					<Button onclick={accept} disabled={busy || blocked} class="group/cta w-full gap-2">
 						{accepting ? "Joining…" : "Accept invitation"}
 						<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 					</Button>
 					<Button
 						variant="ghost"
 						onclick={reject}
-						disabled={rejecting || blocked}
+						disabled={busy || blocked}
 						class="w-full gap-2 text-muted-foreground"
 					>
 						<X class="size-4" />

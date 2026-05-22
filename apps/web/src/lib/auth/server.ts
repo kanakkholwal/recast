@@ -294,17 +294,23 @@ async function ensureDefaultTeamForUser(u: {
 			|| "team";
 		const slug = `${slugBase}-${orgId.slice(0, 6)}`;
 
-		await db.insert(organizationTable).values({
-			id: orgId,
-			name: `${first}'s Team`,
-			slug,
-			plan: "free",
-		});
-		await db.insert(memberTable).values({
-			id: crypto.randomUUID(),
-			organizationId: orgId,
-			userId: u.id,
-			role: "owner",
+		// Both writes in one transaction — a failure on the member insert
+		// (e.g. FK violation, connection drop) would otherwise leave an
+		// ownerless org behind, which the org-count cap would still count
+		// against the user. Either both commit or neither.
+		await db.transaction(async (tx) => {
+			await tx.insert(organizationTable).values({
+				id: orgId,
+				name: `${first}'s Team`,
+				slug,
+				plan: "free",
+			});
+			await tx.insert(memberTable).values({
+				id: crypto.randomUUID(),
+				organizationId: orgId,
+				userId: u.id,
+				role: "owner",
+			});
 		});
 	} catch (err) {
 		console.error("[auth] ensureDefaultTeamForUser failed", err);

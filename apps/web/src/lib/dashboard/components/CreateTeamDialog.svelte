@@ -30,24 +30,32 @@
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/(^-|-$)/g, "") || "team"}-${Math.random().toString(36).slice(2, 8)}`;
-		const { error } = await authClient.organization.create({
-			name: name.trim(),
-			slug,
-			keepCurrentActiveOrganization: false,
-		});
-		creating = false;
-		if (error) {
-			// Surface the real reason: cap reached, slug clash, etc.
-			toast.error(error.message ?? "Couldn't create the team.");
-			console.error("[create team]", error);
-			return;
+		try {
+			const { error } = await authClient.organization.create({
+				name: name.trim(),
+				slug,
+				keepCurrentActiveOrganization: false,
+			});
+			if (error) {
+				// Surface the real reason: cap reached, slug clash, etc.
+				toast.error(error.message ?? "Couldn't create the team.");
+				console.error("[create team]", error);
+				return;
+			}
+			toast.success(`Welcome to ${name.trim()}.`);
+			name = "";
+			open = false;
+			// Active org has been switched server-side by setActive — re-pull
+			// every loader so the sidebar swaps over to the new team.
+			await invalidateAll();
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't create the team.");
+			console.error("[create team]", err);
+		} finally {
+			// Always release so a thrown rejection (network drop, abort) can't
+			// strand the submit button in a disabled state.
+			creating = false;
 		}
-		toast.success(`Welcome to ${name.trim()}.`);
-		name = "";
-		open = false;
-		// Active org has been switched server-side by setActive — re-pull
-		// every loader so the sidebar swaps over to the new team.
-		await invalidateAll();
 	}
 </script>
 
