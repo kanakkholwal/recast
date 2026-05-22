@@ -60,6 +60,9 @@
       "digestAlgorithm": "sha256",
       "timestampUrl": "http://timestamp.digicert.com"
     },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    },
     "linux": {
       "appimage": {}
     },

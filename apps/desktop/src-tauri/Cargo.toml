@@ -89,14 +89,27 @@ x11rb = { version = "0.13", features = ["shm"] }
 [target.'cfg(any(target_os = "macos", target_os = "linux"))'.dependencies]
 device_query = "2.1"
 
-# NOTE: a `screencapturekit` dep was added here in a previous round to
-# wire macOS system-audio loopback natively. It was removed when the
-# crate's module layout on the current crates.io release turned out to
-# differ from what the integration assumed, and verifying the right API
-# names from a non-macOS dev host is not viable. The placeholder lives
-# in `audio/platform/macos_sckit.rs` and will be re-instated alongside
-# the integration when API verification is possible (see that file's
-# "What needs to happen next" comment block).
+# macOS-only: native ScreenCaptureKit bindings for system-audio loopback
+# (and later screen capture). Eliminates the BlackHole virtual-driver
+# requirement that the FFmpeg fallback chain depends on. The crate has a
+# Swift bridge (`build.rs` invokes `swiftc`) so it only builds on a macOS
+# host — Tauri's CI macos-latest runner has Xcode preinstalled.
+#
+# Why `screencapturekit` (the safe wrapper) rather than the lower-level
+# `objc2-screen-capture-kit`: the 6.x release line stabilised the API
+# (the earlier 0.2/0.3 module-path churn that caused us to back out is
+# resolved), exposes a plain Rust `SCStreamOutputTrait` for sample
+# callbacks (no `declare_class!` gymnastics), and has documented
+# Tauri integration examples. `objc2-screen-capture-kit` is still the
+# right escape hatch if we ever need API surface this crate doesn't
+# wrap.
+#
+# `macos_13_0` feature enables SCStream audio loopback — the system-audio
+# capability shipped in macOS 13. We don't enable `macos_14_0`+ to avoid
+# accidentally depending on APIs that won't exist on the deployment
+# target.
+[target.'cfg(target_os = "macos")'.dependencies]
+screencapturekit = { version = "6.0", default-features = false, features = ["macos_13_0"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"
