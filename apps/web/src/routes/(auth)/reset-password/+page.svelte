@@ -3,7 +3,7 @@
 	import { page } from "$app/state";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
-	import { AlertCircle, ArrowRight, Eye, EyeOff } from "@lucide/svelte";
+	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
@@ -28,19 +28,27 @@
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
-		if (!canSubmit) return;
+		if (!canSubmit || loading) return;
 		loading = true;
-		const { error } = await authClient.resetPassword({
-			newPassword: password,
-			token,
-		});
-		loading = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't reset your password.");
-			return;
+		try {
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.resetPassword({
+						newPassword: password,
+						token,
+					});
+					if (error) throw new Error(error.message ?? "Couldn't reset your password.");
+				})(),
+				{
+					loading: "Updating your password…",
+					success: "Password updated — sign in with your new password.",
+					error: (err) => (err as Error)?.message ?? "Couldn't reset your password.",
+				},
+			);
+			await goto("/login");
+		} finally {
+			loading = false;
 		}
-		toast.success("Password updated — sign in with your new password.");
-		await goto("/login");
 	}
 </script>
 
@@ -107,7 +115,11 @@
 			class="group/cta mt-2 w-full gap-2"
 		>
 			{loading ? "Updating…" : "Update password"}
-			<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+			{#if loading}
+				<LoaderCircle class="size-4 animate-spin" />
+			{:else}
+				<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+			{/if}
 		</Button>
 	</form>
 

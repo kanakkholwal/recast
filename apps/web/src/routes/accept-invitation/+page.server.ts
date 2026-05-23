@@ -1,4 +1,4 @@
-import { error, redirect } from "@sveltejs/kit";
+import { error } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
@@ -14,8 +14,10 @@ type SessionShape = { user: { id: string; email: string } };
  * Lands here from the invitation email. We:
  *
  *   1. Validate the id and fetch the invite (404 if unknown).
- *   2. If the user isn't signed in → /login?next=…, preserving the id so
- *      this page reruns post-sign-in.
+ *   2. If the user isn't signed in we DON'T redirect — instead we surface
+ *      the invitee email so the page can render an inline magic-link sign-in
+ *      form. Bouncing to /login + back was a confusing round-trip for new
+ *      invitees who hadn't yet picked a password.
  *   3. If the signed-in email doesn't match the invitation email, show a
  *      "wrong account" message — don't auto-accept against the wrong row.
  *   4. Otherwise hand the id to the page so the client can call
@@ -51,24 +53,29 @@ export const load: PageServerLoad = async ({ url, request }) => {
 		.api.getSession({ headers: request.headers })
 		.catch(() => null)) as SessionShape | null;
 
+	const expired = inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now();
+
+	const baseInvite = {
+		id: inv.id,
+		email: inv.email,
+		role: inv.role,
+		status: inv.status,
+		orgName: inv.orgName,
+		expired: Boolean(expired),
+	};
+
 	if (!session) {
-		const next = encodeURIComponent(`/accept-invitation?id=${id}`);
-		redirect(303, `/login?next=${next}`);
+		return {
+			invite: baseInvite,
+			viewer: null,
+		};
 	}
 
 	const emailMatches =
 		session.user.email.toLowerCase() === inv.email.toLowerCase();
-	const expired = inv.expiresAt && new Date(inv.expiresAt).getTime() < Date.now();
 
 	return {
-		invite: {
-			id: inv.id,
-			email: inv.email,
-			role: inv.role,
-			status: inv.status,
-			orgName: inv.orgName,
-			expired: Boolean(expired),
-		},
+		invite: baseInvite,
 		viewer: { email: session.user.email, emailMatches },
 	};
 };

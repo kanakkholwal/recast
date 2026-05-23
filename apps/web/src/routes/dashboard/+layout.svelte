@@ -23,7 +23,7 @@
 	<DashboardSidebar />
 	<Sidebar.Inset class="min-h-svh">
 		<DashboardHeader />
-		<div class="px-5 py-7 sm:px-8 sm:py-9">
+		<div class="px-5 py-8 sm:px-8 sm:py-10">
 			{@render children()}
 		</div>
 	</Sidebar.Inset>

@@ -1,4 +1,4 @@
-import { building } from "$app/environment";
+import { building, dev } from "$app/environment";
 import { env as rawEnv } from "$env/dynamic/private";
 import { serverEnvSchema, type ServerEnv } from "./schema";
 
@@ -21,6 +21,10 @@ let cached: ServerEnv | null = null;
 
 export function getServerEnv(): ServerEnv {
 	if (cached) return cached;
+	
+	if (dev){
+		console.info("[NODE_ENV]:",rawEnv.NODE_ENV);
+	}
 
 	// Skip validation while Vite is collecting the prerender manifest — env
 	// isn't available there and prerendered pages don't need it anyway.

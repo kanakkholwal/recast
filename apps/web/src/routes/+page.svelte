@@ -20,6 +20,7 @@
 	  Highlighter,
 	  Layout,
 	  Link2,
+	  LoaderCircle,
 	  Lock,
 	  MonitorPlay,
 	  MousePointer2,
@@ -42,25 +43,29 @@
 	let loading = $state(false);
 	async function joinWaitlist(e: SubmitEvent) {
 		e.preventDefault();
-		if (!email.trim()) return;
+		if (!email.trim() || loading) return;
 		loading = true;
 		try {
-			const res = await fetch("/api/waitlist", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email, source: "home-cloud" }),
-			});
-			const data = (await res.json().catch(() => ({}))) as {
-				ok?: boolean;
-				error?: string;
-			};
-			if (!data.ok) {
-				toast.error(data.error ?? "Couldn't join the waitlist.");
-				return;
-			}
+			await toast.promise(
+				(async () => {
+					const res = await fetch("/api/waitlist", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ email, source: "home-cloud" }),
+					});
+					const data = (await res.json().catch(() => ({}))) as {
+						ok?: boolean;
+						error?: string;
+					};
+					if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
+				})(),
+				{
+					loading: "Adding you to the waitlist…",
+					success: "You're on the list — we'll email when access opens.",
+					error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
+				},
+			);
 			joined = true;
-		} catch {
-			toast.error("Network error. Try again in a moment.");
 		} finally {
 			loading = false;
 		}
@@ -605,7 +610,11 @@
 										/>
 										<Button type="submit" disabled={loading} class="gap-2">
 											{loading ? "Joining…" : "Join waitlist"}
-											<ArrowRight class="size-4" />
+											{#if loading}
+												<LoaderCircle class="size-4 animate-spin" />
+											{:else}
+												<ArrowRight class="size-4" />
+											{/if}
 										</Button>
 									</form>
 								{/if}

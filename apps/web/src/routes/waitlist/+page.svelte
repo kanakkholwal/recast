@@ -5,37 +5,46 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowLeft, ArrowRight, MailCheck, Sparkles } from "@lucide/svelte";
+	import { ArrowLeft, ArrowRight, LoaderCircle, MailCheck, Sparkles } from "@lucide/svelte";
+	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
 	const source = $derived(page.url.searchParams.get("source") ?? "waitlist");
 
-	let email = $state("");
+	// Prefill from `?email=` when the user lands here via the "Join waitlist"
+	// CTA on /login — saves them from retyping.
+	let email = $state(
+		untrack(() => page.url.searchParams.get("email")?.trim() ?? ""),
+	);
 	let loading = $state(false);
 	let joined = $state(false);
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
-		if (!email.trim()) return;
+		if (!email.trim() || loading) return;
 		loading = true;
 		try {
-			const res = await fetch("/api/waitlist", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email, source }),
-			});
-			const data = (await res.json().catch(() => ({}))) as {
-				ok?: boolean;
-				error?: string;
-			};
-			if (!data.ok) {
-				toast.error(data.error ?? "Couldn't join the waitlist.");
-				return;
-			}
+			await toast.promise(
+				(async () => {
+					const res = await fetch("/api/waitlist", {
+						method: "POST",
+						headers: { "Content-Type": "application/json" },
+						body: JSON.stringify({ email, source }),
+					});
+					const data = (await res.json().catch(() => ({}))) as {
+						ok?: boolean;
+						error?: string;
+					};
+					if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
+				})(),
+				{
+					loading: "Adding you to the waitlist…",
+					success: "You're on the list — we'll email when access opens.",
+					error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
+				},
+			);
 			joined = true;
-		} catch {
-			toast.error("Network error — try again.");
 		} finally {
 			loading = false;
 		}
@@ -141,7 +150,11 @@
 						class="group/cta mt-1 w-full gap-2"
 					>
 						{loading ? "Joining…" : "Join the waitlist"}
-						<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{#if loading}
+							<LoaderCircle class="size-4 animate-spin" />
+						{:else}
+							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{/if}
 					</Button>
 				</form>
 			{/if}

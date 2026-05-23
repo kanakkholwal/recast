@@ -23,6 +23,7 @@
 			page.url.pathname.startsWith("/admin") ||
 			page.url.pathname.startsWith("/onboarding") ||
 			page.url.pathname === "/accept-invitation" ||
+			page.url.pathname === "/verify-email" ||
 			chromelessPaths.has(page.url.pathname),
 	);
 </script>

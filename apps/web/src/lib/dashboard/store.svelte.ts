@@ -118,6 +118,19 @@ class RecordingsStore {
 		this.persist();
 	}
 
+	/**
+	 * Bump the view counter when the player reports `view-start`. We count
+	 * the unique-per-session pattern naively (one bump per call) — the
+	 * caller (PlayerDialog → recasts page) only fires this once per open
+	 * via the `started` latch, so refresh-spam doesn't inflate the count.
+	 */
+	incrementViews(id: string) {
+		this.items = this.items.map((r) =>
+			r.id === id ? { ...r, views: r.views + 1 } : r,
+		);
+		this.persist();
+	}
+
 	reset() {
 		this.items = seedRecordings();
 		this.persist();

@@ -1,0 +1,29 @@
+{
+  "name": "@recast/player",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./styles.css": "./src/styles.css"
+  },
+  "peerDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "dependencies": {
+    "@lucide/svelte": "^0.577.0",
+    "@recast/ui": "workspace:*",
+    "hls-video-element": "^1.5.11",
+    "media-chrome": "^4.19.0"
+  },
+  "devDependencies": {
+    "svelte": "^5.0.0"
+  },
+  "scripts": {
+    "build": "exit 0",
+    "check": "exit 0"
+  }
+}

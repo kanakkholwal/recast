@@ -147,6 +147,39 @@ export const actions: Actions = {
 		if (role !== "member" && role !== "admin") {
 			return fail(400, { error: "Invalid role" });
 		}
+
+		// Public sign-up is closed in production, so a brand-new invitee who
+		// isn't on the waitlist couldn't otherwise create an account to
+		// accept the invitation. Pre-create a `status=active` user row so the
+		// magic-link sign-in (and /accept-invitation) flow has something to
+		// find. If a row already exists — active, pending, or banned — we
+		// leave it untouched. Pending invitees get promoted to active so the
+		// invitation supersedes the waitlist queue.
+		const db = getDb();
+		const [existing] = await db
+			.select({ id: userTable.id, status: userTable.status })
+			.from(userTable)
+			.where(eq(userTable.email, email))
+			.limit(1);
+		if (!existing) {
+			await db.insert(userTable).values({
+				id: crypto.randomUUID(),
+				email,
+				name: email.split("@")[0]!,
+				status: "active",
+				// Owner-vouched: the invite IS the verification. Skipping this
+				// makes Better Auth's accept-invitation reject the session with
+				// "email not verified" when the invitee signs in for the first
+				// time via magic link.
+				emailVerified: true,
+			});
+		} else if (existing.status === "pending") {
+			await db
+				.update(userTable)
+				.set({ status: "active", emailVerified: true })
+				.where(eq(userTable.id, existing.id));
+		}
+
 		try {
 			await getAuth().api.createInvitation({
 				headers: request.headers,
