@@ -113,26 +113,30 @@
 		e.preventDefault();
 		if (loading) return;
 		loading = true;
+		const trimmedEmail = email.trim();
+		const ok = await preflightEmail(trimmedEmail);
+		if (!ok) {
+			loading = false;
+			return;
+		}
+		const toastId = toast.loading("Signing you in…");
 		try {
-			const trimmedEmail = email.trim();
-			const ok = await preflightEmail(trimmedEmail);
-			if (!ok) return;
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.signIn.email({
-						email: trimmedEmail,
-						password,
-						rememberMe,
-					});
-					if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
-				})(),
-				{
-					loading: "Signing you in…",
-					success: "Welcome back.",
-					error: (err) => (err as Error)?.message ?? "Sign in failed. Check your credentials.",
-				},
+			const { error } = await authClient.signIn.email({
+				email: trimmedEmail,
+				password,
+				rememberMe,
+			});
+			if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
+			toast.success("Welcome back.", { id: toastId });
+			// Force a fresh load chain so the destination's server load sees
+			// the new session cookie immediately, not whatever the client had
+			// cached pre-login.
+			await goto(next, { invalidateAll: true });
+		} catch (err) {
+			toast.error(
+				(err as Error)?.message ?? "Sign in failed. Check your credentials.",
+				{ id: toastId },
 			);
-			await goto(next);
 		} finally {
 			loading = false;
 		}

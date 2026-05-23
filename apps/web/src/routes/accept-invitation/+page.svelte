@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
+	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import Logo from "$lib/logo.svelte";
 	import { Button } from "@recast/ui/button";
@@ -40,21 +40,22 @@
 	async function accept() {
 		if (busy) return;
 		accepting = true;
+		const toastId = toast.loading(`Joining ${data.invite.orgName}…`);
 		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.acceptInvitation({
-						invitationId: data.invite.id,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
-				})(),
-				{
-					loading: `Joining ${data.invite.orgName}…`,
-					success: `Welcome to ${data.invite.orgName}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't accept the invitation.",
-				},
-			);
-			await goto("/dashboard");
+			const { error } = await authClient.organization.acceptInvitation({
+				invitationId: data.invite.id,
+			});
+			if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
+			toast.success(`Welcome to ${data.invite.orgName}.`, { id: toastId });
+			// Force-rerun every loader so the dashboard's auth + team gate
+			// sees the new membership / active-org cookie immediately;
+			// without this the gate can bounce the user back to onboarding.
+			await invalidateAll();
+			await goto("/dashboard", { invalidateAll: true });
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't accept the invitation.", {
+				id: toastId,
+			});
 		} finally {
 			accepting = false;
 		}
