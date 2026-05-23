@@ -15,6 +15,13 @@
       "when": 1779386161852,
       "tag": "0001_tough_microbe",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1779472047470,
+      "tag": "0002_thin_tiger_shark",
+      "breakpoints": true
     }
   ]
 }

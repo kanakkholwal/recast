@@ -1,17 +1,15 @@
 <script lang="ts">
 	import { page } from "$app/state";
-	import { authClient } from "$lib/auth/client";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
+	import { NavProgress } from "@recast/ui/nav-progress";
 	import { cn } from "@recast/ui/utils";
 	import {
 		ArrowLeft,
+		Building2,
 		ClipboardList,
 		Crown,
 		CreditCard,
 		Hourglass,
 		LayoutDashboard,
-		ShieldOff,
 		Users,
 	} from "@lucide/svelte";
 
@@ -22,6 +20,7 @@
 	const nav = [
 		{ href: "/admin", label: "Overview", icon: LayoutDashboard, exact: true },
 		{ href: "/admin/users", label: "Users", icon: Users, exact: false },
+		{ href: "/admin/teams", label: "Teams", icon: Building2, exact: false },
 		{ href: "/admin/waitlist", label: "Waitlist", icon: Hourglass, exact: false },
 		{ href: "/admin/subscriptions", label: "Subscriptions", icon: CreditCard, exact: false },
 		{ href: "/admin/audit", label: "Audit log", icon: ClipboardList, exact: false },
@@ -30,15 +29,6 @@
 	function isActive(href: string, exact: boolean) {
 		return exact ? currentPath === href : currentPath.startsWith(href);
 	}
-
-	async function stopImpersonating() {
-		const { error } = await authClient.admin.stopImpersonating();
-		if (error) {
-			toast.error(error.message ?? "Couldn't stop impersonating.");
-			return;
-		}
-		window.location.href = "/admin";
-	}
 </script>
 
 <svelte:head>
@@ -46,20 +36,12 @@
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
+<!-- Top-of-page navigation indicator, shared with the desktop app. -->
+<NavProgress />
+
 <div class="min-h-screen bg-background text-foreground">
-	{#if data.admin.impersonatedBy}
-		<div
-			class="sticky top-0 z-50 flex items-center justify-between gap-3 border-b border-amber-500/30 bg-amber-500/10 px-5 py-2.5 text-xs"
-		>
-			<span class="flex items-center gap-2 font-medium text-amber-700 dark:text-amber-300">
-				<ShieldOff class="size-3.5" />
-				You're impersonating <span class="font-semibold">{data.admin.email}</span>
-			</span>
-			<Button size="sm" variant="outline" onclick={stopImpersonating}>
-				Stop impersonating
-			</Button>
-		</div>
-	{/if}
+	<!-- Impersonation indicator lives in the root layout (ImpersonationBanner)
+	     so it floats above every route, not just /admin. -->
 
 	<div class="mx-auto flex w-full max-w-7xl gap-8 px-5 py-8 sm:px-8 sm:py-10">
 		<aside class="hidden w-56 shrink-0 lg:block">

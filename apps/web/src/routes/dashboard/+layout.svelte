@@ -2,6 +2,7 @@
 	import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
 	import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
 	import { settingsStore } from "$lib/dashboard/store.svelte";
+	import { NavProgress } from "@recast/ui/nav-progress";
 	import * as Sidebar from "@recast/ui/sidebar";
 	import { onMount } from "svelte";
 
@@ -13,6 +14,10 @@
 		settingsStore.value.profile.email = data.user.email;
 	});
 </script>
+
+<!-- Top-of-page navigation indicator. Driven by SvelteKit's `navigating`
+	 store inside the component; renders nothing when idle. -->
+<NavProgress />
 
 <Sidebar.Provider>
 	<DashboardSidebar />

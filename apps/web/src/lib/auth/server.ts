@@ -1,4 +1,21 @@
 import { dev } from "$app/environment";
+import { haveIBeenPwned } from "better-auth/plugins";
+
+import { sendTemplatedEmail } from "$lib/email";
+import { polarProductIdFor } from "$lib/billing/plans";
+import { tryGetPolarClient } from "$lib/billing/polar";
+import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
+import { getDb } from "$lib/db";
+import * as schema from "$lib/db/schema";
+import {
+	TEAM_PLAN_MEMBER_CAPS,
+	USER_TEAM_OWNERSHIP_CAPS,
+	member as memberTable,
+	organization as organizationTable,
+	user as userTable,
+} from "$lib/db/schema";
+import { publicEnv } from "$lib/env/public";
+import { serverEnv } from "$lib/env/server";
 import {
 	checkout,
 	polar,
@@ -7,17 +24,8 @@ import {
 } from "@polar-sh/better-auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { admin, magicLink } from "better-auth/plugins";
-import { eq } from "drizzle-orm";
-import { sendEmail } from "$lib/auth/email";
-import { polarProductIdFor } from "$lib/billing/plans";
-import { tryGetPolarClient } from "$lib/billing/polar";
-import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
-import { getDb } from "$lib/db";
-import { user as userTable } from "$lib/db/schema";
-import * as schema from "$lib/db/schema";
-import { serverEnv } from "$lib/env/server";
-import { publicEnv } from "$lib/env/public";
+import { admin, magicLink, organization } from "better-auth/plugins";
+import { and, count, eq } from "drizzle-orm";
 
 /**
  * Better Auth instance — singleton, lazy-built on first request so the
@@ -51,18 +59,34 @@ function createAuth() {
 			requireEmailVerification: false,
 			sendResetPassword: async ({ user, url }) => {
 				if (await isOnWaitlist(user.email)) return;
-				await sendEmail({
+				await sendTemplatedEmail({
 					to: user.email,
-					subject: "Reset your Recast password",
-					text:
-						`Hi${user.name ? ` ${user.name}` : ""},\n\n` +
-						`Click the link below to set a new password:\n${url}\n\n` +
-						`If you didn't ask for this, you can ignore the email.`,
+					template: "reset-password",
+					data: {
+						url,
+						firstName: user.name?.split(/\s+/)[0] ?? null,
+					},
 				});
 			},
 		},
 		socialProviders: buildSocialProviders(),
 		plugins: buildPlugins(),
+		// Auto-create a default org the first time a user row appears, so
+		// every signed-in account lands in a team. The org's plan starts at
+		// "free"; admins can elevate it from /admin/teams/[id].
+		databaseHooks: {
+			user: {
+				create: {
+					after: async (createdUser) => {
+						await ensureDefaultTeamForUser({
+							id: createdUser.id,
+							name: createdUser.name ?? "",
+							email: createdUser.email,
+						});
+					},
+				},
+			},
+		},
 	});
 }
 
@@ -114,12 +138,20 @@ function buildPlugins() {
 		expiresIn: 60 * 10,
 		sendMagicLink: async ({ email, url }) => {
 			if (await isOnWaitlist(email)) return;
-			await sendEmail({
+			// Look up the user's name so the template can address them.
+			const db = getDb();
+			const [row] = await db
+				.select({ name: userTable.name })
+				.from(userTable)
+				.where(eq(userTable.email, email))
+				.limit(1);
+			await sendTemplatedEmail({
 				to: email,
-				subject: "Your Recast sign-in link",
-				text:
-					`Click the link below to sign in to Recast:\n\n${url}\n\n` +
-					`The link expires in 10 minutes. If you didn't ask for it, ignore this email.`,
+				template: "magic-link",
+				data: {
+					url,
+					firstName: row?.name?.split(/\s+/)[0] ?? null,
+				},
 			});
 		},
 	});
@@ -131,37 +163,158 @@ function buildPlugins() {
 	const polarPlugins =
 		polarClient && proProductId && webhookSecret
 			? [
-					polar({
-						client: polarClient,
-						createCustomerOnSignUp: true,
-						use: [
-							checkout({
-								products: [{ productId: proProductId, slug: "pro" }],
-								successUrl: "/dashboard?upgraded=1",
-								authenticatedUsersOnly: true,
-							}),
-							portal(),
-							webhooks({
-								secret: webhookSecret,
-								onSubscriptionActive: async (payload) =>
-									handleSubscriptionEvent(payload),
-								onSubscriptionUpdated: async (payload) =>
-									handleSubscriptionEvent(payload),
-								onSubscriptionCanceled: async (payload) => {
-									const userId = extractUserId(payload);
-									if (userId) await downgradeToFree(userId);
-								},
-								onSubscriptionRevoked: async (payload) => {
-									const userId = extractUserId(payload);
-									if (userId) await downgradeToFree(userId);
-								},
-							}),
-						],
-					}),
-				]
+				polar({
+					client: polarClient,
+					createCustomerOnSignUp: true,
+					use: [
+						checkout({
+							products: [{ productId: proProductId, slug: "pro" }],
+							successUrl: "/dashboard?upgraded=1",
+							authenticatedUsersOnly: true,
+						}),
+						portal(),
+						webhooks({
+							secret: webhookSecret,
+							onSubscriptionActive: async (payload) =>
+								handleSubscriptionEvent(payload),
+							onSubscriptionUpdated: async (payload) =>
+								handleSubscriptionEvent(payload),
+							onSubscriptionCanceled: async (payload) => {
+								const userId = extractUserId(payload);
+								if (userId) await downgradeToFree(userId);
+							},
+							onSubscriptionRevoked: async (payload) => {
+								const userId = extractUserId(payload);
+								if (userId) await downgradeToFree(userId);
+							},
+						}),
+					],
+				}),
+			]
 			: [];
 
-	return [adminPlugin, linkPlugin, ...polarPlugins];
+	// Organization plugin — owns the `organization`, `member`, `invitation`
+	// tables and `session.activeOrganizationId`. Caps:
+	//
+	//   • Per-team member count: read from `organization.plan` via our
+	//     TEAM_PLAN_MEMBER_CAPS map. Free = 3, Pro = 50, Enterprise = ∞.
+	//   • Per-user team-ownership count: 3 if all owned teams are free;
+	//     10 once any owned team is pro/enterprise.
+	//
+	// `allowUserToCreateOrganization` runs before /organization/create — we
+	// return false when the cap is hit; the plugin throws a clean 403.
+	const orgPlugin = organization({
+		creatorRole: "owner",
+		invitationExpiresIn: 7 * 24 * 60 * 60, // 7 days
+		allowUserToCreateOrganization: async (u) => {
+			const db = getDb();
+			// Count teams this user OWNS (members with role=owner), join to org
+			// to read each team's plan.
+			const owned = await db
+				.select({ plan: organizationTable.plan })
+				.from(memberTable)
+				.innerJoin(
+					organizationTable,
+					eq(memberTable.organizationId, organizationTable.id),
+				)
+				.where(and(eq(memberTable.userId, u.id), eq(memberTable.role, "owner")));
+			const hasPaidTeam = owned.some((o) => o.plan !== "free");
+			const cap = hasPaidTeam
+				? USER_TEAM_OWNERSHIP_CAPS.paid
+				: USER_TEAM_OWNERSHIP_CAPS.free;
+			return owned.length < cap;
+		},
+		membershipLimit: async (_u, org) => {
+			const plan = (org as { plan?: string }).plan ?? "free";
+			return TEAM_PLAN_MEMBER_CAPS[plan] ?? TEAM_PLAN_MEMBER_CAPS.free!;
+		},
+		schema: {
+			organization: {
+				additionalFields: {
+					plan: { type: "string", defaultValue: "free", required: false },
+				},
+			},
+		},
+		sendInvitationEmail: async ({ email, organization: org, inviter, id }) => {
+			const base = serverEnv().BETTER_AUTH_URL ?? publicEnv().PUBLIC_APP_URL;
+			const acceptUrl = `${base.replace(/\/$/, "")}/accept-invitation?id=${id}`;
+			await sendTemplatedEmail({
+				to: email,
+				template: "team-invitation",
+				data: {
+					url: acceptUrl,
+					teamName: org.name,
+					inviterName: inviter.user.name || inviter.user.email,
+					inviterEmail: inviter.user.email,
+				},
+			});
+		},
+	});
+
+	return [adminPlugin, linkPlugin, orgPlugin, ...polarPlugins, haveIBeenPwned({
+		enabled: !dev,
+	})];
+}
+
+/**
+ * Creates a "{name}'s Team" org for a user if they don't have one yet.
+ * Idempotent — safe to call twice (the membership check short-circuits).
+ *
+ * Skipped silently for waitlist (`status === "pending"`) users so we don't
+ * spawn orphan teams for emails the user hasn't activated yet.
+ */
+async function ensureDefaultTeamForUser(u: {
+	id: string;
+	name: string;
+	email: string;
+}): Promise<void> {
+	const db = getDb();
+	try {
+		const [row] = await db
+			.select({ status: userTable.status })
+			.from(userTable)
+			.where(eq(userTable.id, u.id))
+			.limit(1);
+		if (row?.status === "pending") return;
+
+		const [existing] = await db
+			.select({ c: count() })
+			.from(memberTable)
+			.where(eq(memberTable.userId, u.id));
+		if ((existing?.c ?? 0) > 0) return;
+
+		const first = (u.name || u.email.split("@")[0] || "Personal").split(/\s+/)[0]!;
+		const orgId = crypto.randomUUID();
+		// Slug needs to be unique — suffix with a short id so two "Kanak's
+		// Team" rows don't collide on the org.slug unique index.
+		const slugBase = first
+			.toLowerCase()
+			.replace(/[^a-z0-9]+/g, "-")
+			.replace(/(^-|-$)/g, "")
+			|| "team";
+		const slug = `${slugBase}-${orgId.slice(0, 6)}`;
+
+		// Both writes in one transaction — a failure on the member insert
+		// (e.g. FK violation, connection drop) would otherwise leave an
+		// ownerless org behind, which the org-count cap would still count
+		// against the user. Either both commit or neither.
+		await db.transaction(async (tx) => {
+			await tx.insert(organizationTable).values({
+				id: orgId,
+				name: `${first}'s Team`,
+				slug,
+				plan: "free",
+			});
+			await tx.insert(memberTable).values({
+				id: crypto.randomUUID(),
+				organizationId: orgId,
+				userId: u.id,
+				role: "owner",
+			});
+		});
+	} catch (err) {
+		console.error("[auth] ensureDefaultTeamForUser failed", err);
+	}
 }
 
 /**

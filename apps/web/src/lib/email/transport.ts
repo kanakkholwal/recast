@@ -1,12 +1,10 @@
 import { serverEnv } from "$lib/env/server";
 
 /**
- * Outbound mail. Wired to Resend in production; logs to stdout otherwise so
- * magic links + reset links are discoverable during local development.
- *
- * Set `RESEND_API_KEY` + `EMAIL_FROM` to send real mail. Swap to your
- * provider of choice (Postmark, Loops, AWS SES) by replacing the body of
- * this helper — every caller goes through it.
+ * Low-level email transport. Resend in production, stdout in dev so links
+ * are visible without an inbox round-trip. Every higher-level send goes
+ * through `sendTemplatedEmail` (see ./templates) — call this directly only
+ * if you need to bypass the templating layer.
  */
 
 export type EmailMessage = {
@@ -14,6 +12,8 @@ export type EmailMessage = {
 	subject: string;
 	text: string;
 	html?: string;
+	/** Optional reply-to address; defaults to EMAIL_FROM. */
+	replyTo?: string;
 };
 
 export async function sendEmail(msg: EmailMessage): Promise<void> {
@@ -39,7 +39,11 @@ export async function sendEmail(msg: EmailMessage): Promise<void> {
 			to: [msg.to],
 			subject: msg.subject,
 			text: msg.text,
+			// Resend accepts text-only, but HTML lifts deliverability AND
+			// rendering quality — fall back to a naive conversion if a caller
+			// somehow bypassed `sendTemplatedEmail` without supplying HTML.
 			html: msg.html ?? msg.text.replace(/\n/g, "<br>"),
+			reply_to: msg.replyTo,
 		}),
 	});
 

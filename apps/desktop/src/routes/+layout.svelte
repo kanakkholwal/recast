@@ -9,8 +9,8 @@
   let { children } = $props();
 
   import CommandPaletteHost from "$components/layout/CommandPaletteHost.svelte";
-  import Loading from "$components/layout/loading.svelte";
   import { initAssets } from "$lib/assets";
+  import { NavProgress } from "@recast/ui/nav-progress";
   import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
   import { Toaster } from "@recast/ui/sonner";
   import { ModeWatcher, setMode } from "@recast/ui/theme";
@@ -74,7 +74,7 @@
   });
 </script>
 <TooltipProvider>
-  <Loading />
+  <NavProgress />
   <ModeWatcher />
   <!-- Overlay windows (panel, camera-preview, pickers) are too small to host
        a Sonner toast without overflow. Gate the Toaster out of those routes so

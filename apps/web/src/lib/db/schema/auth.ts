@@ -1,4 +1,5 @@
-import { boolean, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { boolean, index, pgTable, text, timestamp } from "drizzle-orm/pg-core";
+import { organization } from "./organization";
 
 /**
  * Better Auth core tables. Names and shapes follow the documented schema —
@@ -33,24 +34,45 @@ export const user = pgTable("user", {
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
-export const session = pgTable("session", {
-	id: text("id").primaryKey(),
-	expiresAt: timestamp("expires_at").notNull(),
-	token: text("token").notNull().unique(),
-	ipAddress: text("ip_address"),
-	userAgent: text("user_agent"),
-	userId: text("user_id")
-		.notNull()
-		.references(() => user.id, { onDelete: "cascade" }),
-	/**
-	 * Admin plugin impersonation marker. When set, this session was created
-	 * by an admin calling /admin/impersonate-user; `stopImpersonating()`
-	 * restores the original admin session.
-	 */
-	impersonatedBy: text("impersonated_by"),
-	createdAt: timestamp("created_at").notNull().defaultNow(),
-	updatedAt: timestamp("updated_at").notNull().defaultNow(),
-});
+export const session = pgTable(
+	"session",
+	{
+		id: text("id").primaryKey(),
+		expiresAt: timestamp("expires_at").notNull(),
+		token: text("token").notNull().unique(),
+		ipAddress: text("ip_address"),
+		userAgent: text("user_agent"),
+		userId: text("user_id")
+			.notNull()
+			.references(() => user.id, { onDelete: "cascade" }),
+		/**
+		 * Admin plugin impersonation marker. When set, this session was created
+		 * by an admin calling /admin/impersonate-user; `stopImpersonating()`
+		 * restores the original admin session.
+		 */
+		impersonatedBy: text("impersonated_by"),
+		/**
+		 * Active organization for this session — managed by Better Auth's
+		 * `organization` plugin via `setActiveOrganization`. Dashboard data
+		 * scopes to this id.
+		 *
+		 * FK with `ON DELETE SET NULL` so deleting an org clears the pointer
+		 * rather than orphaning the session row or cascading the session away.
+		 * Lazy `() => organization.id` keeps the auth/organization import
+		 * cycle resolvable (Drizzle's table-definition phase reads the column
+		 * via the callback, not eagerly at module load).
+		 */
+		activeOrganizationId: text("active_organization_id").references(
+			() => organization.id,
+			{ onDelete: "set null" },
+		),
+		createdAt: timestamp("created_at").notNull().defaultNow(),
+		updatedAt: timestamp("updated_at").notNull().defaultNow(),
+	},
+	(t) => [
+		index("session_active_org_idx").on(t.activeOrganizationId),
+	],
+);
 
 export const account = pgTable("account", {
 	id: text("id").primaryKey(),

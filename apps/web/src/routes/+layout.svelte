@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { dev } from "$app/environment";
 	import { page } from "$app/state";
+	import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
 	import { DevThemeToggle, Navbar } from "$lib/components";
 	import { Toaster } from "@recast/ui/sonner";
 	import { ModeWatcher } from "@recast/ui/theme";
@@ -20,11 +21,17 @@
 	const isChromeless = $derived(
 		page.url.pathname.startsWith("/dashboard") ||
 			page.url.pathname.startsWith("/admin") ||
+			page.url.pathname.startsWith("/onboarding") ||
+			page.url.pathname === "/accept-invitation" ||
 			chromelessPaths.has(page.url.pathname),
 	);
 </script>
 
 <ModeWatcher />
+
+<!-- Global impersonation indicator. Self-renders only when an admin is
+	 acting as another user; invisible otherwise. -->
+<ImpersonationBanner />
 
 {#if !isChromeless}
 	<div

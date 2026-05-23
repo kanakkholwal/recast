@@ -63,6 +63,13 @@ function createUpdaterStore() {
 	}
 
 	async function runCheck() {
+		// Production-only. `tauri dev` ships an unsigned, unpublished build —
+		// the updater plugin can't compare against `latest.json` in any
+		// meaningful way, and surfacing the corner card during local
+		// development just confuses contributors. Vite sets `import.meta.env.DEV`
+		// from the running mode, so this short-circuits cleanly for
+		// `tauri dev` while staying live for `tauri build` artefacts.
+		if (import.meta.env.DEV) return;
 		if (!(await isTauriApp())) return;
 		if (status === "checking" || status === "downloading") return;
 		error = null;
