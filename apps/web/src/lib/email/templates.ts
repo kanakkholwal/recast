@@ -64,6 +64,7 @@ const templates: {
 
 	"verify-email": ({ url, firstName }) => {
 		const hello = firstName ? `Hi ${firstName},` : "Hi,";
+		const helloHtml = firstName ? `Hi ${escapeText(firstName)},` : "Hi,";
 		return {
 			subject: "Verify your Recast email",
 			text:
@@ -77,7 +78,7 @@ const templates: {
 				body:
 					heading("Confirm your email") +
 					paragraph(
-						`${hello.replace(",", "")} — tap below to confirm <strong>this</strong> is your email. ` +
+						`${helloHtml.replace(",", "")} — tap below to confirm <strong>this</strong> is your email. ` +
 							`Until you verify, your Recast dashboard stays read-only.`,
 					) +
 					ctaButton("Verify email", url, "accent") +

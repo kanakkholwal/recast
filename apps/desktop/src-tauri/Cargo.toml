@@ -95,7 +95,7 @@ device_query = "2.1"
 #
 # **Opt-in feature `sckit-loopback`.** The `screencapturekit` 6.x crate
 # transitively pulls `apple-metal`, whose Swift bridge references macOS
-# 26 SDK symbols (`MTLSamplerReductionMode`) and macOS 14.4 SDK symbols
+# 10.15 SDK symbols (`MTLSamplerReductionMode`) and macOS 14.4 SDK symbols
 # (`reactiveTextureUsage`) unconditionally — neither is available on the
 # GH Actions `macos-latest` runner's Xcode. Pinning `apple-metal` to
 # older versions doesn't help; the macOS 14.4 references go back to 0.6.x.

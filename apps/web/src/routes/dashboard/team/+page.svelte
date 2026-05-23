@@ -76,10 +76,13 @@
 				use:enhance={() => {
 					leaving = true;
 					return async ({ result }) => {
-						if (result.type === "redirect") {
-							toast.success("You've left the team.");
+						try {
+							if (result.type === "redirect") {
+								toast.success("You've left the team.");
+							}
+						} finally {
+							leaving = false;
 						}
-						leaving = false;
 					};
 				}}
 			>
@@ -117,11 +120,14 @@
 			use:enhance={() => {
 				savingProfile = true;
 				return async ({ result, update }) => {
-					if (result.type === "success") toast.success("Team updated.");
-					else if (result.type === "failure")
-						toast.error(String(result.data?.error));
-					await update();
-					savingProfile = false;
+					try {
+						if (result.type === "success") toast.success("Team updated.");
+						else if (result.type === "failure")
+							toast.error(String(result.data?.error));
+						await update();
+					} finally {
+						savingProfile = false;
+					}
 				};
 			}}
 		>
@@ -215,9 +221,12 @@
 								use:enhance={() => {
 									updatingRoleMemberId = m.id;
 									return async ({ result, update }) => {
-										if (result.type === "success") toast.success("Role updated.");
-										await update();
-										updatingRoleMemberId = null;
+										try {
+											if (result.type === "success") toast.success("Role updated.");
+											await update();
+										} finally {
+											updatingRoleMemberId = null;
+										}
 									};
 								}}
 							>
@@ -259,9 +268,12 @@
 								use:enhance={() => {
 									removingMemberId = m.id;
 									return async ({ result, update }) => {
-										if (result.type === "success") toast.success("Member removed.");
-										await update();
-										removingMemberId = null;
+										try {
+											if (result.type === "success") toast.success("Member removed.");
+											await update();
+										} finally {
+											removingMemberId = null;
+										}
 									};
 								}}
 							>
@@ -312,14 +324,17 @@
 						use:enhance={() => {
 							inviting = true;
 							return async ({ result, update }) => {
-								if (result.type === "success") {
-									toast.success("Invitation sent.");
-									inviteEmail = "";
-								} else if (result.type === "failure") {
-									toast.error(String(result.data?.error));
+								try {
+									if (result.type === "success") {
+										toast.success("Invitation sent.");
+										inviteEmail = "";
+									} else if (result.type === "failure") {
+										toast.error(String(result.data?.error));
+									}
+									await update();
+								} finally {
+									inviting = false;
 								}
-								await update();
-								inviting = false;
 							};
 						}}
 					>
@@ -378,9 +393,12 @@
 									use:enhance={() => {
 										cancellingInviteId = inv.id;
 										return async ({ result, update }) => {
-											if (result.type === "success") toast.success("Invite canceled.");
-											await update();
-											cancellingInviteId = null;
+											try {
+												if (result.type === "success") toast.success("Invite canceled.");
+												await update();
+											} finally {
+												cancellingInviteId = null;
+											}
 										};
 									}}
 								>

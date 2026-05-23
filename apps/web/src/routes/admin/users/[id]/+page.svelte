@@ -130,10 +130,13 @@
 			use:enhance={() => {
 				savingProfile = true;
 				return async ({ result, update }) => {
-					if (result.type === "success") toast.success("Profile updated.");
-					else if (result.type === "failure") toast.error(String(result.data?.error));
-					await update();
-					savingProfile = false;
+					try {
+						if (result.type === "success") toast.success("Profile updated.");
+						else if (result.type === "failure") toast.error(String(result.data?.error));
+						await update();
+					} finally {
+						savingProfile = false;
+					}
 				};
 			}}
 		>
@@ -165,10 +168,13 @@
 				use:enhance={() => {
 					settingRole = true;
 					return async ({ result, update }) => {
-						if (result.type === "success") toast.success("Role updated.");
-						else if (result.type === "failure") toast.error(String(result.data?.error));
-						await update();
-						settingRole = false;
+						try {
+							if (result.type === "success") toast.success("Role updated.");
+							else if (result.type === "failure") toast.error(String(result.data?.error));
+							await update();
+						} finally {
+							settingRole = false;
+						}
 					};
 				}}
 			>
@@ -196,10 +202,13 @@
 				use:enhance={() => {
 					settingStatus = true;
 					return async ({ result, update }) => {
-						if (result.type === "success") toast.success("Status updated.");
-						else if (result.type === "failure") toast.error(String(result.data?.error));
-						await update();
-						settingStatus = false;
+						try {
+							if (result.type === "success") toast.success("Status updated.");
+							else if (result.type === "failure") toast.error(String(result.data?.error));
+							await update();
+						} finally {
+							settingStatus = false;
+						}
 					};
 				}}
 			>
@@ -253,9 +262,12 @@
 						use:enhance={() => {
 							unbanning = true;
 							return async ({ result, update }) => {
-								if (result.type === "success") toast.success("User unbanned.");
-								await update();
-								unbanning = false;
+								try {
+									if (result.type === "success") toast.success("User unbanned.");
+									await update();
+								} finally {
+									unbanning = false;
+								}
 							};
 						}}
 					>
@@ -309,9 +321,12 @@
 						use:enhance={() => {
 							revokingAll = true;
 							return async ({ result, update }) => {
-								if (result.type === "success") toast.success("All sessions revoked.");
-								await update();
-								revokingAll = false;
+								try {
+									if (result.type === "success") toast.success("All sessions revoked.");
+									await update();
+								} finally {
+									revokingAll = false;
+								}
 							};
 						}}
 					>
@@ -339,9 +354,12 @@
 										use:enhance={() => {
 											revokingSessionToken = s.token;
 											return async ({ result, update }) => {
-												if (result.type === "success") toast.success("Session revoked.");
-												await update();
-												revokingSessionToken = null;
+												try {
+													if (result.type === "success") toast.success("Session revoked.");
+													await update();
+												} finally {
+													revokingSessionToken = null;
+												}
 											};
 										}}
 									>
@@ -386,14 +404,17 @@
 				use:enhance={() => {
 					settingPassword = true;
 					return async ({ result, update }) => {
-						if (result.type === "success") {
-							toast.success("Password set. Share securely with the user.");
-							newPassword = "";
-						} else if (result.type === "failure") {
-							toast.error(String(result.data?.error));
+						try {
+							if (result.type === "success") {
+								toast.success("Password set. Share securely with the user.");
+								newPassword = "";
+							} else if (result.type === "failure") {
+								toast.error(String(result.data?.error));
+							}
+							await update();
+						} finally {
+							settingPassword = false;
 						}
-						await update();
-						settingPassword = false;
 					};
 				}}
 			>
@@ -464,14 +485,17 @@
 			use:enhance={() => {
 				deleting = true;
 				return async ({ result }) => {
-					if (result.type === "redirect") {
-						confirmDelete = false;
-						toast.success("User deleted.");
-						goto(result.location);
-					} else if (result.type === "failure") {
-						toast.error(String(result.data?.error));
+					try {
+						if (result.type === "redirect") {
+							confirmDelete = false;
+							toast.success("User deleted.");
+							goto(result.location);
+						} else if (result.type === "failure") {
+							toast.error(String(result.data?.error));
+						}
+					} finally {
+						deleting = false;
 					}
-					deleting = false;
 				};
 			}}
 		>
@@ -506,13 +530,16 @@
 			use:enhance={() => {
 				banning = true;
 				return async ({ result, update }) => {
-					if (result.type === "success") {
-						confirmBan = false;
-						toast.success("User banned.");
-						await invalidateAll();
+					try {
+						if (result.type === "success") {
+							confirmBan = false;
+							toast.success("User banned.");
+							await invalidateAll();
+						}
+						await update();
+					} finally {
+						banning = false;
 					}
-					await update();
-					banning = false;
 				};
 			}}
 		>

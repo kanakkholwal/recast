@@ -53,10 +53,13 @@
 			use:enhance={() => {
 				savingPlan = true;
 				return async ({ result, update }) => {
-					if (result.type === "success") toast.success("Plan updated.");
-					else if (result.type === "failure") toast.error(String(result.data?.error));
-					await update();
-					savingPlan = false;
+					try {
+						if (result.type === "success") toast.success("Plan updated.");
+						else if (result.type === "failure") toast.error(String(result.data?.error));
+						await update();
+					} finally {
+						savingPlan = false;
+					}
 				};
 			}}
 			class="space-y-3"
@@ -89,10 +92,13 @@
 			use:enhance={() => {
 				savingName = true;
 				return async ({ result, update }) => {
-					if (result.type === "success") toast.success("Renamed.");
-					else if (result.type === "failure") toast.error(String(result.data?.error));
-					await update();
-					savingName = false;
+					try {
+						if (result.type === "success") toast.success("Renamed.");
+						else if (result.type === "failure") toast.error(String(result.data?.error));
+						await update();
+					} finally {
+						savingName = false;
+					}
 				};
 			}}
 			class="space-y-3"

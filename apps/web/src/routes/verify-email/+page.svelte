@@ -100,8 +100,8 @@
 			<p class="text-pretty mt-3 max-w-sm text-sm leading-relaxed text-muted-foreground">
 				We sent a confirmation link to
 				<span class="font-mono font-medium text-foreground">{data.email}</span>.
-				Click it and you'll land back here — until then your dashboard stays
-				read-only.
+				Click it and you'll be redirected to your dashboard — until then your
+				dashboard stays read-only.
 			</p>
 		</div>
 

@@ -40,14 +40,17 @@
 	use:enhance={() => {
 		approving = true;
 		return async ({ result, update }) => {
-			if (result.type === "success") {
-				toast.success(`Approved ${result.data?.approved ?? 0} user(s).`);
-				selected = new Set();
-			} else if (result.type === "failure") {
-				toast.error(String(result.data?.error));
+			try {
+				if (result.type === "success") {
+					toast.success(`Approved ${result.data?.approved ?? 0} user(s).`);
+					selected = new Set();
+				} else if (result.type === "failure") {
+					toast.error(String(result.data?.error));
+				}
+				await update();
+			} finally {
+				approving = false;
 			}
-			await update();
-			approving = false;
 		};
 	}}
 >

@@ -317,7 +317,18 @@
 {/if}
 
 {#if playing}
-	<PlayerDialog recast={playing} onclose={() => (playing = null)} />
+	<PlayerDialog
+		recast={playing}
+		onclose={() => (playing = null)}
+		onengagement={(event) => {
+			// Single-bump-per-open: the dialog's `started` latch guarantees
+			// `view-start` fires once. The other events (progress/ended) feed
+			// into analytics later — no-op for now.
+			if (event === "view-start" && playing) {
+				recastsStore.incrementViews(playing.id);
+			}
+		}}
+	/>
 {/if}
 
 {#if renaming}

@@ -17,11 +17,12 @@
 		e.preventDefault();
 		if (loading) return;
 		loading = true;
+		const trimmedEmail = email.trim();
 		try {
 			await toast.promise(
 				(async () => {
 					const { error } = await authClient.requestPasswordReset({
-						email,
+						email: trimmedEmail,
 						redirectTo: "/reset-password",
 					});
 					if (error) throw new Error(error.message ?? "Couldn't send the reset email.");

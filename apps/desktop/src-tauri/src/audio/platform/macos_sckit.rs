@@ -42,8 +42,8 @@
 //!
 //! **Compile-tested only, and disabled by default.** The
 //! `screencapturekit` 6.x crate transitively pulls `apple-metal`, whose
-//! Swift bridge unconditionally references macOS 14.4 and macOS 26 SDK
-//! symbols (`reactiveTextureUsage`, `MTLSamplerReductionMode`) that
+//! Swift bridge unconditionally references newer SDK symbols
+//! (e.g. `reactiveTextureUsage`, introduced around macOS 14.4) that
 //! aren't on the GH Actions `macos-latest` runner's Xcode. Until the
 //! upstream `apple-metal` packaging bug is fixed (should be
 //! `#if canImport(...)` compile-time gates, not runtime `#available`

@@ -58,7 +58,7 @@
 		try {
 			await toast.promise(
 				(async () => {
-					const { error } = await authClient.signUp.email({ name, email, password });
+					const { error } = await authClient.signUp.email({ name, email: email.trim(), password });
 					if (error) throw new Error(error.message ?? "Couldn't create your account.");
 				})(),
 				{

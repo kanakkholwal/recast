@@ -35,7 +35,9 @@
 		if (!teamName.trim() || busy) return;
 		creating = true;
 		const target = teamName.trim();
-		const slug = `${target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")}-${Math.random().toString(36).slice(2, 8)}`;
+		let base = target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+		if (!base) base = "team";
+		const slug = `${base}-${Math.random().toString(36).slice(2, 8)}`;
 		try {
 			await toast.promise(
 				(async () => {

@@ -83,15 +83,16 @@
 
 	async function signInWithLink(e: SubmitEvent) {
 		e.preventDefault();
-		if (!email.trim() || loading) return;
+		const trimmedEmail = email.trim();
+		if (!trimmedEmail || loading) return;
 		loading = true;
 		try {
-			const ok = await preflightEmail(email.trim());
+			const ok = await preflightEmail(trimmedEmail);
 			if (!ok) return;
 			await toast.promise(
 				(async () => {
 					const { error } = await authClient.signIn.magicLink({
-						email,
+						email: trimmedEmail,
 						callbackURL: next,
 					});
 					if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
@@ -113,12 +114,13 @@
 		if (loading) return;
 		loading = true;
 		try {
-			const ok = await preflightEmail(email.trim());
+			const trimmedEmail = email.trim();
+			const ok = await preflightEmail(trimmedEmail);
 			if (!ok) return;
 			await toast.promise(
 				(async () => {
 					const { error } = await authClient.signIn.email({
-						email,
+						email: trimmedEmail,
 						password,
 						rememberMe,
 					});
