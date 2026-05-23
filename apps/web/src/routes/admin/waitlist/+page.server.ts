@@ -9,7 +9,9 @@ import type { Actions, PageServerLoad } from "./$types";
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const db = getDb();
-	const pending = await db
+	// Streamed — the page header and approve form render immediately while
+	// the list fills in.
+	const pending = db
 		.select({
 			id: user.id,
 			email: user.email,

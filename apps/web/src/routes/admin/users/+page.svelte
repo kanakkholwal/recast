@@ -12,6 +12,7 @@
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import * as Select from "@recast/ui/select";
+	import { Skeleton } from "@recast/ui/skeleton";
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
 
@@ -54,9 +55,6 @@
 		goto(`/admin/users?${sp.toString()}`);
 	}
 
-	const startIdx = $derived(data.total === 0 ? 0 : data.offset + 1);
-	const endIdx = $derived(Math.min(data.offset + data.limit, data.total));
-
 	function sortIndicator(field: string): string {
 		if (data.filters.sort !== field) return "";
 		return data.filters.dir === "asc" ? "↑" : "↓";
@@ -67,7 +65,13 @@
 	<div>
 		<h1 class="text-2xl font-semibold tracking-tight">Users</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			{data.total.toLocaleString()} total · showing {startIdx}–{endIdx}
+			{#await data.list}
+				Loading…
+			{:then list}
+				{@const startIdx = list.total === 0 ? 0 : data.offset + 1}
+				{@const endIdx = Math.min(data.offset + data.limit, list.total)}
+				{list.total.toLocaleString()} total · showing {startIdx}–{endIdx}
+			{/await}
 		</p>
 	</div>
 </header>
@@ -158,56 +162,78 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-border/30">
-				{#each data.users as u (u.id)}
-					<tr class="transition-colors hover:bg-foreground/2">
-						<td class="px-4 py-3">
-							<a href="/admin/users/{u.id}" class="block hover:text-primary">
-								<span class="block truncate font-medium">{u.name}</span>
-								<span class="block truncate text-xs text-muted-foreground">{u.email}</span>
-							</a>
-						</td>
-						<td class="px-4 py-3">
-							<div class="flex flex-wrap items-center gap-1.5">
-								{#if u.role === "admin"}
-									<Badge variant="secondary" class="gap-1">
-										<Crown class="size-3" /> admin
-									</Badge>
-								{:else}
-									<Badge variant="outline">user</Badge>
-								{/if}
-								{#if u.status === "pending"}
-									<Badge variant="outline" class="text-amber-600 dark:text-amber-400">
-										waitlist
-									</Badge>
-								{/if}
-								{#if u.banned}
-									<Badge variant="destructive" class="gap-1">
-										<ShieldOff class="size-3" /> banned
-									</Badge>
-								{/if}
-							</div>
-						</td>
-						<td class="px-4 py-3 text-muted-foreground">
-							{new Date(u.createdAt).toLocaleDateString()}
-						</td>
-						<td class="px-4 py-3 text-right">
-							<a
-								href="/admin/users/{u.id}"
-								class={cn(
-									"inline-flex items-center gap-1.5 rounded-md border border-border/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-foreground/5",
-								)}
-							>
-								Manage
-							</a>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="4" class="px-4 py-10 text-center text-sm text-muted-foreground">
-							No users match these filters.
-						</td>
-					</tr>
-				{/each}
+				{#await data.list}
+					{#each Array(8) as _, i (i)}
+						<tr>
+							<td class="px-4 py-3">
+								<div class="space-y-1.5">
+									<Skeleton class="h-3.5 w-32" />
+									<Skeleton class="h-3 w-44" />
+								</div>
+							</td>
+							<td class="px-4 py-3">
+								<Skeleton class="h-5 w-16" />
+							</td>
+							<td class="px-4 py-3">
+								<Skeleton class="h-3 w-20" />
+							</td>
+							<td class="px-4 py-3 text-right">
+								<Skeleton class="ml-auto h-6 w-16" />
+							</td>
+						</tr>
+					{/each}
+				{:then list}
+					{#each list.users as u (u.id)}
+						<tr class="transition-colors hover:bg-foreground/2">
+							<td class="px-4 py-3">
+								<a href="/admin/users/{u.id}" class="block hover:text-primary">
+									<span class="block truncate font-medium">{u.name}</span>
+									<span class="block truncate text-xs text-muted-foreground">{u.email}</span>
+								</a>
+							</td>
+							<td class="px-4 py-3">
+								<div class="flex flex-wrap items-center gap-1.5">
+									{#if u.role === "admin"}
+										<Badge variant="secondary" class="gap-1">
+											<Crown class="size-3" /> admin
+										</Badge>
+									{:else}
+										<Badge variant="outline">user</Badge>
+									{/if}
+									{#if u.status === "pending"}
+										<Badge variant="outline" class="text-amber-600 dark:text-amber-400">
+											waitlist
+										</Badge>
+									{/if}
+									{#if u.banned}
+										<Badge variant="destructive" class="gap-1">
+											<ShieldOff class="size-3" /> banned
+										</Badge>
+									{/if}
+								</div>
+							</td>
+							<td class="px-4 py-3 text-muted-foreground">
+								{new Date(u.createdAt).toLocaleDateString()}
+							</td>
+							<td class="px-4 py-3 text-right">
+								<a
+									href="/admin/users/{u.id}"
+									class={cn(
+										"inline-flex items-center gap-1.5 rounded-md border border-border/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-foreground/5",
+									)}
+								>
+									Manage
+								</a>
+							</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="4" class="px-4 py-10 text-center text-sm text-muted-foreground">
+								No users match these filters.
+							</td>
+						</tr>
+					{/each}
+				{/await}
 			</tbody>
 		</table>
 	</div>
@@ -215,22 +241,34 @@
 
 <div class="mt-4 flex items-center justify-between text-xs text-muted-foreground">
 	<span>Page {Math.floor(data.offset / data.limit) + 1}</span>
-	<div class="flex items-center gap-2">
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={data.offset === 0}
-			onclick={() => changePage(-1)}
-		>
-			<ChevronLeft class="size-3.5" /> Prev
-		</Button>
-		<Button
-			variant="outline"
-			size="sm"
-			disabled={endIdx >= data.total}
-			onclick={() => changePage(1)}
-		>
-			Next <ChevronRight class="size-3.5" />
-		</Button>
-	</div>
+	{#await data.list}
+		<div class="flex items-center gap-2">
+			<Button variant="outline" size="sm" disabled>
+				<ChevronLeft class="size-3.5" /> Prev
+			</Button>
+			<Button variant="outline" size="sm" disabled>
+				Next <ChevronRight class="size-3.5" />
+			</Button>
+		</div>
+	{:then list}
+		{@const endIdx = Math.min(data.offset + data.limit, list.total)}
+		<div class="flex items-center gap-2">
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={data.offset === 0}
+				onclick={() => changePage(-1)}
+			>
+				<ChevronLeft class="size-3.5" /> Prev
+			</Button>
+			<Button
+				variant="outline"
+				size="sm"
+				disabled={endIdx >= list.total}
+				onclick={() => changePage(1)}
+			>
+				Next <ChevronRight class="size-3.5" />
+			</Button>
+		</div>
+	{/await}
 </div>

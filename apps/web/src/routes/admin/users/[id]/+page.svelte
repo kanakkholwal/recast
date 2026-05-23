@@ -10,6 +10,7 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
+	import { Skeleton } from "@recast/ui/skeleton";
 	import { toast } from "@recast/ui/sonner";
 	import {
 		ArrowLeft,
@@ -236,20 +237,31 @@
 	<section class="space-y-6">
 		<div class="glass-card rounded-xl p-5">
 			<h2 class="mb-3 text-sm font-semibold tracking-tight">Subscription</h2>
-			{#if data.sub}
+			{#await data.sub}
 				<dl class="space-y-1.5 text-xs">
-					<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Plan</dt><dd class="font-medium">{data.sub.plan}</dd></div>
-					<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Status</dt><dd class="font-medium">{data.sub.status}</dd></div>
-					{#if data.sub.currentPeriodEnd}
-						<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Renews</dt><dd class="font-medium">{new Date(data.sub.currentPeriodEnd).toLocaleDateString()}</dd></div>
-					{/if}
-					{#if data.sub.polarSubscriptionId}
-						<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Polar ID</dt><dd class="font-mono text-[10px]">{data.sub.polarSubscriptionId.slice(0, 12)}…</dd></div>
-					{/if}
+					{#each Array(3) as _, i (i)}
+						<div class="flex justify-between gap-2">
+							<Skeleton class="h-3 w-14" />
+							<Skeleton class="h-3 w-20" />
+						</div>
+					{/each}
 				</dl>
-			{:else}
-				<p class="text-xs text-muted-foreground">No subscription record.</p>
-			{/if}
+			{:then sub}
+				{#if sub}
+					<dl class="space-y-1.5 text-xs">
+						<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Plan</dt><dd class="font-medium">{sub.plan}</dd></div>
+						<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Status</dt><dd class="font-medium">{sub.status}</dd></div>
+						{#if sub.currentPeriodEnd}
+							<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Renews</dt><dd class="font-medium">{new Date(sub.currentPeriodEnd).toLocaleDateString()}</dd></div>
+						{/if}
+						{#if sub.polarSubscriptionId}
+							<div class="flex justify-between gap-2"><dt class="text-muted-foreground">Polar ID</dt><dd class="font-mono text-[10px]">{sub.polarSubscriptionId.slice(0, 12)}…</dd></div>
+						{/if}
+					</dl>
+				{:else}
+					<p class="text-xs text-muted-foreground">No subscription record.</p>
+				{/if}
+			{/await}
 		</div>
 
 		<div class="rounded-xl border border-destructive/30 bg-destructive/4 p-5">
@@ -307,83 +319,102 @@
 		<Collapsible.Trigger class="flex w-full items-center justify-between gap-3 p-5 group/coll">
 			<span class="flex items-center gap-2 text-sm font-semibold tracking-tight">
 				<LogOut class="size-4 text-muted-foreground" />
-				Sessions ({data.sessions.length})
+				Sessions
+				{#await data.sessions}
+					(<Skeleton class="inline-block h-3 w-4 align-middle" />)
+				{:then sessions}
+					({sessions.length})
+				{/await}
 			</span>
 			<ChevronDown class="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/coll:rotate-180" />
 		</Collapsible.Trigger>
 		<Collapsible.Content>
 			<div class="border-t border-border/40 p-5">
-				{#if data.sessions.length}
-					<form
-						method="POST"
-						action="?/revokeAllSessions"
-						class="mb-3"
-						use:enhance={() => {
-							revokingAll = true;
-							return async ({ result, update }) => {
-								try {
-									if (result.type === "success") toast.success("All sessions revoked.");
-									await update();
-								} finally {
-									revokingAll = false;
-								}
-							};
-						}}
-					>
-						<Button type="submit" size="sm" variant="outline" disabled={revokingAll} class="gap-2">
-							{#if revokingAll}
-								<LoaderCircle class="size-3.5 animate-spin" />
-							{/if}
-							{revokingAll ? "Revoking…" : "Revoke all sessions"}
-						</Button>
-					</form>
+				{#await data.sessions}
 					<ul class="divide-y divide-border/30">
-						{#each data.sessions as s (s.id)}
+						{#each Array(3) as _, i (i)}
 							<li class="flex items-center justify-between gap-3 py-2.5">
-								<div class="min-w-0">
-									<span class="block truncate font-mono text-[11px]">{s.ipAddress ?? "—"}</span>
-									<span class="block truncate text-[11px] text-muted-foreground">{s.userAgent ?? "—"}</span>
+								<div class="min-w-0 flex-1 space-y-1.5">
+									<Skeleton class="h-3 w-28" />
+									<Skeleton class="h-2.5 w-48" />
 								</div>
-								<div class="flex items-center gap-2">
-									{#if s.impersonatedBy}
-										<Badge variant="outline" class="text-amber-600 dark:text-amber-400">impersonation</Badge>
-									{/if}
-									<form
-										method="POST"
-										action="?/revokeSession"
-										use:enhance={() => {
-											revokingSessionToken = s.token;
-											return async ({ result, update }) => {
-												try {
-													if (result.type === "success") toast.success("Session revoked.");
-													await update();
-												} finally {
-													revokingSessionToken = null;
-												}
-											};
-										}}
-									>
-										<input type="hidden" name="sessionToken" value={s.token} />
-										<Button
-											type="submit"
-											variant="ghost"
-											size="sm"
-											disabled={revokingSessionToken === s.token}
-											class="gap-1.5"
-										>
-											{#if revokingSessionToken === s.token}
-												<LoaderCircle class="size-3.5 animate-spin" />
-											{/if}
-											{revokingSessionToken === s.token ? "Revoking…" : "Revoke"}
-										</Button>
-									</form>
-								</div>
+								<Skeleton class="h-6 w-14" />
 							</li>
 						{/each}
 					</ul>
-				{:else}
-					<p class="text-sm text-muted-foreground">No active sessions.</p>
-				{/if}
+				{:then sessions}
+					{#if sessions.length}
+						<form
+							method="POST"
+							action="?/revokeAllSessions"
+							class="mb-3"
+							use:enhance={() => {
+								revokingAll = true;
+								return async ({ result, update }) => {
+									try {
+										if (result.type === "success") toast.success("All sessions revoked.");
+										await update();
+									} finally {
+										revokingAll = false;
+									}
+								};
+							}}
+						>
+							<Button type="submit" size="sm" variant="outline" disabled={revokingAll} class="gap-2">
+								{#if revokingAll}
+									<LoaderCircle class="size-3.5 animate-spin" />
+								{/if}
+								{revokingAll ? "Revoking…" : "Revoke all sessions"}
+							</Button>
+						</form>
+						<ul class="divide-y divide-border/30">
+							{#each sessions as s (s.id)}
+								<li class="flex items-center justify-between gap-3 py-2.5">
+									<div class="min-w-0">
+										<span class="block truncate font-mono text-[11px]">{s.ipAddress ?? "—"}</span>
+										<span class="block truncate text-[11px] text-muted-foreground">{s.userAgent ?? "—"}</span>
+									</div>
+									<div class="flex items-center gap-2">
+										{#if s.impersonatedBy}
+											<Badge variant="outline" class="text-amber-600 dark:text-amber-400">impersonation</Badge>
+										{/if}
+										<form
+											method="POST"
+											action="?/revokeSession"
+											use:enhance={() => {
+												revokingSessionToken = s.token;
+												return async ({ result, update }) => {
+													try {
+														if (result.type === "success") toast.success("Session revoked.");
+														await update();
+													} finally {
+														revokingSessionToken = null;
+													}
+												};
+											}}
+										>
+											<input type="hidden" name="sessionToken" value={s.token} />
+											<Button
+												type="submit"
+												variant="ghost"
+												size="sm"
+												disabled={revokingSessionToken === s.token}
+												class="gap-1.5"
+											>
+												{#if revokingSessionToken === s.token}
+													<LoaderCircle class="size-3.5 animate-spin" />
+												{/if}
+												{revokingSessionToken === s.token ? "Revoking…" : "Revoke"}
+											</Button>
+										</form>
+									</div>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="text-sm text-muted-foreground">No active sessions.</p>
+					{/if}
+				{/await}
 			</div>
 		</Collapsible.Content>
 	</Collapsible.Root>
@@ -442,28 +473,44 @@
 		<Collapsible.Trigger class="flex w-full items-center justify-between gap-3 p-5 group/coll">
 			<span class="flex items-center gap-2 text-sm font-semibold tracking-tight">
 				<ClipboardList class="size-4 text-muted-foreground" />
-				Audit log for this user ({data.audit.length})
+				Audit log for this user
+				{#await data.audit}
+					(<Skeleton class="inline-block h-3 w-4 align-middle" />)
+				{:then audit}
+					({audit.length})
+				{/await}
 			</span>
 			<ChevronDown class="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/coll:rotate-180" />
 		</Collapsible.Trigger>
 		<Collapsible.Content>
 			<div class="border-t border-border/40 p-5">
-				{#if data.audit.length}
+				{#await data.audit}
 					<ul class="divide-y divide-border/30">
-						{#each data.audit as a (a.id)}
+						{#each Array(3) as _, i (i)}
 							<li class="flex items-center justify-between gap-3 py-2">
-								<span class="font-mono text-[11px] font-semibold uppercase tracking-wider">
-									{a.action}
-								</span>
-								<span class="font-mono text-[10px] text-muted-foreground">
-									{new Date(a.createdAt).toLocaleString()}
-								</span>
+								<Skeleton class="h-3 w-32" />
+								<Skeleton class="h-3 w-24" />
 							</li>
 						{/each}
 					</ul>
-				{:else}
-					<p class="text-sm text-muted-foreground">No audit entries yet.</p>
-				{/if}
+				{:then audit}
+					{#if audit.length}
+						<ul class="divide-y divide-border/30">
+							{#each audit as a (a.id)}
+								<li class="flex items-center justify-between gap-3 py-2">
+									<span class="font-mono text-[11px] font-semibold uppercase tracking-wider">
+										{a.action}
+									</span>
+									<span class="font-mono text-[10px] text-muted-foreground">
+										{new Date(a.createdAt).toLocaleString()}
+									</span>
+								</li>
+							{/each}
+						</ul>
+					{:else}
+						<p class="text-sm text-muted-foreground">No audit entries yet.</p>
+					{/if}
+				{/await}
 			</div>
 		</Collapsible.Content>
 	</Collapsible.Root>

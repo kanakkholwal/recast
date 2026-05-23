@@ -59,7 +59,9 @@ export const load: PageServerLoad = async ({ request }) => {
 		.limit(1);
 	if (!org) error(404, "Team not found");
 
-	const members = await db
+	// Streamed — the team header (name, plan, seat cap) renders immediately
+	// while the member list + pending invites fill in.
+	const members = db
 		.select({
 			id: memberTable.id,
 			role: memberTable.role,
@@ -73,7 +75,7 @@ export const load: PageServerLoad = async ({ request }) => {
 		.where(eq(memberTable.organizationId, orgId))
 		.orderBy(desc(memberTable.createdAt));
 
-	const invites = await db
+	const invites = db
 		.select()
 		.from(invitationTable)
 		.where(

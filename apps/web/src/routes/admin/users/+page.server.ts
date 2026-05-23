@@ -7,6 +7,10 @@ import type { PageServerLoad } from "./$types";
  * endpoint. We pass the caller's headers along so Better Auth can verify
  * the session (the plugin's middleware enforces admin-only access — our
  * `requireAdmin` is belt-and-braces in case the plugin config changes).
+ *
+ * The list query is returned as an un-awaited promise so SvelteKit streams it
+ * — the filter bar + pagination shell render immediately while the table
+ * fills in.
  */
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
@@ -63,15 +67,14 @@ export const load: PageServerLoad = async (event) => {
 		total: number;
 	};
 
-	const result = (await getAuth().api.listUsers({
+	const list: Promise<ListUsersResult> = getAuth().api.listUsers({
 		headers: event.request.headers,
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		query: query as any,
-	})) as ListUsersResult;
+	}) as Promise<ListUsersResult>;
 
 	return {
-		users: result.users,
-		total: result.total,
+		list,
 		limit,
 		offset,
 		filters: {

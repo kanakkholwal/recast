@@ -7,7 +7,8 @@ import type { PageServerLoad } from "./$types";
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const db = getDb();
-	const rows = await db
+	// Streamed — the page header renders immediately while the table fills in.
+	const rows = db
 		.select({
 			sub: subscription,
 			user: { id: user.id, email: user.email, name: user.name },

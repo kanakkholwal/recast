@@ -1,5 +1,20 @@
 <script lang="ts">
 	import { onMount } from "svelte";
+	import {
+		Captions,
+		Maximize,
+		Minimize,
+		PictureInPicture,
+		PictureInPicture2,
+		Pause,
+		Play,
+		RotateCcw,
+		RotateCw,
+		Volume,
+		Volume1,
+		Volume2,
+		VolumeX,
+	} from "@lucide/svelte";
 	import type { RecastPlayerApi, RecastPlayerProps } from "./types";
 
 	/**
@@ -89,9 +104,8 @@
 	}
 
 	/**
-	 * Volume bind callback — Svelte 5 can't `bind:volume` to a custom
-	 * element, so we set the attribute imperatively after mount. Done in
-	 * onMount AND when the prop changes via $effect for re-renders.
+	 * Volume sync — Svelte 5 can't `bind:volume` to a custom element, so we
+	 * write through to the underlying media element via $effect.
 	 */
 	$effect(() => {
 		if (videoEl) videoEl.volume = Math.min(1, Math.max(0, volume));
@@ -109,15 +123,12 @@
 			{title}
 			crossorigin="anonymous"
 			playsinline
-			autoplay={autoplay ? "" : undefined}
+			{autoplay}
 			onplay={handlePlay}
 			ontimeupdate={handleTimeUpdate}
 			onended={handleEnded}
 		>
 			{#if thumbnails}
-				<!-- media-chrome reads scrub-preview tiles from this metadata
-				     track. The VTT file points at a sprite image (Cloudinary
-				     can generate one per upload). -->
 				<track kind="metadata" src={thumbnails} label="thumbnails" default />
 			{/if}
 		</hls-video>
@@ -131,7 +142,7 @@
 			{title}
 			crossorigin="anonymous"
 			playsinline
-			autoplay={autoplay ? "" : undefined}
+			{autoplay}
 			onplay={handlePlay}
 			ontimeupdate={handleTimeUpdate}
 			onended={handleEnded}
@@ -142,53 +153,100 @@
 		</video>
 	{/if}
 
-	<!-- Loading spinner — auto-hides once enough buffer is ready. -->
-	<media-loading-indicator slot="centered-chrome" noautohide></media-loading-indicator>
+	<!-- Loading spinner — appears only while buffering. The default
+	     autohide window (~500ms buffer-stall) is what we want; removing
+	     it would leave a permanent spinner over a happily-playing video. -->
+	<media-loading-indicator class="recast-loading"></media-loading-indicator>
 
-	<!-- Center play overlay — shows pre-play, hides during playback. -->
-	<media-play-button slot="centered-chrome" class="big-play"></media-play-button>
+	<!-- Big center play overlay. Positioned absolutely (rather than via
+	     media-chrome's centered-chrome slot) so it sits at the actual
+	     visual center of the video frame instead of being flex-stacked
+	     next to other centered-chrome children. Auto-hides during
+	     playback via the `mediapaused`-driven rule in styles.css. -->
+	<media-play-button class="recast-big-play">
+		<span slot="play" class="recast-icon recast-icon-big">
+			<Play class="size-7 translate-x-px" />
+		</span>
+		<span slot="pause" class="recast-icon recast-icon-big">
+			<Pause class="size-7" />
+		</span>
+	</media-play-button>
 
-	<!-- Bottom control bar. Editor surfaces can drop sibling rows above
-	     this one (comment lane, cut-marker rail) without fighting any
-	     pre-built layout — this whole bar is our own composition. -->
-	<media-control-bar>
-		<media-play-button></media-play-button>
-		<media-seek-backward-button seekoffset="10"></media-seek-backward-button>
-		<media-seek-forward-button seekoffset="10"></media-seek-forward-button>
-		<media-time-display showduration></media-time-display>
-		<media-time-range>
+	<!-- Bottom control bar. Custom-icon slots throughout so every button
+	     uses Lucide (the rest of the app's icon vocabulary) — no
+	     media-chrome default glyphs leak in. -->
+	<media-control-bar class="recast-control-bar">
+		<media-play-button class="recast-btn">
+			<span slot="play" class="recast-icon"><Play class="size-4 translate-x-[0.5px]" /></span>
+			<span slot="pause" class="recast-icon"><Pause class="size-4" /></span>
+		</media-play-button>
+
+		<media-seek-backward-button class="recast-btn" seekoffset="10">
+			<span slot="icon" class="recast-icon"><RotateCcw class="size-4" /></span>
+		</media-seek-backward-button>
+
+		<media-seek-forward-button class="recast-btn" seekoffset="10">
+			<span slot="icon" class="recast-icon"><RotateCw class="size-4" /></span>
+		</media-seek-forward-button>
+
+		<media-time-display class="recast-time" showduration></media-time-display>
+
+		<media-time-range class="recast-scrubber">
 			{#if thumbnails}
-				<media-preview-thumbnail slot="preview"></media-preview-thumbnail>
+				<media-preview-thumbnail
+					slot="preview"
+					class="recast-thumb"
+				></media-preview-thumbnail>
 			{/if}
-			<media-preview-time-display slot="preview"></media-preview-time-display>
+			<media-preview-time-display
+				slot="preview"
+				class="recast-preview-time"
+			></media-preview-time-display>
 		</media-time-range>
-		<media-mute-button></media-mute-button>
-		<media-volume-range></media-volume-range>
-		<!-- Cycles 1x → 1.5x → 2x → 0.5x → 1x on click. No menu, one button —
-		     keeps the bar dense and avoids speculative menu elements. -->
-		<media-playback-rate-button rates="0.5 1 1.25 1.5 2"></media-playback-rate-button>
+
+		<media-mute-button class="recast-btn">
+			<span slot="off" class="recast-icon"><VolumeX class="size-4" /></span>
+			<span slot="low" class="recast-icon"><Volume class="size-4" /></span>
+			<span slot="medium" class="recast-icon"><Volume1 class="size-4" /></span>
+			<span slot="high" class="recast-icon"><Volume2 class="size-4" /></span>
+		</media-mute-button>
+
+		<media-volume-range class="recast-volume"></media-volume-range>
+
+		<media-playback-rate-button
+			class="recast-btn recast-btn-text"
+			rates="0.5 1 1.25 1.5 2"
+		></media-playback-rate-button>
+
 		{#if showMenu}
-			<media-captions-button></media-captions-button>
+			<media-captions-button class="recast-btn">
+				<span slot="on" class="recast-icon"><Captions class="size-4" /></span>
+				<span slot="off" class="recast-icon recast-icon-muted">
+					<Captions class="size-4" />
+				</span>
+			</media-captions-button>
 		{/if}
-		<media-pip-button></media-pip-button>
-		<media-fullscreen-button></media-fullscreen-button>
+
+		<media-pip-button class="recast-btn">
+			<span slot="enter" class="recast-icon"><PictureInPicture class="size-4" /></span>
+			<span slot="exit" class="recast-icon"><PictureInPicture2 class="size-4" /></span>
+		</media-pip-button>
+
+		<media-fullscreen-button class="recast-btn">
+			<span slot="enter" class="recast-icon"><Maximize class="size-4" /></span>
+			<span slot="exit" class="recast-icon"><Minimize class="size-4" /></span>
+		</media-fullscreen-button>
 	</media-control-bar>
 </media-controller>
 
 <style>
-	/* Local fallbacks — actual theme lives in styles.css (consumed by the
-	   host app once at root). These ensure the player still renders
-	   reasonably even if the consumer forgot the stylesheet import. */
+	/* Local minimum so the controller has dimensions even if the host app
+	   forgot to import @recast/player/styles.css. Full theming lives in
+	   that stylesheet so consumers can override per-app if they need. */
 	:global(.recast-player) {
 		display: block;
 		width: 100%;
 		aspect-ratio: 16 / 9;
 		background: #000;
-		--media-primary-color: #cdec3a;
-	}
-
-	:global(.recast-player .big-play) {
-		--media-control-background: transparent;
-		--media-button-icon-height: 56px;
 	}
 </style>

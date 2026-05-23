@@ -5,6 +5,7 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
+	import { Skeleton } from "@recast/ui/skeleton";
 	import { toast } from "@recast/ui/sonner";
 	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@lucide/svelte";
 	import { untrack } from "svelte";
@@ -34,7 +35,11 @@
 	<div class="mt-3 flex items-center gap-2">
 		<Badge variant={data.team.plan === "free" ? "outline" : "secondary"}>{data.team.plan}</Badge>
 		<span class="text-xs text-muted-foreground">
-			{data.members.length} / {Number.isFinite(memberCap) ? memberCap : "∞"} seats
+			{#await data.members}
+				…
+			{:then members}
+				{members.length} / {Number.isFinite(memberCap) ? memberCap : "∞"} seats
+			{/await}
 		</span>
 	</div>
 </header>
@@ -119,21 +124,35 @@
 
 <section class="glass-card mt-6 rounded-xl p-5">
 	<h2 class="mb-3 text-sm font-semibold tracking-tight">Members</h2>
-	<ul class="divide-y divide-border/30">
-		{#each data.members as m (m.id)}
-			<li class="flex items-center justify-between gap-3 py-2.5">
-				<a href="/admin/users/{m.userId}" class="min-w-0 hover:text-primary">
-					<span class="block truncate text-sm font-medium">{m.name}</span>
-					<span class="block truncate text-xs text-muted-foreground">{m.email}</span>
-				</a>
-				{#if m.role === "owner"}
-					<Badge variant="secondary" class="gap-1"><Crown class="size-3" /> owner</Badge>
-				{:else if m.role === "admin"}
-					<Badge variant="outline" class="gap-1"><ShieldCheck class="size-3" /> admin</Badge>
-				{:else}
-					<Badge variant="outline">member</Badge>
-				{/if}
-			</li>
-		{/each}
-	</ul>
+	{#await data.members}
+		<ul class="divide-y divide-border/30">
+			{#each Array(4) as _, i (i)}
+				<li class="flex items-center justify-between gap-3 py-2.5">
+					<div class="min-w-0 flex-1 space-y-1.5">
+						<Skeleton class="h-3.5 w-32" />
+						<Skeleton class="h-3 w-44" />
+					</div>
+					<Skeleton class="h-5 w-16" />
+				</li>
+			{/each}
+		</ul>
+	{:then members}
+		<ul class="divide-y divide-border/30">
+			{#each members as m (m.id)}
+				<li class="flex items-center justify-between gap-3 py-2.5">
+					<a href="/admin/users/{m.userId}" class="min-w-0 hover:text-primary">
+						<span class="block truncate text-sm font-medium">{m.name}</span>
+						<span class="block truncate text-xs text-muted-foreground">{m.email}</span>
+					</a>
+					{#if m.role === "owner"}
+						<Badge variant="secondary" class="gap-1"><Crown class="size-3" /> owner</Badge>
+					{:else if m.role === "admin"}
+						<Badge variant="outline" class="gap-1"><ShieldCheck class="size-3" /> admin</Badge>
+					{:else}
+						<Badge variant="outline">member</Badge>
+					{/if}
+				</li>
+			{/each}
+		</ul>
+	{/await}
 </section>

@@ -8,7 +8,8 @@ export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const db = getDb();
 
-	const rows = await db
+	// Streamed — the page header renders immediately while the table fills in.
+	const teams = db
 		.select({
 			id: organizationTable.id,
 			name: organizationTable.name,
@@ -24,5 +25,5 @@ export const load: PageServerLoad = async (event) => {
 		.orderBy(desc(organizationTable.createdAt))
 		.limit(200);
 
-	return { teams: rows };
+	return { teams };
 };

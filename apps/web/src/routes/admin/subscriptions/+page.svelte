@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Badge } from "@recast/ui/badge";
+	import { Skeleton } from "@recast/ui/skeleton";
 
 	let { data } = $props();
 
@@ -34,7 +35,23 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-border/30">
-				{#each data.rows as r (r.sub.id)}
+				{#await data.rows}
+					{#each Array(6) as _, i (i)}
+						<tr>
+							<td class="px-4 py-3">
+								<div class="space-y-1.5">
+									<Skeleton class="h-3.5 w-28" />
+									<Skeleton class="h-3 w-40" />
+								</div>
+							</td>
+							<td class="px-4 py-3"><Skeleton class="h-3.5 w-12" /></td>
+							<td class="px-4 py-3"><Skeleton class="h-5 w-16" /></td>
+							<td class="px-4 py-3"><Skeleton class="h-3 w-20" /></td>
+							<td class="px-4 py-3"><Skeleton class="h-3 w-28" /></td>
+						</tr>
+					{/each}
+				{:then rows}
+				{#each rows as r (r.sub.id)}
 					<tr class="transition-colors hover:bg-foreground/2">
 						<td class="px-4 py-3">
 							<a href="/admin/users/{r.user.id}" class="block hover:text-primary">
@@ -63,6 +80,7 @@
 						</td>
 					</tr>
 				{/each}
+				{/await}
 			</tbody>
 		</table>
 	</div>

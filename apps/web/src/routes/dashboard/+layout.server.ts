@@ -65,9 +65,10 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 		.where(eq(memberTable.userId, session.user.id))
 		.orderBy(desc(memberTable.createdAt));
 
-	// Pending invitations addressed to this email — surfaced on the
-	// onboarding screen so a brand-new user can accept directly.
-	const pendingInvites = await db
+	// Pending invitations addressed to this email — streamed so the dashboard
+	// shell + sidebar render immediately. Consumed downstream (e.g. invite
+	// banners); the query keeps running but no longer blocks initial paint.
+	const pendingInvites = db
 		.select({
 			id: invitationTable.id,
 			email: invitationTable.email,

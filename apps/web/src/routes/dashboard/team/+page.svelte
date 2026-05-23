@@ -5,6 +5,7 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
+	import { Skeleton } from "@recast/ui/skeleton";
 	import { toast } from "@recast/ui/sonner";
 	import {
 		Crown,
@@ -46,23 +47,27 @@
 	);
 	const isOwner = $derived(data.viewer.role === "owner");
 
-	const seatsRemaining = $derived(
-		Number.isFinite(data.caps.members)
-			? Math.max(0, data.caps.members - data.members.length)
-			: Number.POSITIVE_INFINITY,
-	);
-	const seatsLabel = $derived(
-		Number.isFinite(data.caps.members)
-			? `${data.members.length} / ${data.caps.members} seats used`
-			: `${data.members.length} seats used · no cap`,
-	);
+	function seatsRemainingFor(memberCount: number): number {
+		return Number.isFinite(data.caps.members)
+			? Math.max(0, data.caps.members - memberCount)
+			: Number.POSITIVE_INFINITY;
+	}
+	function seatsLabelFor(memberCount: number): string {
+		return Number.isFinite(data.caps.members)
+			? `${memberCount} / ${data.caps.members} seats used`
+			: `${memberCount} seats used · no cap`;
+	}
 </script>
 
 <header class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 	<div class="min-w-0">
 		<h1 class="truncate text-2xl font-semibold tracking-tight">{data.org.name}</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
-			{seatsLabel}
+			{#await data.members}
+				Loading members…
+			{:then members}
+				{seatsLabelFor(members.length)}
+			{/await}
 		</p>
 	</div>
 	<div class="flex items-center gap-2">
@@ -196,8 +201,21 @@
 	<!-- Members -->
 	<section class="glass-card rounded-xl p-5 lg:col-span-2">
 		<h2 class="mb-4 text-sm font-semibold tracking-tight">Members</h2>
+		{#await data.members}
+			<ul class="divide-y divide-border/30">
+				{#each Array(4) as _, i (i)}
+					<li class="flex items-center justify-between gap-3 py-3">
+						<div class="min-w-0 flex-1 space-y-1.5">
+							<Skeleton class="h-3.5 w-32" />
+							<Skeleton class="h-3 w-44" />
+						</div>
+						<Skeleton class="h-5 w-16" />
+					</li>
+				{/each}
+			</ul>
+		{:then members}
 		<ul class="divide-y divide-border/30">
-			{#each data.members as m (m.id)}
+			{#each members as m (m.id)}
 				<li class="flex flex-wrap items-center justify-between gap-3 py-3">
 					<div class="min-w-0">
 						<span class="block truncate text-sm font-medium">{m.name}</span>
@@ -297,6 +315,7 @@
 				</li>
 			{/each}
 		</ul>
+		{/await}
 	</section>
 
 	<!-- Invite + pending invitations -->
@@ -307,6 +326,14 @@
 					<Send class="size-4 text-muted-foreground" />
 					Invite a teammate
 				</h2>
+				{#await data.members}
+					<div class="space-y-3">
+						<Skeleton class="h-9 w-full" />
+						<Skeleton class="h-9 w-full" />
+						<Skeleton class="h-9 w-full" />
+					</div>
+				{:then members}
+				{@const seatsRemaining = seatsRemainingFor(members.length)}
 				{#if seatsRemaining <= 0}
 					<p class="rounded-lg border border-amber-500/30 bg-amber-500/8 p-3 text-xs text-muted-foreground">
 						You're at the seat cap for the
@@ -369,6 +396,7 @@
 						</Button>
 					</form>
 				{/if}
+				{/await}
 			</div>
 		{/if}
 
@@ -376,9 +404,22 @@
 			<h2 class="mb-3 text-sm font-semibold tracking-tight">
 				Pending invitations
 			</h2>
-			{#if data.invites.length}
+			{#await data.invites}
 				<ul class="divide-y divide-border/30">
-					{#each data.invites as inv (inv.id)}
+					{#each Array(2) as _, i (i)}
+						<li class="flex items-center justify-between gap-3 py-2">
+							<div class="min-w-0 flex-1 space-y-1.5">
+								<Skeleton class="h-3 w-36" />
+								<Skeleton class="h-2.5 w-16" />
+							</div>
+							<Skeleton class="h-6 w-6" />
+						</li>
+					{/each}
+				</ul>
+			{:then invites}
+			{#if invites.length}
+				<ul class="divide-y divide-border/30">
+					{#each invites as inv (inv.id)}
 						<li class="flex items-center justify-between gap-3 py-2">
 							<div class="min-w-0">
 								<span class="block truncate text-xs font-mono">{inv.email}</span>
@@ -423,6 +464,7 @@
 			{:else}
 				<p class="text-xs text-muted-foreground">No pending invitations.</p>
 			{/if}
+			{/await}
 		</div>
 	</section>
 </div>

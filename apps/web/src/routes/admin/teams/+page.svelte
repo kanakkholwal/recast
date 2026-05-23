@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Badge } from "@recast/ui/badge";
+	import { Skeleton } from "@recast/ui/skeleton";
 
 	let { data } = $props();
 </script>
@@ -7,8 +8,10 @@
 <header class="mb-6">
 	<h1 class="text-2xl font-semibold tracking-tight">Teams</h1>
 	<p class="mt-1 text-sm text-muted-foreground">
-		{data.teams.length} {data.teams.length === 1 ? "team" : "teams"} total. Plan
-		changes here are the only way to upgrade — there's no self-serve checkout.
+		{#await data.teams then teams}
+			{teams.length} {teams.length === 1 ? "team" : "teams"} total.
+		{/await}
+		Plan changes here are the only way to upgrade — there's no self-serve checkout.
 	</p>
 </header>
 
@@ -25,43 +28,60 @@
 				</tr>
 			</thead>
 			<tbody class="divide-y divide-border/30">
-				{#each data.teams as t (t.id)}
-					<tr class="transition-colors hover:bg-foreground/2">
-						<td class="px-4 py-3">
-							<a href="/admin/teams/{t.id}" class="block hover:text-primary">
-								<span class="block truncate font-medium">{t.name}</span>
-								<span class="block truncate font-mono text-xs text-muted-foreground">{t.slug}</span>
-							</a>
-						</td>
-						<td class="px-4 py-3">
-							{#if t.plan === "free"}
-								<Badge variant="outline">free</Badge>
-							{:else if t.plan === "pro"}
-								<Badge variant="secondary">pro</Badge>
-							{:else}
-								<Badge variant="secondary" class="bg-primary/15 text-primary">enterprise</Badge>
-							{/if}
-						</td>
-						<td class="px-4 py-3 tabular-nums">{t.memberCount}</td>
-						<td class="px-4 py-3 text-muted-foreground">
-							{new Date(t.createdAt).toLocaleDateString()}
-						</td>
-						<td class="px-4 py-3 text-right">
-							<a
-								href="/admin/teams/{t.id}"
-								class="inline-flex items-center gap-1.5 rounded-md border border-border/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-foreground/5"
-							>
-								Manage
-							</a>
-						</td>
-					</tr>
-				{:else}
-					<tr>
-						<td colspan="5" class="px-4 py-10 text-center text-sm text-muted-foreground">
-							No teams yet.
-						</td>
-					</tr>
-				{/each}
+				{#await data.teams}
+					{#each Array(6) as _, i (i)}
+						<tr>
+							<td class="px-4 py-3">
+								<div class="space-y-1.5">
+									<Skeleton class="h-3.5 w-28" />
+									<Skeleton class="h-3 w-20" />
+								</div>
+							</td>
+							<td class="px-4 py-3"><Skeleton class="h-5 w-14" /></td>
+							<td class="px-4 py-3"><Skeleton class="h-3 w-8" /></td>
+							<td class="px-4 py-3"><Skeleton class="h-3 w-20" /></td>
+							<td class="px-4 py-3 text-right"><Skeleton class="ml-auto h-6 w-16" /></td>
+						</tr>
+					{/each}
+				{:then teams}
+					{#each teams as t (t.id)}
+						<tr class="transition-colors hover:bg-foreground/2">
+							<td class="px-4 py-3">
+								<a href="/admin/teams/{t.id}" class="block hover:text-primary">
+									<span class="block truncate font-medium">{t.name}</span>
+									<span class="block truncate font-mono text-xs text-muted-foreground">{t.slug}</span>
+								</a>
+							</td>
+							<td class="px-4 py-3">
+								{#if t.plan === "free"}
+									<Badge variant="outline">free</Badge>
+								{:else if t.plan === "pro"}
+									<Badge variant="secondary">pro</Badge>
+								{:else}
+									<Badge variant="secondary" class="bg-primary/15 text-primary">enterprise</Badge>
+								{/if}
+							</td>
+							<td class="px-4 py-3 tabular-nums">{t.memberCount}</td>
+							<td class="px-4 py-3 text-muted-foreground">
+								{new Date(t.createdAt).toLocaleDateString()}
+							</td>
+							<td class="px-4 py-3 text-right">
+								<a
+									href="/admin/teams/{t.id}"
+									class="inline-flex items-center gap-1.5 rounded-md border border-border/40 px-2.5 py-1 text-xs font-medium transition-colors hover:bg-foreground/5"
+								>
+									Manage
+								</a>
+							</td>
+						</tr>
+					{:else}
+						<tr>
+							<td colspan="5" class="px-4 py-10 text-center text-sm text-muted-foreground">
+								No teams yet.
+							</td>
+						</tr>
+					{/each}
+				{/await}
 			</tbody>
 		</table>
 	</div>

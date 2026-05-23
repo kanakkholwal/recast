@@ -7,6 +7,11 @@ import { getDb } from "$lib/db";
 import { auditLog, session as sessionTable, subscription, user } from "$lib/db/schema";
 import type { Actions, PageServerLoad } from "./$types";
 
+/**
+ * Per-user admin page. `target` must resolve before render — it gates the 404
+ * and seeds the page header — so we await it. Sessions, sub and audit log live
+ * in collapsibles below the fold and are streamed.
+ */
 export const load: PageServerLoad = async (event) => {
 	await requireAdmin(event);
 	const id = event.params.id;
@@ -15,27 +20,30 @@ export const load: PageServerLoad = async (event) => {
 	const [target] = await db.select().from(user).where(eq(user.id, id)).limit(1);
 	if (!target) error(404, "User not found");
 
-	const sessions = await db
+	const sessions = db
 		.select()
 		.from(sessionTable)
 		.where(eq(sessionTable.userId, id))
 		.orderBy(desc(sessionTable.createdAt))
 		.limit(20);
 
-	const [sub] = await db
-		.select()
-		.from(subscription)
-		.where(eq(subscription.userId, id))
-		.limit(1);
+	const sub = (async () => {
+		const [row] = await db
+			.select()
+			.from(subscription)
+			.where(eq(subscription.userId, id))
+			.limit(1);
+		return row ?? null;
+	})();
 
-	const audit = await db
+	const audit = db
 		.select()
 		.from(auditLog)
 		.where(eq(auditLog.targetUserId, id))
 		.orderBy(desc(auditLog.createdAt))
 		.limit(20);
 
-	return { target, sessions, sub: sub ?? null, audit };
+	return { target, sessions, sub, audit };
 };
 
 /**
@@ -225,4 +233,3 @@ export const actions: Actions = {
 		redirect(303, "/admin/users");
 	},
 };
-

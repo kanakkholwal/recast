@@ -25,6 +25,7 @@
 		page.url.pathname.startsWith("/dashboard") ||
 			page.url.pathname.startsWith("/admin") ||
 			page.url.pathname.startsWith("/onboarding") ||
+			page.url.pathname.startsWith("/share/") ||
 			page.url.pathname === "/accept-invitation" ||
 			page.url.pathname === "/verify-email" ||
 			chromelessPaths.has(page.url.pathname),

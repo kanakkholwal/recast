@@ -1,57 +1,315 @@
 /**
- * RecastPlayer theme — overrides media-chrome's design-token surface so the
- * player matches the in-app brand instead of media-chrome's neutral defaults.
- * All values use shadcn semantic tokens (color-mix against --color-foreground
- * / --color-primary) so a single theme flip on :root cascades into the
- * player without touching this file.
+ * RecastPlayer theme — restyles media-chrome from the ground up to match
+ * the shadcn/Tailwind vocabulary used across the rest of the Recast
+ * surface. We don't just tint colors; we override sizes, border radii,
+ * hover behaviour, tooltip styling, fonts, and scrubber geometry so the
+ * player reads as "part of the app", not "a video widget bolted on".
+ *
+ * Everything keys off design-system tokens where it makes sense; chrome
+ * surfaces stay dark + glassy regardless of host theme since the player
+ * always sits over black video frames.
  */
+
+/* ──────────────────────────────────────────────────────────────────
+   1. Font + selection — applied to the controller AND every
+   descendant (custom-element shadow roots included via media-chrome's
+   `--media-font-family` variable, which the library does pipe through).
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-player,
+.recast-player * {
+	font-family: "Geist Variable", "Inter", ui-sans-serif, system-ui,
+		-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	-webkit-user-select: none;
+	user-select: none;
+}
+
+/* media-chrome tooltips, time displays, and menu items live in shadow
+   DOM that doesn't always inherit from the host — push the font via the
+   library's own CSS variables so it lands inside the shadow roots. */
+.recast-player {
+	--media-font-family: "Geist Variable", "Inter", ui-sans-serif, system-ui,
+		-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	--media-tooltip-font-family: "Geist Variable", "Inter", ui-sans-serif,
+		system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+	--media-font-weight: 500;
+	--media-tooltip-font-weight: 500;
+	--media-text-font-weight: 500;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   2. Brand + chrome tokens
+   ────────────────────────────────────────────────────────────────── */
 
 .recast-player {
 	--media-primary-color: var(--color-primary);
 	--media-secondary-color: rgba(255, 255, 255, 0.92);
+	--media-icon-color: rgba(255, 255, 255, 0.92);
 
-	/* Chrome surfaces — keep them dark + glassy regardless of host theme,
-	   since the player always sits over a black video frame. */
-	--media-control-background: rgba(20, 20, 20, 0.55);
-	--media-control-hover-background: rgba(40, 40, 40, 0.72);
-	--media-menu-background: rgba(20, 20, 20, 0.92);
+	/* Default control background — transparent. Hover affordances are
+	   applied per-button below via `.recast-btn:hover`, so ranges + time
+	   displays never pick up a white-overlay rectangle on hover. */
+	--media-control-background: transparent;
+	--media-control-hover-background: transparent;
+	--media-menu-background: rgba(15, 15, 14, 0.96);
+	--media-menu-color: rgba(255, 255, 255, 0.92);
 
-	/* Scrub bar — primary track + softer rail. */
-	--media-range-track-background: rgba(255, 255, 255, 0.18);
-	--media-range-track-pointer-background: rgba(255, 255, 255, 0.35);
-	--media-range-thumb-background: var(--color-primary);
-	--media-range-thumb-border-radius: 9999px;
-	--media-range-bar-color: var(--color-primary);
-
-	/* Tooltip + preview thumbnail chip. */
-	--media-tooltip-background: rgba(20, 20, 20, 0.92);
-	--media-preview-thumbnail-border: 2px solid rgba(255, 255, 255, 0.18);
-	--media-preview-thumbnail-border-radius: 6px;
-
-	/* Buttons. */
-	--media-button-icon-height: 22px;
-	--media-control-padding: 10px;
-	--media-control-height: 44px;
-
-	/* Loading/buffering ring uses the brand accent. */
-	--media-loading-icon-color: var(--color-primary);
-
-	/* Hide the native fullscreen on mobile sometimes — keep it visible. */
-	font-family: var(--font-sans, system-ui);
+	--media-control-padding: 0;
+	--media-control-height: 36px;
+	--media-button-icon-height: 16px;
+	--media-button-icon-width: 16px;
+	--media-button-padding: 0;
 }
+
+/* ──────────────────────────────────────────────────────────────────
+   3. Scrubber + volume range — primary thumb, soft rail
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-player {
+	--media-range-track-background: rgba(255, 255, 255, 0.18);
+	--media-range-track-pointer-background: rgba(255, 255, 255, 0.32);
+	--media-range-track-translucent-background: rgba(255, 255, 255, 0.28);
+	--media-range-bar-color: var(--color-primary);
+	--media-range-track-height: 3px;
+	--media-range-track-border-radius: 9999px;
+	--media-range-thumb-background: var(--color-primary);
+	--media-range-thumb-width: 12px;
+	--media-range-thumb-height: 12px;
+	--media-range-thumb-border-radius: 9999px;
+	--media-range-thumb-border: 0;
+	--media-range-thumb-box-shadow:
+		0 0 0 4px rgba(205, 236, 58, 0.18),
+		0 1px 3px rgba(0, 0, 0, 0.4);
+	--media-range-thumb-opacity: 1;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   4. Tooltip + preview thumb — popover styling
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-player {
+	--media-tooltip-background: rgba(15, 15, 14, 0.96);
+	--media-tooltip-color: rgba(255, 255, 255, 0.92);
+	--media-tooltip-padding: 4px 8px;
+	--media-tooltip-border-radius: 6px;
+	--media-tooltip-font-size: 11px;
+	--media-tooltip-arrow-color: rgba(15, 15, 14, 0.96);
+
+	--media-preview-thumbnail-border: 1px solid rgba(255, 255, 255, 0.16);
+	--media-preview-thumbnail-border-radius: 8px;
+	--media-preview-thumbnail-background: rgba(15, 15, 14, 0.96);
+	--media-preview-thumbnail-box-shadow:
+		0 12px 32px -8px rgba(0, 0, 0, 0.6),
+		0 2px 6px rgba(0, 0, 0, 0.4);
+
+	--media-preview-time-background: rgba(15, 15, 14, 0.96);
+	--media-preview-time-color: rgba(255, 255, 255, 0.92);
+	--media-preview-time-padding: 3px 7px;
+	--media-preview-time-border-radius: 6px;
+	--media-preview-time-margin: 6px 0 0;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   5. Time display + small text
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-player {
+	--media-text-color: rgba(255, 255, 255, 0.78);
+	--media-font-size: 12px;
+
+	/* Loading indicator uses the brand accent. */
+	--media-loading-indicator-icon-color: var(--color-primary);
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   6. Top + bottom chrome gradient fades — readability over any frame
+   ────────────────────────────────────────────────────────────────── */
 
 .recast-player::part(top-chrome) {
 	background: linear-gradient(
 		to bottom,
-		rgba(0, 0, 0, 0.45),
+		rgba(0, 0, 0, 0.5),
 		rgba(0, 0, 0, 0)
 	);
 }
 
-.recast-player::part(bottom-chrome) {
+.recast-control-bar {
 	background: linear-gradient(
 		to top,
-		rgba(0, 0, 0, 0.6),
+		rgba(0, 0, 0, 0.7),
 		rgba(0, 0, 0, 0)
 	);
+	padding: 8px 10px 6px;
+	gap: 2px;
+	align-items: center;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   7. Bottom-bar buttons — shadcn ghost vocabulary
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-btn {
+	height: 32px;
+	min-width: 32px;
+	border-radius: 8px;
+	transition: background-color 150ms ease, color 150ms ease;
+	color: rgba(255, 255, 255, 0.92);
+}
+
+.recast-btn:hover {
+	background: rgba(255, 255, 255, 0.1) !important;
+}
+
+.recast-btn:focus-visible {
+	outline: 2px solid var(--color-primary);
+	outline-offset: 1px;
+}
+
+/* Text-only buttons (playback rate). Tighter padding, mono digit width
+   so 1× → 1.25× → 1.5× doesn't jitter the bar. */
+.recast-btn-text {
+	padding: 0 8px;
+	font-family: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
+		Consolas, monospace !important;
+	font-size: 11px;
+	font-weight: 600;
+	letter-spacing: -0.01em;
+	font-variant-numeric: tabular-nums;
+}
+
+.recast-icon {
+	display: grid;
+	place-items: center;
+	width: 100%;
+	height: 100%;
+}
+
+.recast-icon-muted :global(svg) {
+	opacity: 0.55;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   8. Range elements — explicitly opt OUT of the button hover overlay
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-scrubber,
+.recast-volume {
+	background: transparent !important;
+}
+
+.recast-scrubber:hover,
+.recast-volume:hover {
+	background: transparent !important;
+}
+
+/* The mute button sits next to volume; volume range expands a bit on
+   hover for easier scrubbing without snapping shut. */
+.recast-volume {
+	width: 56px;
+	height: 32px;
+	transition: width 180ms ease;
+}
+
+.recast-volume:hover,
+.recast-volume:focus-within {
+	width: 72px;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   9. Big center play overlay — absolutely centered, auto-hides during
+   playback. `mediapaused` is a media-chrome attribute toggled on the
+   controller; when it's gone we know playback is live and we fade the
+   button out instead of leaving it floating over the frame.
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-big-play {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	width: 72px;
+	height: 72px;
+	border-radius: 9999px;
+	background: rgba(15, 15, 14, 0.55);
+	backdrop-filter: blur(8px);
+	-webkit-backdrop-filter: blur(8px);
+	transition:
+		background-color 180ms ease,
+		opacity 180ms ease,
+		transform 180ms ease;
+	z-index: 2;
+	pointer-events: auto;
+}
+
+.recast-big-play:hover {
+	background: rgba(205, 236, 58, 0.92);
+}
+
+.recast-big-play:hover .recast-icon-big {
+	color: rgba(15, 15, 14, 0.95);
+}
+
+.recast-icon-big {
+	display: grid;
+	place-items: center;
+	width: 100%;
+	height: 100%;
+	color: rgba(255, 255, 255, 0.95);
+}
+
+/* Hide while playing — media-chrome strips `mediapaused` from the
+   controller as soon as the video starts. */
+media-controller.recast-player:not([mediapaused]) .recast-big-play {
+	opacity: 0;
+	transform: translate(-50%, -50%) scale(0.92);
+	pointer-events: none;
+}
+
+/* Loading indicator centered. Default media-chrome positions it via
+   slot but we removed the slot reliance — set position here. */
+.recast-loading {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 1;
+	pointer-events: none;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   10. Scrubber sizing + time display alignment
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-scrubber {
+	flex: 1;
+	min-width: 60px;
+	margin: 0 6px;
+	height: 32px;
+}
+
+.recast-time {
+	font-family: "Geist Mono Variable", ui-monospace, "SF Mono", Menlo,
+		Consolas, monospace;
+	font-size: 11px;
+	font-weight: 500;
+	letter-spacing: -0.01em;
+	color: rgba(255, 255, 255, 0.78);
+	font-variant-numeric: tabular-nums;
+	padding: 0 6px;
+	height: 32px;
+	display: inline-flex;
+	align-items: center;
+}
+
+/* ──────────────────────────────────────────────────────────────────
+   11. Preview chip sizing
+   ────────────────────────────────────────────────────────────────── */
+
+.recast-thumb {
+	width: 160px;
+	height: 90px;
+}
+
+.recast-preview-time {
+	margin-top: 6px;
 }
