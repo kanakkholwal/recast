@@ -2,18 +2,31 @@ import {
 	boolean,
 	index,
 	integer,
+	pgEnum,
 	pgTable,
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+import { organization } from "./organization";
 import { recast } from "./recasts";
 
 /**
- * Public share record — one per generated link. `slug` is the URL fragment
- * used at /v/{slug}. Free tier caps active (non-expired) shares per user
- * at 10; gating is a count on this table.
+ * Who can open a share link:
+ *   - `public`  → anyone with the URL (default; matches v1 behavior)
+ *   - `team`    → signed-in members of `organizationId` only
+ *   - `private` → owner + global admins only
+ *
+ * Visibility is changeable from the share page itself by the owner or a
+ * platform admin. Team-scoped shares require an `organizationId`; the
+ * loader treats a team share with no org id as effectively private.
  */
+export const shareVisibilityEnum = pgEnum("share_visibility", [
+	"public",
+	"team",
+	"private",
+]);
+
 export const share = pgTable(
 	"share",
 	{
@@ -24,6 +37,11 @@ export const share = pgTable(
 		ownerId: text("owner_id")
 			.notNull()
 			.references(() => user.id, { onDelete: "cascade" }),
+		/** Owning team — required for `team` visibility, optional otherwise. */
+		organizationId: text("organization_id").references(() => organization.id, {
+			onDelete: "set null",
+		}),
+		visibility: shareVisibilityEnum("visibility").notNull().default("public"),
 		passwordHash: text("password_hash"),
 		expiresAt: timestamp("expires_at"),
 		// On free plan this is always true and shown on the player; Pro removes.
@@ -35,6 +53,7 @@ export const share = pgTable(
 	(t) => [
 		index("share_owner_idx").on(t.ownerId),
 		index("share_recast_idx").on(t.recastId),
+		index("share_org_idx").on(t.organizationId),
 	],
 );
 
