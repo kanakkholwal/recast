@@ -6,6 +6,9 @@
 	import { Toaster } from "@recast/ui/sonner";
 	import { ModeWatcher } from "@recast/ui/theme";
 	import "../app.css";
+	// Player theme — imported once at the root so any /share or dashboard
+	// route that mounts <RecastPlayer> picks up the branded CSS variables.
+	import "@recast/player/styles.css";
 
 	let { children } = $props();
 

@@ -1,0 +1,57 @@
+/**
+ * RecastPlayer theme — overrides media-chrome's design-token surface so the
+ * player matches the in-app brand instead of media-chrome's neutral defaults.
+ * All values use shadcn semantic tokens (color-mix against --color-foreground
+ * / --color-primary) so a single theme flip on :root cascades into the
+ * player without touching this file.
+ */
+
+.recast-player {
+	--media-primary-color: var(--color-primary);
+	--media-secondary-color: rgba(255, 255, 255, 0.92);
+
+	/* Chrome surfaces — keep them dark + glassy regardless of host theme,
+	   since the player always sits over a black video frame. */
+	--media-control-background: rgba(20, 20, 20, 0.55);
+	--media-control-hover-background: rgba(40, 40, 40, 0.72);
+	--media-menu-background: rgba(20, 20, 20, 0.92);
+
+	/* Scrub bar — primary track + softer rail. */
+	--media-range-track-background: rgba(255, 255, 255, 0.18);
+	--media-range-track-pointer-background: rgba(255, 255, 255, 0.35);
+	--media-range-thumb-background: var(--color-primary);
+	--media-range-thumb-border-radius: 9999px;
+	--media-range-bar-color: var(--color-primary);
+
+	/* Tooltip + preview thumbnail chip. */
+	--media-tooltip-background: rgba(20, 20, 20, 0.92);
+	--media-preview-thumbnail-border: 2px solid rgba(255, 255, 255, 0.18);
+	--media-preview-thumbnail-border-radius: 6px;
+
+	/* Buttons. */
+	--media-button-icon-height: 22px;
+	--media-control-padding: 10px;
+	--media-control-height: 44px;
+
+	/* Loading/buffering ring uses the brand accent. */
+	--media-loading-icon-color: var(--color-primary);
+
+	/* Hide the native fullscreen on mobile sometimes — keep it visible. */
+	font-family: var(--font-sans, system-ui);
+}
+
+.recast-player::part(top-chrome) {
+	background: linear-gradient(
+		to bottom,
+		rgba(0, 0, 0, 0.45),
+		rgba(0, 0, 0, 0)
+	);
+}
+
+.recast-player::part(bottom-chrome) {
+	background: linear-gradient(
+		to top,
+		rgba(0, 0, 0, 0.6),
+		rgba(0, 0, 0, 0)
+	);
+}

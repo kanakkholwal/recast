@@ -111,7 +111,7 @@ jobs:
         run: bash scripts/release/install-linux-deps.sh
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       # `tauri::generate_context!` validates that every `externalBin` sidecar
       # exists for the target triple at macro-expansion time, so even a

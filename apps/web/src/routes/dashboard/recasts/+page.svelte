@@ -321,10 +321,10 @@
 		recast={playing}
 		onclose={() => (playing = null)}
 		onengagement={(event) => {
-			// Single-bump-per-open: the dialog's `started` latch guarantees
+			// Single-bump-per-open: the player's `started` latch guarantees
 			// `view-start` fires once. The other events (progress/ended) feed
 			// into analytics later — no-op for now.
-			if (event === "view-start" && playing) {
+			if (event.type === "view-start" && playing) {
 				recastsStore.incrementViews(playing.id);
 			}
 		}}
