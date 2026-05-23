@@ -2,7 +2,7 @@
 	import { Container, Eyebrow, Section } from "$lib/components";
 	import { TextLoop } from "$lib/motion-core";
 	import { Button } from "@recast/ui/button";
-	import { ArrowRight, Download, MousePointer2, Share2, Sparkles, Video } from "lucide-svelte";
+	import { ArrowRight, Download, MousePointer2, Share2, Sparkles, Video } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { blur, fly } from "svelte/transition";
 

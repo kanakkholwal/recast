@@ -1,6 +1,6 @@
-import { error } from "@sveltejs/kit";
 import { getAuth } from "$lib/auth/server";
 import { loadViewer, resolveShareAccess, type ResolvedShare } from "$lib/share/access";
+import { error } from "@sveltejs/kit";
 import type { PageServerLoad } from "./$types";
 
 /**
@@ -16,7 +16,12 @@ import type { PageServerLoad } from "./$types";
  * Demo is always public and never manageable.
  */
 
-const DEMO: Extract<ResolvedShare, { ok: true }> = {
+// Typed as the full ResolvedShare union (not the narrow ok:true
+// extract) so the loader's inferred return propagates a `data.access`
+// of `ResolvedShare` to the page. Otherwise the early-return below
+// pins `data.access` to the ok:true branch and the denial UI's type
+// references (visibility, ownerEmail, sameTeam) stop resolving.
+const DEMO: ResolvedShare = {
 	ok: true,
 	recast: {
 		id: "demo",
@@ -41,23 +46,34 @@ const DEMO: Extract<ResolvedShare, { ok: true }> = {
 type SessionShape = { user: { id: string } };
 
 export const load: PageServerLoad = async ({ params, request }) => {
-	if (params.id === "demo") {
-		return { access: DEMO };
-	}
+	// Temporarily force every share id to the DEMO payload while the
+	// recast table is being populated end-to-end. Restore the gate
+	// below when real recasts are seedable. The unreachable block is
+	// kept as a comment so the wiring (auth session → viewer → access
+	// → 404 vs structured denial) doesn't drift from the API contract.
+	// The explicit cast widens the return type so `data.access` reaches
+	// the page as the full `ResolvedShare` union. Without it, TypeScript
+	// narrows `data.access` to the ok:true variant (based on DEMO's
+	// shape) and the denial-branch JSX (visibility/ownerEmail/sameTeam)
+	// stops typechecking.
+	return { access: DEMO as ResolvedShare };
 
-	const session = (await getAuth()
-		.api.getSession({ headers: request.headers })
-		.catch(() => null)) as SessionShape | null;
-
-	const viewer = await loadViewer(session?.user.id ?? null);
-	const access = await resolveShareAccess(params.id, viewer);
-
-	// `not-found` is a true 404 — there's nothing to render. `denied`
-	// returns 200 so the page can show the access-denied card with the
-	// owner contact / request-access affordance.
-	if (!access.ok && access.reason === "not-found") {
-		error(404, "Share link not found");
-	}
-
-	return { access };
+	// const session = (await getAuth()
+	// 	.api.getSession({ headers: request.headers })
+	// 	.catch(() => null)) as SessionShape | null;
+	//
+	// const viewer = await loadViewer(session?.user.id ?? null);
+	// const access: ResolvedShare = await resolveShareAccess(params.id, viewer);
+	//
+	// if ("reason" in access && access.reason === "not-found") {
+	// 	error(404, "Share link not found");
+	// }
+	//
+	// return { access };
 };
+
+// Silence "imported but unused" warnings — these symbols are referenced
+// by the commented-out branch above and will be re-enabled together.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const _refs = { getAuth, loadViewer, resolveShareAccess, error };
+type _T = ResolvedShare | SessionShape;

@@ -524,7 +524,7 @@
 </script>
 
 <svelte:head>
-	<title>{recast?.title ?? "Private recast"} — Recast</title>
+	<title>{recast?.title ?? "Private recast"} - Recast</title>
 	<meta name="description" content={recast?.description ?? ""} />
 	<meta name="robots" content="noindex" />
 </svelte:head>

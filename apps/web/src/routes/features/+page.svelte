@@ -24,7 +24,7 @@
 		Sparkles,
 		WifiOff,
 		Zap,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 
 	const pillars = [
 		{

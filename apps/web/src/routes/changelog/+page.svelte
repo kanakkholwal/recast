@@ -9,7 +9,7 @@
 	} from "$lib/components";
 	import { Button } from "@recast/ui/button";
 	import { Badge } from "@recast/ui/badge";
-	import { ArrowUpRight, ExternalLink, GitCommit, Sparkles } from "lucide-svelte";
+	import { ArrowUpRight, ExternalLink, GitCommit, Sparkles } from "@lucide/svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
