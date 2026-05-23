@@ -11,6 +11,7 @@
 		Building2,
 		Check,
 		ChevronsUpDown,
+		LoaderCircle,
 		Plus,
 		Sparkles,
 	} from "@lucide/svelte";
@@ -44,17 +45,23 @@
 	async function setActive(id: string) {
 		if (switching || id === active.id) return;
 		switching = id;
+		const target = memberships.find((m) => m.organizationId === id);
+		const targetName = target?.name ?? "team";
 		try {
-			const { error } = await authClient.organization.setActive({
-				organizationId: id,
-			});
-			if (error) {
-				toast.error(error.message ?? "Couldn't switch team.");
-				return;
-			}
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.organization.setActive({
+						organizationId: id,
+					});
+					if (error) throw new Error(error.message ?? "Couldn't switch team.");
+				})(),
+				{
+					loading: `Switching to ${targetName}…`,
+					success: `Switched to ${targetName}.`,
+					error: (err) => (err as Error)?.message ?? "Couldn't switch team.",
+				},
+			);
 			await invalidateAll();
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't switch team.");
 		} finally {
 			// Always clear — a thrown rejection must not strand the row in
 			// the "switching…" pseudo-loading state.
@@ -126,10 +133,10 @@
 						</span>
 					</span>
 				</span>
-				{#if m.organizationId === active.id}
+				{#if switching === m.organizationId}
+					<LoaderCircle class="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+				{:else if m.organizationId === active.id}
 					<Check class="size-3.5 shrink-0 text-primary" />
-				{:else if switching === m.organizationId}
-					<span class="text-[10px] text-muted-foreground">…</span>
 				{/if}
 			</DropdownMenu.Item>
 		{/each}

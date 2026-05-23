@@ -9,6 +9,7 @@
 	import {
 		Crown,
 		Image,
+		LoaderCircle,
 		LogOut,
 		Mail,
 		Send,
@@ -24,6 +25,15 @@
 
 	let inviteEmail = $state("");
 	let inviteRole = $state<"member" | "admin">("member");
+
+	// Per-action in-flight tracking so each button can show its own spinner
+	// without disabling the entire page.
+	let leaving = $state(false);
+	let savingProfile = $state(false);
+	let inviting = $state(false);
+	let cancellingInviteId = $state<string | null>(null);
+	let removingMemberId = $state<string | null>(null);
+	let updatingRoleMemberId = $state<string | null>(null);
 
 	// Owner-editable profile fields. Seeded once from server data so the
 	// inputs don't snap back during form submission.
@@ -48,7 +58,7 @@
 	);
 </script>
 
-<header class="mb-8 flex flex-wrap items-end justify-between gap-4">
+<header class="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 	<div class="min-w-0">
 		<h1 class="truncate text-2xl font-semibold tracking-tight">{data.org.name}</h1>
 		<p class="mt-1 text-sm text-muted-foreground">
@@ -63,15 +73,23 @@
 			<form
 				method="POST"
 				action="?/leave"
-				use:enhance={() =>
-					async ({ result }) => {
+				use:enhance={() => {
+					leaving = true;
+					return async ({ result }) => {
 						if (result.type === "redirect") {
 							toast.success("You've left the team.");
 						}
-					}}
+						leaving = false;
+					};
+				}}
 			>
-				<Button type="submit" variant="outline" size="sm">
-					<LogOut class="size-3.5" /> Leave team
+				<Button type="submit" variant="outline" size="sm" disabled={leaving}>
+					{#if leaving}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{:else}
+						<LogOut class="size-3.5" />
+					{/if}
+					{leaving ? "Leaving…" : "Leave team"}
 				</Button>
 			</form>
 		{/if}
@@ -96,13 +114,16 @@
 			method="POST"
 			action="?/updateProfile"
 			class="grid gap-3 sm:grid-cols-[88px_1fr]"
-			use:enhance={() =>
-				async ({ result, update }) => {
+			use:enhance={() => {
+				savingProfile = true;
+				return async ({ result, update }) => {
 					if (result.type === "success") toast.success("Team updated.");
 					else if (result.type === "failure")
 						toast.error(String(result.data?.error));
 					await update();
-				}}
+					savingProfile = false;
+				};
+			}}
 		>
 			<div class="row-span-3 flex justify-center sm:justify-start">
 				<div class="relative grid size-20 place-items-center overflow-hidden rounded-2xl bg-foreground/6 text-foreground/70 ring-1 ring-border/40">
@@ -154,7 +175,12 @@
 			</Label>
 
 			<div class="sm:col-start-2">
-				<Button type="submit" size="sm">Save changes</Button>
+				<Button type="submit" size="sm" disabled={savingProfile} class="gap-2">
+					{#if savingProfile}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{savingProfile ? "Saving…" : "Save changes"}
+				</Button>
 			</div>
 		</form>
 	</section>
@@ -180,14 +206,20 @@
 							<Badge variant="outline">member</Badge>
 						{/if}
 						{#if canManage && m.userId !== data.viewer.userId && m.role !== "owner"}
+							{#if updatingRoleMemberId === m.id}
+								<LoaderCircle class="size-3.5 animate-spin text-muted-foreground" />
+							{/if}
 							<form
 								method="POST"
 								action="?/updateRole"
-								use:enhance={() =>
-									async ({ result, update }) => {
+								use:enhance={() => {
+									updatingRoleMemberId = m.id;
+									return async ({ result, update }) => {
 										if (result.type === "success") toast.success("Role updated.");
 										await update();
-									}}
+										updatingRoleMemberId = null;
+									};
+								}}
 							>
 								<input type="hidden" name="memberId" value={m.id} />
 								<Select.Root
@@ -224,15 +256,28 @@
 							<form
 								method="POST"
 								action="?/removeMember"
-								use:enhance={() =>
-									async ({ result, update }) => {
+								use:enhance={() => {
+									removingMemberId = m.id;
+									return async ({ result, update }) => {
 										if (result.type === "success") toast.success("Member removed.");
 										await update();
-									}}
+										removingMemberId = null;
+									};
+								}}
 							>
 								<input type="hidden" name="memberIdOrEmail" value={m.id} />
-								<Button type="submit" variant="ghost" size="sm" class="text-destructive">
-									<Trash2 class="size-3.5" />
+								<Button
+									type="submit"
+									variant="ghost"
+									size="sm"
+									disabled={removingMemberId === m.id}
+									class="text-destructive"
+								>
+									{#if removingMemberId === m.id}
+										<LoaderCircle class="size-3.5 animate-spin" />
+									{:else}
+										<Trash2 class="size-3.5" />
+									{/if}
 								</Button>
 							</form>
 						{/if}
@@ -264,8 +309,9 @@
 						method="POST"
 						action="?/invite"
 						class="space-y-3"
-						use:enhance={() =>
-							async ({ result, update }) => {
+						use:enhance={() => {
+							inviting = true;
+							return async ({ result, update }) => {
 								if (result.type === "success") {
 									toast.success("Invitation sent.");
 									inviteEmail = "";
@@ -273,7 +319,9 @@
 									toast.error(String(result.data?.error));
 								}
 								await update();
-							}}
+								inviting = false;
+							};
+						}}
 					>
 						<Label class="block">
 							<span class="mb-1 block text-xs font-semibold text-foreground/85">Email</span>
@@ -296,8 +344,13 @@
 								</Select.Content>
 							</Select.Root>
 						</Label>
-						<Button type="submit" size="sm" class="w-full gap-2">
-							<Mail class="size-3.5" /> Send invite
+						<Button type="submit" size="sm" disabled={inviting || !inviteEmail.trim()} class="w-full gap-2">
+							{#if inviting}
+								<LoaderCircle class="size-3.5 animate-spin" />
+							{:else}
+								<Mail class="size-3.5" />
+							{/if}
+							{inviting ? "Sending invite…" : "Send invite"}
 						</Button>
 					</form>
 				{/if}
@@ -322,15 +375,27 @@
 								<form
 									method="POST"
 									action="?/cancelInvite"
-									use:enhance={() =>
-										async ({ result, update }) => {
+									use:enhance={() => {
+										cancellingInviteId = inv.id;
+										return async ({ result, update }) => {
 											if (result.type === "success") toast.success("Invite canceled.");
 											await update();
-										}}
+											cancellingInviteId = null;
+										};
+									}}
 								>
 									<input type="hidden" name="id" value={inv.id} />
-									<Button type="submit" variant="ghost" size="sm">
-										<X class="size-3.5" />
+									<Button
+										type="submit"
+										variant="ghost"
+										size="sm"
+										disabled={cancellingInviteId === inv.id}
+									>
+										{#if cancellingInviteId === inv.id}
+											<LoaderCircle class="size-3.5 animate-spin" />
+										{:else}
+											<X class="size-3.5" />
+										{/if}
 									</Button>
 								</form>
 							{/if}

@@ -17,6 +17,7 @@
 		ClipboardList,
 		Crown,
 		Key,
+		LoaderCircle,
 		LogOut,
 		ShieldOff,
 		Trash2,
@@ -40,15 +41,39 @@
 	let confirmDelete = $state(false);
 	let confirmBan = $state(false);
 
+	// Per-action in-flight tracking.
+	let impersonating = $state(false);
+	let savingProfile = $state(false);
+	let settingRole = $state(false);
+	let settingStatus = $state(false);
+	let unbanning = $state(false);
+	let revokingAll = $state(false);
+	let revokingSessionToken = $state<string | null>(null);
+	let settingPassword = $state(false);
+	let deleting = $state(false);
+	let banning = $state(false);
+
 	async function impersonate() {
-		const { error } = await authClient.admin.impersonateUser({ userId: t.id });
-		if (error) {
-			toast.error(error.message ?? "Couldn't start impersonation.");
-			return;
+		if (impersonating) return;
+		impersonating = true;
+		try {
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.admin.impersonateUser({ userId: t.id });
+					if (error) throw new Error(error.message ?? "Couldn't start impersonation.");
+				})(),
+				{
+					loading: `Starting session as ${t.email}…`,
+					success: `Now acting as ${t.email}.`,
+					error: (err) => (err as Error)?.message ?? "Couldn't start impersonation.",
+				},
+			);
+			// Cookie has been swapped to the impersonation session — leave admin
+			// and land in the impersonated user's dashboard.
+			window.location.href = "/dashboard";
+		} finally {
+			impersonating = false;
 		}
-		// Cookie has been swapped to the impersonation session — leave admin
-		// and land in the impersonated user's dashboard.
-		window.location.href = "/dashboard";
 	}
 </script>
 
@@ -82,9 +107,13 @@
 		</div>
 	</div>
 	<div class="flex gap-2">
-		<Button variant="outline" size="sm" onclick={impersonate}>
-			<UserCog class="size-3.5" />
-			Impersonate
+		<Button variant="outline" size="sm" disabled={impersonating} onclick={impersonate}>
+			{#if impersonating}
+				<LoaderCircle class="size-3.5 animate-spin" />
+			{:else}
+				<UserCog class="size-3.5" />
+			{/if}
+			{impersonating ? "Starting…" : "Impersonate"}
 		</Button>
 	</div>
 </header>
@@ -98,12 +127,15 @@
 			method="POST"
 			action="?/updateProfile"
 			class="space-y-3"
-			use:enhance={() =>
-				async ({ result, update }) => {
+			use:enhance={() => {
+				savingProfile = true;
+				return async ({ result, update }) => {
 					if (result.type === "success") toast.success("Profile updated.");
 					else if (result.type === "failure") toast.error(String(result.data?.error));
 					await update();
-				}}
+					savingProfile = false;
+				};
+			}}
 		>
 			<Label class="block">
 				<span class="mb-1 block text-xs font-semibold text-foreground/85">Name</span>
@@ -116,7 +148,12 @@
 					Email changes go through the user's own settings — admins can't edit it.
 				</span>
 			</Label>
-			<Button type="submit" size="sm">Save profile</Button>
+			<Button type="submit" size="sm" disabled={savingProfile} class="gap-2">
+				{#if savingProfile}
+					<LoaderCircle class="size-3.5 animate-spin" />
+				{/if}
+				{savingProfile ? "Saving…" : "Save profile"}
+			</Button>
 		</form>
 
 		<hr class="my-6 border-border/40" />
@@ -125,12 +162,15 @@
 			<form
 				method="POST"
 				action="?/setRole"
-				use:enhance={() =>
-					async ({ result, update }) => {
+				use:enhance={() => {
+					settingRole = true;
+					return async ({ result, update }) => {
 						if (result.type === "success") toast.success("Role updated.");
 						else if (result.type === "failure") toast.error(String(result.data?.error));
 						await update();
-					}}
+						settingRole = false;
+					};
+				}}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">Role</span>
@@ -142,18 +182,26 @@
 						</Select.Content>
 					</Select.Root>
 				</Label>
-				<Button type="submit" size="sm" class="mt-2 w-full">Set role</Button>
+				<Button type="submit" size="sm" disabled={settingRole} class="mt-2 w-full gap-2">
+					{#if settingRole}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{settingRole ? "Saving…" : "Set role"}
+				</Button>
 			</form>
 
 			<form
 				method="POST"
 				action="?/setStatus"
-				use:enhance={() =>
-					async ({ result, update }) => {
+				use:enhance={() => {
+					settingStatus = true;
+					return async ({ result, update }) => {
 						if (result.type === "success") toast.success("Status updated.");
 						else if (result.type === "failure") toast.error(String(result.data?.error));
 						await update();
-					}}
+						settingStatus = false;
+					};
+				}}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">Status</span>
@@ -165,7 +213,12 @@
 						</Select.Content>
 					</Select.Root>
 				</Label>
-				<Button type="submit" size="sm" class="mt-2 w-full">Set status</Button>
+				<Button type="submit" size="sm" disabled={settingStatus} class="mt-2 w-full gap-2">
+					{#if settingStatus}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{settingStatus ? "Saving…" : "Set status"}
+				</Button>
 			</form>
 		</div>
 	</section>
@@ -197,14 +250,20 @@
 					<form
 						method="POST"
 						action="?/unban"
-						use:enhance={() =>
-							async ({ result, update }) => {
+						use:enhance={() => {
+							unbanning = true;
+							return async ({ result, update }) => {
 								if (result.type === "success") toast.success("User unbanned.");
 								await update();
-							}}
+								unbanning = false;
+							};
+						}}
 					>
-						<Button variant="outline" size="sm" type="submit" class="w-full">
-							Unban user
+						<Button variant="outline" size="sm" type="submit" disabled={unbanning} class="w-full gap-2">
+							{#if unbanning}
+								<LoaderCircle class="size-3.5 animate-spin" />
+							{/if}
+							{unbanning ? "Unbanning…" : "Unban user"}
 						</Button>
 					</form>
 				{:else}
@@ -247,13 +306,21 @@
 						method="POST"
 						action="?/revokeAllSessions"
 						class="mb-3"
-						use:enhance={() =>
-							async ({ result, update }) => {
+						use:enhance={() => {
+							revokingAll = true;
+							return async ({ result, update }) => {
 								if (result.type === "success") toast.success("All sessions revoked.");
 								await update();
-							}}
+								revokingAll = false;
+							};
+						}}
 					>
-						<Button type="submit" size="sm" variant="outline">Revoke all sessions</Button>
+						<Button type="submit" size="sm" variant="outline" disabled={revokingAll} class="gap-2">
+							{#if revokingAll}
+								<LoaderCircle class="size-3.5 animate-spin" />
+							{/if}
+							{revokingAll ? "Revoking…" : "Revoke all sessions"}
+						</Button>
 					</form>
 					<ul class="divide-y divide-border/30">
 						{#each data.sessions as s (s.id)}
@@ -269,14 +336,28 @@
 									<form
 										method="POST"
 										action="?/revokeSession"
-										use:enhance={() =>
-											async ({ result, update }) => {
+										use:enhance={() => {
+											revokingSessionToken = s.token;
+											return async ({ result, update }) => {
 												if (result.type === "success") toast.success("Session revoked.");
 												await update();
-											}}
+												revokingSessionToken = null;
+											};
+										}}
 									>
 										<input type="hidden" name="sessionToken" value={s.token} />
-										<Button type="submit" variant="ghost" size="sm">Revoke</Button>
+										<Button
+											type="submit"
+											variant="ghost"
+											size="sm"
+											disabled={revokingSessionToken === s.token}
+											class="gap-1.5"
+										>
+											{#if revokingSessionToken === s.token}
+												<LoaderCircle class="size-3.5 animate-spin" />
+											{/if}
+											{revokingSessionToken === s.token ? "Revoking…" : "Revoke"}
+										</Button>
 									</form>
 								</div>
 							</li>
@@ -302,8 +383,9 @@
 				method="POST"
 				action="?/setPassword"
 				class="space-y-3 border-t border-border/40 p-5"
-				use:enhance={() =>
-					async ({ result, update }) => {
+				use:enhance={() => {
+					settingPassword = true;
+					return async ({ result, update }) => {
 						if (result.type === "success") {
 							toast.success("Password set. Share securely with the user.");
 							newPassword = "";
@@ -311,7 +393,9 @@
 							toast.error(String(result.data?.error));
 						}
 						await update();
-					}}
+						settingPassword = false;
+					};
+				}}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">New password</span>
@@ -323,7 +407,12 @@
 						class="h-9 font-mono"
 					/>
 				</Label>
-				<Button type="submit" size="sm">Set password</Button>
+				<Button type="submit" size="sm" disabled={settingPassword || !newPassword.trim()} class="gap-2">
+					{#if settingPassword}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{settingPassword ? "Saving…" : "Set password"}
+				</Button>
 			</form>
 		</Collapsible.Content>
 	</Collapsible.Root>
@@ -372,8 +461,9 @@
 		<form
 			method="POST"
 			action="?/remove"
-			use:enhance={() =>
-				async ({ result }) => {
+			use:enhance={() => {
+				deleting = true;
+				return async ({ result }) => {
 					if (result.type === "redirect") {
 						confirmDelete = false;
 						toast.success("User deleted.");
@@ -381,13 +471,20 @@
 					} else if (result.type === "failure") {
 						toast.error(String(result.data?.error));
 					}
-				}}
+					deleting = false;
+				};
+			}}
 		>
 			<Dialog.Footer>
-				<Button type="button" variant="ghost" onclick={() => (confirmDelete = false)}>
+				<Button type="button" variant="ghost" disabled={deleting} onclick={() => (confirmDelete = false)}>
 					Cancel
 				</Button>
-				<Button type="submit" variant="destructive">Delete user</Button>
+				<Button type="submit" variant="destructive" disabled={deleting} class="gap-2">
+					{#if deleting}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{deleting ? "Deleting…" : "Delete user"}
+				</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>
@@ -406,15 +503,18 @@
 			method="POST"
 			action="?/ban"
 			class="space-y-3"
-			use:enhance={() =>
-				async ({ result, update }) => {
+			use:enhance={() => {
+				banning = true;
+				return async ({ result, update }) => {
 					if (result.type === "success") {
 						confirmBan = false;
 						toast.success("User banned.");
 						await invalidateAll();
 					}
 					await update();
-				}}
+					banning = false;
+				};
+			}}
 		>
 			<Label class="block">
 				<span class="mb-1 block text-xs font-semibold text-foreground/85">Reason</span>
@@ -432,8 +532,13 @@
 				/>
 			</Label>
 			<Dialog.Footer>
-				<Button type="button" variant="ghost" onclick={() => (confirmBan = false)}>Cancel</Button>
-				<Button type="submit" variant="destructive">Ban user</Button>
+				<Button type="button" variant="ghost" disabled={banning} onclick={() => (confirmBan = false)}>Cancel</Button>
+				<Button type="submit" variant="destructive" disabled={banning} class="gap-2">
+					{#if banning}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{banning ? "Banning…" : "Ban user"}
+				</Button>
 			</Dialog.Footer>
 		</form>
 	</Dialog.Content>

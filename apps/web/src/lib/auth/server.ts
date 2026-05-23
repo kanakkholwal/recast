@@ -56,12 +56,35 @@ function createAuth() {
 			// In production, public sign-up is closed — the waitlist endpoint
 			// creates user rows directly. Dev keeps signup open for iteration.
 			disableSignUp: !dev,
+			// We don't block sign-IN on verification (locked-out users with a
+			// flipped password can't recover). Instead the dashboard layout
+			// redirects unverified users to /verify-email — view-only is fine,
+			// mutations aren't reachable. See [dashboard/+layout.server.ts].
 			requireEmailVerification: false,
 			sendResetPassword: async ({ user, url }) => {
 				if (await isOnWaitlist(user.email)) return;
 				await sendTemplatedEmail({
 					to: user.email,
 					template: "reset-password",
+					data: {
+						url,
+						firstName: user.name?.split(/\s+/)[0] ?? null,
+					},
+				});
+			},
+		},
+		emailVerification: {
+			// Fire on signup automatically. Invitees + waitlist activations are
+			// minted with `emailVerified: true` already, so they skip this and
+			// land on the dashboard directly.
+			sendOnSignUp: true,
+			autoSignInAfterVerification: true,
+			expiresIn: 60 * 60 * 24, // 24h
+			sendVerificationEmail: async ({ user, url }) => {
+				if (await isOnWaitlist(user.email)) return;
+				await sendTemplatedEmail({
+					to: user.email,
+					template: "verify-email",
 					data: {
 						url,
 						firstName: user.name?.split(/\s+/)[0] ?? null,

@@ -10,7 +10,7 @@
 	  type Recast,
 	  type RecordingSource,
 	} from "$lib/dashboard/store.svelte";
-	import { Cloud, Film, HardDrive, Search, Upload, Video, X } from "@lucide/svelte";
+	import { Cloud, Film, HardDrive, LoaderCircle, Search, Upload, Video, X } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import * as Select from "@recast/ui/select";
 	import { toast } from "@recast/ui/sonner";
@@ -90,26 +90,36 @@
 		if (!file) return;
 
 		uploading = true;
-		const url = URL.createObjectURL(file);
-		const durationSec = await readDuration(url);
-		const destination = settingsStore.value.preferences.defaultDestination;
+		try {
+			await toast.promise(
+				(async () => {
+					const url = URL.createObjectURL(file);
+					const durationSec = await readDuration(url);
+					const destination = settingsStore.value.preferences.defaultDestination;
 
-		recastsStore.add({
-			id: crypto.randomUUID(),
-			title: file.name.replace(/\.[^.]+$/, "") || "Untitled recast",
-			durationSec,
-			createdAt: Date.now(),
-			sizeBytes: file.size,
-			source: destination,
-			provider: destination === "cloud" ? "Cloudinary" : null,
-			views: 0,
-			videoUrl: url,
-			posterUrl: "",
-		});
-
-		uploading = false;
-		input.value = "";
-		toast.success(`“${file.name}” added to your library.`);
+					recastsStore.add({
+						id: crypto.randomUUID(),
+						title: file.name.replace(/\.[^.]+$/, "") || "Untitled recast",
+						durationSec,
+						createdAt: Date.now(),
+						sizeBytes: file.size,
+						source: destination,
+						provider: destination === "cloud" ? "Cloudinary" : null,
+						views: 0,
+						videoUrl: url,
+						posterUrl: "",
+					});
+				})(),
+				{
+					loading: `Adding “${file.name}”…`,
+					success: `“${file.name}” added to your library.`,
+					error: (err) => (err as Error)?.message ?? "Couldn't add that file.",
+				},
+			);
+		} finally {
+			uploading = false;
+			input.value = "";
+		}
 	}
 
 	function doRename(rec: Recast, title: string) {
@@ -170,7 +180,11 @@
 		</p>
 	</div>
 	<Button class="gap-2" disabled={uploading} onclick={() => fileInput?.click()}>
-		<Upload class="size-4" />
+		{#if uploading}
+			<LoaderCircle class="size-4 animate-spin" />
+		{:else}
+			<Upload class="size-4" />
+		{/if}
 		{uploading ? "Adding…" : "Upload recast"}
 	</Button>
 </header>
@@ -290,9 +304,13 @@
 			<p class="mt-1 max-w-xs text-xs text-muted-foreground">
 				Upload a video, or capture one with the Recast desktop app.
 			</p>
-			<Button size="sm" class="mt-5 gap-2" onclick={() => fileInput?.click()}>
-				<Upload class="size-3.5" />
-				Upload recast
+			<Button size="sm" class="mt-5 gap-2" disabled={uploading} onclick={() => fileInput?.click()}>
+				{#if uploading}
+					<LoaderCircle class="size-3.5 animate-spin" />
+				{:else}
+					<Upload class="size-3.5" />
+				{/if}
+				{uploading ? "Adding…" : "Upload recast"}
 			</Button>
 		{/if}
 	</div>

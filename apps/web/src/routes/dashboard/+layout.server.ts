@@ -14,6 +14,7 @@ type SessionUser = {
 	name?: string | null;
 	email: string;
 	role?: string | null;
+	emailVerified?: boolean | null;
 };
 type SessionShape = {
 	user: SessionUser;
@@ -24,8 +25,13 @@ type SessionShape = {
  * Dashboard auth + team gate.
  *
  *   1. No session → /login?next=…
- *   2. No teams at all → /onboarding/team (create one or accept an invite)
- *   3. No active team set but has memberships → auto-set the most recent
+ *   2. Not email-verified → /verify-email (full dashboard is gated; users
+ *      can still see the marketing site and verification page itself).
+ *      Magic-link sign-in auto-verifies, and invitees are pre-created with
+ *      `emailVerified: true`, so this only catches password signups that
+ *      haven't clicked the confirmation link yet.
+ *   3. No teams at all → /onboarding/team (create one or accept an invite)
+ *   4. No active team set but has memberships → auto-set the most recent
  *      one and rerun. Avoids forcing onboarding on users whose session
  *      simply lost activeOrganizationId (logged in fresh, etc).
  */
@@ -36,6 +42,10 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 
 	if (!session) {
 		redirect(303, `/login?next=${encodeURIComponent(url.pathname + url.search)}`);
+	}
+
+	if (!session.user.emailVerified) {
+		redirect(303, "/verify-email");
 	}
 
 	const db = getDb();
@@ -111,6 +121,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			name: session.user.name ?? "",
 			email: session.user.email,
 			role: session.user.role ?? "user",
+			emailVerified: Boolean(session.user.emailVerified),
 		},
 		memberships,
 		pendingInvites,

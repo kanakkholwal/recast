@@ -6,13 +6,16 @@
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowLeft, Crown, ShieldCheck } from "@lucide/svelte";
+	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@lucide/svelte";
 	import { untrack } from "svelte";
 
 	let { data } = $props();
 
 	let name = $state(untrack(() => data.team.name));
 	let plan = $state(untrack(() => data.team.plan));
+
+	let savingPlan = $state(false);
+	let savingName = $state(false);
 
 	const memberCap = $derived(data.caps.members[data.team.plan] ?? 3);
 </script>
@@ -47,12 +50,15 @@
 		<form
 			method="POST"
 			action="?/updatePlan"
-			use:enhance={() =>
-				async ({ result, update }) => {
+			use:enhance={() => {
+				savingPlan = true;
+				return async ({ result, update }) => {
 					if (result.type === "success") toast.success("Plan updated.");
 					else if (result.type === "failure") toast.error(String(result.data?.error));
 					await update();
-				}}
+					savingPlan = false;
+				};
+			}}
 			class="space-y-3"
 		>
 			<Label class="block">
@@ -66,7 +72,12 @@
 					</Select.Content>
 				</Select.Root>
 			</Label>
-			<Button type="submit" size="sm">Save plan</Button>
+			<Button type="submit" size="sm" disabled={savingPlan} class="gap-2">
+				{#if savingPlan}
+					<LoaderCircle class="size-3.5 animate-spin" />
+				{/if}
+				{savingPlan ? "Saving…" : "Save plan"}
+			</Button>
 		</form>
 	</section>
 
@@ -75,19 +86,27 @@
 		<form
 			method="POST"
 			action="?/rename"
-			use:enhance={() =>
-				async ({ result, update }) => {
+			use:enhance={() => {
+				savingName = true;
+				return async ({ result, update }) => {
 					if (result.type === "success") toast.success("Renamed.");
 					else if (result.type === "failure") toast.error(String(result.data?.error));
 					await update();
-				}}
+					savingName = false;
+				};
+			}}
 			class="space-y-3"
 		>
 			<Label class="block">
 				<span class="mb-1 block text-xs font-semibold text-foreground/85">Name</span>
 				<Input bind:value={name} name="name" class="h-9" />
 			</Label>
-			<Button type="submit" size="sm">Save name</Button>
+			<Button type="submit" size="sm" disabled={savingName} class="gap-2">
+				{#if savingName}
+					<LoaderCircle class="size-3.5 animate-spin" />
+				{/if}
+				{savingName ? "Saving…" : "Save name"}
+			</Button>
 		</form>
 	</section>
 </div>

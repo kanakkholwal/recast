@@ -6,7 +6,15 @@
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
 	import { authClient } from "$lib/auth/client";
-	import { ArrowRight, Eye, EyeOff, MailCheck, Wand2 } from "@lucide/svelte";
+	import {
+		AlertCircle,
+		ArrowRight,
+		Eye,
+		EyeOff,
+		LoaderCircle,
+		MailCheck,
+		Wand2,
+	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";
@@ -24,39 +32,108 @@
 	let showPassword = $state(false);
 	let loading = $state(false);
 	let linkSent = $state(false);
+	/**
+	 * Inline status banner shown when the lookup reveals the email isn't
+	 * eligible to sign in yet. Kept inline (rather than a toast) so the CTA
+	 * to the waitlist stays visible.
+	 *   - `unknown` → no account on file; offer waitlist
+	 *   - `pending` → on the waitlist; tell them to wait
+	 */
+	let preflight = $state<{ status: "unknown" | "pending"; email: string } | null>(
+		null,
+	);
 
 	const next = $derived(page.url.searchParams.get("next") || "/dashboard");
 
+	// Clear the inline waitlist banner the moment the user edits their email,
+	// so the stale banner doesn't linger after they fix a typo.
+	$effect(() => {
+		if (preflight && preflight.email !== email.trim()) preflight = null;
+	});
+
+	/**
+	 * Hits /api/auth/lookup to decide whether to actually call Better Auth.
+	 * Returns `true` if we should proceed, `false` if the inline banner has
+	 * been shown and the auth call should be skipped.
+	 */
+	async function preflightEmail(emailInput: string): Promise<boolean> {
+		try {
+			const res = await fetch("/api/auth/lookup", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ email: emailInput }),
+			});
+			const data = (await res.json()) as {
+				status: "active" | "pending" | "unknown" | "invalid";
+			};
+			if (data.status === "unknown" || data.status === "pending") {
+				preflight = { status: data.status, email: emailInput };
+				return false;
+			}
+			// `invalid` falls through to the auth call, which surfaces the
+			// real validation error (better than swallowing it here).
+			preflight = null;
+			return true;
+		} catch {
+			// Network blip on the lookup shouldn't block sign-in attempts.
+			preflight = null;
+			return true;
+		}
+	}
+
 	async function signInWithLink(e: SubmitEvent) {
 		e.preventDefault();
-		if (!email.trim()) return;
+		if (!email.trim() || loading) return;
 		loading = true;
-		const { error } = await authClient.signIn.magicLink({
-			email,
-			callbackURL: next,
-		});
-		loading = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't send the sign-in link.");
-			return;
+		try {
+			const ok = await preflightEmail(email.trim());
+			if (!ok) return;
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.signIn.magicLink({
+						email,
+						callbackURL: next,
+					});
+					if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
+				})(),
+				{
+					loading: "Sending sign-in link…",
+					success: "Check your inbox — the link expires in 10 minutes.",
+					error: (err) => (err as Error)?.message ?? "Couldn't send the sign-in link.",
+				},
+			);
+			linkSent = true;
+		} finally {
+			loading = false;
 		}
-		linkSent = true;
 	}
 
 	async function signInWithPassword(e: SubmitEvent) {
 		e.preventDefault();
+		if (loading) return;
 		loading = true;
-		const { error } = await authClient.signIn.email({
-			email,
-			password,
-			rememberMe,
-		});
-		loading = false;
-		if (error) {
-			toast.error(error.message ?? "Sign in failed. Check your credentials.");
-			return;
+		try {
+			const ok = await preflightEmail(email.trim());
+			if (!ok) return;
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.signIn.email({
+						email,
+						password,
+						rememberMe,
+					});
+					if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
+				})(),
+				{
+					loading: "Signing you in…",
+					success: "Welcome back.",
+					error: (err) => (err as Error)?.message ?? "Sign in failed. Check your credentials.",
+				},
+			);
+			await goto(next);
+		} finally {
+			loading = false;
 		}
-		await goto(next);
 	}
 </script>
 
@@ -70,6 +147,42 @@
 	{#if dev}
 		<div class="my-5">
 			<OrDivider label="or continue with email" />
+		</div>
+	{/if}
+
+	{#if preflight}
+		<div
+			class="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 text-xs"
+			in:fly={{ y: 6, duration: 280, easing: cubicOut }}
+		>
+			<AlertCircle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+			<div class="min-w-0 flex-1">
+				{#if preflight.status === "unknown"}
+					<p class="font-medium text-foreground">
+						No account for <span class="font-mono">{preflight.email}</span>
+					</p>
+					<p class="mt-0.5 text-muted-foreground">
+						Recast Cloud is invite-only right now. Join the waitlist and
+						we'll email you the moment your spot is ready.
+					</p>
+					<a
+						href={`/waitlist?email=${encodeURIComponent(preflight.email)}&source=login`}
+						class="mt-2 inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
+					>
+						Join the waitlist
+						<ArrowRight class="size-3.5" />
+					</a>
+				{:else}
+					<p class="font-medium text-foreground">
+						You're on the waitlist
+					</p>
+					<p class="mt-0.5 text-muted-foreground">
+						<span class="font-mono">{preflight.email}</span> is queued. We'll
+						email you a sign-in link the moment access opens — no need to
+						retry here.
+					</p>
+				{/if}
+			</div>
 		</div>
 	{/if}
 
@@ -132,7 +245,11 @@
 						class="group/cta mt-1 w-full gap-2"
 					>
 						{loading ? "Sending…" : "Send sign-in link"}
-						<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{#if loading}
+							<LoaderCircle class="size-4 animate-spin" />
+						{:else}
+							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{/if}
 					</Button>
 					<p class="text-center text-[11px] text-muted-foreground">
 						No password needed — we'll email you a one-time link.
@@ -201,7 +318,11 @@
 						class="group/cta mt-1 w-full gap-2"
 					>
 						{loading ? "Signing in…" : "Sign in"}
-						<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{#if loading}
+							<LoaderCircle class="size-4 animate-spin" />
+						{:else}
+							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+						{/if}
 					</Button>
 				</form>
 			</Tabs.Content>

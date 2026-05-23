@@ -2,7 +2,7 @@
 	import { authClient } from "$lib/auth/client";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { ShieldOff, UserCog } from "@lucide/svelte";
+	import { LoaderCircle, ShieldOff, UserCog } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -41,19 +41,21 @@
 		// Wrapped in try/finally so a thrown rejection (network drop, aborted
 		// fetch) can't strand the button in a permanently-disabled state.
 		try {
-			const { error } = await authClient.admin.stopImpersonating();
-			if (error) {
-				toast.error(error.message ?? "Couldn't stop impersonating.");
-				return;
-			}
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.admin.stopImpersonating();
+					if (error) throw new Error(error.message ?? "Couldn't stop impersonating.");
+				})(),
+				{
+					loading: "Stopping impersonation…",
+					success: "Back in your admin session.",
+					error: (err) => (err as Error)?.message ?? "Couldn't stop impersonating.",
+				},
+			);
 			// Hard reload so every server load re-runs against the restored
 			// admin cookie. SvelteKit's `invalidateAll()` would leave the same
 			// module instances around and we want a clean slate.
 			window.location.href = "/admin";
-		} catch (err) {
-			toast.error(
-				(err as Error)?.message ?? "Couldn't stop impersonating.",
-			);
 		} finally {
 			stopping = false;
 		}
@@ -62,7 +64,7 @@
 
 {#if impersonatedBy}
 	<div
-		class="fixed inset-x-0 top-0 z-[100] flex justify-center pointer-events-none"
+		class="fixed inset-x-0 top-0 z-100 flex justify-center pointer-events-none"
 		in:fly={{ y: -16, duration: 280, easing: cubicOut }}
 		out:fly={{ y: -16, duration: 200, easing: cubicOut }}
 	>
@@ -85,7 +87,11 @@
 				onclick={stop}
 				class="ml-1 h-7 gap-1.5 rounded-full border-amber-500/40 bg-background/80 px-3 text-[11px] text-amber-900 hover:bg-background dark:text-amber-200"
 			>
-				<ShieldOff class="size-3" />
+				{#if stopping}
+					<LoaderCircle class="size-3 animate-spin" />
+				{:else}
+					<ShieldOff class="size-3" />
+				{/if}
 				{stopping ? "Stopping…" : "Stop"}
 			</Button>
 		</div>

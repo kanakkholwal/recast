@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
-	import { ArrowRight, MailCheck } from "@lucide/svelte";
+	import { ArrowRight, LoaderCircle, MailCheck } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
@@ -15,19 +15,29 @@
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
+		if (loading) return;
 		loading = true;
-		const { error } = await authClient.requestPasswordReset({
-			email,
-			redirectTo: "/reset-password",
-		});
-		loading = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't send the reset email.");
-			return;
+		try {
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.requestPasswordReset({
+						email,
+						redirectTo: "/reset-password",
+					});
+					if (error) throw new Error(error.message ?? "Couldn't send the reset email.");
+				})(),
+				{
+					loading: "Sending reset link…",
+					success: "Check your inbox for the reset link.",
+					error: (err) => (err as Error)?.message ?? "Couldn't send the reset email.",
+				},
+			);
+			// We tell the user the link was sent regardless of whether the email
+			// exists — standard pattern, prevents account enumeration.
+			sent = true;
+		} finally {
+			loading = false;
 		}
-		// We tell the user the link was sent regardless of whether the email
-		// exists — standard pattern, prevents account enumeration.
-		sent = true;
 	}
 </script>
 
@@ -85,7 +95,11 @@
 				class="group/cta mt-1 w-full gap-2"
 			>
 				{loading ? "Sending…" : "Send reset link"}
-				<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+				{#if loading}
+					<LoaderCircle class="size-4 animate-spin" />
+				{:else}
+					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+				{/if}
 			</Button>
 		</form>
 	{/if}

@@ -55,7 +55,7 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 						<table role="presentation" cellspacing="0" cellpadding="0" border="0">
 							<tr>
 								<td style="vertical-align:middle;">
-									<span style="display:inline-block; width:28px; height:28px; background:${EMAIL_COLORS.ink}; border-radius:8px;"></span>
+									${logoMark()}
 								</td>
 								<td style="vertical-align:middle; padding-left:10px;">
 									<span style="font-size:16px; font-weight:600; color:${EMAIL_COLORS.ink}; letter-spacing:-0.01em;">Recast</span>
@@ -65,7 +65,12 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 					</td>
 				</tr>
 				<tr>
-					<td style="background:${EMAIL_COLORS.cardBg}; border:1px solid ${EMAIL_COLORS.border}; border-radius:16px; padding:32px 28px;">
+					<!-- Thin primary-accent stripe across the top of the card — the
+					     first hit of the lime brand color the reader sees. -->
+					<td style="background:${EMAIL_COLORS.primary}; border-radius:16px 16px 0 0; height:3px; line-height:3px; font-size:1px;">&nbsp;</td>
+				</tr>
+				<tr>
+					<td style="background:${EMAIL_COLORS.cardBg}; border:1px solid ${EMAIL_COLORS.border}; border-top:0; border-radius:0 0 16px 16px; padding:32px 28px;">
 						${body}
 					</td>
 				</tr>
@@ -85,14 +90,49 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 }
 
 /**
+ * Mini brand mark — three white pill bars on a dark rounded square, the
+ * same silhouette as the in-app SVG logo. Done as nested tables so clients
+ * that strip inline SVG (Outlook desktop, parts of Gmail web) still render
+ * a recognisable mark, not a black hole.
+ */
+function logoMark(): string {
+	const pill = `<div style="width:3px; height:14px; background:#ffffff; border-radius:2px; font-size:1px; line-height:1px;">&nbsp;</div>`;
+	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="background:${EMAIL_COLORS.ink}; border-radius:8px;">
+	<tr>
+		<td style="padding:7px 6px;">
+			<table role="presentation" cellspacing="0" cellpadding="0" border="0">
+				<tr>
+					<td style="width:3px; padding:0;">${pill}</td>
+					<td style="width:3px;">&nbsp;</td>
+					<td style="width:3px; padding:0;">${pill}</td>
+					<td style="width:3px;">&nbsp;</td>
+					<td style="width:3px; padding:0;">${pill}</td>
+				</tr>
+			</table>
+		</td>
+	</tr>
+</table>`;
+}
+
+/**
  * Bulletproof CTA button (table-based for Outlook). Pass the full URL —
  * we do no relative-URL resolution here, every caller supplies an absolute.
+ *
+ * `tone` defaults to `ink` (dark button, white text) — the brand-primary
+ * recipe. Pass `accent` for the lime variant, used sparingly for moments
+ * where the brand color should be the focal point (verify-email confirm).
  */
-export function ctaButton(label: string, url: string): string {
+export function ctaButton(
+	label: string,
+	url: string,
+	tone: "ink" | "accent" = "ink",
+): string {
+	const bg = tone === "accent" ? EMAIL_COLORS.primary : EMAIL_COLORS.buttonBg;
+	const ink = tone === "accent" ? EMAIL_COLORS.primaryInk : EMAIL_COLORS.buttonInk;
 	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:8px 0;">
 	<tr>
-		<td style="background:${EMAIL_COLORS.buttonBg}; border-radius:10px;">
-			<a href="${escapeAttr(url)}" target="_blank" style="display:inline-block; padding:12px 22px; color:${EMAIL_COLORS.buttonInk}; text-decoration:none; font-size:14px; font-weight:600; letter-spacing:-0.01em;">${escapeHtml(label)}</a>
+		<td style="background:${bg}; border-radius:10px;">
+			<a href="${escapeAttr(url)}" target="_blank" style="display:inline-block; padding:12px 22px; color:${ink}; text-decoration:none; font-size:14px; font-weight:600; letter-spacing:-0.01em;">${escapeHtml(label)}</a>
 		</td>
 	</tr>
 </table>`;

@@ -3,10 +3,12 @@
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { toast } from "@recast/ui/sonner";
+	import { LoaderCircle } from "@lucide/svelte";
 
 	let { data } = $props();
 
 	let selected = $state<Set<string>>(new Set());
+	let approving = $state(false);
 
 	function toggle(id: string, checked: boolean) {
 		const next = new Set(selected);
@@ -35,8 +37,9 @@
 <form
 	method="POST"
 	action="?/approve"
-	use:enhance={() =>
-		async ({ result, update }) => {
+	use:enhance={() => {
+		approving = true;
+		return async ({ result, update }) => {
 			if (result.type === "success") {
 				toast.success(`Approved ${result.data?.approved ?? 0} user(s).`);
 				selected = new Set();
@@ -44,7 +47,9 @@
 				toast.error(String(result.data?.error));
 			}
 			await update();
-		}}
+			approving = false;
+		};
+	}}
 >
 	<div class="mb-3 flex items-center justify-between">
 		<label class="flex items-center gap-2 text-xs font-medium">
@@ -54,8 +59,11 @@
 			/>
 			Select all
 		</label>
-		<Button type="submit" size="sm" disabled={selected.size === 0}>
-			Approve {selected.size || ""}
+		<Button type="submit" size="sm" disabled={selected.size === 0 || approving} class="gap-2">
+			{#if approving}
+				<LoaderCircle class="size-3.5 animate-spin" />
+			{/if}
+			{approving ? "Approving…" : `Approve ${selected.size || ""}`}
 		</Button>
 	</div>
 

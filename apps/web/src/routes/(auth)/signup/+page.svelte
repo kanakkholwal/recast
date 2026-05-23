@@ -4,7 +4,7 @@
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
 	import { authClient } from "$lib/auth/client";
-	import { AlertCircle, ArrowRight, Eye, EyeOff } from "@lucide/svelte";
+	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";
@@ -53,15 +53,24 @@
 
 	async function signUp(e: SubmitEvent) {
 		e.preventDefault();
-		if (!canSubmit) return;
+		if (!canSubmit || loading) return;
 		loading = true;
-		const { error } = await authClient.signUp.email({ name, email, password });
-		loading = false;
-		if (error) {
-			toast.error(error.message ?? "Couldn't create your account.");
-			return;
+		try {
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.signUp.email({ name, email, password });
+					if (error) throw new Error(error.message ?? "Couldn't create your account.");
+				})(),
+				{
+					loading: "Creating your account…",
+					success: "Account created — welcome to Recast.",
+					error: (err) => (err as Error)?.message ?? "Couldn't create your account.",
+				},
+			);
+			await goto("/dashboard");
+		} finally {
+			loading = false;
 		}
-		await goto("/dashboard");
 	}
 </script>
 
@@ -189,7 +198,11 @@
 			class="group/cta mt-2 w-full gap-2"
 		>
 			{loading ? "Creating account…" : "Create account"}
-			<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+			{#if loading}
+				<LoaderCircle class="size-4 animate-spin" />
+			{:else}
+				<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+			{/if}
 		</Button>
 	</form>
 

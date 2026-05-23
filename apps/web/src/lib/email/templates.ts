@@ -22,6 +22,7 @@ import { sendEmail } from "./transport";
 export type TemplateData = {
 	"magic-link": { url: string; firstName?: string | null };
 	"reset-password": { url: string; firstName?: string | null };
+	"verify-email": { url: string; firstName?: string | null };
 	"team-invitation": {
 		url: string;
 		teamName: string;
@@ -55,6 +56,33 @@ const templates: {
 					ctaButton("Sign in to Recast", url) +
 					muted(
 						"If you didn't request this, ignore the email — no account changes were made.",
+					) +
+					fallbackLink(url),
+			}),
+		};
+	},
+
+	"verify-email": ({ url, firstName }) => {
+		const hello = firstName ? `Hi ${firstName},` : "Hi,";
+		return {
+			subject: "Verify your Recast email",
+			text:
+				`${hello}\n\n` +
+				`Confirm this email address to finish setting up your Recast\n` +
+				`account. The link below is good for the next 24 hours:\n\n${url}\n\n` +
+				`Until you verify, dashboard actions stay read-only.`,
+			html: wrap({
+				subject: "Verify your Recast email",
+				preheader: "Confirm your email to unlock your Recast account.",
+				body:
+					heading("Confirm your email") +
+					paragraph(
+						`${hello.replace(",", "")} — tap below to confirm <strong>this</strong> is your email. ` +
+							`Until you verify, your Recast dashboard stays read-only.`,
+					) +
+					ctaButton("Verify email", url, "accent") +
+					muted(
+						"Link valid for 24 hours. Didn't sign up for Recast? Ignore the email — no account changes were made.",
 					) +
 					fallbackLink(url),
 			}),

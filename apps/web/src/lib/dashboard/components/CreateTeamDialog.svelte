@@ -6,7 +6,7 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowRight, Plus } from "@lucide/svelte";
+	import { ArrowRight, LoaderCircle, Plus } from "@lucide/svelte";
 
 	/**
 	 * Inline "create another team" flow for users who already have at least
@@ -26,31 +26,36 @@
 		e.preventDefault();
 		if (!name.trim() || creating) return;
 		creating = true;
-		const slug = `${name
+		const teamName = name.trim();
+		const slug = `${teamName
 			.toLowerCase()
 			.replace(/[^a-z0-9]+/g, "-")
 			.replace(/(^-|-$)/g, "") || "team"}-${Math.random().toString(36).slice(2, 8)}`;
 		try {
-			const { error } = await authClient.organization.create({
-				name: name.trim(),
-				slug,
-				keepCurrentActiveOrganization: false,
-			});
-			if (error) {
-				// Surface the real reason: cap reached, slug clash, etc.
-				toast.error(error.message ?? "Couldn't create the team.");
-				console.error("[create team]", error);
-				return;
-			}
-			toast.success(`Welcome to ${name.trim()}.`);
+			await toast.promise(
+				(async () => {
+					const { error } = await authClient.organization.create({
+						name: teamName,
+						slug,
+						keepCurrentActiveOrganization: false,
+					});
+					if (error) {
+						// Surface the real reason: cap reached, slug clash, etc.
+						console.error("[create team]", error);
+						throw new Error(error.message ?? "Couldn't create the team.");
+					}
+				})(),
+				{
+					loading: `Creating ${teamName}…`,
+					success: `Welcome to ${teamName}.`,
+					error: (err) => (err as Error)?.message ?? "Couldn't create the team.",
+				},
+			);
 			name = "";
 			open = false;
 			// Active org has been switched server-side by setActive — re-pull
 			// every loader so the sidebar swaps over to the new team.
 			await invalidateAll();
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't create the team.");
-			console.error("[create team]", err);
 		} finally {
 			// Always release so a thrown rejection (network drop, abort) can't
 			// strand the submit button in a disabled state.
@@ -92,7 +97,11 @@
 				</Button>
 				<Button type="submit" disabled={creating || !name.trim()} class="gap-2">
 					{creating ? "Creating…" : "Create team"}
-					<ArrowRight class="size-4" />
+					{#if creating}
+						<LoaderCircle class="size-4 animate-spin" />
+					{:else}
+						<ArrowRight class="size-4" />
+					{/if}
 				</Button>
 			</Dialog.Footer>
 		</form>
