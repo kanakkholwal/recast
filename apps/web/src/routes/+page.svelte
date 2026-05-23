@@ -33,7 +33,7 @@
 	  VolumeX,
 	  X,
 	  Zap,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly, slide } from "svelte/transition";
 

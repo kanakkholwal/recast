@@ -1,7 +1,7 @@
 {
   "name": "recast-web",
   "private": true,
-  "version": "0.1.0-beta",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite dev",
@@ -22,7 +22,7 @@
     "@sveltejs/kit": "^2.50.2",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
     "@tailwindcss/vite": "^4.2.1",
-    "@types/gsap": "^3.0.0",
+    "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
     "portless": "^0.10.3",
@@ -43,7 +43,6 @@
     "clsx": "^2.1.1",
     "drizzle-orm": "^0.45.2",
     "gsap": "^3.15.0",
-    "lucide-svelte": "latest",
     "mode-watcher": "^1.1.0",
     "postgres": "^3.4.9",
     "svelte-sonner": "^1.1.0",

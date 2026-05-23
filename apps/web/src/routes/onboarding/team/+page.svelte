@@ -38,22 +38,23 @@
 		let base = target.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 		if (!base) base = "team";
 		const slug = `${base}-${Math.random().toString(36).slice(2, 8)}`;
+		const toastId = toast.loading(`Creating ${target}…`);
 		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.create({
-						name: target,
-						slug,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't create the team.");
-				})(),
-				{
-					loading: `Creating ${target}…`,
-					success: `Welcome to ${target}.`,
-					error: (err) => (err as Error)?.message ?? "Couldn't create the team.",
-				},
-			);
-			await goto("/dashboard");
+			const { error } = await authClient.organization.create({
+				name: target,
+				slug,
+			});
+			if (error) throw new Error(error.message ?? "Couldn't create the team.");
+			toast.success(`Welcome to ${target}.`, { id: toastId });
+			// invalidateAll forces the dashboard layout's server load to rerun
+			// with the freshly created membership + active-org cookie; without
+			// it the gate at /dashboard can bounce straight back to onboarding.
+			await invalidateAll();
+			await goto("/dashboard", { invalidateAll: true });
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't create the team.", {
+				id: toastId,
+			});
 		} finally {
 			// Always release — a thrown rejection (network drop, abort) must
 			// not leave the button permanently disabled.

@@ -16,6 +16,7 @@
 		size = "default",
 		portalProps,
 		class: className,
+		preventScroll = false,
 		...restProps
 	}: DropdownMenuPrimitive.ContentProps & {
 		size?: DropdownMenuSize;
@@ -35,6 +36,7 @@
 		data-size={size}
 		{sideOffset}
 		{align}
+		{preventScroll}
 		class={cn(
 			CRAFT_OVERLAY_ANIMATION,
 			// Unfold from the corner nearest the trigger (macOS-menu feel)

@@ -44,6 +44,7 @@
 		"@fontsource-variable/geist-mono": "^5.2.7",
 		"@fontsource-variable/google-sans": "^5.2.1",
 		"@lucide/svelte": "^0.577.0",
+		"@recast/player": "workspace:*",
 		"@tauri-apps/plugin-dialog": "2.6.0",
 		"@tauri-apps/plugin-opener": "~2.5.3",
 		"@tauri-apps/plugin-os": "^2.3.2",

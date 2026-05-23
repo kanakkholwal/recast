@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { mode, toggleMode } from "@recast/ui/theme";
-	import { Moon, Sun } from "lucide-svelte";
+	import { Moon, Sun } from "@lucide/svelte";
 </script>
 
 <button

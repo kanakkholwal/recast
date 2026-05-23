@@ -17,7 +17,7 @@
 		LoaderCircle,
 		Minus,
 		Sparkles,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

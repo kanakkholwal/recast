@@ -28,7 +28,7 @@
 	  TriangleAlert,
 	  WifiOff,
 	  Zap,
-	} from "lucide-svelte";
+	} from "@lucide/svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
