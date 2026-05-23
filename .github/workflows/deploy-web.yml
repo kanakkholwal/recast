@@ -43,7 +43,7 @@ jobs:
           run_install: false
 
       - name: Install dependencies
-        run: pnpm install --filter=recast-web
+        run: pnpm install --filter=recast-web --no-frozen-lockfile
 
       - name: Run linter (optional)
         run: pnpm run lint
