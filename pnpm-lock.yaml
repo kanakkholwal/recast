@@ -30,6 +30,9 @@ importers:
       '@lucide/svelte':
         specifier: ^0.577.0
         version: 0.577.0(svelte@5.55.3)
+      '@recast/player':
+        specifier: workspace:*
+        version: link:../../packages/player
       '@tauri-apps/plugin-dialog':
         specifier: 2.6.0
         version: 2.6.0

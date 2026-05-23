@@ -37,6 +37,15 @@ export const KIND_META: Record<
 // RELEASES:START — auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
+		version: '0.1.9',
+		date: '2026-05-23',
+		changes: [
+			{ kind: 'added', summary: 'Inline playback for recordings: tapping a card on the exports page now opens a `PlayerDialog` powered by `@recast/player` (RecastPlayer) with the branded media-chrome controls, instead of jumping straight to the file location. "Show in folder" stays one click away inside the dialog footer.' },
+			{ kind: 'added', summary: 'Global `@recast/player/styles.css` import in the desktop root layout so any future inline players pick up the same theming without per-route boilerplate.' },
+			{ kind: 'fixed', summary: 'Pointer-events leak from floating UI surfaces in the Tauri build: `DropdownMenu`, `HoverCard`, `Popover`, and `Select` content wrappers now also default `preventScroll={false}` (matching the earlier `Dialog` and `Sheet` fix from 0.1.6), so a closed menu or popover can no longer leave `pointer-events: none` on the document body and freeze the window.' },
+		],
+	},
+	{
 		version: '0.1.8',
 		date: '2026-05-22',
 		changes: [

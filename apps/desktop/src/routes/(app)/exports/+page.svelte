@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ConfirmDialog, RenameDialog } from "$components/recast";
+  import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
   import {
     deleteFile,
     generateThumbnails,
@@ -51,6 +51,7 @@
   let sort = $state<"recent" | "name" | "size">("recent");
   let renameTarget = $state<RecordingEntry | null>(null);
   let deleteTarget = $state<RecordingEntry | null>(null);
+  let playTarget = $state<RecordingEntry | null>(null);
 
   // Multi-select: a toolbar "Select" toggle flips the page into selection
   // mode, where clicking a card checks it instead of opening the file.
@@ -199,7 +200,7 @@
 
   function activateEntry(entry: RecordingEntry) {
     if (selectMode) toggleSelected(entry.path);
-    else openFileLocation(entry.path);
+    else playTarget = entry;
   }
 
   function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
@@ -709,4 +710,8 @@
       if (!v) deleteTarget = null;
     }}
   />
+{/if}
+
+{#if playTarget}
+  <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
 {/if}

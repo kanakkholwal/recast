@@ -2,6 +2,10 @@
   import "@fontsource-variable/google-sans";
   import { TooltipProvider } from "@recast/ui/tooltip";
   import "../app.css";
+  // RecastPlayer theme — needs to load once globally so any route that
+  // mounts <RecastPlayer> (exports preview, future inline players) picks
+  // up the branded media-chrome styling.
+  import "@recast/player/styles.css";
 
   import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";
