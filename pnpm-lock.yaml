@@ -34,8 +34,8 @@ importers:
         specifier: ^5.2.1
         version: 5.2.1
       '@lucide/svelte':
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.56.1)
+        specifier: ^1.17.0
+        version: 1.17.0(svelte@5.56.1)
       '@recast/player':
         specifier: workspace:*
         version: link:../../packages/player
@@ -149,8 +149,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@lucide/svelte':
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.56.1)
+        specifier: ^1.17.0
+        version: 1.17.0(svelte@5.56.1)
       '@polar-sh/better-auth':
         specifier: ^1.8.4
         version: 1.8.4(@polar-sh/sdk@0.47.1)(@stripe/react-stripe-js@4.0.2(@stripe/stripe-js@7.9.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(@stripe/stripe-js@7.9.0)(better-auth@1.6.11(@opentelemetry/api@1.9.1)(@sveltejs/kit@2.57.1(@opentelemetry/api@1.9.1)(@sveltejs/vite-plugin-svelte@6.2.4(svelte@5.56.1)(vite@7.3.2(@types/node@22.19.19)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.22.3)))(svelte@5.56.1)(typescript@5.9.3)(vite@7.3.2(@types/node@22.19.19)(jiti@2.6.1)(lightningcss@1.32.0)(tsx@4.22.3)))(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(postgres@3.4.9))(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(svelte@5.56.1))(react@19.2.6)(zod@4.4.3)
@@ -283,8 +283,8 @@ importers:
   packages/player:
     dependencies:
       '@lucide/svelte':
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.56.1)
+        specifier: ^1.17.0
+        version: 1.17.0(svelte@5.56.1)
       '@recast/ui':
         specifier: workspace:*
         version: link:../ui
@@ -302,8 +302,8 @@ importers:
   packages/ui:
     dependencies:
       '@lucide/svelte':
-        specifier: ^0.577.0
-        version: 0.577.0(svelte@5.56.1)
+        specifier: ^1.17.0
+        version: 1.17.0(svelte@5.56.1)
       '@tabler/icons-svelte':
         specifier: ^3.41.1
         version: 3.41.1(svelte@5.56.1)
@@ -1470,8 +1470,8 @@ packages:
   '@jridgewell/trace-mapping@0.3.31':
     resolution: {integrity: sha512-zzNR+SdQSDJzc8joaeP8QQoCQr8NuYx2dIIytl1QeBEZHJ9uW6hebsrYgbz8hJwUQao3TWCMtmfV8Nu1twOLAw==}
 
-  '@lucide/svelte@0.577.0':
-    resolution: {integrity: sha512-0P6mkySd2MapIEgq08tADPmcN4DHndC/02PWwaLkOerXlx5Sv9aT4BxyXLIY+eccr0g/nEyCYiJesqS61YdBZQ==}
+  '@lucide/svelte@1.17.0':
+    resolution: {integrity: sha512-q06YCFBN5CO8cd1ADmLCxWRVMVb7xxvHzqC0lvNoxGa+FLW6Cd1Y1AOxgbQk4Iwe68vkAMCRveNHint4WoaVKg==}
     peerDependencies:
       svelte: ^5
 
@@ -4693,7 +4693,7 @@ snapshots:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
 
-  '@lucide/svelte@0.577.0(svelte@5.56.1)':
+  '@lucide/svelte@1.17.0(svelte@5.56.1)':
     dependencies:
       svelte: 5.56.1
 

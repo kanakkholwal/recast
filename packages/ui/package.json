@@ -173,7 +173,7 @@
     "svelte": "^5.56.1"
   },
   "dependencies": {
-    "@lucide/svelte": "^0.577.0",
+    "@lucide/svelte": "^1.17.0",
     "@tabler/icons-svelte": "^3.41.1",
     "bits-ui": "^2.16.3",
     "clsx": "^2.1.1",
