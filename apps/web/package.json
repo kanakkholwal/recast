@@ -25,7 +25,7 @@
     "@recast/ui": "workspace:*",
     "@sveltejs/kit": "^2.63.0",
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
-    "@tailwindcss/vite": "^4.2.1",
+    "@tailwindcss/vite": "^4.3.1",
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
