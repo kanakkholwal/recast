@@ -48,7 +48,7 @@
 		"tailwind-variants": "^3.2.2",
 		"tailwindcss": "^4.2.1",
 		"typescript": "^5.9.3",
-		"vite": "^7.3.1",
+		"vite": "^8.1.0",
 		"vitest": "^3.2.4"
 	},
 	"dependencies": {
