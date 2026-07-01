@@ -11,6 +11,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
   import PanelSection from "./PanelSection.svelte";
+  import SceneAnimControls from "./SceneAnimControls.svelte";
 
   // Contextual controls for the clip/segment selected on the timeline. Auto-opened
   // by PropertiesPanel when `selectedClipStart` is set (mirrors the Focus tab for
@@ -121,6 +122,22 @@
           <Gauge class="size-3" />
         {/snippet}
       </SliderControl>
+    </PanelSection>
+
+    <PanelSection
+      title="Scene animation"
+      hint="How this clip animates into and out of view. Applies to the video layer only, in both preview and export."
+    >
+      <div class="space-y-3">
+        <div class="space-y-1.5">
+          <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entrance</span>
+          <SceneAnimControls {store} start={selected.start} side="in" />
+        </div>
+        <div class="space-y-1.5">
+          <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Exit</span>
+          <SceneAnimControls {store} start={selected.start} side="out" />
+        </div>
+      </div>
     </PanelSection>
 
     <div class="space-y-1.5">

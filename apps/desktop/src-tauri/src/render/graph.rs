@@ -105,6 +105,11 @@ pub struct RenderState {
     /// Per-segment speed overrides (empty = every segment plays at 1×).
     #[serde(default)]
     pub segment_speeds: Vec<SegmentSpeed>,
+    /// Per-segment scene animations — entrance/exit transforms on the video
+    /// layer, anchored to a segment's original start (empty = every segment
+    /// static). Read by the export to build the video-layer overlay LUT.
+    #[serde(default)]
+    pub scene_animations: Vec<crate::render::scene_anim::SegmentAnim>,
     /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
     #[serde(default)]
@@ -191,6 +196,7 @@ impl Default for RenderState {
             cuts: Vec::new(),
             split_points: Vec::new(),
             segment_speeds: Vec::new(),
+            scene_animations: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
@@ -368,6 +374,7 @@ impl RenderGraph {
         drop_shadow_mask: Option<PathBuf>,
         gradient_image: Option<PathBuf>,
         canvas: CanvasGeometry,
+        scene: Option<&crate::render::scene_anim::SceneOverlay>,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -427,7 +434,7 @@ impl RenderGraph {
         // outputs a fully-transparent stream — the visual symptom is a black
         // background showing through with only the cursor overlay visible.
         let mut prelude_segments: Vec<String> = Vec::new();
-        let video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
+        let mut video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
             (None, None) => "[0:v]".into(),
             (Some(zoom_filter), None) => {
                 prelude_segments.push(format!("[0:v]{zoom_filter}[video0]"));
@@ -445,6 +452,33 @@ impl RenderGraph {
                 ));
                 "[video0]".into()
             }
+        };
+
+        // Scene entrance/exit animation on the video layer only. `scale_expr`, when
+        // present, resizes the layer per frame (about its centre — the overlay
+        // position folds in the recentre); the overlay `x/y` expressions below then
+        // reposition it. Absent → the static overlay path is byte-identical to the
+        // no-animation output. Mirrors scenes/eval.ts; see render::scene_anim.
+        if let Some(scale_expr) = scene.and_then(|s| s.scale_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}scale=w='iw*({scale_expr})':h='ih*({scale_expr})':eval=frame[videoScene]"
+            ));
+            video_label = "[videoScene]".into();
+        }
+        // Rotation spins the card about its centre; `c=none` leaves the exposed
+        // corners transparent (needs alpha), keeping the frame size so the overlay
+        // recentre math above is unaffected. `a` re-evaluates per frame.
+        if let Some(rot_expr) = scene.and_then(|s| s.rotate_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}format=yuva420p,rotate=a='({rot_expr})*PI/180':c=none:ow=iw:oh=ih[videoSceneRot]"
+            ));
+            video_label = "[videoSceneRot]".into();
+        }
+        // The overlay position: expression-driven when animating, else the static
+        // `video_x:video_y` (identical to the pre-scene output).
+        let overlay_pos = match scene {
+            Some(s) => format!("x='{}':y='{}'", s.x_expr, s.y_expr),
+            None => format!("{video_x}:{video_y}"),
         };
 
         // Resolve the wallpaper/image bg path up-front (without pushing yet)
@@ -494,7 +528,7 @@ impl RenderGraph {
                         canvas.comp_y,
                     );
                     segments.push(format!(
-                        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
+                        "{bg_label}{video_label}overlay={overlay_pos}[vout]"
                     ));
                     Some(segments.join(";"))
                 } else {
@@ -504,8 +538,7 @@ impl RenderGraph {
                         &video_label,
                         canvas_width,
                         canvas_height,
-                        video_x,
-                        video_y,
+                        &overlay_pos,
                         canvas.comp_x,
                         canvas.comp_y,
                         shadow_input_index,
@@ -519,8 +552,7 @@ impl RenderGraph {
                 &video_label,
                 canvas_width,
                 canvas_height,
-                video_x,
-                video_y,
+                &overlay_pos,
                 canvas.comp_x,
                 canvas.comp_y,
                 shadow_input_index,
@@ -569,8 +601,7 @@ fn build_color_background_filter(
     video_label: &str,
     canvas_width: u32,
     canvas_height: u32,
-    video_x: u32,
-    video_y: u32,
+    overlay_pos: &str,
     shadow_overlay_x: u32,
     shadow_overlay_y: u32,
     shadow_input_index: Option<usize>,
@@ -603,7 +634,7 @@ fn build_color_background_filter(
         shadow_overlay_y,
     );
     segments.push(format!(
-        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
+        "{bg_label}{video_label}overlay={overlay_pos}[vout]"
     ));
     Some(segments.join(";"))
 }
@@ -836,7 +867,7 @@ fn build_zoom_exprs(
     )
 }
 
-fn wrap_flat_sum(default: &str, terms: Vec<String>) -> String {
+pub(crate) fn wrap_flat_sum(default: &str, terms: Vec<String>) -> String {
     if terms.is_empty() {
         default.to_string()
     } else {
@@ -892,7 +923,7 @@ fn merge_scale_segments(samples_per_region: &[Vec<ZoomSample>], tol: f64) -> Vec
 /// Format one segment as a flat-sum term over the half-open window `[ta, tb)`,
 /// contributing `value - default`. Returns `None` for a constant segment that
 /// equals the default (nothing to add).
-fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> Option<String> {
+pub(crate) fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> Option<String> {
     if (va - vb).abs() < 1e-6 {
         let offset = va - default_val;
         if offset.abs() < 1e-6 {
@@ -1154,6 +1185,7 @@ mod tests {
                 None,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }
@@ -1173,6 +1205,7 @@ mod tests {
                 Some(shadow_path),
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }
@@ -1315,6 +1348,7 @@ mod tests {
                 None,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan");
         let fc = plan.filter_complex.expect("filter_complex");
@@ -1466,6 +1500,7 @@ mod tests {
                 shadow_mask,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }

@@ -22,6 +22,13 @@ import {
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
 } from '../timeline/segment-speed';
+import {
+	pruneSegmentAnims,
+	type SceneAnimSpec,
+	type SegmentAnim,
+	segmentAnimAt as animAtAnchor,
+	setSegmentAnim as upsertSegmentAnim,
+} from '../scenes/segment-anim';
 import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
@@ -508,6 +515,9 @@ export interface EditorRenderState {
 	/** Per-segment speed overrides, anchored to a segment's original start. A
 	 *  segment with no entry plays at 1×. */
 	segmentSpeeds?: SegmentSpeed[];
+	/** Per-segment scene animations (entrance/exit video-layer transforms),
+	 *  anchored to a segment's original start. A segment with no entry is static. */
+	segmentAnims?: SegmentAnim[];
 	/** Whether zoom regions apply in preview/export. */
 	focusEnabled?: boolean;
 	/** Whether annotations render in preview/export. Negation of the
@@ -1070,6 +1080,9 @@ export function createEditorStore() {
 	// until a segment between two boundaries is ripple-deleted (→ a manual cut).
 	let splitPoints = $state<number[]>([]);
 	let segmentSpeeds = $state<SegmentSpeed[]>([]);
+	// Per-segment scene animations (entrance/exit transforms on the video layer),
+	// anchored to a segment's original start. A segment with no entry is static.
+	let segmentAnims = $state<SegmentAnim[]>([]);
 	// Transient (not serialized): true only while a trim handle is being dragged.
 	// Flips the timeline onto the full-recording axis so the handle can move
 	// across the whole source and reveal the trimmed head/tail (Cap-style ghost).
@@ -1265,6 +1278,7 @@ export function createEditorStore() {
 			cuts,
 			splitPoints,
 			segmentSpeeds,
+			segmentAnims,
 			autoZoomEnabled,
 			autoZoomApplied,
 			annotations,
@@ -1369,6 +1383,7 @@ export function createEditorStore() {
 		cuts = (s.cuts ?? []).map((c: TimelineCut) => ({ ...c }));
 		splitPoints = [...(s.splitPoints ?? [])];
 		segmentSpeeds = (s.segmentSpeeds ?? []).map((o: SegmentSpeed) => ({ ...o }));
+		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot — we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1775,6 +1790,7 @@ export function createEditorStore() {
 		cuts = [];
 		splitPoints = [];
 		segmentSpeeds = [];
+		segmentAnims = [];
 		cutsEnabled = true;
 		focusEnabled = true;
 		dismissedSilences = [];
@@ -1980,6 +1996,21 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	/** The scene animation anchored at original `start` (null when unset). */
+	function segmentAnimAtStart(start: number): SegmentAnim | null {
+		return animAtAnchor(segmentAnims, start);
+	}
+
+	/** Set or clear (spec = null) the entrance/exit animation of the segment
+	 * anchored at original `start`. Coalesced into one undo entry per anchor+side
+	 * while presets/sliders change; orphaned anchors are pruned. */
+	function setSegmentAnim(start: number, side: 'in' | 'out', spec: SceneAnimSpec | null) {
+		pushUndoStateCoalesced(`segment-anim-${side}-${start.toFixed(3)}`, 400);
+		const next = upsertSegmentAnim(segmentAnims, start, side, spec);
+		segmentAnims = pruneSegmentAnims(next, currentSegments());
+		isDirty = true;
+	}
+
 	/** Split the clip at original time `t`. Returns true if a split was added. */
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
@@ -2106,6 +2137,7 @@ export function createEditorStore() {
 			splitPoints: [...splitPoints],
 			// Prune orphaned anchors on save so the section diffs cleanly.
 			segmentSpeeds: pruneSegmentSpeeds(segmentSpeeds, currentSegments()),
+			segmentAnims: pruneSegmentAnims(segmentAnims, currentSegments()),
 			cutsEnabled,
 			focusEnabled,
 			annotationsEnabled: !annotationsGloballyHidden,
@@ -2197,6 +2229,7 @@ export function createEditorStore() {
 		cutsEnabled = state.cutsEnabled ?? true;
 		splitPoints = [...(state.splitPoints ?? [])];
 		segmentSpeeds = (state.segmentSpeeds ?? []).map((o) => ({ ...o }));
+		segmentAnims = (state.segmentAnims ?? []).map((o) => ({ ...o }));
 		focusEnabled = state.focusEnabled ?? true;
 		if (state.annotationsEnabled !== undefined) {
 			annotationsGloballyHidden = !state.annotationsEnabled;
@@ -2400,6 +2433,9 @@ export function createEditorStore() {
 		segmentSpeedAt: segmentSpeedAtStart,
 		segmentSpeedAtTime,
 		setSegmentSpeed,
+		get segmentAnims() { return segmentAnims; },
+		segmentAnimAt: segmentAnimAtStart,
+		setSegmentAnim,
 		get selectedClipStart() { return selectedClipStart; },
 		set selectedClipStart(v: number | null) { selectedClipStart = v; },
 		get focusEnabled() { return focusEnabled; },

@@ -30,6 +30,7 @@
 	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
 	import { PlaybackClock } from "$lib/playback/clock";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+	import { evalSceneAt } from "$lib/scenes/eval";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import CameraOverlay from "./_components/CameraOverlay.svelte";
@@ -246,6 +247,8 @@ uniform vec2 u_zoomCenter;        // [0..1] in video UV
 uniform float u_zoomScale;        // 1.0 = no zoom
 uniform float u_motionBlurPx;     // radial motion-blur radius in canvas px (0 = off)
 uniform float u_borderRadiusPx;   // rounded corner radius of the video rect, canvas pixels
+uniform float u_videoOpacity;     // scene entrance/exit fade on the video layer (1 = opaque)
+uniform float u_videoRotation;    // scene rotation of the video card, radians about its centre
 
 uniform vec2 u_cursorPos;         // [0..1] in video UV
 uniform float u_cursorVisible;    // 0 or 1
@@ -330,6 +333,15 @@ void main() {
 
 	// Rounded-rect mask for the video region.
 	vec2 videoCenter = (videoMin + videoMax) * 0.5;
+	// Scene rotation: spin the whole card about its centre by inverse-rotating the
+	// sampling coordinate — the mask, video UV, cursor and highlight all derive
+	// from canvasPx, so rotating it here rotates the card as one.
+	if (abs(u_videoRotation) > 0.0001) {
+		float rs = sin(u_videoRotation);
+		float rc = cos(u_videoRotation);
+		vec2 rd = canvasPx - videoCenter;
+		canvasPx = videoCenter + vec2(rc * rd.x + rs * rd.y, -rs * rd.x + rc * rd.y);
+	}
 	vec2 halfSize = videoSize * 0.5;
 	// Clamp radius so it never exceeds half the smaller dimension.
 	float maxR = min(halfSize.x, halfSize.y);
@@ -349,7 +361,8 @@ void main() {
 		float shadowMask = 1.0 - smoothstep(0.0, blurPx, sdShadow);
 		// Don't bleed shadow onto the video surface.
 		shadowMask *= (1.0 - videoCoverage);
-		color.rgb = mix(color.rgb, u_shadowColor.rgb, shadowMask * u_shadowColor.a);
+		// Fade the shadow with the video layer so the whole card animates as one.
+		color.rgb = mix(color.rgb, u_shadowColor.rgb, shadowMask * u_shadowColor.a * u_videoOpacity);
 	}
 
 	if (videoCoverage > 0.0) {
@@ -416,7 +429,7 @@ void main() {
 		}
 
 		// Mix the composed video (+cursor) over the background using the rounded mask.
-		color = mix(color, videoColor, videoCoverage);
+		color = mix(color, videoColor, videoCoverage * u_videoOpacity);
 	}
 
 	frag = vec4(color.rgb, 1.0);
@@ -499,6 +512,8 @@ void main() {
 			"u_zoomScale",
 			"u_motionBlurPx",
 			"u_borderRadiusPx",
+			"u_videoOpacity",
+			"u_videoRotation",
 			"u_cursorPos",
 			"u_cursorVisible",
 			"u_cursorRadius",
@@ -1162,16 +1177,30 @@ void main() {
 		);
 		const sx = canvasEl.width / Math.max(1, geom.canvasW);
 		const sy = canvasEl.height / Math.max(1, geom.canvasH);
-		gl.uniform2f(
-			uniforms.u_videoOrigin,
-			geom.videoX * sx,
-			geom.videoY * sy,
-		);
-		gl.uniform2f(
-			uniforms.u_videoSize,
-			geom.videoW * sx,
-			geom.videoH * sy,
-		);
+		// Scene entrance/exit animation — a per-segment transform on the video
+		// layer only (background stays put). Evaluated in original/timeline time
+		// against the segment's window, exactly like zoom, so preview and the
+		// (tail-retimed) export graph stay in sync.
+		const scene = evalSceneAt(store.segments, store.segmentAnims, playbackTime);
+		let videoX = geom.videoX * sx;
+		let videoY = geom.videoY * sy;
+		let videoW = geom.videoW * sx;
+		let videoH = geom.videoH * sy;
+		// Scale about the rect centre, then translate (canvas-normalized).
+		if (scene.scale !== 1) {
+			const cx = videoX + videoW * 0.5;
+			const cy = videoY + videoH * 0.5;
+			videoW *= scene.scale;
+			videoH *= scene.scale;
+			videoX = cx - videoW * 0.5;
+			videoY = cy - videoH * 0.5;
+		}
+		videoX += scene.translateX * canvasEl.width;
+		videoY += scene.translateY * canvasEl.height;
+		gl.uniform2f(uniforms.u_videoOrigin, videoX, videoY);
+		gl.uniform2f(uniforms.u_videoSize, videoW, videoH);
+		gl.uniform1f(uniforms.u_videoOpacity, scene.opacity);
+		gl.uniform1f(uniforms.u_videoRotation, (scene.rotate * Math.PI) / 180);
 
 		// Background
 		const bgType = store.backgroundType;
@@ -1648,6 +1677,7 @@ void main() {
 		void store.cursorSettings;
 		void store.zoomRegions;
 		void store.shadow;
+		void store.segmentAnims;
 		requestRedraw();
 	});
 

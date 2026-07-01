@@ -1,6 +1,11 @@
 <script lang="ts">
   import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
   import {
+    getRecentColors,
+    pushRecentColor,
+  } from "$lib/annotations/recent-colors";
+  import { registry } from "$lib/registry";
+  import {
     COLOR_PRESETS,
     GRADIENT_PRESETS,
     MAX_FRAME_PADDING_PERCENT,
@@ -19,23 +24,18 @@
     Sparkles,
     SquareRoundCorner,
   } from "@lucide/svelte";
-  import {
-    getRecentColors,
-    pushRecentColor,
-  } from "$lib/annotations/recent-colors";
-  import { registry } from "$lib/registry";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { SegmentedToggle } from "@recast/ui/segmented";
+  import { SliderControl } from "@recast/ui/slider-control";
   import * as Tabs from "@recast/ui/tabs";
   import { cn } from "@recast/ui/utils";
   import { convertFileSrc } from "@tauri-apps/api/core";
+  import { Image } from "@unpic/svelte";
   import {
     imagePreviewSrc,
     isValidImageValue,
   } from "./background-picker.logic";
-  import { Image } from "@unpic/svelte";
-  import { SliderControl } from "@recast/ui/slider-control";
   import GradientBuilder from "./GradientBuilder.svelte";
   import PanelSection from "./PanelSection.svelte";
 
@@ -295,6 +295,10 @@
           }}
         />
       </div>
+      {:else}
+        <div class="text-[11px] text-muted-foreground">
+          Drop shadow is disabled. Enable it to adjust its settings.
+        </div>
     {/if}
   </PanelSection>
 

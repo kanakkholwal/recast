@@ -1228,6 +1228,34 @@ pub async fn export_video(
     };
     let gradient_bg_path = gradient_bg.as_ref().map(|m| m.path.clone());
 
+    // Scene entrance/exit animations on the video layer. Derived on the same
+    // post-trim kept-segment windows as speed (cuts + splits) so an animation's
+    // window lines up with its clip; the tail cut+speed stage then re-times it,
+    // exactly like zoom. `None` when nothing animates → the static overlay path.
+    let scene_overlay = if request.render_state.scene_animations.is_empty() {
+        None
+    } else {
+        let scene_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
+        let windows: Vec<(f64, f64)> = build_speed_segments(
+            duration,
+            &scene_cuts,
+            &request.render_state.split_points,
+            &[],
+            trim_start,
+        )
+        .iter()
+        .map(|s| (s.start, s.end))
+        .collect();
+        crate::render::scene_anim::build_scene_overlay(
+            &windows,
+            trim_start,
+            &request.render_state.scene_animations,
+            &canvas_geom,
+            metadata.width,
+            metadata.height,
+        )
+    };
+
     let export_plan = graph
         .build_export_plan_with(
             SourceVideoMetadata {
@@ -1242,6 +1270,7 @@ pub async fn export_video(
             drop_shadow_mask_path,
             gradient_bg_path,
             canvas_geom,
+            scene_overlay.as_ref(),
         )
         .map_err(|e| e.to_string())?;
     let overlay_duration = if duration > 0.0 {
