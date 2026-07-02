@@ -31,6 +31,11 @@ import {
 	segmentAnimAt as animAtAnchor,
 	setSegmentAnim as upsertSegmentAnim,
 } from '../scenes/segment-anim';
+import {
+	seamTransitionAt as readSeamTransition,
+	type SeamTransition,
+	setSeamTransition as applySeamTransition,
+} from '../scenes/seam';
 import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
@@ -2031,6 +2036,21 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	/** Set the transition across the seam between the segments anchored at
+	 * `leftStart` and `rightStart` — a matched exit+entrance styled by the current
+	 * motion tone. One undo entry for the pair. */
+	function setSeamTransition(leftStart: number, rightStart: number, kind: SeamTransition) {
+		pushUndoState();
+		const next = applySeamTransition(segmentAnims, leftStart, rightStart, kind, motionTone);
+		segmentAnims = pruneSegmentAnims(next, currentSegments());
+		isDirty = true;
+	}
+
+	/** The transition currently spanning that seam ("none" / a push / "custom"). */
+	function seamTransitionAt(leftStart: number, rightStart: number): SeamTransition | 'custom' {
+		return readSeamTransition(segmentAnims, leftStart, rightStart);
+	}
+
 	/** Split the clip at original time `t`. Returns true if a split was added. */
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
@@ -2460,6 +2480,8 @@ export function createEditorStore() {
 		setSegmentAnim,
 		get motionTone() { return motionTone; },
 		setMotionTone,
+		setSeamTransition,
+		seamTransitionAt,
 		get selectedClipStart() { return selectedClipStart; },
 		set selectedClipStart(v: number | null) { selectedClipStart = v; },
 		get focusEnabled() { return focusEnabled; },
