@@ -3,9 +3,7 @@
 // container-pixel positions or string handle IDs — no DOM dependencies.
 
 import type { Annotation } from "$lib/stores/editor-store.svelte";
-import { type ZoomRegionLike } from "./eval";
-import { evalZoom } from "./eval";
-import { normaliseBox, uvToCanvas, type Rect } from "./uv";
+import { normaliseBox } from "./uv";
 
 export type HandleName =
 	| "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w"
@@ -52,8 +50,9 @@ export function handlePositions(
 }
 
 export interface HitOptions {
-	rect: Rect;
-	zoomRegions: ZoomRegionLike[];
+	/** Projects a UV point for a given annotation into container pixels — the
+	 *  caller chooses the rect + zoom per annotation (video vs frame anchor). */
+	project: (a: Annotation, ux: number, uy: number) => Point;
 	t: number;
 	/** Slop in container pixels (already includes DPR scaling if relevant). */
 	handleSlop: number;
@@ -73,11 +72,10 @@ export function hitTestHandle(
 	opts: HitOptions,
 ): HandleName | null {
 	if (a.hidden) return null;
-	const zoom = evalZoom(opts.zoomRegions, opts.t);
 
 	if (a.kind.kind === "arrow") {
-		const p1 = uvToCanvas(a.kind.x1, a.kind.y1, opts.rect, zoom);
-		const p2 = uvToCanvas(a.kind.x2, a.kind.y2, opts.rect, zoom);
+		const p1 = opts.project(a, a.kind.x1, a.kind.y1);
+		const p2 = opts.project(a, a.kind.x2, a.kind.y2);
 		if (
 			Math.abs(pt.x - p1.x) <= opts.handleSlop &&
 			Math.abs(pt.y - p1.y) <= opts.handleSlop
@@ -95,8 +93,8 @@ export function hitTestHandle(
 	}
 
 	const box = normaliseBox(a.kind);
-	const topLeft = uvToCanvas(box.x, box.y, opts.rect, zoom);
-	const bottomRight = uvToCanvas(box.x + box.w, box.y + box.h, opts.rect, zoom);
+	const topLeft = opts.project(a, box.x, box.y);
+	const bottomRight = opts.project(a, box.x + box.w, box.y + box.h);
 	const x = topLeft.x;
 	const y = topLeft.y;
 	const w = bottomRight.x - topLeft.x;
@@ -128,7 +126,6 @@ export function hitTestAnnotation(
 	annotations: Annotation[],
 	opts: HitOptions,
 ): Annotation | null {
-	const zoom = evalZoom(opts.zoomRegions, opts.t);
 	for (let i = annotations.length - 1; i >= 0; i--) {
 		const a = annotations[i];
 		if (a.hidden) continue;
@@ -140,20 +137,15 @@ export function hitTestAnnotation(
 		if (opts.t < a.start || opts.t > a.end) continue;
 
 		if (a.kind.kind === "arrow") {
-			const p1 = uvToCanvas(a.kind.x1, a.kind.y1, opts.rect, zoom);
-			const p2 = uvToCanvas(a.kind.x2, a.kind.y2, opts.rect, zoom);
+			const p1 = opts.project(a, a.kind.x1, a.kind.y1);
+			const p2 = opts.project(a, a.kind.x2, a.kind.y2);
 			if (pointToSegmentDist(pt, p1, p2) <= opts.annotationSlop) return a;
 			continue;
 		}
 
 		const box = normaliseBox(a.kind);
-		const topLeft = uvToCanvas(box.x, box.y, opts.rect, zoom);
-		const bottomRight = uvToCanvas(
-			box.x + box.w,
-			box.y + box.h,
-			opts.rect,
-			zoom,
-		);
+		const topLeft = opts.project(a, box.x, box.y);
+		const bottomRight = opts.project(a, box.x + box.w, box.y + box.h);
 		if (
 			pt.x >= topLeft.x &&
 			pt.x <= bottomRight.x &&

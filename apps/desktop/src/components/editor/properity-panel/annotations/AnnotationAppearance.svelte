@@ -81,6 +81,9 @@
       annotation.kind.kind === "arrow",
   );
 
+  // Images get a border (stroke) too — width/style/colour frame the image.
+  const hasStroke = $derived(isShape || annotation.kind.kind === "image");
+
   const hasFill = $derived(
     annotation.kind.kind === "rect" || annotation.kind.kind === "ellipse",
   );
@@ -92,7 +95,7 @@
   flush
 >
   <div class="flex flex-col gap-3">
-    {#if isShape}
+    {#if hasStroke}
       <div class="space-y-2">
         <SliderControl
           label="Stroke width"
@@ -279,7 +282,9 @@
           onchange={(v) => setGlow({ opacity: v / 100 })}
         />
         <p class="text-[10px] leading-tight text-muted-foreground">
-          Preview only. Exports use a solid stroke. Tracked for v2.1.
+          {annotation.kind.kind === "image"
+            ? "Renders in the exported video."
+            : "Preview only for shapes; exports drop the glow. Tracked for v2.1."}
         </p>
       {/if}
     </div>

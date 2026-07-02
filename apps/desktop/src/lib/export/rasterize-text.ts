@@ -44,6 +44,7 @@ export async function expandTextAnnotations<
         h: Math.abs(k.h),
         path: dataUrl,
         opacity: 1,
+        radius: 0,
       },
     } as T);
   }

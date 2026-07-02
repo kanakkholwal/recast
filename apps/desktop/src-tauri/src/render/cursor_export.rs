@@ -33,7 +33,9 @@ use crate::render::cursor_anim::{
     idle_sway_offset, motion_blur_step_alpha, press_state_at,
 };
 use crate::render::graph::RenderState;
-use crate::render::node_types::{Annotation, AnnotationKind};
+use crate::render::node_types::{
+    Annotation, AnnotationAnchor, AnnotationGlow, AnnotationKind, AnnotationStroke,
+};
 
 /// Input for pre-rendering a cursor overlay track.
 #[derive(Debug, Clone)]
@@ -904,6 +906,7 @@ fn draw_annotation(
             h,
             path,
             opacity: img_opacity,
+            radius,
         } => {
             if let Some(img) = image_cache.get(path) {
                 draw_image(
@@ -918,6 +921,10 @@ fn draw_annotation(
                     *w,
                     *h,
                     opacity * img_opacity.clamp(0.0, 1.0),
+                    *radius,
+                    annotation.glow.as_ref(),
+                    Some(&annotation.stroke),
+                    annotation.anchor,
                 );
             }
         }
@@ -947,8 +954,10 @@ fn draw_shape(
         return;
     };
 
-    let (x1, y1) = uv_to_canvas(request, x, y, t_secs);
-    let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs);
+    let anchor = annotation.anchor;
+    let (ref_w, ref_h) = anchor_ref_dims(request, anchor);
+    let (x1, y1) = uv_to_canvas(request, x, y, t_secs, anchor);
+    let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs, anchor);
     let x = x1.min(x2);
     let y = y1.min(y2);
     let w = (x1 - x2).abs();
@@ -968,7 +977,7 @@ fn draw_shape(
                     y,
                     w,
                     h,
-                    radius * request.source_width.min(request.source_height) as f64,
+                    radius * ref_w.min(ref_h),
                     r,
                     g,
                     b,
@@ -1004,7 +1013,7 @@ fn draw_shape(
     if annotation.stroke.width > 0.0 {
         if let Some((r, g, b, a)) = parse_css_color(&annotation.stroke.color) {
             if a > 0.0 {
-                let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+                let stroke_px = (annotation.stroke.width * ref_w).max(1.0);
                 match annotation.kind {
                     AnnotationKind::Rect { .. } => draw_rect(
                         frame,
@@ -1014,7 +1023,7 @@ fn draw_shape(
                         y,
                         w,
                         h,
-                        radius * request.source_width.min(request.source_height) as f64,
+                        radius * ref_w.min(ref_h),
                         r,
                         g,
                         b,
@@ -1066,10 +1075,12 @@ fn draw_arrow(
     if sa <= 0.0 {
         return;
     }
-    let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+    let anchor = annotation.anchor;
+    let (ref_w, _) = anchor_ref_dims(request, anchor);
+    let stroke_px = (annotation.stroke.width * ref_w).max(1.0);
 
-    let (cx1, cy1) = uv_to_canvas(request, x1_uv, y1_uv, t_secs);
-    let (cx2, cy2) = uv_to_canvas(request, x2_uv, y2_uv, t_secs);
+    let (cx1, cy1) = uv_to_canvas(request, x1_uv, y1_uv, t_secs, anchor);
+    let (cx2, cy2) = uv_to_canvas(request, x2_uv, y2_uv, t_secs, anchor);
     let dx = cx2 - cx1;
     let dy = cy2 - cy1;
     let line_len = (dx * dx + dy * dy).sqrt();
@@ -1133,12 +1144,16 @@ fn draw_image(
     w_uv: f64,
     h_uv: f64,
     alpha: f64,
+    radius_uv: f64,
+    glow: Option<&AnnotationGlow>,
+    stroke: Option<&AnnotationStroke>,
+    anchor: AnnotationAnchor,
 ) {
     if w_uv <= 0.0 || h_uv <= 0.0 || alpha <= 0.0 {
         return;
     }
-    let (cx1, cy1) = uv_to_canvas(request, x_uv, y_uv, t_secs);
-    let (cx2, cy2) = uv_to_canvas(request, x_uv + w_uv, y_uv + h_uv, t_secs);
+    let (cx1, cy1) = uv_to_canvas(request, x_uv, y_uv, t_secs, anchor);
+    let (cx2, cy2) = uv_to_canvas(request, x_uv + w_uv, y_uv + h_uv, t_secs, anchor);
     let dx = cx1.min(cx2);
     let dy = cy1.min(cy2);
     let dw = (cx2 - cx1).abs();
@@ -1150,6 +1165,17 @@ fn draw_image(
     if img_w == 0 || img_h == 0 {
         return;
     }
+    // Corner radius in dst pixels, mirroring the preview (`radius` × shorter
+    // side of the box). Clamped so it can't exceed half the box.
+    let corner = (radius_uv.max(0.0) * dw.min(dh)).min(dw.min(dh) / 2.0);
+
+    // Soft shadow / glow behind the image, mirroring the preview's Glow.
+    if let Some(g) = glow {
+        draw_image_shadow(
+            frame, width, height, img, request, t_secs, dx, dy, dw, dh, corner, alpha, g, anchor,
+        );
+    }
+
     let x_min = dx.floor().max(0.0) as usize;
     let y_min = dy.floor().max(0.0) as usize;
     let x_max = (dx + dw).ceil().min(width as f64 - 1.0).max(0.0) as usize;
@@ -1165,11 +1191,189 @@ fn draw_image(
             let u = ((px as f64 + 0.5 - dx) / dw).clamp(0.0, 0.999);
             let sx = (u * img_w as f64) as u32;
             let pixel = img.get_pixel(sx, sy);
-            let src_a = pixel[3] as f64 / 255.0 * alpha;
+            // Rounded-corner coverage: distance from the pixel to the inner
+            // rect (box shrunk by `corner`); 1px anti-aliased falloff.
+            let cover = if corner > 0.5 {
+                let lx = px as f64 + 0.5 - dx;
+                let ly = py as f64 + 0.5 - dy;
+                let nx = lx.clamp(corner, dw - corner);
+                let ny = ly.clamp(corner, dh - corner);
+                let dist = ((lx - nx).powi(2) + (ly - ny).powi(2)).sqrt();
+                (corner - dist + 0.5).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let src_a = pixel[3] as f64 / 255.0 * alpha * cover;
             if src_a <= 0.0 {
                 continue;
             }
             blend_pixel(frame, width, px, py, pixel[0], pixel[1], pixel[2], src_a);
+        }
+    }
+
+    // Border: a rounded-rect stroke over the image, mirroring the preview.
+    if let Some(stroke) = stroke {
+        if stroke.width > 0.0 {
+            if let Some((sr, sg, sb, sa)) = parse_css_color(&stroke.color) {
+                if sa > 0.0 {
+                    let stroke_px = (stroke.width * anchor_ref_dims(request, anchor).0).max(1.0);
+                    draw_rect(
+                        frame,
+                        width,
+                        height,
+                        dx,
+                        dy,
+                        dw,
+                        dh,
+                        corner,
+                        sr,
+                        sg,
+                        sb,
+                        sa * alpha,
+                        false,
+                        stroke_px,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Soft symmetric shadow behind an image annotation — the export equivalent of
+/// the preview's `Glow`. Rasterizes the image's alpha silhouette (including the
+/// rounded-corner mask), box-blurs it, and blends the tinted result behind the
+/// image. `glow.blur` is in UV, matched to the video width like the preview.
+#[allow(clippy::too_many_arguments)]
+fn draw_image_shadow(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    img: &RgbaImage,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    dx: f64,
+    dy: f64,
+    dw: f64,
+    dh: f64,
+    corner: f64,
+    alpha: f64,
+    glow: &AnnotationGlow,
+    anchor: AnnotationAnchor,
+) {
+    if glow.opacity <= 0.0 || glow.blur <= 0.0 {
+        return;
+    }
+    let Some((gr, gg, gb, ga)) = parse_css_color(&glow.color) else {
+        return;
+    };
+    // Blur radius in dst pixels, relative to the anchor rect's width so it
+    // matches the preview's `glow.blur × rect.width`.
+    let (fx0, _) = uv_to_canvas(request, 0.0, 0.0, t_secs, anchor);
+    let (fx1, _) = uv_to_canvas(request, 1.0, 0.0, t_secs, anchor);
+    let radius = (glow.blur * (fx1 - fx0).abs()).clamp(0.0, 80.0);
+    if radius < 0.5 {
+        return;
+    }
+    let radius_i = radius.round() as usize;
+
+    // Expanded region covering the image rect plus a blur margin.
+    let margin = radius_i as isize + 1;
+    let rx0 = (dx.floor() as isize - margin).max(0) as usize;
+    let ry0 = (dy.floor() as isize - margin).max(0) as usize;
+    let rx1 = ((dx + dw).ceil() as isize + margin).min(width as isize - 1);
+    let ry1 = ((dy + dh).ceil() as isize + margin).min(height as isize - 1);
+    if rx1 < rx0 as isize || ry1 < ry0 as isize {
+        return;
+    }
+    let (rx1, ry1) = (rx1 as usize, ry1 as usize);
+    let rw = rx1 - rx0 + 1;
+    let rh = ry1 - ry0 + 1;
+    let (img_w, img_h) = img.dimensions();
+
+    // Silhouette = image alpha × rounded-corner coverage, in [0,1].
+    let mut sil = vec![0f32; rw * rh];
+    for gy in ry0..=ry1 {
+        let ly = gy as f64 + 0.5 - dy;
+        if ly < 0.0 || ly > dh {
+            continue;
+        }
+        let sy = ((ly / dh).clamp(0.0, 0.999) * img_h as f64) as u32;
+        for gx in rx0..=rx1 {
+            let lx = gx as f64 + 0.5 - dx;
+            if lx < 0.0 || lx > dw {
+                continue;
+            }
+            let sx = ((lx / dw).clamp(0.0, 0.999) * img_w as f64) as u32;
+            let a = img.get_pixel(sx, sy)[3] as f32 / 255.0;
+            if a <= 0.0 {
+                continue;
+            }
+            let cover = if corner > 0.5 {
+                let nx = lx.clamp(corner, dw - corner);
+                let ny = ly.clamp(corner, dh - corner);
+                let dist = ((lx - nx).powi(2) + (ly - ny).powi(2)).sqrt();
+                (corner - dist + 0.5).clamp(0.0, 1.0) as f32
+            } else {
+                1.0
+            };
+            sil[(gy - ry0) * rw + (gx - rx0)] = a * cover;
+        }
+    }
+
+    box_blur_alpha(&mut sil, rw, rh, radius_i);
+
+    let scale = (alpha * glow.opacity * ga).clamp(0.0, 1.0);
+    if scale <= 0.0 {
+        return;
+    }
+    for gy in ry0..=ry1 {
+        for gx in rx0..=rx1 {
+            let s = sil[(gy - ry0) * rw + (gx - rx0)] as f64;
+            if s <= 0.0 {
+                continue;
+            }
+            blend_pixel(frame, width, gx, gy, gr, gg, gb, s * scale);
+        }
+    }
+}
+
+/// Separable running-sum box blur over an alpha buffer, run twice to approximate
+/// a Gaussian. Edges clamp; the buffer is zero-padded by construction.
+fn box_blur_alpha(buf: &mut [f32], w: usize, h: usize, radius: usize) {
+    if radius == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let win = (2 * radius + 1) as f32;
+    let mut tmp = vec![0f32; buf.len()];
+    for _ in 0..2 {
+        // Horizontal: buf -> tmp.
+        for y in 0..h {
+            let base = y * w;
+            let mut sum = 0f32;
+            for k in -(radius as isize)..=(radius as isize) {
+                sum += buf[base + k.clamp(0, w as isize - 1) as usize];
+            }
+            tmp[base] = sum / win;
+            for x in 1..w {
+                let add_i = (x + radius).min(w - 1);
+                let sub_i = (x as isize - 1 - radius as isize).max(0) as usize;
+                sum += buf[base + add_i] - buf[base + sub_i];
+                tmp[base + x] = sum / win;
+            }
+        }
+        // Vertical: tmp -> buf.
+        for x in 0..w {
+            let mut sum = 0f32;
+            for k in -(radius as isize)..=(radius as isize) {
+                sum += tmp[k.clamp(0, h as isize - 1) as usize * w + x];
+            }
+            buf[x] = sum / win;
+            for y in 1..h {
+                let add_i = (y + radius).min(h - 1) * w + x;
+                let sub_i = (y as isize - 1 - radius as isize).max(0) as usize * w + x;
+                sum += tmp[add_i] - tmp[sub_i];
+                buf[y * w + x] = sum / win;
+            }
         }
     }
 }
@@ -1479,7 +1683,21 @@ fn sorted_visible_annotations(annotations: &[Annotation]) -> Vec<&Annotation> {
     indexed.into_iter().map(|(_, a)| a).collect()
 }
 
-fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> (f64, f64) {
+fn uv_to_canvas(
+    request: &CursorOverlayRequest,
+    x: f64,
+    y: f64,
+    t_secs: f64,
+    anchor: AnnotationAnchor,
+) -> (f64, f64) {
+    // Frame-anchored annotations span the whole comp buffer (canvas_* = comp
+    // dims) and ignore zoom — the export mirror of the preview's frame anchor.
+    if anchor == AnnotationAnchor::Frame {
+        return (
+            x * request.canvas_width as f64,
+            y * request.canvas_height as f64,
+        );
+    }
     let mut uv_x = x;
     let mut uv_y = y;
     if let Some((scale, center_x, center_y)) = active_zoom_at(
@@ -1498,6 +1716,15 @@ fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> 
         (request.padding as f64 + source_x) * scale_canvas,
         (request.padding as f64 + source_y) * scale_canvas,
     )
+}
+
+/// Reference dimensions a stroke width / corner radius scales against, matching
+/// the preview: the video for a video anchor, the padded frame for a frame anchor.
+fn anchor_ref_dims(request: &CursorOverlayRequest, anchor: AnnotationAnchor) -> (f64, f64) {
+    match anchor {
+        AnnotationAnchor::Frame => (request.canvas_width as f64, request.canvas_height as f64),
+        AnnotationAnchor::Video => (request.source_width as f64, request.source_height as f64),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1739,4 +1966,80 @@ fn parse_css_color(value: &str) -> Option<(u8, u8, u8, f64)> {
         .unwrap_or(1.0)
         .clamp(0.0, 1.0);
     Some((r, g, b, a))
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::{anchor_ref_dims, uv_to_canvas, CursorOverlayRequest};
+    use crate::render::graph::RenderState;
+    use crate::render::node_types::{AnnotationAnchor, ZoomRegion};
+
+    // source 200x100, padding 10 → comp (canvas_*) 220x120. scale_canvas = 1.
+    fn req(zoom: Vec<ZoomRegion>) -> CursorOverlayRequest {
+        let render_state = RenderState {
+            zoom_regions: zoom,
+            ..RenderState::default()
+        };
+        CursorOverlayRequest {
+            cursor_track_path: std::path::PathBuf::from("none"),
+            canvas_width: 220,
+            canvas_height: 120,
+            source_width: 200,
+            source_height: 100,
+            padding: 10,
+            fps: 30,
+            duration_secs: 4.0,
+            trim_start: 0.0,
+            render_state,
+        }
+    }
+
+    fn active_zoom() -> ZoomRegion {
+        serde_json::from_value(serde_json::json!({
+            "start": 0.0, "end": 4.0, "scale": 2.0, "centerX": 0.5, "centerY": 0.5
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn frame_anchor_spans_comp_without_padding_offset_or_zoom() {
+        let r = req(vec![active_zoom()]);
+        // 0..1 maps across the whole comp buffer, even with a 2x zoom active.
+        assert_eq!(
+            uv_to_canvas(&r, 0.0, 0.0, 2.0, AnnotationAnchor::Frame),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            uv_to_canvas(&r, 1.0, 1.0, 2.0, AnnotationAnchor::Frame),
+            (220.0, 120.0)
+        );
+        // Ignores the zoom: 0.75 stays at 0.75 * comp width regardless of `t`.
+        let (fx, _) = uv_to_canvas(&r, 0.75, 0.5, 2.0, AnnotationAnchor::Frame);
+        assert!((fx - 0.75 * 220.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn video_anchor_offsets_by_padding_and_follows_zoom() {
+        // No zoom: 0..1 spans the video region [padding, padding+source].
+        let r0 = req(vec![]);
+        assert_eq!(
+            uv_to_canvas(&r0, 0.0, 0.0, 0.0, AnnotationAnchor::Video),
+            (10.0, 10.0)
+        );
+        let (vx0, _) = uv_to_canvas(&r0, 0.75, 0.5, 0.0, AnnotationAnchor::Video);
+        assert!((vx0 - (0.75 * 200.0 + 10.0)).abs() < 1e-9); // 160
+
+        // With a 2x zoom about centre, the same UV is pushed outward — proving
+        // video anchor tracks zoom while frame anchor (above) does not.
+        let r = req(vec![active_zoom()]);
+        let (vx, _) = uv_to_canvas(&r, 0.75, 0.5, 2.0, AnnotationAnchor::Video);
+        assert!(vx > 200.0, "expected zoom to push x past 200, got {vx}");
+    }
+
+    #[test]
+    fn anchor_ref_dims_pick_frame_vs_source() {
+        let r = req(vec![]);
+        assert_eq!(anchor_ref_dims(&r, AnnotationAnchor::Frame), (220.0, 120.0));
+        assert_eq!(anchor_ref_dims(&r, AnnotationAnchor::Video), (200.0, 100.0));
+    }
 }

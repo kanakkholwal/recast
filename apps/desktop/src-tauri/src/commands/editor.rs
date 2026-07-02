@@ -25,7 +25,7 @@ use crate::project::reader::ProjectOpenResult;
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 use crate::render::mask_export::{render_border_radius_mask, MaskResult};
-use crate::render::node_types::{AnnotationKind, AudioSettings};
+use crate::render::node_types::{AnnotationAnchor, AnnotationKind, AudioSettings};
 
 /// True if the line is part of an FFmpeg `-progress` block (key=value metric
 /// lines that FFmpeg emits every `-stats_period` interval). These should be
@@ -1680,11 +1680,30 @@ pub async fn export_video(
                 tint_color,
                 ..
             } => {
-                // UV → canvas-pixel rect.
-                let cx = (x * canvas_width as f64).round() as i32;
-                let cy = (y * canvas_height as f64).round() as i32;
-                let cw = (w.abs() * canvas_width as f64).round() as i32;
-                let ch = (h.abs() * canvas_height as f64).round() as i32;
+                // UV → canvas-pixel rect, over the annotation's anchor rect:
+                // the video region (video anchor, matches preview) or the padded
+                // frame (frame anchor). Identical to the old full-canvas mapping
+                // when there's no padding. Static either way — FFmpeg can't
+                // follow a per-frame zoom, so a zoomed video-anchored blur holds
+                // its un-zoomed spot.
+                let (rx, ry, rw_ref, rh_ref) = match a.anchor {
+                    AnnotationAnchor::Frame => (
+                        canvas_geom.comp_x as f64,
+                        canvas_geom.comp_y as f64,
+                        comp_width as f64,
+                        comp_height as f64,
+                    ),
+                    AnnotationAnchor::Video => (
+                        canvas_geom.video_x as f64,
+                        canvas_geom.video_y as f64,
+                        canvas_geom.video_w as f64,
+                        canvas_geom.video_h as f64,
+                    ),
+                };
+                let cx = (rx + x * rw_ref).round() as i32;
+                let cy = (ry + y * rh_ref).round() as i32;
+                let cw = (w.abs() * rw_ref).round() as i32;
+                let ch = (h.abs() * rh_ref).round() as i32;
                 if cw < 4 || ch < 4 {
                     return None;
                 }

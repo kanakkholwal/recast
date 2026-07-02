@@ -1,8 +1,14 @@
 <script lang="ts">
   import { evalOpacity, evalZoom } from "$lib/annotations/eval";
-  import { normaliseBox, uvToCanvas, videoRectPx } from "$lib/annotations/uv";
+  import {
+    compositionRectPx,
+    normaliseBox,
+    uvToCanvas,
+    videoRectPx,
+  } from "$lib/annotations/uv";
   import type {
     Annotation,
+    AnnotationAnchor,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount } from "svelte";
@@ -27,12 +33,16 @@
   // rAF tick so positions track playback (store doesn't dispatch per video frame).
   let _frame = $state(0);
 
-  function videoRectCss() {
-    return videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding);
+  const IDENTITY_ZOOM = { scale: 1, cx: 0.5, cy: 0.5 };
+
+  function rectCssFor(a: { anchor?: AnnotationAnchor }) {
+    return a.anchor === "frame"
+      ? compositionRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect)
+      : videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect);
   }
 
-  function uvToCss(ux: number, uy: number, t: number) {
-    return uvToCanvas(ux, uy, videoRectCss(), evalZoom(store.zoomRegions, t));
+  function uvToCss(a: { anchor?: AnnotationAnchor }, ux: number, uy: number, t: number) {
+    return uvToCanvas(ux, uy, rectCssFor(a), a.anchor === "frame" ? IDENTITY_ZOOM : evalZoom(store.zoomRegions, t));
   }
 
   function playbackTime(): number {
@@ -77,8 +87,8 @@
 
     const k = a.kind;
     const box = normaliseBox(k);
-    const tl = uvToCss(box.x, box.y, t);
-    const br = uvToCss(box.x + box.w, box.y + box.h, t);
+    const tl = uvToCss(a, box.x, box.y, t);
+    const br = uvToCss(a, box.x + box.w, box.y + box.h, t);
     const x = Math.min(tl.x, br.x);
     const y = Math.min(tl.y, br.y);
     const w = Math.abs(br.x - tl.x);

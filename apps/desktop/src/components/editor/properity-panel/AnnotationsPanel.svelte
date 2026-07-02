@@ -20,12 +20,15 @@
     ArrowUpRight,
     Circle,
     Droplets,
+    Image as ImageIcon,
     MousePointer2,
     Square,
     SquareDashedMousePointer,
     Trash2,
     Type as TypeIcon,
   } from "@lucide/svelte";
+  import { toast } from "@recast/ui/sonner";
+  import { pickImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { Kbd } from "@recast/ui/kbd";
@@ -73,6 +76,7 @@
     { id: "ellipse", label: "Ellipse", icon: Circle, hotkey: "O" },
     { id: "arrow", label: "Arrow", icon: ArrowUpRight, hotkey: "A" },
     { id: "text", label: "Text", icon: TypeIcon, hotkey: "T" },
+    { id: "image", label: "Image", icon: ImageIcon, hotkey: "I" },
     { id: "blur", label: "Blur", icon: Droplets, hotkey: "B" },
   ];
 
@@ -81,7 +85,44 @@
       store.annotationTool = null;
       return;
     }
+    // Image is an insert action, not a draggable tool: pick a file, then place
+    // it centered at its own aspect ratio.
+    if (id === "image") {
+      void insertImage();
+      return;
+    }
     store.annotationTool = store.annotationTool === id ? null : id;
+  }
+
+  async function insertImage() {
+    store.annotationTool = null;
+    const meta = store.metadata;
+    const frameAspect = meta && meta.height > 0 ? meta.width / meta.height : 16 / 9;
+    try {
+      const kind = await pickImageAnnotation(frameAspect);
+      if (kind) store.addAnnotation(kind);
+    } catch (error) {
+      toast.error(`Could not insert image: ${error}`);
+    }
+  }
+
+  async function replaceImage() {
+    if (!selected || selected.kind.kind !== "image") return;
+    try {
+      const path = await pickImageFile();
+      if (!path) return;
+      store.pushUndoState();
+      store.updateAnnotation(selected.id, {
+        kind: { ...selected.kind, path },
+      });
+    } catch (error) {
+      toast.error(`Could not replace image: ${error}`);
+    }
+  }
+
+  function imageFileName(path: string): string {
+    const parts = path.split(/[/\\]/);
+    return parts[parts.length - 1] || "Image";
   }
 
   // Tool hotkeys. Suppressed when focus is in an editable element so typing
@@ -131,9 +172,9 @@
     switch (store.annotationTool) {
       case "rect":
       case "ellipse":
-        return "Drag on the preview to draw a shape.";
+        return "Drag on the preview to draw. Hold Shift for a square.";
       case "arrow":
-        return "Drag from start to end on the preview.";
+        return "Drag from start to end. Hold Shift to snap to 45°.";
       case "text":
         return "Drag a box on the preview, then type.";
       case "blur":
@@ -251,6 +292,25 @@
           Delete
         </Button>
       </div>
+
+      <PanelSection
+        title="Anchor"
+        hint="Video moves with zoom/focus; Frame pins it to the output frame."
+      >
+        <Segmented
+          size="xs"
+          aria-label="Anchor"
+          value={a.anchor ?? "video"}
+          options={[
+            { value: "video", label: "Video" },
+            { value: "frame", label: "Frame" },
+          ]}
+          onValueChange={(v) => {
+            store.pushUndoState();
+            updateSelected({ anchor: v as "video" | "frame" });
+          }}
+        />
+      </PanelSection>
 
       {#if a.kind.kind === "text"}
         {@const k = a.kind}
@@ -442,6 +502,37 @@
               }}
             />
           {/if}
+        </PanelSection>
+      {/if}
+
+      {#if a.kind.kind === "image"}
+        {@const k = a.kind}
+        <PanelSection title="Image">
+          <div class="flex flex-col gap-2.5">
+            <div class="flex items-center gap-2">
+              <span
+                class="min-w-0 flex-1 truncate text-[11px] text-muted-foreground"
+                title={k.path}
+              >
+                {imageFileName(k.path)}
+              </span>
+              <Button size="xs" variant="outline" onclick={replaceImage}>Replace</Button>
+            </div>
+            <SliderControl
+              label="Corner radius"
+              value={(k.radius ?? 0) * 100}
+              min={0}
+              max={50}
+              step={1}
+              unit="%"
+              formatValue={(v) => `${v.toFixed(0)}%`}
+              onstart={() => store.pushUndoState()}
+              onchange={(v) => {
+                if (a.kind.kind !== "image") return;
+                updateSelected({ kind: { ...a.kind, radius: v / 100 } });
+              }}
+            />
+          </div>
         </PanelSection>
       {/if}
 

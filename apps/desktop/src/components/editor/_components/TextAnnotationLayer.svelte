@@ -1,10 +1,16 @@
 <script lang="ts">
   import { evalOpacity, evalZoom } from "$lib/annotations/eval";
   import { ensureFontLoaded } from "$lib/fonts/font-options";
-  import { canvasToUV, uvToCanvas, videoRectPx } from "$lib/annotations/uv";
+  import {
+    canvasToUV,
+    compositionRectPx,
+    uvToCanvas,
+    videoRectPx,
+  } from "$lib/annotations/uv";
   import { FRAME_ANCHORS, snap, type SnapAnchor } from "$lib/annotations/snap";
   import type {
     Annotation,
+    AnnotationAnchor,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
   import { onDestroy, onMount, tick } from "svelte";
@@ -51,22 +57,30 @@
   // Below this (CSS px) the gesture is a click (select); above it, a move.
   const CLICK_DRAG_THRESHOLD_PX = 3;
 
-  function videoRectCss() {
-    return videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding);
+  const IDENTITY_ZOOM = { scale: 1, cx: 0.5, cy: 0.5 };
+
+  function rectCssFor(a: { anchor?: AnnotationAnchor }) {
+    return a.anchor === "frame"
+      ? compositionRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect)
+      : videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect);
   }
 
-  function uvToCss(ux: number, uy: number, t: number) {
-    return uvToCanvas(ux, uy, videoRectCss(), evalZoom(store.zoomRegions, t));
+  function zoomForA(a: { anchor?: AnnotationAnchor }, t: number) {
+    return a.anchor === "frame" ? IDENTITY_ZOOM : evalZoom(store.zoomRegions, t);
   }
 
-  function pointerToUV(e: PointerEvent, t: number) {
+  function uvToCss(a: { anchor?: AnnotationAnchor }, ux: number, uy: number, t: number) {
+    return uvToCanvas(ux, uy, rectCssFor(a), zoomForA(a, t));
+  }
+
+  function pointerToUV(a: { anchor?: AnnotationAnchor }, e: PointerEvent, t: number) {
     if (!layerEl) return { x: 0, y: 0 };
     const rect = layerEl.getBoundingClientRect();
     return canvasToUV(
       e.clientX - rect.left,
       e.clientY - rect.top,
-      videoRectCss(),
-      evalZoom(store.zoomRegions, t),
+      rectCssFor(a),
+      zoomForA(a, t),
     );
   }
 
@@ -119,8 +133,8 @@
     const y = Math.min(k.y, k.y + k.h);
     const w = Math.abs(k.w);
     const h = Math.abs(k.h);
-    const tl = uvToCss(x, y, t);
-    const br = uvToCss(x + w, y + h, t);
+    const tl = uvToCss(a, x, y, t);
+    const br = uvToCss(a, x + w, y + h, t);
     const cssW = Math.max(0, br.x - tl.x);
     const cssH = Math.max(0, br.y - tl.y);
     const fontSizePx = k.fontSize * layerSize.h;
@@ -229,7 +243,7 @@
     target.setPointerCapture(e.pointerId);
 
     const t = playbackTime();
-    const pointerUV = pointerToUV(e, t);
+    const pointerUV = pointerToUV(a, e, t);
     const startCss = pointerToCss(e);
 
     drag = {
@@ -263,7 +277,7 @@
     if (!moved && !drag.moved) return;
     drag.moved = true;
 
-    const rawUv = pointerToUV(e, t);
+    const rawUv = pointerToUV(a, e, t);
     const dx = rawUv.x - drag.pointerStartUV.x;
     const dy = rawUv.y - drag.pointerStartUV.y;
     let nx = drag.startX + dx;

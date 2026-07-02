@@ -9,6 +9,7 @@ import { googleFontStack } from '../fonts/google-fonts';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import { log } from '../logger';
+import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // — which pulls this store's catalogs — can't form an import cycle.
 import { resolveBackgroundWireValue } from '../registry/resolve';
@@ -171,6 +172,7 @@ export type AnnotationKind =
 		h: number;
 		path: string; // absolute file path or asset URL
 		opacity: number; // 0..1
+		radius: number; // corner radius, fraction of the shorter side (0..0.5)
 	}
 	| {
 		// Privacy / focus blur. Applies a box blur (separable, kernel
@@ -221,7 +223,14 @@ export interface Annotation {
 	opacity?: number;
 	/** Optional glow / soft shadow. Preview only in v2 (Rust glow follows). */
 	glow?: AnnotationGlow;
+	/** What the annotation is pinned to. "video" (default) tracks the zoomed
+	 *  video content; "frame" pins it to the output frame so zoom/focus never
+	 *  moves it. Absent = "video". */
+	anchor?: AnnotationAnchor;
 }
+
+/** Coordinate space an annotation is anchored to. */
+export type AnnotationAnchor = "video" | "frame";
 
 export const DEFAULT_ANNOTATION_RAMP = 0.2;
 export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
@@ -1659,6 +1668,10 @@ export function createEditorStore() {
 		const clipEnd = trimEnd || metadata?.duration || 0;
 		const s = start ?? Math.max(trimStart, now);
 		const e = end ?? Math.min(clipEnd, Math.max(s + 2.0, now + 2.0));
+		// New annotations pick up the current theme colour rather than a fixed
+		// blue, so markup matches the app out of the box (resolved to a concrete
+		// colour here since the export bakes it).
+		const themeColor = resolveTokenRgb('var(--primary)');
 		const annotation: Annotation = {
 			id: generateId(),
 			start: s,
@@ -1667,8 +1680,14 @@ export function createEditorStore() {
 			rampOut: DEFAULT_ANNOTATION_RAMP,
 			easeIn: { ...EASE },
 			easeOut: { ...EASE },
-			stroke: { ...DEFAULT_ANNOTATION_STROKE },
-			fill: DEFAULT_ANNOTATION_FILL,
+			// Images start borderless (opt-in via the Appearance controls); shapes
+			// keep the default hairline stroke.
+			stroke: {
+				...DEFAULT_ANNOTATION_STROKE,
+				color: themeColor,
+				width: kind.kind === 'image' ? 0 : DEFAULT_ANNOTATION_STROKE.width,
+			},
+			fill: resolveTokenRgba('var(--primary)', 0.18),
 			kind,
 			zIndex: annotationZSeq++,
 			opacity: 1,
@@ -2342,6 +2361,7 @@ export function createEditorStore() {
 			hidden: a.hidden ?? false,
 			opacity: a.opacity ?? 1,
 			glow: a.glow,
+			anchor: a.anchor,
 		}));
 		annotationZSeq = annotations.length + 1;
 		selectedAnnotationId = null;

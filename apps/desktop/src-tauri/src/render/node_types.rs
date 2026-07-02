@@ -249,7 +249,71 @@ impl CameraOverlaySettings {
 
 #[cfg(test)]
 mod tests {
-    use super::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
+    use super::{
+        Annotation, AnnotationAnchor, AnnotationKind, CameraMotionSegment, CameraOverlaySettings,
+        CameraPlacement,
+    };
+
+    // Guards the IPC contract: the frontend sends camelCase keys, and the export
+    // pipeline must read `anchor` + the image `radius`/`stroke` it sends. A key
+    // mismatch here would silently drop the feature at export (as `segmentAnims`
+    // once did), so these assert the exact wire shape survives deserialization.
+    #[test]
+    fn annotation_anchor_and_image_controls_survive_frontend_json() {
+        let raw = r##"{
+            "id": "a1",
+            "start": 1.0,
+            "end": 3.0,
+            "anchor": "frame",
+            "stroke": { "width": 0.006, "color": "#ff0000", "style": "solid" },
+            "kind": {
+                "kind": "image",
+                "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4,
+                "path": "logo.png", "opacity": 0.9, "radius": 0.25
+            }
+        }"##;
+        let a: Annotation = serde_json::from_str(raw).unwrap();
+        assert_eq!(a.anchor, AnnotationAnchor::Frame);
+        assert!((a.stroke.width - 0.006).abs() < 1e-9);
+        assert_eq!(a.stroke.color, "#ff0000");
+        match a.kind {
+            AnnotationKind::Image {
+                radius,
+                opacity,
+                path,
+                ..
+            } => {
+                assert!((radius - 0.25).abs() < 1e-9);
+                assert!((opacity - 0.9).abs() < 1e-9);
+                assert_eq!(path, "logo.png");
+            }
+            other => panic!("expected image kind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn annotation_anchor_defaults_to_video_when_absent() {
+        // Older projects / omitted field must default to Video, never fail.
+        let raw = r#"{
+            "id": "a2", "start": 0.0, "end": 1.0,
+            "kind": { "kind": "rect", "x": 0.0, "y": 0.0, "w": 0.5, "h": 0.5, "radius": 0.0 }
+        }"#;
+        let a: Annotation = serde_json::from_str(raw).unwrap();
+        assert_eq!(a.anchor, AnnotationAnchor::Video);
+    }
+
+    #[test]
+    fn annotation_anchor_serializes_to_lowercase() {
+        // Round-trip: save/load + preview all key off "video"/"frame".
+        assert_eq!(
+            serde_json::to_value(AnnotationAnchor::Frame).unwrap(),
+            serde_json::json!("frame")
+        );
+        assert_eq!(
+            serde_json::to_value(AnnotationAnchor::Video).unwrap(),
+            serde_json::json!("video")
+        );
+    }
 
     #[test]
     fn camera_overlay_uses_default_placement_before_motion() {
@@ -541,6 +605,9 @@ pub enum AnnotationKind {
         path: String,
         #[serde(default = "default_image_opacity")]
         opacity: f64,
+        /// Corner radius as a fraction of the shorter side (0..0.5). 0 = sharp.
+        #[serde(default)]
+        radius: f64,
     },
     /// Privacy/focus blur applied to the live frame underneath the rect.
     /// `strength` (0..1) drives a separable box-blur radius; `variant`
@@ -631,6 +698,19 @@ pub struct Annotation {
     /// don't have to bump the version again, but the current draw path ignores it.
     #[serde(default)]
     pub glow: Option<AnnotationGlow>,
+    /// What the annotation is pinned to. `Video` (default) tracks the zoomed
+    /// video content; `Frame` pins it to the output frame (no zoom).
+    #[serde(default)]
+    pub anchor: AnnotationAnchor,
+}
+
+/// Coordinate space an annotation is anchored to.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AnnotationAnchor {
+    #[default]
+    Video,
+    Frame,
 }
 
 fn default_anno_ramp() -> f64 {
