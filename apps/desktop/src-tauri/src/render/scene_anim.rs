@@ -27,6 +27,11 @@ const DEFAULT_SCALE_DELTA: f64 = 0.3;
 const DEFAULT_POP_DELTA: f64 = 0.35;
 const DEFAULT_ROTATE_DEG: f64 = 15.0;
 const ANCHOR_EPS: f64 = 1e-4;
+// Mirror scenes/eval.ts: a segment shorter than this stays static, and each ramp
+// caps to this fraction of the window, so tiny fragments (aggressive silence-cuts)
+// never sit in a permanent in→out wobble.
+const MIN_ANIMATABLE_SEC: f64 = 0.2;
+const MAX_SIDE_FRACTION: f64 = 0.4;
 
 /// One side (entrance or exit) of a segment's animation. Mirrors
 /// `SceneAnimSpec` on the frontend.
@@ -134,18 +139,24 @@ fn presence(spec: &SceneAnimSpec, p: f64) -> Tf {
 
 /// The transform at time `t` within a segment's window `[start, end]`. Mirrors
 /// `evalSegmentTransform`: entrance eases 0→1 over `in.durationMs`, exit eases
-/// 1→0 over `out.durationMs`, hold between is identity; entrance wins on overlap.
+/// 1→0 over `out.durationMs`, hold between is identity. Each side caps to
+/// `MAX_SIDE_FRACTION` of the window and segments shorter than `MIN_ANIMATABLE_SEC`
+/// stay static — the anti-wobble guards.
 fn eval_segment(anim: &SegmentAnim, t: f64, start: f64, end: f64) -> Tf {
     let win = (end - start).max(0.0);
+    if win < MIN_ANIMATABLE_SEC {
+        return identity();
+    }
+    let max_side = win * MAX_SIDE_FRACTION;
     if let Some(a) = &anim.anim_in {
-        let d = (clamp_anim_ms(a.duration_ms) / 1000.0).min(win);
+        let d = (clamp_anim_ms(a.duration_ms) / 1000.0).min(max_side);
         if d > 0.0 && t < start + d {
             let phase = ((t - start) / d).clamp(0.0, 1.0);
             return presence(a, a.easing.y(phase as f32) as f64);
         }
     }
     if let Some(a) = &anim.anim_out {
-        let d = (clamp_anim_ms(a.duration_ms) / 1000.0).min(win);
+        let d = (clamp_anim_ms(a.duration_ms) / 1000.0).min(max_side);
         if d > 0.0 && t > end - d {
             let phase = ((end - t) / d).clamp(0.0, 1.0);
             return presence(a, a.easing.y(phase as f32) as f64);
@@ -393,6 +404,37 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn tiny_segment_is_guarded_to_no_overlay() {
+        // A sub-MIN_ANIMATABLE_SEC window with a real slide anim must produce no
+        // overlay expressions — the export stays on the static path (no wobble).
+        let canvas = CanvasGeometry {
+            canvas_w: 1920,
+            canvas_h: 1080,
+            video_x: 0,
+            video_y: 0,
+            video_w: 1920,
+            video_h: 1080,
+            padding_px: 0,
+            comp_x: 0,
+            comp_y: 0,
+            comp_w: 1920,
+            comp_h: 1080,
+        };
+        let anims = vec![SegmentAnim {
+            start: 0.0,
+            anim_in: Some(SceneAnimSpec {
+                kind: "slide".into(),
+                duration_ms: 500.0,
+                easing: Easing::LINEAR,
+                dir: Some("left".into()),
+                intensity: None,
+            }),
+            anim_out: None,
+        }];
+        assert!(build_scene_overlay(&[(0.0, 0.15)], 0.0, &anims, &canvas, 1920, 1080).is_none());
     }
 
     #[test]

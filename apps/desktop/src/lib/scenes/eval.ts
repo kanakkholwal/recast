@@ -27,6 +27,14 @@ import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
 
 const EPS = 1e-4;
 
+// Below this a segment is too short to animate — it stays static. Each ramp is
+// capped to this fraction of the window so a hold always remains between the two
+// sides. Together they stop tiny fragments (e.g. from aggressive silence-cutting)
+// from sitting in a permanent in→out ramp — a constant wobble. Mirrored in the
+// Rust export evaluator (render/scene_anim.rs); keep the two in lockstep.
+const MIN_ANIMATABLE_SEC = 0.2;
+const MAX_SIDE_FRACTION = 0.4;
+
 /** Video-layer transform. `translateX/Y` are fractions of the canvas width/
  *  height; `scale` multiplies the video rect about its own centre; `rotate` is
  *  degrees about that centre. */
@@ -103,10 +111,12 @@ export function presenceTransform(spec: SceneAnimSpec, p: number): SceneTransfor
 }
 
 /**
- * The video-layer transform for a single segment at output time `t`, given its
- * output window `[outStart, outEnd]`. Entrance eases presence 0→1 over the first
- * `in.durationMs`; exit eases 1→0 over the last `out.durationMs`; the hold
- * between is identity. In wins if the two ramps would overlap on a short clip.
+ * The video-layer transform for a single segment at time `t`, given its window
+ * `[outStart, outEnd]`. Entrance eases presence 0→1 over the first `in.durationMs`;
+ * exit eases 1→0 over the last `out.durationMs`; the hold between is identity. Each
+ * side is capped to `MAX_SIDE_FRACTION` of the window (so the two never overlap and
+ * a hold always remains), and a segment shorter than `MIN_ANIMATABLE_SEC` stays
+ * static — both guards defeat the silence-cut wobble.
  */
 export function evalSegmentTransform(
 	anim: SegmentAnim | null,
@@ -116,16 +126,18 @@ export function evalSegmentTransform(
 ): SceneTransform {
 	if (!anim) return SCENE_IDENTITY;
 	const winDur = Math.max(0, outEnd - outStart);
+	if (winDur < MIN_ANIMATABLE_SEC) return SCENE_IDENTITY;
+	const maxSide = winDur * MAX_SIDE_FRACTION;
 
 	if (anim.in) {
-		const d = Math.min(clampAnimMs(anim.in.durationMs) / 1000, winDur);
+		const d = Math.min(clampAnimMs(anim.in.durationMs) / 1000, maxSide);
 		if (d > 0 && t < outStart + d) {
 			const phase = clamp01((t - outStart) / d);
 			return presenceTransform(anim.in, bezierY(anim.in.easing, phase));
 		}
 	}
 	if (anim.out) {
-		const d = Math.min(clampAnimMs(anim.out.durationMs) / 1000, winDur);
+		const d = Math.min(clampAnimMs(anim.out.durationMs) / 1000, maxSide);
 		if (d > 0 && t > outEnd - d) {
 			// phase 1 at the start of the exit window (resting), 0 at the very end.
 			const phase = clamp01((outEnd - t) / d);

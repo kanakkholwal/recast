@@ -15,15 +15,17 @@ describe("evalSegmentTransform", () => {
 		const anim: SegmentAnim = { start: 0, in: lin, out: lin };
 		expect(evalSegmentTransform(anim, 5, 0, 10)).toEqual(SCENE_IDENTITY);
 	});
-	it("lets the entrance win when the two ramps overlap on a short clip", () => {
-		// window 1s, both ramps 1s → they fully overlap; `in` covers the window.
+	it("caps each ramp to 40% of the window so a hold always remains", () => {
+		// 1s clip, both ramps 1s → each caps to 0.4s; the centre is a hold, so the
+		// two never overlap (the anti-wobble guard).
 		const anim: SegmentAnim = { start: 0, in: lin, out: lin };
-		expect(evalSegmentTransform(anim, 0.5, 0, 1).opacity).toBeCloseTo(0.5, 6);
+		expect(evalSegmentTransform(anim, 0.2, 0, 1).opacity).toBeCloseTo(0.5, 6); // mid entrance
+		expect(evalSegmentTransform(anim, 0.5, 0, 1)).toEqual(SCENE_IDENTITY); // hold
+		expect(evalSegmentTransform(anim, 0.8, 0, 1).opacity).toBeCloseTo(0.5, 6); // mid exit
 	});
-	it("clamps a ramp longer than the window to the window", () => {
-		// 5s ramp on a 2s window → phase spans the whole 2s.
+	it("keeps a too-short segment static (no wobble from silence-cut fragments)", () => {
 		const anim: SegmentAnim = { start: 0, in: { ...lin, durationMs: 5000 } };
-		expect(evalSegmentTransform(anim, 1, 0, 2).opacity).toBeCloseTo(0.5, 6);
+		expect(evalSegmentTransform(anim, 0.05, 0, 0.15)).toEqual(SCENE_IDENTITY);
 	});
 });
 
