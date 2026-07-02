@@ -107,8 +107,10 @@ pub struct RenderState {
     pub segment_speeds: Vec<SegmentSpeed>,
     /// Per-segment scene animations — entrance/exit transforms on the video
     /// layer, anchored to a segment's original start (empty = every segment
-    /// static). Read by the export to build the video-layer overlay LUT.
-    #[serde(default)]
+    /// static). Read by the export to build the video-layer overlay LUT. The
+    /// frontend serialises these under `segmentAnims` (see the editor store); the
+    /// key must match or the export silently drops every animation to passthrough.
+    #[serde(rename = "segmentAnims", default)]
     pub scene_animations: Vec<crate::render::scene_anim::SegmentAnim>,
     /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
     /// Preview-only today; export integration lands with the cursor-overlay rewrite.
@@ -1174,6 +1176,86 @@ mod tests {
     fn fmt_term_drops_constant_at_default() {
         // Constant segment equal to the default contributes nothing.
         assert_eq!(fmt_term(0.0, 1.0, 1.0, 1.0, 1.0, "t"), None);
+    }
+
+    #[test]
+    fn scene_anims_use_the_frontend_segment_anims_key() {
+        // Regression: the frontend serialises scene animations as `segmentAnims`,
+        // but the Rust field deserialised `sceneAnimations`, so every animation was
+        // silently dropped into passthrough and never reached the export graph
+        // (perfect in preview, absent in export). The key must round-trip.
+        let value = serde_json::to_value(RenderState::default()).unwrap();
+        assert!(
+            value.get("segmentAnims").is_some(),
+            "must emit the frontend key"
+        );
+        assert!(value.get("sceneAnimations").is_none());
+
+        // A frontend-shaped payload must populate the typed field the export reads.
+        let mut payload = value;
+        payload["segmentAnims"] = serde_json::json!([{
+            "start": 0.0,
+            "in": { "kind": "slide", "durationMs": 500, "easing": { "x1": 0, "y1": 0, "x2": 1, "y2": 1 }, "dir": "left" }
+        }]);
+        let rs: RenderState = serde_json::from_value(payload).unwrap();
+        assert_eq!(rs.scene_animations.len(), 1);
+        assert_eq!(
+            rs.scene_animations[0].anim_in.as_ref().unwrap().kind,
+            "slide"
+        );
+    }
+
+    #[test]
+    fn scene_overlay_injects_video_layer_stages() {
+        // The scene overlay must reach the graph: a scale/rotate/opacity overlay
+        // produces the per-frame video-layer stages and an expression-driven
+        // overlay position (not the static one).
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 10.0,
+            ..RenderState::default()
+        };
+        let scene = crate::render::scene_anim::SceneOverlay {
+            x_expr: "100".into(),
+            y_expr: "50".into(),
+            scale_expr: Some("(1.1)".into()),
+            rotate_expr: Some("(15)".into()),
+            opacity_expr: Some("(1)".into()),
+        };
+        let plan = RenderGraph::from_state(&state)
+            .build_export_plan_with(
+                SourceVideoMetadata {
+                    width: 1920,
+                    height: 1080,
+                    fps: 60.0,
+                },
+                Path::new("."),
+                1,
+                None,
+                None,
+                None,
+                None,
+                test_canvas(),
+                Some(&scene),
+            )
+            .expect("plan");
+        let fc = plan.filter_complex.expect("filter graph");
+        assert!(
+            fc.contains("scale=w='iw*((1.1))"),
+            "scene scale stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("rotate=a='((15))*PI/180'"),
+            "scene rotate stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("geq=lum='p(X,Y)'"),
+            "scene fade stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("overlay=x='100':y='50'"),
+            "expression overlay missing: {fc}"
+        );
     }
 
     fn render_state_with_zoom(
