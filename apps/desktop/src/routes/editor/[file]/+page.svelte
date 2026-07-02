@@ -794,6 +794,11 @@
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
   let activeExportId = $state<string | null>(null);
+  // Backend prep sub-step (e.g. "Rendering cursor & annotations") emitted by Rust
+  // while it runs the synchronous prep passes AFTER hand-off but before the encode
+  // reports real progress — otherwise the checklist's "Encode frames" step sits
+  // stalled during that window.
+  let exportPrepDetail = $state<string | null>(null);
 
 
   // Rotating status messages shown below the progress ring during encode.
@@ -911,6 +916,9 @@
     switch (event.status) {
       case "started":
         return;
+      case "preparing":
+        exportPrepDetail = event.detail ?? null;
+        return;
       case "progress": {
         const next = Math.min(Math.max(event.progress, 0), 100);
         const current = store.exportProgress ?? 0;
@@ -951,6 +959,7 @@
     exportHasProgress = false;
     exportCancelling = false;
     exportFinalizing = false;
+    exportPrepDetail = null;
     activeExportId = exportId;
     exportResult = null;
     exportStartedAt = Date.now();
@@ -1451,15 +1460,20 @@
     },
     {
       key: "encode" as const,
-      label: exportFinalizing ? "Finalise file" : "Encode frames",
+      // Live hint: show the backend's prep sub-step ("Rendering cursor &
+      // annotations") until real encode progress arrives, so this row is never a
+      // stalled "Encode frames · pending" during the Rust prep window.
+      label: exportFinalizing
+        ? "Finalise file"
+        : !exportHasProgress && exportPrepDetail
+          ? exportPrepDetail
+          : "Encode frames",
       state:
         prepSending !== "done"
           ? "pending"
-          : exportFinalizing
+          : exportFinalizing || exportHasProgress || exportPrepDetail !== null
             ? "running"
-            : exportHasProgress
-              ? "running"
-              : "pending",
+            : "pending",
     },
   ]);
 </script>
@@ -1719,7 +1733,7 @@
 
 {#snippet progress()}
   {@const isPreparing =
-    prepSending !== "done" && !exportHasProgress && !exportFinalizing}
+    !exportHasProgress && !exportFinalizing}
   {@const eta = exportEtaMs()}
   {@const ringPct = isPreparing
     ? 0

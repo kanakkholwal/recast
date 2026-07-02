@@ -86,6 +86,47 @@ fn static_root() -> PathBuf {
     }
 }
 
+/// Pre-bake a wallpaper/image background to a canvas-sized, blurred PNG once, so
+/// the export filter graph doesn't re-scale and re-blur a *static* image on every
+/// frame — measured at ~19.5 ms/frame of pure waste on a 120 fps export (the blur
+/// of a still image is identical every frame). Uses the exact
+/// scale/crop/boxblur the graph would apply, so the composited result is
+/// pixel-identical to the per-frame path. Best-effort: returns `None` on any
+/// failure and the caller keeps the live per-frame background.
+fn prebake_static_background(
+    src: &Path,
+    canvas_w: u32,
+    canvas_h: u32,
+    blur: f64,
+) -> Option<(PathBuf, crate::render::cursor_export::TempDirGuard)> {
+    if canvas_w == 0 || canvas_h == 0 {
+        return None;
+    }
+    // Mirror graph.rs: boxblur sigma is `blur / 8`.
+    let sigma = (blur / 8.0).max(0.0);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let dir = std::env::temp_dir().join(format!("recast-export-bg-{ts}"));
+    std::fs::create_dir_all(&dir).ok()?;
+    let guard = crate::render::cursor_export::TempDirGuard::new(dir.clone());
+    let out = dir.join("background.png");
+    let vf = format!(
+        "scale={canvas_w}:{canvas_h}:force_original_aspect_ratio=increase,crop={canvas_w}:{canvas_h},boxblur={sigma}"
+    );
+    let mut cmd = Command::new(crate::ffmpeg::ffmpeg_path());
+    cmd.args(["-y", "-hide_banner", "-loglevel", "error", "-i"])
+        .arg(src)
+        .args(["-vf", &vf, "-frames:v", "1"])
+        .arg(&out);
+    crate::ffmpeg::configure_silent_command(&mut cmd);
+    match cmd.status() {
+        Ok(status) if status.success() && out.exists() => Some((out, guard)),
+        _ => None,
+    }
+}
+
 fn open_project_if_needed(path: &Path) -> Result<Option<ProjectOpenResult>, String> {
     if path.extension().and_then(|value| value.to_str()) == Some("recast") {
         crate::project::reader::open_project(path)
@@ -255,66 +296,63 @@ struct ExportStateEvent {
     path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
+    /// Human-readable sub-step during the multi-stage prep phase (e.g. "Rendering
+    /// cursor layer"), so the UI isn't a blank "Preparing…" while the synchronous
+    /// prep passes run before the encode emits real progress.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    detail: Option<String>,
 }
 
 impl ExportStateEvent {
-    fn started(export_id: &str) -> Self {
+    fn base(export_id: &str, status: &'static str) -> Self {
         Self {
             export_id: export_id.to_string(),
-            status: "started",
+            status,
             progress: None,
             path: None,
             message: None,
+            detail: None,
+        }
+    }
+
+    fn started(export_id: &str) -> Self {
+        Self::base(export_id, "started")
+    }
+
+    /// A named sub-step of the prep phase (before the encode drives real %).
+    fn preparing(export_id: &str, detail: &str) -> Self {
+        Self {
+            detail: Some(detail.to_string()),
+            ..Self::base(export_id, "preparing")
         }
     }
 
     fn progress(export_id: &str, progress: f64) -> Self {
         Self {
-            export_id: export_id.to_string(),
-            status: "progress",
             progress: Some(progress),
-            path: None,
-            message: None,
+            ..Self::base(export_id, "progress")
         }
     }
 
     fn finalizing(export_id: &str) -> Self {
-        Self {
-            export_id: export_id.to_string(),
-            status: "finalizing",
-            progress: None,
-            path: None,
-            message: None,
-        }
+        Self::base(export_id, "finalizing")
     }
 
     fn success(export_id: &str, path: &str) -> Self {
         Self {
-            export_id: export_id.to_string(),
-            status: "success",
-            progress: None,
             path: Some(path.to_string()),
-            message: None,
+            ..Self::base(export_id, "success")
         }
     }
 
     fn cancelled(export_id: &str) -> Self {
-        Self {
-            export_id: export_id.to_string(),
-            status: "cancelled",
-            progress: None,
-            path: None,
-            message: None,
-        }
+        Self::base(export_id, "cancelled")
     }
 
     fn error(export_id: &str, message: &str) -> Self {
         Self {
-            export_id: export_id.to_string(),
-            status: "error",
-            progress: None,
-            path: None,
             message: Some(message.to_string()),
+            ..Self::base(export_id, "error")
         }
     }
 }
@@ -1057,7 +1095,7 @@ fn build_speed_audio_filter(amap: &str, segs: &[SpeedSegment]) -> String {
 #[tauri::command]
 pub async fn export_video(
     app: AppHandle,
-    request: ExportRequest,
+    mut request: ExportRequest,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let export_id = request.export_id.clone();
@@ -1070,6 +1108,10 @@ pub async fn export_video(
         .lock()
         .insert(export_id.clone(), cancel_flag.clone());
     emit_export_state(&app, ExportStateEvent::started(&export_id));
+    emit_export_state(
+        &app,
+        ExportStateEvent::preparing(&export_id, "Preparing export"),
+    );
 
     // Per-stage wall-clock instrumentation (export-perf plan, step 1): attribute
     // the total to prep / cursor pre-render / encode so the pipeline is optimised
@@ -1234,6 +1276,43 @@ pub async fn export_video(
     };
     let gradient_bg_path = gradient_bg.as_ref().map(|m| m.path.clone());
 
+    // Pre-bake a static wallpaper/image background once (canvas-sized + blurred)
+    // so the filter graph doesn't re-scale/re-blur it on every frame — a static
+    // background is identical each frame (measured ~19.5 ms/frame at 120 fps).
+    // Point the background at the baked PNG with blur 0; the graph then loops it as
+    // a near-no-op, pixel-identical to the per-frame path. Best-effort: on failure
+    // the render state is untouched and the live per-frame path runs as before. The
+    // guard keeps the PNG alive until the export finishes.
+    let _prebaked_bg = if matches!(
+        request.render_state.background_type.as_str(),
+        "wallpaper" | "image"
+    ) {
+        crate::render::graph::resolve_background_path(
+            &request.render_state.background_value,
+            &static_root(),
+            asset_cache_dir.as_deref(),
+        )
+        .and_then(|src| {
+            prebake_static_background(
+                &src,
+                canvas_width,
+                canvas_height,
+                request.render_state.background_blur,
+            )
+        })
+        .map(|(path, guard)| {
+            request.render_state.background_value = path.to_string_lossy().into_owned();
+            request.render_state.background_blur = 0.0;
+            guard
+        })
+    } else {
+        None
+    };
+    // Rebuild the graph so the export plan sees the (possibly) pre-baked
+    // background. `trim_start`/`trim_end` were already read above and the
+    // background swap doesn't affect them.
+    let graph = RenderGraph::from_state(&request.render_state);
+
     // Scene entrance/exit animations on the video layer. Derived on the same
     // post-trim kept-segment windows as speed (cuts + splits) so an animation's
     // window lines up with its clip; the tail cut+speed stage then re-times it,
@@ -1291,6 +1370,15 @@ pub async fn export_video(
     let needs_overlay = request.render_state.cursor_enabled
         || !request.render_state.annotations.is_empty()
         || (request.render_state.shadow.enabled && request.render_state.shadow.opacity > 0.0);
+    // Surface the cursor/annotation pre-render — it's the longest prep sub-step
+    // (it renders every output frame before the encode starts), so a plain
+    // "Preparing…" here reads as a hang.
+    if needs_overlay && overlay_duration > 0.0 {
+        emit_export_state(
+            &app,
+            ExportStateEvent::preparing(&export_id, "Rendering cursor & annotations"),
+        );
+    }
     let cursor_overlay = if needs_overlay && overlay_duration > 0.0 {
         project
             .as_ref()
@@ -1319,6 +1407,12 @@ pub async fn export_video(
         "export[{export_id}] timing: prep={prep_ms}ms cursor_overlay={cursor_ms}ms (ran={cursor_ran})"
     );
 
+    // The filter graph is the export's dominant cost (a single-threaded,
+    // expression-heavy composite starves the GPU encoder). Parallelise it across
+    // cores — pure performance, byte-identical output (every filter still runs).
+    let filter_threads = std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(4);
     let mut args = vec![
         "-hide_banner".to_string(),
         "-loglevel".to_string(),
@@ -1336,6 +1430,10 @@ pub async fn export_video(
         "pipe:2".to_string(),
         "-stats_period".to_string(),
         "0.1".to_string(),
+        "-filter_complex_threads".to_string(),
+        filter_threads.to_string(),
+        "-filter_threads".to_string(),
+        filter_threads.to_string(),
     ];
     if trim_start > 0.0 {
         args.extend(["-ss".to_string(), format!("{trim_start:.3}")]);
@@ -1981,6 +2079,15 @@ pub async fn export_video(
     if output_cap > 0.0 {
         args.extend(["-t".to_string(), format!("{output_cap:.3}")]);
     }
+    // The real length of the output file — the `-t` cap (cuts dropped + speed
+    // warped), not the raw trimmed span. This is the UI progress denominator and
+    // the completion-probe target; using the raw span made the bar stall short of
+    // (cuts/speed-up) or overshoot past (slow-motion) 100%.
+    let expected_output_secs = if output_cap > 0.0 {
+        output_cap
+    } else {
+        source_duration
+    };
 
     if duration <= 0.0 && (!export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some()) {
         args.push("-shortest".to_string());
@@ -2201,12 +2308,15 @@ pub async fn export_video(
         .position(|a| a == "-c:v")
         .and_then(|i| args.get(i + 1).cloned())
         .unwrap_or_else(|| "unknown".to_string());
-    let decode_mode = if args.iter().any(|a| a == "-hwaccel") {
-        "hardware"
-    } else {
-        "software"
-    };
-    log::info!("export[{export_id}] encoder={video_encoder} decode={decode_mode}");
+    // `-hwaccel auto` may still fall back to software internally, so report the
+    // requested mode rather than claiming hardware.
+    let decode_mode = args
+        .iter()
+        .position(|a| a == "-hwaccel")
+        .and_then(|i| args.get(i + 1).cloned())
+        .map(|v| format!("hwaccel:{v}"))
+        .unwrap_or_else(|| "software".to_string());
+    log::info!("export[{export_id}] encoder={video_encoder} decode={decode_mode} filter_threads={filter_threads}");
 
     // Spawn FFmpeg in a background thread so the UI stays responsive.
     // Watchdog: if 60s pass without a progress line, kill the child.
@@ -2280,11 +2390,7 @@ pub async fn export_video(
                     // `progress=continue` (between blocks) or `progress=end`
                     // (final block). Treat all of these as non-log noise.
                     if let Some(progress_secs) = parse_ffmpeg_progress_seconds(&line) {
-                        let effective_duration = if duration > 0.0 {
-                            duration
-                        } else {
-                            source_duration
-                        };
+                        let effective_duration = expected_output_secs;
                         // Watchdog proof-of-life: any parseable progress line
                         // means ffmpeg is alive. Don't gate this on out_time
                         // advancing — on Windows/NVENC we regularly see
@@ -2563,11 +2669,7 @@ pub async fn export_video(
         watchdog_stop.store(true, Ordering::Release);
         let _ = watchdog_thread.join();
 
-        let expected_output_duration = if duration > 0.0 {
-            duration
-        } else {
-            source_duration
-        };
+        let expected_output_duration = expected_output_secs;
 
         // Pipes are closed, which means ffmpeg has finished writing the file.
         // Probe the output NOW and, if it's usable, emit `success` to the UI

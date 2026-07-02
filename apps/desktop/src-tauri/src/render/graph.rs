@@ -968,7 +968,7 @@ pub(crate) fn fmt_term(
     }
 }
 
-fn resolve_background_path(
+pub(crate) fn resolve_background_path(
     value: &str,
     static_root: &Path,
     asset_cache_dir: Option<&Path>,

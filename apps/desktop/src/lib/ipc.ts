@@ -467,6 +467,7 @@ export function getVideoMetadata(path: string): Promise<VideoMetadata> {
 
 export type ExportStateEvent =
 	| { exportId: string; status: "started" }
+	| { exportId: string; status: "preparing"; detail?: string }
 	| { exportId: string; status: "progress"; progress: number }
 	| { exportId: string; status: "finalizing" }
 	| { exportId: string; status: "success"; path: string }

@@ -1245,6 +1245,11 @@ export function createEditorStore() {
 	// that rate (only ever offered ≤ source, so we never duplicate frames). GIF
 	// has its own fps control in `gifSettings`.
 	let exportFps = $state<number | null>(null);
+	// Seed the 60fps export default once per project (see the `metadata` setter):
+	// a >60fps recording exports far faster at 60 with no perceptible loss, but
+	// Original/30/24 stay selectable. The flag stops a later metadata set from
+	// clobbering a user's choice.
+	let exportFpsDefaulted = false;
 	let gifSettings = $state<GifSettings>({ ...DEFAULT_GIF_SETTINGS });
 	// How captions are emitted on export (burn-in / sidecar). Session-only, like
 	// the other export prefs.
@@ -1863,6 +1868,7 @@ export function createEditorStore() {
 		exportQuality = 'source';
 		exportSpeed = 'balanced';
 		exportFps = null;
+		exportFpsDefaulted = false;
 		undoStack = [];
 		redoStack = [];
 	}
@@ -2366,7 +2372,16 @@ export function createEditorStore() {
 		set microphonePath(v: string | null) { microphonePath = v; },
 
 		get metadata() { return metadata; },
-		set metadata(v: VideoMetadata | null) { metadata = v; },
+		set metadata(v: VideoMetadata | null) {
+			metadata = v;
+			// Default export to 60fps for >60fps recordings — imperceptible for a
+			// screen demo, ~halves export time. Seeded once so a later user choice is
+			// never clobbered; Original/30/24 remain selectable in the dialog.
+			if (v) {
+				if (!exportFpsDefaulted && v.fps > 60.5) exportFps = 60;
+				exportFpsDefaulted = true;
+			}
+		},
 
 		get thumbnailStrip() { return thumbnailStrip; },
 		set thumbnailStrip(v: string[]) { thumbnailStrip = v; },
