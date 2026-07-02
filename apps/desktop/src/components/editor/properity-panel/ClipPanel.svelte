@@ -25,6 +25,13 @@
   const SPEED_PRESETS = [0.5, 1, 1.5, 2];
   const fmtSpeed = (s: number) => `${s}×`;
 
+  // Project-wide scene-animation motion style (restyles every clip's animation).
+  const MOTION_TONES = [
+    { id: "subtle", label: "Subtle" },
+    { id: "balanced", label: "Balanced" },
+    { id: "energetic", label: "Energetic" },
+  ] as const;
+
   // The selected kept segment, matched by its original start anchor.
   const selected = $derived.by(() => {
     const start = store.selectedClipStart;
@@ -129,6 +136,30 @@
       hint="How this clip animates into and out of view. Applies to the video layer only, in both preview and export."
     >
       <div class="space-y-3">
+        <div class="space-y-1.5">
+          <div class="flex items-center justify-between">
+            <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Motion</span>
+            <span class="text-[10px] text-muted-foreground/70">all clips</span>
+          </div>
+          <div class="grid grid-cols-3 gap-1">
+            {#each MOTION_TONES as tone (tone.id)}
+              {@const active = store.motionTone === tone.id}
+              <button
+                type="button"
+                onclick={() => store.setMotionTone(tone.id)}
+                aria-pressed={active}
+                class={cn(
+                  "rounded-md border px-1.5 py-1 text-[11px] font-medium transition-colors",
+                  active
+                    ? "border-primary/60 bg-primary/10 text-primary"
+                    : "border-border/60 bg-card/40 text-muted-foreground hover:border-border hover:text-foreground",
+                )}
+              >
+                {tone.label}
+              </button>
+            {/each}
+          </div>
+        </div>
         <div class="space-y-1.5">
           <span class="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Entrance</span>
           <SceneAnimControls {store} start={selected.start} side="in" />

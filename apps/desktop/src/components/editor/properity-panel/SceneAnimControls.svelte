@@ -52,7 +52,7 @@
     store.setSegmentAnim(start, side, next);
   }
   function pickKind(kind: SceneAnimKind) {
-    const base = defaultSpec(kind, side);
+    const base = defaultSpec(kind, side, store.motionTone);
     // Keep the user's tuning (duration/easing) when swapping the kind.
     write({ ...base, durationMs: spec?.durationMs ?? base.durationMs, easing: spec?.easing ?? base.easing });
   }

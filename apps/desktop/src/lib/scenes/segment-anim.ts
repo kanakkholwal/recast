@@ -9,7 +9,7 @@
  * and mirrored by the Rust export graph. It never changes duration or timing.
  */
 
-import { EASE_OUT, EASE_IN, BOUNCE, type Easing } from "../easing/cubic-bezier";
+import { EASE_OUT, EASE_IN, EASE_IN_OUT, BOUNCE, type Easing } from "../easing/cubic-bezier";
 import type { Segment } from "../timeline/segments";
 
 /** Tolerance for matching an anchor to a segment start. Matches segments.ts. */
@@ -81,12 +81,76 @@ export function clampAnimMs(ms: number): number {
 	return Math.min(MAX_ANIM_MS, Math.max(MIN_ANIM_MS, ms));
 }
 
-/** A ready-to-use spec for `kind`, with sensible defaults for a fresh pick. */
-export function defaultSpec(kind: SceneAnimKind, side: "in" | "out"): SceneAnimSpec {
-	const easing = kind === "pop" ? BOUNCE : side === "in" ? EASE_OUT : EASE_IN;
-	const spec: SceneAnimSpec = { kind, durationMs: DEFAULT_ANIM_MS, easing };
+/**
+ * Project-wide motion style. Shapes the easing, duration, and intensity baked
+ * into scene specs, so the whole video reads as calm, standard, or lively without
+ * per-clip fiddling. It's an authoring concept only — the concrete values land in
+ * each `SceneAnimSpec`, so the preview/export pipeline (and its parity fixture)
+ * never sees `MotionTone` and stays unchanged. `balanced` reproduces the original
+ * defaults exactly.
+ */
+export type MotionTone = "subtle" | "balanced" | "energetic";
+
+interface ToneParams {
+	durationScale: number;
+	intensityScale: number;
+	easeIn: Easing;
+	easeOut: Easing;
+}
+
+function toneParams(tone: MotionTone): ToneParams {
+	switch (tone) {
+		case "subtle":
+			// Calmer: slower and gentler, smoothly eased both ways.
+			return { durationScale: 1.25, intensityScale: 0.6, easeIn: EASE_IN_OUT, easeOut: EASE_IN_OUT };
+		case "energetic":
+			// Livelier: quicker and bigger, but still eased (not a nauseating snap).
+			return { durationScale: 0.8, intensityScale: 1.25, easeIn: EASE_OUT, easeOut: EASE_IN };
+		default:
+			return { durationScale: 1, intensityScale: 1, easeIn: EASE_OUT, easeOut: EASE_IN };
+	}
+}
+
+/** A ready-to-use spec for `kind`, styled for the project's motion `tone`. */
+export function defaultSpec(
+	kind: SceneAnimKind,
+	side: "in" | "out",
+	tone: MotionTone = "balanced",
+): SceneAnimSpec {
+	const tp = toneParams(tone);
+	// Pop always keeps its overshoot; the tone only sets timing/intensity for it.
+	const easing = kind === "pop" ? BOUNCE : side === "in" ? tp.easeIn : tp.easeOut;
+	const spec: SceneAnimSpec = { kind, durationMs: clampAnimMs(DEFAULT_ANIM_MS * tp.durationScale), easing };
 	if (kind === "slide") spec.dir = side === "in" ? "left" : "right";
+	// Balanced leaves intensity unset (the evaluator's per-kind default); other
+	// tones bake a scaled, clamped intensity so the style is visible.
+	if (tp.intensityScale !== 1) {
+		const r = intensityRange(kind);
+		if (r) spec.intensity = Math.min(r.max, Math.max(r.min, r.default * tp.intensityScale));
+	}
 	return spec;
+}
+
+/** Restyle one spec to `tone`, preserving its kind and (for slide) direction. */
+export function retuneSpecForTone(
+	spec: SceneAnimSpec,
+	side: "in" | "out",
+	tone: MotionTone,
+): SceneAnimSpec {
+	const base = defaultSpec(spec.kind, side, tone);
+	return spec.kind === "slide" ? { ...base, dir: spec.dir ?? base.dir } : base;
+}
+
+/** Restyle every animation to `tone` — the effect of switching the motion dial. */
+export function retuneAnimsForTone(
+	anims: ReadonlyArray<SegmentAnim>,
+	tone: MotionTone,
+): SegmentAnim[] {
+	return anims.map((a) => ({
+		start: a.start,
+		in: a.in ? retuneSpecForTone(a.in, "in", tone) : undefined,
+		out: a.out ? retuneSpecForTone(a.out, "out", tone) : undefined,
+	}));
 }
 
 /** The animation anchored at original `start`, or null when unset. */

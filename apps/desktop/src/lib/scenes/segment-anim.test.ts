@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EASE_IN, EASE_OUT } from "../easing/cubic-bezier";
+import { EASE_IN, EASE_IN_OUT, EASE_OUT } from "../easing/cubic-bezier";
 import type { Segment } from "../timeline/segments";
 import {
 	clampAnimMs,
@@ -8,6 +8,7 @@ import {
 	MAX_ANIM_MS,
 	MIN_ANIM_MS,
 	pruneSegmentAnims,
+	retuneAnimsForTone,
 	type SceneAnimSpec,
 	type SegmentAnim,
 	segmentAnimAt,
@@ -43,6 +44,38 @@ describe("defaultSpec", () => {
 		const inPop = defaultSpec("pop", "in");
 		const outPop = defaultSpec("pop", "out");
 		expect(inPop.easing).toEqual(outPop.easing);
+	});
+});
+
+describe("motion tone", () => {
+	it("leaves balanced identical to the original defaults", () => {
+		const s = defaultSpec("slide", "in", "balanced");
+		expect(s.durationMs).toBe(DEFAULT_ANIM_MS);
+		expect(s.easing).toEqual(EASE_OUT);
+		expect(s.intensity).toBeUndefined();
+	});
+	it("subtle is slower, gentler, and smoothly eased", () => {
+		const s = defaultSpec("slide", "in", "subtle");
+		expect(s.durationMs).toBe(clampAnimMs(DEFAULT_ANIM_MS * 1.25));
+		expect(s.easing).toEqual(EASE_IN_OUT);
+		expect(s.intensity).toBeCloseTo(0.36, 6); // 0.6 default × 0.6
+	});
+	it("energetic is quicker and bigger", () => {
+		const s = defaultSpec("slide", "in", "energetic");
+		expect(s.durationMs).toBe(clampAnimMs(DEFAULT_ANIM_MS * 0.8));
+		expect(s.intensity).toBeCloseTo(0.75, 6); // 0.6 default × 1.25
+	});
+	it("retunes all animations to the tone but preserves kind and slide direction", () => {
+		const anims: SegmentAnim[] = [
+			{ start: 0, in: { kind: "slide", durationMs: 900, easing: EASE_IN, dir: "up", intensity: 1.2 } },
+			{ start: 5, out: { kind: "fade", durationMs: 900, easing: EASE_IN } },
+		];
+		const out = retuneAnimsForTone(anims, "subtle");
+		expect(out[0].in?.kind).toBe("slide");
+		expect(out[0].in?.dir).toBe("up"); // direction kept
+		expect(out[0].in?.durationMs).toBe(clampAnimMs(DEFAULT_ANIM_MS * 1.25)); // restyled
+		expect(out[1].out?.kind).toBe("fade");
+		expect(out[1].out?.easing).toEqual(EASE_IN_OUT);
 	});
 });
 

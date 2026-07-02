@@ -23,7 +23,9 @@ import {
 	setSegmentSpeed as upsertSegmentSpeed,
 } from '../timeline/segment-speed';
 import {
+	type MotionTone,
 	pruneSegmentAnims,
+	retuneAnimsForTone,
 	type SceneAnimSpec,
 	type SegmentAnim,
 	segmentAnimAt as animAtAnchor,
@@ -518,6 +520,8 @@ export interface EditorRenderState {
 	/** Per-segment scene animations (entrance/exit video-layer transforms),
 	 *  anchored to a segment's original start. A segment with no entry is static. */
 	segmentAnims?: SegmentAnim[];
+	/** Project-wide scene-animation motion style (defaults to "balanced"). */
+	motionTone?: MotionTone;
 	/** Whether zoom regions apply in preview/export. */
 	focusEnabled?: boolean;
 	/** Whether annotations render in preview/export. Negation of the
@@ -1083,6 +1087,9 @@ export function createEditorStore() {
 	// Per-segment scene animations (entrance/exit transforms on the video layer),
 	// anchored to a segment's original start. A segment with no entry is static.
 	let segmentAnims = $state<SegmentAnim[]>([]);
+	// Project-wide motion style for scene animations. Authoring-only: it bakes
+	// concrete values into each spec, so the export pipeline never reads it.
+	let motionTone = $state<MotionTone>('balanced');
 	// Transient (not serialized): true only while a trim handle is being dragged.
 	// Flips the timeline onto the full-recording axis so the handle can move
 	// across the whole source and reveal the trimmed head/tail (Cap-style ghost).
@@ -1279,6 +1286,7 @@ export function createEditorStore() {
 			splitPoints,
 			segmentSpeeds,
 			segmentAnims,
+			motionTone,
 			autoZoomEnabled,
 			autoZoomApplied,
 			annotations,
@@ -1384,6 +1392,7 @@ export function createEditorStore() {
 		splitPoints = [...(s.splitPoints ?? [])];
 		segmentSpeeds = (s.segmentSpeeds ?? []).map((o: SegmentSpeed) => ({ ...o }));
 		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
+		motionTone = s.motionTone ?? 'balanced';
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot — we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1791,6 +1800,7 @@ export function createEditorStore() {
 		splitPoints = [];
 		segmentSpeeds = [];
 		segmentAnims = [];
+		motionTone = 'balanced';
 		cutsEnabled = true;
 		focusEnabled = true;
 		dismissedSilences = [];
@@ -2011,6 +2021,16 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	/** Set the project-wide scene-animation motion style, restyling every existing
+	 * animation to match (so the dial visibly re-tones the whole video). */
+	function setMotionTone(tone: MotionTone) {
+		if (tone === motionTone) return;
+		pushUndoState();
+		motionTone = tone;
+		segmentAnims = retuneAnimsForTone(segmentAnims, tone);
+		isDirty = true;
+	}
+
 	/** Split the clip at original time `t`. Returns true if a split was added. */
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
@@ -2138,6 +2158,7 @@ export function createEditorStore() {
 			// Prune orphaned anchors on save so the section diffs cleanly.
 			segmentSpeeds: pruneSegmentSpeeds(segmentSpeeds, currentSegments()),
 			segmentAnims: pruneSegmentAnims(segmentAnims, currentSegments()),
+			motionTone,
 			cutsEnabled,
 			focusEnabled,
 			annotationsEnabled: !annotationsGloballyHidden,
@@ -2230,6 +2251,7 @@ export function createEditorStore() {
 		splitPoints = [...(state.splitPoints ?? [])];
 		segmentSpeeds = (state.segmentSpeeds ?? []).map((o) => ({ ...o }));
 		segmentAnims = (state.segmentAnims ?? []).map((o) => ({ ...o }));
+		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
 		if (state.annotationsEnabled !== undefined) {
 			annotationsGloballyHidden = !state.annotationsEnabled;
@@ -2436,6 +2458,8 @@ export function createEditorStore() {
 		get segmentAnims() { return segmentAnims; },
 		segmentAnimAt: segmentAnimAtStart,
 		setSegmentAnim,
+		get motionTone() { return motionTone; },
+		setMotionTone,
 		get selectedClipStart() { return selectedClipStart; },
 		set selectedClipStart(v: number | null) { selectedClipStart = v; },
 		get focusEnabled() { return focusEnabled; },
