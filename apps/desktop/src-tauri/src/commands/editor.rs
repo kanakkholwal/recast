@@ -1071,6 +1071,12 @@ pub async fn export_video(
         .insert(export_id.clone(), cancel_flag.clone());
     emit_export_state(&app, ExportStateEvent::started(&export_id));
 
+    // Per-stage wall-clock instrumentation (export-perf plan, step 1): attribute
+    // the total to prep / cursor pre-render / encode so the pipeline is optimised
+    // against measured numbers, not guesses. Emitted at info, correlated with the
+    // frontend by `export_id`.
+    let export_start = Instant::now();
+
     let input_path = PathBuf::from(&request.input_path);
     let project = open_project_if_needed(&input_path)?;
     let source_video = project
@@ -1278,6 +1284,10 @@ pub async fn export_video(
     } else {
         source_duration
     };
+    // Prep (probe + masks + plan) is everything up to here; time the cursor/
+    // overlay pre-render separately — it's the plan's prime perf suspect.
+    let prep_ms = export_start.elapsed().as_millis();
+    let cursor_render_start = Instant::now();
     let needs_overlay = request.render_state.cursor_enabled
         || !request.render_state.annotations.is_empty()
         || (request.render_state.shadow.enabled && request.render_state.shadow.opacity > 0.0);
@@ -1303,6 +1313,11 @@ pub async fn export_video(
     } else {
         None
     };
+    let cursor_ms = cursor_render_start.elapsed().as_millis();
+    let cursor_ran = cursor_overlay.is_some();
+    log::info!(
+        "export[{export_id}] timing: prep={prep_ms}ms cursor_overlay={cursor_ms}ms (ran={cursor_ran})"
+    );
 
     let mut args = vec![
         "-hide_banner".to_string(),
@@ -2177,6 +2192,22 @@ pub async fn export_video(
     let output_path_str = output_path.to_string_lossy().to_string();
     log::info!("export ffmpeg args: {}", args.join(" "));
 
+    // Record which encoder/decoder actually ran — the plan's #1 open question
+    // (hardware vs the libx264 software fallback). Read off the emitted args so it
+    // stays correct across every format/branch. Captured before `args` moves into
+    // the encode task below.
+    let video_encoder = args
+        .iter()
+        .position(|a| a == "-c:v")
+        .and_then(|i| args.get(i + 1).cloned())
+        .unwrap_or_else(|| "unknown".to_string());
+    let decode_mode = if args.iter().any(|a| a == "-hwaccel") {
+        "hardware"
+    } else {
+        "software"
+    };
+    log::info!("export[{export_id}] encoder={video_encoder} decode={decode_mode}");
+
     // Spawn FFmpeg in a background thread so the UI stays responsive.
     // Watchdog: if 60s pass without a progress line, kill the child.
     // Clone the handle so we retain one outside the closure for the
@@ -2762,7 +2793,18 @@ pub async fn export_video(
     }
 
     match task_result {
-        Ok(inner) => inner,
+        Ok(inner) => {
+            if inner.is_ok() {
+                // One correlated summary line: total wall-clock and the stage
+                // breakdown. The encode's own duration is logged inside the task
+                // ("child exited at T+…ms" / "success emitted at T+…ms").
+                log::info!(
+                    "export[{export_id}] timing: total={}ms prep={prep_ms}ms cursor_overlay={cursor_ms}ms (ran={cursor_ran}) encoder={video_encoder} decode={decode_mode}",
+                    export_start.elapsed().as_millis()
+                );
+            }
+            inner
+        }
         Err(join_err) => {
             // spawn_blocking only errors on panic; surface it so the frontend
             // can show a real failure dialog instead of hanging on the Promise.
