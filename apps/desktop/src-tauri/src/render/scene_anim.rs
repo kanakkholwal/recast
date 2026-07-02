@@ -70,6 +70,9 @@ pub struct SceneOverlay {
     pub scale_expr: Option<String>,
     /// Rotation in DEGREES over output `t` (the caller converts to radians).
     pub rotate_expr: Option<String>,
+    /// Opacity 0..1 over `geq`'s time var `T`, multiplied into the layer's alpha
+    /// plane (fade to background). `None` when nothing fades.
+    pub opacity_expr: Option<String>,
 }
 
 #[derive(Clone, Copy)]
@@ -78,6 +81,7 @@ struct Tf {
     ty: f64,
     scale: f64,
     rotate: f64,
+    opacity: f64,
 }
 
 fn identity() -> Tf {
@@ -86,6 +90,7 @@ fn identity() -> Tf {
         ty: 0.0,
         scale: 1.0,
         rotate: 0.0,
+        opacity: 1.0,
     }
 }
 
@@ -97,12 +102,12 @@ fn clamp_anim_ms(ms: f64) -> f64 {
     }
 }
 
-/// Geometric transform for a spec at presence `p` (1 = resting/identity, 0 =
-/// fully animated away; may overshoot for bouncy easings). Mirrors
-/// `presenceTransform` — minus the opacity channel, which export can't express.
+/// Transform for a spec at presence `p` (1 = resting/identity, 0 = fully animated
+/// away; may overshoot for bouncy easings). Mirrors `presenceTransform`.
 fn presence(spec: &SceneAnimSpec, p: f64) -> Tf {
     let mut t = identity();
     match spec.kind.as_str() {
+        "fade" => t.opacity = p.clamp(0.0, 1.0),
         "slide" => {
             let d = spec.intensity.unwrap_or(DEFAULT_SLIDE);
             let off = (1.0 - p) * d;
@@ -131,7 +136,7 @@ fn presence(spec: &SceneAnimSpec, p: f64) -> Tf {
             let deg = spec.intensity.unwrap_or(DEFAULT_ROTATE_DEG);
             t.rotate = (1.0 - p) * deg;
         }
-        // "fade" (opacity) and unknown kinds have no geometric effect here.
+        // Unknown kinds are a no-op (identity).
         _ => {}
     }
     t
@@ -201,12 +206,13 @@ fn merge_linear(samples: &[(f64, f64)], tol: f64) -> Vec<(f64, f64, f64, f64)> {
 }
 
 /// Build one flat-sum FFmpeg expression from per-segment samples of a channel.
-fn build_channel_expr(seg_samples: &[Vec<(f64, f64)>], default_val: f64) -> String {
+/// `var` is the filter's time variable (`t` for overlay/scale, `T` for `geq`).
+fn build_channel_expr(seg_samples: &[Vec<(f64, f64)>], default_val: f64, var: &str) -> String {
     let tol = 0.002_f64;
     let mut terms = Vec::new();
     for samples in seg_samples {
         for (ta, va, tb, vb) in merge_linear(samples, tol) {
-            if let Some(term) = fmt_term(ta, va, tb, vb, default_val) {
+            if let Some(term) = fmt_term(ta, va, tb, vb, default_val, var) {
                 terms.push(term);
             }
         }
@@ -239,9 +245,11 @@ pub fn build_scene_overlay(
     let mut ty_seg: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut sc_seg: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut rot_seg: Vec<Vec<(f64, f64)>> = Vec::new();
+    let mut op_seg: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut any_translate = false;
     let mut any_scale = false;
     let mut any_rotate = false;
+    let mut any_opacity = false;
 
     for &(s, e) in windows {
         let anchor = s + trim_start;
@@ -263,6 +271,7 @@ pub fn build_scene_overlay(
         let mut tys = Vec::with_capacity(samples + 1);
         let mut scs = Vec::with_capacity(samples + 1);
         let mut rots = Vec::with_capacity(samples + 1);
+        let mut ops = Vec::with_capacity(samples + 1);
         for i in 0..=samples {
             let t = start + step * i as f64;
             let tf = eval_segment(anim, t, s, e);
@@ -270,6 +279,7 @@ pub fn build_scene_overlay(
             tys.push((t, tf.ty));
             scs.push((t, tf.scale));
             rots.push((t, tf.rotate));
+            ops.push((t, tf.opacity));
             if tf.tx.abs() > 1e-6 || tf.ty.abs() > 1e-6 {
                 any_translate = true;
             }
@@ -279,14 +289,18 @@ pub fn build_scene_overlay(
             if tf.rotate.abs() > 1e-6 {
                 any_rotate = true;
             }
+            if (tf.opacity - 1.0).abs() > 1e-6 {
+                any_opacity = true;
+            }
         }
         tx_seg.push(txs);
         ty_seg.push(tys);
         sc_seg.push(scs);
         rot_seg.push(rots);
+        op_seg.push(ops);
     }
 
-    if !any_translate && !any_scale && !any_rotate {
+    if !any_translate && !any_scale && !any_rotate && !any_opacity {
         return None;
     }
 
@@ -297,10 +311,12 @@ pub fn build_scene_overlay(
     let vx = canvas.video_x as f64;
     let vy = canvas.video_y as f64;
 
-    let tx_expr = build_channel_expr(&tx_seg, 0.0);
-    let ty_expr = build_channel_expr(&ty_seg, 0.0);
-    let scale_expr = build_channel_expr(&sc_seg, 1.0);
-    let rotate_expr = build_channel_expr(&rot_seg, 0.0);
+    let tx_expr = build_channel_expr(&tx_seg, 0.0, "t");
+    let ty_expr = build_channel_expr(&ty_seg, 0.0, "t");
+    let scale_expr = build_channel_expr(&sc_seg, 1.0, "t");
+    let rotate_expr = build_channel_expr(&rot_seg, 0.0, "t");
+    // geq evaluates its expression with the uppercase time variable `T`.
+    let opacity_expr = build_channel_expr(&op_seg, 1.0, "T");
 
     // overlay top-left = video origin + translate(fraction·canvas) − recentre for
     // the centred scale (video grows/shrinks about its own centre).
@@ -312,6 +328,11 @@ pub fn build_scene_overlay(
         y_expr,
         scale_expr: if any_scale { Some(scale_expr) } else { None },
         rotate_expr: if any_rotate { Some(rotate_expr) } else { None },
+        opacity_expr: if any_opacity {
+            Some(opacity_expr)
+        } else {
+            None
+        },
     })
 }
 
@@ -382,6 +403,12 @@ mod tests {
                 let ex_ty = s["translateY"].as_f64().unwrap();
                 let ex_sc = s["scale"].as_f64().unwrap();
                 let ex_rot = s["rotate"].as_f64().unwrap_or(0.0);
+                let ex_op = s["opacity"].as_f64().unwrap();
+                assert!(
+                    (tf.opacity - ex_op).abs() < 1e-6,
+                    "{name} @t={t}: opacity {} != {ex_op}",
+                    tf.opacity
+                );
                 assert!(
                     (tf.tx - ex_tx).abs() < 1e-6,
                     "{name} @t={t}: tx {} != {ex_tx}",
@@ -404,6 +431,42 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn fade_produces_opacity_expr_only() {
+        let canvas = CanvasGeometry {
+            canvas_w: 1920,
+            canvas_h: 1080,
+            video_x: 0,
+            video_y: 0,
+            video_w: 1920,
+            video_h: 1080,
+            padding_px: 0,
+            comp_x: 0,
+            comp_y: 0,
+            comp_w: 1920,
+            comp_h: 1080,
+        };
+        let anims = vec![SegmentAnim {
+            start: 0.0,
+            anim_in: Some(SceneAnimSpec {
+                kind: "fade".into(),
+                duration_ms: 500.0,
+                easing: Easing::LINEAR,
+                dir: None,
+                intensity: None,
+            }),
+            anim_out: None,
+        }];
+        let ov = build_scene_overlay(&[(0.0, 4.0)], 0.0, &anims, &canvas, 1920, 1080)
+            .expect("fade is an active animation");
+        // Fade drives only the alpha channel — no scale/rotate stages — and its
+        // LUT uses geq's uppercase time variable.
+        assert!(ov.scale_expr.is_none());
+        assert!(ov.rotate_expr.is_none());
+        let op = ov.opacity_expr.expect("opacity expr");
+        assert!(op.contains("gte(T,") && !op.contains("gte(t,"));
     }
 
     #[test]

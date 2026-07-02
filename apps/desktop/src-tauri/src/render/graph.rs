@@ -474,6 +474,17 @@ impl RenderGraph {
             ));
             video_label = "[videoSceneRot]".into();
         }
+        // Fade to background: multiply the layer's alpha plane by the opacity LUT
+        // so the background shows through (overlay does the blend). `geq`'s time
+        // variable is `T`; colour planes pass through untouched. geq is per-pixel
+        // (offline-only) and runs only when a fade exists, so non-fade exports are
+        // unaffected. Composes with the rounded-corner/rotate alpha already present.
+        if let Some(op_expr) = scene.and_then(|s| s.opacity_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}format=yuva420p,geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':a='p(X,Y)*({op_expr})'[videoSceneFade]"
+            ));
+            video_label = "[videoSceneFade]".into();
+        }
         // The overlay position: expression-driven when animating, else the static
         // `video_x:video_y` (identical to the pre-scene output).
         let overlay_pos = match scene {
@@ -847,14 +858,16 @@ fn build_zoom_exprs(
             .map(|s| (s.center_x, s.center_y))
             .unwrap_or((0.5, 0.5));
         for &(ta, za, tb, zb) in region_segs {
-            if let Some(t) = fmt_term(ta, za, tb, zb, 1.0) {
+            if let Some(t) = fmt_term(ta, za, tb, zb, 1.0, "t") {
                 z_terms.push(t);
             }
             // crop_x = cx*iw*(Z-1); linear in t over the same segment as Z.
-            if let Some(t) = fmt_term(ta, cx * iw * (za - 1.0), tb, cx * iw * (zb - 1.0), 0.0) {
+            if let Some(t) = fmt_term(ta, cx * iw * (za - 1.0), tb, cx * iw * (zb - 1.0), 0.0, "t")
+            {
                 x_terms.push(t);
             }
-            if let Some(t) = fmt_term(ta, cy * ih * (za - 1.0), tb, cy * ih * (zb - 1.0), 0.0) {
+            if let Some(t) = fmt_term(ta, cy * ih * (za - 1.0), tb, cy * ih * (zb - 1.0), 0.0, "t")
+            {
                 y_terms.push(t);
             }
         }
@@ -921,15 +934,25 @@ fn merge_scale_segments(samples_per_region: &[Vec<ZoomSample>], tol: f64) -> Vec
 }
 
 /// Format one segment as a flat-sum term over the half-open window `[ta, tb)`,
-/// contributing `value - default`. Returns `None` for a constant segment that
+/// contributing `value - default`. `var` is the filter's time variable — `t` for
+/// overlay/scale/crop, `T` for `geq`. Returns `None` for a constant segment that
 /// equals the default (nothing to add).
-pub(crate) fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> Option<String> {
+pub(crate) fn fmt_term(
+    ta: f64,
+    va: f64,
+    tb: f64,
+    vb: f64,
+    default_val: f64,
+    var: &str,
+) -> Option<String> {
     if (va - vb).abs() < 1e-6 {
         let offset = va - default_val;
         if offset.abs() < 1e-6 {
             return None;
         }
-        Some(format!("if(gte(t,{ta:.4})*lt(t,{tb:.4}),{offset:.4},0)"))
+        Some(format!(
+            "if(gte({var},{ta:.4})*lt({var},{tb:.4}),{offset:.4},0)"
+        ))
     } else {
         // Guard a degenerate (zero-width) window: without it the ramp's
         // `(t-ta)/dt` divides by zero and bakes `inf` into the filter expression,
@@ -938,7 +961,7 @@ pub(crate) fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> 
         let dv = vb - va;
         let offset_a = va - default_val;
         Some(format!(
-            "if(gte(t,{ta:.4})*lt(t,{tb:.4}),({offset_a:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4}),0)"
+            "if(gte({var},{ta:.4})*lt({var},{tb:.4}),({offset_a:.4}+{dv:.6}*({var}-{ta:.4})/{dt:.4}),0)"
         ))
     }
 }
@@ -1142,7 +1165,7 @@ mod tests {
     #[test]
     fn fmt_term_handles_degenerate_zero_width_window() {
         // tb == ta with differing values previously divided by zero → `inf`.
-        let term = fmt_term(2.0, 1.0, 2.0, 1.5, 1.0).expect("ramp term");
+        let term = fmt_term(2.0, 1.0, 2.0, 1.5, 1.0, "t").expect("ramp term");
         assert!(!term.contains("inf"));
         assert!(!term.contains("NaN"));
     }
@@ -1150,7 +1173,7 @@ mod tests {
     #[test]
     fn fmt_term_drops_constant_at_default() {
         // Constant segment equal to the default contributes nothing.
-        assert_eq!(fmt_term(0.0, 1.0, 1.0, 1.0, 1.0), None);
+        assert_eq!(fmt_term(0.0, 1.0, 1.0, 1.0, 1.0, "t"), None);
     }
 
     fn render_state_with_zoom(
