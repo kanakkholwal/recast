@@ -33,6 +33,8 @@
     buildCaptionExport,
     buildCloudCaptionTranscript,
     buildExportRenderState,
+    findMissingImageAnnotations,
+    hasBlurUnderZoom,
     runExport,
   } from "$lib/services/export";
   import { isShareSupported, shareRecording } from "$lib/share";
@@ -977,6 +979,24 @@
             onSending: (s) => (prepSending = s),
           },
         });
+
+      // Warn (but don't block) if any image annotation can't be loaded — the
+      // export skips them silently otherwise, shipping a video with them gone.
+      const missingImages = await findMissingImageAnnotations(store);
+      if (missingImages.length > 0) {
+        const names = missingImages.map((p) => p.split(/[/\\]/).pop()).join(", ");
+        toast.warning(
+          `${missingImages.length} image${missingImages.length > 1 ? "s" : ""} couldn't be found and won't appear in the export: ${names}`,
+        );
+      }
+
+      // A blur can't follow a zoom in the export — warn so a redaction doesn't
+      // silently slide off the thing it was covering.
+      if (hasBlurUnderZoom(store)) {
+        toast.warning(
+          "A blur overlaps a zoom. In the export the blur stays fixed and may not cover the zoomed content.",
+        );
+      }
 
       // The settings this export ran with — key when a user reports a bad export.
       log.info("export", "export_started", {

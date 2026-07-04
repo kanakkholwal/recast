@@ -112,8 +112,9 @@ pub struct RenderState {
     /// key must match or the export silently drops every animation to passthrough.
     #[serde(rename = "segmentAnims", default)]
     pub scene_animations: Vec<crate::render::scene_anim::SegmentAnim>,
-    /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
-    /// Preview-only today; export integration lands with the cursor-overlay rewrite.
+    /// Annotation overlays (rect/ellipse/arrow/image/blur; text arrives
+    /// pre-rasterized as image). Composited in export by the cursor-overlay
+    /// pass (`render/cursor_export.rs`) and the FFmpeg blur filter.
     #[serde(default)]
     pub annotations: Vec<Annotation>,
     /// Drop shadow cast by the video rect.

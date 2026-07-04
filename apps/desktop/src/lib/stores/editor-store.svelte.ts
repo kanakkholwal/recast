@@ -106,9 +106,8 @@ export interface AnnotationStroke {
 }
 
 /**
- * Optional preview-only glow / shadow. Renders in the editor but **not** in
- * the Rust export pipeline yet — the Annotations tab surfaces this trade-off
- * with a banner so the user is never surprised at export time.
+ * Optional glow / soft shadow. Renders in export for rect, ellipse, image, and
+ * text; arrow glow is preview-only (the Annotations tab notes this per kind).
  */
 export interface AnnotationGlow {
 	color: string;
@@ -221,7 +220,7 @@ export interface Annotation {
 	hidden?: boolean;
 	/** Master opacity 0..1; multiplied with the split-ramp opacity. */
 	opacity?: number;
-	/** Optional glow / soft shadow. Preview only in v2 (Rust glow follows). */
+	/** Optional glow / soft shadow. Exports for rect/ellipse/image/text; arrow is preview-only. */
 	glow?: AnnotationGlow;
 	/** What the annotation is pinned to. "video" (default) tracks the zoomed
 	 *  video content; "frame" pins it to the output frame so zoom/focus never
@@ -1335,6 +1334,13 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	// Drop the most recent undo entry. For unwinding a push that turned into a
+	// no-op — e.g. a placement that pushed at pointer-down but was cancelled
+	// (too-small drag / stray click) before it changed anything.
+	function popUndoState() {
+		if (undoStack.length > 0) undoStack = undoStack.slice(0, -1);
+	}
+
 	// Coalesced undo: a sequence of small edits that share the same `key`
 	// inside `ttlMs` of each other becomes a single undo entry. Used for
 	// keyboard nudges (e.g. holding ArrowLeft on a trim handle) so a
@@ -1707,8 +1713,8 @@ export function createEditorStore() {
 		annotations = annotations.map((a) => (a.id === id ? { ...a, ...updates } : a));
 	}
 
-	function removeAnnotation(id: string) {
-		pushUndoState();
+	function removeAnnotation(id: string, pushUndo = true) {
+		if (pushUndo) pushUndoState();
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
 		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
@@ -2298,9 +2304,6 @@ export function createEditorStore() {
 		segmentAnims = (state.segmentAnims ?? []).map((o) => ({ ...o }));
 		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
-		if (state.annotationsEnabled !== undefined) {
-			annotationsGloballyHidden = !state.annotationsEnabled;
-		}
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		transcript = state.transcript ?? null;
@@ -2367,7 +2370,9 @@ export function createEditorStore() {
 		selectedAnnotationId = null;
 		annotationTool = null;
 		hoveredAnnotationId = null;
-		annotationsGloballyHidden = false;
+		// Restore the "hide all annotations" toggle. Hidden only when explicitly
+		// disabled; absent (older projects) or true → visible.
+		annotationsGloballyHidden = state.annotationsEnabled === false;
 		// A freshly loaded document matches on-disk state — no unsaved edits.
 		isDirty = false;
 		// Anchor `revertToSaved` to the just-loaded state.
@@ -2621,6 +2626,7 @@ export function createEditorStore() {
 		undo,
 		redo,
 		pushUndoState,
+		popUndoState,
 		pushUndoStateCoalesced,
 		markSaved,
 		revertToSaved,

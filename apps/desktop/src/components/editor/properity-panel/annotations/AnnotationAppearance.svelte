@@ -259,6 +259,33 @@
       </div>
       {#if annotation.glow}
         {@const g = annotation.glow}
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] text-muted-foreground">Color</span>
+          <Popover.Root>
+            <Popover.Trigger>
+              {#snippet child({ props })}
+                <button
+                  type="button"
+                  {...props}
+                  aria-label="Glow color"
+                  class="size-5 rounded-full border-2 border-border/40 shadow-sm transition hover:border-border"
+                  style:background={g.color}
+                ></button>
+              {/snippet}
+            </Popover.Trigger>
+            <Popover.Content align="start" class="w-auto p-0">
+              <ColorPicker
+                value={g.color}
+                {recents}
+                oncommit={(c: string) => {
+                  store.pushUndoState();
+                  setGlow({ color: c });
+                  rememberColor(c);
+                }}
+              />
+            </Popover.Content>
+          </Popover.Root>
+        </div>
         <SliderControl
           label="Blur"
           value={g.blur * 1000}
@@ -282,9 +309,9 @@
           onchange={(v) => setGlow({ opacity: v / 100 })}
         />
         <p class="text-[10px] leading-tight text-muted-foreground">
-          {annotation.kind.kind === "image"
-            ? "Renders in the exported video."
-            : "Preview only for shapes; exports drop the glow. Tracked for v2.1."}
+          {annotation.kind.kind === "arrow"
+            ? "Preview only for arrows; the export drops the glow."
+            : "Renders in the exported video."}
         </p>
       {/if}
     </div>

@@ -646,11 +646,12 @@
           </div>
           <BezierEditor
             value={customCurve === "in" ? a.easeIn : a.easeOut}
-            onchange={(v) =>
-              updateSelected(
-                customCurve === "in" ? { easeIn: v } : { easeOut: v },
-                true,
-              )}
+            onchange={(v) => {
+              // BezierEditor streams onchange per pointermove; coalesce so a
+              // whole curve drag is one undo entry, not one per frame.
+              store.pushUndoStateCoalesced(`anno-curve-${a.id}-${customCurve}`, 500);
+              updateSelected(customCurve === "in" ? { easeIn: v } : { easeOut: v });
+            }}
             showPresets={false}
             size={220}
           />

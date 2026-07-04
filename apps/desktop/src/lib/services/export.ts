@@ -5,6 +5,7 @@
  * callback. See ./README.md for the headless-core layering.
  */
 
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { rasterizeCursorSprites } from "$lib/export/rasterize-cursor";
 import { expandTextAnnotations } from "$lib/export/rasterize-text";
 import {
@@ -105,6 +106,57 @@ export async function buildExportRenderState(
 	hooks?.onSending?.("done");
 
 	return { renderState: finalRenderState, metadata: meta };
+}
+
+function canLoadImage(src: string): Promise<boolean> {
+	return new Promise((resolve) => {
+		const img = new Image();
+		img.onload = () => resolve(true);
+		img.onerror = () => resolve(false);
+		img.src = src;
+	});
+}
+
+/**
+ * File paths of image annotations whose source can't be loaded (missing, moved,
+ * or undecodable) — so the caller can warn before an export ships with them
+ * silently absent. Image annotations store an absolute path, so moving the
+ * project or deleting the file leaves a valid-looking editor but a broken export.
+ * Skips data-URL images (rasterized text), hidden annotations, and the case
+ * where all annotations are globally hidden.
+ */
+export async function findMissingImageAnnotations(store: EditorStore): Promise<string[]> {
+	if (store.annotationsGloballyHidden) return [];
+	const paths = new Set<string>();
+	for (const a of store.annotations) {
+		if (a.hidden) continue;
+		if (a.kind.kind === "image" && a.kind.path && !a.kind.path.startsWith("data:")) {
+			paths.add(a.kind.path);
+		}
+	}
+	if (paths.size === 0) return [];
+	const checks = await Promise.all(
+		[...paths].map((p) => canLoadImage(convertFileSrc(p)).then((ok) => ({ p, ok }))),
+	);
+	return checks.filter((c) => !c.ok).map((c) => c.p);
+}
+
+/**
+ * True when a visible blur overlaps a visible zoom region in time. The export
+ * blurs a static rectangle (FFmpeg can't follow a per-frame zoom), so under a
+ * zoom the redaction stays put while the content moves and can expose what it
+ * was hiding — the preview tracks the zoom, so this would ship silently.
+ */
+export function hasBlurUnderZoom(store: EditorStore): boolean {
+	if (store.annotationsGloballyHidden || !store.focusEnabled) return false;
+	const zooms = store.zoomRegions.filter((z) => !z.hidden);
+	if (zooms.length === 0) return false;
+	return store.annotations.some(
+		(a) =>
+			a.kind.kind === "blur" &&
+			!a.hidden &&
+			zooms.some((z) => a.start < z.end && z.start < a.end),
+	);
 }
 
 /** What to emit for generated captions on export. Built from the store via

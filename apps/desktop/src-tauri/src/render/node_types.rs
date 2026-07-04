@@ -550,10 +550,9 @@ impl Default for AnnotationStroke {
     }
 }
 
-/// Optional preview-only glow / soft shadow. Stored on the wire in v2 so the
-/// preview and any future Rust glow renderer agree on the shape, but the
-/// current Rust pipeline ignores it (the editor surfaces a "preview only"
-/// banner so the user knows export drops the glow).
+/// Optional glow / soft shadow. Rendered in export for rect, ellipse, image,
+/// and (rasterized) text via `draw_shape_shadow`/`draw_image_shadow`; arrow
+/// glow is still preview-only.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnotationGlow {
@@ -602,6 +601,10 @@ pub enum AnnotationKind {
         y: f64,
         w: f64,
         h: f64,
+        /// Absolute file path or `data:` URL. Defaulted so a corrupt/partial
+        /// project missing the key skips this one annotation (empty path fails
+        /// to decode → skipped) instead of aborting the whole export deserialize.
+        #[serde(default)]
         path: String,
         #[serde(default = "default_image_opacity")]
         opacity: f64,

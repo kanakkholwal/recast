@@ -40,6 +40,8 @@
   let layerEl: HTMLDivElement | undefined = $state();
   let layerSize = $state({ w: 0, h: 0 });
   let editingId = $state<string | null>(null);
+  // Pre-edit text, captured on entry so Escape can restore it.
+  let editStartContent = "";
   let resizeObserver: ResizeObserver | null = null;
   let rafHandle: number | null = null;
   // rAF tick to rebuild positions per frame (store doesn't fire on every video tick).
@@ -95,25 +97,25 @@
   }
 
   function tick_() {
-    if (layerEl) {
-      const r = layerEl.getBoundingClientRect();
-      if (r.width !== layerSize.w || r.height !== layerSize.h) {
-        layerSize = { w: r.width, h: r.height };
-      }
-    }
+    // Layer size comes from the ResizeObserver; only fall back to a live
+    // measure while it's still unknown (not laid out when observed) so text
+    // isn't stuck positioned against a 0x0 frame.
+    if ((layerSize.w <= 0 || layerSize.h <= 0) && layerEl) measureLayer();
     _frame++;
     rafHandle = requestAnimationFrame(tick_);
   }
 
+  function measureLayer() {
+    if (!layerEl) return;
+    const r = layerEl.getBoundingClientRect();
+    layerSize = { w: r.width, h: r.height };
+  }
+
   onMount(() => {
+    measureLayer();
     rafHandle = requestAnimationFrame(tick_);
     if (targetEl) {
-      resizeObserver = new ResizeObserver(() => {
-        if (layerEl) {
-          const r = layerEl.getBoundingClientRect();
-          layerSize = { w: r.width, h: r.height };
-        }
-      });
+      resizeObserver = new ResizeObserver(() => measureLayer());
       resizeObserver.observe(targetEl);
     }
   });
@@ -121,6 +123,22 @@
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
     resizeObserver?.disconnect();
   });
+
+  /** Apply an alpha to a `#rrggbb` or `rgb()/rgba()` colour → `rgba(...)`. */
+  function colorWithAlpha(color: string, alpha: number): string {
+    const c = color.trim();
+    const hex = /^#?([0-9a-fA-F]{6})$/.exec(c);
+    if (hex) {
+      const v = parseInt(hex[1], 16);
+      return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${alpha})`;
+    }
+    const rgb = /^rgba?\(([^)]+)\)$/.exec(c);
+    if (rgb) {
+      const p = rgb[1].split(",").map((s) => s.trim());
+      return `rgba(${p[0]},${p[1]},${p[2]},${alpha})`;
+    }
+    return c;
+  }
 
   // `_frame` dependency forces re-derive on rAF ticks so position tracks playback/zoom.
   function styleFor(a: Annotation): string {
@@ -139,6 +157,12 @@
     const cssH = Math.max(0, br.y - tl.y);
     const fontSizePx = k.fontSize * layerSize.h;
     const z = a.zIndex ?? 0;
+    // Glow → CSS drop-shadow so the preview matches the exported text (which
+    // rasterizes to an image and picks up the same glow via draw_image_shadow).
+    const g = a.glow;
+    const glowFilter = g
+      ? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * layerSize.w).toFixed(2)}px ${colorWithAlpha(g.color, g.opacity)})`
+      : "";
     return [
       `left: ${tl.x}px`,
       `top: ${tl.y}px`,
@@ -152,13 +176,18 @@
       `color: ${k.color}`,
       `text-align: ${k.align}`,
       `line-height: ${k.lineHeight}`,
-    ].join(";");
+      glowFilter,
+    ]
+      .filter(Boolean)
+      .join(";");
   }
 
   function startEditing(a: Annotation) {
     if (a.kind.kind !== "text") return;
     if (a.locked) return;
-    store.pushUndoState();
+    // Remember the pre-edit text so Escape can cancel, and defer undo to commit
+    // so a select/enter that changes nothing doesn't push a no-op entry.
+    editStartContent = a.kind.content;
     editingId = a.id;
     void tick().then(() => {
       const el = document.querySelector(
@@ -179,18 +208,26 @@
   function commitEditing(a: Annotation, el: HTMLElement) {
     if (a.kind.kind !== "text") return;
     const content = el.innerText.replace(/​/g, "");
-    if (a.kind.content !== content) {
-      store.updateAnnotation(a.id, {
-        kind: { ...a.kind, content },
-      });
-    }
     editingId = null;
+    // Emptied text → drop it rather than leave an invisible layer the canvas
+    // hit-test can't select (only removable from the layer panel otherwise).
+    if (content.trim() === "") {
+      store.removeAnnotation(a.id);
+      return;
+    }
+    if (a.kind.content !== content) {
+      store.pushUndoState();
+      store.updateAnnotation(a.id, { kind: { ...a.kind, content } });
+    }
   }
 
-  function handleKeyDown(e: KeyboardEvent, _a: Annotation) {
+  function handleKeyDown(e: KeyboardEvent, a: Annotation) {
     if (e.key === "Escape") {
       e.preventDefault();
+      // Cancel: restore the pre-edit text before blur so commit sees no change
+      // (Svelte won't reset the contenteditable when the store value is equal).
       const el = e.currentTarget as HTMLElement;
+      if (a.kind.kind === "text") el.innerText = editStartContent;
       el.blur();
     }
   }
@@ -254,9 +291,9 @@
       moved: false,
     };
     // Selecting on press matches Figma/Keynote — the rest of the panel
-    // updates immediately even before the user commits to a drag.
+    // updates immediately even before the user commits to a drag. Undo is
+    // pushed on the first real move (below), so a pure select doesn't bloat it.
     store.selectedAnnotationId = a.id;
-    store.pushUndoState();
 
     // Stash the press position on the element for the threshold check.
     target.dataset.dragStartX = String(startCss.x);
@@ -275,6 +312,8 @@
     const moved =
       Math.hypot(css.x - startX, css.y - startY) >= CLICK_DRAG_THRESHOLD_PX;
     if (!moved && !drag.moved) return;
+    // Push undo once, when the drag actually starts moving.
+    if (!drag.moved) store.pushUndoState();
     drag.moved = true;
 
     const rawUv = pointerToUV(a, e, t);

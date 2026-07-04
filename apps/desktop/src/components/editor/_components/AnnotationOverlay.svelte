@@ -55,7 +55,9 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafHandle: number | null = null;
-  let resizeObserver: ResizeObserver | null = null;
+  // Container CSS size, cached from a ResizeObserver so the rAF loop doesn't
+  // force a layout with getBoundingClientRect() every frame.
+  let targetSize = { w: 0, h: 0 };
 
   //  Drag / placement state
   type DragState =
@@ -83,6 +85,10 @@
         anchor: { x: number; y: number };
       };
   let drag: DragState = null;
+  // Undo is pushed on the first real move of a move/resize drag, not at
+  // pointer-down, so a pure select-click leaves no no-op entry. Placement
+  // pushes via addAnnotation, so it starts "already pushed".
+  let dragUndoPushed = true;
   // Active snap guides for the current drag, in UV space. Cleared on
   // pointerup. Capped to 4 simultaneous guides to avoid visual noise.
   let snapGuides: SnapAnchor[] = $state([]);
@@ -254,17 +260,19 @@
     } else if (a.kind.kind === "blur") {
       // Copy the WebGL composite into the overlay canvas, blurred via the 2D
       // context's native `filter` — reliable across WebView backends, unlike
-      // backdrop-filter on a GPU-promoted canvas. Strength 0..1 → 0..32 px,
-      // matching the export-side cap.
+      // backdrop-filter on a GPU-promoted canvas.
       const k = a.kind;
       if (compositeCanvasEl && w > 1 && h > 1) {
-        const blurPx = Math.max(0.001, Math.min(32, k.strength * 32));
         // Source rect in the WebGL canvas's backing-store coords. Both canvases
         // stretch to the same targetEl, so its pixel space is proportional to ours.
         const srcW = compositeCanvasEl.width;
         const srcH = compositeCanvasEl.height;
         const dstW = canvasEl?.width ?? 0;
         const dstH = canvasEl?.height ?? 0;
+        // Match the export radius: strength × 12% of the frame's shorter side.
+        // A single gaussian ~= the export's 3-pass box of the same radius, so
+        // the editor frosting reads the same strength as the rendered file.
+        const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
         if (srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
           const sx = (x / dstW) * srcW;
           const sy = (y / dstH) * srcH;
@@ -302,7 +310,7 @@
           ctx.filter = "none";
           // Variant tint sits on top of the blurred copy so it reads
           // as a deliberate privacy treatment rather than just a smudge.
-          const tint = blurTint(k.variant, k.tintColor);
+          const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
           if (tint) {
             ctx.fillStyle = tint;
             ctx.fillRect(x, y, w, h);
@@ -335,26 +343,53 @@
 
   // Decoded <img> per source path, reused across frames. The rAF loop repaints
   // continuously, so a load that finishes later shows up on the next frame.
-  type ImageEntry = { img: HTMLImageElement; ready: boolean; failed: boolean };
+  type ImageEntry = {
+    img: HTMLImageElement;
+    ready: boolean;
+    failed: boolean;
+    failedAt: number;
+  };
   const imageCache = new Map<string, ImageEntry>();
+  const IMAGE_RETRY_MS = 4000;
 
   function getImage(path: string): ImageEntry {
     let entry = imageCache.get(path);
+    // Retry a failed load after a delay so a restored/renamed file recovers
+    // within the session instead of showing the placeholder forever.
+    if (entry?.failed && Date.now() - entry.failedAt > IMAGE_RETRY_MS) {
+      imageCache.delete(path);
+      entry = undefined;
+    }
     if (!entry) {
       const img = new Image();
-      entry = { img, ready: false, failed: false };
+      entry = { img, ready: false, failed: false, failedAt: 0 };
       const e = entry;
       img.onload = () => {
         e.ready = true;
       };
       img.onerror = () => {
         e.failed = true;
+        e.failedAt = Date.now();
       };
       img.src = convertFileSrc(path);
       imageCache.set(path, entry);
     }
     return entry;
   }
+
+  // Evict cached bitmaps no longer referenced by any annotation, so replacing
+  // or deleting images doesn't accumulate decoded images for the editor's life.
+  $effect(() => {
+    const live = new Set<string>();
+    for (const a of store.annotations) {
+      if (a.kind.kind === "image" && a.kind.path) live.add(a.kind.path);
+    }
+    const stale: string[] = [];
+    for (const path of imageCache.keys()) {
+      if (!live.has(path)) stale.push(path);
+    }
+    for (const path of stale) imageCache.delete(path);
+  });
 
   function drawImageAnnotation(
     ctx: CanvasRenderingContext2D,
@@ -458,7 +493,8 @@
     if (style === "dotted") ctx.lineCap = "round";
   }
 
-  /** Apply the optional preview-only glow (rendered before fill/stroke). */
+  /** Apply the optional glow (rendered before fill/stroke; exported for all
+   *  canvas kinds except arrow). */
   function applyGlow(ctx: CanvasRenderingContext2D, a: Annotation) {
     if (!a.glow) return;
     const r = rectFor(a);
@@ -706,11 +742,18 @@
   }
 
   function resizeToContainer() {
-    if (!canvasEl || !targetEl) return;
-    const rect = targetEl.getBoundingClientRect();
+    if (!canvasEl) return;
+    // Fallback: if the cached size is still unknown (target not yet laid out
+    // when the observer was set up), measure live so the canvas never gets
+    // stuck at 1x1 — a 1x1 backing stretched over the preview renders the first
+    // near-white handle as a full-screen white wash.
+    if ((targetSize.w <= 0 || targetSize.h <= 0) && targetEl) {
+      const r = targetEl.getBoundingClientRect();
+      targetSize = { w: r.width, h: r.height };
+    }
     const dpr = getDpr();
-    const w = Math.max(1, Math.floor(rect.width * dpr));
-    const h = Math.max(1, Math.floor(rect.height * dpr));
+    const w = Math.max(1, Math.floor(targetSize.w * dpr));
+    const h = Math.max(1, Math.floor(targetSize.h * dpr));
     if (canvasEl.width !== w || canvasEl.height !== h) {
       canvasEl.width = w;
       canvasEl.height = h;
@@ -755,7 +798,7 @@
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         const box = normaliseBox(selected.kind);
         drag = { kind: "resize", id: selected.id, handle: hit, startBox: box };
-        store.pushUndoState();
+        dragUndoPushed = false;
         e.preventDefault();
         return;
       }
@@ -786,7 +829,7 @@
             pointerStartUV: pointerUV,
           };
         }
-        store.pushUndoState();
+        dragUndoPushed = false;
         e.preventDefault();
         return;
       }
@@ -821,7 +864,7 @@
           pointerStartUV: pointerUV,
         };
       }
-      store.pushUndoState();
+      dragUndoPushed = false;
       e.preventDefault();
       return;
     }
@@ -975,6 +1018,13 @@
     // can lock to a horizontal guide while still tracking the cursor vertically.
     const uv = applySnap(rawUv.x, rawUv.y, drag.id, e.altKey);
 
+    // First real move of a move/resize commits one undo entry (placement
+    // pushed at creation).
+    if (!dragUndoPushed) {
+      store.pushUndoState();
+      dragUndoPushed = true;
+    }
+
     if (drag.kind === "place") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (!anno) return;
@@ -1120,7 +1170,10 @@
           anno.kind.kind === "blur"
         ) {
           if (Math.abs(anno.kind.w) < 0.01 || Math.abs(anno.kind.h) < 0.01) {
-            store.removeAnnotation(drag.id);
+            // Cancelled placement: remove and unwind addAnnotation's undo push
+            // so a stray click leaves no undo entries.
+            store.removeAnnotation(drag.id, false);
+            store.popUndoState();
           }
         } else if (anno.kind.kind === "text") {
           if (Math.abs(anno.kind.w) < 0.04) {
@@ -1137,7 +1190,8 @@
           const dx = anno.kind.x2 - anno.kind.x1;
           const dy = anno.kind.y2 - anno.kind.y1;
           if (Math.hypot(dx, dy) < 0.01) {
-            store.removeAnnotation(drag.id);
+            store.removeAnnotation(drag.id, false);
+            store.popUndoState();
           }
         }
       }
@@ -1264,23 +1318,38 @@
       if (e.key === "ArrowUp") dy = -stepY;
       if (e.key === "ArrowDown") dy = stepY;
       e.preventDefault();
+      // Coalesce a held/repeated arrow key into one undo entry (same key the
+      // timeline layer card uses), so Ctrl+Z reverts the nudge, not an
+      // unrelated earlier edit.
+      store.pushUndoStateCoalesced(`nudge-annotation-${store.selectedAnnotationId}`, 600);
       nudgeBy(dx, dy);
     }
   }
 
   //  Lifecycle
 
+  // Track the container size. A $effect (not onMount) so it re-establishes if
+  // `targetEl` arrives after mount, and getBoundingClientRect (rendered size)
+  // so a scaled/letterboxed preview maps to the right backing resolution.
+  $effect(() => {
+    const el = targetEl;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) targetSize = { w: r.width, h: r.height };
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   onMount(() => {
     tick();
-    if (targetEl) {
-      resizeObserver = new ResizeObserver(() => draw());
-      resizeObserver.observe(targetEl);
-    }
   });
 
   onDestroy(() => {
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
-    resizeObserver?.disconnect();
     disposeCanvasTokens();
   });
 
