@@ -57,8 +57,8 @@ export async function checkCapability(
 			ok: false,
 			reason: "planned",
 			message: capability.note
-				? `${label} isn't available yet — ${capability.note}`
-				: `${label} isn't available yet — it's coming in a future update.`,
+				? `${label} isn't available yet: ${capability.note}`
+				: `${label} isn't available yet. It's coming in a future update.`,
 		};
 	}
 
@@ -66,7 +66,7 @@ export async function checkCapability(
 		ok: false,
 		reason: "unsupported",
 		message: capability.note
-			? `${label} isn't supported on ${os} — ${capability.note}`
+			? `${label} isn't supported on ${os}: ${capability.note}`
 			: `${label} isn't supported on ${os}.`,
 	};
 }

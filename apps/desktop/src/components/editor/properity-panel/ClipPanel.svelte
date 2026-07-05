@@ -193,7 +193,7 @@
         </div>
         {#if seamKind === "custom"}
           <p class="mt-1 text-[10px] text-muted-foreground/70">
-            Custom entrance/exit set on these clips — pick a push to replace it.
+            Custom entrance/exit set on these clips. Pick a push to replace it.
           </p>
         {/if}
       </PanelSection>

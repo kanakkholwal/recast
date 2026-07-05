@@ -83,7 +83,7 @@ export async function openProjectFromExternalPath(
     await peekRecastProject(path);
   } catch (e) {
     toast.error(
-      `Couldn't open "${basename(path)}" — ${describeError(e)}`,
+      `Couldn't open "${basename(path)}": ${describeError(e)}`,
     );
     return;
   }

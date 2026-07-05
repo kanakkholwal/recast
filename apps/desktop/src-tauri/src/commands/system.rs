@@ -190,8 +190,13 @@ pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> Result<bool, S
     Ok(state.config.read().hide_panel_from_capture)
 }
 
+/// Async on purpose: after persisting, it reflects the change on a *live*
+/// recording panel so the toggle is immediate rather than "next launch". The
+/// `set_content_protected` round-trip would deadlock the macOS main thread if
+/// this ran as a sync command (those run on the main thread) — see
+/// `exclude_window_from_capture`.
 #[tauri::command]
-pub fn set_hide_panel_from_capture(
+pub async fn set_hide_panel_from_capture(
     app: AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
@@ -202,6 +207,16 @@ pub fn set_hide_panel_from_capture(
         config.clone()
     };
     save_config(&app, &snapshot);
+    // If the floating panel is currently open, apply the change right away.
+    // `set_content_protected` toggles both directions (Windows
+    // WDA_EXCLUDEFROMCAPTURE ⇄ WDA_NONE, macOS NSWindow.sharingType none ⇄
+    // readOnly) and the compositor honors it on the next captured frame, so a
+    // mid-recording flip is reflected immediately. No-op on Linux.
+    if let Some(panel) = app.get_webview_window("recording-panel") {
+        panel
+            .set_content_protected(enabled)
+            .map_err(|e| format!("panel content-protection toggle failed: {e}"))?;
+    }
     Ok(())
 }
 

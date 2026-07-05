@@ -17,7 +17,7 @@
   import { cn } from "@recast/ui/utils";
   import type { ComponentProps } from "svelte";
   import { cubicOut } from "svelte/easing";
-  import { crossfade, fade, fly } from "svelte/transition";
+  import { crossfade, fade } from "svelte/transition";
 
   let {
     ref = $bindable(null),
@@ -60,25 +60,23 @@
       <a
         href="/"
         class={cn(
-          "flex h-10 items-center gap-2.5 overflow-hidden rounded-lg transition-opacity hover:opacity-80",
-          open ? "px-2 pr-9" : "justify-center px-0",
+          "flex h-10 items-center gap-2.5 overflow-hidden rounded-lg transition-[padding,opacity] duration-200 ease-linear hover:opacity-80",
+          open ? "px-2 pr-9" : "px-1.5",
         )}
         data-tauri-drag-region
         aria-label="Recast home"
       >
-        <Logo
-          size="24"
-          class="shrink-0"
-        />
-        {#if open}
-          <span
-            in:fly={{ x: -8, duration: 240, easing: cubicOut, delay: 60 }}
-            out:fade={{ duration: 220, easing: cubicOut }}
-            class="truncate text-[15px] font-semibold tracking-tight text-foreground"
-          >
-            Recast
-          </span>
-        {/if}
+        <Logo size="24" class="shrink-0" />
+        <!-- Always mounted: the label collapses its own width in sync with the
+             sidebar-container width animation, so nothing snaps on toggle. -->
+        <span
+          class={cn(
+            "truncate text-[15px] font-semibold tracking-tight text-foreground transition-[max-width,opacity] duration-200 ease-linear",
+            open ? "max-w-32 opacity-100" : "max-w-0 opacity-0",
+          )}
+        >
+          Recast
+        </span>
       </a>
     </Sidebar.MenuItem>
 
@@ -89,18 +87,14 @@
 
   <Sidebar.Content class="scrollbar-hide">
     <Sidebar.Group>
-      {#if open}
-        <Sidebar.GroupLabel
-          class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          <span
-            in:fade={{ duration: 180, delay: 80, easing: cubicOut }}
-            out:fade={{ duration: 140, easing: cubicOut }}
-          >
-            Workspace
-          </span>
-        </Sidebar.GroupLabel>
-      {/if}
+      <!-- Kept mounted: GroupLabel has a built-in collapse
+           (`group-data-[collapsible=icon]:-mt-8 opacity-0`, transitioned), so
+           it slides away smoothly instead of popping out of the DOM. -->
+      <Sidebar.GroupLabel
+        class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+      >
+        Workspace
+      </Sidebar.GroupLabel>
       <Sidebar.GroupContent>
         <Sidebar.Menu class="gap-0.5">
           {#each navLinks as link (link.href)}
@@ -118,11 +112,10 @@
                     {...(props as Record<string, unknown>)}
                     data-active={active}
                     class={cn(
-                      "group/item relative flex h-9 items-center gap-2.5 overflow-hidden rounded-lg text-[12.5px] font-medium transition-colors duration-200",
+                      "group/item relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium transition-colors duration-200",
                       active
                         ? "text-foreground"
                         : "text-muted-foreground hover:text-foreground",
-                      open ? "px-2.5" : "size-8 justify-center p-0",
                     )}
                   >
                     {#if active}
@@ -148,15 +141,14 @@
                         "group-hover/item:-translate-y-px group-active/item:scale-95",
                       )}
                     />
-                    {#if open}
-                      <span
-                        in:fly={{ x: -6, duration: 220, easing: cubicOut, delay: 40 }}
-                        out:fade={{ duration: 160, easing: cubicOut }}
-                        class="relative z-10 truncate"
-                      >
-                        {link.title}
-                      </span>
-                    {/if}
+                    <span
+                      class={cn(
+                        "relative z-10 truncate transition-[max-width,opacity] duration-200 ease-linear",
+                        open ? "max-w-40 opacity-100" : "max-w-0 opacity-0",
+                      )}
+                    >
+                      {link.title}
+                    </span>
                   </a>
                 {/snippet}
               </Sidebar.MenuButton>
@@ -172,8 +164,8 @@
       onclick={launchRecordingPanel}
       size="sm"
       class={cn(
-        "group/launch w-full gap-1.5 overflow-hidden rounded-lg",
-        open ? "h-9" : "size-8 p-0",
+        "group/launch h-9 w-full justify-center gap-1.5 overflow-hidden rounded-lg transition-[padding] duration-200 ease-linear",
+        open ? "px-3" : "px-0",
       )}
       title="Launch Recording Panel (⌘⇧R)"
     >
@@ -181,15 +173,14 @@
         size={13}
         class="shrink-0 transition-transform duration-200 group-hover/launch:rotate-12"
       />
-      {#if open}
-        <span
-          in:fly={{ x: -6, duration: 220, easing: cubicOut, delay: 60 }}
-          out:fade={{ duration: 160, easing: cubicOut }}
-          class="text-[12px] font-semibold"
-        >
-          Launch Panel
-        </span>
-      {/if}
+      <span
+        class={cn(
+          "overflow-hidden text-[12px] font-semibold transition-[max-width,opacity] duration-200 ease-linear",
+          open ? "max-w-32 opacity-100" : "max-w-0 opacity-0",
+        )}
+      >
+        Launch Panel
+      </span>
     </Button>
   </Sidebar.Footer>
 </Sidebar.Root>

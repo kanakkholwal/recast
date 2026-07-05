@@ -997,7 +997,7 @@
       // silently slide off the thing it was covering.
       if (hasBlurUnderZoom(store)) {
         toast.warning(
-          "A blur overlaps a zoom. In the export it can't follow the zoom and may not cover the zoomed content — set the blur's Anchor to Frame if it should stay in a fixed spot.",
+          "A blur overlaps a zoom. In the export it can't follow the zoom and may not cover the zoomed content. Set the blur's Anchor to Frame if it should stay in a fixed spot.",
         );
       }
 

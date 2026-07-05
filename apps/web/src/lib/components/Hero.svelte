@@ -120,7 +120,7 @@
 			</div>
 		</div>
 
-		<div class="relative mx-auto mt-20 max-w-6xl" in:fly={rise(560)}>
+		<figure class="relative mx-auto mt-20 max-w-6xl" in:fly={rise(560)}>
 			<div class="glass-card group/preview relative overflow-hidden rounded-2xl shadow-craft-xl ring-1 ring-foreground/5">
 				<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4 dark:bg-white/3">
 					<div class="flex gap-1.5">
@@ -138,7 +138,10 @@
 					{#if previewSrc}
 						<!-- Polished demo loop. Always silent — same proof framing as
 						     the before/after pair below the fold; sound would fight
-						     the hero copy and the TextLoop animation. -->
+						     the hero copy and the TextLoop animation.
+						     `aspect-video` reserves the 16:9 box so the preview never
+						     shifts layout when the clip's metadata loads (the clip is
+						     the same 16:9 before/after asset shown below the fold). -->
 						<!-- svelte-ignore a11y_media_has_caption -->
 						<video
 							src={previewSrc}
@@ -147,15 +150,17 @@
 							muted
 							playsinline
 							preload="metadata"
-							class="block w-full rounded-xl object-cover ring-1 ring-border-low"
+							class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
 						></video>
 					{:else}
 						<img
 							src="/product_preview_hero.png"
 							alt="Recast app preview"
+							width="1920"
+							height="1080"
 							loading="eager"
 							decoding="async"
-							class="block w-full rounded-xl object-cover ring-1 ring-border-low"
+							class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
 						/>
 					{/if}
 				</div>
@@ -175,6 +180,10 @@
 					Auto
 				</span>
 			</div>
-		</div>
+
+			<figcaption class="mt-7 text-center text-[12.5px] leading-relaxed text-muted-foreground sm:mt-9">
+				One raw take, auto-polished into a demo worth sending.
+			</figcaption>
+		</figure>
 	</Container>
 </Section>

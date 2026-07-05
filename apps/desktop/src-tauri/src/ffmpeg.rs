@@ -489,6 +489,10 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
 
     let mut list: Vec<EncoderAvailability> = candidates
         .into_iter()
+        // Only probe encoders that can exist on this OS — skipping the rest
+        // avoids a guaranteed-to-fail spawn and its noisy FFmpeg stderr (e.g.
+        // VideoToolbox on Windows, NVENC/AMF/QSV on macOS).
+        .filter(|c| encoder_applies_to_platform(c.0))
         .map(|(name, label, vendor, family, hardware, extra)| {
             // libx264 ships in every bundled build and always initializes —
             // skip the spawn for it. Everything else (hardware paths and
@@ -522,6 +526,21 @@ pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
     list
 }
 
+/// Whether an encoder can plausibly exist on the current OS, so we skip a
+/// guaranteed-to-fail probe (and its noisy FFmpeg stderr) for the rest.
+/// VideoToolbox is macOS-only; NVENC/AMF/QSV don't exist on macOS. Software
+/// encoders (libx264/libx265) and anything unrecognized are always probed.
+fn encoder_applies_to_platform(name: &str) -> bool {
+    let is_mac = cfg!(target_os = "macos");
+    if name.contains("videotoolbox") {
+        is_mac
+    } else if name.contains("nvenc") || name.contains("amf") || name.contains("qsv") {
+        !is_mac
+    } else {
+        true
+    }
+}
+
 fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     let mut command = Command::new(ffmpeg_path());
     command.args([
@@ -548,10 +567,17 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     match command.output() {
         Ok(out) if out.status.success() => true,
         Ok(out) => {
-            log::info!(
-                "{name} init probe failed: {}",
-                String::from_utf8_lossy(&out.stderr).trim()
-            );
+            // Expected for any hardware encoder this machine can't use. FFmpeg
+            // writes a multi-line failure dump to stderr; log only the first
+            // meaningful line, at debug, so a normal dev run isn't flooded with
+            // benign probe noise (the result is surfaced in Settings anyway).
+            let reason = String::from_utf8_lossy(&out.stderr)
+                .lines()
+                .map(str::trim)
+                .find(|l| !l.is_empty())
+                .unwrap_or("no encoder output")
+                .to_string();
+            log::debug!("{name} encoder unavailable: {reason}");
             false
         }
         Err(e) => {

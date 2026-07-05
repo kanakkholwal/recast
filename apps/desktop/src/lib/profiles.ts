@@ -408,7 +408,7 @@ export function resolveMic(
 			kind: "fallback",
 			requestedLabel: profile.micLabel,
 			device: def,
-			reason: "saved mic unavailable — using system default",
+			reason: "saved mic unavailable, using system default",
 		};
 	}
 	if (def) return { kind: "matched", device: def };
@@ -459,7 +459,7 @@ export function resolveCamera(
 			kind: "fallback",
 			requestedLabel: profile.cameraLabel ?? profile.cameraDeviceId ?? "",
 			device: def,
-			reason: "saved camera unavailable — using system default",
+			reason: "saved camera unavailable, using system default",
 		};
 	}
 	if (def) return { kind: "matched", device: def };
