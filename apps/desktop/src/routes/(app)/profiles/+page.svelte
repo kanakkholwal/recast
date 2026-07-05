@@ -1,27 +1,23 @@
 <script lang="ts">
   import {
     Camera,
-    CameraOff,
     CheckCircle2,
     Copy,
     Mic,
-    MicOff,
     MoreHorizontal,
     Pencil,
     Plus,
     Power,
     Search,
     SlidersHorizontal as SlidersIcon,
-    Sparkles,
     Star,
     Timer,
     Trash2,
     Volume2,
-    VolumeOff,
     X,
   } from "@lucide/svelte";
-  import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
+  import { Cutout } from "@recast/ui/cutout";
   import * as Dialog from "@recast/ui/dialog";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
@@ -31,7 +27,7 @@
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly, scale } from "svelte/transition";
+  import { fade, fly } from "svelte/transition";
 
   import {
     enumerateCameras,
@@ -331,36 +327,33 @@
     );
   });
 
-  // Capability metadata for the per-card chip rail and dialog toggles.
+  // Capture sources rendered as the faceplate readout at the bottom of each
+  // card. `short` is the mono channel label; on/off is conveyed by lighting the
+  // whole cell in `primary`.
   type Cap = {
     field: "systemAudio" | "microphone" | "camera";
     label: string;
-    on: typeof Volume2;
-    off: typeof VolumeOff;
+    short: string;
+    icon: typeof Volume2;
   };
   const capabilities: Cap[] = [
-    { field: "systemAudio", label: "System audio", on: Volume2, off: VolumeOff },
-    { field: "microphone", label: "Microphone", on: Mic, off: MicOff },
-    { field: "camera", label: "Camera", on: Camera, off: CameraOff },
+    { field: "systemAudio", label: "System audio", short: "Audio", icon: Volume2 },
+    { field: "microphone", label: "Microphone", short: "Mic", icon: Mic },
+    { field: "camera", label: "Camera", short: "Cam", icon: Camera },
   ];
 
+  // Header sub-line. The faceplate already shows WHICH sources are on, so this
+  // carries only the specifics — device names + an explicit countdown override.
   function summarize(profile: RecordingProfile): string {
-    const parts = [
-      profile.systemAudio && "System audio",
-      profile.microphone &&
-        (profile.micLabel ? `Mic: ${profile.micLabel}` : "Mic"),
-      profile.camera &&
-        (profile.cameraLabel
-          ? `Cam: ${profile.cameraLabel}`
-          : "Camera"),
-      // Only surface an explicit countdown override (null/undefined inherits
-      // the global setting and isn't worth a chip).
-      profile.countdown != null &&
-        (profile.countdown === 0
-          ? "No countdown"
-          : `${profile.countdown}s countdown`),
-    ].filter(Boolean) as string[];
-    return parts.length === 0 ? "Silent capture" : parts.join(" · ");
+    const parts: string[] = [];
+    if (profile.microphone) parts.push(profile.micLabel ?? "Default mic");
+    if (profile.camera) parts.push(profile.cameraLabel ?? "Camera");
+    if (profile.countdown != null) {
+      parts.push(
+        profile.countdown === 0 ? "No countdown" : `${profile.countdown}s countdown`,
+      );
+    }
+    return parts.length === 0 ? "Screen capture only" : parts.join(" · ");
   }
 </script>
 
@@ -551,59 +544,89 @@
               delay: Math.min(i * 40, 240),
               easing: cubicOut,
             }}
+            role="button"
+            tabindex="0"
+            aria-label={`Edit ${profile.name}`}
+            onclick={() => startEditing(profile)}
+            onkeydown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                startEditing(profile);
+              }
+            }}
             class={cn(
-              "group/card relative flex flex-col gap-3 overflow-hidden rounded-xl border bg-card/70 p-4 shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-sm",
+              "group/card relative flex cursor-pointer flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:ring-ring/60",
               profile.isDefault
-                ? "border-border/60 ring-1 ring-primary/20"
-                : "border-border/50 hover:border-border",
+                ? "border-primary/60 bg-card"
+                : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
             )}
           >
-            {#if profile.isDefault}
-              <span
-                aria-hidden="true"
-                class="pointer-events-none absolute inset-x-3 top-0 h-px bg-linear-to-r from-transparent via-primary/60 to-transparent"
-              ></span>
-            {/if}
-            <span
-              aria-hidden="true"
-              class="pointer-events-none absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-foreground/15 to-transparent opacity-0 transition-opacity duration-200 group-hover/card:opacity-100"
-            ></span>
-            <div class="flex items-start gap-2">
-              <button
-                type="button"
-                onclick={() => startEditing(profile)}
-                class="flex min-w-0 flex-1 items-center gap-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60 rounded-md"
-              >
+            <!-- Identity region — same treatment as a thumbnail-less recasts
+                 card: muted surface, centered mark, and a `.recast`-style cutout
+                 tab (here it carries the capability glyphs). -->
+            <div class="relative h-24 shrink-0 overflow-hidden bg-muted/40">
+              <div class="grid size-full place-items-center">
                 <span
                   class={cn(
-                    "flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-all duration-200 group-hover/card:scale-[1.04]",
+                    "flex size-12 items-center justify-center rounded-xl border transition-colors",
                     profile.isDefault
-                      ? "bg-[color-mix(in_srgb,var(--color-primary)_8%,transparent)] text-primary ring-primary/25"
-                      : "bg-foreground/5 text-foreground ring-border/40 group-hover/card:bg-foreground/8",
+                      ? "border-primary/30 bg-primary/10 text-primary"
+                      : "border-border/50 bg-card text-muted-foreground group-hover/card:text-foreground",
                   )}
                 >
                   {#if profile.isDefault}
-                    <span in:scale={{ start: 0.7, duration: 220, easing: cubicOut }}>
-                      <Star class="size-4" />
-                    </span>
+                    <Star class="size-5" />
                   {:else}
-                    <SlidersIcon class="size-4" />
+                    <SlidersIcon class="size-5" />
                   {/if}
                 </span>
-                <div class="min-w-0 flex-1">
-                  <div
-                    class="truncate text-[13.5px] font-semibold text-foreground"
-                  >
-                    {profile.name}
-                  </div>
-                  <div
-                    class="truncate text-[10.5px] text-muted-foreground/80"
-                  >
-                    {summarize(profile)}
-                  </div>
-                </div>
-              </button>
+              </div>
 
+              {#if profile.isDefault}
+                <span
+                  class="absolute left-2 top-2 inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary/15 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-primary backdrop-blur-md"
+                >
+                  <Star size={9} /> Default
+                </span>
+              {/if}
+
+              <Cutout
+                corner="bl"
+                surface="card"
+                radius={8}
+                class="flex items-center gap-1.5 px-2.5 pb-1 pt-2.5"
+              >
+                {#each capabilities as cap (cap.field)}
+                  {@const on = profile[cap.field]}
+                  {@const Icon = cap.icon}
+                  <Icon
+                    class={cn(
+                      "size-3 transition-colors",
+                      on ? "text-primary" : "text-muted-foreground/30",
+                    )}
+                    aria-label={`${cap.label}: ${on ? "on" : "off"}`}
+                  />
+                {/each}
+              </Cutout>
+            </div>
+
+            <!-- Info -->
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5 px-3 py-2.5">
+              <div class="truncate text-[12.5px] font-semibold text-foreground">
+                {profile.name}
+              </div>
+              <div class="truncate text-[10.5px] text-muted-foreground/80">
+                {summarize(profile)}
+              </div>
+            </div>
+
+            <!-- Actions — same placement/treatment as the recasts card. -->
+            <div
+              role="presentation"
+              onclick={(e) => e.stopPropagation()}
+              onkeydown={(e) => e.stopPropagation()}
+              class="absolute right-2 top-2 z-20"
+            >
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   {#snippet child({ props })}
@@ -611,8 +634,8 @@
                       {...props as Record<string, unknown>}
                       variant="ghost"
                       size="icon-sm"
-                      class="size-7"
                       title="More actions"
+                      class="size-7 rounded-lg border border-border/60 bg-background/80 text-foreground/60 opacity-0 backdrop-blur-md transition-all duration-200 hover:bg-background hover:text-foreground group-hover/card:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
                     >
                       <MoreHorizontal size={14} />
                     </Button>
@@ -635,9 +658,7 @@
                     </DropdownMenu.Shortcut>
                   </DropdownMenu.Item>
                   {#if !profile.isDefault}
-                    <DropdownMenu.Item
-                      onSelect={() => setDefault(profile.id)}
-                    >
+                    <DropdownMenu.Item onSelect={() => setDefault(profile.id)}>
                       <CheckCircle2 class="size-3" /> Set as default
                     </DropdownMenu.Item>
                   {/if}
@@ -650,59 +671,6 @@
                   </DropdownMenu.Item>
                 </DropdownMenu.Content>
               </DropdownMenu.Root>
-            </div>
-
-            <div class="flex flex-wrap gap-1.5">
-              {#each capabilities as cap (cap.field)}
-                {@const on = profile[cap.field]}
-                {@const Icon = on ? cap.on : cap.off}
-                <Badge
-                  variant={on ? "secondary" : "outline"}
-                  class={cn(
-                    "gap-1.5 px-2 text-[10px] transition-colors duration-200",
-                    on && "bg-primary/10 text-primary border-primary/25",
-                    !on && "text-muted-foreground/70",
-                  )}
-                >
-                  <Icon class="size-3 transition-transform duration-200" />
-                  {cap.label}
-                </Badge>
-              {/each}
-            </div>
-
-            <div class="flex items-center justify-between pt-1">
-              {#if profile.isDefault}
-                <span in:scale={{ start: 0.85, duration: 220, easing: cubicOut }}>
-                  <Badge
-                    variant="outline"
-                    class="gap-1 border-warning/25 bg-warning/10 text-warning"
-                  >
-                    <Sparkles class="size-3" />
-                    Default
-                  </Badge>
-                </span>
-              {:else}
-                <button
-                  type="button"
-                  onclick={() => setDefault(profile.id)}
-                  class="group/setdef relative text-[10.5px] font-medium text-muted-foreground transition-colors hover:text-foreground"
-                >
-                  Set as default
-                  <span
-                    aria-hidden="true"
-                    class="absolute -bottom-0.5 left-0 h-px w-full origin-left scale-x-0 bg-foreground/30 transition-transform duration-200 group-hover/setdef:scale-x-100"
-                  ></span>
-                </button>
-              {/if}
-              <Button
-                variant="ghost"
-                size="xs"
-                onclick={() => startEditing(profile)}
-                class="h-6 gap-1 px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
-              >
-                <Pencil size={10} />
-                Edit
-              </Button>
             </div>
           </div>
         {/each}
@@ -717,7 +685,7 @@
               delay: Math.min(filtered.length * 40, 280),
               easing: cubicOut,
             }}
-            class="group/add flex flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+            class="group/add flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
           >
             <span
               class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-all duration-200 group-hover/add:scale-110 group-hover/add:bg-primary/10 group-hover/add:text-primary group-hover/add:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
