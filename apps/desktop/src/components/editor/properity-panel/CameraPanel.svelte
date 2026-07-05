@@ -9,6 +9,7 @@
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { cn } from "@recast/ui/utils";
   import { SliderControl } from "@recast/ui/slider-control";
+  import { dotStyleFor, labelFor } from "./camera-panel.logic";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -54,39 +55,6 @@
     }
     const next = cameraPlacementFromPreset(activePreset, size);
     store.updateCameraOverlay({ defaultPlacement: next });
-  }
-
-  /** Human label for a preset id. Re-used in chip's aria-label/title and
-   *  the panel header readout. */
-  function labelFor(preset: CameraPositionPreset): string {
-    return preset
-      .split("-")
-      .map((part) => part[0].toUpperCase() + part.slice(1))
-      .join(" ");
-  }
-
-  /** Position the dot inside a preset chip so the chip looks like a
-   *  miniature frame with the bubble placed where it will land. */
-  function dotStyleFor(preset: CameraPositionPreset): string {
-    if (preset === "custom") return "left:50%;top:50%;transform:translate(-50%,-50%);";
-    const [row, col] = preset.split("-");
-    let xPart = "";
-    let yPart = "";
-    let translateX = "";
-    let translateY = "";
-    if (col === "left") xPart = "left:18%;";
-    else if (col === "right") xPart = "right:18%;";
-    else { xPart = "left:50%;"; translateX = "translateX(-50%)"; }
-    if (row === "top") yPart = "top:18%;";
-    else if (row === "bottom") yPart = "bottom:18%;";
-    else { yPart = "top:50%;"; translateY = "translateY(-50%)"; }
-    const transform =
-      translateX && translateY
-        ? `transform:${translateX} ${translateY};`
-        : translateX || translateY
-          ? `transform:${translateX || translateY};`
-          : "";
-    return xPart + yPart + transform;
   }
 
   // 3×3 grid mirroring the spatial position each chip represents, so users

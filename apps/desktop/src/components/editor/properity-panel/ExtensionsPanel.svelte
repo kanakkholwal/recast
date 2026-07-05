@@ -1,11 +1,15 @@
 <script lang="ts">
   import {
-    hasUpdate,
     installFromUrl,
     loadRegistryIndex,
     toggleExtension,
     type RegistryIndexEntry,
   } from "$lib/extensions";
+  import {
+    contribCount,
+    countUpdates,
+    updateAvailableFor,
+  } from "./extensions-panel.logic";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { extensionsStore } from "$lib/stores/extensions-store.svelte";
   import type { InstalledExtension } from "$lib/ipc";
@@ -52,28 +56,7 @@
   );
 
   /** Installed packs that have a newer version available in the registry. */
-  const updateCount = $derived(
-    extensionsStore.installed.filter((ext) =>
-      hasUpdate(ext.manifest.version, entryById.get(ext.manifest.id)?.version),
-    ).length,
-  );
-
-  function updateAvailableFor(ext: InstalledExtension): boolean {
-    return hasUpdate(ext.manifest.version, entryById.get(ext.manifest.id)?.version);
-  }
-
-  function contribCount(ext: InstalledExtension): number {
-    const c = ext.manifest.contributes ?? {};
-    return (
-      (c.cursors?.length ?? 0) +
-      (c.backgrounds?.length ?? 0) +
-      (c.gradients?.length ?? 0) +
-      (c.colors?.length ?? 0) +
-      (c.easings?.length ?? 0) +
-      (c.smoothings?.length ?? 0) +
-      (c.captionPresets?.length ?? 0)
-    );
-  }
+  const updateCount = $derived(countUpdates(extensionsStore.installed, entryById));
 
   function openDetails(id: string) {
     selectedId = id;
@@ -206,7 +189,7 @@
     {:else}
       <div class="flex flex-col gap-1">
         {#each extensionsStore.installed as ext (ext.manifest.id)}
-          {@const canUpdate = updateAvailableFor(ext)}
+          {@const canUpdate = updateAvailableFor(ext, entryById)}
           <div
             class="flex items-center gap-2 rounded-md border border-border/60 bg-card/40 px-2 py-1.5"
           >
@@ -289,7 +272,7 @@
       <div class="flex flex-col gap-1">
         {#each index as entry (entry.id)}
           {@const installedExt = installedById.get(entry.id)}
-          {@const canUpdate = installedExt ? updateAvailableFor(installedExt) : false}
+          {@const canUpdate = installedExt ? updateAvailableFor(installedExt, entryById) : false}
           <button
             type="button"
             class="flex w-full items-center gap-2 rounded-md border border-border/60 bg-card/40 px-2 py-1.5 text-left transition-colors hover:bg-card/70 focus:outline-none focus:ring-2 focus:ring-ring/40"

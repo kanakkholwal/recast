@@ -3,110 +3,25 @@
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
 	import { Button } from "@recast/ui/button";
-	import {
-		ArrowLeft,
-		BookOpen,
-		Compass,
-		Home,
-		LifeBuoy,
-		MonitorPlay,
-		RefreshCw,
-		ScrollText,
-		Search,
-	} from "@lucide/svelte";
+	import { ArrowLeft, Home, RefreshCw, ScrollText } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, fly } from "svelte/transition";
+	import {
+		ACCENT_BACKDROP,
+		ACCENT_RING,
+		errorCopy,
+		pickStatusIcon,
+		suggestions,
+	} from "./error-page.logic";
 
 	const status = $derived(page.status);
 	const message = $derived(page.error?.message ?? "");
 	const isServerError = $derived(status >= 500);
 
-	/**
-	 * One copy block per status code we want a custom face for. Anything we
-	 * don't have an entry for falls back to `default` so the page always
-	 * renders something sensible — even for a 418.
-	 */
-	type Copy = {
-		eyebrow: string;
-		title: string;
-		body: string;
-		accent: "primary" | "amber" | "destructive";
-	};
-	const copyFor = $derived<Copy>(
-		({
-			404: {
-				eyebrow: "404 · Lost in the timeline",
-				title: "We can't find that frame.",
-				body:
-					"The link is broken, the page moved, or the URL has a typo. Let's get you back to something useful.",
-				accent: "primary",
-			},
-			403: {
-				eyebrow: "403 · Locked",
-				title: "Not yours to see.",
-				body:
-					"You're signed in, but this corner isn't open to your account. If you think that's a mistake, ping support.",
-				accent: "amber",
-			},
-			401: {
-				eyebrow: "401 · Sign in first",
-				title: "You'll need an account.",
-				body: "This page wants a signed-in user. Sign in and we'll bring you straight back.",
-				accent: "amber",
-			},
-			500: {
-				eyebrow: "500 · Recast tripped",
-				title: "Something broke on our end.",
-				body:
-					"That's on us, not you. The error was logged. Try the page again in a moment, or head back to where you were.",
-				accent: "destructive",
-			},
-			default: {
-				eyebrow: `${status} · ${isServerError ? "Server error" : "Couldn't load"}`,
-				title: "This page didn't render.",
-				body:
-					message ||
-					"Something went sideways loading the page. Try again, or head home.",
-				accent: isServerError ? "destructive" : "primary",
-			},
-		}[status] ?? {
-			eyebrow: `${status} · Couldn't load`,
-			title: "This page didn't render.",
-			body: message || "Try again, or head home.",
-			accent: "primary",
-		}) as Copy,
-	);
-
-	// Suggestion tiles — what to try next. Keeping this curated rather than
-	// site-map-y on purpose: 3 anchored next steps reads as helpful, a
-	// 12-link tree reads like a dead end.
-	const suggestions = [
-		{ icon: Home, label: "Home", href: "/", desc: "The product overview." },
-		{ icon: MonitorPlay, label: "Download", href: "/download", desc: "Get the app for your OS." },
-		{ icon: BookOpen, label: "Changelog", href: "/changelog", desc: "What we shipped recently." },
-	];
-
-	const accentRing = $derived(
-		({
-			primary: "ring-primary/25 bg-primary/10 text-primary",
-			amber:
-				"ring-amber-500/30 bg-amber-500/15 text-amber-600 dark:text-amber-400",
-			destructive: "ring-destructive/30 bg-destructive/12 text-destructive",
-		}[copyFor.accent]),
-	);
-
-	const accentBackdrop = $derived(
-		({
-			primary: "color-mix(in srgb, var(--color-primary) 10%, transparent)",
-			amber: "color-mix(in srgb, oklch(72% 0.18 65) 10%, transparent)",
-			destructive:
-				"color-mix(in srgb, var(--color-destructive) 8%, transparent)",
-		}[copyFor.accent]),
-	);
-
-	const StatusIcon = $derived(
-		status === 404 ? Compass : isServerError ? LifeBuoy : Search,
-	);
+	const copyFor = $derived(errorCopy(status, message, isServerError));
+	const accentRing = $derived(ACCENT_RING[copyFor.accent]);
+	const accentBackdrop = $derived(ACCENT_BACKDROP[copyFor.accent]);
+	const StatusIcon = $derived(pickStatusIcon(status, isServerError));
 </script>
 
 <svelte:head>

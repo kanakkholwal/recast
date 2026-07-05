@@ -19,7 +19,9 @@
 		type RecordingSource,
 	} from "$lib/dashboard/store.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
-	import { UPLOAD_ACCEPT, uploadRecastFile, type UploadPhase } from "$lib/dashboard/upload";
+	import { filterAndSortRecasts, isFileDrag } from "$lib/dashboard/recasts-library.logic";
+	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
+	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import { Archive, FolderOpen, Library, LoaderCircle, Upload, UploadCloud } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
@@ -71,56 +73,23 @@
 
 	// Upload (shared by the header button, the empty-state button, the file
 	// input, and drag-and-drop).
-	let uploading = $state(false);
-	let uploadPhase = $state<UploadPhase>("preparing");
-	let uploadPct = $state(0);
 	let fileInput = $state<HTMLInputElement | null>(null);
 	let dragDepth = $state(0);
 	const isDraggingFile = $derived(dragDepth > 0);
-
-	const uploadLabel = $derived(
-		uploadPhase === "uploading"
-			? `Uploading ${uploadPct}%`
-			: uploadPhase === "finalizing"
-				? "Finalizing…"
-				: uploadPhase === "sharing"
-					? "Creating link…"
-					: "Preparing…",
-	);
-
-	function matchesFolder(r: Recast): boolean {
-		if (selectedFolder === "all") return true;
-		if (selectedFolder === "root") return !r.folderId;
-		return r.folderId === selectedFolder;
-	}
-	// Tag filter is OR — show recasts carrying ANY of the selected tags.
-	function matchesTags(r: Recast): boolean {
-		if (selectedTagIds.length === 0) return true;
-		return selectedTagIds.some((id) => r.tags.includes(id));
-	}
-
-	const visible = $derived.by(() => {
-		const q = query.trim().toLowerCase();
-		const list = recastsStore.items.filter(
-			(r) =>
-				(activeFilter === "all" || r.source === activeFilter) &&
-				matchesFolder(r) &&
-				matchesTags(r) &&
-				r.title.toLowerCase().includes(q),
-		);
-		return [...list].sort((a, b) => {
-			switch (sortKey) {
-				case "oldest":
-					return a.createdAt - b.createdAt;
-				case "name":
-					return a.title.localeCompare(b.title);
-				case "largest":
-					return b.sizeBytes - a.sizeBytes;
-				default:
-					return b.createdAt - a.createdAt;
-			}
-		});
+	const upload = createUploadController({
+		workspaceId: () => workspaceId,
+		onRefresh: invalidateAll,
 	});
+
+	const visible = $derived(
+		filterAndSortRecasts(recastsStore.items, {
+			query,
+			activeFilter,
+			folder: selectedFolder,
+			tagIds: selectedTagIds,
+			sortKey,
+		}),
+	);
 
 	const hasRecasts = $derived(recastsStore.items.length > 0);
 	const filtersActive = $derived(
@@ -150,50 +119,7 @@
 		selectedIds = new Set();
 	}
 
-	// ── Upload ─────────────────────────────────────────────────────────
-	async function startUpload(file: File) {
-		if (uploading) return;
-		uploading = true;
-		uploadPhase = "preparing";
-		uploadPct = 0;
-		try {
-			const result = await uploadRecastFile(file, {
-				workspaceId,
-				onPhase: (p) => (uploadPhase = p),
-				onProgress: (pct) => (uploadPct = pct),
-			});
-			await invalidateAll();
-			let copied = false;
-			try {
-				await navigator.clipboard.writeText(result.shareUrl);
-				copied = true;
-			} catch {
-				copied = false;
-			}
-			toast.success(
-				copied
-					? `“${file.name}” uploaded. Share link copied to clipboard.`
-					: `“${file.name}” uploaded and shared.`,
-			);
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't upload that file.");
-		} finally {
-			uploading = false;
-		}
-	}
-
-	function onFilePicked(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = "";
-		if (file) startUpload(file);
-	}
-
-	// Only react to external FILE drags — internal card→folder drags carry
-	// "text/recast-id", so they never trip the upload overlay.
-	function isFileDrag(e: DragEvent): boolean {
-		return Array.from(e.dataTransfer?.types ?? []).includes("Files");
-	}
+	// ── Upload (drag-and-drop; button/input flows go through `upload`) ──
 	function onDragEnter(e: DragEvent) {
 		if (!isFileDrag(e)) return;
 		e.preventDefault();
@@ -213,7 +139,7 @@
 		e.preventDefault();
 		dragDepth = 0;
 		const file = e.dataTransfer?.files?.[0];
-		if (file) startUpload(file);
+		if (file) upload.start(file);
 	}
 
 	// ── Mutations ──────────────────────────────────────────────────────
@@ -400,28 +326,28 @@
 	<title>Recasts - Recast Dashboard</title>
 </svelte:head>
 
-<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={onFilePicked} />
+<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={upload.onFilePicked} />
 <input bind:this={posterInput} type="file" accept={POSTER_ACCEPT} class="hidden" onchange={onPosterPicked} />
 
 <PageHeader icon={Library} title="Recasts" subtitle="Everything you've captured, uploaded, and shared.">
-	<Button class="gap-2" disabled={uploading} onclick={() => fileInput?.click()}>
-		{#if uploading}<LoaderCircle class="size-4 animate-spin" />{:else}<Upload class="size-4" />{/if}
-		{uploading ? uploadLabel : "Upload recast"}
+	<Button class="gap-2" disabled={upload.uploading} onclick={() => fileInput?.click()}>
+		{#if upload.uploading}<LoaderCircle class="size-4 animate-spin" />{:else}<Upload class="size-4" />{/if}
+		{upload.uploading ? upload.label : "Upload recast"}
 	</Button>
 </PageHeader>
 
 <!-- Inline upload progress -->
-{#if uploading}
+{#if upload.uploading}
 	<div class="mt-4" transition:slide={{ duration: 200, easing: cubicOut }}>
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
-			<span class="font-medium text-foreground">{uploadLabel}</span>
-			{#if uploadPhase === "uploading"}<span class="font-mono tabular-nums">{uploadPct}%</span>{/if}
+			<span class="font-medium text-foreground">{upload.label}</span>
+			{#if upload.phase === "uploading"}<span class="font-mono tabular-nums">{upload.pct}%</span>{/if}
 		</div>
 		<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
 			<div
 				class="h-full rounded-full bg-linear-to-r from-primary/70 to-primary transition-[width] duration-300 ease-[cubic-bezier(0.625,0.05,0,1)]"
-				style="width: {uploadPhase === 'uploading' ? uploadPct : 100}%"
-				class:animate-pulse={uploadPhase !== "uploading"}
+				style="width: {upload.phase === 'uploading' ? upload.pct : 100}%"
+				class:animate-pulse={upload.phase !== "uploading"}
 			></div>
 		</div>
 	</div>
@@ -510,8 +436,8 @@
 					{selectionMode}
 					hasAnyRecasts={hasRecasts}
 					{filtersActive}
-					{uploading}
-					{uploadLabel}
+					uploading={upload.uploading}
+					uploadLabel={upload.label}
 					onplay={(rec) => (playing = rec)}
 					onrename={(rec) => (renaming = rec)}
 					oncopylink={copyLink}

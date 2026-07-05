@@ -12,6 +12,12 @@
 		type CommentSegment,
 	} from "$lib/share/format";
 	import { toggleReactionState } from "$lib/share/engagement";
+	import {
+		buildEmbedCode,
+		toLegacyVisibility,
+		withTimeParam,
+		type LegacyVisibility,
+	} from "./share-page.logic";
 	import Logo from "$lib/logo.svelte";
 	import {
 	  ArrowRight,
@@ -205,12 +211,6 @@
 	// specific-people allowlist is created from the share dialog, not here —
 	// but we surface it ACCURATELY (instead of masking it as "Only me") so the
 	// owner sees the real scope and can switch off it.
-	type LegacyVisibility = "public" | "team" | "private";
-	const toLegacyVisibility = (v: string): LegacyVisibility => {
-		if (v === "public") return "public";
-		if (v === "team" || v === "workspace") return "team";
-		return "private";
-	};
 	// The share's true current scope (full enum), synced from the server and
 	// updated optimistically on toggle.
 	let currentScope = $state<string>(
@@ -609,11 +609,8 @@
 		if (!isPlaying) api?.play();
 		ended = false;
 		if (!browser) return;
-		const url = new URL(window.location.href);
-		const t = compactTime(seconds);
-		if (t) url.searchParams.set("t", t);
-		else url.searchParams.delete("t");
-		window.history.replaceState({}, "", url.toString());
+		const href = withTimeParam(new URL(window.location.href), seconds);
+		window.history.replaceState({}, "", href);
 	}
 
 
@@ -628,19 +625,19 @@
 
 	async function copyShareLink() {
 		if (!browser) return;
-		const url = new URL(window.location.href);
-		url.searchParams.delete("t");
-		await writeClipboard(url.toString(), "Share link copied.");
+		// Seconds 0 clears any `?t=` so the copied link starts from the top.
+		await writeClipboard(
+			withTimeParam(new URL(window.location.href), 0),
+			"Share link copied.",
+		);
 	}
 
 	async function copyLinkAtCurrentTime() {
 		if (!browser) return;
-		const url = new URL(window.location.href);
+		const href = withTimeParam(new URL(window.location.href), currentTime);
 		const t = compactTime(currentTime);
-		if (t) url.searchParams.set("t", t);
-		else url.searchParams.delete("t");
 		await writeClipboard(
-			url.toString(),
+			href,
 			t ? `Link copied at ${formatTime(currentTime)}.` : "Link copied.",
 		);
 	}
@@ -648,8 +645,7 @@
 	async function copyEmbedCode() {
 		if (!browser) return;
 		const url = new URL(window.location.href);
-		const iframe = `<iframe src="${url.toString()}" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-		await writeClipboard(iframe, "Embed code copied.");
+		await writeClipboard(buildEmbedCode(url.toString()), "Embed code copied.");
 	}
 
 	// ── Viewer identity ──────────────────────────────────────────────

@@ -88,6 +88,7 @@
   import { initExtensions } from "$lib/extensions";
   import { NavProgress } from "@recast/ui/nav-progress";
   import { getTauriTheme, isTauriApp } from "$lib/runtime/tauri";
+  import { isOverlayRoute } from "$lib/runtime/overlay-routes";
   import { Toaster, toast } from "@recast/ui/sonner";
   import { ModeWatcher, setMode } from "@recast/ui/theme";
   import { safeStorage } from "@recast/ui/persisted-state";
@@ -95,16 +96,7 @@
   import { onMount, tick } from "svelte";
   import { log } from "$lib/logger";
 
-  const TRANSPARENT_ROUTES = [
-    "/camera-preview",
-    "/device-picker",
-    "/profile-picker",
-    "/select",
-    "/panel",
-  ];
-  const isTransparentRoute = $derived(
-    TRANSPARENT_ROUTES.some((p) => page.url.pathname.startsWith(p)),
-  );
+  const isTransparentRoute = $derived(isOverlayRoute(page.url.pathname));
 
   // Cross-window toast bridge: transparent-route windows are too narrow to host
   // a Sonner card, so they emit `ui:toast` and we render via the main Toaster.
@@ -216,9 +208,7 @@
 
     const to = navigation.to?.url.pathname ?? "";
     const from = navigation.from?.url.pathname ?? "";
-    const isOverlay = (p: string) =>
-      TRANSPARENT_ROUTES.some((r) => p.startsWith(r));
-    if (isOverlay(to) || isOverlay(from)) return;
+    if (isOverlayRoute(to) || isOverlayRoute(from)) return;
 
     document.documentElement.dataset.navDirection =
       to.length >= from.length ? "forward" : "back";

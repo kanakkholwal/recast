@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { page } from "$app/state";
+	import { buildOgUrl } from "./SeoMeta.logic";
 
 	type Props = {
 		title: string;
@@ -29,11 +30,7 @@
 	const origin = $derived(page.url.origin);
 	const canonical = $derived(`${origin}${canonicalPath ?? page.url.pathname}`);
 
-	const generatedOg = $derived.by(() => {
-		const params = new URLSearchParams({ title, description });
-		if (eyebrow) params.set("eyebrow", eyebrow);
-		return `${origin}/api/og?${params.toString()}`;
-	});
+	const generatedOg = $derived(buildOgUrl(origin, title, description, eyebrow));
 
 	const ogUrl = $derived(ogImage ?? generatedOg);
 	const headTitle = $derived(pageTitle ?? `${title} - Recast`);

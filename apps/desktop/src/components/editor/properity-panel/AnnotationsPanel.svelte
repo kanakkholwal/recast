@@ -1,6 +1,9 @@
 <script lang="ts">
   import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
+  import { isEditableTarget } from "$lib/dom/editable";
   import { clockCentis as fmtTime } from "$lib/format/time";
+  import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
+  import { regionMaxRamp } from "./focus-panel.logic";
   import { FONT_WEIGHTS, STROKE_SWATCHES } from "$lib/annotations/palette";
   import {
     getRecentColors,
@@ -120,20 +123,8 @@
     }
   }
 
-  function imageFileName(path: string): string {
-    const parts = path.split(/[/\\]/);
-    return parts[parts.length - 1] || "Image";
-  }
-
   // Tool hotkeys. Suppressed when focus is in an editable element so typing
   // in a text annotation or any input doesn't switch tools.
-  function isEditableTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    if (target.isContentEditable) return true;
-    const tag = target.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-  }
-
   function handleHotkey(event: KeyboardEvent) {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
     if (isEditableTarget(event.target)) return;
@@ -163,26 +154,7 @@
     });
   }
 
-  function maxRamp(a: Annotation): number {
-    return Math.max(0, (a.end - a.start) * 0.5);
-  }
-
-  // Tool status hint shown beneath the palette while a tool is active.
-  const toolHint = $derived.by(() => {
-    switch (store.annotationTool) {
-      case "rect":
-      case "ellipse":
-        return "Drag on the preview to draw. Hold Shift for a square.";
-      case "arrow":
-        return "Drag from start to end. Hold Shift to snap to 45°.";
-      case "text":
-        return "Drag a box on the preview, then type.";
-      case "blur":
-        return "Drag a region to obscure. Applied at export.";
-      default:
-        return "";
-    }
-  });
+  const toolHint = $derived(toolHintFor(store.annotationTool));
 </script>
 
 <!-- Tool hotkeys (V/R/O/A/T/B). `<svelte:window>` so HMR can't leak the listener. -->
@@ -606,7 +578,7 @@
           label="Fade in"
           value={a.rampIn}
           min={0}
-          max={Math.max(maxRamp(a), 0.01)}
+          max={Math.max(regionMaxRamp(a), 0.01)}
           step={0.01}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
@@ -617,7 +589,7 @@
           label="Fade out"
           value={a.rampOut}
           min={0}
-          max={Math.max(maxRamp(a), 0.01)}
+          max={Math.max(regionMaxRamp(a), 0.01)}
           step={0.01}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}

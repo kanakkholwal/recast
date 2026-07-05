@@ -3,6 +3,7 @@
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
 	import { authClient } from "$lib/auth/client";
+	import { lookupEmailStatus } from "$lib/auth/lookup";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
@@ -51,34 +52,17 @@
 		if (preflight && preflight.email !== email.trim()) preflight = null;
 	});
 
-	/**
-	 * Hits /api/auth/lookup to decide whether to actually call Better Auth.
-	 * Returns `true` if we should proceed, `false` if the inline banner has
-	 * been shown and the auth call should be skipped.
-	 */
+	// Returns `true` if we should proceed to the auth call, `false` if the
+	// inline banner has been shown and the call should be skipped. `invalid`
+	// falls through so the auth call surfaces the real validation error.
 	async function preflightEmail(emailInput: string): Promise<boolean> {
-		try {
-			const res = await fetch("/api/auth/lookup", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ email: emailInput }),
-			});
-			const data = (await res.json()) as {
-				status: "active" | "pending" | "unknown" | "invalid";
-			};
-			if (data.status === "unknown" || data.status === "pending") {
-				preflight = { status: data.status, email: emailInput };
-				return false;
-			}
-			// `invalid` falls through to the auth call, which surfaces the
-			// real validation error (better than swallowing it here).
-			preflight = null;
-			return true;
-		} catch {
-			// Network blip on the lookup shouldn't block sign-in attempts.
-			preflight = null;
-			return true;
+		const status = await lookupEmailStatus(emailInput);
+		if (status === "unknown" || status === "pending") {
+			preflight = { status, email: emailInput };
+			return false;
 		}
+		preflight = null;
+		return true;
 	}
 
 	async function signInWithLink(e: SubmitEvent) {

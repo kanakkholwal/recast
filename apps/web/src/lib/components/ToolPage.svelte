@@ -6,7 +6,14 @@
 	import { ConvertClientError, runConversion } from "$lib/tools/client";
 	import { checkFileSize, formatBytes, inputBudget, type SizeBudget } from "$lib/tools/device";
 	import type { ToolControl, ToolDef } from "$lib/tools/registry";
-	import type { ToolOptions } from "$lib/tools/worker-protocol";
+	import {
+		buildToolJsonLd,
+		buildToolOptions,
+		numberControlsOf,
+		outputKindFor,
+		resolvePhase,
+		selectControlsOf,
+	} from "./ToolPage.logic";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import * as Card from "@recast/ui/card";
@@ -29,10 +36,9 @@
 	let { tool }: { tool: ToolDef } = $props();
 
 	// svelte-ignore state_referenced_locally
-	const selectControls = tool.controls?.filter((c) => c.type === "select") ?? [];
+	const selectControls = selectControlsOf(tool);
 	// svelte-ignore state_referenced_locally
-	const numberControls = tool.controls?.filter((c) => c.type === "number") ?? [];
-	const NUMERIC_KEYS = ["width", "height", "fps", "startSec", "endSec", "frameCount", "videoBitrate"];
+	const numberControls = numberControlsOf(tool);
 
 	// svelte-ignore state_referenced_locally
 	let selectValues = $state<Record<string, string>>(
@@ -79,21 +85,9 @@
 
 	const blocked = $derived(capability?.supported === false);
 	const blockedReason = $derived(capability && !capability.supported ? capability.reason : null);
-	const phase = $derived<"blocked" | "processing" | "result" | "ready" | "select">(
-		blocked ? "blocked" : busy ? "processing" : resultUrl ? "result" : file ? "ready" : "select",
-	);
+	const phase = $derived(resolvePhase(blocked, busy, !!resultUrl, !!file));
 	const isVideoInput = $derived((file?.type ?? "").startsWith("video/"));
-	const outputKind = $derived(
-		!resultMime
-			? "file"
-			: resultMime.startsWith("video/")
-				? "video"
-				: resultMime === "image/gif"
-					? "image"
-					: resultMime.startsWith("audio/")
-						? "audio"
-						: "file",
-	);
+	const outputKind = $derived(outputKindFor(resultMime));
 
 	function acceptFile(f: File | null | undefined) {
 		resetResult();
@@ -125,15 +119,6 @@
 		acceptFile(e.dataTransfer?.files?.[0]);
 	}
 
-	function buildOptions(): ToolOptions {
-		const opts: Record<string, unknown> = { ...(tool.fixedOptions ?? {}) };
-		for (const c of selectControls) {
-			opts[c.key] = NUMERIC_KEYS.includes(c.key) ? Number(selectValues[c.key]) : selectValues[c.key];
-		}
-		for (const c of numberControls) opts[c.key] = numberValues[c.key];
-		return opts as ToolOptions;
-	}
-
 	function resetResult() {
 		if (resultUrl) URL.revokeObjectURL(resultUrl);
 		resultUrl = null;
@@ -158,7 +143,7 @@
 		resetResult();
 		controller = new AbortController();
 		try {
-			const out = await runConversion(file, tool.op, buildOptions(), {
+			const out = await runConversion(file, tool.op, buildToolOptions(tool, selectControls, numberControls, selectValues, numberValues), {
 				signal: controller.signal,
 				onProgress: (r) => (progress = r),
 			});
@@ -184,28 +169,7 @@
 	const cancel = () => controller?.abort();
 	const segmentedOptions = (c: ToolControl) => (c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
 
-	const jsonLd = $derived(
-		JSON.stringify([
-			{
-				"@context": "https://schema.org",
-				"@type": "SoftwareApplication",
-				name: tool.title,
-				applicationCategory: "MultimediaApplication",
-				operatingSystem: "Web",
-				offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-				description: tool.description,
-			},
-			{
-				"@context": "https://schema.org",
-				"@type": "FAQPage",
-				mainEntity: tool.faq.map((f) => ({
-					"@type": "Question",
-					name: f.q,
-					acceptedAnswer: { "@type": "Answer", text: f.a },
-				})),
-			},
-		]),
-	);
+	const jsonLd = $derived(buildToolJsonLd(tool));
 </script>
 
 <SeoMeta title={tool.title} description={tool.description} eyebrow="Free tool" />

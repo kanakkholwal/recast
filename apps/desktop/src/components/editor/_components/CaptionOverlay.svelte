@@ -16,6 +16,7 @@
     isStaticAnimation,
     resolveCaptionAnimation,
   } from "$lib/captions/animation";
+  import { withAlpha } from "./annotation-draw.logic";
 
   let { store }: { store: EditorStore } = $props();
 
@@ -24,15 +25,6 @@
   $effect(() => {
     ensureFontLoaded(store.captionStyle.fontFamily, store.captionStyle.fontWeight);
   });
-
-  /** Hex (#rrggbb) + 0–100 opacity → an rgba() string. */
-  function rgba(hex: string, opacity: number): string {
-    const h = hex.replace("#", "");
-    const r = parseInt(h.slice(0, 2), 16) || 0;
-    const g = parseInt(h.slice(2, 4), 16) || 0;
-    const b = parseInt(h.slice(4, 6), 16) || 0;
-    return `rgba(${r}, ${g}, ${b}, ${Math.max(0, Math.min(100, opacity)) / 100})`;
-  }
 
   // The playhead is OUTPUT time; the transcript is SOURCE time. Map back through
   // the time map so captions (and per-word timing) stay synced across cuts and
@@ -97,7 +89,7 @@
       s.outlineWidth > 0
         ? `-webkit-text-stroke: ${s.outlineWidth / 100}em ${s.outlineColor}; paint-order: stroke fill`
         : "",
-      s.background === "box" ? `background: ${rgba(s.backgroundColor, s.backgroundOpacity)}` : "",
+      s.background === "box" ? `background: ${withAlpha(s.backgroundColor, s.backgroundOpacity / 100)}` : "",
       `--lines: ${s.maxLines}`,
     ]
       .filter(Boolean)

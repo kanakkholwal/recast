@@ -1,6 +1,11 @@
 <script lang="ts">
   import { computeCanvasGeometry } from "$lib/canvas-geometry";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import {
+    bubblePlacementStyle,
+    clampCameraDrag,
+    shapeBorderRadius,
+  } from "./camera-overlay.logic";
 
   interface Props {
     store: EditorStore;
@@ -29,24 +34,13 @@
     );
   });
 
-  // x/y/width as canvas percentages. Height is omitted; `aspect-ratio: 1` keeps
-  // the bubble square regardless of video aspect (UV 1:1 would render rectangular on 16:9).
-  const bubbleStyle = $derived.by(() => {
-    if (!geom) return "display:none;";
-    const p = store.cameraOverlay.defaultPlacement;
-    const left = ((geom.videoX + p.x * geom.videoW) / geom.canvasW) * 100;
-    const top = ((geom.videoY + p.y * geom.videoH) / geom.canvasH) * 100;
-    const width = ((p.width * geom.videoW) / geom.canvasW) * 100;
-    return `left:${left}%;top:${top}%;width:${width}%;`;
-  });
+  const bubbleStyle = $derived(
+    bubblePlacementStyle(geom, store.cameraOverlay.defaultPlacement),
+  );
 
-  // square → 0; rounded → saved corner-radius (16% default); circle → 50% (true circle with the 1:1 aspect).
-  const borderRadius = $derived.by(() => {
-    const s = store.cameraOverlay.shape;
-    if (s === "circle") return "50%";
-    if (s === "square" || s === "rectangle") return "0";
-    return `${(store.cameraOverlay.cornerRadius ?? 0.16) * 100}%`;
-  });
+  const borderRadius = $derived(
+    shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
+  );
 
   // Keep the camera <video> within ~150ms of the screen video; the tolerance avoids
   // re-seeking on micro-jitter between the two HTMLVideoElement clocks.
@@ -95,18 +89,19 @@
   function onPointerMove(e: PointerEvent) {
     if (!isDragging || !targetEl || !geom) return;
     const rect = targetEl.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    // CSS-pixel drag deltas → video-UV deltas (drag distance / video CSS size).
-    const videoCssW = rect.width * (geom.videoW / geom.canvasW);
-    const videoCssH = rect.height * (geom.videoH / geom.canvasH);
-    if (videoCssW <= 0 || videoCssH <= 0) return;
-    const dxUv = (e.clientX - dragStartClient.x) / videoCssW;
-    const dyUv = (e.clientY - dragStartClient.y) / videoCssH;
     const p = store.cameraOverlay.defaultPlacement;
-    const newX = Math.max(0, Math.min(1 - p.width, dragStartUv.x + dxUv));
-    const newY = Math.max(0, Math.min(1 - p.height, dragStartUv.y + dyUv));
+    const next = clampCameraDrag(
+      geom,
+      rect.width,
+      rect.height,
+      e.clientX - dragStartClient.x,
+      e.clientY - dragStartClient.y,
+      dragStartUv,
+      p,
+    );
+    if (!next) return;
     store.updateCameraOverlay({
-      defaultPlacement: { ...p, x: newX, y: newY },
+      defaultPlacement: { ...p, x: next.x, y: next.y },
     });
   }
 

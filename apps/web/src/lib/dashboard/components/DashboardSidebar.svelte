@@ -1,6 +1,11 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
+	import {
+		isActive,
+		resolveActiveOrg,
+		resolveMemberships,
+	} from "./DashboardSidebar.logic";
 	import Logo from "$lib/logo.svelte";
 	import {
 	  BarChart3,
@@ -89,26 +94,8 @@
 		groups ?? (nav ? [{ label: groupLabel, items: nav }] : defaultGroups),
 	);
 
-	// /dashboard/+layout.server.ts surfaces these. Falls back to safe defaults
-	// if rendered outside that load (e.g. during route transition).
-	type Membership = {
-		organizationId: string;
-		name: string;
-		role: string;
-		plan: string;
-	};
-	type ActiveOrg = { id: string; name: string; role: string; plan: string };
-	const memberships = $derived(
-		((page.data as { memberships?: Membership[] }).memberships ?? []) as Membership[],
-	);
-	const activeOrg = $derived(
-		((page.data as { activeOrganization?: ActiveOrg }).activeOrganization ??
-			null) as ActiveOrg | null,
-	);
-
-	function isActive(href: string, exact: boolean) {
-		return exact ? currentPath === href : currentPath.startsWith(href);
-	}
+	const memberships = $derived(resolveMemberships(page.data));
+	const activeOrg = $derived(resolveActiveOrg(page.data));
 
 	// Slides the active highlight between rows rather than cross-fading in place.
 	const [send, receive] = crossfade({
@@ -201,7 +188,7 @@
 				<Sidebar.GroupContent>
 					<Sidebar.Menu class="gap-0.5">
 						{#each group.items as link (link.href)}
-							{@const active = isActive(link.href, link.exact)}
+							{@const active = isActive(link.href, link.exact, currentPath)}
 							{@const Icon = link.icon}
 							<Sidebar.MenuItem>
 								<Sidebar.MenuButton tooltipContent={link.title}>

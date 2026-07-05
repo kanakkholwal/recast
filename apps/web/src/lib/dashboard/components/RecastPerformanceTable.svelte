@@ -1,17 +1,13 @@
 <script lang="ts">
-	import { formatCount } from "$lib/dashboard/format";
 	import EmptyState from "./EmptyState.svelte";
+	import {
+		nextSort,
+		PERF_COLUMNS as cols,
+		sortRows,
+		type Row,
+		type SortKey,
+	} from "./RecastPerformanceTable.logic";
 	import { ArrowDown, ArrowUp, BarChart3, Crown } from "@lucide/svelte";
-
-	type Row = {
-		id: string;
-		title: string;
-		views: number;
-		avgWatch: number;
-		completion: number;
-		comments: number;
-	};
-	type SortKey = "views" | "avgWatch" | "completion" | "comments";
 
 	// Sortable per-recast comparison table. Replaces the text-only "Top recasts"
 	// on the analytics page; each row drills into /dashboard/recasts/[id].
@@ -20,26 +16,11 @@
 	let sortKey = $state<SortKey>("views");
 	let dir = $state<"asc" | "desc">("desc");
 
-	const sorted = $derived(
-		[...rows]
-			.sort((a, b) => (a[sortKey] - b[sortKey]) * (dir === "asc" ? 1 : -1))
-			.slice(0, limit),
-	);
+	const sorted = $derived(sortRows(rows, sortKey, dir, limit));
 
 	function toggleSort(k: SortKey) {
-		if (sortKey === k) dir = dir === "asc" ? "desc" : "asc";
-		else {
-			sortKey = k;
-			dir = "desc";
-		}
+		({ key: sortKey, dir } = nextSort({ key: sortKey, dir }, k));
 	}
-
-	const cols: { key: SortKey; label: string; fmt: (r: Row) => string }[] = [
-		{ key: "views", label: "Views", fmt: (r) => formatCount(r.views) },
-		{ key: "avgWatch", label: "Avg watch", fmt: (r) => `${r.avgWatch}%` },
-		{ key: "completion", label: "Completion", fmt: (r) => `${r.completion}%` },
-		{ key: "comments", label: "Comments", fmt: (r) => formatCount(r.comments) },
-	];
 </script>
 
 <section class="glass-card flex h-full flex-col rounded-xl">

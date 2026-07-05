@@ -1,5 +1,6 @@
 <script lang="ts">
   import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
+  import { clockDecis as fmtTime } from "$lib/format/time";
   import type {
     Annotation,
     EditorStore,
@@ -15,6 +16,7 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
+  import { reorderZ } from "./annotation-layer.logic";
 
   interface Props {
     store: EditorStore;
@@ -28,13 +30,6 @@
   let renamingId = $state<string | null>(null);
   let dragId = $state<string | null>(null);
   let dragOverId = $state<string | null>(null);
-
-  function fmtTime(sec: number): string {
-    const s = Math.max(0, sec);
-    const m = Math.floor(s / 60);
-    const rem = s - m * 60;
-    return `${m}:${rem.toFixed(1).padStart(4, "0")}`;
-  }
 
   function startRename(a: Annotation) {
     if (a.locked) return;
@@ -92,15 +87,10 @@
     }
     e.preventDefault();
 
-    const visual = ordered.map((a) => a.id);
-    const fromIdx = visual.indexOf(dragId);
-    const toIdx = visual.indexOf(target.id);
-    if (fromIdx === -1 || toIdx === -1) return;
-    const next = [...visual];
-    const [moved] = next.splice(fromIdx, 1);
-    next.splice(toIdx, 0, moved);
-    // Visual order is top → bottom; store wants bottom → top z order.
-    store.setAnnotationZOrder([...next].reverse());
+    // Visual order is top → bottom; reorderZ returns the store's bottom → top.
+    const next = reorderZ(ordered.map((a) => a.id), dragId, target.id);
+    if (!next) return;
+    store.setAnnotationZOrder(next);
     dragId = null;
     dragOverId = null;
   }

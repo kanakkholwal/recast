@@ -1,15 +1,20 @@
 <script lang="ts">
   import {
-    framePaddingPixels,
     type EditorStore,
     type ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
   import {
+    canvasToUV as canvasToUVPure,
     cursorForHandle,
     HANDLE_RADIUS_PX,
     handlePositions,
     hitTestHandle,
+    MAX_SCALE,
+    MIN_SCALE,
     regionBox,
+    resizeFocusRegion,
+    uvToCanvas as uvToCanvasPure,
+    videoRectPx as videoRectPxPure,
     type HandleName,
   } from "./focus-overlay.logic";
   import { onDestroy, onMount } from "svelte";
@@ -47,41 +52,24 @@
   let drag: DragState = null;
 
   const SELECTION_COLOUR = "#3b82f6";
-  const MIN_SCALE = 1.05;
-  const MAX_SCALE = 3;
 
   function getDpr(): number {
     return window.devicePixelRatio || 1;
   }
 
-  function compW(): number {
-    const meta = store.metadata;
-    if (!meta) return 0;
-    const paddingPx = framePaddingPixels(store.padding, meta);
-    return meta.width + paddingPx * 2;
-  }
-
-  /** Canvas device-px rect of the video region (mirror of the shader). */
+  // Thin wrappers over the pure geometry: bind the canvas dims + store to the
+  // shared projections so call sites stay two-arg.
   function videoRectPx(): { x: number; y: number; w: number; h: number } {
     if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
-    const cw = canvasEl.width;
-    const ch = canvasEl.height;
-    const total = compW();
-    const meta = store.metadata;
-    const sourcePaddingPx = meta ? framePaddingPixels(store.padding, meta) : 0;
-    const padPx = total > 0 ? (sourcePaddingPx / total) * cw : 0;
-    return { x: padPx, y: padPx, w: cw - 2 * padPx, h: ch - 2 * padPx };
+    return videoRectPxPure(canvasEl.width, canvasEl.height, store.metadata, store.padding);
   }
 
   function uvToCanvas(ux: number, uy: number): { x: number; y: number } {
-    const rect = videoRectPx();
-    return { x: rect.x + ux * rect.w, y: rect.y + uy * rect.h };
+    return uvToCanvasPure(ux, uy, videoRectPx());
   }
 
   function canvasToUV(cx: number, cy: number): { x: number; y: number } {
-    const rect = videoRectPx();
-    if (rect.w <= 0 || rect.h <= 0) return { x: 0, y: 0 };
-    return { x: (cx - rect.x) / rect.w, y: (cy - rect.y) / rect.h };
+    return canvasToUVPure(cx, cy, videoRectPx());
   }
 
   function pointerToCanvasPx(e: PointerEvent): { x: number; y: number } {
@@ -243,38 +231,15 @@
     }
 
     if (drag.kind === "resize") {
-      // Resize: compute the new focus rect from the dragged edge, then derive
-      // scale = 1 / max(rectW, rectH) and re-centre. Clamped so the rect
-      // never leaves [0,1]² and the scale stays in [MIN_SCALE, MAX_SCALE].
       const uv = canvasToUV(pt.x, pt.y);
-      const halfW0 = 1 / (2 * drag.startScale);
-      const halfH0 = 1 / (2 * drag.startScale);
-      let x0 = drag.startCX - halfW0;
-      let y0 = drag.startCY - halfH0;
-      let x1 = drag.startCX + halfW0;
-      let y1 = drag.startCY + halfH0;
-
-      const h = drag.handle;
-      if (h === "w" || h === "nw" || h === "sw") x0 = uv.x;
-      if (h === "e" || h === "ne" || h === "se") x1 = uv.x;
-      if (h === "n" || h === "nw" || h === "ne") y0 = uv.y;
-      if (h === "s" || h === "sw" || h === "se") y1 = uv.y;
-
-      const rawW = Math.max(1 / MAX_SCALE, Math.abs(x1 - x0));
-      const rawH = Math.max(1 / MAX_SCALE, Math.abs(y1 - y0));
-      // Keep the rect square — the zoom itself is uniform scale — by taking
-      // the larger of the two dimensions.
-      const side = Math.min(1, Math.max(rawW, rawH, 1 / MAX_SCALE));
-      const scale = Math.min(MAX_SCALE, Math.max(MIN_SCALE, 1 / side));
-
-      // Re-centre around the midpoint of the dragged rect, then clamp into
-      // the frame given the new side length.
-      const midX = (Math.min(x0, x1) + Math.max(x0, x1)) * 0.5;
-      const midY = (Math.min(y0, y1) + Math.max(y0, y1)) * 0.5;
-      const half = side * 0.5;
-      const cx = Math.min(Math.max(midX, half), 1 - half);
-      const cy = Math.min(Math.max(midY, half), 1 - half);
-
+      const { scale, cx, cy } = resizeFocusRegion(
+        drag.handle,
+        drag.startScale,
+        drag.startCX,
+        drag.startCY,
+        uv,
+        { min: MIN_SCALE, max: MAX_SCALE },
+      );
       store.updateZoomRegion(r.id, { scale, centerX: cx, centerY: cy });
     }
   }

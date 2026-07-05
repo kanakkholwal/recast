@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
+	import { slugifyBase } from "./CreateTeamDialog.logic";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Input } from "@recast/ui/input";
@@ -27,10 +28,7 @@
 		if (!name.trim() || creating) return;
 		creating = true;
 		const teamName = name.trim();
-		const slug = `${teamName
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/(^-|-$)/g, "") || "team"}-${Math.random().toString(36).slice(2, 8)}`;
+		const slug = `${slugifyBase(teamName)}-${Math.random().toString(36).slice(2, 8)}`;
 		try {
 			await toast.promise(
 				(async () => {

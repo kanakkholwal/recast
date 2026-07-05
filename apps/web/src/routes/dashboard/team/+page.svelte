@@ -2,6 +2,7 @@
 	import { enhance } from "$app/forms";
 	import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
 	import StatCard from "$lib/dashboard/components/StatCard.svelte";
+	import { capitalize, initials, isManageable, seatsRemaining, seatsValue } from "$lib/dashboard/team.logic";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
@@ -61,35 +62,7 @@
 	);
 	const isOwner = $derived(data.viewer.role === "owner");
 
-	const cap = (s: string) => (s ? s[0]!.toUpperCase() + s.slice(1) : s);
-	const planLabel = $derived(cap(data.org.plan));
-
-	function initials(name: string): string {
-		return (
-			name
-				.split(/\s+/)
-				.filter(Boolean)
-				.slice(0, 2)
-				.map((w) => w[0]!.toUpperCase())
-				.join("") || "?"
-		);
-	}
-
-	function seatsRemainingFor(memberCount: number): number {
-		return Number.isFinite(data.caps.members)
-			? Math.max(0, data.caps.members - memberCount)
-			: Number.POSITIVE_INFINITY;
-	}
-	function seatsValue(memberCount: number): string {
-		return Number.isFinite(data.caps.members)
-			? `${memberCount} / ${data.caps.members}`
-			: String(memberCount);
-	}
-
-	/** A member is manageable when it isn't you and isn't the owner. */
-	function manageable(m: { userId: string; role: string }): boolean {
-		return canManage && m.userId !== data.viewer.userId && m.role !== "owner";
-	}
+	const planLabel = $derived(capitalize(data.org.plan));
 
 	async function changeRole(memberId: string, value: string) {
 		pendingRole = { ...pendingRole, [memberId]: value };
@@ -134,8 +107,8 @@
 				<Skeleton class="h-17 rounded-xl" />
 			{/each}
 		{:then members}
-			{@const seatsLeft = seatsRemainingFor(members.length)}
-			<StatCard icon={Users} label="Members" value={seatsValue(members.length)} />
+			{@const seatsLeft = seatsRemaining(data.caps.members, members.length)}
+			<StatCard icon={Users} label="Members" value={seatsValue(data.caps.members, members.length)} />
 			<StatCard
 				icon={UserPlus}
 				label="Seats left"
@@ -269,7 +242,7 @@
 								</div>
 
 								<div class="flex items-center gap-2">
-									{#if manageable(m)}
+									{#if isManageable(m, data.viewer, canManage)}
 										<!-- Role is editable: the Select is the single source of
 										     truth (no separate badge that duplicates it). -->
 										{#if updatingRoleMemberId === m.id}
@@ -305,7 +278,7 @@
 												onValueChange={(v) => changeRole(m.id, String(v))}
 											>
 												<Select.Trigger class="h-8 w-28 text-xs capitalize">
-													{cap(pendingRole[m.id] ?? m.role)}
+													{capitalize(pendingRole[m.id] ?? m.role)}
 												</Select.Trigger>
 												<Select.Content>
 													<Select.Item value="member">Member</Select.Item>
@@ -348,8 +321,8 @@
 							<Skeleton class="h-9 w-full" />
 						</div>
 					{:then members}
-						{@const seatsRemaining = seatsRemainingFor(members.length)}
-						{#if seatsRemaining <= 0}
+						{@const seatsLeft = seatsRemaining(data.caps.members, members.length)}
+						{#if seatsLeft <= 0}
 							<p class="rounded-lg border border-warning/30 bg-warning/8 p-3 text-xs text-muted-foreground">
 								You're at the seat cap for the
 								<span class="font-medium text-foreground">{planLabel}</span> plan.
@@ -394,7 +367,7 @@
 								<Label class="block">
 									<span class="mb-1 block text-xs font-semibold text-foreground/85">Role</span>
 									<Select.Root type="single" bind:value={inviteRole} name="role">
-										<Select.Trigger class="h-9 w-full capitalize">{cap(inviteRole)}</Select.Trigger>
+										<Select.Trigger class="h-9 w-full capitalize">{capitalize(inviteRole)}</Select.Trigger>
 										<Select.Content>
 											<Select.Item value="member">Member</Select.Item>
 											<Select.Item value="admin">Admin</Select.Item>
@@ -436,7 +409,7 @@
 									<div class="min-w-0">
 										<span class="block truncate text-xs font-medium">{inv.email}</span>
 										<span class="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-											{cap(inv.role)}
+											{capitalize(inv.role)}
 										</span>
 									</div>
 									{#if canManage}

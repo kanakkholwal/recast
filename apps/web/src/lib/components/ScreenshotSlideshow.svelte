@@ -1,26 +1,13 @@
 <script lang="ts">
 	import { onMount, onDestroy } from "svelte";
+	import {
+		INTERVAL_MS,
+		TRANSITION_MS,
+		buildReel,
+		slides,
+	} from "./ScreenshotSlideshow.logic";
 
-	type Slide = { src: string; alt: string };
-
-	const slides: Slide[] = [
-		{ src: "/screenshots/preview_homescreen.png", alt: "Recast home screen" },
-		{ src: "/screenshots/preview_profiles.png", alt: "Recast export profiles" },
-	];
-
-	const INTERVAL_MS = 4000;
-	const TRANSITION_MS = 900;
-
-	// Build a long reel by repeating the slide list. We then advance a
-	// monotonically-increasing `step` counter; when it nears the end of the
-	// reel we silently snap back by `slides.length` slots so the same image
-	// stays under the active position. That snap is invisible because the
-	// slide N steps earlier shows the exact same picture.
-	const REPEAT = Math.max(6, slides.length * 4);
-	const reel: Slide[] = Array.from(
-		{ length: REPEAT },
-		(_, i) => slides[i % slides.length],
-	);
+	const reel = buildReel(slides);
 
 	let step = $state(0);
 	let snapping = $state(false);

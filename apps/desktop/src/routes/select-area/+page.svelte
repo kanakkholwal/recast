@@ -1,9 +1,14 @@
 <script lang="ts">
-  import type { RegionRect } from "$lib/ipc";
   import { Button } from "@recast/ui/button";
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import {
+    clampToolbar,
+    rectFromPoints,
+    toRegionPayload,
+    TOOLBAR_W,
+  } from "./select-area.logic";
 
   // Overlay spans all monitors from the virtual-desktop origin, so pointer
   // coords are virtual-desktop pixels — what the Rust resolver expects.
@@ -54,27 +59,21 @@
     if (!dragging) return;
     dragging = false;
     (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    const x = Math.min(startX, curX);
-    const y = Math.min(startY, curY);
-    const w = Math.abs(curX - startX);
-    const h = Math.abs(curY - startY);
-    if (w < 8 || h < 8) {
+    const next = rectFromPoints(startX, startY, curX, curY);
+    if (next.w < 8 || next.h < 8) {
       rect = null;
       return;
     }
-    rect = { x, y, w, h };
+    rect = next;
   }
 
   function confirm() {
     if (!rect) return;
-    const dpr = window.devicePixelRatio || 1;
-    const payload: RegionRect & { label: string } = {
-      x: Math.round((rect.x + originX) * dpr),
-      y: Math.round((rect.y + originY) * dpr),
-      width: Math.round(rect.w * dpr),
-      height: Math.round(rect.h * dpr),
-      label: `Area ${Math.round(rect.w * dpr)}×${Math.round(rect.h * dpr)}`,
-    };
+    const payload = toRegionPayload(
+      rect,
+      { x: originX, y: originY },
+      window.devicePixelRatio || 1,
+    );
     emit("region-selected", payload);
     getCurrentWindow().close();
   }
@@ -101,32 +100,16 @@
 
   // Live derived rect for display while dragging.
   const liveRect = $derived(
-    dragging
-      ? {
-          x: Math.min(startX, curX),
-          y: Math.min(startY, curY),
-          w: Math.abs(curX - startX),
-          h: Math.abs(curY - startY),
-        }
-      : rect,
+    dragging ? rectFromPoints(startX, startY, curX, curY) : rect,
   );
 
   // Toolbar position, clamped to the viewport so it stays reachable when the
   // selection lands near the bottom or right edge of the virtual desktop.
-  const TOOLBAR_W = 240;
-  const TOOLBAR_H = 36;
-  const toolbarPos = $derived.by(() => {
-    if (!rect) return { left: 0, top: 0 };
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const desiredTop = rect.y + rect.h + 6;
-    const top =
-      desiredTop + TOOLBAR_H + 8 > vh
-        ? Math.max(8, rect.y - TOOLBAR_H - 6)
-        : desiredTop;
-    const left = Math.max(8, Math.min(rect.x, vw - TOOLBAR_W - 8));
-    return { left, top };
-  });
+  const toolbarPos = $derived.by(() =>
+    rect
+      ? clampToolbar(rect, window.innerWidth, window.innerHeight)
+      : { left: 0, top: 0 },
+  );
 </script>
 
 <svelte:window onkeydown={onKey} />

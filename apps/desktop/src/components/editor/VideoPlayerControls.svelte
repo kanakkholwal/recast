@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { EditorStore } from "$lib/stores/editor-store.svelte";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+	import { formatTimecode, frameStepOutput } from "$lib/editor/time";
 	import {
 	  Camera,
 	  LoaderCircle,
@@ -86,13 +87,6 @@
 		if (fullscreenTargetEl) await fullscreenTargetEl.requestFullscreen();
 	}
 
-	function formatTime(seconds: number): string {
-		const mins = Math.floor(seconds / 60);
-		const secs = Math.floor(seconds % 60);
-		const ms = Math.floor((seconds % 1) * 100);
-		return `${mins}:${secs.toString().padStart(2, "0")}.${ms.toString().padStart(2, "0")}`;
-	}
-
 	// OUTPUT (post-cut) time: readout/scrubber reflect the edited length and can't land
 	// in a removed region. `store.currentTime` stays the source of truth (original time); we map to output only for display + seek.
 	const timeMap = $derived(store.timeMap);
@@ -100,8 +94,8 @@
 	const outputDuration = $derived(originalToOutput(timeMap, fullDuration));
 	const currentOutput = $derived(originalToOutput(timeMap, store.currentTime));
 
-	const currentTimeFormatted = $derived(formatTime(currentOutput));
-	const durationFormatted = $derived(formatTime(outputDuration));
+	const currentTimeFormatted = $derived(formatTimecode(currentOutput));
+	const durationFormatted = $derived(formatTimecode(outputDuration));
 	const progressPct = $derived(
 		outputDuration > 0
 			? Math.min(100, (currentOutput / outputDuration) * 100)
@@ -121,14 +115,14 @@
 
 	function stepFrame(direction: number) {
 		if (!store.metadata) return;
-		// Step a frame on the OUTPUT axis so stepping past a cut boundary lands on
-		// the next kept frame instead of inside the removed range.
-		const frameDuration = 1 / (store.metadata.fps || 30);
-		const nextOut = Math.max(
-			0,
-			Math.min(currentOutput + frameDuration * direction, outputDuration),
+		// Step on the OUTPUT axis so stepping past a cut boundary lands on the next
+		// kept frame instead of inside the removed range.
+		const orig = frameStepOutput(
+			timeMap,
+			store.metadata,
+			store.currentTime,
+			direction,
 		);
-		const orig = outputToOriginal(timeMap, nextOut);
 		if (videoEl) videoEl.currentTime = orig;
 		store.currentTime = orig;
 	}

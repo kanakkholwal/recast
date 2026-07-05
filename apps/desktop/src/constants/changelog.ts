@@ -403,3 +403,20 @@ export const RELEASES: readonly ChangelogRelease[] = [
 // RELEASES:END
 
 export const LATEST_RELEASE = RELEASES[0];
+
+/** Sections in the order they read in the changelog. */
+const CHANGE_ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
+
+/** Bucket a release's changes by kind, keeping only present kinds in order. */
+export function groupChanges(
+	release: ChangelogRelease,
+): (readonly [ChangeKind, string[]])[] {
+	const map = new Map<ChangeKind, string[]>();
+	for (const c of release.changes) {
+		if (!map.has(c.kind)) map.set(c.kind, []);
+		map.get(c.kind)!.push(c.summary);
+	}
+	return CHANGE_ORDER.filter((k) => map.has(k)).map(
+		(k) => [k, map.get(k)!] as const,
+	);
+}

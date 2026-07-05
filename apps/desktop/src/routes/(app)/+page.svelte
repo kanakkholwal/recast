@@ -1,7 +1,6 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
   import {
-    generateThumbnails,
     getOutputDir,
     launchRecordingPanel,
     listExports,
@@ -13,6 +12,9 @@
   import { commandPalette } from "$lib/stores/command-palette.svelte";
   import { formatSize, relativeDate } from "$lib/format/files";
   import { openInEditor as openEditorWindow } from "$lib/library/editor-window";
+  import { recentSix } from "$lib/library/list";
+  import { createThumbnailLoader } from "$lib/library/thumbnails";
+  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
   import {
     AppWindow,
     ArrowRight,
@@ -33,7 +35,6 @@
   import { cn } from "@recast/ui/utils";
   import { safeStorage } from "@recast/ui/persisted-state";
   import { listen } from "@tauri-apps/api/event";
-  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
@@ -44,7 +45,7 @@
   let thumbnails = $state<Record<string, string>>({});
   let editorWindow = $state<"navigate" | "new-window">("navigate");
   let now = $state(Date.now());
-  let thumbnailPass = 0;
+  const loadThumbnails = createThumbnailLoader();
 
   onMount(() => {
     fetchAll();
@@ -64,9 +65,9 @@
     isLoading = true;
     try {
       const [r, e] = await Promise.all([listRecasts(), listExports()]);
-      recasts = r.sort((a, b) => b.created - a.created).slice(0, 6);
-      exports_ = e.sort((a, b) => b.created - a.created).slice(0, 6);
-      void loadThumbnails([...recasts, ...exports_]);
+      recasts = recentSix(r);
+      exports_ = recentSix(e);
+      void refreshThumbnails([...recasts, ...exports_]);
     } catch (err) {
       toast.error(`Could not load activity: ${err}`);
     } finally {
@@ -74,23 +75,10 @@
     }
   }
 
-  async function loadThumbnails(items: RecordingEntry[]) {
-    const pass = ++thumbnailPass;
-    const settled = await Promise.allSettled(
-      items.map(async (item) => {
-        const frames = await generateThumbnails(item.path, 1);
-        return [item.path, frames[0] ?? ""] as const;
-      }),
-    );
-    if (pass !== thumbnailPass) return;
-    const next: Record<string, string> = {};
-    for (const r of settled) {
-      if (r.status === "fulfilled" && r.value[1]) next[r.value[0]] = r.value[1];
-    }
-    thumbnails = next;
+  async function refreshThumbnails(items: RecordingEntry[]) {
+    const next = await loadThumbnails(items);
+    if (next) thumbnails = next;
   }
-
-
 
   // Closes over `now` so the relative label re-renders as the clock ticks.
   const formatDate = (unix: number) => relativeDate(unix, { now });
@@ -108,13 +96,7 @@
   }
 
   async function openDevicePickerWindow(type: "mic" | "camera") {
-    const label = `device-picker-${type}`;
-    const existing = await WebviewWindow.getByLabel(label);
-    if (existing) {
-      await existing.setFocus();
-      return;
-    }
-    new WebviewWindow(label, {
+    await spawnOverlayWindow(`device-picker-${type}`, {
       url: `/device-picker?type=${type}`,
       title: `Select ${type === "mic" ? "Microphone" : "Camera"}`,
       width: 320,

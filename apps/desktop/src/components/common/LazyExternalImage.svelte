@@ -3,6 +3,7 @@
   import { assetsStore } from "$lib/stores/assets-store.svelte";
   import { Skeleton } from "@recast/ui/skeleton";
   import { onMount, tick } from "svelte";
+  import { boxStyle as computeBoxStyle, pickSrc } from "./LazyExternalImage.logic";
 
   interface Props {
     /** Asset id from the manifest. */
@@ -65,11 +66,7 @@
   // from re-decoding when surrounding state churns.
   const fullUrl = $derived(assetsStore.urls[assetId]);
   const thumbUrl = $derived(assetsStore.thumbUrls[assetId]);
-  const src = $derived.by(() => {
-    if (tier === "thumb") return thumbUrl ?? null;
-    if (tier === "full") return fullUrl ?? null;
-    return fullUrl ?? thumbUrl ?? null;
-  });
+  const src = $derived(pickSrc(tier, fullUrl, thumbUrl));
   const showOfflineBadge = $derived(!src && !online);
 
   // On src change, promote `loaded` if the <img> is already cache-complete:
@@ -85,12 +82,7 @@
     });
   });
 
-  const boxStyle = $derived(
-    [
-      `width: ${width};`,
-      height ? `height: ${height};` : `aspect-ratio: ${aspectRatio};`,
-    ].join(" "),
-  );
+  const boxStyle = $derived(computeBoxStyle(width, height, aspectRatio));
 </script>
 
 <span class="relative block overflow-hidden" style={boxStyle}>

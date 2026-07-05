@@ -7,8 +7,13 @@
     toggleExtension,
     type RegistryIndexEntry,
   } from "$lib/extensions";
-  import type { ExtensionManifest, InstalledExtension } from "$lib/ipc";
+  import type {
+    ExtensionContributions,
+    ExtensionManifest,
+    InstalledExtension,
+  } from "$lib/ipc";
   import { extensionsStore } from "$lib/stores/extensions-store.svelte";
+  import { buildContributionGroups } from "./extensions-panel.logic";
   import {
     Blend,
     Blocks,
@@ -91,27 +96,22 @@
   );
   const manifestUrl = $derived(entry?.manifestUrl ?? null);
 
-  type Group = { key: string; label: string; icon: Component; items: string[] };
-  const groups = $derived.by<Group[]>(() => {
-    const c = manifest?.contributes ?? {};
-    const defs: Array<{ key: keyof typeof c; label: string; icon: Component }> = [
-      { key: "cursors", label: "Cursors", icon: MousePointer },
-      { key: "backgrounds", label: "Backgrounds", icon: Image },
-      { key: "gradients", label: "Gradients", icon: Blend },
-      { key: "colors", label: "Colors", icon: Palette },
-      { key: "easings", label: "Easing presets", icon: Spline },
-      { key: "smoothings", label: "Smoothing presets", icon: Waves },
-      { key: "captionPresets", label: "Caption themes", icon: Captions },
-    ];
-    return defs
-      .map((d) => ({
-        ...d,
-        items: ((c[d.key] ?? []) as Array<{ label?: string; id: string }>).map(
-          (it) => it.label ?? it.id,
-        ),
-      }))
-      .filter((g) => g.items.length > 0);
-  });
+  // Icon-bearing definition table stays in the component; the pure map/filter
+  // lives in the shared logic module.
+  const contributionDefs: Array<{
+    key: keyof ExtensionContributions;
+    label: string;
+    icon: Component;
+  }> = [
+    { key: "cursors", label: "Cursors", icon: MousePointer },
+    { key: "backgrounds", label: "Backgrounds", icon: Image },
+    { key: "gradients", label: "Gradients", icon: Blend },
+    { key: "colors", label: "Colors", icon: Palette },
+    { key: "easings", label: "Easing presets", icon: Spline },
+    { key: "smoothings", label: "Smoothing presets", icon: Waves },
+    { key: "captionPresets", label: "Caption themes", icon: Captions },
+  ];
+  const groups = $derived(buildContributionGroups(manifest, contributionDefs));
 
   const assetCount = $derived(manifest?.assets?.length ?? 0);
 

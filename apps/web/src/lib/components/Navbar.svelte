@@ -1,33 +1,8 @@
 <script lang="ts">
+  import { GITHUB_URL, navMenuGroups as menuGroups } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";
   import { FloatingMenu } from "$lib/motion-core";
   import { GithubBrand } from "@recast/ui/brand-icons";
-
-  const menuGroups = [
-    {
-      title: "Product",
-      variant: "default" as const,
-      links: [
-        { label: "Features", href: "/features" },
-        { label: "Extensions", href: "/extensions" },
-        { label: "Free Tools", href: "/tools" },
-        { label: "Pricing", href: "/pricing" },
-        { label: "Cloud Waitlist", href: "/waitlist" },
-      ],
-    },
-    {
-      title: "Resources",
-      variant: "muted" as const,
-      links: [
-        { label: "Changelog", href: "/changelog" },
-        // GitHub stays in the menu too — the icon button is desktop-only
-        // (md:flex), and mobile users discover external links through
-        // the open menu.
-        { label: "GitHub", href: "https://github.com/kanakkholwal/recast" },
-        { label: "Contact", href: "mailto:try-recast@gmail.com" },
-      ],
-    },
-  ];
 
   let menuContainer: HTMLElement;
 </script>
@@ -43,7 +18,7 @@
     secondaryButton={{ label: "Cloud Waitlist", href: "/waitlist" }}
     tertiaryButton={{
       label: "GitHub",
-      href: "https://github.com/kanakkholwal/recast",
+      href: GITHUB_URL,
       icon: GithubBrand,
       iconOnly: true,
       ariaLabel: "Recast on GitHub",

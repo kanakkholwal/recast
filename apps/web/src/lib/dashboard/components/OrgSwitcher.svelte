@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
+	import { initials } from "./OrgSwitcher.logic";
 	import {
 	  Building2,
 	  Check,
@@ -69,14 +70,6 @@
 		}
 	}
 
-	function initials(name: string) {
-		return name
-			.split(/\s+/)
-			.filter(Boolean)
-			.slice(0, 2)
-			.map((w) => w[0]!.toUpperCase())
-			.join("") || "T";
-	}
 </script>
 
 <DropdownMenu.Root>

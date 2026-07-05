@@ -13,26 +13,17 @@
   import * as Tabs from "@recast/ui/tabs";
   import { cn } from "@recast/ui/utils";
   import { emit, listen } from "@tauri-apps/api/event";
-  import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
-
-  type TargetSource = {
-    type: "monitor" | "window" | "region";
-    id: number;
-    label: string;
-    appName?: string;
-    thumbnail: string | null;
-    resolution?: string;
-    /** Monitor refresh rate in Hz (monitors only); caps the useful capture fps. */
-    refreshHz?: number;
-    region?: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  };
+  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
+  import {
+    buildSources,
+    filterByType,
+    isSameSource,
+    lastRegionToSource,
+    regionEventToSource,
+    type TargetSource,
+  } from "./select.logic";
 
   let sources: TargetSource[] = $state([]);
   let selectedSource: TargetSource | null = $state(null);
@@ -52,15 +43,7 @@
       height: number;
       label: string;
     }>("region-selected", (event) => {
-      const { x, y, width, height, label } = event.payload;
-      const region: TargetSource = {
-        type: "region",
-        id: 0,
-        label,
-        thumbnail: null,
-        resolution: `${width} × ${height}`,
-        region: { x, y, width, height },
-      };
+      const region = regionEventToSource(event.payload);
       // Replace any prior region in the list and select it.
       sources = [...sources.filter((s) => s.type !== "region"), region];
       lastRegion = region;
@@ -71,26 +54,8 @@
     // Hydrate the "remembered" region from persisted config.
     getLastSource()
       .then((last) => {
-        if (
-          last &&
-          last.kind === "region" &&
-          last.regionWidth &&
-          last.regionHeight
-        ) {
-          lastRegion = {
-            type: "region",
-            id: 0,
-            label: last.label,
-            thumbnail: null,
-            resolution: `${last.regionWidth} × ${last.regionHeight}`,
-            region: {
-              x: last.regionX ?? 0,
-              y: last.regionY ?? 0,
-              width: last.regionWidth,
-              height: last.regionHeight,
-            },
-          };
-        }
+        const remembered = lastRegionToSource(last);
+        if (remembered) lastRegion = remembered;
       })
       .catch(() => {});
 
@@ -100,13 +65,8 @@
   });
 
   async function openAreaPicker() {
-    const existing = await WebviewWindow.getByLabel("region-picker");
-    if (existing) {
-      await existing.setFocus();
-      return;
-    }
     // Oversize to cover the whole virtual desktop across multiple monitors.
-    new WebviewWindow("region-picker", {
+    await spawnOverlayWindow("region-picker", {
       url: "/select-area",
       title: "Select Area",
       width: window.screen.availWidth,
@@ -129,30 +89,7 @@
         getDisplays(),
         getWindows(),
       ]);
-      const next: TargetSource[] = [];
-      displays.forEach((d, i) =>
-        next.push({
-          type: "monitor",
-          id: d.id,
-          label: d.isPrimary ? "Primary Display" : `Display ${i + 1}`,
-          thumbnail: d.thumbnail,
-          resolution: `${d.width} × ${d.height}`,
-          refreshHz: d.refreshHz || undefined,
-        }),
-      );
-      windows.forEach((w) => {
-        if (w.title?.trim()) {
-          next.push({
-            type: "window",
-            id: w.id,
-            label: w.title,
-            appName: w.appName,
-            thumbnail: w.thumbnail,
-            resolution: `${w.width} × ${w.height}`,
-          });
-        }
-      });
-      sources = next;
+      sources = buildSources(displays, windows);
       if (!selectedSource && sources.length > 0) selectedSource = sources[0];
     } catch (e) {
       console.error(e);
@@ -181,9 +118,9 @@
     }
   }
 
-  const monitorSources = $derived(sources.filter((s) => s.type === "monitor"));
-  const windowSources = $derived(sources.filter((s) => s.type === "window"));
-  const regionSources = $derived(sources.filter((s) => s.type === "region"));
+  const monitorSources = $derived(filterByType(sources, "monitor"));
+  const windowSources = $derived(filterByType(sources, "window"));
+  const regionSources = $derived(filterByType(sources, "region"));
   const filteredSources = $derived(
     tab === "monitor"
       ? monitorSources
@@ -193,9 +130,7 @@
   );
 
   function isSelected(source: TargetSource) {
-    return (
-      selectedSource?.id === source.id && selectedSource?.type === source.type
-    );
+    return isSameSource(selectedSource, source);
   }
 </script>
 
@@ -292,7 +227,6 @@
         <button
           type="button"
           onclick={openAreaPicker}
-          // onmousedown={(e) => e.stopPropagation()}
           class="group/draw flex h-28 w-full flex-col items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card/40 hover:bg-muted/50 transition-colors focus:outline-none focus:ring-1 focus:ring-ring"
         >
           <Crop size={20} class="text-muted-foreground" />
@@ -313,7 +247,6 @@
                 selectedSource = lastRegion;
               }
             }}
-            // onmousedown={(e) => e.stopPropagation()}
             class="flex items-center justify-between gap-2 rounded-md border border-border bg-card px-2.5 py-2 text-left hover:bg-muted/50 transition-colors"
           >
             <div class="flex flex-col">
@@ -336,7 +269,6 @@
             type="button"
             onclick={() => (selectedSource = source)}
             ondblclick={confirmSelection}
-            // onmousedown={(e) => e.stopPropagation()}
             class={cn(
               "flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
               selected
@@ -389,7 +321,6 @@
             type="button"
             onclick={() => (selectedSource = source)}
             ondblclick={confirmSelection}
-            // onmousedown={(e) => e.stopPropagation()}
             class={cn(
               "group/tile relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
               "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -464,7 +395,6 @@
     <Button
       onclick={fetchSources}
       disabled={isFetching}
-      // onmousedown={(e: MouseEvent) => e.stopPropagation()}
       variant="ghost"
       size="xs"
       class="gap-1.5"
@@ -476,7 +406,6 @@
     <div class="flex items-center gap-1.5">
       <Button
         onclick={closeWindow}
-        // onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant="ghost"
         size="xs"
       >
@@ -485,7 +414,6 @@
       <Button
         onclick={confirmSelection}
         disabled={!selectedSource}
-        // onmousedown={(e: MouseEvent) => e.stopPropagation()}
         variant="default"
         size="xs"
       >

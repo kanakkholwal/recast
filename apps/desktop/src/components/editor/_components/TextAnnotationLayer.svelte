@@ -7,7 +7,9 @@
     uvToCanvas,
     videoRectPx,
   } from "$lib/annotations/uv";
-  import { FRAME_ANCHORS, snap, type SnapAnchor } from "$lib/annotations/snap";
+  import { snap } from "$lib/annotations/snap";
+  import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
+  import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
   import type {
     Annotation,
     AnnotationAnchor,
@@ -57,8 +59,6 @@
   let drag: TextDrag = $state(null);
   // Below this (CSS px) the gesture is a click (select); above it, a move.
   const CLICK_DRAG_THRESHOLD_PX = 3;
-
-  const IDENTITY_ZOOM = { scale: 1, cx: 0.5, cy: 0.5 };
 
   function rectCssFor(a: { anchor?: AnnotationAnchor }) {
     return a.anchor === "frame"
@@ -130,22 +130,6 @@
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
   });
 
-  /** Apply an alpha to a `#rrggbb` or `rgb()/rgba()` colour → `rgba(...)`. */
-  function colorWithAlpha(color: string, alpha: number): string {
-    const c = color.trim();
-    const hex = /^#?([0-9a-fA-F]{6})$/.exec(c);
-    if (hex) {
-      const v = parseInt(hex[1], 16);
-      return `rgba(${(v >> 16) & 255},${(v >> 8) & 255},${v & 255},${alpha})`;
-    }
-    const rgb = /^rgba?\(([^)]+)\)$/.exec(c);
-    if (rgb) {
-      const p = rgb[1].split(",").map((s) => s.trim());
-      return `rgba(${p[0]},${p[1]},${p[2]},${alpha})`;
-    }
-    return c;
-  }
-
   // `_frame` dependency forces re-derive on rAF ticks so position tracks playback/zoom.
   function styleFor(a: Annotation): string {
     if (a.kind.kind !== "text") return "";
@@ -175,7 +159,7 @@
     // rasterizes to an image and picks up the same glow via draw_image_shadow).
     const g = a.glow;
     const glowFilter = g
-      ? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * rect.w).toFixed(2)}px ${colorWithAlpha(g.color, g.opacity)})`
+      ? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * rect.w).toFixed(2)}px ${withAlpha(g.color, g.opacity)})`
       : "";
     return [
       `left: ${tl.x}px`,
@@ -246,41 +230,6 @@
     }
   }
 
-  // Frame edges + every other annotation's box; mirrors AnnotationOverlay's anchor set.
-  function buildSnapAnchors(excludeId: string | null): SnapAnchor[] {
-    const anchors: SnapAnchor[] = [...FRAME_ANCHORS];
-    for (const a of store.annotations) {
-      if (a.id === excludeId) continue;
-      if (a.hidden) continue;
-      if (a.kind.kind === "arrow") {
-        anchors.push({ axis: "x", value: a.kind.x1 });
-        anchors.push({ axis: "y", value: a.kind.y1 });
-        anchors.push({ axis: "x", value: a.kind.x2 });
-        anchors.push({ axis: "y", value: a.kind.y2 });
-        continue;
-      }
-      const k = a.kind;
-      if (
-        k.kind === "rect" ||
-        k.kind === "ellipse" ||
-        k.kind === "image" ||
-        k.kind === "text"
-      ) {
-        const x = Math.min(k.x, k.x + k.w);
-        const y = Math.min(k.y, k.y + k.h);
-        const w = Math.abs(k.w);
-        const h = Math.abs(k.h);
-        anchors.push({ axis: "x", value: x });
-        anchors.push({ axis: "x", value: x + w / 2 });
-        anchors.push({ axis: "x", value: x + w });
-        anchors.push({ axis: "y", value: y });
-        anchors.push({ axis: "y", value: y + h / 2 });
-        anchors.push({ axis: "y", value: y + h });
-      }
-    }
-    return anchors;
-  }
-
   function handleTextPointerDown(e: PointerEvent, a: Annotation) {
     if (editingId === a.id) return; // let contenteditable take the gesture
     if (a.locked || a.kind.kind !== "text") return;
@@ -338,7 +287,7 @@
 
     // Snap (Alt held bypasses, matching the canvas overlay).
     if (!e.altKey && store.annotationSnapEnabled) {
-      const anchors = buildSnapAnchors(drag.id);
+      const anchors = buildAnnotationSnapAnchors(store.annotations, drag.id);
       const result = snap(nx, ny, anchors, 0.005, true);
       nx = result.x;
       ny = result.y;

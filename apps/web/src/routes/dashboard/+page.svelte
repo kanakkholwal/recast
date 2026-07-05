@@ -9,10 +9,10 @@
 	import { formatBytes, formatCount } from "$lib/dashboard/format";
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 	import { quotaStore, recastsStore, settingsStore, type Recast } from "$lib/dashboard/store.svelte";
-	import { UPLOAD_ACCEPT, uploadRecastFile, type UploadPhase } from "$lib/dashboard/upload";
+	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
+	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import { BarChart3, Cloud, Eye, Film, LayoutDashboard, LoaderCircle, Upload, Video } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly, slide } from "svelte/transition";
@@ -42,88 +42,41 @@
 	let playing = $state<Recast | null>(null);
 
 	// Upload — same flow the library uses, so the home page is a real entry point.
-	let uploading = $state(false);
-	let uploadPhase = $state<UploadPhase>("preparing");
-	let uploadPct = $state(0);
 	let fileInput = $state<HTMLInputElement | null>(null);
-
-	const uploadLabel = $derived(
-		uploadPhase === "uploading"
-			? `Uploading ${uploadPct}%`
-			: uploadPhase === "finalizing"
-				? "Finalizing…"
-				: uploadPhase === "sharing"
-					? "Creating link…"
-					: "Preparing…",
-	);
-
-	async function startUpload(file: File) {
-		if (uploading) return;
-		uploading = true;
-		uploadPhase = "preparing";
-		uploadPct = 0;
-		try {
-			const result = await uploadRecastFile(file, {
-				workspaceId,
-				onPhase: (p) => (uploadPhase = p),
-				onProgress: (pct) => (uploadPct = pct),
-			});
-			await invalidateAll();
-			let copied = false;
-			try {
-				await navigator.clipboard.writeText(result.shareUrl);
-				copied = true;
-			} catch {
-				copied = false;
-			}
-			toast.success(
-				copied
-					? `“${file.name}” uploaded. Share link copied to clipboard.`
-					: `“${file.name}” uploaded and shared.`,
-			);
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't upload that file.");
-		} finally {
-			uploading = false;
-		}
-	}
-
-	function onFilePicked(e: Event) {
-		const input = e.currentTarget as HTMLInputElement;
-		const file = input.files?.[0];
-		input.value = "";
-		if (file) startUpload(file);
-	}
+	const upload = createUploadController({
+		workspaceId: () => workspaceId,
+		onRefresh: invalidateAll,
+	});
 </script>
 
 <svelte:head>
 	<title>Home - Recast Dashboard</title>
 </svelte:head>
 
-<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={onFilePicked} />
+<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={upload.onFilePicked} />
 
 <PageHeader icon={LayoutDashboard} title="Welcome back, {firstName}." subtitle="Here's what's happening across your recasts.">
 	<Button variant="outline" size="sm" href="/dashboard/analytics" class="gap-2">
 		<BarChart3 class="size-3.5" />
 		Analytics
 	</Button>
-	<Button size="sm" class="gap-2" disabled={uploading} onclick={() => fileInput?.click()}>
-		{#if uploading}<LoaderCircle class="size-3.5 animate-spin" />{:else}<Upload class="size-3.5" />{/if}
-		{uploading ? uploadLabel : "Upload"}
+	<Button size="sm" class="gap-2" disabled={upload.uploading} onclick={() => fileInput?.click()}>
+		{#if upload.uploading}<LoaderCircle class="size-3.5 animate-spin" />{:else}<Upload class="size-3.5" />{/if}
+		{upload.uploading ? upload.label : "Upload"}
 	</Button>
 </PageHeader>
 
-{#if uploading}
+{#if upload.uploading}
 	<div class="mt-4" transition:slide={{ duration: 200, easing: cubicOut }}>
 		<div class="flex items-center justify-between text-xs text-muted-foreground">
-			<span class="font-medium text-foreground">{uploadLabel}</span>
-			{#if uploadPhase === "uploading"}<span class="font-mono tabular-nums">{uploadPct}%</span>{/if}
+			<span class="font-medium text-foreground">{upload.label}</span>
+			{#if upload.phase === "uploading"}<span class="font-mono tabular-nums">{upload.pct}%</span>{/if}
 		</div>
 		<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
 			<div
 				class="h-full rounded-full bg-linear-to-r from-primary/70 to-primary transition-[width] duration-300 ease-[cubic-bezier(0.625,0.05,0,1)]"
-				style="width: {uploadPhase === 'uploading' ? uploadPct : 100}%"
-				class:animate-pulse={uploadPhase !== "uploading"}
+				style="width: {upload.phase === 'uploading' ? upload.pct : 100}%"
+				class:animate-pulse={upload.phase !== "uploading"}
 			></div>
 		</div>
 	</div>

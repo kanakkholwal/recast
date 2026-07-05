@@ -7,6 +7,15 @@
  * for annotations, which live in zoomed space). Keep the two separate.
  */
 
+import { framePaddingPixels } from "$lib/editor/frame-padding";
+import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
+
+type Meta = Pick<VideoMetadata, "width" | "height"> | null | undefined;
+
+/** Zoom-scale clamp for the focus region editor. */
+export const MIN_SCALE = 1.05;
+export const MAX_SCALE = 3;
+
 export type HandleName =
 	| "nw"
 	| "n"
@@ -79,6 +88,78 @@ export function hitTestHandle(
 	}
 	if (pt.x >= x && pt.x <= x + w && pt.y >= y && pt.y <= y + h) return "body";
 	return null;
+}
+
+/** Composition (frame + uniform padding) width in source pixels. */
+export function compW(metadata: Meta, paddingPercent: number): number {
+	if (!metadata) return 0;
+	const paddingPx = framePaddingPixels(paddingPercent, metadata);
+	return metadata.width + paddingPx * 2;
+}
+
+/** Canvas device-px rect of the video region inside the padded canvas (mirror of the shader). */
+export function videoRectPx(
+	canvasW: number,
+	canvasH: number,
+	metadata: Meta,
+	paddingPercent: number,
+): Box {
+	const total = compW(metadata, paddingPercent);
+	const sourcePaddingPx = metadata ? framePaddingPixels(paddingPercent, metadata) : 0;
+	const padPx = total > 0 ? (sourcePaddingPx / total) * canvasW : 0;
+	return { x: padPx, y: padPx, w: canvasW - 2 * padPx, h: canvasH - 2 * padPx };
+}
+
+/** Video-region UV → canvas px (no zoom; the region editor works in source space). */
+export function uvToCanvas(ux: number, uy: number, rect: Box): { x: number; y: number } {
+	return { x: rect.x + ux * rect.w, y: rect.y + uy * rect.h };
+}
+
+/** Canvas px → video-region UV (inverse of uvToCanvas). */
+export function canvasToUV(cx: number, cy: number, rect: Box): { x: number; y: number } {
+	if (rect.w <= 0 || rect.h <= 0) return { x: 0, y: 0 };
+	return { x: (cx - rect.x) / rect.w, y: (cy - rect.y) / rect.h };
+}
+
+/**
+ * New zoom-region scale + centre from dragging a resize handle to UV point `uv`.
+ * Rebuilds the focus rect from the dragged edge, keeps it square (uniform zoom)
+ * by taking the larger dimension, clamps scale into `[min, max]`, then re-centres
+ * on the rect midpoint and clamps the centre so the rect stays inside [0,1]².
+ */
+export function resizeFocusRegion(
+	handle: HandleName,
+	startScale: number,
+	startCX: number,
+	startCY: number,
+	uv: { x: number; y: number },
+	bounds: { min: number; max: number },
+): { scale: number; cx: number; cy: number } {
+	const { min, max } = bounds;
+	const halfW0 = 1 / (2 * startScale);
+	const halfH0 = 1 / (2 * startScale);
+	let x0 = startCX - halfW0;
+	let y0 = startCY - halfH0;
+	let x1 = startCX + halfW0;
+	let y1 = startCY + halfH0;
+
+	if (handle === "w" || handle === "nw" || handle === "sw") x0 = uv.x;
+	if (handle === "e" || handle === "ne" || handle === "se") x1 = uv.x;
+	if (handle === "n" || handle === "nw" || handle === "ne") y0 = uv.y;
+	if (handle === "s" || handle === "sw" || handle === "se") y1 = uv.y;
+
+	const rawW = Math.max(1 / max, Math.abs(x1 - x0));
+	const rawH = Math.max(1 / max, Math.abs(y1 - y0));
+	const side = Math.min(1, Math.max(rawW, rawH, 1 / max));
+	const scale = Math.min(max, Math.max(min, 1 / side));
+
+	const midX = (Math.min(x0, x1) + Math.max(x0, x1)) * 0.5;
+	const midY = (Math.min(y0, y1) + Math.max(y0, y1)) * 0.5;
+	const half = side * 0.5;
+	const cx = Math.min(Math.max(midX, half), 1 - half);
+	const cy = Math.min(Math.max(midY, half), 1 - half);
+
+	return { scale, cx, cy };
 }
 
 /** CSS cursor for a hovered handle. */

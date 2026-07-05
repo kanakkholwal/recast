@@ -43,6 +43,20 @@ export function isUploadableVideo(file: File): boolean {
 	return file.type === "video/mp4" || /\.mp4$/i.test(file.name);
 }
 
+/** Header/button/progress label for the current upload phase. */
+export function uploadPhaseLabel(phase: UploadPhase, pct: number): string {
+	switch (phase) {
+		case "uploading":
+			return `Uploading ${pct}%`;
+		case "finalizing":
+			return "Finalizing…";
+		case "sharing":
+			return "Creating link…";
+		default:
+			return "Preparing…";
+	}
+}
+
 // ── error mapping ─────────────────────────────────────────────────────
 
 type Denial = { reason?: string };

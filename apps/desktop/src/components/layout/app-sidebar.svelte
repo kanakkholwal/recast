@@ -15,6 +15,7 @@
   import * as Sidebar from "@recast/ui/sidebar";
   import { useSidebar } from "@recast/ui/sidebar";
   import { cn } from "@recast/ui/utils";
+  import { isActive } from "./app-sidebar.logic";
   import type { ComponentProps } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { crossfade, fade } from "svelte/transition";
@@ -31,10 +32,6 @@
   const open = $derived(sidebar.state === "expanded");
 
   let currentPath = $derived(page.url.pathname);
-  function isActive(path: string) {
-    if (path === "/") return currentPath === "/";
-    return currentPath.startsWith(path);
-  }
 
   const navLinks = [
     { title: "Home", href: "/", icon: LayoutDashboard },
@@ -98,7 +95,7 @@
       <Sidebar.GroupContent>
         <Sidebar.Menu class="gap-0.5">
           {#each navLinks as link (link.href)}
-            {@const active = isActive(link.href)}
+            {@const active = isActive(link.href, currentPath)}
             {@const Icon = link.icon}
             <Sidebar.MenuItem>
               <Sidebar.MenuButton tooltipContent={link.title}>

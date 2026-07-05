@@ -1,0 +1,91 @@
+import Mail from "@lucide/svelte/icons/mail";
+import { GithubBrand, XBrand } from "@recast/ui/brand-icons";
+import type { Component } from "svelte";
+
+// Single source of truth for the site chrome (Navbar + Footer). Both surfaces
+// repeat the same product links and external URLs; keep the URLs here so a
+// changed handle/repo only edits in one place.
+
+type IconComponent = Component<{ class?: string; size?: number | string }>;
+
+export type NavLink = { label: string; href: string; external?: boolean };
+
+export const GITHUB_URL = "https://github.com/kanakkholwal/recast";
+const GITHUB_RELEASES_URL = "https://github.com/kanakkholwal/recast/releases";
+const TWITTER_URL = "https://x.com/kanakkholwal";
+const DISCORD_URL = "https://discord.gg/rBCuqRsb5";
+const CONTACT_EMAIL = "mailto:try-recast@gmail.com";
+
+// Product links shared verbatim between Navbar and Footer.
+const FEATURES: NavLink = { label: "Features", href: "/features" };
+const EXTENSIONS: NavLink = { label: "Extensions", href: "/extensions" };
+const FREE_TOOLS: NavLink = { label: "Free Tools", href: "/tools" };
+const PRICING: NavLink = { label: "Pricing", href: "/pricing" };
+const CHANGELOG: NavLink = { label: "Changelog", href: "/changelog" };
+
+export const footerCols: { title: string; links: NavLink[] }[] = [
+	{
+		title: "Product",
+		links: [
+			FEATURES,
+			EXTENSIONS,
+			FREE_TOOLS,
+			PRICING,
+			{ label: "Download", href: "/download" },
+			{ label: "Join Waitlist", href: "/waitlist" },
+		],
+	},
+	{
+		title: "Resources",
+		links: [
+			{ label: "Documentation", href: "#" },
+			{ label: "GitHub", href: GITHUB_URL, external: true },
+			{ label: "Releases", href: GITHUB_RELEASES_URL, external: true },
+			CHANGELOG,
+		],
+	},
+	{
+		title: "Company",
+		links: [
+			{ label: "Contact", href: CONTACT_EMAIL },
+			{ label: "X / Twitter", href: TWITTER_URL, external: true },
+			{ label: "Discord", href: DISCORD_URL, external: true },
+		],
+	},
+];
+
+export const footerSocials: { icon: IconComponent; href: string; label: string }[] = [
+	{ icon: GithubBrand, href: GITHUB_URL, label: "GitHub" },
+	{ icon: XBrand, href: TWITTER_URL, label: "X / Twitter" },
+	{ icon: Mail, href: CONTACT_EMAIL, label: "Email" },
+];
+
+export const navMenuGroups: {
+	title: string;
+	variant: "default" | "muted";
+	links: NavLink[];
+}[] = [
+	{
+		title: "Product",
+		variant: "default",
+		links: [
+			FEATURES,
+			EXTENSIONS,
+			FREE_TOOLS,
+			PRICING,
+			{ label: "Cloud Waitlist", href: "/waitlist" },
+		],
+	},
+	{
+		title: "Resources",
+		variant: "muted",
+		links: [
+			CHANGELOG,
+			// GitHub stays in the menu too — the icon button is desktop-only
+			// (md:flex), and mobile users discover external links through
+			// the open menu.
+			{ label: "GitHub", href: GITHUB_URL },
+			{ label: "Contact", href: CONTACT_EMAIL },
+		],
+	},
+];

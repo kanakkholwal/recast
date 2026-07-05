@@ -22,17 +22,13 @@
   import { toast } from "@recast/ui/sonner";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
+  import { cloudPhaseLabel, uploadPct } from "./corner-notifications.logic";
 
   const pct = $derived(Math.round(updater.progress * 100));
 
   function openChangelog() {
     whatsNew.dismissCard();
     goto("/whats-new");
-  }
-
-  function uploadPct(bytesSent: number, totalBytes: number) {
-    if (!totalBytes) return 0;
-    return Math.min(100, Math.round((bytesSent / totalBytes) * 100));
   }
 
   async function copyLink(link: string) {
@@ -63,21 +59,6 @@
     }
   }
 
-  // Only the cloud-side phases surface here; export has its own progress UI.
-  function cloudPhaseLabel(phase: string) {
-    switch (phase) {
-      case "preparing":
-        return "Preparing…";
-      case "uploading":
-        return "Uploading to Recast Cloud";
-      case "finalizing":
-        return "Finalizing…";
-      case "sharing":
-        return "Creating share link…";
-      default:
-        return "Sharing…";
-    }
-  }
 </script>
 
 <!-- Non-blocking notification stack, bottom-right; never traps focus. -->

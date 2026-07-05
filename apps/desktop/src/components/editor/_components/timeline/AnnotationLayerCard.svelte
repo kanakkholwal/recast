@@ -9,11 +9,12 @@
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
   import {
-    formatTimeByMode,
-    frameStep,
-    type TimeMode,
-  } from "./timeline-helpers";
-  import { snapTime, type SnapResult, type SnapTarget } from "./timeline-snap";
+    computeCardMove,
+    computeCardNudge,
+    computeCardResize,
+  } from "./timeline-card-drag.logic";
+  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+  import { type SnapResult, type SnapTarget } from "./timeline-snap";
 
   // Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
   // (no sparkline) so the two lanes are distinguishable at a glance.
@@ -94,59 +95,31 @@
 
   function onPointerMove(event: PointerEvent) {
     if (!drag) return;
-    // Output-space pointer delta mapped back to original time — see ZoomLayerCard.
-    const outDelta = (event.clientX - drag.startClientX) / pixelsPerSecond;
-    const movedFrom = (orig: number) => tOf(xOf(orig) + outDelta);
-    const tolerance = SNAP_TOLERANCE_PX / pixelsPerSecond;
-    let snapForGuide: SnapTarget | null = null;
-
-    if (drag.mode === "move") {
-      const span = drag.originalEnd - drag.originalStart;
-      const proposed = movedFrom(drag.originalStart);
-      const startSnap = snapTime(proposed, snapTargets, tolerance, fps);
-      const endSnap = snapTime(proposed + span, snapTargets, tolerance, fps);
-      const startDist = startSnap.target
-        ? Math.abs(startSnap.time - proposed)
-        : Infinity;
-      const endDist = endSnap.target
-        ? Math.abs(endSnap.time - (proposed + span))
-        : Infinity;
-
-      let nextStart: number;
-      if (startSnap.target && startDist <= endDist) {
-        nextStart = startSnap.time;
-        snapForGuide = startSnap.target;
-      } else if (endSnap.target) {
-        nextStart = endSnap.time - span;
-        snapForGuide = endSnap.target;
-      } else {
-        nextStart = startSnap.time;
-      }
-
-      nextStart = Math.max(0, Math.min(duration - span, nextStart));
-      const nextEnd = nextStart + span;
-      store.updateAnnotation(annotation.id, { start: nextStart, end: nextEnd });
-    } else if (drag.mode === "resize-start") {
-      const proposed = movedFrom(drag.originalStart);
-      const snap = snapTime(proposed, snapTargets, tolerance, fps);
-      snapForGuide = snap.target;
-      const next = Math.max(
-        0,
-        Math.min(drag.originalEnd - MIN_DURATION, snap.time),
-      );
-      store.updateAnnotation(annotation.id, { start: next });
-    } else {
-      const proposed = movedFrom(drag.originalEnd);
-      const snap = snapTime(proposed, snapTargets, tolerance, fps);
-      snapForGuide = snap.target;
-      const next = Math.min(
-        duration,
-        Math.max(drag.originalStart + MIN_DURATION, snap.time),
-      );
-      store.updateAnnotation(annotation.id, { end: next });
-    }
-
-    onSnapChange(snapForGuide);
+    const geom = {
+      origin: { start: drag.originalStart, end: drag.originalEnd },
+      clientX: event.clientX,
+      startClientX: drag.startClientX,
+      pps: pixelsPerSecond,
+      xOf,
+      tOf,
+      snapTargets,
+      tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
+      fps,
+      duration,
+    };
+    const result =
+      drag.mode === "move"
+        ? computeCardMove(geom)
+        : computeCardResize({
+            ...geom,
+            edge: drag.mode === "resize-start" ? "start" : "end",
+            minDuration: MIN_DURATION,
+          });
+    store.updateAnnotation(annotation.id, {
+      start: result.start,
+      end: result.end,
+    });
+    onSnapChange(result.guide);
   }
 
   function onPointerUp(_event: PointerEvent) {
@@ -180,26 +153,20 @@
     event.preventDefault();
     event.stopPropagation();
 
-    const direction = event.key === "ArrowLeft" ? -1 : 1;
-    const delta = direction * (event.shiftKey ? 1 : frameStep(fps));
-
     store.pushUndoStateCoalesced(`nudge-annotation-${annotation.id}`, 600);
 
-    if (event.altKey) {
-      const next = Math.min(
-        duration,
-        Math.max(annotation.start + MIN_DURATION, annotation.end + delta),
-      );
-      store.updateAnnotation(annotation.id, { end: next });
-      return;
-    }
-
-    const span = annotation.end - annotation.start;
-    let nextStart = annotation.start + delta;
-    nextStart = Math.max(0, Math.min(duration - span, nextStart));
+    const next = computeCardNudge({
+      origin: { start: annotation.start, end: annotation.end },
+      direction: event.key === "ArrowLeft" ? -1 : 1,
+      shift: event.shiftKey,
+      alt: event.altKey,
+      fps,
+      duration,
+      minDuration: MIN_DURATION,
+    });
     store.updateAnnotation(annotation.id, {
-      start: nextStart,
-      end: nextStart + span,
+      start: next.start,
+      end: next.end,
     });
   }
 

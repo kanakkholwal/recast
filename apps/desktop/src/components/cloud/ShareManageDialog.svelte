@@ -10,6 +10,11 @@
 	 */
 	import { recastCloudListShares, type CloudUploadRecord } from "$lib/ipc";
 	import { cloudShare } from "$lib/stores/cloudShare.svelte";
+	import {
+		buildShareUpdate,
+		toVisibility,
+		type Visibility,
+	} from "./share-manage-dialog.logic";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Input } from "@recast/ui/input";
@@ -27,8 +32,6 @@
 		Trash2,
 		Users,
 	} from "@lucide/svelte";
-
-	type Visibility = "public" | "workspace" | "private";
 
 	let {
 		open = false,
@@ -61,12 +64,6 @@
 	let removePassword = $state(false);
 	let expiryDate = $state(""); // yyyy-mm-dd
 	let initialExpiry = $state("");
-
-	function toVisibility(v: string): Visibility {
-		if (v === "public") return "public";
-		if (v === "workspace" || v === "team") return "workspace";
-		return "private";
-	}
 
 	const VIS: { id: Visibility; label: string; icon: typeof Globe }[] = [
 		{ id: "public", label: "Anyone with the link", icon: Globe },
@@ -123,18 +120,14 @@
 
 	async function save() {
 		saving = true;
-		const opts: {
-			visibility?: Visibility;
-			password?: string;
-			expiresAt?: string;
-		} = {};
-		if (visibility !== initialVisibility) opts.visibility = visibility;
-		if (removePassword) opts.password = "";
-		else if (password.trim()) opts.password = password.trim();
-		if (expiryDate !== initialExpiry) {
-			// End-of-day in local time, ISO. Empty clears.
-			opts.expiresAt = expiryDate ? new Date(`${expiryDate}T23:59:59`).toISOString() : "";
-		}
+		const opts = buildShareUpdate({
+			visibility,
+			initialVisibility,
+			removePassword,
+			password,
+			expiryDate,
+			initialExpiry,
+		});
 		if (Object.keys(opts).length === 0) {
 			saving = false;
 			close();

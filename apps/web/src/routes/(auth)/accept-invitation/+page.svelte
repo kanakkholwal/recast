@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import Logo from "$lib/logo.svelte";
+	import { isInviteBlocked } from "./invitation.logic";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import {
@@ -25,17 +26,7 @@
 	/** Either action in flight — prevents accept + reject racing each other. */
 	const busy = $derived(accepting || rejecting);
 
-	function sessionMismatch() {
-		// Only meaningful once we have a viewer. The unauthed branch lives in
-		// its own template block.
-		return data.viewer && !data.viewer.emailMatches;
-	}
-
-	const blocked = $derived(
-		sessionMismatch() ||
-			data.invite.expired ||
-			data.invite.status !== "pending",
-	);
+	const blocked = $derived(isInviteBlocked(data.invite, data.viewer));
 
 	async function accept() {
 		if (busy) return;

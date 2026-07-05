@@ -5,6 +5,7 @@
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import InspectorHint from "./InspectorHint.svelte";
 	import { SliderControl } from "@recast/ui/slider-control";
+	import { getFileLabel } from "./watermark-panel.logic";
 
 	interface Props {
 		store: EditorStore;
@@ -27,11 +28,6 @@
 			store.pushUndoState();
 		}
 		store.updateWatermarkSettings(updates);
-	}
-
-	function getFileLabel(path: string) {
-		const segments = path.split(/[/\\]/);
-		return segments[segments.length - 1] ?? "Selected image";
 	}
 
 	async function handlePickWatermark() {

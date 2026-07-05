@@ -3,6 +3,8 @@
   import { type TimelineCut } from "$lib/timeline/cuts";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
   import { X } from "@lucide/svelte";
+  import { buildWaveformPath } from "./timeline-helpers";
+  import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
 
   // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
 
@@ -98,31 +100,23 @@
 
     if (!drag.id) return;
     const delta = t - drag.anchorTime;
-    if (drag.mode === "move") {
-      let s = drag.originStart + delta;
-      let en = drag.originEnd + delta;
-      if (s < 0) {
-        en -= s;
-        s = 0;
-      }
-      if (en > duration) {
-        s -= en - duration;
-        en = duration;
-      }
-      store.updateCut(drag.id, Math.max(0, s), en);
-    } else {
-      let s = drag.originStart;
-      let en = drag.originEnd;
-      if (drag.mode === "resize-l") {
-        s = Math.min(Math.max(0, drag.originStart + delta), en - MIN_CUT);
-      } else {
-        en = Math.max(
-          Math.min(duration, drag.originEnd + delta),
-          s + MIN_CUT,
-        );
-      }
-      store.updateCut(drag.id, s, en);
-    }
+    const next =
+      drag.mode === "move"
+        ? clampCutMove({
+            originStart: drag.originStart,
+            originEnd: drag.originEnd,
+            delta,
+            duration,
+          })
+        : clampCutResize({
+            edge: drag.mode === "resize-l" ? "l" : "r",
+            originStart: drag.originStart,
+            originEnd: drag.originEnd,
+            delta,
+            duration,
+            minCut: MIN_CUT,
+          });
+    store.updateCut(drag.id, next.start, next.end);
   }
 
   function onUp(e: PointerEvent) {
@@ -138,22 +132,17 @@
     store.removeCut(id);
   }
 
-  // Peak envelope behind the bands. Built in output-pixel space (each bucket at
-  // `xOf(bucketTime)`) so buckets inside an applied cut collapse onto the seam.
-  const waveformPath = $derived.by(() => {
-    const w = store.waveform;
-    const n = w.length;
-    if (n < 2 || duration <= 0) return "";
-    const xAt = (i: number) => xOf((i / n) * duration);
-    let d = `M ${xAt(0).toFixed(2)} 50`;
-    for (let i = 0; i < n; i++) {
-      d += ` L ${xAt(i).toFixed(2)} ${(50 - w[i] * 46).toFixed(2)}`;
-    }
-    for (let i = n - 1; i >= 0; i--) {
-      d += ` L ${xAt(i).toFixed(2)} ${(50 + w[i] * 46).toFixed(2)}`;
-    }
-    return d + " Z";
-  });
+  // Peak envelope behind the bands, spanning the whole axis (buckets inside an
+  // applied cut collapse onto the seam via xOf).
+  const waveformPath = $derived(
+    buildWaveformPath({
+      waveform: store.waveform,
+      duration,
+      xOf,
+      height: 100,
+      amp: 46,
+    }),
+  );
 </script>
 
 <div

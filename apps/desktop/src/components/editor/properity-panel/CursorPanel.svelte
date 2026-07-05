@@ -24,6 +24,7 @@
   import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
   import InspectorHint from "../InspectorHint.svelte";
   import PanelSection from "./PanelSection.svelte";
+  import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
   const highlightColors = [
     "#3b82f6",
     "#ef4444",
@@ -60,15 +61,6 @@
   ) {
     if (trackUndo) store.pushUndoState();
     store.updateCursorSettings(updates);
-  }
-
-  // Cursor SVGs may come from untrusted extension packs. Render via a data-URL
-  // <img>, not {@html}, so SVG loads in secure static mode (no script execution).
-  function svgSwatchUrl(svg: string): string {
-    return (
-      "data:image/svg+xml;utf8," +
-      encodeURIComponent(svg.trim().replace(/\n\s*/g, " "))
-    );
   }
 </script>
 
@@ -373,7 +365,7 @@
       collapsible
     >
       {#snippet action()}
-        {#if store.cursorSettings.clickBounce !== 0 || store.cursorSettings.sway !== 0 || store.cursorSettings.motionBlur !== 0 || store.cursorSettings.bounceSpeedMs !== 220}
+        {#if isCursorAnimTouched(store.cursorSettings)}
           <Button
             variant="ghost"
             size="xs"

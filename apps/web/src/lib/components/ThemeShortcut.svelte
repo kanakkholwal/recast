@@ -14,24 +14,15 @@
 	 * a low-key toast so the change feels intentional rather than a
 	 * "did the page just flicker?" moment.
 	 */
+	import { isEditableTarget } from "$lib/dom/is-editable";
 	import { toast } from "@recast/ui/sonner";
 	import { mode, toggleMode } from "@recast/ui/theme";
 	import { onMount } from "svelte";
-
-	function isEditable(target: EventTarget | null): boolean {
-		if (!(target instanceof HTMLElement)) return false;
-		if (target.isContentEditable) return true;
-		const tag = target.tagName;
-		return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-	}
+	import { isThemeToggleChord } from "./ThemeShortcut.logic";
 
 	function handleKeydown(e: KeyboardEvent) {
-		// `key` lowercases to "l" regardless of Shift, so we don't need to
-		// compare against "L". Match either Cmd (mac) or Ctrl (win/linux).
-		if (e.key?.toLowerCase() !== "l") return;
-		if (!e.shiftKey) return;
-		if (!(e.metaKey || e.ctrlKey)) return;
-		if (isEditable(e.target)) return;
+		if (!isThemeToggleChord(e)) return;
+		if (isEditableTarget(e.target)) return;
 
 		e.preventDefault();
 		toggleMode();

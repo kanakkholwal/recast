@@ -4,6 +4,11 @@
     commandPalette,
     type PaletteCommand,
   } from "$lib/stores/command-palette.svelte";
+  import {
+    groupCommands,
+    highlight,
+    rankCommands,
+  } from "./command-palette-host.logic";
   import { CornerDownLeft, Search } from "@lucide/svelte";
   import { Kbd, KbdGroup } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
@@ -32,39 +37,11 @@
     queueMicrotask(() => command.action());
   }
 
-  // Score-based filter: title > description > keywords. Empty query = all.
-  function matchScore(cmd: PaletteCommand, q: string): number {
-    if (!q) return 1;
-    const needle = q.toLowerCase();
-    const t = cmd.title.toLowerCase();
-    if (t.startsWith(needle)) return 100;
-    if (t.includes(needle)) return 80;
-    if ((cmd.description ?? "").toLowerCase().includes(needle)) return 60;
-    if ((cmd.keywords ?? []).some((k) => k.toLowerCase().includes(needle)))
-      return 40;
-    if (cmd.category.toLowerCase().includes(needle)) return 20;
-    return 0;
-  }
+  const filtered = $derived(rankCommands(commandPalette.commands, query));
 
-  const filtered = $derived(
-    commandPalette.commands
-      .map((c) => ({ cmd: c, score: matchScore(c, query) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .map((x) => x.cmd),
+  const grouped = $derived.by<[string, PaletteCommand[]][]>(() =>
+    groupCommands(filtered, query),
   );
-
-  // When query is empty, group by category. Otherwise show a flat list ranked
-  // by relevance — matches user expectation of a search results view.
-  const grouped = $derived.by<[string, PaletteCommand[]][]>(() => {
-    if (query.trim()) return [["Results", filtered]];
-    const map = new Map<string, PaletteCommand[]>();
-    for (const cmd of filtered) {
-      if (!map.has(cmd.category)) map.set(cmd.category, []);
-      map.get(cmd.category)!.push(cmd);
-    }
-    return Array.from(map.entries());
-  });
 
   // Flat order used for keyboard navigation; mirrors render order so the
   // selected index always points at a real button.
@@ -123,19 +100,6 @@
       return () => window.removeEventListener("keydown", handleKeydown);
     }
   });
-
-  function highlight(text: string, search: string) {
-    if (!search.trim()) return [{ text, hl: false }];
-    const escaped = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`(${escaped})`, "gi");
-    return text
-      .split(regex)
-      .filter((p) => p.length > 0)
-      .map((part) => ({
-        text: part,
-        hl: part.toLowerCase() === search.toLowerCase(),
-      }));
-  }
 
   function indexOfCmd(cmd: PaletteCommand): number {
     return flatItems.indexOf(cmd);

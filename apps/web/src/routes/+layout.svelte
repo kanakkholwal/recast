@@ -16,6 +16,11 @@
 
   import { Toaster } from "@recast/ui/sonner";
   import { ModeWatcher } from "@recast/ui/theme";
+  import {
+    buildSiteJsonLd,
+    isChromeless as isChromelessPath,
+    isIndexable,
+  } from "./layout.logic";
   import "../app.css";
 // Player theme — imported once at the root so any /share or dashboard
   // route that mounts <RecastPlayer> picks up the branded CSS variables.
@@ -23,66 +28,9 @@
 
   let { children } = $props();
 
-  // The dashboard, auth, and waitlist screens ship their own focused
-  // shells — keep the marketing chrome off them.
-  const chromelessPaths = new Set([
-    "/login",
-    "/signup",
-    "/forgot-password",
-    "/reset-password",
-    "/waitlist",
-    "/device",
-  ]);
-  const isChromeless = $derived(
-    page.url.pathname.startsWith("/dashboard") ||
-      page.url.pathname.startsWith("/admin") ||
-      page.url.pathname.startsWith("/onboarding") ||
-      page.url.pathname.startsWith("/share/") ||
-      page.url.pathname === "/accept-invitation" ||
-      page.url.pathname === "/verify-email" ||
-      chromelessPaths.has(page.url.pathname),
-  );
-
-  // Only the public marketing/tool pages should be indexed; everything else
-  // (dashboard, admin, auth, onboarding, shares) is marked noindex.
-  const PUBLIC_PREFIXES = [
-    "/features",
-    "/extensions",
-    "/pricing",
-    "/download",
-    "/changelog",
-    "/privacy-policy",
-    "/terms-of-service",
-    "/tools",
-  ];
-  const indexable = $derived(
-    page.url.pathname === "/" ||
-      PUBLIC_PREFIXES.some(
-        (p) => page.url.pathname === p || page.url.pathname.startsWith(`${p}/`),
-      ),
-  );
-  // Site-wide brand structured data (helps search engines understand the brand
-  // and enables sitelinks). Emitted only on indexable pages.
-  const siteJsonLd = $derived(
-    JSON.stringify([
-      {
-        "@context": "https://schema.org",
-        "@type": "Organization",
-        name: "Recast",
-        url: page.url.origin,
-        sameAs: [
-          "https://github.com/kanakkholwal/recast",
-          "https://x.com/kanakkholwal",
-        ],
-      },
-      {
-        "@context": "https://schema.org",
-        "@type": "WebSite",
-        name: "Recast",
-        url: page.url.origin,
-      },
-    ]),
-  );
+  const isChromeless = $derived(isChromelessPath(page.url.pathname));
+  const indexable = $derived(isIndexable(page.url.pathname));
+  const siteJsonLd = $derived(buildSiteJsonLd(page.url.origin));
 
   // Returning visitor who already accepted → re-enable replay + persistent id
   // before any events fire this session.

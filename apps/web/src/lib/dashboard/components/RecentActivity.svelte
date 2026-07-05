@@ -1,7 +1,8 @@
 <script lang="ts">
 	import type { Activity } from "$lib/dashboard/activity";
 	import { formatRelative } from "$lib/dashboard/format";
-	import { Activity as ActivityIcon, CheckCircle2, Eye, Share2 } from "@lucide/svelte";
+	import { kindMeta } from "./RecentActivity.logic";
+	import { Activity as ActivityIcon } from "@lucide/svelte";
 
 	let {
 		activity,
@@ -18,16 +19,6 @@
 	} = $props();
 
 	const items = $derived(activity.slice(0, limit));
-
-	const kindMeta: Record<
-		Activity["kind"],
-		{ icon: typeof Eye; verb: string; tone: string }
-	> = {
-		viewed: { icon: Eye, verb: "watched", tone: "text-muted-foreground" },
-		completed: { icon: CheckCircle2, verb: "finished", tone: "text-success" },
-		shared: { icon: Share2, verb: "shared", tone: "text-primary" },
-		downloaded: { icon: ActivityIcon, verb: "downloaded", tone: "text-muted-foreground" },
-	};
 </script>
 
 <section class="glass-card flex h-full flex-col rounded-xl">
