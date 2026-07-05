@@ -185,6 +185,26 @@ pub fn set_close_to_tray(
     Ok(())
 }
 
+#[tauri::command]
+pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> Result<bool, String> {
+    Ok(state.config.read().hide_panel_from_capture)
+}
+
+#[tauri::command]
+pub fn set_hide_panel_from_capture(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> Result<(), String> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.hide_panel_from_capture = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
 /// Mirror the frontend telemetry-consent state into `AppConfig` so the native
 /// crash reporter (`telemetry.rs`) can read the `errors` flag and attribute
 /// crashes to the same anonymous `install_id` as JS events. Called from
@@ -568,42 +588,34 @@ fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<S
 /// a black box rather than excluded entirely) — still better than the
 /// preview leaking into the recording.
 ///
-/// No-op on non-Windows platforms.
+/// Delegates to Tauri/tao's `set_content_protected`, whose per-platform
+/// behavior is:
+///   - **Windows** — `SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)`,
+///     which removes the window entirely from every capture surface (DXGI
+///     Desktop Duplication included — the API Recast records with).
+///   - **macOS** — `NSWindow.sharingType = .none`. Recast captures the screen
+///     through FFmpeg AVFoundation, a compositor-level source that honors
+///     `sharingType`, so the window is genuinely absent from the recording.
+///     (The macOS-15 ScreenCaptureKit exception that ignores this flag does
+///     not apply to an AVFoundation capture.)
+///   - **Linux** — compile-time no-op: tao gates the implementation to
+///     macOS+Windows (`window.rs`), because neither X11 root `GetImage` nor
+///     the PipeWire portal exposes a per-window exclusion primitive. The call
+///     is harmless and would start working if tao ever adds a Wayland path.
+///
+/// Async on purpose: sync Tauri commands run on the macOS main thread, and
+/// `set_content_protected` round-trips to the event loop — doing that from the
+/// main thread would deadlock. An async command runs off it.
 #[tauri::command]
-pub fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), String> {
+pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), String> {
     let window = app
         .get_webview_window(&label)
         .ok_or_else(|| format!("window '{label}' not found"))?;
-    #[cfg(windows)]
-    {
-        use windows::Win32::Foundation::HWND;
-        use windows::Win32::UI::WindowsAndMessaging::{
-            SetWindowDisplayAffinity, WDA_EXCLUDEFROMCAPTURE,
-        };
-        let hwnd_raw = window
-            .hwnd()
-            .map_err(|e| format!("hwnd lookup failed for '{label}': {e}"))?;
-        // Tauri's `hwnd()` returns a `windows::Win32::Foundation::HWND`
-        // already, but the inner pointer type may differ between Tauri's
-        // pinned `windows` version and ours. Reconstruct from the raw
-        // pointer to be version-agnostic.
-        let hwnd = HWND(hwnd_raw.0 as *mut std::ffi::c_void);
-        unsafe {
-            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE)
-                .map_err(|e| format!("SetWindowDisplayAffinity failed for '{label}': {e}"))?;
-        }
-        log::info!("excluded window '{label}' from screen capture");
-        Ok(())
-    }
-    #[cfg(not(windows))]
-    {
-        // Other platforms have their own per-OS exclusion APIs (macOS:
-        // CGSWindowSetSharingState; Linux: no portable equivalent). Phase 1
-        // ships Windows-only since the recording pipeline is Windows-only
-        // today; revisit if the platform matrix expands.
-        let _ = window;
-        Ok(())
-    }
+    window
+        .set_content_protected(true)
+        .map_err(|e| format!("content protection failed for '{label}': {e}"))?;
+    log::info!("excluded window '{label}' from screen capture");
+    Ok(())
 }
 
 /// Lock a window's resize to a fixed aspect ratio and cap its width at a

@@ -133,6 +133,12 @@ pub struct AppConfig {
     /// who don't want background tray presence can flip this off in Settings.
     #[serde(default = "default_close_to_tray")]
     pub close_to_tray: bool,
+    /// When true, the floating recording panel is excluded from screen capture
+    /// (Windows `WDA_EXCLUDEFROMCAPTURE`, macOS `NSWindow.sharingType = .none`)
+    /// so Recast's own controls don't appear in the recorded video. Default on.
+    /// No effect on Linux, which has no per-window exclusion API.
+    #[serde(default = "default_hide_panel_from_capture")]
+    pub hide_panel_from_capture: bool,
     /// Telemetry consent, mirrored from the frontend `consent.svelte.ts` store
     /// so the native crash reporter (`telemetry.rs`) can read it without IPC.
     ///
@@ -165,6 +171,10 @@ fn default_close_to_tray() -> bool {
     true
 }
 
+fn default_hide_panel_from_capture() -> bool {
+    true
+}
+
 fn default_telemetry_errors() -> bool {
     true
 }
@@ -175,6 +185,7 @@ impl Default for AppConfig {
             output_dir: None,
             last_source: None,
             close_to_tray: true,
+            hide_panel_from_capture: true,
             telemetry_product: false,
             telemetry_errors: true,
             install_id: None,

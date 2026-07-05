@@ -173,8 +173,10 @@ export interface CaptionExportPayload {
 }
 
 /** Map a transcript onto the OUTPUT timeline (trim + cuts + per-segment speed)
- *  so sidecar timings line up with the exported video, not the raw recording. */
-function toOutputTimeTranscript(store: EditorStore, src: Transcript): Transcript {
+ *  so sidecar timings line up with the exported video, not the raw recording.
+ *  Exported so ad-hoc sidecar exports (e.g. the Captions panel's SRT/VTT
+ *  buttons) apply the same warp the export dialog and Cloud track do. */
+export function toOutputTimeTranscript(store: EditorStore, src: Transcript): Transcript {
 	const map = store.timeMap;
 	const at = (t: number) => originalToOutput(map, t);
 	const segments = src.segments

@@ -370,6 +370,8 @@ pub fn run() {
             commands::open_log_dir,
             commands::get_close_to_tray,
             commands::set_close_to_tray,
+            commands::get_hide_panel_from_capture,
+            commands::set_hide_panel_from_capture,
             commands::set_telemetry_consent,
             commands::gdrive_connect,
             commands::gdrive_status,

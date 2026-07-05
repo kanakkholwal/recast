@@ -32,7 +32,7 @@
 				secondary:
 					"border-secondary bg-secondary text-secondary-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
 				outline:
-					"border-accent bg-accent shadow-craft-sm hover:bg-accent/10 hover:text-accent-foreground dark:bg-input/30 dark:hover:bg-input/50",
+					"border-border text-foreground",
 				ghost:
 					"border-transparent hover:bg-muted/40 hover:text-accent-foreground dark:hover:bg-accent/50",
 				link: "text-primary underline-offset-4 hover:underline hover:scale-100",
@@ -52,9 +52,9 @@
 				raw: "border-0 p-0 h-auto w-auto hover:scale-100 active:scale-100",
 			},
 			size: {
-				default: "h-9 rounded-xl px-5 py-2.5 text-sm",
-				lg: "h-11 rounded-2xl px-8 text-base font-semibold",
-				sm: "h-8 rounded-lg px-3 text-xs",
+				default: "h-9 rounded-xl px-5 py-2.5 text-sm font-medium gap-2 [&_svg:not([class*='size-'])]:size-4",
+				lg: "h-11 rounded-2xl px-8 text-base font-semibold gap-2 [&_svg:not([class*='size-'])]:size-5",
+				sm: "h-8 rounded-lg px-3 text-xs gap-1.5 [&_svg:not([class*='size-'])]:size-3",
 				xs: "h-6 rounded-md px-2 text-[11px] gap-1.5 [&_svg:not([class*='size-'])]:size-3",
 				icon: "size-9 rounded-xl",
 				"icon-sm": "size-8 rounded-lg",

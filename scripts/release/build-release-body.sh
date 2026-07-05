@@ -35,6 +35,21 @@ PREV_TAG="${PREV_TAG:-}"
 body_file="${1:-$(mktemp)}"
 version="${TAG#v}"
 
+# 0. Product intro — a release page is often reached from a search result or a
+# direct link, not the in-app updater, so lead with what Recast is and which
+# platforms are stable vs. beta before the download list.
+{
+  echo "**Recast** is an offline-first screen recorder and editor. Record your"
+  echo "screen, then polish it with zoom, cursor smoothing, captions, and"
+  echo "annotations before exporting. Recording, editing, and export run fully"
+  echo "on your machine; nothing is uploaded unless you choose to share it."
+  echo
+  echo "> **Platform status:** Windows is stable. macOS (Apple Silicon & Intel)"
+  echo "> and Linux are in **beta**; read the platform notes below before you"
+  echo "> install."
+  echo
+} > "$body_file"
+
 # 1. What's new — curated CHANGELOG section, or fall back to GH auto-notes.
 found="false"
 if node scripts/extract-changelog.mjs "$version" --out changelog-section.md > /dev/null 2>&1; then
@@ -44,10 +59,9 @@ if node scripts/extract-changelog.mjs "$version" --out changelog-section.md > /d
     echo
     cat changelog-section.md
     echo
-  } > "$body_file"
+  } >> "$body_file"
 else
   echo "::warning::No CHANGELOG.md section for ${version}; falling back to auto-generated notes."
-  : > "$body_file"
 fi
 
 # 2. Downloads — point users at the right asset for their platform.
@@ -60,8 +74,8 @@ fi
   echo "| Windows 10/11 (x64) — Store package | \`recast_${version}_x64.msix\` |"
   echo "| macOS (Apple Silicon) — beta | \`recast_${version}_aarch64.dmg\` · or \`brew install --cask kanakkholwal/recast/recast\` |"
   echo "| macOS (Intel) — beta | \`recast_${version}_x64.dmg\` · or \`brew install --cask kanakkholwal/recast/recast\` |"
-  echo "| Linux (x64) — universal | \`recast_${version}_amd64.AppImage\` |"
-  echo "| Linux (x64) — Debian/Ubuntu | \`recast_${version}_amd64.deb\` |"
+  echo "| Linux (x64) — universal, beta | \`recast_${version}_amd64.AppImage\` |"
+  echo "| Linux (x64) — Debian/Ubuntu, beta | \`recast_${version}_amd64.deb\` |"
   echo
   echo "All assets ship with [GitHub artifact attestations](https://docs.github.com/actions/security-guides/using-artifact-attestations-to-establish-provenance-for-builds) for build provenance."
   echo
@@ -110,7 +124,7 @@ fi
   echo
   echo "After that, first launch will prompt for **Screen Recording**, **Microphone**, and **Camera** permission in System Settings → Privacy & Security. Grant the ones you intend to record from and restart the app."
   echo
-  echo "Once we ship a notarized build (tracked under [Phase 7 of the cross-platform plan](https://github.com/${REPO}/blob/main/apps/desktop/docs/cross-platform-support-plan.md#phase-7--packaging-signing--distribution-release-path-already-wired)) this step will go away."
+  echo "Once we ship a notarized build (tracked under [Packaging and signing in the cross-platform plan](https://github.com/${REPO}/blob/main/apps/desktop/docs/cross-platform-support-plan.md#packaging-and-signing)) this step will go away."
   echo
 } >> "$body_file"
 
@@ -119,7 +133,7 @@ fi
   echo "## System requirements"
   echo
   echo "- **Windows**: Windows 10 1809+ or Windows 11, x64. WebView2 Runtime (bundled by the installer)."
-  echo "- **macOS**: macOS 11 Big Sur or later. Universal screen recording, microphone, and accessibility permissions are required at first launch."
+  echo "- **macOS**: macOS 13 Ventura or later, Apple Silicon or Intel. Screen Recording, Microphone, and Camera permissions are requested at first launch (grant the ones you record from)."
   echo "- **Linux**: glibc 2.35+ (Ubuntu 22.04 / Fedora 36 / Debian 12 or newer). PipeWire 0.3+ recommended for system audio capture."
   echo
 } >> "$body_file"
