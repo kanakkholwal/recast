@@ -984,6 +984,20 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
       y: window.screen.availHeight - panelHeight - 40,
     });
 
+    // Keep Recast's own controls out of the recorded video. Gated on the
+    // user setting (default on); exclusion must run on `tauri://created`, once
+    // the native window handle exists. No-op on Linux (no OS support).
+    panelWin.once("tauri://created", async () => {
+      try {
+        if (await getHidePanelFromCapture()) {
+          await excludeWindowFromCapture("recording-panel");
+        }
+      } catch (err) {
+        // Non-fatal: the panel just won't be hidden from the capture.
+        console.warn("recording panel capture-exclusion failed:", err);
+      }
+    });
+
     panelWin.once("tauri://error", (e) => console.error(e));
   }
 
@@ -1044,9 +1058,20 @@ export async function openCameraPreviewWindow() {
 // These wrappers are thin — web-safe callers guard with `isTauriApp()` themselves.
 
 /** Exclude a window (by Tauri label) from screen capture (Windows
- *  `SetWindowDisplayAffinity`). No-op on platforms without an equivalent. */
+ *  `SetWindowDisplayAffinity`, macOS `NSWindow.sharingType`). No-op on Linux,
+ *  which has no per-window exclusion API. */
 export function excludeWindowFromCapture(label: string): Promise<void> {
 	return invoke<void>("exclude_window_from_capture", { label });
+}
+
+/** Whether the floating recording panel is hidden from screen recordings.
+ *  Backed by `AppConfig.hide_panel_from_capture` (default on). */
+export function getHidePanelFromCapture(): Promise<boolean> {
+	return invoke<boolean>("get_hide_panel_from_capture");
+}
+
+export function setHidePanelFromCapture(enabled: boolean): Promise<void> {
+	return invoke<void>("set_hide_panel_from_capture", { enabled });
 }
 
 /** Refresh the system tray menu/icon. `isRecording` overrides the recording

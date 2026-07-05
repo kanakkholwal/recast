@@ -22,6 +22,7 @@
     type CaptionAnimation,
   } from "$lib/captions/animation";
   import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
+  import { toOutputTimeTranscript } from "$lib/services/export";
   import {
     AlertTriangle,
     AlignCenter,
@@ -222,7 +223,10 @@
         filters: [{ name: format.toUpperCase(), extensions: [format] }],
       });
       if (!dest) return;
-      await exportCaptions(t, format, dest);
+      // Map onto the output timeline (trim + cuts + speed) so cues line up with
+      // the exported video, not the raw recording — same warp the export dialog
+      // and Cloud track apply.
+      await exportCaptions(toOutputTimeTranscript(store, t), format, dest);
       toast.success(`Exported ${format.toUpperCase()}`);
     } catch (e) {
       toast.error(`Export failed: ${e}`);

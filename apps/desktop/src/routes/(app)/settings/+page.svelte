@@ -9,9 +9,11 @@
   import {
     getCloseToTray,
     getDisplays,
+    getHidePanelFromCapture,
     getLastSource,
     getOutputDir,
     setCloseToTray,
+    setHidePanelFromCapture,
     setOutputDir,
   } from "$lib/ipc";
   import {
@@ -26,6 +28,7 @@
     Cloud,
     Cpu,
     ExternalLink,
+    EyeOff,
     FlaskConical,
     FolderOpen,
     Globe,
@@ -51,6 +54,7 @@
   import { setMode } from "@recast/ui/theme";
   import { cn } from "@recast/ui/utils";
   import { listen } from "@tauri-apps/api/event";
+  import { platform } from "@tauri-apps/plugin-os";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
@@ -88,6 +92,11 @@
   let editorWindow = $state<EditorBehavior>("navigate");
   let countdown = $state<CountdownSeconds>(3);
   let closeToTray = $state(true);
+  let hidePanelFromCapture = $state(true);
+  // Content protection is a compile-time no-op on Linux (tao gates it to
+  // macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
+  // the toggle is shown disabled there rather than pretending it does anything.
+  const isLinux = platform() === "linux";
   // Global recording prefs, read by the recording panel via shared localStorage.
   let recordingQuality = $state<RecordingQuality>("auto");
   let recordingFps = $state<number>(60);
@@ -234,6 +243,11 @@
       // Pre-tray builds or non-Tauri preview — leave the default and let
       // the UI render the optimistic value.
     }
+    try {
+      hidePanelFromCapture = await getHidePanelFromCapture();
+    } catch {
+      // Older builds or non-Tauri preview — keep the optimistic default.
+    }
   }
 
   async function toggleCloseToTray() {
@@ -244,6 +258,17 @@
     } catch (e) {
       // Roll back on failure so the UI mirrors the actual persisted state.
       closeToTray = !next;
+      toast.error(`Could not update setting: ${e}`);
+    }
+  }
+
+  async function toggleHidePanelFromCapture() {
+    const next = !hidePanelFromCapture;
+    hidePanelFromCapture = next;
+    try {
+      await setHidePanelFromCapture(next);
+    } catch (e) {
+      hidePanelFromCapture = !next;
       toast.error(`Could not update setting: ${e}`);
     }
   }
@@ -592,6 +617,73 @@
                         </button>
                       {/each}
                     </div>
+                  </div>
+                </div>
+              </section>
+
+              <!-- Recording panel visibility -->
+              <section id="settings-panel-capture" class="flex flex-col gap-3">
+                <div class="px-1">
+                  <h2
+                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                  >
+                    <EyeOff class="size-3 text-primary" />
+                    Recording panel
+                  </h2>
+                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+                    Whether Recast's own floating controls show up in the video.
+                  </p>
+                </div>
+                <div
+                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+                >
+                  <div class="flex items-center justify-between gap-3 px-4 py-3">
+                    <div class="min-w-0">
+                      <div class="text-[12px] font-semibold text-foreground">
+                        Hide recording panel from captures
+                      </div>
+                      <div class="text-[11px] text-muted-foreground">
+                        {#if isLinux}
+                          Not available on Linux — X11 and Wayland provide no way
+                          for an app to exclude its own window from screen
+                          capture.
+                        {:else if hidePanelFromCapture}
+                          The floating Recast panel is kept out of your
+                          recordings. Applies the next time the panel opens.
+                        {:else}
+                          The floating Recast panel appears in your recordings
+                          like any other window.
+                        {/if}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-label="Hide recording panel from captures"
+                      aria-checked={!isLinux && hidePanelFromCapture}
+                      disabled={isLinux}
+                      onclick={toggleHidePanelFromCapture}
+                      class={cn(
+                        "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+                        isLinux
+                          ? "cursor-not-allowed bg-input opacity-50 ring-1 ring-inset ring-border/50"
+                          : cn(
+                              "cursor-pointer",
+                              hidePanelFromCapture
+                                ? "bg-primary"
+                                : "bg-input ring-1 ring-inset ring-border/50",
+                            ),
+                      )}
+                    >
+                      <span
+                        class={cn(
+                          "size-4 rounded-full bg-card shadow-sm transition-transform",
+                          !isLinux && hidePanelFromCapture
+                            ? "translate-x-4.5"
+                            : "translate-x-0.5",
+                        )}
+                      ></span>
+                    </button>
                   </div>
                 </div>
               </section>
@@ -1152,34 +1244,31 @@
                     <Button
                       href="/whats-new"
                       variant="outline"
-                      size="sm"
-                      class="h-8 gap-1.5"
+                      size="xs"
                     >
-                      <Sparkles class="size-3.5 text-primary" />
-                      <span class="text-[11.5px]">What's new</span>
-                      <ArrowUpRight class="size-3 text-muted-foreground" />
+                      <Sparkles class="text-primary" />
+                      <span>What's new</span>
+                      <ArrowUpRight class="text-muted-foreground" />
                     </Button>
                     <Button
                       href={config.website}
                       target="_blank"
                       variant="outline"
-                      size="sm"
-                      class="h-8 gap-1.5"
+                      size="xs"
                     >
-                      <Globe class="size-3.5" />
-                      <span class="text-[11.5px]">Website</span>
-                      <ArrowUpRight class="size-3 text-muted-foreground" />
+                      <Globe />
+                      <span>Website</span>
+                      <ArrowUpRight class="text-muted-foreground" />
                     </Button>
                     <Button
                       href={config.github}
                       target="_blank"
                       variant="outline"
-                      size="sm"
-                      class="h-8 gap-1.5"
+                      size="xs"
                     >
-                      <GithubBrand class="size-3.5" />
-                      <span class="text-[11.5px]">GitHub</span>
-                      <ArrowUpRight class="size-3 text-muted-foreground" />
+                      <GithubBrand />
+                      <span>GitHub</span>
+                      <ArrowUpRight class="text-muted-foreground" />
                     </Button>
                   </div>
                 </div>

@@ -1015,10 +1015,13 @@ fn warped_output_duration(segs: &[SpeedSegment]) -> f64 {
 /// exports run cuts + per-segment speed through select/setpts, so the stream is
 /// the warped duration — capping at the raw trimmed span would freeze the last
 /// frame over the infinite background for the cut/sped-away time (and truncate
-/// slow-motion, where warped > raw). GIF uses a separate cut/palette path and
-/// loops, so it keeps the raw trimmed span.
+/// slow-motion, where warped > raw). GIF keeps the raw trimmed span for a plain
+/// cuts-only export (it loops and has no infinite audio/background tail to
+/// freeze), but once per-segment speed warps the stream it must follow the
+/// warped length — otherwise slow-motion (warped > raw) is truncated and a
+/// speed-up leaves a dangling tail.
 fn output_duration_cap(format: &str, duration: f64, speed_segments: &[SpeedSegment]) -> f64 {
-    if format == "gif" {
+    if format == "gif" && !has_speed_change(speed_segments) {
         duration
     } else {
         warped_output_duration(speed_segments)
@@ -1858,16 +1861,40 @@ pub async fn export_video(
             std::process::id()
         ));
 
-        // Cuts apply to GIF too, but its two-pass palette path runs before the
-        // generic (MP4/WebM-only) cut stage below, so inject the same
-        // select+setpts into both the palette pre-pass and the main pass.
+        // Cuts AND per-segment speed apply to GIF too, but its two-pass palette
+        // path runs before the generic (MP4/WebM-only) cut+speed stage below, so
+        // build the same select+setpts warp here and inject it into both the
+        // palette pre-pass and the main pass. GIF has no audio, so there's no
+        // atempo counterpart; the downstream `fps=` resamples the warped PTS to
+        // CFR (dropping/duplicating frames as the speed demands).
         let gif_cut_select: Option<String> = {
             let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
-            (!export_cuts.is_empty()).then(|| {
-                format!(
-                    "select='{}',setpts=N/FRAME_RATE/TB",
-                    build_cut_select_expr(&export_cuts)
-                )
+            let gif_speed_segments = build_speed_segments(
+                duration,
+                &export_cuts,
+                &request.render_state.split_points,
+                &request.render_state.segment_speeds,
+                trim_start,
+            );
+            let gif_speed_active = has_speed_change(&gif_speed_segments);
+            let has_cuts = !export_cuts.is_empty();
+            (has_cuts || gif_speed_active).then(|| {
+                let select_prefix = if has_cuts {
+                    format!("select='{}',", build_cut_select_expr(&export_cuts))
+                } else {
+                    String::new()
+                };
+                let setpts = if gif_speed_active {
+                    // Single-quote: the warp expression contains commas the
+                    // filtergraph parser would otherwise read as separators.
+                    format!(
+                        "setpts='({})/TB'",
+                        build_speed_setpts_expr(&gif_speed_segments)
+                    )
+                } else {
+                    "setpts=N/FRAME_RATE/TB".to_string()
+                };
+                format!("{select_prefix}{setpts}")
             })
         };
         let cut_select_for_prepass = gif_cut_select.clone();
@@ -3068,14 +3095,26 @@ mod cut_export_tests {
     }
 
     #[test]
-    fn output_cap_uses_warped_length_for_video_and_raw_for_gif() {
+    fn output_cap_uses_warped_length_when_speed_is_active_incl_gif() {
         // Two kept segments, the second sped 2× → raw span 8s, warped 4 + 2 = 6s.
         let segs = vec![seg(0.0, 4.0, 1.0), seg(4.0, 8.0, 2.0)];
         // Non-GIF caps at the real content length — this is the frozen-tail fix.
         assert!((output_duration_cap("mp4", 8.0, &segs) - 6.0).abs() < 1e-9);
         assert!((output_duration_cap("webm", 8.0, &segs) - 6.0).abs() < 1e-9);
-        // GIF keeps the raw trimmed span (its own cut/palette path).
+        // GIF now warps too (its palette path applies the same select+setpts), so
+        // the cap follows the warped length — capping at the raw 8s span would
+        // leave a frozen tail on the sped-up stream.
+        assert!((output_duration_cap("gif", 8.0, &segs) - 6.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn output_cap_keeps_raw_span_for_cuts_only_gif() {
+        // No speed change (all 1×): GIF keeps the raw trimmed span (it loops and
+        // has no infinite tail to freeze), even though the kept content is shorter.
+        let segs = vec![seg(0.0, 3.0, 1.0), seg(5.0, 8.0, 1.0)];
         assert!((output_duration_cap("gif", 8.0, &segs) - 8.0).abs() < 1e-9);
+        // Non-GIF still collapses to the kept length (6s here).
+        assert!((output_duration_cap("mp4", 8.0, &segs) - 6.0).abs() < 1e-9);
     }
 
     #[test]
