@@ -19,15 +19,11 @@
 		BarChart3,
 		Check,
 		Clock,
-		Cloud,
-		CloudUpload,
 		Film,
 		FolderInput,
-		HardDrive,
 		ImagePlus,
 		Inbox,
 		Link2,
-		MonitorPlay,
 		MoreHorizontal,
 		Pencil,
 		Play,
@@ -47,7 +43,6 @@
 		onrename,
 		oncopylink,
 		onchangeposter,
-		ontogglesource,
 		onmove,
 		ontoggletag,
 		ondelete,
@@ -65,7 +60,6 @@
 		onrename: () => void;
 		oncopylink: () => void;
 		onchangeposter?: () => void;
-		ontogglesource: () => void;
 		onmove: (folderId: string | null) => void;
 		ontoggletag: (tagId: string) => void;
 		ondelete: () => void;
@@ -161,18 +155,6 @@
 			{formatDuration(recast.durationSec)}
 		</span>
 
-		<span
-			class="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset backdrop-blur-sm
-				{recast.source === 'cloud'
-				? 'bg-primary/90 text-background ring-primary/40'
-				: 'bg-background/85 text-muted-foreground ring-border-low/50'}"
-		>
-			{#if recast.source === "cloud"}
-				<Cloud class="size-3" />{recast.provider}
-			{:else}
-				<MonitorPlay class="size-3" />Local
-			{/if}
-		</span>
 	</button>
 
 	<!-- Meta -->
@@ -211,7 +193,7 @@
 						<BarChart3 class="size-4 text-muted-foreground" />
 						View analytics
 					</DropdownMenu.Item>
-					{#if onchangeposter && recast.source === "cloud"}
+					{#if onchangeposter}
 						<DropdownMenu.Item onclick={onchangeposter}>
 							<ImagePlus class="size-4 text-muted-foreground" />
 							Change poster
@@ -274,15 +256,6 @@
 						</DropdownMenu.SubContent>
 					</DropdownMenu.Sub>
 
-					<DropdownMenu.Item onclick={ontogglesource}>
-						{#if recast.source === "cloud"}
-							<HardDrive class="size-4 text-muted-foreground" />
-							Move to local
-						{:else}
-							<CloudUpload class="size-4 text-muted-foreground" />
-							Upload to cloud
-						{/if}
-					</DropdownMenu.Item>
 					<DropdownMenu.Separator />
 					<DropdownMenu.Item
 						onclick={ondelete}

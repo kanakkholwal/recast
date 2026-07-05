@@ -4,6 +4,7 @@
   import Logo from "$lib/logo.svelte";
   import {
     BarChart3,
+    Archive,
     Film,
     LayoutDashboard,
     Moon,
@@ -84,6 +85,12 @@
           title: "Recasts",
           href: "/dashboard/recasts",
           icon: Film,
+          exact: false,
+        },
+        {
+          title: "Archive",
+          href: "/dashboard/archive",
+          icon: Archive,
           exact: false,
         },
       ],
@@ -272,33 +279,38 @@
   </Sidebar.Content>
 
   <Sidebar.Footer class="gap-1 border-t border-border/30 p-2">
-    <Button
+    <button
       type="button"
-      variant="secondary"
       onclick={toggleMode}
       aria-label={mode.current === "dark"
         ? "Switch to light mode"
         : "Switch to dark mode"}
       title={mode.current === "dark" ? "Light mode" : "Dark mode"}
       class={cn(
-        "group/theme h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",
+        "group/theme relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium text-muted-foreground outline-none transition-colors duration-200 hover:bg-foreground/6 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45",
         open ? "justify-center" : "justify-start",
       )}
     >
+      <span
+        class="absolute inset-0 rounded-lg ring-1 ring-inset ring-border/0 transition-colors duration-200 group-hover/theme:ring-border/35"
+        aria-hidden="true"
+      ></span>
+      <span class="relative z-10 grid size-4 shrink-0 place-items-center">
         {#if mode.current === "dark"}
-            <Sun class="size-3.5 transition-transform duration-300 group-hover/theme:rotate-45" />
-        {:else}     
-            <Moon class="size-3.5  transition-transform duration-300 group-hover/theme:-rotate-12" />
+          <Sun class="size-3.5 transition-transform duration-300 group-hover/theme:rotate-45" />
+        {:else}
+          <Moon class="size-3.5 transition-transform duration-300 group-hover/theme:-rotate-12" />
         {/if}
+      </span>
       <span
         class={cn(
-          "truncate transition-[max-width,opacity] duration-200 ease-linear",
+          "relative z-10 truncate transition-[max-width,opacity] duration-200 ease-linear",
           open ? "max-w-40 opacity-100" : "max-w-0 opacity-0",
         )}
       >
         {mode.current === "dark" ? "Light mode" : "Dark mode"}
       </span>
-    </Button>
+    </button>
   </Sidebar.Footer>
 </Sidebar.Root>
 

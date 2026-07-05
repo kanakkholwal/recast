@@ -2,7 +2,6 @@
 	import { focusOnMount } from "$lib/dashboard/focus";
 	import { isEditableTarget } from "$lib/dom/is-editable";
 	import { tagsStore } from "$lib/dashboard/library.svelte";
-	import type { RecordingSource } from "$lib/dashboard/store.svelte";
 	import { Chip } from "@recast/ui/chip";
 	import * as Select from "@recast/ui/select";
 	import { Plus, Search, Settings2, X } from "@lucide/svelte";
@@ -13,7 +12,6 @@
 	// the folder.
 	let {
 		query = $bindable(""),
-		activeFilter = $bindable("all"),
 		sortKey = $bindable("recent"),
 		selectedTagIds = $bindable([]),
 		total,
@@ -24,7 +22,6 @@
 		oncreatetag,
 	}: {
 		query?: string;
-		activeFilter?: RecordingSource | "all";
 		sortKey?: string;
 		selectedTagIds?: string[];
 		total: number;
@@ -39,11 +36,6 @@
 	let creatingTag = $state(false);
 	let newTagName = $state("");
 
-	const filters: { label: string; value: RecordingSource | "all" }[] = [
-		{ label: "All", value: "all" },
-		{ label: "Cloud", value: "cloud" },
-		{ label: "Local", value: "local" },
-	];
 	const sorts = [
 		{ label: "Newest first", value: "recent" },
 		{ label: "Oldest first", value: "oldest" },
@@ -106,19 +98,6 @@
 		</div>
 
 		<div class="flex items-center gap-2">
-			<div class="flex items-center gap-1 rounded-lg border border-border-low/60 bg-card/40 p-1">
-				{#each filters as f (f.value)}
-					<button
-						type="button"
-						onclick={() => (activeFilter = f.value)}
-						class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200
-							{activeFilter === f.value ? 'bg-primary/12 text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-					>
-						{f.label}
-					</button>
-				{/each}
-			</div>
-
 			<Select.Root type="single" bind:value={sortKey}>
 				<Select.Trigger aria-label="Sort recasts" class="w-40 border-border-low/60 bg-card/40 text-xs font-semibold hover:border-border-low">
 					{sortLabel}
