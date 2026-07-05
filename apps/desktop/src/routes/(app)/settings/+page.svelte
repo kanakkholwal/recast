@@ -649,7 +649,7 @@
                           capture.
                         {:else if hidePanelFromCapture}
                           The floating Recast panel is kept out of your
-                          recordings. Applies the next time the panel opens.
+                          recordings, including one that's already open.
                         {:else}
                           The floating Recast panel appears in your recordings
                           like any other window.
