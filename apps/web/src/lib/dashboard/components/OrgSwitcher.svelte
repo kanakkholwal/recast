@@ -2,19 +2,19 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
+	import {
+	  Building2,
+	  Check,
+	  ChevronsUpDown,
+	  LoaderCircle,
+	  Plus,
+	  Sparkles,
+	} from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { toast } from "@recast/ui/sonner";
 	import { useSidebar } from "@recast/ui/sidebar";
+	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
-	import {
-		Building2,
-		Check,
-		ChevronsUpDown,
-		LoaderCircle,
-		Plus,
-		Sparkles,
-	} from "@lucide/svelte";
 
 	/**
 	 * Team selector. Reads from /dashboard/+layout.server.ts so the list is
@@ -82,8 +82,8 @@
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
 		class={cn(
-			"group/team flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50",
-			!open && "justify-center",
+			"group/team flex w-full items-center overflow-hidden rounded-lg py-1.5 text-left outline-none transition-all duration-200 ease-linear border border-border bg-card/80 hover:bg-card hover:border-primary focus-visible:ring-2 focus-visible:ring-primary/50",
+			open ? "px-2.5" : "p-0",
 		)}
 		aria-label="Switch team"
 	>
@@ -92,21 +92,31 @@
 		>
 			{initials(active.name)}
 		</span>
-		{#if open}
-			<span class="flex min-w-0 flex-1 flex-col leading-tight">
-				<span class="truncate text-[12.5px] font-semibold text-foreground">
-					{active.name}
-				</span>
-				<span class="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
-					<span>{active.role}</span>
-					<span aria-hidden="true">·</span>
-					<span class={active.plan === "free" ? "" : "text-primary"}>
-						{active.plan}
-					</span>
+		<!-- Always mounted: label + chevron collapse their width and left margin
+		     in step with the sidebar, so the selector glides instead of snapping. -->
+		<span
+			class={cn(
+				"flex min-w-0 flex-col overflow-hidden leading-tight transition-[max-width,margin,opacity] duration-200 ease-linear",
+				open ? "ml-2.5 max-w-40 flex-1 opacity-100" : "ml-0 max-w-0 opacity-0",
+			)}
+		>
+			<span class="truncate text-[12.5px] font-semibold text-foreground">
+				{active.name}
+			</span>
+			<span class="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+				<span>{active.role}</span>
+				<span aria-hidden="true">·</span>
+				<span class={active.plan === "free" ? "" : "text-primary"}>
+					{active.plan}
 				</span>
 			</span>
-			<ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground" />
-		{/if}
+		</span>
+		<ChevronsUpDown
+			class={cn(
+				"size-3.5 shrink-0 text-muted-foreground transition-[max-width,margin,opacity] duration-200 ease-linear",
+				open ? "ml-1 max-w-4 opacity-100" : "ml-0 max-w-0 opacity-0",
+			)}
+		/>
 	</DropdownMenu.Trigger>
 	<DropdownMenu.Content align="start" sideOffset={6} class="w-64">
 		<DropdownMenu.Label class="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">

@@ -1,25 +1,17 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
-	import { authClient } from "$lib/auth/client";
 	import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
-	import { settingsStore } from "$lib/dashboard/store.svelte";
 	import Logo from "$lib/logo.svelte";
 	import {
-	  ArrowUpRight,
 	  BarChart3,
-	  ChevronsUpDown,
 	  Film,
 	  LayoutDashboard,
-	  LogOut,
 	  Moon,
-	  Settings,
-	  Shield,
+	  Plus,
 	  Sun,
-	  User,
 	  Users,
 	} from "@lucide/svelte";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
+	import { Button } from "@recast/ui/button";
 	import * as Sidebar from "@recast/ui/sidebar";
 	import { useSidebar } from "@recast/ui/sidebar";
 	import { mode, toggleMode } from "@recast/ui/theme";
@@ -38,49 +30,63 @@
 		exact: boolean;
 	}
 
+	interface NavGroup {
+		label: string;
+		items: NavItem[];
+	}
+
 	interface Props {
-		/** Nav rows. Defaults to the dashboard nav. */
+		/** Grouped nav (dashboard). Takes precedence over `nav`. */
+		groups?: NavGroup[];
+		/** Flat nav rows (admin shell). Rendered as a single group. */
 		nav?: NavItem[];
 		/** Small label under the wordmark ("Dashboard" / "Admin"). */
 		subtitle?: string;
-		/** Section heading above the nav. */
+		/** Section heading for the flat `nav` group. */
 		groupLabel?: string;
 		/** Where the wordmark links. */
 		homeHref?: string;
-		/** Show the org switcher (dashboard only). */
+		/** Show the org switcher + "New Recast" CTA (dashboard only). */
 		showOrgSwitcher?: boolean;
-		/** Force the admin cross-links in the user menu. Defaults to the
-		 *  signed-in role from `page.data.user` (present on dashboard loads). */
-		adminLinks?: boolean;
 	}
 
-	const defaultNav: NavItem[] = [
-		{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
-		{ title: "Recasts", href: "/dashboard/recasts", icon: Film, exact: false },
-		{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, exact: false },
-		{ title: "Team", href: "/dashboard/team", icon: Users, exact: false },
-		{ title: "Settings", href: "/dashboard/settings", icon: Settings, exact: false },
+	// Default dashboard nav, grouped like the Loom-style shell: primary
+	// workspace destinations up top, the media library below. Settings lives in
+	// the header profile menu + command palette, not the rail.
+	const defaultGroups: NavGroup[] = [
+		{
+			label: "Workspace",
+			items: [
+				{ title: "Home", href: "/dashboard", icon: LayoutDashboard, exact: true },
+				{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, exact: false },
+				{ title: "Team", href: "/dashboard/team", icon: Users, exact: false },
+			],
+		},
+		{
+			label: "Library",
+			items: [
+				{ title: "Recasts", href: "/dashboard/recasts", icon: Film, exact: false },
+			],
+		},
 	];
 
 	let {
-		nav = defaultNav,
+		groups,
+		nav,
 		subtitle = "Dashboard",
-		groupLabel = "Library",
+		groupLabel = "Menu",
 		homeHref = "/dashboard",
 		showOrgSwitcher = true,
-		adminLinks,
 	}: Props = $props();
 
 	const sidebar = useSidebar();
 	const open = $derived(sidebar.state === "expanded");
 	const currentPath = $derived(page.url.pathname);
-	const profile = $derived(settingsStore.value.profile);
-	// Surfaced by /dashboard/+layout.server.ts; falls back to "user" if absent
-	// so the conditional below safely returns false on unauthenticated pages.
-	// The admin shell passes `adminLinks` explicitly since its load exposes
-	// `page.data.admin`, not `page.data.user`.
-	const isAdmin = $derived(
-		adminLinks ?? (page.data?.user as { role?: string } | undefined)?.role === "admin",
+
+	// Grouped nav wins; a flat `nav` becomes one group; otherwise the dashboard
+	// default. Keeps the admin shell (flat `nav`) working unchanged.
+	const resolvedGroups = $derived<NavGroup[]>(
+		groups ?? (nav ? [{ label: groupLabel, items: nav }] : defaultGroups),
 	);
 
 	// /dashboard/+layout.server.ts surfaces these. Falls back to safe defaults
@@ -110,11 +116,6 @@
 		easing: cubicOut,
 		fallback: (node) => fade(node, { duration: 120 }),
 	});
-
-	async function signOut() {
-		await authClient.signOut();
-		await goto("/login");
-	}
 </script>
 
 <Sidebar.Root variant="inset" collapsible="icon">
@@ -125,27 +126,28 @@
 			href={homeHref}
 			aria-label="Recast {subtitle}"
 			class={cn(
-				"flex h-10 items-center gap-2.5 overflow-hidden rounded-lg transition-opacity hover:opacity-80",
-				open ? "px-1.5" : "justify-center px-0",
+				"flex h-10 items-center overflow-hidden rounded-lg transition-[padding,opacity] duration-200 ease-linear hover:opacity-80",
+				open ? "px-1.5" : "px-0",
 			)}
 		>
 			<span class="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground p-1 text-background shadow-craft-sm">
 				<Logo size="20" color="transparent" fill="currentColor" />
 			</span>
-			{#if open}
-				<span
-					in:fly={{ x: -8, duration: 240, easing: cubicOut, delay: 60 }}
-					out:fade={{ duration: 180, easing: cubicOut }}
-					class="flex flex-col leading-none"
-				>
-					<span class="text-[15px] font-semibold tracking-tight text-foreground">
-						Recast
-					</span>
-					<span class="mt-0.5 text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-						{subtitle}
-					</span>
+			<!-- Always mounted: the label collapses its own width (and left margin)
+			     in sync with the sidebar width, so nothing snaps or clips on toggle. -->
+			<span
+				class={cn(
+					"flex flex-col overflow-hidden leading-none transition-[max-width,margin,opacity] duration-200 ease-linear",
+					open ? "ml-2.5 max-w-32 opacity-100" : "ml-0 max-w-0 opacity-0",
+				)}
+			>
+				<span class="truncate text-[15px] font-semibold tracking-tight text-foreground">
+					Recast
 				</span>
-			{/if}
+				<span class="mt-0.5 truncate text-[10px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+					{subtitle}
+				</span>
+			</span>
 		</a>
 
 		{#if showOrgSwitcher && activeOrg}
@@ -161,83 +163,101 @@
 				/>
 			</div>
 		{/if}
+
+		{#if showOrgSwitcher}
+			<Button
+				href="/dashboard/recasts"
+				size="sm"
+				class={cn("group/new h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",open ? "justify-center" : "justify-start")}
+				title="New Recast"
+			>
+				<Plus
+					size={14}
+					class="shrink-0 transition-transform duration-200 group-hover/new:rotate-90"
+				/>
+				<span
+					class={cn(
+						"overflow-hidden text-[12px] font-semibold transition-[max-width,opacity] duration-200 ease-linear",
+						open ? "max-w-32 opacity-100" : "max-w-0 opacity-0",
+					)}
+				>
+					New Recast
+				</span>
+			</Button>
+		{/if}
 	</Sidebar.Header>
 
 	<Sidebar.Content class="scrollbar-hide">
-		<Sidebar.Group>
-			{#if open}
+		{#each resolvedGroups as group (group.label)}
+			<Sidebar.Group>
+				<!-- Kept mounted: GroupLabel has a built-in collapse
+				     (`group-data-[collapsible=icon]:-mt-8 opacity-0`, transitioned), so
+				     it slides away smoothly instead of popping out of the DOM. -->
 				<Sidebar.GroupLabel
 					class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
 				>
-					<span
-						in:fade={{ duration: 180, delay: 80, easing: cubicOut }}
-						out:fade={{ duration: 140, easing: cubicOut }}
-					>
-						{groupLabel}
-					</span>
+					{group.label}
 				</Sidebar.GroupLabel>
-			{/if}
-			<Sidebar.GroupContent>
-				<Sidebar.Menu class="gap-0.5">
-					{#each nav as link (link.href)}
-						{@const active = isActive(link.href, link.exact)}
-						{@const Icon = link.icon}
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton tooltipContent={link.title}>
-								{#snippet child({
-									props,
-								}: {
-									props: ComponentProps<typeof Sidebar.MenuButton>;
-								})}
-									<a
-										href={link.href}
-										{...props as Record<string, unknown>}
-										data-active={active}
-										class={cn(
-											"group/item relative flex h-9 items-center gap-2.5 overflow-hidden rounded-lg text-[12.5px] font-medium transition-colors duration-200",
-											active
-												? "text-foreground"
-												: "text-muted-foreground hover:text-foreground",
-											open ? "px-2.5" : "size-8 justify-center p-0",
-										)}
-									>
-										{#if active}
-											<span
-												in:receive={{ key: "nav-active-bg" }}
-												out:send={{ key: "nav-active-bg" }}
-												class="absolute inset-0 z-0 rounded-lg bg-foreground/6 ring-1 ring-inset ring-border/40"
-												aria-hidden="true"
-											></span>
-											{#if open}
+				<Sidebar.GroupContent>
+					<Sidebar.Menu class="gap-0.5">
+						{#each group.items as link (link.href)}
+							{@const active = isActive(link.href, link.exact)}
+							{@const Icon = link.icon}
+							<Sidebar.MenuItem>
+								<Sidebar.MenuButton tooltipContent={link.title}>
+									{#snippet child({
+										props,
+									}: {
+										props: ComponentProps<typeof Sidebar.MenuButton>;
+									})}
+										<a
+											href={link.href}
+											{...props as Record<string, unknown>}
+											data-active={active}
+											class={cn(
+												"group/item relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium transition-colors duration-200",
+												active
+													? "text-foreground"
+													: "text-muted-foreground hover:text-foreground",
+											)}
+										>
+											{#if active}
 												<span
-													in:receive={{ key: "nav-active-pill" }}
-													out:send={{ key: "nav-active-pill" }}
-													class="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary"
+													in:receive={{ key: "nav-active-bg" }}
+													out:send={{ key: "nav-active-bg" }}
+													class="absolute inset-0 z-0 rounded-lg bg-foreground/6 ring-1 ring-inset ring-border/40"
 													aria-hidden="true"
 												></span>
+												{#if open}
+													<span
+														in:receive={{ key: "nav-active-pill" }}
+														out:send={{ key: "nav-active-pill" }}
+														class="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-full bg-primary"
+														aria-hidden="true"
+													></span>
+												{/if}
 											{/if}
-										{/if}
-										<Icon
-											size={14}
-											class="relative z-10 shrink-0 transition-transform duration-200 group-hover/item:-translate-y-px group-active/item:scale-95"
-										/>
-										{#if open}
+											<Icon
+												size={14}
+												class="relative z-10 shrink-0 transition-transform duration-200 group-hover/item:-translate-y-px group-active/item:scale-95"
+											/>
 											<span
-												in:fly={{ x: -6, duration: 220, easing: cubicOut, delay: 40 }}
-												out:fade={{ duration: 160, easing: cubicOut }}
-												class="relative z-10 truncate"
+												class={cn(
+													"relative z-10 truncate transition-[max-width,opacity] duration-200 ease-linear",
+													open ? "max-w-40 opacity-100" : "max-w-0 opacity-0",
+												)}
 											>
 												{link.title}
 											</span>
-										{/if}
-									</a>
-								{/snippet}
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
-					{/each}
-				</Sidebar.Menu>
-			</Sidebar.GroupContent>
-		</Sidebar.Group>
+										</a>
+									{/snippet}
+								</Sidebar.MenuButton>
+							</Sidebar.MenuItem>
+						{/each}
+					</Sidebar.Menu>
+				</Sidebar.GroupContent>
+			</Sidebar.Group>
+		{/each}
 	</Sidebar.Content>
 
 	<Sidebar.Footer class="gap-1 border-t border-border/30 p-2">
@@ -246,10 +266,7 @@
 			onclick={toggleMode}
 			aria-label={mode.current === "dark" ? "Switch to light mode" : "Switch to dark mode"}
 			title={mode.current === "dark" ? "Light mode" : "Dark mode"}
-			class={cn(
-				"group/theme relative flex h-9 items-center gap-2.5 overflow-hidden rounded-lg text-[12.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-foreground/5 hover:text-foreground",
-				open ? "px-2.5" : "size-8 justify-center self-center p-0",
-			)}
+			class="group/theme relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium text-muted-foreground transition-colors duration-200 hover:bg-foreground/5 hover:text-foreground"
 		>
 			<span class="relative grid size-3.5 place-items-center">
 				{#if mode.current === "dark"}
@@ -270,83 +287,15 @@
 					</span>
 				{/if}
 			</span>
-			{#if open}
-				<span
-					in:fly={{ x: -6, duration: 220, easing: cubicOut, delay: 40 }}
-					out:fade={{ duration: 160, easing: cubicOut }}
-					class="truncate"
-				>
-					{mode.current === "dark" ? "Light mode" : "Dark mode"}
-				</span>
-			{/if}
-		</button>
-
-		<div class="my-1 h-px bg-border/30"></div>
-
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger
+			<span
 				class={cn(
-					"flex w-full items-center gap-2.5 rounded-lg p-1.5 text-left outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50",
-					!open && "justify-center",
+					"truncate transition-[max-width,opacity] duration-200 ease-linear",
+					open ? "max-w-40 opacity-100" : "max-w-0 opacity-0",
 				)}
 			>
-				<span class="grid size-8 shrink-0 place-items-center rounded-lg bg-linear-to-br from-primary/80 to-primary text-xs font-bold text-background">
-					{settingsStore.initials}
-				</span>
-				{#if open}
-					<span class="flex min-w-0 flex-1 flex-col" in:fade={{ duration: 160 }}>
-						<span class="truncate text-[12.5px] font-semibold text-foreground">
-							{profile.name}
-						</span>
-						<span class="truncate text-[11px] text-muted-foreground">
-							{profile.email}
-						</span>
-					</span>
-					<ChevronsUpDown class="size-3.5 shrink-0 text-muted-foreground" />
-				{/if}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content side="top" align="start" sideOffset={8} class="w-56">
-				<DropdownMenu.Label>
-					<span class="block truncate text-sm font-semibold text-foreground">
-						{profile.name}
-					</span>
-					<span class="block truncate text-xs font-normal text-muted-foreground">
-						{profile.email}
-					</span>
-				</DropdownMenu.Label>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item onclick={() => goto("/dashboard/settings/profile")}>
-					<User class="size-4 text-muted-foreground" />
-					Profile
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => goto("/dashboard/settings")}>
-					<Settings class="size-4 text-muted-foreground" />
-					Settings
-				</DropdownMenu.Item>
-				{#if isAdmin}
-					<DropdownMenu.Item onclick={() => goto("/dashboard")}>
-						<LayoutDashboard class="size-4 text-muted-foreground" />
-						Dashboard
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => goto("/admin")}>
-						<Shield class="size-4 text-primary" />
-						Admin dashboard
-					</DropdownMenu.Item>
-				{/if}
-				<DropdownMenu.Item onclick={() => goto("/")}>
-					<ArrowUpRight class="size-4 text-muted-foreground" />
-					Back to site
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item
-					onclick={signOut}
-					class="text-destructive/90 data-highlighted:text-destructive"
-				>
-					<LogOut class="size-4" />
-					Sign out
-				</DropdownMenu.Item>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+				{mode.current === "dark" ? "Light mode" : "Dark mode"}
+			</span>
+		</button>
 	</Sidebar.Footer>
 </Sidebar.Root>
 

@@ -20,7 +20,7 @@
 			"focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
 			"aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-invalid:ring-3",
 			"dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
-			"active:scale-[0.98] hover:scale-[1.02]",
+			"active:scale-[0.99] hover:scale-[1.01]",
 			"disabled:pointer-events-none disabled:opacity-50",
 			"[&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
 		].join(" "),
