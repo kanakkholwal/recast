@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state";
-	import SearchCommandMenu from "$lib/dashboard/components/SearchCommandMenu.svelte";
+	import CommandPaletteHost from "$lib/dashboard/components/CommandPaletteHost.svelte";
+	import SearchTrigger from "$lib/dashboard/components/SearchTrigger.svelte";
 	import UserMenu from "$lib/dashboard/components/UserMenu.svelte";
 	import * as Sidebar from "@recast/ui/sidebar";
 
@@ -35,7 +36,15 @@
 		const sub = second === "settings" && parts[2] ? titleCase(parts[2]) : null;
 		return { section, sub };
 	});
+
+	// On the dashboard home the search lives in the hero, so the header trigger
+	// stands down there to avoid two search bars on one screen.
+	const isHome = $derived(page.url.pathname === "/dashboard");
 </script>
+
+<!-- The one shared command dialog + ⌘K, mounted once for every dashboard/admin
+	 route. Header and hero triggers both open THIS. -->
+<CommandPaletteHost />
 
 <!-- Sticky inside the inset panel: on md+ the panel is inset by `m-2`, so the
 	 header sticks at `top-2` and rounds its top corners to match the panel; on
@@ -58,9 +67,12 @@
 	</nav>
 
 	<!-- Search takes the flexible middle; capped so it doesn't sprawl on wide
-		 viewports, matching the app's centred command-bar layout. -->
+		 viewports. On the home route it's hidden (the hero owns it), but the
+		 spacer stays so the profile menu keeps its right-edge anchor. -->
 	<div class="mx-auto flex w-full max-w-md items-center">
-		<SearchCommandMenu />
+		{#if !isHome}
+			<SearchTrigger />
+		{/if}
 	</div>
 
 	<UserMenu />

@@ -4,13 +4,13 @@
 	import { authClient } from "$lib/auth/client";
 	import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import {
-		ArrowUpRight,
-		ChevronsUpDown,
-		LayoutDashboard,
-		LogOut,
-		Settings,
-		Shield,
-		User,
+	  ArrowUpRight,
+	  ChevronsUpDown,
+	  LayoutDashboard,
+	  LogOut,
+	  Settings,
+	  Shield,
+	  User,
 	} from "@lucide/svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 

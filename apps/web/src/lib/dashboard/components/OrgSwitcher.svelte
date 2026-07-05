@@ -2,7 +2,6 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
-	import { initials } from "./OrgSwitcher.logic";
 	import {
 	  Building2,
 	  Check,
@@ -16,6 +15,7 @@
 	import { useSidebar } from "@recast/ui/sidebar";
 	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
+	import { initials } from "./OrgSwitcher.logic";
 
 	/**
 	 * Team selector. Reads from /dashboard/+layout.server.ts so the list is
@@ -75,7 +75,7 @@
 <DropdownMenu.Root>
 	<DropdownMenu.Trigger
 		class={cn(
-			"group/team flex w-full items-center overflow-hidden rounded-lg py-1.5 text-left outline-none transition-all duration-200 ease-linear border border-border bg-card/80 hover:bg-card hover:border-primary focus-visible:ring-2 focus-visible:ring-primary/50",
+			"group/team flex w-full items-center overflow-hidden rounded-lg py-1.5 text-left outline-none transition-all duration-200 ease-linear border border-border bg-card/80 hover:bg-card focus-visible:ring-2 focus-visible:ring-primary/50",
 			open ? "px-2.5" : "p-0",
 		)}
 		aria-label="Switch team"

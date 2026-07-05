@@ -1,7 +1,15 @@
-<script>
-  export let color = "black";
-  export let fill = "white";
-  export let size = "584";
+<script lang="ts">
+  let {
+    color = "black",
+    fill = "white",
+    size = "584",
+    ...rest
+  }: {
+    color?: string;
+    fill?: string;
+    size?: string;
+    [key: string]: unknown;
+  } = $props();
 </script>
 
 <svg
@@ -10,7 +18,7 @@
   viewBox="0 0 584 584"
   fill="none"
   xmlns="http://www.w3.org/2000/svg"
-  {...$$restProps}
+  {...rest}
 >
   <rect width="584" height="584" rx="75" fill={color} />
   <path
