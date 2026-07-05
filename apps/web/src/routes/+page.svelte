@@ -796,28 +796,37 @@
 			</div>
 
 			<Reveal variant="scale" class="mt-12">
-				<div
-					class="glass-card relative mx-auto max-w-5xl overflow-hidden rounded-2xl shadow-craft-xl"
-					style="transform: perspective(1600px) rotateX(2deg);"
-				>
-					<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4">
-						<div class="flex gap-1.5">
-							<span class="size-2.5 rounded-full bg-foreground/15"></span>
-							<span class="size-2.5 rounded-full bg-foreground/15"></span>
-							<span class="size-2.5 rounded-full bg-foreground/15"></span>
+				<figure class="mx-auto max-w-5xl">
+					<div
+						class="glass-card relative overflow-hidden rounded-2xl shadow-craft-xl"
+						style="transform: perspective(1600px) rotateX(2deg);"
+					>
+						<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4">
+							<div class="flex gap-1.5">
+								<span class="size-2.5 rounded-full bg-foreground/15"></span>
+								<span class="size-2.5 rounded-full bg-foreground/15"></span>
+								<span class="size-2.5 rounded-full bg-foreground/15"></span>
+							</div>
+							<span class="ml-3 text-[11px] font-medium text-muted-foreground">Recast · Editor</span>
 						</div>
-						<span class="ml-3 text-[11px] font-medium text-muted-foreground">Recast · Editor</span>
+						<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
+							<!-- `width`/`height` (the asset's true 1920×1080) reserve the
+							     16:9 box so this lazy screenshot can't shift layout in. -->
+							<img
+								src="/product_preview_hero.png"
+								alt="Recast editor"
+								width="1920"
+								height="1080"
+								loading="lazy"
+								decoding="async"
+								class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
+							/>
+						</div>
 					</div>
-					<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
-						<img
-							src="/product_preview_hero.png"
-							alt="Recast editor"
-							loading="lazy"
-							decoding="async"
-							class="block w-full rounded-xl object-cover ring-1 ring-border-low"
-						/>
-					</div>
-				</div>
+					<figcaption class="mt-5 text-center text-[12.5px] leading-relaxed text-muted-foreground">
+						The full editor: timeline, zoom regions, annotations, and export presets in one window.
+					</figcaption>
+				</figure>
 			</Reveal>
 		</Container>
 	</Section>

@@ -790,7 +790,7 @@
 
     <PanelSection
       title="Animation"
-      hint="Word-by-word reveal and highlight, synced to speech. Needs word timing — pick a Parakeet model for the tightest sync."
+      hint="Word-by-word reveal and highlight, synced to speech. Needs word timing, so pick a Parakeet model for the tightest sync."
       flush
       collapsible
       defaultOpen={false}

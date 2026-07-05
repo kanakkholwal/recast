@@ -2,7 +2,7 @@
 const config = {
     appName: 'Recast',
     appVersion: __VERSION__,
-    appDescription: `Record your screen and audio with ease.`,
+    appDescription: `Record your screen and audio, then polish and share.`,
     supportEmail: "support@nexonauts.com",
     appDomain: "recast.nexonauts.com",
     website: "https://recast.nexonauts.com",

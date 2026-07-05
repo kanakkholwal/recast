@@ -644,7 +644,7 @@
                       </div>
                       <div class="text-[11px] text-muted-foreground">
                         {#if isLinux}
-                          Not available on Linux — X11 and Wayland provide no way
+                          Not available on Linux. X11 and Wayland provide no way
                           for an app to exclude its own window from screen
                           capture.
                         {:else if hidePanelFromCapture}
