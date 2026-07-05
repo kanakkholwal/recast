@@ -6,7 +6,14 @@
 	import RecastCard from "./RecastCard.svelte";
 	import RecastRow from "./RecastRow.svelte";
 	import TopProgress from "./TopProgress.svelte";
-	import type { RecastAction, RecastListItem } from "./types";
+	import {
+		activate,
+		chordFromEvent,
+		findActionByChord,
+		groupSections,
+		matches,
+	} from "./RecastList.logic";
+	import type { RecastListItem } from "./types";
 
 	interface Props {
 		items: RecastListItem[];
@@ -34,41 +41,14 @@
 	let searchEl = $state<HTMLInputElement | null>(null);
 	let gridEl = $state<HTMLDivElement | null>(null);
 
-	function matches(item: RecastListItem, q: string) {
-		if (!q) return true;
-		const haystack = [
-			item.title,
-			item.subtitle ?? "",
-			...(item.keywords ?? []),
-		]
-			.join(" ")
-			.toLowerCase();
-		return haystack.includes(q);
-	}
-
 	const filtered = $derived.by(() => {
 		const q = query.trim().toLowerCase();
 		return items.filter((i) => matches(i, q));
 	});
 
-	const sections = $derived.by(() => {
-		const grouped = new Map<string, RecastListItem[]>();
-		for (const item of filtered) {
-			const key = item.section ?? "";
-			if (!grouped.has(key)) grouped.set(key, []);
-			grouped.get(key)!.push(item);
-		}
-		return Array.from(grouped.entries()).map(([heading, sectionItems]) => ({
-			heading,
-			items: sectionItems,
-		}));
-	});
+	const sections = $derived(groupSections(filtered));
 
 	const visibleOrder = $derived(filtered.map((i) => i.id));
-
-	// onMount(() => {
-	// 	tick().then(() => searchEl?.focus());
-	// });
 
 	function focusCard(id: string) {
 		const el = gridEl?.querySelector<HTMLElement>(
@@ -79,11 +59,6 @@
 
 	function focusFirstCard() {
 		if (visibleOrder.length > 0) focusCard(visibleOrder[0]);
-	}
-
-	function activate(item: RecastListItem) {
-		if (item.onSelect) item.onSelect();
-		else if (item.actions && item.actions.length > 0) item.actions[0].onAction();
 	}
 
 	function handleSearchKeydown(e: KeyboardEvent) {
@@ -99,33 +74,6 @@
 			e.preventDefault();
 			query = "";
 		}
-	}
-
-	function normalizeShortcut(s: string) {
-		return s.replace(/\s+/g, "").toLowerCase();
-	}
-
-	function chordFromEvent(e: KeyboardEvent): string {
-		const parts: string[] = [];
-		if (e.metaKey || e.ctrlKey) parts.push("⌘");
-		if (e.shiftKey) parts.push("⇧");
-		if (e.altKey) parts.push("⌥");
-		const key = e.key;
-		if (key === "Enter") parts.push("↵");
-		else if (key === "Backspace") parts.push("⌫");
-		else if (key === " ") parts.push("space");
-		else parts.push(key.toUpperCase());
-		return normalizeShortcut(parts.join(""));
-	}
-
-	function findActionByChord(
-		actions: RecastAction[] | undefined,
-		chord: string,
-	): RecastAction | undefined {
-		if (!actions) return undefined;
-		return actions.find(
-			(a) => a.shortcut && normalizeShortcut(a.shortcut) === chord,
-		);
 	}
 
 	function currentFocusedItem(): RecastListItem | undefined {

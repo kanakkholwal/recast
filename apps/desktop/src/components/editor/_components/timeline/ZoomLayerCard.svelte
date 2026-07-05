@@ -5,11 +5,12 @@
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
   import {
-    formatTimeByMode,
-    frameStep,
-    type TimeMode,
-  } from "./timeline-helpers";
-  import { snapTime, type SnapResult, type SnapTarget } from "./timeline-snap";
+    computeCardMove,
+    computeCardNudge,
+    computeCardResize,
+  } from "./timeline-card-drag.logic";
+  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+  import { type SnapResult, type SnapTarget } from "./timeline-snap";
 
   // Three drag modes through one pointer-handler: move (shift both edges),
   // resize-start (move `start`), resize-end (move `end`).
@@ -93,63 +94,28 @@
 
   function onPointerMove(event: PointerEvent) {
     if (!drag) return;
-    // Pointer moves in OUTPUT pixels; map the original anchor through output space
-    // and back so dragging tracks the cursor on the collapsed axis.
-    const outDelta = (event.clientX - drag.startClientX) / pixelsPerSecond;
-    const movedFrom = (orig: number) => tOf(xOf(orig) + outDelta);
-    const tolerance = SNAP_TOLERANCE_PX / pixelsPerSecond;
-    let snapForGuide: SnapTarget | null = null;
-
-    if (drag.mode === "move") {
-      const span = drag.originalEnd - drag.originalStart;
-      const proposed = movedFrom(drag.originalStart);
-
-      // Snap whichever edge is closer so the card butts against a target from either side.
-      const startSnap = snapTime(proposed, snapTargets, tolerance, fps);
-      const endSnap = snapTime(proposed + span, snapTargets, tolerance, fps);
-      const startDist = startSnap.target
-        ? Math.abs(startSnap.time - proposed)
-        : Infinity;
-      const endDist = endSnap.target
-        ? Math.abs(endSnap.time - (proposed + span))
-        : Infinity;
-
-      let nextStart: number;
-      if (startSnap.target && startDist <= endDist) {
-        nextStart = startSnap.time;
-        snapForGuide = startSnap.target;
-      } else if (endSnap.target) {
-        nextStart = endSnap.time - span;
-        snapForGuide = endSnap.target;
-      } else {
-        nextStart = startSnap.time; // frame-quantised fallback
-      }
-
-      // Clamp inside [0, duration] without changing span.
-      nextStart = Math.max(0, Math.min(duration - span, nextStart));
-      const nextEnd = nextStart + span;
-      store.updateZoomRegion(region.id, { start: nextStart, end: nextEnd });
-    } else if (drag.mode === "resize-start") {
-      const proposed = movedFrom(drag.originalStart);
-      const snap = snapTime(proposed, snapTargets, tolerance, fps);
-      snapForGuide = snap.target;
-      const next = Math.max(
-        0,
-        Math.min(drag.originalEnd - MIN_DURATION, snap.time),
-      );
-      store.updateZoomRegion(region.id, { start: next });
-    } else {
-      const proposed = movedFrom(drag.originalEnd);
-      const snap = snapTime(proposed, snapTargets, tolerance, fps);
-      snapForGuide = snap.target;
-      const next = Math.min(
-        duration,
-        Math.max(drag.originalStart + MIN_DURATION, snap.time),
-      );
-      store.updateZoomRegion(region.id, { end: next });
-    }
-
-    onSnapChange(snapForGuide);
+    const geom = {
+      origin: { start: drag.originalStart, end: drag.originalEnd },
+      clientX: event.clientX,
+      startClientX: drag.startClientX,
+      pps: pixelsPerSecond,
+      xOf,
+      tOf,
+      snapTargets,
+      tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
+      fps,
+      duration,
+    };
+    const result =
+      drag.mode === "move"
+        ? computeCardMove(geom)
+        : computeCardResize({
+            ...geom,
+            edge: drag.mode === "resize-start" ? "start" : "end",
+            minDuration: MIN_DURATION,
+          });
+    store.updateZoomRegion(region.id, { start: result.start, end: result.end });
+    onSnapChange(result.guide);
   }
 
   function onPointerUp(_event: PointerEvent) {
@@ -191,29 +157,18 @@
     event.preventDefault();
     event.stopPropagation();
 
-    const direction = event.key === "ArrowLeft" ? -1 : 1;
-    // Shift = 1s, plain = one frame. Mirrors the playhead step in Timeline.svelte.
-    const delta = direction * (event.shiftKey ? 1 : frameStep(fps));
-
     store.pushUndoStateCoalesced(`nudge-zoom-${region.id}`, 600);
 
-    // Alt = resize the trailing edge instead of translating the card.
-    if (event.altKey) {
-      const next = Math.min(
-        duration,
-        Math.max(region.start + MIN_DURATION, region.end + delta),
-      );
-      store.updateZoomRegion(region.id, { end: next });
-      return;
-    }
-
-    const span = region.end - region.start;
-    let nextStart = region.start + delta;
-    nextStart = Math.max(0, Math.min(duration - span, nextStart));
-    store.updateZoomRegion(region.id, {
-      start: nextStart,
-      end: nextStart + span,
+    const next = computeCardNudge({
+      origin: { start: region.start, end: region.end },
+      direction: event.key === "ArrowLeft" ? -1 : 1,
+      shift: event.shiftKey,
+      alt: event.altKey,
+      fps,
+      duration,
+      minDuration: MIN_DURATION,
     });
+    store.updateZoomRegion(region.id, { start: next.start, end: next.end });
   }
 
   function onCardClick(event: MouseEvent) {

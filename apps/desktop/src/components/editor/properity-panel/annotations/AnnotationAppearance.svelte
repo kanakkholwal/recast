@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { hasFill as kindHasFill, hasStroke as kindHasStroke } from "$lib/annotations/kind-groups";
   import { FILL_SWATCHES, STROKE_SWATCHES } from "$lib/annotations/palette";
   import {
     getRecentColors,
@@ -10,6 +11,7 @@
     AnnotationStrokeStyle,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import { defaultGlow } from "./annotation-appearance.logic";
   import { Sparkles } from "@lucide/svelte";
   import { ColorPicker } from "@recast/ui/color-picker";
   import * as Popover from "@recast/ui/popover";
@@ -65,28 +67,14 @@
       store.updateAnnotation(annotation.id, { glow: undefined });
       return;
     }
-    const base: AnnotationGlow = annotation.glow ?? {
-      color: annotation.stroke.color || "#3b82f6",
-      blur: 0.012,
-      opacity: 0.7,
-    };
+    const base = defaultGlow(annotation.glow, annotation.stroke.color);
     store.updateAnnotation(annotation.id, {
       glow: { ...base, ...update },
     });
   }
 
-  const isShape = $derived(
-    annotation.kind.kind === "rect" ||
-      annotation.kind.kind === "ellipse" ||
-      annotation.kind.kind === "arrow",
-  );
-
-  // Images get a border (stroke) too — width/style/colour frame the image.
-  const hasStroke = $derived(isShape || annotation.kind.kind === "image");
-
-  const hasFill = $derived(
-    annotation.kind.kind === "rect" || annotation.kind.kind === "ellipse",
-  );
+  const hasStroke = $derived(kindHasStroke(annotation.kind.kind));
+  const hasFill = $derived(kindHasFill(annotation.kind.kind));
 </script>
 
 <PanelSection

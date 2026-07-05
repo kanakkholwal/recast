@@ -3,6 +3,7 @@
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Kbd } from "@recast/ui/kbd";
+	import { toErrorMessage } from "./dialog.logic";
 
 	interface Props {
 		open: boolean;
@@ -45,7 +46,7 @@
 			await onConfirm();
 			close();
 		} catch (e) {
-			error = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+			error = toErrorMessage(e);
 			busy = false;
 		}
 	}

@@ -12,7 +12,12 @@
   import { ColorField } from "@recast/ui/color-field";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
-  import { sampleStopColor } from "./background-picker.logic";
+  import {
+    clampStopPos,
+    insertStopInWidestGap,
+    posFromPointerX,
+    sampleStopColor,
+  } from "./background-picker.logic";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -66,7 +71,7 @@
   }
 
   function setStopPos(i: number, pos: number) {
-    const clamped = Math.round(Math.min(100, Math.max(0, pos)));
+    const clamped = clampStopPos(pos);
     commitGradient({
       ...gradientDraft,
       stops: gradientDraft.stops.map((s, j) => (j === i ? { ...s, pos: clamped } : s)),
@@ -83,20 +88,9 @@
 
   function addStop() {
     if (gradientDraft.stops.length >= MAX_GRADIENT_STOPS) return;
-    // Insert in the widest gap so the new handle lands somewhere useful.
-    const sorted = [...gradientDraft.stops].sort((a, b) => a.pos - b.pos);
-    let gapPos = 50;
-    let widest = -1;
-    for (let i = 0; i < sorted.length - 1; i++) {
-      const gap = sorted[i + 1].pos - sorted[i].pos;
-      if (gap > widest) {
-        widest = gap;
-        gapPos = Math.round((sorted[i].pos + sorted[i + 1].pos) / 2);
-      }
-    }
     const stops = [
       ...gradientDraft.stops,
-      { color: sampleDraftColor(gapPos), pos: gapPos },
+      insertStopInWidestGap(gradientDraft.stops),
     ];
     commitGradient({ ...gradientDraft, stops }, false);
     selectedStop = stops.length - 1;
@@ -118,7 +112,7 @@
     if (!bar) return;
     const rect = bar.getBoundingClientRect();
     const move = (ev: PointerEvent) => {
-      setStopPos(i, ((ev.clientX - rect.left) / Math.max(rect.width, 1)) * 100);
+      setStopPos(i, posFromPointerX(ev.clientX, rect));
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -134,9 +128,7 @@
     const bar = gradientBarEl;
     if (!bar) return;
     const rect = bar.getBoundingClientRect();
-    const pos = Math.round(
-      Math.min(100, Math.max(0, ((e.clientX - rect.left) / Math.max(rect.width, 1)) * 100)),
-    );
+    const pos = clampStopPos(posFromPointerX(e.clientX, rect));
     const stops = [...gradientDraft.stops, { color: sampleDraftColor(pos), pos }];
     commitGradient({ ...gradientDraft, stops }, false);
     selectedStop = stops.length - 1;

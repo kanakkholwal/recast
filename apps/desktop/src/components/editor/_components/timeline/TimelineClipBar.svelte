@@ -11,13 +11,20 @@
   import * as ContextMenu from "@recast/ui/context-menu";
   import { fade } from "svelte/transition";
   import {
+    buildWaveformPath,
     formatTimeByMode,
     formatTimecode,
     frameStep,
     minClipDuration,
-    quantizeToFrame,
     type TimeMode,
   } from "./timeline-helpers";
+  import {
+    clampTrimIn,
+    clampTrimOut,
+    layoutClipBlocks,
+    nudgeTrimIn,
+    nudgeTrimOut,
+  } from "./timeline-clipbar.logic";
   import { buildSnapTargets, snapTime } from "./timeline-snap";
 
   // Clip bar with thumbnails and in/out trim handles. Owns its drag state;
@@ -83,16 +90,7 @@
       : thumbnailWidth,
   );
   const clipBlocks = $derived(
-    store.segments.map((seg) => ({
-      key: seg.start,
-      start: seg.start,
-      end: seg.end,
-      left: xOf(seg.start),
-      // -2px leaves a thin seam between adjacent clips so a split reads as two.
-      width: Math.max(2, xOf(seg.end) - xOf(seg.start) - 2),
-      // Shift the original-scale strip so this block reveals [seg.start, seg.end].
-      stripOffset: -(seg.start - store.inPoint) * pps,
-    })),
+    layoutClipBlocks(store.segments, xOf, pps, store.inPoint),
   );
   // Density-based filmstrip tiles, planned per kept block and virtualized to the
   // viewport. Empty (fallback to the stretched strip) when there's no provider.
@@ -183,28 +181,16 @@
   // output-pixel space (each bucket at `xOf(bucketTime)`) over the kept range
   // only; buckets inside a removed cut collapse onto the seam like the cut lane.
   const WAVE_H = 48;
-  const waveformPath = $derived.by(() => {
-    const w = store.waveform;
-    const n = w.length;
-    if (n < 2 || duration <= 0) return "";
-    const mid = WAVE_H / 2;
-    const amp = WAVE_H / 2 - 3;
-    const kept: number[] = [];
-    for (let i = 0; i < n; i++) {
-      const t = (i / n) * duration;
-      if (t < store.inPoint - 0.001 || t > store.outPoint + 0.001) continue;
-      kept.push(i);
-    }
-    if (kept.length < 2) return "";
-    const xAt = (i: number) => xOf((i / n) * duration).toFixed(2);
-    let d = `M ${xAt(kept[0])} ${mid}`;
-    for (const i of kept) d += ` L ${xAt(i)} ${(mid - w[i] * amp).toFixed(2)}`;
-    for (let k = kept.length - 1; k >= 0; k--) {
-      const i = kept[k];
-      d += ` L ${xAt(i)} ${(mid + w[i] * amp).toFixed(2)}`;
-    }
-    return `${d} Z`;
-  });
+  const waveformPath = $derived(
+    buildWaveformPath({
+      waveform: store.waveform,
+      duration,
+      xOf,
+      height: WAVE_H,
+      amp: WAVE_H / 2 - 3,
+      range: { start: store.inPoint, end: store.outPoint },
+    }),
+  );
 
   let activeTrimHandle = $state<"in" | "out" | null>(null);
   // Output-x of the active trim snap target (playhead/region/etc.), or null.
@@ -290,7 +276,7 @@
     const t = snapTrim(raw, which);
     const min = minClipDuration(fps);
     if (which === "in") {
-      const next = Math.max(0, Math.min(t, store.outPoint - min));
+      const next = clampTrimIn(t, store.outPoint, min);
       store.trimStart = next;
       // Park playback at the in point so the preview shows the first kept frame while dragging.
       if (scrub) {
@@ -298,7 +284,7 @@
         if (videoEl) videoEl.currentTime = next;
       }
     } else {
-      const next = Math.min(duration, Math.max(t, store.inPoint + min));
+      const next = clampTrimOut(t, duration, store.inPoint, min);
       store.trimEnd = next;
       if (scrub) {
         // Show the last kept frame (one before the cut) — the frame being decided on.
@@ -315,17 +301,16 @@
     const delta = direction * (second ? 1 : frameStep(fps));
     const min = minClipDuration(fps);
     if (which === "in") {
-      const next = quantizeToFrame(
-        Math.max(0, Math.min(store.outPoint - min, store.inPoint + delta)),
-        fps,
-      );
-      store.trimStart = next;
+      store.trimStart = nudgeTrimIn(store.inPoint, store.outPoint, delta, min, fps);
     } else {
-      const next = quantizeToFrame(
-        Math.max(store.inPoint + min, Math.min(duration, store.outPoint + delta)),
+      store.trimEnd = nudgeTrimOut(
+        store.inPoint,
+        store.outPoint,
+        duration,
+        delta,
+        min,
         fps,
       );
-      store.trimEnd = next;
     }
   }
 

@@ -31,6 +31,14 @@
   import * as Collapsible from "@recast/ui/collapsible";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
+  import {
+    buildFacts,
+    captureHeadlineNote as captureHeadlineNoteOf,
+    deriveOsDetail,
+    deriveOsName,
+    groupEncoders,
+    PLATFORM_LABEL,
+  } from "./DeviceCapabilities.logic";
 
   // Best-effort: each os-plugin getter is wrapped so a blocked permission or
   // non-Tauri preview degrades to "Unknown" rather than throwing the panel away.
@@ -51,14 +59,6 @@
   let captureCaps = $state<CaptureCapabilities | null>(null);
   let captureProbing = $state(true);
   let captureError = $state<string | null>(null);
-
-  const PLATFORM_LABEL: Record<string, string> = {
-    windows: "Windows",
-    macos: "macOS",
-    linux: "Linux",
-    ios: "iOS",
-    android: "Android",
-  };
 
   async function loadOsInfo() {
     try {
@@ -123,42 +123,17 @@
     void loadCapture();
   });
 
-  // Windows 11 still reports NT kernel 10.0; only build ≥22000 distinguishes it
-  // from 10, so we surface the build instead of the bare "10.0.26200".
-  function windowsBuild(v: string): number | null {
-    const m = /^\d+\.\d+\.(\d+)/.exec(v);
-    return m ? Number(m[1]) : null;
-  }
-
-  const osName = $derived.by(() => {
-    if (platform === "windows") {
-      const build = windowsBuild(osVersion);
-      if (build !== null) return build >= 22000 ? "Windows 11" : "Windows 10";
-    }
-    if (platform === "macos" && osVersion) return `macOS ${osVersion}`;
-    return osLabel;
-  });
-
-  // Build on Windows (the meaningful number), raw version elsewhere.
-  const osDetail = $derived.by(() => {
-    if (platform === "windows") {
-      const build = windowsBuild(osVersion);
-      return build !== null ? String(build) : osVersion;
-    }
-    return osVersion;
-  });
+  const osName = $derived(deriveOsName(platform, osVersion, osLabel));
+  const osDetail = $derived(deriveOsDetail(platform, osVersion));
 
   // Screen is the headline verdict; audio/camera/cursor hang off the list below.
   const screenCap = $derived(
     captureCaps?.capabilities.find((c) => c.key === "screen") ?? null,
   );
   const captureReady = $derived(screenCap?.supported ?? false);
-  const captureHeadlineNote = $derived.by(() => {
-    if (screenCap?.note) return screenCap.note;
-    return captureReady
-      ? "Recast can record your whole screen, a single window, or a selected region on this device."
-      : "Screen recording isn't available on this device yet. Editing, sharing, and playback still work.";
-  });
+  const captureHeadlineNote = $derived(
+    captureHeadlineNoteOf(screenCap?.note, captureReady),
+  );
   let showCapture = $state(false);
 
   // Keyed by the Rust `key`; falls back to the screen glyph for unknown keys.
@@ -173,31 +148,10 @@
   };
 
   const facts = $derived(
-    [
-      { label: "Operating system", value: osName },
-      { label: platform === "windows" ? "Build" : "Version", value: osDetail },
-      { label: "Architecture", value: osArch },
-      {
-        label: "FFmpeg",
-        value:
-          diagnostics?.version?.replace(/^ffmpeg version\s*/i, "") ?? "Detecting…",
-      },
-    ].filter((f) => f.value),
+    buildFacts(platform, osName, osDetail, osArch, diagnostics?.version),
   );
 
-  // Group encoders by codec family for the matrix; order follows first-appearance.
-  const encoderGroups = $derived.by(() => {
-    const groups: { family: string; items: EncoderAvailability[] }[] = [];
-    for (const enc of encoders) {
-      let group = groups.find((g) => g.family === enc.family);
-      if (!group) {
-        group = { family: enc.family, items: [] };
-        groups.push(group);
-      }
-      group.items.push(enc);
-    }
-    return groups;
-  });
+  const encoderGroups = $derived(groupEncoders(encoders));
 
   // Which encoder the recorder actually picked, and whether it's a GPU path.
   const activeEncoder = $derived(encoders.find((e) => e.active) ?? null);

@@ -6,9 +6,9 @@
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
 	import { Skeleton } from "@recast/ui/skeleton";
-	import { toast } from "@recast/ui/sonner";
 	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@lucide/svelte";
 	import { untrack } from "svelte";
+	import { enhanceAction } from "$lib/forms/enhance";
 
 	let { data } = $props();
 
@@ -55,18 +55,10 @@
 		<form
 			method="POST"
 			action="?/updatePlan"
-			use:enhance={() => {
-				savingPlan = true;
-				return async ({ result, update }) => {
-					try {
-						if (result.type === "success") toast.success("Plan updated.");
-						else if (result.type === "failure") toast.error(String(result.data?.error));
-						await update();
-					} finally {
-						savingPlan = false;
-					}
-				};
-			}}
+			use:enhance={enhanceAction({
+				setBusy: (b) => (savingPlan = b),
+				onSuccess: "Plan updated.",
+			})}
 			class="space-y-3"
 		>
 			<Label class="block">
@@ -94,18 +86,10 @@
 		<form
 			method="POST"
 			action="?/rename"
-			use:enhance={() => {
-				savingName = true;
-				return async ({ result, update }) => {
-					try {
-						if (result.type === "success") toast.success("Renamed.");
-						else if (result.type === "failure") toast.error(String(result.data?.error));
-						await update();
-					} finally {
-						savingName = false;
-					}
-				};
-			}}
+			use:enhance={enhanceAction({
+				setBusy: (b) => (savingName = b),
+				onSuccess: "Renamed.",
+			})}
 			class="space-y-3"
 		>
 			<Label class="block">

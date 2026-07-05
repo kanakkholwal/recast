@@ -15,6 +15,12 @@
 	import { Skeleton } from "@recast/ui/skeleton";
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
+	import {
+		buildPageQuery,
+		buildSortQuery,
+		buildUsersQuery,
+		sortIndicator,
+	} from "./users-filters.logic";
 
 	let { data } = $props();
 
@@ -26,38 +32,42 @@
 	let statusFilter = $state<string>(untrack(() => data.filters.status ?? "all"));
 
 	function applyFilters(reset = true) {
-		const sp = new URLSearchParams();
-		if (q.trim()) sp.set("q", q.trim());
-		sp.set("field", searchField);
-		if (roleFilter !== "all") sp.set("role", roleFilter);
-		if (statusFilter !== "all") sp.set("status", statusFilter);
-		sp.set("sort", data.filters.sort);
-		sp.set("dir", data.filters.dir);
-		sp.set("limit", String(data.limit));
-		if (!reset) sp.set("offset", String(data.offset));
-		goto(`/admin/users?${sp.toString()}`, { keepFocus: true });
+		goto(
+			buildUsersQuery(
+				{
+					q,
+					field: searchField,
+					role: roleFilter,
+					status: statusFilter,
+					sort: data.filters.sort,
+					dir: data.filters.dir,
+				},
+				{ limit: data.limit, offset: data.offset, reset },
+			),
+			{ keepFocus: true },
+		);
 	}
 
 	function changePage(delta: number) {
-		const sp = new URLSearchParams(page.url.searchParams);
-		const newOffset = Math.max(0, data.offset + delta * data.limit);
-		sp.set("offset", String(newOffset));
-		goto(`/admin/users?${sp.toString()}`);
+		goto(
+			buildPageQuery({
+				search: page.url.searchParams.toString(),
+				offset: data.offset,
+				limit: data.limit,
+				delta,
+			}),
+		);
 	}
 
 	function toggleSort(field: string) {
-		const sp = new URLSearchParams(page.url.searchParams);
-		const currentDir = data.filters.sort === field ? data.filters.dir : "desc";
-		const nextDir = currentDir === "desc" ? "asc" : "desc";
-		sp.set("sort", field);
-		sp.set("dir", nextDir);
-		sp.delete("offset");
-		goto(`/admin/users?${sp.toString()}`);
-	}
-
-	function sortIndicator(field: string): string {
-		if (data.filters.sort !== field) return "";
-		return data.filters.dir === "asc" ? "↑" : "↓";
+		goto(
+			buildSortQuery({
+				search: page.url.searchParams.toString(),
+				currentSort: data.filters.sort,
+				currentDir: data.filters.dir,
+				field,
+			}),
+		);
 	}
 </script>
 
@@ -149,13 +159,13 @@
 				<tr>
 					<th class="px-4 py-2.5">
 						<button class="font-semibold hover:text-foreground" onclick={() => toggleSort("name")}>
-							User {sortIndicator("name")}
+							User {sortIndicator(data.filters.sort, data.filters.dir, "name")}
 						</button>
 					</th>
 					<th class="px-4 py-2.5">Role / Status</th>
 					<th class="px-4 py-2.5">
 						<button class="font-semibold hover:text-foreground" onclick={() => toggleSort("createdAt")}>
-							Joined {sortIndicator("createdAt")}
+							Joined {sortIndicator(data.filters.sort, data.filters.dir, "createdAt")}
 						</button>
 					</th>
 					<th class="px-4 py-2.5 text-right">Actions</th>

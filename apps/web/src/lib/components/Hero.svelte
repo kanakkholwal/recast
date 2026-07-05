@@ -1,40 +1,16 @@
 <script lang="ts">
 	import { Container, Eyebrow, Section } from "$lib/components";
 	import { TextLoop } from "$lib/motion-core";
-	import { ArrowRight, Download, MousePointer2, Share2, Sparkles, Video } from "@lucide/svelte";
+	import { ArrowRight, Download, Sparkles } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
-	import { cubicOut } from "svelte/easing";
 	import { blur, fly } from "svelte/transition";
+	import { platforms, rise, steps, words } from "./Hero.logic";
 
 	// Hero preview asset. Pass the polished demo URL from the parent (single
 	// source of truth alongside the before/after proof clips). Falls back to
 	// the static screenshot if no URL is provided, so the hero never breaks
 	// on a missing prop.
 	let { previewSrc = "" }: { previewSrc?: string } = $props();
-
-	// Concrete artifacts the target audience actually makes, ordered so the
-	// loop opens with the broadest noun (demo) and rotates through the
-	// segment-specific outputs (investor walkthrough = founders, launch video
-	// = indie hackers, changelog clip = devrels, onboarding tour = product
-	// engineers / solopreneurs). Naming outputs instead of style adjectives
-	// (the old "cinematic / hand-edited" loop) plants category + audience in
-	// the same beat and makes the TextLoop animation land on real value.
-	const words = [
-		"demo.",
-		"launch video.",
-		"changelog clip.",
-		"investor walkthrough.",
-		"onboarding tour.",
-	];
-	const platforms = ["macOS", "Windows", "Linux"];
-	const steps = [
-		{ icon: Video, label: "Record" },
-		{ icon: MousePointer2, label: "Auto-polish" },
-		{ icon: Share2, label: "Share" },
-	];
-
-	/** Svelte native transition — snappy in, lands gently. */
-	const rise = (delay: number) => ({ y: 16, duration: 720, delay, easing: cubicOut });
 </script>
 
 <Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-44 md:pb-28">

@@ -7,6 +7,7 @@
   import { registry } from "$lib/registry";
   import { clockCentis as fmtTime } from "$lib/format/time";
   import {
+    computeNewZoomBounds,
     regionMaxRamp,
     scaleAt,
     sparklinePath,
@@ -67,16 +68,18 @@
   let customCurve = $state<"in" | "out">("in");
 
   function addRegion() {
-    const duration = store.metadata?.duration ?? 0;
-    if (duration <= 0) return;
-    const clipEnd = store.trimEnd || duration;
-    const start = Math.max(store.trimStart, store.currentTime - 0.35);
-    const end = Math.min(clipEnd, Math.max(start + 0.8, store.currentTime + 0.85));
+    const bounds = computeNewZoomBounds(
+      store.metadata?.duration ?? 0,
+      store.trimStart,
+      store.trimEnd,
+      store.currentTime,
+    );
+    if (!bounds) return;
     // Zoom toward where the cursor actually was, not dead-centre.
     const w = store.metadata?.width ?? 0;
     const h = store.metadata?.height ?? 0;
     const center = resolveZoomCenter(store.cursorSamplesRaw, store.currentTime, w, h);
-    store.addZoomRegion(start, end, 1.8, center);
+    store.addZoomRegion(bounds.start, bounds.end, 1.8, center);
   }
 
   let hasAutoZooms = $derived(store.zoomRegions.some((r) => r.source === "auto"));

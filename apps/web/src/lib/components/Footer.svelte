@@ -1,67 +1,7 @@
 <script lang="ts">
   import { Container } from "$lib/components";
+  import { footerCols as cols, footerSocials as socials } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";
-  import Mail from "@lucide/svelte/icons/mail";
-  import { GithubBrand, XBrand } from "@recast/ui/brand-icons";
-
-  type Link = { label: string; href: string; external?: boolean };
-
-  const cols: { title: string; links: Link[] }[] = [
-    {
-      title: "Product",
-      links: [
-        { label: "Features", href: "/features" },
-        { label: "Extensions", href: "/extensions" },
-        { label: "Free Tools", href: "/tools" },
-        { label: "Pricing", href: "/pricing" },
-        { label: "Download", href: "/download" },
-        { label: "Join Waitlist", href: "/waitlist" },
-      ],
-    },
-    {
-      title: "Resources",
-      links: [
-        { label: "Documentation", href: "#" },
-        {
-          label: "GitHub",
-          href: "https://github.com/kanakkholwal/recast",
-          external: true,
-        },
-        {
-          label: "Releases",
-          href: "https://github.com/kanakkholwal/recast/releases",
-          external: true,
-        },
-        { label: "Changelog", href: "/changelog" },
-      ],
-    },
-    {
-      title: "Company",
-      links: [
-        { label: "Contact", href: "mailto:try-recast@gmail.com" },
-        {
-          label: "X / Twitter",
-          href: "https://x.com/kanakkholwal",
-          external: true,
-        },
-        {
-          label: "Discord",
-          href: "https://discord.gg/rBCuqRsb5",
-          external: true,
-        },
-      ],
-    },
-  ];
-
-  const socials = [
-    {
-      icon: GithubBrand,
-      href: "https://github.com/kanakkholwal/recast",
-      label: "GitHub",
-    },
-    { icon: XBrand, href: "https://x.com/kanakkholwal", label: "X / Twitter" },
-    { icon: Mail, href: "mailto:try-recast@gmail.com", label: "Email" },
-  ];
 </script>
 
 <footer class="relative border-t border-border-low/70">

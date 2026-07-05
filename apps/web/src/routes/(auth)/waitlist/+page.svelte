@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { SeoMeta } from "$lib/components";
+	import { joinWaitlist } from "$lib/waitlist";
 	import Logo from "$lib/logo.svelte";
 	import { ArrowLeft, ArrowRight, LoaderCircle, MailCheck, Sparkles } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
@@ -27,18 +28,7 @@
 		loading = true;
 		try {
 			await toast.promise(
-				(async () => {
-					const res = await fetch("/api/waitlist", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ email, source }),
-					});
-					const data = (await res.json().catch(() => ({}))) as {
-						ok?: boolean;
-						error?: string;
-					};
-					if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
-				})(),
+				joinWaitlist(email, source),
 				{
 					loading: "Adding you to the waitlist…",
 					success: "You're on the list. We'll email when access opens.",

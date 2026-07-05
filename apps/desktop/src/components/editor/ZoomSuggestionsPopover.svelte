@@ -1,6 +1,8 @@
 <script lang="ts">
+  import { clockCentis } from "$lib/format/time";
   import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import { keyOf, normalizeCenter, reasonLabel } from "./zoom-suggestions.logic";
   import {
     AUTO_ZOOM_SCALE,
     findFreeSlot as _findFreeSlot,
@@ -50,17 +52,6 @@
     }
   }
 
-  function formatTime(us: number): string {
-    const s = us / 1_000_000;
-    const m = Math.floor(s / 60);
-    const rem = s - m * 60;
-    return `${m}:${rem.toFixed(2).padStart(5, "0")}`;
-  }
-
-  function reasonLabel(r: ZoomSuggestion["reason"]): string {
-    return r === "click" ? "Click" : "Settle";
-  }
-
   function reasonIcon(r: ZoomSuggestion["reason"]) {
     return r === "click" ? MousePointerClick : Sparkles;
   }
@@ -95,10 +86,6 @@
     return map;
   });
 
-  function keyOf(sug: ZoomSuggestion) {
-    return sug.timestampUs + "-" + sug.reason;
-  }
-
   function accept(idx: number) {
     const sug = pending[idx];
     if (!sug) return;
@@ -112,13 +99,7 @@
   }
 
   function centerOf(sug: ZoomSuggestion): { x: number; y: number } | undefined {
-    const w = store.metadata?.width ?? 0;
-    const h = store.metadata?.height ?? 0;
-    if (w <= 0 || h <= 0) return undefined;
-    return {
-      x: Math.min(1, Math.max(0, sug.x / w)),
-      y: Math.min(1, Math.max(0, sug.y / h)),
-    };
+    return normalizeCenter(sug.x, sug.y, store.metadata?.width ?? 0, store.metadata?.height ?? 0);
   }
 
   function dismiss(idx: number) {
@@ -236,7 +217,7 @@
                   {reasonLabel(sug.reason)}
                 </span>
                 <span class="font-mono text-[10px] tabular-nums text-muted-foreground">
-                  {formatTime(sug.timestampUs)}
+                  {clockCentis(sug.timestampUs / 1_000_000)}
                 </span>
               </div>
               <div class="truncate text-[10px] text-muted-foreground">

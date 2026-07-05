@@ -2,7 +2,8 @@
 	import { ChevronRight, Ellipsis } from "@lucide/svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { cn } from "@recast/ui/utils";
-	import type { RecastAccessory, RecastAction, RecastListItem } from "./types";
+	import { accessoryClass } from "./accessory.logic";
+	import type { RecastAction, RecastListItem } from "./types";
 
 	interface Props {
 		item: RecastListItem;
@@ -17,18 +18,6 @@
 	const destructiveActions = $derived<RecastAction[]>(
 		item.actions?.filter((a) => a.variant === "destructive") ?? [],
 	);
-
-	function accessoryClass(a: RecastAccessory) {
-		const variants = {
-			default: "bg-muted/80 text-muted-foreground border-border/40",
-			success: "bg-success/10 text-success border-success/20",
-			warning: "bg-warning/10 text-warning border-warning/20",
-			destructive:
-				"bg-destructive/10 text-destructive border-destructive/20",
-			info: "bg-info/10 text-info border-info/20",
-		} as const;
-		return variants[a.variant ?? "default"];
-	}
 
 	function onKeydown(e: KeyboardEvent) {
 		if (e.key === "Enter" || e.key === " ") {

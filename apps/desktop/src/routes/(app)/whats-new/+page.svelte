@@ -1,11 +1,6 @@
 <script lang="ts">
   import { config } from "$constants/app";
-  import {
-    KIND_META,
-    RELEASES,
-    type ChangeKind,
-    type ChangelogRelease,
-  } from "$constants/changelog";
+  import { KIND_META, RELEASES, groupChanges } from "$constants/changelog";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Sparkles } from "@lucide/svelte";
@@ -14,19 +9,6 @@
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
-
-  const ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
-
-  function groupChanges(release: ChangelogRelease) {
-    const map = new Map<ChangeKind, string[]>();
-    for (const c of release.changes) {
-      if (!map.has(c.kind)) map.set(c.kind, []);
-      map.get(c.kind)!.push(c.summary);
-    }
-    return ORDER.filter((k) => map.has(k)).map(
-      (k) => [k, map.get(k)!] as const,
-    );
-  }
 
   // Visiting the full changelog page also counts as having seen the latest version.
   onMount(() => {

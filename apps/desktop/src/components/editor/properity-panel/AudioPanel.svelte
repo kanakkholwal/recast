@@ -1,10 +1,13 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import { isEditableTarget } from "$lib/dom/editable";
   import { clock } from "$lib/format/time";
   import {
+    activePreset as activePresetLabel,
     dbForVolume,
     envelopePath as envelopePathBase,
     FADE_PRESETS,
+    volumeZone as classifyVolume,
     type FadePreset,
   } from "./audio-panel.logic";
   import {
@@ -46,12 +49,6 @@
   }
 
   // Suppress the M shortcut while typing in an input/contenteditable.
-  function isEditableTarget(target: EventTarget | null): boolean {
-    if (!(target instanceof HTMLElement)) return false;
-    if (target.isContentEditable) return true;
-    const tag = target.tagName;
-    return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-  }
   function handleKey(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
     if (isEditableTarget(e.target)) return;
@@ -61,36 +58,18 @@
     }
   }
 
-  // Volume zones for the readout. Above 100% the export applies straight gain,
-  // which can clip — surfaced as a warning.
-  type Zone = "muted" | "low" | "nominal" | "boost" | "hot";
-  const volumeZone = $derived.by<Zone>(() => {
-    if (store.audioSettings.muted) return "muted";
-    const v = store.audioSettings.volume;
-    if (v <= 0) return "muted";
-    if (v < 70) return "low";
-    if (v <= 105) return "nominal";
-    if (v <= 150) return "boost";
-    return "hot";
-  });
+  const volumeZone = $derived(
+    classifyVolume(store.audioSettings.muted, store.audioSettings.volume),
+  );
 
   function applyPreset(preset: FadePreset) {
     store.pushUndoState();
     store.updateAudioSettings({ fadeIn: preset.in, fadeOut: preset.out });
   }
-  function isPresetActive(preset: FadePreset): boolean {
-    const a = store.audioSettings;
-    return (
-      Math.abs(a.fadeIn - preset.in) < 0.01 &&
-      Math.abs(a.fadeOut - preset.out) < 0.01
-    );
-  }
 
   // Matching preset drives the Segmented selection; a custom slider value
   // leaves nothing selected.
-  const activePreset = $derived(
-    FADE_PRESETS.find((p) => isPresetActive(p))?.label ?? "",
-  );
+  const activePreset = $derived(activePresetLabel(store.audioSettings));
   const fadePresetOptions = $derived(
     FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })),
   );

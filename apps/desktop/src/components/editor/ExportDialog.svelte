@@ -7,8 +7,14 @@
     GifDither,
     GifQuality,
   } from "$lib/stores/editor-store.svelte";
-  import { totalCutDuration } from "$lib/timeline/cuts";
   import { clockCentis as formatTime } from "$lib/format/time";
+  import {
+    buildFpsOptions,
+    clampSourceFps,
+    computeExportDurations,
+    computeRemovedDuration,
+    nextLoopCount,
+  } from "./export-dialog.logic";
   import {
     Check,
     Circle,
@@ -112,20 +118,8 @@
     store.updateCaptionExport({ sidecar: v });
   }
 
-  // Source rate plus standard lower rates only — never higher (duplicating
-  // frames adds size without smoothness). A stored choice above the current
-  // source falls back to Original via the Rust-side clamp.
-  const sourceFps = $derived(Math.max(1, Math.round(store.metadata?.fps ?? 60)));
-  const fpsOptions = $derived([
-    { value: null as number | null, label: "Original", desc: `${sourceFps} fps` },
-    ...[60, 30, 24]
-      .filter((f) => f < sourceFps)
-      .map((f) => ({
-        value: f as number | null,
-        label: `${f} fps`,
-        desc: f === 24 ? "Cinematic" : "Smaller file",
-      })),
-  ]);
+  const sourceFps = $derived(clampSourceFps(store.metadata?.fps));
+  const fpsOptions = $derived(buildFpsOptions(sourceFps));
   // Reads the store directly rather than `isGif` (declared below) to avoid a
   // use-before-declaration.
   const showFps = $derived(
@@ -136,22 +130,16 @@
   const clipEnd = $derived(
     store.trimEnd > 0 ? store.trimEnd : (store.metadata?.duration ?? 0),
   );
-  const clipDuration = $derived(Math.max(0, clipEnd - store.trimStart));
   const sourceDuration = $derived(store.metadata?.duration ?? 0);
-  // Cut time inside the trim window, clamped and merged. Mirrors the Rust
-  // export's collect_export_cuts. `effectiveCuts` already drops opted-off cuts.
-  const removedDuration = $derived.by(() => {
-    if (store.effectiveCuts.length === 0) return 0;
-    const clamped = store.effectiveCuts
-      .map((c) => ({
-        ...c,
-        start: Math.max(c.start, store.trimStart),
-        end: Math.min(c.end, clipEnd),
-      }))
-      .filter((c) => c.end > c.start);
-    return totalCutDuration(clamped);
-  });
-  const outputDuration = $derived(Math.max(0, clipDuration - removedDuration));
+  // `effectiveCuts` already drops opted-off cuts.
+  const removedDuration = $derived(
+    computeRemovedDuration(store.effectiveCuts, store.trimStart, clipEnd),
+  );
+  const durations = $derived(
+    computeExportDurations(clipEnd, store.trimStart, removedDuration),
+  );
+  const clipDuration = $derived(durations.clipDuration);
+  const outputDuration = $derived(durations.outputDuration);
   const hasTrim = $derived(
     store.trimStart > 0 ||
       (sourceDuration > 0 &&
@@ -197,9 +185,7 @@
   }
 
   function cycleLoopCount() {
-    const cur = store.gifSettings.loop;
-    const next = typeof cur === "number" ? (cur >= 5 ? 1 : cur + 1) : 1;
-    setLoop(next);
+    setLoop(nextLoopCount(store.gifSettings.loop));
   }
 
   function resetGifDefaults() {

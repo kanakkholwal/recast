@@ -62,7 +62,6 @@
 		groupLabel="Administration"
 		homeHref="/admin"
 		showOrgSwitcher={false}
-		adminLinks
 	/>
 	<Sidebar.Inset>
 		<DashboardHeader rootLabel="Overview" {labels} />

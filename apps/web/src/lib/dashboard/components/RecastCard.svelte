@@ -7,6 +7,11 @@
 	} from "$lib/dashboard/format";
 	import type { Folder, Tag } from "$lib/dashboard/library.svelte";
 	import type { Recast } from "$lib/dashboard/store.svelte";
+	import {
+		folderDepth,
+		resolveAssignedTags,
+		sortFoldersByPath,
+	} from "./RecastCard.logic";
 	import { goto } from "$app/navigation";
 	import { Chip } from "@recast/ui/chip";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -69,19 +74,10 @@
 	let posterFailed = $state(false);
 	const showPoster = $derived(!!recast.posterUrl && !posterFailed);
 
-	const assignedTags = $derived(
-		recast.tags
-			.map((id) => tags.find((t) => t.id === id))
-			.filter((t): t is Tag => Boolean(t)),
-	);
+	const assignedTags = $derived(resolveAssignedTags(recast.tags, tags));
 	const assignedSet = $derived(new Set(recast.tags));
 
-	// Folders sorted by their materialized path so nesting reads top-down in
-	// the "Move to" submenu; depth drives indentation.
-	const sortedFolders = $derived([...folders].sort((a, b) => a.path.localeCompare(b.path)));
-	function depthOf(path: string): number {
-		return Math.max(0, (path.match(/\//g)?.length ?? 1) - 2);
-	}
+	const sortedFolders = $derived(sortFoldersByPath(folders));
 
 	function onDragStart(e: DragEvent) {
 		e.dataTransfer?.setData("text/recast-id", recast.id);
@@ -238,7 +234,7 @@
 								<DropdownMenu.Separator />
 								{#each sortedFolders as f (f.id)}
 									<DropdownMenu.Item onclick={() => onmove(f.id)}>
-										<span style="width: {depthOf(f.path) * 10}px" class="shrink-0"></span>
+										<span style="width: {folderDepth(f.path) * 10}px" class="shrink-0"></span>
 										{#if f.color}
 											<span class="size-2.5 shrink-0 rounded-[3px]" style="background:{f.color}"></span>
 										{/if}

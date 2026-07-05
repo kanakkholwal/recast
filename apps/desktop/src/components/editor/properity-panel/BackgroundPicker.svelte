@@ -35,6 +35,7 @@
   import {
     imagePreviewSrc,
     isValidImageValue,
+    selectionValueForType,
   } from "./background-picker.logic";
   import GradientBuilder from "./GradientBuilder.svelte";
   import PanelSection from "./PanelSection.svelte";
@@ -84,26 +85,16 @@
   let paddingValue = $state(0);
   let borderRadiusValue = $state(0);
 
-  function isValidValueForType(type: BackgroundType, value: string) {
-    switch (type) {
-      case "wallpaper":
-        // Any registered background id (built-in `asset:<id>` or an `ext:` pack).
-        return registry.get("background", value) !== undefined;
-      case "color":
-        return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
-      case "gradient":
-        return value.includes("gradient(");
-      case "image":
-        return value.length > 0;
-      default:
-        return false;
-    }
-  }
+  const isRegisteredBackground = (id: string) =>
+    registry.get("background", id) !== undefined;
 
   function getSelectionValue(type: BackgroundType) {
-    return isValidValueForType(type, store.backgroundValue)
-      ? store.backgroundValue
-      : DEFAULT_BACKGROUND_VALUES[type];
+    return selectionValueForType(
+      type,
+      store.backgroundValue,
+      DEFAULT_BACKGROUND_VALUES,
+      isRegisteredBackground,
+    );
   }
 
   function applyBackground(

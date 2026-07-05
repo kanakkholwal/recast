@@ -1,8 +1,9 @@
 <script lang="ts">
 	import { enhance } from "$app/forms";
-	import { goto, invalidateAll } from "$app/navigation";
+	import { goto } from "$app/navigation";
 	import { untrack } from "svelte";
 	import { authClient } from "$lib/auth/client";
+	import { enhanceAction } from "$lib/forms/enhance";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import * as Collapsible from "@recast/ui/collapsible";
@@ -128,18 +129,10 @@
 			method="POST"
 			action="?/updateProfile"
 			class="space-y-3"
-			use:enhance={() => {
-				savingProfile = true;
-				return async ({ result, update }) => {
-					try {
-						if (result.type === "success") toast.success("Profile updated.");
-						else if (result.type === "failure") toast.error(String(result.data?.error));
-						await update();
-					} finally {
-						savingProfile = false;
-					}
-				};
-			}}
+			use:enhance={enhanceAction({
+				setBusy: (b) => (savingProfile = b),
+				onSuccess: "Profile updated.",
+			})}
 		>
 			<Label class="block">
 				<span class="mb-1 block text-xs font-semibold text-foreground/85">Name</span>
@@ -166,18 +159,10 @@
 			<form
 				method="POST"
 				action="?/setRole"
-				use:enhance={() => {
-					settingRole = true;
-					return async ({ result, update }) => {
-						try {
-							if (result.type === "success") toast.success("Role updated.");
-							else if (result.type === "failure") toast.error(String(result.data?.error));
-							await update();
-						} finally {
-							settingRole = false;
-						}
-					};
-				}}
+				use:enhance={enhanceAction({
+					setBusy: (b) => (settingRole = b),
+					onSuccess: "Role updated.",
+				})}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">Role</span>
@@ -200,18 +185,10 @@
 			<form
 				method="POST"
 				action="?/setStatus"
-				use:enhance={() => {
-					settingStatus = true;
-					return async ({ result, update }) => {
-						try {
-							if (result.type === "success") toast.success("Status updated.");
-							else if (result.type === "failure") toast.error(String(result.data?.error));
-							await update();
-						} finally {
-							settingStatus = false;
-						}
-					};
-				}}
+				use:enhance={enhanceAction({
+					setBusy: (b) => (settingStatus = b),
+					onSuccess: "Status updated.",
+				})}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">Status</span>
@@ -271,17 +248,11 @@
 					<form
 						method="POST"
 						action="?/unban"
-						use:enhance={() => {
-							unbanning = true;
-							return async ({ result, update }) => {
-								try {
-									if (result.type === "success") toast.success("User unbanned.");
-									await update();
-								} finally {
-									unbanning = false;
-								}
-							};
-						}}
+						use:enhance={enhanceAction({
+							setBusy: (b) => (unbanning = b),
+							onSuccess: "User unbanned.",
+							onFailure: false,
+						})}
 					>
 						<Button variant="outline" size="sm" type="submit" disabled={unbanning} class="w-full gap-2">
 							{#if unbanning}
@@ -348,17 +319,11 @@
 							method="POST"
 							action="?/revokeAllSessions"
 							class="mb-3"
-							use:enhance={() => {
-								revokingAll = true;
-								return async ({ result, update }) => {
-									try {
-										if (result.type === "success") toast.success("All sessions revoked.");
-										await update();
-									} finally {
-										revokingAll = false;
-									}
-								};
-							}}
+							use:enhance={enhanceAction({
+								setBusy: (b) => (revokingAll = b),
+								onSuccess: "All sessions revoked.",
+								onFailure: false,
+							})}
 						>
 							<Button type="submit" size="sm" variant="outline" disabled={revokingAll} class="gap-2">
 								{#if revokingAll}
@@ -381,17 +346,11 @@
 										<form
 											method="POST"
 											action="?/revokeSession"
-											use:enhance={() => {
-												revokingSessionToken = s.token;
-												return async ({ result, update }) => {
-													try {
-														if (result.type === "success") toast.success("Session revoked.");
-														await update();
-													} finally {
-														revokingSessionToken = null;
-													}
-												};
-											}}
+											use:enhance={enhanceAction({
+												setBusy: (b) => (revokingSessionToken = b ? s.token : null),
+												onSuccess: "Session revoked.",
+												onFailure: false,
+											})}
 										>
 											<input type="hidden" name="sessionToken" value={s.token} />
 											<Button
@@ -432,22 +391,11 @@
 				method="POST"
 				action="?/setPassword"
 				class="space-y-3 border-t border-border/40 p-5"
-				use:enhance={() => {
-					settingPassword = true;
-					return async ({ result, update }) => {
-						try {
-							if (result.type === "success") {
-								toast.success("Password set. Share securely with the user.");
-								newPassword = "";
-							} else if (result.type === "failure") {
-								toast.error(String(result.data?.error));
-							}
-							await update();
-						} finally {
-							settingPassword = false;
-						}
-					};
-				}}
+				use:enhance={enhanceAction({
+					setBusy: (b) => (settingPassword = b),
+					onSuccess: "Password set. Share securely with the user.",
+					reset: () => (newPassword = ""),
+				})}
 			>
 				<Label class="block">
 					<span class="mb-1 block text-xs font-semibold text-foreground/85">New password</span>
@@ -574,21 +522,13 @@
 			method="POST"
 			action="?/ban"
 			class="space-y-3"
-			use:enhance={() => {
-				banning = true;
-				return async ({ result, update }) => {
-					try {
-						if (result.type === "success") {
-							confirmBan = false;
-							toast.success("User banned.");
-							await invalidateAll();
-						}
-						await update();
-					} finally {
-						banning = false;
-					}
-				};
-			}}
+			use:enhance={enhanceAction({
+				setBusy: (b) => (banning = b),
+				onSuccess: "User banned.",
+				onFailure: false,
+				invalidate: true,
+				reset: () => (confirmBan = false),
+			})}
 		>
 			<Label class="block">
 				<span class="mb-1 block text-xs font-semibold text-foreground/85">Reason</span>

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { formatDateTime, formatSize } from "$lib/format/files";
   import type { RecordingEntry } from "$lib/ipc";
   import { openFileLocation } from "$lib/ipc";
   import { Clock, Download, FolderOpen, Video, X } from "@lucide/svelte";
@@ -19,21 +20,6 @@
   // Tauri's asset:// URL — needed because the WebView can't read raw OS
   // paths. Recomputed if the parent swaps `entry` in place (rename flow).
   const src = $derived(convertFileSrc(entry.path));
-
-  function formatSize(bytes: number) {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1048576) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / 1048576).toFixed(1)} MB`;
-  }
-
-  function formatDate(unix: number) {
-    return new Date(unix * 1000).toLocaleDateString(undefined, {
-      month: "short",
-      day: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
@@ -89,7 +75,7 @@
         </span>
         <span class="flex items-center gap-1.5">
           <Clock class="size-3.5" />
-          {formatDate(entry.created)}
+          {formatDateTime(entry.created)}
         </span>
       </div>
       <Button

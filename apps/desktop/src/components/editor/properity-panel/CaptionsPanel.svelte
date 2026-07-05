@@ -16,6 +16,14 @@
   } from "$lib/ipc";
   import { registry } from "$lib/registry";
   import type { CaptionPresetValue } from "$lib/registry/types";
+  import {
+    captionStyleMatchesPreset,
+    downloadProgressPct,
+    groupModelsByFamily,
+    gpuLabel as gpuLabelOf,
+    langLabel,
+    pickDefaultModelId,
+  } from "./captions-panel.logic";
   import { ensureFontLoaded } from "$lib/fonts/font-options";
   import {
     resolveCaptionAnimation,
@@ -106,34 +114,15 @@
   });
 
   // Group models by family, preserving first-seen order, for the picker.
-  const families = $derived.by(() => {
-    const groups: { name: string; models: CaptionModelInfo[] }[] = [];
-    for (const m of models) {
-      let g = groups.find((x) => x.name === m.family);
-      if (!g) {
-        g = { name: m.family, models: [] };
-        groups.push(g);
-      }
-      g.models.push(m);
-    }
-    return groups;
-  });
+  const families = $derived(groupModelsByFamily(models));
 
-  const gpuLabel = $derived.by(() => {
-    if (!caps) return "";
-    return caps.gpu.available ? (caps.gpu.backend?.toUpperCase() ?? "GPU") : "CPU only";
-  });
+  const gpuLabel = $derived(gpuLabelOf(caps));
 
   async function refresh() {
     try {
       models = await listCaptionModels();
       if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
-        selectedModelId =
-          usable.find((m) => m.isDefault)?.id ??
-          usable[0]?.id ??
-          models.find((m) => m.isDefault)?.id ??
-          models[0]?.id ??
-          null;
+        selectedModelId = pickDefaultModelId(models);
       }
     } catch (e) {
       toast.error(`Could not load caption models: ${e}`);
@@ -152,9 +141,7 @@
       total: number;
     }>("captions:download-progress", (e) => {
       if (e.payload.modelId !== downloadingId) return;
-      downloadPct = e.payload.total > 0
-        ? Math.min(100, Math.round((e.payload.downloaded / e.payload.total) * 100))
-        : 0;
+      downloadPct = downloadProgressPct(e.payload.downloaded, e.payload.total);
     });
     const unPhase = listen<{ phase: string }>("captions:transcribe-progress", (e) => {
       phase = e.payload.phase;
@@ -295,33 +282,9 @@
   // active theme), or null once the user has tweaked away from any preset.
   const activeTheme = $derived.by(() => {
     const cs = store.captionStyle;
-    return (
-      captionPresets.find((p) => {
-        const v = p.value;
-        return (
-          v.fontFamily === cs.fontFamily &&
-          v.fontWeight === cs.fontWeight &&
-          v.fontSizePct === cs.fontSizePct &&
-          v.position === cs.position &&
-          v.align === cs.align &&
-          v.offsetPct === cs.offsetPct &&
-          v.color === cs.color &&
-          v.uppercase === cs.uppercase &&
-          v.letterSpacing === cs.letterSpacing &&
-          v.background === cs.background &&
-          v.backgroundColor === cs.backgroundColor &&
-          v.backgroundOpacity === cs.backgroundOpacity &&
-          v.outlineWidth === cs.outlineWidth &&
-          v.outlineColor === cs.outlineColor &&
-          v.maxLines === cs.maxLines
-        );
-      }) ?? null
-    );
+    return captionPresets.find((p) => captionStyleMatchesPreset(cs, p.value)) ?? null;
   });
   const activeThemeLabel = $derived(activeTheme?.label ?? "Custom");
-
-  const langLabel = (m: CaptionModelInfo) =>
-    m.languages.includes("multi") ? "Multilingual" : m.languages.join(", ").toUpperCase();
 </script>
 
 <div

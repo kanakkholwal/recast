@@ -4,6 +4,13 @@
 	import OrDivider from "$lib/auth/components/OrDivider.svelte";
 	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
 	import { authClient } from "$lib/auth/client";
+	import {
+		STRENGTH_COLORS,
+		STRENGTH_LABELS,
+		canSignUp,
+		passwordsMatch,
+		scorePasswordStrength,
+	} from "$lib/auth/password.logic";
 	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
@@ -21,34 +28,10 @@
 	let showPassword = $state(false);
 	let loading = $state(false);
 
-	const passwordStrength = $derived.by(() => {
-		const p = password;
-		let score = 0;
-		if (p.length >= 8) score++;
-		if (/[A-Z]/.test(p) && /[a-z]/.test(p)) score++;
-		if (/\d/.test(p)) score++;
-		if (/[^A-Za-z0-9]/.test(p)) score++;
-		return score; // 0..4
-	});
-	const strengthLabel = ["Weak", "Fair", "Good", "Strong", "Excellent"];
-	const strengthColor = [
-		"bg-destructive/60",
-		"bg-warning/60",
-		"bg-warning",
-		"bg-success/80",
-		"bg-success",
-	];
-
-	const passwordsMatch = $derived(
-		password === confirmPassword || confirmPassword.length === 0,
-	);
-
+	const passwordStrength = $derived(scorePasswordStrength(password));
+	const matches = $derived(passwordsMatch(password, confirmPassword));
 	const canSubmit = $derived(
-		name.trim().length > 0 &&
-			email.trim().length > 0 &&
-			password.length >= 8 &&
-			password === confirmPassword &&
-			agreed,
+		canSignUp({ name, email, password, confirmPassword, agreed }),
 	);
 
 	async function signUp(e: SubmitEvent) {
@@ -148,13 +131,13 @@
 							<span
 								class="h-1 flex-1 rounded-full transition-colors duration-200
 									{i < passwordStrength
-									? strengthColor[passwordStrength]
+									? STRENGTH_COLORS[passwordStrength]
 									: 'bg-foreground/10'}"
 							></span>
 						{/each}
 					</div>
 					<span class="w-14 text-right text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-						{strengthLabel[passwordStrength]}
+						{STRENGTH_LABELS[passwordStrength]}
 					</span>
 				</div>
 			{/if}
@@ -168,10 +151,10 @@
 				autocomplete="new-password"
 				bind:value={confirmPassword}
 				placeholder="Type it again"
-				aria-invalid={!passwordsMatch}
+				aria-invalid={!matches}
 				class="h-10"
 			/>
-			{#if !passwordsMatch}
+			{#if !matches}
 				<span
 					class="flex items-center gap-1 text-[11px] font-medium text-destructive"
 					transition:slide={{ duration: 200, easing: cubicOut }}

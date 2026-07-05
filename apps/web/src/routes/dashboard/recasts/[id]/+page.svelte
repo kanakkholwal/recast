@@ -2,13 +2,9 @@
 	import { invalidateAll } from "$app/navigation";
 	import * as api from "$lib/dashboard/api";
 	import {
-		avgWatchPct,
-		completionRate,
 		deviceBreakdown,
-		engagementRate,
 		geographyBreakdown,
 		trafficBreakdown,
-		uniqueViewers,
 		viewCount,
 		viewsByDay,
 		watchRetention,
@@ -25,8 +21,7 @@
 	import StatGrid from "$lib/dashboard/components/StatGrid.svelte";
 	import WatchRetention from "$lib/dashboard/components/WatchRetention.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
-	import { formatBytes, formatDuration, formatRelative } from "$lib/dashboard/format";
-	import type { Recast } from "$lib/dashboard/store.svelte";
+	import { buildStatRow, formatRecastSubtitle, toPlayerRecast } from "$lib/dashboard/recast-detail.logic";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import {
@@ -85,46 +80,26 @@
 
 	// ── Lifetime stats (Comments/Reactions are broken out in the Engagement
 	//    card + heatmap, so the row carries the headline rates instead). ──────
-	const lifetimeViews = $derived(viewCount(data.activity));
-	const interactions = $derived(data.engagement.reactionCount + data.engagement.commentCount);
-	const stats = $derived([
-		{ icon: Eye, label: "Views", value: String(lifetimeViews) },
-		{ icon: Users, label: "Reach", value: String(uniqueViewers(data.activity)) },
-		{
-			icon: Zap,
-			label: "Engagement",
-			value: `${engagementRate(lifetimeViews, data.engagement.reactionCount, data.engagement.commentCount)}%`,
-		},
-		{ icon: Percent, label: "Avg watch", value: `${avgWatchPct(data.activity)}%` },
-		{ icon: CheckCircle2, label: "Completion", value: `${completionRate(data.activity)}%` },
-		{ icon: MessageSquare, label: "Interactions", value: String(interactions) },
-	]);
+	const stats = $derived(
+		buildStatRow(data.activity, data.engagement, {
+			views: Eye,
+			reach: Users,
+			engagement: Zap,
+			avgWatch: Percent,
+			completion: CheckCircle2,
+			interactions: MessageSquare,
+		}),
+	);
 
 	// ── Audience breakdowns (computed from the already-loaded activity) ──────
 	const geography = $derived(geographyBreakdown(data.activity));
 	const devices = $derived(deviceBreakdown(data.activity));
 	const traffic = $derived(trafficBreakdown(data.activity));
 
-	const subtitle = $derived(
-		`${formatDuration(recast.durationSec)} · ${formatBytes(recast.sizeBytes)} · ${formatRelative(recast.createdAt)}`,
-	);
+	const subtitle = $derived(formatRecastSubtitle(recast));
 
 	// Player wants the store-shaped Recast.
-	const playerRecast: Recast = $derived({
-		id: recast.id,
-		title: recast.title,
-		durationSec: recast.durationSec,
-		createdAt: recast.createdAt,
-		sizeBytes: recast.sizeBytes,
-		source: recast.source as Recast["source"],
-		provider: recast.provider,
-		views: viewCount(data.activity),
-		folderId: null,
-		tags: [],
-		videoUrl: recast.videoUrl,
-		posterUrl: recast.posterUrl ?? "",
-		latestShareSlug: shares[0]?.slug ?? null,
-	});
+	const playerRecast = $derived(toPlayerRecast(recast, shares, viewCount(data.activity)));
 
 	async function copyLink() {
 		try {

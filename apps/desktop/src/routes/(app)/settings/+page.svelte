@@ -24,6 +24,12 @@
     type RecordingQuality,
   } from "$lib/profiles";
   import {
+    clampFps,
+    computeFpsOptions,
+    fpsToStored,
+    resolveMaxRefresh,
+  } from "./settings.logic";
+  import {
     ArrowUpRight,
     Cloud,
     Cpu,
@@ -135,16 +141,7 @@
         getDisplays(),
         getLastSource(),
       ]);
-      const globalMax = displays.reduce(
-        (m, d) => Math.max(m, d.refreshHz || 0),
-        0,
-      );
-      let selected = 0;
-      if (last?.kind === "monitor") {
-        selected = displays.find((d) => d.id === last.id)?.refreshHz ?? 0;
-      }
-      const resolved = selected || globalMax;
-      maxRefreshHz = resolved >= 1 ? resolved : 60;
+      maxRefreshHz = resolveMaxRefresh(displays, last);
     } catch {
       maxRefreshHz = 60;
     }
@@ -157,24 +154,14 @@
 
   function updateRecordingFps(value: number) {
     recordingFps = value;
-    // 60 persists as null (the unset/default sentinel) so a fresh install and an
-    // explicit 60 behave identically downstream.
-    persistRecordingFps(value === 60 ? null : value);
+    persistRecordingFps(fpsToStored(value));
   }
 
-  // 60 is always available; 120/144/240 appear only when a monitor can present
-  // them (tolerance covers 119.88/143.86-style reported rates).
-  const fpsOptions = $derived(
-    [60, 120, 144, 240].filter(
-      (rate) => rate === 60 || maxRefreshHz >= rate - 2,
-    ),
-  );
+  const fpsOptions = $derived(computeFpsOptions(maxRefreshHz));
 
-  // Desired rate capped to this display's max. The stored preference is never
-  // mutated, so switching back to a high-refresh display restores it.
-  const effectiveFps = $derived(
-    Math.min(recordingFps, fpsOptions[fpsOptions.length - 1] ?? 60),
-  );
+  // The stored preference is never mutated, so switching back to a high-refresh
+  // display restores it.
+  const effectiveFps = $derived(clampFps(recordingFps, fpsOptions));
 
   const recordingQualityOptions: {
     value: RecordingQuality;

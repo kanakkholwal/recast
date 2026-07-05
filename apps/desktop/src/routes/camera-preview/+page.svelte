@@ -21,43 +21,24 @@
     setWindowAspectRatio,
     updateCameraPreviewState,
     validateCameraSource,
-    type CameraPreviewState,
   } from "$lib/ipc";
-
-  type AspectKey = "1:1" | "4:3" | "16:9";
-  type ShapeKey = "square" | "rounded" | "circle";
-  type CameraStatus = "loading" | "live" | "warning" | "failed";
-
-  const ASPECTS: AspectKey[] = ["1:1", "4:3", "16:9"];
-  const ASPECT_RATIO: Record<AspectKey, number> = {
-    "1:1": 1,
-    "4:3": 4 / 3,
-    "16:9": 16 / 9,
-  };
-
-  // Circle is 1:1-only — on a non-square aspect it'd be an ellipse, which the
-  // composited bubble in the editor doesn't render.
-  function allowedShapesFor(a: AspectKey): ShapeKey[] {
-    return a === "1:1"
-      ? ["square", "rounded", "circle"]
-      : ["square", "rounded"];
-  }
-
-  // CSS px radius for the "rounded" shape — matches the rounded-3xl token.
-  const WINDOW_RADIUS = 20;
-
-  // Max preview size as a fraction of the screen, so it never covers recorded
-  // content or balloons the composited bubble.
-  const MAX_SCREEN_FRACTION = 0.25;
-  // Min video width. Window width == video width, so this floors at the width
-  // of the controls pill (~150px, widest at the "16:9" label) to avoid clipping it.
-  const CONTROL_BAR_MIN_WIDTH = 168;
-  const MIN_LOGICAL_SIZE = CONTROL_BAR_MIN_WIDTH;
-
-  // Bottom strip for the control bar, outside the rounded/clipped video bubble.
-  // The aspect lock governs only `windowHeight − CONTROL_BAR_HEIGHT`. Keep in
-  // sync with the strip height in markup and `openCameraPreviewWindow` (ipc.ts).
-  const CONTROL_BAR_HEIGHT = 40;
+  import { isBrowserDeviceId } from "$lib/runtime/device-id";
+  import {
+    allowedShapesFor,
+    ASPECT_RATIO,
+    ASPECTS,
+    buildPreviewState,
+    computeSizeConstraints,
+    CONTROL_BAR_HEIGHT,
+    fitInsideMax,
+    MAX_SCREEN_FRACTION,
+    MIN_LOGICAL_SIZE,
+    targetWindowSize,
+    WINDOW_RADIUS,
+    type AspectKey,
+    type CameraStatus,
+    type ShapeKey,
+  } from "./camera-preview.logic";
 
   // Cached max logical size; aspect-snap helpers clamp against it because the
   // OS max-size only bounds drag-resize, not our programmatic setSize calls.
@@ -144,7 +125,7 @@
       statusMessage = "Connecting to camera…";
 
       // Validation only applies to DirectShow names; skip browser deviceId hashes.
-      if (deviceQuery && !/^[a-f0-9]{40,}$/i.test(deviceQuery)) {
+      if (deviceQuery && !isBrowserDeviceId(deviceQuery)) {
         try {
           const validation = await validateCameraSource(deviceQuery);
           if (validation.status === "warning" || validation.status === "error") {
@@ -227,20 +208,15 @@
   // aspect is landscape-or-square (ratio ≥ 1) so a square max box bounds the
   // window by width without clipping the proportional height.
   async function applySizeConstraints() {
-    const screenW = Math.max(window.screen.availWidth || 1920, 320);
-    const maxW = Math.floor(screenW * MAX_SCREEN_FRACTION);
+    const { maxLogicalW: maxW, maxLogicalH: maxH, minLogicalW, minWinH } =
+      computeSizeConstraints(window.screen.availWidth || 1920);
     // Square video bounding box; the window adds the control strip on top.
     maxLogicalW = maxW;
-    maxLogicalH = maxW;
-
-    // Use the widest aspect (shortest video) for the min height so the OS floor
-    // never out-clamps the native per-aspect minimum.
-    const widestRatio = Math.max(...Object.values(ASPECT_RATIO));
-    const minWinH = Math.round(MIN_LOGICAL_SIZE / widestRatio) + CONTROL_BAR_HEIGHT;
+    maxLogicalH = maxH;
 
     const win = getCurrentWindow();
     try {
-      await win.setMinSize(new LogicalSize(MIN_LOGICAL_SIZE, minWinH));
+      await win.setMinSize(new LogicalSize(minLogicalW, minWinH));
       await win.setMaxSize(
         new LogicalSize(maxLogicalW, maxLogicalH + CONTROL_BAR_HEIGHT),
       );
@@ -273,21 +249,6 @@
     }
   }
 
-  // Largest box of the given ratio that fits inside (maxLogicalW, maxLogicalH).
-  function fitInsideMax(w: number, h: number, ratio: number): [number, number] {
-    let outW = w;
-    let outH = h;
-    if (outW > maxLogicalW) {
-      outW = maxLogicalW;
-      outH = outW / ratio;
-    }
-    if (outH > maxLogicalH) {
-      outH = maxLogicalH;
-      outW = outH * ratio;
-    }
-    return [Math.round(outW), Math.round(outH)];
-  }
-
   async function applyAspect(
     next: AspectKey,
     opts: { snap?: boolean } = {},
@@ -302,10 +263,11 @@
       // Window width == video width (no horizontal chrome).
       const widthLogical = size.width / factor;
       const ratio = ASPECT_RATIO[next];
-      const [clampedW, clampedVideoH] = fitInsideMax(
+      const [clampedW, clampedVideoH] = targetWindowSize(
         widthLogical,
-        widthLogical / ratio,
         ratio,
+        maxLogicalW,
+        maxLogicalH,
       );
       isSnapping = true;
       // Window height = video height + control strip.
@@ -328,7 +290,13 @@
     const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
     const target = ASPECT_RATIO[aspect];
     const expectedVideoH = w / target;
-    const [clampedW, clampedVideoH] = fitInsideMax(w, expectedVideoH, target);
+    const [clampedW, clampedVideoH] = fitInsideMax(
+      w,
+      expectedVideoH,
+      target,
+      maxLogicalW,
+      maxLogicalH,
+    );
     if (
       Math.abs(clampedVideoH - videoH) <= 1 &&
       Math.abs(clampedW - w) <= 1
@@ -397,35 +365,18 @@
     const win = getCurrentWindow();
     const position = await win.outerPosition();
     const size = await win.outerSize();
-    const screenWidth = Math.max(window.screen.availWidth || 1, 1);
-    const screenHeight = Math.max(window.screen.availHeight || 1, 1);
-
-    const factor = window.devicePixelRatio || 1;
-    // Subtract the bottom control strip so the reported bubble rect is just the
-    // video region and the composite isn't stretched by the controls' height.
-    const videoHeightPhys = Math.max(1, size.height - CONTROL_BAR_HEIGHT * factor);
-    const widthLogical = size.width / factor;
-    // Corner radius as a fraction of the shorter side, capped at 0.5 (full circle).
-    const shortLogical = Math.min(widthLogical, videoHeightPhys / factor);
-    const cornerRadius =
-      shape === "square"
-        ? 0
-        : shape === "circle"
-          ? 0.5
-          : Math.min(0.5, WINDOW_RADIUS / Math.max(shortLogical, 1));
-
-    const state: CameraPreviewState = {
-      mirror: isMirrored,
+    const state = buildPreviewState(
+      position,
+      size,
+      {
+        width: Math.max(window.screen.availWidth || 1, 1),
+        height: Math.max(window.screen.availHeight || 1, 1),
+      },
+      window.devicePixelRatio || 1,
       shape,
-      cornerRadius,
-      animationPreset: status === "warning" ? "lively" : "soft",
-      // Window top == video top (strip is at the bottom), so X/Y are unchanged.
-      windowX: Math.max(0, Math.min(1, position.x / screenWidth)),
-      windowY: Math.max(0, Math.min(1, position.y / screenHeight)),
-      windowWidth: Math.max(0.05, Math.min(1, size.width / screenWidth)),
-      windowHeight: Math.max(0.05, Math.min(1, videoHeightPhys / screenHeight)),
-    };
-
+      isMirrored,
+      status,
+    );
     await updateCameraPreviewState(state);
   }
 

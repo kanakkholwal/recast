@@ -109,6 +109,41 @@ export function buildTimeMarkers(
 	return markers;
 }
 
+// Filled SVG envelope path for an audio waveform, built in output-pixel space
+// (each bucket at `xOf(bucketTime)`) so buckets inside a removed cut collapse
+// onto the seam. `range` clips to a kept window (in/out); null keeps everything.
+// `amp` is the peak half-height; `mid` is height/2.
+export function buildWaveformPath(p: {
+	waveform: ReadonlyArray<number>;
+	duration: number;
+	xOf: (t: number) => number;
+	height: number;
+	amp: number;
+	range?: { start: number; end: number } | null;
+}): string {
+	const w = p.waveform;
+	const n = w.length;
+	if (n < 2 || p.duration <= 0) return "";
+	const mid = p.height / 2;
+	const kept: number[] = [];
+	for (let i = 0; i < n; i++) {
+		if (p.range) {
+			const t = (i / n) * p.duration;
+			if (t < p.range.start - 0.001 || t > p.range.end + 0.001) continue;
+		}
+		kept.push(i);
+	}
+	if (kept.length < 2) return "";
+	const xAt = (i: number) => p.xOf((i / n) * p.duration).toFixed(2);
+	let d = `M ${xAt(kept[0])} ${mid}`;
+	for (const i of kept) d += ` L ${xAt(i)} ${(mid - w[i] * p.amp).toFixed(2)}`;
+	for (let k = kept.length - 1; k >= 0; k--) {
+		const i = kept[k];
+		d += ` L ${xAt(i)} ${(mid + w[i] * p.amp).toFixed(2)}`;
+	}
+	return `${d} Z`;
+}
+
 // Minor tick marks between labels.
 export function buildMinorTicks(
 	duration: number,

@@ -1,9 +1,8 @@
 <script lang="ts">
   import { ConfirmDialog, RenameDialog } from "$components/recast";
-  import { formatSize, relativeDate as relativeDateBase } from "$lib/format/files";
+  import { formatSize } from "$lib/format/files";
   import {
     deleteFile,
-    generateThumbnails,
     listRecasts,
     migrateProject,
     openFileLocation,
@@ -14,6 +13,20 @@
     openInEditor as openEditorWindow,
     openInNewWindow,
   } from "$lib/library/editor-window";
+  import {
+    filterEntries,
+    sortEntries,
+    sumBytes,
+    type LibrarySort,
+  } from "$lib/library/list";
+  import { createSelection } from "$lib/library/selection.svelte";
+  import {
+    createThumbnailLoader,
+    libraryDate,
+    removeThumbnail,
+    removeThumbnails,
+    renameThumbnail,
+  } from "$lib/library/thumbnails";
   import { morph } from "$lib/morph";
   import { isShareSupported, shareRecording } from "$lib/share";
   import {
@@ -50,26 +63,31 @@
   import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
-  import { SvelteSet } from "svelte/reactivity";
   import { fade, fly } from "svelte/transition";
 
   let entries = $state<RecordingEntry[]>([]);
   let isLoading = $state(true);
   let thumbnails = $state<Record<string, string>>({});
   let editorWindow = $state<"navigate" | "new-window">("navigate");
-  let thumbnailPass = 0;
+  const loadThumbnails = createThumbnailLoader();
 
   let query = $state("");
   let view = $state<"grid" | "list">("grid");
-  let sort = $state<"recent" | "name" | "size">("recent");
+  let sort = $state<LibrarySort>("recent");
   let renameTarget = $state<RecordingEntry | null>(null);
   let deleteTarget = $state<RecordingEntry | null>(null);
 
   // Multi-select: a toolbar "Select" toggle flips the page into selection
   // mode, where clicking a card checks it instead of opening the editor.
-  let selectMode = $state(false);
   let bulkDeleteOpen = $state(false);
-  const selected = new SvelteSet<string>();
+  const selection = createSelection({
+    noun: "recording",
+    deleteFile,
+    onDeleted: (deleted) => {
+      entries = entries.filter((e) => !deleted.has(e.path));
+      if (deleted.size > 0) thumbnails = removeThumbnails(thumbnails, deleted);
+    },
+  });
 
   // Legacy-format migration: surfaced only when the scan finds older bundles.
   let migrateAllOpen = $state(false);
@@ -97,7 +115,7 @@
     isLoading = true;
     try {
       entries = await listRecasts();
-      void loadThumbnails(entries);
+      void refreshThumbnails(entries);
     } catch (e) {
       toast.error(`Could not load recordings: ${e}`);
     } finally {
@@ -105,25 +123,10 @@
     }
   }
 
-  async function loadThumbnails(items: RecordingEntry[]) {
-    const pass = ++thumbnailPass;
-    const settled = await Promise.allSettled(
-      items.map(async (item) => {
-        const frames = await generateThumbnails(item.path, 1);
-        return [item.path, frames[0] ?? ""] as const;
-      }),
-    );
-    if (pass !== thumbnailPass) return;
-    const next: Record<string, string> = {};
-    for (const r of settled) {
-      if (r.status === "fulfilled" && r.value[1]) next[r.value[0]] = r.value[1];
-    }
-    thumbnails = next;
+  async function refreshThumbnails(items: RecordingEntry[]) {
+    const next = await loadThumbnails(items);
+    if (next) thumbnails = next;
   }
-
-  // >1-week fallback keeps the time (date + time), matching this list's history.
-  const relativeDate = (unix: number) =>
-    relativeDateBase(unix, { withTime: true });
 
   const openInEditor = (entry: RecordingEntry) =>
     openEditorWindow(entry, editorWindow);
@@ -139,21 +142,14 @@
           }
         : e,
     );
-    const existingThumb = thumbnails[entry.path];
-    if (existingThumb) {
-      const { [entry.path]: _, ...rest } = thumbnails;
-      thumbnails = { ...rest, [newPath]: existingThumb };
-    }
+    thumbnails = renameThumbnail(thumbnails, entry.path, newPath);
     toast.success("Renamed");
   }
 
   async function handleDelete(entry: RecordingEntry) {
     await deleteFile(entry.path);
     entries = entries.filter((e) => e.path !== entry.path);
-    if (thumbnails[entry.path]) {
-      const { [entry.path]: _, ...rest } = thumbnails;
-      thumbnails = rest;
-    }
+    thumbnails = removeThumbnail(thumbnails, entry.path);
     toast.success(`Moved "${entry.filename}" to trash`);
   }
 
@@ -189,21 +185,9 @@
     }
   }
 
-  const filtered = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    let list = q
-      ? entries.filter((e) => e.filename.toLowerCase().includes(q))
-      : entries.slice();
-    if (sort === "recent") list.sort((a, b) => b.created - a.created);
-    else if (sort === "name")
-      list.sort((a, b) => a.filename.localeCompare(b.filename));
-    else if (sort === "size") list.sort((a, b) => b.sizeBytes - a.sizeBytes);
-    return list;
-  });
+  const filtered = $derived(sortEntries(filterEntries(entries, query), sort));
 
-  const totalSize = $derived(
-    entries.reduce((sum, e) => sum + e.sizeBytes, 0),
-  );
+  const totalSize = $derived(sumBytes(entries));
 
   // Grid and list share one keyed {#each}. Touching `view` here gives the
   // each block a reason to re-run on a layout toggle (returning a fresh
@@ -214,7 +198,7 @@
   });
 
   function activateEntry(entry: RecordingEntry) {
-    if (selectMode) toggleSelected(entry.path);
+    if (selection.selectMode) selection.toggle(entry.path);
     else openInEditor(entry);
   }
 
@@ -225,56 +209,8 @@
     }
   }
 
-  const selectedCount = $derived(selected.size);
-  const allFilteredSelected = $derived(
-    filtered.length > 0 && filtered.every((e) => selected.has(e.path)),
-  );
-
-  function exitSelectMode() {
-    selectMode = false;
-    selected.clear();
-  }
-
-  function toggleSelectMode() {
-    if (selectMode) exitSelectMode();
-    else selectMode = true;
-  }
-
-  function toggleSelected(path: string) {
-    if (selected.has(path)) selected.delete(path);
-    else selected.add(path);
-  }
-
-  function toggleSelectAll() {
-    if (allFilteredSelected) selected.clear();
-    else for (const e of filtered) selected.add(e.path);
-  }
-
-  async function handleBulkDelete() {
-    const paths = [...selected];
-    const results = await Promise.allSettled(
-      paths.map((p) => deleteFile(p)),
-    );
-    const deleted = new Set<string>();
-    results.forEach((r, i) => {
-      if (r.status === "fulfilled") deleted.add(paths[i]);
-    });
-    entries = entries.filter((e) => !deleted.has(e.path));
-    if (deleted.size > 0) {
-      const nextThumbs = { ...thumbnails };
-      for (const p of deleted) delete nextThumbs[p];
-      thumbnails = nextThumbs;
-    }
-    const failed = paths.length - deleted.size;
-    if (failed > 0) {
-      toast.error(`Moved ${deleted.size} to trash · ${failed} failed`);
-    } else {
-      toast.success(
-        `Moved ${deleted.size} recording${deleted.size === 1 ? "" : "s"} to trash`,
-      );
-    }
-    exitSelectMode();
-  }
+  const selectedCount = $derived(selection.count);
+  const allFilteredSelected = $derived(selection.allSelected(filtered));
 
   // Migrate every legacy bundle sequentially — each `migrateProject` runs off
   // the Rust main thread, and awaiting one at a time avoids parallel disk
@@ -399,18 +335,19 @@
           {/if}
 
           <Button
-            variant={selectMode ? "secondary" : "ghost"}
+            variant={selection.selectMode ? "secondary" : "ghost"}
             size="xs"
             class={cn(
               "h-7 gap-1 text-[11px]",
-              !selectMode && "text-muted-foreground hover:text-foreground",
+              !selection.selectMode &&
+                "text-muted-foreground hover:text-foreground",
             )}
-            onclick={toggleSelectMode}
+            onclick={selection.toggleMode}
             disabled={entries.length === 0}
             title="Select multiple recordings"
           >
             <ListChecks size={11} />
-            {selectMode ? "Done" : "Select"}
+            {selection.selectMode ? "Done" : "Select"}
           </Button>
 
           <Select.Root
@@ -526,7 +463,7 @@
           : "flex flex-col gap-1.5"}
       >
         {#each displayed as entry, i (entry.path)}
-          {@const isSelected = selected.has(entry.path)}
+          {@const isSelected = selection.has(entry.path)}
           <div
             in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
             animate:morph={{ duration: 340 }}
@@ -570,7 +507,7 @@
                 </div>
               {/if}
 
-              {#if selectMode}
+              {#if selection.selectMode}
                 <div class="absolute left-1.5 top-1.5 z-10">
                   <span
                     class={cn(
@@ -622,7 +559,7 @@
                 {entry.filename}
               </div>
               <div class="truncate text-[10.5px] text-muted-foreground/80">
-                {formatSize(entry.sizeBytes)} · {relativeDate(entry.created)}
+                {formatSize(entry.sizeBytes)} · {libraryDate(entry.created)}
               </div>
               {#if entry.needsMigration}
                 <span
@@ -635,7 +572,7 @@
             </div>
 
             <!-- Actions -->
-            {#if !selectMode}
+            {#if !selection.selectMode}
               <div
                 role="presentation"
                 onclick={(e) => e.stopPropagation()}
@@ -719,7 +656,7 @@
 </div>
 
 <!-- Floating bulk-action bar — visible whenever selection mode is on. -->
-{#if selectMode}
+{#if selection.selectMode}
   <div
     in:fly={{ y: 24, duration: 220, easing: cubicOut }}
     out:fly={{ y: 24, duration: 160, easing: cubicOut }}
@@ -736,7 +673,7 @@
         variant="ghost"
         size="xs"
         class="h-7 text-[11px]"
-        onclick={toggleSelectAll}
+        onclick={() => selection.toggleAll(filtered)}
         disabled={filtered.length === 0}
       >
         {allFilteredSelected ? "Clear all" : "Select all"}
@@ -755,7 +692,7 @@
         variant="ghost"
         size="xs"
         class="h-7 text-[11px] text-muted-foreground hover:text-foreground"
-        onclick={exitSelectMode}
+        onclick={selection.exit}
       >
         Cancel
       </Button>
@@ -783,7 +720,7 @@
     description="The selected recordings will be sent to the recycle bin. You can restore them from there if needed."
     confirmLabel="Move to Trash"
     variant="destructive"
-    onConfirm={handleBulkDelete}
+    onConfirm={selection.bulkDelete}
     onOpenChange={(v) => {
       if (!v) bulkDeleteOpen = false;
     }}

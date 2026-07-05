@@ -2,6 +2,7 @@
 	import { goto, invalidateAll } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import Logo from "$lib/logo.svelte";
+	import { formatUserCode, normalizeUserCode } from "./device-code.logic";
 	import {
 		AlertTriangle,
 		ArrowRight,
@@ -32,19 +33,8 @@
 	let denying = $state(false);
 	const busy = $derived(approving || denying);
 
-	// RFC 8628 user codes are random ASCII; the convention is to show them
-	// split in half with a dash for readability (the plugin tolerates either
-	// form on the wire — POST /device/approve strips dashes before lookup).
-	function formatUserCode(code: string | null | undefined): string {
-		if (!code) return "";
-		const clean = code.replace(/-/g, "").toUpperCase();
-		if (clean.length <= 4) return clean;
-		const half = Math.floor(clean.length / 2);
-		return `${clean.slice(0, half)}-${clean.slice(half)}`;
-	}
-
 	async function submitManualCode() {
-		const code = manualCode.trim().toUpperCase().replace(/[^A-Z0-9-]/g, "");
+		const code = normalizeUserCode(manualCode);
 		if (!code) return;
 		manualSubmitting = true;
 		try {

@@ -3,7 +3,18 @@
  * blur-variant tint colours. The imperative drawing stays in AnnotationOverlay.
  */
 
+import type { HandleName } from "$lib/annotations/hit";
+import type { ZoomTransform } from "$lib/annotations/eval";
+
 export type StrokeStyle = "solid" | "dashed" | "dotted";
+
+/** CSS-px half-size of an annotation resize handle (also the grab-slop base). */
+export const HANDLE_RADIUS_PX = 5.5;
+/** CSS-px corner radius drawn on annotation resize handles. */
+export const HANDLE_CORNER_PX = 2;
+
+/** Zoom transform that maps UV straight through — used for frame-anchored annotations, which ignore zoom. */
+export const IDENTITY_ZOOM: ZoomTransform = { scale: 1, cx: 0.5, cy: 0.5 };
 
 /** Canvas dash array for a stroke style, scaled by stroke width. Empty = solid. */
 export function strokeDashPattern(
@@ -119,4 +130,62 @@ export function arrowGeometry(
 		left: { x: lineEndX + nx * headWidth * 0.5, y: lineEndY + ny * headWidth * 0.5 },
 		right: { x: lineEndX - nx * headWidth * 0.5, y: lineEndY - ny * headWidth * 0.5 },
 	};
+}
+
+/**
+ * Emit a rounded-rectangle sub-path into `ctx` (caller owns beginPath/fill/
+ * stroke). Radius is clamped to half the shorter side so a full-radius box
+ * rounds cleanly regardless of dimensions. Path-building only — no ctx state
+ * is mutated beyond the current path.
+ */
+export function roundRectPath(
+	ctx: CanvasRenderingContext2D,
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	r: number,
+): void {
+	const maxR = Math.min(Math.abs(w) / 2, Math.abs(h) / 2);
+	const rr = Math.min(r, maxR);
+	ctx.moveTo(x + rr, y);
+	ctx.lineTo(x + w - rr, y);
+	ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
+	ctx.lineTo(x + w, y + h - rr);
+	ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+	ctx.lineTo(x + rr, y + h);
+	ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
+	ctx.lineTo(x, y + rr);
+	ctx.quadraticCurveTo(x, y, x + rr, y);
+	ctx.closePath();
+}
+
+/**
+ * CSS cursor for a hovered annotation handle. Distinct from the focus overlay's
+ * map: annotations add the `tool` (placement) and arrow `p1`/`p2` states, and
+ * body hovers read as `grab` rather than `move`.
+ */
+export function cursorForHandle(h: HandleName | "tool" | null): string {
+	if (h === "tool") return "crosshair";
+	switch (h) {
+		case "nw":
+		case "se":
+			return "nwse-resize";
+		case "ne":
+		case "sw":
+			return "nesw-resize";
+		case "n":
+		case "s":
+			return "ns-resize";
+		case "e":
+		case "w":
+			return "ew-resize";
+		case "p1":
+		case "p2":
+			return "crosshair";
+		case "body":
+			return "grab";
+		default:
+			return "default";
+	}
 }

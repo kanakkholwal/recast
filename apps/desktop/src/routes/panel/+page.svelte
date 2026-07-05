@@ -60,6 +60,15 @@
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { isBrowserDeviceId } from "$lib/runtime/device-id";
+  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
+  import {
+    clampFpsToDisplay,
+    formatRecordingTimer,
+    lastSourceToTarget,
+    targetToLastSource,
+    type TargetSource,
+  } from "./panel.logic";
   import { Tween } from "svelte/motion";
   import { cubicOut } from "svelte/easing";
   import { fade, scale } from "svelte/transition";
@@ -73,21 +82,6 @@
       window.alert(message);
     });
   }
-
-  type TargetSource = {
-    type: "monitor" | "window" | "region";
-    id: number;
-    label: string;
-    /** Monitor refresh rate in Hz (monitors only); caps the useful capture
-     *  fps so we never record above what the display can present. */
-    refreshHz?: number;
-    region?: {
-      x: number;
-      y: number;
-      width: number;
-      height: number;
-    };
-  };
 
   let selectedSource: TargetSource | null = $state(null);
   let isRecording = $state(false);
@@ -231,7 +225,7 @@
 
     // Skip browser MediaDevices ids (hex hashes) — the Rust validator only
     // knows DirectShow names; openCameraStream is the source of truth there.
-    if (/^[a-f0-9]{40,}$/i.test(deviceId)) {
+    if (isBrowserDeviceId(deviceId)) {
       cameraValidation = {
         id: deviceId,
         name: selectedCameraName,
@@ -275,20 +269,7 @@
     const unlistenSource = listen<TargetSource>("source-selected", (event) => {
       selectedSource = event.payload;
       // Persist for next launch.
-      setLastSource({
-        kind:
-          event.payload.type === "monitor"
-            ? "monitor"
-            : event.payload.type === "window"
-              ? "window"
-              : "region",
-        id: event.payload.id,
-        label: event.payload.label,
-        regionX: event.payload.region?.x ?? null,
-        regionY: event.payload.region?.y ?? null,
-        regionWidth: event.payload.region?.width ?? null,
-        regionHeight: event.payload.region?.height ?? null,
-      }).catch(() => {});
+      setLastSource(targetToLastSource(event.payload)).catch(() => {});
     });
 
     // Listen for device selection from picker windows
@@ -332,27 +313,7 @@
     getLastSource()
       .then((last) => {
         if (last) {
-          selectedSource = {
-            type:
-              last.kind === "window"
-                ? "window"
-                : last.kind === "region"
-                  ? "region"
-                  : "monitor",
-            id: last.id,
-            label: last.label,
-            region:
-              last.kind === "region" &&
-              last.regionWidth != null &&
-              last.regionHeight != null
-                ? {
-                    x: last.regionX ?? 0,
-                    y: last.regionY ?? 0,
-                    width: last.regionWidth,
-                    height: last.regionHeight,
-                  }
-                : undefined,
-          };
+          selectedSource = lastSourceToTarget(last);
           // Look up the restored monitor's refresh rate so fps clamping knows
           // the display ceiling without a capture-time probe.
           if (selectedSource?.type === "monitor") {
@@ -550,66 +511,47 @@
 
   function openSourceSelector() {
     if (isRecording) return;
-    WebviewWindow.getByLabel("source-selector").then(async (existing) => {
-      if (existing) {
-        await existing.setFocus();
-        return;
-      }
-      new WebviewWindow("source-selector", {
-        url: "/select",
-        title: "Select Source",
-        width: 560,
-        height: 440,
-        center: true,
-        decorations: false,
-        transparent: true,
-        shadow: false,
-        resizable: false,
-      });
+    void spawnOverlayWindow("source-selector", {
+      url: "/select",
+      title: "Select Source",
+      width: 560,
+      height: 440,
+      center: true,
+      decorations: false,
+      transparent: true,
+      shadow: false,
+      resizable: false,
     });
   }
 
   function openProfilePicker() {
     if (isRecording) return;
-    WebviewWindow.getByLabel("profile-picker").then(async (existing) => {
-      if (existing) {
-        await existing.setFocus();
-        return;
-      }
-      new WebviewWindow("profile-picker", {
-        url: `/profile-picker?selected=${activeProfileId ?? ""}`,
-        title: "Switch profile",
-        width: 320,
-        height: 380,
-        center: true,
-        decorations: false,
-        transparent: true,
-        shadow: false,
-        resizable: false,
-      });
+    void spawnOverlayWindow("profile-picker", {
+      url: `/profile-picker?selected=${activeProfileId ?? ""}`,
+      title: "Switch profile",
+      width: 320,
+      height: 380,
+      center: true,
+      decorations: false,
+      transparent: true,
+      shadow: false,
+      resizable: false,
     });
   }
 
   function openDevicePicker(type: "mic" | "camera") {
     if (isRecording) return;
-    const label = `device-picker-${type}`;
     const selected = type === "mic" ? selectedMicId : selectedCameraId;
-    WebviewWindow.getByLabel(label).then(async (existing) => {
-      if (existing) {
-        await existing.setFocus();
-        return;
-      }
-      new WebviewWindow(label, {
-        url: `/device-picker?type=${type}&selected=${selected ?? ""}`,
-        title: `Select ${type === "mic" ? "Microphone" : "Camera"}`,
-        width: 320,
-        height: 340,
-        center: true,
-        decorations: false,
-        transparent: true,
-        shadow: false,
-        resizable: false,
-      });
+    void spawnOverlayWindow(`device-picker-${type}`, {
+      url: `/device-picker?type=${type}&selected=${selected ?? ""}`,
+      title: `Select ${type === "mic" ? "Microphone" : "Camera"}`,
+      width: 320,
+      height: 340,
+      center: true,
+      decorations: false,
+      transparent: true,
+      shadow: false,
+      resizable: false,
     });
   }
 
@@ -807,16 +749,6 @@
     }
   }
 
-  /** Cap a desired capture fps to the selected monitor's refresh rate. `null`
-   *  (Auto) and non-monitor / unknown-refresh sources pass through unchanged —
-   *  the backend still clamps to its 24–240 range. */
-  function clampFpsToDisplay(desired: number | null): number | null {
-    if (desired == null) return null;
-    const cap =
-      selectedSource?.type === "monitor" ? selectedSource.refreshHz : undefined;
-    return cap && cap >= 1 ? Math.min(desired, cap) : desired;
-  }
-
   async function startActualRecording() {
     if (!selectedSource) {
       isStarting = false;
@@ -837,7 +769,7 @@
       // refresh — capturing above it only duplicates frames, so e.g. a 144 fps
       // preference records at 60 on a 60 Hz display while still recording 144
       // on a 144 Hz one. The user's preference itself is left untouched.
-      fps: clampFpsToDisplay(loadRecordingFps()),
+      fps: clampFpsToDisplay(loadRecordingFps(), selectedSource),
       quality: loadRecordingQuality(),
     };
     try {
@@ -956,11 +888,7 @@
     const ms = now - recordingStartTime - pausedAccumMs - livePause;
     return Math.max(0, Math.floor(ms / 1000));
   });
-  const timer = $derived(
-    `${Math.floor(elapsed / 60)
-      .toString()
-      .padStart(2, "0")}:${(elapsed % 60).toString().padStart(2, "0")}`,
-  );
+  const timer = $derived(formatRecordingTimer(elapsed));
 
   // Out-transition for a leaving phase block: pin it absolute at its current
   // size so it no longer contributes to the content's measured width while it

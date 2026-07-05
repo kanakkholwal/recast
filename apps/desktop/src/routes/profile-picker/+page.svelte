@@ -17,9 +17,10 @@
 
   import type { RecordingProfile } from "$lib/profiles";
   import { profilesStore } from "$lib/stores/profiles.svelte";
+  import { wrapIndex } from "$lib/util/wrap-index";
+  import { parseSelectedParam, summarize } from "./profile-picker.logic";
 
-  const params = new URLSearchParams(window.location.search);
-  const initialSelected = params.get("selected") ?? null;
+  const initialSelected = parseSelectedParam(window.location.search);
 
   let highlightedId = $state<string | null>(initialSelected);
 
@@ -44,7 +45,7 @@
     const list = profilesStore.profiles;
     if (list.length === 0) return;
     const idx = list.findIndex((p) => p.id === highlightedId);
-    const next = list[(idx + delta + list.length) % list.length];
+    const next = list[wrapIndex(idx + delta, list.length)];
     highlightedId = next.id;
   }
 
@@ -74,17 +75,6 @@
         selectProfile(target);
       }
     }
-  }
-
-  function summarize(profile: RecordingProfile): string[] {
-    const out: string[] = [];
-    if (profile.systemAudio) out.push("Audio");
-    if (profile.microphone)
-      out.push(profile.micLabel ? `Mic: ${profile.micLabel}` : "Mic");
-    if (profile.camera)
-      out.push(profile.cameraLabel ? `Cam: ${profile.cameraLabel}` : "Camera");
-    if (out.length === 0) out.push("Silent capture");
-    return out;
   }
 </script>
 

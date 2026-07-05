@@ -8,6 +8,7 @@
 	 * web session's active org).
 	 */
 	import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
+	import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Label } from "@recast/ui/label";
@@ -43,16 +44,6 @@
 			remember = false;
 		}
 	});
-
-	function roleLabel(role: string): string {
-		return role ? role[0]!.toUpperCase() + role.slice(1) : "Member";
-	}
-
-	function planLabel(plan: string): string {
-		if (plan === "pro") return "Pro";
-		if (plan === "enterprise") return "Enterprise";
-		return "Free";
-	}
 
 	function confirm() {
 		if (!chosen) return;

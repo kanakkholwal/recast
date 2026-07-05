@@ -48,7 +48,7 @@
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { AudioTimelineEngine } from "$lib/playback/audio-engine";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+  import { originalToOutput } from "$lib/timeline/time-map";
   import {
     createTileProvider,
     type TileProvider,
@@ -80,6 +80,14 @@
   import { onDestroy, onMount, tick, untrack } from "svelte";
 
   import { log } from "$lib/logger";
+  import {
+    basename,
+    ENCODE_MESSAGES,
+    exportEtaMs as computeExportEtaMs,
+    formatElapsed,
+    parseLayout,
+  } from "./editor-page.logic";
+  import { formatTimecode, frameStepOutput } from "$lib/editor/time";
   import { cubicOut } from "svelte/easing";
   import { fade, slide } from "svelte/transition";
 
@@ -109,21 +117,8 @@
   // Persisted sidebar/timeline visibility; missing or malformed falls back to all visible.
   const LAYOUT_KEY = "recast-editor-layout";
   function loadLayout(): { sidebar: boolean; timeline: boolean } {
-    const fallback = { sidebar: true, timeline: true };
-    if (!browser) return fallback;
-    try {
-      const raw = localStorage.getItem(LAYOUT_KEY);
-      if (!raw) return fallback;
-      const parsed = JSON.parse(raw) as Partial<typeof fallback>;
-      return {
-        sidebar:
-          typeof parsed?.sidebar === "boolean" ? parsed.sidebar : true,
-        timeline:
-          typeof parsed?.timeline === "boolean" ? parsed.timeline : true,
-      };
-    } catch {
-      return fallback;
-    }
+    if (!browser) return { sidebar: true, timeline: true };
+    return parseLayout(localStorage.getItem(LAYOUT_KEY));
   }
   const initialLayout = loadLayout();
   let showSidebar = $state(initialLayout.sidebar);
@@ -494,14 +489,12 @@
   // kept frame, never inside a removed range. `store.currentTime` stays original.
   function frameStepSeek(direction: 1 | -1) {
     if (!store.metadata) return;
-    const map = store.timeMap;
-    const frameDur = 1 / (store.metadata.fps || 30);
-    const outDur = originalToOutput(map, store.metadata.duration);
-    const nextOut = Math.max(
-      0,
-      Math.min(originalToOutput(map, store.currentTime) + frameDur * direction, outDur),
+    const orig = frameStepOutput(
+      store.timeMap,
+      store.metadata,
+      store.currentTime,
+      direction,
     );
-    const orig = outputToOriginal(map, nextOut);
     if (videoEl) videoEl.currentTime = orig;
     store.currentTime = orig;
   }
@@ -806,15 +799,6 @@
   let exportPrepDetail = $state<string | null>(null);
 
 
-  // Rotating status messages shown below the progress ring during encode.
-  const ENCODE_MESSAGES = [
-    "Crunching frames",
-    "Encoding pixels",
-    "Weaving the timeline",
-    "Tuning the colours",
-    "Squeezing the bitrate",
-    "Polishing every frame",
-  ];
   let encodeMessageIndex = $state(0);
 
   // Preparing-stage substages, surfaced in the dialog instead of a generic spinner.
@@ -870,12 +854,13 @@
 
   // ETA from elapsed × (1 − pct) / pct; only meaningful past ≥10% progress.
   function exportEtaMs(): number | null {
-    if (!exportHasProgress || exportFinalizing) return null;
-    const pct = store.exportProgress ?? 0;
-    if (pct < 10) return null;
-    const elapsed = exportNow - exportStartedAt;
-    if (elapsed < 250) return null;
-    return (elapsed * (100 - pct)) / pct;
+    return computeExportEtaMs({
+      hasProgress: exportHasProgress,
+      finalizing: exportFinalizing,
+      progress: store.exportProgress ?? 0,
+      now: exportNow,
+      startedAt: exportStartedAt,
+    });
   }
 
   let exportResult = $state<
@@ -987,7 +972,7 @@
       // export skips them silently otherwise, shipping a video with them gone.
       const missingImages = await findMissingImageAnnotations(store);
       if (missingImages.length > 0) {
-        const names = missingImages.map((p) => p.split(/[/\\]/).pop()).join(", ");
+        const names = missingImages.map(basename).join(", ");
         toast.warning(
           `${missingImages.length} image${missingImages.length > 1 ? "s" : ""} couldn't be found and won't appear in the export: ${names}`,
         );
@@ -1101,7 +1086,7 @@
   async function playExportedFile() {
     if (exportResult?.kind !== "success") return;
     const path = exportResult.path;
-    const filename = path.split(/[\\/]/).pop() ?? "export";
+    const filename = basename(path) ?? "export";
     let entry: RecordingEntry = {
       filename,
       path,
@@ -1221,7 +1206,7 @@
       return;
     }
     const title =
-      exportResult.path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, "") ?? "Recast";
+      basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
     try {
       const result = await cloudShare.share(
         exportResult.path,
@@ -1281,7 +1266,7 @@
 
   async function shareExportedFile() {
     if (exportResult?.kind !== "success") return;
-    const fileName = exportResult.path.split(/[\\/]/).pop() ?? "recording";
+    const fileName = basename(exportResult.path) ?? "recording";
     const fallbackLink =
       successUpload?.status === "complete" ? successUpload.webViewLink : undefined;
     const result = await shareRecording({
@@ -1312,20 +1297,6 @@
     }
   }
 
-  function formatElapsed(ms: number) {
-    const s = Math.floor(ms / 1000);
-    if (s < 60) return `${s}s`;
-    return `${Math.floor(s / 60)}m ${s % 60}s`;
-  }
-
-  function formatTime(seconds: number) {
-    if (!Number.isFinite(seconds) || seconds <= 0) return "0:00.00";
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    const centiseconds = Math.floor((seconds % 1) * 100);
-    return `${mins}:${secs.toString().padStart(2, "0")}.${centiseconds.toString().padStart(2, "0")}`;
-  }
-
   function getExportDuration() {
     const duration = store.metadata?.duration ?? 0;
     const clipEnd = store.trimEnd > 0 ? store.trimEnd : duration;
@@ -1335,7 +1306,7 @@
   function getExportRangeLabel() {
     const duration = store.metadata?.duration ?? 0;
     const clipEnd = store.trimEnd > 0 ? store.trimEnd : duration;
-    return `${formatTime(store.trimStart)} - ${formatTime(clipEnd)}`;
+    return `${formatTimecode(store.trimStart)} - ${formatTimecode(clipEnd)}`;
   }
 
 
@@ -1779,7 +1750,7 @@
         >Duration</span
       >
       <span class="truncate font-mono text-[12px] tabular-nums text-foreground">
-        {formatTime(getExportDuration())}
+        {formatTimecode(getExportDuration())}
       </span>
     </div>
   </section>

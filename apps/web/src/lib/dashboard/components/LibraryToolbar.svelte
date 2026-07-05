@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { focusOnMount } from "$lib/dashboard/focus";
+	import { isEditableTarget } from "$lib/dom/is-editable";
 	import { tagsStore } from "$lib/dashboard/library.svelte";
 	import type { RecordingSource } from "$lib/dashboard/store.svelte";
 	import { Chip } from "@recast/ui/chip";
@@ -67,10 +68,7 @@
 	// Keyboard-first: "/" focuses the search from anywhere on the page (unless
 	// you're already typing); Escape clears it while focused.
 	function onWindowKeydown(e: KeyboardEvent) {
-		const t = e.target as HTMLElement | null;
-		const typing =
-			!!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
-		if (e.key === "/" && !typing) {
+		if (e.key === "/" && !isEditableTarget(e.target)) {
 			e.preventDefault();
 			searchInput?.focus();
 			searchInput?.select();

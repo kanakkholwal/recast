@@ -37,44 +37,35 @@ export const KIND_META: Record<
 // RELEASES:START — auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
-		version: '0.3.2',
+		version: '0.3.1',
 		date: '2026-07-05',
 		highlights: [
+			'Scene animations: give any clip an entrance and exit (fade, slide, scale, pop, shrink, or rotate) that plays in the preview and renders in the exported video.',
 			'Image annotations: drop a PNG or JPG onto the canvas with its own border, corner radius, and shadow, and it renders in the preview and the exported video.',
 			'Annotations can pin to the video and track its zoom, or pin to the frame and hold still while the footage moves under them.',
-			'Play an exported file inside the editor the moment the render finishes, without leaving for your file manager.',
+			'Exports are roughly 3.5× faster. A 46-second recording that took 5m42s now finishes in about 1m37s.',
 		],
 		changes: [
+			{ kind: 'added', summary: 'Scene animations. Each clip can animate into and out of view (fade, slide, scale, pop, shrink, or rotate) with full easing control per side. A project-wide motion tone (Subtle, Balanced, Energetic) tunes the intensity across the whole timeline, and a Push transition carries motion across a cut where content was removed. Animations play in the preview and render in the exported video.' },
 			{ kind: 'added', summary: 'Image annotation tool. Import a PNG or JPG and it drops onto the canvas at its own aspect ratio, with a border, corner radius, and soft shadow. All of it renders in the preview and burns into the export, and a Replace action swaps the source in place.' },
 			{ kind: 'added', summary: 'Per-annotation anchoring. Each annotation attaches to the Video, so it tracks zoom and focus, or to the Frame, so it stays put on the output while the footage moves under it. Works for shapes, text, and blur.' },
 			{ kind: 'added', summary: 'In-app player for exported files. When an export finishes, play it right inside the editor instead of opening your file manager first.' },
 			{ kind: 'added', summary: 'Option to hide the recording panel from screen captures (Settings). It applies immediately to a live recording. Windows and macOS support it; on Linux the setting explains why it can\'t yet.' },
+			{ kind: 'changed', summary: 'Export defaults to 60fps for recordings above 60fps (Original, 30, and 24 stay selectable). It\'s imperceptible for a screen recording and roughly halves export time.' },
+			{ kind: 'changed', summary: 'The background image is blurred once at export instead of on every frame, which more than halved the encode time on its own.' },
+			{ kind: 'changed', summary: 'The export dialog names each prep step, rendering the cursor and annotation layer and then encoding, so it never sits on a blank "Preparing…".' },
 			{ kind: 'changed', summary: 'Redesigned the on-canvas annotation selection to match the recording area-select: real handles, a selection ring, and a live width-by-height badge. Hold Shift to lock aspect while resizing, snap a new shape to a square, or snap an arrow to 45 degrees. Moving an annotation snaps its own edges and center to the guides.' },
 			{ kind: 'changed', summary: 'New annotations take the current theme color instead of a fixed blue.' },
 			{ kind: 'changed', summary: 'Blur annotations can now be moved and duplicated, and they honor rounded corners in the export the same way the preview does. Corner radius across rectangles, blur, and images now uses a single 0–100% scale.' },
 			{ kind: 'changed', summary: 'Refreshed the Profiles page layout and accessibility.' },
 			{ kind: 'changed', summary: 'Copy cleanups across the editor panels, Settings, the sidebar, and the website.' },
+			{ kind: 'fixed', summary: 'Scene animations now render in exported video, not just the preview.' },
+			{ kind: 'fixed', summary: 'Export progress and the time-remaining estimate are measured against the real output length, so the bar no longer stalls short of or overshoots 100% on projects with cuts or speed changes.' },
 			{ kind: 'fixed', summary: 'Annotation glow, blur, and images now render in the exported video with the same look as the preview (arrow glow stays preview-only).' },
 			{ kind: 'fixed', summary: 'Text annotations wait for their font to load before rendering, so exported text no longer falls back to the wrong font. Text also survives a save and reload with all of its settings instead of reverting.' },
 			{ kind: 'fixed', summary: 'A frame-anchored annotation keeps its anchor after you save and reopen a project instead of snapping back to the video.' },
 			{ kind: 'fixed', summary: 'Scaled image annotations are smoothed instead of blocky, and a single corrupt annotation is skipped instead of failing the whole export.' },
 			{ kind: 'fixed', summary: 'Export now warns, without blocking, when an image annotation can\'t be loaded or a blur sits under a zoom, since both would otherwise export silently wrong.' },
-		],
-	},
-	{
-		version: '0.3.1',
-		date: '2026-07-02',
-		highlights: [
-			'Scene animations: give any clip an entrance and exit (fade, slide, scale, pop, shrink, or rotate) that plays in the preview and renders in the exported video.',
-			'Exports are roughly 3.5× faster. A 46-second recording that took 5m42s now finishes in about 1m37s.',
-		],
-		changes: [
-			{ kind: 'added', summary: 'Scene animations. Each clip can animate into and out of view (fade, slide, scale, pop, shrink, or rotate) with full easing control per side. A project-wide motion tone (Subtle, Balanced, Energetic) tunes the intensity across the whole timeline, and a Push transition carries motion across a cut where content was removed. Animations play in the preview and render in the exported video.' },
-			{ kind: 'changed', summary: 'Export defaults to 60fps for recordings above 60fps (Original, 30, and 24 stay selectable). It\'s imperceptible for a screen recording and roughly halves export time.' },
-			{ kind: 'changed', summary: 'The background image is blurred once at export instead of on every frame, which more than halved the encode time on its own.' },
-			{ kind: 'changed', summary: 'The export dialog names each prep step, rendering the cursor and annotation layer and then encoding, so it never sits on a blank "Preparing…".' },
-			{ kind: 'fixed', summary: 'Scene animations now render in exported video, not just the preview.' },
-			{ kind: 'fixed', summary: 'Export progress and the time-remaining estimate are measured against the real output length, so the bar no longer stalls short of or overshoots 100% on projects with cuts or speed changes.' },
 		],
 	},
 	{
@@ -412,3 +403,20 @@ export const RELEASES: readonly ChangelogRelease[] = [
 // RELEASES:END
 
 export const LATEST_RELEASE = RELEASES[0];
+
+/** Sections in the order they read in the changelog. */
+const CHANGE_ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
+
+/** Bucket a release's changes by kind, keeping only present kinds in order. */
+export function groupChanges(
+	release: ChangelogRelease,
+): (readonly [ChangeKind, string[]])[] {
+	const map = new Map<ChangeKind, string[]>();
+	for (const c of release.changes) {
+		if (!map.has(c.kind)) map.set(c.kind, []);
+		map.get(c.kind)!.push(c.summary);
+	}
+	return CHANGE_ORDER.filter((k) => map.has(k)).map(
+		(k) => [k, map.get(k)!] as const,
+	);
+}

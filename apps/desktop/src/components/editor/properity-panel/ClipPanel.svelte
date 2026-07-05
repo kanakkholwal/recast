@@ -20,6 +20,7 @@
   import { Kbd } from "@recast/ui/kbd";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
+  import { anchorMatches, fmtSpeed } from "./clip-panel.logic";
   import PanelSection from "./PanelSection.svelte";
   import SceneAnimControls from "./SceneAnimControls.svelte";
 
@@ -33,7 +34,6 @@
   let { store }: Props = $props();
 
   const SPEED_PRESETS = [0.5, 1, 1.5, 2];
-  const fmtSpeed = (s: number) => `${s}×`;
 
   // Project-wide scene-animation motion style (restyles every clip's animation).
   const MOTION_TONES = [
@@ -46,10 +46,10 @@
   const selected = $derived.by(() => {
     const start = store.selectedClipStart;
     if (start === null) return null;
-    return store.segments.find((s) => Math.abs(s.start - start) < 1e-4) ?? null;
+    return store.segments.find((s) => anchorMatches(s.start, start)) ?? null;
   });
   const speed = $derived(selected ? store.segmentSpeedAt(selected.start) : 1);
-  const isSped = $derived(Math.abs(speed - 1) > 1e-4);
+  const isSped = $derived(!anchorMatches(speed, 1));
 
   // A seam sits before this clip when a cut removed content between it and the
   // previous segment. That's where a transition smooths the jump.
@@ -131,7 +131,7 @@
       {/snippet}
       <div class="grid grid-cols-4 gap-1">
         {#each SPEED_PRESETS as preset (preset)}
-          {@const active = Math.abs(speed - preset) < 1e-4}
+          {@const active = anchorMatches(speed, preset)}
           <button
             type="button"
             onclick={() => setSpeed(preset)}

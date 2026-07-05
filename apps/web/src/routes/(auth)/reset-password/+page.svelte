@@ -3,6 +3,7 @@
 	import { page } from "$app/state";
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
+	import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
 	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
@@ -19,12 +20,8 @@
 	let showPassword = $state(false);
 	let loading = $state(false);
 
-	const passwordsMatch = $derived(
-		password === confirmPassword || confirmPassword.length === 0,
-	);
-	const canSubmit = $derived(
-		password.length >= 8 && password === confirmPassword,
-	);
+	const matches = $derived(passwordsMatch(password, confirmPassword));
+	const canSubmit = $derived(canResetPassword({ password, confirmPassword }));
 
 	async function submit(e: SubmitEvent) {
 		e.preventDefault();
@@ -95,10 +92,10 @@
 				autocomplete="new-password"
 				bind:value={confirmPassword}
 				placeholder="Type it again"
-				aria-invalid={!passwordsMatch}
+				aria-invalid={!matches}
 				class="h-10"
 			/>
-			{#if !passwordsMatch}
+			{#if !matches}
 				<span
 					class="flex items-center gap-1 text-[11px] font-medium text-destructive"
 					transition:slide={{ duration: 200, easing: cubicOut }}

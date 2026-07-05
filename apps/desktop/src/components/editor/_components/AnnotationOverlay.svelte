@@ -15,7 +15,7 @@
     videoRectPx,
     type Rect,
   } from "$lib/annotations/uv";
-  import { FRAME_ANCHORS, snap, snapBox, type SnapAnchor } from "$lib/annotations/snap";
+  import { snap, snapBox, type SnapAnchor } from "$lib/annotations/snap";
   import {
     constrain45,
     constrainSquare,
@@ -29,9 +29,15 @@
   import {
     arrowGeometry,
     blurTint,
+    cursorForHandle,
+    HANDLE_CORNER_PX,
+    HANDLE_RADIUS_PX,
+    IDENTITY_ZOOM,
+    roundRectPath,
     strokeDashPattern,
     withAlpha,
   } from "./annotation-draw.logic";
+  import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
   import type {
     Annotation,
     AnnotationAnchor,
@@ -97,16 +103,11 @@
   // body, "nwse-resize" / "ns-resize" / etc on handles). Cleared on leave.
   let hoverHandle: HandleName | null | "tool" = $state(null);
 
-  const HANDLE_RADIUS_PX = 5.5; // CSS px half-size of resize handles
-  const HANDLE_CORNER_PX = 2; // CSS px corner radius on handles
-
   // Thin wrappers around shared geometry modules; this file owns rendering +
   // interaction state, not the math.
   function getDpr(): number {
     return window.devicePixelRatio || 1;
   }
-
-  const IDENTITY_ZOOM = { scale: 1, cx: 0.5, cy: 0.5 };
 
   function videoRect(): Rect {
     if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
@@ -533,28 +534,6 @@
     ctx.shadowBlur = Math.max(0, a.glow.blur * r.w);
   }
 
-  function roundRectPath(
-    ctx: CanvasRenderingContext2D,
-    x: number,
-    y: number,
-    w: number,
-    h: number,
-    r: number,
-  ) {
-    const maxR = Math.min(Math.abs(w) / 2, Math.abs(h) / 2);
-    const rr = Math.min(r, maxR);
-    ctx.moveTo(x + rr, y);
-    ctx.lineTo(x + w - rr, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + rr);
-    ctx.lineTo(x + w, y + h - rr);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
-    ctx.lineTo(x + rr, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - rr);
-    ctx.lineTo(x, y + rr);
-    ctx.quadraticCurveTo(x, y, x + rr, y);
-    ctx.closePath();
-  }
-
   /** A single resize grip: a rounded square with the surface fill, a crisp
    *  primary border and a soft drop shadow, matching the recording overlay's
    *  handle language. Shadow is applied to the fill only. */
@@ -966,30 +945,6 @@
     store.selectedAnnotationId = null;
   }
 
-  /** Build snap anchors from frame edges + every other annotation's box. */
-  function buildSnapAnchors(excludeId: string | null): SnapAnchor[] {
-    const anchors: SnapAnchor[] = [...FRAME_ANCHORS];
-    for (const a of store.annotations) {
-      if (a.id === excludeId) continue;
-      if (a.hidden) continue;
-      if (a.kind.kind === "arrow") {
-        anchors.push({ axis: "x", value: a.kind.x1 });
-        anchors.push({ axis: "y", value: a.kind.y1 });
-        anchors.push({ axis: "x", value: a.kind.x2 });
-        anchors.push({ axis: "y", value: a.kind.y2 });
-        continue;
-      }
-      const box = normaliseBox(a.kind);
-      anchors.push({ axis: "x", value: box.x });
-      anchors.push({ axis: "x", value: box.x + box.w / 2 });
-      anchors.push({ axis: "x", value: box.x + box.w });
-      anchors.push({ axis: "y", value: box.y });
-      anchors.push({ axis: "y", value: box.y + box.h / 2 });
-      anchors.push({ axis: "y", value: box.y + box.h });
-    }
-    return anchors;
-  }
-
   function applySnap(
     ux: number,
     uy: number,
@@ -1000,7 +955,7 @@
       snapGuides = [];
       return { x: ux, y: uy };
     }
-    const anchors = buildSnapAnchors(dragId);
+    const anchors = buildAnnotationSnapAnchors(store.annotations, dragId);
     const result = snap(ux, uy, anchors, 0.005, true);
     // Cap to 4 simultaneous guides (one per axis is the typical case; never
     // more than 2 from this fn, but keep the cap for safety).
@@ -1112,7 +1067,7 @@
         let newX = bx;
         let newY = by;
         if (!e.altKey && store.annotationSnapEnabled) {
-          const res = snapBox(bx, by, b.w, b.h, buildSnapAnchors(drag.id), 0.005);
+          const res = snapBox(bx, by, b.w, b.h, buildAnnotationSnapAnchors(store.annotations, drag.id), 0.005);
           newX = res.x;
           newY = res.y;
           snapGuides = res.guides.slice(0, 4);
@@ -1382,34 +1337,6 @@
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
     disposeCanvasTokens();
   });
-
-  // Map a handle name to a CSS resize cursor so dragging from a corner shows
-  // the diagonal arrow, edge handles show the axis arrow, and so on. Body
-  // hovers show "grab" / "grabbing".
-  function cursorForHandle(h: HandleName | "tool" | null): string {
-    if (h === "tool") return "crosshair";
-    switch (h) {
-      case "nw":
-      case "se":
-        return "nwse-resize";
-      case "ne":
-      case "sw":
-        return "nesw-resize";
-      case "n":
-      case "s":
-        return "ns-resize";
-      case "e":
-      case "w":
-        return "ew-resize";
-      case "p1":
-      case "p2":
-        return "crosshair";
-      case "body":
-        return "grab";
-      default:
-        return "default";
-    }
-  }
 
   const canvasCursor = $derived.by(() => {
     if (store.annotationTool) return "crosshair";

@@ -2,6 +2,7 @@
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Kbd } from "@recast/ui/kbd";
+	import { stemSelectionRange, toErrorMessage } from "./dialog.logic";
 
 	interface Props {
 		open: boolean;
@@ -37,9 +38,9 @@
 			// Focus + select the stem (filename without extension) on open.
 			queueMicrotask(() => {
 				inputEl?.focus();
-				const dot = seed.lastIndexOf(".");
-				if (dot > 0) {
-					inputEl?.setSelectionRange(0, dot);
+				const range = stemSelectionRange(seed);
+				if (range) {
+					inputEl?.setSelectionRange(range[0], range[1]);
 				} else {
 					inputEl?.select();
 				}
@@ -64,7 +65,7 @@
 			await onSave(trimmed);
 			close();
 		} catch (e) {
-			error = typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
+			error = toErrorMessage(e);
 			busy = false;
 		}
 	}

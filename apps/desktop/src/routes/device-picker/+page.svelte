@@ -24,10 +24,16 @@
   import { emit } from "@tauri-apps/api/event";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
+  import { wrapIndex } from "$lib/util/wrap-index";
+  import {
+    mapCameras,
+    parseDevicePickerParams,
+    pickDefault,
+  } from "./device-picker.logic";
 
-  const params = new URLSearchParams(window.location.search);
-  const deviceType = params.get("type") === "camera" ? "camera" : "mic";
-  const selectedId = params.get("selected") ?? null;
+  const { deviceType, selectedId } = parseDevicePickerParams(
+    window.location.search,
+  );
 
   let devices = $state<(AudioDeviceInfo | CameraDeviceInfo)[]>([]);
   let currentSelectedId = $state<string | null>(selectedId);
@@ -54,19 +60,11 @@
       } else {
         // From the WebView's MediaDevices so the deviceId is one getUserMedia
         // accepts. Non-virtual first, so the default below prefers a real webcam.
-        const cams = await enumerateCameras();
-        devices = cams.map<CameraDeviceInfo>((c) => ({
-          id: c.deviceId,
-          name: c.label,
-          status: c.isVirtual ? "warning" : "ready",
-          statusMessage: c.isVirtual ? "Virtual camera" : null,
-        }));
+        devices = mapCameras(await enumerateCameras());
       }
-      if (!currentSelectedId && devices.length > 0) {
-        const def = isMic
-          ? (devices as AudioDeviceInfo[]).find((d) => d.isDefault)
-          : devices[0];
-        if (def) currentSelectedId = def.id;
+      if (!currentSelectedId) {
+        const def = pickDefault(devices, isMic);
+        if (def) currentSelectedId = def;
       }
     } catch (e) {
       if (e instanceof CameraAccessError) {
@@ -110,13 +108,10 @@
     const idx = devices.findIndex((d) => d.id === currentSelectedId);
     if (e.key === "ArrowDown") {
       e.preventDefault();
-      const next = devices[(idx + 1 + devices.length) % devices.length];
-      currentSelectedId = next.id;
+      currentSelectedId = devices[wrapIndex(idx + 1, devices.length)].id;
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
-      const prev =
-        devices[(idx - 1 + devices.length) % devices.length] ?? devices[0];
-      currentSelectedId = prev.id;
+      currentSelectedId = devices[wrapIndex(idx - 1, devices.length)].id;
     } else if (e.key === "Enter" && currentSelectedId) {
       e.preventDefault();
       selectDevice(currentSelectedId);

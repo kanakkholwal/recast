@@ -16,17 +16,6 @@
 
 	let { data } = $props();
 
-	const metricMeta = [
-		{ key: "total", label: "Total users", icon: Users, source: "counts" },
-		{ key: "active", label: "Active users", icon: UserCheck, source: "counts" },
-		{ key: "pending", label: "On waitlist", icon: Hourglass, source: "counts" },
-		{ key: "admins", label: "Admins", icon: Crown, source: "counts" },
-		{ key: "banned", label: "Banned", icon: ShieldOff, source: "counts" },
-		{ key: "active", label: "Paid subscriptions", icon: CreditCard, source: "subs" },
-		{ key: "signups7d", label: "Signups (7d)", icon: TrendingUp, source: "counts" },
-		{ key: "signups30d", label: "Signups (30d)", icon: Activity, source: "counts" },
-	] as const;
-
 	function timeAgo(d: Date | string): string {
 		const ms = Date.now() - new Date(d).getTime();
 		const min = Math.floor(ms / 60_000);
@@ -37,6 +26,17 @@
 		const d2 = Math.floor(hr / 24);
 		return `${d2}d ago`;
 	}
+
+	const metricMeta = [
+		{ key: "total", label: "Total users", icon: Users, source: "counts" },
+		{ key: "active", label: "Active users", icon: UserCheck, source: "counts" },
+		{ key: "pending", label: "On waitlist", icon: Hourglass, source: "counts" },
+		{ key: "admins", label: "Admins", icon: Crown, source: "counts" },
+		{ key: "banned", label: "Banned", icon: ShieldOff, source: "counts" },
+		{ key: "active", label: "Paid subscriptions", icon: CreditCard, source: "subs" },
+		{ key: "signups7d", label: "Signups (7d)", icon: TrendingUp, source: "counts" },
+		{ key: "signups30d", label: "Signups (30d)", icon: Activity, source: "counts" },
+	] as const;
 </script>
 
 <header class="mb-8">

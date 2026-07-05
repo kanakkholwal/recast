@@ -13,6 +13,36 @@ export const FADE_PRESETS: FadePreset[] = [
 	{ label: "Cinematic", in: 1.0, out: 2.0 },
 ];
 
+/** Volume readout zone. Above ~105% the export applies straight gain (can clip). */
+export type VolumeZone = "muted" | "low" | "nominal" | "boost" | "hot";
+
+export function volumeZone(muted: boolean, volume: number): VolumeZone {
+	if (muted || volume <= 0) return "muted";
+	if (volume < 70) return "low";
+	if (volume <= 105) return "nominal";
+	if (volume <= 150) return "boost";
+	return "hot";
+}
+
+/** A preset matches when both fade lengths are within a step of the settings. */
+export function isPresetActive(
+	settings: { fadeIn: number; fadeOut: number },
+	preset: FadePreset,
+): boolean {
+	return (
+		Math.abs(settings.fadeIn - preset.in) < 0.01 &&
+		Math.abs(settings.fadeOut - preset.out) < 0.01
+	);
+}
+
+/** Label of the matching preset (drives the Segmented selection); "" = custom. */
+export function activePreset(settings: {
+	fadeIn: number;
+	fadeOut: number;
+}): string {
+	return FADE_PRESETS.find((p) => isPresetActive(settings, p))?.label ?? "";
+}
+
 /**
  * dB-ish display: 20·log10(volume/100), so "0 dB" at 100%. Intentionally not the
  * ffmpeg `volume=` curve (a linear multiplier) — this matches user intuition.

@@ -36,6 +36,16 @@
   import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
   import { COUNTDOWN_OPTIONS, type RecordingProfile } from "$lib/profiles";
   import { profilesStore } from "$lib/stores/profiles.svelte";
+  import {
+    buildDraftFromCombo,
+    buildDuplicate,
+    computeDialogWidth,
+    DIALOG_ASIDE_W,
+    DIALOG_MAIN_W,
+    isCompactViewport,
+    normalizeProfileForSave,
+    summarize,
+  } from "./profiles.logic";
 
   // mode = 'create' means draft is not yet in the store; mode = 'edit' means
   // draft mirrors an existing entry. Persistence only happens on Save.
@@ -58,10 +68,6 @@
   const remainingSlots = $derived(profilesStore.freeSlots(mics, cameras));
   const isFull = $derived(remainingSlots === 0);
 
-  // Device pickers live in a side panel so the dialog grows wider, not taller,
-  // when a capability is enabled. Below `sm` they fall back inline.
-  const DIALOG_MAIN_W = 408;
-  const DIALOG_ASIDE_W = 300;
   let viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
   );
@@ -71,17 +77,11 @@
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
   });
-  const isCompactDialog = $derived(viewportWidth < 640);
+  const isCompactDialog = $derived(isCompactViewport(viewportWidth));
   const showDevicePanel = $derived(
     !isCompactDialog && !!draft && (draft.microphone || draft.camera),
   );
-  const dialogWidth = $derived(
-    isCompactDialog
-      ? Math.min(440, viewportWidth - 32)
-      : showDevicePanel
-        ? DIALOG_MAIN_W + DIALOG_ASIDE_W
-        : DIALOG_MAIN_W,
-  );
+  const dialogWidth = $derived(computeDialogWidth(viewportWidth, showDevicePanel));
 
   onMount(() => {
     profilesStore.hydrate();
@@ -119,29 +119,12 @@
       );
       return;
     }
-    // Resolve device labels for any specific id the combo picked, so the
-    // dropdown opens pre-filled and the saved profile carries an identity.
-    const micDevice = combo.micDeviceId
-      ? mics.find((m) => m.id === combo.micDeviceId)
-      : null;
-    const camDevice = combo.cameraDeviceId
-      ? cameras.find((c) => c.deviceId === combo.cameraDeviceId)
-      : null;
-    const draftProfile: RecordingProfile = {
-      id: crypto.randomUUID(),
-      name: `Profile ${profilesStore.profiles.length + 1}`,
-      systemAudio: combo.systemAudio,
-      microphone: combo.microphone,
-      micDeviceId: combo.micDeviceId,
-      micLabel: micDevice?.name ?? null,
-      camera: combo.camera,
-      cameraDeviceId: combo.cameraDeviceId,
-      cameraLabel: camDevice?.label ?? null,
-      // Carry the auto-picked countdown so the profile lands on the free combo
-      // instead of serializing as "inherit" and colliding.
-      countdown: combo.countdown,
-      isDefault: profilesStore.profiles.length === 0,
-    };
+    const draftProfile = buildDraftFromCombo(
+      combo,
+      mics,
+      cameras,
+      profilesStore.profiles.length,
+    );
     openDialog("create", draftProfile);
   }
 
@@ -152,15 +135,7 @@
       );
       return;
     }
-    // Open as a draft — user must change capabilities before Save (the
-    // duplicate-signature check would otherwise reject it).
-    const copy: RecordingProfile = {
-      ...profile,
-      id: crypto.randomUUID(),
-      name: `${profile.name} Copy`,
-      isDefault: false,
-    };
-    openDialog("create", copy);
+    openDialog("create", buildDuplicate(profile));
   }
 
   function openDialog(next: "create" | "edit", profile: RecordingProfile) {
@@ -200,17 +175,7 @@
       toast.error("Name cannot be empty");
       return;
     }
-    const next: RecordingProfile = { ...draft, name: trimmed };
-    // If a capability is off, clear the matching device pointers so we don't
-    // persist stale identity that won't be applied anyway.
-    if (!next.microphone) {
-      next.micDeviceId = null;
-      next.micLabel = null;
-    }
-    if (!next.camera) {
-      next.cameraLabel = null;
-      next.cameraDeviceId = null;
-    }
+    const next = normalizeProfileForSave({ ...draft, name: trimmed });
 
     const conflict = profilesStore.duplicateOf(next);
     if (conflict) {
@@ -341,20 +306,6 @@
     { field: "microphone", label: "Microphone", short: "Mic", icon: Mic },
     { field: "camera", label: "Camera", short: "Cam", icon: Camera },
   ];
-
-  // Header sub-line. The faceplate already shows WHICH sources are on, so this
-  // carries only the specifics — device names + an explicit countdown override.
-  function summarize(profile: RecordingProfile): string {
-    const parts: string[] = [];
-    if (profile.microphone) parts.push(profile.micLabel ?? "Default mic");
-    if (profile.camera) parts.push(profile.cameraLabel ?? "Camera");
-    if (profile.countdown != null) {
-      parts.push(
-        profile.countdown === 0 ? "No countdown" : `${profile.countdown}s countdown`,
-      );
-    }
-    return parts.length === 0 ? "Screen capture only" : parts.join(" · ");
-  }
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -1001,7 +952,7 @@
             in:fly={{ x: 20, duration: 260, easing: cubicOut }}
             out:fly={{ x: 20, duration: 220, easing: cubicOut }}
             style="width: {DIALOG_ASIDE_W}px;"
-            class="flex shrink-0 flex-col border-l border-border/40 bg-muted/15"
+            class="flex shrink-0 flex-col border-l border-border/40"
           >
             <div class="flex items-center gap-2 border-b border-border/30 px-5 py-3">
               <SlidersIcon size={12} class="text-muted-foreground" />

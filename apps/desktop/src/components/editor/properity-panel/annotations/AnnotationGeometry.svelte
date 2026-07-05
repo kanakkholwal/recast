@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { isBoxKind } from "$lib/annotations/kind-groups";
   import { normaliseBox } from "$lib/annotations/uv";
   import type {
     Annotation,
@@ -15,6 +16,7 @@
   import { Input } from "@recast/ui/input";
   import { cn } from "@recast/ui/utils";
   import PanelSection from "../PanelSection.svelte";
+  import { alignTarget, fmt, parseAndCommit } from "./annotation-geometry.logic";
 
   interface Props {
     store: EditorStore;
@@ -23,24 +25,8 @@
 
   let { store, annotation }: Props = $props();
 
-  function fmt(n: number) {
-    return (n * 100).toFixed(2);
-  }
-
-  function parseAndCommit(value: string, fallback: number): number {
-    const parsed = parseFloat(value);
-    if (Number.isNaN(parsed)) return fallback;
-    return parsed / 100;
-  }
-
   function setBox(updates: Partial<{ x: number; y: number; w: number; h: number }>) {
-    if (
-      annotation.kind.kind === "rect" ||
-      annotation.kind.kind === "ellipse" ||
-      annotation.kind.kind === "text" ||
-      annotation.kind.kind === "image" ||
-      annotation.kind.kind === "blur"
-    ) {
+    if (isBoxKind(annotation.kind)) {
       store.pushUndoState();
       store.updateAnnotation(annotation.id, {
         kind: { ...annotation.kind, ...updates },
@@ -61,17 +47,11 @@
   function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
     store.pushUndoState();
     const box = normaliseBox(annotation.kind);
+    const target = alignTarget(box, axis, anchor);
     if (annotation.kind.kind === "arrow") {
       const k = annotation.kind;
-      let dx = 0;
-      let dy = 0;
-      if (axis === "x") {
-        const target = anchor === "start" ? 0 : anchor === "end" ? 1 - box.w : 0.5 - box.w / 2;
-        dx = target - box.x;
-      } else {
-        const target = anchor === "start" ? 0 : anchor === "end" ? 1 - box.h : 0.5 - box.h / 2;
-        dy = target - box.y;
-      }
+      const dx = axis === "x" ? target - box.x : 0;
+      const dy = axis === "y" ? target - box.y : 0;
       store.updateAnnotation(annotation.id, {
         kind: {
           ...k,
@@ -84,23 +64,9 @@
       return;
     }
 
-    if (
-      annotation.kind.kind !== "rect" &&
-      annotation.kind.kind !== "ellipse" &&
-      annotation.kind.kind !== "text" &&
-      annotation.kind.kind !== "image" &&
-      annotation.kind.kind !== "blur"
-    ) {
-      return;
-    }
-    const updates: Partial<{ x: number; y: number }> = {};
-    if (axis === "x") {
-      const target = anchor === "start" ? 0 : anchor === "end" ? 1 - box.w : 0.5 - box.w / 2;
-      updates.x = target;
-    } else {
-      const target = anchor === "start" ? 0 : anchor === "end" ? 1 - box.h : 0.5 - box.h / 2;
-      updates.y = target;
-    }
+    if (!isBoxKind(annotation.kind)) return;
+    const updates: Partial<{ x: number; y: number }> =
+      axis === "x" ? { x: target } : { y: target };
     store.updateAnnotation(annotation.id, {
       kind: { ...annotation.kind, ...updates },
     });
@@ -165,7 +131,7 @@
           />
         </label>
       </div>
-    {:else if annotation.kind.kind === "rect" || annotation.kind.kind === "ellipse" || annotation.kind.kind === "text" || annotation.kind.kind === "image" || annotation.kind.kind === "blur"}
+    {:else if isBoxKind(annotation.kind)}
       {@const k = annotation.kind}
       <div class="grid grid-cols-2 gap-2">
         <label class={FIELD_LABEL}>

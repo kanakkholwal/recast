@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { authClient } from "$lib/auth/client";
+	import { readImpersonation } from "./ImpersonationBanner.logic";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { LoaderCircle, ShieldOff, UserCog } from "@lucide/svelte";
@@ -19,19 +20,9 @@
 
 	const session = authClient.useSession();
 
-	type SessionShape = {
-		data: {
-			session?: { impersonatedBy?: string | null } | null;
-			user?: { email?: string | null; name?: string | null } | null;
-		} | null;
-	};
-
-	const impersonatedBy = $derived(
-		($session as unknown as SessionShape).data?.session?.impersonatedBy ?? null,
-	);
-	const targetEmail = $derived(
-		($session as unknown as SessionShape).data?.user?.email ?? "user",
-	);
+	const impersonation = $derived(readImpersonation($session));
+	const impersonatedBy = $derived(impersonation.impersonatedBy);
+	const targetEmail = $derived(impersonation.targetEmail);
 
 	let stopping = $state(false);
 

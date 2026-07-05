@@ -1,7 +1,9 @@
 /**
- * BackgroundPicker helpers: colour interpolation, gradient-stop sampling, and
- * background `image` value classification.
+ * BackgroundPicker helpers: colour interpolation, gradient-stop sampling,
+ * background `image` value classification, and per-mode value validation.
  */
+
+import type { BackgroundType } from "$lib/stores/editor-store.svelte";
 
 /** A gradient colour stop: `color` is a hex string, `pos` is 0..100. */
 export interface GradientStop {
@@ -47,6 +49,39 @@ export function sampleStopColor(stops: GradientStop[], pos: number): string {
 		}
 	}
 	return last.color;
+}
+
+/** Round + clamp a gradient-stop position into 0..100. */
+export function clampStopPos(pos: number): number {
+	return Math.round(Math.min(100, Math.max(0, pos)));
+}
+
+/** Pointer x → gradient-bar position (0..100, unclamped). `rect` needs only its
+ *  left edge and width, so a plain object stands in for a DOMRect. */
+export function posFromPointerX(
+	clientX: number,
+	rect: { left: number; width: number },
+): number {
+	return ((clientX - rect.left) / Math.max(rect.width, 1)) * 100;
+}
+
+/**
+ * The stop to drop into the widest gap between existing stops: positioned at the
+ * gap midpoint with a colour sampled there, so the new handle lands somewhere
+ * useful and looks visually neutral.
+ */
+export function insertStopInWidestGap(stops: GradientStop[]): GradientStop {
+	const sorted = [...stops].sort((a, b) => a.pos - b.pos);
+	let gapPos = 50;
+	let widest = -1;
+	for (let i = 0; i < sorted.length - 1; i++) {
+		const gap = sorted[i + 1].pos - sorted[i].pos;
+		if (gap > widest) {
+			widest = gap;
+			gapPos = Math.round((sorted[i].pos + sorted[i + 1].pos) / 2);
+		}
+	}
+	return { color: sampleStopColor(stops, gapPos), pos: gapPos };
 }
 
 /** Non-image values that can linger in `backgroundValue` after a tab switch. */
@@ -99,4 +134,44 @@ export function imagePreviewSrc(
 	if (isNonImageValue(value)) return "";
 	if (isDirectSrc(value)) return value;
 	return resolve(value);
+}
+
+/**
+ * Whether `value` is a valid selection for a given background mode. Wallpaper
+ * validity depends on the registry, so it's injected (`isRegisteredBackground`)
+ * to keep this Tauri/registry-free.
+ */
+export function isValidValueForType(
+	type: BackgroundType,
+	value: string,
+	isRegisteredBackground: (id: string) => boolean,
+): boolean {
+	switch (type) {
+		case "wallpaper":
+			// Any registered background id (built-in `asset:<id>` or an `ext:` pack).
+			return isRegisteredBackground(value);
+		case "color":
+			return /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(value);
+		case "gradient":
+			return value.includes("gradient(");
+		case "image":
+			return value.length > 0;
+		default:
+			return false;
+	}
+}
+
+/**
+ * Value to seed a mode with: keep the current value when it's valid for that
+ * mode, else fall back to the mode's default.
+ */
+export function selectionValueForType(
+	type: BackgroundType,
+	currentValue: string,
+	defaults: Record<BackgroundType, string>,
+	isRegisteredBackground: (id: string) => boolean,
+): string {
+	return isValidValueForType(type, currentValue, isRegisteredBackground)
+		? currentValue
+		: defaults[type];
 }

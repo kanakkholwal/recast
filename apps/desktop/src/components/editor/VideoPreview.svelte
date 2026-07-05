@@ -9,7 +9,6 @@
 		resolveCursorDataUrl,
 		resolveCursorSprite,
 	} from "$lib/registry";
-	import { bezierY } from "$lib/easing/cubic-bezier";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
 	import { Spinner } from "@recast/ui/spinner";
@@ -27,6 +26,17 @@
 	} from "./cursor-animation.logic";
 	import { hexToRgba } from "./color.logic";
 	import { buildGradientUniforms } from "./gradient.logic";
+	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
+	import { compile, link } from "./webgl.logic";
+	import {
+		classifyWcError,
+		evaluateZoomAt,
+		idleAlphaAt,
+		interpolateCursor,
+		resolutionTier,
+		type CursorSampleJS,
+		type IdlePeriodJS,
+	} from "./video-preview.logic";
 	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
 	import { PlaybackClock } from "$lib/playback/clock";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
@@ -139,15 +149,6 @@
 	let rafHandle: number | null = null;
 
 	// Cursor track
-	type CursorSampleJS = {
-		timestampUs: number;
-		x: number;
-		y: number;
-		visible: boolean;
-		leftDown: boolean;
-		rightDown: boolean;
-	};
-	type IdlePeriodJS = { startUs: number; endUs: number };
 	let cursorSamplesRaw: CursorSampleJS[] = [];
 	let cursorSamples: CursorSampleJS[] = []; // post-smoothing; read by interpolateCursor
 	// Off-thread smoother; results are applied async (see loadCursorTrackIfNeeded).
@@ -209,257 +210,6 @@
 	// The snap at downUs is the visual analogue of the audible click — a smooth
 	// crossfade there would feel mushy and desync from the audio.
 	let pressEvents: PressEvent[] = [];
-	//  Shaders
-	const VERT_SRC = `#version 300 es
-in vec2 a_pos;
-out vec2 v_uv;
-void main() {
-	v_uv = a_pos * 0.5 + 0.5;
-	v_uv.y = 1.0 - v_uv.y;
-	gl_Position = vec4(a_pos, 0.0, 1.0);
-}`;
-
-	const FRAG_SRC = `#version 300 es
-precision highp float;
-
-uniform sampler2D u_video;
-uniform sampler2D u_background;
-
-uniform vec2 u_canvasSize;        // pixels
-// Source-video rectangle inside the canvas. Replaces the v1 single
-// u_paddingPx so we can letterbox/pillarbox to a target aspect ratio
-// (the bars between the comp and the canvas edge are filled by the
-// background).
-uniform vec2 u_videoOrigin;       // pixels — top-left of source video
-uniform vec2 u_videoSize;         // pixels — source video w/h
-uniform int u_bgType;             // 0=color, 1=gradient, 2=image
-uniform vec4 u_bgColor;           // [0..1]
-// Multi-stop linear gradient. Colors + their positions (0..1) along the
-// gradient line, plus the stop count and the CSS angle (radians). MAX_STOPS
-// mirrors MAX_GRADIENT_STOPS in the store + the Rust export rasteriser.
-#define MAX_STOPS 8
-uniform vec4 u_gradColors[MAX_STOPS];
-uniform float u_gradStops[MAX_STOPS];
-uniform int u_gradCount;
-uniform float u_gradAngle;        // radians (CSS convention: 0 = up, CW)
-uniform float u_bgBlurPx;         // image-mode blur radius in canvas pixels (0 = off)
-uniform vec2 u_zoomCenter;        // [0..1] in video UV
-uniform float u_zoomScale;        // 1.0 = no zoom
-uniform float u_motionBlurPx;     // radial motion-blur radius in canvas px (0 = off)
-uniform float u_borderRadiusPx;   // rounded corner radius of the video rect, canvas pixels
-uniform float u_videoOpacity;     // scene entrance/exit fade on the video layer (1 = opaque)
-uniform float u_videoRotation;    // scene rotation of the video card, radians about its centre
-
-uniform vec2 u_cursorPos;         // [0..1] in video UV
-uniform float u_cursorVisible;    // 0 or 1
-uniform float u_cursorRadius;     // pixels (canvas)
-uniform vec4 u_cursorColor;
-uniform vec4 u_highlightColor;
-uniform float u_highlightAlpha;   // 0 if no click highlight
-uniform vec2 u_highlightPos;      // [0..1] video UV, ALREADY zoom-transformed — the
-                                  // captured click point, independent of the cursor
-
-// Drop shadow cast by the video rect onto the background.
-uniform int u_shadowEnabled;      // 0 / 1
-uniform float u_shadowBlurPx;     // soft edge width
-uniform float u_shadowSpreadPx;   // rect grows by this much before blur
-uniform vec2 u_shadowOffsetPx;    // (x, y) offset
-uniform vec4 u_shadowColor;       // rgb + alpha
-
-in vec2 v_uv;
-out vec4 frag;
-
-vec4 sampleBackground(vec2 uv) {
-	if (u_bgType == 0) return u_bgColor;
-	if (u_bgType == 1) {
-		// Multi-stop linear gradient with a real CSS angle. Project the pixel
-		// onto the gradient line in PIXEL space (aspect-aware) so the visual
-		// angle matches the picker swatch and the exported PNG exactly. The
-		// Rust rasteriser uses identical math — keep the two in lockstep.
-		vec2 dir = vec2(sin(u_gradAngle), -cos(u_gradAngle));
-		vec2 p = (uv - 0.5) * u_canvasSize;
-		float ext = abs(dir.x) * u_canvasSize.x + abs(dir.y) * u_canvasSize.y;
-		float t = clamp(0.5 + dot(p, dir) / max(ext, 1.0), 0.0, 1.0);
-		// Walk the stops; the highest stop whose position is <= t owns the
-		// segment, so the final assignment is the correct interpolation.
-		vec4 col = u_gradColors[0];
-		for (int i = 0; i < MAX_STOPS - 1; i++) {
-			if (i + 1 >= u_gradCount) break;
-			float a = u_gradStops[i];
-			float b = u_gradStops[i + 1];
-			if (t >= a) {
-				float seg = clamp((t - a) / max(b - a, 1e-5), 0.0, 1.0);
-				col = mix(u_gradColors[i], u_gradColors[i + 1], seg);
-			}
-		}
-		return col;
-	}
-	// Image / wallpaper — optionally blurred with a cheap separable-ish 9-tap kernel.
-	if (u_bgBlurPx <= 0.5) {
-		return texture(u_background, uv);
-	}
-	// Multi-tap gaussian approximation — 9 samples in a diamond/cross pattern
-	// with radius in UV space. Good enough for background blur at small
-	// radii; heavier blur is faked by larger step and stronger weights.
-	vec2 step = vec2(u_bgBlurPx, u_bgBlurPx) / u_canvasSize;
-	vec4 c = vec4(0.0);
-	c += texture(u_background, uv) * 0.227027;
-	c += texture(u_background, uv + vec2( step.x,  0.0)) * 0.1945946;
-	c += texture(u_background, uv + vec2(-step.x,  0.0)) * 0.1945946;
-	c += texture(u_background, uv + vec2( 0.0,  step.y)) * 0.1216216;
-	c += texture(u_background, uv + vec2( 0.0, -step.y)) * 0.1216216;
-	c += texture(u_background, uv + vec2( step.x * 2.0,  0.0)) * 0.054054;
-	c += texture(u_background, uv + vec2(-step.x * 2.0,  0.0)) * 0.054054;
-	c += texture(u_background, uv + vec2( 0.0,  step.y * 2.0)) * 0.054054;
-	c += texture(u_background, uv + vec2( 0.0, -step.y * 2.0)) * 0.054054;
-	return c;
-}
-
-// Signed distance from 'p' to a centered rounded rect of half-size 'hs' and radius 'r'.
-// Negative inside, positive outside.
-float sdRoundRect(vec2 p, vec2 hs, float r) {
-	vec2 q = abs(p) - hs + vec2(r);
-	return length(max(q, vec2(0.0))) + min(max(q.x, q.y), 0.0) - r;
-}
-
-void main() {
-	vec2 canvasPx = v_uv * u_canvasSize;
-
-	vec2 videoMin = u_videoOrigin;
-	vec2 videoMax = u_videoOrigin + u_videoSize;
-	vec2 videoSize = max(u_videoSize, vec2(1.0));
-
-	vec4 color = sampleBackground(v_uv);
-
-	// Rounded-rect mask for the video region.
-	vec2 videoCenter = (videoMin + videoMax) * 0.5;
-	// Scene rotation: spin the whole card about its centre by inverse-rotating the
-	// sampling coordinate — the mask, video UV, cursor and highlight all derive
-	// from canvasPx, so rotating it here rotates the card as one.
-	if (abs(u_videoRotation) > 0.0001) {
-		float rs = sin(u_videoRotation);
-		float rc = cos(u_videoRotation);
-		vec2 rd = canvasPx - videoCenter;
-		canvasPx = videoCenter + vec2(rc * rd.x + rs * rd.y, -rs * rd.x + rc * rd.y);
-	}
-	vec2 halfSize = videoSize * 0.5;
-	// Clamp radius so it never exceeds half the smaller dimension.
-	float maxR = min(halfSize.x, halfSize.y);
-	float r = clamp(u_borderRadiusPx, 0.0, maxR);
-	float sd = sdRoundRect(canvasPx - videoCenter, halfSize, r);
-	// Coverage = 1 inside, fading to 0 over ~1 px at the edge for AA.
-	float videoCoverage = 1.0 - smoothstep(-1.0, 0.0, sd);
-
-	// Drop shadow — computed before the video mix so it sits under the rect.
-	// Reuse sdRoundRect against an offset, spread-expanded clone of the video
-	// rectangle, then falls off across u_shadowBlurPx pixels.
-	if (u_shadowEnabled == 1 && u_shadowColor.a > 0.0) {
-		float spread = max(u_shadowSpreadPx, 0.0);
-		float blurPx = max(u_shadowBlurPx, 0.5);
-		vec2 shadowP = (canvasPx - videoCenter) - u_shadowOffsetPx;
-		float sdShadow = sdRoundRect(shadowP, halfSize + vec2(spread), r + spread * 0.5);
-		float shadowMask = 1.0 - smoothstep(0.0, blurPx, sdShadow);
-		// Don't bleed shadow onto the video surface.
-		shadowMask *= (1.0 - videoCoverage);
-		// Fade the shadow with the video layer so the whole card animates as one.
-		color.rgb = mix(color.rgb, u_shadowColor.rgb, shadowMask * u_shadowColor.a * u_videoOpacity);
-	}
-
-	if (videoCoverage > 0.0) {
-		vec2 videoUV = (canvasPx - videoMin) / videoSize;
-
-		// Apply zoom: shrink uv toward zoom center
-		if (u_zoomScale > 1.0001) {
-			videoUV = (videoUV - u_zoomCenter) / u_zoomScale + u_zoomCenter;
-			videoUV = clamp(videoUV, 0.0, 1.0);
-		}
-
-		// Radial motion blur centred on the focus point. Direction = vector
-		// from zoom centre outward; magnitude driven by d(scale)/dt in JS.
-		// 7 taps with a triangular weight — cheap enough per fragment.
-		vec4 videoColor;
-		if (u_motionBlurPx > 0.5) {
-			vec2 dir = (videoUV - u_zoomCenter) * (u_motionBlurPx / max(u_canvasSize.x, 1.0));
-			vec4 acc = vec4(0.0);
-			float w = 0.0;
-			for (int i = -3; i <= 3; i++) {
-				float fi = float(i) / 3.0;
-				vec2 uv = clamp(videoUV + dir * fi, 0.0, 1.0);
-				float wi = 1.0 - abs(fi) * 0.5;
-				acc += texture(u_video, uv) * wi;
-				w += wi;
-			}
-			videoColor = acc / w;
-		} else {
-			videoColor = texture(u_video, videoUV);
-		}
-
-		// Click highlight halo — PINNED to the captured click point
-		// (u_highlightPos, already zoom-transformed), drawn under the cursor and
-		// independent of the cursor sprite / its visibility. This is what makes
-		// the ring land exactly where AND when the click happened even with
-		// smoothing on (the smoothed cursor lags, so riding it read as delayed,
-		// off-target feedback). u_highlightPos already carries the same affine
-		// zoom as the cursor, so it tracks the zoomed video.
-		if (u_highlightAlpha > 0.0) {
-			vec2 hlUV = u_highlightPos;
-			if (hlUV.x >= 0.0 && hlUV.x <= 1.0 && hlUV.y >= 0.0 && hlUV.y <= 1.0) {
-				vec2 hlPx = videoMin + hlUV * videoSize;
-				float hdist = length(canvasPx - hlPx);
-				float hr = u_cursorRadius * 6.0;
-				float ha = (1.0 - smoothstep(hr - 4.0, hr, hdist)) * u_highlightAlpha;
-				videoColor = mix(videoColor, u_highlightColor, ha);
-			}
-		}
-
-		// Cursor overlay (drawn on top of video, clipped to rounded video region).
-		if (u_cursorVisible > 0.5) {
-			vec2 cursorUV = u_cursorPos;
-			if (u_zoomScale > 1.0001) {
-				cursorUV = (cursorUV - u_zoomCenter) * u_zoomScale + u_zoomCenter;
-			}
-
-			if (cursorUV.x >= 0.0 && cursorUV.x <= 1.0 && cursorUV.y >= 0.0 && cursorUV.y <= 1.0) {
-				vec2 cursorPx = videoMin + cursorUV * videoSize;
-				float dist = length(canvasPx - cursorPx);
-
-				float cd = 1.0 - smoothstep(u_cursorRadius - 1.5, u_cursorRadius, dist);
-				videoColor = mix(videoColor, u_cursorColor, cd * u_cursorColor.a);
-			}
-		}
-
-		// Mix the composed video (+cursor) over the background using the rounded mask.
-		color = mix(color, videoColor, videoCoverage * u_videoOpacity);
-	}
-
-	frag = vec4(color.rgb, 1.0);
-}`;
-
-	//  GL helpers 
-	function compile(g: WebGL2RenderingContext, type: number, src: string): WebGLShader {
-		const sh = g.createShader(type)!;
-		g.shaderSource(sh, src);
-		g.compileShader(sh);
-		if (!g.getShaderParameter(sh, g.COMPILE_STATUS)) {
-			const log = g.getShaderInfoLog(sh);
-			g.deleteShader(sh);
-			throw new Error(`Shader compile failed: ${log}`);
-		}
-		return sh;
-	}
-
-	function link(g: WebGL2RenderingContext, vs: WebGLShader, fs: WebGLShader): WebGLProgram {
-		const p = g.createProgram()!;
-		g.attachShader(p, vs);
-		g.attachShader(p, fs);
-		g.linkProgram(p);
-		if (!g.getProgramParameter(p, g.LINK_STATUS)) {
-			const log = g.getProgramInfoLog(p);
-			g.deleteProgram(p);
-			throw new Error(`Program link failed: ${log}`);
-		}
-		return p;
-	}
 
 	function initGL() {
 		if (!canvasEl) return;
@@ -708,61 +458,6 @@ void main() {
 		});
 	}
 
-	// Idle hide fade — shared 200ms ramp at each end of an idle period.
-	// Mirrored 1:1 in `cursor_export.rs` so preview and export agree.
-	const CURSOR_IDLE_FADE_US = 200_000;
-	function idleAlphaAt(tsUs: number, idleTimeoutSec: number): number {
-		const thresholdUs = idleTimeoutSec * 1_000_000;
-		for (const period of idlePeriods) {
-			const fadeStart = period.startUs + thresholdUs;
-			if (period.endUs <= fadeStart) continue;
-			const fadeEnd = Math.min(fadeStart + CURSOR_IDLE_FADE_US, period.endUs);
-			const resumeStart = Math.max(period.endUs - CURSOR_IDLE_FADE_US, fadeEnd);
-			if (tsUs < fadeStart || tsUs > period.endUs) continue;
-			if (tsUs >= fadeEnd && tsUs <= resumeStart) return 0;
-			if (tsUs < fadeEnd) {
-				return 1 - (tsUs - fadeStart) / (fadeEnd - fadeStart);
-			}
-			return 1 - (period.endUs - tsUs) / (period.endUs - resumeStart);
-		}
-		return 1;
-	}
-
-	//  Cursor interpolation (mirror of cursor::smoothing::interpolate_at)
-	function interpolateCursor(timestampUs: number) {
-		if (cursorSamples.length === 0) return null;
-		// Binary search
-		let lo = 0;
-		let hi = cursorSamples.length;
-		while (lo < hi) {
-			const mid = (lo + hi) >>> 1;
-			if (cursorSamples[mid].timestampUs < timestampUs) lo = mid + 1;
-			else hi = mid;
-		}
-		const idx = lo;
-		if (idx >= cursorSamples.length) return cursorSamples[cursorSamples.length - 1];
-		if (idx === 0 || cursorSamples[idx].timestampUs === timestampUs) return cursorSamples[idx];
-		const a = cursorSamples[idx - 1];
-		const b = cursorSamples[idx];
-		const range = b.timestampUs - a.timestampUs;
-		const tLinear = range > 0 ? (timestampUs - a.timestampUs) / range : 0;
-		// Apply the user's cursor-motion easing if set. The curve reshapes
-		// the *interpolation parameter* between adjacent captured samples;
-		// boolean states still flip at the midpoint of the linear param to
-		// keep click/release timing predictable.
-		const easing = store.cursorMotionEasing;
-		const t = easing ? bezierY(easing, tLinear) : tLinear;
-		return {
-			timestampUs,
-			x: a.x + (b.x - a.x) * t,
-			y: a.y + (b.y - a.y) * t,
-			visible: tLinear < 0.5 ? a.visible : b.visible,
-			leftDown: tLinear < 0.5 ? a.leftDown : b.leftDown,
-			rightDown: tLinear < 0.5 ? a.rightDown : b.rightDown,
-		};
-	}
-
-	//  Color parsing 
 	//  Sizing
 	function resizeCanvas() {
 		if (!canvasEl || !containerEl || !store.metadata) return false;
@@ -857,55 +552,6 @@ void main() {
 			return false;
 		}
 		return true;
-	}
-
-	// Zoom state for `timeSec`: eased scale (1.0 outside any region), focus
-	// centre in video UV, and motion-blur strength. Matches the Rust
-	// `ZoomRegion::scale_at` 1:1 so preview and export stay aligned.
-	function evaluateZoomAt(timeSec: number): {
-		scale: number;
-		cx: number;
-		cy: number;
-		motionBlur: number;
-	} {
-		const regions = store.zoomRegions;
-		for (const r of regions) {
-			if (r.hidden) continue;
-			if (timeSec <= r.start || timeSec >= r.end) continue;
-			const duration = Math.max(0, r.end - r.start);
-			const half = duration * 0.5;
-			const rampIn = Math.min(Math.max(0, r.rampIn), half);
-			const rampOut = Math.min(Math.max(0, r.rampOut), half);
-			const holdStart = r.start + rampIn;
-			const holdEnd = r.end - rampOut;
-			let phase: number;
-			let curve;
-			let atHold = false;
-			if (timeSec < holdStart) {
-				phase = rampIn > 0 ? (timeSec - r.start) / rampIn : 1;
-				curve = r.easeIn;
-			} else if (timeSec > holdEnd) {
-				phase = rampOut > 0 ? (r.end - timeSec) / rampOut : 1;
-				curve = r.easeOut;
-			} else {
-				atHold = true;
-				phase = 1;
-				curve = r.easeIn;
-			}
-			phase = Math.max(0, Math.min(1, phase));
-			const eased = atHold ? 1 : bezierY(curve, phase);
-			const scale = 1.0 + (r.scale - 1.0) * eased;
-			// Focus point is CONSTANT at the target for the whole region — only the
-			// scale eases. The affine zoom `(uv - c)/scale + c` is the identity at
-			// scale≈1 (no first-frame offset regardless of c) and dollies straight
-			// into the target as it ramps. Easing the centre from 0.5→target instead
-			// caused the "scale at centre, then slide" artifact, and a constant
-			// centre keeps the cursor (same forward transform) glued.
-			const cx = r.centerX ?? 0.5;
-			const cy = r.centerY ?? 0.5;
-			return { scale, cx, cy, motionBlur: r.motionBlur ?? 0 };
-		}
-		return { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
 	}
 
 	// AnnotationOverlay reads this canvas back via drawImage from its OWN rAF
@@ -1243,7 +889,7 @@ void main() {
 
 		// Zoom — eased per-frame scale + focus centre + motion-blur strength.
 		const zoom = store.focusEnabled
-			? evaluateZoomAt(playbackTime)
+			? evaluateZoomAt(store.zoomRegions, playbackTime)
 			: { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
 		gl.uniform2f(uniforms.u_zoomCenter, zoom.cx, zoom.cy);
 		gl.uniform1f(uniforms.u_zoomScale, zoom.scale);
@@ -1255,7 +901,7 @@ void main() {
 		let motionBlurPx = 0;
 		if (zoom.motionBlur > 0.001 && zoom.scale > 1.0001) {
 			const dt = 1 / 60;
-			const next = evaluateZoomAt(playbackTime + dt);
+			const next = evaluateZoomAt(store.zoomRegions, playbackTime + dt);
 			const dScaleDt = Math.abs(next.scale - zoom.scale) / dt;
 			// k = 30 px per unit-scale-per-second is a good default at 1080p;
 			// cap at 20 px to keep the 7-tap sample cheap.
@@ -1282,7 +928,7 @@ void main() {
 			// any idle period the alpha is 1; deep inside it's 0; near each
 			// boundary we linearly ramp over CURSOR_IDLE_FADE_US so the cursor
 			// dissolves in/out instead of popping.
-			const idleA = cs.hideWhenIdle ? idleAlphaAt(ts, cs.idleTimeout) : 1;
+			const idleA = cs.hideWhenIdle ? idleAlphaAt(idlePeriods, ts, cs.idleTimeout) : 1;
 			// Press window can override idle-hide: even mid-idle, the cursor
 			// fades back in around an upcoming click so the viewer sees
 			// "intent → click → release" rather than a cursor materialising
@@ -1291,7 +937,7 @@ void main() {
 			const baseAlpha = Math.max(idleA, press.visibleAlpha);
 
 			if (baseAlpha > 0) {
-				const pos = interpolateCursor(ts);
+				const pos = interpolateCursor(cursorSamples, store.cursorMotionEasing, ts);
 				if (pos && pos.visible) {
 					cursorAlpha = baseAlpha;
 					// Always-on click anchor snap. With strong smoothing and
@@ -1530,31 +1176,6 @@ void main() {
 			if (program) gl.deleteProgram(program);
 		}
 	});
-
-	// Coarse resolution bucket for telemetry cohorting (the default-on decision
-	// is "decode-fps by OS + resolution"). Keyed off the larger dimension.
-	function resolutionTier(w: number, h: number): string {
-		const p = Math.max(w, h);
-		if (p >= 4500) return "5k";
-		if (p >= 3000) return "4k";
-		if (p >= 2000) return "1440p";
-		if (p >= 1700) return "1080p";
-		if (p >= 1200) return "720p";
-		return "sd";
-	}
-
-	// Map a source-init failure to a coarse, PII-safe reason. The raw message can
-	// in principle carry a URL/path, so we NEVER send it — only this enum.
-	function classifyWcError(err: unknown): string {
-		const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
-		if (m.includes("unavailable") || m.includes("worker") || m.includes("videoframe"))
-			return "unsupported";
-		if (m.includes("track")) return "no_video_track";
-		if (m.includes("codec") || m.includes("config") || m.includes("decoder"))
-			return "codec_unsupported";
-		if (m.includes("http") || m.includes("fetch")) return "fetch_failed";
-		return "decode_error";
-	}
 
 	// WebCodecs frame source (re)create when the media src changes — or when the
 	// `webcodecsPreview` experiment is toggled. Owns its own worker + decoder;
