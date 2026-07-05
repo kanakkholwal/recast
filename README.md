@@ -25,9 +25,11 @@
 ## About
 
 Recast is an open-source screen recorder and editor that runs entirely on your
-machine. No account is required to record, no telemetry phones home, and
-nothing is uploaded by default. When you want to share a finished video, push
-it to your own Google Drive from the export dialog and copy the link.
+machine. No account is required to record, and nothing you record is uploaded
+unless you choose to share it. Anonymous crash reporting is on by default and
+product analytics is opt-in; both are tied to no account and can be switched
+off in Settings. To share a finished video, push it to your own Google Drive
+from the export dialog and copy the link.
 
 A hosted sharing layer (Recast Cloud) with watch analytics and team
 workspaces is on the way. It is storage-agnostic by design: bring your own
@@ -35,12 +37,12 @@ storage on the free tier, or use Recast-managed storage or a custom S3, R2,
 Azure, or GCP bucket on paid plans.
 
 For the full feature catalog, screenshots, and competitor comparisons, see
-the [marketing site](https://recast.nexonauts.com). This README focuses on
+the [web site](https://recast.nexonauts.com). This README focuses on
 running the codebase locally.
 
 ## Quick start
 
-Prerequisites: Node.js 18+, [pnpm](https://pnpm.io/) 9+, Rust 1.70+, and the
+Prerequisites: Node.js 18+, [pnpm](https://pnpm.io/) 10+, Rust 1.77+, and the
 [Tauri OS prerequisites](https://v2.tauri.app/start/prerequisites/) for your
 platform. The setup script can auto-install any of these that are missing.
 
@@ -61,7 +63,7 @@ Run the desktop app in dev mode:
 pnpm --filter recast-desktop dev
 ```
 
-Run the marketing website:
+Run the website:
 
 ```sh
 pnpm turbo run dev --filter=recast-web

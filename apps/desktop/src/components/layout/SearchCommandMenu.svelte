@@ -10,6 +10,7 @@
   let { iconOnly } = $props<{ iconOnly?: boolean }>();
 </script>
 
+
 <Button
   onclick={() => commandPalette.show()}
   aria-label="Open Command Menu"
@@ -17,16 +18,29 @@
   variant="raw"
   size="sm"
   class={cn(
-    "border border-foreground/5 group relative h-8 bg-input",
-    iconOnly ? "w-8" : "min-w-8 w-full max-w-xs",
+    "group relative flex h-8 w-full items-center justify-start gap-2 overflow-hidden rounded-lg border border-foreground/5 bg-card/80 px-2.5 transition-colors duration-200",
   )}
 >
-  <Search class="size-4 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />
-  {#if !iconOnly}
-    <span class="flex-1 text-left text-xs font-medium">Search…</span>
-    <Kbd class="hidden sm:inline-flex">
-      <span class="text-[8px] font-semibold">⌘</span>
-      <span class="text-[11px]">K</span>
-    </Kbd>
-  {/if}
+  <!-- `justify-start` + symmetric `px-2.5` around a 14px icon keeps it exactly
+       centered in the collapsed 34px rail (10 + 14 + 10), matching the nav
+       rows. The Kbd's `ml-auto` only pushes the (collapsing) shortcut right; it
+       never moves the icon. -->
+  <Search class="size-3.5 shrink-0 opacity-50 transition-opacity group-hover:opacity-70" />
+  <span
+    class={cn(
+      "min-w-0 truncate text-left text-xs font-medium text-muted-foreground transition-[max-width,opacity] duration-200 ease-linear",
+      iconOnly ? "max-w-0 opacity-0" : "max-w-40 opacity-100",
+    )}
+  >
+    Search…
+  </span>
+  <Kbd
+    class={cn(
+      "ml-auto hidden shrink-0 transition-[max-width,opacity] duration-200 ease-linear sm:inline-flex",
+      iconOnly ? "max-w-0 opacity-0" : "max-w-16 opacity-100",
+    )}
+  >
+    <span class="text-[8px] font-semibold">⌘</span>
+    <span class="text-[10px]">K</span>
+  </Kbd>
 </Button>

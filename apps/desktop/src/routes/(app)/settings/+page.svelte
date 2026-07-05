@@ -992,7 +992,7 @@
                           aria-checked={active}
                           onclick={() => (layoutMode.current = m.value)}
                           class={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-200",
+                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] whitespace-nowrap font-semibold transition-all duration-200",
                             active
                               ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
                               : "text-muted-foreground hover:text-foreground",
