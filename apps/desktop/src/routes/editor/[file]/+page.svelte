@@ -2,6 +2,7 @@
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+  import PlayerDialog from "$components/recast/PlayerDialog.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import ExportDialog from "$components/editor/ExportDialog.svelte";
   import ExportFlowDialog, {
@@ -13,7 +14,7 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-  import type { ExportStateEvent } from "$lib/ipc";
+  import type { ExportStateEvent, RecordingEntry } from "$lib/ipc";
   import {
     autosaveProject,
     cancelExport,
@@ -22,6 +23,7 @@
     detectSilence,
     extractWaveform,
     generateThumbnails,
+    listExports,
     loadEditorDocument,
     migrateProject,
     openFileLocation,
@@ -33,6 +35,8 @@
     buildCaptionExport,
     buildCloudCaptionTranscript,
     buildExportRenderState,
+    findMissingImageAnnotations,
+    hasBlurUnderZoom,
     runExport,
   } from "$lib/services/export";
   import { isShareSupported, shareRecording } from "$lib/share";
@@ -61,6 +65,7 @@
     HardDriveUpload,
     Link2,
     LoaderCircle,
+    Play,
     RefreshCw,
     Share2,
     TriangleAlert,
@@ -794,6 +799,11 @@
   let exportFinalizing = $state(false);
   let exportHasProgress = $state(false);
   let activeExportId = $state<string | null>(null);
+  // Backend prep sub-step (e.g. "Rendering cursor & annotations") emitted by Rust
+  // while it runs the synchronous prep passes AFTER hand-off but before the encode
+  // reports real progress — otherwise the checklist's "Encode frames" step sits
+  // stalled during that window.
+  let exportPrepDetail = $state<string | null>(null);
 
 
   // Rotating status messages shown below the progress ring during encode.
@@ -911,6 +921,9 @@
     switch (event.status) {
       case "started":
         return;
+      case "preparing":
+        exportPrepDetail = event.detail ?? null;
+        return;
       case "progress": {
         const next = Math.min(Math.max(event.progress, 0), 100);
         const current = store.exportProgress ?? 0;
@@ -951,6 +964,7 @@
     exportHasProgress = false;
     exportCancelling = false;
     exportFinalizing = false;
+    exportPrepDetail = null;
     activeExportId = exportId;
     exportResult = null;
     exportStartedAt = Date.now();
@@ -968,6 +982,24 @@
             onSending: (s) => (prepSending = s),
           },
         });
+
+      // Warn (but don't block) if any image annotation can't be loaded — the
+      // export skips them silently otherwise, shipping a video with them gone.
+      const missingImages = await findMissingImageAnnotations(store);
+      if (missingImages.length > 0) {
+        const names = missingImages.map((p) => p.split(/[/\\]/).pop()).join(", ");
+        toast.warning(
+          `${missingImages.length} image${missingImages.length > 1 ? "s" : ""} couldn't be found and won't appear in the export: ${names}`,
+        );
+      }
+
+      // A blur can't follow a zoom in the export — warn so a redaction doesn't
+      // silently slide off the thing it was covering.
+      if (hasBlurUnderZoom(store)) {
+        toast.warning(
+          "A blur overlaps a zoom. In the export it can't follow the zoom and may not cover the zoomed content — set the blur's Anchor to Frame if it should stay in a fixed spot.",
+        );
+      }
 
       // The settings this export ran with — key when a user reports a bad export.
       log.info("export", "export_started", {
@@ -1058,6 +1090,33 @@
 
   function dismissExportResult() {
     exportResult = null;
+  }
+
+  // Watch the finished export in the in-app player. Opening it dismisses the
+  // export dialog — ExportFlowDialog portals over the player otherwise. Size and
+  // created come from the exports listing (accurate); a minimal entry is the
+  // fallback so playback never hinges on the listing succeeding.
+  let playTarget = $state<RecordingEntry | null>(null);
+
+  async function playExportedFile() {
+    if (exportResult?.kind !== "success") return;
+    const path = exportResult.path;
+    const filename = path.split(/[\\/]/).pop() ?? "export";
+    let entry: RecordingEntry = {
+      filename,
+      path,
+      sizeBytes: 0,
+      created: Math.floor(Date.now() / 1000),
+      needsMigration: false,
+    };
+    try {
+      const found = (await listExports()).find((e) => e.path === path);
+      if (found) entry = found;
+    } catch {
+      // Keep the fallback entry.
+    }
+    playTarget = entry;
+    dismissExportResult();
   }
 
   // Options phase is UI-only (the picker before Export); progress/result phases
@@ -1451,15 +1510,20 @@
     },
     {
       key: "encode" as const,
-      label: exportFinalizing ? "Finalise file" : "Encode frames",
+      // Live hint: show the backend's prep sub-step ("Rendering cursor &
+      // annotations") until real encode progress arrives, so this row is never a
+      // stalled "Encode frames · pending" during the Rust prep window.
+      label: exportFinalizing
+        ? "Finalise file"
+        : !exportHasProgress && exportPrepDetail
+          ? exportPrepDetail
+          : "Encode frames",
       state:
         prepSending !== "done"
           ? "pending"
-          : exportFinalizing
+          : exportFinalizing || exportHasProgress || exportPrepDetail !== null
             ? "running"
-            : exportHasProgress
-              ? "running"
-              : "pending",
+            : "pending",
     },
   ]);
 </script>
@@ -1639,6 +1703,10 @@
     {cancelled}
     error={errorPanel}
   />
+
+  {#if playTarget}
+    <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
+  {/if}
 </div>
 
 {#snippet options()}
@@ -1719,7 +1787,7 @@
 
 {#snippet progress()}
   {@const isPreparing =
-    prepSending !== "done" && !exportHasProgress && !exportFinalizing}
+    !exportHasProgress && !exportFinalizing}
   {@const eta = exportEtaMs()}
   {@const ringPct = isPreparing
     ? 0
@@ -2149,15 +2217,26 @@
         <Kbd class="ml-0.5">Esc</Kbd>
       </Button>
 
-      <Button
-        variant="default"
-        size="xs"
-        class="gap-1.5"
-        onclick={revealExportInFolder}
-      >
-        <FolderOpen class="size-3" />
-        Show in folder
-      </Button>
+      <div class="flex items-center gap-1.5">
+        <Button
+          variant="secondary"
+          size="xs"
+          class="gap-1.5"
+          onclick={playExportedFile}
+        >
+          <Play class="size-3" />
+          Play
+        </Button>
+        <Button
+          variant="default"
+          size="xs"
+          class="gap-1.5"
+          onclick={revealExportInFolder}
+        >
+          <FolderOpen class="size-3" />
+          Show in folder
+        </Button>
+      </div>
     </footer>
   </div>
 {/snippet}

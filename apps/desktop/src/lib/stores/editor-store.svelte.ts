@@ -9,6 +9,7 @@ import { googleFontStack } from '../fonts/google-fonts';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import { log } from '../logger';
+import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // — which pulls this store's catalogs — can't form an import cycle.
 import { resolveBackgroundWireValue } from '../registry/resolve';
@@ -22,6 +23,20 @@ import {
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
 } from '../timeline/segment-speed';
+import {
+	type MotionTone,
+	pruneSegmentAnims,
+	retuneAnimsForTone,
+	type SceneAnimSpec,
+	type SegmentAnim,
+	segmentAnimAt as animAtAnchor,
+	setSegmentAnim as upsertSegmentAnim,
+} from '../scenes/segment-anim';
+import {
+	seamTransitionAt as readSeamTransition,
+	type SeamTransition,
+	setSeamTransition as applySeamTransition,
+} from '../scenes/seam';
 import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
@@ -91,9 +106,8 @@ export interface AnnotationStroke {
 }
 
 /**
- * Optional preview-only glow / shadow. Renders in the editor but **not** in
- * the Rust export pipeline yet — the Annotations tab surfaces this trade-off
- * with a banner so the user is never surprised at export time.
+ * Optional glow / soft shadow. Renders in export for rect, ellipse, image, and
+ * text; arrow glow is preview-only (the Annotations tab notes this per kind).
  */
 export interface AnnotationGlow {
 	color: string;
@@ -157,6 +171,7 @@ export type AnnotationKind =
 		h: number;
 		path: string; // absolute file path or asset URL
 		opacity: number; // 0..1
+		radius: number; // corner radius, fraction of the shorter side (0..0.5)
 	}
 	| {
 		// Privacy / focus blur. Applies a box blur (separable, kernel
@@ -205,9 +220,16 @@ export interface Annotation {
 	hidden?: boolean;
 	/** Master opacity 0..1; multiplied with the split-ramp opacity. */
 	opacity?: number;
-	/** Optional glow / soft shadow. Preview only in v2 (Rust glow follows). */
+	/** Optional glow / soft shadow. Exports for rect/ellipse/image/text; arrow is preview-only. */
 	glow?: AnnotationGlow;
+	/** What the annotation is pinned to. "video" (default) tracks the zoomed
+	 *  video content; "frame" pins it to the output frame so zoom/focus never
+	 *  moves it. Absent = "video". */
+	anchor?: AnnotationAnchor;
 }
+
+/** Coordinate space an annotation is anchored to. */
+export type AnnotationAnchor = "video" | "frame";
 
 export const DEFAULT_ANNOTATION_RAMP = 0.2;
 export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
@@ -508,6 +530,11 @@ export interface EditorRenderState {
 	/** Per-segment speed overrides, anchored to a segment's original start. A
 	 *  segment with no entry plays at 1×. */
 	segmentSpeeds?: SegmentSpeed[];
+	/** Per-segment scene animations (entrance/exit video-layer transforms),
+	 *  anchored to a segment's original start. A segment with no entry is static. */
+	segmentAnims?: SegmentAnim[];
+	/** Project-wide scene-animation motion style (defaults to "balanced"). */
+	motionTone?: MotionTone;
 	/** Whether zoom regions apply in preview/export. */
 	focusEnabled?: boolean;
 	/** Whether annotations render in preview/export. Negation of the
@@ -1070,6 +1097,12 @@ export function createEditorStore() {
 	// until a segment between two boundaries is ripple-deleted (→ a manual cut).
 	let splitPoints = $state<number[]>([]);
 	let segmentSpeeds = $state<SegmentSpeed[]>([]);
+	// Per-segment scene animations (entrance/exit transforms on the video layer),
+	// anchored to a segment's original start. A segment with no entry is static.
+	let segmentAnims = $state<SegmentAnim[]>([]);
+	// Project-wide motion style for scene animations. Authoring-only: it bakes
+	// concrete values into each spec, so the export pipeline never reads it.
+	let motionTone = $state<MotionTone>('balanced');
 	// Transient (not serialized): true only while a trim handle is being dragged.
 	// Flips the timeline onto the full-recording axis so the handle can move
 	// across the whole source and reveal the trimmed head/tail (Cap-style ghost).
@@ -1220,6 +1253,11 @@ export function createEditorStore() {
 	// that rate (only ever offered ≤ source, so we never duplicate frames). GIF
 	// has its own fps control in `gifSettings`.
 	let exportFps = $state<number | null>(null);
+	// Seed the 60fps export default once per project (see the `metadata` setter):
+	// a >60fps recording exports far faster at 60 with no perceptible loss, but
+	// Original/30/24 stay selectable. The flag stops a later metadata set from
+	// clobbering a user's choice.
+	let exportFpsDefaulted = false;
 	let gifSettings = $state<GifSettings>({ ...DEFAULT_GIF_SETTINGS });
 	// How captions are emitted on export (burn-in / sidecar). Session-only, like
 	// the other export prefs.
@@ -1265,6 +1303,8 @@ export function createEditorStore() {
 			cuts,
 			splitPoints,
 			segmentSpeeds,
+			segmentAnims,
+			motionTone,
 			autoZoomEnabled,
 			autoZoomApplied,
 			annotations,
@@ -1292,6 +1332,13 @@ export function createEditorStore() {
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 		isDirty = true;
+	}
+
+	// Drop the most recent undo entry. For unwinding a push that turned into a
+	// no-op — e.g. a placement that pushed at pointer-down but was cancelled
+	// (too-small drag / stray click) before it changed anything.
+	function popUndoState() {
+		if (undoStack.length > 0) undoStack = undoStack.slice(0, -1);
 	}
 
 	// Coalesced undo: a sequence of small edits that share the same `key`
@@ -1369,6 +1416,8 @@ export function createEditorStore() {
 		cuts = (s.cuts ?? []).map((c: TimelineCut) => ({ ...c }));
 		splitPoints = [...(s.splitPoints ?? [])];
 		segmentSpeeds = (s.segmentSpeeds ?? []).map((o: SegmentSpeed) => ({ ...o }));
+		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
+		motionTone = s.motionTone ?? 'balanced';
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot — we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1625,6 +1674,10 @@ export function createEditorStore() {
 		const clipEnd = trimEnd || metadata?.duration || 0;
 		const s = start ?? Math.max(trimStart, now);
 		const e = end ?? Math.min(clipEnd, Math.max(s + 2.0, now + 2.0));
+		// New annotations pick up the current theme colour rather than a fixed
+		// blue, so markup matches the app out of the box (resolved to a concrete
+		// colour here since the export bakes it).
+		const themeColor = resolveTokenRgb('var(--primary)');
 		const annotation: Annotation = {
 			id: generateId(),
 			start: s,
@@ -1633,8 +1686,14 @@ export function createEditorStore() {
 			rampOut: DEFAULT_ANNOTATION_RAMP,
 			easeIn: { ...EASE },
 			easeOut: { ...EASE },
-			stroke: { ...DEFAULT_ANNOTATION_STROKE },
-			fill: DEFAULT_ANNOTATION_FILL,
+			// Images start borderless (opt-in via the Appearance controls); shapes
+			// keep the default hairline stroke.
+			stroke: {
+				...DEFAULT_ANNOTATION_STROKE,
+				color: themeColor,
+				width: kind.kind === 'image' ? 0 : DEFAULT_ANNOTATION_STROKE.width,
+			},
+			fill: resolveTokenRgba('var(--primary)', 0.18),
 			kind,
 			zIndex: annotationZSeq++,
 			opacity: 1,
@@ -1654,8 +1713,8 @@ export function createEditorStore() {
 		annotations = annotations.map((a) => (a.id === id ? { ...a, ...updates } : a));
 	}
 
-	function removeAnnotation(id: string) {
-		pushUndoState();
+	function removeAnnotation(id: string, pushUndo = true) {
+		if (pushUndo) pushUndoState();
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
 		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
@@ -1702,7 +1761,7 @@ export function createEditorStore() {
 		dup.zIndex = annotationZSeq++;
 		dup.name = source.name ? `${source.name} copy` : undefined;
 		// Nudge the geometry diagonally so the duplicate is visible.
-		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text") {
+		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text" || dup.kind.kind === "blur") {
 			dup.kind = { ...dup.kind, x: dup.kind.x + offset, y: dup.kind.y + offset };
 		} else if (dup.kind.kind === "arrow") {
 			dup.kind = {
@@ -1775,6 +1834,8 @@ export function createEditorStore() {
 		cuts = [];
 		splitPoints = [];
 		segmentSpeeds = [];
+		segmentAnims = [];
+		motionTone = 'balanced';
 		cutsEnabled = true;
 		focusEnabled = true;
 		dismissedSilences = [];
@@ -1832,6 +1893,7 @@ export function createEditorStore() {
 		exportQuality = 'source';
 		exportSpeed = 'balanced';
 		exportFps = null;
+		exportFpsDefaulted = false;
 		undoStack = [];
 		redoStack = [];
 	}
@@ -1980,6 +2042,46 @@ export function createEditorStore() {
 		isDirty = true;
 	}
 
+	/** The scene animation anchored at original `start` (null when unset). */
+	function segmentAnimAtStart(start: number): SegmentAnim | null {
+		return animAtAnchor(segmentAnims, start);
+	}
+
+	/** Set or clear (spec = null) the entrance/exit animation of the segment
+	 * anchored at original `start`. Coalesced into one undo entry per anchor+side
+	 * while presets/sliders change; orphaned anchors are pruned. */
+	function setSegmentAnim(start: number, side: 'in' | 'out', spec: SceneAnimSpec | null) {
+		pushUndoStateCoalesced(`segment-anim-${side}-${start.toFixed(3)}`, 400);
+		const next = upsertSegmentAnim(segmentAnims, start, side, spec);
+		segmentAnims = pruneSegmentAnims(next, currentSegments());
+		isDirty = true;
+	}
+
+	/** Set the project-wide scene-animation motion style, restyling every existing
+	 * animation to match (so the dial visibly re-tones the whole video). */
+	function setMotionTone(tone: MotionTone) {
+		if (tone === motionTone) return;
+		pushUndoState();
+		motionTone = tone;
+		segmentAnims = retuneAnimsForTone(segmentAnims, tone);
+		isDirty = true;
+	}
+
+	/** Set the transition across the seam between the segments anchored at
+	 * `leftStart` and `rightStart` — a matched exit+entrance styled by the current
+	 * motion tone. One undo entry for the pair. */
+	function setSeamTransition(leftStart: number, rightStart: number, kind: SeamTransition) {
+		pushUndoState();
+		const next = applySeamTransition(segmentAnims, leftStart, rightStart, kind, motionTone);
+		segmentAnims = pruneSegmentAnims(next, currentSegments());
+		isDirty = true;
+	}
+
+	/** The transition currently spanning that seam ("none" / a push / "custom"). */
+	function seamTransitionAt(leftStart: number, rightStart: number): SeamTransition | 'custom' {
+		return readSeamTransition(segmentAnims, leftStart, rightStart);
+	}
+
 	/** Split the clip at original time `t`. Returns true if a split was added. */
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
@@ -2106,6 +2208,8 @@ export function createEditorStore() {
 			splitPoints: [...splitPoints],
 			// Prune orphaned anchors on save so the section diffs cleanly.
 			segmentSpeeds: pruneSegmentSpeeds(segmentSpeeds, currentSegments()),
+			segmentAnims: pruneSegmentAnims(segmentAnims, currentSegments()),
+			motionTone,
 			cutsEnabled,
 			focusEnabled,
 			annotationsEnabled: !annotationsGloballyHidden,
@@ -2197,10 +2301,9 @@ export function createEditorStore() {
 		cutsEnabled = state.cutsEnabled ?? true;
 		splitPoints = [...(state.splitPoints ?? [])];
 		segmentSpeeds = (state.segmentSpeeds ?? []).map((o) => ({ ...o }));
+		segmentAnims = (state.segmentAnims ?? []).map((o) => ({ ...o }));
+		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
-		if (state.annotationsEnabled !== undefined) {
-			annotationsGloballyHidden = !state.annotationsEnabled;
-		}
 		shadow = state.shadow ?? shadow;
 		audioSettings = state.audioSettings ?? audioSettings;
 		transcript = state.transcript ?? null;
@@ -2261,12 +2364,15 @@ export function createEditorStore() {
 			hidden: a.hidden ?? false,
 			opacity: a.opacity ?? 1,
 			glow: a.glow,
+			anchor: a.anchor,
 		}));
 		annotationZSeq = annotations.length + 1;
 		selectedAnnotationId = null;
 		annotationTool = null;
 		hoveredAnnotationId = null;
-		annotationsGloballyHidden = false;
+		// Restore the "hide all annotations" toggle. Hidden only when explicitly
+		// disabled; absent (older projects) or true → visible.
+		annotationsGloballyHidden = state.annotationsEnabled === false;
 		// A freshly loaded document matches on-disk state — no unsaved edits.
 		isDirty = false;
 		// Anchor `revertToSaved` to the just-loaded state.
@@ -2291,7 +2397,16 @@ export function createEditorStore() {
 		set microphonePath(v: string | null) { microphonePath = v; },
 
 		get metadata() { return metadata; },
-		set metadata(v: VideoMetadata | null) { metadata = v; },
+		set metadata(v: VideoMetadata | null) {
+			metadata = v;
+			// Default export to 60fps for >60fps recordings — imperceptible for a
+			// screen demo, ~halves export time. Seeded once so a later user choice is
+			// never clobbered; Original/30/24 remain selectable in the dialog.
+			if (v) {
+				if (!exportFpsDefaulted && v.fps > 60.5) exportFps = 60;
+				exportFpsDefaulted = true;
+			}
+		},
 
 		get thumbnailStrip() { return thumbnailStrip; },
 		set thumbnailStrip(v: string[]) { thumbnailStrip = v; },
@@ -2400,6 +2515,13 @@ export function createEditorStore() {
 		segmentSpeedAt: segmentSpeedAtStart,
 		segmentSpeedAtTime,
 		setSegmentSpeed,
+		get segmentAnims() { return segmentAnims; },
+		segmentAnimAt: segmentAnimAtStart,
+		setSegmentAnim,
+		get motionTone() { return motionTone; },
+		setMotionTone,
+		setSeamTransition,
+		seamTransitionAt,
 		get selectedClipStart() { return selectedClipStart; },
 		set selectedClipStart(v: number | null) { selectedClipStart = v; },
 		get focusEnabled() { return focusEnabled; },
@@ -2504,6 +2626,7 @@ export function createEditorStore() {
 		undo,
 		redo,
 		pushUndoState,
+		popUndoState,
 		pushUndoStateCoalesced,
 		markSaved,
 		revertToSaved,

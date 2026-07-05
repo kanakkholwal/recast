@@ -619,7 +619,31 @@ mod blur_tests {
             tint_rgb: 0xff00aa,
             opacity: 1.0,
             strength: 1.0,
+            corner_px: 0.0,
         }
+    }
+
+    #[test]
+    fn rounded_blur_adds_a_geq_alpha_mask() {
+        let regs = [BlurRegion {
+            corner_px: 20.0,
+            ..region_with("glass", 0.0, 1.0)
+        }];
+        let (chain, _) = build_annotation_blur_complex(None, "0:v", &regs);
+        assert!(
+            chain.contains("format=yuva420p") && chain.contains("geq="),
+            "rounded blur should add an alpha mask: {chain}"
+        );
+    }
+
+    #[test]
+    fn square_blur_has_no_geq_mask() {
+        let regs = [region_with("glass", 0.0, 1.0)]; // corner_px = 0.0
+        let (chain, _) = build_annotation_blur_complex(None, "0:v", &regs);
+        assert!(
+            !chain.contains("geq="),
+            "square blur should not add a geq mask: {chain}"
+        );
     }
 
     #[test]
@@ -1044,6 +1068,7 @@ mod export_retention_tests {
                         tint_rgb,
                         opacity: a.opacity.clamp(0.0, 1.0),
                         strength: strength.clamp(0.0, 1.0),
+                        corner_px: 0.0,
                     })
                 }
                 _ => None,
@@ -1393,6 +1418,24 @@ pub struct BlurRegion<'a> {
     /// by this so high strength → near-opaque box (true redaction). The
     /// preview applies the same scaling.
     pub strength: f64,
+    /// Corner radius in pixels (0 = square). Rounds the blurred region via a
+    /// per-pixel alpha mask so the corners show the sharp video, matching the
+    /// preview. 0 keeps the cheap rectangular path.
+    pub corner_px: f64,
+}
+
+/// A `,format=yuva420p,geq=…` snippet that sets the alpha plane to a
+/// rounded-rect mask (opaque inside, transparent in the cut corners of radius
+/// `r` px) while copying the colour planes. `ox`/`oy` measure how far a pixel
+/// lies outside the inner rect (the box shrunk by `r`); if that offset is past
+/// the corner arc the pixel is transparent. Commas are escaped `\,` like the
+/// `enable=` expression so the filtergraph parser hands geq clean args.
+fn rounded_alpha_filter(r: f64) -> String {
+    let r = format!("{r:.2}");
+    format!(
+        ",format=yuva420p,geq=lum='p(X\\,Y)':cb='p(X\\,Y)':cr='p(X\\,Y)':a='255*(1-gt(pow(max(0\\,max({r}-X\\,X-(W-1-{r})))\\,2)+pow(max(0\\,max({r}-Y\\,Y-(H-1-{r})))\\,2)\\,{r}*{r}))'",
+        r = r
+    )
 }
 
 /// Build a filter_complex chain that crops each `BlurRegion` out of the
@@ -1497,6 +1540,13 @@ pub fn build_annotation_blur_complex(
         };
         if let Some(rgba) = tint_rgba {
             tail.push_str(&format!(",drawbox=x=0:y=0:w=iw:h=ih:color={rgba}:t=fill"));
+        }
+        // Rounded corners: give the blurred crop a rounded-rect alpha so the
+        // overlay leaves the sharp video showing in the cut corners (matches the
+        // preview). Clamp to half the shorter side (fully rounded).
+        let corner = region.corner_px.min((w.min(h) as f64) / 2.0);
+        if corner >= 1.0 {
+            tail.push_str(&rounded_alpha_filter(corner));
         }
         tail.push_str(&blur_label);
         lines.push(tail);

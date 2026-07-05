@@ -62,6 +62,40 @@ export function videoRectPx(
 	};
 }
 
+/**
+ * Device-pixel rect of the full composition FRAME (source + padding) inside the
+ * container. This is what frame-anchored annotations (and captions) map onto,
+ * so 0..1 spans the padded output frame rather than just the video.
+ */
+export function compositionRectPx(
+	containerW: number,
+	containerH: number,
+	metadata: Pick<VideoMetadata, "width" | "height"> | null | undefined,
+	paddingPercent: number,
+	outputAspect: OutputAspect = "source",
+): Rect {
+	if (!metadata || containerW <= 0 || containerH <= 0) {
+		return { x: 0, y: 0, w: containerW, h: containerH };
+	}
+	const geom = computeCanvasGeometry(
+		metadata.width,
+		metadata.height,
+		paddingPercent,
+		outputAspect,
+	);
+	if (geom.canvasW <= 0 || geom.canvasH <= 0) {
+		return { x: 0, y: 0, w: containerW, h: containerH };
+	}
+	const sx = containerW / geom.canvasW;
+	const sy = containerH / geom.canvasH;
+	return {
+		x: geom.compX * sx,
+		y: geom.compY * sy,
+		w: geom.compW * sx,
+		h: geom.compH * sy,
+	};
+}
+
 /** Annotation UV → container px, applying the shader's zoom transform. */
 export function uvToCanvas(
 	ux: number,

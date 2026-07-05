@@ -1,9 +1,5 @@
 <script lang="ts">
-  import {
-    evalOpacity,
-    evalZoom,
-    type ZoomRegionLike,
-  } from "$lib/annotations/eval";
+  import { evalOpacity, evalZoom } from "$lib/annotations/eval";
   import {
     handlePositions,
     hitTestAnnotation,
@@ -13,22 +9,36 @@
   } from "$lib/annotations/hit";
   import {
     canvasToUV,
+    compositionRectPx,
     normaliseBox,
     uvToCanvas,
     videoRectPx,
     type Rect,
   } from "$lib/annotations/uv";
-  import { FRAME_ANCHORS, snap, type SnapAnchor } from "$lib/annotations/snap";
+  import { FRAME_ANCHORS, snap, snapBox, type SnapAnchor } from "$lib/annotations/snap";
+  import {
+    constrain45,
+    constrainSquare,
+    isCornerHandle,
+    lockAspect,
+  } from "$lib/annotations/resize-constraints";
+  import {
+    disposeCanvasTokens,
+    selectionPalette,
+  } from "$lib/annotations/canvas-tokens";
   import {
     arrowGeometry,
     blurTint,
     strokeDashPattern,
+    withAlpha,
   } from "./annotation-draw.logic";
   import type {
     Annotation,
+    AnnotationAnchor,
     AnnotationKind,
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy, onMount } from "svelte";
 
   interface Props {
@@ -46,7 +56,9 @@
 
   let canvasEl: HTMLCanvasElement | null = $state(null);
   let rafHandle: number | null = null;
-  let resizeObserver: ResizeObserver | null = null;
+  // Container CSS size, cached from a ResizeObserver so the rAF loop doesn't
+  // force a layout with getBoundingClientRect() every frame.
+  let targetSize = { w: 0, h: 0 };
 
   //  Drag / placement state
   type DragState =
@@ -74,6 +86,10 @@
         anchor: { x: number; y: number };
       };
   let drag: DragState = null;
+  // Undo is pushed on the first real move of a move/resize drag, not at
+  // pointer-down, so a pure select-click leaves no no-op entry. Placement
+  // pushes via addAnnotation, so it starts "already pushed".
+  let dragUndoPushed = true;
   // Active snap guides for the current drag, in UV space. Cleared on
   // pointerup. Capped to 4 simultaneous guides to avoid visual noise.
   let snapGuides: SnapAnchor[] = $state([]);
@@ -81,10 +97,8 @@
   // body, "nwse-resize" / "ns-resize" / etc on handles). Cleared on leave.
   let hoverHandle: HandleName | null | "tool" = $state(null);
 
-  const HANDLE_RADIUS_PX = 6; // CSS px half-size of resize handles
-  const SELECTION_COLOUR = "#3b82f6";
-  const HOVER_FLASH_COLOUR = "rgba(59,130,246,0.85)";
-  const SNAP_GUIDE_COLOUR = "rgba(59,130,246,0.7)";
+  const HANDLE_RADIUS_PX = 5.5; // CSS px half-size of resize handles
+  const HANDLE_CORNER_PX = 2; // CSS px corner radius on handles
 
   // Thin wrappers around shared geometry modules; this file owns rendering +
   // interaction state, not the math.
@@ -92,21 +106,59 @@
     return window.devicePixelRatio || 1;
   }
 
-  function rectPx(): Rect {
+  const IDENTITY_ZOOM = { scale: 1, cx: 0.5, cy: 0.5 };
+
+  function videoRect(): Rect {
     if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
-    return videoRectPx(canvasEl.width, canvasEl.height, store.metadata, store.padding);
+    return videoRectPx(
+      canvasEl.width,
+      canvasEl.height,
+      store.metadata,
+      store.padding,
+      store.outputAspect,
+    );
   }
 
-  function projectUV(ux: number, uy: number, t: number) {
-    return uvToCanvas(ux, uy, rectPx(), evalZoom(zoomRegions(), t));
+  function compRect(): Rect {
+    if (!canvasEl) return { x: 0, y: 0, w: 0, h: 0 };
+    return compositionRectPx(
+      canvasEl.width,
+      canvasEl.height,
+      store.metadata,
+      store.padding,
+      store.outputAspect,
+    );
   }
 
-  function unprojectUV(cx: number, cy: number, t: number) {
-    return canvasToUV(cx, cy, rectPx(), evalZoom(zoomRegions(), t));
+  /** Rect an annotation projects onto: the padded frame when anchored to
+   *  "frame", otherwise the video region (which the zoom transform then acts
+   *  on). Accepts anything with an optional `anchor` so placement can pass a
+   *  bare object. */
+  function rectFor(a: { anchor?: AnnotationAnchor }): Rect {
+    return a.anchor === "frame" ? compRect() : videoRect();
   }
 
-  function zoomRegions(): ZoomRegionLike[] {
-    return store.zoomRegions;
+  /** Frame-anchored annotations ignore zoom; video-anchored ones track it. */
+  function zoomFor(a: { anchor?: AnnotationAnchor }, t: number) {
+    return a.anchor === "frame" ? IDENTITY_ZOOM : evalZoom(store.zoomRegions, t);
+  }
+
+  function projectA(
+    a: { anchor?: AnnotationAnchor },
+    ux: number,
+    uy: number,
+    t: number,
+  ) {
+    return uvToCanvas(ux, uy, rectFor(a), zoomFor(a, t));
+  }
+
+  function unprojectA(
+    a: { anchor?: AnnotationAnchor },
+    cx: number,
+    cy: number,
+    t: number,
+  ) {
+    return canvasToUV(cx, cy, rectFor(a), zoomFor(a, t));
   }
 
   /** True if this annotation should NOT draw on the 2D-canvas overlay. Text
@@ -146,22 +198,28 @@
     // Export still honours start/end exactly.
     const isBlur = a.kind.kind === "blur";
     const isSelected = a.id === store.selectedAnnotationId;
+    const editing = store.activePanel === "annotations";
+    // Outside its time window an annotation is invisible. Keep showing the
+    // SELECTED one as a dim ghost while editing so moving/resizing it (its
+    // handles draw regardless of time) doesn't make it vanish under the cursor.
+    let renderOpacity = opacity;
     if (isBlur) {
       if (!isSelected && (t < a.start || t > a.end)) return;
     } else if (opacity <= 0) {
-      return;
+      if (isSelected && editing) renderOpacity = 0.35;
+      else return;
     }
     if (!isCanvasDrawn(a.kind)) return; // text is rendered by TextAnnotationLayer
 
     if (a.kind.kind === "arrow") {
-      drawArrow(ctx, a, opacity, t);
+      drawArrow(ctx, a, renderOpacity, t);
       return;
     }
 
-    const r = rectPx();
+    const r = rectFor(a);
     const box = normaliseBox(a.kind);
-    const topLeft = projectUV(box.x, box.y, t);
-    const bottomRight = projectUV(box.x + box.w, box.y + box.h, t);
+    const topLeft = projectA(a, box.x, box.y, t);
+    const bottomRight = projectA(a, box.x + box.w, box.y + box.h, t);
     const x = topLeft.x;
     const y = topLeft.y;
     const w = bottomRight.x - topLeft.x;
@@ -170,12 +228,14 @@
 
     ctx.save();
     // Blur uses full preview opacity; other kinds honour the fade-ramp value.
-    ctx.globalAlpha = isBlur ? 1 : opacity;
+    ctx.globalAlpha = isBlur ? 1 : renderOpacity;
     applyGlow(ctx, a);
 
     ctx.beginPath();
     if (a.kind.kind === "rect") {
-      const radius = Math.max(0, a.kind.radius * Math.min(r.w, r.h));
+      // Radius = fraction (0..0.5) of the box's shorter side, so 100% rounds
+      // fully regardless of box size (roundRectPath clamps to half).
+      const radius = Math.max(0, a.kind.radius * Math.min(w, h));
       if (radius > 0) {
         roundRectPath(ctx, x, y, w, h, radius);
       } else {
@@ -184,64 +244,90 @@
     } else if (a.kind.kind === "ellipse") {
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
     } else if (a.kind.kind === "image") {
-      ctx.rect(x, y, w, h);
+      // Drawn directly (not via the shared fill/stroke path below) so we can
+      // control the border and shadow independently of the shape kinds.
+      drawImageAnnotation(ctx, a.kind, x, y, w, h);
+      if (a.stroke.color && a.stroke.color !== "transparent" && a.stroke.width > 0) {
+        const cornerPx = Math.max(0, a.kind.radius * Math.min(Math.abs(w), Math.abs(h)));
+        const strokePx = Math.max(1, a.stroke.width * r.w);
+        // Border sits on the image; the glow already fired on the image itself.
+        ctx.shadowColor = "transparent";
+        ctx.shadowBlur = 0;
+        ctx.beginPath();
+        if (cornerPx > 0.5) roundRectPath(ctx, x, y, w, h, cornerPx);
+        else ctx.rect(x, y, w, h);
+        applyStrokeStyle(ctx, a, strokePx);
+        ctx.strokeStyle = a.stroke.color;
+        ctx.stroke();
+      }
     } else if (a.kind.kind === "blur") {
       // Copy the WebGL composite into the overlay canvas, blurred via the 2D
       // context's native `filter` — reliable across WebView backends, unlike
-      // backdrop-filter on a GPU-promoted canvas. Strength 0..1 → 0..32 px,
-      // matching the export-side cap.
+      // backdrop-filter on a GPU-promoted canvas.
       const k = a.kind;
       if (compositeCanvasEl && w > 1 && h > 1) {
-        const blurPx = Math.max(0.001, Math.min(32, k.strength * 32));
         // Source rect in the WebGL canvas's backing-store coords. Both canvases
         // stretch to the same targetEl, so its pixel space is proportional to ours.
         const srcW = compositeCanvasEl.width;
         const srcH = compositeCanvasEl.height;
         const dstW = canvasEl?.width ?? 0;
         const dstH = canvasEl?.height ?? 0;
+        // Match the export radius: strength × 12% of the frame's shorter side.
+        // A single gaussian ~= the export's 3-pass box of the same radius, so
+        // the editor frosting reads the same strength as the rendered file.
+        const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
         if (srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
-          const sx = (x / dstW) * srcW;
-          const sy = (y / dstH) * srcH;
-          const sw = (w / dstW) * srcW;
-          const sh = (h / dstH) * srcH;
-          const radius = Math.max(0, k.radius * Math.min(r.w, r.h));
-          ctx.save();
-          ctx.beginPath();
-          if (radius > 0) {
-            roundRectPath(ctx, x, y, w, h, radius);
-          } else {
-            ctx.rect(x, y, w, h);
+          // Sample a margin of real surrounding pixels around the region so the
+          // blur has content to pull from. Without it, a large radius samples
+          // the transparent edge, its alpha washes out, and the sharp video
+          // shows through — which reads as LESS blur past ~40% strength. (The
+          // export box-blurs an edge-clamped crop, the same idea.)
+          const m = Math.ceil(blurPx);
+          const ex = x - m;
+          const ey = y - m;
+          const ew = w + 2 * m;
+          const eh = h + 2 * m;
+          const esx = (ex / dstW) * srcW;
+          const esy = (ey / dstH) * srcH;
+          const esw = (ew / dstW) * srcW;
+          const esh = (eh / dstH) * srcH;
+          // Corner radius as a fraction (0..0.5) of the region's shorter side.
+          const radius = Math.max(0, k.radius * Math.min(w, h));
+          const bw = Math.max(1, Math.round(w));
+          const bh = Math.max(1, Math.round(h));
+          const octx = getBlurScratch(bw, bh);
+          if (octx) {
+            octx.clearRect(0, 0, bw, bh);
+            // Blur the composite into the scratch. The expanded source (esx..)
+            // maps so the region lands at (0,0,w,h); the -m offset gives the
+            // blur real margin pixels, and the scratch bounds clip the spill.
+            octx.filter = `blur(${blurPx.toFixed(2)}px)`;
+            try {
+              octx.drawImage(compositeCanvasEl, esx, esy, esw, esh, -m, -m, ew, eh);
+            } catch {
+              // source not readable this frame; next rAF repaints.
+            }
+            octx.filter = "none";
+            // Variant tint on top of the blurred copy so it reads as a
+            // deliberate privacy treatment rather than just a smudge.
+            const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
+            if (tint) {
+              octx.fillStyle = tint;
+              octx.fillRect(0, 0, bw, bh);
+            }
+            // Composite onto the overlay under the rounded clip (no filter in
+            // effect, so the rounded corners are honoured).
+            ctx.save();
+            ctx.beginPath();
+            if (radius > 0) {
+              roundRectPath(ctx, x, y, w, h, radius);
+            } else {
+              ctx.rect(x, y, w, h);
+            }
+            ctx.clip();
+            ctx.drawImage(blurScratch!, x, y, w, h);
+            ctx.restore();
           }
-          ctx.clip();
-          // `filter` applies to the following drawImage; browsers promote this
-          // to a GPU shader, so it's cheap per blur region.
-          ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
-          try {
-            ctx.drawImage(
-              compositeCanvasEl,
-              sx,
-              sy,
-              sw,
-              sh,
-              x,
-              y,
-              w,
-              h,
-            );
-          } catch {
-            // drawImage can fail mid-frame if the source canvas was
-            // resized between layout and render. Bail silently — the
-            // next animation frame will repaint correctly.
-          }
-          ctx.filter = "none";
-          // Variant tint sits on top of the blurred copy so it reads
-          // as a deliberate privacy treatment rather than just a smudge.
-          const tint = blurTint(k.variant, k.tintColor);
-          if (tint) {
-            ctx.fillStyle = tint;
-            ctx.fillRect(x, y, w, h);
-          }
-          ctx.restore();
         }
       }
     }
@@ -250,13 +336,134 @@
       ctx.fillStyle = a.fill;
       ctx.fill();
     }
-    if (a.stroke.color && a.stroke.color !== "transparent" && a.stroke.width > 0) {
+    // Image draws its own border in its branch (above) so it can sit over the
+    // image and skip the glow; other kinds stroke the path built above.
+    if (
+      a.kind.kind !== "image" &&
+      a.stroke.color &&
+      a.stroke.color !== "transparent" &&
+      a.stroke.width > 0
+    ) {
       const strokePx = Math.max(1, a.stroke.width * r.w);
       applyStrokeStyle(ctx, a, strokePx);
       ctx.strokeStyle = a.stroke.color;
       ctx.stroke();
     }
 
+    ctx.restore();
+  }
+
+  // Decoded <img> per source path, reused across frames. The rAF loop repaints
+  // continuously, so a load that finishes later shows up on the next frame.
+  type ImageEntry = {
+    img: HTMLImageElement;
+    ready: boolean;
+    failed: boolean;
+    failedAt: number;
+  };
+  const imageCache = new Map<string, ImageEntry>();
+  const IMAGE_RETRY_MS = 4000;
+
+  function getImage(path: string): ImageEntry {
+    let entry = imageCache.get(path);
+    // Retry a failed load after a delay so a restored/renamed file recovers
+    // within the session instead of showing the placeholder forever.
+    if (entry?.failed && Date.now() - entry.failedAt > IMAGE_RETRY_MS) {
+      imageCache.delete(path);
+      entry = undefined;
+    }
+    if (!entry) {
+      const img = new Image();
+      entry = { img, ready: false, failed: false, failedAt: 0 };
+      const e = entry;
+      img.onload = () => {
+        e.ready = true;
+      };
+      img.onerror = () => {
+        e.failed = true;
+        e.failedAt = Date.now();
+      };
+      img.src = convertFileSrc(path);
+      imageCache.set(path, entry);
+    }
+    return entry;
+  }
+
+  // Evict cached bitmaps no longer referenced by any annotation, so replacing
+  // or deleting images doesn't accumulate decoded images for the editor's life.
+  $effect(() => {
+    const live = new Set<string>();
+    for (const a of store.annotations) {
+      if (a.kind.kind === "image" && a.kind.path) live.add(a.kind.path);
+    }
+    const stale: string[] = [];
+    for (const path of imageCache.keys()) {
+      if (!live.has(path)) stale.push(path);
+    }
+    for (const path of stale) imageCache.delete(path);
+  });
+
+  // Offscreen scratch canvas for blur. We render the blur + tint here
+  // (rectangular) then composite onto the overlay under a rounded clip — a
+  // rounded `ctx.clip()` is NOT reliably honoured while `ctx.filter = blur()`
+  // is active (WebView2/Chromium blurs to the full bounding box), so the
+  // corners are applied afterwards with no filter in effect.
+  let blurScratch: HTMLCanvasElement | null = null;
+  function getBlurScratch(w: number, h: number): CanvasRenderingContext2D | null {
+    if (!blurScratch) blurScratch = document.createElement("canvas");
+    if (blurScratch.width !== w || blurScratch.height !== h) {
+      blurScratch.width = w;
+      blurScratch.height = h;
+    }
+    return blurScratch.getContext("2d");
+  }
+
+  function drawImageAnnotation(
+    ctx: CanvasRenderingContext2D,
+    k: Extract<AnnotationKind, { kind: "image" }>,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+  ) {
+    const entry = k.path ? getImage(k.path) : null;
+    if (entry?.ready) {
+      ctx.save();
+      ctx.globalAlpha *= Math.max(0, Math.min(1, k.opacity));
+      const cornerPx = Math.max(0, (k.radius ?? 0) * Math.min(Math.abs(w), Math.abs(h)));
+      if (cornerPx > 0.5) {
+        // A clip would swallow the glow shadow (applyGlow set it on ctx), so
+        // cast it from the rounded outline first, then draw the image clipped
+        // with the shadow disabled.
+        if (ctx.shadowBlur > 0) {
+          ctx.beginPath();
+          roundRectPath(ctx, x, y, w, h, cornerPx);
+          ctx.fill();
+          ctx.shadowColor = "transparent";
+          ctx.shadowBlur = 0;
+        }
+        ctx.beginPath();
+        roundRectPath(ctx, x, y, w, h, cornerPx);
+        ctx.clip();
+      }
+      try {
+        ctx.drawImage(entry.img, x, y, w, h);
+      } catch {
+        // Source not decodable this frame (e.g. resized mid-render); the next
+        // rAF repaints correctly.
+      }
+      ctx.restore();
+      return;
+    }
+    // Placeholder while loading (or on error): a faint box so the region stays
+    // visible and selectable before pixels arrive.
+    ctx.save();
+    ctx.fillStyle = "rgba(120, 120, 120, 0.12)";
+    ctx.fillRect(x, y, w, h);
+    ctx.strokeStyle = "rgba(120, 120, 120, 0.5)";
+    ctx.setLineDash([6 * getDpr(), 4 * getDpr()]);
+    ctx.lineWidth = getDpr();
+    ctx.strokeRect(x, y, w, h);
     ctx.restore();
   }
 
@@ -268,9 +475,9 @@
   ) {
     if (a.kind.kind !== "arrow") return;
     const k = a.kind;
-    const r = rectPx();
-    const p1 = projectUV(k.x1, k.y1, t);
-    const p2 = projectUV(k.x2, k.y2, t);
+    const r = rectFor(a);
+    const p1 = projectA(a, k.x1, k.y1, t);
+    const p2 = projectA(a, k.x2, k.y2, t);
     const strokePx = Math.max(2, a.stroke.width * r.w);
     const geo = arrowGeometry(p1, p2, strokePx, k.headSize);
     if (!geo) return;
@@ -313,14 +520,17 @@
     if (style === "dotted") ctx.lineCap = "round";
   }
 
-  /** Apply the optional preview-only glow (rendered before fill/stroke). */
+  /** Apply the optional glow (rendered before fill/stroke; exported for all
+   *  canvas kinds except arrow). */
   function applyGlow(ctx: CanvasRenderingContext2D, a: Annotation) {
     if (!a.glow) return;
-    const r = rectPx();
-    ctx.shadowColor = a.glow.color;
+    const r = rectFor(a);
+    // Bake glow opacity into the shadow colour, NOT globalAlpha. The export dims
+    // only the cast glow and keeps the shape at full opacity (cursor_export.rs
+    // draw_shape_shadow/draw_image_shadow scale `alpha × glow.opacity`); folding
+    // it into globalAlpha here would fade the whole shape and break parity.
+    ctx.shadowColor = withAlpha(a.glow.color, a.glow.opacity);
     ctx.shadowBlur = Math.max(0, a.glow.blur * r.w);
-    // Canvas shadow respects globalAlpha; pre-multiply to avoid double-darkening.
-    ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, a.glow.opacity));
   }
 
   function roundRectPath(
@@ -345,49 +555,99 @@
     ctx.closePath();
   }
 
+  /** A single resize grip: a rounded square with the surface fill, a crisp
+   *  primary border and a soft drop shadow, matching the recording overlay's
+   *  handle language. Shadow is applied to the fill only. */
+  function drawHandle(
+    ctx: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    dpr: number,
+    palette: ReturnType<typeof selectionPalette>,
+  ) {
+    const hs = HANDLE_RADIUS_PX * dpr;
+    const r = HANDLE_CORNER_PX * dpr;
+    ctx.beginPath();
+    roundRectPath(ctx, cx - hs, cy - hs, hs * 2, hs * 2, r);
+    ctx.save();
+    ctx.shadowColor = "rgba(0, 0, 0, 0.25)";
+    ctx.shadowBlur = 3 * dpr;
+    ctx.shadowOffsetY = 0.5 * dpr;
+    ctx.fillStyle = palette.surface;
+    ctx.fill();
+    ctx.restore();
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.strokeStyle = palette.accent;
+    ctx.stroke();
+  }
+
   function drawSelection(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
     const dpr = getDpr();
+    const palette = selectionPalette();
     ctx.save();
     ctx.setLineDash([]);
 
     if (a.kind.kind === "arrow") {
-      const p1 = projectUV(a.kind.x1, a.kind.y1, t);
-      const p2 = projectUV(a.kind.x2, a.kind.y2, t);
-      const hs = HANDLE_RADIUS_PX * dpr;
-      for (const pt of [p1, p2]) {
-        ctx.fillStyle = "#ffffff";
-        ctx.fillRect(pt.x - hs, pt.y - hs, hs * 2, hs * 2);
-        ctx.strokeStyle = SELECTION_COLOUR;
-        ctx.lineWidth = 1.5 * dpr;
-        ctx.strokeRect(pt.x - hs, pt.y - hs, hs * 2, hs * 2);
-      }
+      const p1 = projectA(a, a.kind.x1, a.kind.y1, t);
+      const p2 = projectA(a, a.kind.x2, a.kind.y2, t);
+      for (const pt of [p1, p2]) drawHandle(ctx, pt.x, pt.y, dpr, palette);
       ctx.restore();
       return;
     }
 
     const box = normaliseBox(a.kind);
-    const topLeft = projectUV(box.x, box.y, t);
-    const bottomRight = projectUV(box.x + box.w, box.y + box.h, t);
+    const topLeft = projectA(a, box.x, box.y, t);
+    const bottomRight = projectA(a, box.x + box.w, box.y + box.h, t);
     const x = topLeft.x;
     const y = topLeft.y;
     const w = bottomRight.x - topLeft.x;
     const h = bottomRight.y - topLeft.y;
 
-    ctx.strokeStyle = SELECTION_COLOUR;
-    ctx.lineWidth = 1.5 * dpr;
-    ctx.setLineDash([4 * dpr, 3 * dpr]);
+    // Soft outer ring then the crisp primary border — mirrors the recording
+    // area selection's `border-primary ring-primary/40`.
+    ctx.strokeStyle = palette.accentRing;
+    ctx.lineWidth = 3 * dpr;
     ctx.strokeRect(x, y, w, h);
-    ctx.setLineDash([]);
+    ctx.strokeStyle = palette.accent;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.strokeRect(x, y, w, h);
 
-    const hs = HANDLE_RADIUS_PX * dpr;
     const handles = handlePositions(x, y, w, h);
     for (const [, pt] of Object.entries(handles)) {
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(pt.x - hs, pt.y - hs, hs * 2, hs * 2);
-      ctx.strokeStyle = SELECTION_COLOUR;
-      ctx.lineWidth = 1.5 * dpr;
-      ctx.strokeRect(pt.x - hs, pt.y - hs, hs * 2, hs * 2);
+      drawHandle(ctx, pt.x, pt.y, dpr, palette);
     }
+    ctx.restore();
+  }
+
+  /** Size badge pinned to the top-left of the box while placing or resizing,
+   *  showing the annotation's dimensions in output-video pixels. Mirrors the
+   *  recording overlay's `bg-primary` dimension chip. */
+  function drawSizeBadge(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
+    if (a.kind.kind === "arrow" || !store.metadata) return;
+    const dpr = getDpr();
+    const palette = selectionPalette();
+    const box = normaliseBox(a.kind);
+    const tl = projectA(a, box.x, box.y, t);
+    const wPx = Math.round(box.w * store.metadata.width);
+    const hPx = Math.round(box.h * store.metadata.height);
+    const label = `${wPx} × ${hPx}`;
+
+    ctx.save();
+    ctx.font = `600 ${11 * dpr}px ${palette.monoFamily}`;
+    ctx.textBaseline = "middle";
+    const padX = 6 * dpr;
+    const chipH = 18 * dpr;
+    const textW = ctx.measureText(label).width;
+    const chipW = textW + padX * 2;
+    const chipX = tl.x;
+    const chipY = Math.max(tl.y - chipH - 4 * dpr, 2 * dpr);
+
+    ctx.beginPath();
+    roundRectPath(ctx, chipX, chipY, chipW, chipH, 3 * dpr);
+    ctx.fillStyle = palette.accent;
+    ctx.fill();
+    ctx.fillStyle = palette.onAccent;
+    ctx.fillText(label, chipX + padX, chipY + chipH / 2 + 0.5 * dpr);
     ctx.restore();
   }
 
@@ -395,13 +655,13 @@
   function drawHoverFlash(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
     const dpr = getDpr();
     ctx.save();
-    ctx.strokeStyle = HOVER_FLASH_COLOUR;
+    ctx.strokeStyle = selectionPalette().accentMuted;
     ctx.lineWidth = 2 * dpr;
     ctx.setLineDash([]);
 
     if (a.kind.kind === "arrow") {
-      const p1 = projectUV(a.kind.x1, a.kind.y1, t);
-      const p2 = projectUV(a.kind.x2, a.kind.y2, t);
+      const p1 = projectA(a, a.kind.x1, a.kind.y1, t);
+      const p2 = projectA(a, a.kind.x2, a.kind.y2, t);
       ctx.beginPath();
       ctx.moveTo(p1.x, p1.y);
       ctx.lineTo(p2.x, p2.y);
@@ -411,8 +671,8 @@
     }
 
     const box = normaliseBox(a.kind);
-    const tl = projectUV(box.x, box.y, t);
-    const br = projectUV(box.x + box.w, box.y + box.h, t);
+    const tl = projectA(a, box.x, box.y, t);
+    const br = projectA(a, box.x + box.w, box.y + box.h, t);
     const pad = 4 * dpr;
     ctx.strokeRect(
       tl.x - pad,
@@ -455,7 +715,14 @@
       if (hover && !hover.hidden) drawHoverFlash(ctx, hover, t);
 
       const sel = store.annotations.find((a) => a.id === store.selectedAnnotationId);
-      if (sel && !sel.hidden) drawSelection(ctx, sel, t);
+      if (sel && !sel.hidden) {
+        drawSelection(ctx, sel, t);
+        // Live dimensions while actively sizing (place/resize), not on idle
+        // selection or plain moves, so the chip appears only when it helps.
+        if (drag && (drag.kind === "place" || drag.kind === "resize") && drag.id === sel.id) {
+          drawSizeBadge(ctx, sel, t);
+        }
+      }
 
       if (snapGuides.length > 0) drawSnapGuides(ctx, t);
     }
@@ -465,25 +732,30 @@
    *  practice (one per axis); the cap in `applySnap` enforces a hard ceiling. */
   function drawSnapGuides(ctx: CanvasRenderingContext2D, t: number) {
     const dpr = getDpr();
-    const r = rectPx();
+    // Guides live in the dragged annotation's space so they line up with it.
+    const activeDrag = drag;
+    const anchorObj =
+      (activeDrag && store.annotations.find((x) => x.id === activeDrag.id)) || {};
+    const r = rectFor(anchorObj);
+    const zoom = zoomFor(anchorObj, t);
     if (r.w <= 0 || r.h <= 0) return;
 
     ctx.save();
-    ctx.strokeStyle = SNAP_GUIDE_COLOUR;
+    ctx.strokeStyle = selectionPalette().accentMuted;
     ctx.lineWidth = 1 * dpr;
     ctx.setLineDash([4 * dpr, 3 * dpr]);
 
     for (const g of snapGuides) {
       if (g.axis === "x") {
-        const top = uvToCanvas(g.value, 0, r, evalZoom(zoomRegions(), t));
-        const bot = uvToCanvas(g.value, 1, r, evalZoom(zoomRegions(), t));
+        const top = uvToCanvas(g.value, 0, r, zoom);
+        const bot = uvToCanvas(g.value, 1, r, zoom);
         ctx.beginPath();
         ctx.moveTo(top.x, top.y);
         ctx.lineTo(bot.x, bot.y);
         ctx.stroke();
       } else {
-        const left = uvToCanvas(0, g.value, r, evalZoom(zoomRegions(), t));
-        const right = uvToCanvas(1, g.value, r, evalZoom(zoomRegions(), t));
+        const left = uvToCanvas(0, g.value, r, zoom);
+        const right = uvToCanvas(1, g.value, r, zoom);
         ctx.beginPath();
         ctx.moveTo(left.x, left.y);
         ctx.lineTo(right.x, right.y);
@@ -499,11 +771,18 @@
   }
 
   function resizeToContainer() {
-    if (!canvasEl || !targetEl) return;
-    const rect = targetEl.getBoundingClientRect();
+    if (!canvasEl) return;
+    // Fallback: if the cached size is still unknown (target not yet laid out
+    // when the observer was set up), measure live so the canvas never gets
+    // stuck at 1x1 — a 1x1 backing stretched over the preview renders the first
+    // near-white handle as a full-screen white wash.
+    if ((targetSize.w <= 0 || targetSize.h <= 0) && targetEl) {
+      const r = targetEl.getBoundingClientRect();
+      targetSize = { w: r.width, h: r.height };
+    }
     const dpr = getDpr();
-    const w = Math.max(1, Math.floor(rect.width * dpr));
-    const h = Math.max(1, Math.floor(rect.height * dpr));
+    const w = Math.max(1, Math.floor(targetSize.w * dpr));
+    const h = Math.max(1, Math.floor(targetSize.h * dpr));
     if (canvasEl.width !== w || canvasEl.height !== h) {
       canvasEl.width = w;
       canvasEl.height = h;
@@ -515,8 +794,7 @@
   function pickAnnotation(pt: { x: number; y: number }, t: number) {
     const dpr = getDpr();
     return hitTestAnnotation(pt, store.annotationsByZ, {
-      rect: rectPx(),
-      zoomRegions: zoomRegions(),
+      project: (a, ux, uy) => projectA(a, ux, uy, t),
       t,
       handleSlop: HANDLE_RADIUS_PX * dpr + 2 * dpr,
       lineSlop: 6 * dpr,
@@ -527,8 +805,7 @@
   function pickHandle(pt: { x: number; y: number }, a: Annotation, t: number) {
     const dpr = getDpr();
     return hitTestHandle(pt, a, {
-      rect: rectPx(),
-      zoomRegions: zoomRegions(),
+      project: (anno, ux, uy) => projectA(anno, ux, uy, t),
       t,
       handleSlop: HANDLE_RADIUS_PX * dpr + 2 * dpr,
       lineSlop: 6 * dpr,
@@ -550,7 +827,7 @@
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
         const box = normaliseBox(selected.kind);
         drag = { kind: "resize", id: selected.id, handle: hit, startBox: box };
-        store.pushUndoState();
+        dragUndoPushed = false;
         e.preventDefault();
         return;
       }
@@ -560,7 +837,7 @@
         // can be moved during fade-in / fade-out windows where evalOpacity
         // would otherwise filter it out of the hit-test.
         (e.currentTarget as Element).setPointerCapture(e.pointerId);
-        const pointerUV = unprojectUV(pt.x, pt.y, t);
+        const pointerUV = unprojectA(selected, pt.x, pt.y, t);
         if (selected.kind.kind === "arrow") {
           drag = {
             kind: "move",
@@ -581,7 +858,7 @@
             pointerStartUV: pointerUV,
           };
         }
-        store.pushUndoState();
+        dragUndoPushed = false;
         e.preventDefault();
         return;
       }
@@ -595,7 +872,7 @@
       // Distance-from-segment uses pointToSegmentDist for arrows; reused so
       // future tools can hit-test against polylines without divergence.
       void pointToSegmentDist;
-      const pointerUV = unprojectUV(pt.x, pt.y, t);
+      const pointerUV = unprojectA(hitAnno, pt.x, pt.y, t);
       if (hitAnno.kind.kind === "arrow") {
         drag = {
           kind: "move",
@@ -616,7 +893,7 @@
           pointerStartUV: pointerUV,
         };
       }
-      store.pushUndoState();
+      dragUndoPushed = false;
       e.preventDefault();
       return;
     }
@@ -624,7 +901,8 @@
     // No hit — if a tool is active, start placing a new annotation.
     const tool = store.annotationTool;
     if (tool) {
-      const anchor = unprojectUV(pt.x, pt.y, t);
+      // New annotations default to the video anchor.
+      const anchor = unprojectA({}, pt.x, pt.y, t);
       let kind: AnnotationKind;
       switch (tool) {
         case "rect":
@@ -751,6 +1029,10 @@
     hoverHandle = hit ? "body" : null;
   }
 
+  function frameDims(): { w: number; h: number } {
+    return { w: store.metadata?.width ?? 16, h: store.metadata?.height ?? 9 };
+  }
+
   function handlePointerMove(e: PointerEvent) {
     if (!drag) {
       refreshHover(pointerToCanvasPx(e), playbackTime());
@@ -758,17 +1040,29 @@
     }
     const pt = pointerToCanvasPx(e);
     const t = playbackTime();
-    const rawUv = unprojectUV(pt.x, pt.y, t);
+    const f = frameDims();
+    const dragAnno = store.annotations.find((x) => x.id === drag!.id) ?? {};
+    const rawUv = unprojectA(dragAnno, pt.x, pt.y, t);
     // Alt held bypasses snap, matching Figma. Snap is per-axis so an annotation
     // can lock to a horizontal guide while still tracking the cursor vertically.
     const uv = applySnap(rawUv.x, rawUv.y, drag.id, e.altKey);
+
+    // First real move of a move/resize commits one undo entry (placement
+    // pushed at creation).
+    if (!dragUndoPushed) {
+      store.pushUndoState();
+      dragUndoPushed = true;
+    }
 
     if (drag.kind === "place") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (!anno) return;
       if (anno.kind.kind === "arrow") {
+        const end = e.shiftKey
+          ? constrain45(anno.kind.x1, anno.kind.y1, uv.x, uv.y, f.w, f.h)
+          : { x: uv.x, y: uv.y };
         store.updateAnnotation(drag.id, {
-          kind: { ...anno.kind, x2: uv.x, y2: uv.y },
+          kind: { ...anno.kind, x2: end.x, y2: end.y },
         });
       } else if (
         anno.kind.kind === "rect" ||
@@ -777,8 +1071,9 @@
         anno.kind.kind === "image" ||
         anno.kind.kind === "blur"
       ) {
-        const w = uv.x - drag.anchor.x;
-        const h = uv.y - drag.anchor.y;
+        let w = uv.x - drag.anchor.x;
+        let h = uv.y - drag.anchor.y;
+        if (e.shiftKey) ({ w, h } = constrainSquare(w, h, f.w, f.h));
         store.updateAnnotation(drag.id, {
           kind: { ...anno.kind, x: drag.anchor.x, y: drag.anchor.y, w, h },
         });
@@ -786,9 +1081,9 @@
     } else if (drag.kind === "move") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
       if (!anno) return;
-      const dx = uv.x - drag.pointerStartUV.x;
-      const dy = uv.y - drag.pointerStartUV.y;
       if (anno.kind.kind === "arrow") {
+        const dx = uv.x - drag.pointerStartUV.x;
+        const dy = uv.y - drag.pointerStartUV.y;
         const sx2 = drag.startX2 ?? anno.kind.x2;
         const sy2 = drag.startY2 ?? anno.kind.y2;
         store.updateAnnotation(drag.id, {
@@ -807,8 +1102,23 @@
         anno.kind.kind === "image" ||
         anno.kind.kind === "blur"
       ) {
-        const newX = drag.startX + dx;
-        const newY = drag.startY + dy;
+        // Snap the box's own edges/center to guides (not the raw cursor), so a
+        // move aligns the annotation itself. Alt or the snap toggle bypasses.
+        const rawDx = rawUv.x - drag.pointerStartUV.x;
+        const rawDy = rawUv.y - drag.pointerStartUV.y;
+        const bx = drag.startX + rawDx;
+        const by = drag.startY + rawDy;
+        const b = normaliseBox(anno.kind);
+        let newX = bx;
+        let newY = by;
+        if (!e.altKey && store.annotationSnapEnabled) {
+          const res = snapBox(bx, by, b.w, b.h, buildSnapAnchors(drag.id), 0.005);
+          newX = res.x;
+          newY = res.y;
+          snapGuides = res.guides.slice(0, 4);
+        } else {
+          snapGuides = [];
+        }
         store.updateAnnotation(drag.id, {
           kind: { ...anno.kind, x: newX, y: newY },
         });
@@ -818,12 +1128,18 @@
       if (!anno) return;
       if (anno.kind.kind === "arrow") {
         if (drag.handle === "p1") {
+          const p = e.shiftKey
+            ? constrain45(anno.kind.x2, anno.kind.y2, uv.x, uv.y, f.w, f.h)
+            : { x: uv.x, y: uv.y };
           store.updateAnnotation(drag.id, {
-            kind: { ...anno.kind, x1: uv.x, y1: uv.y },
+            kind: { ...anno.kind, x1: p.x, y1: p.y },
           });
         } else if (drag.handle === "p2") {
+          const p = e.shiftKey
+            ? constrain45(anno.kind.x1, anno.kind.y1, uv.x, uv.y, f.w, f.h)
+            : { x: uv.x, y: uv.y };
           store.updateAnnotation(drag.id, {
-            kind: { ...anno.kind, x2: uv.x, y2: uv.y },
+            kind: { ...anno.kind, x2: p.x, y2: p.y },
           });
         }
         return;
@@ -848,6 +1164,10 @@
       }
       if (h === "sw" || h === "s" || h === "se") {
         nh = uv.y - b.y;
+      }
+      // Shift on a corner locks to the starting aspect ratio.
+      if (e.shiftKey && isCornerHandle(h)) {
+        ({ nx, ny, nw, nh } = lockAspect(h, b, nx, ny, nw, nh));
       }
       if (
         anno.kind.kind === "rect" ||
@@ -879,7 +1199,10 @@
           anno.kind.kind === "blur"
         ) {
           if (Math.abs(anno.kind.w) < 0.01 || Math.abs(anno.kind.h) < 0.01) {
-            store.removeAnnotation(drag.id);
+            // Cancelled placement: remove and unwind addAnnotation's undo push
+            // so a stray click leaves no undo entries.
+            store.removeAnnotation(drag.id, false);
+            store.popUndoState();
           }
         } else if (anno.kind.kind === "text") {
           if (Math.abs(anno.kind.w) < 0.04) {
@@ -896,7 +1219,8 @@
           const dx = anno.kind.x2 - anno.kind.x1;
           const dy = anno.kind.y2 - anno.kind.y1;
           if (Math.hypot(dx, dy) < 0.01) {
-            store.removeAnnotation(drag.id);
+            store.removeAnnotation(drag.id, false);
+            store.popUndoState();
           }
         }
       }
@@ -941,7 +1265,8 @@
       a.kind.kind === "rect" ||
       a.kind.kind === "ellipse" ||
       a.kind.kind === "text" ||
-      a.kind.kind === "image"
+      a.kind.kind === "image" ||
+      a.kind.kind === "blur"
     ) {
       store.updateAnnotation(id, {
         kind: { ...a.kind, x: a.kind.x + dxUV, y: a.kind.y + dyUV },
@@ -1011,7 +1336,8 @@
       const inEditable =
         target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
       if (inEditable) return;
-      const r = rectPx();
+      const selForNudge = store.annotations.find((x) => x.id === store.selectedAnnotationId) ?? {};
+      const r = rectFor(selForNudge);
       if (r.w <= 0 || r.h <= 0) return;
       const stepX = (e.shiftKey ? 10 : 1) / Math.max(1, r.w);
       const stepY = (e.shiftKey ? 10 : 1) / Math.max(1, r.h);
@@ -1022,23 +1348,39 @@
       if (e.key === "ArrowUp") dy = -stepY;
       if (e.key === "ArrowDown") dy = stepY;
       e.preventDefault();
+      // Coalesce a held/repeated arrow key into one undo entry (same key the
+      // timeline layer card uses), so Ctrl+Z reverts the nudge, not an
+      // unrelated earlier edit.
+      store.pushUndoStateCoalesced(`nudge-annotation-${store.selectedAnnotationId}`, 600);
       nudgeBy(dx, dy);
     }
   }
 
   //  Lifecycle
 
+  // Track the container size. A $effect (not onMount) so it re-establishes if
+  // `targetEl` arrives after mount, and getBoundingClientRect (rendered size)
+  // so a scaled/letterboxed preview maps to the right backing resolution.
+  $effect(() => {
+    const el = targetEl;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) targetSize = { w: r.width, h: r.height };
+    };
+    measure();
+    const ro = new ResizeObserver(() => measure());
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
   onMount(() => {
     tick();
-    if (targetEl) {
-      resizeObserver = new ResizeObserver(() => draw());
-      resizeObserver.observe(targetEl);
-    }
   });
 
   onDestroy(() => {
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
-    resizeObserver?.disconnect();
+    disposeCanvasTokens();
   });
 
   // Map a handle name to a CSS resize cursor so dragging from a corner shows

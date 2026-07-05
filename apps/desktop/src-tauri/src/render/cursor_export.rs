@@ -33,7 +33,9 @@ use crate::render::cursor_anim::{
     idle_sway_offset, motion_blur_step_alpha, press_state_at,
 };
 use crate::render::graph::RenderState;
-use crate::render::node_types::{Annotation, AnnotationKind};
+use crate::render::node_types::{
+    Annotation, AnnotationAnchor, AnnotationGlow, AnnotationKind, AnnotationStroke,
+};
 
 /// Input for pre-rendering a cursor overlay track.
 #[derive(Debug, Clone)]
@@ -904,6 +906,7 @@ fn draw_annotation(
             h,
             path,
             opacity: img_opacity,
+            radius,
         } => {
             if let Some(img) = image_cache.get(path) {
                 draw_image(
@@ -918,6 +921,10 @@ fn draw_annotation(
                     *w,
                     *h,
                     opacity * img_opacity.clamp(0.0, 1.0),
+                    *radius,
+                    annotation.glow.as_ref(),
+                    Some(&annotation.stroke),
+                    annotation.anchor,
                 );
             }
         }
@@ -925,6 +932,10 @@ fn draw_annotation(
             // Blur regions are handled by the main video filter chain
             // (`build_annotation_blur_complex`) — the alpha overlay carries
             // no underlying pixels to blur, so this is a deliberate no-op.
+        }
+        AnnotationKind::Text { .. } => {
+            // Text reaches export pre-rasterized as an `Image` (rasterize-text);
+            // the raw Text variant only exists to round-trip save/load, so skip.
         }
         AnnotationKind::Unsupported => {
             // Silently skip — caller (JS) was supposed to rasterize/replace
@@ -947,14 +958,29 @@ fn draw_shape(
         return;
     };
 
-    let (x1, y1) = uv_to_canvas(request, x, y, t_secs);
-    let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs);
+    let anchor = annotation.anchor;
+    // Stroke width scales with the frame (ref_w); corner radius scales with the
+    // box (below), so only the width reference is needed here.
+    let (ref_w, _) = anchor_ref_dims(request, anchor);
+    let (x1, y1) = uv_to_canvas(request, x, y, t_secs, anchor);
+    let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs, anchor);
     let x = x1.min(x2);
     let y = y1.min(y2);
     let w = (x1 - x2).abs();
     let h = (y1 - y2).abs();
     if w <= 0.5 || h <= 0.5 {
         return;
+    }
+
+    // Glow / soft shadow behind the shape, mirroring the preview's Glow.
+    if let Some(g) = annotation.glow.as_ref() {
+        let is_ellipse = matches!(annotation.kind, AnnotationKind::Ellipse { .. });
+        // Radius = fraction (0..0.5) of the box's shorter side (matches preview).
+        let radius_px = radius * w.min(h);
+        draw_shape_shadow(
+            frame, width, height, request, t_secs, x, y, w, h, radius_px, is_ellipse, opacity, g,
+            anchor,
+        );
     }
 
     if let Some((r, g, b, a)) = parse_css_color(&annotation.fill) {
@@ -968,7 +994,7 @@ fn draw_shape(
                     y,
                     w,
                     h,
-                    radius * request.source_width.min(request.source_height) as f64,
+                    radius * w.min(h),
                     r,
                     g,
                     b,
@@ -1004,7 +1030,7 @@ fn draw_shape(
     if annotation.stroke.width > 0.0 {
         if let Some((r, g, b, a)) = parse_css_color(&annotation.stroke.color) {
             if a > 0.0 {
-                let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+                let stroke_px = (annotation.stroke.width * ref_w).max(1.0);
                 match annotation.kind {
                     AnnotationKind::Rect { .. } => draw_rect(
                         frame,
@@ -1014,7 +1040,7 @@ fn draw_shape(
                         y,
                         w,
                         h,
-                        radius * request.source_width.min(request.source_height) as f64,
+                        radius * w.min(h),
                         r,
                         g,
                         b,
@@ -1066,10 +1092,12 @@ fn draw_arrow(
     if sa <= 0.0 {
         return;
     }
-    let stroke_px = (annotation.stroke.width * request.source_width as f64).max(1.0);
+    let anchor = annotation.anchor;
+    let (ref_w, _) = anchor_ref_dims(request, anchor);
+    let stroke_px = (annotation.stroke.width * ref_w).max(1.0);
 
-    let (cx1, cy1) = uv_to_canvas(request, x1_uv, y1_uv, t_secs);
-    let (cx2, cy2) = uv_to_canvas(request, x2_uv, y2_uv, t_secs);
+    let (cx1, cy1) = uv_to_canvas(request, x1_uv, y1_uv, t_secs, anchor);
+    let (cx2, cy2) = uv_to_canvas(request, x2_uv, y2_uv, t_secs, anchor);
     let dx = cx2 - cx1;
     let dy = cy2 - cy1;
     let line_len = (dx * dx + dy * dy).sqrt();
@@ -1133,12 +1161,16 @@ fn draw_image(
     w_uv: f64,
     h_uv: f64,
     alpha: f64,
+    radius_uv: f64,
+    glow: Option<&AnnotationGlow>,
+    stroke: Option<&AnnotationStroke>,
+    anchor: AnnotationAnchor,
 ) {
     if w_uv <= 0.0 || h_uv <= 0.0 || alpha <= 0.0 {
         return;
     }
-    let (cx1, cy1) = uv_to_canvas(request, x_uv, y_uv, t_secs);
-    let (cx2, cy2) = uv_to_canvas(request, x_uv + w_uv, y_uv + h_uv, t_secs);
+    let (cx1, cy1) = uv_to_canvas(request, x_uv, y_uv, t_secs, anchor);
+    let (cx2, cy2) = uv_to_canvas(request, x_uv + w_uv, y_uv + h_uv, t_secs, anchor);
     let dx = cx1.min(cx2);
     let dy = cy1.min(cy2);
     let dw = (cx2 - cx1).abs();
@@ -1150,26 +1182,307 @@ fn draw_image(
     if img_w == 0 || img_h == 0 {
         return;
     }
+    // Corner radius in dst pixels, mirroring the preview (`radius` × shorter
+    // side of the box). Clamped so it can't exceed half the box.
+    let corner = (radius_uv.max(0.0) * dw.min(dh)).min(dw.min(dh) / 2.0);
+
+    // Soft shadow / glow behind the image, mirroring the preview's Glow.
+    if let Some(g) = glow {
+        draw_image_shadow(
+            frame, width, height, img, request, t_secs, dx, dy, dw, dh, corner, alpha, g, anchor,
+        );
+    }
+
     let x_min = dx.floor().max(0.0) as usize;
     let y_min = dy.floor().max(0.0) as usize;
     let x_max = (dx + dw).ceil().min(width as f64 - 1.0).max(0.0) as usize;
     let y_max = (dy + dh).ceil().min(height as f64 - 1.0).max(0.0) as usize;
     for py in y_min..=y_max {
-        // Map dst pixel back into image space (nearest-neighbour). Bilinear
-        // would look nicer but a single-pass nearest is plenty for screen
-        // recordings where the rasterized text PNG already matches the
-        // intended pixel size to within a few percent.
-        let v = ((py as f64 + 0.5 - dy) / dh).clamp(0.0, 0.999);
-        let sy = (v * img_h as f64) as u32;
+        let v = ((py as f64 + 0.5 - dy) / dh).clamp(0.0, 1.0);
         for px in x_min..=x_max {
-            let u = ((px as f64 + 0.5 - dx) / dw).clamp(0.0, 0.999);
-            let sx = (u * img_w as f64) as u32;
-            let pixel = img.get_pixel(sx, sy);
-            let src_a = pixel[3] as f64 / 255.0 * alpha;
+            let u = ((px as f64 + 0.5 - dx) / dw).clamp(0.0, 1.0);
+            // Bilinear sample so scaled images aren't blocky (the preview smooths).
+            let s = sample_bilinear(img, u, v);
+            // Rounded-corner coverage: distance from the pixel to the inner
+            // rect (box shrunk by `corner`); 1px anti-aliased falloff.
+            let cover = if corner > 0.5 {
+                let lx = px as f64 + 0.5 - dx;
+                let ly = py as f64 + 0.5 - dy;
+                let nx = lx.clamp(corner, dw - corner);
+                let ny = ly.clamp(corner, dh - corner);
+                let dist = ((lx - nx).powi(2) + (ly - ny).powi(2)).sqrt();
+                (corner - dist + 0.5).clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            let src_a = s[3] / 255.0 * alpha * cover;
             if src_a <= 0.0 {
                 continue;
             }
-            blend_pixel(frame, width, px, py, pixel[0], pixel[1], pixel[2], src_a);
+            blend_pixel(
+                frame,
+                width,
+                px,
+                py,
+                s[0].round() as u8,
+                s[1].round() as u8,
+                s[2].round() as u8,
+                src_a,
+            );
+        }
+    }
+
+    // Border: a rounded-rect stroke over the image, mirroring the preview.
+    if let Some(stroke) = stroke {
+        if stroke.width > 0.0 {
+            if let Some((sr, sg, sb, sa)) = parse_css_color(&stroke.color) {
+                if sa > 0.0 {
+                    let stroke_px = (stroke.width * anchor_ref_dims(request, anchor).0).max(1.0);
+                    draw_rect(
+                        frame,
+                        width,
+                        height,
+                        dx,
+                        dy,
+                        dw,
+                        dh,
+                        corner,
+                        sr,
+                        sg,
+                        sb,
+                        sa * alpha,
+                        false,
+                        stroke_px,
+                    );
+                }
+            }
+        }
+    }
+}
+
+/// Soft symmetric shadow behind an image annotation — the export equivalent of
+/// the preview's `Glow`. Rasterizes the image's alpha silhouette (including the
+/// rounded-corner mask), box-blurs it, and blends the tinted result behind the
+/// image. `glow.blur` is in UV, matched to the video width like the preview.
+#[allow(clippy::too_many_arguments)]
+fn draw_image_shadow(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    img: &RgbaImage,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    dx: f64,
+    dy: f64,
+    dw: f64,
+    dh: f64,
+    corner: f64,
+    alpha: f64,
+    glow: &AnnotationGlow,
+    anchor: AnnotationAnchor,
+) {
+    if glow.opacity <= 0.0 || glow.blur <= 0.0 {
+        return;
+    }
+    let Some((gr, gg, gb, ga)) = parse_css_color(&glow.color) else {
+        return;
+    };
+    // Blur radius in dst pixels, relative to the anchor rect's width so it
+    // matches the preview's `glow.blur × rect.width`.
+    let (fx0, _) = uv_to_canvas(request, 0.0, 0.0, t_secs, anchor);
+    let (fx1, _) = uv_to_canvas(request, 1.0, 0.0, t_secs, anchor);
+    let radius = (glow.blur * (fx1 - fx0).abs()).clamp(0.0, 80.0);
+    if radius < 0.5 {
+        return;
+    }
+    let radius_i = radius.round() as usize;
+
+    // Expanded region covering the image rect plus a blur margin.
+    let margin = radius_i as isize + 1;
+    let rx0 = (dx.floor() as isize - margin).max(0) as usize;
+    let ry0 = (dy.floor() as isize - margin).max(0) as usize;
+    let rx1 = ((dx + dw).ceil() as isize + margin).min(width as isize - 1);
+    let ry1 = ((dy + dh).ceil() as isize + margin).min(height as isize - 1);
+    if rx1 < rx0 as isize || ry1 < ry0 as isize {
+        return;
+    }
+    let (rx1, ry1) = (rx1 as usize, ry1 as usize);
+    let rw = rx1 - rx0 + 1;
+    let rh = ry1 - ry0 + 1;
+    let (img_w, img_h) = img.dimensions();
+
+    // Silhouette = image alpha × rounded-corner coverage, in [0,1].
+    let mut sil = vec![0f32; rw * rh];
+    for gy in ry0..=ry1 {
+        let ly = gy as f64 + 0.5 - dy;
+        if ly < 0.0 || ly > dh {
+            continue;
+        }
+        let sy = ((ly / dh).clamp(0.0, 0.999) * img_h as f64) as u32;
+        for gx in rx0..=rx1 {
+            let lx = gx as f64 + 0.5 - dx;
+            if lx < 0.0 || lx > dw {
+                continue;
+            }
+            let sx = ((lx / dw).clamp(0.0, 0.999) * img_w as f64) as u32;
+            let a = img.get_pixel(sx, sy)[3] as f32 / 255.0;
+            if a <= 0.0 {
+                continue;
+            }
+            let cover = if corner > 0.5 {
+                let nx = lx.clamp(corner, dw - corner);
+                let ny = ly.clamp(corner, dh - corner);
+                let dist = ((lx - nx).powi(2) + (ly - ny).powi(2)).sqrt();
+                (corner - dist + 0.5).clamp(0.0, 1.0) as f32
+            } else {
+                1.0
+            };
+            sil[(gy - ry0) * rw + (gx - rx0)] = a * cover;
+        }
+    }
+
+    box_blur_alpha(&mut sil, rw, rh, radius_i);
+
+    let scale = (alpha * glow.opacity * ga).clamp(0.0, 1.0);
+    if scale <= 0.0 {
+        return;
+    }
+    for gy in ry0..=ry1 {
+        for gx in rx0..=rx1 {
+            let s = sil[(gy - ry0) * rw + (gx - rx0)] as f64;
+            if s <= 0.0 {
+                continue;
+            }
+            blend_pixel(frame, width, gx, gy, gr, gg, gb, s * scale);
+        }
+    }
+}
+
+/// Soft glow / shadow behind a rect or ellipse annotation — the export
+/// equivalent of the preview's Glow for shapes. Rasterizes the shape's fill
+/// silhouette, box-blurs it, and blends the tinted result behind the shape.
+/// `x,y,w,h,radius_px` are canvas pixels; `is_ellipse` selects the coverage SDF.
+#[allow(clippy::too_many_arguments)]
+fn draw_shape_shadow(
+    frame: &mut [u8],
+    width: usize,
+    height: usize,
+    request: &CursorOverlayRequest,
+    t_secs: f64,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+    radius_px: f64,
+    is_ellipse: bool,
+    alpha: f64,
+    glow: &AnnotationGlow,
+    anchor: AnnotationAnchor,
+) {
+    if glow.opacity <= 0.0 || glow.blur <= 0.0 {
+        return;
+    }
+    let Some((gr, gg, gb, ga)) = parse_css_color(&glow.color) else {
+        return;
+    };
+    let (fx0, _) = uv_to_canvas(request, 0.0, 0.0, t_secs, anchor);
+    let (fx1, _) = uv_to_canvas(request, 1.0, 0.0, t_secs, anchor);
+    let radius = (glow.blur * (fx1 - fx0).abs()).clamp(0.0, 80.0);
+    if radius < 0.5 {
+        return;
+    }
+    let radius_i = radius.round() as usize;
+
+    let margin = radius_i as isize + 1;
+    let rx0 = (x.floor() as isize - margin).max(0) as usize;
+    let ry0 = (y.floor() as isize - margin).max(0) as usize;
+    let rx1 = ((x + w).ceil() as isize + margin).min(width as isize - 1);
+    let ry1 = ((y + h).ceil() as isize + margin).min(height as isize - 1);
+    if rx1 < rx0 as isize || ry1 < ry0 as isize {
+        return;
+    }
+    let (rx1, ry1) = (rx1 as usize, ry1 as usize);
+    let rw = rx1 - rx0 + 1;
+    let rh = ry1 - ry0 + 1;
+
+    let cx = x + w * 0.5;
+    let cy = y + h * 0.5;
+    let hx = (w * 0.5).max(0.5);
+    let hy = (h * 0.5).max(0.5);
+    let rr = radius_px.min(hx.min(hy)).max(0.0);
+    let edge = 1.0 / hx.min(hy);
+
+    // Silhouette = the shape's fill coverage, matching draw_rect/draw_ellipse.
+    let mut sil = vec![0f32; rw * rh];
+    for gy in ry0..=ry1 {
+        let ly = gy as f64 + 0.5 - cy;
+        for gx in rx0..=rx1 {
+            let lx = gx as f64 + 0.5 - cx;
+            let cover = if is_ellipse {
+                let dist = ((lx / hx).powi(2) + (ly / hy).powi(2)).sqrt();
+                (1.0 - smoothstep(1.0 - edge, 1.0, dist)).clamp(0.0, 1.0)
+            } else {
+                let sd = rounded_rect_sdf(lx, ly, hx, hy, rr);
+                (1.0 - smoothstep(-1.0, 0.0, sd)).clamp(0.0, 1.0)
+            };
+            sil[(gy - ry0) * rw + (gx - rx0)] = cover as f32;
+        }
+    }
+
+    box_blur_alpha(&mut sil, rw, rh, radius_i);
+
+    let scale = (alpha * glow.opacity * ga).clamp(0.0, 1.0);
+    if scale <= 0.0 {
+        return;
+    }
+    for gy in ry0..=ry1 {
+        for gx in rx0..=rx1 {
+            let s = sil[(gy - ry0) * rw + (gx - rx0)] as f64;
+            if s <= 0.0 {
+                continue;
+            }
+            blend_pixel(frame, width, gx, gy, gr, gg, gb, s * scale);
+        }
+    }
+}
+
+/// Separable running-sum box blur over an alpha buffer, run twice to approximate
+/// a Gaussian. Edges clamp; the buffer is zero-padded by construction.
+fn box_blur_alpha(buf: &mut [f32], w: usize, h: usize, radius: usize) {
+    if radius == 0 || w == 0 || h == 0 {
+        return;
+    }
+    let win = (2 * radius + 1) as f32;
+    let mut tmp = vec![0f32; buf.len()];
+    for _ in 0..2 {
+        // Horizontal: buf -> tmp.
+        for y in 0..h {
+            let base = y * w;
+            let mut sum = 0f32;
+            for k in -(radius as isize)..=(radius as isize) {
+                sum += buf[base + k.clamp(0, w as isize - 1) as usize];
+            }
+            tmp[base] = sum / win;
+            for x in 1..w {
+                let add_i = (x + radius).min(w - 1);
+                let sub_i = (x as isize - 1 - radius as isize).max(0) as usize;
+                sum += buf[base + add_i] - buf[base + sub_i];
+                tmp[base + x] = sum / win;
+            }
+        }
+        // Vertical: tmp -> buf.
+        for x in 0..w {
+            let mut sum = 0f32;
+            for k in -(radius as isize)..=(radius as isize) {
+                sum += tmp[k.clamp(0, h as isize - 1) as usize * w + x];
+            }
+            buf[x] = sum / win;
+            for y in 1..h {
+                let add_i = (y + radius).min(h - 1) * w + x;
+                let sub_i = (y as isize - 1 - radius as isize).max(0) as usize * w + x;
+                sum += tmp[add_i] - tmp[sub_i];
+                buf[y * w + x] = sum / win;
+            }
         }
     }
 }
@@ -1312,7 +1625,25 @@ fn decode_image_path_or_url(path: &str) -> Option<RgbaImage> {
             .and_then(|r| r.decode().map_err(|e| anyhow!(e)))
     };
     match decoded {
-        Ok(img) => Some(img.to_rgba8()),
+        Ok(img) => {
+            // Cap the longest side so a huge source (e.g. an 8000×8000 photo,
+            // ~256 MB as RGBA) can't OOM the export — it's only ever composited
+            // at the annotation's box size anyway.
+            const MAX_DIM: u32 = 4096;
+            let (w, h) = (img.width(), img.height());
+            let img = if w > MAX_DIM || h > MAX_DIM {
+                let scale = MAX_DIM as f32 / w.max(h) as f32;
+                let nw = ((w as f32 * scale).round() as u32).max(1);
+                let nh = ((h as f32 * scale).round() as u32).max(1);
+                log::warn!(
+                    "annotation image {w}x{h} exceeds {MAX_DIM}px, downscaling to {nw}x{nh}"
+                );
+                img.resize(nw, nh, image::imageops::FilterType::Triangle)
+            } else {
+                img
+            };
+            Some(img.to_rgba8())
+        }
         Err(e) => {
             let preview = if path.len() > 40 { &path[..40] } else { path };
             log::warn!("failed to decode image ({preview}…): {e}");
@@ -1325,6 +1656,35 @@ fn decode_image_path_or_url(path: &str) -> Option<RgbaImage> {
 /// path as annotations but with a clearer name at the call site.
 fn decode_data_url(url: &str) -> Option<RgbaImage> {
     decode_image_path_or_url(url)
+}
+
+/// Bilinear RGBA sample at UV `(u, v)` in `[0, 1]`, returning channels as
+/// 0..255 floats. Smooth-scales an image annotation instead of the blocky
+/// nearest-neighbour the canvas preview never shows.
+fn sample_bilinear(img: &RgbaImage, u: f64, v: f64) -> [f64; 4] {
+    let (w, h) = img.dimensions();
+    if w == 0 || h == 0 {
+        return [0.0; 4];
+    }
+    let fx = (u * w as f64 - 0.5).max(0.0);
+    let fy = (v * h as f64 - 0.5).max(0.0);
+    let x0 = fx.floor() as u32;
+    let y0 = fy.floor() as u32;
+    let x1 = (x0 + 1).min(w - 1);
+    let y1 = (y0 + 1).min(h - 1);
+    let tx = fx - x0 as f64;
+    let ty = fy - y0 as f64;
+    let p00 = img.get_pixel(x0.min(w - 1), y0).0;
+    let p10 = img.get_pixel(x1, y0).0;
+    let p01 = img.get_pixel(x0.min(w - 1), y1).0;
+    let p11 = img.get_pixel(x1, y1).0;
+    let mut out = [0.0; 4];
+    for (c, o) in out.iter_mut().enumerate() {
+        let top = p00[c] as f64 * (1.0 - tx) + p10[c] as f64 * tx;
+        let bot = p01[c] as f64 * (1.0 - tx) + p11[c] as f64 * tx;
+        *o = top * (1.0 - ty) + bot * ty;
+    }
+    out
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1403,24 +1763,39 @@ fn draw_triangle_filled(
     let y_max = ((ay.max(by).max(cy)).ceil() as i64)
         .min(height as i64 - 1)
         .max(0) as usize;
-    // Edge-function rasterizer; sign indicates which side of an edge a point
-    // lies on. Inside the triangle, all three edge functions agree in sign.
+    // Edge-function rasterizer. The raw edge function is twice the signed area
+    // of (p, a, b); dividing by the edge length gives the perpendicular pixel
+    // distance to that edge. Taking the min distance across the three edges and
+    // running a 1px smoothstep gives an anti-aliased edge instead of a hard
+    // stair-step (matching the AA'd capsule shaft the head attaches to).
     let sign = |px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64| -> f64 {
         (px - bx) * (ay - by) - (ax - bx) * (py - by)
+    };
+    let len = |ax: f64, ay: f64, bx: f64, by: f64| {
+        ((ax - bx).powi(2) + (ay - by).powi(2)).sqrt().max(1e-6)
+    };
+    let l1 = len(ax, ay, bx, by);
+    let l2 = len(bx, by, cx, cy);
+    let l3 = len(cx, cy, ax, ay);
+    // Orient so "inside" is positive regardless of winding.
+    let orient = if sign(cx, cy, ax, ay, bx, by) >= 0.0 {
+        1.0
+    } else {
+        -1.0
     };
     for py in y_min..=y_max {
         for px in x_min..=x_max {
             let pcx = px as f64 + 0.5;
             let pcy = py as f64 + 0.5;
-            let d1 = sign(pcx, pcy, ax, ay, bx, by);
-            let d2 = sign(pcx, pcy, bx, by, cx, cy);
-            let d3 = sign(pcx, pcy, cx, cy, ax, ay);
-            let has_neg = d1 < 0.0 || d2 < 0.0 || d3 < 0.0;
-            let has_pos = d1 > 0.0 || d2 > 0.0 || d3 > 0.0;
-            if has_neg && has_pos {
+            let e1 = orient * sign(pcx, pcy, ax, ay, bx, by) / l1;
+            let e2 = orient * sign(pcx, pcy, bx, by, cx, cy) / l2;
+            let e3 = orient * sign(pcx, pcy, cx, cy, ax, ay) / l3;
+            let m = e1.min(e2).min(e3);
+            let coverage = smoothstep(-0.5, 0.5, m);
+            if coverage <= 0.0 {
                 continue;
             }
-            blend_pixel(buf, width, px, py, r, g, b, alpha);
+            blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
         }
     }
 }
@@ -1479,7 +1854,21 @@ fn sorted_visible_annotations(annotations: &[Annotation]) -> Vec<&Annotation> {
     indexed.into_iter().map(|(_, a)| a).collect()
 }
 
-fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> (f64, f64) {
+fn uv_to_canvas(
+    request: &CursorOverlayRequest,
+    x: f64,
+    y: f64,
+    t_secs: f64,
+    anchor: AnnotationAnchor,
+) -> (f64, f64) {
+    // Frame-anchored annotations span the whole comp buffer (canvas_* = comp
+    // dims) and ignore zoom — the export mirror of the preview's frame anchor.
+    if anchor == AnnotationAnchor::Frame {
+        return (
+            x * request.canvas_width as f64,
+            y * request.canvas_height as f64,
+        );
+    }
     let mut uv_x = x;
     let mut uv_y = y;
     if let Some((scale, center_x, center_y)) = active_zoom_at(
@@ -1498,6 +1887,15 @@ fn uv_to_canvas(request: &CursorOverlayRequest, x: f64, y: f64, t_secs: f64) -> 
         (request.padding as f64 + source_x) * scale_canvas,
         (request.padding as f64 + source_y) * scale_canvas,
     )
+}
+
+/// Reference dimensions a stroke width / corner radius scales against, matching
+/// the preview: the video for a video anchor, the padded frame for a frame anchor.
+fn anchor_ref_dims(request: &CursorOverlayRequest, anchor: AnnotationAnchor) -> (f64, f64) {
+    match anchor {
+        AnnotationAnchor::Frame => (request.canvas_width as f64, request.canvas_height as f64),
+        AnnotationAnchor::Video => (request.source_width as f64, request.source_height as f64),
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1566,15 +1964,19 @@ fn draw_ellipse(
     let ry = (h * 0.5).max(0.5);
     for py in y_min..=y_max {
         for px in x_min..=x_max {
-            let nx = (px as f64 + 0.5 - cx) / rx;
-            let ny = (py as f64 + 0.5 - cy) / ry;
-            let dist = (nx * nx + ny * ny).sqrt();
-            let edge_px = 1.0 / rx.min(ry);
+            let dx = px as f64 + 0.5 - cx;
+            let dy = py as f64 + 0.5 - cy;
+            let dist = ((dx / rx).powi(2) + (dy / ry).powi(2)).sqrt();
+            // Convert the normalized distance to a pixel distance via the field
+            // gradient, so the edge AA and the stroke are a uniform pixel width
+            // even for an eccentric (flat/tall) ellipse.
+            let grad =
+                ((dx / (rx * rx)).powi(2) + (dy / (ry * ry)).powi(2)).sqrt() / dist.max(1e-6);
+            let px_signed = (dist - 1.0) / grad.max(1e-6);
             let coverage = if fill {
-                (1.0 - smoothstep(1.0 - edge_px, 1.0, dist)).clamp(0.0, 1.0)
+                (1.0 - smoothstep(-1.0, 0.0, px_signed)).clamp(0.0, 1.0)
             } else {
-                let stroke_n = stroke / rx.min(ry);
-                (1.0 - smoothstep(stroke_n - edge_px, stroke_n, (dist - 1.0).abs())).clamp(0.0, 1.0)
+                (1.0 - smoothstep(stroke - 1.0, stroke, px_signed.abs())).clamp(0.0, 1.0)
             };
             blend_pixel(buf, width, px, py, r, g, b, alpha * coverage);
         }
@@ -1739,4 +2141,80 @@ fn parse_css_color(value: &str) -> Option<(u8, u8, u8, f64)> {
         .unwrap_or(1.0)
         .clamp(0.0, 1.0);
     Some((r, g, b, a))
+}
+
+#[cfg(test)]
+mod anchor_tests {
+    use super::{anchor_ref_dims, uv_to_canvas, CursorOverlayRequest};
+    use crate::render::graph::RenderState;
+    use crate::render::node_types::{AnnotationAnchor, ZoomRegion};
+
+    // source 200x100, padding 10 → comp (canvas_*) 220x120. scale_canvas = 1.
+    fn req(zoom: Vec<ZoomRegion>) -> CursorOverlayRequest {
+        let render_state = RenderState {
+            zoom_regions: zoom,
+            ..RenderState::default()
+        };
+        CursorOverlayRequest {
+            cursor_track_path: std::path::PathBuf::from("none"),
+            canvas_width: 220,
+            canvas_height: 120,
+            source_width: 200,
+            source_height: 100,
+            padding: 10,
+            fps: 30,
+            duration_secs: 4.0,
+            trim_start: 0.0,
+            render_state,
+        }
+    }
+
+    fn active_zoom() -> ZoomRegion {
+        serde_json::from_value(serde_json::json!({
+            "start": 0.0, "end": 4.0, "scale": 2.0, "centerX": 0.5, "centerY": 0.5
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn frame_anchor_spans_comp_without_padding_offset_or_zoom() {
+        let r = req(vec![active_zoom()]);
+        // 0..1 maps across the whole comp buffer, even with a 2x zoom active.
+        assert_eq!(
+            uv_to_canvas(&r, 0.0, 0.0, 2.0, AnnotationAnchor::Frame),
+            (0.0, 0.0)
+        );
+        assert_eq!(
+            uv_to_canvas(&r, 1.0, 1.0, 2.0, AnnotationAnchor::Frame),
+            (220.0, 120.0)
+        );
+        // Ignores the zoom: 0.75 stays at 0.75 * comp width regardless of `t`.
+        let (fx, _) = uv_to_canvas(&r, 0.75, 0.5, 2.0, AnnotationAnchor::Frame);
+        assert!((fx - 0.75 * 220.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn video_anchor_offsets_by_padding_and_follows_zoom() {
+        // No zoom: 0..1 spans the video region [padding, padding+source].
+        let r0 = req(vec![]);
+        assert_eq!(
+            uv_to_canvas(&r0, 0.0, 0.0, 0.0, AnnotationAnchor::Video),
+            (10.0, 10.0)
+        );
+        let (vx0, _) = uv_to_canvas(&r0, 0.75, 0.5, 0.0, AnnotationAnchor::Video);
+        assert!((vx0 - (0.75 * 200.0 + 10.0)).abs() < 1e-9); // 160
+
+        // With a 2x zoom about centre, the same UV is pushed outward — proving
+        // video anchor tracks zoom while frame anchor (above) does not.
+        let r = req(vec![active_zoom()]);
+        let (vx, _) = uv_to_canvas(&r, 0.75, 0.5, 2.0, AnnotationAnchor::Video);
+        assert!(vx > 200.0, "expected zoom to push x past 200, got {vx}");
+    }
+
+    #[test]
+    fn anchor_ref_dims_pick_frame_vs_source() {
+        let r = req(vec![]);
+        assert_eq!(anchor_ref_dims(&r, AnnotationAnchor::Frame), (220.0, 120.0));
+        assert_eq!(anchor_ref_dims(&r, AnnotationAnchor::Video), (200.0, 100.0));
+    }
 }

@@ -71,6 +71,68 @@ export function snap(
 	return { x: outX, y: outY, guides, snapped: guides.length > 0 };
 }
 
+export interface BoxSnapResult {
+	x: number;
+	y: number;
+	guides: SnapAnchor[];
+	snapped: boolean;
+}
+
+/**
+ * Snap a whole box while moving it. Considers the box's left/center/right and
+ * top/center/bottom lines and shifts the box so the nearest line within
+ * `tolerance` lands on its anchor. Unlike snapping the cursor, this aligns the
+ * annotation's own edges to guides, which is what a move should do.
+ */
+export function snapBox(
+	x: number,
+	y: number,
+	w: number,
+	h: number,
+	anchors: SnapAnchor[],
+	tolerance = 0.005,
+	enabled = true,
+): BoxSnapResult {
+	if (!enabled || anchors.length === 0) {
+		return { x, y, guides: [], snapped: false };
+	}
+	const xLines = [x, x + w / 2, x + w];
+	const yLines = [y, y + h / 2, y + h];
+	let bestDx = 0;
+	let bestDy = 0;
+	let bestDistX = tolerance;
+	let bestDistY = tolerance;
+	let guideX: SnapAnchor | null = null;
+	let guideY: SnapAnchor | null = null;
+
+	for (const a of anchors) {
+		if (a.axis === "x") {
+			for (const line of xLines) {
+				const d = a.value - line;
+				if (Math.abs(d) <= bestDistX) {
+					bestDistX = Math.abs(d);
+					bestDx = d;
+					guideX = a;
+				}
+			}
+		} else {
+			for (const line of yLines) {
+				const d = a.value - line;
+				if (Math.abs(d) <= bestDistY) {
+					bestDistY = Math.abs(d);
+					bestDy = d;
+					guideY = a;
+				}
+			}
+		}
+	}
+
+	const guides: SnapAnchor[] = [];
+	if (guideX) guides.push(guideX);
+	if (guideY) guides.push(guideY);
+	return { x: x + bestDx, y: y + bestDy, guides, snapped: guides.length > 0 };
+}
+
 /** Standard frame-anchor set: 0, 0.5, 1 on both axes. */
 export const FRAME_ANCHORS: SnapAnchor[] = [
 	{ axis: "x", value: 0, label: "frame-left" },

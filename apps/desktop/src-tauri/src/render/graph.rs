@@ -105,8 +105,16 @@ pub struct RenderState {
     /// Per-segment speed overrides (empty = every segment plays at 1×).
     #[serde(default)]
     pub segment_speeds: Vec<SegmentSpeed>,
-    /// Annotation overlays (rect/ellipse for Phase 1, more to follow).
-    /// Preview-only today; export integration lands with the cursor-overlay rewrite.
+    /// Per-segment scene animations — entrance/exit transforms on the video
+    /// layer, anchored to a segment's original start (empty = every segment
+    /// static). Read by the export to build the video-layer overlay LUT. The
+    /// frontend serialises these under `segmentAnims` (see the editor store); the
+    /// key must match or the export silently drops every animation to passthrough.
+    #[serde(rename = "segmentAnims", default)]
+    pub scene_animations: Vec<crate::render::scene_anim::SegmentAnim>,
+    /// Annotation overlays (rect/ellipse/arrow/image/blur; text arrives
+    /// pre-rasterized as image). Composited in export by the cursor-overlay
+    /// pass (`render/cursor_export.rs`) and the FFmpeg blur filter.
     #[serde(default)]
     pub annotations: Vec<Annotation>,
     /// Drop shadow cast by the video rect.
@@ -191,6 +199,7 @@ impl Default for RenderState {
             cuts: Vec::new(),
             split_points: Vec::new(),
             segment_speeds: Vec::new(),
+            scene_animations: Vec::new(),
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
@@ -368,6 +377,7 @@ impl RenderGraph {
         drop_shadow_mask: Option<PathBuf>,
         gradient_image: Option<PathBuf>,
         canvas: CanvasGeometry,
+        scene: Option<&crate::render::scene_anim::SceneOverlay>,
     ) -> Result<ExportPlan> {
         let background = self.nodes.iter().find_map(|node| match node {
             RenderNode::Background(background) => Some(background),
@@ -427,7 +437,7 @@ impl RenderGraph {
         // outputs a fully-transparent stream — the visual symptom is a black
         // background showing through with only the cursor overlay visible.
         let mut prelude_segments: Vec<String> = Vec::new();
-        let video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
+        let mut video_label: String = match (zoom_filter.as_ref(), mask_input_index) {
             (None, None) => "[0:v]".into(),
             (Some(zoom_filter), None) => {
                 prelude_segments.push(format!("[0:v]{zoom_filter}[video0]"));
@@ -445,6 +455,44 @@ impl RenderGraph {
                 ));
                 "[video0]".into()
             }
+        };
+
+        // Scene entrance/exit animation on the video layer only. `scale_expr`, when
+        // present, resizes the layer per frame (about its centre — the overlay
+        // position folds in the recentre); the overlay `x/y` expressions below then
+        // reposition it. Absent → the static overlay path is byte-identical to the
+        // no-animation output. Mirrors scenes/eval.ts; see render::scene_anim.
+        if let Some(scale_expr) = scene.and_then(|s| s.scale_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}scale=w='iw*({scale_expr})':h='ih*({scale_expr})':eval=frame[videoScene]"
+            ));
+            video_label = "[videoScene]".into();
+        }
+        // Rotation spins the card about its centre; `c=none` leaves the exposed
+        // corners transparent (needs alpha), keeping the frame size so the overlay
+        // recentre math above is unaffected. `a` re-evaluates per frame.
+        if let Some(rot_expr) = scene.and_then(|s| s.rotate_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}format=yuva420p,rotate=a='({rot_expr})*PI/180':c=none:ow=iw:oh=ih[videoSceneRot]"
+            ));
+            video_label = "[videoSceneRot]".into();
+        }
+        // Fade to background: multiply the layer's alpha plane by the opacity LUT
+        // so the background shows through (overlay does the blend). `geq`'s time
+        // variable is `T`; colour planes pass through untouched. geq is per-pixel
+        // (offline-only) and runs only when a fade exists, so non-fade exports are
+        // unaffected. Composes with the rounded-corner/rotate alpha already present.
+        if let Some(op_expr) = scene.and_then(|s| s.opacity_expr.as_ref()) {
+            prelude_segments.push(format!(
+                "{video_label}format=yuva420p,geq=lum='p(X,Y)':cb='p(X,Y)':cr='p(X,Y)':a='p(X,Y)*({op_expr})'[videoSceneFade]"
+            ));
+            video_label = "[videoSceneFade]".into();
+        }
+        // The overlay position: expression-driven when animating, else the static
+        // `video_x:video_y` (identical to the pre-scene output).
+        let overlay_pos = match scene {
+            Some(s) => format!("x='{}':y='{}'", s.x_expr, s.y_expr),
+            None => format!("{video_x}:{video_y}"),
         };
 
         // Resolve the wallpaper/image bg path up-front (without pushing yet)
@@ -494,7 +542,7 @@ impl RenderGraph {
                         canvas.comp_y,
                     );
                     segments.push(format!(
-                        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
+                        "{bg_label}{video_label}overlay={overlay_pos}[vout]"
                     ));
                     Some(segments.join(";"))
                 } else {
@@ -504,8 +552,7 @@ impl RenderGraph {
                         &video_label,
                         canvas_width,
                         canvas_height,
-                        video_x,
-                        video_y,
+                        &overlay_pos,
                         canvas.comp_x,
                         canvas.comp_y,
                         shadow_input_index,
@@ -519,8 +566,7 @@ impl RenderGraph {
                 &video_label,
                 canvas_width,
                 canvas_height,
-                video_x,
-                video_y,
+                &overlay_pos,
                 canvas.comp_x,
                 canvas.comp_y,
                 shadow_input_index,
@@ -569,8 +615,7 @@ fn build_color_background_filter(
     video_label: &str,
     canvas_width: u32,
     canvas_height: u32,
-    video_x: u32,
-    video_y: u32,
+    overlay_pos: &str,
     shadow_overlay_x: u32,
     shadow_overlay_y: u32,
     shadow_input_index: Option<usize>,
@@ -603,7 +648,7 @@ fn build_color_background_filter(
         shadow_overlay_y,
     );
     segments.push(format!(
-        "{bg_label}{video_label}overlay={video_x}:{video_y}[vout]"
+        "{bg_label}{video_label}overlay={overlay_pos}[vout]"
     ));
     Some(segments.join(";"))
 }
@@ -816,14 +861,16 @@ fn build_zoom_exprs(
             .map(|s| (s.center_x, s.center_y))
             .unwrap_or((0.5, 0.5));
         for &(ta, za, tb, zb) in region_segs {
-            if let Some(t) = fmt_term(ta, za, tb, zb, 1.0) {
+            if let Some(t) = fmt_term(ta, za, tb, zb, 1.0, "t") {
                 z_terms.push(t);
             }
             // crop_x = cx*iw*(Z-1); linear in t over the same segment as Z.
-            if let Some(t) = fmt_term(ta, cx * iw * (za - 1.0), tb, cx * iw * (zb - 1.0), 0.0) {
+            if let Some(t) = fmt_term(ta, cx * iw * (za - 1.0), tb, cx * iw * (zb - 1.0), 0.0, "t")
+            {
                 x_terms.push(t);
             }
-            if let Some(t) = fmt_term(ta, cy * ih * (za - 1.0), tb, cy * ih * (zb - 1.0), 0.0) {
+            if let Some(t) = fmt_term(ta, cy * ih * (za - 1.0), tb, cy * ih * (zb - 1.0), 0.0, "t")
+            {
                 y_terms.push(t);
             }
         }
@@ -836,7 +883,7 @@ fn build_zoom_exprs(
     )
 }
 
-fn wrap_flat_sum(default: &str, terms: Vec<String>) -> String {
+pub(crate) fn wrap_flat_sum(default: &str, terms: Vec<String>) -> String {
     if terms.is_empty() {
         default.to_string()
     } else {
@@ -890,15 +937,25 @@ fn merge_scale_segments(samples_per_region: &[Vec<ZoomSample>], tol: f64) -> Vec
 }
 
 /// Format one segment as a flat-sum term over the half-open window `[ta, tb)`,
-/// contributing `value - default`. Returns `None` for a constant segment that
+/// contributing `value - default`. `var` is the filter's time variable — `t` for
+/// overlay/scale/crop, `T` for `geq`. Returns `None` for a constant segment that
 /// equals the default (nothing to add).
-fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> Option<String> {
+pub(crate) fn fmt_term(
+    ta: f64,
+    va: f64,
+    tb: f64,
+    vb: f64,
+    default_val: f64,
+    var: &str,
+) -> Option<String> {
     if (va - vb).abs() < 1e-6 {
         let offset = va - default_val;
         if offset.abs() < 1e-6 {
             return None;
         }
-        Some(format!("if(gte(t,{ta:.4})*lt(t,{tb:.4}),{offset:.4},0)"))
+        Some(format!(
+            "if(gte({var},{ta:.4})*lt({var},{tb:.4}),{offset:.4},0)"
+        ))
     } else {
         // Guard a degenerate (zero-width) window: without it the ramp's
         // `(t-ta)/dt` divides by zero and bakes `inf` into the filter expression,
@@ -907,12 +964,12 @@ fn fmt_term(ta: f64, va: f64, tb: f64, vb: f64, default_val: f64) -> Option<Stri
         let dv = vb - va;
         let offset_a = va - default_val;
         Some(format!(
-            "if(gte(t,{ta:.4})*lt(t,{tb:.4}),({offset_a:.4}+{dv:.6}*(t-{ta:.4})/{dt:.4}),0)"
+            "if(gte({var},{ta:.4})*lt({var},{tb:.4}),({offset_a:.4}+{dv:.6}*({var}-{ta:.4})/{dt:.4}),0)"
         ))
     }
 }
 
-fn resolve_background_path(
+pub(crate) fn resolve_background_path(
     value: &str,
     static_root: &Path,
     asset_cache_dir: Option<&Path>,
@@ -1111,7 +1168,7 @@ mod tests {
     #[test]
     fn fmt_term_handles_degenerate_zero_width_window() {
         // tb == ta with differing values previously divided by zero → `inf`.
-        let term = fmt_term(2.0, 1.0, 2.0, 1.5, 1.0).expect("ramp term");
+        let term = fmt_term(2.0, 1.0, 2.0, 1.5, 1.0, "t").expect("ramp term");
         assert!(!term.contains("inf"));
         assert!(!term.contains("NaN"));
     }
@@ -1119,7 +1176,87 @@ mod tests {
     #[test]
     fn fmt_term_drops_constant_at_default() {
         // Constant segment equal to the default contributes nothing.
-        assert_eq!(fmt_term(0.0, 1.0, 1.0, 1.0, 1.0), None);
+        assert_eq!(fmt_term(0.0, 1.0, 1.0, 1.0, 1.0, "t"), None);
+    }
+
+    #[test]
+    fn scene_anims_use_the_frontend_segment_anims_key() {
+        // Regression: the frontend serialises scene animations as `segmentAnims`,
+        // but the Rust field deserialised `sceneAnimations`, so every animation was
+        // silently dropped into passthrough and never reached the export graph
+        // (perfect in preview, absent in export). The key must round-trip.
+        let value = serde_json::to_value(RenderState::default()).unwrap();
+        assert!(
+            value.get("segmentAnims").is_some(),
+            "must emit the frontend key"
+        );
+        assert!(value.get("sceneAnimations").is_none());
+
+        // A frontend-shaped payload must populate the typed field the export reads.
+        let mut payload = value;
+        payload["segmentAnims"] = serde_json::json!([{
+            "start": 0.0,
+            "in": { "kind": "slide", "durationMs": 500, "easing": { "x1": 0, "y1": 0, "x2": 1, "y2": 1 }, "dir": "left" }
+        }]);
+        let rs: RenderState = serde_json::from_value(payload).unwrap();
+        assert_eq!(rs.scene_animations.len(), 1);
+        assert_eq!(
+            rs.scene_animations[0].anim_in.as_ref().unwrap().kind,
+            "slide"
+        );
+    }
+
+    #[test]
+    fn scene_overlay_injects_video_layer_stages() {
+        // The scene overlay must reach the graph: a scale/rotate/opacity overlay
+        // produces the per-frame video-layer stages and an expression-driven
+        // overlay position (not the static one).
+        let state = RenderState {
+            trim_start: 0.0,
+            trim_end: 10.0,
+            ..RenderState::default()
+        };
+        let scene = crate::render::scene_anim::SceneOverlay {
+            x_expr: "100".into(),
+            y_expr: "50".into(),
+            scale_expr: Some("(1.1)".into()),
+            rotate_expr: Some("(15)".into()),
+            opacity_expr: Some("(1)".into()),
+        };
+        let plan = RenderGraph::from_state(&state)
+            .build_export_plan_with(
+                SourceVideoMetadata {
+                    width: 1920,
+                    height: 1080,
+                    fps: 60.0,
+                },
+                Path::new("."),
+                1,
+                None,
+                None,
+                None,
+                None,
+                test_canvas(),
+                Some(&scene),
+            )
+            .expect("plan");
+        let fc = plan.filter_complex.expect("filter graph");
+        assert!(
+            fc.contains("scale=w='iw*((1.1))"),
+            "scene scale stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("rotate=a='((15))*PI/180'"),
+            "scene rotate stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("geq=lum='p(X,Y)'"),
+            "scene fade stage missing: {fc}"
+        );
+        assert!(
+            fc.contains("overlay=x='100':y='50'"),
+            "expression overlay missing: {fc}"
+        );
     }
 
     fn render_state_with_zoom(
@@ -1154,6 +1291,7 @@ mod tests {
                 None,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }
@@ -1173,6 +1311,7 @@ mod tests {
                 Some(shadow_path),
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }
@@ -1315,6 +1454,7 @@ mod tests {
                 None,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan");
         let fc = plan.filter_complex.expect("filter_complex");
@@ -1466,6 +1606,7 @@ mod tests {
                 shadow_mask,
                 None,
                 test_canvas(),
+                None,
             )
             .expect("plan")
     }
