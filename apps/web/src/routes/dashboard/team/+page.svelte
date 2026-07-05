@@ -39,6 +39,7 @@
 
 	let leaving = $state(false);
 	let savingProfile = $state(false);
+	let settingDefault = $state(false);
 	let inviting = $state(false);
 	let cancellingInviteId = $state<string | null>(null);
 	let removing = $state(false);
@@ -57,6 +58,7 @@
 	const canManage = $derived(data.viewer.role === "owner" || data.viewer.role === "admin");
 	const isOwner = $derived(data.viewer.role === "owner");
 	const planLabel = $derived(capitalize(data.org.plan));
+	const isDefaultWorkspace = $derived(data.viewer.defaultWorkspaceId === data.org.id);
 	const createdLabel = $derived(
 		new Date(data.org.createdAt).toLocaleDateString("en-US", {
 			month: "short",
@@ -84,6 +86,38 @@
 			<Badge variant={data.org.plan === "free" ? "outline" : "secondary"}>
 				{planLabel} plan
 			</Badge>
+			{#if isDefaultWorkspace}
+				<Badge variant="secondary" class="gap-1">
+					<ShieldCheck class="size-3" />
+					Default
+				</Badge>
+			{:else}
+				<form
+					method="POST"
+					action="?/setDefaultWorkspace"
+					use:enhance={() => {
+						settingDefault = true;
+						return async ({ result, update }) => {
+							try {
+								if (result.type === "success") toast.success("Default workspace updated.");
+								else if (result.type === "failure") toast.error(String(result.data?.error));
+								await update({ reset: false });
+							} finally {
+								settingDefault = false;
+							}
+						};
+					}}
+				>
+					<Button type="submit" variant="outline" size="sm" disabled={settingDefault} class="gap-2">
+						{#if settingDefault}
+							<LoaderCircle class="size-3.5 animate-spin" />
+						{:else}
+							<ShieldCheck class="size-3.5" />
+						{/if}
+						Make default
+					</Button>
+				</form>
+			{/if}
 			{#if !isOwner}
 				<Button variant="outline" size="sm" onclick={() => (leaveOpen = true)} class="gap-2">
 					<LogOut class="size-3.5" />
@@ -145,6 +179,12 @@
 						</div>
 					</div>
 					<div class="flex shrink-0 flex-wrap gap-2">
+						{#if isDefaultWorkspace}
+							<Badge variant="secondary" class="gap-1">
+								<ShieldCheck class="size-3" />
+								Opens by default
+							</Badge>
+						{/if}
 						<Button href={workspaceUrl} variant="outline" size="sm" class="gap-2">
 							<Building2 class="size-3.5" />
 							View workspace

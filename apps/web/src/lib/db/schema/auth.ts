@@ -37,6 +37,10 @@ export const user = pgTable("user", {
 	banned: boolean("banned"),
 	banReason: text("ban_reason"),
 	banExpires: timestamp("ban_expires"),
+	defaultWorkspaceId: text("default_workspace_id").references(
+		() => organization.id,
+		{ onDelete: "set null" },
+	),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 	updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

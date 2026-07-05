@@ -70,6 +70,7 @@ function createAuth() {
 		user: {
 			additionalFields: {
 				status: { type: "string", defaultValue: "active", required: false },
+				defaultWorkspaceId: { type: "string", required: false },
 			},
 		},
 		emailAndPassword: {
@@ -416,6 +417,10 @@ async function ensureDefaultTeamForUser(u: {
 				userId: u.id,
 				role: "owner",
 			});
+			await tx
+				.update(userTable)
+				.set({ defaultWorkspaceId: orgId, updatedAt: new Date() })
+				.where(eq(userTable.id, u.id));
 		});
 	} catch (err) {
 		console.error("[auth] ensureDefaultTeamForUser failed", err);
