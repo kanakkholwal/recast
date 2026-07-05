@@ -2,6 +2,7 @@
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
   import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+  import PlayerDialog from "$components/recast/PlayerDialog.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import ExportDialog from "$components/editor/ExportDialog.svelte";
   import ExportFlowDialog, {
@@ -13,7 +14,7 @@
   import VideoPreview from "$components/editor/VideoPreview.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-  import type { ExportStateEvent } from "$lib/ipc";
+  import type { ExportStateEvent, RecordingEntry } from "$lib/ipc";
   import {
     autosaveProject,
     cancelExport,
@@ -22,6 +23,7 @@
     detectSilence,
     extractWaveform,
     generateThumbnails,
+    listExports,
     loadEditorDocument,
     migrateProject,
     openFileLocation,
@@ -63,6 +65,7 @@
     HardDriveUpload,
     Link2,
     LoaderCircle,
+    Play,
     RefreshCw,
     Share2,
     TriangleAlert,
@@ -1089,6 +1092,33 @@
     exportResult = null;
   }
 
+  // Watch the finished export in the in-app player. Opening it dismisses the
+  // export dialog — ExportFlowDialog portals over the player otherwise. Size and
+  // created come from the exports listing (accurate); a minimal entry is the
+  // fallback so playback never hinges on the listing succeeding.
+  let playTarget = $state<RecordingEntry | null>(null);
+
+  async function playExportedFile() {
+    if (exportResult?.kind !== "success") return;
+    const path = exportResult.path;
+    const filename = path.split(/[\\/]/).pop() ?? "export";
+    let entry: RecordingEntry = {
+      filename,
+      path,
+      sizeBytes: 0,
+      created: Math.floor(Date.now() / 1000),
+      needsMigration: false,
+    };
+    try {
+      const found = (await listExports()).find((e) => e.path === path);
+      if (found) entry = found;
+    } catch {
+      // Keep the fallback entry.
+    }
+    playTarget = entry;
+    dismissExportResult();
+  }
+
   // Options phase is UI-only (the picker before Export); progress/result phases
   // derive from the pipeline state, so the dialog is one surface that morphs.
   let exportOptionsOpen = $state(false);
@@ -1673,6 +1703,10 @@
     {cancelled}
     error={errorPanel}
   />
+
+  {#if playTarget}
+    <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
+  {/if}
 </div>
 
 {#snippet options()}
@@ -2183,15 +2217,26 @@
         <Kbd class="ml-0.5">Esc</Kbd>
       </Button>
 
-      <Button
-        variant="default"
-        size="xs"
-        class="gap-1.5"
-        onclick={revealExportInFolder}
-      >
-        <FolderOpen class="size-3" />
-        Show in folder
-      </Button>
+      <div class="flex items-center gap-1.5">
+        <Button
+          variant="secondary"
+          size="xs"
+          class="gap-1.5"
+          onclick={playExportedFile}
+        >
+          <Play class="size-3" />
+          Play
+        </Button>
+        <Button
+          variant="default"
+          size="xs"
+          class="gap-1.5"
+          onclick={revealExportInFolder}
+        >
+          <FolderOpen class="size-3" />
+          Show in folder
+        </Button>
+      </div>
     </footer>
   </div>
 {/snippet}

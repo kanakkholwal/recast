@@ -93,6 +93,30 @@ jobs:
         with:
           xcode-version: latest-stable
 
+      # `latest-stable` currently resolves to an Xcode RC whose toolchain is
+      # missing the compiler-rt static archives rustc links (`-lclang_rt.osx`
+      # → `library 'clang_rt.osx' not found`, clang/21/lib/darwin absent).
+      # Rather than gamble on which Xcode the runner ships, find
+      # libclang_rt.osx.a wherever it actually lives — active toolchain first,
+      # then Command Line Tools, then any installed Xcode — and add its dir to
+      # the linker search path so the final link resolves.
+      - name: Ensure compiler-rt on link path (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          rt=$(find \
+            "$(xcode-select -p)/Toolchains" \
+            /Library/Developer/CommandLineTools/usr/lib/clang \
+            /Applications/Xcode*.app/Contents/Developer/Toolchains \
+            -name 'libclang_rt.osx.a' 2>/dev/null | head -n1 || true)
+          if [ -z "$rt" ]; then
+            echo "::error::libclang_rt.osx.a not found; cannot satisfy -lclang_rt.osx"
+            exit 1
+          fi
+          echo "Using compiler-rt at: $rt"
+          echo "RUSTFLAGS=${RUSTFLAGS:-} -L $(dirname "$rt")" >> "$GITHUB_ENV"
+
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
