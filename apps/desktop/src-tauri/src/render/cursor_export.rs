@@ -933,6 +933,10 @@ fn draw_annotation(
             // (`build_annotation_blur_complex`) — the alpha overlay carries
             // no underlying pixels to blur, so this is a deliberate no-op.
         }
+        AnnotationKind::Text { .. } => {
+            // Text reaches export pre-rasterized as an `Image` (rasterize-text);
+            // the raw Text variant only exists to round-trip save/load, so skip.
+        }
         AnnotationKind::Unsupported => {
             // Silently skip — caller (JS) was supposed to rasterize/replace
             // before sending. Logged once at deserialize time would be ideal
@@ -955,7 +959,9 @@ fn draw_shape(
     };
 
     let anchor = annotation.anchor;
-    let (ref_w, ref_h) = anchor_ref_dims(request, anchor);
+    // Stroke width scales with the frame (ref_w); corner radius scales with the
+    // box (below), so only the width reference is needed here.
+    let (ref_w, _) = anchor_ref_dims(request, anchor);
     let (x1, y1) = uv_to_canvas(request, x, y, t_secs, anchor);
     let (x2, y2) = uv_to_canvas(request, x + w, y + h, t_secs, anchor);
     let x = x1.min(x2);
@@ -969,7 +975,8 @@ fn draw_shape(
     // Glow / soft shadow behind the shape, mirroring the preview's Glow.
     if let Some(g) = annotation.glow.as_ref() {
         let is_ellipse = matches!(annotation.kind, AnnotationKind::Ellipse { .. });
-        let radius_px = radius * ref_w.min(ref_h);
+        // Radius = fraction (0..0.5) of the box's shorter side (matches preview).
+        let radius_px = radius * w.min(h);
         draw_shape_shadow(
             frame, width, height, request, t_secs, x, y, w, h, radius_px, is_ellipse, opacity, g,
             anchor,
@@ -987,7 +994,7 @@ fn draw_shape(
                     y,
                     w,
                     h,
-                    radius * ref_w.min(ref_h),
+                    radius * w.min(h),
                     r,
                     g,
                     b,
@@ -1033,7 +1040,7 @@ fn draw_shape(
                         y,
                         w,
                         h,
-                        radius * ref_w.min(ref_h),
+                        radius * w.min(h),
                         r,
                         g,
                         b,

@@ -30,6 +30,7 @@
     arrowGeometry,
     blurTint,
     strokeDashPattern,
+    withAlpha,
   } from "./annotation-draw.logic";
   import type {
     Annotation,
@@ -232,7 +233,9 @@
 
     ctx.beginPath();
     if (a.kind.kind === "rect") {
-      const radius = Math.max(0, a.kind.radius * Math.min(r.w, r.h));
+      // Radius = fraction (0..0.5) of the box's shorter side, so 100% rounds
+      // fully regardless of box size (roundRectPath clamps to half).
+      const radius = Math.max(0, a.kind.radius * Math.min(w, h));
       if (radius > 0) {
         roundRectPath(ctx, x, y, w, h, radius);
       } else {
@@ -274,48 +277,57 @@
         // the editor frosting reads the same strength as the rendered file.
         const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
         if (srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0) {
-          const sx = (x / dstW) * srcW;
-          const sy = (y / dstH) * srcH;
-          const sw = (w / dstW) * srcW;
-          const sh = (h / dstH) * srcH;
-          const radius = Math.max(0, k.radius * Math.min(r.w, r.h));
-          ctx.save();
-          ctx.beginPath();
-          if (radius > 0) {
-            roundRectPath(ctx, x, y, w, h, radius);
-          } else {
-            ctx.rect(x, y, w, h);
+          // Sample a margin of real surrounding pixels around the region so the
+          // blur has content to pull from. Without it, a large radius samples
+          // the transparent edge, its alpha washes out, and the sharp video
+          // shows through — which reads as LESS blur past ~40% strength. (The
+          // export box-blurs an edge-clamped crop, the same idea.)
+          const m = Math.ceil(blurPx);
+          const ex = x - m;
+          const ey = y - m;
+          const ew = w + 2 * m;
+          const eh = h + 2 * m;
+          const esx = (ex / dstW) * srcW;
+          const esy = (ey / dstH) * srcH;
+          const esw = (ew / dstW) * srcW;
+          const esh = (eh / dstH) * srcH;
+          // Corner radius as a fraction (0..0.5) of the region's shorter side.
+          const radius = Math.max(0, k.radius * Math.min(w, h));
+          const bw = Math.max(1, Math.round(w));
+          const bh = Math.max(1, Math.round(h));
+          const octx = getBlurScratch(bw, bh);
+          if (octx) {
+            octx.clearRect(0, 0, bw, bh);
+            // Blur the composite into the scratch. The expanded source (esx..)
+            // maps so the region lands at (0,0,w,h); the -m offset gives the
+            // blur real margin pixels, and the scratch bounds clip the spill.
+            octx.filter = `blur(${blurPx.toFixed(2)}px)`;
+            try {
+              octx.drawImage(compositeCanvasEl, esx, esy, esw, esh, -m, -m, ew, eh);
+            } catch {
+              // source not readable this frame; next rAF repaints.
+            }
+            octx.filter = "none";
+            // Variant tint on top of the blurred copy so it reads as a
+            // deliberate privacy treatment rather than just a smudge.
+            const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
+            if (tint) {
+              octx.fillStyle = tint;
+              octx.fillRect(0, 0, bw, bh);
+            }
+            // Composite onto the overlay under the rounded clip (no filter in
+            // effect, so the rounded corners are honoured).
+            ctx.save();
+            ctx.beginPath();
+            if (radius > 0) {
+              roundRectPath(ctx, x, y, w, h, radius);
+            } else {
+              ctx.rect(x, y, w, h);
+            }
+            ctx.clip();
+            ctx.drawImage(blurScratch!, x, y, w, h);
+            ctx.restore();
           }
-          ctx.clip();
-          // `filter` applies to the following drawImage; browsers promote this
-          // to a GPU shader, so it's cheap per blur region.
-          ctx.filter = `blur(${blurPx.toFixed(2)}px)`;
-          try {
-            ctx.drawImage(
-              compositeCanvasEl,
-              sx,
-              sy,
-              sw,
-              sh,
-              x,
-              y,
-              w,
-              h,
-            );
-          } catch {
-            // drawImage can fail mid-frame if the source canvas was
-            // resized between layout and render. Bail silently — the
-            // next animation frame will repaint correctly.
-          }
-          ctx.filter = "none";
-          // Variant tint sits on top of the blurred copy so it reads
-          // as a deliberate privacy treatment rather than just a smudge.
-          const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
-          if (tint) {
-            ctx.fillStyle = tint;
-            ctx.fillRect(x, y, w, h);
-          }
-          ctx.restore();
         }
       }
     }
@@ -390,6 +402,21 @@
     }
     for (const path of stale) imageCache.delete(path);
   });
+
+  // Offscreen scratch canvas for blur. We render the blur + tint here
+  // (rectangular) then composite onto the overlay under a rounded clip — a
+  // rounded `ctx.clip()` is NOT reliably honoured while `ctx.filter = blur()`
+  // is active (WebView2/Chromium blurs to the full bounding box), so the
+  // corners are applied afterwards with no filter in effect.
+  let blurScratch: HTMLCanvasElement | null = null;
+  function getBlurScratch(w: number, h: number): CanvasRenderingContext2D | null {
+    if (!blurScratch) blurScratch = document.createElement("canvas");
+    if (blurScratch.width !== w || blurScratch.height !== h) {
+      blurScratch.width = w;
+      blurScratch.height = h;
+    }
+    return blurScratch.getContext("2d");
+  }
 
   function drawImageAnnotation(
     ctx: CanvasRenderingContext2D,
@@ -498,10 +525,12 @@
   function applyGlow(ctx: CanvasRenderingContext2D, a: Annotation) {
     if (!a.glow) return;
     const r = rectFor(a);
-    ctx.shadowColor = a.glow.color;
+    // Bake glow opacity into the shadow colour, NOT globalAlpha. The export dims
+    // only the cast glow and keeps the shape at full opacity (cursor_export.rs
+    // draw_shape_shadow/draw_image_shadow scale `alpha × glow.opacity`); folding
+    // it into globalAlpha here would fade the whole shape and break parity.
+    ctx.shadowColor = withAlpha(a.glow.color, a.glow.opacity);
     ctx.shadowBlur = Math.max(0, a.glow.blur * r.w);
-    // Canvas shadow respects globalAlpha; pre-multiply to avoid double-darkening.
-    ctx.globalAlpha = ctx.globalAlpha * Math.max(0, Math.min(1, a.glow.opacity));
   }
 
   function roundRectPath(
@@ -1236,7 +1265,8 @@
       a.kind.kind === "rect" ||
       a.kind.kind === "ellipse" ||
       a.kind.kind === "text" ||
-      a.kind.kind === "image"
+      a.kind.kind === "image" ||
+      a.kind.kind === "blur"
     ) {
       store.updateAnnotation(id, {
         kind: { ...a.kind, x: a.kind.x + dxUV, y: a.kind.y + dyUV },

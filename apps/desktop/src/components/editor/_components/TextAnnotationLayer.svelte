@@ -42,7 +42,6 @@
   let editingId = $state<string | null>(null);
   // Pre-edit text, captured on entry so Escape can restore it.
   let editStartContent = "";
-  let resizeObserver: ResizeObserver | null = null;
   let rafHandle: number | null = null;
   // rAF tick to rebuild positions per frame (store doesn't fire on every video tick).
   let _frame = $state(0);
@@ -97,9 +96,8 @@
   }
 
   function tick_() {
-    // Layer size comes from the ResizeObserver; only fall back to a live
-    // measure while it's still unknown (not laid out when observed) so text
-    // isn't stuck positioned against a 0x0 frame.
+    // Fallback only while the size is still unknown; the $effect below keeps it
+    // live once the element is observed.
     if ((layerSize.w <= 0 || layerSize.h <= 0) && layerEl) measureLayer();
     _frame++;
     rafHandle = requestAnimationFrame(tick_);
@@ -111,17 +109,25 @@
     layerSize = { w: r.width, h: r.height };
   }
 
-  onMount(() => {
+  // Track the layer size with a ResizeObserver. A $effect (not onMount) so it
+  // re-attaches when `layerEl` binds — `targetEl` (the parent's bind:this) is
+  // still null at this child's onMount, which is why the old onMount observer
+  // never attached and `layerSize` froze, drifting the text off its selection
+  // box on any preview resize. Observe the always-present local `layerEl`.
+  $effect(() => {
+    const el = layerEl;
+    if (!el) return;
     measureLayer();
+    const ro = new ResizeObserver(() => measureLayer());
+    ro.observe(el);
+    return () => ro.disconnect();
+  });
+
+  onMount(() => {
     rafHandle = requestAnimationFrame(tick_);
-    if (targetEl) {
-      resizeObserver = new ResizeObserver(() => measureLayer());
-      resizeObserver.observe(targetEl);
-    }
   });
   onDestroy(() => {
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);
-    resizeObserver?.disconnect();
   });
 
   /** Apply an alpha to a `#rrggbb` or `rgb()/rgba()` colour → `rgba(...)`. */
@@ -155,13 +161,21 @@
     const br = uvToCss(a, x + w, y + h, t);
     const cssW = Math.max(0, br.x - tl.x);
     const cssH = Math.max(0, br.y - tl.y);
-    const fontSizePx = k.fontSize * layerSize.h;
+    // Size the font and glow off the annotation's ANCHOR rect, not the full
+    // layer. The export rasterizes at comp resolution then scales the raster
+    // into the anchor rect (video rect for video-anchored, comp rect for
+    // frame-anchored), so a video-anchored text shrinks with the video whenever
+    // there's padding. Using layerSize.h/.w here made preview font/wrap comp-
+    // relative and drifted off the exported glyphs. `glow.blur × rect.w` mirrors
+    // draw_image_shadow's `glow.blur × (uv_to_canvas(1)−uv_to_canvas(0))`.
+    const rect = rectCssFor(a);
+    const fontSizePx = k.fontSize * rect.h;
     const z = a.zIndex ?? 0;
     // Glow → CSS drop-shadow so the preview matches the exported text (which
     // rasterizes to an image and picks up the same glow via draw_image_shadow).
     const g = a.glow;
     const glowFilter = g
-      ? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * layerSize.w).toFixed(2)}px ${colorWithAlpha(g.color, g.opacity)})`
+      ? `filter: drop-shadow(0 0 ${Math.max(0, g.blur * rect.w).toFixed(2)}px ${colorWithAlpha(g.color, g.opacity)})`
       : "";
     return [
       `left: ${tl.x}px`,

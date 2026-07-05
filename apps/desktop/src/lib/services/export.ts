@@ -142,10 +142,13 @@ export async function findMissingImageAnnotations(store: EditorStore): Promise<s
 }
 
 /**
- * True when a visible blur overlaps a visible zoom region in time. The export
- * blurs a static rectangle (FFmpeg can't follow a per-frame zoom), so under a
- * zoom the redaction stays put while the content moves and can expose what it
- * was hiding — the preview tracks the zoom, so this would ship silently.
+ * True when a VIDEO-anchored blur overlaps a visible zoom region in time. The
+ * export composites a blur as a static FFmpeg crop→boxblur→overlay at a fixed
+ * rectangle; FFmpeg can't move that rectangle per frame to follow the zoom's
+ * per-frame scale/translate. So a video-anchored blur (which tracks the zoomed
+ * content in the preview) stays put in export and can expose what it hid.
+ * Frame-anchored blurs are static by design, so they're already correct and
+ * don't trigger the warning — anchoring the blur to the frame is the fix.
  */
 export function hasBlurUnderZoom(store: EditorStore): boolean {
 	if (store.annotationsGloballyHidden || !store.focusEnabled) return false;
@@ -154,6 +157,7 @@ export function hasBlurUnderZoom(store: EditorStore): boolean {
 	return store.annotations.some(
 		(a) =>
 			a.kind.kind === "blur" &&
+			a.anchor !== "frame" &&
 			!a.hidden &&
 			zooms.some((z) => a.start < z.end && z.start < a.end),
 	);

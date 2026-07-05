@@ -3,6 +3,7 @@ import {
 	arrowGeometry,
 	blurTint,
 	strokeDashPattern,
+	withAlpha,
 } from "./annotation-draw.logic";
 
 describe("strokeDashPattern", () => {
@@ -33,6 +34,26 @@ describe("blurTint", () => {
 	});
 	it("returns null for invalid colour", () => {
 		expect(blurTint("color", "nope", 1)).toBeNull();
+	});
+});
+
+describe("withAlpha", () => {
+	// Bakes glow opacity into the shadow colour so the shape stays full-opacity,
+	// matching the export (which dims only the cast glow, not the shape).
+	it("applies alpha to a #rrggbb colour", () => {
+		expect(withAlpha("#ff8000", 0.5)).toBe("rgba(255,128,0,0.500)");
+		expect(withAlpha("00ff00", 1)).toBe("rgba(0,255,0,1.000)");
+	});
+	it("multiplies an existing #rrggbbaa alpha", () => {
+		expect(withAlpha("#ff000080", 0.5)).toBe("rgba(255,0,0,0.251)");
+	});
+	it("multiplies an existing rgba() alpha, preserves rgb()", () => {
+		expect(withAlpha("rgba(10, 20, 30, 0.4)", 0.5)).toBe("rgba(10,20,30,0.200)");
+		expect(withAlpha("rgb(10, 20, 30)", 0.5)).toBe("rgba(10,20,30,0.500)");
+	});
+	it("clamps the factor and leaves unknown forms unchanged", () => {
+		expect(withAlpha("#ffffff", 2)).toBe("rgba(255,255,255,1.000)");
+		expect(withAlpha("var(--accent)", 0.5)).toBe("var(--accent)");
 	});
 });
 

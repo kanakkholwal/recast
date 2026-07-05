@@ -451,16 +451,16 @@
           />
           <SliderControl
             label="Corner radius"
-            value={k.radius * 1000}
+            value={(k.radius ?? 0) * 200}
             min={0}
-            max={50}
+            max={100}
             step={1}
-            unit="‰"
-            formatValue={(v) => `${v.toFixed(0)}‰`}
+            unit="%"
+            formatValue={(v) => `${v.toFixed(0)}%`}
             onstart={() => store.pushUndoState()}
             onchange={(v) => {
               if (a.kind.kind !== "blur") return;
-              updateSelected({ kind: { ...a.kind, radius: v / 1000 } });
+              updateSelected({ kind: { ...a.kind, radius: v / 200 } });
             }}
           />
           <div class="flex items-center justify-between gap-2">
@@ -520,16 +520,16 @@
             </div>
             <SliderControl
               label="Corner radius"
-              value={(k.radius ?? 0) * 100}
+              value={(k.radius ?? 0) * 200}
               min={0}
-              max={50}
+              max={100}
               step={1}
               unit="%"
               formatValue={(v) => `${v.toFixed(0)}%`}
               onstart={() => store.pushUndoState()}
               onchange={(v) => {
                 if (a.kind.kind !== "image") return;
-                updateSelected({ kind: { ...a.kind, radius: v / 100 } });
+                updateSelected({ kind: { ...a.kind, radius: v / 200 } });
               }}
             />
           </div>
@@ -543,16 +543,16 @@
         <PanelSection title="Shape">
           <SliderControl
             label="Corner radius"
-            value={k.radius * 1000}
+            value={(k.radius ?? 0) * 200}
             min={0}
-            max={50}
+            max={100}
             step={1}
-            unit="‰"
-            formatValue={(v) => `${v.toFixed(0)}‰`}
+            unit="%"
+            formatValue={(v) => `${v.toFixed(0)}%`}
             onstart={() => store.pushUndoState()}
             onchange={(v) => {
               if (a.kind.kind !== "rect") return;
-              updateSelected({ kind: { ...a.kind, radius: v / 1000 } });
+              updateSelected({ kind: { ...a.kind, radius: v / 200 } });
             }}
           />
         </PanelSection>

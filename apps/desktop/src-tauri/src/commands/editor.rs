@@ -379,13 +379,22 @@ pub async fn load_editor_document(path: String) -> Result<EditorDocument, String
 fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     if let Some(project) = open_project_if_needed(&input)? {
-        let render_state = fs::read_to_string(&project.edits_path)
-            .ok()
-            .and_then(|content| serde_json::from_str(&content).ok())
-            .unwrap_or_else(|| RenderState {
-                trim_end: project.metadata.video.duration_ms as f64 / 1000.0,
-                ..RenderState::default()
-            });
+        let default_state = || RenderState {
+            trim_end: project.metadata.video.duration_ms as f64 / 1000.0,
+            ..RenderState::default()
+        };
+        // A missing edits.json is a fresh project (expected → defaults). A parse
+        // FAILURE, though, would silently discard every edit, so surface it.
+        let render_state = match fs::read_to_string(&project.edits_path) {
+            Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
+                log::error!(
+                    "failed to parse edits.json ({}): {e}; loading defaults (edits not applied)",
+                    project.edits_path.display()
+                );
+                default_state()
+            }),
+            Err(_) => default_state(),
+        };
 
         return Ok(EditorDocument {
             project_path: path,
@@ -1678,6 +1687,7 @@ pub async fn export_video(
                 strength,
                 variant,
                 tint_color,
+                radius: corner_frac,
                 ..
             } => {
                 // UV → canvas-pixel rect, over the annotation's anchor rect:
@@ -1717,6 +1727,9 @@ pub async fn export_video(
                     .clamp(1.0, 127.0) as u32;
                 let tint_rgb =
                     u32::from_str_radix(tint_color.trim_start_matches('#'), 16).unwrap_or(0x000000);
+                // Corner radius as a fraction (0..0.5) of the region's shorter
+                // side — same basis as the preview's `radius * min(w, h)`.
+                let corner_px = corner_frac.clamp(0.0, 0.5) * (cw.min(ch) as f64);
                 Some(BlurRegion {
                     x: cx,
                     y: cy,
@@ -1729,6 +1742,7 @@ pub async fn export_video(
                     tint_rgb,
                     opacity: a.opacity.clamp(0.0, 1.0),
                     strength: strength.clamp(0.0, 1.0),
+                    corner_px,
                 })
             }
             _ => None,

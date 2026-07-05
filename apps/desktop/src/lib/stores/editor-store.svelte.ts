@@ -1761,7 +1761,7 @@ export function createEditorStore() {
 		dup.zIndex = annotationZSeq++;
 		dup.name = source.name ? `${source.name} copy` : undefined;
 		// Nudge the geometry diagonally so the duplicate is visible.
-		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text") {
+		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text" || dup.kind.kind === "blur") {
 			dup.kind = { ...dup.kind, x: dup.kind.x + offset, y: dup.kind.y + offset };
 		} else if (dup.kind.kind === "arrow") {
 			dup.kind = {

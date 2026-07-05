@@ -315,6 +315,62 @@ mod tests {
         );
     }
 
+    // Rust has no text renderer (text reaches export pre-rasterized as an
+    // image), but a saved text annotation must survive the typed load
+    // round-trip (deserialize→reserialize) or every field is lost — it would
+    // otherwise fall through to `Unsupported` and reload as a broken kind.
+    #[test]
+    fn text_annotation_round_trips_and_keeps_its_kind() {
+        let raw = r##"{
+            "id": "t1", "start": 0.0, "end": 2.0,
+            "kind": {
+                "kind": "text", "x": 0.1, "y": 0.2, "w": 0.3, "h": 0.1,
+                "content": "Hello", "fontFamily": "Inter", "fontSize": 0.05,
+                "fontWeight": 600, "color": "#ffffff", "align": "center",
+                "lineHeight": 1.2
+            }
+        }"##;
+        let a: Annotation = serde_json::from_str(raw).unwrap();
+        match &a.kind {
+            AnnotationKind::Text {
+                content,
+                font_family,
+                line_height,
+                ..
+            } => {
+                assert_eq!(content, "Hello");
+                assert_eq!(font_family, "Inter");
+                assert!((line_height - 1.2).abs() < 1e-9);
+            }
+            other => panic!("expected text kind, got {other:?}"),
+        }
+        // Re-serialize: the tag must stay "text" (not "unsupported") and the
+        // camelCase field keys must be preserved for the JS load map.
+        let v = serde_json::to_value(&a).unwrap();
+        assert_eq!(v["kind"]["kind"], "text");
+        assert_eq!(v["kind"]["content"], "Hello");
+        assert_eq!(v["kind"]["fontFamily"], "Inter");
+    }
+
+    // The frontend sends `headSize`; without a per-variant rename_all it would
+    // never map and the export would silently use the default arrowhead size.
+    #[test]
+    fn arrow_head_size_maps_from_camelcase() {
+        let raw = r#"{"id":"a","start":0.0,"end":1.0,
+            "kind":{"kind":"arrow","x1":0.1,"y1":0.1,"x2":0.5,"y2":0.5,"headSize":0.3}}"#;
+        let a: Annotation = serde_json::from_str(raw).unwrap();
+        match a.kind {
+            AnnotationKind::Arrow { head_size, .. } => {
+                assert!(
+                    (head_size - 0.3).abs() < 1e-9,
+                    "headSize should map, got {head_size}"
+                );
+            }
+            other => panic!("expected arrow, got {other:?}"),
+        }
+        assert_eq!(serde_json::to_value(&a).unwrap()["kind"]["headSize"], 0.3);
+    }
+
     #[test]
     fn camera_overlay_uses_default_placement_before_motion() {
         let overlay = CameraOverlaySettings::default();
@@ -584,6 +640,11 @@ pub enum AnnotationKind {
         h: f64,
     },
     /// Stroke-only directional callout. The head is drawn at (x2, y2).
+    // `rename_all` on the ENUM only renames variant NAMES, not fields inside a
+    // variant — so a multi-word field needs its own rename_all (or explicit
+    // rename) or the frontend's `headSize` never maps and export silently uses
+    // the default (and it's lost on reload).
+    #[serde(rename_all = "camelCase")]
     Arrow {
         x1: f64,
         y1: f64,
@@ -628,6 +689,34 @@ pub enum AnnotationKind {
         tint_color: String,
         #[serde(default)]
         radius: f64,
+    },
+    /// Text overlay. Only needs to ROUND-TRIP through save/load — the export
+    /// receives text pre-rasterized as an `Image` (rasterize-text.ts), so the
+    /// draw loop skips this variant. Without it, a saved text annotation
+    /// deserializes to `Unsupported` on reload and loses every field (data loss).
+    /// Fields mirror the TS `text` kind. `rename_all` HERE (on the variant) is
+    /// required — the enum-level `rename_all` only covers variant names, so
+    /// without this `fontFamily`/`fontSize`/etc. wouldn't map.
+    #[serde(rename_all = "camelCase")]
+    Text {
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+        #[serde(default)]
+        content: String,
+        #[serde(default)]
+        font_family: String,
+        #[serde(default)]
+        font_size: f64,
+        #[serde(default)]
+        font_weight: f64,
+        #[serde(default)]
+        color: String,
+        #[serde(default)]
+        align: String,
+        #[serde(default)]
+        line_height: f64,
     },
     /// Unknown / unsupported variant. Deserialization fallback so the export
     /// pipeline doesn't fail if the JS side sends a kind Rust can't render
@@ -697,8 +786,9 @@ pub struct Annotation {
     /// Master opacity (0..1) multiplied with the split-ramp evaluator output.
     #[serde(default = "default_opacity_unit")]
     pub opacity: f64,
-    /// Optional preview-only glow. Carried on the wire so future Rust passes
-    /// don't have to bump the version again, but the current draw path ignores it.
+    /// Optional glow / soft shadow. Rendered in export for rect/ellipse
+    /// (`draw_shape_shadow`) and image/text-as-image (`draw_image_shadow`);
+    /// arrow glow is preview-only.
     #[serde(default)]
     pub glow: Option<AnnotationGlow>,
     /// What the annotation is pinned to. `Video` (default) tracks the zoomed
