@@ -110,10 +110,13 @@ jobs:
           # dropped Intel-Mac at 1.24). Silence detection runs on pure-Rust tract,
           # so the rest of the app builds fine; the UI warns captions are
           # unavailable on Intel Mac.
+          # NOTE: the `tauri` CLI has no `--no-default-features` flag of its own,
+          # so it MUST come after a `--` passthrough to reach cargo. Do not drop
+          # the `--` (pnpm 10 forwards it intact).
           - name: macos-x64
             os: macos-latest
             rust_target: x86_64-apple-darwin
-            tauri_args: "--target x86_64-apple-darwin --no-default-features"
+            tauri_args: "--target x86_64-apple-darwin -- --no-default-features"
           - name: linux-x64
             os: ubuntu-24.04
             rust_target: x86_64-unknown-linux-gnu
