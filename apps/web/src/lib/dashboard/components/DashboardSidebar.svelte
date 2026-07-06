@@ -1,22 +1,21 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import { GITHUB_URL } from "$lib/components/nav-data";
   import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
   import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
   import Logo from "$lib/logo.svelte";
   import {
-    BarChart3,
     Archive,
+    BarChart3,
     Film,
     LayoutDashboard,
-    Moon,
     Plus,
-    Sun,
     Users,
   } from "@lucide/svelte";
+  import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";
   import { useSidebar } from "@recast/ui/sidebar";
-  import { mode, toggleMode } from "@recast/ui/theme";
   import { cn } from "@recast/ui/utils";
   import type { ComponentProps } from "svelte";
   import { cubicOut } from "svelte/easing";
@@ -281,38 +280,32 @@
   </Sidebar.Content>
 
   <Sidebar.Footer class="gap-1 border-t border-border/30 p-2">
-    <button
-      type="button"
-      onclick={toggleMode}
-      aria-label={mode.current === "dark"
-        ? "Switch to light mode"
-        : "Switch to dark mode"}
-      title={mode.current === "dark" ? "Light mode" : "Dark mode"}
+    <!-- Theme toggle lives in the profile menu; the rail's footer slot is a
+         quiet "star us on GitHub" nudge instead. -->
+    <Button
+      href={GITHUB_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label="Star Recast on GitHub"
+      title="Star on GitHub"
+      variant="dark"
       class={cn(
-        "group/theme relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium text-muted-foreground outline-none transition-colors duration-200 hover:bg-foreground/6 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45",
+        "group/gh relative h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",
         open ? "justify-center" : "justify-start",
       )}
     >
-      <span
-        class="absolute inset-0 rounded-lg ring-1 ring-inset ring-border/0 transition-colors duration-200 group-hover/theme:ring-border/35"
-        aria-hidden="true"
-      ></span>
-      <span class="relative z-10 grid size-4 shrink-0 place-items-center">
-        {#if mode.current === "dark"}
-          <Sun class="size-3.5 transition-transform duration-300 group-hover/theme:rotate-45" />
-        {:else}
-          <Moon class="size-3.5 transition-transform duration-300 group-hover/theme:-rotate-12" />
-        {/if}
-      </span>
+        <GithubBrand
+          class="size-3.5 transition-transform duration-300 group-hover/gh:scale-110"
+        />
       <span
         class={cn(
-          "relative z-10 truncate transition-[max-width,opacity] duration-200 ease-linear",
+          "relative z-10 inline-flex items-center gap-1.5 truncate transition-[max-width,opacity] duration-200 ease-linear",
           open ? "max-w-40 opacity-100" : "max-w-0 opacity-0",
         )}
       >
-        {mode.current === "dark" ? "Light mode" : "Dark mode"}
+        Star on GitHub
       </span>
-    </button>
+    </Button>
   </Sidebar.Footer>
 </Sidebar.Root>
 

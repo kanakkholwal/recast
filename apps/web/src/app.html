@@ -7,12 +7,106 @@
 	<meta name="color-scheme" content="light dark" />
 	<link rel="icon" href="/favicon.ico" />
 
+	<!-- Initial splash — pure HTML/CSS so it paints instantly on a hard load,
+	     before any bundle runs, covering the hydration gap on product routes.
+	     The root layout fades + removes it once hydrated (see +layout.svelte).
+	     Colours use prefers-color-scheme since the app theme class isn't set
+	     this early; a brief mismatch (if the user forced a non-system theme)
+	     resolves the moment the app hydrates. -->
+	<style>
+		#app-splash {
+			position: fixed;
+			inset: 0;
+			z-index: 2147483000;
+			display: none;
+			align-items: center;
+			justify-content: center;
+			background: #ffffff;
+			opacity: 1;
+			transition: opacity 320ms ease;
+		}
+		html.splash-active #app-splash { display: flex; }
+		html.splash-active.splash-hydrated #app-splash {
+			opacity: 0;
+			pointer-events: none;
+		}
+		#app-splash .app-splash-mark {
+			position: relative;
+			display: grid;
+			place-items: center;
+			width: 64px;
+			height: 64px;
+			border-radius: 18px;
+			background: #0b0b0b;
+			color: #ffffff;
+			box-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.28);
+			animation: app-splash-pulse 1.5s ease-in-out infinite;
+		}
+		#app-splash svg { width: 34px; height: 34px; display: block; }
+		@media (prefers-color-scheme: dark) {
+			#app-splash { background: #0a0a0a; }
+			#app-splash .app-splash-mark {
+				background: #fafafa;
+				color: #0a0a0a;
+				box-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.6);
+			}
+		}
+		@keyframes app-splash-pulse {
+			0%, 100% { transform: scale(1); }
+			50% { transform: scale(1.07); }
+		}
+		@media (prefers-reduced-motion: reduce) {
+			#app-splash .app-splash-mark { animation: none; }
+		}
+	</style>
+	<script>
+		// Only arm the splash on product surfaces (mirror of isAppArea in
+		// routes/layout.logic.ts — keep the two in sync). Runs before body paint
+		// so marketing pages never flash it.
+		(function () {
+			try {
+				var p = location.pathname;
+				if (p.indexOf("/dashboard") !== 0 && p.indexOf("/share/") !== 0) return;
+				var root = document.documentElement;
+				root.classList.add("splash-active");
+				// Safety net: if hydration never runs (bundle error, dead network),
+				// retire the splash anyway so the viewer is never stuck on it.
+				setTimeout(function () {
+					var el = document.getElementById("app-splash");
+					if (!el) return;
+					root.classList.add("splash-hydrated");
+					setTimeout(function () {
+						if (el) el.remove();
+					}, 400);
+				}, 10000);
+			} catch (e) {}
+		})();
+	</script>
+
 	%sveltekit.head%
 </head>
 
 <body data-sveltekit-preload-data="hover">
 
 	<div style="display: contents">%sveltekit.body%</div>
+
+	<div id="app-splash" aria-hidden="true">
+		<span class="app-splash-mark">
+			<svg viewBox="0 0 584 584" fill="none" xmlns="http://www.w3.org/2000/svg">
+				<path d="M200.12 204.56C200.12 167.8 170.32 138 133.56 138C96.7999 138 67 167.8 67 204.56V378.64C67 415.4 96.7999 445.2 133.56 445.2C170.32 445.2 200.12 415.4 200.12 378.64V204.56Z" fill="currentColor" />
+				<path d="M358.84 204.56C358.84 167.8 329.04 138 292.28 138C255.52 138 225.72 167.8 225.72 204.56V378.64C225.72 415.4 255.52 445.2 292.28 445.2C329.04 445.2 358.84 415.4 358.84 378.64V204.56Z" fill="currentColor" />
+				<path d="M517.56 204.56C517.56 167.8 487.76 138 451 138C414.24 138 384.44 167.8 384.44 204.56V378.64C384.44 415.4 414.24 445.2 451 445.2C487.76 445.2 517.56 415.4 517.56 378.64V204.56Z" fill="currentColor" />
+				<path d="M307.28 271.6H275.28C273.071 271.6 271.28 273.39 271.28 275.6V307.6C271.28 309.809 273.071 311.6 275.28 311.6H307.28C309.489 311.6 311.28 309.809 311.28 307.6V275.6C311.28 273.39 309.489 271.6 307.28 271.6Z" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+				<path d="M271.28 271.6V251.6" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+				<path d="M271.28 271.6H251.28" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+				<path d="M311.28 311.6V331.6" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+				<path d="M311.28 311.6H331.28" stroke="currentColor" stroke-width="6" stroke-linecap="round" />
+				<path d="M451.28 251.6L486.28 271.6L451.28 291.6L416.28 271.6L451.28 251.6Z" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+				<path d="M416.28 271.6L451.28 291.6V331.6L416.28 311.6V271.6Z" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+				<path d="M486.28 271.6L451.28 291.6V331.6L486.28 311.6V271.6Z" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
+			</svg>
+		</span>
+	</div>
 </body>
 
 </html>

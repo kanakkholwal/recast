@@ -1,3 +1,4 @@
+export { default as AppLoading } from "./AppLoading.svelte";
 export { default as Container } from "./Container.svelte";
 export { default as DevThemeToggle } from "./DevThemeToggle.svelte";
 export { default as Footer } from "./Footer.svelte";

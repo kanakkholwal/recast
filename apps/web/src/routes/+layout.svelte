@@ -6,11 +6,13 @@
   import { authClient } from "$lib/auth/client";
   import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
   import {
+    AppLoading,
     DevThemeToggle,
     Navbar,
     SeoMeta,
     ThemeShortcut,
   } from "$lib/components";
+  import { onMount } from "svelte";
   import ConsentBanner from "$lib/components/ConsentBanner.svelte";
   import { NavProgress } from "@recast/ui/nav-progress";
 
@@ -27,6 +29,19 @@
   import "@recast/player/styles.css";
 
   let { children } = $props();
+
+  // Retire the initial splash (rendered by app.html on product routes) once the
+  // app has hydrated — fade via CSS, then drop it from the DOM.
+  onMount(() => {
+    const el = document.getElementById("app-splash");
+    if (!el) return;
+    document.documentElement.classList.add("splash-hydrated");
+    const t = setTimeout(() => {
+      el.remove();
+      document.documentElement.classList.remove("splash-active", "splash-hydrated");
+    }, 360);
+    return () => clearTimeout(t);
+  });
 
   const isChromeless = $derived(isChromelessPath(page.url.pathname));
   const indexable = $derived(isIndexable(page.url.pathname));
@@ -73,6 +88,9 @@
   {/if}
 </svelte:head>
 <NavProgress />
+<!-- Branded loading screen for navigations into product areas (/dashboard,
+     /share). The thin NavProgress bar still covers everything else. -->
+<AppLoading />
 <ModeWatcher />
 <!-- Cmd/Ctrl+Shift+L from any route toggles light↔dark. Runs in prod
 	 (DevThemeToggle's floating chip is still dev-only). -->
