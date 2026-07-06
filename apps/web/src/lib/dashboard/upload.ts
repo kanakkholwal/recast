@@ -8,9 +8,9 @@
  *   3. POST /api/uploads/complete  → HEAD-verifies + publishes
  *   4. POST /api/recasts/{id}/share → mints a public link
  *
- * Only `.mp4` is accepted. A `.recast` project can't be turned into a
- * shareable video in the browser — that needs the native render pipeline —
- * and its inner recording is the raw, unedited source, not a web-ready MP4.
+ * Only web-ready `.mp4` / `.webm` are accepted. A `.recast` project can't be
+ * turned into a shareable video in the browser — that needs the native render
+ * pipeline — and its inner recording is the raw, unedited source.
  */
 
 import { browser } from "$app/environment";
@@ -22,12 +22,30 @@ export interface UploadHandlers {
 	onPhase?: (phase: UploadPhase) => void;
 	/** Byte progress 0–100 during the video PUT. */
 	onProgress?: (pct: number) => void;
+	share?: ShareOptions;
+	/**
+	 * When `false`, upload + publish only and skip minting the share link — the
+	 * caller creates it afterwards via `createRecastShare`. Powers the
+	 * step-by-step dialog that configures sharing *after* the upload finishes.
+	 * Defaults to `true` (the quick-share behaviour home/library rely on).
+	 */
+	autoShare?: boolean;
 }
 
 export interface UploadResult {
 	recastId: string;
 	slug: string;
 	shareUrl: string;
+}
+
+export type ShareVisibility = "private" | "workspace" | "selected" | "public";
+
+export interface ShareOptions {
+	visibility: ShareVisibility;
+	password?: string;
+	expiresAt?: string | null;
+	commentsEnabled?: boolean;
+	invitees?: Array<{ email: string; role: "viewer" | "commenter" }>;
 }
 
 interface SignedEnvelope {
@@ -37,10 +55,21 @@ interface SignedEnvelope {
 }
 
 /** Accept attribute + the guard below — keep them in sync. */
-export const UPLOAD_ACCEPT = "video/mp4,.mp4";
+export const UPLOAD_ACCEPT = "video/mp4,video/webm,.mp4,.webm";
 
 export function isUploadableVideo(file: File): boolean {
-	return file.type === "video/mp4" || /\.mp4$/i.test(file.name);
+	return (
+		file.type === "video/mp4" ||
+		file.type === "video/webm" ||
+		/\.(mp4|webm)$/i.test(file.name)
+	);
+}
+
+/** The MIME we upload the file under — mirrored on `/init` (to sign the PUT)
+ *  and on the PUT itself, so the signed content-type matches the bytes. */
+export function uploadContentType(file: File): "video/mp4" | "video/webm" {
+	if (file.type === "video/webm" || /\.webm$/i.test(file.name)) return "video/webm";
+	return "video/mp4";
 }
 
 /** Header/button/progress label for the current upload phase. */
@@ -190,9 +219,10 @@ export async function uploadRecastFile(
 ): Promise<UploadResult> {
 	if (!browser) throw new Error("Upload can only run in the browser.");
 	if (!isUploadableVideo(file)) {
-		throw new Error("Only .mp4 video files can be uploaded here.");
+		throw new Error("Only .mp4 or .webm video files can be uploaded here.");
 	}
 
+	const contentType = uploadContentType(file);
 	handlers.onPhase?.("preparing");
 	const objectUrl = URL.createObjectURL(file);
 	let video: HTMLVideoElement | null = null;
@@ -215,6 +245,7 @@ export async function uploadRecastFile(
 				sizeBytes: file.size,
 				width,
 				height,
+				contentType,
 			}),
 		});
 		const init = await readJson(initRes);
@@ -239,7 +270,7 @@ export async function uploadRecastFile(
 
 		// 2. PUT the video
 		handlers.onPhase?.("uploading");
-		const status = await putWithProgress(videoUpload, file, "video/mp4", handlers.onProgress);
+		const status = await putWithProgress(videoUpload, file, contentType, handlers.onProgress);
 		if (status < 200 || status >= 300) {
 			throw new Error(`Upload rejected (${status}).`);
 		}
@@ -275,25 +306,15 @@ export async function uploadRecastFile(
 			);
 		}
 
-		// 4. share (public link, matching the desktop "Share to Cloud" default)
-		handlers.onPhase?.("sharing");
-		const shareRes = await fetch(`/api/recasts/${recastId}/share`, {
-			method: "POST",
-			headers: { "content-type": "application/json" },
-			body: JSON.stringify({ visibility: "public" }),
-		});
-		const shareData = await readJson(shareRes);
-		if (!shareRes.ok || !shareData?.slug) {
-			throw new Error(
-				(shareData?.message as string) ?? "Uploaded, but couldn't create a share link.",
-			);
+		// 4. share (public link, matching the desktop "Share to Cloud" default).
+		//    Skipped when the caller configures + mints the link afterwards.
+		if (handlers.autoShare === false) {
+			return { recastId, slug: "", shareUrl: "" };
 		}
-
-		return {
-			recastId,
-			slug: shareData.slug as string,
-			shareUrl: shareData.shareUrl as string,
-		};
+		handlers.onPhase?.("sharing");
+		const share = handlers.share ?? { visibility: "public" };
+		const { slug, shareUrl } = await createRecastShare(recastId, share);
+		return { recastId, slug, shareUrl };
 	} finally {
 		URL.revokeObjectURL(objectUrl);
 		if (video) {
@@ -301,4 +322,30 @@ export async function uploadRecastFile(
 			video.load();
 		}
 	}
+}
+
+/**
+ * Mint a public share link for an already-uploaded recast. Split out of
+ * `uploadRecastFile` so a caller can gather the viewer's sharing choices
+ * *after* the file is published, then create the link in one step.
+ */
+export async function createRecastShare(
+	recastId: string,
+	share: ShareOptions,
+): Promise<{ slug: string; shareUrl: string }> {
+	const shareRes = await fetch(`/api/recasts/${recastId}/share`, {
+		method: "POST",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(share),
+	});
+	const shareData = await readJson(shareRes);
+	if (!shareRes.ok || !shareData?.slug) {
+		throw new Error(
+			(shareData?.message as string) ?? "Couldn't create a share link.",
+		);
+	}
+	return {
+		slug: shareData.slug as string,
+		shareUrl: shareData.shareUrl as string,
+	};
 }

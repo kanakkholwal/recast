@@ -16,9 +16,11 @@
 	import { Chip } from "@recast/ui/chip";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import {
+		Archive,
 		BarChart3,
 		Check,
 		Clock,
+		Eye,
 		Film,
 		FolderInput,
 		ImagePlus,
@@ -27,6 +29,7 @@
 		MoreHorizontal,
 		Pencil,
 		Play,
+		Share2,
 		Tag as TagIcon,
 		Trash2,
 	} from "@lucide/svelte";
@@ -45,6 +48,7 @@
 		onchangeposter,
 		onmove,
 		ontoggletag,
+		onarchive,
 		ondelete,
 	}: {
 		recast: Recast;
@@ -62,8 +66,12 @@
 		onchangeposter?: () => void;
 		onmove: (folderId: string | null) => void;
 		ontoggletag: (tagId: string) => void;
+		onarchive?: () => void;
 		ondelete: () => void;
 	} = $props();
+
+	const isShared = $derived(!!recast.latestShareSlug);
+	const showViews = $derived(recast.source === "cloud" && recast.views > 0);
 
 	let posterFailed = $state(false);
 	const showPoster = $derived(!!recast.posterUrl && !posterFailed);
@@ -82,7 +90,7 @@
 <article
 	draggable="true"
 	ondragstart={onDragStart}
-	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl transition-shadow duration-300 hover:shadow-craft-lg active:cursor-grabbing
+	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg active:cursor-grabbing
 		{selected ? 'ring-2 ring-primary' : ''}"
 >
 	<!-- Selection checkbox — a sibling of the thumbnail button (never nested,
@@ -150,6 +158,20 @@
 			</span>
 		</span>
 
+		{#if isShared}
+			<span class="absolute right-2.5 top-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
+				<Share2 class="size-2.5" />
+				Shared
+			</span>
+		{/if}
+
+		{#if showViews}
+			<span class="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
+				<Eye class="size-3" />
+				{formatCount(recast.views)}
+			</span>
+		{/if}
+
 		<span class="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
 			<Clock class="size-3" />
 			{formatDuration(recast.durationSec)}
@@ -165,7 +187,7 @@
 					{recast.title}
 				</h3>
 				<p class="mt-1 text-xs text-muted-foreground">
-					{formatRelative(recast.createdAt)} · {formatBytes(recast.sizeBytes)}{#if recast.source === "cloud"} · {formatCount(recast.views)} views{/if}
+					{formatRelative(recast.createdAt)} · {formatBytes(recast.sizeBytes)}
 				</p>
 			</div>
 

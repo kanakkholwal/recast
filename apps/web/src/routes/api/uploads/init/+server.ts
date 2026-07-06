@@ -31,6 +31,8 @@ const BodySchema = z.object({
 	width: z.number().int().positive().optional(),
 	height: z.number().int().positive().optional(),
 	fps: z.number().int().positive().max(240).optional(),
+	/** Video MIME — signs the PUT so the bytes match. mp4 or webm only. */
+	contentType: z.enum(["video/mp4", "video/webm"]).default("video/mp4"),
 	/** Client has a caption track to upload → sign a captions PUT URL too. */
 	hasCaptions: z.boolean().optional(),
 });
@@ -50,7 +52,8 @@ const BodySchema = z.object({
  *      duration caps.
  *   5. Insert a `recast` row with status='draft', sizeBytes still 0 (we
  *      learn the real size on /complete via R2 HEAD).
- *   6. Sign and return the PUT URL bound to `Content-Type: video/mp4`.
+ *   6. Sign and return the PUT URL bound to the client's `Content-Type`
+ *      (`video/mp4` or `video/webm`).
  *
  * On any failure after step 5 (e.g. signing fails) the draft row is rolled
  * back so a 5xx doesn't leak placeholder rows into the user's library.
@@ -124,7 +127,7 @@ export const POST: RequestHandler = async ({ request }) => {
 
 	let upload;
 	try {
-		upload = await signUploadUrl({ key, contentType: "video/mp4" });
+		upload = await signUploadUrl({ key, contentType: body.contentType });
 	} catch (err) {
 		// Roll back the draft row — leaving it would count against the
 		// active-recasts cap (once /complete bumps usage) for a recast

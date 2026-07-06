@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { commandPalette } from "$lib/dashboard/command-palette.svelte";
+	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import {
 		Archive,
 		BarChart3,
@@ -25,16 +26,25 @@
 
 	interface Entry {
 		title: string;
-		href: string;
+		href?: string;
 		icon: typeof LayoutDashboard;
 		keywords?: string;
+		action?: () => void;
 	}
 
 	const groups: { heading: string; items: Entry[] }[] = [
 		{
 			heading: "Quick actions",
 			items: [
-				{ title: "New Recast", href: "/dashboard/recasts", icon: Plus, keywords: "upload record video create" },
+				{
+					title: "New Recast",
+					icon: Plus,
+					keywords: "upload record video create",
+					action: () => {
+						commandPalette.hide();
+						quickUpload.show();
+					},
+				},
 			],
 		},
 		{
@@ -107,21 +117,36 @@
 							{group.heading}
 						</CommandPrimitive.GroupHeading>
 						<CommandPrimitive.GroupItems>
-							{#each group.items as item (item.href)}
+							{#each group.items as item (item.href ?? item.title)}
 								{@const Icon = item.icon}
-								<CommandPrimitive.LinkItem
-									href={item.href}
-									keywords={item.keywords ? item.keywords.split(" ") : undefined}
-									onSelect={() => commandPalette.hide()}
-									class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
-								>
-									<span
-										class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+								{#if item.href}
+									<CommandPrimitive.LinkItem
+										href={item.href}
+										keywords={item.keywords ? item.keywords.split(" ") : undefined}
+										onSelect={() => commandPalette.hide()}
+										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
 									>
-										<Icon class="size-4" />
-									</span>
-									<span class="flex-1 truncate font-medium">{item.title}</span>
-								</CommandPrimitive.LinkItem>
+										<span
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+										>
+											<Icon class="size-4" />
+										</span>
+										<span class="flex-1 truncate font-medium">{item.title}</span>
+									</CommandPrimitive.LinkItem>
+								{:else}
+									<CommandPrimitive.Item
+										keywords={item.keywords ? item.keywords.split(" ") : undefined}
+										onSelect={() => item.action?.()}
+										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
+									>
+										<span
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+										>
+											<Icon class="size-4" />
+										</span>
+										<span class="flex-1 truncate font-medium">{item.title}</span>
+									</CommandPrimitive.Item>
+								{/if}
 							{/each}
 						</CommandPrimitive.GroupItems>
 					</CommandPrimitive.Group>

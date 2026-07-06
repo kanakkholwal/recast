@@ -11,25 +11,25 @@
 	import TagManagerDialog from "$lib/dashboard/components/TagManagerDialog.svelte";
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 	import { foldersStore, tagsStore } from "$lib/dashboard/library.svelte";
-	import { recastsStore, type Recast } from "$lib/dashboard/store.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
 	import { filterAndSortRecasts, isFileDrag } from "$lib/dashboard/recasts-library.logic";
+	import { recastsStore, type Recast } from "$lib/dashboard/store.svelte";
 	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
 	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import {
-		Folder,
-		FolderOpen,
-		FolderPlus,
-		Grid2X2,
-		Library,
-		List,
-		LoaderCircle,
-		MoreHorizontal,
-		Pencil,
-		Plus,
-		Trash2,
-		Upload,
-		UploadCloud,
+	  Folder,
+	  FolderOpen,
+	  FolderPlus,
+	  Grid2X2,
+	  Library,
+	  List,
+	  LoaderCircle,
+	  MoreHorizontal,
+	  Pencil,
+	  Plus,
+	  Trash2,
+	  Upload,
+	  UploadCloud,
 	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -48,8 +48,9 @@
 		const mapped = mapRecastsForStore(data.recasts);
 		const folders = data.folders;
 		const tags = data.tags;
+		const ws = data.workspaceId;
 		untrack(() => {
-			recastsStore.hydrate(mapped);
+			recastsStore.hydrate(mapped, ws);
 			foldersStore.hydrate(folders);
 			tagsStore.hydrate(tags);
 		});
@@ -459,7 +460,7 @@
 	<div
 		role="region"
 		aria-label="Recast library"
-		class="glass-card relative mt-8 overflow-hidden rounded-2xl p-4 sm:p-5"
+		class="glass-card shadow-none relative mt-8 overflow-hidden rounded-2xl p-4 sm:p-5"
 		in:fly={{ y: 12, duration: 480, delay: 80, easing: cubicOut }}
 		ondragenter={onDragEnter}
 		ondragover={onDragOver}

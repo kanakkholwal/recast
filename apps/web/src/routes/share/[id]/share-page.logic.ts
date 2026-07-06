@@ -5,10 +5,33 @@
  * by svelte-check.)
  */
 
+import type { RecastPlayerMarker } from "@recast/player";
 import { compactTime } from "$lib/share/format";
 
 /** The three standard scopes the inline visibility toggle can write. */
 export type LegacyVisibility = "public" | "team" | "private";
+
+/**
+ * Project the comment thread onto the player scrubber — one marker per
+ * time-anchored comment, coloured to match its author avatar so a viewer can
+ * read the conversation off the timeline and jump straight to the moment.
+ * Comments at 0:00 (the composer's default when nothing is playing) are
+ * dropped: they're "general" notes, not tied to a spot on the video.
+ */
+export function buildCommentMarkers(
+	comments: { id: string; authorName: string; atSeconds: number; body: string }[],
+	hue: (seed: string) => number,
+): RecastPlayerMarker[] {
+	return comments
+		.filter((c) => c.atSeconds > 0)
+		.map((c) => ({
+			id: c.id,
+			time: c.atSeconds,
+			label: `${c.authorName}: ${c.body.length > 60 ? `${c.body.slice(0, 60)}…` : c.body}`,
+			kind: "comment" as const,
+			color: `hsl(${hue(c.authorName)} 60% 45%)`,
+		}));
+}
 
 /**
  * Collapse the full visibility enum to the toggle's three rows. `workspace` is

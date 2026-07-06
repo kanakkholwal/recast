@@ -2,17 +2,24 @@
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
 	import { authClient } from "$lib/auth/client";
+	import { commandPalette } from "$lib/dashboard/command-palette.svelte";
 	import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import {
 	  ArrowUpRight,
 	  ChevronsUpDown,
+	  Command,
+	  CreditCard,
 	  LayoutDashboard,
 	  LogOut,
+	  Moon,
 	  Settings,
 	  Shield,
-	  User,
+	  Sparkles,
+	  Sun,
 	} from "@lucide/svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
+	import { Kbd } from "@recast/ui/kbd";
+	import { mode, toggleMode } from "@recast/ui/theme";
 
 	const profile = $derived(settingsStore.value.profile);
 
@@ -21,6 +28,8 @@
 	const isAdmin = $derived(
 		(page.data?.user as { role?: string } | undefined)?.role === "admin",
 	);
+	// Whether we're currently inside the admin shell — decides "enter" vs "exit".
+	const inAdmin = $derived(page.url.pathname.startsWith("/admin"));
 
 	// Plan label under the name — prefers the active org's plan, then the quota
 	// snapshot, else "free".
@@ -30,6 +39,7 @@
 			"free") as string,
 	);
 	const planLabel = $derived(`${plan.charAt(0).toUpperCase()}${plan.slice(1)} plan`);
+	const isFree = $derived(plan === "free");
 
 	async function signOut() {
 		await authClient.signOut();
@@ -65,29 +75,63 @@
 			</span>
 		</DropdownMenu.Label>
 		<DropdownMenu.Separator />
-		<DropdownMenu.Item onclick={() => goto("/dashboard/settings/profile")}>
-			<User class="size-4 text-muted-foreground" />
-			Profile
-		</DropdownMenu.Item>
 		<DropdownMenu.Item onclick={() => goto("/dashboard/settings")}>
 			<Settings class="size-4 text-muted-foreground" />
 			Settings
 		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => goto("/dashboard/settings/billing")}>
+			{#if isFree}
+				<Sparkles class="size-4 text-primary" />
+				<span class="text-foreground">Upgrade plan</span>
+			{:else}
+				<CreditCard class="size-4 text-muted-foreground" />
+				Plan &amp; billing
+			{/if}
+		</DropdownMenu.Item>
+
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item closeOnSelect={false} onclick={toggleMode}>
+			{#if mode.current === "dark"}
+				<Sun class="size-4 text-muted-foreground" />
+				Light mode
+			{:else}
+				<Moon class="size-4 text-muted-foreground" />
+				Dark mode
+			{/if}
+		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => commandPalette.show()}>
+			<Command class="size-4 text-muted-foreground" />
+			Command menu
+			<Kbd class="ml-auto">
+				<span class="text-[9px] font-semibold">⌘</span>
+				<span class="text-[10px]">K</span>
+			</Kbd>
+		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => goto("/changelog")}>
+			<Sparkles class="size-4 text-muted-foreground" />
+			What's new
+		</DropdownMenu.Item>
+
 		{#if isAdmin}
-			<DropdownMenu.Item onclick={() => goto("/dashboard")}>
-				<LayoutDashboard class="size-4 text-muted-foreground" />
-				Dashboard
-			</DropdownMenu.Item>
-			<DropdownMenu.Item onclick={() => goto("/admin")}>
-				<Shield class="size-4 text-primary" />
-				Admin dashboard
-			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+			{#if inAdmin}
+				<DropdownMenu.Item onclick={() => goto("/dashboard")}>
+					<LayoutDashboard class="size-4 text-muted-foreground" />
+					Exit admin
+				</DropdownMenu.Item>
+			{:else}
+				<DropdownMenu.Item onclick={() => goto("/admin")}>
+					<Shield class="size-4 text-primary" />
+					Admin dashboard
+				</DropdownMenu.Item>
+			{/if}
 		{/if}
+
+		<DropdownMenu.Separator />
 		<DropdownMenu.Item onclick={() => goto("/")}>
 			<ArrowUpRight class="size-4 text-muted-foreground" />
 			Back to site
 		</DropdownMenu.Item>
-		<DropdownMenu.Separator />
 		<DropdownMenu.Item
 			onclick={signOut}
 			class="text-destructive/90 data-highlighted:text-destructive"

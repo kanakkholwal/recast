@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from "$app/state";
   import OrgSwitcher from "$lib/dashboard/components/OrgSwitcher.svelte";
+  import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
   import Logo from "$lib/logo.svelte";
   import {
     BarChart3,
@@ -181,8 +182,9 @@
 
     {#if showOrgSwitcher}
       <Button
-        href="/dashboard/recasts"
+        type="button"
         size="sm"
+        onclick={() => quickUpload.show()}
         class={cn(
           "group/new h-9 w-full gap-2.5 overflow-hidden rounded-lg px-2.5",
           open ? "justify-center" : "justify-start",

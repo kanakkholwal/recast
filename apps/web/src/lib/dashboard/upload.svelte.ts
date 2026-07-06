@@ -1,18 +1,24 @@
 /**
- * Shared upload controller — the reactive state + orchestration behind the
- * dashboard's "Upload" flow, used identically by the Home and Library pages
- * (header button, empty-state button, file input, drag-and-drop). Holds the
- * in-flight `$state` so both routes get the same progress UI without copying
- * the whole start/finalize/copy-link dance.
+ * Shared upload controller: the reactive state and orchestration behind the
+ * dashboard upload flows. Used by home, library, and the global quick-upload
+ * dialog so progress, refresh, share creation, and clipboard behavior stay in
+ * one place.
  */
 
 import { toast } from "@recast/ui/sonner";
-import { uploadPhaseLabel, uploadRecastFile, type UploadPhase } from "./upload";
+import {
+	uploadPhaseLabel,
+	uploadRecastFile,
+	type UploadPhase,
+	type UploadResult,
+	type ShareOptions,
+} from "./upload";
 
 interface UploadControllerOptions {
-	/** Reactive workspace id — read fresh at upload time. */
+	/** Reactive workspace id, read fresh at upload time. */
 	workspaceId: () => string | undefined;
-	/** Re-run the page loaders after a successful upload (e.g. invalidateAll). */
+	share?: () => ShareOptions | undefined;
+	/** Re-run page loaders after a successful upload. */
 	onRefresh: () => Promise<void>;
 }
 
@@ -20,19 +26,26 @@ export function createUploadController(options: UploadControllerOptions) {
 	let uploading = $state(false);
 	let phase = $state<UploadPhase>("preparing");
 	let pct = $state(0);
+	let lastResult = $state<UploadResult | null>(null);
+	let lastFileName = $state("");
 
-	async function start(file: File) {
-		if (uploading) return;
+	async function start(file: File): Promise<UploadResult | null> {
+		if (uploading) return null;
 		uploading = true;
 		phase = "preparing";
 		pct = 0;
+		lastResult = null;
+		lastFileName = file.name;
+
 		try {
 			const result = await uploadRecastFile(file, {
 				workspaceId: options.workspaceId(),
+				share: options.share?.(),
 				onPhase: (p) => (phase = p),
 				onProgress: (v) => (pct = v),
 			});
 			await options.onRefresh();
+
 			let copied = false;
 			try {
 				await navigator.clipboard.writeText(result.shareUrl);
@@ -40,25 +53,32 @@ export function createUploadController(options: UploadControllerOptions) {
 			} catch {
 				copied = false;
 			}
+
 			toast.success(
 				copied
-					? `“${file.name}” uploaded. Share link copied to clipboard.`
-					: `“${file.name}” uploaded and shared.`,
+					? `"${file.name}" uploaded. Share link copied to clipboard.`
+					: `"${file.name}" uploaded and shared.`,
 			);
+			lastResult = result;
+			return result;
 		} catch (err) {
 			toast.error((err as Error)?.message ?? "Couldn't upload that file.");
+			return null;
 		} finally {
 			uploading = false;
 		}
 	}
 
-	/** Consume a file input's change event: take the first file, reset the input
-	 *  so the same file can be re-picked, and kick off the upload. */
 	function onFilePicked(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
 		input.value = "";
-		if (file) start(file);
+		if (file) void start(file);
+	}
+
+	function resetResult() {
+		lastResult = null;
+		lastFileName = "";
 	}
 
 	return {
@@ -74,7 +94,14 @@ export function createUploadController(options: UploadControllerOptions) {
 		get label() {
 			return uploadPhaseLabel(phase, pct);
 		},
+		get lastResult() {
+			return lastResult;
+		},
+		get lastFileName() {
+			return lastFileName;
+		},
 		start,
 		onFilePicked,
+		resetResult,
 	};
 }

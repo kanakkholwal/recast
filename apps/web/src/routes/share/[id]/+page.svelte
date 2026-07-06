@@ -13,6 +13,13 @@
 	} from "$lib/share/format";
 	import { toggleReactionState } from "$lib/share/engagement";
 	import {
+		activeCueIndex,
+		filterCues,
+		readCuesFromTrack,
+		type TranscriptCue,
+	} from "$lib/share/transcript";
+	import {
+		buildCommentMarkers,
 		buildEmbedCode,
 		toLegacyVisibility,
 		withTimeParam,
@@ -23,13 +30,13 @@
 	  ArrowRight,
 	  AtSign,
 	  Check,
-	  ChevronDown,
 	  Clock,
 	  Code,
 	  Copy,
 	  Download,
 	  ExternalLink,
 	  Eye,
+	  FileText,
 	  Globe,
 	  LayoutDashboard,
 	  Link2,
@@ -40,6 +47,7 @@
 	  MessageSquare,
 	  Moon,
 	  RotateCcw,
+	  Search,
 	  Settings,
 	  Share2,
 	  ShieldOff,
@@ -54,7 +62,12 @@
 	import { analytics } from "$lib/analytics/client";
 	import { authClient } from "$lib/auth/client";
 	import { mode as themeMode, toggleMode } from "@recast/ui/theme";
-	import { RecastPlayer, type RecastPlayerApi, type RecastPlayerTrack } from "@recast/player";
+	import {
+		RecastPlayer,
+		type RecastPlayerActionEvent,
+		type RecastPlayerApi,
+		type RecastPlayerTrack,
+	} from "@recast/player";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -359,7 +372,11 @@
 	let ctaLabel = $state(untrack(() => (data.access.ok ? data.access.share.ctaLabel : null)));
 	let ctaUrl = $state(untrack(() => (data.access.ok ? data.access.share.ctaUrl : null)));
 	const cta = $derived(ctaLabel && ctaUrl ? { label: ctaLabel, url: ctaUrl } : null);
-	const showEndCard = $derived(ended && cta != null);
+	// The owner's next-step card fires when they set a CTA. When they didn't,
+	// a finished stranger (not the owner) is the highest-intent moment to plant
+	// the growth loop — offer "record your own" instead of a blank overlay.
+	const showOwnerEndCard = $derived(ended && cta != null);
+	const showStrangerEndCard = $derived(ended && cta == null && !canManage);
 
 	// ── Comments + reactions (engagement layer) ──────────────────────
 	let commentsEnabled = $state(
@@ -372,7 +389,92 @@
 	let reactions = $state<ReactionCount[]>([]);
 	let myReactions = $state<Set<string>>(new Set());
 	let engagementLoaded = $state(false);
-	let commentsOpen = $state(true);
+
+	// ── Engagement side-panel (Transcript | Comments) ─────────────────
+	// The video and the conversation live side-by-side so a viewer can read,
+	// skim the transcript, and jump moments without scrolling the player away.
+	const hasTranscript = $derived(captionTracks.length > 0);
+	type PanelTab = "transcript" | "comments";
+	let activeTab = $state<PanelTab>("comments");
+	// Skim-first: default to the transcript on captioned recasts, comments
+	// otherwise. Runs once, then a viewer's tab choice sticks.
+	let tabInitialized = false;
+	$effect(() => {
+		if (tabInitialized || !recast) return;
+		activeTab = hasTranscript ? "transcript" : "comments";
+		tabInitialized = true;
+	});
+	// Keep the active tab valid if the owner toggles comments off mid-view.
+	$effect(() => {
+		if (activeTab === "comments" && !commentsEnabled && hasTranscript)
+			activeTab = "transcript";
+		else if (activeTab === "transcript" && !hasTranscript && commentsEnabled)
+			activeTab = "comments";
+	});
+
+	// Interactive transcript, read straight off the player's live caption
+	// `<track>` (no second fetch of the signed VTT, no CORS surface).
+	let transcriptCues = $state<TranscriptCue[]>([]);
+	let transcriptQuery = $state("");
+	let transcriptListEl = $state<HTMLElement | null>(null);
+	const filteredCues = $derived(filterCues(transcriptCues, transcriptQuery));
+	// The line to light as "now" — suppressed while searching (the filtered
+	// list no longer aligns with the playhead index).
+	const activeCue = $derived(
+		transcriptQuery.trim() ? -1 : activeCueIndex(transcriptCues, smoothedTime.current),
+	);
+
+	$effect(() => {
+		if (!browser || !api || !hasTranscript) return;
+		const video = api.getVideoElement();
+		if (!video) return;
+		const track = Array.from(video.textTracks).find(
+			(t) => t.kind === "captions" || t.kind === "subtitles",
+		);
+		if (!track) return;
+		// Populate cues without forcing captions on-screen — only nudge a
+		// disabled track to `hidden`; never override the viewer's CC choice.
+		if (track.mode === "disabled") track.mode = "hidden";
+		const read = () => {
+			const cues = readCuesFromTrack(track);
+			if (cues.length) transcriptCues = cues;
+			return cues.length > 0;
+		};
+		if (read()) return;
+		// VTT cues parse asynchronously after the track loads — poll briefly.
+		let tries = 0;
+		const iv = setInterval(() => {
+			if (read() || ++tries > 15) clearInterval(iv);
+		}, 200);
+		return () => clearInterval(iv);
+	});
+
+	// Keep the active transcript line in view while it plays (not while the
+	// viewer is searching or reading a different tab).
+	$effect(() => {
+		const idx = activeCue;
+		if (idx < 0 || activeTab !== "transcript" || transcriptQuery.trim()) return;
+		transcriptListEl
+			?.querySelector<HTMLElement>(`[data-cue="${idx}"]`)
+			?.scrollIntoView({ block: "nearest" });
+	});
+
+	// Comments projected onto the scrubber — click a marker (handled inside the
+	// player) to seek; we also surface the comment in the panel.
+	const commentMarkers = $derived(buildCommentMarkers(comments, commentHue));
+
+	function onPlayerAction(e: RecastPlayerActionEvent) {
+		if (e.type !== "marker-select") return;
+		activeTab = "comments";
+		ended = false;
+		if (!browser) return;
+		const id = e.marker.id;
+		queueMicrotask(() => {
+			document
+				.getElementById(`comment-${id}`)
+				?.scrollIntoView({ block: "center", behavior: "smooth" });
+		});
+	}
 
 	// Scroll-aware top bar: once the title scrolls under the sticky header
 	// we fade the owner + title into the bar so the viewer keeps context
@@ -850,7 +952,7 @@
 		<!-- Top bar — brand left, light viewer/owner actions right. The mode
 		     switcher is gone; the only chrome here is theme, share, account. -->
 		<header class="sticky top-0 z-30 border-b border-border-low/30 bg-background/70 backdrop-blur-xl">
-			<div class="relative mx-auto flex max-w-4xl items-center gap-3 px-5 py-3 sm:px-6">
+			<div class="relative mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-6">
 				<!-- Left mark. For Pro shares this should swap to the owner's
 				     custom logo (branding feature, not wired yet) — the slot is
 				     here so that change is a one-line conditional later. -->
@@ -908,7 +1010,12 @@
 					     can view, comments, CTA, analytics) gated behind canManage. -->
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
-							class="group/share inline-flex h-9 items-center gap-1.5 rounded-xl border border-transparent bg-primary px-3 text-xs font-semibold text-primary-foreground shadow-craft-sm transition-all hover:scale-[1.02] hover:bg-primary/95 active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-primary"
+							class={cn(
+								"group/share inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-craft-sm transition-all hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-primary",
+								canManage
+									? "border border-transparent bg-primary text-primary-foreground hover:bg-primary/95"
+									: "border border-border/40 bg-foreground/5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
+							)}
 						>
 							<Share2 class="size-3.5" />
 							<span class="max-sm:hidden">Share</span>
@@ -1066,10 +1173,16 @@
 			</div>
 		</header>
 
-		<main class="mx-auto max-w-4xl px-5 pb-20 pt-6 sm:px-6">
-			<!-- Player hero. End-card overlays the player when the video ends
-			     AND the owner set a CTA — the highest-intent moment to ask
-			     for the next step. -->
+		<main class="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-6">
+			<!-- Two-pane on desktop: sticky video + context on the left, the
+			     transcript/comments panel on the right so viewers watch and
+			     engage at once. Collapses to a single stack on mobile. -->
+			<div class="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-8">
+			<!-- LEFT — player, title/meta, CTA, reactions. -->
+			<div class="min-w-0">
+			<!-- Player hero. End-card overlays the player when the video ends —
+			     the owner's next-step CTA, or (for a stranger) a quiet nudge to
+			     record their own. Highest-intent moment either way. -->
 			<section class="relative">
 				<div class="glass-card relative overflow-hidden rounded-2xl shadow-craft-xl">
 					{#if recast?.src}
@@ -1080,8 +1193,10 @@
 							title={recast.title}
 							aspectRatio={playerAspect}
 							tracks={captionTracks}
+							markers={commentMarkers}
 							controls={{ captions: captionTracks.length > 0 }}
 							onengagement={onEngagement}
+							onaction={onPlayerAction}
 						/>
 					{:else}
 						<div class="grid aspect-video place-items-center bg-foreground/5 text-sm text-muted-foreground">
@@ -1089,7 +1204,7 @@
 						</div>
 					{/if}
 
-					{#if showEndCard && cta}
+					{#if showOwnerEndCard && cta}
 						<!-- z-50 lifts the end-card above the player's controls
 						     (media-chrome tops out at z-index 6); without it the
 						     center play button sits on top and eats the clicks
@@ -1103,6 +1218,32 @@
 								<Button href={cta.url} target="_blank" rel="noopener" size="lg" class="gap-2">
 									{cta.label}
 									<ExternalLink class="size-4" />
+								</Button>
+								<button
+									type="button"
+									onclick={replay}
+									class="inline-flex items-center gap-1.5 text-xs font-medium text-white/60 transition-colors hover:text-white"
+								>
+									<RotateCcw class="size-3.5" />
+									Replay
+								</button>
+							</div>
+						</div>
+					{:else if showStrangerEndCard}
+						<!-- No owner CTA: turn the finished-watching moment into the
+						     growth loop instead of a blank overlay. -->
+						<div
+							class="absolute inset-0 z-50 grid place-items-center bg-black/70 backdrop-blur-sm"
+							in:fade={{ duration: 220, easing: cubicOut }}
+						>
+							<div class="flex flex-col items-center gap-4 px-6 text-center" in:scale={{ start: 0.95, duration: 280, easing: quintOut, opacity: 0.4 }}>
+								<span class="grid size-11 place-items-center rounded-2xl bg-white/10 p-1.5 text-white ring-1 ring-white/15">
+									<Logo size="24" color="transparent" fill="currentColor" />
+								</span>
+								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this — free with Recast.</p>
+								<Button href="/" size="lg" class="gap-2">
+									Record your own
+									<ArrowRight class="size-4" />
 								</Button>
 								<button
 									type="button"
@@ -1194,145 +1335,223 @@
 					<span class="ml-1 text-xs text-muted-foreground">{totalReactions} {totalReactions === 1 ? "reaction" : "reactions"}</span>
 				{/if}
 			</div>
+			</div><!-- /LEFT -->
 
-			<!-- Comments — collapsible disclosure, only when the owner allows
-			     them. Name-only: viewers comment without an account. -->
-			{#if commentsEnabled}
-				<section class="mt-6">
-					<button
-						type="button"
-						onclick={() => (commentsOpen = !commentsOpen)}
-						class="flex w-full items-center gap-2 rounded-xl px-1 py-1.5 text-left transition-colors hover:text-foreground"
-						aria-expanded={commentsOpen}
-					>
-						<MessageSquare class="size-4 text-muted-foreground" />
-						<span class="text-sm font-semibold">Comments</span>
-						<span class="rounded-md bg-foreground/8 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
-							{comments.length}
-						</span>
-						<ChevronDown class={cn("ml-auto size-4 text-muted-foreground transition-transform", commentsOpen && "rotate-180")} />
-					</button>
+			<!-- RIGHT — engagement panel. Sticky + internally scrollable on
+			     desktop so the video stays put while a viewer reads the
+			     transcript or the thread; a normal stacked block on mobile.
+			     Name-only: viewers comment without an account. -->
+			{#if hasTranscript || commentsEnabled}
+				<aside class="mt-6 lg:mt-0 lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
+					<div class="glass-card flex h-full flex-col overflow-hidden rounded-2xl border border-border-low/40 shadow-craft-sm">
+						<!-- Tab bar -->
+						<div role="tablist" aria-label="Transcript and comments" class="flex shrink-0 items-center gap-1 border-b border-border-low/40 p-1.5">
+							{#if hasTranscript}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={activeTab === "transcript"}
+									onclick={() => (activeTab = "transcript")}
+									class={cn(
+										"inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+										activeTab === "transcript" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									<FileText class="size-3.5" />
+									Transcript
+								</button>
+							{/if}
+							{#if commentsEnabled}
+								<button
+									type="button"
+									role="tab"
+									aria-selected={activeTab === "comments"}
+									onclick={() => (activeTab = "comments")}
+									class={cn(
+										"inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
+										activeTab === "comments" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:text-foreground",
+									)}
+								>
+									<MessageSquare class="size-3.5" />
+									Comments
+									{#if comments.length > 0}
+										<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
+									{/if}
+								</button>
+							{/if}
+						</div>
 
-					{#if commentsOpen}
-						<div class="mt-2" transition:slide={{ duration: 220, easing: cubicOut }}>
-							<!-- Composer -->
-							<div class="glass-card rounded-2xl border border-border-low/40 p-3 shadow-craft-sm">
-								<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-									<input
-										bind:value={viewerName}
-										type="text"
-										placeholder="Your name"
-										maxlength="60"
-										class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 sm:w-36 sm:shrink-0"
-									/>
-									<div class="flex flex-1 items-center gap-2">
+						<!-- Transcript tab — cues read off the player's live caption
+						     track; the current line lights and auto-scrolls, click to
+						     seek, search to filter. -->
+						{#if hasTranscript && activeTab === "transcript"}
+							<div class="flex min-h-0 flex-1 flex-col">
+								<div class="shrink-0 border-b border-border-low/40 p-2.5">
+									<div class="relative">
+										<Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
 										<input
-											bind:this={inputEl}
-											bind:value={draftText}
+											bind:value={transcriptQuery}
 											type="text"
-											placeholder="Comment at {formatTime(currentTime)}…"
-											onkeydown={(e) => {
-												if (e.key === "Enter" && !e.shiftKey) {
-													e.preventDefault();
-													submitComment();
-												}
-											}}
-											class="min-w-0 flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+											placeholder="Search transcript…"
+											class="w-full rounded-lg border border-border-low/70 bg-background/80 py-2 pl-8 pr-3 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
 										/>
-										<Tooltip.Provider delayDuration={250}>
-											<Tooltip.Root>
-												<Tooltip.Trigger
-													onclick={insertCurrentTimestamp}
-													aria-label="Insert current timestamp"
-													class="grid size-9 shrink-0 place-items-center rounded-lg border border-border-low/70 bg-background/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
-												>
-													<Clock class="size-3.5" />
-												</Tooltip.Trigger>
-												<Tooltip.Content sideOffset={8}>
-													<span class="text-[11px]">Insert <span class="font-mono">[{formatTime(currentTime)}]</span></span>
-												</Tooltip.Content>
-											</Tooltip.Root>
-										</Tooltip.Provider>
-										<Button size="sm" class="shrink-0 gap-1.5" disabled={!draftText.trim() || !viewerName.trim()} onclick={submitComment}>
-											Post
-											<ArrowRight class="size-3.5" />
-										</Button>
 									</div>
 								</div>
-								<p class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[10px] text-muted-foreground">
-									<span class="inline-flex items-center gap-1"><Clock class="size-2.5" /><span class="font-mono">[m:ss]</span> jumps to a time</span>
-									<span aria-hidden="true">·</span>
-									<span class="inline-flex items-center gap-1"><AtSign class="size-2.5" /><span class="font-mono">@name</span> mentions someone</span>
-								</p>
-							</div>
-
-							<!-- Thread -->
-							{#if comments.length === 0}
-								<p class="mt-4 px-1 text-sm text-muted-foreground">No comments yet. Be the first.</p>
-							{:else}
-								<ul class="mt-2">
-									{#each comments as c (c.id)}
-										{@const within = Math.abs(c.atSeconds - smoothedTime.current) < 5}
-										<li
-											class={cn(
-												"group/comment flex items-start gap-3 rounded-xl px-2 py-3 transition-colors",
-												within ? "bg-primary/8" : "hover:bg-foreground/4",
-											)}
-										>
+								<div bind:this={transcriptListEl} class="min-h-0 flex-1 overflow-y-auto p-1.5">
+									{#if transcriptCues.length === 0}
+										<p class="px-2 py-8 text-center text-xs text-muted-foreground">Preparing transcript…</p>
+									{:else if filteredCues.length === 0}
+										<p class="px-2 py-8 text-center text-xs text-muted-foreground">No lines match “{transcriptQuery}”.</p>
+									{:else}
+										{#each filteredCues as cue, i (cue.id)}
+											{@const isActive = !transcriptQuery.trim() && activeCue === i}
 											<button
 												type="button"
-												onclick={() => jumpTo(c.atSeconds)}
-												aria-label="Jump to {c.authorName}'s comment at {formatTime(c.atSeconds)}"
-												class="grid size-8 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white transition-transform hover:scale-105"
-												style="background: hsl({commentHue(c.authorName)} 60% 45%);"
+												data-cue={i}
+												onclick={() => jumpTo(cue.start)}
+												class={cn(
+													"group/cue flex w-full gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors",
+													isActive ? "bg-primary/10" : "hover:bg-foreground/5",
+												)}
 											>
-												{c.authorName[0]?.toUpperCase()}
+												<span class={cn("shrink-0 pt-px font-mono text-[10px] tabular-nums", isActive ? "text-primary" : "text-muted-foreground group-hover/cue:text-foreground")}>
+													{formatTime(cue.start)}
+												</span>
+												<span class={cn("text-[13px] leading-relaxed", isActive ? "text-foreground" : "text-foreground/70")}>
+													{cue.text}
+												</span>
 											</button>
-											<div class="min-w-0 flex-1">
-												<div class="flex items-center gap-2">
-													<span class="text-sm font-semibold">{c.authorName}</span>
+										{/each}
+									{/if}
+								</div>
+							</div>
+						{/if}
+
+						<!-- Comments tab — thread scrolls, composer pinned to the
+						     bottom so it's always reachable beside the video. -->
+						{#if commentsEnabled && activeTab === "comments"}
+							<div class="flex min-h-0 flex-1 flex-col">
+								<div class="min-h-0 flex-1 overflow-y-auto p-2">
+									{#if comments.length === 0}
+										<p class="px-1 py-8 text-center text-sm text-muted-foreground">No comments yet. Be the first.</p>
+									{:else}
+										<ul>
+											{#each comments as c (c.id)}
+												{@const within = Math.abs(c.atSeconds - smoothedTime.current) < 5}
+												<li
+													id={`comment-${c.id}`}
+													class={cn(
+														"group/comment flex items-start gap-3 rounded-xl px-2 py-3 transition-colors",
+														within ? "bg-primary/8" : "hover:bg-foreground/4",
+													)}
+												>
 													<button
 														type="button"
 														onclick={() => jumpTo(c.atSeconds)}
-														class={cn("font-mono text-[10px] tabular-nums transition-colors hover:text-primary", within ? "text-primary" : "text-muted-foreground")}
+														aria-label="Jump to {c.authorName}'s comment at {formatTime(c.atSeconds)}"
+														class="grid size-8 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white transition-transform hover:scale-105"
+														style="background: hsl({commentHue(c.authorName)} 60% 45%);"
 													>
-														{formatTime(c.atSeconds)}
+														{c.authorName[0]?.toUpperCase()}
 													</button>
-													{#if c.mine || canManage}
-														<button
-															type="button"
-															onclick={() => removeComment(c.id)}
-															aria-label="Delete comment"
-															class="ml-auto grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/comment:opacity-100"
-														>
-															<Trash2 class="size-3" />
-														</button>
-													{/if}
-												</div>
-												<p class="mt-0.5 text-[13px] leading-relaxed text-foreground/85">
-													{#each parseCommentText(c.body) as seg, i (i)}
-														{#if seg.kind === "text"}<!--
-														-->{seg.text}<!--
-													-->{:else if seg.kind === "timestamp"}<!--
-														--><button
-															type="button"
-															onclick={() => jumpTo(seg.seconds)}
-															class="mx-px inline-flex -translate-y-px items-center px-1 align-middle text-[11px] font-medium text-primary transition-colors hover:underline"
-														>{formatTime(seg.seconds)}</button><!--
-													-->{:else if seg.kind === "mention"}<!--
-														--><span class="mx-px rounded-md bg-foreground/10 px-1 font-medium text-foreground">@{seg.name}</span><!--
-													-->{/if}
-													{/each}
-												</p>
-											</div>
-										</li>
-									{/each}
-								</ul>
-							{/if}
-						</div>
-					{/if}
-				</section>
+													<div class="min-w-0 flex-1">
+														<div class="flex items-center gap-2">
+															<span class="text-sm font-semibold">{c.authorName}</span>
+															<button
+																type="button"
+																onclick={() => jumpTo(c.atSeconds)}
+																class={cn("font-mono text-[10px] tabular-nums transition-colors hover:text-primary", within ? "text-primary" : "text-muted-foreground")}
+															>
+																{formatTime(c.atSeconds)}
+															</button>
+															{#if c.mine || canManage}
+																<button
+																	type="button"
+																	onclick={() => removeComment(c.id)}
+																	aria-label="Delete comment"
+																	class="ml-auto grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground opacity-0 transition-all hover:bg-destructive/10 hover:text-destructive focus-visible:opacity-100 group-hover/comment:opacity-100"
+																>
+																	<Trash2 class="size-3" />
+																</button>
+															{/if}
+														</div>
+														<p class="mt-0.5 text-[13px] leading-relaxed text-foreground/85">
+															{#each parseCommentText(c.body) as seg, i (i)}
+																{#if seg.kind === "text"}<!--
+																-->{seg.text}<!--
+															-->{:else if seg.kind === "timestamp"}<!--
+																--><button
+																	type="button"
+																	onclick={() => jumpTo(seg.seconds)}
+																	class="mx-px inline-flex -translate-y-px items-center px-1 align-middle text-[11px] font-medium text-primary transition-colors hover:underline"
+																>{formatTime(seg.seconds)}</button><!--
+															-->{:else if seg.kind === "mention"}<!--
+																--><span class="mx-px rounded-md bg-foreground/10 px-1 font-medium text-foreground">@{seg.name}</span><!--
+															-->{/if}
+															{/each}
+														</p>
+													</div>
+												</li>
+											{/each}
+										</ul>
+									{/if}
+								</div>
+								<!-- Composer (pinned) -->
+								<div class="shrink-0 border-t border-border-low/40 p-2.5">
+									<div class="flex flex-col gap-2">
+										<input
+											bind:value={viewerName}
+											type="text"
+											placeholder="Your name"
+											maxlength="60"
+											class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+										/>
+										<div class="flex items-center gap-2">
+											<input
+												bind:this={inputEl}
+												bind:value={draftText}
+												type="text"
+												placeholder="Comment at {formatTime(currentTime)}…"
+												onkeydown={(e) => {
+													if (e.key === "Enter" && !e.shiftKey) {
+														e.preventDefault();
+														submitComment();
+													}
+												}}
+												class="min-w-0 flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+											/>
+											<Tooltip.Provider delayDuration={250}>
+												<Tooltip.Root>
+													<Tooltip.Trigger
+														onclick={insertCurrentTimestamp}
+														aria-label="Insert current timestamp"
+														class="grid size-9 shrink-0 place-items-center rounded-lg border border-border-low/70 bg-background/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+													>
+														<Clock class="size-3.5" />
+													</Tooltip.Trigger>
+													<Tooltip.Content sideOffset={8}>
+														<span class="text-[11px]">Insert <span class="font-mono">[{formatTime(currentTime)}]</span></span>
+													</Tooltip.Content>
+												</Tooltip.Root>
+											</Tooltip.Provider>
+											<Button size="sm" class="shrink-0 gap-1.5" disabled={!draftText.trim() || !viewerName.trim()} onclick={submitComment}>
+												Post
+												<ArrowRight class="size-3.5" />
+											</Button>
+										</div>
+										<p class="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[10px] text-muted-foreground">
+											<span class="inline-flex items-center gap-1"><Clock class="size-2.5" /><span class="font-mono">[m:ss]</span> jumps</span>
+											<span aria-hidden="true">·</span>
+											<span class="inline-flex items-center gap-1"><AtSign class="size-2.5" /><span class="font-mono">@name</span> mentions</span>
+										</p>
+									</div>
+								</div>
+							</div>
+						{/if}
+					</div>
+				</aside>
 			{/if}
+			</div><!-- /grid -->
 
 			<!-- Free-tier growth loop: every shared link quietly markets
 			     Recast. Pro removes the watermark, so this hides for them. -->
