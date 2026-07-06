@@ -26,6 +26,8 @@
 		UserCog,
 	} from "@lucide/svelte";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	const t = $derived(data.target);
@@ -238,6 +240,8 @@
 				{:else}
 					<p class="text-xs text-muted-foreground">No subscription record.</p>
 				{/if}
+			{:catch}
+				<InlineError message="Couldn't load subscription." />
 			{/await}
 		</div>
 
@@ -295,6 +299,8 @@
 					(<Skeleton class="inline-block h-3 w-4 align-middle" />)
 				{:then sessions}
 					({sessions.length})
+				{:catch}
+					<!-- value hidden; the section below surfaces the error + retry -->
 				{/await}
 			</span>
 			<ChevronDown class="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/coll:rotate-180" />
@@ -373,6 +379,8 @@
 					{:else}
 						<p class="text-sm text-muted-foreground">No active sessions.</p>
 					{/if}
+				{:catch}
+					<InlineError message="Couldn't load sessions." />
 				{/await}
 			</div>
 		</Collapsible.Content>
@@ -426,6 +434,8 @@
 					(<Skeleton class="inline-block h-3 w-4 align-middle" />)
 				{:then audit}
 					({audit.length})
+				{:catch}
+					<!-- value hidden; the section below surfaces the error + retry -->
 				{/await}
 			</span>
 			<ChevronDown class="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]/coll:rotate-180" />
@@ -458,6 +468,8 @@
 					{:else}
 						<p class="text-sm text-muted-foreground">No audit entries yet.</p>
 					{/if}
+				{:catch}
+					<InlineError message="Couldn't load the audit log." />
 				{/await}
 			</div>
 		</Collapsible.Content>

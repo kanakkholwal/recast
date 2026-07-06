@@ -124,19 +124,57 @@
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   6. Bottom chrome gradient fade — readability over any frame
+   6. Floating glass pill — the control bar is detached from the video
+   edges (inset margin via the transparent host bar) and rendered as a
+   single frosted, rounded surface. A faint bottom scrim keeps the pill
+   legible when it floats over a bright frame.
    ────────────────────────────────────────────────────────────────── */
 
 .recast-control-bar {
 	background: linear-gradient(
 		to top,
-		rgba(0, 0, 0, 0.82),
-		rgba(0, 0, 0, 0.38),
+		rgba(0, 0, 0, 0.35),
 		rgba(0, 0, 0, 0)
 	);
-	padding: 10px 12px 8px;
-	gap: 4px;
+	display: flex;
+	align-items: stretch;
+	padding: 0 16px 16px;
+	gap: 0;
+}
+
+.recast-pill {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	width: 100%;
+	padding: 5px 8px;
+	border-radius: 16px;
+	background: rgba(18, 18, 17, 0.5);
+	border: 1px solid rgba(255, 255, 255, 0.1);
+	box-shadow:
+		0 12px 34px -8px rgba(0, 0, 0, 0.5),
+		0 2px 8px -2px rgba(0, 0, 0, 0.3),
+		inset 0 1px 0 rgba(255, 255, 255, 0.06);
+	backdrop-filter: blur(22px) saturate(150%);
+	-webkit-backdrop-filter: blur(22px) saturate(150%);
+}
+
+.recast-pill-row {
+	display: flex;
 	align-items: center;
+	gap: 2px;
+}
+
+.recast-group {
+	display: flex;
+	align-items: center;
+	gap: 2px;
+	min-width: 0;
+}
+
+/* Push the utility cluster to the right edge of the row. */
+.recast-group-end {
+	margin-left: auto;
 }
 
 media-controller.recast-player.recast-player-theater {
@@ -148,8 +186,8 @@ media-controller.recast-player.recast-player-theater {
    ────────────────────────────────────────────────────────────────── */
 
 .recast-btn {
-	height: 36px;
-	min-width: 36px;
+	height: 34px;
+	min-width: 34px;
 	border-radius: 999px;
 	transition: background-color 150ms ease, color 150ms ease;
 	color: rgba(255, 255, 255, 0.92);
@@ -249,7 +287,7 @@ media-controller.recast-player.recast-player-theater {
    hover for easier scrubbing without snapping shut. */
 .recast-volume {
 	width: 72px;
-	height: 36px;
+	height: 34px;
 	transition: width 180ms ease;
 }
 
@@ -326,20 +364,21 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 .recast-scrubber {
 	flex: 1;
 	min-width: 60px;
-	margin: 0 8px;
-	height: 36px;
+	margin: 0 6px;
+	height: 26px;
 }
 
+/* Full-width top row of the pill; the button row sits below it. */
 .recast-scrubber-wrap {
 	position: relative;
 	display: flex;
-	flex: 1;
+	width: 100%;
 	align-items: center;
 }
 
 .recast-marker-rail {
 	position: absolute;
-	inset: 50% 8px auto 8px;
+	inset: 50% 6px auto 6px;
 	height: 14px;
 	transform: translateY(-50%);
 	pointer-events: none;
@@ -367,8 +406,8 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	letter-spacing: -0.01em;
 	color: rgba(255, 255, 255, 0.78);
 	font-variant-numeric: tabular-nums;
-	padding: 0 8px;
-	height: 36px;
+	padding: 0 6px 0 4px;
+	height: 34px;
 	display: inline-flex;
 	align-items: center;
 }
@@ -396,7 +435,12 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 
 @media (max-width: 640px) {
 	.recast-control-bar {
-		padding-inline: 8px;
+		padding: 0 10px 10px;
+	}
+
+	.recast-pill {
+		border-radius: 14px;
+		padding: 4px 6px;
 	}
 
 	.recast-volume {
@@ -407,8 +451,12 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 		width: 56px;
 		height: 56px;
 	}
+}
 
-	.recast-marker-rail {
-		inset-inline: 6px;
+/* Very narrow: drop the ±10s jog buttons so the transport group doesn't
+   crowd the pill — tap-to-seek on the scrubber covers the same intent. */
+@media (max-width: 460px) {
+	.recast-btn-seek {
+		display: none;
 	}
 }

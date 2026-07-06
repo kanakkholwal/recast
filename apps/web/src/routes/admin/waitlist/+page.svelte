@@ -6,6 +6,8 @@
 	import { toast } from "@recast/ui/sonner";
 	import { LoaderCircle } from "@lucide/svelte";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	let selected = $state<Set<string>>(new Set());
@@ -30,6 +32,8 @@
 			Loading…
 		{:then pending}
 			{pending.length} pending {pending.length === 1 ? "user" : "users"}.
+		{:catch}
+			<!-- value hidden; the section below surfaces the error + retry -->
 		{/await}
 		Approving sets their status to active so they can sign in via magic link or password reset.
 	</p>
@@ -118,5 +122,7 @@
 				{/each}
 			</ul>
 		</div>
+	{:catch}
+		<InlineError message="Couldn't load the waitlist." />
 	{/await}
 </form>

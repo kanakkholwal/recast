@@ -47,6 +47,8 @@
 		toRole: "member" | "admin";
 	};
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	let inviteEmail = $state("");
@@ -158,9 +160,14 @@
 				label="Seats left"
 				value={Number.isFinite(seatsLeft) ? String(seatsLeft) : "Unlimited"}
 			/>
+		{:catch}
+			<StatCard icon={Users} label="Members" value="—" />
+			<StatCard icon={UserPlus} label="Seats left" value="—" />
 		{/await}
-		{#await data.invites then invites}
+		{#await data.invites}{:then invites}
 			<StatCard icon={Clock} label="Pending invites" value={String(invites.length)} />
+		{:catch}
+			<StatCard icon={Clock} label="Pending invites" value="—" />
 		{/await}
 		<StatCard icon={ShieldCheck} label="Your role" value={roleLabel} />
 	</section>
@@ -387,6 +394,8 @@
 							<p class="mt-1 text-xs text-muted-foreground">Try another search or role filter.</p>
 						</div>
 					{/if}
+				{:catch}
+					<InlineError message="Couldn't load members." />
 				{/await}
 			</SettingsSection>
 		</div>
@@ -459,6 +468,8 @@
 							<p class="text-xs text-muted-foreground">No pending invitations.</p>
 						</div>
 					{/if}
+				{:catch}
+					<InlineError message="Couldn't load invitations." />
 				{/await}
 			</SettingsSection>
 

@@ -7,6 +7,7 @@
 	  Crown,
 	  Search,
 	  ShieldOff,
+	  X,
 	} from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
@@ -16,11 +17,14 @@
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
 	import {
+		ariaSort,
 		buildPageQuery,
 		buildSortQuery,
 		buildUsersQuery,
 		sortIndicator,
 	} from "./users-filters.logic";
+
+	import InlineError from "$lib/components/InlineError.svelte";
 
 	let { data } = $props();
 
@@ -30,6 +34,15 @@
 	let searchField = $state<"email" | "name">(untrack(() => data.filters.field));
 	let roleFilter = $state<string>(untrack(() => data.filters.role ?? "all"));
 	let statusFilter = $state<string>(untrack(() => data.filters.status ?? "all"));
+
+	// Human labels for the filter controls — the raw enum values ("all",
+	// "pending") read as unfinished in the UI.
+	const FIELD_LABEL: Record<string, string> = { email: "Email", name: "Name" };
+	const ROLE_LABEL: Record<string, string> = { all: "All roles", user: "Users", admin: "Admins" };
+	const STATUS_LABEL: Record<string, string> = { all: "All statuses", active: "Active", pending: "Waitlist" };
+	const hasActiveFilters = $derived(
+		q.trim() !== "" || roleFilter !== "all" || statusFilter !== "all",
+	);
 
 	function applyFilters(reset = true) {
 		goto(
@@ -46,6 +59,41 @@
 			),
 			{ keepFocus: true },
 		);
+	}
+
+	// Live search — debounced so we don't navigate on every keystroke. Enter
+	// (form submit) applies immediately and cancels the pending debounce.
+	let searchTimer: ReturnType<typeof setTimeout> | undefined;
+	function debouncedSearch() {
+		clearTimeout(searchTimer);
+		searchTimer = setTimeout(() => applyFilters(), 350);
+	}
+	function submitSearch(e: SubmitEvent) {
+		e.preventDefault();
+		clearTimeout(searchTimer);
+		applyFilters();
+	}
+
+	// Discrete controls apply on change — no separate "Apply" step.
+	function selectField(v: string) {
+		searchField = v as "email" | "name";
+		if (q.trim()) applyFilters();
+	}
+	function selectRole(v: string) {
+		roleFilter = v;
+		applyFilters();
+	}
+	function selectStatus(v: string) {
+		statusFilter = v;
+		applyFilters();
+	}
+	function clearFilters() {
+		clearTimeout(searchTimer);
+		q = "";
+		searchField = "email";
+		roleFilter = "all";
+		statusFilter = "all";
+		applyFilters();
 	}
 
 	function changePage(delta: number) {
@@ -81,91 +129,84 @@
 				{@const startIdx = list.total === 0 ? 0 : data.offset + 1}
 				{@const endIdx = Math.min(data.offset + data.limit, list.total)}
 				{list.total.toLocaleString()} total · showing {startIdx}–{endIdx}
+			{:catch}
+				<!-- value hidden; the section below surfaces the error + retry -->
 			{/await}
 		</p>
 	</div>
 </header>
 
 <form
-	class="mb-4 flex flex-wrap items-center gap-2 bg-card/40 p-2 rounded-lg"
-	onsubmit={(e) => {
-		e.preventDefault();
-		applyFilters();
-	}}
+	class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border/40 bg-card/30 p-2"
+	onsubmit={submitSearch}
 >
-	<div class="relative flex-1 min-w-55">
+	<div class="relative min-w-56 flex-1">
 		<Search class="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
 		<Input
 			type="search"
-			placeholder="Search by {searchField}…"
+			placeholder="Search users by {FIELD_LABEL[searchField].toLowerCase()}…"
 			bind:value={q}
+			oninput={debouncedSearch}
+			aria-label="Search users"
 			class="h-9 pl-9"
 		/>
 	</div>
 
-	<Select.Root type="single" bind:value={searchField}>
-		<Select.Trigger class="h-9 w-32">
-			{searchField}
+	<Select.Root type="single" value={searchField} onValueChange={selectField}>
+		<Select.Trigger class="h-9 w-28" aria-label="Search field">
+			{FIELD_LABEL[searchField]}
 		</Select.Trigger>
 		<Select.Content>
-			<Select.Item value="email">email</Select.Item>
-			<Select.Item value="name">name</Select.Item>
+			<Select.Item value="email">Email</Select.Item>
+			<Select.Item value="name">Name</Select.Item>
 		</Select.Content>
 	</Select.Root>
 
-	<Select.Root type="single" bind:value={roleFilter}>
-		<Select.Trigger class="h-9 w-32">
-			role: {roleFilter}
+	<Select.Root type="single" value={roleFilter} onValueChange={selectRole}>
+		<Select.Trigger class="h-9 w-36" aria-label="Filter by role">
+			{ROLE_LABEL[roleFilter]}
 		</Select.Trigger>
 		<Select.Content>
-			<Select.Item value="all">all</Select.Item>
-			<Select.Item value="user">user</Select.Item>
-			<Select.Item value="admin">admin</Select.Item>
+			<Select.Item value="all">All roles</Select.Item>
+			<Select.Item value="user">Users</Select.Item>
+			<Select.Item value="admin">Admins</Select.Item>
 		</Select.Content>
 	</Select.Root>
 
-	<Select.Root type="single" bind:value={statusFilter}>
-		<Select.Trigger class="h-9 w-36">
-			status: {statusFilter}
+	<Select.Root type="single" value={statusFilter} onValueChange={selectStatus}>
+		<Select.Trigger class="h-9 w-40" aria-label="Filter by status">
+			{STATUS_LABEL[statusFilter]}
 		</Select.Trigger>
 		<Select.Content>
-			<Select.Item value="all">all</Select.Item>
-			<Select.Item value="active">active</Select.Item>
-			<Select.Item value="pending">pending</Select.Item>
+			<Select.Item value="all">All statuses</Select.Item>
+			<Select.Item value="active">Active</Select.Item>
+			<Select.Item value="pending">Waitlist</Select.Item>
 		</Select.Content>
 	</Select.Root>
 
-	<Button type="submit" size="sm">Apply</Button>
-	<Button
-		type="button"
-		size="sm"
-		variant="ghost"
-		onclick={() => {
-			q = "";
-			searchField = "email";
-			roleFilter = "all";
-			statusFilter = "all";
-			applyFilters();
-		}}
-	>
-		Reset
-	</Button>
+	{#if hasActiveFilters}
+		<Button type="button" size="sm" variant="ghost" class="gap-1.5 text-muted-foreground" onclick={clearFilters}>
+			<X class="size-3.5" /> Clear
+		</Button>
+	{/if}
 </form>
 
-<div class="glass-card overflow-hidden rounded-xl">
+<!-- Desktop: semantic sortable table. Hidden below lg where it would force
+     horizontal scroll; the card grid below takes over there. -->
+<div class="hidden overflow-hidden rounded-xl glass-card lg:block">
 	<div class="overflow-x-auto">
 		<table class="w-full min-w-160 text-left text-sm">
 			<thead class="border-b border-border/40 bg-foreground/2 text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
 				<tr>
-					<th class="px-4 py-2.5">
-						<button class="font-semibold hover:text-foreground" onclick={() => toggleSort("name")}>
-							User {sortIndicator(data.filters.sort, data.filters.dir, "name")}
+					<th class="px-4 py-2.5" aria-sort={ariaSort(data.filters.sort, data.filters.dir, "name")}>
+						<button class="inline-flex items-center gap-1 font-semibold transition-colors hover:text-foreground" onclick={() => toggleSort("name")}>
+							User <span class="text-primary">{sortIndicator(data.filters.sort, data.filters.dir, "name")}</span>
 						</button>
 					</th>
 					<th class="px-4 py-2.5">Role / Status</th>
-					<th class="px-4 py-2.5">
-						<button class="font-semibold hover:text-foreground" onclick={() => toggleSort("createdAt")}>
-							Joined {sortIndicator(data.filters.sort, data.filters.dir, "createdAt")}
+					<th class="px-4 py-2.5" aria-sort={ariaSort(data.filters.sort, data.filters.dir, "createdAt")}>
+						<button class="inline-flex items-center gap-1 font-semibold transition-colors hover:text-foreground" onclick={() => toggleSort("createdAt")}>
+							Joined <span class="text-primary">{sortIndicator(data.filters.sort, data.filters.dir, "createdAt")}</span>
 						</button>
 					</th>
 					<th class="px-4 py-2.5 text-right">Actions</th>
@@ -243,10 +284,70 @@
 							</td>
 						</tr>
 					{/each}
+				{:catch}
+					<tr>
+						<td colspan="4" class="px-4 py-6">
+							<InlineError message="Couldn't load users." />
+						</td>
+					</tr>
 				{/await}
 			</tbody>
 		</table>
 	</div>
+</div>
+
+<!-- Mobile / tablet: one card per user (no horizontal scroll). -->
+<div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:hidden">
+	{#await data.list}
+		{#each Array(6) as _, i (i)}
+			<div class="glass-card rounded-xl p-3">
+				<div class="space-y-1.5">
+					<Skeleton class="h-3.5 w-32" />
+					<Skeleton class="h-3 w-44" />
+				</div>
+				<div class="mt-3 flex items-center justify-between">
+					<Skeleton class="h-5 w-16" />
+					<Skeleton class="h-3 w-14" />
+				</div>
+			</div>
+		{/each}
+	{:then list}
+		{#each list.users as u (u.id)}
+			<a href="/admin/users/{u.id}" class="glass-card block rounded-xl p-3 transition-colors hover:bg-foreground/2">
+				<div class="flex items-start justify-between gap-2">
+					<div class="min-w-0">
+						<span class="block truncate font-medium">{u.name}</span>
+						<span class="block truncate text-xs text-muted-foreground">{u.email}</span>
+					</div>
+					<div class="flex shrink-0 flex-wrap justify-end gap-1">
+						{#if u.role === "admin"}
+							<Badge variant="secondary" class="gap-1"><Crown class="size-3" /> admin</Badge>
+						{:else}
+							<Badge variant="outline">user</Badge>
+						{/if}
+						{#if u.status === "pending"}
+							<Badge variant="outline" class="text-amber-600 dark:text-amber-400">waitlist</Badge>
+						{/if}
+						{#if u.banned}
+							<Badge variant="destructive" class="gap-1"><ShieldOff class="size-3" /> banned</Badge>
+						{/if}
+					</div>
+				</div>
+				<div class="mt-2.5 flex items-center justify-between text-xs text-muted-foreground">
+					<span>Joined {new Date(u.createdAt).toLocaleDateString()}</span>
+					<span class="font-medium text-foreground/70">Manage →</span>
+				</div>
+			</a>
+		{:else}
+			<div class="glass-card col-span-full rounded-xl px-4 py-10 text-center text-sm text-muted-foreground">
+				No users match these filters.
+			</div>
+		{/each}
+	{:catch}
+		<div class="col-span-full">
+			<InlineError message="Couldn't load users." />
+		</div>
+	{/await}
 </div>
 
 <div class="mt-4 flex items-center justify-between text-xs text-muted-foreground">
@@ -280,5 +381,7 @@
 				Next <ChevronRight class="size-3.5" />
 			</Button>
 		</div>
+	{:catch}
+		<!-- value hidden; the section below surfaces the error + retry -->
 	{/await}
 </div>

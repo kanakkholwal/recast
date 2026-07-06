@@ -37,10 +37,7 @@
 	  ExternalLink,
 	  Eye,
 	  FileText,
-	  Flame,
 	  Globe,
-	  Heart,
-	  Laugh,
 	  LayoutDashboard,
 	  Link2,
 	  Lock,
@@ -49,16 +46,13 @@
 	  Megaphone,
 	  MessageSquare,
 	  Moon,
-	  PartyPopper,
 	  PencilLine,
 	  RotateCcw,
 	  Search,
 	  Settings,
 	  Share2,
 	  ShieldOff,
-	  Sparkles,
 	  Sun,
-	  ThumbsUp,
 	  Trash2,
 	  User,
 	  UserCheck,
@@ -99,7 +93,8 @@
 		type ReactionCount,
 		type ShareComment,
 	} from "$lib/share/client";
-	import { REACTIONS, type ReactionId } from "$lib/share/reactions";
+	import { REACTIONS } from "$lib/share/reactions";
+	import ReactionIcon from "$lib/share/ReactionIcon.svelte";
 
 	let { data } = $props();
 
@@ -484,6 +479,7 @@
 	function onPlayerAction(e: RecastPlayerActionEvent) {
 		if (e.type !== "marker-select") return;
 		activeTab = "comments";
+		panelOpen = true;
 		ended = false;
 		if (!browser) return;
 		const id = e.marker.id;
@@ -593,24 +589,19 @@
 	function countFor(emoji: string): number {
 		return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
 	}
-	// Reaction id → Lucide icon (the swap point: change a mapping, keep the
-	// stored id + data intact). Design system is Lucide-only, so these are line
-	// icons tinted with each reaction's accent hue on the active/hover state.
-	const REACTION_ICON = {
-		like: ThumbsUp,
-		love: Heart,
-		laugh: Laugh,
-		wow: Sparkles,
-		celebrate: PartyPopper,
-		fire: Flame,
-	} satisfies Record<ReactionId, typeof ThumbsUp>;
-
-	// ── On-demand engagement panel (docked, non-modal) ────────────────
-	// Watching is the primary job, so the conversation/transcript is off to the
-	// side and only slides in when the viewer asks for it — the video keeps
-	// playing behind it (no dimming overlay on desktop).
+	// The engagement rail (Transcript | Comments) lives in the page's layout as
+	// a collapsible sticky sidebar — not a slide-in sheet. The reaction-bar
+	// buttons toggle it: opening to a tab, switching tabs while open, or
+	// collapsing when you click the tab that's already showing. It only mounts
+	// when there's a populated tab, so the video reclaims full width when it's
+	// collapsed or on a bare recast.
+	const hasSidebar = $derived(hasTranscript || commentsEnabled);
 	let panelOpen = $state(false);
-	function openPanel(tab: PanelTab) {
+	function togglePanel(tab: PanelTab) {
+		if (panelOpen && activeTab === tab) {
+			panelOpen = false;
+			return;
+		}
 		activeTab = tab;
 		panelOpen = true;
 	}
@@ -696,6 +687,7 @@
 			ctaLabel?: string | null;
 			ctaUrl?: string | null;
 			commentsEnabled?: boolean;
+			title?: string;
 			description?: string | null;
 		};
 	}
@@ -763,42 +755,56 @@
 		window.history.replaceState({}, "", href);
 	}
 
-	// ── Owner description (recast blurb — shown under the video + OG card) ──
-	// Locally editable copy so an owner edit reflects at once; server-synced.
+	// ── Owner-editable video details (title + description — the recast's own
+	//    text, shown on the page and reused for the OG card). Locally mirrored
+	//    so an owner edit reflects at once; server-synced on navigation. ──────
+	let titleText = $state(untrack(() => (data.access.ok ? data.access.recast.title : "")));
 	let descriptionText = $state(
 		untrack(() => (data.access.ok ? data.access.recast.description : "")),
 	);
 	$effect(() => {
-		if (access.ok) descriptionText = access.recast.description;
+		if (access.ok) {
+			titleText = access.recast.title;
+			descriptionText = access.recast.description;
+		}
 	});
-	let descDialogOpen = $state(false);
+	let detailsOpen = $state(false);
+	let titleDraft = $state("");
 	let descDraft = $state("");
-	let savingDesc = $state(false);
+	let savingDetails = $state(false);
 
-	function openDescEditor() {
+	function openDetailsEditor() {
+		titleDraft = titleText ?? "";
 		descDraft = descriptionText ?? "";
-		descDialogOpen = true;
+		detailsOpen = true;
 	}
 
-	async function saveDescription(e: SubmitEvent) {
+	async function saveDetails(e: SubmitEvent) {
 		e.preventDefault();
-		const next = descDraft.trim();
-		savingDesc = true;
+		const title = titleDraft.trim();
+		const description = descDraft.trim();
+		if (!title) {
+			toast.error("Title can't be empty.");
+			return;
+		}
+		savingDetails = true;
 		if (isDemo) {
-			descriptionText = next;
-			descDialogOpen = false;
-			savingDesc = false;
+			titleText = title;
+			descriptionText = description;
+			detailsOpen = false;
+			savingDetails = false;
 			return;
 		}
 		try {
-			const r = await patchSettings({ description: next });
+			const r = await patchSettings({ title, description });
+			titleText = r.title ?? title;
 			descriptionText = r.description ?? "";
-			descDialogOpen = false;
-			toast.success(next ? "Description saved." : "Description removed.");
+			detailsOpen = false;
+			toast.success("Details saved.");
 		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't save the description.");
+			toast.error((err as Error)?.message ?? "Couldn't save the details.");
 		} finally {
-			savingDesc = false;
+			savingDetails = false;
 		}
 	}
 
@@ -1039,7 +1045,7 @@
 		<!-- Top bar — brand left, light viewer/owner actions right. The mode
 		     switcher is gone; the only chrome here is theme, share, account. -->
 		<header class="sticky top-0 z-30 border-b border-border-low/30 bg-background/70 backdrop-blur-xl">
-			<div class={cn("relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
+			<div class="relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 sm:px-6 lg:px-8">
 				<!-- Left mark. For Pro shares this should swap to the owner's
 				     custom logo (branding feature, not wired yet) — the slot is
 				     here so that change is a one-line conditional later. -->
@@ -1062,7 +1068,7 @@
 						<span class="grid size-6 shrink-0 place-items-center rounded-full bg-foreground/10 text-[9px] font-bold text-foreground ring-1 ring-border/40">
 							{initials(recast.sharedBy, null)}
 						</span>
-						<span class="truncate text-sm font-medium text-foreground/90">{recast.title}</span>
+						<span class="truncate text-sm font-medium text-foreground/90">{titleText}</span>
 					</div>
 				{/if}
 
@@ -1260,7 +1266,7 @@
 			</div>
 		</header>
 
-		<main class={cn("relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
+		<main class="share-main relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 sm:px-6 lg:px-8" data-has-rail={hasSidebar} data-rail={panelOpen && hasSidebar ? "open" : "closed"}>
 			<!-- Video-first: the player IS the page. Theater-sized so it fills as
 			     much of the viewport as the fold allows; the conversation and
 			     transcript are on-demand chrome (floating bar → docked panel), so
@@ -1363,7 +1369,6 @@
 			     conversation never competes with the video for space. -->
 			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low/50 bg-background/85 p-1.5 shadow-craft-lg backdrop-blur-xl">
 				{#each REACTIONS as r (r.id)}
-					{@const Icon = REACTION_ICON[r.id]}
 					{@const count = countFor(r.id)}
 					{@const mine = myReactions.has(r.id)}
 					<button
@@ -1373,14 +1378,17 @@
 						aria-label={r.label}
 						title={r.label}
 						class={cn(
-							"group/react inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-colors",
-							mine ? "bg-foreground/8" : "hover:bg-foreground/5",
+							"group/react inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-all",
+							!mine && "hover:bg-foreground/5",
 						)}
-						style={mine ? `color: hsl(${r.hue} 72% 52%)` : ""}
+						style={mine ? `background-color: hsl(${r.hue} 85% 55% / 0.16)` : ""}
 					>
-						<Icon class={cn("size-[18px] transition-transform group-hover/react:scale-110", mine && "fill-current")} />
+						<ReactionIcon id={r.id} class="size-5 transition-transform group-hover/react:scale-110" />
 						{#if count > 0}
-							<span class={cn("font-mono text-[11px] tabular-nums", !mine && "text-muted-foreground")}>{count}</span>
+							<span
+								class={cn("font-mono text-[11px] tabular-nums", !mine && "text-muted-foreground")}
+								style={mine ? `color: hsl(${r.hue} 60% 42%)` : ""}
+							>{count}</span>
 						{/if}
 					</button>
 				{/each}
@@ -1390,23 +1398,37 @@
 				{/if}
 
 				{#if commentsEnabled}
+					{@const commentsActive = panelOpen && activeTab === "comments"}
 					<button
 						type="button"
-						onclick={() => openPanel("comments")}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						onclick={() => togglePanel("comments")}
+						aria-pressed={commentsActive}
+						class={cn(
+							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+							commentsActive
+								? "bg-foreground/10 text-foreground"
+								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+						)}
 					>
 						<MessageSquare class="size-4" />
 						<span class="max-sm:hidden">Comments</span>
 						{#if comments.length > 0}
-							<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
+							<span class={cn("rounded-md px-1.5 py-0.5 font-mono text-[10px] tabular-nums", commentsActive ? "bg-foreground/15" : "bg-foreground/10")}>{comments.length}</span>
 						{/if}
 					</button>
 				{/if}
 				{#if hasTranscript}
+					{@const transcriptActive = panelOpen && activeTab === "transcript"}
 					<button
 						type="button"
-						onclick={() => openPanel("transcript")}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						onclick={() => togglePanel("transcript")}
+						aria-pressed={transcriptActive}
+						class={cn(
+							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+							transcriptActive
+								? "bg-foreground/10 text-foreground"
+								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+						)}
 					>
 						<FileText class="size-4" />
 						<span class="max-sm:hidden">Transcript</span>
@@ -1417,12 +1439,25 @@
 			<!-- Title + meta + description + CTA. Text stays a readable column even
 			     though the video goes full-width. -->
 			<div class="mx-auto mt-6 w-full max-w-3xl">
-				<h1
-					bind:this={titleAnchorEl}
-					class="text-balance text-2xl font-semibold leading-tight tracking-tight sm:text-3xl"
-				>
-					{recast?.title}
-				</h1>
+				<div class="flex items-start gap-2">
+					<h1
+						bind:this={titleAnchorEl}
+						class="text-balance text-2xl font-semibold leading-tight tracking-tight sm:text-3xl"
+					>
+						{titleText}
+					</h1>
+					{#if canManage}
+						<button
+							type="button"
+							onclick={openDetailsEditor}
+							aria-label="Edit title and description"
+							title="Edit details"
+							class="mt-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						>
+							<PencilLine class="size-4" />
+						</button>
+					{/if}
+				</div>
 				<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
 					<span>Shared by <span class="font-medium text-foreground">{recast?.sharedBy}</span></span>
 					<span aria-hidden="true">·</span>
@@ -1446,7 +1481,7 @@
 						{#if canManage}
 							<button
 								type="button"
-								onclick={openDescEditor}
+								onclick={openDetailsEditor}
 								class="ml-1.5 inline-flex items-center gap-1 align-middle text-xs font-medium text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/desc:opacity-100"
 							>
 								<PencilLine class="size-3" /> Edit
@@ -1456,7 +1491,7 @@
 				{:else if canManage}
 					<button
 						type="button"
-						onclick={openDescEditor}
+						onclick={openDetailsEditor}
 						class="mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-border-low/70 px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
 					>
 						<PencilLine class="size-3.5" />
@@ -1485,22 +1520,14 @@
 				{/if}
 			</div>
 
-			<!-- Docked engagement panel — non-modal: slides in from the right on
-			     demand and the video keeps playing behind it (no dimming overlay
-			     on desktop; a tap-scrim on mobile). Opened from the floating bar.
-			     Name-only: viewers comment without an account. -->
-			{#if panelOpen}
-				<!-- Mobile scrim — tap to dismiss (desktop keeps the video visible). -->
-				<button
-					type="button"
-					aria-label="Close panel"
-					onclick={() => (panelOpen = false)}
-					transition:fade={{ duration: 150 }}
-					class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-				></button>
+				<!-- Engagement rail — in-layout and collapsible. On desktop it's a
+				     sticky right-hand column (grid placement lives on <main>); on
+				     mobile it stacks below the video. Toggled from the reaction-bar
+				     Comments/Transcript buttons — the video reclaims full width when
+				     it's collapsed. Name-only: viewers comment without an account. -->
+			{#if hasSidebar}
 				<aside
-					class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border-low/50 bg-background/95 shadow-craft-xl backdrop-blur-xl sm:w-[400px]"
-					transition:fly={{ x: 420, duration: 280, easing: cubicOut }}
+					class="mt-4 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border-low/50 bg-background/70 shadow-craft-lg backdrop-blur-xl lg:sticky lg:top-[76px] lg:mt-0 lg:h-[calc(100dvh-100px)]"
 				>
 					<div class="flex h-full flex-col overflow-hidden">
 						<!-- Tab bar + close -->
@@ -1809,22 +1836,26 @@
 			</Dialog.Content>
 		</Dialog.Root>
 
-		<!-- Owner description editor — the video's blurb, shown under the title
-		     and reused as the OG/social-card description. -->
-		<Dialog.Root bind:open={descDialogOpen}>
+		<!-- Owner details editor — the recast's own title + blurb, shown on the
+		     page and reused as the OG/social-card text. -->
+		<Dialog.Root bind:open={detailsOpen}>
 			<Dialog.Content>
 				<Dialog.Header>
 					<Dialog.Title class="flex items-center gap-2">
 						<span class="glass-chip grid size-7 place-items-center rounded-lg text-primary">
 							<PencilLine class="size-3.5" />
 						</span>
-						Description
+						Edit details
 					</Dialog.Title>
 					<Dialog.Description>
-						A short blurb shown under the video and in the link preview when this recast is shared.
+						The title and blurb shown on the video and in the link preview when this recast is shared.
 					</Dialog.Description>
 				</Dialog.Header>
-				<form class="space-y-3" onsubmit={saveDescription}>
+				<form class="space-y-3" onsubmit={saveDetails}>
+					<Label class="block">
+						<span class="mb-1 block text-xs font-semibold text-foreground/85">Title</span>
+						<Input bind:value={titleDraft} placeholder="Untitled recast" maxlength={200} class="h-10" required />
+					</Label>
 					<Label class="block">
 						<span class="mb-1 block text-xs font-semibold text-foreground/85">Description</span>
 						<textarea
@@ -1843,13 +1874,13 @@
 								class="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
 								onclick={() => (descDraft = "")}
 							>
-								Clear
+								Clear description
 							</Button>
 						{/if}
-						<Button type="button" variant="ghost" onclick={() => (descDialogOpen = false)}>Cancel</Button>
-						<Button type="submit" disabled={savingDesc} class="gap-2">
-							{savingDesc ? "Saving…" : "Save"}
-							{#if !savingDesc}<Check class="size-4" />{/if}
+						<Button type="button" variant="ghost" onclick={() => (detailsOpen = false)}>Cancel</Button>
+						<Button type="submit" disabled={savingDetails || !titleDraft.trim()} class="gap-2">
+							{savingDetails ? "Saving…" : "Save"}
+							{#if !savingDetails}<Check class="size-4" />{/if}
 						</Button>
 					</Dialog.Footer>
 				</form>
@@ -1857,3 +1888,56 @@
 		</Dialog.Root>
 	{/if}
 {/if}
+
+
+<style>
+	/* Engagement rail open/close. The grid's second track is `auto`, so it
+	   follows the rail's own width — animating the rail's width + margin eases
+	   the video (the 1fr track) to its new size as the rail reveals. Width and
+	   margin transitions are universally supported, unlike grid-track interp. */
+	@media (min-width: 1024px) {
+		:global(.share-main[data-has-rail="true"]) {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			column-gap: 0;
+			align-items: start;
+		}
+		:global(.share-main[data-has-rail="true"] > *:not(aside)) {
+			grid-column: 1;
+		}
+		:global(.share-main[data-has-rail="true"] > aside) {
+			grid-column: 2;
+			grid-row: 1 / span 99;
+			width: 0;
+			margin-left: 0;
+			overflow: hidden;
+			opacity: 0;
+			pointer-events: none;
+			transition:
+				width 320ms cubic-bezier(0.4, 0, 0.2, 1),
+				margin-left 320ms cubic-bezier(0.4, 0, 0.2, 1),
+				opacity 240ms ease;
+		}
+		:global(.share-main[data-rail="open"] > aside) {
+			width: 360px;
+			margin-left: 1.5rem;
+			opacity: 1;
+			pointer-events: auto;
+		}
+		/* Fixed inner width so the rail clips as it grows/shrinks rather than
+		   reflowing its contents mid-animation. */
+		:global(.share-main[data-has-rail="true"] > aside > *) {
+			width: 360px;
+		}
+	}
+	@media (max-width: 1023px) {
+		:global(.share-main[data-rail="closed"] > aside) {
+			display: none;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		:global(.share-main[data-has-rail="true"] > aside) {
+			transition: none;
+		}
+	}
+</style>
