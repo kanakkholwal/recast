@@ -1,4 +1,7 @@
 <script lang="ts">
+	import * as Chart from "$components/ui/chart/index.js";
+	import { BarChart } from "layerchart";
+
 	let {
 		data,
 	}: {
@@ -7,6 +10,14 @@
 
 	const max = $derived(Math.max(1, ...data.map((d) => d.views)));
 	const total = $derived(data.reduce((s, d) => s + d.views, 0));
+
+	// Thin the x-axis to a handful of evenly-spaced ticks so 14/30-day ranges
+	// don't collapse into an unreadable wall of labels.
+	const xTicks = $derived(data.length > 8 ? 6 : undefined);
+
+	const chartConfig = {
+		views: { label: "Views", color: "var(--color-primary)" },
+	} satisfies Chart.ChartConfig;
 </script>
 
 <div class="rounded-xl border border-border-low/50 bg-background/40 p-5 backdrop-blur-sm">
@@ -24,26 +35,30 @@
 		</div>
 	</div>
 
-	<div class="mt-5 flex h-32 items-end gap-1.5">
-		{#each data as d, i (i)}
-			{@const h = Math.max(2, Math.round((d.views / max) * 100))}
-			<div class="group/bar relative flex h-full flex-1 flex-col items-center justify-end">
-				<div
-					class="w-full origin-bottom rounded-t-sm bg-linear-to-t from-primary/30 to-primary/80 ring-1 ring-inset ring-primary/10 transition-all duration-300 ease-[cubic-bezier(0.625,0.05,0,1)] group-hover/bar:from-primary/45 group-hover/bar:to-primary"
-					style="height: {h}%"
-				></div>
-				<div
-					class="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-semibold text-background opacity-0 transition-opacity duration-200 group-hover/bar:opacity-100"
-				>
-					{d.views}
-				</div>
-			</div>
-		{/each}
-	</div>
-
-	<div class="mt-3 flex justify-between text-[10px] font-medium text-muted-foreground">
-		{#each data as d, i (i)}
-			<span class="flex-1 text-center">{d.label}</span>
-		{/each}
-	</div>
+	<Chart.Container config={chartConfig} class="mt-5 aspect-auto h-32 w-full">
+		<BarChart
+			{data}
+			x="label"
+			y="views"
+			axis="x"
+			grid={false}
+			rule={false}
+			bandPadding={0.35}
+			padding={{ top: 8, bottom: 22 }}
+			highlight={{ area: { class: "fill-primary/10" } }}
+			props={{
+				xAxis: { ticks: xTicks },
+				bars: { radius: 3, fillOpacity: 0.9 },
+			}}
+		>
+			{#snippet tooltip()}
+				<Chart.Tooltip formatter={viewsRow} />
+			{/snippet}
+		</BarChart>
+	</Chart.Container>
 </div>
+
+{#snippet viewsRow({ value }: { value: unknown })}
+	<span class="text-muted-foreground">Views</span>
+	<span class="ml-auto font-mono font-medium tabular-nums text-foreground">{value}</span>
+{/snippet}

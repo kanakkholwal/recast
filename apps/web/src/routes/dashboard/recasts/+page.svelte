@@ -4,7 +4,6 @@
 	import type { ArchivedRecast } from "$lib/dashboard/components/ArchivedCard.svelte";
 	import LibraryToolbar from "$lib/dashboard/components/LibraryToolbar.svelte";
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-	import PlayerDialog from "$lib/dashboard/components/PlayerDialog.svelte";
 	import RecastGrid from "$lib/dashboard/components/RecastGrid.svelte";
 	import RenameDialog from "$lib/dashboard/components/RenameDialog.svelte";
 	import SelectionBar from "$lib/dashboard/components/SelectionBar.svelte";
@@ -66,7 +65,6 @@
 	let selectedFolder = $state<FolderSelection>("all");
 	let selectedTagIds = $state<string[]>([]);
 
-	let playing = $state<Recast | null>(null);
 	let renaming = $state<Recast | null>(null);
 	let managingTags = $state(false);
 	let creatingFolder = $state(false);
@@ -249,7 +247,6 @@
 	async function deleteRecast(rec: Recast) {
 		const snapshot = recastsStore.items;
 		recastsStore.remove(rec.id);
-		if (playing?.id === rec.id) playing = null;
 		try {
 			await api.deleteRecast(rec.id);
 			toast.success(`“${rec.title}” deleted.`);
@@ -262,7 +259,6 @@
 	async function archiveRecast(rec: Recast) {
 		const snapshot = recastsStore.items;
 		recastsStore.remove(rec.id);
-		if (playing?.id === rec.id) playing = null;
 		try {
 			await api.archiveRecast(rec.id);
 			toast.success(`“${rec.title}” archived — storage freed.`);
@@ -317,7 +313,6 @@
 		const ids = [...selectedIds];
 		const snapshot = recastsStore.items;
 		ids.forEach((id) => recastsStore.remove(id));
-		if (playing && ids.includes(playing.id)) playing = null;
 		clearSelection();
 		try {
 			await Promise.all(ids.map((id) => api.deleteRecast(id)));
@@ -698,7 +693,6 @@
 					{filtersActive}
 					uploading={upload.uploading}
 					uploadLabel={upload.label}
-					onplay={(rec) => (playing = rec)}
 					onrename={(rec) => (renaming = rec)}
 					oncopylink={copyLink}
 					onchangeposter={changePoster}
@@ -740,18 +734,6 @@
 		onaddtag={bulkAddTag}
 		ondelete={bulkDelete}
 		onclear={clearSelection}
-	/>
-{/if}
-
-{#if playing}
-	<PlayerDialog
-		recast={playing}
-		onclose={() => (playing = null)}
-		onengagement={(event) => {
-			if (event.type === "view-start" && playing) {
-				recastsStore.incrementViews(playing.id);
-			}
-		}}
 	/>
 {/if}
 

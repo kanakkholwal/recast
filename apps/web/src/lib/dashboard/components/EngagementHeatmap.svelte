@@ -1,7 +1,9 @@
 <script lang="ts">
+	import * as Chart from "$components/ui/chart/index.js";
 	import { engagementHeatmap, type EngagementMoment } from "$lib/dashboard/activity";
 	import { formatDuration } from "$lib/dashboard/format";
 	import { Flame } from "@lucide/svelte";
+	import { BarChart } from "layerchart";
 
 	// "Which moments did viewers actually react to" — reactions + comments
 	// bucketed across the video's runtime. The tallest bar is the moment people
@@ -17,6 +19,18 @@
 	const heat = $derived(engagementHeatmap(moments, durationSec, 24));
 	const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
 	const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
+
+	// Comments stack on top of reactions within each time slice; same hue, split
+	// by weight so reactions read as the dominant signal.
+	const series = [
+		{ key: "reactions", label: "Reactions", value: "reactions", color: "var(--color-primary)", props: { fillOpacity: 0.85 } },
+		{ key: "comments", label: "Comments", value: "comments", color: "var(--color-primary)", props: { fillOpacity: 0.35 } },
+	];
+
+	const chartConfig = {
+		reactions: { label: "Reactions", color: "var(--color-primary)" },
+		comments: { label: "Comments", color: "var(--color-primary)" },
+	} satisfies Chart.ChartConfig;
 </script>
 
 <section class="glass-card rounded-xl p-5">
@@ -37,31 +51,24 @@
 			No reactions or comments yet. They'll show up here, pinned to when they happened.
 		</p>
 	{:else}
-		<div class="mt-5 flex h-28 items-end gap-px">
-			{#each heat.bins as b, i (i)}
-				{@const h = Math.round((b.total / heat.max) * 100)}
-				<div class="group/bar relative flex h-full flex-1 flex-col items-stretch justify-end">
-					<!-- Comments stack on top of reactions within each slice. -->
-					{#if b.total > 0}
-						<div
-							class="w-full rounded-t-[2px] bg-primary/35 transition-colors duration-200 group-hover/bar:bg-primary/55"
-							style="height: {Math.round((b.comments / heat.max) * 100)}%"
-						></div>
-						<div
-							class="w-full bg-primary/80 transition-colors duration-200 group-hover/bar:bg-primary"
-							style="height: {Math.round((b.reactions / heat.max) * 100)}%"
-						></div>
-					{:else}
-						<div class="h-px w-full bg-foreground/10" style="height: {Math.max(2, h)}%"></div>
-					{/if}
-					<div
-						class="pointer-events-none absolute -top-9 left-1/2 z-10 -translate-x-1/2 whitespace-nowrap rounded-md bg-foreground px-1.5 py-0.5 text-[10px] font-semibold text-background opacity-0 transition-opacity duration-200 group-hover/bar:opacity-100"
-					>
-						{formatDuration(b.startSec)} · {b.reactions}★ {b.comments}💬
-					</div>
-				</div>
-			{/each}
-		</div>
+		<Chart.Container config={chartConfig} class="mt-5 aspect-auto h-28 w-full">
+			<BarChart
+				data={heat.bins}
+				x="startSec"
+				{series}
+				seriesLayout="stack"
+				axis={false}
+				grid={false}
+				rule={false}
+				bandPadding={0.15}
+				padding={{ top: 8 }}
+				props={{ bars: { radius: 2 } }}
+			>
+				{#snippet tooltip()}
+					<Chart.Tooltip labelFormatter={(v: unknown) => formatDuration(v as number)} />
+				{/snippet}
+			</BarChart>
+		</Chart.Container>
 
 		<div class="mt-3 flex items-center justify-between text-[10px] font-medium text-muted-foreground">
 			<span>0:00</span>

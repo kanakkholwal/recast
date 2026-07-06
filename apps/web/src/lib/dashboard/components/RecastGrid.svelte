@@ -43,7 +43,6 @@
 		filtersActive,
 		uploading = false,
 		uploadLabel = "",
-		onplay,
 		onrename,
 		oncopylink,
 		onchangeposter,
@@ -65,7 +64,6 @@
 		filtersActive: boolean;
 		uploading?: boolean;
 		uploadLabel?: string;
-		onplay: (rec: Recast) => void;
 		onrename: (rec: Recast) => void;
 		oncopylink: (rec: Recast) => void;
 		onchangeposter?: (rec: Recast) => void;
@@ -96,7 +94,6 @@
 						selected={selectedIds.has(rec.id)}
 						{selectionMode}
 						onToggleSelect={() => onToggleSelect(rec)}
-						onplay={() => onplay(rec)}
 						onrename={() => onrename(rec)}
 						oncopylink={() => oncopylink(rec)}
 						onchangeposter={onchangeposter ? () => onchangeposter(rec) : undefined}
@@ -133,9 +130,14 @@
 					>
 						<Check class="size-3" />
 					</button>
-					<button
-						type="button"
-						onclick={() => (selectionMode ? onToggleSelect(rec) : onplay(rec))}
+					<a
+						href="/dashboard/recasts/{rec.id}"
+						onclick={(e) => {
+							if (selectionMode) {
+								e.preventDefault();
+								onToggleSelect(rec);
+							}
+						}}
 						class="flex min-w-0 items-center gap-3 text-left"
 					>
 						<span class="relative h-11 w-16 shrink-0 overflow-hidden rounded-md bg-foreground/8">
@@ -156,7 +158,7 @@
 								{formatDuration(rec.durationSec)} · {formatBytes(rec.sizeBytes)}
 							</span>
 						</span>
-					</button>
+					</a>
 					<span class="text-sm text-muted-foreground">{formatRelative(rec.createdAt)}</span>
 					<span class="hidden text-sm text-muted-foreground md:block">{formatBytes(rec.sizeBytes)}</span>
 					<span class="font-mono text-sm tabular-nums text-foreground">{formatCount(rec.views)}</span>
@@ -168,8 +170,8 @@
 							<MoreHorizontal class="size-4" />
 						</DropdownMenu.Trigger>
 						<DropdownMenu.Content align="end" sideOffset={6} class="w-48">
-							<DropdownMenu.Item onclick={() => onplay(rec)}>
-								<Play class="size-4 text-muted-foreground" /> Play
+							<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${rec.id}`)}>
+								<Play class="size-4 text-muted-foreground" /> Open
 							</DropdownMenu.Item>
 							<DropdownMenu.Item onclick={() => onrename(rec)}>
 								<Pencil class="size-4 text-muted-foreground" /> Rename
@@ -177,7 +179,7 @@
 							<DropdownMenu.Item onclick={() => oncopylink(rec)}>
 								<Link2 class="size-4 text-muted-foreground" /> Copy link
 							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${rec.id}`)}>
+							<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${rec.id}/analytics`)}>
 								<BarChart3 class="size-4 text-muted-foreground" /> View analytics
 							</DropdownMenu.Item>
 							<DropdownMenu.Separator />

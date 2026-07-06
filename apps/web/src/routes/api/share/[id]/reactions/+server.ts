@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { shareReaction } from "$lib/db/schema";
 import { gateShareAccess } from "$lib/share/gate";
+import { reactorKey, resolveClientIp } from "$lib/share/ip";
 import { REACTION_IDS } from "$lib/share/reactions";
 import type { RequestHandler } from "./$types";
 
@@ -17,16 +18,24 @@ const ALLOWED = new Set(REACTION_IDS);
 /**
  * POST /api/share/[id]/reactions
  *
- * Toggle a reaction. Always allowed (independent of the comments toggle) —
- * reactions are the lighter, lower-abuse engagement surface. Name-only:
- * identity is the anonymous `sessionId`. One row per (share, viewer, emoji),
- * so re-posting the same emoji removes it — the button reads as a toggle.
+ * Set a reaction. Always allowed (independent of the comments toggle) —
+ * reactions are the lighter, lower-abuse engagement surface. A viewer gets ONE
+ * reaction per share, keyed by their IP (`reactorKey`), so one IP maps to one
+ * reaction:
+ *   - no current reaction → add it
+ *   - same emoji tapped again → remove it (toggle off)
+ *   - a different emoji → switch in place (never stacks)
  * `atSeconds` is recorded as owner-insight metadata, not part of identity.
  *
  * Body: { sessionId, emoji, atSeconds }
  */
-export const POST: RequestHandler = async ({ params, request, cookies }) => {
-	await gateShareAccess(params.id, request, cookies);
+export const POST: RequestHandler = async ({
+	params,
+	request,
+	cookies,
+	getClientAddress,
+}) => {
+	const gate = await gateShareAccess(params.id, request, cookies);
 
 	let body: { sessionId?: unknown; emoji?: unknown; atSeconds?: unknown } = {};
 	try {
@@ -45,30 +54,42 @@ export const POST: RequestHandler = async ({ params, request, cookies }) => {
 	if (!sessionId) error(400, "Missing session");
 	if (!ALLOWED.has(emoji)) error(400, "Unsupported reaction");
 
+	const key = reactorKey({
+		userId: gate.viewerId,
+		ip: resolveClientIp(request, getClientAddress),
+		sessionId,
+	});
 	const db = getDb();
-	const match = and(
-		eq(shareReaction.shareSlug, params.id),
-		eq(shareReaction.sessionId, sessionId),
-		eq(shareReaction.emoji, emoji),
-	);
 
+	// The reactor's current reaction, if any — one row per (share, reactor).
 	const [existing] = await db
-		.select({ id: shareReaction.id })
+		.select({ id: shareReaction.id, emoji: shareReaction.emoji })
 		.from(shareReaction)
-		.where(match)
+		.where(
+			and(eq(shareReaction.shareSlug, params.id), eq(shareReaction.ipHash, key)),
+		)
 		.limit(1);
 
 	if (existing) {
-		await db.delete(shareReaction).where(eq(shareReaction.id, existing.id));
-		return json({ ok: true, added: false });
+		if (existing.emoji === emoji) {
+			await db.delete(shareReaction).where(eq(shareReaction.id, existing.id));
+			return json({ ok: true, added: false });
+		}
+		// Switch reaction type in place — keeps it a single reaction per viewer.
+		await db
+			.update(shareReaction)
+			.set({ emoji, atSeconds, createdAt: new Date() })
+			.where(eq(shareReaction.id, existing.id));
+		return json({ ok: true, added: true, emoji });
 	}
 
 	await db.insert(shareReaction).values({
 		id: crypto.randomUUID(),
 		shareSlug: params.id,
 		sessionId,
+		ipHash: key,
 		emoji,
 		atSeconds,
 	});
-	return json({ ok: true, added: true }, { status: 201 });
+	return json({ ok: true, added: true, emoji }, { status: 201 });
 };

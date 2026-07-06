@@ -5,16 +5,14 @@
 	import { Clock, Film, Play } from "@lucide/svelte";
 
 	// Visual recent-recasts rail for the home overview — poster thumbnails that
-	// open the player. A warmer, more product-forward counterpart to the
-	// text-only "Top recasts" list.
+	// link through to each recast. A warmer, more product-forward counterpart to
+	// the text-only "Top recasts" list.
 	let {
 		recasts,
 		limit = 4,
-		onplay,
 	}: {
 		recasts: Recast[];
 		limit?: number;
-		onplay: (rec: Recast) => void;
 	} = $props();
 
 	const items = $derived(recasts.slice(0, limit));
@@ -40,7 +38,7 @@
 	{:else}
 		<div class="grid grid-cols-2 gap-3 p-4 sm:grid-cols-4">
 			{#each items as rec (rec.id)}
-				<button type="button" onclick={() => onplay(rec)} class="group/tile flex flex-col gap-2 text-left">
+				<a href="/dashboard/recasts/{rec.id}" class="group/tile flex flex-col gap-2 text-left">
 					<div class="relative aspect-video overflow-hidden rounded-lg bg-foreground/5 ring-1 ring-inset ring-border-low/40">
 						{#if rec.posterUrl && !failed[rec.id]}
 							<img
@@ -68,7 +66,7 @@
 						<p class="truncate text-xs font-medium text-foreground" title={rec.title}>{rec.title}</p>
 						<p class="truncate text-[10px] text-muted-foreground">{formatRelative(rec.createdAt)}</p>
 					</div>
-				</button>
+				</a>
 			{/each}
 		</div>
 	{/if}

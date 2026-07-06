@@ -30,6 +30,8 @@ export type GatedShare = {
 	visibility: string;
 	commentsEnabled: boolean;
 	canManage: boolean;
+	/** Signed-in viewer's account id (null when anonymous) — server-only. */
+	viewerId: string | null;
 };
 
 export async function gateShareAccess(
@@ -149,5 +151,6 @@ export async function gateShareAccess(
 		visibility: s.visibility,
 		commentsEnabled: s.commentsEnabled,
 		canManage,
+		viewerId: session?.user?.id ?? null,
 	};
 }

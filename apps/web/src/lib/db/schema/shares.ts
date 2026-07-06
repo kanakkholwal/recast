@@ -185,10 +185,11 @@ export const shareComment = pgTable(
 
 /**
  * Lightweight sentiment reactions (Cap-style). Always allowed regardless of
- * the comments toggle. One row per (share, viewer, emoji) so each emoji
- * toggles once per viewer rather than stacking. `atSeconds` records WHERE in
- * the video the viewer was when they reacted — surfaced to the owner later
- * ("most viewers loved 0:52"), not used by the viewer-facing toggle.
+ * the comments toggle. A viewer gets ONE reaction per share — picking a second
+ * emoji switches it in place — and the reactor is keyed by IP (`ipHash`), so
+ * one IP maps to one reaction. `atSeconds` records WHERE in the video the
+ * viewer was when they reacted — surfaced to the owner later ("most viewers
+ * loved 0:52"), not used by the viewer-facing toggle.
  */
 export const shareReaction = pgTable(
 	"share_reaction",
@@ -198,6 +199,12 @@ export const shareReaction = pgTable(
 			.notNull()
 			.references(() => share.slug, { onDelete: "cascade" }),
 		sessionId: text("session_id").notNull(),
+		/**
+		 * Salted hash of the reactor's IP (or their session when the IP can't be
+		 * resolved) — the dedup identity. Nullable only for legacy rows written
+		 * before single-reaction/IP mapping existed.
+		 */
+		ipHash: text("ip_hash"),
 		emoji: text("emoji").notNull(),
 		/** Playhead position when the reaction was made (owner-insight metadata). */
 		atSeconds: integer("at_seconds").notNull().default(0),
@@ -205,7 +212,9 @@ export const shareReaction = pgTable(
 	},
 	(t) => [
 		index("share_reaction_share_idx").on(t.shareSlug),
-		unique("share_reaction_unique_key").on(t.shareSlug, t.sessionId, t.emoji),
+		// One reaction per (share, reactor). Replaces the old
+		// (share, session, emoji) key that let a viewer stack multiple emojis.
+		unique("share_reaction_reactor_key").on(t.shareSlug, t.ipHash),
 	],
 );
 

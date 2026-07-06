@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
 	import PerformanceHero from "$lib/dashboard/components/PerformanceHero.svelte";
-	import PlayerDialog from "$lib/dashboard/components/PlayerDialog.svelte";
 	import RecentActivity from "$lib/dashboard/components/RecentActivity.svelte";
 	import RecentRecasts from "$lib/dashboard/components/RecentRecasts.svelte";
 	import StatGrid from "$lib/dashboard/components/StatGrid.svelte";
@@ -9,7 +8,7 @@
 	import { avgWatchPct, completionRate, uniqueViewers, viewsByDay } from "$lib/dashboard/activity";
 	import { formatBytes } from "$lib/dashboard/format";
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
-	import { quotaStore, recastsStore, settingsStore, type Recast } from "$lib/dashboard/store.svelte";
+	import { quotaStore, recastsStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
 	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import { Cloud, HardDrive, Users, Video } from "@lucide/svelte";
@@ -52,8 +51,6 @@
 		{ icon: Users, label: "Team", value: String(quotaStore.value?.usage.membersCount ?? 1) },
 	]);
 
-	let playing = $state<Recast | null>(null);
-
 	// Upload — same flow the library uses, so the home page is a real entry point.
 	let fileInput = $state<HTMLInputElement | null>(null);
 	const upload = createUploadController({
@@ -63,7 +60,7 @@
 </script>
 
 <svelte:head>
-	<title>Home - Recast Dashboard</title>
+	<title>Dashboard - Recast Dashboard</title>
 </svelte:head>
 
 <input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={upload.onFilePicked} />
@@ -118,17 +115,5 @@
 
 <!-- Resume / browse recent work. -->
 <div class="mt-4" in:fly={{ y: 12, duration: 480, delay: 340, easing: cubicOut }}>
-	<RecentRecasts recasts={recastsStore.items} onplay={(rec) => (playing = rec)} />
+	<RecentRecasts recasts={recastsStore.items} />
 </div>
-
-{#if playing}
-	<PlayerDialog
-		recast={playing}
-		onclose={() => (playing = null)}
-		onengagement={(event) => {
-			if (event.type === "view-start" && playing) {
-				recastsStore.incrementViews(playing.id);
-			}
-		}}
-	/>
-{/if}
