@@ -11,10 +11,9 @@
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 	import { foldersStore, tagsStore } from "$lib/dashboard/library.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
+	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import { filterAndSortRecasts, isFileDrag } from "$lib/dashboard/recasts-library.logic";
 	import { recastsStore, type Recast } from "$lib/dashboard/store.svelte";
-	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
-	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import {
 	  Folder,
 	  FolderOpen,
@@ -22,7 +21,6 @@
 	  Grid2X2,
 	  Library,
 	  List,
-	  LoaderCircle,
 	  MoreHorizontal,
 	  Pencil,
 	  Plus,
@@ -76,15 +74,10 @@
 	let selectedIds = $state(new Set<string>());
 	const selectionMode = $derived(selectedIds.size > 0);
 
-	// Upload (shared by the header button, the empty-state button, the file
-	// input, and drag-and-drop).
-	let fileInput = $state<HTMLInputElement | null>(null);
+	// Drag-and-drop onto the library opens the shared upload dialog with the
+	// dropped file staged; the header + empty-state buttons open it empty.
 	let dragDepth = $state(0);
 	const isDraggingFile = $derived(dragDepth > 0);
-	const upload = createUploadController({
-		workspaceId: () => workspaceId,
-		onRefresh: invalidateAll,
-	});
 
 	const visible = $derived(
 		filterAndSortRecasts(recastsStore.items, {
@@ -160,7 +153,7 @@
 		e.preventDefault();
 		dragDepth = 0;
 		const file = e.dataTransfer?.files?.[0];
-		if (file) upload.start(file);
+		if (file) quickUpload.show(file);
 	}
 
 	// ── Mutations ──────────────────────────────────────────────────────
@@ -439,32 +432,14 @@
 	<title>Recasts - Recast Dashboard</title>
 </svelte:head>
 
-<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={upload.onFilePicked} />
 <input bind:this={posterInput} type="file" accept={POSTER_ACCEPT} class="hidden" onchange={onPosterPicked} />
 
 <PageHeader icon={Library} title="Recasts" subtitle="Everything you've captured, uploaded, and shared.">
-	<Button class="gap-2" disabled={upload.uploading} onclick={() => fileInput?.click()}>
-		{#if upload.uploading}<LoaderCircle class="size-4 animate-spin" />{:else}<Upload class="size-4" />{/if}
-		{upload.uploading ? upload.label : "Upload recast"}
+	<Button class="gap-2" onclick={() => quickUpload.show()}>
+		<Upload class="size-4" />
+		Upload recast
 	</Button>
 </PageHeader>
-
-<!-- Inline upload progress -->
-{#if upload.uploading}
-	<div class="mt-4" transition:slide={{ duration: 200, easing: cubicOut }}>
-		<div class="flex items-center justify-between text-xs text-muted-foreground">
-			<span class="font-medium text-foreground">{upload.label}</span>
-			{#if upload.phase === "uploading"}<span class="font-mono tabular-nums">{upload.pct}%</span>{/if}
-		</div>
-		<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
-			<div
-				class="h-full rounded-full bg-linear-to-r from-primary/70 to-primary transition-[width] duration-300 ease-[cubic-bezier(0.625,0.05,0,1)]"
-				style="width: {upload.phase === 'uploading' ? upload.pct : 100}%"
-				class:animate-pulse={upload.phase !== "uploading"}
-			></div>
-		</div>
-	</div>
-{/if}
 
 	<!-- Library: folder cards + content. The whole region is a file drop target. -->
 	<div
@@ -691,8 +666,6 @@
 					{viewMode}
 					hasAnyRecasts={hasRecasts}
 					{filtersActive}
-					uploading={upload.uploading}
-					uploadLabel={upload.label}
 					onrename={(rec) => (renaming = rec)}
 					oncopylink={copyLink}
 					onchangeposter={changePoster}
@@ -701,7 +674,7 @@
 					onarchive={archiveRecast}
 					ondelete={deleteRecast}
 					onToggleSelect={toggleSelect}
-					onupload={() => fileInput?.click()}
+					onupload={() => quickUpload.show()}
 					onclearfilters={clearFilters}
 				/>
 			</div>

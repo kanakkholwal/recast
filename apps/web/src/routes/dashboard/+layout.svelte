@@ -20,6 +20,13 @@
 	$effect(() => {
 		quotaStore.hydrate(data.quota ?? null);
 	});
+
+	// Has this workspace ever published a recast (active or archived)? Drives the
+	// upload dialog's endowed-progress framing for genuine first-timers.
+	const firstUpload = $derived(
+		((data.quota?.usage.activeRecastsCount ?? 0) +
+			(data.quota?.usage.archivedRecastsCount ?? 0)) === 0,
+	);
 </script>
 <svelte:head>
 	<title>Dashboard - Recast</title>
@@ -39,4 +46,5 @@
 	workspaceId={data.activeOrganization?.id}
 	workspaceName={data.activeOrganization?.name}
 	plan={data.activeOrganization?.plan}
+	{firstUpload}
 />

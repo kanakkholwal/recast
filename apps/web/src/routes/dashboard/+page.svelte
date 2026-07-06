@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from "$app/navigation";
 	import PerformanceHero from "$lib/dashboard/components/PerformanceHero.svelte";
 	import RecentActivity from "$lib/dashboard/components/RecentActivity.svelte";
 	import RecentRecasts from "$lib/dashboard/components/RecentRecasts.svelte";
@@ -8,13 +7,12 @@
 	import { avgWatchPct, completionRate, uniqueViewers, viewsByDay } from "$lib/dashboard/activity";
 	import { formatBytes } from "$lib/dashboard/format";
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
+	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import { quotaStore, recastsStore, settingsStore } from "$lib/dashboard/store.svelte";
-	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
-	import { createUploadController } from "$lib/dashboard/upload.svelte";
 	import { Cloud, HardDrive, Users, Video } from "@lucide/svelte";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
-	import { fly, slide } from "svelte/transition";
+	import { fly } from "svelte/transition";
 
 	let { data } = $props();
 
@@ -25,7 +23,6 @@
 		untrack(() => recastsStore.hydrate(mapped, ws));
 	});
 
-	const workspaceId = $derived(data.workspaceId);
 	const firstName = $derived(settingsStore.value.profile.name.split(/\s+/)[0] ?? "there");
 	const activity = $derived(data.activity);
 
@@ -50,20 +47,11 @@
 		{ icon: HardDrive, label: "Storage used", value: formatBytes(usedBytes) },
 		{ icon: Users, label: "Team", value: String(quotaStore.value?.usage.membersCount ?? 1) },
 	]);
-
-	// Upload — same flow the library uses, so the home page is a real entry point.
-	let fileInput = $state<HTMLInputElement | null>(null);
-	const upload = createUploadController({
-		workspaceId: () => workspaceId,
-		onRefresh: invalidateAll,
-	});
 </script>
 
 <svelte:head>
 	<title>Dashboard - Recast Dashboard</title>
 </svelte:head>
-
-<input bind:this={fileInput} type="file" accept={UPLOAD_ACCEPT} class="hidden" onchange={upload.onFilePicked} />
 
 <PerformanceHero
 	{firstName}
@@ -73,26 +61,8 @@
 	{viewers}
 	{completion}
 	{avgWatch}
-	uploading={upload.uploading}
-	uploadLabel={upload.label}
-	onNew={() => fileInput?.click()}
+	onNew={() => quickUpload.show()}
 />
-
-{#if upload.uploading}
-	<div class="mt-4" transition:slide={{ duration: 200, easing: cubicOut }}>
-		<div class="flex items-center justify-between text-xs text-muted-foreground">
-			<span class="font-medium text-foreground">{upload.label}</span>
-			{#if upload.phase === "uploading"}<span class="font-mono tabular-nums">{upload.pct}%</span>{/if}
-		</div>
-		<div class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8">
-			<div
-				class="h-full rounded-full bg-linear-to-r from-primary/70 to-primary transition-[width] duration-300 ease-[cubic-bezier(0.625,0.05,0,1)]"
-				style="width: {upload.phase === 'uploading' ? upload.pct : 100}%"
-				class:animate-pulse={upload.phase !== "uploading"}
-			></div>
-		</div>
-	</div>
-{/if}
 
 <!-- Library at a glance — orientation counts, kept visually subordinate to the
 	 hero above but surfaced high where they're actually useful. -->

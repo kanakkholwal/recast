@@ -17,7 +17,6 @@
 		Check,
 		Film,
 		Link2,
-		LoaderCircle,
 		MoreHorizontal,
 		Pencil,
 		Play,
@@ -41,8 +40,6 @@
 		viewMode = "grid",
 		hasAnyRecasts,
 		filtersActive,
-		uploading = false,
-		uploadLabel = "",
 		onrename,
 		oncopylink,
 		onchangeposter,
@@ -62,8 +59,6 @@
 		viewMode?: "grid" | "list";
 		hasAnyRecasts: boolean;
 		filtersActive: boolean;
-		uploading?: boolean;
-		uploadLabel?: string;
 		onrename: (rec: Recast) => void;
 		oncopylink: (rec: Recast) => void;
 		onchangeposter?: (rec: Recast) => void;
@@ -202,9 +197,9 @@
 	{/if}
 {:else if !hasAnyRecasts}
 	<EmptyState icon={Film} title="No recasts yet" description="Upload an MP4, or capture and export one with the Recast desktop app.">
-		<Button size="sm" class="gap-2" disabled={uploading} onclick={onupload}>
-			{#if uploading}<LoaderCircle class="size-3.5 animate-spin" />{:else}<Upload class="size-3.5" />{/if}
-			{uploading ? uploadLabel : "Upload recast"}
+		<Button size="sm" class="gap-2" onclick={onupload}>
+			<Upload class="size-3.5" />
+			Upload recast
 		</Button>
 	</EmptyState>
 {:else if filtersActive}
