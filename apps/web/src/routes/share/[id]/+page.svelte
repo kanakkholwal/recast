@@ -479,6 +479,7 @@
 	function onPlayerAction(e: RecastPlayerActionEvent) {
 		if (e.type !== "marker-select") return;
 		activeTab = "comments";
+		panelOpen = true;
 		ended = false;
 		if (!browser) return;
 		const id = e.marker.id;
@@ -588,12 +589,19 @@
 	function countFor(emoji: string): number {
 		return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
 	}
-	// ── On-demand engagement panel (docked, non-modal) ────────────────
-	// Watching is the primary job, so the conversation/transcript is off to the
-	// side and only slides in when the viewer asks for it — the video keeps
-	// playing behind it (no dimming overlay on desktop).
+	// The engagement rail (Transcript | Comments) lives in the page's layout as
+	// a collapsible sticky sidebar — not a slide-in sheet. The reaction-bar
+	// buttons toggle it: opening to a tab, switching tabs while open, or
+	// collapsing when you click the tab that's already showing. It only mounts
+	// when there's a populated tab, so the video reclaims full width when it's
+	// collapsed or on a bare recast.
+	const hasSidebar = $derived(hasTranscript || commentsEnabled);
 	let panelOpen = $state(false);
-	function openPanel(tab: PanelTab) {
+	function togglePanel(tab: PanelTab) {
+		if (panelOpen && activeTab === tab) {
+			panelOpen = false;
+			return;
+		}
 		activeTab = tab;
 		panelOpen = true;
 	}
@@ -1037,7 +1045,7 @@
 		<!-- Top bar — brand left, light viewer/owner actions right. The mode
 		     switcher is gone; the only chrome here is theme, share, account. -->
 		<header class="sticky top-0 z-30 border-b border-border-low/30 bg-background/70 backdrop-blur-xl">
-			<div class={cn("relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
+			<div class="relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 sm:px-6 lg:px-8">
 				<!-- Left mark. For Pro shares this should swap to the owner's
 				     custom logo (branding feature, not wired yet) — the slot is
 				     here so that change is a one-line conditional later. -->
@@ -1258,7 +1266,7 @@
 			</div>
 		</header>
 
-		<main class={cn("relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
+		<main class="share-main relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 sm:px-6 lg:px-8" data-has-rail={hasSidebar} data-rail={panelOpen && hasSidebar ? "open" : "closed"}>
 			<!-- Video-first: the player IS the page. Theater-sized so it fills as
 			     much of the viewport as the fold allows; the conversation and
 			     transcript are on-demand chrome (floating bar → docked panel), so
@@ -1390,23 +1398,37 @@
 				{/if}
 
 				{#if commentsEnabled}
+					{@const commentsActive = panelOpen && activeTab === "comments"}
 					<button
 						type="button"
-						onclick={() => openPanel("comments")}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						onclick={() => togglePanel("comments")}
+						aria-pressed={commentsActive}
+						class={cn(
+							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+							commentsActive
+								? "bg-foreground/10 text-foreground"
+								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+						)}
 					>
 						<MessageSquare class="size-4" />
 						<span class="max-sm:hidden">Comments</span>
 						{#if comments.length > 0}
-							<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
+							<span class={cn("rounded-md px-1.5 py-0.5 font-mono text-[10px] tabular-nums", commentsActive ? "bg-foreground/15" : "bg-foreground/10")}>{comments.length}</span>
 						{/if}
 					</button>
 				{/if}
 				{#if hasTranscript}
+					{@const transcriptActive = panelOpen && activeTab === "transcript"}
 					<button
 						type="button"
-						onclick={() => openPanel("transcript")}
-						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						onclick={() => togglePanel("transcript")}
+						aria-pressed={transcriptActive}
+						class={cn(
+							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
+							transcriptActive
+								? "bg-foreground/10 text-foreground"
+								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+						)}
 					>
 						<FileText class="size-4" />
 						<span class="max-sm:hidden">Transcript</span>
@@ -1498,22 +1520,14 @@
 				{/if}
 			</div>
 
-			<!-- Docked engagement panel — non-modal: slides in from the right on
-			     demand and the video keeps playing behind it (no dimming overlay
-			     on desktop; a tap-scrim on mobile). Opened from the floating bar.
-			     Name-only: viewers comment without an account. -->
-			{#if panelOpen}
-				<!-- Mobile scrim — tap to dismiss (desktop keeps the video visible). -->
-				<button
-					type="button"
-					aria-label="Close panel"
-					onclick={() => (panelOpen = false)}
-					transition:fade={{ duration: 150 }}
-					class="fixed inset-0 z-40 bg-black/40 lg:hidden"
-				></button>
+				<!-- Engagement rail — in-layout and collapsible. On desktop it's a
+				     sticky right-hand column (grid placement lives on <main>); on
+				     mobile it stacks below the video. Toggled from the reaction-bar
+				     Comments/Transcript buttons — the video reclaims full width when
+				     it's collapsed. Name-only: viewers comment without an account. -->
+			{#if hasSidebar}
 				<aside
-					class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border-low/50 bg-background/95 shadow-craft-xl backdrop-blur-xl sm:w-[400px]"
-					transition:fly={{ x: 420, duration: 280, easing: cubicOut }}
+					class="mt-4 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border-low/50 bg-background/70 shadow-craft-lg backdrop-blur-xl lg:sticky lg:top-[76px] lg:mt-0 lg:h-[calc(100dvh-100px)]"
 				>
 					<div class="flex h-full flex-col overflow-hidden">
 						<!-- Tab bar + close -->
@@ -1874,3 +1888,56 @@
 		</Dialog.Root>
 	{/if}
 {/if}
+
+
+<style>
+	/* Engagement rail open/close. The grid's second track is `auto`, so it
+	   follows the rail's own width — animating the rail's width + margin eases
+	   the video (the 1fr track) to its new size as the rail reveals. Width and
+	   margin transitions are universally supported, unlike grid-track interp. */
+	@media (min-width: 1024px) {
+		:global(.share-main[data-has-rail="true"]) {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			column-gap: 0;
+			align-items: start;
+		}
+		:global(.share-main[data-has-rail="true"] > *:not(aside)) {
+			grid-column: 1;
+		}
+		:global(.share-main[data-has-rail="true"] > aside) {
+			grid-column: 2;
+			grid-row: 1 / span 99;
+			width: 0;
+			margin-left: 0;
+			overflow: hidden;
+			opacity: 0;
+			pointer-events: none;
+			transition:
+				width 320ms cubic-bezier(0.4, 0, 0.2, 1),
+				margin-left 320ms cubic-bezier(0.4, 0, 0.2, 1),
+				opacity 240ms ease;
+		}
+		:global(.share-main[data-rail="open"] > aside) {
+			width: 360px;
+			margin-left: 1.5rem;
+			opacity: 1;
+			pointer-events: auto;
+		}
+		/* Fixed inner width so the rail clips as it grows/shrinks rather than
+		   reflowing its contents mid-animation. */
+		:global(.share-main[data-has-rail="true"] > aside > *) {
+			width: 360px;
+		}
+	}
+	@media (max-width: 1023px) {
+		:global(.share-main[data-rail="closed"] > aside) {
+			display: none;
+		}
+	}
+	@media (prefers-reduced-motion: reduce) {
+		:global(.share-main[data-has-rail="true"] > aside) {
+			transition: none;
+		}
+	}
+</style>

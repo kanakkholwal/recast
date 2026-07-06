@@ -77,3 +77,14 @@ export function sortIndicator(
 	if (currentSort !== field) return "";
 	return currentDir === "asc" ? "↑" : "↓";
 }
+
+/** `aria-sort` value for a column header, so screen readers announce the
+ *  current sort direction (WCAG sortable-table). */
+export function ariaSort(
+	currentSort: string,
+	currentDir: string,
+	field: string,
+): "ascending" | "descending" | "none" {
+	if (currentSort !== field) return "none";
+	return currentDir === "asc" ? "ascending" : "descending";
+}
