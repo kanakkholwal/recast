@@ -1,6 +1,7 @@
 <script lang="ts">
 	import DashboardHeader from "$lib/dashboard/components/DashboardHeader.svelte";
 	import DashboardSidebar from "$lib/dashboard/components/DashboardSidebar.svelte";
+	import QuickUploadDialog from "$lib/dashboard/components/QuickUploadDialog.svelte";
 	import { quotaStore, settingsStore } from "$lib/dashboard/store.svelte";
 	import { NavProgress } from "@recast/ui/nav-progress";
 	import * as Sidebar from "@recast/ui/sidebar";
@@ -39,3 +40,9 @@
 		</div>
 	</Sidebar.Inset>
 </Sidebar.Provider>
+
+<QuickUploadDialog
+	workspaceId={data.activeOrganization?.id}
+	workspaceName={data.activeOrganization?.name}
+	plan={data.activeOrganization?.plan}
+/>

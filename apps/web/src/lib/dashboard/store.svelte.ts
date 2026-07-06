@@ -38,7 +38,16 @@ export type Recast = {
 export const STORAGE_QUOTA_BYTES = 5 * 1024 ** 3;
 
 const REC_KEY = "recast.dashboard.recordings.v1";
+// Pointer to the workspace whose recast cache is "current", so a cold load
+// restores the right team's list instead of whichever was cached last.
+const REC_WS_KEY = "recast.dashboard.recordings.ws";
 const SET_KEY = "recast.dashboard.settings.v1";
+
+/** Per-workspace cache key so switching teams never surfaces another team's
+ *  recasts. Falls back to the legacy unscoped key when no workspace is known. */
+function recKeyFor(workspaceId: string | null): string {
+	return workspaceId ? `${REC_KEY}.${workspaceId}` : REC_KEY;
+}
 
 // Stable, public sample media so playback genuinely works on dummy data.
 function sample(name: string) {
@@ -74,28 +83,44 @@ function reconcile(r: Recast): Recast {
 class RecordingsStore {
 	items = $state<Recast[]>([]);
 	hydrated = $state(false);
+	// Which workspace the cached list belongs to. Read from the pointer so a
+	// cold load restores that workspace's cache, not a stale other-team one.
+	#workspaceId: string | null = safeStorage.get<string | null>(REC_WS_KEY, null);
 
 	constructor() {
-		const stored = safeStorage.get<Recast[] | null>(REC_KEY, null);
-		// Until `hydrate()` is called we show the last cached server list,
-		// or — if we've never seen one — the dummy seed so the design
-		// surface stays explorable on logged-out previews.
+		const stored = safeStorage.get<Recast[] | null>(recKeyFor(this.#workspaceId), null);
+		// Until `hydrate()` is called we show the last cached server list for
+		// this workspace, or — if we've never seen one — the dummy seed so the
+		// design surface stays explorable on logged-out previews.
 		this.items = (stored ?? seedRecordings()).map(reconcile);
 	}
 
 	/**
-	 * Replace the in-memory list with server-loaded rows. Persisted to
-	 * localStorage so the next cold load shows the same content instantly
-	 * (then immediately revalidated by the next `hydrate()` call).
+	 * Point the cache at a workspace ahead of a cold load (call before the
+	 * full-page reload on a team switch), so the next construct reads that
+	 * team's scoped cache rather than the previous team's.
 	 */
-	hydrate(server: Recast[]) {
+	hintWorkspace(workspaceId: string) {
+		this.#workspaceId = workspaceId;
+		safeStorage.set(REC_WS_KEY, workspaceId);
+	}
+
+	/**
+	 * Replace the in-memory list with server-loaded rows. Persisted under the
+	 * workspace-scoped key so the next cold load shows the same content
+	 * instantly (then immediately revalidated by the next `hydrate()` call).
+	 * Pass `workspaceId` on server-driven loads; omit it for in-place
+	 * re-hydrations (optimistic rollbacks) that stay in the current scope.
+	 */
+	hydrate(server: Recast[], workspaceId?: string) {
+		if (workspaceId) this.hintWorkspace(workspaceId);
 		this.items = server;
 		this.hydrated = true;
 		this.persist();
 	}
 
 	private persist() {
-		safeStorage.set(REC_KEY, this.items);
+		safeStorage.set(recKeyFor(this.#workspaceId), this.items);
 	}
 
 	get usedBytes(): number {

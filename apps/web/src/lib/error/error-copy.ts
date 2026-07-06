@@ -1,8 +1,9 @@
 /**
- * Copy, accent lookups, and next-step data for the global error page, extracted
- * from `+error.svelte` so the status→copy mapping stays out of the reactive
- * shell. `errorCopy` takes primitives (status/message/isServerError) so the
- * component wraps it in a thin `$derived`.
+ * Copy, accent lookups, and next-step data for Recast's error surfaces —
+ * shared by the global `+error.svelte` (full-page) and the section-scoped
+ * `+error.svelte` boundaries (in-shell card) so status→copy stays in one place.
+ * `errorCopy` takes primitives (status/message/isServerError) so each component
+ * wraps it in a thin `$derived`.
  */
 
 import { BookOpen, Compass, Home, LifeBuoy, MonitorPlay, Search } from "@lucide/svelte";

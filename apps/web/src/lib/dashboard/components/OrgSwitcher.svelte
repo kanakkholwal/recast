@@ -1,7 +1,8 @@
 <script lang="ts">
-	import { goto, invalidateAll } from "$app/navigation";
+	import { goto } from "$app/navigation";
 	import { authClient } from "$lib/auth/client";
 	import CreateTeamDialog from "$lib/dashboard/components/CreateTeamDialog.svelte";
+	import { recastsStore } from "$lib/dashboard/store.svelte";
 	import {
 	  Building2,
 	  Check,
@@ -62,10 +63,19 @@
 					error: (err) => (err as Error)?.message ?? "Couldn't switch team.",
 				},
 			);
-			await invalidateAll();
+			// Point the recast cache at the new team before reloading, so the
+			// fresh load restores its scope instead of flashing the old team's
+			// cached list. Then hard-reload the workspace home: a soft
+			// `invalidateAll()` left the previous team's data on screen because
+			// the client stores + any deep route tied to the old org don't fully
+			// reset. A full-document navigation guarantees the server re-resolves
+			// the new active org and every store re-inits from it.
+			recastsStore.hintWorkspace(id);
+			window.location.assign("/dashboard");
 		} finally {
 			// Always clear — a thrown rejection must not strand the row in
-			// the "switching…" pseudo-loading state.
+			// the "switching…" pseudo-loading state. (On success the reload
+			// unloads the page before this matters.)
 			switching = null;
 		}
 	}

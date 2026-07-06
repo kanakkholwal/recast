@@ -126,6 +126,7 @@ export async function resolveShareAccess(
 			recastId: recast.id,
 			workspaceId: recast.workspaceId,
 			title: recast.title,
+			description: recast.description,
 			videoUrl: recast.videoUrl,
 			posterUrl: recast.posterUrl,
 			captionsUrl: recast.captionsUrl,
@@ -206,7 +207,7 @@ export async function resolveShareAccess(
 		recast: {
 			id: row.recastId,
 			title: row.title,
-			description: "",
+			description: row.description ?? "",
 			src: row.videoUrl,
 			poster: row.posterUrl,
 			captions: row.captionsUrl,

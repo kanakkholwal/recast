@@ -16,21 +16,20 @@
 	import { Chip } from "@recast/ui/chip";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import {
+		Archive,
 		BarChart3,
 		Check,
 		Clock,
-		Cloud,
-		CloudUpload,
+		Eye,
 		Film,
 		FolderInput,
-		HardDrive,
 		ImagePlus,
 		Inbox,
 		Link2,
-		MonitorPlay,
 		MoreHorizontal,
 		Pencil,
 		Play,
+		Share2,
 		Tag as TagIcon,
 		Trash2,
 	} from "@lucide/svelte";
@@ -47,9 +46,9 @@
 		onrename,
 		oncopylink,
 		onchangeposter,
-		ontogglesource,
 		onmove,
 		ontoggletag,
+		onarchive,
 		ondelete,
 	}: {
 		recast: Recast;
@@ -65,11 +64,14 @@
 		onrename: () => void;
 		oncopylink: () => void;
 		onchangeposter?: () => void;
-		ontogglesource: () => void;
 		onmove: (folderId: string | null) => void;
 		ontoggletag: (tagId: string) => void;
+		onarchive?: () => void;
 		ondelete: () => void;
 	} = $props();
+
+	const isShared = $derived(!!recast.latestShareSlug);
+	const showViews = $derived(recast.source === "cloud" && recast.views > 0);
 
 	let posterFailed = $state(false);
 	const showPoster = $derived(!!recast.posterUrl && !posterFailed);
@@ -88,7 +90,7 @@
 <article
 	draggable="true"
 	ondragstart={onDragStart}
-	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl transition-shadow duration-300 hover:shadow-craft-lg active:cursor-grabbing
+	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg active:cursor-grabbing
 		{selected ? 'ring-2 ring-primary' : ''}"
 >
 	<!-- Selection checkbox — a sibling of the thumbnail button (never nested,
@@ -156,23 +158,25 @@
 			</span>
 		</span>
 
+		{#if isShared}
+			<span class="absolute right-2.5 top-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
+				<Share2 class="size-2.5" />
+				Shared
+			</span>
+		{/if}
+
+		{#if showViews}
+			<span class="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
+				<Eye class="size-3" />
+				{formatCount(recast.views)}
+			</span>
+		{/if}
+
 		<span class="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
 			<Clock class="size-3" />
 			{formatDuration(recast.durationSec)}
 		</span>
 
-		<span
-			class="absolute bottom-2.5 left-2.5 z-20 flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset backdrop-blur-sm
-				{recast.source === 'cloud'
-				? 'bg-primary/90 text-background ring-primary/40'
-				: 'bg-background/85 text-muted-foreground ring-border-low/50'}"
-		>
-			{#if recast.source === "cloud"}
-				<Cloud class="size-3" />{recast.provider}
-			{:else}
-				<MonitorPlay class="size-3" />Local
-			{/if}
-		</span>
 	</button>
 
 	<!-- Meta -->
@@ -183,7 +187,7 @@
 					{recast.title}
 				</h3>
 				<p class="mt-1 text-xs text-muted-foreground">
-					{formatRelative(recast.createdAt)} · {formatBytes(recast.sizeBytes)}{#if recast.source === "cloud"} · {formatCount(recast.views)} views{/if}
+					{formatRelative(recast.createdAt)} · {formatBytes(recast.sizeBytes)}
 				</p>
 			</div>
 
@@ -211,7 +215,7 @@
 						<BarChart3 class="size-4 text-muted-foreground" />
 						View analytics
 					</DropdownMenu.Item>
-					{#if onchangeposter && recast.source === "cloud"}
+					{#if onchangeposter}
 						<DropdownMenu.Item onclick={onchangeposter}>
 							<ImagePlus class="size-4 text-muted-foreground" />
 							Change poster
@@ -274,16 +278,13 @@
 						</DropdownMenu.SubContent>
 					</DropdownMenu.Sub>
 
-					<DropdownMenu.Item onclick={ontogglesource}>
-						{#if recast.source === "cloud"}
-							<HardDrive class="size-4 text-muted-foreground" />
-							Move to local
-						{:else}
-							<CloudUpload class="size-4 text-muted-foreground" />
-							Upload to cloud
-						{/if}
-					</DropdownMenu.Item>
 					<DropdownMenu.Separator />
+					{#if onarchive}
+						<DropdownMenu.Item onclick={onarchive}>
+							<Archive class="size-4 text-muted-foreground" />
+							Archive
+						</DropdownMenu.Item>
+					{/if}
 					<DropdownMenu.Item
 						onclick={ondelete}
 						class="text-destructive/90 data-highlighted:text-destructive"

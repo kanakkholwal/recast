@@ -54,6 +54,7 @@ const BodySchema = z
 			)
 			.max(50)
 			.optional(),
+		commentsEnabled: z.boolean().default(true),
 	})
 	.strict();
 
@@ -129,7 +130,20 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	const isPro = sub?.plan === "pro";
 
 	const passwordHash = await hashSharePassword(body.password);
-	const expiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+	const requestedExpiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
+
+	// Free workspaces get a forced 15-day link expiry (to keep hosting costs
+	// down) — default it when the client sent nothing, and cap anything longer.
+	// Pro honours the request as-is, including "never" (null).
+	const FREE_MAX_EXPIRY_DAYS = 15;
+	const expiresAt = isPro
+		? requestedExpiresAt
+		: (() => {
+				const cap = new Date(Date.now() + FREE_MAX_EXPIRY_DAYS * 24 * 60 * 60 * 1000);
+				return requestedExpiresAt && requestedExpiresAt.getTime() < cap.getTime()
+					? requestedExpiresAt
+					: cap;
+			})();
 
 	// Slug generation — retry a couple of times on the (vanishingly rare)
 	// collision. 10 chars over 36-symbol alphabet gives ~5×10^15 combos,
@@ -172,6 +186,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 			passwordHash,
 			expiresAt,
 			watermark: !isPro,
+			commentsEnabled: body.commentsEnabled,
 		});
 
 		if (resolvedInvitees.length > 0) {
@@ -195,6 +210,7 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		shareUrl: `${base}/share/${slug}`,
 		visibility: body.visibility,
 		watermark: !isPro,
+		commentsEnabled: body.commentsEnabled,
 	});
 };
 

@@ -123,32 +123,34 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 		}
 	}
 
-	// Sign the R2 key into a playable URL. Stored value is the bare key
-	// (e.g. "workspace/abc/def.mp4") — anything starting with http(s) is
-	// either a legacy row or an external URL and passes through.
-	if (isStorageConfigured() && !/^https?:\/\//.test(access.recast.src)) {
-		try {
-			access.recast.src = await signDownloadUrl({
-				key: access.recast.src,
-				expiresInSeconds: 60 * 60,
-			});
-		} catch (err) {
-			console.error("[share] signDownloadUrl failed", err);
-			// Fall through with empty src — the page will render a
-			// "playback unavailable" state rather than a broken player.
-			access.recast.src = "";
-		}
-	}
-
-	// Poster is stored as a bare key too — sign it the same way so the player
-	// shows the thumbnail before playback (otherwise the <video poster> 404s
-	// and the hero is just a black box until the first frame decodes).
+	// Sign the video, poster, and captions in parallel — three independent R2
+	// round-trips that used to run in series and blocked the hero for no reason.
+	//   • video: stored as a bare key (e.g. "workspace/abc/def.mp4"); anything
+	//     starting with http(s) is a legacy/external URL and passes through.
+	//   • poster: signed so the <video poster> shows before the first frame
+	//     decodes (otherwise the hero is a black box).
+	//   • captions: signed so the player can load it as a `<track>` (and the
+	//     page's interactive transcript can read cues off it).
 	// `resolvePlaybackUrl` no-ops on empty/absolute values and never throws.
-	access.recast.poster = await resolvePlaybackUrl(access.recast.poster, 60 * 60);
-
-	// Captions track is a bare key too — sign it the same way so the player can
-	// load it as a `<track>` (no-ops on null/absolute, never throws).
-	access.recast.captions = await resolvePlaybackUrl(access.recast.captions, 60 * 60);
+	const needsSign =
+		isStorageConfigured() && !/^https?:\/\//.test(access.recast.src);
+	const [src, poster, captions] = await Promise.all([
+		needsSign
+			? signDownloadUrl({ key: access.recast.src, expiresInSeconds: 60 * 60 }).catch(
+					(err) => {
+						console.error("[share] signDownloadUrl failed", err);
+						// Empty src → the page renders "playback unavailable" rather
+						// than a broken player.
+						return "";
+					},
+				)
+			: Promise.resolve(access.recast.src),
+		resolvePlaybackUrl(access.recast.poster, 60 * 60),
+		resolvePlaybackUrl(access.recast.captions, 60 * 60),
+	]);
+	access.recast.src = src;
+	access.recast.poster = poster;
+	access.recast.captions = captions;
 
 	return { access, customSeo: true };
 };

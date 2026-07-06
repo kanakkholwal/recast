@@ -23,10 +23,10 @@ import { member, recast, share, user } from "$lib/db/schema";
 export async function resolveShareManage(
 	slug: string,
 	userId: string | null | undefined,
-): Promise<{ ownerId: string; workspaceId: string; canManage: boolean } | null> {
+): Promise<{ ownerId: string; workspaceId: string; recastId: string; canManage: boolean } | null> {
 	const db = getDb();
 	const [row] = await db
-		.select({ ownerId: share.ownerId, workspaceId: recast.workspaceId })
+		.select({ ownerId: share.ownerId, workspaceId: recast.workspaceId, recastId: recast.id })
 		.from(share)
 		.innerJoin(recast, eq(share.recastId, recast.id))
 		.where(eq(share.slug, slug))

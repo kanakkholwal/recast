@@ -1,0 +1,2 @@
+ALTER TABLE "user" ADD COLUMN "default_workspace_id" text;--> statement-breakpoint
+ALTER TABLE "user" ADD CONSTRAINT "user_default_workspace_id_organization_id_fk" FOREIGN KEY ("default_workspace_id") REFERENCES "public"."organization"("id") ON DELETE set null ON UPDATE no action;

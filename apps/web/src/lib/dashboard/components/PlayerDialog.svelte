@@ -78,7 +78,7 @@
 			<span>{formatRelative(recast.createdAt)}</span>
 			<span class="flex items-center gap-1.5">
 				{#if recast.source === "cloud"}
-					<Cloud class="size-3.5 text-primary" />{recast.provider}
+					<Cloud class="size-3.5 text-primary" />Cloud
 				{:else}
 					<MonitorPlay class="size-3.5" />Local
 				{/if}

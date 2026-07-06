@@ -22,7 +22,8 @@
 	// Hydrate the local store with the server-loaded list (home omits folders/tags).
 	$effect(() => {
 		const mapped = mapRecastsForStore(data.recasts, { folders: false, tags: false });
-		untrack(() => recastsStore.hydrate(mapped));
+		const ws = data.workspaceId;
+		untrack(() => recastsStore.hydrate(mapped, ws));
 	});
 
 	const workspaceId = $derived(data.workspaceId);

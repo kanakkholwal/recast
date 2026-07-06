@@ -2,7 +2,7 @@ import { error, json } from "@sveltejs/kit";
 import { eq } from "drizzle-orm";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
-import { share } from "$lib/db/schema";
+import { recast, share } from "$lib/db/schema";
 import { resolveShareManage } from "$lib/share/manage";
 import { hashSharePassword } from "$lib/share/password";
 import type { RequestHandler } from "./$types";
@@ -10,6 +10,7 @@ import type { RequestHandler } from "./$types";
 type SessionShape = { user: { id: string; role?: string } };
 
 const MAX_CTA_LABEL = 60;
+const MAX_DESCRIPTION = 500;
 const MIN_PASSWORD = 4;
 
 /**
@@ -39,6 +40,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		commentsEnabled?: unknown;
 		password?: unknown;
 		expiresAt?: unknown;
+		description?: unknown;
 	} = {};
 	try {
 		body = (await request.json()) as typeof body;
@@ -118,9 +120,26 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	if (Object.keys(patch).length === 0) error(400, "Nothing to update");
+	// Description lives on the recast (it's the video's blurb, reused for the
+	// OG card), not the share row — updated separately below.
+	let description: string | null | undefined;
+	if ("description" in body) {
+		description =
+			typeof body.description === "string" && body.description.trim()
+				? body.description.trim().slice(0, MAX_DESCRIPTION)
+				: null;
+	}
 
-	await db.update(share).set(patch).where(eq(share.slug, params.id));
+	if (Object.keys(patch).length === 0 && description === undefined) {
+		error(400, "Nothing to update");
+	}
+
+	if (Object.keys(patch).length > 0) {
+		await db.update(share).set(patch).where(eq(share.slug, params.id));
+	}
+	if (description !== undefined) {
+		await db.update(recast).set({ description }).where(eq(recast.id, manage.recastId));
+	}
 
 	// Never echo the password hash back. Report whether a password is now set
 	// and the other (safe) fields that changed.
@@ -128,6 +147,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	return json({
 		ok: true,
 		...safe,
+		...(description !== undefined ? { description } : {}),
 		...("passwordHash" in patch ? { passwordSet: passwordHash !== null } : {}),
 		...("expiresAt" in patch
 			? { expiresAt: expiresAt ? expiresAt.toISOString() : null }

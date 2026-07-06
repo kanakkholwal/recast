@@ -3,13 +3,16 @@ import { and, eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { shareReaction } from "$lib/db/schema";
 import { gateShareAccess } from "$lib/share/gate";
+import { REACTION_IDS } from "$lib/share/reactions";
 import type { RequestHandler } from "./$types";
 
 /**
- * Allowed reaction set — a small curated palette keeps the surface tight
- * (anti-clutter) and bounds abuse. Anchored to a point in the video.
+ * Allowed reaction set — stable ids from the shared registry (the rendered
+ * icon is mapped from the id on the client, so the id is what we persist). A
+ * small curated palette keeps the surface tight and bounds abuse. Anchored to
+ * a point in the video.
  */
-const ALLOWED = new Set(["👍", "❤️", "😂", "😮", "🎉", "👏", "🔥"]);
+const ALLOWED = new Set(REACTION_IDS);
 
 /**
  * POST /api/share/[id]/reactions

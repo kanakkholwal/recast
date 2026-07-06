@@ -45,6 +45,11 @@ export async function moveRecast(id: string, folderId: string | null): Promise<v
 export async function deleteRecast(id: string): Promise<void> {
 	await jsonOrThrow(await fetch(`/api/recasts/${id}`, { method: "DELETE" }));
 }
+/** Archive a recast — deletes the video blob + reclaims storage, keeps the
+ *  row (analytics/metadata) until the cron hard-deletes it. Not reversible. */
+export async function archiveRecast(id: string): Promise<void> {
+	await jsonOrThrow(await post(`/api/recasts/${id}/archive`, {}));
+}
 export async function setRecastTags(id: string, tagIds: string[]): Promise<void> {
 	await jsonOrThrow(await put(`/api/recasts/${id}/tags`, { tagIds }));
 }

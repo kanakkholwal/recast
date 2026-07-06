@@ -1,9 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
 	import * as api from "$lib/dashboard/api";
-	import ArchivedCard, { type ArchivedRecast } from "$lib/dashboard/components/ArchivedCard.svelte";
-	import EmptyState from "$lib/dashboard/components/EmptyState.svelte";
-	import FolderRail, { type FolderSelection } from "$lib/dashboard/components/FolderRail.svelte";
+	import type { ArchivedRecast } from "$lib/dashboard/components/ArchivedCard.svelte";
 	import LibraryToolbar from "$lib/dashboard/components/LibraryToolbar.svelte";
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
 	import PlayerDialog from "$lib/dashboard/components/PlayerDialog.svelte";
@@ -13,22 +11,35 @@
 	import TagManagerDialog from "$lib/dashboard/components/TagManagerDialog.svelte";
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 	import { foldersStore, tagsStore } from "$lib/dashboard/library.svelte";
-	import {
-		recastsStore,
-		type Recast,
-		type RecordingSource,
-	} from "$lib/dashboard/store.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
 	import { filterAndSortRecasts, isFileDrag } from "$lib/dashboard/recasts-library.logic";
+	import { recastsStore, type Recast } from "$lib/dashboard/store.svelte";
 	import { UPLOAD_ACCEPT } from "$lib/dashboard/upload";
 	import { createUploadController } from "$lib/dashboard/upload.svelte";
-	import { Archive, FolderOpen, Library, LoaderCircle, Upload, UploadCloud } from "@lucide/svelte";
+	import {
+	  Folder,
+	  FolderOpen,
+	  FolderPlus,
+	  Grid2X2,
+	  Library,
+	  List,
+	  LoaderCircle,
+	  MoreHorizontal,
+	  Pencil,
+	  Plus,
+	  Trash2,
+	  Upload,
+	  UploadCloud,
+	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
+	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { toast } from "@recast/ui/sonner";
+	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
-	import { flip } from "svelte/animate";
 	import { cubicOut } from "svelte/easing";
-	import { fly, scale, slide } from "svelte/transition";
+	import { fly, slide } from "svelte/transition";
+
+	type FolderSelection = "all" | "root" | string;
 
 	let { data } = $props();
 
@@ -37,8 +48,9 @@
 		const mapped = mapRecastsForStore(data.recasts);
 		const folders = data.folders;
 		const tags = data.tags;
+		const ws = data.workspaceId;
 		untrack(() => {
-			recastsStore.hydrate(mapped);
+			recastsStore.hydrate(mapped, ws);
 			foldersStore.hydrate(folders);
 			tagsStore.hydrate(tags);
 		});
@@ -46,19 +58,10 @@
 
 	const workspaceId = $derived(data.workspaceId);
 
-	// Archived recasts live in their own tab. Keep a local copy so a delete can
-	// drop the card optimistically; re-seed whenever the loader returns fresh data.
+	let viewMode = $state<"grid" | "list">("grid");
 	let archived = $state<ArchivedRecast[]>([]);
-	$effect(() => {
-		const next = data.archived;
-		untrack(() => (archived = next));
-	});
-
-	type View = "library" | "archived";
-	let view = $state<View>("library");
 
 	let query = $state("");
-	let activeFilter = $state<RecordingSource | "all">("all");
 	let sortKey = $state<string>("recent");
 	let selectedFolder = $state<FolderSelection>("all");
 	let selectedTagIds = $state<string[]>([]);
@@ -66,6 +69,10 @@
 	let playing = $state<Recast | null>(null);
 	let renaming = $state<Recast | null>(null);
 	let managingTags = $state(false);
+	let creatingFolder = $state(false);
+	let creatingParentId = $state<string | null>(null);
+	let renamingFolderId = $state<string | null>(null);
+	let newFolderName = $state("");
 
 	// Bulk selection.
 	let selectedIds = $state(new Set<string>());
@@ -84,7 +91,7 @@
 	const visible = $derived(
 		filterAndSortRecasts(recastsStore.items, {
 			query,
-			activeFilter,
+			activeFilter: "all",
 			folder: selectedFolder,
 			tagIds: selectedTagIds,
 			sortKey,
@@ -93,17 +100,33 @@
 
 	const hasRecasts = $derived(recastsStore.items.length > 0);
 	const filtersActive = $derived(
-		query.trim() !== "" || activeFilter !== "all" || selectedFolder !== "all" || selectedTagIds.length > 0,
+		query.trim() !== "" || selectedFolder !== "all" || selectedTagIds.length > 0,
 	);
 	const folderCrumb = $derived(
 		typeof selectedFolder === "string" && selectedFolder !== "all" && selectedFolder !== "root"
 			? foldersStore.breadcrumb(selectedFolder)
 			: [],
 	);
+	const folderCards = $derived([...foldersStore.items].sort((a, b) => a.path.localeCompare(b.path)));
+	const selectedFolderName = $derived(
+		selectedFolder === "all"
+			? "All videos"
+			: selectedFolder === "root"
+				? "No folder"
+				: foldersStore.get(selectedFolder)?.name ?? "Folder",
+	);
+	const libraryStats = $derived({
+		folders: foldersStore.items.length,
+		videos: recastsStore.items.length,
+	});
+
+	function countForFolder(folderId: string): number {
+		const ids = foldersStore.subtreeIds(folderId);
+		return recastsStore.items.filter((r) => r.folderId && ids.has(r.folderId)).length;
+	}
 
 	function clearFilters() {
 		query = "";
-		activeFilter = "all";
 		selectedFolder = "all";
 		selectedTagIds = [];
 	}
@@ -156,12 +179,6 @@
 		}
 	}
 
-	function toggleSource(rec: Recast) {
-		const next: RecordingSource = rec.source === "cloud" ? "local" : "cloud";
-		recastsStore.setSource(rec.id, next);
-		toast.success(next === "cloud" ? "Uploaded to Cloudinary." : "Moved to local storage.");
-	}
-
 	async function moveRecast(rec: Recast, folderId: string | null) {
 		if (rec.folderId === folderId) return;
 		const prev = rec.folderId;
@@ -193,10 +210,6 @@
 	let posterTargetId = $state<string | null>(null);
 
 	function changePoster(rec: Recast) {
-		if (rec.source !== "cloud") {
-			toast.error("Upload this recast to the cloud first to set a poster.");
-			return;
-		}
 		posterTargetId = rec.id;
 		posterInput?.click();
 	}
@@ -243,6 +256,21 @@
 		} catch (e) {
 			recastsStore.hydrate(snapshot);
 			toast.error((e as Error)?.message ?? "Couldn't delete recast.");
+		}
+	}
+
+	async function archiveRecast(rec: Recast) {
+		const snapshot = recastsStore.items;
+		recastsStore.remove(rec.id);
+		if (playing?.id === rec.id) playing = null;
+		try {
+			await api.archiveRecast(rec.id);
+			toast.success(`“${rec.title}” archived — storage freed.`);
+			// Refresh the archived rail + quota usage below.
+			void invalidateAll();
+		} catch (e) {
+			recastsStore.hydrate(snapshot);
+			toast.error((e as Error)?.message ?? "Couldn't archive recast.");
 		}
 	}
 
@@ -320,6 +348,96 @@
 			toast.error((e as Error)?.message ?? "Couldn't create tag.");
 		}
 	}
+
+	async function createRootFolder() {
+		const name = newFolderName.trim();
+		creatingFolder = false;
+		newFolderName = "";
+		if (!name) return;
+		try {
+			const folder = await api.createFolder({ workspaceId, name, parentId: null });
+			foldersStore.add(folder);
+			selectedFolder = folder.id;
+			toast.success(`Folder "${name}" created.`);
+		} catch (e) {
+			toast.error((e as Error)?.message ?? "Couldn't create folder.");
+		}
+	}
+
+	function startCreateFolder(parentId: string | null = null) {
+		creatingParentId = parentId;
+		creatingFolder = true;
+		renamingFolderId = null;
+		newFolderName = "";
+	}
+
+	function cancelFolderDraft() {
+		creatingFolder = false;
+		creatingParentId = null;
+		renamingFolderId = null;
+		newFolderName = "";
+	}
+
+	async function createFolder() {
+		const name = newFolderName.trim();
+		const parentId = creatingParentId;
+		cancelFolderDraft();
+		if (!name) return;
+		try {
+			const folder = await api.createFolder({ workspaceId, name, parentId });
+			foldersStore.add(folder);
+			selectedFolder = folder.id;
+			toast.success(`Folder "${name}" created.`);
+		} catch (e) {
+			toast.error((e as Error)?.message ?? "Couldn't create folder.");
+		}
+	}
+
+	function startRenameFolder(folderId: string, name: string) {
+		renamingFolderId = folderId;
+		creatingFolder = false;
+		creatingParentId = null;
+		newFolderName = name;
+	}
+
+	async function renameFolder(folderId: string) {
+		const folder = foldersStore.get(folderId);
+		const name = newFolderName.trim();
+		cancelFolderDraft();
+		if (!folder || !name || name === folder.name) return;
+		const prev = folder.name;
+		foldersStore.update(folderId, { name });
+		try {
+			await api.updateFolder(folderId, { name });
+			toast.success("Folder renamed.");
+		} catch (e) {
+			foldersStore.update(folderId, { name: prev });
+			toast.error((e as Error)?.message ?? "Couldn't rename folder.");
+		}
+	}
+
+	async function removeFolder(folderId: string) {
+		const folder = foldersStore.get(folderId);
+		if (!folder) return;
+		const ids = foldersStore.subtreeIds(folderId);
+		foldersStore.remove(folderId);
+		recastsStore.clearFolder(ids);
+		if (selectedFolder !== "all" && ids.has(selectedFolder as string)) selectedFolder = "all";
+		try {
+			await api.deleteFolder(folderId);
+			toast.success(`Folder "${folder.name}" deleted.`);
+		} catch (e) {
+			toast.error((e as Error)?.message ?? "Couldn't delete folder.");
+		}
+	}
+
+	async function commitFolderDraft(folderId?: string) {
+		if (folderId) {
+			await renameFolder(folderId);
+			return;
+		}
+		await createFolder();
+	}
 </script>
 
 <svelte:head>
@@ -353,66 +471,207 @@
 	</div>
 {/if}
 
-<!-- View tabs: Library / Archived -->
-<div class="mt-8 flex items-center gap-1 border-b border-border-low/60" in:fly={{ y: 12, duration: 480, delay: 200, easing: cubicOut }}>
-	<button
-		type="button"
-		onclick={() => (view = "library")}
-		class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors
-			{view === 'library' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
-	>
-		<Library class="size-4" />
-		Library
-	</button>
-	<button
-		type="button"
-		onclick={() => (view = "archived")}
-		class="-mb-px flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm font-semibold transition-colors
-			{view === 'archived' ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}"
-	>
-		<Archive class="size-4" />
-		Archived
-		{#if archived.length > 0}
-			<span class="rounded-full bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">{archived.length}</span>
-		{/if}
-	</button>
-</div>
-
-{#if view === "library"}
-	<!-- Library: folder rail + content. The whole region is a file drop target. -->
+	<!-- Library: folder cards + content. The whole region is a file drop target. -->
 	<div
 		role="region"
 		aria-label="Recast library"
-		class="relative mt-6 flex flex-col gap-6 lg:flex-row"
+		class="glass-card shadow-none relative mt-8 overflow-hidden rounded-2xl p-4 sm:p-5"
 		in:fly={{ y: 12, duration: 480, delay: 80, easing: cubicOut }}
 		ondragenter={onDragEnter}
 		ondragover={onDragOver}
 		ondragleave={onDragLeave}
 		ondrop={onDrop}
 	>
-		<FolderRail
-			{workspaceId}
-			selected={selectedFolder}
-			onselect={(s) => (selectedFolder = s)}
-			onDropRecast={(recastId, folderId) => {
-				const rec = recastsStore.items.find((r) => r.id === recastId);
-				if (rec) moveRecast(rec, folderId);
-			}}
-		/>
+		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+			<div>
+				<h2 class="text-xl font-semibold tracking-tight text-foreground">Videos</h2>
+				<p class="mt-1 text-sm text-muted-foreground">
+					{libraryStats.videos} videos · {libraryStats.folders} folders
+				</p>
+			</div>
+			<div class="flex flex-wrap items-center gap-2">
+				<Button variant="outline" size="sm" class="gap-2" onclick={() => startCreateFolder()}>
+					<Plus class="size-3.5" />
+					New folder
+				</Button>
+				<div class="grid h-9 grid-cols-2 rounded-lg border border-border-low/70 bg-background/50 p-0.5">
+					<button
+						type="button"
+						onclick={() => (viewMode = "list")}
+						aria-pressed={viewMode === "list"}
+						class={cn(
+							"inline-flex min-w-24 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+							viewMode === "list" ? "bg-card text-foreground shadow-craft-sm" : "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<List class="size-3.5" />
+						List
+					</button>
+					<button
+						type="button"
+						onclick={() => (viewMode = "grid")}
+						aria-pressed={viewMode === "grid"}
+						class={cn(
+							"inline-flex min-w-24 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors",
+							viewMode === "grid" ? "bg-card text-foreground shadow-craft-sm" : "text-muted-foreground hover:text-foreground",
+						)}
+					>
+						<Grid2X2 class="size-3.5" />
+						Grid
+					</button>
+				</div>
+			</div>
+		</div>
 
-		<div class="min-w-0 flex-1">
-			<LibraryToolbar
-				bind:query
-				bind:activeFilter
-				bind:sortKey
-				bind:selectedTagIds
-				total={recastsStore.items.length}
-				shown={visible.length}
-				{filtersActive}
-				onclear={clearFilters}
-				onmanagetags={() => (managingTags = true)}
-				oncreatetag={createTag}
-			/>
+		<div class="mt-6">
+			<div class="mb-3 flex items-center justify-between gap-3">
+				<h3 class="text-sm font-semibold text-foreground">Folders</h3>
+				<span class="font-mono text-xs tabular-nums text-muted-foreground">{folderCards.length}</span>
+			</div>
+			<div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+				<button
+					type="button"
+					onclick={() => (selectedFolder = "all")}
+					class={cn(
+						"flex min-h-16 items-center gap-3 rounded-lg border px-3 text-left transition-colors",
+						selectedFolder === "all"
+							? "border-primary/35 bg-primary/8"
+							: "border-border-low/70 bg-background/45 hover:border-primary/30 hover:bg-background/70",
+					)}
+				>
+					<span class="grid size-9 place-items-center rounded-md bg-foreground/5 text-muted-foreground">
+						<Library class="size-4" />
+					</span>
+					<span class="min-w-0">
+						<span class="block truncate text-sm font-semibold text-foreground">All videos</span>
+						<span class="text-xs text-muted-foreground">{recastsStore.items.length} videos</span>
+					</span>
+				</button>
+				{#each folderCards as folder (folder.id)}
+					{@const isRenaming = renamingFolderId === folder.id}
+					<div
+						role="listitem"
+						class={cn(
+							"group/folder flex min-h-16 items-center gap-3 rounded-lg border px-3 text-left transition-colors",
+							selectedFolder === folder.id
+								? "border-primary/35 bg-primary/8"
+								: "border-border-low/70 bg-background/45 hover:border-primary/30 hover:bg-background/70",
+						)}
+						ondragover={(e) => e.preventDefault()}
+						ondrop={(e) => {
+							const id = e.dataTransfer?.getData("text/recast-id");
+							const rec = recastsStore.items.find((r) => r.id === id);
+							if (rec) moveRecast(rec, folder.id);
+						}}
+					>
+						<button
+							type="button"
+							onclick={() => (selectedFolder = folder.id)}
+							class="flex min-w-0 flex-1 items-center gap-3 text-left"
+						>
+							<span class="grid size-9 shrink-0 place-items-center rounded-md bg-foreground/5 text-muted-foreground">
+								{#if folder.color}
+									<span class="size-4 rounded-[4px]" style="background:{folder.color}"></span>
+								{:else}
+									<Folder class="size-4" />
+								{/if}
+							</span>
+							<span class="min-w-0">
+								{#if isRenaming}
+									<input
+										bind:value={newFolderName}
+										onclick={(e) => e.stopPropagation()}
+										onblur={() => commitFolderDraft(folder.id)}
+										onkeydown={(e) => {
+											if (e.key === "Enter") e.currentTarget.blur();
+											if (e.key === "Escape") cancelFolderDraft();
+										}}
+										class="block w-full bg-transparent text-sm font-semibold text-foreground outline-none"
+									/>
+								{:else}
+									<span class="block truncate text-sm font-semibold text-foreground">{folder.name}</span>
+								{/if}
+								<span class="text-xs text-muted-foreground">{countForFolder(folder.id)} videos</span>
+							</span>
+						</button>
+						<DropdownMenu.Root>
+							<DropdownMenu.Trigger
+								class="grid size-8 shrink-0 place-items-center rounded-md text-muted-foreground opacity-100 transition-colors hover:bg-foreground/8 hover:text-foreground sm:opacity-0 sm:group-hover/folder:opacity-100"
+								aria-label="Folder options"
+							>
+								<MoreHorizontal class="size-4" />
+							</DropdownMenu.Trigger>
+							<DropdownMenu.Content align="end" sideOffset={6} class="w-44">
+								<DropdownMenu.Item onclick={() => startRenameFolder(folder.id, folder.name)}>
+									<Pencil class="size-4 text-muted-foreground" />
+									Rename
+								</DropdownMenu.Item>
+								<DropdownMenu.Item onclick={() => startCreateFolder(folder.id)}>
+									<FolderPlus class="size-4 text-muted-foreground" />
+									New subfolder
+								</DropdownMenu.Item>
+								<DropdownMenu.Separator />
+								<DropdownMenu.Item
+									onclick={() => removeFolder(folder.id)}
+									class="text-destructive/90 data-highlighted:text-destructive"
+								>
+									<Trash2 class="size-4" />
+									Delete
+								</DropdownMenu.Item>
+							</DropdownMenu.Content>
+						</DropdownMenu.Root>
+					</div>
+				{/each}
+				{#if creatingFolder}
+					<form
+						class="flex min-h-16 items-center gap-3 rounded-lg border border-primary/35 bg-primary/8 px-3"
+						onsubmit={(e) => {
+							e.preventDefault();
+							createFolder();
+						}}
+					>
+						<span class="grid size-9 shrink-0 place-items-center rounded-md bg-background/70 text-primary">
+							<Folder class="size-4" />
+						</span>
+						<input
+							bind:value={newFolderName}
+							placeholder="Folder name"
+							onkeydown={(e) => {
+								if (e.key === "Escape") {
+									cancelFolderDraft();
+								}
+							}}
+							onblur={() => commitFolderDraft()}
+							class="min-w-0 flex-1 bg-transparent text-sm font-semibold text-foreground outline-none placeholder:text-muted-foreground/70"
+						/>
+					</form>
+				{/if}
+			</div>
+		</div>
+
+		<div class="mt-6">
+			<div class="min-w-0">
+				<div class="mb-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+					<div>
+						<h3 class="text-sm font-semibold text-foreground">{selectedFolderName}</h3>
+						<p class="mt-0.5 text-xs text-muted-foreground">
+							{visible.length} matching {visible.length === 1 ? "video" : "videos"}
+						</p>
+					</div>
+					<div class="lg:min-w-[min(100%,42rem)]">
+						<LibraryToolbar
+							bind:query
+							bind:sortKey
+							bind:selectedTagIds
+							total={recastsStore.items.length}
+							shown={visible.length}
+							{filtersActive}
+							onclear={clearFilters}
+							onmanagetags={() => (managingTags = true)}
+							oncreatetag={createTag}
+						/>
+					</div>
+				</div>
 
 			<!-- Folder context line -->
 			{#if folderCrumb.length > 0}
@@ -434,6 +693,7 @@
 					tags={tagsStore.items}
 					{selectedIds}
 					{selectionMode}
+					{viewMode}
 					hasAnyRecasts={hasRecasts}
 					{filtersActive}
 					uploading={upload.uploading}
@@ -442,15 +702,16 @@
 					onrename={(rec) => (renaming = rec)}
 					oncopylink={copyLink}
 					onchangeposter={changePoster}
-					ontogglesource={toggleSource}
 					onmove={moveRecast}
 					ontoggletag={toggleTag}
+					onarchive={archiveRecast}
 					ondelete={deleteRecast}
 					onToggleSelect={toggleSelect}
 					onupload={() => fileInput?.click()}
 					onclearfilters={clearFilters}
 				/>
 			</div>
+		</div>
 		</div>
 
 		<!-- Drop-to-upload overlay -->
@@ -469,37 +730,8 @@
 			</div>
 		{/if}
 	</div>
-{:else}
-	<!-- Archived tab -->
-	<div class="mt-6" in:fly={{ y: 12, duration: 480, delay: 80, easing: cubicOut }}>
-		{#if archived.length > 0}
-			<p class="mb-5 max-w-2xl text-sm text-muted-foreground">
-				These recasts lost their cloud file after 14 days without views, so only
-				the details remain. Re-share from the Recast desktop app to bring one back,
-				or delete it for good. Each is purged automatically 16 days after archiving.
-			</p>
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-				{#each archived as rec (rec.id)}
-					<div
-						animate:flip={{ duration: 320, easing: cubicOut }}
-						in:scale={{ start: 0.97, duration: 300, easing: cubicOut }}
-						out:scale={{ start: 0.97, duration: 170, easing: cubicOut }}
-					>
-						<ArchivedCard recast={rec} ondelete={() => deleteArchived(rec)} />
-					</div>
-				{/each}
-			</div>
-		{:else}
-			<EmptyState
-				icon={Archive}
-				title="Nothing archived"
-				description="Unwatched recasts on the Free plan are archived after 14 days. They'll show up here to restore or remove."
-			/>
-		{/if}
-	</div>
-{/if}
 
-{#if view === "library" && selectionMode}
+{#if selectionMode}
 	<SelectionBar
 		count={selectedIds.size}
 		folders={foldersStore.items}

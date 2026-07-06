@@ -1,0 +1,1 @@
+ALTER TABLE "recast" ADD COLUMN "description" text;

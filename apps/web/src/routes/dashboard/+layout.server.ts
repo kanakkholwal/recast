@@ -6,6 +6,7 @@ import {
 	invitation as invitationTable,
 	member as memberTable,
 	organization as organizationTable,
+	user as userTable,
 } from "$lib/db/schema";
 import { getQuotaSnapshot, storagePctUsed } from "$lib/storage/quota";
 import type { LayoutServerLoad } from "./$types";
@@ -50,6 +51,11 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 	}
 
 	const db = getDb();
+	const [userPrefs] = await db
+		.select({ defaultWorkspaceId: userTable.defaultWorkspaceId })
+		.from(userTable)
+		.where(eq(userTable.id, session.user.id))
+		.limit(1);
 	const memberships = await db
 		.select({
 			organizationId: memberTable.organizationId,
@@ -100,8 +106,11 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 	let activeOrganizationId = session.session?.activeOrganizationId ?? null;
 	if (!activeOrganizationId || !memberships.find((m) => m.organizationId === activeOrganizationId)) {
 		// Session lost activeOrganizationId (or it points at a team the user
-		// no longer belongs to). Restore by picking the most recent membership.
-		const fallback = memberships[0]!;
+		// no longer belongs to). Restore from the user's default workspace when
+		// possible, otherwise pick the most recent membership.
+		const fallback =
+			memberships.find((m) => m.organizationId === userPrefs?.defaultWorkspaceId) ??
+			memberships[0]!;
 		activeOrganizationId = fallback.organizationId;
 		try {
 			await getAuth().api.setActiveOrganization({
@@ -150,6 +159,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			email: session.user.email,
 			role: session.user.role ?? "user",
 			emailVerified: Boolean(session.user.emailVerified),
+			defaultWorkspaceId: userPrefs?.defaultWorkspaceId ?? null,
 		},
 		memberships,
 		pendingInvites,
@@ -159,6 +169,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 			slug: activeMembership.slug,
 			plan: activeMembership.plan,
 			role: activeMembership.role,
+			isDefault: activeMembership.organizationId === userPrefs?.defaultWorkspaceId,
 		},
 		quota,
 	};

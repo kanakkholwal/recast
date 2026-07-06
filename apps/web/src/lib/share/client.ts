@@ -11,9 +11,7 @@ import { safeStorage } from "@recast/ui/persisted-state";
 const SID_KEY = "recast.share.sid";
 const NAME_KEY = "recast.share.name";
 
-/** Curated reaction palette — kept tight (anti-clutter) and matched to the
- *  server's allow-list in `/api/share/[id]/reactions`. */
-export const REACTION_EMOJI = ["👍", "❤️", "😂", "😮", "🎉", "👏", "🔥"] as const;
+// Reaction set moved to `$lib/share/reactions` (id-based, server-safe).
 
 export type ShareComment = {
 	id: string;
@@ -56,20 +54,14 @@ export function rememberViewerName(name: string): void {
 	if (trimmed) safeStorage.set(NAME_KEY, trimmed);
 }
 
-const EMPTY: Engagement = {
-	ok: true,
-	commentsEnabled: true,
-	canManage: false,
-	comments: [],
-	reactions: [],
-	myReactions: [],
-};
-
 export async function loadEngagement(slug: string, sessionId: string): Promise<Engagement> {
 	const res = await fetch(
 		`/api/share/${slug}/comments?sessionId=${encodeURIComponent(sessionId)}`,
 	);
-	if (!res.ok) return { ...EMPTY };
+	// Throw on non-ok so callers can distinguish a genuine failure (network /
+	// 5xx / gate) from an empty-but-loaded thread. The page surfaces the former
+	// as a retry affordance instead of a false "No comments yet".
+	if (!res.ok) throw new Error(`Couldn't load engagement (${res.status})`);
 	return (await res.json()) as Engagement;
 }
 

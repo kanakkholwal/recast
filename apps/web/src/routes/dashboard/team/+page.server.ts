@@ -58,6 +58,11 @@ export const load: PageServerLoad = async ({ request }) => {
 		.where(eq(organizationTable.id, orgId))
 		.limit(1);
 	if (!org) error(404, "Team not found");
+	const [userPrefs] = await db
+		.select({ defaultWorkspaceId: userTable.defaultWorkspaceId })
+		.from(userTable)
+		.where(eq(userTable.id, userId))
+		.limit(1);
 
 	// Streamed — the team header (name, plan, seat cap) renders immediately
 	// while the member list + pending invites fill in.
@@ -92,12 +97,29 @@ export const load: PageServerLoad = async ({ request }) => {
 		org,
 		members,
 		invites,
-		viewer: { userId, role: myRole },
+		viewer: {
+			userId,
+			role: myRole,
+			defaultWorkspaceId: userPrefs?.defaultWorkspaceId ?? null,
+		},
 		caps: { members: memberCap },
 	};
 };
 
 export const actions: Actions = {
+	setDefaultWorkspace: async ({ request }) => {
+		const { userId, orgId } = await loadActiveOrg(request.headers);
+		await getDb()
+			.update(userTable)
+			.set({ defaultWorkspaceId: orgId, updatedAt: new Date() })
+			.where(eq(userTable.id, userId));
+		await getAuth().api.setActiveOrganization({
+			headers: request.headers,
+			body: { organizationId: orgId },
+		});
+		return { ok: true };
+	},
+
 	updateProfile: async ({ request }) => {
 		const { orgId, myRole } = await loadActiveOrg(request.headers);
 		if (myRole !== "owner") {
@@ -236,11 +258,23 @@ export const actions: Actions = {
 	},
 
 	leave: async ({ request }) => {
-		const { orgId } = await loadActiveOrg(request.headers);
+		const { userId, orgId } = await loadActiveOrg(request.headers);
+		const db = getDb();
+		const [userPrefs] = await db
+			.select({ defaultWorkspaceId: userTable.defaultWorkspaceId })
+			.from(userTable)
+			.where(eq(userTable.id, userId))
+			.limit(1);
 		await getAuth().api.leaveOrganization({
 			headers: request.headers,
 			body: { organizationId: orgId },
 		});
+		if (userPrefs?.defaultWorkspaceId === orgId) {
+			await db
+				.update(userTable)
+				.set({ defaultWorkspaceId: null, updatedAt: new Date() })
+				.where(eq(userTable.id, userId));
+		}
 		redirect(303, "/dashboard");
 	},
 };

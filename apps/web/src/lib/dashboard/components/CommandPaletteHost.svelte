@@ -1,23 +1,22 @@
 <script lang="ts">
 	import { commandPalette } from "$lib/dashboard/command-palette.svelte";
+	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import {
+		Archive,
 		BarChart3,
 		CornerDownLeft,
+		CreditCard,
 		Film,
 		LayoutDashboard,
-		Plug,
 		Plus,
 		Search,
 		Settings,
 		SlidersHorizontal,
 		User,
 		Users,
-		Zap,
 	} from "@lucide/svelte";
-	import { Badge } from "@recast/ui/badge";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Kbd, KbdGroup } from "@recast/ui/kbd";
-	import { cn } from "@recast/ui/utils";
 	import { Command as CommandPrimitive } from "bits-ui";
 
 	// The single command dialog + the global ⌘K binding. Mounted once (in the
@@ -25,21 +24,27 @@
 	// tall input, roomy rows, group headings, and a keyboard-hint footer — while
 	// bits-ui handles filtering + keyboard navigation.
 
-	// Reserved for the "fast upload with tags" flow — stubbed UI only for now.
-	let fastUpload = $state(false);
-
 	interface Entry {
 		title: string;
-		href: string;
+		href?: string;
 		icon: typeof LayoutDashboard;
 		keywords?: string;
+		action?: () => void;
 	}
 
 	const groups: { heading: string; items: Entry[] }[] = [
 		{
 			heading: "Quick actions",
 			items: [
-				{ title: "New Recast", href: "/dashboard/recasts", icon: Plus, keywords: "upload record video create" },
+				{
+					title: "New Recast",
+					icon: Plus,
+					keywords: "upload record video create",
+					action: () => {
+						commandPalette.hide();
+						quickUpload.show();
+					},
+				},
 			],
 		},
 		{
@@ -47,6 +52,7 @@
 			items: [
 				{ title: "Home", href: "/dashboard", icon: LayoutDashboard, keywords: "overview dashboard" },
 				{ title: "Recasts", href: "/dashboard/recasts", icon: Film, keywords: "videos library recordings" },
+				{ title: "Archive", href: "/dashboard/archive", icon: Archive, keywords: "archived videos library" },
 				{ title: "Analytics", href: "/dashboard/analytics", icon: BarChart3, keywords: "stats engagement views" },
 				{ title: "Team", href: "/dashboard/team", icon: Users, keywords: "members organization workspace" },
 			],
@@ -56,8 +62,8 @@
 			items: [
 				{ title: "Settings", href: "/dashboard/settings", icon: Settings },
 				{ title: "Profile", href: "/dashboard/settings/profile", icon: User, keywords: "account name email" },
-				{ title: "Integrations", href: "/dashboard/settings/integrations", icon: Plug, keywords: "cloudinary storage connect" },
-				{ title: "Preferences", href: "/dashboard/settings/preferences", icon: SlidersHorizontal, keywords: "defaults autoupload" },
+				{ title: "Preferences", href: "/dashboard/settings/preferences", icon: SlidersHorizontal, keywords: "defaults workspace" },
+				{ title: "Plan & billing", href: "/dashboard/settings/billing", icon: CreditCard, keywords: "plan billing subscription" },
 			],
 		},
 	];
@@ -95,37 +101,6 @@
 
 			<!-- Stubbed control: with this on, a dropped video would auto-upload and
 			     auto-tag. Non-functional for now — layout only. -->
-			<div class="flex items-center gap-2.5 border-b border-border/50 px-4 py-3">
-				<span class="grid size-7 shrink-0 place-items-center rounded-md bg-primary/10 text-primary">
-					<Zap class="size-3.5" />
-				</span>
-				<span class="flex min-w-0 flex-col leading-tight">
-					<span class="truncate text-[12.5px] font-medium text-foreground">Fast upload with tags</span>
-					<span class="truncate text-[11px] text-muted-foreground">Auto-upload dropped videos and tag them</span>
-				</span>
-				<button
-					type="button"
-					role="switch"
-					aria-checked={fastUpload}
-					aria-label="Toggle fast upload with tags"
-					disabled
-					title="Coming soon"
-					onclick={() => (fastUpload = !fastUpload)}
-					class={cn(
-						"ml-auto inline-flex h-4 w-7 shrink-0 cursor-not-allowed items-center rounded-full p-0.5 opacity-60 transition-colors",
-						fastUpload ? "bg-primary" : "bg-foreground/15",
-					)}
-				>
-					<span
-						class={cn(
-							"size-3 rounded-full bg-background shadow-sm transition-transform",
-							fastUpload ? "translate-x-3" : "translate-x-0",
-						)}
-					></span>
-				</button>
-				<Badge variant="outline" class="shrink-0 text-[10px]">Soon</Badge>
-			</div>
-
 			<!-- Results -->
 			<CommandPrimitive.List
 				class="max-h-[22rem] overflow-y-auto overflow-x-hidden p-2 no-scrollbar"
@@ -142,21 +117,36 @@
 							{group.heading}
 						</CommandPrimitive.GroupHeading>
 						<CommandPrimitive.GroupItems>
-							{#each group.items as item (item.href)}
+							{#each group.items as item (item.href ?? item.title)}
 								{@const Icon = item.icon}
-								<CommandPrimitive.LinkItem
-									href={item.href}
-									keywords={item.keywords ? item.keywords.split(" ") : undefined}
-									onSelect={() => commandPalette.hide()}
-									class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
-								>
-									<span
-										class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+								{#if item.href}
+									<CommandPrimitive.LinkItem
+										href={item.href}
+										keywords={item.keywords ? item.keywords.split(" ") : undefined}
+										onSelect={() => commandPalette.hide()}
+										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
 									>
-										<Icon class="size-4" />
-									</span>
-									<span class="flex-1 truncate font-medium">{item.title}</span>
-								</CommandPrimitive.LinkItem>
+										<span
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+										>
+											<Icon class="size-4" />
+										</span>
+										<span class="flex-1 truncate font-medium">{item.title}</span>
+									</CommandPrimitive.LinkItem>
+								{:else}
+									<CommandPrimitive.Item
+										keywords={item.keywords ? item.keywords.split(" ") : undefined}
+										onSelect={() => item.action?.()}
+										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
+									>
+										<span
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+										>
+											<Icon class="size-4" />
+										</span>
+										<span class="flex-1 truncate font-medium">{item.title}</span>
+									</CommandPrimitive.Item>
+								{/if}
 							{/each}
 						</CommandPrimitive.GroupItems>
 					</CommandPrimitive.Group>

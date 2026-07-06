@@ -55,6 +55,7 @@ export const GET: RequestHandler = async ({ request }) => {
 				email: userTable.email,
 				name: userTable.name,
 				image: userTable.image,
+				defaultWorkspaceId: userTable.defaultWorkspaceId,
 				createdAt: userTable.createdAt,
 			})
 			.from(userTable)
@@ -129,8 +130,8 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	if (!userRow) throw error(404, "user_not_found");
 
-	// Default upload target: the session's active org if the user is still a
-	// member, else their first workspace. null only if they belong to none.
+	// Default upload target: the user's saved default workspace if still valid,
+	// else the session's active org, else their first workspace.
 	const recastCountByWorkspace = new Map(
 		workspaceRecastCounts.map((r) => [r.workspaceId, Number(r.count) || 0]),
 	);
@@ -144,7 +145,11 @@ export const GET: RequestHandler = async ({ request }) => {
 	}));
 	const activeId = session.user.activeOrganizationId ?? null;
 	const defaultWorkspaceId =
-		(activeId && workspaces.some((w) => w.id === activeId) ? activeId : workspaces[0]?.id) ??
+		(userRow.defaultWorkspaceId && workspaces.some((w) => w.id === userRow.defaultWorkspaceId)
+			? userRow.defaultWorkspaceId
+			: activeId && workspaces.some((w) => w.id === activeId)
+				? activeId
+				: workspaces[0]?.id) ??
 		null;
 
 	// Default to free if there's no subscription row (the seed for new users
