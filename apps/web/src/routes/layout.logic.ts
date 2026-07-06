@@ -29,6 +29,13 @@ export function isChromeless(pathname: string): boolean {
 	);
 }
 
+// Product surfaces ("the app", not "the website") — these get the branded
+// splash + route loading screen. Keep in sync with the inline path check in
+// `app.html`, which can't import this (it runs before any bundle loads).
+export function isAppArea(pathname: string): boolean {
+	return pathname.startsWith("/dashboard") || pathname.startsWith("/share/");
+}
+
 // Only the public marketing/tool pages should be indexed; everything else
 // (dashboard, admin, auth, onboarding, shares) is marked noindex.
 const PUBLIC_PREFIXES = [
