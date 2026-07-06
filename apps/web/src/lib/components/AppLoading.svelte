@@ -36,7 +36,8 @@
 		transition:fade={{ duration: 150 }}
 	>
 		<div class="flex flex-col items-center gap-4">
-			<span class="app-loading-mark grid size-14 place-items-center rounded-2xl bg-foreground text-background shadow-craft-lg">
+			<span class="app-loading-mark relative grid size-14 place-items-center rounded-2xl bg-foreground text-background shadow-craft-lg">
+				<span class="app-loading-ring pointer-events-none absolute -inset-2 rounded-full" aria-hidden="true"></span>
 				<Logo size="30" color="transparent" fill="currentColor" />
 			</span>
 			<span class="text-xs font-medium text-muted-foreground">Loading…</span>
