@@ -1,6 +1,8 @@
 <script lang="ts">
 	import { Skeleton } from "@recast/ui/skeleton";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 </script>
 
@@ -8,8 +10,10 @@
 	<h1 class="text-2xl font-semibold tracking-tight">Audit log</h1>
 	<p class="mt-1 text-sm text-muted-foreground">
 		Append-only record of every admin action.
-		{#await data.rows then rows}
+		{#await data.rows}{:then rows}
 			Showing latest {rows.length}.
+		{:catch}
+			<!-- value hidden; the section below surfaces the error + retry -->
 		{/await}
 	</p>
 </header>
@@ -69,6 +73,12 @@
 							</td>
 						</tr>
 					{/each}
+				{:catch}
+					<tr>
+						<td colspan="5" class="px-4 py-6">
+							<InlineError message="Couldn't load the audit log." />
+						</td>
+					</tr>
 				{/await}
 			</tbody>
 		</table>

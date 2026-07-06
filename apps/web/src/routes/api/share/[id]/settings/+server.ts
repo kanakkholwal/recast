@@ -10,6 +10,7 @@ import type { RequestHandler } from "./$types";
 type SessionShape = { user: { id: string; role?: string } };
 
 const MAX_CTA_LABEL = 60;
+const MAX_TITLE = 200;
 const MAX_DESCRIPTION = 500;
 const MIN_PASSWORD = 4;
 
@@ -27,6 +28,8 @@ const MIN_PASSWORD = 4;
  *   - password         : string (≥4 chars) to set, "" or null to remove.
  *                        Hashed before persist; never echoed back.
  *   - expiresAt        : ISO datetime to set, null to clear. Must be future.
+ *   - title            : recast title (non-empty). Written to the recast row.
+ *   - description      : recast blurb (empty clears). Written to the recast row.
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	const session = (await getAuth()
@@ -40,6 +43,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		commentsEnabled?: unknown;
 		password?: unknown;
 		expiresAt?: unknown;
+		title?: unknown;
 		description?: unknown;
 	} = {};
 	try {
@@ -120,25 +124,30 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	// Description lives on the recast (it's the video's blurb, reused for the
-	// OG card), not the share row — updated separately below.
-	let description: string | null | undefined;
+	// Title + description live on the recast (the video's own text, reused for
+	// the OG card), not the share row — collected here and written in one update.
+	const recastPatch: { title?: string; description?: string | null } = {};
+	if ("title" in body) {
+		const title = typeof body.title === "string" ? body.title.trim().slice(0, MAX_TITLE) : "";
+		if (!title) error(400, "Title can't be empty");
+		recastPatch.title = title;
+	}
 	if ("description" in body) {
-		description =
+		recastPatch.description =
 			typeof body.description === "string" && body.description.trim()
 				? body.description.trim().slice(0, MAX_DESCRIPTION)
 				: null;
 	}
 
-	if (Object.keys(patch).length === 0 && description === undefined) {
+	if (Object.keys(patch).length === 0 && Object.keys(recastPatch).length === 0) {
 		error(400, "Nothing to update");
 	}
 
 	if (Object.keys(patch).length > 0) {
 		await db.update(share).set(patch).where(eq(share.slug, params.id));
 	}
-	if (description !== undefined) {
-		await db.update(recast).set({ description }).where(eq(recast.id, manage.recastId));
+	if (Object.keys(recastPatch).length > 0) {
+		await db.update(recast).set(recastPatch).where(eq(recast.id, manage.recastId));
 	}
 
 	// Never echo the password hash back. Report whether a password is now set
@@ -147,7 +156,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 	return json({
 		ok: true,
 		...safe,
-		...(description !== undefined ? { description } : {}),
+		...recastPatch,
 		...("passwordHash" in patch ? { passwordSet: passwordHash !== null } : {}),
 		...("expiresAt" in patch
 			? { expiresAt: expiresAt ? expiresAt.toISOString() : null }

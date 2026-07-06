@@ -684,101 +684,112 @@
 	{/if}
 
 	<media-control-bar class="recast-control-bar" noautohide={pinControls ? "" : undefined}>
-		<media-play-button class="recast-btn" aria-label="Play or pause">
-			<span slot="play" class="recast-icon"><Play class="size-4 translate-x-[0.5px]" /></span>
-			<span slot="pause" class="recast-icon"><Pause class="size-4" /></span>
-		</media-play-button>
+		<!-- Floating glass pill: detached from the video edges, frosted, with the
+		     scrubber running full-width along the top and the transport / utility
+		     controls split into left + right groups on the row below. -->
+		<div class="recast-pill">
+			<div class="recast-scrubber-wrap">
+				<media-time-range class="recast-scrubber" aria-label="Seek">
+					{#if thumbnails}
+						<media-preview-thumbnail slot="preview" class="recast-thumb"></media-preview-thumbnail>
+					{/if}
+					<media-preview-time-display slot="preview" class="recast-preview-time"></media-preview-time-display>
+				</media-time-range>
 
-		{#if mergedControls.seek}
-			<media-seek-backward-button class="recast-btn" seekoffset="10" aria-label="Back 10 seconds">
-				<span slot="icon" class="recast-icon"><RotateCcw class="size-4" /></span>
-			</media-seek-backward-button>
-
-			<media-seek-forward-button class="recast-btn" seekoffset="10" aria-label="Forward 10 seconds">
-				<span slot="icon" class="recast-icon"><RotateCw class="size-4" /></span>
-			</media-seek-forward-button>
-		{/if}
-
-		{#if mergedControls.time}
-			<media-time-display class="recast-time" showduration></media-time-display>
-		{/if}
-
-		<div class="recast-scrubber-wrap">
-			<media-time-range class="recast-scrubber" aria-label="Seek">
-				{#if thumbnails}
-					<media-preview-thumbnail slot="preview" class="recast-thumb"></media-preview-thumbnail>
+				{#if mergedFeatures.markers && markers.length > 0}
+					<div class="recast-marker-rail">
+						{#each markers as marker (marker.id)}
+							{@const markerTooltipId = `marker-${marker.id}`}
+							<button
+								type="button"
+								class="recast-marker"
+								style={`left:${markerLeft(marker.time)}%;--recast-marker-color:${markerColor(marker)};`}
+								title={marker.label}
+								aria-label={marker.label}
+								onmouseenter={() => showTooltip(markerTooltipId)}
+								onmouseleave={() => hideTooltip(markerTooltipId)}
+								onfocus={() => showTooltip(markerTooltipId)}
+								onblur={() => hideTooltip(markerTooltipId)}
+								onclick={() => selectMarker(marker)}
+							></button>
+							{#if activeTooltipId === markerTooltipId}
+								<div
+									class="recast-ui-tooltip recast-ui-tooltip-marker"
+									style={`left:${markerLeft(marker.time)}%;`}
+									transition:fade={{ duration: 120 }}
+								>
+									{marker.label}
+								</div>
+							{/if}
+						{/each}
+					</div>
 				{/if}
-				<media-preview-time-display slot="preview" class="recast-preview-time"></media-preview-time-display>
-			</media-time-range>
+			</div>
 
-			{#if mergedFeatures.markers && markers.length > 0}
-				<div class="recast-marker-rail">
-					{#each markers as marker (marker.id)}
-						{@const markerTooltipId = `marker-${marker.id}`}
-						<button
-							type="button"
-							class="recast-marker"
-							style={`left:${markerLeft(marker.time)}%;--recast-marker-color:${markerColor(marker)};`}
-							title={marker.label}
-							aria-label={marker.label}
-							onmouseenter={() => showTooltip(markerTooltipId)}
-							onmouseleave={() => hideTooltip(markerTooltipId)}
-							onfocus={() => showTooltip(markerTooltipId)}
-							onblur={() => hideTooltip(markerTooltipId)}
-							onclick={() => selectMarker(marker)}
-						></button>
-						{#if activeTooltipId === markerTooltipId}
-							<div
-								class="recast-ui-tooltip recast-ui-tooltip-marker"
-								style={`left:${markerLeft(marker.time)}%;`}
-								transition:fade={{ duration: 120 }}
-							>
-								{marker.label}
-							</div>
-						{/if}
-					{/each}
+			<div class="recast-pill-row">
+				<div class="recast-group">
+					<media-play-button class="recast-btn" aria-label="Play or pause">
+						<span slot="play" class="recast-icon"><Play class="size-4 translate-x-[0.5px]" /></span>
+						<span slot="pause" class="recast-icon"><Pause class="size-4" /></span>
+					</media-play-button>
+
+					{#if mergedControls.seek}
+						<media-seek-backward-button class="recast-btn recast-btn-seek" seekoffset="10" aria-label="Back 10 seconds">
+							<span slot="icon" class="recast-icon"><RotateCcw class="size-4" /></span>
+						</media-seek-backward-button>
+
+						<media-seek-forward-button class="recast-btn recast-btn-seek" seekoffset="10" aria-label="Forward 10 seconds">
+							<span slot="icon" class="recast-icon"><RotateCw class="size-4" /></span>
+						</media-seek-forward-button>
+					{/if}
+
+					{#if mergedControls.time}
+						<media-time-display class="recast-time" showduration></media-time-display>
+					{/if}
 				</div>
-			{/if}
+
+				<div class="recast-group recast-group-end">
+					{#if mergedControls.volume}
+						<media-mute-button class="recast-btn" aria-label="Mute or unmute">
+							<span slot="off" class="recast-icon"><VolumeX class="size-4" /></span>
+							<span slot="low" class="recast-icon"><Volume class="size-4" /></span>
+							<span slot="medium" class="recast-icon"><Volume1 class="size-4" /></span>
+							<span slot="high" class="recast-icon"><Volume2 class="size-4" /></span>
+						</media-mute-button>
+						<media-volume-range class="recast-volume" aria-label="Volume"></media-volume-range>
+					{/if}
+
+					{#if mergedControls.playbackRate}
+						<media-playback-rate-button
+							class="recast-btn recast-btn-text"
+							rates="0.25 0.5 0.75 1 1.25 1.5 1.75 2"
+							aria-label="Playback speed"
+						></media-playback-rate-button>
+					{/if}
+
+					{#if showCaptions}
+						<media-captions-button class="recast-btn" aria-label="Captions">
+							<span slot="on" class="recast-icon"><Captions class="size-4" /></span>
+							<span slot="off" class="recast-icon recast-icon-muted"><Captions class="size-4" /></span>
+						</media-captions-button>
+					{/if}
+
+					{#if mergedControls.pip}
+						<media-pip-button class="recast-btn" aria-label="Picture in picture">
+							<span slot="enter" class="recast-icon"><PictureInPicture class="size-4" /></span>
+							<span slot="exit" class="recast-icon"><PictureInPicture2 class="size-4" /></span>
+						</media-pip-button>
+					{/if}
+
+					{#if mergedControls.fullscreen}
+						<media-fullscreen-button class="recast-btn" aria-label="Fullscreen">
+							<span slot="enter" class="recast-icon"><Maximize class="size-4" /></span>
+							<span slot="exit" class="recast-icon"><Minimize class="size-4" /></span>
+						</media-fullscreen-button>
+					{/if}
+				</div>
+			</div>
 		</div>
-
-		{#if mergedControls.volume}
-			<media-mute-button class="recast-btn" aria-label="Mute or unmute">
-				<span slot="off" class="recast-icon"><VolumeX class="size-4" /></span>
-				<span slot="low" class="recast-icon"><Volume class="size-4" /></span>
-				<span slot="medium" class="recast-icon"><Volume1 class="size-4" /></span>
-				<span slot="high" class="recast-icon"><Volume2 class="size-4" /></span>
-			</media-mute-button>
-			<media-volume-range class="recast-volume" aria-label="Volume"></media-volume-range>
-		{/if}
-
-		{#if mergedControls.playbackRate}
-			<media-playback-rate-button
-				class="recast-btn recast-btn-text"
-				rates="0.25 0.5 0.75 1 1.25 1.5 1.75 2"
-				aria-label="Playback speed"
-			></media-playback-rate-button>
-		{/if}
-
-		{#if showCaptions}
-			<media-captions-button class="recast-btn" aria-label="Captions">
-				<span slot="on" class="recast-icon"><Captions class="size-4" /></span>
-				<span slot="off" class="recast-icon recast-icon-muted"><Captions class="size-4" /></span>
-			</media-captions-button>
-		{/if}
-
-		{#if mergedControls.pip}
-			<media-pip-button class="recast-btn" aria-label="Picture in picture">
-				<span slot="enter" class="recast-icon"><PictureInPicture class="size-4" /></span>
-				<span slot="exit" class="recast-icon"><PictureInPicture2 class="size-4" /></span>
-			</media-pip-button>
-		{/if}
-
-		{#if mergedControls.fullscreen}
-			<media-fullscreen-button class="recast-btn" aria-label="Fullscreen">
-				<span slot="enter" class="recast-icon"><Maximize class="size-4" /></span>
-				<span slot="exit" class="recast-icon"><Minimize class="size-4" /></span>
-			</media-fullscreen-button>
-		{/if}
 	</media-control-bar>
 </media-controller>
 

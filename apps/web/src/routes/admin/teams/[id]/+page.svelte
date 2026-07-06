@@ -10,6 +10,8 @@
 	import { untrack } from "svelte";
 	import { enhanceAction } from "$lib/forms/enhance";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	let name = $state(untrack(() => data.team.name));
@@ -39,6 +41,8 @@
 				…
 			{:then members}
 				{members.length} / {Number.isFinite(memberCap) ? memberCap : "∞"} seats
+			{:catch}
+				<!-- value hidden; the section below surfaces the error + retry -->
 			{/await}
 		</span>
 	</div>
@@ -138,5 +142,7 @@
 				</li>
 			{/each}
 		</ul>
+	{:catch}
+		<InlineError message="Couldn't load members." />
 	{/await}
 </section>

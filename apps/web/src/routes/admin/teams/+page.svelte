@@ -2,14 +2,18 @@
 	import { Badge } from "@recast/ui/badge";
 	import { Skeleton } from "@recast/ui/skeleton";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 </script>
 
 <header class="mb-6">
 	<h1 class="text-2xl font-semibold tracking-tight">Teams</h1>
 	<p class="mt-1 text-sm text-muted-foreground">
-		{#await data.teams then teams}
+		{#await data.teams}{:then teams}
 			{teams.length} {teams.length === 1 ? "team" : "teams"} total.
+		{:catch}
+			<!-- value hidden; the section below surfaces the error + retry -->
 		{/await}
 		Plan changes here are the only way to upgrade. There's no self-serve checkout.
 	</p>
@@ -81,6 +85,12 @@
 							</td>
 						</tr>
 					{/each}
+				{:catch}
+					<tr>
+						<td colspan="5" class="px-4 py-6">
+							<InlineError message="Couldn't load teams." />
+						</td>
+					</tr>
 				{/await}
 			</tbody>
 		</table>

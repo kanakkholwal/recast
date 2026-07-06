@@ -22,6 +22,8 @@
 		sortIndicator,
 	} from "./users-filters.logic";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	// Seed editable form state once from the URL-driven `data.filters` — we
@@ -81,6 +83,8 @@
 				{@const startIdx = list.total === 0 ? 0 : data.offset + 1}
 				{@const endIdx = Math.min(data.offset + data.limit, list.total)}
 				{list.total.toLocaleString()} total · showing {startIdx}–{endIdx}
+			{:catch}
+				<!-- value hidden; the section below surfaces the error + retry -->
 			{/await}
 		</p>
 	</div>
@@ -243,6 +247,12 @@
 							</td>
 						</tr>
 					{/each}
+				{:catch}
+					<tr>
+						<td colspan="4" class="px-4 py-6">
+							<InlineError message="Couldn't load users." />
+						</td>
+					</tr>
 				{/await}
 			</tbody>
 		</table>
@@ -280,5 +290,7 @@
 				Next <ChevronRight class="size-3.5" />
 			</Button>
 		</div>
+	{:catch}
+		<!-- value hidden; the section below surfaces the error + retry -->
 	{/await}
 </div>

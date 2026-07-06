@@ -2,6 +2,8 @@
 	import { Badge } from "@recast/ui/badge";
 	import { Skeleton } from "@recast/ui/skeleton";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	const statusVariant: Record<string, "default" | "outline" | "destructive" | "secondary"> = {
@@ -80,6 +82,12 @@
 						</td>
 					</tr>
 				{/each}
+				{:catch}
+					<tr>
+						<td colspan="5" class="px-4 py-6">
+							<InlineError message="Couldn't load subscriptions." />
+						</td>
+					</tr>
 				{/await}
 			</tbody>
 		</table>

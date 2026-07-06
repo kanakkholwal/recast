@@ -37,10 +37,7 @@
 	  ExternalLink,
 	  Eye,
 	  FileText,
-	  Flame,
 	  Globe,
-	  Heart,
-	  Laugh,
 	  LayoutDashboard,
 	  Link2,
 	  Lock,
@@ -49,16 +46,13 @@
 	  Megaphone,
 	  MessageSquare,
 	  Moon,
-	  PartyPopper,
 	  PencilLine,
 	  RotateCcw,
 	  Search,
 	  Settings,
 	  Share2,
 	  ShieldOff,
-	  Sparkles,
 	  Sun,
-	  ThumbsUp,
 	  Trash2,
 	  User,
 	  UserCheck,
@@ -99,7 +93,8 @@
 		type ReactionCount,
 		type ShareComment,
 	} from "$lib/share/client";
-	import { REACTIONS, type ReactionId } from "$lib/share/reactions";
+	import { REACTIONS } from "$lib/share/reactions";
+	import ReactionIcon from "$lib/share/ReactionIcon.svelte";
 
 	let { data } = $props();
 
@@ -593,18 +588,6 @@
 	function countFor(emoji: string): number {
 		return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
 	}
-	// Reaction id → Lucide icon (the swap point: change a mapping, keep the
-	// stored id + data intact). Design system is Lucide-only, so these are line
-	// icons tinted with each reaction's accent hue on the active/hover state.
-	const REACTION_ICON = {
-		like: ThumbsUp,
-		love: Heart,
-		laugh: Laugh,
-		wow: Sparkles,
-		celebrate: PartyPopper,
-		fire: Flame,
-	} satisfies Record<ReactionId, typeof ThumbsUp>;
-
 	// ── On-demand engagement panel (docked, non-modal) ────────────────
 	// Watching is the primary job, so the conversation/transcript is off to the
 	// side and only slides in when the viewer asks for it — the video keeps
@@ -696,6 +679,7 @@
 			ctaLabel?: string | null;
 			ctaUrl?: string | null;
 			commentsEnabled?: boolean;
+			title?: string;
 			description?: string | null;
 		};
 	}
@@ -763,42 +747,56 @@
 		window.history.replaceState({}, "", href);
 	}
 
-	// ── Owner description (recast blurb — shown under the video + OG card) ──
-	// Locally editable copy so an owner edit reflects at once; server-synced.
+	// ── Owner-editable video details (title + description — the recast's own
+	//    text, shown on the page and reused for the OG card). Locally mirrored
+	//    so an owner edit reflects at once; server-synced on navigation. ──────
+	let titleText = $state(untrack(() => (data.access.ok ? data.access.recast.title : "")));
 	let descriptionText = $state(
 		untrack(() => (data.access.ok ? data.access.recast.description : "")),
 	);
 	$effect(() => {
-		if (access.ok) descriptionText = access.recast.description;
+		if (access.ok) {
+			titleText = access.recast.title;
+			descriptionText = access.recast.description;
+		}
 	});
-	let descDialogOpen = $state(false);
+	let detailsOpen = $state(false);
+	let titleDraft = $state("");
 	let descDraft = $state("");
-	let savingDesc = $state(false);
+	let savingDetails = $state(false);
 
-	function openDescEditor() {
+	function openDetailsEditor() {
+		titleDraft = titleText ?? "";
 		descDraft = descriptionText ?? "";
-		descDialogOpen = true;
+		detailsOpen = true;
 	}
 
-	async function saveDescription(e: SubmitEvent) {
+	async function saveDetails(e: SubmitEvent) {
 		e.preventDefault();
-		const next = descDraft.trim();
-		savingDesc = true;
+		const title = titleDraft.trim();
+		const description = descDraft.trim();
+		if (!title) {
+			toast.error("Title can't be empty.");
+			return;
+		}
+		savingDetails = true;
 		if (isDemo) {
-			descriptionText = next;
-			descDialogOpen = false;
-			savingDesc = false;
+			titleText = title;
+			descriptionText = description;
+			detailsOpen = false;
+			savingDetails = false;
 			return;
 		}
 		try {
-			const r = await patchSettings({ description: next });
+			const r = await patchSettings({ title, description });
+			titleText = r.title ?? title;
 			descriptionText = r.description ?? "";
-			descDialogOpen = false;
-			toast.success(next ? "Description saved." : "Description removed.");
+			detailsOpen = false;
+			toast.success("Details saved.");
 		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't save the description.");
+			toast.error((err as Error)?.message ?? "Couldn't save the details.");
 		} finally {
-			savingDesc = false;
+			savingDetails = false;
 		}
 	}
 
@@ -1062,7 +1060,7 @@
 						<span class="grid size-6 shrink-0 place-items-center rounded-full bg-foreground/10 text-[9px] font-bold text-foreground ring-1 ring-border/40">
 							{initials(recast.sharedBy, null)}
 						</span>
-						<span class="truncate text-sm font-medium text-foreground/90">{recast.title}</span>
+						<span class="truncate text-sm font-medium text-foreground/90">{titleText}</span>
 					</div>
 				{/if}
 
@@ -1363,7 +1361,6 @@
 			     conversation never competes with the video for space. -->
 			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low/50 bg-background/85 p-1.5 shadow-craft-lg backdrop-blur-xl">
 				{#each REACTIONS as r (r.id)}
-					{@const Icon = REACTION_ICON[r.id]}
 					{@const count = countFor(r.id)}
 					{@const mine = myReactions.has(r.id)}
 					<button
@@ -1373,14 +1370,17 @@
 						aria-label={r.label}
 						title={r.label}
 						class={cn(
-							"group/react inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-colors",
-							mine ? "bg-foreground/8" : "hover:bg-foreground/5",
+							"group/react inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-all",
+							!mine && "hover:bg-foreground/5",
 						)}
-						style={mine ? `color: hsl(${r.hue} 72% 52%)` : ""}
+						style={mine ? `background-color: hsl(${r.hue} 85% 55% / 0.16)` : ""}
 					>
-						<Icon class={cn("size-[18px] transition-transform group-hover/react:scale-110", mine && "fill-current")} />
+						<ReactionIcon id={r.id} class="size-5 transition-transform group-hover/react:scale-110" />
 						{#if count > 0}
-							<span class={cn("font-mono text-[11px] tabular-nums", !mine && "text-muted-foreground")}>{count}</span>
+							<span
+								class={cn("font-mono text-[11px] tabular-nums", !mine && "text-muted-foreground")}
+								style={mine ? `color: hsl(${r.hue} 60% 42%)` : ""}
+							>{count}</span>
 						{/if}
 					</button>
 				{/each}
@@ -1417,12 +1417,25 @@
 			<!-- Title + meta + description + CTA. Text stays a readable column even
 			     though the video goes full-width. -->
 			<div class="mx-auto mt-6 w-full max-w-3xl">
-				<h1
-					bind:this={titleAnchorEl}
-					class="text-balance text-2xl font-semibold leading-tight tracking-tight sm:text-3xl"
-				>
-					{recast?.title}
-				</h1>
+				<div class="flex items-start gap-2">
+					<h1
+						bind:this={titleAnchorEl}
+						class="text-balance text-2xl font-semibold leading-tight tracking-tight sm:text-3xl"
+					>
+						{titleText}
+					</h1>
+					{#if canManage}
+						<button
+							type="button"
+							onclick={openDetailsEditor}
+							aria-label="Edit title and description"
+							title="Edit details"
+							class="mt-1 grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+						>
+							<PencilLine class="size-4" />
+						</button>
+					{/if}
+				</div>
 				<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
 					<span>Shared by <span class="font-medium text-foreground">{recast?.sharedBy}</span></span>
 					<span aria-hidden="true">·</span>
@@ -1446,7 +1459,7 @@
 						{#if canManage}
 							<button
 								type="button"
-								onclick={openDescEditor}
+								onclick={openDetailsEditor}
 								class="ml-1.5 inline-flex items-center gap-1 align-middle text-xs font-medium text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/desc:opacity-100"
 							>
 								<PencilLine class="size-3" /> Edit
@@ -1456,7 +1469,7 @@
 				{:else if canManage}
 					<button
 						type="button"
-						onclick={openDescEditor}
+						onclick={openDetailsEditor}
 						class="mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-border-low/70 px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
 					>
 						<PencilLine class="size-3.5" />
@@ -1809,22 +1822,26 @@
 			</Dialog.Content>
 		</Dialog.Root>
 
-		<!-- Owner description editor — the video's blurb, shown under the title
-		     and reused as the OG/social-card description. -->
-		<Dialog.Root bind:open={descDialogOpen}>
+		<!-- Owner details editor — the recast's own title + blurb, shown on the
+		     page and reused as the OG/social-card text. -->
+		<Dialog.Root bind:open={detailsOpen}>
 			<Dialog.Content>
 				<Dialog.Header>
 					<Dialog.Title class="flex items-center gap-2">
 						<span class="glass-chip grid size-7 place-items-center rounded-lg text-primary">
 							<PencilLine class="size-3.5" />
 						</span>
-						Description
+						Edit details
 					</Dialog.Title>
 					<Dialog.Description>
-						A short blurb shown under the video and in the link preview when this recast is shared.
+						The title and blurb shown on the video and in the link preview when this recast is shared.
 					</Dialog.Description>
 				</Dialog.Header>
-				<form class="space-y-3" onsubmit={saveDescription}>
+				<form class="space-y-3" onsubmit={saveDetails}>
+					<Label class="block">
+						<span class="mb-1 block text-xs font-semibold text-foreground/85">Title</span>
+						<Input bind:value={titleDraft} placeholder="Untitled recast" maxlength={200} class="h-10" required />
+					</Label>
 					<Label class="block">
 						<span class="mb-1 block text-xs font-semibold text-foreground/85">Description</span>
 						<textarea
@@ -1843,13 +1860,13 @@
 								class="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
 								onclick={() => (descDraft = "")}
 							>
-								Clear
+								Clear description
 							</Button>
 						{/if}
-						<Button type="button" variant="ghost" onclick={() => (descDialogOpen = false)}>Cancel</Button>
-						<Button type="submit" disabled={savingDesc} class="gap-2">
-							{savingDesc ? "Saving…" : "Save"}
-							{#if !savingDesc}<Check class="size-4" />{/if}
+						<Button type="button" variant="ghost" onclick={() => (detailsOpen = false)}>Cancel</Button>
+						<Button type="submit" disabled={savingDetails || !titleDraft.trim()} class="gap-2">
+							{savingDetails ? "Saving…" : "Save"}
+							{#if !savingDetails}<Check class="size-4" />{/if}
 						</Button>
 					</Dialog.Footer>
 				</form>

@@ -14,6 +14,8 @@
 		Users,
 	} from "@lucide/svelte";
 
+	import InlineError from "$lib/components/InlineError.svelte";
+
 	let { data } = $props();
 
 	function timeAgo(d: Date | string): string {
@@ -100,6 +102,10 @@
 			</div>
 			<div class="text-2xl font-semibold tabular-nums tracking-tight">—</div>
 		</article>
+	{:catch}
+		<div class="col-span-full">
+			<InlineError message="Couldn't load metrics." />
+		</div>
 	{/await}
 </section>
 
@@ -153,6 +159,8 @@
 					<li class="py-3 text-sm text-muted-foreground">No users yet.</li>
 				{/each}
 			</ul>
+		{:catch}
+			<InlineError message="Couldn't load recent signups." />
 		{/await}
 	</section>
 
@@ -200,6 +208,8 @@
 					<li class="py-3 text-sm text-muted-foreground">No admin actions yet.</li>
 				{/each}
 			</ul>
+		{:catch}
+			<InlineError message="Couldn't load recent activity." />
 		{/await}
 	</section>
 </div>
