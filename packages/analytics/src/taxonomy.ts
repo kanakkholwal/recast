@@ -28,6 +28,7 @@ export const ANALYTICS_EVENTS = [
 	"recast_uploaded",
 	"share_created",
 	"share_viewed",
+	"share_player_error",
 	"editor_opened",
 	"cloud_connected",
 	"sign_in",
@@ -80,6 +81,10 @@ export interface EventPropMap {
 		/** The anonymous `shareView` session id, so PostHog reconciles with the
 		 * first-party watch-metrics table. Viewers are NOT identified. */
 		share_session_id?: string;
+	};
+	share_player_error: {
+		/** Error class name only (e.g. "TypeError") — never the raw message (no paths/PII). */
+		reason?: string;
 	};
 	recast_uploaded: {
 		size_bytes?: number;

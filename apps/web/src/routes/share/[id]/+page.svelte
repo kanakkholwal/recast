@@ -37,7 +37,10 @@
 	  ExternalLink,
 	  Eye,
 	  FileText,
+	  Flame,
 	  Globe,
+	  Heart,
+	  Laugh,
 	  LayoutDashboard,
 	  Link2,
 	  Lock,
@@ -46,16 +49,21 @@
 	  Megaphone,
 	  MessageSquare,
 	  Moon,
+	  PartyPopper,
+	  PencilLine,
 	  RotateCcw,
 	  Search,
 	  Settings,
 	  Share2,
 	  ShieldOff,
+	  Sparkles,
 	  Sun,
+	  ThumbsUp,
 	  Trash2,
 	  User,
 	  UserCheck,
 	  Users,
+	  X,
 	  Film,
 	} from "@lucide/svelte";
 	import { goto, invalidateAll } from "$app/navigation";
@@ -81,7 +89,6 @@
 	import { Tween } from "svelte/motion";
 	import { fade, fly, scale, slide } from "svelte/transition";
 	import {
-		REACTION_EMOJI,
 		deleteComment,
 		loadEngagement,
 		postComment,
@@ -92,6 +99,7 @@
 		type ReactionCount,
 		type ShareComment,
 	} from "$lib/share/client";
+	import { REACTIONS, type ReactionId } from "$lib/share/reactions";
 
 	let { data } = $props();
 
@@ -152,6 +160,12 @@
 	// its 16/9 placeholder and adjusts once the real dimensions decode.
 	const playerAspect = $derived(
 		recast?.width && recast?.height ? `${recast.width} / ${recast.height}` : null,
+	);
+	// Numeric aspect for theater sizing — the video is capped by available
+	// height (`max-width = height × ratio`) so it grows as large as the viewport
+	// allows without overflowing the fold. Falls back to 16:9 on legacy rows.
+	const heroRatio = $derived(
+		recast?.width && recast?.height ? recast.width / recast.height : 16 / 9,
 	);
 	const slug = $derived(shareMeta?.slug ?? recast?.id ?? "");
 	const isDemo = $derived(slug === "demo");
@@ -388,7 +402,10 @@
 	let comments = $state<ShareComment[]>([]);
 	let reactions = $state<ReactionCount[]>([]);
 	let myReactions = $state<Set<string>>(new Set());
+	// Fire-once guard so the load effect doesn't re-trigger; distinct from the
+	// UI-facing `engagementState`, which drives skeleton / retry / empty.
 	let engagementLoaded = $state(false);
+	let engagementState = $state<"loading" | "ready" | "error">("loading");
 
 	// ── Engagement side-panel (Transcript | Comments) ─────────────────
 	// The video and the conversation live side-by-side so a viewer can read,
@@ -428,23 +445,24 @@
 		if (!browser || !api || !hasTranscript) return;
 		const video = api.getVideoElement();
 		if (!video) return;
-		const track = Array.from(video.textTracks).find(
-			(t) => t.kind === "captions" || t.kind === "subtitles",
-		);
-		if (!track) return;
-		// Populate cues without forcing captions on-screen — only nudge a
-		// disabled track to `hidden`; never override the viewer's CC choice.
-		if (track.mode === "disabled") track.mode = "hidden";
-		const read = () => {
+		// Both the `<track>` registration and its cue parsing land
+		// asynchronously after the player mounts, so poll for both.
+		const attempt = () => {
+			const track = Array.from(video.textTracks).find(
+				(t) => t.kind === "captions" || t.kind === "subtitles",
+			);
+			if (!track) return false;
+			// Populate cues without forcing captions on-screen — only nudge a
+			// disabled track to `hidden`; never override the viewer's CC choice.
+			if (track.mode === "disabled") track.mode = "hidden";
 			const cues = readCuesFromTrack(track);
 			if (cues.length) transcriptCues = cues;
 			return cues.length > 0;
 		};
-		if (read()) return;
-		// VTT cues parse asynchronously after the track loads — poll briefly.
+		if (attempt()) return;
 		let tries = 0;
 		const iv = setInterval(() => {
-			if (read() || ++tries > 15) clearInterval(iv);
+			if (attempt() || ++tries > 25) clearInterval(iv);
 		}, 200);
 		return () => clearInterval(iv);
 	});
@@ -508,10 +526,10 @@
 		{ id: "d3", authorName: "Sara", atSeconds: 128, body: "This cut at 2:08 is sharp — worth showing the founder the full sequence.", createdAt: 0, mine: false },
 	];
 	const DEMO_REACTIONS: ReactionCount[] = [
-		{ emoji: "👍", count: 12 },
-		{ emoji: "❤️", count: 7 },
-		{ emoji: "🔥", count: 4 },
-		{ emoji: "🎉", count: 2 },
+		{ emoji: "like", count: 12 },
+		{ emoji: "love", count: 7 },
+		{ emoji: "fire", count: 4 },
+		{ emoji: "celebrate", count: 2 },
 	];
 
 	onMount(() => {
@@ -531,12 +549,14 @@
 
 	async function loadAll(s: string) {
 		engagementLoaded = true; // guard against the effect re-firing mid-await
+		engagementState = "loading";
 		const sid = shareSessionId();
 		sessionId = sid;
 		if (s === "demo") {
 			comments = DEMO_COMMENTS;
 			reactions = DEMO_REACTIONS;
 			myReactions = new Set();
+			engagementState = "ready";
 			return;
 		}
 		try {
@@ -545,9 +565,16 @@
 			reactions = e.reactions;
 			myReactions = new Set(e.myReactions);
 			commentsEnabled = e.commentsEnabled;
+			engagementState = "ready";
 		} catch {
-			// Leave the surface empty rather than blanking the page.
+			// Surface a retry affordance rather than a false "No comments yet".
+			engagementState = "error";
 		}
+	}
+
+	// Manual retry after a failed engagement load (network / server error).
+	function retryEngagement() {
+		if (slug) loadAll(slug);
 	}
 
 	async function refresh() {
@@ -566,7 +593,27 @@
 	function countFor(emoji: string): number {
 		return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
 	}
-	const totalReactions = $derived(reactions.reduce((sum, r) => sum + r.count, 0));
+	// Reaction id → Lucide icon (the swap point: change a mapping, keep the
+	// stored id + data intact). Design system is Lucide-only, so these are line
+	// icons tinted with each reaction's accent hue on the active/hover state.
+	const REACTION_ICON = {
+		like: ThumbsUp,
+		love: Heart,
+		laugh: Laugh,
+		wow: Sparkles,
+		celebrate: PartyPopper,
+		fire: Flame,
+	} satisfies Record<ReactionId, typeof ThumbsUp>;
+
+	// ── On-demand engagement panel (docked, non-modal) ────────────────
+	// Watching is the primary job, so the conversation/transcript is off to the
+	// side and only slides in when the viewer asks for it — the video keeps
+	// playing behind it (no dimming overlay on desktop).
+	let panelOpen = $state(false);
+	function openPanel(tab: PanelTab) {
+		activeTab = tab;
+		panelOpen = true;
+	}
 
 	async function react(emoji: string) {
 		const nextState = toggleReactionState({ myReactions, reactions }, emoji);
@@ -649,6 +696,7 @@
 			ctaLabel?: string | null;
 			ctaUrl?: string | null;
 			commentsEnabled?: boolean;
+			description?: string | null;
 		};
 	}
 
@@ -713,6 +761,45 @@
 		if (!browser) return;
 		const href = withTimeParam(new URL(window.location.href), seconds);
 		window.history.replaceState({}, "", href);
+	}
+
+	// ── Owner description (recast blurb — shown under the video + OG card) ──
+	// Locally editable copy so an owner edit reflects at once; server-synced.
+	let descriptionText = $state(
+		untrack(() => (data.access.ok ? data.access.recast.description : "")),
+	);
+	$effect(() => {
+		if (access.ok) descriptionText = access.recast.description;
+	});
+	let descDialogOpen = $state(false);
+	let descDraft = $state("");
+	let savingDesc = $state(false);
+
+	function openDescEditor() {
+		descDraft = descriptionText ?? "";
+		descDialogOpen = true;
+	}
+
+	async function saveDescription(e: SubmitEvent) {
+		e.preventDefault();
+		const next = descDraft.trim();
+		savingDesc = true;
+		if (isDemo) {
+			descriptionText = next;
+			descDialogOpen = false;
+			savingDesc = false;
+			return;
+		}
+		try {
+			const r = await patchSettings({ description: next });
+			descriptionText = r.description ?? "";
+			descDialogOpen = false;
+			toast.success(next ? "Description saved." : "Description removed.");
+		} catch (err) {
+			toast.error((err as Error)?.message ?? "Couldn't save the description.");
+		} finally {
+			savingDesc = false;
+		}
 	}
 
 
@@ -952,7 +1039,7 @@
 		<!-- Top bar — brand left, light viewer/owner actions right. The mode
 		     switcher is gone; the only chrome here is theme, share, account. -->
 		<header class="sticky top-0 z-30 border-b border-border-low/30 bg-background/70 backdrop-blur-xl">
-			<div class="relative mx-auto flex max-w-6xl items-center gap-3 px-5 py-3 sm:px-6">
+			<div class={cn("relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
 				<!-- Left mark. For Pro shares this should swap to the owner's
 				     custom logo (branding feature, not wired yet) — the slot is
 				     here so that change is a one-line conditional later. -->
@@ -1173,31 +1260,42 @@
 			</div>
 		</header>
 
-		<main class="mx-auto max-w-6xl px-4 pb-20 pt-6 sm:px-6">
-			<!-- Two-pane on desktop: sticky video + context on the left, the
-			     transcript/comments panel on the right so viewers watch and
-			     engage at once. Collapses to a single stack on mobile. -->
-			<div class="lg:grid lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-8">
-			<!-- LEFT — player, title/meta, CTA, reactions. -->
-			<div class="min-w-0">
-			<!-- Player hero. End-card overlays the player when the video ends —
-			     the owner's next-step CTA, or (for a stranger) a quiet nudge to
-			     record their own. Highest-intent moment either way. -->
-			<section class="relative">
+		<main class={cn("relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 transition-[padding] duration-300 sm:px-6 lg:px-8", panelOpen && "lg:pr-[420px]")}>
+			<!-- Video-first: the player IS the page. Theater-sized so it fills as
+			     much of the viewport as the fold allows; the conversation and
+			     transcript are on-demand chrome (floating bar → docked panel), so
+			     watching a stranger's video needs zero learning curve.
+			     End-card overlays the player when the video ends — the owner's
+			     next-step CTA, or (for a stranger) a nudge to record their own. -->
+			<section class="relative mx-auto w-full" style="max-width: min(100%, calc((100dvh - 15rem) * {heroRatio}));">
 				<div class="glass-card relative overflow-hidden rounded-2xl shadow-craft-xl">
 					{#if recast?.src}
-						<RecastPlayer
-							bind:api
-							src={recast.src}
-							poster={recast.poster}
-							title={recast.title}
-							aspectRatio={playerAspect}
-							tracks={captionTracks}
-							markers={commentMarkers}
-							controls={{ captions: captionTracks.length > 0 }}
-							onengagement={onEngagement}
-							onaction={onPlayerAction}
-						/>
+						<!-- Isolate the player: an hls.js / media-chrome render or effect
+						     error degrades to a recoverable fallback instead of white-
+						     screening the whole share view. -->
+						<svelte:boundary onerror={(err) => browser && analytics.capture("share_player_error", { reason: (err as Error)?.name ?? "unknown" })}>
+							<RecastPlayer
+								bind:api
+								src={recast.src}
+								poster={recast.poster}
+								title={recast.title}
+								aspectRatio={playerAspect}
+								tracks={captionTracks}
+								markers={commentMarkers}
+								controls={{ captions: captionTracks.length > 0 }}
+								onengagement={onEngagement}
+								onaction={onPlayerAction}
+							/>
+							{#snippet failed(_error, reset)}
+								<div class="grid aspect-video place-items-center gap-3 bg-foreground/5 px-6 text-center">
+									<p class="text-sm text-muted-foreground">Something went wrong loading the player.</p>
+									<Button size="sm" variant="outline" onclick={reset} class="gap-1.5">
+										<RotateCcw class="size-3.5" />
+										Try again
+									</Button>
+								</div>
+							{/snippet}
+						</svelte:boundary>
 					{:else}
 						<div class="grid aspect-video place-items-center bg-foreground/5 text-sm text-muted-foreground">
 							Playback is unavailable for this recast.
@@ -1259,9 +1357,66 @@
 				</div>
 			</section>
 
-			<!-- Title + meta. Sits below the video (video-first), with view
-			     count as quiet social proof. -->
-			<div class="mt-5">
+			<!-- Floating action bar — sits just under the video. Id-based Lucide
+			     reaction icons + on-demand Comments / Transcript triggers that open
+			     the docked side panel. This is the only always-on chrome; the
+			     conversation never competes with the video for space. -->
+			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low/50 bg-background/85 p-1.5 shadow-craft-lg backdrop-blur-xl">
+				{#each REACTIONS as r (r.id)}
+					{@const Icon = REACTION_ICON[r.id]}
+					{@const count = countFor(r.id)}
+					{@const mine = myReactions.has(r.id)}
+					<button
+						type="button"
+						onclick={() => react(r.id)}
+						aria-pressed={mine}
+						aria-label={r.label}
+						title={r.label}
+						class={cn(
+							"group/react inline-flex shrink-0 items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-sm transition-colors",
+							mine ? "bg-foreground/8" : "hover:bg-foreground/5",
+						)}
+						style={mine ? `color: hsl(${r.hue} 72% 52%)` : ""}
+					>
+						<Icon class={cn("size-[18px] transition-transform group-hover/react:scale-110", mine && "fill-current")} />
+						{#if count > 0}
+							<span class={cn("font-mono text-[11px] tabular-nums", !mine && "text-muted-foreground")}>{count}</span>
+						{/if}
+					</button>
+				{/each}
+
+				{#if commentsEnabled || hasTranscript}
+					<span class="mx-1 h-6 w-px shrink-0 bg-border-low/60" aria-hidden="true"></span>
+				{/if}
+
+				{#if commentsEnabled}
+					<button
+						type="button"
+						onclick={() => openPanel("comments")}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+					>
+						<MessageSquare class="size-4" />
+						<span class="max-sm:hidden">Comments</span>
+						{#if comments.length > 0}
+							<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
+						{/if}
+					</button>
+				{/if}
+				{#if hasTranscript}
+					<button
+						type="button"
+						onclick={() => openPanel("transcript")}
+						class="inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+					>
+						<FileText class="size-4" />
+						<span class="max-sm:hidden">Transcript</span>
+					</button>
+				{/if}
+			</div>
+
+			<!-- Title + meta + description + CTA. Text stays a readable column even
+			     though the video goes full-width. -->
+			<div class="mx-auto mt-6 w-full max-w-3xl">
 				<h1
 					bind:this={titleAnchorEl}
 					class="text-balance text-2xl font-semibold leading-tight tracking-tight sm:text-3xl"
@@ -1284,68 +1439,72 @@
 						</span>
 					{/if}
 				</div>
-				{#if recast?.description}
-					<p class="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">{recast.description}</p>
-				{/if}
-			</div>
 
-			<!-- Persistent CTA — the founder's "next step", always visible (the
-			     end-card only catches viewers who finish). -->
-			{#if cta}
-				<div class="mt-4">
-					<Button href={cta.url} target="_blank" rel="noopener" class="gap-2">
-						{cta.label}
-						<ExternalLink class="size-3.5" />
-					</Button>
-				</div>
-			{:else if canManage}
-				<button
-					type="button"
-					onclick={openCtaEditor}
-					class="mt-4 inline-flex items-center gap-2 rounded-xl border border-dashed border-border-low/70 px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
-				>
-					<Megaphone class="size-3.5" />
-					Add a call-to-action
-				</button>
-			{/if}
-
-			<!-- Reactions — lightweight sentiment, always available. -->
-			<div class="mt-6 flex flex-wrap items-center gap-2">
-				{#each REACTION_EMOJI as emoji (emoji)}
-					{@const count = countFor(emoji)}
-					{@const mine = myReactions.has(emoji)}
+				{#if descriptionText}
+					<p class="group/desc mt-3 text-sm leading-relaxed text-muted-foreground">
+						{descriptionText}
+						{#if canManage}
+							<button
+								type="button"
+								onclick={openDescEditor}
+								class="ml-1.5 inline-flex items-center gap-1 align-middle text-xs font-medium text-muted-foreground/70 opacity-0 transition-opacity hover:text-foreground focus-visible:opacity-100 group-hover/desc:opacity-100"
+							>
+								<PencilLine class="size-3" /> Edit
+							</button>
+						{/if}
+					</p>
+				{:else if canManage}
 					<button
 						type="button"
-						onclick={() => react(emoji)}
-						aria-pressed={mine}
-						class={cn(
-							"inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-sm transition-all",
-							mine
-								? "border-primary/40 bg-primary/12 text-foreground"
-								: "border-border-low/60 bg-foreground/3 text-muted-foreground hover:border-border hover:bg-foreground/6",
-						)}
+						onclick={openDescEditor}
+						class="mt-3 inline-flex items-center gap-2 rounded-xl border border-dashed border-border-low/70 px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
 					>
-						<span class="leading-none">{emoji}</span>
-						{#if count > 0}
-							<span class="font-mono text-[11px] tabular-nums">{count}</span>
-						{/if}
+						<PencilLine class="size-3.5" />
+						Add a description
 					</button>
-				{/each}
-				{#if totalReactions > 0}
-					<span class="ml-1 text-xs text-muted-foreground">{totalReactions} {totalReactions === 1 ? "reaction" : "reactions"}</span>
+				{/if}
+
+				<!-- Persistent CTA — the founder's "next step", always visible (the
+				     end-card only catches viewers who finish). -->
+				{#if cta}
+					<div class="mt-4">
+						<Button href={cta.url} target="_blank" rel="noopener" class="gap-2">
+							{cta.label}
+							<ExternalLink class="size-3.5" />
+						</Button>
+					</div>
+				{:else if canManage}
+					<button
+						type="button"
+						onclick={openCtaEditor}
+						class="mt-4 inline-flex items-center gap-2 rounded-xl border border-dashed border-border-low/70 px-3.5 py-2 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+					>
+						<Megaphone class="size-3.5" />
+						Add a call-to-action
+					</button>
 				{/if}
 			</div>
-			</div><!-- /LEFT -->
 
-			<!-- RIGHT — engagement panel. Sticky + internally scrollable on
-			     desktop so the video stays put while a viewer reads the
-			     transcript or the thread; a normal stacked block on mobile.
+			<!-- Docked engagement panel — non-modal: slides in from the right on
+			     demand and the video keeps playing behind it (no dimming overlay
+			     on desktop; a tap-scrim on mobile). Opened from the floating bar.
 			     Name-only: viewers comment without an account. -->
-			{#if hasTranscript || commentsEnabled}
-				<aside class="mt-6 lg:mt-0 lg:sticky lg:top-20 lg:h-[calc(100vh-6rem)]">
-					<div class="glass-card flex h-full flex-col overflow-hidden rounded-2xl border border-border-low/40 shadow-craft-sm">
-						<!-- Tab bar -->
-						<div role="tablist" aria-label="Transcript and comments" class="flex shrink-0 items-center gap-1 border-b border-border-low/40 p-1.5">
+			{#if panelOpen}
+				<!-- Mobile scrim — tap to dismiss (desktop keeps the video visible). -->
+				<button
+					type="button"
+					aria-label="Close panel"
+					onclick={() => (panelOpen = false)}
+					transition:fade={{ duration: 150 }}
+					class="fixed inset-0 z-40 bg-black/40 lg:hidden"
+				></button>
+				<aside
+					class="fixed inset-y-0 right-0 z-50 flex w-full flex-col border-l border-border-low/50 bg-background/95 shadow-craft-xl backdrop-blur-xl sm:w-[400px]"
+					transition:fly={{ x: 420, duration: 280, easing: cubicOut }}
+				>
+					<div class="flex h-full flex-col overflow-hidden">
+						<!-- Tab bar + close -->
+						<div role="tablist" aria-label="Transcript and comments" class="flex shrink-0 items-center gap-1 border-b border-border-low/40 p-2">
 							{#if hasTranscript}
 								<button
 									type="button"
@@ -1379,6 +1538,14 @@
 									{/if}
 								</button>
 							{/if}
+							<button
+								type="button"
+								onclick={() => (panelOpen = false)}
+								aria-label="Close panel"
+								class="ml-auto grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+							>
+								<X class="size-4" />
+							</button>
 						</div>
 
 						<!-- Transcript tab — cues read off the player's live caption
@@ -1432,7 +1599,30 @@
 						{#if commentsEnabled && activeTab === "comments"}
 							<div class="flex min-h-0 flex-1 flex-col">
 								<div class="min-h-0 flex-1 overflow-y-auto p-2">
-									{#if comments.length === 0}
+									{#if engagementState === "loading"}
+									<!-- Skeleton rows so an opened panel reads as loading, not
+									     empty, during the client-side engagement fetch. -->
+										<ul class="animate-pulse space-y-1" aria-hidden="true">
+											{#each [0, 1, 2] as i (i)}
+												<li class="flex items-start gap-3 px-2 py-3">
+													<span class="size-8 shrink-0 rounded-full bg-foreground/8"></span>
+													<div class="min-w-0 flex-1 space-y-2">
+														<div class="h-3 w-24 rounded bg-foreground/8"></div>
+														<div class="h-3 w-full rounded bg-foreground/6"></div>
+														<div class="h-3 w-3/5 rounded bg-foreground/6"></div>
+													</div>
+												</li>
+											{/each}
+										</ul>
+									{:else if engagementState === "error"}
+										<div class="flex flex-col items-center gap-3 px-4 py-10 text-center">
+											<p class="text-sm text-muted-foreground">Couldn't load the conversation.</p>
+											<Button size="sm" variant="outline" onclick={retryEngagement} class="gap-1.5">
+												<RotateCcw class="size-3.5" />
+												Try again
+											</Button>
+										</div>
+									{:else if comments.length === 0}
 										<p class="px-1 py-8 text-center text-sm text-muted-foreground">No comments yet. Be the first.</p>
 									{:else}
 										<ul>
@@ -1551,7 +1741,6 @@
 					</div>
 				</aside>
 			{/if}
-			</div><!-- /grid -->
 
 			<!-- Free-tier growth loop: every shared link quietly markets
 			     Recast. Pro removes the watermark, so this hides for them. -->
@@ -1614,6 +1803,53 @@
 						<Button type="submit" disabled={savingCta} class="gap-2">
 							{savingCta ? "Saving…" : "Save"}
 							{#if !savingCta}<Check class="size-4" />{/if}
+						</Button>
+					</Dialog.Footer>
+				</form>
+			</Dialog.Content>
+		</Dialog.Root>
+
+		<!-- Owner description editor — the video's blurb, shown under the title
+		     and reused as the OG/social-card description. -->
+		<Dialog.Root bind:open={descDialogOpen}>
+			<Dialog.Content>
+				<Dialog.Header>
+					<Dialog.Title class="flex items-center gap-2">
+						<span class="glass-chip grid size-7 place-items-center rounded-lg text-primary">
+							<PencilLine class="size-3.5" />
+						</span>
+						Description
+					</Dialog.Title>
+					<Dialog.Description>
+						A short blurb shown under the video and in the link preview when this recast is shared.
+					</Dialog.Description>
+				</Dialog.Header>
+				<form class="space-y-3" onsubmit={saveDescription}>
+					<Label class="block">
+						<span class="mb-1 block text-xs font-semibold text-foreground/85">Description</span>
+						<textarea
+							bind:value={descDraft}
+							rows="4"
+							maxlength={500}
+							placeholder="What's this recording about?"
+							class="w-full resize-none rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+						></textarea>
+					</Label>
+					<Dialog.Footer class="gap-2">
+						{#if descriptionText}
+							<Button
+								type="button"
+								variant="ghost"
+								class="mr-auto text-destructive hover:bg-destructive/10 hover:text-destructive"
+								onclick={() => (descDraft = "")}
+							>
+								Clear
+							</Button>
+						{/if}
+						<Button type="button" variant="ghost" onclick={() => (descDialogOpen = false)}>Cancel</Button>
+						<Button type="submit" disabled={savingDesc} class="gap-2">
+							{savingDesc ? "Saving…" : "Save"}
+							{#if !savingDesc}<Check class="size-4" />{/if}
 						</Button>
 					</Dialog.Footer>
 				</form>

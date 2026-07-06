@@ -5,7 +5,6 @@
 		deviceBreakdown,
 		geographyBreakdown,
 		trafficBreakdown,
-		viewCount,
 		viewsByDay,
 		watchRetention,
 	} from "$lib/dashboard/activity";
@@ -13,7 +12,6 @@
 	import BreakdownList, { flagEmoji } from "$lib/dashboard/components/BreakdownList.svelte";
 	import EngagementHeatmap from "$lib/dashboard/components/EngagementHeatmap.svelte";
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-	import PlayerDialog from "$lib/dashboard/components/PlayerDialog.svelte";
 	import RangeTabs from "$lib/dashboard/components/RangeTabs.svelte";
 	import RecastEngagement from "$lib/dashboard/components/RecastEngagement.svelte";
 	import RecastShares, { type ShareRow } from "$lib/dashboard/components/RecastShares.svelte";
@@ -21,13 +19,14 @@
 	import StatGrid from "$lib/dashboard/components/StatGrid.svelte";
 	import WatchRetention from "$lib/dashboard/components/WatchRetention.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
-	import { buildStatRow, formatRecastSubtitle, toPlayerRecast } from "$lib/dashboard/recast-detail.logic";
+	import { buildStatRow, formatRecastSubtitle } from "$lib/dashboard/recast-detail.logic";
+	import { RecastPlayer } from "@recast/player";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import {
 		ArrowLeft,
+		Check,
 		CheckCircle2,
-		Cloud,
 		Copy,
 		Eye,
 		Globe,
@@ -35,9 +34,7 @@
 		Link2,
 		Loader2,
 		MessageSquare,
-		MonitorPlay,
 		Percent,
-		Play,
 		Smartphone,
 		Users,
 		Zap,
@@ -58,7 +55,6 @@
 		untrack(() => (shares = next));
 	});
 
-	let playing = $state(false);
 	let creatingShare = $state(false);
 
 	// ── Range (chart + retention only; the stat row is lifetime) ────────
@@ -98,8 +94,10 @@
 
 	const subtitle = $derived(formatRecastSubtitle(recast));
 
-	// Player wants the store-shaped Recast.
-	const playerRecast = $derived(toPlayerRecast(recast, shares, viewCount(data.activity)));
+	// Copy-link feedback lives on the button itself (tick + "Copied link")
+	// rather than a toast, so the action confirms right where it happened.
+	let copied = $state(false);
+	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
 
 	async function copyLink() {
 		try {
@@ -110,7 +108,9 @@
 				await invalidateAll();
 			}
 			await navigator.clipboard.writeText(`${location.origin}/share/${slug}`);
-			toast.success("Share link copied to clipboard.");
+			copied = true;
+			clearTimeout(copiedTimer);
+			copiedTimer = setTimeout(() => (copied = false), 2000);
 		} catch (e) {
 			toast.error((e as Error)?.message ?? "Couldn't copy the link.");
 		}
@@ -183,60 +183,43 @@
 </a>
 
 <PageHeader title={recast.title} {subtitle}>
-	<Button variant="outline" size="sm" class="gap-2" onclick={copyLink}>
-		<Copy class="size-3.5" />
-		Copy link
+	<Button variant="outline" size="sm" class="gap-2" disabled={replacingPoster} onclick={pickPoster}>
+		{#if replacingPoster}
+			<Loader2 class="size-3.5 animate-spin" />
+			Saving…
+		{:else}
+			<ImagePlus class="size-3.5" />
+			Change cover
+		{/if}
 	</Button>
-	<Button size="sm" class="gap-2" onclick={() => (playing = true)}>
-		<Play class="size-3.5 fill-current" />
-		Play
+	<Button variant="outline" size="sm" class="gap-2" onclick={copyLink}>
+		{#if copied}
+			<Check class="size-3.5 text-success" />
+			Copied link
+		{:else}
+			<Copy class="size-3.5" />
+			Copy link
+		{/if}
 	</Button>
 </PageHeader>
 
-<!-- Poster strip -->
-<div
-	class="group/hero relative mt-6 aspect-video w-full overflow-hidden rounded-2xl bg-foreground/5 ring-1 ring-inset ring-border-low/40 sm:aspect-[21/9]"
-	in:fly={{ y: 12, duration: 480, easing: cubicOut }}
->
-	<button
-		type="button"
-		onclick={() => (playing = true)}
-		aria-label="Play {recast.title}"
-		class="absolute inset-0 block size-full"
-	>
-		{#if recast.posterUrl}
-			<img src={recast.posterUrl} alt="" class="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover/hero:scale-[1.02]" />
-		{/if}
-		<span class="absolute inset-0 grid place-items-center bg-background/25 transition-colors group-hover/hero:bg-background/35">
-			<span class="grid size-14 place-items-center rounded-full bg-primary text-background shadow-craft-floating transition-transform duration-200 group-active/hero:scale-95">
-				<Play class="size-6 translate-x-0.5 fill-current" />
-			</span>
-		</span>
-		<span class="absolute left-3 top-3 flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider ring-1 ring-inset backdrop-blur-sm
-			{recast.source === 'cloud' ? 'bg-primary/90 text-background ring-primary/40' : 'bg-background/85 text-muted-foreground ring-border-low/50'}">
-			{#if recast.source === "cloud"}<Cloud class="size-3" />{recast.provider}{:else}<MonitorPlay class="size-3" />Local{/if}
-		</span>
-	</button>
+<input
+	bind:this={posterInput}
+	type="file"
+	accept={POSTER_ACCEPT}
+	class="hidden"
+	onchange={onPosterPick}
+/>
 
-	<!-- Replace cover (owner-or-admin; enforced server-side) -->
-	<button
-		type="button"
-		onclick={pickPoster}
-		disabled={replacingPoster}
-		class="absolute right-3 top-3 z-10 inline-flex items-center gap-1.5 rounded-md bg-background/85 px-2 py-1 text-[11px] font-medium text-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm transition-colors hover:bg-background disabled:cursor-not-allowed disabled:opacity-60"
-	>
-		{#if replacingPoster}
-			<Loader2 class="size-3.5 animate-spin" /> Saving…
-		{:else}
-			<ImagePlus class="size-3.5" /> Change cover
-		{/if}
-	</button>
-	<input
-		bind:this={posterInput}
-		type="file"
-		accept={POSTER_ACCEPT}
-		class="hidden"
-		onchange={onPosterPick}
+<!-- Player — our RecastPlayer, playing inline so it feels native to the app. -->
+<div class="mt-6" in:fly={{ y: 12, duration: 480, easing: cubicOut }}>
+	<RecastPlayer
+		src={recast.videoUrl}
+		poster={recast.posterUrl || null}
+		title={recast.title}
+		aspectRatio={recast.width && recast.height ? `${recast.width} / ${recast.height}` : "16 / 9"}
+		features={{ share: false }}
+		className="w-full overflow-hidden rounded-2xl ring-1 ring-inset ring-border-low/40"
 	/>
 </div>
 
@@ -287,7 +270,3 @@
 <div class="mt-4">
 	<RecentActivity activity={data.activity} limit={12} linkHref={null} />
 </div>
-
-{#if playing}
-	<PlayerDialog recast={playerRecast} onclose={() => (playing = false)} />
-{/if}

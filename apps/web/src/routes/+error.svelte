@@ -12,7 +12,7 @@
 		errorCopy,
 		pickStatusIcon,
 		suggestions,
-	} from "./error-page.logic";
+	} from "$lib/error/error-copy";
 
 	const status = $derived(page.status);
 	const message = $derived(page.error?.message ?? "");

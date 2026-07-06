@@ -47,6 +47,10 @@ export const recast = pgTable(
 			onDelete: "set null",
 		}),
 		title: text("title").notNull(),
+		/** Optional viewer-facing blurb — shown under the video on the share
+		 *  page and used as the OG/social-card description. Null until the owner
+		 *  writes one. */
+		description: text("description"),
 		durationSec: integer("duration_sec").notNull().default(0),
 		sizeBytes: bigint("size_bytes", { mode: "number" }).notNull().default(0),
 		/** Resolution stored in R2 (post-downscale on Free). */

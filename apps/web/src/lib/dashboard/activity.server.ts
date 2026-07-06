@@ -8,6 +8,7 @@
 import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { recast, share, shareComment, shareReaction, shareView } from "$lib/db/schema";
+import { reactionGlyph } from "$lib/share/reactions";
 import { deviceFromUA } from "$lib/share/ua";
 import type { Activity, EngagementMoment, RecastEngagement, RecastPerf } from "./activity";
 
@@ -197,8 +198,10 @@ export async function loadRecastEngagement(recastId: string): Promise<RecastEnga
 	for (const r of reactionRows) counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1);
 
 	// Every reaction + comment with its video timestamp — the heatmap input.
+	// Stored reaction values are registry ids; map to a display glyph (legacy
+	// rows that stored a bare emoji pass through unchanged).
 	const moments: EngagementMoment[] = [
-		...reactionRows.map((r) => ({ atSeconds: r.atSeconds, kind: "reaction" as const, emoji: r.emoji })),
+		...reactionRows.map((r) => ({ atSeconds: r.atSeconds, kind: "reaction" as const, emoji: reactionGlyph(r.emoji) })),
 		...commentRows.map((c) => ({ atSeconds: c.atSeconds, kind: "comment" as const })),
 	];
 
@@ -206,7 +209,7 @@ export async function loadRecastEngagement(recastId: string): Promise<RecastEnga
 		commentCount: commentRows.length,
 		reactionCount: reactionRows.length,
 		reactions: [...counts.entries()]
-			.map(([emoji, count]) => ({ emoji, count }))
+			.map(([emoji, count]) => ({ emoji: reactionGlyph(emoji), count }))
 			.sort((a, b) => b.count - a.count),
 		recentComments: commentRows.slice(0, 20).map((c) => ({
 			authorName: c.authorName,

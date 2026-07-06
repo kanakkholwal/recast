@@ -12,6 +12,7 @@
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { Button } from "@recast/ui/button";
 	import {
+		Archive,
 		BarChart3,
 		Check,
 		Film,
@@ -48,6 +49,7 @@
 		onchangeposter,
 		onmove,
 		ontoggletag,
+		onarchive,
 		ondelete,
 		onToggleSelect,
 		onupload,
@@ -69,6 +71,7 @@
 		onchangeposter?: (rec: Recast) => void;
 		onmove: (rec: Recast, folderId: string | null) => void;
 		ontoggletag: (rec: Recast, tagId: string) => void;
+		onarchive?: (rec: Recast) => void;
 		ondelete: (rec: Recast) => void;
 		onToggleSelect: (rec: Recast) => void;
 		onupload: () => void;
@@ -99,6 +102,7 @@
 						onchangeposter={onchangeposter ? () => onchangeposter(rec) : undefined}
 						onmove={(folderId) => onmove(rec, folderId)}
 						ontoggletag={(tagId) => ontoggletag(rec, tagId)}
+						onarchive={onarchive ? () => onarchive(rec) : undefined}
 						ondelete={() => ondelete(rec)}
 					/>
 				</div>
@@ -177,6 +181,11 @@
 								<BarChart3 class="size-4 text-muted-foreground" /> View analytics
 							</DropdownMenu.Item>
 							<DropdownMenu.Separator />
+							{#if onarchive}
+								<DropdownMenu.Item onclick={() => onarchive(rec)}>
+									<Archive class="size-4 text-muted-foreground" /> Archive
+								</DropdownMenu.Item>
+							{/if}
 							<DropdownMenu.Item
 								onclick={() => ondelete(rec)}
 								class="text-destructive/90 data-highlighted:text-destructive"

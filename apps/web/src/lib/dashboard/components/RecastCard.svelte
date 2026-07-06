@@ -279,6 +279,12 @@
 					</DropdownMenu.Sub>
 
 					<DropdownMenu.Separator />
+					{#if onarchive}
+						<DropdownMenu.Item onclick={onarchive}>
+							<Archive class="size-4 text-muted-foreground" />
+							Archive
+						</DropdownMenu.Item>
+					{/if}
 					<DropdownMenu.Item
 						onclick={ondelete}
 						class="text-destructive/90 data-highlighted:text-destructive"

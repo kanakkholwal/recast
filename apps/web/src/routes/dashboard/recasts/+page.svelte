@@ -259,6 +259,21 @@
 		}
 	}
 
+	async function archiveRecast(rec: Recast) {
+		const snapshot = recastsStore.items;
+		recastsStore.remove(rec.id);
+		if (playing?.id === rec.id) playing = null;
+		try {
+			await api.archiveRecast(rec.id);
+			toast.success(`“${rec.title}” archived — storage freed.`);
+			// Refresh the archived rail + quota usage below.
+			void invalidateAll();
+		} catch (e) {
+			recastsStore.hydrate(snapshot);
+			toast.error((e as Error)?.message ?? "Couldn't archive recast.");
+		}
+	}
+
 	// ── Bulk mutations ─────────────────────────────────────────────────
 	function plural(n: number) {
 		return n === 1 ? "" : "s";
@@ -689,6 +704,7 @@
 					onchangeposter={changePoster}
 					onmove={moveRecast}
 					ontoggletag={toggleTag}
+					onarchive={archiveRecast}
 					ondelete={deleteRecast}
 					onToggleSelect={toggleSelect}
 					onupload={() => fileInput?.click()}

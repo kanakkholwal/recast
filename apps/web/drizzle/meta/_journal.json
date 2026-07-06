@@ -71,6 +71,13 @@
       "when": 1783282218785,
       "tag": "0009_famous_prism",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1783324640242,
+      "tag": "0010_magical_toad",
+      "breakpoints": true
     }
   ]
 }
