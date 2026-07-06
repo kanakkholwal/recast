@@ -85,13 +85,28 @@ export async function enforceRateLimit(
 	event: Pick<RequestEvent, "getClientAddress">,
 	opts: EnforceOptions,
 ): Promise<Response | null> {
-	const ip = event.getClientAddress();
+	// `getClientAddress()` throws on adapters that can't determine the address;
+	// never let that 500 the handler — fall back to a shared bucket instead.
+	let ip: string;
+	try {
+		ip = event.getClientAddress();
+	} catch {
+		ip = "unknown";
+	}
 	const key = `${opts.bucket}:${opts.id ? `${opts.id}:` : ""}${ip}`;
-	const { ok, retryAfterSec } = await consumeRateLimit(
-		key,
-		opts.limit,
-		opts.windowMs,
-	);
+
+	let ok = true;
+	let retryAfterSec = 0;
+	try {
+		({ ok, retryAfterSec } = await consumeRateLimit(key, opts.limit, opts.windowMs));
+	} catch (err) {
+		// Fail-open: rate limiting is a best-effort guardrail, so an infrastructure
+		// failure (a drifted/missing rate_limit table or its `key` primary key)
+		// must never 500 the request it protects. Log loudly so the root cause
+		// still gets fixed rather than silently masked.
+		console.error(`[rate-limit] consume failed for "${opts.bucket}"; allowing`, err);
+		return null;
+	}
 	if (ok) return null;
 
 	// Mirror the `{ ok: false, reason }` shape the share endpoints already use.

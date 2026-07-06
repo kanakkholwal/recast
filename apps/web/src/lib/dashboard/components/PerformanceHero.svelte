@@ -3,13 +3,7 @@
 	import { formatCount } from "$lib/dashboard/format";
 	import { Button } from "@recast/ui/button";
 	import { Kbd } from "@recast/ui/kbd";
-	import {
-		ArrowDownRight,
-		ArrowUpRight,
-		BarChart3,
-		LoaderCircle,
-		Upload,
-	} from "@lucide/svelte";
+	import { ArrowDownRight, ArrowUpRight, BarChart3, Upload } from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -24,8 +18,6 @@
 		viewers,
 		completion,
 		avgWatch,
-		uploading = false,
-		uploadLabel = "Upload",
 		onNew,
 	}: {
 		firstName: string;
@@ -37,8 +29,6 @@
 		viewers: number;
 		completion: number;
 		avgWatch: number;
-		uploading?: boolean;
-		uploadLabel?: string;
 		onNew: () => void;
 	} = $props();
 
@@ -93,13 +83,9 @@
 			<BarChart3 class="size-3.5" />
 			Analytics
 		</Button>
-		<Button size="sm" class="gap-2" disabled={uploading} onclick={onNew}>
-			{#if uploading}
-				<LoaderCircle class="size-3.5 animate-spin" />
-			{:else}
-				<Upload class="size-3.5" />
-			{/if}
-			{uploading ? uploadLabel : "Upload"}
+		<Button size="sm" class="gap-2" onclick={onNew}>
+			<Upload class="size-3.5" />
+			Upload
 		</Button>
 	</div>
 

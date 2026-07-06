@@ -29,6 +29,7 @@
     "@types/node": "^22.10.0",
     "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.10",
+    "layerchart": "2.0.0-next.48",
     "portless": "^0.10.3",
     "svelte": "^5.56.1",
     "svelte-check": "^4.4.2",

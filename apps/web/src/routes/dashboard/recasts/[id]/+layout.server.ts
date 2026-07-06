@@ -2,17 +2,17 @@ import { error } from "@sveltejs/kit";
 import { and, desc, eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { recast, share } from "$lib/db/schema";
-import { loadRecastActivity, loadRecastEngagement } from "$lib/dashboard/activity.server";
 import { resolvePlaybackUrl } from "$lib/storage";
-import type { PageServerLoad } from "./$types";
+import type { LayoutServerLoad } from "./$types";
 
 /**
- * Per-recast detail loader. Authorizes the recast against the active workspace
- * (404 otherwise), signs its playable + poster URLs, and pulls everything the
- * detail page renders: the recast's own activity (chart/retention/feed), its
- * engagement (comments/reactions), and its share links.
+ * Shared loader for the recast pages (overview + analytics). Authorizes the
+ * recast against the active workspace (404 otherwise), signs its playable +
+ * poster URLs, and loads its share links — everything the overview page and the
+ * shared header need. The heavier analytics data (activity/engagement) is
+ * loaded lazily by the analytics sub-route so the overview stays light.
  */
-export const load: PageServerLoad = async ({ params, parent }) => {
+export const load: LayoutServerLoad = async ({ params, parent }) => {
 	const { activeOrganization } = await parent();
 	const db = getDb();
 	const workspaceId = activeOrganization.id;
@@ -37,7 +37,7 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 		.limit(1);
 	if (!row) error(404, "Recast not found");
 
-	const [shareRows, activity, engagement, videoUrl, posterUrl] = await Promise.all([
+	const [shareRows, videoUrl, posterUrl] = await Promise.all([
 		db
 			.select({
 				slug: share.slug,
@@ -50,8 +50,6 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			.from(share)
 			.where(eq(share.recastId, params.id))
 			.orderBy(desc(share.createdAt)),
-		loadRecastActivity(params.id),
-		loadRecastEngagement(params.id),
 		resolvePlaybackUrl(row.videoUrl),
 		resolvePlaybackUrl(row.posterUrl),
 	]);
@@ -79,7 +77,5 @@ export const load: PageServerLoad = async ({ params, parent }) => {
 			expiresAt: s.expiresAt ? s.expiresAt.getTime() : null,
 			createdAt: (s.createdAt ?? new Date(0)).getTime(),
 		})),
-		activity,
-		engagement,
 	};
 };

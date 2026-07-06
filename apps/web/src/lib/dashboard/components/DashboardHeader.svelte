@@ -12,7 +12,7 @@
 		labels?: Record<string, string>;
 	}
 
-	let { rootLabel = "Home", labels }: Props = $props();
+	let { rootLabel = "Dashboard", labels }: Props = $props();
 
 	function titleCase(s: string) {
 		return s.charAt(0).toUpperCase() + s.slice(1);

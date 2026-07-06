@@ -42,7 +42,6 @@
 		selected = false,
 		selectionMode = false,
 		onToggleSelect,
-		onplay,
 		onrename,
 		oncopylink,
 		onchangeposter,
@@ -60,7 +59,6 @@
 		/** When any card is selected, clicking a card toggles it instead of playing. */
 		selectionMode?: boolean;
 		onToggleSelect?: () => void;
-		onplay: () => void;
 		onrename: () => void;
 		oncopylink: () => void;
 		onchangeposter?: () => void;
@@ -114,11 +112,19 @@
 		</button>
 	{/if}
 
-	<!-- Thumbnail (fixed height — robust across grid breakpoints) -->
-	<button
-		type="button"
-		onclick={() => (selectionMode ? onToggleSelect?.() : onplay())}
-		aria-label={selectionMode ? `Toggle selection of ${recast.title}` : `Play ${recast.title}`}
+	<!-- Thumbnail (fixed height — robust across grid breakpoints). A real link so
+	     open-in-new-tab works; selection-mode clicks toggle instead of navigate.
+	     draggable=false hands dragging to the parent article's card DnD. -->
+	<a
+		href="/dashboard/recasts/{recast.id}"
+		draggable="false"
+		onclick={(e) => {
+			if (selectionMode) {
+				e.preventDefault();
+				onToggleSelect?.();
+			}
+		}}
+		aria-label={selectionMode ? `Toggle selection of ${recast.title}` : `Open ${recast.title}`}
 		class="relative block h-44 w-full shrink-0 overflow-hidden bg-foreground/5"
 	>
 		{#if showPoster}
@@ -177,7 +183,7 @@
 			{formatDuration(recast.durationSec)}
 		</span>
 
-	</button>
+	</a>
 
 	<!-- Meta -->
 	<div class="flex flex-1 flex-col p-4">
@@ -199,9 +205,9 @@
 					<MoreHorizontal class="size-4" />
 				</DropdownMenu.Trigger>
 				<DropdownMenu.Content align="end" sideOffset={6} class="w-52">
-					<DropdownMenu.Item onclick={onplay}>
+					<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${recast.id}`)}>
 						<Play class="size-4 text-muted-foreground" />
-						Play
+						Open
 					</DropdownMenu.Item>
 					<DropdownMenu.Item onclick={onrename}>
 						<Pencil class="size-4 text-muted-foreground" />
@@ -211,7 +217,7 @@
 						<Link2 class="size-4 text-muted-foreground" />
 						Copy link
 					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${recast.id}`)}>
+					<DropdownMenu.Item onclick={() => goto(`/dashboard/recasts/${recast.id}/analytics`)}>
 						<BarChart3 class="size-4 text-muted-foreground" />
 						View analytics
 					</DropdownMenu.Item>

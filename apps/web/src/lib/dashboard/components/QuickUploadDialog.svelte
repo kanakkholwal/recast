@@ -22,6 +22,7 @@
 	  Link2,
 	  LoaderCircle,
 	  Lock,
+	  MessageSquare,
 	  RotateCcw,
 	  UploadCloud,
 	  Users,
@@ -40,10 +41,13 @@
 		workspaceId,
 		workspaceName,
 		plan,
+		firstUpload = false,
 	}: {
 		workspaceId: string | undefined;
 		workspaceName?: string | null;
 		plan?: string | null;
+		/** No recasts yet, show the endowed-progress (account already done) journey. */
+		firstUpload?: boolean;
 	} = $props();
 
 	// The flow: pick a file → watch it upload → choose sharing → get the link.
@@ -84,6 +88,15 @@
 				return "Only workspace admins";
 		}
 	});
+	const VisibilityIcon = $derived(
+		visibility === "public"
+			? Globe2
+			: visibility === "selected"
+				? Users
+				: visibility === "private"
+					? Lock
+					: Building2,
+	);
 	const parsedInvitees = $derived.by(() =>
 		inviteesRaw
 			.split(/[\n,]/)
@@ -99,12 +112,23 @@
 		...(isPro && expiry !== "never" ? { expiresAt: expiresAt(expiry) } : {}),
 	}));
 
-	// Journey framing — a lightweight 3-stage indicator for the sense of
-	// progress ("almost there") across the whole flow.
-	const STAGES = ["Upload", "Settings", "Share"];
-	const stageIndex = $derived(
+	// Journey framing, a lightweight stage indicator for the sense of progress
+	// across the whole flow. First-time users get an endowed-progress variant:
+	// the account they already created counts as a completed first step, so the
+	// bar reads "1 of 4 done" rather than "0 of 3", a goal-gradient nudge that
+	// lifts follow-through. Latched when the journey begins so a mid-flow quota
+	// refresh (post-upload invalidate) can't drop a segment underfoot.
+	let endowed = $state(false);
+	$effect(() => {
+		if (quickUpload.open && step === "pick") endowed = firstUpload;
+	});
+	const stages = $derived(
+		endowed ? ["Account", "Upload", "Settings", "Share"] : ["Upload", "Settings", "Share"],
+	);
+	const baseStageIndex = $derived(
 		step === "pick" || step === "uploading" ? 0 : step === "configure" ? 1 : 2,
 	);
+	const stageIndex = $derived(endowed ? baseStageIndex + 1 : baseStageIndex);
 
 	// Per-phase upload steps + an overall percentage that eases across them.
 	const UPLOAD_STEPS = [
@@ -162,7 +186,7 @@
 	async function startUpload(file: File | undefined) {
 		if (!file || step === "uploading") return;
 		if (!isUploadableVideo(file)) {
-			toast.error("Only .mp4 video files can be uploaded here.");
+			toast.error("Only MP4 or WebM videos can be uploaded here.");
 			return;
 		}
 		step = "uploading";
@@ -178,7 +202,7 @@
 				onProgress: (v) => (pct = v),
 			});
 			recastId = r.recastId;
-			// The recast is published (unshared) — surface it in the library now.
+			// The recast is published (unshared), surface it in the library now.
 			void invalidateAll();
 			step = "configure";
 		} catch (err) {
@@ -221,6 +245,17 @@
 		}
 	}
 
+	// A file dropped elsewhere (e.g. the library) opens the dialog with the file
+	// staged, start its upload straight away so the drop and the button share
+	// one flow. Guarded on the `pick` step so it never re-fires mid-journey.
+	$effect(() => {
+		if (quickUpload.open && quickUpload.pendingFile && step === "pick") {
+			const file = quickUpload.pendingFile;
+			quickUpload.pendingFile = null;
+			startUpload(file);
+		}
+	});
+
 	function onFilePicked(e: Event) {
 		const input = e.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
@@ -256,13 +291,13 @@
 	const stepDescription = $derived.by(() => {
 		switch (step) {
 			case "uploading":
-				return "Hang tight — we're uploading your recast.";
+				return "Hang tight, we're uploading your recast.";
 			case "configure":
 				return "Choose who can see it, then create the link.";
 			case "done":
 				return "Your share link is ready to send.";
 			default:
-				return `Upload an MP4 to ${workspaceName || "the current workspace"}.`;
+				return `Upload an MP4 or WebM to ${workspaceName || "your workspace"}.`;
 		}
 	});
 </script>
@@ -289,20 +324,23 @@
 
 			<!-- Journey stages -->
 			<div class="mt-3 flex items-center gap-2" aria-hidden="true">
-				{#each STAGES as label, i (label)}
+				{#each stages as label, i (label)}
+					{@const done = i < stageIndex}
+					{@const active = i === stageIndex}
 					<div class="flex flex-1 flex-col gap-1">
 						<div
 							class={cn(
 								"h-1 rounded-full transition-colors duration-300",
-								i < stageIndex ? "bg-primary" : i === stageIndex ? "bg-primary/60" : "bg-foreground/10",
+								done ? "bg-primary" : active ? "bg-primary/60" : "bg-foreground/10",
 							)}
 						></div>
 						<span
 							class={cn(
-								"text-[10px] font-medium uppercase tracking-[0.1em] transition-colors",
-								i <= stageIndex ? "text-foreground/70" : "text-muted-foreground/50",
+								"flex items-center gap-1 text-[10px] font-medium uppercase tracking-widest transition-colors",
+								done || active ? "text-foreground/70" : "text-muted-foreground/50",
 							)}
 						>
+							{#if done}<Check class="size-2.5 shrink-0 text-primary" />{/if}
 							{label}
 						</span>
 					</div>
@@ -335,12 +373,12 @@
 					<span class="glass-chip grid size-14 place-items-center rounded-2xl text-primary">
 						<UploadCloud class="size-6" />
 					</span>
-					<span class="mt-4 text-base font-semibold text-foreground">Drop MP4 or browse</span>
+					<span class="mt-4 text-base font-semibold text-foreground">Drop a video or browse</span>
 					<span class="mt-1 text-sm text-muted-foreground">
-						Sharing options come after the upload.
+						Set visibility, comments, and expiry after upload.
 					</span>
 					<span class="mt-4 text-[11px] font-medium uppercase tracking-wider text-muted-foreground/60">
-						MP4 only
+						MP4 · WebM
 					</span>
 				</button>
 			{:else if step === "uploading"}
@@ -398,7 +436,8 @@
 					</ol>
 				</div>
 			{:else if step === "configure"}
-				<div class="space-y-4">
+				<div class="space-y-5">
+					<!-- Upload confirmation -->
 					<div class="flex items-center gap-2.5 rounded-lg border border-success/25 bg-success/8 px-3 py-2.5">
 						<CheckCircle2 class="size-4 shrink-0 text-success" />
 						<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
@@ -407,11 +446,15 @@
 						<span class="shrink-0 text-xs font-medium text-success">Uploaded</span>
 					</div>
 
+					<!-- Primary decision: audience -->
 					<section>
-						<h3 class="mb-2 text-sm font-semibold text-foreground">Who can see it</h3>
+						<h3 class="mb-1.5 text-sm font-semibold text-foreground">Who can see it</h3>
 						<Select.Root type="single" bind:value={visibility}>
 							<Select.Trigger class="h-10 w-full text-sm" aria-label="Share visibility">
-								{visibilityLabel}
+								<span class="flex items-center gap-2">
+									<VisibilityIcon class="size-4 text-muted-foreground" />
+									{visibilityLabel}
+								</span>
 							</Select.Trigger>
 							<Select.Content>
 								<Select.Item value="workspace">
@@ -444,84 +487,73 @@
 						{/if}
 					</section>
 
-					<section class="space-y-2.5">
-						<button
-							type="button"
-							role="switch"
-							aria-checked={commentsEnabled}
-							onclick={() => (commentsEnabled = !commentsEnabled)}
-							class="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg border border-border-low/60 bg-background/45 px-3 text-left transition-colors hover:bg-background/70"
-						>
-							<span>
-								<span class="block text-sm font-medium text-foreground">Allow viewer comments</span>
-								<span class="block text-xs text-muted-foreground">Reactions stay available either way.</span>
-							</span>
-							<span class={cn("h-5 w-9 shrink-0 rounded-full p-0.5 transition-colors", commentsEnabled ? "bg-primary" : "bg-foreground/15")}>
-								<span class={cn("block size-4 rounded-full bg-background transition-transform", commentsEnabled && "translate-x-4")}></span>
-							</span>
-						</button>
-
-						<div class="rounded-lg border border-border-low/60 bg-background/45 p-3">
-							<div class="flex items-center justify-between gap-3">
-								<div class="flex items-center gap-2">
-									<KeyRound class="size-4 text-muted-foreground" />
-									<span class="text-sm font-medium text-foreground">Password protection</span>
+					<!-- Secondary options, unified into one consistent list so every
+					     control reads the same way (icon + label left, control right). -->
+					<section>
+						<h3 class="mb-1.5 text-sm font-semibold text-foreground">Options</h3>
+						<div class="divide-y divide-border-low/50 overflow-hidden rounded-lg border border-border-low/60 bg-background/45">
+							<!-- Comments -->
+							<div class="flex items-center justify-between gap-3 px-3 py-3">
+								<div class="flex min-w-0 items-start gap-2.5">
+									<MessageSquare class="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+									<div class="min-w-0">
+										<span class="block text-sm font-medium text-foreground">Viewer comments</span>
+										<span class="block text-xs text-muted-foreground">Reactions stay on either way.</span>
+									</div>
 								</div>
-								{#if !isPro}<Badge variant="outline">Pro</Badge>{/if}
+								{@render toggle(commentsEnabled, () => (commentsEnabled = !commentsEnabled), "Allow viewer comments")}
 							</div>
-							{#if isPro}
-								<div class="mt-3 grid gap-2 sm:grid-cols-[auto_1fr] sm:items-center">
-									<button
-										type="button"
-										role="switch"
-										aria-label="Enable password protection"
-										aria-checked={passwordEnabled}
-										onclick={() => (passwordEnabled = !passwordEnabled)}
-										class={cn("h-5 w-9 rounded-full p-0.5 transition-colors", passwordEnabled ? "bg-primary" : "bg-foreground/15")}
-									>
-										<span class={cn("block size-4 rounded-full bg-background transition-transform", passwordEnabled && "translate-x-4")}></span>
-									</button>
+
+							<!-- Password (Pro) -->
+							<div class="px-3 py-3">
+								<div class="flex items-center justify-between gap-3">
+									<div class="flex min-w-0 items-center gap-2.5">
+										<KeyRound class="size-4 shrink-0 text-muted-foreground" />
+										<span class="text-sm font-medium text-foreground">Password</span>
+										{#if !isPro}<Badge variant="outline">Pro</Badge>{/if}
+									</div>
+									{#if isPro}
+										{@render toggle(passwordEnabled, () => (passwordEnabled = !passwordEnabled), "Require a password")}
+									{/if}
+								</div>
+								{#if isPro && passwordEnabled}
 									<Input
 										bind:value={password}
 										type="password"
-										disabled={!passwordEnabled}
-										placeholder="Optional password"
-										class="h-9"
+										placeholder="Set a password"
+										class="mt-2.5 h-9"
 									/>
-								</div>
-							{:else}
-								<p class="mt-2 text-xs text-muted-foreground">Upgrade to add a password on shared recasts.</p>
-							{/if}
-						</div>
-
-						<div class="rounded-lg border border-border-low/60 bg-background/45 p-3">
-							<div class="mb-2 flex items-center justify-between gap-3">
-								<div class="flex items-center gap-2">
-									<CalendarClock class="size-4 text-muted-foreground" />
-									<span class="text-sm font-medium text-foreground">Link expiry</span>
-								</div>
-								{#if !isPro}<Badge variant="outline">Pro</Badge>{/if}
+								{:else if !isPro}
+									<p class="mt-1 text-xs text-muted-foreground">Protect links with a password on Pro.</p>
+								{/if}
 							</div>
-							{#if isPro}
-								<Select.Root type="single" bind:value={expiry}>
-									<Select.Trigger class="h-9 w-full text-sm" aria-label="Link expiry">
-										{expiry === "never" ? "Never expires" : expiry === "7d" ? "Expires in 7 days" : "Expires in 30 days"}
-									</Select.Trigger>
-									<Select.Content>
-										<Select.Item value="never">Never expires</Select.Item>
-										<Select.Item value="7d">7 days</Select.Item>
-										<Select.Item value="30d">30 days</Select.Item>
-									</Select.Content>
-								</Select.Root>
-							{:else}
-								<div class="flex h-9 items-center rounded-md border border-border-low/60 bg-muted/30 px-3 text-sm text-muted-foreground">
-									Expires in 15 days
+
+							<!-- Expiry (Pro) -->
+							<div class="flex items-center justify-between gap-3 px-3 py-3">
+								<div class="flex min-w-0 items-center gap-2.5">
+									<CalendarClock class="size-4 shrink-0 text-muted-foreground" />
+									<span class="text-sm font-medium text-foreground">Link expiry</span>
+									{#if !isPro}<Badge variant="outline">Pro</Badge>{/if}
 								</div>
-								<p class="mt-1.5 text-[11px] text-muted-foreground">
-									Free links expire after 15 days. Upgrade to keep them longer.
-								</p>
-							{/if}
+								{#if isPro}
+									<Select.Root type="single" bind:value={expiry}>
+										<Select.Trigger class="h-9 w-36 text-sm" aria-label="Link expiry">
+											{expiry === "never" ? "Never" : expiry === "7d" ? "7 days" : "30 days"}
+										</Select.Trigger>
+										<Select.Content>
+											<Select.Item value="never">Never expires</Select.Item>
+											<Select.Item value="7d">7 days</Select.Item>
+											<Select.Item value="30d">30 days</Select.Item>
+										</Select.Content>
+									</Select.Root>
+								{:else}
+									<span class="shrink-0 text-sm text-muted-foreground">15 days</span>
+								{/if}
+							</div>
 						</div>
+						{#if !isPro}
+							<p class="mt-1.5 text-[11px] text-muted-foreground">Free share links expire after 15 days.</p>
+						{/if}
 					</section>
 
 					<Button class="h-10 w-full gap-2" disabled={creatingLink} onclick={createLink}>
@@ -578,3 +610,24 @@
 		</div>
 	</Dialog.Content>
 </Dialog.Root>
+
+{#snippet toggle(on: boolean, onToggle: () => void, label: string)}
+	<button
+		type="button"
+		role="switch"
+		aria-checked={on}
+		aria-label={label}
+		onclick={onToggle}
+		class={cn(
+			"relative h-5 w-9 shrink-0 cursor-pointer rounded-full outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring/50",
+			on ? "bg-primary" : "bg-foreground/20",
+		)}
+	>
+		<span
+			class={cn(
+				"absolute left-0.5 top-0.5 size-4 rounded-full bg-background shadow-sm transition-transform duration-200",
+				on && "translate-x-4",
+			)}
+		></span>
+	</button>
+{/snippet}

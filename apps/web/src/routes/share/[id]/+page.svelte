@@ -1,31 +1,39 @@
 <script lang="ts">
 	import { browser } from "$app/environment";
+	import { goto, invalidateAll } from "$app/navigation";
 	import { page } from "$app/state";
+	import { analytics } from "$lib/analytics/client";
+	import { authClient } from "$lib/auth/client";
 	import { SeoMeta } from "$lib/components";
+	import Logo from "$lib/logo.svelte";
 	import {
-		commentHue,
-		compactTime,
-		formatTime,
-		initials,
-		parseCommentText,
-		parseTimeParam,
-		type CommentSegment,
-	} from "$lib/share/format";
+	  deleteComment,
+	  loadEngagement,
+	  postComment,
+	  rememberViewerName,
+	  shareSessionId,
+	  storedViewerName,
+	  toggleReaction,
+	  type ReactionCount,
+	  type ShareComment,
+	} from "$lib/share/client";
 	import { toggleReactionState } from "$lib/share/engagement";
 	import {
-		activeCueIndex,
-		filterCues,
-		readCuesFromTrack,
-		type TranscriptCue,
-	} from "$lib/share/transcript";
+	  commentHue,
+	  compactTime,
+	  formatTime,
+	  initials,
+	  parseCommentText,
+	  parseTimeParam
+	} from "$lib/share/format";
+	import ReactionIcon from "$lib/share/ReactionIcon.svelte";
+	import { REACTIONS } from "$lib/share/reactions";
 	import {
-		buildCommentMarkers,
-		buildEmbedCode,
-		toLegacyVisibility,
-		withTimeParam,
-		type LegacyVisibility,
-	} from "./share-page.logic";
-	import Logo from "$lib/logo.svelte";
+	  activeCueIndex,
+	  filterCues,
+	  readCuesFromTrack,
+	  type TranscriptCue,
+	} from "$lib/share/transcript";
 	import {
 	  ArrowRight,
 	  AtSign,
@@ -37,6 +45,7 @@
 	  ExternalLink,
 	  Eye,
 	  FileText,
+	  Film,
 	  Globe,
 	  LayoutDashboard,
 	  Link2,
@@ -58,17 +67,12 @@
 	  UserCheck,
 	  Users,
 	  X,
-	  Film,
 	} from "@lucide/svelte";
-	import { goto, invalidateAll } from "$app/navigation";
-	import { analytics } from "$lib/analytics/client";
-	import { authClient } from "$lib/auth/client";
-	import { mode as themeMode, toggleMode } from "@recast/ui/theme";
 	import {
-		RecastPlayer,
-		type RecastPlayerActionEvent,
-		type RecastPlayerApi,
-		type RecastPlayerTrack,
+	  RecastPlayer,
+	  type RecastPlayerActionEvent,
+	  type RecastPlayerApi,
+	  type RecastPlayerTrack,
 	} from "@recast/player";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
@@ -76,25 +80,20 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import { toast } from "@recast/ui/sonner";
+	import { mode as themeMode, toggleMode } from "@recast/ui/theme";
 	import * as Tooltip from "@recast/ui/tooltip";
 	import { cn } from "@recast/ui/utils";
-	import { onMount, untrack } from "svelte";
+	import { onMount, tick, untrack } from "svelte";
 	import { cubicOut, quintOut } from "svelte/easing";
 	import { Tween } from "svelte/motion";
 	import { fade, fly, scale, slide } from "svelte/transition";
 	import {
-		deleteComment,
-		loadEngagement,
-		postComment,
-		rememberViewerName,
-		shareSessionId,
-		storedViewerName,
-		toggleReaction,
-		type ReactionCount,
-		type ShareComment,
-	} from "$lib/share/client";
-	import { REACTIONS } from "$lib/share/reactions";
-	import ReactionIcon from "$lib/share/ReactionIcon.svelte";
+	  buildCommentMarkers,
+	  buildEmbedCode,
+	  toLegacyVisibility,
+	  withTimeParam,
+	  type LegacyVisibility,
+	} from "./share-page.logic";
 
 	let { data } = $props();
 
@@ -513,20 +512,22 @@
 	let viewerName = $state("");
 	let draftText = $state("");
 	let inputEl = $state<HTMLInputElement | null>(null);
+	// Name is remembered, so it collapses to a compact "commenting as" line once
+	// set; `editingName` reopens the field, keeping the comment input the focus.
+	let editingName = $state(false);
+	let nameInputEl = $state<HTMLInputElement | null>(null);
 
-	// Demo content so /share/demo stays a live design surface without a row
-	// in the database (the engagement endpoints 404 for it).
-	const DEMO_COMMENTS: ShareComment[] = [
-		{ id: "d1", authorName: "Mia", atSeconds: 14, body: "Love the opening shot at [0:14] — crisp even after compression.", createdAt: 0, mine: false },
-		{ id: "d2", authorName: "Dev", atSeconds: 52, body: "@Mia can we lift the audio bed ~3dB at [0:52]? Voice is competing.", createdAt: 0, mine: false },
-		{ id: "d3", authorName: "Sara", atSeconds: 128, body: "This cut at 2:08 is sharp — worth showing the founder the full sequence.", createdAt: 0, mine: false },
-	];
-	const DEMO_REACTIONS: ReactionCount[] = [
-		{ emoji: "like", count: 12 },
-		{ emoji: "love", count: 7 },
-		{ emoji: "fire", count: 4 },
-		{ emoji: "celebrate", count: 2 },
-	];
+	async function editName() {
+		editingName = true;
+		await tick();
+		nameInputEl?.focus();
+	}
+
+	function commitName() {
+		editingName = false;
+		if (viewerName.trim()) rememberViewerName(viewerName);
+	}
+
 
 	onMount(() => {
 		sessionId = shareSessionId();
@@ -548,13 +549,6 @@
 		engagementState = "loading";
 		const sid = shareSessionId();
 		sessionId = sid;
-		if (s === "demo") {
-			comments = DEMO_COMMENTS;
-			reactions = DEMO_REACTIONS;
-			myReactions = new Set();
-			engagementState = "ready";
-			return;
-		}
 		try {
 			const e = await loadEngagement(s, sid);
 			comments = e.comments;
@@ -850,6 +844,13 @@
 	const session = authClient.useSession();
 	const viewer = $derived(($session as unknown as SessionShape).data?.user ?? null);
 
+	// Signed-in viewers don't get asked for a name — default the composer to their
+	// account name. Only fills when the field is empty, so a stored or typed name
+	// still wins, and it resolves once the session hydrates.
+	$effect(() => {
+		if (!viewerName.trim() && viewer?.name) viewerName = viewer.name;
+	});
+
 
 	async function signOut() {
 		await authClient.signOut();
@@ -1045,7 +1046,7 @@
 		<!-- Top bar — brand left, light viewer/owner actions right. The mode
 		     switcher is gone; the only chrome here is theme, share, account. -->
 		<header class="sticky top-0 z-30 border-b border-border-low/30 bg-background/70 backdrop-blur-xl">
-			<div class="relative mx-auto flex w-full max-w-[1600px] items-center gap-3 px-5 py-3 sm:px-6 lg:px-8">
+			<div class="relative mx-auto flex w-full max-w-400 items-center gap-3 px-5 py-3 sm:px-6 lg:px-8">
 				<!-- Left mark. For Pro shares this should swap to the owner's
 				     custom logo (branding feature, not wired yet) — the slot is
 				     here so that change is a one-line conditional later. -->
@@ -1266,8 +1267,8 @@
 			</div>
 		</header>
 
-		<main class="share-main relative mx-auto w-full max-w-[1600px] px-4 pb-24 pt-6 sm:px-6 lg:px-8" data-has-rail={hasSidebar} data-rail={panelOpen && hasSidebar ? "open" : "closed"}>
-			<!-- Video-first: the player IS the page. Theater-sized so it fills as
+		<main class="share-main relative mx-auto w-full max-w-400 px-4 pb-24 pt-6 sm:px-6 lg:px-8" data-has-rail={hasSidebar} data-rail={panelOpen && hasSidebar ? "open" : "closed"}>
+			<!-- Video-first: the player IS the page. Theatmax-w-400 fills as
 			     much of the viewport as the fold allows; the conversation and
 			     transcript are on-demand chrome (floating bar → docked panel), so
 			     watching a stranger's video needs zero learning curve.
@@ -1527,7 +1528,7 @@
 				     it's collapsed. Name-only: viewers comment without an account. -->
 			{#if hasSidebar}
 				<aside
-					class="mt-4 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border-low/50 bg-background/70 shadow-craft-lg backdrop-blur-xl lg:sticky lg:top-[76px] lg:mt-0 lg:h-[calc(100dvh-100px)]"
+					class="mt-4 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border-low/50 bg-background/70 shadow-craft-lg backdrop-blur-xl lg:sticky lg:top-19 lg:mt-0 lg:h-[calc(100dvh-100px)]"
 				>
 					<div class="flex h-full flex-col overflow-hidden">
 						<!-- Tab bar + close -->
@@ -1713,36 +1714,71 @@
 										</ul>
 									{/if}
 								</div>
-								<!-- Composer (pinned) -->
+								<!-- Composer (pinned). Comment input is the focal point (full
+								     width); identity is secondary — a remembered "commenting as"
+								     line that only expands to a field when unset or edited. -->
 								<div class="shrink-0 border-t border-border-low/40 p-2.5">
 									<div class="flex flex-col gap-2">
-										<input
-											bind:value={viewerName}
-											type="text"
-											placeholder="Your name"
-											maxlength="60"
-											class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
-										/>
-										<div class="flex items-center gap-2">
+										{#if viewerName.trim() && !editingName}
+											<div class="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
+												<span
+													class="grid size-4 shrink-0 place-items-center rounded-full text-[8px] font-bold text-white"
+													style="background: hsl({commentHue(viewerName)} 60% 45%);"
+												>{viewerName.trim()[0]?.toUpperCase()}</span>
+												<span>Commenting as <span class="font-medium text-foreground">{viewerName.trim()}</span></span>
+												<button
+													type="button"
+													onclick={editName}
+													class="ml-0.5 font-medium text-muted-foreground/80 underline-offset-2 transition-colors hover:text-foreground hover:underline"
+												>
+													Change
+												</button>
+											</div>
+										{:else}
 											<input
-												bind:this={inputEl}
-												bind:value={draftText}
+												bind:this={nameInputEl}
+												bind:value={viewerName}
 												type="text"
-												placeholder="Comment at {formatTime(currentTime)}…"
+												placeholder="Your name"
+												maxlength="60"
+												onblur={commitName}
 												onkeydown={(e) => {
-													if (e.key === "Enter" && !e.shiftKey) {
+													if (e.key === "Enter") {
 														e.preventDefault();
-														submitComment();
+														commitName();
+														inputEl?.focus();
 													}
 												}}
-												class="min-w-0 flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3 py-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+												class="w-full max-w-[220px] rounded-lg border border-border-low/60 bg-background/60 px-3 py-1.5 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
 											/>
+										{/if}
+
+										<input
+											bind:this={inputEl}
+											bind:value={draftText}
+											type="text"
+											placeholder="Add a comment at {formatTime(currentTime)}…"
+											onkeydown={(e) => {
+												if (e.key === "Enter" && !e.shiftKey) {
+													e.preventDefault();
+													submitComment();
+												}
+											}}
+											class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+										/>
+
+										<div class="flex items-center gap-2">
+											<p class="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-muted-foreground">
+												<span class="inline-flex items-center gap-1"><Clock class="size-2.5" /><span class="font-mono">[m:ss]</span> jumps</span>
+												<span aria-hidden="true">·</span>
+												<span class="inline-flex items-center gap-1"><AtSign class="size-2.5" /><span class="font-mono">@name</span> mentions</span>
+											</p>
 											<Tooltip.Provider delayDuration={250}>
 												<Tooltip.Root>
 													<Tooltip.Trigger
 														onclick={insertCurrentTimestamp}
 														aria-label="Insert current timestamp"
-														class="grid size-9 shrink-0 place-items-center rounded-lg border border-border-low/70 bg-background/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+														class="grid size-8 shrink-0 place-items-center rounded-lg border border-border-low/70 bg-background/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
 													>
 														<Clock class="size-3.5" />
 													</Tooltip.Trigger>
@@ -1756,11 +1792,6 @@
 												<ArrowRight class="size-3.5" />
 											</Button>
 										</div>
-										<p class="flex flex-wrap items-center gap-x-2 gap-y-1 px-1 text-[10px] text-muted-foreground">
-											<span class="inline-flex items-center gap-1"><Clock class="size-2.5" /><span class="font-mono">[m:ss]</span> jumps</span>
-											<span aria-hidden="true">·</span>
-											<span class="inline-flex items-center gap-1"><AtSign class="size-2.5" /><span class="font-mono">@name</span> mentions</span>
-										</p>
 									</div>
 								</div>
 							</div>

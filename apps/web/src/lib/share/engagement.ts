@@ -15,29 +15,37 @@ export interface ReactionState {
 }
 
 /**
- * Optimistic local update for toggling the viewer's reaction to `emoji`:
- * add/remove from `myReactions` and bump/drop the aggregate count (removing the
- * entry entirely when it hits zero, adding a new one at count 1). Returns fresh
+ * Optimistic local update for setting the viewer's reaction to `emoji`. A
+ * viewer holds a SINGLE reaction, so this mirrors the server:
+ *   - tapping the current reaction removes it (toggle off)
+ *   - tapping a different one switches in place (drops the previous, adds this)
+ * Counts are bumped/dropped accordingly (entries removed at zero). Returns fresh
  * objects; does not mutate the input.
  */
 export function toggleReactionState(
 	current: ReactionState,
 	emoji: string,
 ): ReactionState {
-	const had = current.myReactions.has(emoji);
-	const nextSet = new Set(current.myReactions);
 	const next = current.reactions.map((r) => ({ ...r }));
-	const idx = next.findIndex((r) => r.emoji === emoji);
-	if (had) {
-		nextSet.delete(emoji);
-		if (idx >= 0) {
-			next[idx].count -= 1;
-			if (next[idx].count <= 0) next.splice(idx, 1);
+	const dec = (e: string) => {
+		const i = next.findIndex((r) => r.emoji === e);
+		if (i >= 0) {
+			next[i].count -= 1;
+			if (next[i].count <= 0) next.splice(i, 1);
 		}
-	} else {
-		nextSet.add(emoji);
-		if (idx >= 0) next[idx].count += 1;
-		else next.push({ emoji, count: 1 });
+	};
+	const inc = (e: string) => {
+		const i = next.findIndex((r) => r.emoji === e);
+		if (i >= 0) next[i].count += 1;
+		else next.push({ emoji: e, count: 1 });
+	};
+
+	if (current.myReactions.has(emoji)) {
+		dec(emoji);
+		return { myReactions: new Set(), reactions: next };
 	}
-	return { myReactions: nextSet, reactions: next };
+	// Switching reactions: drop whatever they had, then add the new one.
+	for (const prev of current.myReactions) dec(prev);
+	inc(emoji);
+	return { myReactions: new Set([emoji]), reactions: next };
 }

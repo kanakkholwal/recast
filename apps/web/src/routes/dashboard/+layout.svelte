@@ -20,17 +20,18 @@
 	$effect(() => {
 		quotaStore.hydrate(data.quota ?? null);
 	});
+
+	// Has this workspace ever published a recast (active or archived)? Drives the
+	// upload dialog's endowed-progress framing for genuine first-timers.
+	const firstUpload = $derived(
+		((data.quota?.usage.activeRecastsCount ?? 0) +
+			(data.quota?.usage.archivedRecastsCount ?? 0)) === 0,
+	);
 </script>
-
-<!-- Top-of-page navigation indicator. Driven by SvelteKit's `navigating`
-	 store inside the component; renders nothing when idle. -->
+<svelte:head>
+	<title>Dashboard - Recast</title>
+</svelte:head>
 <NavProgress />
-
-<!-- Inset shell, matching the desktop `(app)` group: `variant="inset"` turns the
-	 provider wrapper `bg-sidebar` and floats the content as a rounded `bg-background`
-	 panel with a gap. Unlike desktop (a fixed-viewport app), the web dashboard is a
-	 scrolling document, so the panel grows with content and the page scrolls — the
-	 header rounds/offsets its own top to sit cleanly inside the panel. -->
 <Sidebar.Provider>
 	<DashboardSidebar />
 	<Sidebar.Inset>
@@ -45,4 +46,5 @@
 	workspaceId={data.activeOrganization?.id}
 	workspaceName={data.activeOrganization?.name}
 	plan={data.activeOrganization?.plan}
+	{firstUpload}
 />

@@ -1,5 +1,7 @@
 <script lang="ts">
+	import * as Chart from "$components/ui/chart/index.js";
 	import { TrendingDown } from "@lucide/svelte";
+	import { AreaChart } from "layerchart";
 
 	// Watch-retention survival curve: share of plays that reached each decile of
 	// the video. Shows WHERE viewers drop off, which an average watch % hides.
@@ -9,8 +11,18 @@
 		data: { pct: number; reached: number }[];
 	} = $props();
 
+	// Retention is full at the very start of the video, so anchor the curve at
+	// (0%, 100%) when there are plays — the drop-off then reads from a full
+	// baseline, the way Instagram/YouTube retention graphs do.
+	const hasViews = $derived(data.some((d) => d.reached > 0));
+	const curve = $derived(hasViews ? [{ pct: 0, reached: 100 }, ...data] : data);
+
 	// The 50% mark is a useful "did they get past the intro" reference.
 	const midpoint = $derived(data.find((d) => d.pct === 50)?.reached ?? 0);
+
+	const chartConfig = {
+		reached: { label: "Viewers reached", color: "var(--color-primary)" },
+	} satisfies Chart.ChartConfig;
 </script>
 
 <div class="glass-card rounded-xl p-5">
@@ -24,26 +36,34 @@
 		</span>
 	</header>
 
-	<div class="mt-5 flex h-32 items-end gap-1.5">
-		{#each data as d (d.pct)}
-			{@const h = Math.max(2, d.reached)}
-			<div class="group/bar relative flex h-full flex-1 flex-col items-center justify-end">
-				<div
-					class="w-full origin-bottom rounded-t-sm bg-linear-to-t from-primary/30 to-primary/80 ring-1 ring-inset ring-primary/10 transition-all duration-300 ease-[cubic-bezier(0.625,0.05,0,1)] group-hover/bar:from-primary/45 group-hover/bar:to-primary"
-					style="height: {h}%"
-				></div>
-				<div
-					class="pointer-events-none absolute -top-7 left-1/2 -translate-x-1/2 rounded-md bg-foreground px-1.5 py-0.5 font-mono text-[10px] font-semibold text-background opacity-0 transition-opacity duration-200 group-hover/bar:opacity-100"
-				>
-					{d.reached}%
-				</div>
-			</div>
-		{/each}
-	</div>
-
-	<div class="mt-3 flex justify-between text-[10px] font-medium text-muted-foreground">
-		{#each data as d (d.pct)}
-			<span class="flex-1 text-center">{d.pct}%</span>
-		{/each}
-	</div>
+	<Chart.Container config={chartConfig} class="mt-5 aspect-auto h-32 w-full">
+		<AreaChart
+			data={curve}
+			x="pct"
+			xDomain={[0, 100]}
+			yDomain={[0, 100]}
+			y="reached"
+			axis="x"
+			grid={false}
+			rule={false}
+			padding={{ top: 8, bottom: 22 }}
+			props={{
+				xAxis: { format: (v: number) => `${v}%`, ticks: [0, 25, 50, 75, 100] },
+				area: { fillOpacity: 0.18, line: { class: "stroke-primary stroke-[1.5]" } },
+				highlight: { points: { class: "fill-primary stroke-background" } },
+			}}
+		>
+			{#snippet tooltip()}
+				<Chart.Tooltip
+					labelFormatter={(v: unknown) => `${v}% into video`}
+					formatter={reachedRow}
+				/>
+			{/snippet}
+		</AreaChart>
+	</Chart.Container>
 </div>
+
+{#snippet reachedRow({ value }: { value: unknown })}
+	<span class="text-muted-foreground">Reached</span>
+	<span class="ml-auto font-mono font-medium tabular-nums text-foreground">{value}%</span>
+{/snippet}

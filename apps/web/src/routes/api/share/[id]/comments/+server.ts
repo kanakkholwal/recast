@@ -4,6 +4,7 @@ import { getDb } from "$lib/db";
 import { shareComment, shareReaction } from "$lib/db/schema";
 import { enforceRateLimit } from "$lib/server/rate-limit";
 import { gateShareAccess } from "$lib/share/gate";
+import { reactorKey, resolveClientIp } from "$lib/share/ip";
 import type { RequestHandler } from "./$types";
 
 const MAX_NAME = 60;
@@ -18,9 +19,22 @@ const MAX_BODY = 2000;
  * comments/reactions belong to the caller (drives self-delete + toggle UI)
  * without ever leaking other viewers' fingerprints.
  */
-export const GET: RequestHandler = async ({ params, request, cookies, url }) => {
+export const GET: RequestHandler = async ({
+	params,
+	request,
+	cookies,
+	url,
+	getClientAddress,
+}) => {
 	const gate = await gateShareAccess(params.id, request, cookies);
 	const sessionId = url.searchParams.get("sessionId") ?? "";
+	// The caller's reaction identity — must match the POST handler so their own
+	// reaction renders pressed. Account id when signed in, else IP, else session.
+	const key = reactorKey({
+		userId: gate.viewerId,
+		ip: resolveClientIp(request, getClientAddress),
+		sessionId,
+	});
 
 	const db = getDb();
 
@@ -42,18 +56,18 @@ export const GET: RequestHandler = async ({ params, request, cookies, url }) => 
 	const reactionRows = await db
 		.select({
 			emoji: shareReaction.emoji,
-			sessionId: shareReaction.sessionId,
+			ipHash: shareReaction.ipHash,
 		})
 		.from(shareReaction)
 		.where(eq(shareReaction.shareSlug, params.id));
 
-	// Aggregate reactions per emoji → count, and collect the caller's own
-	// emojis so the client can render the pressed state.
+	// Aggregate reactions per emoji → count, and flag the caller's own (a single
+	// reaction now) so the client can render the pressed state.
 	const counts = new Map<string, number>();
 	const mine: string[] = [];
 	for (const r of reactionRows) {
 		counts.set(r.emoji, (counts.get(r.emoji) ?? 0) + 1);
-		if (sessionId && r.sessionId === sessionId) mine.push(r.emoji);
+		if (r.ipHash && r.ipHash === key) mine.push(r.emoji);
 	}
 
 	return json({
