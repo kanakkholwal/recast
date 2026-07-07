@@ -179,7 +179,7 @@
 	let password = $state("");
 	let expiry = $state<"never" | "7d" | "30d">("never");
 
-	const isPro = $derived(plan === "pro");
+	const isPro = $derived(plan === "pro" || plan === "enterprise");
 
 	const visibilityLabel = $derived.by(() => {
 		switch (visibility) {

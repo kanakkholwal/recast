@@ -37,6 +37,12 @@ export async function consumeRateLimit(
 	const db = getDb();
 	const now = new Date();
 	const newExpiry = new Date(now.getTime() + windowMs);
+	// Raw `sql` interpolation doesn't run values through the column's timestamp
+	// mapper, so a bare Date reaches postgres-js unconverted and it throws
+	// (`ERR_INVALID_ARG_TYPE`). Pass ISO strings; Postgres casts them to the
+	// timestamp column for the comparison/assignment.
+	const nowIso = now.toISOString();
+	const newExpiryIso = newExpiry.toISOString();
 
 	const [row] = await db
 		.insert(rateLimit)
@@ -45,8 +51,8 @@ export async function consumeRateLimit(
 			target: rateLimit.key,
 			set: {
 				// Expired window → start fresh at 1; live window → increment.
-				count: sql`case when ${rateLimit.expiresAt} < ${now} then 1 else ${rateLimit.count} + 1 end`,
-				expiresAt: sql`case when ${rateLimit.expiresAt} < ${now} then ${newExpiry} else ${rateLimit.expiresAt} end`,
+				count: sql`case when ${rateLimit.expiresAt} < ${nowIso} then 1 else ${rateLimit.count} + 1 end`,
+				expiresAt: sql`case when ${rateLimit.expiresAt} < ${nowIso} then ${newExpiryIso} else ${rateLimit.expiresAt} end`,
 			},
 		})
 		.returning({ count: rateLimit.count, expiresAt: rateLimit.expiresAt });

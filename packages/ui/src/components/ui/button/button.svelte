@@ -32,7 +32,7 @@
 				secondary:
 					"border-secondary bg-secondary text-secondary-foreground border-border/30 shadow-craft-sm hover:bg-muted/50",
 				outline:
-					"border-border text-foreground",
+					"border-border bg-card text-foreground",
 				ghost:
 					"border-transparent hover:bg-muted/40 hover:text-accent-foreground dark:hover:bg-accent/50",
 				link: "text-primary underline-offset-4 hover:underline hover:scale-100",

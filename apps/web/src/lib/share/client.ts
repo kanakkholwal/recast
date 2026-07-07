@@ -20,6 +20,8 @@ export type ShareComment = {
 	body: string;
 	createdAt: number;
 	mine: boolean;
+	/** Posted by a signed-in account (server-verified) vs a name-only guest. */
+	verified: boolean;
 };
 
 export type ReactionCount = { emoji: string; count: number };
@@ -54,6 +56,31 @@ export function rememberViewerName(name: string): void {
 	if (trimmed) safeStorage.set(NAME_KEY, trimmed);
 }
 
+/**
+ * Pull a human-readable message out of a failed Response. SvelteKit's
+ * `error(status, msg)` serializes to a JSON body `{ "message": "…" }`, so a
+ * raw `res.text()` leaks that JSON straight into a toast. This parses the
+ * `message` field, falls back to a short plain-text body, and finally to the
+ * caller's default — never surfacing a JSON/HTML blob to the user.
+ */
+export async function readApiError(res: Response, fallback: string): Promise<string> {
+	const raw = await res.text().catch(() => "");
+	const trimmed = raw.trim();
+	if (trimmed.startsWith("{")) {
+		try {
+			const parsed = JSON.parse(trimmed) as { message?: unknown };
+			if (typeof parsed.message === "string" && parsed.message.trim())
+				return parsed.message.trim();
+		} catch {
+			// Malformed JSON — fall through to the default.
+		}
+		return fallback;
+	}
+	// A short, non-markup plain-text body is safe to show; anything HTML-ish isn't.
+	if (trimmed && !trimmed.startsWith("<") && trimmed.length <= 200) return trimmed;
+	return fallback;
+}
+
 export async function loadEngagement(slug: string, sessionId: string): Promise<Engagement> {
 	const res = await fetch(
 		`/api/share/${slug}/comments?sessionId=${encodeURIComponent(sessionId)}`,
@@ -75,8 +102,7 @@ export async function postComment(
 		body: JSON.stringify(input),
 	});
 	if (!res.ok) {
-		const message = await res.text().catch(() => "");
-		throw new Error(message || "Couldn't post comment");
+		throw new Error(await readApiError(res, "Couldn't post comment"));
 	}
 	const data = (await res.json()) as { comment: ShareComment };
 	return data.comment;
@@ -92,8 +118,7 @@ export async function deleteComment(
 		{ method: "DELETE" },
 	);
 	if (!res.ok) {
-		const message = await res.text().catch(() => "");
-		throw new Error(message || "Couldn't delete comment");
+		throw new Error(await readApiError(res, "Couldn't delete comment"));
 	}
 }
 
@@ -107,8 +132,7 @@ export async function toggleReaction(
 		body: JSON.stringify(input),
 	});
 	if (!res.ok) {
-		const message = await res.text().catch(() => "");
-		throw new Error(message || "Couldn't react");
+		throw new Error(await readApiError(res, "Couldn't react"));
 	}
 	const data = (await res.json()) as { added: boolean };
 	return data.added;

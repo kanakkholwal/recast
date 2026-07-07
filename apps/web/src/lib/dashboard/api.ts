@@ -39,6 +39,13 @@ function put(url: string, body: unknown) {
 export async function renameRecast(id: string, title: string): Promise<void> {
 	await jsonOrThrow(await patch(`/api/recasts/${id}`, { title }));
 }
+/** Edit a recast's title and/or description in one call. */
+export async function updateRecastDetails(
+	id: string,
+	fields: { title?: string; description?: string },
+): Promise<void> {
+	await jsonOrThrow(await patch(`/api/recasts/${id}`, fields));
+}
 export async function moveRecast(id: string, folderId: string | null): Promise<void> {
 	await jsonOrThrow(await patch(`/api/recasts/${id}`, { folderId }));
 }
@@ -58,8 +65,9 @@ export async function setRecastTags(id: string, tagIds: string[]): Promise<void>
 export async function shareRecast(
 	id: string,
 	visibility: "private" | "workspace" | "selected" | "public" = "public",
+	opts: { password?: string; expiresAt?: string | null } = {},
 ): Promise<{ slug: string; shareUrl: string }> {
-	return jsonOrThrow(await post(`/api/recasts/${id}/share`, { visibility }));
+	return jsonOrThrow(await post(`/api/recasts/${id}/share`, { visibility, ...opts }));
 }
 /** Revoke a share link by slug. */
 export async function deleteShare(slug: string): Promise<void> {

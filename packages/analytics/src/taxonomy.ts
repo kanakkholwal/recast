@@ -29,6 +29,7 @@ export const ANALYTICS_EVENTS = [
 	"share_created",
 	"share_viewed",
 	"share_player_error",
+	"share_signup_cta_click",
 	"editor_opened",
 	"cloud_connected",
 	"sign_in",
@@ -85,6 +86,11 @@ export interface EventPropMap {
 	share_player_error: {
 		/** Error class name only (e.g. "TypeError") — never the raw message (no paths/PII). */
 		reason?: string;
+	};
+	share_signup_cta_click: {
+		/** Which acquisition surface converted the viewer. */
+		placement?: "header" | "end-card" | "watermark";
+		visibility?: string;
 	};
 	recast_uploaded: {
 		size_bytes?: number;

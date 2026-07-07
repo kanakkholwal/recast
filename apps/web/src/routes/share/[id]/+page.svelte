@@ -10,6 +10,7 @@
 	  deleteComment,
 	  loadEngagement,
 	  postComment,
+	  readApiError,
 	  rememberViewerName,
 	  shareSessionId,
 	  storedViewerName,
@@ -37,6 +38,7 @@
 	import {
 	  ArrowRight,
 	  AtSign,
+	  BadgeCheck,
 	  Check,
 	  Clock,
 	  Code,
@@ -56,6 +58,7 @@
 	  MessageSquare,
 	  Moon,
 	  PencilLine,
+	  Play,
 	  RotateCcw,
 	  Search,
 	  Settings,
@@ -74,7 +77,7 @@
 	  type RecastPlayerApi,
 	  type RecastPlayerTrack,
 	} from "@recast/player";
-	import { Button } from "@recast/ui/button";
+	import { Button, buttonVariants } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { Input } from "@recast/ui/input";
@@ -139,7 +142,7 @@
 				headers: { "content-type": "application/json" },
 				body: JSON.stringify({ email }),
 			});
-			if (!res.ok) throw new Error((await res.text()) || "Couldn't send the link.");
+			if (!res.ok) throw new Error(await readApiError(res, "Couldn't send the link."));
 			claimState = "sent";
 		} catch (err) {
 			claimState = "idle";
@@ -263,8 +266,7 @@
 						body: JSON.stringify({ visibility: next }),
 					});
 					if (!res.ok) {
-						const message = await res.text().catch(() => "Couldn't update access");
-						throw new Error(message || "Couldn't update access");
+						throw new Error(await readApiError(res, "Couldn't update access"));
 					}
 				})(),
 				{
@@ -306,6 +308,15 @@
 	let isPlaying = $state(false);
 	// True once the video reaches the end — drives the CTA end-card overlay.
 	let ended = $state(false);
+	// Pre-play hook: a sender + duration card owns the poster until the viewer
+	// commits to the first play. It's the highest-trust moment on the page (who
+	// sent this, how long), so we surface identity + duration instead of a bare
+	// poster. Cleared on the first view-start/progress or when the viewer plays here.
+	let hasStarted = $state(false);
+	function startPlayback() {
+		hasStarted = true;
+		api?.play();
+	}
 
 	$effect(() => {
 		smoothedTime.set(currentTime);
@@ -351,6 +362,7 @@
 		if (e.type === "view-start") {
 			isPlaying = true;
 			ended = false;
+			hasStarted = true;
 			recordView("start");
 		}
 		if (e.type === "progress") {
@@ -358,6 +370,7 @@
 			watchedPct = e.percent ?? watchedPct;
 			isPlaying = true;
 			ended = false;
+			hasStarted = true;
 			// Some players jump straight to progress without a view-start; the
 			// guard makes this idempotent so we still record the view once.
 			recordView("start");
@@ -518,6 +531,8 @@
 	let nameInputEl = $state<HTMLInputElement | null>(null);
 
 	async function editName() {
+		// Only guests choose a name; a signed-in viewer's identity is their account.
+		if (identityLocked) return;
 		editingName = true;
 		await tick();
 		nameInputEl?.focus();
@@ -525,7 +540,9 @@
 
 	function commitName() {
 		editingName = false;
-		if (viewerName.trim()) rememberViewerName(viewerName);
+		// Never write an account name into the guest name store — the two
+		// identities must not bleed across sessions on a shared browser.
+		if (!identityLocked && viewerName.trim()) rememberViewerName(viewerName);
 	}
 
 
@@ -591,13 +608,21 @@
 	// collapsed or on a bare recast.
 	const hasSidebar = $derived(hasTranscript || commentsEnabled);
 	let panelOpen = $state(false);
-	function togglePanel(tab: PanelTab) {
+	let railEl = $state<HTMLElement | null>(null);
+	async function togglePanel(tab: PanelTab) {
 		if (panelOpen && activeTab === tab) {
 			panelOpen = false;
 			return;
 		}
 		activeTab = tab;
 		panelOpen = true;
+		// On mobile the rail stacks below the fold; without bringing it into view
+		// the toggle reads as "nothing happened". Desktop docks it beside the
+		// video (in-view already), so only scroll on the stacked breakpoint.
+		if (browser && window.matchMedia("(max-width: 1023px)").matches) {
+			await tick();
+			railEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
 	}
 
 	async function react(emoji: string) {
@@ -616,12 +641,12 @@
 		const text = draftText.trim();
 		const name = viewerName.trim();
 		if (!text || !name) return;
-		rememberViewerName(name);
+		if (!identityLocked) rememberViewerName(name);
 		const at = Math.floor(currentTime);
 		if (isDemo) {
 			comments = [
 				...comments,
-				{ id: `local-${comments.length}`, authorName: name, atSeconds: at, body: text, createdAt: 0, mine: true },
+				{ id: `local-${comments.length}`, authorName: name, atSeconds: at, body: text, createdAt: 0, mine: true, verified: identityLocked },
 			];
 			draftText = "";
 			toast.success(`Posted at ${formatTime(at)}.`);
@@ -674,8 +699,7 @@
 			body: JSON.stringify(body),
 		});
 		if (!res.ok) {
-			const message = await res.text().catch(() => "");
-			throw new Error(message || "Couldn't update share settings");
+			throw new Error(await readApiError(res, "Couldn't update share settings"));
 		}
 		return (await res.json()) as {
 			ctaLabel?: string | null;
@@ -843,18 +867,35 @@
 	};
 	const session = authClient.useSession();
 	const viewer = $derived(($session as unknown as SessionShape).data?.user ?? null);
+	// Signed-in viewers comment AS their account — the name is locked, not a
+	// guest field. Guests (no session) still self-supply and remember a name.
+	const identityLocked = $derived(viewer != null);
+	// Account avatar for the composer identity chip: real image when present,
+	// else initials on the neutral account swatch (distinct from guests' hued dots).
+	const viewerInitials = $derived(initials(viewer?.name, viewer?.email));
 
-	// Signed-in viewers don't get asked for a name — default the composer to their
-	// account name. Only fills when the field is empty, so a stored or typed name
-	// still wins, and it resolves once the session hydrates.
+	// Force the composer name to the account once the session hydrates — and keep
+	// it synced — so a signed-in viewer can't post under a stale guest name.
 	$effect(() => {
-		if (!viewerName.trim() && viewer?.name) viewerName = viewer.name;
+		if (viewer)
+			viewerName = viewer.name?.trim() || viewer.email?.split("@")[0] || "Recast user";
 	});
 
 
 	async function signOut() {
 		await authClient.signOut();
 		await goto("/");
+	}
+
+	// Share→signup is the page's growth loop: a stranger watching a polished
+	// recast is the highest-intent moment to convert. Track each acquisition
+	// surface so the funnel is measurable by placement (header / end-card / mark).
+	function trackSignupCta(placement: "header" | "end-card" | "watermark") {
+		if (!browser) return;
+		analytics.capture("share_signup_cta_click", {
+			placement,
+			visibility: shareMeta?.visibility,
+		});
 	}
 </script>
 
@@ -1080,7 +1121,7 @@
 							<Tooltip.Trigger
 								onclick={toggleMode}
 								aria-label={themeMode.current === "dark" ? "Switch to light mode" : "Switch to dark mode"}
-								class="group/theme grid size-9 shrink-0 place-items-center rounded-xl border border-border/40 bg-foreground/5 text-muted-foreground transition-colors hover:bg-foreground/10 hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+								class={cn(buttonVariants({ variant: "ghost", size: "icon-sm" }), "text-muted-foreground")}
 							>
 								<span class="relative grid size-3.5 place-items-center">
 									{#if themeMode.current === "dark"}
@@ -1104,12 +1145,7 @@
 					     can view, comments, CTA, analytics) gated behind canManage. -->
 					<DropdownMenu.Root>
 						<DropdownMenu.Trigger
-							class={cn(
-								"group/share inline-flex h-9 items-center gap-1.5 rounded-xl px-3 text-xs font-semibold shadow-craft-sm transition-all hover:scale-[1.02] active:scale-[0.98] focus-visible:outline-2 focus-visible:outline-primary",
-								canManage
-									? "border border-transparent bg-primary text-primary-foreground hover:bg-primary/95"
-									: "border border-border/40 bg-foreground/5 text-muted-foreground hover:bg-foreground/10 hover:text-foreground",
-							)}
+							class={buttonVariants({ variant: canManage ? "default" : "outline", size: "sm" })}
 						>
 							<Share2 class="size-3.5" />
 							<span class="max-sm:hidden">Share</span>
@@ -1127,7 +1163,7 @@
 								Copy link at
 								<span class="ml-auto font-mono text-[10px] tabular-nums text-foreground">{formatTime(currentTime)}</span>
 							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={copyEmbedCode} class="gap-2.5">
+							<DropdownMenu.Item onclick={copyEmbedCode} class="gap-2.5 hidden">
 								<Code class="size-3.5 text-muted-foreground" />
 								Copy embed code
 							</DropdownMenu.Item>
@@ -1212,7 +1248,7 @@
 						<DropdownMenu.Root>
 							<DropdownMenu.Trigger
 								aria-label="Account menu — {viewer.name || viewer.email}"
-								class="grid size-9 shrink-0 place-items-center overflow-hidden rounded-full bg-foreground text-[11px] font-bold text-background ring-1 ring-border/40 transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-primary"
+								class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-foreground text-[11px] font-bold text-background ring-1 ring-border/40 transition-transform hover:scale-105 focus-visible:outline-2 focus-visible:outline-primary"
 							>
 								{#if viewer.image}
 									<img src={viewer.image} alt="" referrerpolicy="no-referrer" class="size-full object-cover" />
@@ -1254,11 +1290,26 @@
 								</DropdownMenu.Item>
 							</DropdownMenu.Content>
 						</DropdownMenu.Root>
-					{:else if currentScope !== "public"}
-						<!-- Strangers on a public link have nothing to gain from
-						     signing in, so the nudge only shows on team/private
-						     links where an account could unlock access. -->
-						<Button href="/login" size="sm" variant="outline" class="gap-1.5">
+					{:else if currentScope === "public"}
+						<!-- Public share = viral traffic. The video is the demo, so this
+						     is the one persistent, honest path from watching to making
+						     your own. Sign-in stays for returning users but is demoted;
+						     the primary weight goes to acquisition. -->
+						<Button href="/login" size="sm" variant="ghost" class="max-sm:hidden">
+							Sign in
+						</Button>
+						<Button href="/signup" onclick={() => trackSignupCta("header")} size="sm">
+							Try Recast free
+						</Button>
+					{:else}
+						<!-- Access-gated link: signing in is what could unlock it, so it
+						     leads (and carries the return path back to this share). -->
+						<Button
+							href={`/login?next=${encodeURIComponent(browser ? window.location.pathname + window.location.search : "")}`}
+							size="sm"
+							variant="outline"
+							class="gap-1.5"
+						>
 							<User class="size-3.5" />
 							<span class="max-sm:hidden">Sign in</span>
 						</Button>
@@ -1309,6 +1360,56 @@
 						</div>
 					{/if}
 
+					{#if recast?.src && !hasStarted && !ended}
+						<!-- Pre-play hook. Owns the poster until the first play: sender
+						     identity (trust) + duration (expectation) are the two things
+						     that decide whether a stranger commits. A full-surface button
+						     under pointer-events-none content makes the whole frame play,
+						     while the visible play glyph tracks the group hover. z-40 sits
+						     above media-chrome controls but below the z-50 end-cards. -->
+						<div
+							class="group/preplay absolute inset-0 z-40 grid place-items-center bg-gradient-to-b from-black/45 via-black/25 to-black/70 px-6 backdrop-blur-[2px]"
+							out:fade={{ duration: 220, easing: cubicOut }}
+						>
+							<button
+								type="button"
+								onclick={startPlayback}
+								aria-label="Play — {titleText}"
+								class="absolute inset-0 cursor-pointer rounded-2xl focus-visible:outline-2 focus-visible:-outline-offset-4 focus-visible:outline-white"
+							></button>
+							<div class="pointer-events-none relative flex flex-col items-center gap-5 text-center">
+								<div class="flex items-center gap-2.5">
+									<span class="grid size-9 place-items-center rounded-full bg-white/15 text-xs font-bold text-white ring-1 ring-white/25 backdrop-blur">
+										{initials(recast.sharedBy, null)}
+									</span>
+									<span class="text-sm text-white/85"><span class="font-semibold text-white">{recast.sharedBy}</span> shared a video</span>
+								</div>
+
+								<span class="grid size-16 place-items-center rounded-full bg-white/95 text-black shadow-craft-xl transition-transform duration-200 group-hover/preplay:scale-105 group-active/preplay:scale-95 sm:size-20">
+									<Play class="size-7 translate-x-0.5 fill-current sm:size-8" />
+								</span>
+
+								<div class="flex max-w-lg flex-col items-center gap-2.5">
+									<span class="text-balance text-lg font-semibold leading-tight text-white sm:text-xl">{titleText}</span>
+									<div class="flex flex-wrap items-center justify-center gap-2 text-xs font-medium text-white/75">
+										{#if recast.durationSec}
+											<span class="inline-flex items-center gap-1 rounded-full bg-black/35 px-2.5 py-1 ring-1 ring-white/15">
+												<Clock class="size-3" />
+												<span class="font-mono tabular-nums">{formatTime(recast.durationSec)}</span>
+											</span>
+										{/if}
+										{#if viewsCount > 0}
+											<span class="inline-flex items-center gap-1 rounded-full bg-black/35 px-2.5 py-1 ring-1 ring-white/15">
+												<Eye class="size-3" />
+												{viewsCount.toLocaleString()} {viewsCount === 1 ? "view" : "views"}
+											</span>
+										{/if}
+									</div>
+								</div>
+							</div>
+						</div>
+					{/if}
+
 					{#if showOwnerEndCard && cta}
 						<!-- z-50 lifts the end-card above the player's controls
 						     (media-chrome tops out at z-index 6); without it the
@@ -1346,10 +1447,11 @@
 									<Logo size="24" color="transparent" fill="currentColor" />
 								</span>
 								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this — free with Recast.</p>
-								<Button href="/" size="lg" class="gap-2">
+								<Button href="/signup" onclick={() => trackSignupCta("end-card")} size="lg" class="gap-2">
 									Record your own
 									<ArrowRight class="size-4" />
 								</Button>
+								<p class="text-[11px] text-white/50">Free · no credit card</p>
 								<button
 									type="button"
 									onclick={replay}
@@ -1368,7 +1470,7 @@
 			     reaction icons + on-demand Comments / Transcript triggers that open
 			     the docked side panel. This is the only always-on chrome; the
 			     conversation never competes with the video for space. -->
-			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low bg-background/85 p-1.5 shadow-craft-lg dark:shadow-(--shadow-craft-inset) backdrop-blur-xl">
+			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low bg-card p-1.5 shadow-craft-lg dark:shadow-(--shadow-craft-inset) backdrop-blur-xl">
 				{#each REACTIONS as r (r.id)}
 					{@const count = countFor(r.id)}
 					{@const mine = myReactions.has(r.id)}
@@ -1400,40 +1502,30 @@
 
 				{#if commentsEnabled}
 					{@const commentsActive = panelOpen && activeTab === "comments"}
-					<button
-						type="button"
+					<Button
 						onclick={() => togglePanel("comments")}
 						aria-pressed={commentsActive}
-						class={cn(
-							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
-							commentsActive
-								? "bg-foreground/10 text-foreground"
-								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-						)}
+						variant={commentsActive ? "secondary" : "ghost"}
+						size="sm"
 					>
 						<MessageSquare class="size-4" />
 						<span class="max-sm:hidden">Comments</span>
 						{#if comments.length > 0}
-							<span class={cn("rounded-md px-1.5 py-0.5 font-mono text-[10px] tabular-nums", commentsActive ? "bg-foreground/15" : "bg-foreground/10")}>{comments.length}</span>
+							<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
 						{/if}
-					</button>
+					</Button>
 				{/if}
 				{#if hasTranscript}
 					{@const transcriptActive = panelOpen && activeTab === "transcript"}
-					<button
-						type="button"
+					<Button
 						onclick={() => togglePanel("transcript")}
 						aria-pressed={transcriptActive}
-						class={cn(
-							"inline-flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-colors",
-							transcriptActive
-								? "bg-foreground/10 text-foreground"
-								: "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
-						)}
+						variant={transcriptActive ? "secondary" : "ghost"}
+						size="sm"
 					>
 						<FileText class="size-4" />
 						<span class="max-sm:hidden">Transcript</span>
-					</button>
+					</Button>
 				{/if}
 			</div>
 
@@ -1459,16 +1551,23 @@
 						</button>
 					{/if}
 				</div>
-				<div class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-					<span>Shared by <span class="font-medium text-foreground">{recast?.sharedBy}</span></span>
-					<span aria-hidden="true">·</span>
+				<!-- Sender is the trust anchor — promoted to an avatar + name, with the
+				     numbers (date · duration · views) as a lighter meta row beneath. -->
+				<div class="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 text-xs text-muted-foreground">
+					<span class="inline-flex items-center gap-2">
+						<span class="grid size-6 shrink-0 place-items-center rounded-full bg-foreground/10 text-[9px] font-bold text-foreground ring-1 ring-border/40">
+							{initials(recast?.sharedBy, null)}
+						</span>
+						<span class="text-foreground/90">Shared by <span class="font-semibold text-foreground">{recast?.sharedBy}</span></span>
+					</span>
+					<span aria-hidden="true" class="text-border-low">·</span>
 					<span>{recast ? new Date(recast.sharedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : ""}</span>
 					{#if recast?.durationSec}
-						<span aria-hidden="true">·</span>
+						<span aria-hidden="true" class="text-border-low">·</span>
 						<span class="font-mono tabular-nums">{formatTime(recast.durationSec)}</span>
 					{/if}
 					{#if viewsCount > 0}
-						<span aria-hidden="true">·</span>
+						<span aria-hidden="true" class="text-border-low">·</span>
 						<span class="inline-flex items-center gap-1">
 							<Eye class="size-3" />
 							{viewsCount.toLocaleString()} {viewsCount === 1 ? "view" : "views"}
@@ -1528,52 +1627,50 @@
 				     it's collapsed. Name-only: viewers comment without an account. -->
 			{#if hasSidebar}
 				<aside
+					bind:this={railEl}
 					class="mt-4 flex h-[70vh] flex-col overflow-hidden rounded-2xl border border-border-low/50 bg-background/70 shadow-craft-lg backdrop-blur-xl lg:sticky lg:top-19 lg:mt-0 lg:h-[calc(100dvh-100px)]"
 				>
 					<div class="flex h-full flex-col overflow-hidden">
 						<!-- Tab bar + close -->
 						<div role="tablist" aria-label="Transcript and comments" class="flex shrink-0 items-center gap-1 border-b border-border-low/40 p-2">
 							{#if hasTranscript}
-								<button
-									type="button"
+								<Button
 									role="tab"
 									aria-selected={activeTab === "transcript"}
 									onclick={() => (activeTab = "transcript")}
-									class={cn(
-										"inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-										activeTab === "transcript" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:text-foreground",
-									)}
+									variant={activeTab === "transcript" ? "secondary" : "ghost"}
+									size="sm"
+									class="flex-1"
 								>
 									<FileText class="size-3.5" />
 									Transcript
-								</button>
+								</Button>
 							{/if}
 							{#if commentsEnabled}
-								<button
-									type="button"
+								<Button
 									role="tab"
 									aria-selected={activeTab === "comments"}
 									onclick={() => (activeTab = "comments")}
-									class={cn(
-										"inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors",
-										activeTab === "comments" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:text-foreground",
-									)}
+									variant={activeTab === "comments" ? "secondary" : "ghost"}
+									size="sm"
+									class="flex-1"
 								>
 									<MessageSquare class="size-3.5" />
 									Comments
 									{#if comments.length > 0}
 										<span class="rounded-md bg-foreground/10 px-1.5 py-0.5 font-mono text-[10px] tabular-nums">{comments.length}</span>
 									{/if}
-								</button>
+								</Button>
 							{/if}
-							<button
-								type="button"
+							<Button
 								onclick={() => (panelOpen = false)}
 								aria-label="Close panel"
-								class="ml-auto grid size-8 shrink-0 place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+								variant="ghost"
+								size="icon-sm"
+								class="ml-auto"
 							>
 								<X class="size-4" />
-							</button>
+							</Button>
 						</div>
 
 						<!-- Transcript tab — cues read off the player's live caption
@@ -1667,14 +1764,23 @@
 														type="button"
 														onclick={() => jumpTo(c.atSeconds)}
 														aria-label="Jump to {c.authorName}'s comment at {formatTime(c.atSeconds)}"
-														class="grid size-8 shrink-0 place-items-center rounded-full text-[11px] font-bold text-white transition-transform hover:scale-105"
-														style="background: hsl({commentHue(c.authorName)} 60% 45%);"
+														class={cn(
+															"grid size-8 shrink-0 place-items-center rounded-full text-[11px] font-bold ring-1 transition-transform hover:scale-105",
+															c.verified ? "bg-foreground text-background ring-border/40" : "text-white ring-transparent",
+														)}
+														style={c.verified ? "" : `background: hsl(${commentHue(c.authorName)} 60% 45%);`}
 													>
 														{c.authorName[0]?.toUpperCase()}
 													</button>
 													<div class="min-w-0 flex-1">
 														<div class="flex items-center gap-2">
 															<span class="text-sm font-semibold">{c.authorName}</span>
+															{#if c.verified}
+																<span class="inline-flex shrink-0 items-center text-primary" title="Signed-in account">
+																	<BadgeCheck class="size-3.5" />
+																	<span class="sr-only">Verified account</span>
+																</span>
+															{/if}
 															<button
 																type="button"
 																onclick={() => jumpTo(c.atSeconds)}
@@ -1719,7 +1825,27 @@
 								     line that only expands to a field when unset or edited. -->
 								<div class="shrink-0 border-t border-border-low/40 p-2.5">
 									<div class="flex flex-col gap-2">
-										{#if viewerName.trim() && !editingName}
+										{#if identityLocked}
+											<!-- Signed in: the account IS the identity. No name field,
+											     no Change — only guests choose a name. -->
+											<div class="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
+												<span class="grid size-4 shrink-0 place-items-center overflow-hidden rounded-full bg-foreground text-[7px] font-bold text-background ring-1 ring-border/40">
+													{#if viewer?.image}
+														<img src={viewer.image} alt="" referrerpolicy="no-referrer" class="size-full object-cover" />
+													{:else}
+														{viewerInitials}
+													{/if}
+												</span>
+												<span>Commenting as <span class="font-medium text-foreground">{viewerName}</span></span>
+												<span
+													class="ml-0.5 inline-flex items-center gap-0.5 rounded-full bg-foreground/8 px-1.5 py-px text-[9px] font-medium text-muted-foreground ring-1 ring-border/40"
+													title="Signed in — comments use your account name"
+												>
+													<UserCheck class="size-2.5" />
+													Account
+												</span>
+											</div>
+										{:else if viewerName.trim() && !editingName}
 											<div class="flex items-center gap-1.5 px-0.5 text-[11px] text-muted-foreground">
 												<span
 													class="grid size-4 shrink-0 place-items-center rounded-full text-[8px] font-bold text-white"
@@ -1778,7 +1904,7 @@
 													<Tooltip.Trigger
 														onclick={insertCurrentTimestamp}
 														aria-label="Insert current timestamp"
-														class="grid size-8 shrink-0 place-items-center rounded-lg border border-border-low/70 bg-background/80 text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+														class={cn(buttonVariants({ variant: "outline", size: "icon-sm" }), "text-muted-foreground")}
 													>
 														<Clock class="size-3.5" />
 													</Tooltip.Trigger>
@@ -1800,18 +1926,21 @@
 				</aside>
 			{/if}
 
-			<!-- Free-tier growth loop: every shared link quietly markets
-			     Recast. Pro removes the watermark, so this hides for them. -->
+			<!-- Free-tier growth loop: every shared link quietly markets Recast and
+			     doubles as a soft acquisition CTA. Pro removes the watermark. -->
 			{#if watermark}
 				<footer class="mt-12 flex justify-center">
 					<a
-						href="/"
+						href="/signup"
+						onclick={() => trackSignupCta("watermark")}
 						class="group/made inline-flex items-center gap-2 rounded-full border border-border-low/40 bg-foreground/3 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
 					>
 						<span class="grid size-4 place-items-center rounded bg-foreground p-0.5 text-background">
 							<Logo size="12" color="transparent" fill="currentColor" />
 						</span>
 						Made with <span class="font-semibold text-foreground">Recast</span>
+						<span aria-hidden="true" class="text-border-low">·</span>
+						<span class="font-medium text-foreground/80 transition-colors group-hover/made:text-foreground">Record yours free</span>
 					</a>
 				</footer>
 			{/if}

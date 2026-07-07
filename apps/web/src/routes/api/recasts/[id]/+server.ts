@@ -10,6 +10,7 @@ import type { RequestHandler } from "./$types";
 type SessionShape = { user: { id: string; role?: string } };
 
 const MAX_TITLE = 200;
+const MAX_DESCRIPTION = 2000;
 
 /** Owner-or-admin gate shared by PATCH and DELETE. Returns the recast row. */
 async function authorizeRecast(
@@ -58,23 +59,29 @@ async function authorizeRecast(
 /**
  * PATCH /api/recasts/[id]
  *
- * Rename and/or move a recast. Body (only provided keys are written):
- *   - title    : 1–200 chars
- *   - folderId : a folder id in the SAME workspace, or null to move to root
+ * Edit and/or move a recast. Body (only provided keys are written):
+ *   - title       : 1–200 chars
+ *   - description : up to 2000 chars; empty string clears it (null)
+ *   - folderId    : a folder id in the SAME workspace, or null to move to root
  *
  * Owner or global admin only.
  */
 export const PATCH: RequestHandler = async ({ params, request }) => {
 	const row = await authorizeRecast(request, params.id);
 
-	let body: { title?: unknown; folderId?: unknown } = {};
+	let body: { title?: unknown; description?: unknown; folderId?: unknown } = {};
 	try {
 		body = (await request.json()) as typeof body;
 	} catch {
 		error(400, "Invalid JSON body");
 	}
 
-	const patch: { title?: string; folderId?: string | null; updatedAt: Date } = {
+	const patch: {
+		title?: string;
+		description?: string | null;
+		folderId?: string | null;
+		updatedAt: Date;
+	} = {
 		updatedAt: new Date(),
 	};
 
@@ -82,6 +89,12 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		const title = typeof body.title === "string" ? body.title.trim().slice(0, MAX_TITLE) : "";
 		if (!title) error(400, "Title can't be empty");
 		patch.title = title;
+	}
+
+	if ("description" in body) {
+		const d =
+			typeof body.description === "string" ? body.description.trim().slice(0, MAX_DESCRIPTION) : "";
+		patch.description = d || null; // empty clears it
 	}
 
 	const db = getDb();
@@ -103,12 +116,15 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		}
 	}
 
-	if (!("title" in patch) && !("folderId" in patch)) error(400, "Nothing to update");
+	if (!("title" in patch) && !("description" in patch) && !("folderId" in patch)) {
+		error(400, "Nothing to update");
+	}
 
 	await db.update(recast).set(patch).where(eq(recast.id, row.id));
 	return json({
 		ok: true,
 		...(patch.title !== undefined ? { title: patch.title } : {}),
+		...("description" in patch ? { description: patch.description } : {}),
 		...("folderId" in patch ? { folderId: patch.folderId } : {}),
 	});
 };
