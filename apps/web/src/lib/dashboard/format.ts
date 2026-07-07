@@ -44,6 +44,30 @@ export function formatRelative(ts: number): string {
 	return formatDate(ts);
 }
 
+/**
+ * Share-link expiry label. `formatRelative` only speaks the past ("Today", "2
+ * days ago") and collapses any future date to "Just now", so expiries need
+ * their own future-aware formatter: "Expires in 7 days" while live, "Expired"
+ * once the deadline passes (paired with the `expired` flag for styling).
+ */
+export function formatExpiry(expiresAt: number): { expired: boolean; label: string } {
+	const diff = expiresAt - Date.now();
+	if (diff <= 0) return { expired: true, label: "Expired" };
+	const min = 60_000;
+	const hour = 3_600_000;
+	const day = 86_400_000;
+	let rel: string;
+	if (diff < hour) rel = `${Math.max(1, Math.round(diff / min))} min`;
+	else if (diff < day) {
+		const h = Math.round(diff / hour);
+		rel = `${h} hr`;
+	} else {
+		const d = Math.round(diff / day);
+		rel = `${d} day${d === 1 ? "" : "s"}`;
+	}
+	return { expired: false, label: `Expires in ${rel}` };
+}
+
 /** `1024` → `"1,024"`. */
 export function formatCount(n: number): string {
 	return n.toLocaleString("en-US");

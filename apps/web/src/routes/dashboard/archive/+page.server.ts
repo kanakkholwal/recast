@@ -2,6 +2,7 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
 import { QUOTA } from "$lib/db/schema/usage";
+import { resolvePlaybackUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
 const HARD_DELETE_DAYS = QUOTA.free.hardDeleteAfterArchiveDays ?? 16;
@@ -31,17 +32,21 @@ export const load: PageServerLoad = async ({ parent }) => {
 		.limit(100);
 
 	return {
-		archived: rows.map((r) => {
-			const archivedMs = (r.archivedAt ?? r.createdAt).getTime();
-			return {
-				id: r.id,
-				title: r.title,
-				durationSec: r.durationSec,
-				sizeBytes: Number(r.sizeBytes),
-				posterUrl: r.posterUrl,
-				archivedAt: archivedMs,
-				deletesAt: archivedMs + HARD_DELETE_DAYS * DAY_MS,
-			};
-		}),
+		archived: await Promise.all(
+			rows.map(async (r) => {
+				const archivedMs = (r.archivedAt ?? r.createdAt).getTime();
+				return {
+					id: r.id,
+					title: r.title,
+					durationSec: r.durationSec,
+					sizeBytes: Number(r.sizeBytes),
+					// Sign the poster key on read, like the video (a raw key/CDN URL
+					// isn't directly loadable in an <img>).
+					posterUrl: await resolvePlaybackUrl(r.posterUrl),
+					archivedAt: archivedMs,
+					deletesAt: archivedMs + HARD_DELETE_DAYS * DAY_MS,
+				};
+			}),
+		),
 	};
 };

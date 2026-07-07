@@ -1,0 +1,2 @@
+ALTER TABLE "share_comment" ADD COLUMN "author_user_id" text;--> statement-breakpoint
+ALTER TABLE "share_comment" ADD CONSTRAINT "share_comment_author_user_id_user_id_fk" FOREIGN KEY ("author_user_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;

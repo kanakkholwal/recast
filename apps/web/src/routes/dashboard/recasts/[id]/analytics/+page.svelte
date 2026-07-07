@@ -22,6 +22,7 @@
 		Link2,
 		MessageSquare,
 		Percent,
+		Share2,
 		Smartphone,
 		Users,
 		Zap,
@@ -72,6 +73,11 @@
 <svelte:head>
 	<title>{recast.title} · Analytics - Recast</title>
 </svelte:head>
+
+<p class="mb-4 flex items-center gap-1.5 text-xs text-muted-foreground">
+	<Share2 class="size-3.5 shrink-0" />
+	Combined across every share link for this recast.
+</p>
 
 <!-- Lifetime stats -->
 <StatGrid {stats} class="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6" />

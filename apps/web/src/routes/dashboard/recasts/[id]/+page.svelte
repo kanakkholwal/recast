@@ -1,5 +1,4 @@
 <script lang="ts">
-	import { invalidateAll } from "$app/navigation";
 	import * as api from "$lib/dashboard/api";
 	import RecastShares, { type ShareRow } from "$lib/dashboard/components/RecastShares.svelte";
 	import { RecastPlayer } from "@recast/player";
@@ -20,22 +19,6 @@
 		const next = data.shares;
 		untrack(() => (shares = next));
 	});
-
-	let creatingShare = $state(false);
-
-	async function newShare() {
-		if (creatingShare) return;
-		creatingShare = true;
-		try {
-			await api.shareRecast(recast.id);
-			await invalidateAll();
-			toast.success("New share link created.");
-		} catch (e) {
-			toast.error((e as Error)?.message ?? "Couldn't create a link.");
-		} finally {
-			creatingShare = false;
-		}
-	}
 
 	async function revokeShare(slug: string) {
 		const snapshot = shares;
@@ -68,5 +51,5 @@
 
 <!-- Share links -->
 <div class="mt-6">
-	<RecastShares {shares} creating={creatingShare} onnew={newShare} onrevoke={revokeShare} />
+	<RecastShares {shares} recastId={recast.id} onrevoke={revokeShare} />
 </div>

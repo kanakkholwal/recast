@@ -3,6 +3,7 @@ import { getDb } from "$lib/db";
 import { recast } from "$lib/db/schema";
 import { loadWorkspaceActivity, loadWorkspacePerformance } from "$lib/dashboard/activity.server";
 import { recastViewsSql } from "$lib/db/recast-selectors";
+import { resolvePlaybackUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
 /**
@@ -37,6 +38,14 @@ export const load: PageServerLoad = async ({ parent }) => {
 		loadWorkspacePerformance(workspaceId),
 	]);
 
+	// Sign each recast's poster key into a displayable URL once (cheap/local per
+	// row), reused by both the performance table thumbnails and the recasts list.
+	const posterFor = new Map<string, string>(
+		await Promise.all(
+			recasts.map(async (r) => [r.id, await resolvePlaybackUrl(r.posterUrl)] as const),
+		),
+	);
+
 	// Per-recast comparison rows (views/avg watch/completion/comments). Views use
 	// the cached share total; the rest come from the aggregate rollups.
 	const performance = recasts.map((r) => {
@@ -44,6 +53,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 		return {
 			id: r.id,
 			title: r.title,
+			posterUrl: posterFor.get(r.id) ?? "",
 			views: Number(r.views ?? 0),
 			avgWatch: p?.avgWatch ?? 0,
 			completion: p?.completion ?? 0,
@@ -62,7 +72,7 @@ export const load: PageServerLoad = async ({ parent }) => {
 			provider: r.provider,
 			views: Number(r.views ?? 0),
 			createdAt: r.createdAt.getTime(),
-			posterUrl: r.posterUrl ?? "",
+			posterUrl: posterFor.get(r.id) ?? "",
 		})),
 		activity,
 		performance,

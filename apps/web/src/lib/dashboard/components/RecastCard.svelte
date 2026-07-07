@@ -88,7 +88,7 @@
 <article
 	draggable="true"
 	ondragstart={onDragStart}
-	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl transition-[transform,box-shadow] duration-300 hover:-translate-y-0.5 hover:shadow-craft-lg active:cursor-grabbing
+	class="glass-card group/card relative flex h-full cursor-grab flex-col overflow-hidden rounded-xl active:cursor-grabbing
 		{selected ? 'ring-2 ring-primary' : ''}"
 >
 	<!-- Selection checkbox — a sibling of the thumbnail button (never nested,
@@ -133,7 +133,7 @@
 				alt=""
 				loading="lazy"
 				onerror={() => (posterFailed = true)}
-				class="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover/card:scale-[1.04]"
+				class="absolute inset-0 h-full w-full object-cover"
 			/>
 		{:else}
 			<div

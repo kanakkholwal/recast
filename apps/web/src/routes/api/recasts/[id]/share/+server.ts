@@ -1,18 +1,18 @@
 import { error, json } from "@sveltejs/kit";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { customAlphabet } from "nanoid";
 import { z } from "zod";
 import { getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import {
+	organization,
 	recast,
 	share,
 	shareMember,
-	subscription,
 	user,
 } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
-import { hashSharePassword } from "$lib/share/password";
+import { hashSharePassword, verifySharePassword } from "$lib/share/password";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = { user: { id: string } };
@@ -120,14 +120,15 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 	// Fall back to `private` if somehow missing rather than 500.
 	const orgId = body.visibility === "workspace" ? row.workspaceId : null;
 
-	// Plan lookup for watermark. v1 reads the owner's subscription;
-	// per-workspace billing is a follow-up.
-	const [sub] = await db
-		.select({ plan: subscription.plan })
-		.from(subscription)
-		.where(eq(subscription.userId, session.user.id))
+	// Plan gate for watermark + forced expiry. Read the recast's workspace plan
+	// (same source as the quota snapshot) so it stays consistent, and treat both
+	// paid tiers as Pro — `=== "pro"` alone wrongly demoted Enterprise to free.
+	const [org] = await db
+		.select({ plan: organization.plan })
+		.from(organization)
+		.where(eq(organization.id, row.workspaceId))
 		.limit(1);
-	const isPro = sub?.plan === "pro";
+	const isPro = org?.plan === "pro" || org?.plan === "enterprise";
 
 	const passwordHash = await hashSharePassword(body.password);
 	const requestedExpiresAt = body.expiresAt ? new Date(body.expiresAt) : null;
@@ -145,6 +146,54 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 					: cap;
 			})();
 
+	const invitees = body.invitees ?? [];
+	if (body.visibility === "selected" && invitees.length === 0) {
+		error(400, "Selected visibility requires at least one invitee");
+	}
+
+	const base = publicEnv().PUBLIC_APP_URL.replace(/\/$/, "");
+
+	// Dedup: if an identical live link already exists for this recast, hand it
+	// back instead of minting a near-duplicate. "Identical" = same visibility,
+	// comments, expiry, password, and (for `selected`) the same invitee set —
+	// anything different falls through and gets its own fresh link. Note expiring
+	// links rarely match (their absolute expiry differs by when they were made),
+	// which is intended: a new expiry is a new window.
+	const reqExpiry = expiresAt ? expiresAt.getTime() : null;
+	const reqEmails = new Set(invitees.map((i) => i.email.toLowerCase()));
+	const candidates = await db
+		.select({
+			slug: share.slug,
+			passwordHash: share.passwordHash,
+			expiresAt: share.expiresAt,
+			commentsEnabled: share.commentsEnabled,
+		})
+		.from(share)
+		.where(and(eq(share.recastId, row.id), eq(share.visibility, body.visibility)));
+	for (const c of candidates) {
+		if (Boolean(c.commentsEnabled) !== Boolean(body.commentsEnabled)) continue;
+		if ((c.expiresAt ? c.expiresAt.getTime() : null) !== reqExpiry) continue;
+		if (Boolean(c.passwordHash) !== Boolean(body.password)) continue;
+		if (body.password && !(await verifySharePassword(body.password, c.passwordHash))) continue;
+		if (body.visibility === "selected") {
+			const members = await db
+				.select({ email: shareMember.email })
+				.from(shareMember)
+				.where(eq(shareMember.shareSlug, c.slug));
+			const have = new Set(members.map((m) => m.email.toLowerCase()));
+			if (have.size !== reqEmails.size || [...reqEmails].some((e) => !have.has(e))) continue;
+		}
+		return json({
+			ok: true,
+			slug: c.slug,
+			shareUrl: `${base}/share/${c.slug}`,
+			visibility: body.visibility,
+			watermark: !isPro,
+			commentsEnabled: body.commentsEnabled,
+			deduped: true,
+		});
+	}
+
 	// Slug generation — retry a couple of times on the (vanishingly rare)
 	// collision. 10 chars over 36-symbol alphabet gives ~5×10^15 combos,
 	// so a real collision should never happen, but the unique constraint
@@ -160,11 +209,6 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		if (!existing) break;
 		slug = generateSlug();
 		attempts++;
-	}
-
-	const invitees = body.invitees ?? [];
-	if (body.visibility === "selected" && invitees.length === 0) {
-		error(400, "Selected visibility requires at least one invitee");
 	}
 
 	// Resolve invitee emails to user IDs in one trip so we can populate
@@ -203,7 +247,6 @@ export const POST: RequestHandler = async ({ params, request, url }) => {
 		}
 	});
 
-	const base = publicEnv().PUBLIC_APP_URL.replace(/\/$/, "");
 	return json({
 		ok: true,
 		slug,

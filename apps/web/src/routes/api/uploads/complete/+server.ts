@@ -10,7 +10,6 @@ import {
 	deleteObject,
 	isStorageConfigured,
 	posterObjectKey,
-	publicObjectUrl,
 	statObject,
 } from "$lib/storage";
 import type { RequestHandler } from "./$types";
@@ -157,18 +156,13 @@ export const POST: RequestHandler = async ({ request }) => {
 		}
 	}
 
-	// Poster: the client PUT a WebP frame to the signed URL from /init.
-	// Prefer an absolute public URL (posters aren't sensitive and benefit
-	// from CDN caching) when the provider exposes one. On signed-only
-	// providers (Azure, or R2 without a custom domain) `publicObjectUrl`
-	// returns null — previously that dropped the poster entirely. Instead we
-	// persist the bare object key and sign it on read, the same as the video,
-	// so the thumbnail survives regardless of provider.
-	let posterUrl: string | undefined;
-	if (body.hasPoster) {
-		const key = posterObjectKey(row.workspaceId, row.id);
-		posterUrl = publicObjectUrl(key) ?? key;
-	}
+	// Poster: the client PUT a WebP frame to the signed URL from /init. Persist
+	// the bare object key and sign it on read, exactly like the video, so the
+	// thumbnail works on every provider (a stored public-CDN URL breaks the
+	// moment that CDN isn't actually fronting the bucket).
+	const posterUrl: string | undefined = body.hasPoster
+		? posterObjectKey(row.workspaceId, row.id)
+		: undefined;
 
 	// Captions track: persist the bare key (signed on read, like the video) so
 	// the player can load it as a `<track>`. Only when the client uploaded one.

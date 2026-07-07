@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { formatDuration, formatRelative } from "$lib/dashboard/format";
 	import type { Recast } from "$lib/dashboard/store.svelte";
-	import EmptyState from "./EmptyState.svelte";
 	import { Clock, Film, Play } from "@lucide/svelte";
+	import EmptyState from "./EmptyState.svelte";
 
 	// Visual recent-recasts rail for the home overview — poster thumbnails that
 	// link through to each recast. A warmer, more product-forward counterpart to
@@ -46,7 +46,7 @@
 								alt=""
 								loading="lazy"
 								onerror={() => (failed = { ...failed, [rec.id]: true })}
-								class="absolute inset-0 size-full object-cover transition-transform duration-500 group-hover/tile:scale-105"
+								class="absolute inset-0 size-full object-cover"
 							/>
 						{:else}
 							<div class="absolute inset-0 grid place-items-center">

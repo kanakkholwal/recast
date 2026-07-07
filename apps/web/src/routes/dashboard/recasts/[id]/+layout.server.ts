@@ -21,6 +21,7 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		.select({
 			id: recast.id,
 			title: recast.title,
+			description: recast.description,
 			durationSec: recast.durationSec,
 			sizeBytes: recast.sizeBytes,
 			width: recast.width,
@@ -58,6 +59,7 @@ export const load: LayoutServerLoad = async ({ params, parent }) => {
 		recast: {
 			id: row.id,
 			title: row.title,
+			description: row.description,
 			durationSec: row.durationSec,
 			sizeBytes: Number(row.sizeBytes),
 			width: row.width,

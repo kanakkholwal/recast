@@ -170,6 +170,13 @@ export const shareComment = pgTable(
 		/** Anonymous fingerprint — lets the author edit/remove their own posts. */
 		sessionId: text("session_id").notNull(),
 		authorName: text("author_name").notNull(),
+		/** Set when a signed-in account posted this — server-stamped from the
+		 *  session (never client input), so it can't be spoofed. Drives the
+		 *  "verified" badge; null for guest (name-only) comments. Set-null on
+		 *  account delete so the comment survives, just unbadged. */
+		authorUserId: text("author_user_id").references(() => user.id, {
+			onDelete: "set null",
+		}),
 		/** Point in the video the comment is anchored to. */
 		atSeconds: integer("at_seconds").notNull().default(0),
 		body: text("body").notNull(),

@@ -43,6 +43,7 @@ export const GET: RequestHandler = async ({
 			id: shareComment.id,
 			sessionId: shareComment.sessionId,
 			authorName: shareComment.authorName,
+			authorUserId: shareComment.authorUserId,
 			atSeconds: shareComment.atSeconds,
 			body: shareComment.body,
 			createdAt: shareComment.createdAt,
@@ -81,6 +82,8 @@ export const GET: RequestHandler = async ({
 			body: c.body,
 			createdAt: c.createdAt.getTime(),
 			mine: Boolean(sessionId) && c.sessionId === sessionId,
+			// Posted by a signed-in account (server-stamped) → drives the badge.
+			verified: Boolean(c.authorUserId),
 		})),
 		reactions: [...counts.entries()].map(([emoji, count]) => ({ emoji, count })),
 		myReactions: mine,
@@ -120,13 +123,22 @@ export const POST: RequestHandler = async ({ params, request, cookies, getClient
 	}
 
 	const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
-	const authorName =
+	const clientName =
 		typeof body.authorName === "string" ? body.authorName.trim().slice(0, MAX_NAME) : "";
 	const text = typeof body.body === "string" ? body.body.trim().slice(0, MAX_BODY) : "";
 	const atSeconds =
 		typeof body.atSeconds === "number" && Number.isFinite(body.atSeconds)
 			? Math.max(0, Math.floor(body.atSeconds))
 			: 0;
+
+	// A signed-in account comments under its own profile name — server-stamped
+	// from the gated session, NOT the client body, so the display name (and the
+	// verified badge it earns) can't be spoofed by posting straight to the API.
+	// Guests self-supply a name as before.
+	const authorUserId = gate.viewerId;
+	const authorName = authorUserId
+		? (gate.viewerName?.trim() || clientName || "Member").slice(0, MAX_NAME)
+		: clientName;
 
 	if (!sessionId) error(400, "Missing session");
 	if (!authorName) error(400, "A name is required");
@@ -141,6 +153,7 @@ export const POST: RequestHandler = async ({ params, request, cookies, getClient
 		shareSlug: params.id,
 		sessionId,
 		authorName,
+		authorUserId,
 		atSeconds,
 		body: text,
 		createdAt,
@@ -156,6 +169,7 @@ export const POST: RequestHandler = async ({ params, request, cookies, getClient
 				body: text,
 				createdAt: createdAt.getTime(),
 				mine: true,
+				verified: Boolean(authorUserId),
 			},
 		},
 		{ status: 201 },

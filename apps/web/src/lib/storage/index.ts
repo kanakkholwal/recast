@@ -335,24 +335,31 @@ export async function deleteObject(key: string): Promise<void> {
 }
 
 /**
- * Resolve a stored `videoUrl` (or any object key) into something a browser
- * can actually fetch. Uploads persist the *bare key* (e.g.
- * `workspace/{ws}/{recast}.mp4`); for providers without a public base URL
- * that key isn't directly playable, so we mint a short-lived signed GET —
- * the same thing the share page does. Already-absolute URLs (legacy rows,
- * public-CDN assets) and the unconfigured-storage case pass through
- * unchanged, and a signing failure degrades to the raw value rather than
- * throwing the whole page load.
+ * Resolve a stored `videoUrl`/`posterUrl` (or any object key) into something a
+ * browser can actually fetch. Uploads persist the *bare key* (e.g.
+ * `workspace/{ws}/{recast}.mp4`); for providers without a public base URL that
+ * key isn't directly playable, so we mint a short-lived signed GET — the same
+ * thing the share page does.
+ *
+ * `objectKeyFromStored` normalizes the input first: a bare key stays a key, and
+ * an absolute URL that points at *our own* public base is turned back into its
+ * key so it gets signed too. This heals rows that persisted a public-CDN URL
+ * (e.g. posters written as `publicObjectUrl(key)`) when that CDN isn't actually
+ * serving them — they now sign the underlying object like the video does.
+ * Truly external URLs (no matching base) pass through unchanged, and a signing
+ * failure degrades to the raw value rather than throwing the whole page load.
  */
 export async function resolvePlaybackUrl(
 	keyOrUrl: string | null | undefined,
 	expiresInSeconds?: number,
 ): Promise<string> {
 	const value = keyOrUrl ?? "";
-	if (!value || /^https?:\/\//.test(value)) return value;
+	if (!value) return value;
 	if (!isStorageConfigured()) return value;
+	const key = objectKeyFromStored(value);
+	if (!key) return value; // external absolute URL we don't own — leave as-is
 	try {
-		return await signDownloadUrl({ key: value, expiresInSeconds });
+		return await signDownloadUrl({ key, expiresInSeconds });
 	} catch (err) {
 		console.error("[storage] resolvePlaybackUrl sign failed", err);
 		return value;

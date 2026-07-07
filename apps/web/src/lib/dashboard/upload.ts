@@ -1,5 +1,5 @@
 /**
- * Browser-side cloud upload — the web counterpart to the desktop's
+ * Browser-side cloud upload, the web counterpart to the desktop's
  * "Share to Cloud" flow. Drives the same three server endpoints:
  *
  *   1. POST /api/uploads/init      → reserves a draft recast + signed PUT URLs
@@ -9,8 +9,8 @@
  *   4. POST /api/recasts/{id}/share → mints a public link
  *
  * Only web-ready `.mp4` / `.webm` are accepted. A `.recast` project can't be
- * turned into a shareable video in the browser — that needs the native render
- * pipeline — and its inner recording is the raw, unedited source.
+ * turned into a shareable video in the browser, that needs the native render
+ * pipeline, and its inner recording is the raw, unedited source.
  */
 
 import { browser } from "$app/environment";
@@ -24,12 +24,26 @@ export interface UploadHandlers {
 	onProgress?: (pct: number) => void;
 	share?: ShareOptions;
 	/**
-	 * When `false`, upload + publish only and skip minting the share link — the
+	 * When `false`, upload + publish only and skip minting the share link, the
 	 * caller creates it afterwards via `createRecastShare`. Powers the
 	 * step-by-step dialog that configures sharing *after* the upload finishes.
 	 * Defaults to `true` (the quick-share behaviour home/library rely on).
 	 */
 	autoShare?: boolean;
+	/**
+	 * Pre-probed media supplied by the caller (the upload dialog), so the file's
+	 * video element is loaded and sampled once. When present, the upload skips its
+	 * own metadata read + poster capture and uses these values directly.
+	 */
+	media?: ProbedMedia;
+}
+
+export interface ProbedMedia {
+	durationSec: number;
+	width?: number;
+	height?: number;
+	/** WebP cover frame the caller already picked, or null for no poster. */
+	posterBlob?: Blob | null;
 }
 
 export interface UploadResult {
@@ -54,7 +68,7 @@ interface SignedEnvelope {
 	headers?: Record<string, string>;
 }
 
-/** Accept attribute + the guard below — keep them in sync. */
+/** Accept attribute + the guard below, keep them in sync. */
 export const UPLOAD_ACCEPT = "video/mp4,video/webm,.mp4,.webm";
 
 export function isUploadableVideo(file: File): boolean {
@@ -65,7 +79,7 @@ export function isUploadableVideo(file: File): boolean {
 	);
 }
 
-/** The MIME we upload the file under — mirrored on `/init` (to sign the PUT)
+/** The MIME we upload the file under, mirrored on `/init` (to sign the PUT)
  *  and on the PUT itself, so the signed content-type matches the bytes. */
 export function uploadContentType(file: File): "video/mp4" | "video/webm" {
 	if (file.type === "video/webm" || /\.webm$/i.test(file.name)) return "video/webm";
@@ -101,9 +115,9 @@ function denialMessage(denial: Denial | undefined, fallback: string): string {
 		case "resolution_over_cap":
 			return "Your plan caps cloud sharing at 720p. Upload a 720p export, or upgrade for HD.";
 		case "upload_missing":
-			return "The upload didn't arrive — please try again.";
+			return "The upload didn't arrive, please try again.";
 		case "empty_upload":
-			return "That file came through empty — please try again.";
+			return "That file came through empty, please try again.";
 		default:
 			return fallback;
 	}
@@ -119,63 +133,208 @@ async function readJson(res: Response): Promise<Record<string, unknown> | null> 
 
 // ── media probing + poster capture ────────────────────────────────────
 
-function loadVideoElement(url: string): Promise<HTMLVideoElement> {
+/** Poster encode width, matches the "replace cover" flow so covers are uniform. */
+const POSTER_MAX_WIDTH = 960;
+
+export function loadVideoElement(url: string): Promise<HTMLVideoElement> {
 	return new Promise((resolve, reject) => {
 		const v = document.createElement("video");
 		v.preload = "auto";
 		v.muted = true;
-		v.onloadedmetadata = () => resolve(v);
-		v.onerror = () => reject(new Error("Couldn't read this video file."));
+		v.playsInline = true;
+		// Attach off-screen (not fully detached): a detached <video> doesn't
+		// reliably decode frames, so canvas capture comes back blank/failed and
+		// the recast ends up with no cover. A 2px rendered element decodes fine.
+		v.style.cssText =
+			"position:fixed;left:-9999px;top:0;width:2px;height:2px;opacity:0;pointer-events:none;";
+		let settled = false;
+		const finish = (ok: boolean) => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			v.onloadeddata = null;
+			v.onerror = null;
+			if (ok) resolve(v);
+			else {
+				v.remove();
+				reject(new Error("Couldn't read this video file."));
+			}
+		};
+		// Resolve on `loadeddata` (a frame is available), not just metadata, so
+		// the first seek+draw has something to capture.
+		v.onloadeddata = () => finish(true);
+		v.onerror = () => finish(false);
+		const timer = setTimeout(() => finish(false), 15000);
+		document.body.appendChild(v);
 		v.src = url;
 	});
 }
 
+/** Detach + release a video element loaded via `loadVideoElement`. */
+export function releaseVideoElement(video: HTMLVideoElement): void {
+	video.removeAttribute("src");
+	video.load();
+	video.remove();
+}
+
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
 	return new Promise((resolve) => {
-		const done = () => {
-			video.removeEventListener("seeked", done);
+		// Resolve on `seeked` (fires reliably for a detached/offscreen video), with
+		// a safety timeout so a seek that never completes can never stall the
+		// upload. (Do NOT gate this on requestVideoFrameCallback: it only fires
+		// when a frame is composited, which a hidden, non-playing element never
+		// does, so it would hang here forever.)
+		let settled = false;
+		const finish = () => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timer);
+			video.removeEventListener("seeked", finish);
 			resolve();
 		};
-		video.addEventListener("seeked", done);
+		video.addEventListener("seeked", finish);
+		const timer = setTimeout(finish, 2000);
 		try {
 			video.currentTime = time;
 		} catch {
-			video.removeEventListener("seeked", done);
-			resolve();
+			finish();
 		}
 	});
 }
 
+/** Encode the video's current frame as a downscaled WebP (null on failure). */
+export async function captureFrameWebp(
+	video: HTMLVideoElement,
+	timeSec: number,
+): Promise<Blob | null> {
+	const w = video.videoWidth;
+	const h = video.videoHeight;
+	if (!w || !h) return null;
+	await seekTo(video, Math.max(0, timeSec));
+	const scaleW = Math.min(POSTER_MAX_WIDTH, w);
+	const scaleH = Math.max(1, Math.round(h * (scaleW / w)));
+	const canvas = document.createElement("canvas");
+	canvas.width = scaleW;
+	canvas.height = scaleH;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return null;
+	ctx.drawImage(video, 0, 0, scaleW, scaleH);
+	return await new Promise<Blob | null>((resolve) =>
+		canvas.toBlob((b) => resolve(b), "image/webp", 0.82),
+	);
+}
+
+/** Seek and paint the frame at `timeSec` into a canvas (drives the scrubber). */
+export async function renderFrameToCanvas(
+	video: HTMLVideoElement,
+	canvas: HTMLCanvasElement,
+	timeSec: number,
+): Promise<void> {
+	if (!video.videoWidth || !canvas.width) return;
+	await seekTo(video, Math.max(0, timeSec));
+	const ctx = canvas.getContext("2d");
+	ctx?.drawImage(video, 0, 0, canvas.width, canvas.height);
+}
+
 /**
- * Grab a frame ~25% in and encode it as WebP (lighter than PNG/JPEG at
- * equal quality). Best-effort — returns null on any failure; the recast
- * just keeps no poster.
+ * Score a tiny sampled frame for poster-worthiness. Rejects black/blank frames
+ * (a fixed-timestamp grab lands on an intro fade or empty screen most of the
+ * time) and rewards detail + colour, so we pick a frame that actually shows the
+ * content. Cheap: runs on a ~64×36 downscale.
  */
-async function capturePosterWebp(video: HTMLVideoElement): Promise<Blob | null> {
-	try {
-		const w = video.videoWidth;
-		const h = video.videoHeight;
-		if (!w || !h) return null;
-
-		const duration = video.duration || 0;
-		const target = duration > 0 ? Math.min(duration * 0.25, Math.max(0, duration - 0.1)) : 0;
-		await seekTo(video, target);
-
-		const scaleW = Math.min(960, w);
-		const scaleH = Math.max(1, Math.round(h * (scaleW / w)));
-		const canvas = document.createElement("canvas");
-		canvas.width = scaleW;
-		canvas.height = scaleH;
-		const ctx = canvas.getContext("2d");
-		if (!ctx) return null;
-		ctx.drawImage(video, 0, 0, scaleW, scaleH);
-
-		return await new Promise<Blob | null>((resolve) =>
-			canvas.toBlob((b) => resolve(b), "image/webp", 0.82),
-		);
-	} catch {
-		return null;
+function scoreFrame(img: ImageData): { value: number; usable: boolean } {
+	const { data } = img;
+	const n = data.length / 4;
+	let sum = 0;
+	let sumSq = 0;
+	let rgSum = 0;
+	let rgSq = 0;
+	let ybSum = 0;
+	let ybSq = 0;
+	for (let i = 0; i < data.length; i += 4) {
+		const r = data[i];
+		const g = data[i + 1];
+		const b = data[i + 2];
+		const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+		sum += lum;
+		sumSq += lum * lum;
+		const rg = r - g;
+		const yb = 0.5 * (r + g) - b;
+		rgSum += rg;
+		rgSq += rg * rg;
+		ybSum += yb;
+		ybSq += yb * yb;
 	}
+	const meanLum = sum / n;
+	const stdLum = Math.sqrt(Math.max(0, sumSq / n - meanLum * meanLum));
+	const rgMean = rgSum / n;
+	const ybMean = ybSum / n;
+	const rgStd = Math.sqrt(Math.max(0, rgSq / n - rgMean * rgMean));
+	const ybStd = Math.sqrt(Math.max(0, ybSq / n - ybMean * ybMean));
+	// Hasler–Süsstrunk colourfulness.
+	const colourfulness =
+		Math.sqrt(rgStd * rgStd + ybStd * ybStd) +
+		0.3 * Math.sqrt(rgMean * rgMean + ybMean * ybMean);
+
+	// Reject near-black, near-white, and flat/blank (no luminance spread).
+	const usable = meanLum > 18 && meanLum < 245 && stdLum > 8;
+	// Mid-brightness bonus so we don't favour blown-out or crushed frames.
+	const midBonus = (1 - Math.abs(meanLum - 128) / 128) * 20;
+	const value = stdLum + colourfulness * 0.8 + midBonus;
+	return { value, usable };
+}
+
+/**
+ * Pick the best cover frame by sampling several timestamps across the middle of
+ * the clip (skipping intro/outro) and scoring each. Returns the winning frame as
+ * a WebP plus its timestamp, or null if nothing decodes. Best-effort, a recast
+ * with no poster falls back to the generated placeholder.
+ */
+export async function pickBestPosterFrame(
+	video: HTMLVideoElement,
+	samples = 5,
+): Promise<{ blob: Blob; timeSec: number } | null> {
+	const w = video.videoWidth;
+	const h = video.videoHeight;
+	if (!w || !h) return null;
+
+	const duration = video.duration || 0;
+	const times: number[] = [];
+	if (duration > 0.2) {
+		const lo = duration * 0.1;
+		const hi = duration * 0.9;
+		const count = Math.max(1, samples);
+		if (count === 1) times.push((lo + hi) / 2);
+		else for (let i = 0; i < count; i++) times.push(lo + ((hi - lo) * i) / (count - 1));
+	} else {
+		times.push(0);
+	}
+
+	const sc = document.createElement("canvas");
+	sc.width = 64;
+	sc.height = Math.max(1, Math.round(64 * (h / w)));
+	const sctx = sc.getContext("2d", { willReadFrequently: true });
+	if (!sctx) return null;
+
+	let bestUsable: { time: number; value: number } | null = null;
+	let bestAny: { time: number; value: number } | null = null;
+	for (const t of times) {
+		await seekTo(video, t);
+		try {
+			sctx.drawImage(video, 0, 0, sc.width, sc.height);
+			const score = scoreFrame(sctx.getImageData(0, 0, sc.width, sc.height));
+			if (!bestAny || score.value > bestAny.value) bestAny = { time: t, value: score.value };
+			if (score.usable && (!bestUsable || score.value > bestUsable.value))
+				bestUsable = { time: t, value: score.value };
+		} catch {
+			// Tainted/undecodable frame, skip it.
+		}
+	}
+
+	const chosen = bestUsable ?? bestAny;
+	if (!chosen) return null;
+	const blob = await captureFrameWebp(video, chosen.time);
+	return blob ? { blob, timeSec: chosen.time } : null;
 }
 
 // ── signed PUT with progress (fetch has no upload progress) ────────────
@@ -205,7 +364,7 @@ function putWithProgress(
 			};
 		}
 		xhr.onload = () => resolve(xhr.status);
-		xhr.onerror = () => reject(new Error("Upload failed — check your connection."));
+		xhr.onerror = () => reject(new Error("Upload failed, check your connection."));
 		xhr.onabort = () => reject(new Error("Upload was cancelled."));
 		xhr.send(body);
 	});
@@ -224,14 +383,31 @@ export async function uploadRecastFile(
 
 	const contentType = uploadContentType(file);
 	handlers.onPhase?.("preparing");
-	const objectUrl = URL.createObjectURL(file);
+
+	// Metadata + cover frame: reuse the caller's pre-probed media when present
+	// (the dialog loads the file's <video> once for its own preview + scrubber),
+	// otherwise load the video and auto-pick a cover here.
+	let objectUrl: string | null = null;
 	let video: HTMLVideoElement | null = null;
+	let durationSec: number;
+	let width: number | undefined;
+	let height: number | undefined;
+	let posterBlob: Blob | null;
 
 	try {
-		video = await loadVideoElement(objectUrl);
-		const durationSec = Math.max(0, Math.round(video.duration || 0));
-		const width = video.videoWidth || undefined;
-		const height = video.videoHeight || undefined;
+		if (handlers.media) {
+			durationSec = Math.max(0, Math.round(handlers.media.durationSec || 0));
+			width = handlers.media.width || undefined;
+			height = handlers.media.height || undefined;
+			posterBlob = handlers.media.posterBlob ?? null;
+		} else {
+			objectUrl = URL.createObjectURL(file);
+			video = await loadVideoElement(objectUrl);
+			durationSec = Math.max(0, Math.round(video.duration || 0));
+			width = video.videoWidth || undefined;
+			height = video.videoHeight || undefined;
+			posterBlob = (await pickBestPosterFrame(video))?.blob ?? null;
+		}
 		const title = file.name.replace(/\.[^.]+$/, "") || "Untitled recast";
 
 		// 1. init
@@ -263,10 +439,6 @@ export async function uploadRecastFile(
 		if (!videoUpload || videoUpload.method?.toUpperCase() !== "PUT") {
 			throw new Error("This storage provider isn't supported by the web uploader yet.");
 		}
-
-		// Capture the poster while the object URL is still alive (before the
-		// big PUT, so a slow encode doesn't delay finalize).
-		const posterBlob = await capturePosterWebp(video);
 
 		// 2. PUT the video
 		handlers.onPhase?.("uploading");
@@ -316,11 +488,8 @@ export async function uploadRecastFile(
 		const { slug, shareUrl } = await createRecastShare(recastId, share);
 		return { recastId, slug, shareUrl };
 	} finally {
-		URL.revokeObjectURL(objectUrl);
-		if (video) {
-			video.removeAttribute("src");
-			video.load();
-		}
+		if (objectUrl) URL.revokeObjectURL(objectUrl);
+		if (video) releaseVideoElement(video);
 	}
 }
 

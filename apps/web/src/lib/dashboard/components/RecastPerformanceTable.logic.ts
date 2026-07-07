@@ -8,6 +8,7 @@ import { formatCount } from "$lib/dashboard/format";
 export type Row = {
 	id: string;
 	title: string;
+	posterUrl: string;
 	views: number;
 	avgWatch: number;
 	completion: number;

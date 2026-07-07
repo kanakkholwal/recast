@@ -1,13 +1,15 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
-	import * as api from "$lib/dashboard/api";
+	import EditRecastDetailsDialog from "$lib/dashboard/components/EditRecastDetailsDialog.svelte";
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
+	import RecastShareDialog from "$lib/dashboard/components/ShareRecastDialog.svelte";
 	import RecastTabs from "$lib/dashboard/components/RecastTabs.svelte";
 	import { POSTER_ACCEPT, replacePoster } from "$lib/dashboard/poster";
 	import { formatRecastSubtitle } from "$lib/dashboard/recast-detail.logic";
+	import { shareDialog } from "$lib/dashboard/share-dialog.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowLeft, Check, Copy, ImagePlus, Loader2 } from "@lucide/svelte";
+	import { ArrowLeft, ImagePlus, Loader2, Pencil, Share2 } from "@lucide/svelte";
 	import type { Snippet } from "svelte";
 	import type { LayoutData } from "./$types";
 
@@ -16,27 +18,7 @@
 	const recast = $derived(data.recast);
 	const subtitle = $derived(formatRecastSubtitle(recast));
 
-	// Copy-link feedback lives on the button itself (tick + "Copied link") rather
-	// than a toast, so the action confirms right where it happened.
-	let copied = $state(false);
-	let copiedTimer: ReturnType<typeof setTimeout> | undefined;
-
-	async function copyLink() {
-		try {
-			let slug = data.shares[0]?.slug ?? null;
-			if (!slug) {
-				const { slug: newSlug } = await api.shareRecast(recast.id);
-				slug = newSlug;
-				await invalidateAll();
-			}
-			await navigator.clipboard.writeText(`${location.origin}/share/${slug}`);
-			copied = true;
-			clearTimeout(copiedTimer);
-			copiedTimer = setTimeout(() => (copied = false), 2000);
-		} catch (e) {
-			toast.error((e as Error)?.message ?? "Couldn't copy the link.");
-		}
-	}
+	let editOpen = $state(false);
 
 	// ── Replace cover ───────────────────────────────────────────────────
 	let posterInput = $state<HTMLInputElement | null>(null);
@@ -75,6 +57,10 @@
 </a>
 
 <PageHeader title={recast.title} {subtitle}>
+	<Button variant="outline" size="sm" class="gap-2" onclick={() => (editOpen = true)}>
+		<Pencil class="size-3.5" />
+		Edit details
+	</Button>
 	<Button variant="outline" size="sm" class="gap-2" disabled={replacingPoster} onclick={pickPoster}>
 		{#if replacingPoster}
 			<Loader2 class="size-3.5 animate-spin" />
@@ -84,14 +70,9 @@
 			Change cover
 		{/if}
 	</Button>
-	<Button variant="outline" size="sm" class="gap-2" onclick={copyLink}>
-		{#if copied}
-			<Check class="size-3.5 text-success" />
-			Copied link
-		{:else}
-			<Copy class="size-3.5" />
-			Copy link
-		{/if}
+	<Button size="sm" class="gap-2" onclick={() => shareDialog.show(recast.id)}>
+		<Share2 class="size-3.5" />
+		Share
 	</Button>
 </PageHeader>
 
@@ -110,3 +91,12 @@
 <div class="mt-6">
 	{@render children()}
 </div>
+
+<RecastShareDialog />
+
+<EditRecastDetailsDialog
+	bind:open={editOpen}
+	recastId={recast.id}
+	title={recast.title}
+	description={recast.description}
+/>

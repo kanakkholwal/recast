@@ -22,7 +22,9 @@ import { resolveShareManage } from "$lib/share/manage";
  * caller can MANAGE it (owner or global admin — gates moderation/delete).
  */
 
-type SessionShape = { user: { id: string; email: string; role?: string } };
+type SessionShape = {
+	user: { id: string; email: string; name?: string | null; role?: string };
+};
 
 export type GatedShare = {
 	slug: string;
@@ -32,6 +34,9 @@ export type GatedShare = {
 	canManage: boolean;
 	/** Signed-in viewer's account id (null when anonymous) — server-only. */
 	viewerId: string | null;
+	/** Signed-in viewer's display name — used to server-stamp comment authorship
+	 *  so a logged-in commenter can't spoof a name. Null when anonymous. */
+	viewerName: string | null;
 };
 
 export async function gateShareAccess(
@@ -152,5 +157,6 @@ export async function gateShareAccess(
 		commentsEnabled: s.commentsEnabled,
 		canManage,
 		viewerId: session?.user?.id ?? null,
+		viewerName: session?.user?.name ?? null,
 	};
 }
