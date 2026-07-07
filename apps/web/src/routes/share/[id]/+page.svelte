@@ -1368,7 +1368,7 @@
 			     reaction icons + on-demand Comments / Transcript triggers that open
 			     the docked side panel. This is the only always-on chrome; the
 			     conversation never competes with the video for space. -->
-			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low/50 bg-background/85 p-1.5 shadow-craft-lg backdrop-blur-xl">
+			<div class="relative z-20 mx-auto mt-4 flex w-fit max-w-full items-center gap-1 overflow-x-auto rounded-2xl border border-border-low bg-background/85 p-1.5 shadow-craft-lg dark:shadow-(--shadow-craft-inset) backdrop-blur-xl">
 				{#each REACTIONS as r (r.id)}
 					{@const count = countFor(r.id)}
 					{@const mine = myReactions.has(r.id)}

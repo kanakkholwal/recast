@@ -1,5 +1,5 @@
 /**
- * Browser-side "replace poster" flow — the counterpart to the poster the
+ * Browser-side "replace poster" flow, the counterpart to the poster the
  * upload pipeline captures from the first frame. Lets an owner pick any image
  * and set it as the recast's cover. Drives two endpoints:
  *
@@ -14,7 +14,7 @@
 
 import { browser } from "$app/environment";
 
-/** Cap matches the upload-time poster (`capturePosterWebp`) so covers are uniform. */
+/** Cap matches the upload-time poster (`pickBestPosterFrame`) so covers are uniform. */
 const MAX_POSTER_WIDTH = 960;
 const MAX_INPUT_BYTES = 25 * 1024 * 1024;
 
@@ -79,17 +79,12 @@ async function readMessage(res: Response): Promise<string> {
 }
 
 /**
- * Replace `recastId`'s poster with `file`. Resolves to a directly displayable
- * URL for the new poster (use it to update the local store / thumbnail). Throws
- * an Error with a user-facing message on failure.
+ * Store a ready WebP blob as `recastId`'s poster (init → PUT → finalize).
+ * Used both by "replace cover" (a re-encoded image) and by the upload dialog's
+ * frame scrubber (a captured video frame). Resolves to the new poster URL.
  */
-export async function replacePoster(recastId: string, file: File): Promise<string> {
-	if (!browser) throw new Error("Poster replace can only run in the browser.");
-	if (!isPosterImage(file)) throw new Error("Pick a PNG, JPEG, WebP, or AVIF image.");
-	if (file.size > MAX_INPUT_BYTES) throw new Error("That image is too large (max 25 MB).");
-
-	const webp = await reencodeToWebp(file);
-	if (!webp) throw new Error("Couldn't read that image — try another file.");
+export async function uploadPosterBlob(recastId: string, webp: Blob): Promise<string> {
+	if (!browser) throw new Error("Poster upload can only run in the browser.");
 
 	// 1. init (sign)
 	const initRes = await fetch(`/api/recasts/${recastId}/poster`, { method: "POST" });
@@ -99,7 +94,7 @@ export async function replacePoster(recastId: string, file: File): Promise<strin
 		throw new Error("This storage provider doesn't support poster replacement yet.");
 	}
 
-	// 2. PUT the re-encoded WebP
+	// 2. PUT the WebP
 	await putBlob(init.upload, webp, "image/webp");
 
 	// 3. finalize (verify + swap + delete old)
@@ -113,4 +108,20 @@ export async function replacePoster(recastId: string, file: File): Promise<strin
 	}
 	const done = (await doneRes.json()) as { posterUrl?: string };
 	return done.posterUrl ?? "";
+}
+
+/**
+ * Replace `recastId`'s poster with `file`. Resolves to a directly displayable
+ * URL for the new poster (use it to update the local store / thumbnail). Throws
+ * an Error with a user-facing message on failure.
+ */
+export async function replacePoster(recastId: string, file: File): Promise<string> {
+	if (!browser) throw new Error("Poster replace can only run in the browser.");
+	if (!isPosterImage(file)) throw new Error("Pick a PNG, JPEG, WebP, or AVIF image.");
+	if (file.size > MAX_INPUT_BYTES) throw new Error("That image is too large (max 25 MB).");
+
+	const webp = await reencodeToWebp(file);
+	if (!webp) throw new Error("Couldn't read that image, try another file.");
+
+	return uploadPosterBlob(recastId, webp);
 }

@@ -7,7 +7,7 @@
 		type Row,
 		type SortKey,
 	} from "./RecastPerformanceTable.logic";
-	import { ArrowDown, ArrowUp, BarChart3, Crown } from "@lucide/svelte";
+	import { ArrowDown, ArrowUp, BarChart3, Crown, Film } from "@lucide/svelte";
 
 	// Sortable per-recast comparison table. Replaces the text-only "Top recasts"
 	// on the analytics page; each row drills into /dashboard/recasts/[id].
@@ -15,6 +15,8 @@
 
 	let sortKey = $state<SortKey>("views");
 	let dir = $state<"asc" | "desc">("desc");
+	// Per-row poster load failures, so a broken cover falls back to the glyph.
+	let failed = $state<Record<string, boolean>>({});
 
 	const sorted = $derived(sortRows(rows, sortKey, dir, limit));
 
@@ -57,8 +59,29 @@
 					{#each sorted as r (r.id)}
 						<tr class="border-b border-border-low/20 transition-colors last:border-0 hover:bg-foreground/3">
 							<td class="max-w-0 px-5 py-2.5">
-								<a href={`/dashboard/recasts/${r.id}`} class="block truncate font-medium text-foreground hover:text-primary" title={r.title}>
-									{r.title}
+								<a
+									href={`/dashboard/recasts/${r.id}`}
+									class="group/row flex min-w-0 items-center gap-3"
+									title={r.title}
+								>
+									<span class="relative h-9 w-16 shrink-0 overflow-hidden rounded-md bg-foreground/8 ring-1 ring-inset ring-border-low/40">
+										{#if r.posterUrl && !failed[r.id]}
+											<img
+												src={r.posterUrl}
+												alt=""
+												loading="lazy"
+												onerror={() => (failed = { ...failed, [r.id]: true })}
+												class="h-full w-full object-cover"
+											/>
+										{:else}
+											<span class="grid h-full w-full place-items-center">
+												<Film class="size-3.5 text-muted-foreground/60" />
+											</span>
+										{/if}
+									</span>
+									<span class="min-w-0 truncate font-medium text-foreground transition-colors group-hover/row:text-primary">
+										{r.title}
+									</span>
 								</a>
 							</td>
 							{#each cols as c (c.key)}

@@ -8,7 +8,6 @@ import {
 	isStorageConfigured,
 	objectKeyFromStored,
 	posterObjectKey,
-	publicObjectUrl,
 	resolvePlaybackUrl,
 	signUploadUrl,
 	statObject,
@@ -114,7 +113,9 @@ export const PUT: RequestHandler = async ({ params, request }) => {
 		return json({ ok: false, reason: "upload_missing" }, { status: 410 });
 	}
 
-	const posterUrl = publicObjectUrl(key) ?? key;
+	// Persist the bare key and sign it on read (like the video), so the cover
+	// works regardless of whether a public CDN is configured/serving.
+	const posterUrl = key;
 	const db = getDb();
 	await db
 		.update(recast)

@@ -1,11 +1,19 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
+	import { formatDuration } from "$lib/dashboard/format";
+	import { uploadPosterBlob } from "$lib/dashboard/poster";
 	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import {
+	  captureFrameWebp,
 	  createRecastShare,
 	  isUploadableVideo,
+	  loadVideoElement,
+	  pickBestPosterFrame,
+	  releaseVideoElement,
+	  renderFrameToCanvas,
 	  uploadRecastFile,
 	  UPLOAD_ACCEPT,
+	  type ProbedMedia,
 	  type ShareOptions,
 	  type ShareVisibility,
 	  type UploadPhase,
@@ -18,6 +26,7 @@
 	  Copy,
 	  FileVideo,
 	  Globe2,
+	  Image as ImageIcon,
 	  KeyRound,
 	  Link2,
 	  LoaderCircle,
@@ -63,6 +72,102 @@
 	let pct = $state(0);
 	let fileName = $state("");
 	let recastId = $state<string | null>(null);
+
+	// Cover frame. The file's <video> is loaded here (once) so we can auto-pick a
+	// non-blank cover and, if the owner wants, scrub to a different frame, no
+	// separate "upload a cover" step, and no ffmpeg.
+	let videoEl = $state<HTMLVideoElement | null>(null);
+	let videoUrl = $state<string | null>(null);
+	let mediaDuration = $state(0);
+	let mediaW = $state(0);
+	let mediaH = $state(0);
+	let posterUrl = $state<string | null>(null); // committed preview (object URL)
+	let posterTime = $state(0); // committed cover timestamp
+	let showScrubber = $state(false);
+	let scrubTime = $state(0);
+	let scrubCanvas = $state<HTMLCanvasElement | null>(null);
+	let savingPoster = $state(false);
+	// Non-reactive seek guard so rapid scrubbing coalesces to the latest frame.
+	let scrubBusy = false;
+	let scrubPending: number | null = null;
+
+	function setPosterPreview(blob: Blob | null) {
+		if (posterUrl) URL.revokeObjectURL(posterUrl);
+		posterUrl = blob ? URL.createObjectURL(blob) : null;
+	}
+
+	function cleanupMedia() {
+		if (videoUrl) URL.revokeObjectURL(videoUrl);
+		if (posterUrl) URL.revokeObjectURL(posterUrl);
+		if (videoEl) releaseVideoElement(videoEl);
+		videoEl = null;
+		videoUrl = null;
+		posterUrl = null;
+		mediaDuration = 0;
+		mediaW = 0;
+		mediaH = 0;
+		posterTime = 0;
+		showScrubber = false;
+	}
+
+	async function drawScrub(t: number) {
+		if (!videoEl || !scrubCanvas) return;
+		if (scrubBusy) {
+			scrubPending = t;
+			return;
+		}
+		scrubBusy = true;
+		try {
+			await renderFrameToCanvas(videoEl, scrubCanvas, t);
+		} finally {
+			scrubBusy = false;
+			if (scrubPending !== null) {
+				const next = scrubPending;
+				scrubPending = null;
+				void drawScrub(next);
+			}
+		}
+	}
+
+	// Size the scrub canvas to the video's aspect once, then repaint as the
+	// slider (scrubTime) moves.
+	$effect(() => {
+		const c = scrubCanvas;
+		if (!showScrubber || !c || !videoEl || !mediaW || !mediaH) return;
+		if (c.width !== 480) {
+			c.width = 480;
+			c.height = Math.max(1, Math.round(480 * (mediaH / mediaW)));
+		}
+		void drawScrub(scrubTime);
+	});
+
+	function openScrubber() {
+		scrubTime = posterTime;
+		showScrubber = true;
+	}
+	function closeScrubber() {
+		showScrubber = false;
+	}
+
+	async function useScrubFrame() {
+		if (!videoEl || !recastId || savingPoster) return;
+		savingPoster = true;
+		try {
+			const blob = await captureFrameWebp(videoEl, scrubTime);
+			if (blob) {
+				await uploadPosterBlob(recastId, blob);
+				posterTime = scrubTime;
+				setPosterPreview(blob);
+				void invalidateAll();
+				toast.success("Thumbnail updated.");
+			}
+			showScrubber = false;
+		} catch (e) {
+			toast.error((e as Error)?.message ?? "Couldn't update the thumbnail.");
+		} finally {
+			savingPoster = false;
+		}
+	}
 
 	// Sharing state (used only once the upload has finished).
 	let creatingLink = $state(false);
@@ -175,6 +280,8 @@
 		passwordEnabled = false;
 		password = "";
 		expiry = "never";
+		savingPoster = false;
+		cleanupMedia();
 	}
 
 	function close() {
@@ -194,10 +301,51 @@
 		pct = 0;
 		fileName = file.name;
 		result = null;
+
+		// Load the file's <video> once, probe it, and auto-pick a cover frame. The
+		// element stays alive for the scrubber; the picked cover rides along with
+		// the upload so there's no second round-trip.
+		cleanupMedia();
+		let media: ProbedMedia | undefined;
+		const url = URL.createObjectURL(file);
+		videoUrl = url;
+		try {
+			const v = await loadVideoElement(url);
+			videoEl = v;
+			mediaDuration = Math.max(0, v.duration || 0);
+			mediaW = v.videoWidth;
+			mediaH = v.videoHeight;
+			// Metadata first, so a failed/slow cover capture never blocks the upload.
+			media = {
+				durationSec: Math.round(mediaDuration),
+				width: mediaW || undefined,
+				height: mediaH || undefined,
+				posterBlob: null,
+			};
+			try {
+				// Capture the cover (each seek is already bounded by a timeout in
+				// seekTo, so this can't hang; screen recordings with sparse keyframes
+				// just seek a little slower).
+				const picked = await pickBestPosterFrame(v);
+				if (picked) {
+					posterTime = scrubTime = picked.timeSec;
+					setPosterPreview(picked.blob);
+					media.posterBlob = picked.blob;
+				}
+			} catch {
+				// Cover capture failed; keep metadata + upload, placeholder covers it.
+			}
+		} catch {
+			// Browser can't decode this file for a preview; upload still proceeds
+			// (uploadRecastFile probes metadata itself, or surfaces a clear error).
+			cleanupMedia();
+		}
+
 		try {
 			const r = await uploadRecastFile(file, {
 				workspaceId,
 				autoShare: false,
+				media,
 				onPhase: (p) => (phase = p),
 				onProgress: (v) => (pct = v),
 			});
@@ -316,7 +464,7 @@
 >
 	<Dialog.Content
 		showCloseButton={step !== "uploading"}
-		class="max-h-[min(92vh,720px)] gap-0 overflow-hidden p-0 sm:max-w-lg"
+		class="max-h-[min(92vh,760px)] gap-0 overflow-hidden p-0 sm:max-w-xl lg:max-w-2xl"
 	>
 		<Dialog.Header class="border-b border-border/60 px-5 py-4 pr-12">
 			<Dialog.Title>{stepTitle}</Dialog.Title>
@@ -437,14 +585,77 @@
 				</div>
 			{:else if step === "configure"}
 				<div class="space-y-5">
-					<!-- Upload confirmation -->
-					<div class="flex items-center gap-2.5 rounded-lg border border-success/25 bg-success/8 px-3 py-2.5">
-						<CheckCircle2 class="size-4 shrink-0 text-success" />
-						<span class="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
-							{fileName}
-						</span>
-						<span class="shrink-0 text-xs font-medium text-success">Uploaded</span>
+					<!-- Uploaded, with the auto-picked cover -->
+					<div class="flex items-start gap-3">
+						<div class="relative aspect-video w-32 shrink-0 overflow-hidden rounded-lg bg-foreground/8 ring-1 ring-inset ring-border-low/50 sm:w-40">
+							{#if posterUrl}
+								<img src={posterUrl} alt="Selected cover" class="h-full w-full object-cover" />
+							{:else}
+								<div class="grid h-full w-full place-items-center">
+									<FileVideo class="size-6 text-foreground/30" />
+								</div>
+							{/if}
+						</div>
+						<div class="min-w-0 flex-1 py-0.5">
+							<div class="flex items-center gap-1.5">
+								<CheckCircle2 class="size-4 shrink-0 text-success" />
+								<span class="min-w-0 truncate text-sm font-medium text-foreground">{fileName}</span>
+							</div>
+							<p class="mt-1 text-xs text-muted-foreground">
+								Uploaded. We picked a cover for you.
+							</p>
+							{#if videoEl && mediaDuration > 0}
+								<button
+									type="button"
+									onclick={() => (showScrubber ? closeScrubber() : openScrubber())}
+									class="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-primary outline-none hover:underline focus-visible:underline"
+								>
+									<ImageIcon class="size-3.5" />
+									{showScrubber ? "Close" : "Change cover"}
+								</button>
+							{/if}
+						</div>
 					</div>
+
+					{#if showScrubber}
+						<div class="rounded-lg border border-border-low/60 bg-background/45 p-3">
+							<canvas
+								bind:this={scrubCanvas}
+								class="block w-full rounded-md bg-black/80"
+							></canvas>
+							<input
+								type="range"
+								min="0"
+								max={mediaDuration}
+								step="0.1"
+								bind:value={scrubTime}
+								aria-label="Scrub to a cover frame"
+								class="mt-3 w-full accent-primary"
+							/>
+							<div class="mt-2 flex items-center justify-between gap-3">
+								<span class="font-mono text-[11px] tabular-nums text-muted-foreground">
+									{formatDuration(Math.round(scrubTime))} / {formatDuration(Math.round(mediaDuration))}
+								</span>
+								<div class="flex items-center gap-2">
+									<button
+										type="button"
+										onclick={closeScrubber}
+										class="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
+									>
+										Cancel
+									</button>
+									<Button size="sm" class="h-8 gap-1.5" disabled={savingPoster} onclick={useScrubFrame}>
+										{#if savingPoster}
+											<LoaderCircle class="size-3.5 animate-spin" />
+										{:else}
+											<Check class="size-3.5" />
+										{/if}
+										Use frame
+									</Button>
+								</div>
+							</div>
+						</div>
+					{/if}
 
 					<!-- Primary decision: audience -->
 					<section>
