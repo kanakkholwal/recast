@@ -1,45 +1,17 @@
 <script lang="ts">
 	import { page } from "$app/state";
 	import { SeoMeta } from "$lib/components";
-	import { joinWaitlist } from "$lib/waitlist";
+	import WaitlistForm from "$lib/components/WaitlistForm.svelte";
 	import Logo from "$lib/logo.svelte";
-	import { ArrowLeft, ArrowRight, LoaderCircle, MailCheck, Sparkles } from "@lucide/svelte";
-	import { Button } from "@recast/ui/button";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
+	import { Sparkles } from "@lucide/svelte";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
 	const source = $derived(page.url.searchParams.get("source") ?? "waitlist");
-
 	// Prefill from `?email=` when the user lands here via the "Join waitlist"
 	// CTA on /login — saves them from retyping.
-	let email = $state(
-		untrack(() => page.url.searchParams.get("email")?.trim() ?? ""),
-	);
-	let loading = $state(false);
-	let joined = $state(false);
-
-	async function submit(e: SubmitEvent) {
-		e.preventDefault();
-		if (!email.trim() || loading) return;
-		loading = true;
-		try {
-			await toast.promise(
-				joinWaitlist(email, source),
-				{
-					loading: "Adding you to the waitlist…",
-					success: "You're on the list. We'll email when access opens.",
-					error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
-				},
-			);
-			joined = true;
-		} finally {
-			loading = false;
-		}
-	}
+	const initialEmail = untrack(() => page.url.searchParams.get("email")?.trim() ?? "");
 </script>
 
 <SeoMeta
@@ -98,51 +70,7 @@
 		</div>
 
 		<div class="glass-card mt-8 rounded-2xl p-6 shadow-craft-lg sm:p-7">
-			{#if joined}
-				<div
-					class="flex flex-col items-center gap-3 text-center"
-					in:fly={{ y: 8, duration: 360, easing: cubicOut }}
-				>
-					<span class="glass-chip grid size-11 place-items-center rounded-xl text-primary">
-						<MailCheck class="size-5" />
-					</span>
-					<div>
-						<h2 class="text-sm font-semibold text-foreground">You're on the list</h2>
-						<p class="mt-1 text-xs text-muted-foreground">
-							We'll email <span class="font-medium text-foreground">{email}</span> when
-							your spot opens.
-						</p>
-					</div>
-				</div>
-			{:else}
-				<form class="flex flex-col gap-3.5" onsubmit={submit}>
-					<Label class="flex flex-col items-stretch gap-1.5">
-						<span class="text-xs font-semibold text-foreground/85">
-							Your email
-						</span>
-						<Input
-							type="email"
-							required
-							autocomplete="email"
-							bind:value={email}
-							placeholder="founder@startup.com"
-							class="h-10"
-						/>
-					</Label>
-					<Button
-						type="submit"
-						disabled={loading}
-						class="group/cta mt-1 w-full gap-2"
-					>
-						{loading ? "Joining…" : "Join the waitlist"}
-						{#if loading}
-							<LoaderCircle class="size-4 animate-spin" />
-						{:else}
-							<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
-						{/if}
-					</Button>
-				</form>
-			{/if}
+			<WaitlistForm {source} {initialEmail} />
 		</div>
 
 		<p class="mt-6 text-center text-xs text-muted-foreground">
