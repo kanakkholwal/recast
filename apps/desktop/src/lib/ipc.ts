@@ -6,7 +6,7 @@
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
 import type { CaptionAnimation } from "$lib/captions/animation";
 import { analytics } from "$lib/analytics/client";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { platform } from "@tauri-apps/plugin-os";
@@ -714,30 +714,58 @@ export function listCaptionModels(): Promise<CaptionModelInfo[]> {
 	return invoke<CaptionModelInfo[]>("list_caption_models");
 }
 
-/** Download a model's files. Emits `captions:download-progress` events. */
-export function downloadCaptionModel(id: string): Promise<void> {
-	return invoke("download_caption_model", { id });
+/** Progress tick for a caption-model download. `total` is 0 when the server
+ *  didn't report a content length; `file` is empty on the terminal tick. */
+export interface CaptionDownloadProgress {
+	modelId: string;
+	file: string;
+	downloaded: number;
+	total: number;
+}
+
+/**
+ * Download a model's files. Progress streams on a request-scoped channel — one
+ * channel per download, torn down when the call settles, so the caller never
+ * filters ticks by model id (contrast the old global `captions:download-progress`
+ * event). Omit `onProgress` if you don't need progress.
+ */
+export function downloadCaptionModel(
+	id: string,
+	onProgress?: (p: CaptionDownloadProgress) => void,
+): Promise<void> {
+	const channel = new Channel<CaptionDownloadProgress>();
+	if (onProgress) channel.onmessage = onProgress;
+	return invoke("download_caption_model", { id, onProgress: channel });
 }
 
 export function deleteCaptionModel(id: string): Promise<void> {
 	return invoke("delete_caption_model", { id });
 }
 
+/** Coarse phase of a transcription run: "extracting" | "transcribing" | "done". */
+export interface TranscribeProgress {
+	phase: string;
+}
+
 /**
- * Transcribe a recording's audio with the chosen model. Emits
- * `captions:transcribe-progress` ("extracting" | "transcribing" | "done").
+ * Transcribe a recording's audio with the chosen model. Phase updates stream on
+ * a request-scoped channel (`onPhase`); pass it to drive UI state, or omit it.
  */
 export function transcribeProject(args: {
 	audioPath?: string | null;
 	microphonePath?: string | null;
 	modelId: string;
 	language?: string | null;
+	onPhase?: (p: TranscribeProgress) => void;
 }): Promise<Transcript> {
+	const onPhase = new Channel<TranscribeProgress>();
+	if (args.onPhase) onPhase.onmessage = args.onPhase;
 	return invoke<Transcript>("transcribe_project", {
 		audioPath: args.audioPath ?? null,
 		microphonePath: args.microphonePath ?? null,
 		modelId: args.modelId,
 		language: args.language ?? null,
+		onPhase,
 	});
 }
 

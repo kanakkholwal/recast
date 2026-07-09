@@ -23,6 +23,8 @@ use tract_onnx::prelude::*;
 
 use serde::{Deserialize, Serialize};
 
+use crate::commands::error::{AppError, AppResult};
+
 //  Options / output
 
 /// Detection thresholds. Every field has a default so the frontend may send
@@ -203,7 +205,7 @@ pub async fn detect_silence(
     microphone_path: Option<String>,
     cursor_path: Option<String>,
     options: Option<SilenceOptions>,
-) -> Result<Vec<SilenceSegment>, String> {
+) -> AppResult<Vec<SilenceSegment>> {
     let opts = options.unwrap_or_default();
     let silero = ensure_silero(&app).await?;
     tokio::task::spawn_blocking(move || {
@@ -216,7 +218,8 @@ pub async fn detect_silence(
         )
     })
     .await
-    .map_err(|e| format!("silence-detection task panicked: {e}"))?
+    .map_err(|e| AppError::msg(format!("silence-detection task panicked: {e}")))?
+    .map_err(Into::into)
 }
 
 fn detect_blocking(
@@ -493,13 +496,14 @@ pub async fn extract_waveform(
     audio_path: Option<String>,
     microphone_path: Option<String>,
     buckets: Option<usize>,
-) -> Result<Vec<f32>, String> {
+) -> AppResult<Vec<f32>> {
     let buckets = buckets.unwrap_or(2000).clamp(64, 8000);
     tokio::task::spawn_blocking(move || {
         waveform_blocking(audio_path.as_deref(), microphone_path.as_deref(), buckets)
     })
     .await
-    .map_err(|e| format!("waveform task panicked: {e}"))?
+    .map_err(|e| AppError::msg(format!("waveform task panicked: {e}")))?
+    .map_err(Into::into)
 }
 
 fn waveform_blocking(

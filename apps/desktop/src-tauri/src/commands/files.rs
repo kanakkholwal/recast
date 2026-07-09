@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use tauri::State;
 use zip::ZipArchive;
 
+use crate::commands::error::AppResult;
 use crate::commands::types::AppState;
 use crate::project::ProjectMetadata;
 use crate::tray;
@@ -32,8 +33,8 @@ pub fn take_pending_open_file(state: State<'_, AppState>) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn peek_recast_project(path: String) -> Result<ProjectMetadata, String> {
-    peek_recast_project_inner(&PathBuf::from(&path)).map_err(|e| format!("{e:#}"))
+pub fn peek_recast_project(path: String) -> AppResult<ProjectMetadata> {
+    Ok(peek_recast_project_inner(&PathBuf::from(&path))?)
 }
 
 fn peek_recast_project_inner(path: &std::path::Path) -> anyhow::Result<ProjectMetadata> {

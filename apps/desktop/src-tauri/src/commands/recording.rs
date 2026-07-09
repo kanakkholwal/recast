@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use chrono::{Local, TimeZone};
 use tauri::State;
 
+use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
 use super::types::{AppState, RecordingEntry, RecordingStartResult};
 use crate::project::writer::{write_project, ProjectWriteRequest};
@@ -30,7 +31,7 @@ pub async fn start_recording(
     region: Option<RegionRect>,
     options: Option<RecordingOptions>,
     state: State<'_, AppState>,
-) -> Result<RecordingStartResult, String> {
+) -> AppResult<RecordingStartResult> {
     // Resolving the capture target enumerates monitors/windows (xcap's
     // `Monitor::all`/`Window::all` can stall hundreds of ms), on Wayland
     // negotiates the xdg-desktop-portal dialog, and `start()` then spawns the
@@ -43,7 +44,7 @@ pub async fn start_recording(
     let manager = state.recording_manager.clone();
     let output_dir = get_active_output_dir(&state);
 
-    tauri::async_runtime::spawn_blocking(move || -> Result<RecordingStartResult, String> {
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
         // On Wayland the compositor refuses direct framebuffer access — the
         // user-supplied target_type/target_id/region are essentially advisory
         // because the *real* source is whatever the user picks in the
@@ -56,7 +57,9 @@ pub async fn start_recording(
         let target = {
             if std::env::var_os("WAYLAND_DISPLAY").is_some() {
                 let stream = crate::capture::platform::linux_wayland::acquire_portal_stream()
-                    .map_err(|e| format!("Wayland portal handshake failed: {e:#}"))?;
+                    .map_err(|e| {
+                        AppError::msg(format!("Wayland portal handshake failed: {e:#}"))
+                    })?;
                 let kind = if target_type == "window" {
                     crate::recording::CaptureKind::Window
                 } else if target_type == "region" {
@@ -83,31 +86,30 @@ pub async fn start_recording(
                 crate::capture::platform::linux_wayland::stash_portal_stream(stream);
                 target
             } else if target_type == "region" {
-                let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
-                CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?
+                let rect = region.ok_or_else(|| AppError::from("region target requires a rect"))?;
+                CaptureTarget::resolve_region(rect)?
             } else {
-                CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?
+                CaptureTarget::resolve(&target_type, target_id)?
             }
         };
         #[cfg(not(target_os = "linux"))]
         let target = if target_type == "region" {
-            let rect = region.ok_or_else(|| "region target requires a rect".to_string())?;
-            CaptureTarget::resolve_region(rect).map_err(|e| e.to_string())?
+            let rect = region.ok_or_else(|| AppError::from("region target requires a rect"))?;
+            CaptureTarget::resolve_region(rect)?
         } else {
-            CaptureTarget::resolve(&target_type, target_id).map_err(|e| e.to_string())?
+            CaptureTarget::resolve(&target_type, target_id)?
         };
         let warnings = manager
             .start(target, output_dir, options.unwrap_or_default())
-            .inspect_err(|e| log::error!("start_recording failed: {e:#}"))
-            .map_err(|e| format!("{e:#}"))?;
+            .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
         Ok(RecordingStartResult { warnings })
     })
     .await
-    .map_err(|e| format!("start_recording worker panicked: {e}"))?
+    .map_err(|e| AppError::msg(format!("start_recording worker panicked: {e}")))?
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String> {
+pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
     // `stop()` joins the capture/cursor/encoder threads, finalizes the muxer,
     // stops the audio/mic/camera sessions, and — when the camera was recorded
     // through pauses — runs a full FFmpeg re-encode to cut the paused spans out
@@ -125,15 +127,14 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
     let manager = state.recording_manager.clone();
     let dest = recasts_dir(&state);
 
-    let project_path = tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, String> {
+    let project_path = tauri::async_runtime::spawn_blocking(move || -> AppResult<PathBuf> {
         // `{:#}` formats the full anyhow chain (top message + every `.context()`
         // below it), so the JS-side alert sees the real cause instead of just
         // the outermost label. Without this, errors like "encoder thread
         // panicked" hid the underlying FFmpeg-process exit code.
         let artifacts = manager
             .stop()
-            .inspect_err(|e| log::error!("stop_recording failed: {e:#}"))
-            .map_err(|e| format!("{e:#}"))?;
+            .inspect_err(|e| log::error!("stop_recording failed: {e:#}"))?;
         // Human-readable, sortable, searchable name (local time of capture) —
         // e.g. `Recast_2026-05-16_14-30-22.recast`.
         let stamp = Local
@@ -183,8 +184,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
             edits_json: serde_json::to_string_pretty(&default_render_state)
                 .unwrap_or_else(|_| "{}".into()),
         })
-        .inspect_err(|e| log::error!("write_project failed: {e:#}"))
-        .map_err(|e| format!("{e:#}"))?;
+        .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
 
         // Clean up temporary session files.
         let _ = fs::remove_file(&artifacts.recording_path);
@@ -200,24 +200,24 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
         Ok(project_path)
     })
     .await
-    .map_err(|e| format!("stop_recording worker panicked: {e}"))??;
+    .map_err(|e| AppError::msg(format!("stop_recording worker panicked: {e}")))??;
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
     Ok(project_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]
-pub fn pause_recording(state: State<'_, AppState>) -> Result<(), String> {
-    state.recording_manager.pause().map_err(|e| e.to_string())
+pub fn pause_recording(state: State<'_, AppState>) -> AppResult<()> {
+    Ok(state.recording_manager.pause()?)
 }
 
 #[tauri::command]
-pub fn resume_recording(state: State<'_, AppState>) -> Result<(), String> {
-    state.recording_manager.resume().map_err(|e| e.to_string())
+pub fn resume_recording(state: State<'_, AppState>) -> AppResult<()> {
+    Ok(state.recording_manager.resume()?)
 }
 
 #[tauri::command]
-pub fn is_recording_paused(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn is_recording_paused(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.recording_manager.is_paused())
 }
 
@@ -225,11 +225,10 @@ pub fn is_recording_paused(state: State<'_, AppState>) -> Result<bool, String> {
 pub fn update_camera_preview_state(
     state: CameraPreviewUpdate,
     app_state: State<'_, AppState>,
-) -> Result<(), String> {
-    app_state
+) -> AppResult<()> {
+    Ok(app_state
         .recording_manager
-        .update_camera_preview_state(state)
-        .map_err(|e| e.to_string())
+        .update_camera_preview_state(state)?)
 }
 
 // `list_recasts`/`list_exports` are async + spawn_blocking: the scan does a
@@ -238,24 +237,24 @@ pub fn update_camera_preview_state(
 // the UI thread. Resolve the dir up front (cheap config read), then scan off the
 // main thread.
 #[tauri::command]
-pub async fn list_recasts(state: State<'_, AppState>) -> Result<Vec<RecordingEntry>, String> {
+pub async fn list_recasts(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
     let dir = recasts_dir(&state);
     tauri::async_runtime::spawn_blocking(move || list_files_by_ext(&dir, &["recast"]))
         .await
-        .map_err(|e| format!("list_recasts join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("list_recasts join error: {e}")))?
 }
 
 #[tauri::command]
-pub async fn list_exports(state: State<'_, AppState>) -> Result<Vec<RecordingEntry>, String> {
+pub async fn list_exports(state: State<'_, AppState>) -> AppResult<Vec<RecordingEntry>> {
     let dir = exports_dir(&state);
     tauri::async_runtime::spawn_blocking(move || list_files_by_ext(&dir, &["mp4", "webm", "gif"]))
         .await
-        .map_err(|e| format!("list_exports join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("list_exports join error: {e}")))?
 }
 
 /// One pass over `dir`, collecting any file whose extension is in `exts`.
 /// Sorts newest-first by mtime.
-fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> Result<Vec<RecordingEntry>, String> {
+fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEntry>> {
     let mut entries = Vec::new();
     let read = match fs::read_dir(dir) {
         Ok(r) => r,

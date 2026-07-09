@@ -7,6 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager, State};
 use xcap::{Monitor, Window};
 
+use super::error::{AppError, AppResult};
 use super::ffmpeg::{encode_thumbnail_base64, make_thumbnail};
 use serde::Serialize;
 
@@ -138,18 +139,14 @@ fn capture_window_thumbnail(window: &Window) -> Option<String> {
 }
 
 #[tauri::command]
-pub fn get_output_dir(state: State<'_, AppState>) -> Result<String, String> {
+pub fn get_output_dir(state: State<'_, AppState>) -> AppResult<String> {
     Ok(get_active_output_dir(&state).to_string_lossy().to_string())
 }
 
 #[tauri::command]
-pub fn set_output_dir(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    path: String,
-) -> Result<(), String> {
+pub fn set_output_dir(app: AppHandle, state: State<'_, AppState>, path: String) -> AppResult<()> {
     if !Path::new(&path).exists() {
-        return Err("Directory does not exist".into());
+        return Err(AppError::from("Directory does not exist"));
     }
     let snapshot = {
         let mut config = state.config.write();
@@ -161,12 +158,12 @@ pub fn set_output_dir(
 }
 
 #[tauri::command]
-pub fn get_last_source(state: State<'_, AppState>) -> Result<Option<LastSource>, String> {
+pub fn get_last_source(state: State<'_, AppState>) -> AppResult<Option<LastSource>> {
     Ok(state.config.read().last_source.clone())
 }
 
 #[tauri::command]
-pub fn get_close_to_tray(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn get_close_to_tray(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().close_to_tray)
 }
 
@@ -175,7 +172,7 @@ pub fn set_close_to_tray(
     app: AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();
         config.close_to_tray = enabled;
@@ -186,7 +183,7 @@ pub fn set_close_to_tray(
 }
 
 #[tauri::command]
-pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().hide_panel_from_capture)
 }
 
@@ -200,7 +197,7 @@ pub async fn set_hide_panel_from_capture(
     app: AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();
         config.hide_panel_from_capture = enabled;
@@ -215,7 +212,7 @@ pub async fn set_hide_panel_from_capture(
     if let Some(panel) = app.get_webview_window("recording-panel") {
         panel
             .set_content_protected(enabled)
-            .map_err(|e| format!("panel content-protection toggle failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("panel content-protection toggle failed: {e}")))?;
     }
     Ok(())
 }
@@ -231,7 +228,7 @@ pub fn set_telemetry_consent(
     product: bool,
     errors: bool,
     install_id: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();
         config.telemetry_product = product;
@@ -252,7 +249,7 @@ pub fn set_last_source(
     app: AppHandle,
     state: State<'_, AppState>,
     source: LastSource,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();
         config.last_source = Some(source);
@@ -283,7 +280,7 @@ pub(crate) fn apply_log_level(diagnostic: bool) {
 }
 
 #[tauri::command]
-pub fn get_diagnostic_logging(state: State<'_, AppState>) -> Result<bool, String> {
+pub fn get_diagnostic_logging(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().diagnostic_logging)
 }
 
@@ -295,7 +292,7 @@ pub fn set_diagnostic_logging(
     app: AppHandle,
     state: State<'_, AppState>,
     enabled: bool,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let snapshot = {
         let mut config = state.config.write();
         config.diagnostic_logging = enabled;
@@ -316,19 +313,19 @@ pub fn set_diagnostic_logging(
 /// attach it to a support request. Same dir `tauri_plugin_log` writes to
 /// (`app_log_dir`); created if a session hasn't written there yet.
 #[tauri::command]
-pub fn open_log_dir(app: AppHandle) -> Result<String, String> {
+pub fn open_log_dir(app: AppHandle) -> AppResult<String> {
     use tauri::Manager;
     use tauri_plugin_opener::OpenerExt;
 
     let dir = app
         .path()
         .app_log_dir()
-        .map_err(|e| format!("could not resolve log directory: {e}"))?;
+        .map_err(|e| AppError::msg(format!("could not resolve log directory: {e}")))?;
     let _ = std::fs::create_dir_all(&dir);
     let display = dir.to_string_lossy().to_string();
     app.opener()
         .open_path(display.clone(), None::<&str>)
-        .map_err(|e| format!("failed to open log folder: {e}"))?;
+        .map_err(|e| AppError::msg(format!("failed to open log folder: {e}")))?;
     Ok(display)
 }
 
@@ -340,8 +337,8 @@ pub fn open_log_dir(app: AppHandle) -> Result<String, String> {
 // stop responding because the WM can't deliver events. Pushing both onto a
 // blocking worker keeps the GTK loop free even if xcap hangs.
 #[tauri::command]
-pub async fn get_displays() -> Result<Vec<DisplayInfo>, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<DisplayInfo>, String> {
+pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
+    tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<DisplayInfo>> {
         let monitors = Monitor::all().map_err(|e| e.to_string())?;
         Ok(monitors
             .iter()
@@ -365,12 +362,12 @@ pub async fn get_displays() -> Result<Vec<DisplayInfo>, String> {
             .collect())
     })
     .await
-    .map_err(|e| format!("get_displays join error: {e}"))?
+    .map_err(|e| AppError::msg(format!("get_displays join error: {e}")))?
 }
 
 #[tauri::command]
-pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
-    tauri::async_runtime::spawn_blocking(|| -> Result<Vec<WindowInfo>, String> {
+pub async fn get_windows() -> AppResult<Vec<WindowInfo>> {
+    tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<WindowInfo>> {
         let windows = Window::all().map_err(|e| e.to_string())?;
         // Each xcap accessor hits the compositor/WM. The old filter + map
         // called `.is_minimized()` and `.title()` twice each per window.
@@ -399,7 +396,7 @@ pub async fn get_windows() -> Result<Vec<WindowInfo>, String> {
             .collect())
     })
     .await
-    .map_err(|e| format!("get_windows join error: {e}"))?
+    .map_err(|e| AppError::msg(format!("get_windows join error: {e}")))?
 }
 
 #[derive(Serialize, Clone)]
@@ -419,10 +416,11 @@ pub struct AudioDeviceInfo {
 /// main thread, which on macOS/Linux also renders the WebView, so a slow audio
 /// subsystem would freeze the UI. Push it onto a worker instead.
 #[tauri::command]
-pub async fn get_audio_devices() -> Result<Vec<AudioDeviceInfo>, String> {
+pub async fn get_audio_devices() -> AppResult<Vec<AudioDeviceInfo>> {
     tauri::async_runtime::spawn_blocking(get_audio_devices_blocking)
         .await
-        .map_err(|e| format!("get_audio_devices join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("get_audio_devices join error: {e}")))?
+        .map_err(Into::into)
 }
 
 fn get_audio_devices_blocking() -> Result<Vec<AudioDeviceInfo>, String> {
@@ -622,13 +620,13 @@ fn get_device_name(device: &windows::Win32::Media::Audio::IMMDevice) -> Option<S
 /// `set_content_protected` round-trips to the event loop — doing that from the
 /// main thread would deadlock. An async command runs off it.
 #[tauri::command]
-pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> Result<(), String> {
+pub async fn exclude_window_from_capture(app: AppHandle, label: String) -> AppResult<()> {
     let window = app
         .get_webview_window(&label)
-        .ok_or_else(|| format!("window '{label}' not found"))?;
+        .ok_or_else(|| AppError::msg(format!("window '{label}' not found")))?;
     window
         .set_content_protected(true)
-        .map_err(|e| format!("content protection failed for '{label}': {e}"))?;
+        .map_err(|e| AppError::msg(format!("content protection failed for '{label}': {e}")))?;
     log::info!("excluded window '{label}' from screen capture");
     Ok(())
 }
@@ -660,10 +658,10 @@ pub fn set_window_aspect_ratio(
     max_screen_fraction: f64,
     min_width_px: f64,
     chrome_px: f64,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let window = app
         .get_webview_window(&label)
-        .ok_or_else(|| format!("window '{label}' not found"))?;
+        .ok_or_else(|| AppError::msg(format!("window '{label}' not found")))?;
     let ratio = if aspect_height > 0.0 {
         aspect_width / aspect_height
     } else {
@@ -673,7 +671,7 @@ pub fn set_window_aspect_ratio(
     {
         let hwnd = window
             .hwnd()
-            .map_err(|e| format!("hwnd lookup failed for '{label}': {e}"))?;
+            .map_err(|e| AppError::msg(format!("hwnd lookup failed for '{label}': {e}")))?;
         crate::window_aspect::apply(
             &app,
             hwnd.0 as isize,
@@ -693,13 +691,14 @@ pub fn set_window_aspect_ratio(
 
 /// List available camera/video capture devices.
 #[tauri::command]
-pub async fn get_camera_devices() -> Result<Vec<CameraDeviceInfo>, String> {
+pub async fn get_camera_devices() -> AppResult<Vec<CameraDeviceInfo>> {
     // Device enumeration can take a few hundred ms (or several seconds if a
     // webcam is slow to respond on Windows dshow). Tauri runs sync commands
     // on the main thread, which froze the UI; move to a worker.
     tauri::async_runtime::spawn_blocking(get_camera_devices_blocking)
         .await
-        .map_err(|e| format!("get_camera_devices join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("get_camera_devices join error: {e}")))?
+        .map_err(Into::into)
 }
 
 fn get_camera_devices_blocking() -> Result<Vec<CameraDeviceInfo>, String> {
@@ -951,8 +950,8 @@ fn parse_camera_devices(stderr: &str) -> Vec<CameraDeviceInfo> {
 }
 
 #[tauri::command]
-pub async fn validate_camera_source(device_id: String) -> Result<CameraValidationResult, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn validate_camera_source(device_id: String) -> AppResult<CameraValidationResult> {
+    tauri::async_runtime::spawn_blocking(move || -> Result<CameraValidationResult, String> {
         let devices = get_camera_devices_blocking()?;
         let probed_at_unix_ms = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -989,7 +988,8 @@ pub async fn validate_camera_source(device_id: String) -> Result<CameraValidatio
         })
     })
     .await
-    .map_err(|e| format!("validate_camera_source join error: {e}"))?
+    .map_err(|e| AppError::msg(format!("validate_camera_source join error: {e}")))?
+    .map_err(Into::into)
 }
 
 fn classify_camera_name(name: &str) -> (String, Option<String>) {
@@ -1062,7 +1062,34 @@ fn probe_camera_device_health(device_id: &str) -> Option<(String, Option<String>
 
 #[cfg(test)]
 mod tests {
-    use super::parse_camera_devices;
+    use super::{classify_camera_name, parse_camera_devices};
+
+    #[test]
+    fn classifies_known_flaky_virtual_cameras_as_warning() {
+        let (status, message) = classify_camera_name("NVIDIA Broadcast");
+        assert_eq!(status, "warning");
+        assert!(message.is_some());
+    }
+
+    #[test]
+    fn classifies_validation_required_virtual_cameras_as_unknown() {
+        let (status, message) = classify_camera_name("OBS Virtual Camera");
+        assert_eq!(status, "unknown");
+        assert!(message.is_some());
+    }
+
+    #[test]
+    fn classifies_plain_hardware_camera_as_ready_with_no_message() {
+        let (status, message) = classify_camera_name("Integrated Camera");
+        assert_eq!(status, "ready");
+        assert!(message.is_none());
+    }
+
+    #[test]
+    fn camera_classification_is_case_insensitive() {
+        let (status, _) = classify_camera_name("droidcam source");
+        assert_eq!(status, "warning");
+    }
 
     #[test]
     fn parses_legacy_ffmpeg_camera_list() {
@@ -1099,10 +1126,11 @@ mod tests {
 // freeze the window. The Windows/macOS branches only `spawn()` (non-blocking),
 // but routing all three through a worker keeps the command uniformly off-thread.
 #[tauri::command]
-pub async fn open_file_location(path: String) -> Result<(), String> {
+pub async fn open_file_location(path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || open_file_location_blocking(path))
         .await
-        .map_err(|e| format!("open_file_location join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("open_file_location join error: {e}")))?
+        .map_err(Into::into)
 }
 
 fn open_file_location_blocking(path: String) -> Result<(), String> {
@@ -1167,15 +1195,15 @@ fn open_file_location_blocking(path: String) -> Result<(), String> {
 /// Move a file to the OS recycle bin / trash.
 /// Validates the path exists and is a file before deleting.
 #[tauri::command]
-pub fn delete_file(path: String) -> Result<(), String> {
+pub fn delete_file(path: String) -> AppResult<()> {
     let target = std::path::Path::new(&path);
     if !target.exists() {
-        return Err("File not found".to_string());
+        return Err(AppError::from("File not found"));
     }
     if !target.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppError::from("Path is not a file"));
     }
-    trash::delete(target).map_err(|e| format!("Could not move to trash: {e}"))?;
+    trash::delete(target).map_err(|e| AppError::msg(format!("Could not move to trash: {e}")))?;
     Ok(())
 }
 
@@ -1189,28 +1217,28 @@ pub fn delete_file(path: String) -> Result<(), String> {
 /// - target filename already exists (reject, never overwrite)
 /// - source file missing
 #[tauri::command]
-pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
+pub fn rename_file(path: String, new_name: String) -> AppResult<String> {
     let src = std::path::PathBuf::from(&path);
     if !src.exists() {
-        return Err("File not found".to_string());
+        return Err(AppError::from("File not found"));
     }
     if !src.is_file() {
-        return Err("Path is not a file".to_string());
+        return Err(AppError::from("Path is not a file"));
     }
 
     let trimmed = new_name.trim();
     if trimmed.is_empty() {
-        return Err("Name cannot be empty".to_string());
+        return Err(AppError::from("Name cannot be empty"));
     }
     if trimmed.contains('/') || trimmed.contains('\\') || trimmed.contains("..") {
-        return Err("Name cannot contain path separators".to_string());
+        return Err(AppError::from("Name cannot contain path separators"));
     }
     // Basic Windows-illegal chars check.
     if trimmed
         .chars()
         .any(|c| matches!(c, '<' | '>' | ':' | '"' | '|' | '?' | '*'))
     {
-        return Err("Name contains illegal characters".to_string());
+        return Err(AppError::from("Name contains illegal characters"));
     }
 
     // If the user didn't include an extension, preserve the original one.
@@ -1224,7 +1252,7 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
 
     let parent = src
         .parent()
-        .ok_or_else(|| "Cannot determine parent directory".to_string())?;
+        .ok_or_else(|| AppError::from("Cannot determine parent directory"))?;
     let dest = parent.join(&final_name);
 
     if dest == src {
@@ -1232,10 +1260,12 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
         return Ok(src.to_string_lossy().to_string());
     }
     if dest.exists() {
-        return Err(format!("A file named \"{final_name}\" already exists"));
+        return Err(AppError::msg(format!(
+            "A file named \"{final_name}\" already exists"
+        )));
     }
 
-    std::fs::rename(&src, &dest).map_err(|e| format!("Rename failed: {e}"))?;
+    std::fs::rename(&src, &dest).map_err(|e| AppError::msg(format!("Rename failed: {e}")))?;
     Ok(dest.to_string_lossy().to_string())
 }
 
@@ -1248,10 +1278,10 @@ pub fn rename_file(path: String, new_name: String) -> Result<String, String> {
 /// take a few hundred ms cold — running it inline would freeze the GTK main
 /// thread on Linux (same rationale as `get_displays`).
 #[tauri::command]
-pub async fn probe_video_encoders() -> Result<Vec<crate::ffmpeg::EncoderAvailability>, String> {
+pub async fn probe_video_encoders() -> AppResult<Vec<crate::ffmpeg::EncoderAvailability>> {
     tauri::async_runtime::spawn_blocking(crate::ffmpeg::probe_recordable_encoders)
         .await
-        .map_err(|e| format!("probe_video_encoders join error: {e}"))
+        .map_err(|e| AppError::msg(format!("probe_video_encoders join error: {e}")))
 }
 
 /// One capture-input capability and whether the *running* build can do it on
@@ -1515,10 +1545,10 @@ fn build_capture_capabilities() -> CaptureCapabilities {
 /// the first call may spawn the FFmpeg AVFoundation device listing — keeping it
 /// off the UI thread matches the other probe commands.
 #[tauri::command]
-pub async fn capture_capabilities() -> Result<CaptureCapabilities, String> {
+pub async fn capture_capabilities() -> AppResult<CaptureCapabilities> {
     tauri::async_runtime::spawn_blocking(build_capture_capabilities)
         .await
-        .map_err(|e| format!("capture_capabilities join error: {e}"))
+        .map_err(|e| AppError::msg(format!("capture_capabilities join error: {e}")))
 }
 
 #[derive(Debug, Serialize)]
@@ -1535,7 +1565,7 @@ pub struct FfmpegDiagnostics {
 /// encoders the export pipeline depends on are actually available. Surfaced
 /// to the UI so users can include this in bug reports without needing a CLI.
 #[tauri::command]
-pub async fn diagnose_ffmpeg() -> Result<FfmpegDiagnostics, String> {
+pub async fn diagnose_ffmpeg() -> AppResult<FfmpegDiagnostics> {
     tauri::async_runtime::spawn_blocking(|| {
         let ffmpeg = crate::ffmpeg::ffmpeg_path().clone();
         let ffprobe = crate::ffmpeg::ffprobe_path().clone();
@@ -1608,5 +1638,5 @@ pub async fn diagnose_ffmpeg() -> Result<FfmpegDiagnostics, String> {
         })
     })
     .await
-    .map_err(|e| format!("diagnose_ffmpeg join error: {e}"))?
+    .map_err(|e| AppError::msg(format!("diagnose_ffmpeg join error: {e}")))?
 }

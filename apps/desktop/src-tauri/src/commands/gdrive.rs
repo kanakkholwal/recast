@@ -40,6 +40,8 @@ use tauri::{AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
+use super::error::{AppError, AppResult};
+
 const KEYRING_SERVICE: &str = "com.nexonauts.recast";
 const KEYRING_ENTRY: &str = "gdrive-refresh-token";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
@@ -725,7 +727,7 @@ async fn fetch_email(client: &Client, access_token: &str) -> Option<String> {
 /// page, awaits the redirect, exchanges the code for tokens, persists the
 /// refresh token, and emits `gdrive:connected` on success.
 #[tauri::command]
-pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
+pub async fn gdrive_connect(app: AppHandle) -> AppResult<()> {
     let (client_id, _) = require_credentials()?;
     let client = http_client()?;
 
@@ -734,10 +736,10 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
     // 127.0.0.1 port as valid.
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| format!("loopback bind failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("loopback bind failed: {e}")))?;
     let port = listener
         .local_addr()
-        .map_err(|e| format!("loopback local_addr failed: {e}"))?
+        .map_err(|e| AppError::msg(format!("loopback local_addr failed: {e}")))?
         .port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
@@ -764,9 +766,10 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
     let tokens = exchange_code_for_tokens(&client, &code, &verifier, &redirect_uri).await?;
 
     let refresh = tokens.refresh_token.clone().ok_or_else(|| {
-        "Google did not return a refresh token. Try disconnecting and reconnecting; \
-             the consent prompt must request offline access."
-            .to_string()
+        AppError::from(
+            "Google did not return a refresh token. Try disconnecting and reconnecting; \
+             the consent prompt must request offline access.",
+        )
     })?;
     store_refresh_token(&refresh)?;
     *ACCESS_TOKEN.lock() = Some(CachedAccessToken {
@@ -786,7 +789,7 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn gdrive_status() -> Result<GdriveStatus, String> {
+pub async fn gdrive_status() -> AppResult<GdriveStatus> {
     if read_refresh_token().is_none() {
         return Ok(GdriveStatus {
             connected: false,
@@ -815,7 +818,7 @@ pub async fn gdrive_status() -> Result<GdriveStatus, String> {
 }
 
 #[tauri::command]
-pub async fn gdrive_disconnect() -> Result<(), String> {
+pub async fn gdrive_disconnect() -> AppResult<()> {
     let token = read_refresh_token();
     if let Some(token) = token {
         if let Ok(client) = http_client() {
@@ -831,7 +834,7 @@ pub async fn gdrive_disconnect() -> Result<(), String> {
         }
     }
     *ACCESS_TOKEN.lock() = None;
-    delete_refresh_token()
+    delete_refresh_token().map_err(Into::into)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -959,7 +962,7 @@ pub async fn gdrive_upload(
     app: AppHandle,
     path: String,
     upload_id: String,
-) -> Result<GdriveUploadResult, String> {
+) -> AppResult<GdriveUploadResult> {
     let cancel = upload_cancel_flag(&upload_id);
     let result = gdrive_upload_inner(&app, &path, &upload_id, cancel.clone()).await;
     drop_upload_cancel_flag(&upload_id);
@@ -1006,7 +1009,7 @@ pub async fn gdrive_upload(
             );
         }
     }
-    result
+    result.map_err(Into::into)
 }
 
 async fn gdrive_upload_inner(
@@ -1179,5 +1182,67 @@ pub fn gdrive_forget_upload(app: AppHandle, local_path: String) {
     let mut manifest = read_manifest(&app);
     if manifest.remove(&local_path).is_some() {
         write_manifest(&app, &manifest);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn html_escape_replaces_all_markup_sensitive_chars() {
+        assert_eq!(
+            html_escape(r#"<a href="x&y">'q'</a>"#),
+            "&lt;a href=&quot;x&amp;y&quot;&gt;&#39;q&#39;&lt;/a&gt;",
+        );
+    }
+
+    #[test]
+    fn html_escape_leaves_plain_text_untouched() {
+        assert_eq!(html_escape("access_denied"), "access_denied");
+    }
+
+    #[test]
+    fn guess_mime_type_maps_known_video_extensions() {
+        assert_eq!(guess_mime_type(Path::new("clip.mp4")), "video/mp4");
+        assert_eq!(guess_mime_type(Path::new("clip.webm")), "video/webm");
+        assert_eq!(guess_mime_type(Path::new("clip.gif")), "image/gif");
+        assert_eq!(guess_mime_type(Path::new("clip.mov")), "video/quicktime");
+        assert_eq!(guess_mime_type(Path::new("clip.mkv")), "video/x-matroska");
+    }
+
+    #[test]
+    fn guess_mime_type_is_case_insensitive() {
+        assert_eq!(guess_mime_type(Path::new("CLIP.MP4")), "video/mp4");
+    }
+
+    #[test]
+    fn guess_mime_type_falls_back_to_octet_stream() {
+        assert_eq!(
+            guess_mime_type(Path::new("data.bin")),
+            "application/octet-stream",
+        );
+        assert_eq!(
+            guess_mime_type(Path::new("noext")),
+            "application/octet-stream",
+        );
+    }
+
+    #[test]
+    fn pkce_challenge_matches_rfc_7636_test_vector() {
+        // RFC 7636 Appendix B.
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        );
+    }
+
+    #[test]
+    fn random_url_safe_string_has_requested_length_and_charset() {
+        const ALPHABET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+        let s = random_url_safe_string(64);
+        assert_eq!(s.len(), 64);
+        assert!(s.bytes().all(|b| ALPHABET.contains(&b)));
     }
 }

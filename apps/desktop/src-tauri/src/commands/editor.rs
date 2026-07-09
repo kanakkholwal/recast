@@ -11,6 +11,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+use super::error::{AppError, AppResult};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, append_subtitles_to_complex, build_annotation_blur_complex,
@@ -362,18 +363,20 @@ fn emit_export_state(app: &AppHandle, event: ExportStateEvent) {
 }
 
 #[tauri::command]
-pub async fn get_video_metadata(path: String) -> Result<VideoMetadata, String> {
+pub async fn get_video_metadata(path: String) -> AppResult<VideoMetadata> {
     // ffprobe spawn off the main thread — see generate_thumbnails for context.
     tauri::async_runtime::spawn_blocking(move || project_or_media_metadata(Path::new(&path)))
         .await
-        .map_err(|e| format!("get_video_metadata join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("get_video_metadata join error: {e}")))?
+        .map_err(Into::into)
 }
 
 #[tauri::command]
-pub async fn load_editor_document(path: String) -> Result<EditorDocument, String> {
+pub async fn load_editor_document(path: String) -> AppResult<EditorDocument> {
     tauri::async_runtime::spawn_blocking(move || load_editor_document_blocking(path))
         .await
-        .map_err(|e| format!("load_editor_document join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("load_editor_document join error: {e}")))?
+        .map_err(Into::into)
 }
 
 fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
@@ -438,7 +441,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
 }
 
 #[tauri::command]
-pub async fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>, String> {
+pub async fn generate_thumbnails(path: String, count: u32) -> AppResult<Vec<String>> {
     // Sync ffmpeg/ffprobe calls run on Tauri's main thread by default,
     // freezing the UI (clicks/touch/window-drag) for the duration. Move the
     // whole pipeline onto a blocking worker so the event loop stays free —
@@ -446,7 +449,8 @@ pub async fn generate_thumbnails(path: String, count: u32) -> Result<Vec<String>
     // serialised main-thread ffmpeg spawns produced multi-second freezes.
     tauri::async_runtime::spawn_blocking(move || generate_thumbnails_blocking(path, count))
         .await
-        .map_err(|e| format!("generate_thumbnails join error: {e}"))?
+        .map_err(|e| AppError::msg(format!("generate_thumbnails join error: {e}")))?
+        .map_err(Into::into)
 }
 
 fn generate_thumbnails_blocking(path: String, count: u32) -> Result<Vec<String>, String> {
@@ -1109,7 +1113,7 @@ pub async fn export_video(
     app: AppHandle,
     mut request: ExportRequest,
     state: State<'_, AppState>,
-) -> Result<String, String> {
+) -> AppResult<String> {
     let export_id = request.export_id.clone();
 
     // Install a fresh cancellation token for this run, scoped to the export
@@ -1217,7 +1221,7 @@ pub async fn export_video(
     let border_radius_px = border_radius_pct / 100.0 * metadata.width.min(metadata.height) as f64;
     let border_radius_mask: Option<MaskResult> = if border_radius_px > 0.5 {
         render_border_radius_mask(metadata.width, metadata.height, border_radius_px)
-            .map_err(|e| format!("border-radius mask render failed: {e}"))?
+            .map_err(|e| AppError::msg(format!("border-radius mask render failed: {e}")))?
     } else {
         None
     };
@@ -1266,7 +1270,7 @@ pub async fn export_video(
                     color: shadow_settings.color.clone(),
                 },
             )
-            .map_err(|e| format!("drop-shadow mask render failed: {e}"))?
+            .map_err(|e| AppError::msg(format!("drop-shadow mask render failed: {e}")))?
         } else {
             None
         };
@@ -1282,7 +1286,7 @@ pub async fn export_video(
             canvas_width,
             canvas_height,
         )
-        .map_err(|e| format!("gradient background render failed: {e}"))?
+        .map_err(|e| AppError::msg(format!("gradient background render failed: {e}")))?
     } else {
         None
     };
@@ -1369,7 +1373,7 @@ pub async fn export_video(
             canvas_geom,
             scene_overlay.as_ref(),
         )
-        .map_err(|e| e.to_string())?;
+        .map_err(AppError::msg)?;
     let overlay_duration = if duration > 0.0 {
         duration
     } else {
@@ -1409,7 +1413,7 @@ pub async fn export_video(
                 })
             })
             .transpose()
-            .map_err(|e| e.to_string())?
+            .map_err(AppError::msg)?
     } else {
         None
     };
@@ -1562,7 +1566,7 @@ pub async fn export_video(
         };
         if radius_px > 0.5 {
             crate::render::mask_export::render_border_radius_mask(bw, bh, radius_px)
-                .map_err(|e| format!("camera mask render failed: {e}"))?
+                .map_err(|e| AppError::msg(format!("camera mask render failed: {e}")))?
         } else {
             None
         }
@@ -1936,17 +1940,17 @@ pub async fn export_video(
                 let _ = std::fs::remove_file(&palette_path);
                 if cancel_flag.load(Ordering::Acquire) {
                     emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
-                    return Err("export cancelled".to_string());
+                    return Err(AppError::from("export cancelled"));
                 }
                 emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
-                return Err(err_msg);
+                return Err(AppError::from(err_msg));
             }
             Err(join_err) => {
                 state.export_cancel.lock().remove(&export_id);
                 let _ = std::fs::remove_file(&palette_path);
                 let err_msg = format!("export task failed (palette pre-pass): {join_err}");
                 emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
-                return Err(err_msg);
+                return Err(AppError::from(err_msg));
             }
         }
 
@@ -1954,7 +1958,7 @@ pub async fn export_video(
             state.export_cancel.lock().remove(&export_id);
             let _ = std::fs::remove_file(&palette_path);
             emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
-            return Err("export cancelled".to_string());
+            return Err(AppError::from("export cancelled"));
         }
 
         // Wire the palette PNG in as the last FFmpeg input. GIF mode skips
@@ -2889,7 +2893,7 @@ pub async fn export_video(
                     export_start.elapsed().as_millis()
                 );
             }
-            inner
+            inner.map_err(Into::into)
         }
         Err(join_err) => {
             // spawn_blocking only errors on panic; surface it so the frontend
@@ -2899,7 +2903,7 @@ pub async fn export_video(
                 &app_for_fallback,
                 ExportStateEvent::error(&export_id_for_fallback, &err_msg),
             );
-            Err(err_msg)
+            Err(AppError::from(err_msg))
         }
     }
 }
@@ -2909,7 +2913,7 @@ pub async fn export_video(
 /// return `Err("export cancelled")`. Safe to call when no export is running
 /// for the given export session id.
 #[tauri::command]
-pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> Result<(), String> {
+pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> AppResult<()> {
     if let Some(flag) = state.export_cancel.lock().get(&export_id) {
         flag.store(true, Ordering::Release);
     }
@@ -2921,36 +2925,37 @@ pub fn cancel_export(export_id: String, state: State<'_, AppState>) -> Result<()
 /// Crash-recovery shadow write, fired on a ~30s timer — async + spawn_blocking
 /// so the JSON serialize + atomic file write never stall the UI thread.
 #[tauri::command]
-pub async fn autosave_project(project_path: String, edits_json: String) -> Result<(), String> {
+pub async fn autosave_project(project_path: String, edits_json: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::project::autosave::save_autosave(Path::new(&project_path), &edits_json)
             .map_err(|e| e.to_string())
     })
     .await
-    .map_err(|e| format!("autosave task panicked: {e}"))?
+    .map_err(|e| AppError::msg(format!("autosave task panicked: {e}")))?
+    .map_err(Into::into)
 }
 
 /// Re-pack a legacy `.recast` as the current format in place (keeps a `.bak`).
 /// Heavy zip I/O, so it runs off the main thread.
 #[tauri::command]
-pub async fn migrate_project(project_path: String) -> Result<(), String> {
+pub async fn migrate_project(project_path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || {
         crate::project::migrate_project(Path::new(&project_path))
     })
     .await
-    .map_err(|e| format!("migrate task panicked: {e}"))?
-    .map_err(|e| format!("{e:#}"))
+    .map_err(|e| AppError::msg(format!("migrate task panicked: {e}")))?
+    .map_err(AppError::from)
 }
 
 #[tauri::command]
-pub async fn save_project_edits(project_path: String, edits_json: String) -> Result<u64, String> {
+pub async fn save_project_edits(project_path: String, edits_json: String) -> AppResult<u64> {
     let path_for_blocking = project_path.clone();
     tokio::task::spawn_blocking(move || {
         crate::project::writer::update_project_edits(Path::new(&path_for_blocking), &edits_json)
     })
     .await
-    .map_err(|e| format!("save task panicked: {e}"))?
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| AppError::msg(format!("save task panicked: {e}")))?
+    .map_err(AppError::msg)?;
 
     // Autosave shadow is now redundant — the on-disk project matches memory.
     crate::project::autosave::clear_autosave(Path::new(&project_path));
@@ -2989,20 +2994,21 @@ pub async fn get_recoverable_sessions() -> Vec<crate::project::autosave::Autosav
 #[tauri::command]
 pub async fn suggest_zoom_regions(
     cursor_path: String,
-) -> Result<Vec<crate::cursor::smoothing::ZoomTrigger>, String> {
+) -> AppResult<Vec<crate::cursor::smoothing::ZoomTrigger>> {
     // The cursor track is multi-MB on long recordings; read + parse off-thread.
     tauri::async_runtime::spawn_blocking(move || {
         let bytes =
             fs::read(Path::new(&cursor_path)).map_err(|e| format!("read cursor track: {e}"))?;
         let track: crate::cursor::CursorTrack =
             serde_json::from_slice(&bytes).map_err(|e| format!("parse cursor track: {e}"))?;
-        Ok(crate::cursor::smoothing::detect_zoom_triggers(
+        Ok::<_, String>(crate::cursor::smoothing::detect_zoom_triggers(
             &track.samples,
             &track.clicks,
         ))
     })
     .await
-    .map_err(|e| format!("suggest task panicked: {e}"))?
+    .map_err(|e| AppError::msg(format!("suggest task panicked: {e}")))?
+    .map_err(Into::into)
 }
 
 #[cfg(test)]

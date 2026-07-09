@@ -11,19 +11,17 @@ use std::path::PathBuf;
 
 use tauri::{AppHandle, Manager};
 
+use crate::commands::error::{AppError, AppResult};
+
 /// Ensure the woff2 for `family` at `weight` is cached under
 /// `app_data/fonts/`, downloading it from Google Fonts on first use. Returns the
 /// local file path.
 #[tauri::command]
-pub async fn ensure_google_font(
-    app: AppHandle,
-    family: String,
-    weight: u32,
-) -> Result<String, String> {
+pub async fn ensure_google_font(app: AppHandle, family: String, weight: u32) -> AppResult<String> {
     let dir = app
         .path()
         .app_data_dir()
-        .map_err(|e| format!("app_data_dir unavailable: {e}"))?
+        .map_err(|e| AppError::msg(format!("app_data_dir unavailable: {e}")))?
         .join("fonts");
     let safe: String = family
         .chars()
@@ -41,7 +39,7 @@ pub async fn ensure_google_font(
              (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         )
         .build()
-        .map_err(|e| format!("client: {e}"))?;
+        .map_err(|e| AppError::msg(format!("client: {e}")))?;
 
     let css_url = format!(
         "https://fonts.googleapis.com/css2?family={}:wght@{weight}&display=swap",
@@ -51,15 +49,15 @@ pub async fn ensure_google_font(
         .get(&css_url)
         .send()
         .await
-        .map_err(|e| format!("font css request: {e}"))?
+        .map_err(|e| AppError::msg(format!("font css request: {e}")))?
         .error_for_status()
-        .map_err(|e| format!("font css http: {e}"))?
+        .map_err(|e| AppError::msg(format!("font css http: {e}")))?
         .text()
         .await
-        .map_err(|e| format!("font css body: {e}"))?;
+        .map_err(|e| AppError::msg(format!("font css body: {e}")))?;
 
     let woff2 = extract_font_url(&css, ".woff2")
-        .ok_or_else(|| format!("no woff2 URL for '{family}' in Google Fonts CSS"))?;
+        .ok_or_else(|| AppError::msg(format!("no woff2 URL for '{family}' in Google Fonts CSS")))?;
 
     crate::transcription::download_file(&client, &woff2, None, &dest, |_, _| {}).await?;
     Ok(dest.to_string_lossy().to_string())
@@ -127,4 +125,48 @@ fn extract_font_url(css: &str, ext: &str) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_font_url;
+
+    #[test]
+    fn extract_font_url_returns_first_matching_extension() {
+        let css = "src: url(https://fonts.gstatic.com/s/a/v1/x.woff2) format('woff2');";
+        assert_eq!(
+            extract_font_url(css, ".woff2").as_deref(),
+            Some("https://fonts.gstatic.com/s/a/v1/x.woff2")
+        );
+    }
+
+    #[test]
+    fn extract_font_url_skips_other_extensions_to_the_requested_one() {
+        // A css2 body can carry several formats; the picker must match on `ext`,
+        // not just take the first url().
+        let css = "src: url(https://x/a.woff2) format('woff2'), \
+                   url(https://x/a.ttf) format('truetype');";
+        assert_eq!(
+            extract_font_url(css, ".ttf").as_deref(),
+            Some("https://x/a.ttf")
+        );
+    }
+
+    #[test]
+    fn extract_font_url_is_none_when_absent() {
+        assert_eq!(extract_font_url("no urls here", ".woff2"), None);
+        assert_eq!(
+            extract_font_url("src: url(https://x/a.woff2);", ".ttf"),
+            None
+        );
+    }
+
+    #[test]
+    fn extract_font_url_strips_surrounding_quotes() {
+        let css = "src: url(\"https://x/a.ttf\") format('truetype');";
+        assert_eq!(
+            extract_font_url(css, ".ttf").as_deref(),
+            Some("https://x/a.ttf")
+        );
+    }
 }

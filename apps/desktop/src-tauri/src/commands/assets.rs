@@ -7,6 +7,8 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+use super::error::{AppError, AppResult};
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AssetEntry {
@@ -185,7 +187,7 @@ fn hydrate_from_lock(dir: &Path) -> Vec<HydratedAsset> {
 /// (full-res + thumb) are already on disk. Call at startup before attempting
 /// a network install so the UI can hydrate from cache even when offline.
 #[tauri::command]
-pub fn hydrate_cached_assets(app: AppHandle) -> Result<Vec<HydratedAsset>, String> {
+pub fn hydrate_cached_assets(app: AppHandle) -> AppResult<Vec<HydratedAsset>> {
     let dir = assets_dir(&app)?;
     Ok(hydrate_from_lock(&dir))
 }
@@ -194,27 +196,27 @@ pub fn hydrate_cached_assets(app: AppHandle) -> Result<Vec<HydratedAsset>, Strin
 pub async fn ensure_assets_installed(
     app: AppHandle,
     manifest_url: String,
-) -> Result<AssetInstallResult, String> {
+) -> AppResult<AssetInstallResult> {
     let dir = assets_dir(&app)?;
     fs::create_dir_all(&dir)
         .await
-        .map_err(|e| format!("create dir: {e}"))?;
+        .map_err(|e| AppError::msg(format!("create dir: {e}")))?;
 
     let client = reqwest::Client::builder()
         .user_agent("recast-desktop")
         .build()
-        .map_err(|e| format!("client: {e}"))?;
+        .map_err(|e| AppError::msg(format!("client: {e}")))?;
 
     let manifest: Manifest = client
         .get(&manifest_url)
         .send()
         .await
-        .map_err(|e| format!("manifest request: {e}"))?
+        .map_err(|e| AppError::msg(format!("manifest request: {e}")))?
         .error_for_status()
-        .map_err(|e| format!("manifest http: {e}"))?
+        .map_err(|e| AppError::msg(format!("manifest http: {e}")))?
         .json()
         .await
-        .map_err(|e| format!("manifest parse: {e}"))?;
+        .map_err(|e| AppError::msg(format!("manifest parse: {e}")))?;
 
     let mut result = AssetInstallResult {
         cache_dir: dir.to_string_lossy().to_string(),

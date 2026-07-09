@@ -5004,6 +5004,7 @@ dependencies = [
  "tauri-plugin-sharekit",
  "tauri-plugin-single-instance",
  "tauri-plugin-updater",
+ "thiserror 2.0.18",
  "tokio",
  "tract-onnx",
  "transcribe-rs",

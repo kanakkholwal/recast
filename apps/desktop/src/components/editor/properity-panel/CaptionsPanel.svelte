@@ -57,7 +57,6 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
-  import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
@@ -134,22 +133,6 @@
     captionCapabilities()
       .then((c) => (caps = c))
       .catch(() => {});
-    const unDownload = listen<{
-      modelId: string;
-      file: string;
-      downloaded: number;
-      total: number;
-    }>("captions:download-progress", (e) => {
-      if (e.payload.modelId !== downloadingId) return;
-      downloadPct = downloadProgressPct(e.payload.downloaded, e.payload.total);
-    });
-    const unPhase = listen<{ phase: string }>("captions:transcribe-progress", (e) => {
-      phase = e.payload.phase;
-    });
-    return () => {
-      void unDownload.then((f) => f());
-      void unPhase.then((f) => f());
-    };
   });
 
   function pick(id: string) {
@@ -161,7 +144,10 @@
     downloadingId = id;
     downloadPct = 0;
     try {
-      await downloadCaptionModel(id);
+      // Progress is scoped to this download's channel — no model-id filtering.
+      await downloadCaptionModel(id, (p) => {
+        downloadPct = downloadProgressPct(p.downloaded, p.total);
+      });
       toast.success("Model downloaded");
       await refresh();
     } catch (e) {
@@ -190,6 +176,9 @@
         audioPath: store.audioPath,
         microphonePath: store.microphonePath,
         modelId: selected.id,
+        onPhase: (p) => {
+          phase = p.phase;
+        },
       });
     } catch (e) {
       error = `${e}`;

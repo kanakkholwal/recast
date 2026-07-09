@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::auth::{cloud_api_url, current_session_token, user_agent};
+use super::error::{AppError, AppResult};
 
 // ──────────────────────────────────────────────────────────────────────────
 // HTTP helper (shared base + authed client, reused from the auth module)
@@ -253,7 +254,7 @@ pub async fn recast_cloud_upload(
     // Output-time transcript to publish as a selectable caption track. None /
     // empty → no track uploaded. Serialized to VTT here.
     captions_transcript: Option<crate::transcription::Transcript>,
-) -> Result<CloudShareResult, String> {
+) -> AppResult<CloudShareResult> {
     let token = token_or_err().map_err(|e| fail(&app, &path, e))?;
     let client = cloud_client().map_err(|e| fail(&app, &path, e))?;
     let base = cloud_api_url();
@@ -316,11 +317,7 @@ pub async fn recast_cloud_upload(
     if !init_resp.status().is_success() {
         let status = init_resp.status();
         let body = init_resp.text().await.unwrap_or_default();
-        return Err(fail(
-            &app,
-            &path,
-            humanize_init_error(status.as_u16(), &body),
-        ));
+        return Err(fail(&app, &path, humanize_init_error(status.as_u16(), &body)).into());
     }
 
     let init: InitResp = init_resp
@@ -333,7 +330,8 @@ pub async fn recast_cloud_upload(
             &app,
             &path,
             "This storage provider isn't supported by the desktop uploader yet.".into(),
-        ));
+        )
+        .into());
     }
 
     // ── PUT the file ──────────────────────────────────────────────────
@@ -407,7 +405,7 @@ pub async fn recast_cloud_upload(
         .map_err(|e| fail(&app, &path, format!("Upload failed: {e}")))?;
     if !put_resp.status().is_success() {
         let status = put_resp.status();
-        return Err(fail(&app, &path, format!("Upload rejected ({status}).")));
+        return Err(fail(&app, &path, format!("Upload rejected ({status}).")).into());
     }
 
     // ── PUT the poster (best-effort) ────────────────────────────────────
@@ -481,11 +479,7 @@ pub async fn recast_cloud_upload(
     if !complete_resp.status().is_success() {
         let status = complete_resp.status();
         let body = complete_resp.text().await.unwrap_or_default();
-        return Err(fail(
-            &app,
-            &path,
-            humanize_complete_error(status.as_u16(), &body),
-        ));
+        return Err(fail(&app, &path, humanize_complete_error(status.as_u16(), &body)).into());
     }
 
     // ── share (public link) ───────────────────────────────────────────
@@ -505,7 +499,8 @@ pub async fn recast_cloud_upload(
             &app,
             &path,
             format!("Creating share link failed ({status}): {body}"),
-        ));
+        )
+        .into());
     }
 
     let share: ShareResp = share_resp
@@ -553,7 +548,7 @@ pub async fn recast_cloud_update_share(
     visibility: Option<String>,
     password: Option<String>,
     expires_at: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -565,7 +560,7 @@ pub async fn recast_cloud_update_share(
             "public" => "public",
             "workspace" | "team" => "team",
             "private" => "private",
-            other => return Err(format!("Unknown visibility: {other}")),
+            other => return Err(AppError::msg(format!("Unknown visibility: {other}"))),
         };
         let resp = client
             .patch(format!("{base}/api/share/{slug}/access"))
@@ -573,11 +568,13 @@ pub async fn recast_cloud_update_share(
             .json(&serde_json::json!({ "visibility": mapped }))
             .send()
             .await
-            .map_err(|e| format!("Updating visibility failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("Updating visibility failed: {e}")))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Updating visibility failed ({status}): {body}"));
+            return Err(AppError::msg(format!(
+                "Updating visibility failed ({status}): {body}"
+            )));
         }
     }
 
@@ -611,11 +608,13 @@ pub async fn recast_cloud_update_share(
             .json(&settings)
             .send()
             .await
-            .map_err(|e| format!("Updating share settings failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("Updating share settings failed: {e}")))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Updating share settings failed ({status}): {body}"));
+            return Err(AppError::msg(format!(
+                "Updating share settings failed ({status}): {body}"
+            )));
         }
     }
 
@@ -630,7 +629,7 @@ pub async fn recast_cloud_delete(
     app: AppHandle,
     recast_id: String,
     path: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -640,13 +639,15 @@ pub async fn recast_cloud_delete(
         .header(header::AUTHORIZATION, bearer(&token))
         .send()
         .await
-        .map_err(|e| format!("Deleting cloud copy failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("Deleting cloud copy failed: {e}")))?;
 
     // 404 = already gone; treat as success so the local manifest can heal.
     if !resp.status().is_success() && resp.status().as_u16() != 404 {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Deleting cloud copy failed ({status}): {body}"));
+        return Err(AppError::msg(format!(
+            "Deleting cloud copy failed ({status}): {body}"
+        )));
     }
 
     if let Some(p) = path {
@@ -660,7 +661,7 @@ pub async fn recast_cloud_delete(
 /// List the shares for a recast (owner-only). Returned verbatim as JSON so
 /// the manage UI can render whatever the server provides.
 #[tauri::command]
-pub async fn recast_cloud_list_shares(recast_id: String) -> Result<serde_json::Value, String> {
+pub async fn recast_cloud_list_shares(recast_id: String) -> AppResult<serde_json::Value> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -670,15 +671,17 @@ pub async fn recast_cloud_list_shares(recast_id: String) -> Result<serde_json::V
         .header(header::AUTHORIZATION, bearer(&token))
         .send()
         .await
-        .map_err(|e| format!("Listing shares failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("Listing shares failed: {e}")))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Listing shares failed ({status}): {body}"));
+        return Err(AppError::msg(format!(
+            "Listing shares failed ({status}): {body}"
+        )));
     }
     resp.json()
         .await
-        .map_err(|e| format!("Share list parse failed: {e}"))
+        .map_err(|e| AppError::msg(format!("Share list parse failed: {e}")))
 }
 
 /// All locally-recorded cloud uploads, keyed by local export path.
@@ -700,10 +703,10 @@ pub async fn recast_cloud_list_uploads(app: AppHandle) -> HashMap<String, CloudU
 /// for the same reason as `recast_cloud_list_uploads`: keep the manifest
 /// read-modify-write off the UI thread.
 #[tauri::command]
-pub async fn recast_cloud_forget_upload(app: AppHandle, path: String) -> Result<(), String> {
+pub async fn recast_cloud_forget_upload(app: AppHandle, path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || forget_path(&app, &path))
         .await
-        .map_err(|e| format!("Forgetting upload failed: {e}"))
+        .map_err(|e| AppError::msg(format!("Forgetting upload failed: {e}")))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -750,5 +753,67 @@ fn humanize_complete_error(status: u16, body: &str) -> String {
             "Your plan caps cloud sharing at 720p. Export at 720p, or upgrade for HD.".into()
         }
         _ => format!("Finalize failed ({status})."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bearer_prefixes_the_token() {
+        assert_eq!(bearer("abc123"), "Bearer abc123");
+    }
+
+    #[test]
+    fn reason_of_reads_top_level_reason() {
+        assert_eq!(
+            reason_of(r#"{"reason":"storage_over_cap"}"#).as_deref(),
+            Some("storage_over_cap"),
+        );
+    }
+
+    #[test]
+    fn reason_of_reads_nested_denial_reason() {
+        assert_eq!(
+            reason_of(r#"{"denial":{"reason":"duration_over_cap"}}"#).as_deref(),
+            Some("duration_over_cap"),
+        );
+    }
+
+    #[test]
+    fn reason_of_returns_none_for_non_json_or_missing_reason() {
+        assert_eq!(reason_of("not json at all"), None);
+        assert_eq!(reason_of(r#"{"foo":"bar"}"#), None);
+    }
+
+    #[test]
+    fn humanize_init_error_prefers_reason_over_status() {
+        assert_eq!(
+            humanize_init_error(500, r#"{"reason":"storage_over_cap"}"#),
+            "You're out of cloud storage. Upgrade or free up space.",
+        );
+    }
+
+    #[test]
+    fn humanize_init_error_falls_back_to_status() {
+        assert_eq!(
+            humanize_init_error(401, "{}"),
+            "Your Recast Cloud session expired. Sign in again.",
+        );
+        assert_eq!(
+            humanize_init_error(403, "{}"),
+            "You don't have access to that workspace.",
+        );
+        assert_eq!(humanize_init_error(500, "{}"), "Upload init failed (500).");
+    }
+
+    #[test]
+    fn humanize_complete_error_maps_reason_and_status() {
+        assert_eq!(
+            humanize_complete_error(200, r#"{"reason":"upload_missing"}"#),
+            "The upload didn't arrive — please try again.",
+        );
+        assert_eq!(humanize_complete_error(500, "{}"), "Finalize failed (500).");
     }
 }
