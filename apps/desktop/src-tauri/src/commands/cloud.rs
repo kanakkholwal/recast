@@ -15,10 +15,11 @@
 //!   5. POST /api/recasts/{id}/share { visibility: "public" } → share link.
 //!
 //! Auth reuses the device-flow bearer token from `auth.rs` (OS keyring) —
-//! the frontend never sees the raw token. Progress is emitted as coarse
-//! phase events (`recast-cloud:progress|complete|error`); the long-running
-//! granular progress is the export step, which has its own `export-state`
-//! events.
+//! the frontend never sees the raw token. Live progress (coarse phase + PUT
+//! byte counts) streams on the command's request-scoped `on_event` channel;
+//! success is the resolved `CloudShareResult`, and failure additionally fires
+//! a detached `recast-cloud:error` event for corner notifications. The
+//! long-running granular progress is the export step (its own `export-state`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,7 +27,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 
 use super::auth::{cloud_api_url, current_session_token, user_agent};
 use super::error::{AppError, AppResult};
@@ -162,28 +163,26 @@ fn now_unix() -> u64 {
 // Events
 // ──────────────────────────────────────────────────────────────────────────
 
+/// Live progress for an in-flight upload, streamed on the per-call `on_event`
+/// channel (one channel per upload → no path correlation). Terminal
+/// success/failure aren't repeated here: success rides the command's resolved
+/// `CloudShareResult`, failure its rejection (plus the `recast-cloud:error`
+/// broadcast below, for detached corner notifications).
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct CloudProgress<'a> {
-    path: &'a str,
-    /// "preparing" | "uploading" | "finalizing" | "sharing"
-    phase: &'a str,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum CloudUploadEvent {
+    /// Coarse phase: preparing | uploading | finalizing | sharing.
+    Phase { phase: String },
+    /// Cumulative bytes handed to the transport during the file PUT — drives the
+    /// determinate bar (mirrors Google Drive's byte progress).
+    #[serde(rename_all = "camelCase")]
+    Progress { bytes_sent: u64, total_bytes: u64 },
 }
 
-fn emit_progress(app: &AppHandle, path: &str, phase: &str) {
-    let _ = app.emit("recast-cloud:progress", CloudProgress { path, phase });
-}
-
-/// Byte-level progress for the long-running PUT, so the share card can render a
-/// determinate bar instead of an indeterminate pulse (mirrors Google Drive's
-/// `gdrive:progress`). Keyed by the local file path, like every other
-/// `recast-cloud:*` event.
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct CloudUploadProgress<'a> {
-    path: &'a str,
-    bytes_sent: u64,
-    total_bytes: u64,
+fn send_phase(on_event: &Channel<CloudUploadEvent>, phase: &str) {
+    let _ = on_event.send(CloudUploadEvent::Phase {
+        phase: phase.to_string(),
+    });
 }
 
 /// Emit a failure event AND return the message, so the awaiting promise and
@@ -254,12 +253,13 @@ pub async fn recast_cloud_upload(
     // Output-time transcript to publish as a selectable caption track. None /
     // empty → no track uploaded. Serialized to VTT here.
     captions_transcript: Option<crate::transcription::Transcript>,
+    on_event: Channel<CloudUploadEvent>,
 ) -> AppResult<CloudShareResult> {
     let token = token_or_err().map_err(|e| fail(&app, &path, e))?;
     let client = cloud_client().map_err(|e| fail(&app, &path, e))?;
     let base = cloud_api_url();
 
-    emit_progress(&app, &path, "preparing");
+    send_phase(&on_event, "preparing");
 
     // Probe the exported MP4 for the real dimensions / duration / size. This
     // is authoritative; we don't trust caller-supplied numbers.
@@ -341,21 +341,17 @@ pub async fn recast_cloud_upload(
     // otherwise defaults to `Transfer-Encoding: chunked`. Free uploads are
     // 720p-capped (~150 MB), comfortably in RAM; only one ~1 MiB chunk is
     // copied out of the buffer at a time.
-    emit_progress(&app, &path, "uploading");
+    send_phase(&on_event, "uploading");
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|e| fail(&app, &path, format!("Couldn't read export file: {e}")))?;
     let total_bytes = bytes.len() as u64;
 
     // Surface the bar at 0% before the first chunk flushes.
-    let _ = app.emit(
-        "recast-cloud:upload-progress",
-        CloudUploadProgress {
-            path: &path,
-            bytes_sent: 0,
-            total_bytes,
-        },
-    );
+    let _ = on_event.send(CloudUploadEvent::Progress {
+        bytes_sent: 0,
+        total_bytes,
+    });
 
     let envelope_headers = init.upload.headers.unwrap_or_default();
     let has_content_type = envelope_headers
@@ -363,27 +359,21 @@ pub async fn recast_cloud_upload(
         .any(|k| k.eq_ignore_ascii_case("content-type"));
 
     const PUT_CHUNK_SIZE: usize = 1024 * 1024; // 1 MiB → smooth bar, bounded event count
-    let progress_app = app.clone();
-    let progress_path = path.clone();
+    let progress_channel = on_event.clone();
     let body_stream = futures_util::stream::unfold((bytes, 0usize), move |(buf, offset)| {
-        let progress_app = progress_app.clone();
-        let progress_path = progress_path.clone();
+        let progress_channel = progress_channel.clone();
         async move {
             if offset >= buf.len() {
                 return None;
             }
             let end = (offset + PUT_CHUNK_SIZE).min(buf.len());
             let chunk = buf[offset..end].to_vec();
-            // Cumulative bytes handed to the transport, keyed by local path
-            // to match the store's `uploads` map.
-            let _ = progress_app.emit(
-                "recast-cloud:upload-progress",
-                CloudUploadProgress {
-                    path: &progress_path,
-                    bytes_sent: end as u64,
-                    total_bytes,
-                },
-            );
+            // Cumulative bytes handed to the transport. The channel is scoped to
+            // this upload, so no path key is needed to correlate on the client.
+            let _ = progress_channel.send(CloudUploadEvent::Progress {
+                bytes_sent: end as u64,
+                total_bytes,
+            });
             Some((Ok::<Vec<u8>, std::io::Error>(chunk), (buf, end)))
         }
     });
@@ -459,7 +449,7 @@ pub async fn recast_cloud_upload(
     }
 
     // ── complete ──────────────────────────────────────────────────────
-    emit_progress(&app, &path, "finalizing");
+    send_phase(&on_event, "finalizing");
     let complete_resp = client
         .post(format!("{base}/api/uploads/complete"))
         .header(header::AUTHORIZATION, bearer(&token))
@@ -483,7 +473,7 @@ pub async fn recast_cloud_upload(
     }
 
     // ── share (public link) ───────────────────────────────────────────
-    emit_progress(&app, &path, "sharing");
+    send_phase(&on_event, "sharing");
     let share_resp = client
         .post(format!("{base}/api/recasts/{}/share", init.recast_id))
         .header(header::AUTHORIZATION, bearer(&token))
@@ -523,16 +513,6 @@ pub async fn recast_cloud_upload(
             share_url: result.share_url.clone(),
             uploaded_at: now_unix(),
         },
-    );
-
-    let _ = app.emit(
-        "recast-cloud:complete",
-        serde_json::json!({
-            "path": path,
-            "recastId": result.recast_id,
-            "slug": result.slug,
-            "shareUrl": result.share_url,
-        }),
     );
 
     Ok(result)

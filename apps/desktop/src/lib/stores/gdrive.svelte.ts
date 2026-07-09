@@ -42,7 +42,7 @@ function createGdriveStore() {
 	/**
 	 * History of completed uploads, indexed by local file path. Hydrated
 	 * from disk on `init()` via `gdrive_list_uploads`, and incrementally
-	 * updated when `gdrive:upload-complete` fires. Drives the exports
+	 * updated when an `upload()` call resolves. Drives the exports
 	 * list dropdown ("Upload to Drive" vs. "Copy link / Re-upload").
 	 */
 	const uploadHistory = $state<Record<string, GdriveUploadRecord>>({});
@@ -63,40 +63,10 @@ function createGdriveStore() {
 				connecting = false;
 			},
 		);
-		await listen<{
-			uploadId: string;
-			bytesSent: number;
-			totalBytes: number;
-		}>("gdrive:progress", ({ payload }) => {
-			const existing = uploads[payload.uploadId];
-			if (!existing) return;
-			uploads[payload.uploadId] = {
-				...existing,
-				bytesSent: payload.bytesSent,
-				totalBytes: payload.totalBytes,
-			};
-		});
-		await listen<
-			{ uploadId: string; sourcePath: string } & GdriveUploadResult
-		>("gdrive:upload-complete", ({ payload }) => {
-			const existing = uploads[payload.uploadId];
-			if (existing) {
-				uploads[payload.uploadId] = {
-					...existing,
-					status: "complete",
-					bytesSent: existing.totalBytes || existing.bytesSent,
-					webViewLink: payload.webViewLink,
-				};
-			}
-			// Merge into history so the exports list flips its action without a
-			// disk roundtrip. Re-uploads overwrite the prior entry.
-			uploadHistory[payload.sourcePath] = {
-				fileId: payload.fileId,
-				name: payload.name,
-				webViewLink: payload.webViewLink,
-				uploadedAt: Math.floor(Date.now() / 1000),
-			};
-		});
+		// Byte progress now streams on each upload's own channel (see `upload`),
+		// and success rides the resolved `gdriveUpload` promise. Only `connected`
+		// (a connection broadcast) and `upload-error` (carries the cancelled/failed
+		// distinction, and backs up the corner card) stay as global events.
 		await listen<{ uploadId: string; message: string; cancelled: boolean }>(
 			"gdrive:upload-error",
 			({ payload }) => {
@@ -188,10 +158,37 @@ function createGdriveStore() {
 			status: "uploading",
 		};
 		try {
-			return await gdriveUpload(path, uploadId);
+			// Byte progress rides this upload's own channel.
+			const result = await gdriveUpload(path, uploadId, (p) => {
+				const existing = uploads[uploadId];
+				if (!existing) return;
+				uploads[uploadId] = {
+					...existing,
+					bytesSent: p.bytesSent,
+					totalBytes: p.totalBytes,
+				};
+			});
+			// Success is the resolved result (the data the old `upload-complete`
+			// event carried), so update the card + history here.
+			const existing = uploads[uploadId];
+			if (existing) {
+				uploads[uploadId] = {
+					...existing,
+					status: "complete",
+					bytesSent: existing.totalBytes || existing.bytesSent,
+					webViewLink: result.webViewLink,
+				};
+			}
+			uploadHistory[path] = {
+				fileId: result.fileId,
+				name: result.name,
+				webViewLink: result.webViewLink,
+				uploadedAt: Math.floor(Date.now() / 1000),
+			};
+			return result;
 		} catch (e) {
-			// Rust already emitted `gdrive:upload-error` for the card; re-throw
-			// for callers that await (e.g. inline error toasts).
+			// Rust also fires a detached `gdrive:upload-error` (with the
+			// cancelled/failed flag) for the card; re-throw for awaiting callers.
 			throw e;
 		}
 	}

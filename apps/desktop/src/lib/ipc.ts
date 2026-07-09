@@ -364,13 +364,23 @@ export interface CloudUploadRecord {
 	uploadedAt: number;
 }
 
+/** Live progress for an in-flight cloud upload, streamed on the request-scoped
+ *  channel. Terminal states aren't here: success is the resolved
+ *  {@link CloudShareResult}, failure the rejection. */
+export type CloudUploadEvent =
+	| { kind: "phase"; phase: CloudPhase }
+	| { kind: "progress"; bytesSent: number; totalBytes: number };
+
+/** Phase strings the upload streams, in order. */
+export type CloudPhase = "preparing" | "uploading" | "finalizing" | "sharing";
+
 /**
  * Upload an already-exported MP4 to Recast Cloud and create a public share
  * link. The caller runs `exportVideo` first; `workspaceId` comes from the
- * desktop profile's `defaultWorkspaceId`. Emits `recast-cloud:progress`
- * (coarse phase), `recast-cloud:upload-progress` (`{ bytesSent, totalBytes }`
- * during the file PUT), `recast-cloud:complete`, and `recast-cloud:error` —
- * all keyed by `path`.
+ * desktop profile's `defaultWorkspaceId`. Progress (coarse phase + byte
+ * counts during the PUT) streams on a request-scoped channel — no path
+ * correlation. Resolves with the share result; rejects on failure (a detached
+ * `recast-cloud:error` event still fires for corner notifications).
  */
 export function recastCloudUpload(
 	path: string,
@@ -378,12 +388,16 @@ export function recastCloudUpload(
 	workspaceId?: string,
 	/** Output-time transcript to publish as a selectable caption track. */
 	captionsTranscript?: Transcript | null,
+	onEvent?: (e: CloudUploadEvent) => void,
 ): Promise<CloudShareResult> {
+	const channel = new Channel<CloudUploadEvent>();
+	if (onEvent) channel.onmessage = onEvent;
 	return invoke<CloudShareResult>("recast_cloud_upload", {
 		path,
 		title,
 		workspaceId,
 		captionsTranscript: captionsTranscript ?? null,
+		onEvent: channel,
 	});
 }
 
@@ -1281,8 +1295,27 @@ export function gdriveDisconnect(): Promise<void> {
 	return invoke<void>("gdrive_disconnect");
 }
 
-export function gdriveUpload(path: string, uploadId: string): Promise<GdriveUploadResult> {
-	return invoke<GdriveUploadResult>("gdrive_upload", { path, uploadId });
+/** Byte progress for an in-flight Drive upload, streamed on the request-scoped
+ *  channel (one per upload → no id to correlate). */
+export interface GdriveUploadProgress {
+	bytesSent: number;
+	totalBytes: number;
+}
+
+/**
+ * Upload an exported file to Drive. Byte progress streams on a request-scoped
+ * channel (`onProgress`); success is the resolved {@link GdriveUploadResult},
+ * failure the rejection (plus a detached `gdrive:upload-error` event carrying
+ * the cancelled/failed distinction for the corner card).
+ */
+export function gdriveUpload(
+	path: string,
+	uploadId: string,
+	onProgress?: (p: GdriveUploadProgress) => void,
+): Promise<GdriveUploadResult> {
+	const channel = new Channel<GdriveUploadProgress>();
+	if (onProgress) channel.onmessage = onProgress;
+	return invoke<GdriveUploadResult>("gdrive_upload", { path, uploadId, onProgress: channel });
 }
 
 export function gdriveCancelUpload(uploadId: string): Promise<void> {

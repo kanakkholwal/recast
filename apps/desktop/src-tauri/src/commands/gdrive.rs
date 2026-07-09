@@ -36,7 +36,7 @@ use rand::Rng;
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
 
@@ -934,37 +934,30 @@ pub struct GdriveUploadResult {
     pub web_view_link: Option<String>,
 }
 
+/// Byte progress for an in-flight Drive upload, streamed on the command's
+/// request-scoped `on_progress` channel. Scoped per upload, so — unlike the old
+/// `gdrive:progress` broadcast — it carries no upload id to correlate on.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct UploadCompleteEvent<'a> {
-    upload_id: &'a str,
-    /// Source path on this machine. The frontend uses this to index the
-    /// upload-history map so the exports list can flip its menu state
-    /// based on whether this exact file was previously uploaded.
-    source_path: &'a str,
-    #[serde(flatten)]
-    result: &'a GdriveUploadResult,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct UploadProgressEvent<'a> {
-    upload_id: &'a str,
+pub(crate) struct GdriveUploadProgress {
     bytes_sent: u64,
     total_bytes: u64,
 }
 
-/// Resumable upload of `path` into the `/Recast/` folder. Streams the file
-/// in chunks, emits `gdrive:progress` events between chunks, and honors a
-/// cancel flag the frontend can flip via `gdrive_cancel_upload`.
+/// Resumable upload of `path` into the `/Recast/` folder. Streams the file in
+/// chunks, sending byte progress on the `on_progress` channel between chunks,
+/// and honors a cancel flag the frontend can flip via `gdrive_cancel_upload`.
+/// Resolves with the Drive file result; a detached `gdrive:upload-error` event
+/// still fires on failure (with the cancelled flag) for the corner card.
 #[tauri::command]
 pub async fn gdrive_upload(
     app: AppHandle,
     path: String,
     upload_id: String,
+    on_progress: Channel<GdriveUploadProgress>,
 ) -> AppResult<GdriveUploadResult> {
     let cancel = upload_cancel_flag(&upload_id);
-    let result = gdrive_upload_inner(&app, &path, &upload_id, cancel.clone()).await;
+    let result = gdrive_upload_inner(&on_progress, &path, cancel.clone()).await;
     drop_upload_cancel_flag(&upload_id);
     match &result {
         Ok(payload) => {
@@ -987,15 +980,8 @@ pub async fn gdrive_upload(
                     uploaded_at,
                 },
             );
-
-            let _ = app.emit(
-                "gdrive:upload-complete",
-                UploadCompleteEvent {
-                    upload_id: upload_id.as_str(),
-                    source_path: path.as_str(),
-                    result: payload,
-                },
-            );
+            // Success is the resolved `GdriveUploadResult`; the store updates its
+            // card + history from that, so no separate `upload-complete` event.
         }
         Err(err) => {
             let cancelled = cancel.load(Ordering::Relaxed);
@@ -1013,9 +999,8 @@ pub async fn gdrive_upload(
 }
 
 async fn gdrive_upload_inner(
-    app: &AppHandle,
+    on_progress: &Channel<GdriveUploadProgress>,
     path: &str,
-    upload_id: &str,
     cancel: Arc<AtomicBool>,
 ) -> Result<GdriveUploadResult, String> {
     let file_path = PathBuf::from(path);
@@ -1112,14 +1097,10 @@ async fn gdrive_upload_inner(
                 .await
                 .map_err(|e| format!("final response parse failed: {e}"))?;
             bytes_sent += n as u64;
-            let _ = app.emit(
-                "gdrive:progress",
-                UploadProgressEvent {
-                    upload_id,
-                    bytes_sent,
-                    total_bytes,
-                },
-            );
+            let _ = on_progress.send(GdriveUploadProgress {
+                bytes_sent,
+                total_bytes,
+            });
             let file_id = body
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -1145,14 +1126,10 @@ async fn gdrive_upload_inner(
             // confirms received; on a fresh start that's exactly the
             // chunk we just sent, so this is a sanity-check no-op.
             bytes_sent += n as u64;
-            let _ = app.emit(
-                "gdrive:progress",
-                UploadProgressEvent {
-                    upload_id,
-                    bytes_sent,
-                    total_bytes,
-                },
-            );
+            let _ = on_progress.send(GdriveUploadProgress {
+                bytes_sent,
+                total_bytes,
+            });
             continue;
         }
         let body = resp.text().await.unwrap_or_default();
@@ -1168,7 +1145,7 @@ pub fn gdrive_cancel_upload(upload_id: String) {
 /// Returns the local upload history — a map of `localPath -> UploadRecord`
 /// for every export the user has uploaded from this machine. Cheap (single
 /// JSON file read); the frontend caches the result in a Svelte store and
-/// merges in new entries as `gdrive:upload-complete` events fire.
+/// merges in new entries as each `gdrive_upload` call resolves.
 #[tauri::command]
 pub fn gdrive_list_uploads(app: AppHandle) -> HashMap<String, UploadRecord> {
     read_manifest(&app)

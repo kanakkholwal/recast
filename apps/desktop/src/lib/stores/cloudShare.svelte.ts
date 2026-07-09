@@ -95,55 +95,16 @@ function createCloudShareStore() {
 	let initialized = $state(false);
 	let listenersAttached = false;
 
+	// Only the terminal error stays a global broadcast — it's a detached corner
+	// notification, and the `share()` catch already covers the awaited path.
+	// Live progress now streams on each upload's own channel (see `share`), and
+	// success comes back on the resolved `recastCloudUpload` promise.
 	async function attachListeners() {
 		if (listenersAttached) return;
 		if (!(await isTauriApp())) return;
 		listenersAttached = true;
 		const { listen } = await import("@tauri-apps/api/event");
 
-		await listen<{ path: string; phase: CloudPhase }>(
-			"recast-cloud:progress",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (!existing) return;
-				uploads[payload.path] = { ...existing, phase: payload.phase, status: "uploading" };
-			},
-		);
-		// Byte-level progress during the upload PUT — drives the determinate bar.
-		await listen<{ path: string; bytesSent: number; totalBytes: number }>(
-			"recast-cloud:upload-progress",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (!existing) return;
-				uploads[payload.path] = {
-					...existing,
-					bytesSent: payload.bytesSent,
-					totalBytes: payload.totalBytes,
-					phase: "uploading",
-					status: "uploading",
-				};
-			},
-		);
-		await listen<{ path: string; recastId: string; slug: string; shareUrl: string }>(
-			"recast-cloud:complete",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (existing) {
-					uploads[payload.path] = {
-						...existing,
-						status: "complete",
-						phase: "sharing",
-						shareUrl: payload.shareUrl,
-					};
-				}
-				uploadHistory[payload.path] = {
-					recastId: payload.recastId,
-					slug: payload.slug,
-					shareUrl: payload.shareUrl,
-					uploadedAt: Math.floor(Date.now() / 1000),
-				};
-			},
-		);
 		await listen<{ path: string; message: string }>(
 			"recast-cloud:error",
 			({ payload }) => {
@@ -249,10 +210,43 @@ function createCloudShareStore() {
 		// lets Rust fall back to the server profile's defaultWorkspaceId.
 		const target = workspaceId ?? resolveActiveWorkspaceId() ?? undefined;
 		try {
-			return await recastCloudUpload(path, title, target, captionsTranscript);
+			// Progress rides this upload's own channel — phase + byte counts.
+			const result = await recastCloudUpload(path, title, target, captionsTranscript, (e) => {
+				const existing = uploads[path];
+				if (!existing) return;
+				if (e.kind === "phase") {
+					uploads[path] = { ...existing, phase: e.phase, status: "uploading" };
+				} else {
+					uploads[path] = {
+						...existing,
+						bytesSent: e.bytesSent,
+						totalBytes: e.totalBytes,
+						phase: "uploading",
+						status: "uploading",
+					};
+				}
+			});
+			// Success is the resolved result (identical data the old
+			// `recast-cloud:complete` event carried), so update the card + manifest here.
+			const existing = uploads[path];
+			if (existing) {
+				uploads[path] = {
+					...existing,
+					status: "complete",
+					phase: "sharing",
+					shareUrl: result.shareUrl,
+				};
+			}
+			uploadHistory[path] = {
+				recastId: result.recastId,
+				slug: result.slug,
+				shareUrl: result.shareUrl,
+				uploadedAt: Math.floor(Date.now() / 1000),
+			};
+			return result;
 		} catch (e) {
-			// Rust emitted `recast-cloud:error`; ensure the card reflects it even
-			// if the event was missed, then re-throw.
+			// Rust also fires a detached `recast-cloud:error`; ensure the card
+			// reflects the failure even if that event was missed, then re-throw.
 			const existing = uploads[path];
 			if (existing && existing.status !== "error") {
 				uploads[path] = { ...existing, status: "error", error: String(e) };
