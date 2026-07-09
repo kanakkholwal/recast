@@ -423,6 +423,11 @@ pub struct RecordingArtifacts {
     pub recording_path: PathBuf,
     pub cursor_path: PathBuf,
     pub audio_path: PathBuf,
+    /// Whether a real system-audio (loopback) track was captured. False when
+    /// the user disabled system audio — `audio_path` then points at a silent
+    /// fallback WAV, so downstream muxing is unaffected but the project
+    /// metadata reports the track as absent.
+    pub has_system_audio: bool,
     pub microphone_path: Option<PathBuf>,
     pub camera_path: Option<PathBuf>,
     pub camera_overlay: CameraOverlaySettings,
@@ -820,16 +825,26 @@ impl RecordingManager {
             }
         };
 
-        // Start system audio capture. If it fails, log and continue.
-        let audio_session = match AudioCaptureSession::start(AudioCaptureConfig {
-            output_path: audio_path.clone(),
-            pause_flag: pause_flag.clone(),
-        }) {
-            Ok(session) => Some(session),
-            Err(e) => {
-                log::warn!("audio capture unavailable, recording without audio: {e}");
-                None
+        // Start system/loopback audio capture — but only when the user asked
+        // for it. Gating here (mirroring the microphone/camera blocks below) is
+        // what makes the "System audio" toggle real: loopback used to run
+        // unconditionally, so it recorded *everything* on the default output —
+        // including Recast's own editor playback — which is the record-while-
+        // previewing echo. When off, `stop()` falls back to a silent WAV so
+        // downstream muxing still has a track.
+        let audio_session = if options.system_audio {
+            match AudioCaptureSession::start(AudioCaptureConfig {
+                output_path: audio_path.clone(),
+                pause_flag: pause_flag.clone(),
+            }) {
+                Ok(session) => Some(session),
+                Err(e) => {
+                    log::warn!("audio capture unavailable, recording without audio: {e}");
+                    None
+                }
             }
+        } else {
+            None
         };
 
         // Start microphone capture as a separate track.
@@ -915,6 +930,10 @@ impl RecordingManager {
 
         // Stop the system-audio / mic / camera OS sessions regardless of how the
         // threads fared — each reaps its own FFmpeg child / releases its device.
+        // Capture whether a loopback session actually ran before consuming it, so
+        // the project metadata can report system audio honestly (a disabled
+        // toggle writes silence below but must not claim a real track).
+        let has_system_audio = session.audio_session.is_some();
         let audio_stop = session.audio_session.map(|s| s.stop());
         let microphone_stop = session.microphone_session.map(|s| s.stop());
         let camera_stop = session.camera_session.map(|s| s.stop());
@@ -1010,6 +1029,7 @@ impl RecordingManager {
             recording_path: session.recording_path,
             cursor_path: session.cursor_path,
             audio_path,
+            has_system_audio,
             microphone_path,
             camera_path,
             camera_overlay: session.camera_overlay.overlay,
@@ -1277,5 +1297,35 @@ mod scale_tests {
         // Crop stays inside the captured frame.
         assert!(t.crop.x + t.crop.width as i32 <= t.source.x + t.source.width as i32);
         assert!(t.crop.y + t.crop.height as i32 <= t.source.y + t.source.height as i32);
+    }
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    // The panel sends `systemAudio` (camelCase); it must land on `system_audio`
+    // and actually gate loopback in `start()`. This guards the serde bridge that
+    // the record-while-previewing echo fix depends on — if the rename or default
+    // regresses, the toggle silently goes dead again.
+    #[test]
+    fn system_audio_toggle_deserializes_from_camel_case() {
+        let off: RecordingOptions = serde_json::from_str(r#"{"systemAudio": false}"#).unwrap();
+        assert!(
+            !off.system_audio,
+            "systemAudio:false must disable system audio"
+        );
+
+        let on: RecordingOptions = serde_json::from_str(r#"{"systemAudio": true}"#).unwrap();
+        assert!(on.system_audio);
+    }
+
+    #[test]
+    fn system_audio_defaults_on_when_omitted() {
+        // A profile/older client that omits the field keeps the historical
+        // capture-by-default behaviour.
+        let opts: RecordingOptions = serde_json::from_str("{}").unwrap();
+        assert!(opts.system_audio);
+        assert!(RecordingOptions::default().system_audio);
     }
 }

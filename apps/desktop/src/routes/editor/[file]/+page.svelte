@@ -48,6 +48,7 @@
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { AudioTimelineEngine } from "$lib/playback/audio-engine";
+  import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { originalToOutput } from "$lib/timeline/time-map";
   import {
     createTileProvider,
@@ -243,12 +244,21 @@
           }
         }
       }
-      // Cheap drift correction: if audio elements drift > 150ms from video, snap them back.
+      // Drift correction: catch audio up when it falls behind the picture, but
+      // never rewind it to chase a picture that stalled under load — that
+      // replays a slice as a live echo. Picture catch-up is owned by the rAF
+      // sync loop (syncAudioToClock), so here we only nudge lagging audio.
       const videoT = videoEl.currentTime;
       for (const el of [systemAudioEl, micAudioEl]) {
-        if (el && !el.paused && Math.abs(el.currentTime - videoT) > 0.15) {
-          el.currentTime = videoT;
-        }
+        if (!el || el.paused) continue;
+        const action = reconcileAvDrift({
+          audioTime: el.currentTime,
+          pictureTime: videoT,
+          isJump: false,
+          syncThreshold: 0.15,
+          maxLead: AUDIO_MAX_LEAD,
+        });
+        if (action === "resync-audio") el.currentTime = videoT;
       }
     }
   }
@@ -267,12 +277,17 @@
 
   // Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
   // skip the same cuts. Normal playback stays locked at 1×; the only corrections
-  // are one snap per cut boundary and per seek. Steady-state drift past this
-  // threshold hard-seeks audio back; loose enough the ~25Hz publish doesn't thrash.
+  // are one snap per cut boundary and per seek. Audio that falls behind by more
+  // than this is nudged forward; audio that runs ahead of a stalled picture is
+  // NOT rewound (that replays a slice as a live echo) — see reconcileAvDrift.
   const AUDIO_SYNC_THRESHOLD = 0.12;
   // A cut crossing or scrub jumps the playhead far past one publish quantum;
   // detecting it snaps audio exactly on cuts of any length, including short ones.
   const AUDIO_JUMP = 0.12;
+  // How far the audio may lead a stalled picture before we advance the PICTURE
+  // to catch up (a brief visual skip) instead of leaving the gap. Bounds the
+  // lip-sync drift that a decode stall under load would otherwise accumulate.
+  const AUDIO_MAX_LEAD = 0.5;
   let audioSyncRaf: number | null = null;
   let lastAudioTarget = -1;
   function syncAudioToClock() {
@@ -297,9 +312,20 @@
       // cold-start buffering) — each new currentTime= interrupts the last, so it
       // never settles and the audio cuts out entirely. Wait for the current seek.
       if (!el || el.paused || el.seeking || el.readyState < 2) continue;
-      // Snap exactly on a cut/seek (any length), or when steady drift grows.
-      if (jumped || Math.abs(el.currentTime - target) > AUDIO_SYNC_THRESHOLD) {
+      // Snap on a cut/seek or when audio falls behind; when audio runs ahead of a
+      // stalled picture, advance the picture rather than rewind audio (a rewind
+      // replays a slice as a live echo — the record-while-previewing symptom).
+      const action = reconcileAvDrift({
+        audioTime: el.currentTime,
+        pictureTime: target,
+        isJump: jumped,
+        syncThreshold: AUDIO_SYNC_THRESHOLD,
+        maxLead: AUDIO_MAX_LEAD,
+      });
+      if (action === "resync-audio") {
         el.currentTime = target;
+      } else if (action === "catch-picture" && videoEl) {
+        videoEl.currentTime = el.currentTime;
       }
     }
   }

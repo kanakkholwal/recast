@@ -162,7 +162,7 @@ pub async fn stop_recording(state: State<'_, AppState>) -> Result<String, String
                 duration_ms: artifacts.stats.duration_ms,
             },
             media: Some(ProjectMediaMetadata {
-                has_system_audio: true,
+                has_system_audio: artifacts.has_system_audio,
                 has_microphone: artifacts.microphone_path.is_some(),
                 has_camera: artifacts.camera_path.is_some(),
             }),
