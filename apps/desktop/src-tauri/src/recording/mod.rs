@@ -17,6 +17,7 @@ use crate::audio::{
 use crate::cursor::{
     shift_cursor_track, spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack,
 };
+use crate::encoder::h264::{self, EncodePurpose, H264Encoder};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
@@ -1108,56 +1109,14 @@ fn trim_video_pause_intervals(path: &Path, intervals: &[(u64, u64)]) -> Result<(
     // instead of the CPU. The CPU path drops to libx264 ultrafast for
     // the same reason — quality is fine for a 720p camera bubble.
     let mut command = std::process::Command::new(crate::ffmpeg::ffmpeg_path());
-    let codec_args: &[&str] = match crate::ffmpeg::preferred_h264_encoder() {
-        "h264_videotoolbox" => &[
-            "-c:v",
-            "h264_videotoolbox",
-            "-q:v",
-            "60", // Good quality for a 720p camera bubble
-            "-pix_fmt",
-            "yuv420p",
-        ],
-        "h264_nvenc" => &[
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p5",
-            "-rc",
-            "vbr",
-            "-cq",
-            "26",
-            "-b:v",
-            "0",
-            "-pix_fmt",
-            "yuv420p",
-        ],
-        "h264_amf" => &[
-            "-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26",
-            "-pix_fmt", "yuv420p",
-        ],
-        "h264_qsv" => &[
-            "-c:v",
-            "h264_qsv",
-            "-preset",
-            "veryfast",
-            "-global_quality",
-            "26",
-            "-pix_fmt",
-            "nv12",
-        ],
-        _ => &[
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-        ],
-    };
+    // Route through the same probed encoder the recorder uses (NVENC/AMF/QSV →
+    // GPU, else libx264 ultrafast) so trim time scales with the GPU, not the CPU.
+    let codec_args = h264::codec_args(
+        H264Encoder::from_ffmpeg_name(crate::ffmpeg::preferred_h264_encoder()),
+        EncodePurpose::QuickTrim,
+    );
     command.args(["-y", "-i", in_path.as_str(), "-vf", vf.as_str(), "-an"]);
-    command.args(codec_args);
+    command.args(&codec_args);
     command.arg(out_path.as_str());
     crate::ffmpeg::configure_silent_command(&mut command);
     let output = command

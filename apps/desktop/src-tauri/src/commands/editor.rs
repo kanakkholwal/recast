@@ -2223,101 +2223,25 @@ pub async fn export_video(
             // browsers reading from disk) works fine with moov-at-end. If we
             // later need HTTP-streamable output, add it as a separate optional
             // `-c copy -movflags +faststart` remux pass with its own progress.
-            // Export-quality codec args. NVENC/AMF/QSV all get hardware
-            // rate control tuned for quality (not the lowlatency presets
-            // we use for live recording). libx264 stays on the user's
-            // chosen profile preset (medium/slow/etc.) because export
-            // isn't bound by real-time pacing — slower presets = smaller
-            // files at the same quality.
-            match crate::ffmpeg::preferred_h264_encoder() {
-                "h264_videotoolbox" => {
-                    args.extend([
-                        "-c:v".to_string(),
-                        "h264_videotoolbox".to_string(),
-                        "-profile:v".to_string(),
-                        "high".to_string(),
-                        "-pix_fmt".to_string(),
-                        "yuv420p".to_string(),
-                        // VideoToolbox uses -q:v (1-100, higher is better) for VBR
-                        "-q:v".to_string(),
-                        "65".to_string(),
-                    ]);
-                }
-                "h264_nvenc" => {
-                    args.extend([
-                        "-c:v".to_string(),
-                        "h264_nvenc".to_string(),
-                        "-preset".to_string(),
-                        speed.nvenc_preset().to_string(),
-                        "-tune".to_string(),
-                        "hq".to_string(),
-                        "-rc".to_string(),
-                        "vbr".to_string(),
-                        "-cq".to_string(),
-                        profile.mp4_nvenc_cq.to_string(),
-                        "-b:v".to_string(),
-                        "0".to_string(),
-                        "-profile:v".to_string(),
-                        "high".to_string(),
-                        "-pix_fmt".to_string(),
-                        "yuv420p".to_string(),
-                    ]);
-                }
-                "h264_amf" => {
-                    // AMF maps the NVENC `cq` (lower = better, 0..51) to
-                    // `qp_i/qp_p` directly. We use the same value range so
-                    // the export profiles stay quality-comparable across
-                    // GPUs.
-                    let qp = profile.mp4_nvenc_cq.to_string();
-                    args.extend([
-                        "-c:v".to_string(),
-                        "h264_amf".to_string(),
-                        "-quality".to_string(),
-                        speed.amf_quality().to_string(),
-                        "-rc".to_string(),
-                        "cqp".to_string(),
-                        "-qp_i".to_string(),
-                        qp.clone(),
-                        "-qp_p".to_string(),
-                        qp,
-                        "-profile:v".to_string(),
-                        "high".to_string(),
-                        "-pix_fmt".to_string(),
-                        "yuv420p".to_string(),
-                    ]);
-                }
-                "h264_qsv" => {
-                    args.extend([
-                        "-c:v".to_string(),
-                        "h264_qsv".to_string(),
-                        "-preset".to_string(),
-                        speed.qsv_preset().to_string(),
-                        "-global_quality".to_string(),
-                        profile.mp4_nvenc_cq.to_string(),
-                        "-profile:v".to_string(),
-                        "high".to_string(),
-                        "-pix_fmt".to_string(),
-                        "nv12".to_string(),
-                    ]);
-                }
-                _ => {
-                    args.extend([
-                        "-c:v".to_string(),
-                        "libx264".to_string(),
-                        "-preset".to_string(),
-                        speed
-                            .x264_preset()
-                            .unwrap_or(profile.mp4_preset)
-                            .to_string(),
-                        "-crf".to_string(),
-                        profile.mp4_crf.to_string(),
-                        "-pix_fmt".to_string(),
-                        "yuv420p".to_string(),
-                        "-threads".to_string(),
-                        "0".to_string(),
-                    ]);
-                }
-            }
+            // Export-quality codec args. NVENC/AMF/QSV get hardware rate control
+            // tuned for quality (not the lowlatency presets used for live
+            // recording); libx264 uses the user's chosen profile preset because
+            // export isn't bound by real-time pacing. See `encoder::h264`.
+            args.extend(crate::encoder::h264::codec_args(
+                crate::encoder::h264::H264Encoder::from_ffmpeg_name(
+                    crate::ffmpeg::preferred_h264_encoder(),
+                ),
+                crate::encoder::h264::EncodePurpose::Export(
+                    crate::encoder::h264::ExportEncodeParams {
+                        nvenc_preset: speed.nvenc_preset(),
+                        amf_quality: speed.amf_quality(),
+                        qsv_preset: speed.qsv_preset(),
+                        x264_preset: speed.x264_preset().unwrap_or(profile.mp4_preset),
+                        cq: profile.mp4_nvenc_cq,
+                        crf: profile.mp4_crf,
+                    },
+                ),
+            ));
             if audio_map.is_some() {
                 args.extend([
                     "-c:a".to_string(),
