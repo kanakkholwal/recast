@@ -252,8 +252,7 @@ pub fn run() {
             // `take_pending_open_file`. None for a normal launch.
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
-            let launched_for_new_recording =
-                cold_open_file.iter().any(|a| a == "--new-recording");
+            let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
 
             app.manage(AppState {
                 recording_manager: std::sync::Arc::new(RecordingManager::default()),
