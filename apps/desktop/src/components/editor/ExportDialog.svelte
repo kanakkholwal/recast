@@ -777,7 +777,6 @@
   <!-- GIF settings, wrapped so it reads as one panel in either layout. -->
   {#snippet gifSettingsCard()}
     <div
-      class="rounded-xl border border-border/50 bg-card/50 shadow-(--shadow-craft-inset) backdrop-blur"
     >
       {@render gifSettingsBody()}
     </div>

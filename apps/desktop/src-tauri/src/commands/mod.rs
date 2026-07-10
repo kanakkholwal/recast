@@ -3,6 +3,7 @@ pub(crate) mod auth;
 pub(crate) mod cloud;
 mod editor;
 pub(crate) mod error;
+pub(crate) mod export;
 pub(crate) mod extensions;
 pub(crate) mod ffmpeg;
 pub(crate) mod files;
