@@ -1,12 +1,16 @@
 <script lang="ts">
 	import {
 	  ArrowUpRight,
+	  BarChart3,
 	  Check,
 	  ChevronsUpDown,
 	  Cloud,
 	  Crown,
 	  LoaderCircle,
+	  Lock,
 	  LogOut,
+	  MessageSquare,
+	  Palette,
 	  ShieldAlert,
 	  Sparkles,
 	  Users,
@@ -39,6 +43,15 @@
 	const startSignIn = () => auth.startSignIn();
 	const signOut = () => auth.signOut();
 	const cancelSignIn = () => auth.cancelSignIn();
+
+	// Value-first sell for the signed-out state: show what Cloud unlocks before
+	// asking the user to authenticate.
+	const cloudBenefits = [
+		{ icon: BarChart3, label: "Viewer analytics" },
+		{ icon: MessageSquare, label: "Timestamped comments" },
+		{ icon: Lock, label: "Password protection" },
+		{ icon: Palette, label: "Custom branding" },
+	];
 
 	const dashboardUrl = "https://recast.nexonauts.com/dashboard/settings/profile";
 
@@ -242,30 +255,37 @@
 			{/if}
 
 			<!-- Actions: upgrade CTA (free only) + manage account in browser -->
-			<div class="flex flex-wrap items-center gap-2 border-t border-border/40 px-4 py-3">
-				{#if !isPaid}
+			<div class="flex flex-col gap-2 border-t border-border/40 px-4 py-3">
+				<div class="flex flex-wrap items-center gap-2">
+					{#if !isPaid}
+						<Button
+							size="sm"
+							class="h-8 gap-1.5"
+							onclick={() => openUrl("https://recast.li/pricing")}
+						>
+							<Sparkles class="size-3.5" />
+							<span class="text-[11.5px]">Upgrade to Pro</span>
+						</Button>
+					{/if}
 					<Button
+						variant="outline"
 						size="sm"
 						class="h-8 gap-1.5"
-						onclick={() => openUrl("https://recast.li/pricing")}
+						onclick={openDashboard}
 					>
-						<Sparkles class="size-3.5" />
-						<span class="text-[11.5px]">Upgrade to Pro</span>
+						<span class="text-[11.5px]">Manage account</span>
+						<ArrowUpRight class="size-3 text-muted-foreground" />
 					</Button>
-				{/if}
-				<Button
-					variant="outline"
-					size="sm"
-					class="h-8 gap-1.5"
-					onclick={openDashboard}
-				>
-					<span class="text-[11.5px]">Manage account</span>
-					<ArrowUpRight class="size-3 text-muted-foreground" />
-				</Button>
-				{#if view.plan?.cancelAtPeriodEnd && view.plan?.currentPeriodEnd}
-					<span class="ml-auto text-[10.5px] text-warning">
-						Ends {new Date(view.plan.currentPeriodEnd).toLocaleDateString()}
-					</span>
+					{#if view.plan?.cancelAtPeriodEnd && view.plan?.currentPeriodEnd}
+						<span class="ml-auto text-[10.5px] text-warning">
+							Ends {new Date(view.plan.currentPeriodEnd).toLocaleDateString()}
+						</span>
+					{/if}
+				</div>
+				{#if !isPaid}
+					<p class="text-[10.5px] text-muted-foreground">
+						Pro removes the share watermark and lifts your active-link limit.
+					</p>
 				{/if}
 			</div>
 		</div>
@@ -371,31 +391,43 @@
 			</Button>
 		</div>
 	{:else}
-		<div class="flex items-center justify-between gap-3">
+		<div class="flex flex-col gap-3.5">
 			<div class="min-w-0">
-				<div class="text-[12px] font-semibold text-foreground">
-					Connect Recast Cloud
+				<div class="text-[12.5px] font-semibold text-foreground">
+					Turn any recording into a shareable link
 				</div>
-				<div class="text-[11px] text-muted-foreground">
-					Send a Loom-style share link with viewer analytics, comments, and
-					password protection. The app itself never needs an account;
-					Cloud is opt-in.
+				<div class="mt-0.5 text-[11.5px] leading-relaxed text-muted-foreground">
+					No re-upload. Cloud layers on top of the files you already have.
 				</div>
 			</div>
-			<Button
-				size="sm"
-				class="h-8 gap-1.5"
-				disabled={busy}
-				onclick={startSignIn}
-			>
-				{#if inFlight === "sign-in"}
-					<LoaderCircle class="size-3.5 animate-spin" />
-					<span class="text-[11.5px]">Signing in…</span>
-				{:else}
-					<Cloud class="size-3.5" />
-					<span class="text-[11.5px]">Sign in to Recast Cloud</span>
-				{/if}
-			</Button>
+			<ul class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+				{#each cloudBenefits as benefit (benefit.label)}
+					{@const Icon = benefit.icon}
+					<li class="flex items-center gap-2 text-[11.5px] text-foreground/85">
+						<Icon class="size-3.5 shrink-0 text-primary" />
+						<span>{benefit.label}</span>
+					</li>
+				{/each}
+			</ul>
+			<div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+				<Button
+					size="sm"
+					class="h-8 gap-1.5"
+					disabled={busy}
+					onclick={startSignIn}
+				>
+					{#if inFlight === "sign-in"}
+						<LoaderCircle class="size-3.5 animate-spin" />
+						<span class="text-[11.5px]">Signing in…</span>
+					{:else}
+						<Cloud class="size-3.5" />
+						<span class="text-[11.5px]">Sign in to Recast Cloud</span>
+					{/if}
+				</Button>
+				<span class="text-[10.5px] text-muted-foreground">
+					The app never needs an account. Cloud is opt-in.
+				</span>
+			</div>
 		</div>
 	{/if}
 </div>

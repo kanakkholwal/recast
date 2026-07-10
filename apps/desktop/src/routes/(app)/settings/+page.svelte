@@ -1,5 +1,7 @@
 <script lang="ts">
   import Logo from "$components/logo.svelte";
+  import SectionCard from "$components/layout/SectionCard.svelte";
+  import SettingsRow from "$components/layout/SettingsRow.svelte";
   import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
   import CloudSignIn from "$components/settings/CloudSignIn.svelte";
   import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
@@ -39,11 +41,9 @@
     FolderOpen,
     Globe,
     HardDrive,
-    Info,
     Monitor,
     Moon,
     Navigation,
-    PanelsTopLeft,
     Server,
     Settings as SettingsIcon,
     Shield,
@@ -52,10 +52,13 @@
     Sun,
     Timer,
     Video,
+    Wrench,
   } from "@lucide/svelte";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
+  import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
   import { toast } from "@recast/ui/sonner";
+  import { Switch } from "@recast/ui/switch";
   import * as Tabs from "@recast/ui/tabs";
   import { setMode } from "@recast/ui/theme";
   import { cn } from "@recast/ui/utils";
@@ -86,12 +89,9 @@
 
   type Theme = "light" | "dark" | "system";
   type EditorBehavior = "navigate" | "new-window";
-  type SettingsTab =
-    | "general"
-    | "recording"
-    | "cloud"
-    | "experimental"
-    | "about";
+  // Experimental + About + device/diagnostics collapse into one "Advanced"
+  // section. Low-frequency, expert-facing config kept out of the main tabs.
+  type SettingsTab = "general" | "recording" | "cloud" | "advanced";
 
   let outputDir = $state("");
   let currentTheme = $state<Theme>("system");
@@ -300,11 +300,6 @@
     }
   }
 
-  const layoutModeIcons: Record<LayoutMode, typeof Monitor> = {
-    "os-native": Monitor,
-    recast: PanelsTopLeft,
-  };
-
   const themes: { value: Theme; label: string; icon: typeof Sun }[] = [
     { value: "light", label: "Light", icon: Sun },
     { value: "dark", label: "Dark", icon: Moon },
@@ -319,6 +314,16 @@
     { value: "navigate", label: "Navigate", icon: Navigation },
     { value: "new-window", label: "New window", icon: ExternalLink },
   ];
+
+  // Segmented-control option lists, derived from the tables above so labels
+  // stay in one place.
+  const themeSegments: SegmentedOption<Theme>[] = themes.map((t) => ({
+    value: t.value,
+    label: t.label,
+  }));
+  const layoutSegments: SegmentedOption<LayoutMode>[] = LAYOUT_MODES.map(
+    (m) => ({ value: m.value, label: m.label }),
+  );
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -361,7 +366,7 @@
       >
         <Tabs.List
           variant="soft"
-          class="grid w-full max-w-2xl grid-cols-5 gap-1 p-1"
+          class="grid w-full max-w-xl grid-cols-4 gap-1 p-1"
         >
           <Tabs.Trigger value="general" class="gap-1.5 px-2">
             <SettingsIcon class="size-3.5" />
@@ -375,13 +380,9 @@
             <Cloud class="size-3.5" />
             <span class="text-[12px] font-semibold">Cloud</span>
           </Tabs.Trigger>
-          <Tabs.Trigger value="experimental" class="gap-1.5 px-2">
-            <FlaskConical class="size-3.5" />
-            <span class="text-[12px] font-semibold">Experimental</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="about" class="gap-1.5 px-2">
-            <Info class="size-3.5" />
-            <span class="text-[12px] font-semibold">About</span>
+          <Tabs.Trigger value="advanced" class="gap-1.5 px-2">
+            <Wrench class="size-3.5" />
+            <span class="text-[12px] font-semibold">Advanced</span>
           </Tabs.Trigger>
         </Tabs.List>
 
@@ -810,26 +811,16 @@
         <Tabs.Content value="cloud" class="flex min-w-0 flex-col gap-8">
               <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
                    tier = 10 active links + watermark; paid removes both. -->
-              <section id="settings-cloud" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Cloud class="size-3 text-primary" />
-                    Recast Cloud
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Share recordings as Loom-style links with viewer analytics,
-                    password protection, and custom branding, layered on top of
-                    your local recordings.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <CloudSignIn />
-                </div>
-              </section>
+              <SectionCard
+                id="settings-cloud"
+                label="Recast Cloud"
+                description="Share recordings as Loom-style links, layered on top of your local recordings."
+              >
+                {#snippet icon()}
+                  <Cloud class="size-3 text-primary" />
+                {/snippet}
+                <CloudSignIn />
+              </SectionCard>
 
               <!-- Gated behind the `selfHosting` flag: Cloud's server isn't
                    shipped, so there's nothing to point at by default. -->
@@ -863,280 +854,107 @@
 
               <!-- Separate auth from Recast Cloud above; both are external
                    integrations that take exports off this machine. -->
-              <section id="settings-google-drive" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <HardDrive class="size-3 text-primary" />
-                    Google Drive
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Upload exports to your own Drive. Files land in a private
-                    /Recast/ folder.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <GoogleDriveConnection />
-                </div>
-              </section>
+              <SectionCard
+                id="settings-google-drive"
+                label="Google Drive"
+                description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
+              >
+                {#snippet icon()}
+                  <HardDrive class="size-3 text-primary" />
+                {/snippet}
+                <GoogleDriveConnection />
+              </SectionCard>
         </Tabs.Content>
 
         <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
-              <!-- Appearance -->
-              <section id="settings-appearance" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Appearance
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Match your system or pick a fixed mode.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-appearance"
+                label="Appearance"
+                description="How Recast looks and how the window is arranged."
+              >
+                <SettingsRow
+                  label="Theme"
+                  description={currentTheme === "system"
+                    ? "Following your OS preference."
+                    : `Locked to ${currentTheme} mode.`}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Theme
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {currentTheme === "system"
-                          ? "Following your OS preference."
-                          : `Locked to ${currentTheme} mode.`}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Theme"
-                    >
-                      {#each themes as t (t.value)}
-                        {@const Icon = t.icon}
-                        {@const active = currentTheme === t.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateTheme(t.value)}
-                          class={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon class="size-3.5" />
-                          <span>{t.label}</span>
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={themeSegments}
+                    value={currentTheme}
+                    onValueChange={updateTheme}
+                    fill={false}
+                    aria-label="Theme"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window chrome"
+                  description={LAYOUT_MODES.find(
+                    (m) => m.value === layoutMode.current,
+                  )?.hint}
+                >
+                  <Segmented
+                    options={layoutSegments}
+                    value={layoutMode.current}
+                    onValueChange={(v) => (layoutMode.current = v)}
+                    fill={false}
+                    aria-label="Window chrome layout"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
-              <!-- Layout -->
-              <section id="settings-layout" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Layout
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    How the window titlebar and controls are arranged.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-system"
+                label="System"
+                description="Behavior when you close the main window."
+              >
+                <SettingsRow
+                  label="Minimize to tray on close"
+                  description={closeToTray
+                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+                    : "Closing the window quits Recast immediately."}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Window chrome
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {LAYOUT_MODES.find((m) => m.value === layoutMode.current)
-                          ?.hint}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Window chrome layout"
-                    >
-                      {#each LAYOUT_MODES as m (m.value)}
-                        {@const Icon = layoutModeIcons[m.value]}
-                        {@const active = layoutMode.current === m.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => (layoutMode.current = m.value)}
-                          class={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] whitespace-nowrap font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon class="size-3.5" />
-                          <span>{m.label}</span>
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <!-- System -->
-              <section id="settings-system" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    System
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Behavior when you close the main window.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Minimize to tray on close
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {closeToTray
-                          ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
-                          : "Closing the window quits Recast immediately."}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Minimize to tray on close"
-                      aria-checked={closeToTray}
-                      onclick={toggleCloseToTray}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        closeToTray
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          closeToTray ? "translate-x-4.5" : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                </div>
-              </section>
+                  <Switch
+                    checked={closeToTray}
+                    onCheckedChange={() => toggleCloseToTray()}
+                    aria-label="Minimize to tray on close"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
               <!-- Two locally-stored opt-ins: usage analytics (default off) and
                    crash reports (default on, PII-scrubbed). -->
-              <section id="settings-privacy" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Shield class="size-3 text-primary" />
-                    Privacy & Telemetry
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Recast is offline-first, so your recordings never leave this
-                    machine. These control anonymous diagnostics only.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-privacy"
+                label="Privacy & Telemetry"
+                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+              >
+                {#snippet icon()}
+                  <Shield class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Share anonymous usage analytics"
+                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Share anonymous usage analytics
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        Which features you use, so we know what to improve. Off by
-                        default. Nothing is sent unless you turn this on.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Share anonymous usage analytics"
-                      aria-checked={desktopConsent.product}
-                      onclick={toggleProductAnalytics}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        desktopConsent.product
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          desktopConsent.product
-                            ? "translate-x-4.5"
-                            : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                  <div
-                    class="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-3"
-                  >
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Send anonymous crash reports
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        Scrubbed error details when something breaks, with no file
-                        names or paths. On by default.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Send anonymous crash reports"
-                      aria-checked={desktopConsent.errors}
-                      onclick={toggleCrashReports}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        desktopConsent.errors
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          desktopConsent.errors
-                            ? "translate-x-4.5"
-                            : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                </div>
-              </section>
-
-              <DiagnosticsPanel />
+                  <Switch
+                    checked={desktopConsent.product}
+                    onCheckedChange={() => toggleProductAnalytics()}
+                    aria-label="Share anonymous usage analytics"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Send anonymous crash reports"
+                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+                >
+                  <Switch
+                    checked={desktopConsent.errors}
+                    onCheckedChange={() => toggleCrashReports()}
+                    aria-label="Send anonymous crash reports"
+                  />
+                </SettingsRow>
+              </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="experimental" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="advanced" class="flex min-w-0 flex-col gap-8">
               <!-- Experimental features -->
               <section id="settings-experimental" class="flex flex-col gap-3">
                 <div class="px-1">
@@ -1194,9 +1012,6 @@
                   {/each}
                 </div>
               </section>
-        </Tabs.Content>
-
-        <Tabs.Content value="about" class="flex min-w-0 flex-col gap-8">
               <!-- About -->
               <section id="settings-about" class="flex flex-col gap-3">
                 <div class="px-1">
@@ -1277,6 +1092,8 @@
                 </div>
                 <DeviceCapabilities />
               </section>
+
+              <DiagnosticsPanel />
         </Tabs.Content>
       </Tabs.Root>
     </div>

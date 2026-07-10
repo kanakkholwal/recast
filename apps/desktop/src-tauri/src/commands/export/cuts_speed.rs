@@ -257,6 +257,87 @@ pub(crate) fn build_speed_audio_filter(amap: &str, segs: &[SpeedSegment]) -> Str
     parts.join(";")
 }
 
+/// Append the tail-of-chain cut+speed stage to the export filter graph. Drops the
+/// cut ranges (`select`/`aselect`) and re-times survivors (`setpts`/`atempo`) —
+/// everything upstream (zoom, cursor, blur) was computed on the continuous
+/// post-trim timeline and stays correct, since select only removes frames. GIF is
+/// skipped (it has its own paletteuse tail). No-op when there are no cuts and no
+/// speed change. Extracted verbatim from `export_video`; mutates the filter
+/// accumulator, video/audio maps, and the pending output-filter list in place.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn append_cut_speed_stage(
+    filter_complex: &mut Option<String>,
+    video_map: &mut String,
+    audio_map: &mut Option<String>,
+    output_filters: &mut Vec<String>,
+    format: &str,
+    export_cuts: &[(f64, f64)],
+    speed_segments: &[SpeedSegment],
+    speed_active: bool,
+) {
+    if !((!export_cuts.is_empty() || speed_active) && format != "gif") {
+        return;
+    }
+    let has_cuts = !export_cuts.is_empty();
+    let select_expr = build_cut_select_expr(export_cuts);
+    let (mut complex, video_label) = match filter_complex.take() {
+        Some(existing) => (existing, video_map.clone()),
+        None => {
+            // No filtergraph yet: seed one and fold in any pending output-side
+            // filters (e.g. a quality downscale) so they aren't lost now that
+            // `-vf` no longer applies.
+            let mut seed = String::new();
+            let prefix = if output_filters.is_empty() {
+                String::new()
+            } else {
+                format!("{},", output_filters.join(","))
+            };
+            output_filters.clear();
+            seed.push_str(&format!("[0:v:0]{prefix}"));
+            (seed, String::new())
+        }
+    };
+    if !complex.is_empty() && !complex.ends_with(';') && !video_label.is_empty() {
+        complex.push(';');
+    }
+    complex.push_str(&video_label);
+    // Drop cut frames (select), then re-time survivors. At 1× this is the uniform
+    // CFR re-stamp (unchanged); with speed it's the piecewise warp, and the output
+    // `-r` resamples the warped PTS back to CFR (dropping / duplicating frames as
+    // the speed demands).
+    let select_prefix = if has_cuts {
+        format!("select='{select_expr}',")
+    } else {
+        String::new()
+    };
+    let setpts = if speed_active {
+        // Single-quote the value: the warp expression contains commas
+        // (if(lt(T,…),…,…)) that the filtergraph parser would otherwise read as
+        // filter separators — same reason `select='…'` is quoted above.
+        format!("setpts='({})/TB'", build_speed_setpts_expr(speed_segments))
+    } else {
+        "setpts=N/FRAME_RATE/TB".to_string()
+    };
+    complex.push_str(&format!("{select_prefix}{setpts}[vcut]"));
+    *video_map = "[vcut]".to_string();
+    if let Some(amap) = audio_map.take() {
+        if speed_active {
+            // Per-segment atrim+atempo+concat keeps audio length matched to the
+            // warped video, pitch-preserved (atempo time-stretches).
+            complex.push_str(&format!(
+                ";{}",
+                build_speed_audio_filter(&amap, speed_segments)
+            ));
+        } else {
+            complex.push_str(&format!(
+                ";{amap}aselect='{select_expr}',asetpts=N/SR/TB[acut]"
+            ));
+        }
+        *audio_map = Some("[acut]".to_string());
+    }
+    *filter_complex = Some(complex);
+}
+
 #[cfg(test)]
 mod cut_export_tests {
     use super::{

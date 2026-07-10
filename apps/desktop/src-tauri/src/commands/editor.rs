@@ -9,11 +9,12 @@ use base64::{engine::general_purpose, Engine as _};
 use tauri::{AppHandle, Manager, State};
 
 use super::error::{AppError, AppResult};
+use super::export::camera::camera_bubble_rect;
 use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
-    build_cut_select_expr, build_speed_audio_filter, build_speed_segments, build_speed_setpts_expr,
-    collect_export_cuts, has_speed_change, output_duration_cap,
+    append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
+    output_duration_cap,
 };
 use super::export::gif::{run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -955,30 +956,11 @@ pub async fn export_video(
     } else {
         None
     };
-    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> = if let Some(ref path) = camera_path {
-        let p = &camera_overlay_settings.default_placement;
-        // Use video_w as the size base so the bubble is square in
-        // screen pixels (matches `aspect-ratio: 1` in the preview).
-        let bubble_w = (p.width.clamp(0.02, 1.0) * canvas_geom.video_w as f64)
-            .round()
-            .max(2.0) as u32;
-        let bubble_h = bubble_w;
-        // Clamp into the canvas so an out-of-range placement (legacy
-        // project, manual JSON edit) still produces a valid overlay.
-        let max_x = canvas_geom.canvas_w.saturating_sub(bubble_w);
-        let max_y = canvas_geom.canvas_h.saturating_sub(bubble_h);
-        let bubble_x = ((canvas_geom.video_x as f64
-            + p.x.clamp(0.0, 1.0) * canvas_geom.video_w as f64)
-            .round() as u32)
-            .min(max_x);
-        let bubble_y = ((canvas_geom.video_y as f64
-            + p.y.clamp(0.0, 1.0) * canvas_geom.video_h as f64)
-            .round() as u32)
-            .min(max_y);
-        Some((path.clone(), bubble_x, bubble_y, bubble_w, bubble_h))
-    } else {
-        None
-    };
+    let camera_bubble: Option<(PathBuf, u32, u32, u32, u32)> = camera_path.as_ref().map(|path| {
+        let (bubble_x, bubble_y, bubble_w, bubble_h) =
+            camera_bubble_rect(&camera_overlay_settings.default_placement, &canvas_geom);
+        (path.clone(), bubble_x, bubble_y, bubble_w, bubble_h)
+    });
 
     // Pre-render the rounded-rect mask matching the bubble's shape. Square
     // shape needs no mask (mask_input_index stays None and the filter chain
@@ -1311,66 +1293,16 @@ pub async fn export_video(
         trim_start,
     );
     let speed_active = has_speed_change(&speed_segments);
-    if (!export_cuts.is_empty() || speed_active) && request.format != "gif" {
-        let has_cuts = !export_cuts.is_empty();
-        let select_expr = build_cut_select_expr(&export_cuts);
-        let (mut complex, video_label) = match filter_complex_after_cursor.take() {
-            Some(existing) => (existing, video_map_after_cursor.clone()),
-            None => {
-                // No filtergraph yet: seed one and fold in any pending
-                // output-side filters (e.g. a quality downscale) so they
-                // aren't lost now that `-vf` no longer applies.
-                let mut seed = String::new();
-                let prefix = if output_filters.is_empty() {
-                    String::new()
-                } else {
-                    format!("{},", output_filters.join(","))
-                };
-                output_filters.clear();
-                seed.push_str(&format!("[0:v:0]{prefix}"));
-                (seed, String::new())
-            }
-        };
-        if !complex.is_empty() && !complex.ends_with(';') && !video_label.is_empty() {
-            complex.push(';');
-        }
-        complex.push_str(&video_label);
-        // Drop cut frames (select), then re-time survivors. At 1× this is the
-        // uniform CFR re-stamp (unchanged); with speed it's the piecewise warp,
-        // and the output `-r` resamples the warped PTS back to CFR (dropping /
-        // duplicating frames as the speed demands).
-        let select_prefix = if has_cuts {
-            format!("select='{select_expr}',")
-        } else {
-            String::new()
-        };
-        let setpts = if speed_active {
-            // Single-quote the value: the warp expression contains commas
-            // (if(lt(T,…),…,…)) that the filtergraph parser would otherwise read
-            // as filter separators — same reason `select='…'` is quoted above.
-            format!("setpts='({})/TB'", build_speed_setpts_expr(&speed_segments))
-        } else {
-            "setpts=N/FRAME_RATE/TB".to_string()
-        };
-        complex.push_str(&format!("{select_prefix}{setpts}[vcut]"));
-        video_map_after_cursor = "[vcut]".to_string();
-        if let Some(amap) = audio_map.take() {
-            if speed_active {
-                // Per-segment atrim+atempo+concat keeps audio length matched to
-                // the warped video, pitch-preserved (atempo time-stretches).
-                complex.push_str(&format!(
-                    ";{}",
-                    build_speed_audio_filter(&amap, &speed_segments)
-                ));
-            } else {
-                complex.push_str(&format!(
-                    ";{amap}aselect='{select_expr}',asetpts=N/SR/TB[acut]"
-                ));
-            }
-            audio_map = Some("[acut]".to_string());
-        }
-        filter_complex_after_cursor = Some(complex);
-    }
+    append_cut_speed_stage(
+        &mut filter_complex_after_cursor,
+        &mut video_map_after_cursor,
+        &mut audio_map,
+        &mut output_filters,
+        &request.format,
+        &export_cuts,
+        &speed_segments,
+        speed_active,
+    );
 
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         args.extend([

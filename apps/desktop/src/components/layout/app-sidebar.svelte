@@ -33,12 +33,24 @@
 
   let currentPath = $derived(page.url.pathname);
 
-  const navLinks = [
-    { title: "Home", href: "/", icon: LayoutDashboard },
-    { title: "Recasts", href: "/recasts", icon: Film },
-    { title: "Exports", href: "/exports", icon: Download },
-    { title: "Profiles", href: "/profiles", icon: SlidersHorizontal },
-    { title: "Settings", href: "/settings", icon: Settings },
+  // Split destinations (things you make/browse) from configuration so Settings
+  // and Profiles read as a distinct band rather than trailing the content nav.
+  const navGroups = [
+    {
+      label: "Workspace",
+      links: [
+        { title: "Home", href: "/", icon: LayoutDashboard },
+        { title: "Recasts", href: "/recasts", icon: Film },
+        { title: "Exports", href: "/exports", icon: Download },
+      ],
+    },
+    {
+      label: "Configure",
+      links: [
+        { title: "Profiles", href: "/profiles", icon: SlidersHorizontal },
+        { title: "Settings", href: "/settings", icon: Settings },
+      ],
+    },
   ];
 
   // Crossfade between active rows so the highlight slides between items.
@@ -83,6 +95,7 @@
   </Sidebar.Header>
 
   <Sidebar.Content class="scrollbar-hide">
+    {#each navGroups as group (group.label)}
     <Sidebar.Group>
       <!-- Kept mounted: GroupLabel has a built-in collapse
            (`group-data-[collapsible=icon]:-mt-8 opacity-0`, transitioned), so
@@ -90,11 +103,11 @@
       <Sidebar.GroupLabel
         class="px-2 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
-        Workspace
+        {group.label}
       </Sidebar.GroupLabel>
       <Sidebar.GroupContent>
         <Sidebar.Menu class="gap-0.5">
-          {#each navLinks as link (link.href)}
+          {#each group.links as link (link.href)}
             {@const active = isActive(link.href, currentPath)}
             {@const Icon = link.icon}
             <Sidebar.MenuItem>
@@ -154,6 +167,7 @@
         </Sidebar.Menu>
       </Sidebar.GroupContent>
     </Sidebar.Group>
+    {/each}
   </Sidebar.Content>
 
   <Sidebar.Footer class="border-t border-border/30 p-2">

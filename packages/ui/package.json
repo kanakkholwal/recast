@@ -168,6 +168,10 @@
       "svelte": "./src/components/ui/segmented/index.ts",
       "default": "./src/components/ui/segmented/index.ts"
     },
+    "./switch": {
+      "svelte": "./src/components/ui/switch/index.ts",
+      "default": "./src/components/ui/switch/index.ts"
+    },
     "./panel-section": {
       "svelte": "./src/components/ui/panel-section/index.ts",
       "default": "./src/components/ui/panel-section/index.ts"
