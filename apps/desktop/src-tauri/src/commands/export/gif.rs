@@ -1,5 +1,5 @@
 use std::io::{BufRead, Read};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -8,11 +8,18 @@ use std::time::Duration;
 use parking_lot::Mutex;
 use tauri::AppHandle;
 
+use super::cuts_speed::{
+    build_cut_select_expr, build_speed_segments, build_speed_setpts_expr, collect_export_cuts,
+    has_speed_change,
+};
 use super::progress::{is_ffmpeg_progress_key_line, parse_ffmpeg_progress_seconds, ProgressBand};
 use super::state::{emit_export_state, ExportStateEvent};
 use crate::commands::ffmpeg::{
-    build_gif_palette_prepass_filter, summarize_ffmpeg_error, GifFilterOptions,
+    build_gif_palette_prepass_filter, build_gif_paletteuse_external_complex,
+    summarize_ffmpeg_error, GifFilterOptions,
 };
+use crate::commands::types::GifSettings;
+use crate::render::graph::RenderState;
 
 /// Pass 1 of the 2-pass GIF export. Consumes the source at the GIF's target
 /// fps + scale and writes a single palette PNG. The main encode pass then
@@ -189,4 +196,207 @@ pub(crate) fn run_gif_palette_prepass(
         }
         Err(e) => Err(e),
     }
+}
+
+/// Inputs for the 2-pass GIF pipeline. The current filter-complex accumulator is
+/// moved in and the updated one returned, so the caller stays the single owner
+/// of that state.
+pub(crate) struct GifPassParams<'a> {
+    pub app: &'a AppHandle,
+    pub export_id: &'a str,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub source_video: &'a Path,
+    pub output_dir: &'a Path,
+    pub output_scale_filter: Option<&'a str>,
+    pub trim_start: f64,
+    pub trim_end: f64,
+    pub duration: f64,
+    pub source_duration: f64,
+    pub render_state: &'a RenderState,
+    pub gif_settings: &'a GifSettings,
+    /// The profile's default GIF fps (used when the settings don't override it).
+    pub gif_fps: u32,
+    /// Index the palette PNG will occupy in the FFmpeg input list.
+    pub palette_input_index: usize,
+    pub filter_complex: Option<String>,
+    pub video_map: String,
+}
+
+/// Why the GIF pre-pass stopped short. The caller maps these to the shared
+/// cancel/error emit + cancel-token cleanup so this stays UI-agnostic.
+pub(crate) enum GifPassError {
+    Cancelled,
+    Failed(String),
+}
+
+/// Result of a successful GIF pre-pass: the palette input to splice into `args`,
+/// the paletteuse-terminated filter graph, and the temp palette path to clean up.
+pub(crate) struct GifPassOutput {
+    pub palette_input_args: [String; 2],
+    pub filter_complex: Option<String>,
+    pub video_map: String,
+    pub palette_temp_path: PathBuf,
+}
+
+/// Run pass 1 (palette generation off the main thread) and wire the paletteuse
+/// pass. Extracted verbatim from `export_video`'s GIF branch; the only change is
+/// that the three early error/cancel returns become typed [`GifPassError`]s and
+/// the mutated `args`/filter state flow through [`GifPassOutput`].
+pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, GifPassError> {
+    let resolved_fps = p.gif_settings.fps.unwrap_or(p.gif_fps);
+    let gif_max_colors = p.gif_settings.max_colors();
+    // `GifFilterOptions` holds a `&str` for dither, so we can't build the struct
+    // here and then move it into a `'static` spawn_blocking closure. Stash the
+    // owned String, reconstruct the struct inside each closure.
+    let gif_dither_owned: String = p.gif_settings.dither.clone();
+
+    // Transient 2-pass palette file — unique per run so concurrent exports don't
+    // clobber each other's palette.
+    let palette_stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let palette_path = p.output_dir.join(format!(
+        "recast_palette_{palette_stamp}_{}.png",
+        std::process::id()
+    ));
+
+    // Cuts AND per-segment speed apply to GIF too, but its two-pass palette path
+    // runs before the generic (MP4/WebM-only) cut+speed stage, so build the same
+    // select+setpts warp here and inject it into both the palette pre-pass and
+    // the main pass. GIF has no audio, so there's no atempo counterpart; the
+    // downstream `fps=` resamples the warped PTS to CFR.
+    let gif_cut_select: Option<String> = {
+        let export_cuts = collect_export_cuts(p.render_state, p.trim_start, p.trim_end);
+        let gif_speed_segments = build_speed_segments(
+            p.duration,
+            &export_cuts,
+            &p.render_state.split_points,
+            &p.render_state.segment_speeds,
+            p.trim_start,
+        );
+        let gif_speed_active = has_speed_change(&gif_speed_segments);
+        let has_cuts = !export_cuts.is_empty();
+        (has_cuts || gif_speed_active).then(|| {
+            let select_prefix = if has_cuts {
+                format!("select='{}',", build_cut_select_expr(&export_cuts))
+            } else {
+                String::new()
+            };
+            let setpts = if gif_speed_active {
+                // Single-quote: the warp expression contains commas the
+                // filtergraph parser would otherwise read as separators.
+                format!(
+                    "setpts='({})/TB'",
+                    build_speed_setpts_expr(&gif_speed_segments)
+                )
+            } else {
+                "setpts=N/FRAME_RATE/TB".to_string()
+            };
+            format!("{select_prefix}{setpts}")
+        })
+    };
+
+    let cut_select_for_prepass = gif_cut_select.clone();
+    let app_for_prepass = p.app.clone();
+    let export_id_for_prepass = p.export_id.to_string();
+    let source_for_prepass = p.source_video.to_path_buf();
+    let palette_for_prepass = palette_path.clone();
+    let cancel_for_prepass = p.cancel_flag.clone();
+    let scale_for_prepass = p.output_scale_filter.map(|s| s.to_string());
+    let dither_for_prepass = gif_dither_owned.clone();
+    let trim_start = p.trim_start;
+    let duration = p.duration;
+    let source_duration = p.source_duration;
+    let prepass_result = tokio::task::spawn_blocking(move || {
+        let inner_options = GifFilterOptions {
+            fps: resolved_fps,
+            max_colors: gif_max_colors,
+            dither: dither_for_prepass.as_str(),
+        };
+        run_gif_palette_prepass(
+            &app_for_prepass,
+            &export_id_for_prepass,
+            &source_for_prepass,
+            &palette_for_prepass,
+            trim_start,
+            duration,
+            source_duration,
+            inner_options,
+            scale_for_prepass.as_deref(),
+            cut_select_for_prepass.as_deref(),
+            cancel_for_prepass,
+            ProgressBand {
+                offset: 0.0,
+                scale: 0.4,
+            },
+        )
+    })
+    .await;
+
+    match prepass_result {
+        Ok(Ok(())) => {}
+        Ok(Err(err_msg)) => {
+            let _ = std::fs::remove_file(&palette_path);
+            if p.cancel_flag.load(Ordering::Acquire) {
+                return Err(GifPassError::Cancelled);
+            }
+            return Err(GifPassError::Failed(err_msg));
+        }
+        Err(join_err) => {
+            let _ = std::fs::remove_file(&palette_path);
+            return Err(GifPassError::Failed(format!(
+                "export task failed (palette pre-pass): {join_err}"
+            )));
+        }
+    }
+
+    if p.cancel_flag.load(Ordering::Acquire) {
+        let _ = std::fs::remove_file(&palette_path);
+        return Err(GifPassError::Cancelled);
+    }
+
+    // Wire the palette PNG in as the last FFmpeg input. GIF mode skips audio
+    // inputs entirely, so input ordering up to this point is:
+    //   0=source, 1..=extra_inputs, [cursor], [watermark]
+    // Palette appends after that.
+    let palette_input_args = ["-i".to_string(), palette_path.to_string_lossy().to_string()];
+
+    // Drop cut ranges before the palette-use stage so removed frames never reach
+    // the GIF (the generic cut stage is MP4/WebM-only).
+    let mut filter_complex = p.filter_complex;
+    let mut video_map = p.video_map;
+    if let Some(ref cs) = gif_cut_select {
+        let (mut complex, vlabel) = match filter_complex.take() {
+            Some(existing) => (existing, video_map.clone()),
+            None => ("[0:v]".to_string(), "[0:v]".to_string()),
+        };
+        if !complex.is_empty() && !complex.ends_with(';') && !vlabel.is_empty() {
+            complex.push(';');
+        }
+        complex.push_str(&vlabel);
+        complex.push_str(&format!("{cs}[vgifcut]"));
+        filter_complex = Some(complex);
+        video_map = "[vgifcut]".to_string();
+    }
+
+    let pass2_options = GifFilterOptions {
+        fps: resolved_fps,
+        max_colors: gif_max_colors,
+        dither: gif_dither_owned.as_str(),
+    };
+    let (gif_complex, gif_map) = build_gif_paletteuse_external_complex(
+        filter_complex.as_deref(),
+        &video_map,
+        p.palette_input_index,
+        pass2_options,
+        p.output_scale_filter,
+    );
+
+    Ok(GifPassOutput {
+        palette_input_args,
+        filter_complex: Some(gif_complex),
+        video_map: gif_map,
+        palette_temp_path: palette_path,
+    })
 }

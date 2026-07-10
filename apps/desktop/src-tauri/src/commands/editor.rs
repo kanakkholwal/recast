@@ -9,20 +9,21 @@ use base64::{engine::general_purpose, Engine as _};
 use tauri::{AppHandle, Manager, State};
 
 use super::error::{AppError, AppResult};
+use super::export::captions::append_caption_burn_in;
+use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     build_cut_select_expr, build_speed_audio_filter, build_speed_segments, build_speed_setpts_expr,
     collect_export_cuts, has_speed_change, output_duration_cap,
 };
-use super::export::gif::run_gif_palette_prepass;
+use super::export::gif::{run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
 use super::export::run::run_encode;
 use super::export::state::{emit_export_state, ExportStateEvent};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
-    append_output_filters_to_complex, append_subtitles_to_complex, build_annotation_blur_complex,
-    build_gif_paletteuse_external_complex, build_output_scale_filter, has_audio,
-    probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayParams, ExportSpeed,
-    GifFilterOptions,
+    append_output_filters_to_complex, build_annotation_blur_complex, build_output_scale_filter,
+    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayParams,
+    ExportSpeed,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -1189,74 +1190,23 @@ pub async fn export_video(
         video_map_after_cursor = new_map;
     }
 
-    // Burn-in captions (overlay) via libass. The transcript + style ride along
-    // in the render-state passthrough; styled into an ASS script and composited
-    // here on the trimmed-but-uncut axis, so the cut/speed stage below re-times
-    // the burned pixels with the rest. No-op without a transcript; GIF skips it
-    // (its paletteuse tail can't take another filter stage).
-    if request.burn_captions && request.format != "gif" {
-        let transcript: Option<crate::transcription::Transcript> = request
-            .render_state
-            .passthrough
-            .get("transcript")
-            .filter(|v| !v.is_null())
-            .and_then(|v| serde_json::from_value(v.clone()).ok());
-        if let Some(transcript) = transcript.filter(|t| !t.segments.is_empty()) {
-            let style: crate::transcription::CaptionStyle = request
-                .render_state
-                .passthrough
-                .get("captionStyle")
-                .and_then(|v| serde_json::from_value(v.clone()).ok())
-                .unwrap_or_default();
-            // Embed the preset's font so it renders in the burn instead of a
-            // libass fallback. System/generic faces are skipped (libass resolves
-            // them); a fetch failure degrades to the fallback, never blocks export.
-            let family = crate::transcription::subtitles::first_family(&style.font_family);
-            let fontsdir: Option<String> =
-                if crate::transcription::subtitles::is_system_family(&family) {
-                    None
-                } else {
-                    match crate::fonts::ensure_caption_font_dir(&app, &family, style.font_weight)
-                        .await
-                    {
-                        Ok(dir) => Some(dir.to_string_lossy().to_string()),
-                        Err(e) => {
-                            log::warn!("caption font embed ({family}): {e}");
-                            None
-                        }
-                    }
-                };
-            let ass = crate::transcription::subtitles::to_ass(
-                &transcript,
-                &style,
-                canvas_width,
-                canvas_height,
-                crate::transcription::subtitles::VideoRectPx {
-                    x: canvas_geom.video_x,
-                    y: canvas_geom.video_y,
-                    w: canvas_geom.video_w,
-                    h: canvas_geom.video_h,
-                },
-                trim_start,
-                duration,
-                fontsdir.is_some(),
-            );
-            let ass_path =
-                std::env::temp_dir().join(format!("recast-captions-{}.ass", request.export_id));
-            match std::fs::write(&ass_path, ass) {
-                Ok(()) => {
-                    let (new_complex, new_map) = append_subtitles_to_complex(
-                        filter_complex_after_cursor.as_deref(),
-                        &video_map_after_cursor,
-                        &ass_path.to_string_lossy(),
-                        fontsdir.as_deref(),
-                    );
-                    filter_complex_after_cursor = Some(new_complex);
-                    video_map_after_cursor = new_map;
-                }
-                Err(e) => log::warn!("caption burn-in: failed to write ASS script: {e}"),
-            }
-        }
+    // Burn captions into the trimmed-but-uncut axis so the cut/speed stage
+    // re-times them with the rest; no-op without a transcript, and GIF skips it.
+    if let Some((new_complex, new_map)) = append_caption_burn_in(
+        &app,
+        &request,
+        canvas_width,
+        canvas_height,
+        &canvas_geom,
+        trim_start,
+        duration,
+        filter_complex_after_cursor.as_deref(),
+        &video_map_after_cursor,
+    )
+    .await
+    {
+        filter_complex_after_cursor = Some(new_complex);
+        video_map_after_cursor = new_map;
     }
 
     // For GIF, route through a 2-pass pipeline. Pass 1 here (synchronous,
@@ -1271,167 +1221,50 @@ pub async fn export_video(
     let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
     let mut palette_temp_path: Option<PathBuf> = None;
     let progress_band = if request.format == "gif" {
-        let resolved_fps = gif_settings.fps.unwrap_or(profile.gif_fps);
-        let gif_max_colors = gif_settings.max_colors();
-        // `GifFilterOptions` holds a `&str` for dither, so we can't build the
-        // struct here and then move it into a `'static` spawn_blocking closure.
-        // Stash the owned String, reconstruct the struct inside each closure.
-        let gif_dither_owned: String = gif_settings.dither.clone();
-
-        // Transient 2-pass palette file — unique per run so concurrent exports
-        // don't clobber each other's palette.
-        let palette_stamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos();
-        let palette_path = output_dir.join(format!(
-            "recast_palette_{palette_stamp}_{}.png",
-            std::process::id()
-        ));
-
-        // Cuts AND per-segment speed apply to GIF too, but its two-pass palette
-        // path runs before the generic (MP4/WebM-only) cut+speed stage below, so
-        // build the same select+setpts warp here and inject it into both the
-        // palette pre-pass and the main pass. GIF has no audio, so there's no
-        // atempo counterpart; the downstream `fps=` resamples the warped PTS to
-        // CFR (dropping/duplicating frames as the speed demands).
-        let gif_cut_select: Option<String> = {
-            let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
-            let gif_speed_segments = build_speed_segments(
-                duration,
-                &export_cuts,
-                &request.render_state.split_points,
-                &request.render_state.segment_speeds,
-                trim_start,
-            );
-            let gif_speed_active = has_speed_change(&gif_speed_segments);
-            let has_cuts = !export_cuts.is_empty();
-            (has_cuts || gif_speed_active).then(|| {
-                let select_prefix = if has_cuts {
-                    format!("select='{}',", build_cut_select_expr(&export_cuts))
-                } else {
-                    String::new()
-                };
-                let setpts = if gif_speed_active {
-                    // Single-quote: the warp expression contains commas the
-                    // filtergraph parser would otherwise read as separators.
-                    format!(
-                        "setpts='({})/TB'",
-                        build_speed_setpts_expr(&gif_speed_segments)
-                    )
-                } else {
-                    "setpts=N/FRAME_RATE/TB".to_string()
-                };
-                format!("{select_prefix}{setpts}")
-            })
-        };
-        let cut_select_for_prepass = gif_cut_select.clone();
-        let app_for_prepass = app.clone();
-        let export_id_for_prepass = export_id.clone();
-        let source_for_prepass = source_video.clone();
-        let palette_for_prepass = palette_path.clone();
-        let cancel_for_prepass = cancel_flag.clone();
-        let scale_for_prepass = output_scale_filter.clone();
-        let dither_for_prepass = gif_dither_owned.clone();
-        let prepass_result = tokio::task::spawn_blocking(move || {
-            let inner_options = GifFilterOptions {
-                fps: resolved_fps,
-                max_colors: gif_max_colors,
-                dither: dither_for_prepass.as_str(),
-            };
-            run_gif_palette_prepass(
-                &app_for_prepass,
-                &export_id_for_prepass,
-                &source_for_prepass,
-                &palette_for_prepass,
-                trim_start,
-                duration,
-                source_duration,
-                inner_options,
-                scale_for_prepass.as_deref(),
-                cut_select_for_prepass.as_deref(),
-                cancel_for_prepass,
-                ProgressBand {
-                    offset: 0.0,
-                    scale: 0.4,
-                },
-            )
-        })
-        .await;
-
-        match prepass_result {
-            Ok(Ok(())) => {}
-            Ok(Err(err_msg)) => {
-                state.export_cancel.lock().remove(&export_id);
-                let _ = std::fs::remove_file(&palette_path);
-                if cancel_flag.load(Ordering::Acquire) {
-                    emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
-                    return Err(AppError::from("export cancelled"));
-                }
-                emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
-                return Err(AppError::from(err_msg));
-            }
-            Err(join_err) => {
-                state.export_cancel.lock().remove(&export_id);
-                let _ = std::fs::remove_file(&palette_path);
-                let err_msg = format!("export task failed (palette pre-pass): {join_err}");
-                emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
-                return Err(AppError::from(err_msg));
-            }
-        }
-
-        if cancel_flag.load(Ordering::Acquire) {
-            state.export_cancel.lock().remove(&export_id);
-            let _ = std::fs::remove_file(&palette_path);
-            emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
-            return Err(AppError::from("export cancelled"));
-        }
-
-        // Wire the palette PNG in as the last FFmpeg input. GIF mode skips
-        // audio inputs entirely, so input ordering up to this point is:
-        //   0=source, 1..=extra_inputs, [cursor], [watermark]
-        // Palette appends after that.
         let palette_input_index = 1
             + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
             + watermark_path.is_some() as usize;
-        args.extend(["-i".to_string(), palette_path.to_string_lossy().to_string()]);
-
-        // Drop cut ranges before the palette-use stage so removed frames never
-        // reach the GIF (the generic cut stage below is MP4/WebM-only).
-        if let Some(ref cs) = gif_cut_select {
-            let (mut complex, vlabel) = match filter_complex_after_cursor.take() {
-                Some(existing) => (existing, video_map_after_cursor.clone()),
-                None => ("[0:v]".to_string(), "[0:v]".to_string()),
-            };
-            if !complex.is_empty() && !complex.ends_with(';') && !vlabel.is_empty() {
-                complex.push(';');
-            }
-            complex.push_str(&vlabel);
-            complex.push_str(&format!("{cs}[vgifcut]"));
-            filter_complex_after_cursor = Some(complex);
-            video_map_after_cursor = "[vgifcut]".to_string();
-        }
-
-        let pass2_options = GifFilterOptions {
-            fps: resolved_fps,
-            max_colors: gif_max_colors,
-            dither: gif_dither_owned.as_str(),
-        };
-        let (gif_complex, gif_map) = build_gif_paletteuse_external_complex(
-            filter_complex_after_cursor.as_deref(),
-            &video_map_after_cursor,
+        let gif_out = run_gif_pass(GifPassParams {
+            app: &app,
+            export_id: &export_id,
+            cancel_flag: cancel_flag.clone(),
+            source_video: &source_video,
+            output_dir: &output_dir,
+            output_scale_filter: output_scale_filter.as_deref(),
+            trim_start,
+            trim_end,
+            duration,
+            source_duration,
+            render_state: &request.render_state,
+            gif_settings: &gif_settings,
+            gif_fps: profile.gif_fps,
             palette_input_index,
-            pass2_options,
-            output_scale_filter.as_deref(),
-        );
-        filter_complex_after_cursor = Some(gif_complex);
-        video_map_after_cursor = gif_map;
-        palette_temp_path = Some(palette_path);
-
-        ProgressBand {
-            offset: 40.0,
-            scale: 0.6,
+            filter_complex: filter_complex_after_cursor.take(),
+            video_map: video_map_after_cursor.clone(),
+        })
+        .await;
+        match gif_out {
+            Ok(out) => {
+                args.extend(out.palette_input_args);
+                filter_complex_after_cursor = out.filter_complex;
+                video_map_after_cursor = out.video_map;
+                palette_temp_path = Some(out.palette_temp_path);
+                ProgressBand {
+                    offset: 40.0,
+                    scale: 0.6,
+                }
+            }
+            Err(GifPassError::Cancelled) => {
+                state.export_cancel.lock().remove(&export_id);
+                emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
+                return Err(AppError::from("export cancelled"));
+            }
+            Err(GifPassError::Failed(msg)) => {
+                state.export_cancel.lock().remove(&export_id);
+                emit_export_state(&app, ExportStateEvent::error(&export_id, &msg));
+                return Err(AppError::from(msg));
+            }
         }
     } else {
         if let Some(scale_filter) = output_scale_filter {
@@ -1589,108 +1422,15 @@ pub async fn export_video(
         args.push("-shortest".to_string());
     }
 
-    match request.format.as_str() {
-        "gif" => {
-            // Explicit `-c:v gif` + `-f gif` keeps FFmpeg from probing the
-            // output container and falling back to an unrelated codec on
-            // some Windows builds — we've seen the auto-detect path emit
-            // "Could not find tag for codec none" when the filter chain
-            // ends in a labelled output rather than the default sink.
-            // `-vsync 0` (a.k.a. `-fps_mode passthrough`) honours the
-            // exact frame timing produced by the in-graph `fps=` filter
-            // instead of FFmpeg's downstream resampler nudging frames
-            // around, which previously produced 0-byte GIFs when the
-            // composite framerate didn't divide evenly.
-            args.extend([
-                "-c:v".to_string(),
-                "gif".to_string(),
-                "-f".to_string(),
-                "gif".to_string(),
-                "-an".to_string(),
-                "-vsync".to_string(),
-                "0".to_string(),
-                "-loop".to_string(),
-                gif_settings.ffmpeg_loop_arg().to_string(),
-                output_path.to_string_lossy().to_string(),
-            ]);
-        }
-        "webm" => {
-            // libvpx-vp9 is single-threaded and uses `deadline=best` by
-            // default — a combo that turned a 5-min 1080p export into a
-            // 30+ min job on a dual-core laptop with the machine pinned
-            // at one core. Switching on row-multithreading, letting FFmpeg
-            // pick the thread count, and bumping `cpu-used` to 4 with
-            // `deadline=good` gives ~4–8× faster encodes at the same CRF
-            // with quality loss that's invisible to viewers. `tile-columns`
-            // splits the frame for additional parallelism on multi-core
-            // machines — log2(2)=1 gives 2 tile columns, a safe default
-            // for 1080p+.
-            args.extend([
-                "-c:v".to_string(),
-                "libvpx-vp9".to_string(),
-                "-crf".to_string(),
-                profile.webm_crf.to_string(),
-                "-b:v".to_string(),
-                "0".to_string(),
-                "-deadline".to_string(),
-                "good".to_string(),
-                "-cpu-used".to_string(),
-                speed.vp9_cpu_used().to_string(),
-                "-row-mt".to_string(),
-                "1".to_string(),
-                "-tile-columns".to_string(),
-                "1".to_string(),
-                "-threads".to_string(),
-                "0".to_string(),
-            ]);
-            if audio_map.is_some() {
-                args.extend(["-c:a".to_string(), "libopus".to_string()]);
-            } else {
-                args.push("-an".to_string());
-            }
-            args.push(output_path.to_string_lossy().to_string());
-        }
-        _ => {
-            // NOTE: we intentionally do NOT pass `-movflags +faststart` here.
-            // Faststart does an in-place moov-atom rewrite at the very end of
-            // the mux, and on 4K clips that rewrite can take 10–60+ seconds
-            // while stdout stays silent — manifesting as a UI that's stuck in
-            // the "Finalizing…" state. Desktop playback (VLC, Windows Media,
-            // browsers reading from disk) works fine with moov-at-end. If we
-            // later need HTTP-streamable output, add it as a separate optional
-            // `-c copy -movflags +faststart` remux pass with its own progress.
-            // Export-quality codec args. NVENC/AMF/QSV get hardware rate control
-            // tuned for quality (not the lowlatency presets used for live
-            // recording); libx264 uses the user's chosen profile preset because
-            // export isn't bound by real-time pacing. See `encoder::h264`.
-            args.extend(crate::encoder::h264::codec_args(
-                crate::encoder::h264::H264Encoder::from_ffmpeg_name(
-                    crate::ffmpeg::preferred_h264_encoder(),
-                ),
-                crate::encoder::h264::EncodePurpose::Export(
-                    crate::encoder::h264::ExportEncodeParams {
-                        nvenc_preset: speed.nvenc_preset(),
-                        amf_quality: speed.amf_quality(),
-                        qsv_preset: speed.qsv_preset(),
-                        x264_preset: speed.x264_preset().unwrap_or(profile.mp4_preset),
-                        cq: profile.mp4_nvenc_cq,
-                        crf: profile.mp4_crf,
-                    },
-                ),
-            ));
-            if audio_map.is_some() {
-                args.extend([
-                    "-c:a".to_string(),
-                    "aac".to_string(),
-                    "-b:a".to_string(),
-                    "192k".to_string(),
-                ]);
-            } else {
-                args.push("-an".to_string());
-            }
-            args.push(output_path.to_string_lossy().to_string());
-        }
-    }
+    append_codec_args(
+        &mut args,
+        &request.format,
+        &gif_settings,
+        &profile,
+        speed,
+        audio_map.is_some(),
+        &output_path,
+    );
 
     if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
         let (complex_filter, map_label) = append_output_filters_to_complex(
