@@ -7,6 +7,7 @@
 	 * hands it to the activity center. The store also fires success/error toasts,
 	 * so feedback still lands if this dialog is minimized.
 	 */
+	import { formatSize } from "$lib/format/files";
 	import { cloudShare } from "$lib/stores/cloudShare.svelte";
 	import { AlertTriangle, Check, Cloud, Minus } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
@@ -41,6 +42,12 @@
 	const pct = $derived(
 		upload && upload.totalBytes > 0
 			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
+			: null,
+	);
+	// Byte readout during the transfer so a multi-minute upload feels in-control.
+	const sizeLabel = $derived(
+		upload && upload.totalBytes > 0
+			? `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`
 			: null,
 	);
 
@@ -116,7 +123,7 @@
 				bind:loading
 			/>
 		{:else}
-			<div class="space-y-2.5">
+			<div class="space-y-2.5" aria-live="polite">
 				<div class="flex items-center justify-between gap-2 text-xs">
 					<span
 						class={cn(
@@ -134,7 +141,9 @@
 				{#if status !== "error"}
 					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
 						{#if indeterminate}
-							<div class="h-full w-1/3 animate-pulse rounded-full bg-primary"></div>
+							<div
+								class="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse"
+							></div>
 						{:else}
 							<div
 								class="h-full rounded-full bg-primary transition-[width] duration-200"
@@ -142,6 +151,11 @@
 							></div>
 						{/if}
 					</div>
+					{#if sizeLabel}
+						<p class="text-[10px] font-medium tabular-nums text-muted-foreground">
+							{sizeLabel}
+						</p>
+					{/if}
 				{/if}
 
 				{#if status === "error"}

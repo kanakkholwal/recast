@@ -31,7 +31,10 @@
 			(u) => u.sourcePath !== cloudShare.foregroundPath,
 		),
 	);
-	const driveItems = $derived(gdrive.activeUploads);
+	// Same for Drive: hide the one currently in its foreground dialog.
+	const driveItems = $derived(
+		gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId),
+	);
 	const total = $derived(cloudItems.length + driveItems.length);
 	const busy = $derived(
 		cloudItems.some((u) => u.status === "uploading") ||
@@ -46,6 +49,12 @@
 	function openShare(path: string) {
 		open = false;
 		cloudShare.setForeground(path);
+	}
+
+	// Same for a Google Drive upload: reopen its progress/result dialog.
+	function openDrive(uploadId: string) {
+		open = false;
+		gdrive.setForeground(uploadId);
 	}
 
 	async function copy(link: string, label: string) {
@@ -113,64 +122,57 @@
 			<div
 				class="flex max-h-[min(70vh,420px)] flex-col divide-y divide-border/40 overflow-y-auto"
 			>
-				<!-- Recast Cloud shares. The row reopens the foreground dialog
-				     (progress or share settings); inner buttons opt out. -->
+				<!-- Recast Cloud shares. The info area is the click target that reopens
+				     the dialog; the action buttons are siblings, so no interactive
+				     control is nested inside another. -->
 				{#each cloudItems as up (up.sourcePath)}
-					<div
-						role="button"
-						tabindex="0"
-						title="Open share"
-						onclick={() => openShare(up.sourcePath)}
-						onkeydown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								openShare(up.sourcePath);
-							}
-						}}
-						class="flex cursor-pointer flex-col gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-foreground/3 focus-visible:bg-foreground/3"
-					>
+					<div class="flex flex-col gap-2 px-3 py-2.5">
 						<div class="flex items-start gap-2.5">
-							<span
-								class={cn(
-									"grid size-7 shrink-0 place-items-center rounded-lg",
-									up.status === "error"
-										? "bg-destructive/10 text-destructive"
-										: "bg-primary/10 text-primary",
-								)}
+							<button
+								type="button"
+								title="Open share"
+								onclick={() => openShare(up.sourcePath)}
+								class="-my-1 flex min-w-0 flex-1 items-start gap-2.5 rounded-md py-1 text-left outline-none transition-colors hover:bg-foreground/3 focus-visible:bg-foreground/3"
 							>
-								{#if up.status === "uploading"}
-									<Cloud class="size-3.5 animate-pulse" />
-								{:else if up.status === "complete"}
-									<CheckCircle2 class="size-3.5" />
-								{:else}
-									<TriangleAlert class="size-3.5" />
-								{/if}
-							</span>
-							<div class="min-w-0 flex-1">
-								<p class="text-[12px] font-semibold leading-tight text-foreground">
-									{#if up.status === "uploading"}
-										{cloudPhaseLabel(up.phase)}
-									{:else if up.status === "complete"}
-										Shared to Recast Cloud
-									{:else}
-										Share failed
-									{/if}
-								</p>
-								<p
-									class="mt-0.5 truncate text-[11px] text-muted-foreground"
-									title={up.fileName}
+								<span
+									class={cn(
+										"grid size-7 shrink-0 place-items-center rounded-lg",
+										up.status === "error"
+											? "bg-destructive/10 text-destructive"
+											: "bg-primary/10 text-primary",
+									)}
 								>
-									{up.status === "error" && up.error ? up.error : up.fileName}
-								</p>
-							</div>
+									{#if up.status === "uploading"}
+										<Cloud class="size-3.5 motion-safe:animate-pulse" />
+									{:else if up.status === "complete"}
+										<CheckCircle2 class="size-3.5" />
+									{:else}
+										<TriangleAlert class="size-3.5" />
+									{/if}
+								</span>
+								<div class="min-w-0 flex-1">
+									<p class="text-[12px] font-semibold leading-tight text-foreground">
+										{#if up.status === "uploading"}
+											{cloudPhaseLabel(up.phase)}
+										{:else if up.status === "complete"}
+											Shared to Recast Cloud
+										{:else}
+											Share failed
+										{/if}
+									</p>
+									<p
+										class="mt-0.5 truncate text-[11px] text-muted-foreground"
+										title={up.fileName}
+									>
+										{up.status === "error" && up.error ? up.error : up.fileName}
+									</p>
+								</div>
+							</button>
 							<button
 								type="button"
 								class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-foreground"
 								aria-label="Dismiss"
-								onclick={(e) => {
-									e.stopPropagation();
-									cloudShare.dismiss(up.sourcePath);
-								}}
+								onclick={() => cloudShare.dismiss(up.sourcePath)}
 							>
 								<X class="size-3.5" />
 							</button>
@@ -183,7 +185,9 @@
 										style="width: {uploadPct(up.bytesSent, up.totalBytes)}%"
 									></div>
 								{:else}
-									<div class="h-full w-1/3 animate-pulse rounded-full bg-primary"></div>
+									<div
+										class="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse"
+									></div>
 								{/if}
 							</div>
 						{:else if up.status === "complete" && up.shareUrl}
@@ -192,20 +196,14 @@
 									size="xs"
 									variant="ghost"
 									class="h-7 gap-1.5"
-									onclick={(e) => {
-										e.stopPropagation();
-										copy(up.shareUrl!, "Share link copied.");
-									}}
+									onclick={() => copy(up.shareUrl!, "Share link copied.")}
 								>
 									<Copy class="size-3" /> Copy link
 								</Button>
 								<Button
 									size="xs"
 									class="h-7 gap-1.5"
-									onclick={(e) => {
-										e.stopPropagation();
-										openLink(up.shareUrl!);
-									}}
+									onclick={() => openLink(up.shareUrl!)}
 								>
 									<ExternalLink class="size-3" /> Open
 								</Button>
@@ -214,45 +212,54 @@
 					</div>
 				{/each}
 
-				<!-- Google Drive uploads -->
+				<!-- Google Drive uploads. The info area is the click target that reopens
+				     the dialog; the action buttons are siblings, so no interactive
+				     control is nested inside another. -->
 				{#each driveItems as up (up.uploadId)}
 					<div class="flex flex-col gap-2 px-3 py-2.5">
 						<div class="flex items-start gap-2.5">
-							<span
-								class={cn(
-									"grid size-7 shrink-0 place-items-center rounded-lg",
-									up.status === "error"
-										? "bg-destructive/10 text-destructive"
-										: "bg-primary/10 text-primary",
-								)}
+							<button
+								type="button"
+								title="Open upload"
+								onclick={() => openDrive(up.uploadId)}
+								class="-my-1 flex min-w-0 flex-1 items-start gap-2.5 rounded-md py-1 text-left outline-none transition-colors hover:bg-foreground/3 focus-visible:bg-foreground/3"
 							>
-								{#if up.status === "uploading"}
-									<RefreshCw class="size-3.5 animate-spin" />
-								{:else if up.status === "complete"}
-									<CheckCircle2 class="size-3.5" />
-								{:else}
-									<TriangleAlert class="size-3.5" />
-								{/if}
-							</span>
-							<div class="min-w-0 flex-1">
-								<p class="text-[12px] font-semibold leading-tight text-foreground">
-									{#if up.status === "uploading"}
-										Uploading to Drive
-									{:else if up.status === "complete"}
-										Uploaded to Drive
-									{:else if up.status === "cancelled"}
-										Upload cancelled
-									{:else}
-										Upload failed
-									{/if}
-								</p>
-								<p
-									class="mt-0.5 truncate text-[11px] text-muted-foreground"
-									title={up.fileName}
+								<span
+									class={cn(
+										"grid size-7 shrink-0 place-items-center rounded-lg",
+										up.status === "error"
+											? "bg-destructive/10 text-destructive"
+											: "bg-primary/10 text-primary",
+									)}
 								>
-									{up.status === "error" && up.error ? up.error : up.fileName}
-								</p>
-							</div>
+									{#if up.status === "uploading"}
+										<RefreshCw class="size-3.5 motion-safe:animate-spin" />
+									{:else if up.status === "complete"}
+										<CheckCircle2 class="size-3.5" />
+									{:else}
+										<TriangleAlert class="size-3.5" />
+									{/if}
+								</span>
+								<div class="min-w-0 flex-1">
+									<p class="text-[12px] font-semibold leading-tight text-foreground">
+										{#if up.status === "uploading"}
+											Uploading to Drive
+										{:else if up.status === "complete"}
+											Uploaded to Drive
+										{:else if up.status === "cancelled"}
+											Upload cancelled
+										{:else}
+											Upload failed
+										{/if}
+									</p>
+									<p
+										class="mt-0.5 truncate text-[11px] text-muted-foreground"
+										title={up.fileName}
+									>
+										{up.status === "error" && up.error ? up.error : up.fileName}
+									</p>
+								</div>
+							</button>
 							<button
 								type="button"
 								class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-foreground"

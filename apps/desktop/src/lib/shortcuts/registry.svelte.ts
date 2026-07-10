@@ -158,6 +158,24 @@ export const shortcutDefs: ShortcutDef[] = [
 		},
 	},
 
+	// Global (OS-wide) recording hotkeys, registered by the Rust global-shortcut
+	// plugin, not the window dispatcher (hence central: false). Listed here so
+	// the Shortcuts dialog documents them.
+	{
+		id: "global.recordToggle",
+		keys: "Alt+Shift+R",
+		label: "Start / stop recording",
+		category: "General",
+		scopeNote: "Works anywhere, even when Recast is in the background",
+	},
+	{
+		id: "global.pauseToggle",
+		keys: "Alt+Shift+P",
+		label: "Pause / resume recording",
+		category: "General",
+		scopeNote: "While recording, from any app",
+	},
+
 	// Editing: editor route registers these handlers.
 	{ id: "editor.undo", keys: "Mod+Z", label: "Undo", category: "Editing", central: true },
 	{ id: "editor.redo", keys: "Mod+Shift+Z", label: "Redo", category: "Editing", central: true },

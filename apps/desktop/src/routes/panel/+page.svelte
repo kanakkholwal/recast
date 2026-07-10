@@ -363,6 +363,12 @@
       void toggleRecording();
     });
 
+    // Global hotkey (Alt+Shift+P) pauses/resumes while recording. Rust only
+    // emits this when a recording is active, so the panel is the right owner.
+    const unlistenGlobalPause = listen("global-shortcut:toggle-pause", () => {
+      void togglePause();
+    });
+
     return () => {
       window.clearInterval(timer);
       if (profileFlashTimer) clearTimeout(profileFlashTimer);
@@ -372,6 +378,7 @@
       unlistenProfile.then((fn) => fn());
       closeReq.then((fn) => fn());
       unlistenTrayToggle.then((fn) => fn());
+      unlistenGlobalPause.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });

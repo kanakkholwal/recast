@@ -542,6 +542,10 @@ pub async fn export_video(
 ) -> AppResult<String> {
     let export_id = request.export_id.clone();
 
+    // Keep display + system awake for the whole export. RAII: released on every
+    // return path (success, `?` error, cancel) when this scope ends.
+    let _power = state.power.lease();
+
     // Install a fresh cancellation token for this run, scoped to the export
     // session id that the frontend also uses to filter state events.
     let cancel_flag = Arc::new(AtomicBool::new(false));

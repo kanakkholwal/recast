@@ -44,68 +44,77 @@ pub async fn start_recording(
     let manager = state.recording_manager.clone();
     let output_dir = get_active_output_dir(&state);
 
-    tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
-        // On Wayland the compositor refuses direct framebuffer access — the
-        // user-supplied target_type/target_id/region are essentially advisory
-        // because the *real* source is whatever the user picks in the
-        // xdg-desktop-portal dialog. We negotiate the portal stream up front
-        // (this blocks while the dialog is on screen), use the portal's
-        // returned dimensions as authoritative, and stash the stream handle
-        // for the capture thread to pick up. See
-        // `capture::platform::linux_wayland` for the full lifecycle.
-        #[cfg(target_os = "linux")]
-        let target = {
-            if std::env::var_os("WAYLAND_DISPLAY").is_some() {
-                let stream = crate::capture::platform::linux_wayland::acquire_portal_stream()
-                    .map_err(|e| {
+    let outcome =
+        tauri::async_runtime::spawn_blocking(move || -> AppResult<RecordingStartResult> {
+            // On Wayland the compositor refuses direct framebuffer access — the
+            // user-supplied target_type/target_id/region are essentially advisory
+            // because the *real* source is whatever the user picks in the
+            // xdg-desktop-portal dialog. We negotiate the portal stream up front
+            // (this blocks while the dialog is on screen), use the portal's
+            // returned dimensions as authoritative, and stash the stream handle
+            // for the capture thread to pick up. See
+            // `capture::platform::linux_wayland` for the full lifecycle.
+            #[cfg(target_os = "linux")]
+            let target = {
+                if std::env::var_os("WAYLAND_DISPLAY").is_some() {
+                    let stream = crate::capture::platform::linux_wayland::acquire_portal_stream()
+                        .map_err(|e| {
                         AppError::msg(format!("Wayland portal handshake failed: {e:#}"))
                     })?;
-                let kind = if target_type == "window" {
-                    crate::recording::CaptureKind::Window
+                    let kind = if target_type == "window" {
+                        crate::recording::CaptureKind::Window
+                    } else if target_type == "region" {
+                        crate::recording::CaptureKind::Region
+                    } else {
+                        crate::recording::CaptureKind::Display
+                    };
+                    let area = crate::recording::CaptureArea {
+                        x: 0,
+                        y: 0,
+                        width: stream.width,
+                        height: stream.height,
+                    };
+                    let target = CaptureTarget {
+                        kind,
+                        id: target_id,
+                        display_id: target_id,
+                        label: "Wayland portal".to_string(),
+                        source: area,
+                        crop: area,
+                        // The portal already hands us physical pixels, so no rescale.
+                        scale_factor: 1.0,
+                    };
+                    crate::capture::platform::linux_wayland::stash_portal_stream(stream);
+                    target
                 } else if target_type == "region" {
-                    crate::recording::CaptureKind::Region
+                    let rect =
+                        region.ok_or_else(|| AppError::from("region target requires a rect"))?;
+                    CaptureTarget::resolve_region(rect)?
                 } else {
-                    crate::recording::CaptureKind::Display
-                };
-                let area = crate::recording::CaptureArea {
-                    x: 0,
-                    y: 0,
-                    width: stream.width,
-                    height: stream.height,
-                };
-                let target = CaptureTarget {
-                    kind,
-                    id: target_id,
-                    display_id: target_id,
-                    label: "Wayland portal".to_string(),
-                    source: area,
-                    crop: area,
-                    // The portal already hands us physical pixels, so no rescale.
-                    scale_factor: 1.0,
-                };
-                crate::capture::platform::linux_wayland::stash_portal_stream(stream);
-                target
-            } else if target_type == "region" {
+                    CaptureTarget::resolve(&target_type, target_id)?
+                }
+            };
+            #[cfg(not(target_os = "linux"))]
+            let target = if target_type == "region" {
                 let rect = region.ok_or_else(|| AppError::from("region target requires a rect"))?;
                 CaptureTarget::resolve_region(rect)?
             } else {
                 CaptureTarget::resolve(&target_type, target_id)?
-            }
-        };
-        #[cfg(not(target_os = "linux"))]
-        let target = if target_type == "region" {
-            let rect = region.ok_or_else(|| AppError::from("region target requires a rect"))?;
-            CaptureTarget::resolve_region(rect)?
-        } else {
-            CaptureTarget::resolve(&target_type, target_id)?
-        };
-        let warnings = manager
-            .start(target, output_dir, options.unwrap_or_default())
-            .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
-        Ok(RecordingStartResult { warnings })
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("start_recording worker panicked: {e}")))?
+            };
+            let warnings = manager
+                .start(target, output_dir, options.unwrap_or_default())
+                .inspect_err(|e| log::error!("start_recording failed: {e:#}"))?;
+            Ok(RecordingStartResult { warnings })
+        })
+        .await
+        .map_err(|e| AppError::msg(format!("start_recording worker panicked: {e}")))?;
+
+    // Keep display + system awake for the capture (released in stop_recording).
+    // Only on success so a failed start doesn't leak a hold.
+    if outcome.is_ok() {
+        state.power.acquire();
+    }
+    outcome
 }
 
 #[tauri::command]
@@ -201,6 +210,9 @@ pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
     })
     .await
     .map_err(|e| AppError::msg(format!("stop_recording worker panicked: {e}")))??;
+
+    // Finalized: release the sleep inhibitor from start_recording (success path).
+    state.power.release();
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
     Ok(project_path.to_string_lossy().to_string())

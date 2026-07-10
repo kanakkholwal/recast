@@ -323,4 +323,7 @@ pub struct AppState {
     /// and routes to a new editor window. `None` after drain — warm-start
     /// opens go through the `app://open-recast` event instead.
     pub pending_open_file: Mutex<Option<PathBuf>>,
+    /// Display/system-sleep inhibitor. Recording holds it across start→stop;
+    /// `export_video` takes a scoped lease. See `crate::power`.
+    pub power: crate::power::PowerManager,
 }

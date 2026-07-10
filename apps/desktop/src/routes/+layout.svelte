@@ -165,6 +165,7 @@
     let cancelled = false;
     let unlistenFn: (() => void) | undefined;
     let unlistenDeepLink: (() => void) | undefined;
+    let unlistenPanelFn: (() => void) | undefined;
 
     const setup = async () => {
       const { getCurrentWebviewWindow } = await import(
@@ -193,6 +194,16 @@
         else unlistenFn = fn;
       });
 
+      // Global hotkey (Alt+Shift+R while idle) asks the main window to bring up
+      // the recording panel. Stop/pause are routed to the panel itself in Rust.
+      const unlistenLaunchPanel = listen("global-shortcut:launch-panel", () => {
+        void launchRecordingPanel();
+      });
+      unlistenLaunchPanel.then((fn) => {
+        if (cancelled) fn();
+        else unlistenPanelFn = fn;
+      });
+
       // recast:// deep links. Cold start: getCurrent() returns the launch URL.
       // Warm start: onOpenUrl fires. Both route through handleDeepLink.
       try {
@@ -219,6 +230,7 @@
       cancelled = true;
       unlistenFn?.();
       unlistenDeepLink?.();
+      unlistenPanelFn?.();
     };
   });
 

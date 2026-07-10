@@ -6,6 +6,7 @@
 	 * activity center; the store fires success/error toasts either way. Drive
 	 * uploads can be cancelled, so the running state offers Cancel.
 	 */
+	import { formatSize } from "$lib/format/files";
 	import { gdrive } from "$lib/stores/gdrive.svelte";
 	import {
 	  AlertTriangle,
@@ -32,6 +33,12 @@
 	const pct = $derived(
 		upload && upload.totalBytes > 0
 			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
+			: null,
+	);
+	// Byte readout during the transfer so a multi-minute upload feels in-control.
+	const sizeLabel = $derived(
+		upload && upload.totalBytes > 0
+			? `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`
 			: null,
 	);
 	// Determinate once bytes are flowing; a short indeterminate sweep before then.
@@ -138,7 +145,7 @@
 				</Button>
 			</div>
 		{:else}
-			<div class="space-y-2.5">
+			<div class="space-y-2.5" aria-live="polite">
 				<div class="flex items-center justify-between gap-2 text-xs">
 					<span
 						class={cn(
@@ -156,13 +163,30 @@
 				{#if status === "uploading"}
 					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
 						{#if indeterminate}
-							<div class="h-full w-1/3 animate-pulse rounded-full bg-primary"></div>
+							<div
+								class="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse"
+							></div>
 						{:else}
 							<div
 								class="h-full rounded-full bg-primary transition-[width] duration-200"
 								style="width: {pct ?? 0}%"
 							></div>
 						{/if}
+					</div>
+					<!-- Cancel is a low-emphasis link here, not a footer button, so the
+					     destructive action is separated from the primary Minimize and is
+					     never the dialog's default focus. -->
+					<div class="flex items-center justify-between gap-2">
+						<span class="text-[10px] font-medium tabular-nums text-muted-foreground">
+							{sizeLabel ?? ""}
+						</span>
+						<button
+							type="button"
+							class="text-[11px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline"
+							onclick={() => gdrive.cancelUpload(uploadId)}
+						>
+							Cancel upload
+						</button>
 					</div>
 				{:else if status === "error"}
 					<p class="text-[11px] leading-relaxed text-muted-foreground">
@@ -174,10 +198,7 @@
 
 		<Dialog.Footer>
 			{#if status === "uploading"}
-				<Button variant="ghost"  size="sm" onclick={() => gdrive.cancelUpload(uploadId)}>
-					Cancel
-				</Button>
-				<Button variant="default_soft"  size="sm" onclick={onMinimize}>
+				<Button variant="default_soft" size="sm" onclick={onMinimize}>
 					<Minus />
 					Minimize
 				</Button>

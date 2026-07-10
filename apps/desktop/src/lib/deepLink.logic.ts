@@ -1,7 +1,7 @@
 /**
  * Pure parser + builder for `recast://` deep links. Framework-free (no Tauri/
  * SvelteKit imports) so it runs in the node unit suite. Dispatch lives in
- * `deepLink.ts`. Parser and builder are inverses (round-trip tested) — the
+ * `deepLink.ts`. Parser and builder are inverses (round-trip tested); the
  * builder is the safe entry point for automation/MCP to emit links.
  *
  * Grammar:

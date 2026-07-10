@@ -89,6 +89,7 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["downloa
 # feature) is intentionally OFF — it would add the LLVM+CMake toolchain; revisit
 # when we want Whisper models. See docs/captions-transcription-plan.md.
 transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
+keepawake = "0.6.0"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
@@ -207,3 +208,6 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 # Custom `recast://` URL scheme. Transport only — parsing/routing lives in the
 # frontend (src/lib/deepLink.ts). See docs/deep-linking-plan.md.
 tauri-plugin-deep-link = "2"
+# OS-wide hotkeys (stop/pause a recording while another app is focused). Desktop
+# only. Registered + handled in Rust; routes to the panel/main via events.
+tauri-plugin-global-shortcut = "2.3.2"

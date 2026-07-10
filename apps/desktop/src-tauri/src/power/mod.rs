@@ -1,12 +1,8 @@
-//! Inhibit display + system sleep while a long-running capture or export is
-//! active — a recording that dies because the display slept, or an export that
-//! stalls when the machine idles, is a trust-breaking bug.
+//! Keep the display and system awake while recording or exporting.
 //!
-//! A single dedicated OS thread owns the platform inhibitor so its guard never
-//! has to be `Send`/`Sync` (the Linux backend holds a D-Bus connection that
-//! isn't). Commands talk to it over a channel, and it ref-counts holders so a
-//! recording and an export can each keep the machine awake independently — the
-//! inhibitor lifts only when the last holder releases.
+//! A dedicated thread owns the platform inhibitor (its guard isn't Send on the
+//! Linux D-Bus backend) and ref-counts holders, so recording and export can
+//! hold it independently. The inhibitor lifts only when the last holder frees.
 
 use std::sync::mpsc::{channel, Sender};
 use std::thread;
@@ -16,8 +12,8 @@ enum Msg {
     Release,
 }
 
-/// Handle stored in `AppState`. Cheap and `Send + Sync` (it's just a channel
-/// sender); the real inhibitor lives on the worker thread.
+/// Stored in `AppState`. Just a channel sender, so it stays `Send + Sync`; the
+/// real inhibitor lives on the worker thread.
 pub struct PowerManager {
     tx: Sender<Msg>,
 }
@@ -29,8 +25,7 @@ impl PowerManager {
             .name("recast-power".into())
             .spawn(move || {
                 let mut holders: u32 = 0;
-                // `keepawake::KeepAwake` lives only here; dropping it releases
-                // the OS inhibitor. Never crosses the thread boundary.
+                // Never crosses the thread boundary; dropping it frees the OS inhibitor.
                 let mut guard: Option<keepawake::KeepAwake> = None;
                 while let Ok(msg) = rx.recv() {
                     match msg {
@@ -64,9 +59,8 @@ impl PowerManager {
         Self { tx }
     }
 
-    /// Acquire a hold whose release is a separate call — used by recording,
-    /// whose awake-lifetime spans two commands (`start_recording` →
-    /// `stop_recording`). Pair every `acquire` with exactly one `release`.
+    /// Acquire a hold released by a later `release` call. Recording uses this
+    /// because its awake window spans two commands (start then stop).
     pub fn acquire(&self) {
         let _ = self.tx.send(Msg::Acquire);
     }
@@ -75,8 +69,8 @@ impl PowerManager {
         let _ = self.tx.send(Msg::Release);
     }
 
-    /// RAII hold for a single scope (e.g. one `export_video` call). Releases on
-    /// drop — covering early returns, `?` errors, and unwinds.
+    /// RAII hold for one scope (e.g. a single `export_video` call). Releases on
+    /// drop, covering early returns, `?` errors, and unwinds.
     pub fn lease(&self) -> PowerLease {
         let _ = self.tx.send(Msg::Acquire);
         PowerLease {

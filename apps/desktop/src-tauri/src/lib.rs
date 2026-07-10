@@ -163,6 +163,30 @@ pub fn run() {
         // Deep-link injects JS (onOpenUrl/getCurrent) into the webview, so it
         // sits in the pre-window group like dialog/os/sharekit.
         .plugin(tauri_plugin_deep_link::init())
+        // OS-wide recording hotkeys, handled in Rust so they fire when Recast is
+        // unfocused. Alt+Shift+R stops (routed to the panel via tray:record-toggle)
+        // when recording, else launches the panel; Alt+Shift+P pauses/resumes.
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let mods = Modifiers::ALT | Modifiers::SHIFT;
+                    let recording = crate::tray::is_recording_active();
+                    if shortcut == &Shortcut::new(Some(mods), Code::KeyR) {
+                        let _ = if recording {
+                            app.emit("tray:record-toggle", ())
+                        } else {
+                            app.emit("global-shortcut:launch-panel", ())
+                        };
+                    } else if shortcut == &Shortcut::new(Some(mods), Code::KeyP) && recording {
+                        let _ = app.emit("global-shortcut:toggle-pause", ());
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_os::init());
 
     // JS-injecting plugins (dialog, os) MUST be added on the Builder before
@@ -257,6 +281,21 @@ pub fn run() {
                         let _ = w.set_focus();
                     }
                 });
+            }
+
+            // Register the OS-wide hotkeys. Non-fatal: a conflict (another app
+            // owns the combo) just makes that hotkey unavailable.
+            {
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                let mods = Modifiers::ALT | Modifiers::SHIFT;
+                for sc in [
+                    Shortcut::new(Some(mods), Code::KeyR),
+                    Shortcut::new(Some(mods), Code::KeyP),
+                ] {
+                    if let Err(e) = app.global_shortcut().register(sc) {
+                        log::warn!("global shortcut register failed: {e}");
+                    }
+                }
             }
 
             // Native crash reporting. Installed after AppState is managed so the

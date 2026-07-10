@@ -4,11 +4,10 @@
 ; fileAssociations already registers the default "Open" handler (double-click);
 ; this is the explicitly-labelled context-menu entry.
 ;
-; Written under SystemFileAssociations\.recast so it is ADDITIVE — it shows
+; Written under SystemFileAssociations\.recast so it is ADDITIVE: it shows
 ; regardless of which app owns the default association, and does not disturb it.
-; SHCTX follows the installer's mode: HKLM for per-machine, HKCU for per-user.
-; The launched exe receives the file path as %1; the app's argv/file-association
-; path (parse_open_arg + single-instance) opens it in a fresh editor window.
+; SHCTX follows the installer's mode (HKLM per-machine, HKCU per-user). The exe
+; receives the path as %1; parse_open_arg + single-instance open it.
 
 !macro NSIS_HOOK_POSTINSTALL
   WriteRegStr SHCTX "Software\Classes\SystemFileAssociations\.recast\shell\OpenInRecast" "" "Open in Recast"

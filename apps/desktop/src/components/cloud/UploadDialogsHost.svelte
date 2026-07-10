@@ -12,11 +12,17 @@
 
 	const sharePath = $derived(cloudShare.foregroundPath);
 	const driveId = $derived(gdrive.foregroundId);
+
+	// One foreground dialog at a time: two modals must never stack. If a rapid
+	// double-trigger foregrounds both, keep the cloud one and background the Drive
+	// upload (it stays live and reopenable from the activity center).
+	$effect(() => {
+		if (sharePath && driveId) gdrive.setForeground(null);
+	});
 </script>
 
 {#if sharePath}
 	<CloudShareDialog path={sharePath} />
-{/if}
-{#if driveId}
+{:else if driveId}
 	<GdriveUploadDialog uploadId={driveId} />
 {/if}
