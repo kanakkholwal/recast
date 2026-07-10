@@ -15,7 +15,7 @@ import {
 export type { CloudWorkspace };
 
 /**
- * Recast Cloud share store — sibling of {@link import("./gdrive.svelte").gdrive}.
+ * Recast Cloud share store, sibling of {@link import("./gdrive.svelte").gdrive}.
  * A `$state`-backed singleton holding sign-in state (from `auth_status`), an
  * `uploads` map of in-flight shares keyed by export path, and the persisted
  * `uploadHistory` manifest from `commands/cloud.rs`. Nothing runs unless the
@@ -26,7 +26,7 @@ export type CloudPhase = "preparing" | "uploading" | "finalizing" | "sharing";
 export type CloudUploadStatus = "uploading" | "complete" | "error";
 
 export type CloudUpload = {
-	/** Local export path — also the event key from the Rust side. */
+	/** Local export path, also the event key from the Rust side. */
 	sourcePath: string;
 	fileName: string;
 	phase: CloudPhase;
@@ -53,7 +53,7 @@ export type CloudAuth = {
 /**
  * Preferred upload workspace (org id). Validated against live membership on
  * each status refresh and dropped if the user no longer belongs. Desktop-local
- * — never mutates the server session's active org, so the desktop's upload
+ * and never mutates the server session's active org, so the desktop's upload
  * target stays independent of the web dashboard.
  */
 const WORKSPACE_PREF_KEY = "recast-cloud-workspace";
@@ -71,7 +71,7 @@ function writeWorkspacePref(id: string | null): void {
 		if (id) globalThis.localStorage?.setItem(WORKSPACE_PREF_KEY, id);
 		else globalThis.localStorage?.removeItem(WORKSPACE_PREF_KEY);
 	} catch {
-		// Private mode / disabled storage — selection won't persist across
+		// Private mode / disabled storage: selection won't persist across
 		// launches, but the in-memory choice still holds.
 	}
 }
@@ -95,7 +95,7 @@ function createCloudShareStore() {
 	let initialized = $state(false);
 	let listenersAttached = false;
 
-	// Only the terminal error stays a global broadcast — it's a detached corner
+	// Only the terminal error stays a global broadcast; it's a detached corner
 	// notification, and the `share()` catch already covers the awaited path.
 	// Live progress now streams on each upload's own channel (see `share`), and
 	// success comes back on the resolved `recastCloudUpload` promise.
@@ -193,7 +193,7 @@ function createCloudShareStore() {
 		captionsTranscript?: Transcript | null,
 	): Promise<CloudShareResult> {
 		// Seed SYNCHRONOUSLY (before any await) so the "Preparing…" card renders
-		// the instant Share is clicked — the awaits below would otherwise leave
+		// the instant Share is clicked; the awaits below would otherwise leave
 		// the screen looking frozen for a beat.
 		const fileName = path.split(/[\\/]/).pop() ?? path;
 		uploads[path] = {
@@ -210,7 +210,7 @@ function createCloudShareStore() {
 		// lets Rust fall back to the server profile's defaultWorkspaceId.
 		const target = workspaceId ?? resolveActiveWorkspaceId() ?? undefined;
 		try {
-			// Progress rides this upload's own channel — phase + byte counts.
+			// Progress rides this upload's own channel: phase + byte counts.
 			const result = await recastCloudUpload(path, title, target, captionsTranscript, (e) => {
 				const existing = uploads[path];
 				if (!existing) return;
@@ -282,7 +282,7 @@ function createCloudShareStore() {
 		await recastCloudUpdateShare(slug, opts);
 	}
 
-	/** Drop a manifest entry (no network) — e.g. the local file moved/deleted. */
+	/** Drop a manifest entry (no network), e.g. the local file moved/deleted. */
 	async function forget(path: string) {
 		delete uploadHistory[path];
 		if (!(await isTauriApp())) return;

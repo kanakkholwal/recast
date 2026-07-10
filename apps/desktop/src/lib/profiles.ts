@@ -11,7 +11,7 @@ import type { AudioDeviceInfo } from "$lib/ipc";
 import type { BrowserCamera } from "$lib/camera/browser-devices";
 import { findCamera } from "$lib/camera/browser-devices";
 
-/** Stored profile record. v2 schema — adds device identity fields over v1. */
+/** Stored profile record. v2 schema, adding device identity fields over v1. */
 export interface RecordingProfile {
 	id: string;
 	name: string;
@@ -22,9 +22,9 @@ export interface RecordingProfile {
 	/** Display label for the saved mic; used as fallback identity if id stale. */
 	micLabel: string | null;
 	camera: boolean;
-	/** DirectShow-friendly name — what the Rust recorder consumes. */
+	/** DirectShow-friendly name: what the Rust recorder consumes. */
 	cameraLabel: string | null;
-	/** Browser MediaDevices id — what the camera-preview window consumes. */
+	/** Browser MediaDevices id: what the camera-preview window consumes. */
 	cameraDeviceId: string | null;
 	/**
 	 * Per-profile countdown override (seconds). `null`/absent = inherit the
@@ -49,7 +49,7 @@ export const PROFILES_STORAGE_KEY = "recast-recording-profiles";
 export const PROFILES_ENABLED_STORAGE_KEY = "recast-profiles-enabled";
 
 // Global capture quality + frame rate. Capture-WIDE preferences (like the
-// global countdown), so they live outside profile records — kept clear of
+// global countdown), so they live outside profile records, kept clear of
 // `capSig` and the combination cap, applied to every recording.
 
 export const RECORDING_QUALITY_STORAGE_KEY = "recast-recording-quality";
@@ -81,12 +81,12 @@ export function persistRecordingFps(fps: number | null): void {
 	safeStorage.set(RECORDING_FPS_STORAGE_KEY, fps);
 }
 
-// Slot sentinels — distinct from any specific device id and from each other.
+// Slot sentinels, distinct from any specific device id and from each other.
 const DEFAULT_SLOT = "default";
 const OFF_SLOT = "off";
 
 /**
- * Countdown override option space — single source of truth for the editor UI,
+ * Countdown override option space: single source of truth for the editor UI,
  * `capSig`, and the combination cap. `null` = inherit global; `0` = off; rest
  * pin an explicit pre-roll. Keep `null` first so the auto-pick walk exhausts
  * every device combo at "inherit" before introducing pinned countdowns.
@@ -131,7 +131,7 @@ function camSlot(
 }
 
 /**
- * Capability fingerprint — dedup key, **including** device identity (same
+ * Capability fingerprint: dedup key, **including** device identity (same
  * on/off shape with different mic/cam ids are intentionally distinct presets).
  * Slots: `off`, `default` (runtime picks system default), or a literal device
  * id; trailing segment is the countdown slot. See `COUNTDOWN_OPTIONS`.
@@ -371,7 +371,7 @@ export type DeviceResolution<T> =
  *   3. System default exists → fallback (saved device gone).
  *   4. Nothing available → missing.
  *
- * Pure — never reads the store or toasts; callers surface the result.
+ * Pure: never reads the store or toasts; callers surface the result.
  */
 export function resolveMic(
 	profile: RecordingProfile,

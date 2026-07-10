@@ -1,5 +1,5 @@
 /**
- * Editor Store — Central reactive state for the video editor.
+ * Editor Store: Central reactive state for the video editor.
  * Uses Svelte 5 runes ($state) for granular reactivity.
  */
 
@@ -11,7 +11,7 @@ import { EASE, type Easing } from '../easing/cubic-bezier';
 import { log } from '../logger';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
-// — which pulls this store's catalogs — can't form an import cycle.
+// (which pulls this store's catalogs) can't form an import cycle.
 import { resolveBackgroundWireValue } from '../registry/resolve';
 import { totalCutDuration, type CutSource, type TimelineCut } from '../timeline/cuts';
 import { deriveSegments, planDeleteSegment, planSplit, segmentAt, type Segment } from '../timeline/segments';
@@ -64,9 +64,9 @@ export interface ZoomRegion {
 	easeOut: Easing;
 	rampIn: number; // seconds spent ramping from 1.0 → scale
 	rampOut: number; // seconds spent ramping from scale → 1.0
-	centerX: number; // UV 0..1 — focus point X; 0.5 = center crop
-	centerY: number; // UV 0..1 — focus point Y; 0.5 = center crop
-	motionBlur: number; // 0..1 — preview motion-blur strength multiplier
+	centerX: number; // UV 0..1: focus point X; 0.5 = center crop
+	centerY: number; // UV 0..1: focus point Y; 0.5 = center crop
+	motionBlur: number; // 0..1: preview motion-blur strength multiplier
 	/**
 	 * Origin of the region. "auto" means added by Smart Auto-Zoom on first
 	 * load; flipped to "manual" the moment the user edits any field so
@@ -74,7 +74,7 @@ export interface ZoomRegion {
 	 */
 	source: "manual" | "auto";
 	/**
-	 * Muted in preview AND export but kept in the project — a non-destructive
+	 * Muted in preview AND export but kept in the project: a non-destructive
 	 * toggle so you can A/B a zoom without losing its settings. Absent = visible.
 	 */
 	hidden?: boolean;
@@ -183,7 +183,7 @@ export type AnnotationKind =
 		y: number;
 		w: number;
 		h: number;
-		/** Blur strength 0..1 — maps to a box-blur radius up to ~5% of the canvas. */
+		/** Blur strength 0..1, mapping to a box-blur radius up to ~5% of the canvas. */
 		strength: number;
 		/** Tint mode applied over the blurred pixels. */
 		variant: "glass" | "white" | "black" | "color";
@@ -259,19 +259,19 @@ export interface CursorSettings {
 	style: StoredCursorId;
 	smoothing: number; // 0-100 → Gaussian σ in ms (0 = raw capture, 100 ≈ 150 ms)
 	snapToClicks: boolean; // anchor smoothed path to exact click x/y around mouse-down
-	snapWindowMs: number; // half-width (ms) of the snap anchor — 0..200
+	snapWindowMs: number; // half-width (ms) of the snap anchor, 0..200
 	highlightClicks: boolean;
 	highlightColor: string;
 	highlightOpacity: number; // 0-100
 	hideWhenIdle: boolean;
 	idleTimeout: number; // seconds
-	/** Motion-blur strength — 0 = off, 1 = strong velocity trail. */
+	/** Motion-blur strength: 0 = off, 1 = strong velocity trail. */
 	motionBlur: number;
-	/** Click-bounce amplitude — 0 = no bounce, 5 = exaggerated squash. */
+	/** Click-bounce amplitude: 0 = no bounce, 5 = exaggerated squash. */
 	clickBounce: number;
 	/** Bounce/squash duration in ms. */
 	bounceSpeedMs: number;
-	/** Idle sway amplitude — subtle wobble during slow motion. 0 = off, 1 = max. */
+	/** Idle sway amplitude: subtle wobble during slow motion. 0 = off, 1 = max. */
 	sway: number;
 }
 
@@ -361,7 +361,7 @@ export const CAMERA_PRESET_INSET = 0.02;
  * is square by default (Phase 1 ships rounded 1:1 only); width == height.
  * x/y are the top-left corner of the bubble in 0..1 UV.
  *
- * `custom` returns the current bottom-right placement as a sane fallback —
+ * `custom` returns the current bottom-right placement as a sane fallback;
  * the panel never actually invokes this with `custom`; that branch exists
  * so callers don't have to special-case the union.
  */
@@ -388,7 +388,7 @@ export function cameraPlacementFromPreset(
 }
 
 /**
- * Inverse of `cameraPlacementFromPreset` — find which preset (if any) the
+ * Inverse of `cameraPlacementFromPreset`: find which preset (if any) the
  * given placement matches within a 0.5% tolerance. Returns `custom` for
  * free-drag positions. Used by the panel to highlight the active chip.
  */
@@ -457,7 +457,7 @@ export interface EditorRenderState {
 	/** Frame padding as percent of the shorter source edge (0..20). */
 	padding: number;
 	borderRadius: number;
-	/** Generated captions (transcript) + how they render. Optional — projects
+	/** Generated captions (transcript) + how they render. Optional: projects
 	 *  saved before captions landed simply omit these. */
 	transcript?: Transcript | null;
 	captionStyle?: CaptionStyle;
@@ -465,7 +465,7 @@ export interface EditorRenderState {
 	cursorSize: number;
 	/**
 	 * User-picked cursor sprite style (`dot` / `macos` / `windows` /
-	 * `outline` / `target`). Optional for backwards compatibility — projects
+	 * `outline` / `target`). Optional for backwards compatibility: projects
 	 * saved before this field landed default to `dot` on load.
 	 */
 	cursorStyle?: StoredCursorId;
@@ -504,7 +504,7 @@ export interface EditorRenderState {
 	/** Whether cuts apply in preview/export (false = bypassed but preserved). */
 	cutsEnabled?: boolean;
 	/** Split markers (original-recording seconds) dividing the clip into
-	 *  individually deletable segments. Editor-only — has no export effect on
+	 *  individually deletable segments. Editor-only: has no export effect on
 	 *  its own; deleting a segment is what produces a cut. */
 	splitPoints?: number[];
 	/** Per-segment speed overrides, anchored to a segment's original start. A
@@ -518,10 +518,10 @@ export interface EditorRenderState {
 	/** Whether zoom regions apply in preview/export. */
 	focusEnabled?: boolean;
 	/** Whether annotations render in preview/export. Negation of the
-	 * pre-existing `annotationsGloballyHidden` flag — surfaced here so all
+	 * pre-existing `annotationsGloballyHidden` flag, surfaced here so all
 	 * three lane toggles round-trip through the project file. */
 	annotationsEnabled?: boolean;
-	/** Silence suggestions the user dismissed — kept so they don't resurface. */
+	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
 	annotations: Array<Omit<Annotation, "id">>;
@@ -531,10 +531,10 @@ export interface EditorRenderState {
 	cameraOverlay: CameraOverlaySettings;
 	/**
 	 * Editor layout mode (`auto` / column-stacked variants etc.). Optional
-	 * for backwards compatibility — pre-field projects keep their default.
+	 * for backwards compatibility: pre-field projects keep their default.
 	 */
 	layoutMode?: LayoutMode;
-	// Hybrid-raster cursor sprite — populated only on the export path
+	// Hybrid-raster cursor sprite, populated only on the export path
 	// (the editor route runs `rasterizeCursorSprites` right before invoking
 	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
 	cursorSpriteRest?: string;          // data:image/png;base64,…
@@ -556,7 +556,7 @@ export type ExportSpeed = 'fast' | 'balanced' | 'quality';
 
 /** GIF dithering algorithm. Trades file size against gradient quality. */
 export type GifDither = 'bayer' | 'sierra2' | 'none';
-/** GIF quality preset — controls palette size + dither bias. */
+/** GIF quality preset: controls palette size + dither bias. */
 export type GifQuality = 'low' | 'medium' | 'high';
 /** GIF loop behavior. `infinite` writes Netscape loop=0, `once` writes loop=-1, `n` writes loop=n. */
 export type GifLoop = 'infinite' | 'once' | number;
@@ -581,7 +581,7 @@ export type LayoutMode = 'auto' | 'crop';
 /**
  * Final-canvas aspect ratio. `source` keeps the canvas matched to the
  * source video plus padding (the v1 behaviour). The other values reframe
- * the final canvas to a target ratio — the source video stays centred,
+ * the final canvas to a target ratio: the source video stays centred,
  * and the chosen background fills the new horizontal/vertical bars.
  *
  * Strings are kept human-readable so they round-trip through the preset
@@ -610,7 +610,7 @@ export type EditorWindowBehavior = 'navigate' | 'new-window';
 export type PanelTab = 'clip' | 'background' | 'focus' | 'annotations' | 'cursor' | 'camera' | 'audio' | 'captions' | 'extensions' | 'info';
 
 // Wallpapers 19–23 were moved into the installable "Waves" extension pack
-// (extensions/packs/waves-wallpapers) — keep the built-in default set at 18 so
+// (extensions/packs/waves-wallpapers); keep the built-in default set at 18 so
 // the extension flow has real background content to exercise.
 export const WALLPAPERS: WallpaperOption[] = Array.from({ length: 18 }, (_, i) => ({
 	id: `wallpaper${i + 1}`,
@@ -636,7 +636,7 @@ export interface GradientSpec {
 export const MAX_GRADIENT_STOPS = 8;
 
 /**
- * Curated gradient presets, authored as full `linear-gradient(...)` strings —
+ * Curated gradient presets, authored as full `linear-gradient(...)` strings:
  * the exact source of truth the preview shader and export rasteriser both parse.
  */
 export const GRADIENT_PRESETS: { label: string; value: string }[] = [
@@ -787,7 +787,7 @@ export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
 	animation: DEFAULT_CAPTION_ANIMATION,
 };
 
-/** A named caption look — the visual half of {@link CaptionStyle}. Applied
+/** A named caption look: the visual half of {@link CaptionStyle}. Applied
  *  wholesale; users then tweak. Built-ins ship a few; extension packs add more
  *  via the asset registry (`captionPreset` kind). */
 export interface CaptionPreset {
@@ -797,7 +797,7 @@ export interface CaptionPreset {
 	style: Omit<CaptionStyle, 'enabled'>;
 }
 
-/** Shipped caption themes — a modern, cohesive set spanning minimal → impact.
+/** Shipped caption themes: a modern, cohesive set spanning minimal → impact.
  *  Each preset is a complete look (typography + colour + animation). Presets
  *  aren't stored by id (applying one copies its style), so this list can evolve
  *  freely. Ordered clean → bold so the picker reads as a spectrum. */
@@ -1021,7 +1021,7 @@ export const CAPTION_PRESETS: CaptionPreset[] = [
 	},
 ];
 
-/** What to do with generated captions on export. Independent choices — you can
+/** What to do with generated captions on export. Independent choices: you can
  *  burn captions into the pixels AND keep a sidecar file. The sidecar is also
  *  what Cloud uploads as a selectable caption track. */
 export interface CaptionExportOptions {
@@ -1052,7 +1052,7 @@ export function createEditorStore() {
 	let metadata = $state<VideoMetadata | null>(null);
 	// `$state.raw` for large replace-only arrays: swapped wholesale, never
 	// mutated element-wise, so deep-proxying thousands of entries is pure
-	// overhead — only the array identity needs reactivity. See AGENTS.md.
+	// overhead; only the array identity needs reactivity. See AGENTS.md.
 	let thumbnailStrip = $state.raw<string[]>([]);
 	// Audio peak envelope (0..1 per bucket) for the timeline waveform. Transient.
 	let waveform = $state.raw<number[]>([]);
@@ -1062,7 +1062,7 @@ export function createEditorStore() {
 	let isPlaying = $state(false);
 	// The component that owns the <video>/picture-clock registers a transport
 	// seek here. `seek()` moves the playhead AND the transport in lockstep, so a
-	// seek from a panel (e.g. a transcript line) lands even mid-playback — setting
+	// seek from a panel (e.g. a transcript line) lands even mid-playback; setting
 	// `currentTime` alone is overwritten by the next playback time publish.
 	let seekHandler: ((time: number) => void) | null = null;
 
@@ -1070,10 +1070,10 @@ export function createEditorStore() {
 	let trimStart = $state(0);
 	let trimEnd = $state(0); // will be set to duration on load
 
-	// Silence / manual cuts — removed ranges, in original-recording seconds.
+	// Silence / manual cuts: removed ranges, in original-recording seconds.
 	let cuts = $state<TimelineCut[]>([]);
 	// Split markers (original-recording seconds) that divide the clip into
-	// individually deletable segments. Purely an editing aid — no export effect
+	// individually deletable segments. Purely an editing aid, with no export effect
 	// until a segment between two boundaries is ripple-deleted (→ a manual cut).
 	let splitPoints = $state<number[]>([]);
 	let segmentSpeeds = $state<SegmentSpeed[]>([]);
@@ -1125,7 +1125,7 @@ export function createEditorStore() {
 	// picker writes this when the user picks an Instagram/YouTube/X preset.
 	let outputAspect = $state<OutputAspect>('source');
 
-	// Id of the most recently applied preset. Pure UI affordance — lets the
+	// Id of the most recently applied preset. Pure UI affordance that lets the
 	// toolbar surface "Story · 9:16" so users see, per project, what's in
 	// effect. Cleared when the user resets back to source.
 	let lastAppliedPresetId = $state<string | null>(null);
@@ -1139,7 +1139,7 @@ export function createEditorStore() {
 	let annotations = $state<Annotation[]>([]);
 	let selectedAnnotationId = $state<string | null>(null);
 	let annotationTool = $state<AnnotationKindName | null>(null);
-	// Layer-panel hover state — when set, the overlay flashes the matching
+	// Layer-panel hover state: when set, the overlay flashes the matching
 	// annotation so users can find a layer in a busy frame.
 	let hoveredAnnotationId = $state<string | null>(null);
 	// Master visibility toggle (the status rail's eye icon). Independent of
@@ -1206,7 +1206,7 @@ export function createEditorStore() {
 		position: 'bottom-right',
 		inset: 24,
 	});
-	// Camera overlay defaults — Phase 1 spec:
+	// Camera overlay defaults, Phase 1 spec:
 	// - Bottom-right corner at 16% size, 1:1 aspect
 	// - Rounded shape (16% corner radius)
 	// - Mirrored on (matches the recording-time webcam preview)
@@ -1224,7 +1224,7 @@ export function createEditorStore() {
 
 	// Export
 	let exportFormat = $state<ExportFormat>('mp4');
-	// Default to source resolution — downscaling a 1080p+ screen recording to a
+	// Default to source resolution; downscaling a 1080p+ screen recording to a
 	// fixed "HD" needlessly softens sharp text/UI.
 	let exportQuality = $state<ExportQuality>('source');
 	let exportSpeed = $state<ExportSpeed>('balanced');
@@ -1245,7 +1245,7 @@ export function createEditorStore() {
 	let exportProgress = $state<number | null>(null);
 	let isExporting = $state(false);
 
-	// Undo/redo history — arrays of de-proxied settings snapshots, always
+	// Undo/redo history: arrays of de-proxied settings snapshots, always
 	// reassigned with spreads (never index-mutated) and bounded to
 	// `MAX_UNDO_HISTORY`. `$state.raw` since only the array identity is read
 	// reactively; the snapshot contents are already plain.
@@ -1253,7 +1253,7 @@ export function createEditorStore() {
 	let undoStack = $state.raw<EditorSettings[]>([]);
 	let redoStack = $state.raw<EditorSettings[]>([]);
 
-	// Dirty tracking — flips to true the moment the user makes any undoable edit,
+	// Dirty tracking: flips to true the moment the user makes any undoable edit,
 	// clears when the edits are persisted to the .recast archive (markSaved) or
 	// when a fresh render state is loaded from disk.
 	let isDirty = $state(false);
@@ -1267,7 +1267,7 @@ export function createEditorStore() {
 	let timelineZoom = $state(1); // 1x = fit to width
 
 	// Every undoable state field. Anything left out here silently survives a
-	// `pushUndoState` call but isn't restored on undo — the user sees unrelated
+	// `pushUndoState` call but isn't restored on undo: the user sees unrelated
 	// edits revert while their tweak stays put. Keep in sync with `applySnapshot`.
 	function captureSettings() {
 		return {
@@ -1315,7 +1315,7 @@ export function createEditorStore() {
 	}
 
 	// Drop the most recent undo entry. For unwinding a push that turned into a
-	// no-op — e.g. a placement that pushed at pointer-down but was cancelled
+	// no-op, e.g. a placement that pushed at pointer-down but was cancelled
 	// (too-small drag / stray click) before it changed anything.
 	function popUndoState() {
 		if (undoStack.length > 0) undoStack = undoStack.slice(0, -1);
@@ -1349,7 +1349,7 @@ export function createEditorStore() {
 	function revertToSaved() {
 		if (!savedSnapshot) return;
 		// Push the current state onto the undo stack so the revert itself
-		// is undoable — a user who reverts by mistake can Ctrl+Z their way
+		// is undoable, so a user who reverts by mistake can Ctrl+Z their way
 		// back to the work they discarded.
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
@@ -1373,7 +1373,7 @@ export function createEditorStore() {
 		applySnapshot(next);
 	}
 
-	// Each field is copied (spread/map) into fresh state, never aliased — the
+	// Each field is copied (spread/map) into fresh state, never aliased: the
 	// snapshot lives on the undo stack and must stay immutable across re-applies.
 	function applySnapshot(s: EditorSettings) {
 		backgroundType = s.backgroundType;
@@ -1399,7 +1399,7 @@ export function createEditorStore() {
 		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
 		motionTone = s.motionTone ?? 'balanced';
 		// Annotation undo: restore the captured array. Each entry already
-		// carries its own id from the snapshot — we keep them so refs from
+		// carries its own id from the snapshot, so we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
 		if (Array.isArray(s.annotations)) {
 			annotations = s.annotations.map((a: Annotation) => ({ ...a }));
@@ -1511,7 +1511,7 @@ export function createEditorStore() {
 		pushUndoState();
 		backgroundType = selection.type;
 		backgroundValue = selection.value;
-		// `value` can be a long wallpaper/gradient string — log only the type.
+		// `value` can be a long wallpaper/gradient string, so log only the type.
 		log.info('background', 'changed', { type: selection.type });
 	}
 
@@ -1532,7 +1532,7 @@ export function createEditorStore() {
 
 	function updateCursorSettings(updates: Partial<CursorSettings>) {
 		cursorSettings = { ...cursorSettings, ...updates };
-		// Sliders (size, smoothing) fire continuously — debounce to one line.
+		// Sliders (size, smoothing) fire continuously, so debounce to one line.
 		log.debounced('cursor-settings', 'cursor', 'settings_changed', { ...updates });
 	}
 
@@ -1551,7 +1551,7 @@ export function createEditorStore() {
 
 	/**
 	 * Patch the camera overlay settings. Mirrors `updateCursorSettings`
-	 * shape — callers handle their own `pushUndoState` so coalesced
+	 * shape; callers handle their own `pushUndoState` so coalesced
 	 * interactions (drag, slider) can batch into a single undo entry.
 	 */
 	function updateCameraOverlay(updates: Partial<CameraOverlaySettings>) {
@@ -1577,7 +1577,7 @@ export function createEditorStore() {
 	/**
 	 * Duplicate a region's settings into a new one placed immediately after it
 	 * (back-to-back, same duration), clamped to the clip. A duplicate is always
-	 * "manual" — it's an explicit user edit — and the copy becomes selected.
+	 * "manual" (it's an explicit user edit) and the copy becomes selected.
 	 */
 	function duplicateZoomRegion(id: string) {
 		const src = zoomRegions.find((z) => z.id === id);
@@ -1588,7 +1588,7 @@ export function createEditorStore() {
 		let start = src.end;
 		let end = start + duration;
 		if (end > clipEnd) {
-			// No room after the original — clamp the tail; if that collapses the
+			// No room after the original: clamp the tail; if that collapses the
 			// window, just stack it on top of the original (user can drag it).
 			end = clipEnd;
 			start = Math.max(trimStart, end - duration);
@@ -1619,7 +1619,7 @@ export function createEditorStore() {
 		return copy.id;
 	}
 
-	/** Toggle (or set) a region's hidden flag — non-destructive mute. */
+	/** Toggle (or set) a region's hidden flag: non-destructive mute. */
 	function setZoomRegionHidden(id: string, hidden?: boolean) {
 		const src = zoomRegions.find((z) => z.id === id);
 		if (!src) return;
@@ -1630,11 +1630,11 @@ export function createEditorStore() {
 	}
 
 	function updateZoomRegion(id: string, updates: Partial<ZoomRegion>) {
-		// Drag/resize/slider edits stream in — debounce per region id.
+		// Drag/resize/slider edits stream in, so debounce per region id.
 		log.debounced(`zoom-${id}`, 'focus', 'zoom_updated', { id, ...updates });
 		zoomRegions = zoomRegions.map((z) => {
 			if (z.id !== id) return z;
-			// First user edit on an auto region detaches it — "Clear auto
+			// First user edit on an auto region detaches it, so "Clear auto
 			// zooms" should leave anything they've tweaked alone.
 			const next = { ...z, ...updates };
 			if (z.source === "auto" && updates.source === undefined) {
@@ -1685,7 +1685,7 @@ export function createEditorStore() {
 	}
 
 	function updateAnnotation(id: string, updates: Partial<Annotation>) {
-		// Position/style edits stream from drags + property sliders — debounce.
+		// Position/style edits stream from drags + property sliders, so debounce.
 		log.debounced(`annotation-${id}`, 'annotation', 'updated', {
 			id,
 			fields: Object.keys(updates),
@@ -1880,7 +1880,7 @@ export function createEditorStore() {
 
 	/**
 	 * Add a removed range. Returns the new cut id, or null if the range is
-	 * too short to be meaningful. Each call is its own undo entry — callers
+	 * too short to be meaningful. Each call is its own undo entry; callers
 	 * accepting several silence suggestions at once should batch with their
 	 * own `pushUndoState` and use the lower-level array if needed.
 	 */
@@ -1909,7 +1909,7 @@ export function createEditorStore() {
 	}
 
 	/**
-	 * Resize a cut. Does NOT push undo — callers (the cut lane's drag
+	 * Resize a cut. Does NOT push undo; callers (the cut lane's drag
 	 * handlers) own coalescing via `pushUndoStateCoalesced` so a whole drag
 	 * is one undo entry.
 	 */
@@ -1920,7 +1920,7 @@ export function createEditorStore() {
 	/**
 	 * Merge overlapping or touching cuts into one, keeping the earliest id so
 	 * the lane's keyed `{#each}` stays stable. Called at the end of a
-	 * create/resize drag — never mid-drag, which would yank the dragged card.
+	 * create/resize drag, never mid-drag, which would yank the dragged card.
 	 */
 	function mergeCuts() {
 		const sorted = [...cuts].sort((a, b) => a.start - b.start);
@@ -1947,8 +1947,8 @@ export function createEditorStore() {
 	}
 
 	// Manual split/cut is an always-on feature now; auto silence is still its own
-	// opt-in flag (`silenceDetection`). A cut is only "active" — i.e. shown on the
-	// timeline and applied in playback/export — when its source allows it AND the
+	// opt-in flag (`silenceDetection`). A cut is only "active" (i.e. shown on the
+	// timeline and applied in playback/export) when its source allows it AND the
 	// cuts lane is enabled. A disabled silence flag preserves those edits but
 	// ignores them, so toggling it back on restores them.
 	function cutFlagAllows(c: TimelineCut): boolean {
@@ -2048,7 +2048,7 @@ export function createEditorStore() {
 	}
 
 	/** Set the transition across the seam between the segments anchored at
-	 * `leftStart` and `rightStart` — a matched exit+entrance styled by the current
+	 * `leftStart` and `rightStart`: a matched exit+entrance styled by the current
 	 * motion tone. One undo entry for the pair. */
 	function setSeamTransition(leftStart: number, rightStart: number, kind: SeamTransition) {
 		pushUndoState();
@@ -2098,7 +2098,7 @@ export function createEditorStore() {
 	 * split points that bordered it are dropped. Returns the original-time
 	 * "join" (the first kept frame after the deletion) to park the playhead on,
 	 * or null when there's nothing to delete (only one segment, or `t` is not in
-	 * a segment) — the whole recording can't be removed this way.
+	 * a segment): the whole recording can't be removed this way.
 	 */
 	function deleteSegmentAt(t: number): number | null {
 		const segs = currentSegments();
@@ -2353,7 +2353,7 @@ export function createEditorStore() {
 		// Restore the "hide all annotations" toggle. Hidden only when explicitly
 		// disabled; absent (older projects) or true → visible.
 		annotationsGloballyHidden = state.annotationsEnabled === false;
-		// A freshly loaded document matches on-disk state — no unsaved edits.
+		// A freshly loaded document matches on-disk state, so no unsaved edits.
 		isDirty = false;
 		// Anchor `revertToSaved` to the just-loaded state.
 		savedSnapshot = getSettingsSnapshot();
@@ -2379,7 +2379,7 @@ export function createEditorStore() {
 		get metadata() { return metadata; },
 		set metadata(v: VideoMetadata | null) {
 			metadata = v;
-			// Default export to 60fps for >60fps recordings — imperceptible for a
+			// Default export to 60fps for >60fps recordings: imperceptible for a
 			// screen demo, ~halves export time. Seeded once so a later user choice is
 			// never clobbered; Original/30/24 remain selectable in the dialog.
 			if (v) {
@@ -2416,7 +2416,7 @@ export function createEditorStore() {
 		get isPlaying() { return isPlaying; },
 		set isPlaying(v: boolean) { isPlaying = v; },
 
-		// Raw mark fields. Setters intentionally do NOT push undo — callers
+		// Raw mark fields. Setters intentionally do NOT push undo; callers
 		// (Timeline drag/keyboard handlers) own undo coalescing via
 		// `pushUndoStateCoalesced` so a single drag or held arrow key is one
 		// undo entry, not one-per-pointer-frame.
@@ -2475,14 +2475,14 @@ export function createEditorStore() {
 		get cutDuration() { return totalCutDuration(cuts); },
 		get dismissedSilences() { return dismissedSilences; },
 
-		// Lane "enable" toggles — bypass the lane's effect in preview/export
+		// Lane "enable" toggles: bypass the lane's effect in preview/export
 		// while keeping the underlying data intact.
 		get cutsEnabled() { return cutsEnabled; },
 		set cutsEnabled(v: boolean) { cutsEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'cuts', enabled: v }); },
 
 		// Split/segment editing. `segments` is derived (trim − active cuts, sliced
 		// by active splits); `splitPoints` is the marker list the timeline renders
-		// — both empty out when timeline editing is opted off.
+		// Both empty out when timeline editing is opted off.
 		get segments() { return currentSegments(); },
 		get splitPoints() { return activeSplitPoints(); },
 		get segmentSpeeds() { return segmentSpeeds; },

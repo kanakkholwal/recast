@@ -36,7 +36,7 @@ function createProfilesStore() {
 	let enabled = $state(true);
 	let hydrated = $state(false);
 
-	/** Read everything from localStorage. Idempotent — safe to call from
+	/** Read everything from localStorage. Idempotent, safe to call from
 	 *  every onMount, only the first call does work. */
 	function hydrate() {
 		if (hydrated) return;
@@ -105,7 +105,7 @@ function createProfilesStore() {
 			const taken = new Set(profiles.map(capSig));
 			// Count attainable signatures that aren't yet taken. We can't just
 			// subtract `profiles.length` because saved profiles may reference
-			// devices that are no longer attached — those don't consume a slot
+			// devices that are no longer attached; those don't consume a slot
 			// in the *current* cartesian.
 			let count = 0;
 			const micOpts = ["off", "default", ...mics.map((m) => m.id)];

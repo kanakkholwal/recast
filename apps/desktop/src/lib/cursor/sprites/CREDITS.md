@@ -8,7 +8,7 @@ The **`system-macos-*`** and **`system-windows-*`** sprites reproduce the
 into Recast's 64×64 sprite canvas (a `translate`+`scale` group); the cursor
 shapes themselves are the respective vendors' designs.
 
-> ⚠️ **Provenance / licensing — review before shipping publicly.**
+> ⚠️ **Provenance / licensing: review before shipping publicly.**
 > These depict the **Apple macOS** (`system-macos-*`) and **Microsoft Windows**
 > (`system-windows-*`) system cursors. Those cursor *designs* are Apple /
 > Microsoft intellectual property. Imported at the product owner's explicit

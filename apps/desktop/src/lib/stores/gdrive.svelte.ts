@@ -12,7 +12,7 @@ import {
 } from "$lib/ipc";
 
 /**
- * Google Drive store — a `$state`-backed singleton the UI binds to. Thin shell
+ * Google Drive store: a `$state`-backed singleton the UI binds to. Thin shell
  * over Tauri commands/events; the OAuth + Drive REST plumbing lives in
  * `commands/gdrive.rs`. Lazy imports keep it safe to load in the web build.
  */

@@ -3,7 +3,7 @@
  *
  * Replaces `navigator.share`: Web Share Level 2 in WebView2 rejects `video/*`
  * file payloads via `canShare`. Sharekit bridges to the real native share sheets,
- * which accept any file. Errors never throw — they return via `ShareResult` so
+ * which accept any file. Errors never throw; they return via `ShareResult` so
  * callers can branch on cancelled/unsupported/error without try/catch.
  */
 
@@ -89,7 +89,7 @@ function classify(e: unknown): ShareResult {
   return { ok: false, reason: "error", message };
 }
 
-// Static true — kept so UI-gating call sites don't change.
+// Static true, kept so UI-gating call sites don't change.
 export function isShareSupported(): boolean {
   return true;
 }
@@ -99,7 +99,7 @@ export function isFileShareSupported(): boolean {
 }
 
 export async function shareLink(payload: ShareTextPayload): Promise<ShareResult> {
-  // `shareText` takes a single string — compose title/text/url into one.
+  // `shareText` takes a single string, so compose title/text/url into one.
   const parts = [payload.title, payload.text, payload.url].filter(
     (s): s is string => typeof s === "string" && s.length > 0,
   );

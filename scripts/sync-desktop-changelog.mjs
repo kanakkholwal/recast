@@ -4,13 +4,13 @@
 // CHANGELOG.md is the canonical Keep-a-Changelog source (also used by the
 // release workflow via `scripts/extract-changelog.mjs`). The desktop app's
 // "What's new" dialog and full changelog page read from a typed RELEASES
-// array — this script parses CHANGELOG.md and rewrites that array between
+// array. This script parses CHANGELOG.md and rewrites that array between
 // the `RELEASES:START` … `RELEASES:END` markers.
 //
 // Run manually with `pnpm sync:changelog`, or automatically before each
 // desktop build (the `predev` / `prebuild` hook in `apps/desktop/package.json`).
 //
-// Parsing is intentionally permissive — anything we can't classify is
+// Parsing is intentionally permissive, so anything we can't classify is
 // treated as a `changed` entry rather than blocking the build, so a
 // malformed CHANGELOG.md never breaks `pnpm dev`.
 
@@ -143,7 +143,7 @@ function collapseWhitespace(s) {
 
 function renderReleasesBlock(releases) {
 	const out = [];
-	out.push(REGION_START + " — auto-generated, do not edit by hand");
+	out.push(REGION_START + ", auto-generated, do not edit by hand");
 	out.push(
 		"export const RELEASES: readonly ChangelogRelease[] = [",
 	);

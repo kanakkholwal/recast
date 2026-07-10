@@ -31,7 +31,7 @@ const BUILTIN: Source = { kind: "builtin" };
 
 let registered = false;
 
-/** Idempotent — safe to call more than once. */
+/** Idempotent: safe to call more than once. */
 export function registerBuiltins(): void {
 	if (registered) return;
 	registered = true;
