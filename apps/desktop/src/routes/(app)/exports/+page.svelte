@@ -1,6 +1,5 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
-  import CloudShareDialog from "$components/cloud/CloudShareDialog.svelte";
   import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
   import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
   import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
@@ -83,14 +82,6 @@
   let playTarget = $state<RecordingEntry | null>(null);
   // Set when a share needs a workspace choice (user is in >1 workspace).
   let workspacePick = $state<{ path: string; title: string; fileName: string } | null>(null);
-  // Set while a cloud share is shown in the foreground progress dialog. The
-  // upload keeps running if minimized (shareTarget cleared, card strip shows).
-  let shareTarget = $state<{
-    path: string;
-    fileName: string;
-    title: string;
-    workspaceId?: string;
-  } | null>(null);
 
   // Multi-select: a toolbar "Select" toggle flips the page into selection
   // mode, where clicking a card checks it instead of opening the file.
@@ -115,14 +106,6 @@
 
   $effect(() => {
     safeStorage.set("exports-view", view);
-  });
-
-  // While the foreground share dialog is open, suppress that upload's corner
-  // card so it isn't shown twice; minimizing or closing clears it and the corner
-  // card takes over. Reset on unmount so nothing stays hidden.
-  $effect(() => {
-    cloudShare.setForeground(shareTarget?.path ?? null);
-    return () => cloudShare.setForeground(null);
   });
 
   async function fetchExports() {
@@ -203,35 +186,22 @@
       void cloudShare.refreshStatus();
       return;
     }
-    beginCloudShare(entry.path, title, entry.filename);
+    beginCloudShare(entry.path, title);
   }
 
   /**
-   * Start an upload + share and show it in the foreground progress dialog. Both
-   * the dialog and (once minimized) the corner-notification card render live
-   * phase/byte/result/error state straight from the store, so there's no toast:
-   * the store's catch already records the failure, so the rejection is swallowed.
+   * Start an upload + share and surface it in the global foreground dialog
+   * (CloudShareHost). No toast: the store records phase/byte/result/error and the
+   * dialog reads it live, so the store's rejection is swallowed here.
+   *
+   * The dialog is opened on the next frame so a closing overlay (the row's
+   * dropdown, or the workspace picker) fully settles first. Opening a second
+   * modal in the same tick makes bits-ui hand focus back and the new dialog never
+   * appears, which read as "no dialog showed up".
    */
-  function beginCloudShare(
-    path: string,
-    title: string,
-    fileName: string,
-    workspaceId?: string,
-  ) {
-    shareTarget = { path, fileName, title, workspaceId };
+  function beginCloudShare(path: string, title: string, workspaceId?: string) {
     void cloudShare.share(path, title, workspaceId).catch(() => {});
-  }
-
-  function retryCloudShare() {
-    const t = shareTarget;
-    if (!t) return;
-    cloudShare.dismiss(t.path);
-    beginCloudShare(t.path, t.title, t.fileName, t.workspaceId);
-  }
-
-  function closeCloudShare() {
-    if (shareTarget) cloudShare.dismiss(shareTarget.path);
-    shareTarget = null;
+    requestAnimationFrame(() => cloudShare.setForeground(path));
   }
 
   async function copyCloudLink(entry: RecordingEntry) {
@@ -272,11 +242,10 @@
       void goto("/settings");
       return;
     }
-    try {
-      await gdrive.upload(entry.path);
-    } catch (e) {
-      toast.error(`Drive upload failed: ${e}`);
-    }
+    // Progress lives in the foreground dialog (and the activity center once
+    // minimized), never in-place on the card. The store toasts the outcome.
+    const id = gdrive.startUpload(entry.path);
+    requestAnimationFrame(() => gdrive.setForeground(id));
   }
 
   // `navigator.share` exposure is static, so sample once at module load so the
@@ -580,14 +549,6 @@
           {#each displayed as entry, i (entry.path)}
             {@const isSelected = selection.has(entry.path)}
             {@const isImage = isImageFile(entry.filename)}
-            {@const activeUpload = gdrive.getActiveUploadForPath(entry.path)}
-            {@const uploadPct = activeUpload && activeUpload.totalBytes
-              ? Math.min(
-                  100,
-                  Math.round((activeUpload.bytesSent / activeUpload.totalBytes) * 100),
-                )
-              : 0}
-            {@const cloudActive = cloudShare.getActiveForPath(entry.path)}
             <div
               in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
               animate:morph={{ duration: 340 }}
@@ -682,16 +643,6 @@
                       {getExtension(entry.filename)}
                     </span>
                   </Cutout>
-                {/if}
-
-                <!-- Drive upload progress chip on the thumbnail (paired with the bottom bar). -->
-                {#if activeUpload}
-                  <span
-                    class="absolute left-1.5 top-1.5 flex h-4 items-center gap-1 rounded-md bg-background/85 px-1.5 text-[9px] font-semibold tracking-wide text-foreground shadow-craft-sm backdrop-blur"
-                  >
-                    <RefreshCw class="size-2.5 animate-spin text-primary" />
-                    {uploadPct}%
-                  </span>
                 {/if}
               </div>
 
@@ -825,29 +776,6 @@
                 </div>
               {/if}
 
-              <!-- Drive upload progress strip; width tracks the bytes-sent ratio
-                   the Rust side emits between resumable-upload chunks. -->
-              {#if activeUpload}
-                <div
-                  class="pointer-events-none absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-muted/30"
-                  aria-hidden="true"
-                >
-                  <div
-                    class="h-full rounded-r-sm bg-primary/85 transition-[width] duration-200"
-                    style="width: {uploadPct}%"
-                  ></div>
-                </div>
-              {/if}
-
-              <!-- Cloud share strip: phase-based (no byte %), so an indeterminate pulse. -->
-              {#if cloudActive}
-                <div
-                  class="pointer-events-none absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-muted/30"
-                  aria-hidden="true"
-                >
-                  <div class="h-full w-1/3 animate-pulse rounded-r-sm bg-primary/85"></div>
-                </div>
-              {/if}
             </div>
           {/each}
         </div>
@@ -969,20 +897,10 @@
       const pick = workspacePick;
       if (!pick) return;
       if (remember) cloudShare.setWorkspace(workspaceId);
-      beginCloudShare(pick.path, pick.title, pick.fileName, workspaceId);
+      beginCloudShare(pick.path, pick.title, workspaceId);
     }}
     onOpenChange={(v: boolean) => {
       if (!v) workspacePick = null;
     }}
-  />
-{/if}
-
-{#if shareTarget}
-  <CloudShareDialog
-    path={shareTarget.path}
-    fileName={shareTarget.fileName}
-    onMinimize={() => (shareTarget = null)}
-    onClose={closeCloudShare}
-    onRetry={retryCloudShare}
   />
 {/if}

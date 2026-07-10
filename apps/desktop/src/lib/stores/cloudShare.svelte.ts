@@ -1,4 +1,5 @@
 import { isTauriApp } from "$lib/runtime/tauri";
+import { toast } from "@recast/ui/sonner";
 import {
 	authStatus,
 	recastCloudDelete,
@@ -29,6 +30,11 @@ export type CloudUpload = {
 	/** Local export path, also the event key from the Rust side. */
 	sourcePath: string;
 	fileName: string;
+	/** Original share args, kept so a retry (from the dialog or activity center)
+	 * reproduces the same request without the caller re-threading them. */
+	title: string;
+	workspaceId?: string;
+	captionsTranscript?: Transcript | null;
 	phase: CloudPhase;
 	status: CloudUploadStatus;
 	/** Byte-level progress for the upload PUT (0/0 until the first event). */
@@ -204,6 +210,9 @@ function createCloudShareStore() {
 		uploads[path] = {
 			sourcePath: path,
 			fileName,
+			title,
+			workspaceId,
+			captionsTranscript,
 			phase: "preparing",
 			status: "uploading",
 			bytesSent: 0,
@@ -248,6 +257,10 @@ function createCloudShareStore() {
 				shareUrl: result.shareUrl,
 				uploadedAt: Math.floor(Date.now() / 1000),
 			};
+			// Toast alongside the dialog/activity card so feedback still lands when
+			// the share was minimized. This is the one place every entry point
+			// (exports, editor, retry) funnels through.
+			toast.success("Shared to Recast Cloud.", { description: fileName });
 			return result;
 		} catch (e) {
 			// Rust also fires a detached `recast-cloud:error`; ensure the card
@@ -256,12 +269,26 @@ function createCloudShareStore() {
 			if (existing && existing.status !== "error") {
 				uploads[path] = { ...existing, status: "error", error: String(e) };
 			}
+			toast.error(`Couldn't share to Recast Cloud: ${(e as Error)?.message ?? e}`);
 			throw e;
 		}
 	}
 
 	function dismiss(path: string) {
 		delete uploads[path];
+	}
+
+	/**
+	 * Re-run a share with its original args. Reads them off the existing entry
+	 * (title, workspace, captions) before dropping it, so a retry from the dialog
+	 * or the activity center reproduces the same request. No-op if the entry is gone.
+	 */
+	function retry(path: string) {
+		const u = uploads[path];
+		if (!u) return;
+		const { title, workspaceId, captionsTranscript } = u;
+		dismiss(path);
+		void share(path, title, workspaceId, captionsTranscript).catch(() => {});
 	}
 
 	/** Delete the cloud copy (blob + row + shares). Local file untouched. */
@@ -300,11 +327,6 @@ function createCloudShareStore() {
 
 	function getRecordForPath(path: string): CloudUploadRecord | undefined {
 		return uploadHistory[path];
-	}
-
-	function getActiveForPath(path: string): CloudUpload | undefined {
-		const u = uploads[path];
-		return u && u.status === "uploading" ? u : undefined;
 	}
 
 	return {
@@ -365,11 +387,11 @@ function createCloudShareStore() {
 		setWorkspace,
 		share,
 		dismiss,
+		retry,
 		deleteCloud,
 		updateShare,
 		forget,
 		getRecordForPath,
-		getActiveForPath,
 	};
 }
 

@@ -12,6 +12,7 @@
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";
+  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
   import type { ExportStateEvent, RecordingEntry } from "$lib/ipc";
@@ -60,14 +61,11 @@
     CheckCircle2,
     Circle,
     Cloud,
-    ExternalLink,
     FlaskConical,
     FolderOpen,
     HardDriveUpload,
-    Link2,
     LoaderCircle,
     Play,
-    RefreshCw,
     Share2,
     TriangleAlert,
     Upload,
@@ -1212,13 +1210,10 @@
       void goto("/settings");
       return;
     }
-    try {
-      await gdrive.upload(exportResult.path);
-      // Progress surfaces inline via successUpload and the corner-notifications
-      // store, so the upload stays trackable after dismissing the card.
-    } catch (e) {
-      toast.error(`Drive upload failed: ${e}`);
-    }
+    // Progress lives in the foreground dialog (and the activity center once
+    // minimized), never in-place on the card. The store toasts the outcome.
+    const id = gdrive.startUpload(exportResult.path);
+    requestAnimationFrame(() => gdrive.setForeground(id));
   }
 
   // Share the export to Recast Cloud and copy the link; routes to Settings if
@@ -1234,6 +1229,8 @@
     const title =
       basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
     try {
+      // The store surfaces success/error toasts and tracks progress in the
+      // activity center, so just copy the link on success here.
       const result = await cloudShare.share(
         exportResult.path,
         title,
@@ -1242,47 +1239,11 @@
       );
       try {
         await navigator.clipboard.writeText(result.shareUrl);
-        toast.success("Shared. Link copied to clipboard.");
       } catch {
-        toast.success("Shared to Recast Cloud.");
+        // Clipboard blocked; the link is still in the activity center.
       }
-    } catch (e) {
-      toast.error(`Cloud share failed: ${(e as Error)?.message ?? e}`);
-    }
-  }
-
-  // The success card's path, so the upload state can key off it. Null unless the
-  // dialog is in the success state.
-  const successPath = $derived(
-    exportResult?.kind === "success" ? exportResult.path : null,
-  );
-  // Most-recent upload for the exported file; drives the inline progress in the
-  // success card and survives status transitions.
-  const successUpload = $derived.by(() => {
-    if (!successPath) return undefined;
-    const list = gdrive.activeUploads.filter(
-      (u) => u.sourcePath === successPath,
-    );
-    list.sort((a, b) => b.uploadId.localeCompare(a.uploadId));
-    return list[0];
-  });
-  const successUploadPct = $derived(
-    successUpload && successUpload.totalBytes
-      ? Math.min(
-          100,
-          Math.round(
-            (successUpload.bytesSent / successUpload.totalBytes) * 100,
-          ),
-        )
-      : 0,
-  );
-
-  async function copyDriveLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      toast.success("Drive link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
+    } catch {
+      // The store already surfaced the failure.
     }
   }
 
@@ -1293,8 +1254,9 @@
   async function shareExportedFile() {
     if (exportResult?.kind !== "success") return;
     const fileName = basename(exportResult.path) ?? "recording";
-    const fallbackLink =
-      successUpload?.status === "complete" ? successUpload.webViewLink : undefined;
+    // OS share sheets can't attach a local file everywhere; fall back to a
+    // recorded Drive link if this export already has one.
+    const fallbackLink = gdrive.getRecordForPath(exportResult.path)?.webViewLink;
     const result = await shareRecording({
       path: exportResult.path,
       fileName,
@@ -1311,15 +1273,6 @@
       );
     } else {
       toast.error(`Share failed: ${result.message ?? "unknown error"}`);
-    }
-  }
-
-  async function openDriveLink(link: string) {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(link);
-    } catch {
-      window.open(link, "_blank", "noopener");
     }
   }
 
@@ -1543,6 +1496,10 @@
       onToggleTimeline={() => (showTimeline = !showTimeline)}
     />
   </CustomTitlebar>
+
+  <!-- Foreground upload dialogs (cloud share + Drive), reopened by clicking an
+       upload in the activity center; store-driven so they survive navigation. -->
+  <UploadDialogsHost />
 
   <ConfirmDialog
     bind:open={showMigration}
@@ -2036,112 +1993,9 @@
 
     {@render exportSpecStrip()}
 
-    {#if successUpload}
-      <!-- Drive status row with inline progress and a trailing action that
-           tracks the upload state (cancel / copy-link / retry). -->
-      <div
-        class="flex items-center gap-3 border-t border-border/40 bg-muted/15 px-5 py-3"
-        aria-live="polite"
-      >
-        <div
-          class="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset)"
-        >
-          {#if successUpload.status === "uploading"}
-            <RefreshCw class="size-3.5 animate-spin text-primary" />
-          {:else if successUpload.status === "complete"}
-            <HardDriveUpload class="size-3.5 text-success" />
-          {:else if successUpload.status === "cancelled"}
-            <X class="size-3.5" />
-          {:else}
-            <TriangleAlert class="size-3.5 text-destructive" />
-          {/if}
-        </div>
-
-        <div class="min-w-0 flex-1">
-          <p class="text-[12px] font-medium text-foreground">
-            {#if successUpload.status === "uploading"}
-              Uploading to Drive
-            {:else if successUpload.status === "complete"}
-              Uploaded to Drive
-            {:else if successUpload.status === "cancelled"}
-              Upload cancelled
-            {:else}
-              Upload failed
-            {/if}
-          </p>
-          {#if successUpload.status === "uploading"}
-            <div class="mt-1 flex items-center gap-2">
-              <div class="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                <div
-                  class="h-full rounded-full bg-primary transition-[width] duration-200"
-                  style="width: {successUploadPct}%"
-                ></div>
-              </div>
-              <span
-                class="font-mono text-[10px] tabular-nums text-muted-foreground"
-              >
-                {successUploadPct}%
-              </span>
-            </div>
-          {:else if successUpload.status === "error" && successUpload.error}
-            <p
-              class="truncate text-[10.5px] leading-snug text-muted-foreground"
-              title={successUpload.error}
-            >
-              {successUpload.error}
-            </p>
-          {/if}
-        </div>
-
-        <!-- The Drive row owns its lifecycle so the footer carries no Drive action. -->
-        {#if successUpload.status === "uploading"}
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-muted-foreground"
-            onclick={() => gdrive.cancelUpload(successUpload!.uploadId)}
-          >
-            <X class="size-3" />
-            Cancel
-          </Button>
-        {:else if successUpload.status === "complete" && successUpload.webViewLink}
-          <div class="flex shrink-0 items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="xs"
-              class="gap-1.5 text-primary hover:text-primary"
-              onclick={() => copyDriveLink(successUpload!.webViewLink!)}
-            >
-              <Link2 class="size-3" />
-              Copy link
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="text-muted-foreground"
-              title="Open in Drive"
-              onclick={() => openDriveLink(successUpload!.webViewLink!)}
-            >
-              <ExternalLink class="size-3" />
-            </Button>
-          </div>
-        {:else}
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-muted-foreground"
-            onclick={uploadExportToDrive}
-          >
-            <RefreshCw class="size-3" />
-            Retry
-          </Button>
-        {/if}
-      </div>
-    {/if}
-
     <!-- Share/upload tiles, grouped out of the footer so they read as one
-         "where does this go?" choice. The Drive tile drops out once an upload
-         exists, because the Drive row above owns it then. -->
+         "where does this go?" choice. Upload progress is never shown inline
+         here; it opens the foreground dialog and tracks in the activity center. -->
     <div class="border-t border-border/40 bg-muted/15 px-5 py-3.5">
       <p
         class="mb-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
@@ -2164,22 +2018,20 @@
           </span>
         </button>
 
-        {#if !successUpload}
-          <button
-            type="button"
-            onclick={uploadExportToDrive}
-            class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+        <button
+          type="button"
+          onclick={uploadExportToDrive}
+          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+        >
+          <span
+            class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <span
-              class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
-            >
-              <HardDriveUpload class="size-4" />
-            </span>
-            <span class="text-[11px] font-medium leading-none text-foreground">
-              Google Drive
-            </span>
-          </button>
-        {/if}
+            <HardDriveUpload class="size-4" />
+          </span>
+          <span class="text-[11px] font-medium leading-none text-foreground">
+            Google Drive
+          </span>
+        </button>
 
         {#if shareSupported}
           <button

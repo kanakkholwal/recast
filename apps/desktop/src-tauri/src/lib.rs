@@ -11,6 +11,7 @@ mod encoder;
 pub mod ffmpeg;
 mod fonts;
 mod permissions;
+mod power;
 mod project;
 mod recording;
 mod render;
@@ -228,6 +229,7 @@ pub fn run() {
                 export_cancel: Mutex::new(HashMap::new()),
                 auth_poller: Mutex::new(None),
                 pending_open_file: Mutex::new(pending_open_file),
+                power: crate::power::PowerManager::new(),
             });
 
             // Register the `recast://` scheme at runtime for dev builds. In

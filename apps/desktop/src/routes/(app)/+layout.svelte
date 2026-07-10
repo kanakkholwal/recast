@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CornerNotifications from "$components/corner-notifications.svelte";
   import ActivityCenter from "$components/layout/activity-center.svelte";
   import AppSidebar from "$components/layout/app-sidebar.svelte";
@@ -166,3 +167,4 @@
 
 <WhatsNewDialog />
 <CornerNotifications />
+<UploadDialogsHost />

@@ -38,6 +38,16 @@
 			driveItems.some((u) => u.status === "uploading"),
 	);
 
+	let open = $state(false);
+
+	// Reopen the foreground share dialog for a Recast Cloud upload: progress while
+	// it runs, share settings once it lands. Closes the popover so the two
+	// overlays don't fight.
+	function openShare(path: string) {
+		open = false;
+		cloudShare.setForeground(path);
+	}
+
 	async function copy(link: string, label: string) {
 		try {
 			await navigator.clipboard.writeText(link);
@@ -56,7 +66,7 @@
 	}
 </script>
 
-<Popover.Root>
+<Popover.Root {open} onOpenChange={(v) => (open = v)}>
 	<Popover.Trigger>
 		{#snippet child({ props })}
 			<button
@@ -103,9 +113,22 @@
 			<div
 				class="flex max-h-[min(70vh,420px)] flex-col divide-y divide-border/40 overflow-y-auto"
 			>
-				<!-- Recast Cloud shares -->
+				<!-- Recast Cloud shares. The row reopens the foreground dialog
+				     (progress or share settings); inner buttons opt out. -->
 				{#each cloudItems as up (up.sourcePath)}
-					<div class="flex flex-col gap-2 px-3 py-2.5">
+					<div
+						role="button"
+						tabindex="0"
+						title="Open share"
+						onclick={() => openShare(up.sourcePath)}
+						onkeydown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								openShare(up.sourcePath);
+							}
+						}}
+						class="flex cursor-pointer flex-col gap-2 px-3 py-2.5 text-left outline-none transition-colors hover:bg-foreground/3 focus-visible:bg-foreground/3"
+					>
 						<div class="flex items-start gap-2.5">
 							<span
 								class={cn(
@@ -144,7 +167,10 @@
 								type="button"
 								class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-foreground"
 								aria-label="Dismiss"
-								onclick={() => cloudShare.dismiss(up.sourcePath)}
+								onclick={(e) => {
+									e.stopPropagation();
+									cloudShare.dismiss(up.sourcePath);
+								}}
 							>
 								<X class="size-3.5" />
 							</button>
@@ -166,14 +192,20 @@
 									size="xs"
 									variant="ghost"
 									class="h-7 gap-1.5"
-									onclick={() => copy(up.shareUrl!, "Share link copied.")}
+									onclick={(e) => {
+										e.stopPropagation();
+										copy(up.shareUrl!, "Share link copied.");
+									}}
 								>
 									<Copy class="size-3" /> Copy link
 								</Button>
 								<Button
 									size="xs"
 									class="h-7 gap-1.5"
-									onclick={() => openLink(up.shareUrl!)}
+									onclick={(e) => {
+										e.stopPropagation();
+										openLink(up.shareUrl!);
+									}}
 								>
 									<ExternalLink class="size-3" /> Open
 								</Button>

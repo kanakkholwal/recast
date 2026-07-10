@@ -1,44 +1,42 @@
 <script lang="ts">
 	/**
-	 * Foreground progress for a Recast Cloud share, shown after workspace
-	 * selection. Reads live upload state from the cloudShare store (phase + byte
-	 * counts + result/error) rather than routing feedback through a toast. When
-	 * the upload finishes it shows the share settings inline (link, visibility,
-	 * password, expiry) like the web QuickUpload flow. Minimize keeps the upload
-	 * running behind the corner card.
+	 * Foreground progress for a Recast Cloud share. Reads live upload state from
+	 * the cloudShare store (phase + byte counts + result/error). When the upload
+	 * finishes it shows the share settings inline (link, visibility, password,
+	 * expiry) like the web QuickUpload flow. Minimize keeps the upload running and
+	 * hands it to the activity center. The store also fires success/error toasts,
+	 * so feedback still lands if this dialog is minimized.
 	 */
-	import CloudShareSettings from "./CloudShareSettings.svelte";
 	import { cloudShare } from "$lib/stores/cloudShare.svelte";
+	import { AlertTriangle, Check, Cloud, Minus } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
+	import { Spinner } from "@recast/ui/spinner";
 	import { cn } from "@recast/ui/utils";
-	import {
-		AlertTriangle,
-		Check,
-		Cloud,
-		LoaderCircle,
-		Minus,
-	} from "@lucide/svelte";
+	import CloudShareSettings from "./CloudShareSettings.svelte";
 
-	let {
-		path,
-		fileName,
-		onMinimize,
-		onClose,
-		onRetry,
-	}: {
-		path: string;
-		fileName: string;
-		/** Background the upload and dismiss the dialog (upload keeps running). */
-		onMinimize: () => void;
-		/** Terminal-state dismiss: clears the store entry and closes. */
-		onClose: () => void;
-		onRetry: () => void;
-	} = $props();
+	let { path }: { path: string } = $props();
 
 	const upload = $derived(cloudShare.uploads[path]);
 	const record = $derived(cloudShare.uploadHistory[path]);
+	const fileName = $derived(
+		upload?.fileName ?? path.split(/[\\/]/).pop() ?? "",
+	);
 	const status = $derived(upload?.status ?? "uploading");
+
+	/** Background the upload and dismiss the dialog (upload keeps running, and
+	 * resurfaces in the activity center). */
+	function onMinimize() {
+		cloudShare.setForeground(null);
+	}
+	/** Terminal-state dismiss: clears the store entry and closes. */
+	function onClose() {
+		cloudShare.setForeground(null);
+		cloudShare.dismiss(path);
+	}
+	function onRetry() {
+		cloudShare.retry(path);
+	}
 	const phase = $derived(upload?.phase ?? "preparing");
 	const pct = $derived(
 		upload && upload.totalBytes > 0
@@ -129,9 +127,7 @@
 						{phaseLabel}
 					</span>
 					{#if status === "uploading"}
-						<LoaderCircle
-							class="size-3.5 shrink-0 animate-spin text-muted-foreground"
-						/>
+						<Spinner class="size-3.5 shrink-0 text-muted-foreground" />
 					{/if}
 				</div>
 
@@ -156,19 +152,19 @@
 			</div>
 		{/if}
 
-		<Dialog.Footer class="gap-2">
+		<Dialog.Footer>
 			{#if status === "uploading"}
-				<Button variant="secondary" class="gap-1.5" onclick={onMinimize}>
-					<Minus class="size-3.5" />
+				<Button variant="default_soft" size="sm" onclick={onMinimize}>
+					<Minus />
 					Minimize
 				</Button>
 			{:else if status === "complete"}
-				<Button disabled={saving || loading} class="gap-2" onclick={done}>
+				<Button disabled={saving || loading}  size="sm" onclick={done}>
 					{saving ? "Saving…" : "Done"}
-					{#if !saving}<Check class="size-4" />{/if}
+					{#if !saving}<Check />{/if}
 				</Button>
 			{:else}
-				<Button variant="ghost" onclick={onClose}>Close</Button>
+				<Button variant="ghost"  size="sm" onclick={onClose}>Close</Button>
 				<Button onclick={onRetry}>Try again</Button>
 			{/if}
 		</Dialog.Footer>

@@ -1,4 +1,5 @@
 import { isTauriApp } from "$lib/runtime/tauri";
+import { toast } from "@recast/ui/sonner";
 import {
 	gdriveCancelUpload,
 	gdriveConnect,
@@ -8,7 +9,6 @@ import {
 	gdriveStatus,
 	gdriveUpload,
 	type GdriveUploadRecord,
-	type GdriveUploadResult,
 } from "$lib/ipc";
 
 /**
@@ -46,6 +46,11 @@ function createGdriveStore() {
 	 * list dropdown ("Upload to Drive" vs. "Copy link / Re-upload").
 	 */
 	const uploadHistory = $state<Record<string, GdriveUploadRecord>>({});
+
+	// Id of the upload shown in the foreground dialog, if any. The activity
+	// center hides this one so it isn't doubled; clearing it (minimize) hands
+	// tracking back to the activity center.
+	let foregroundId = $state<string | null>(null);
 
 	let listenersAttached = false;
 
@@ -144,9 +149,13 @@ function createGdriveStore() {
 	 * the corner-card UI usually relies on the `uploads` map updating via
 	 * events rather than awaiting this.
 	 */
-	async function upload(path: string): Promise<GdriveUploadResult> {
-		if (!(await isTauriApp())) throw new Error("not running in Tauri");
-		await attachListeners();
+	/**
+	 * Seed an upload and start it in the background, returning its id so the
+	 * caller can foreground the progress dialog. Fire-and-forget: progress,
+	 * completion, history and success/error toasts are all handled in
+	 * {@link runUpload}, so callers never await the transfer.
+	 */
+	function startUpload(path: string): string {
 		const fileName = path.split(/[\\/]/).pop() ?? path;
 		const uploadId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 		uploads[uploadId] = {
@@ -157,6 +166,18 @@ function createGdriveStore() {
 			totalBytes: 0,
 			status: "uploading",
 		};
+		void runUpload(uploadId, path);
+		return uploadId;
+	}
+
+	async function runUpload(uploadId: string, path: string) {
+		const fileName = uploads[uploadId]?.fileName ?? path;
+		if (!(await isTauriApp())) {
+			const ex = uploads[uploadId];
+			if (ex) uploads[uploadId] = { ...ex, status: "error", error: "not running in Tauri" };
+			return;
+		}
+		await attachListeners();
 		try {
 			// Byte progress rides this upload's own channel.
 			const result = await gdriveUpload(path, uploadId, (p) => {
@@ -185,15 +206,38 @@ function createGdriveStore() {
 				webViewLink: result.webViewLink,
 				uploadedAt: Math.floor(Date.now() / 1000),
 			};
-			return result;
+			// Matches the Recast Cloud share toast so both activity-center uploads
+			// confirm the same way.
+			toast.success("Uploaded to Google Drive.", { description: fileName });
 		} catch (e) {
-			// Rust also fires a detached `gdrive:upload-error` (with the
-			// cancelled/failed flag) for the card; re-throw for awaiting callers.
-			throw e;
+			// A user cancel also rejects here. `cancelUpload` flips the status to
+			// "cancelled" first (the detached `gdrive:upload-error` event backs
+			// that up), so only a genuine failure toasts.
+			const existing = uploads[uploadId];
+			if (existing?.status === "cancelled") return;
+			if (existing && existing.status !== "error") {
+				uploads[uploadId] = { ...existing, status: "error", error: String(e) };
+			}
+			toast.error(`Couldn't upload to Google Drive: ${(e as Error)?.message ?? e}`);
 		}
 	}
 
+	/** Re-run a failed/cancelled upload for the same file and keep it foregrounded. */
+	function retry(uploadId: string) {
+		const u = uploads[uploadId];
+		if (!u) return;
+		const path = u.sourcePath;
+		dismissUpload(uploadId);
+		foregroundId = startUpload(path);
+	}
+
 	async function cancelUpload(uploadId: string) {
+		// Flip the status optimistically so `runUpload`'s catch can tell a cancel
+		// from a real failure before the Rust error event arrives.
+		const ex = uploads[uploadId];
+		if (ex && ex.status === "uploading") {
+			uploads[uploadId] = { ...ex, status: "cancelled" };
+		}
 		if (!(await isTauriApp())) return;
 		try {
 			await gdriveCancelUpload(uploadId);
@@ -223,18 +267,6 @@ function createGdriveStore() {
 		return uploadHistory[localPath];
 	}
 
-	/** In-flight upload for a source path, most-recent first if several match. */
-	function getActiveUploadForPath(
-		localPath: string,
-	): GdriveUpload | undefined {
-		const list = Object.values(uploads).filter(
-			(u) => u.sourcePath === localPath && u.status === "uploading",
-		);
-		// uploadIds are timestamp-prefixed, so lexicographic max = most recent.
-		list.sort((a, b) => b.uploadId.localeCompare(a.uploadId));
-		return list[0];
-	}
-
 	return {
 		get connected() {
 			return connected;
@@ -254,6 +286,14 @@ function createGdriveStore() {
 		get uploadHistory() {
 			return uploadHistory;
 		},
+		/** Id of the upload currently shown in the foreground dialog, if any. */
+		get foregroundId() {
+			return foregroundId;
+		},
+		/** Mark (or clear) the upload a foreground progress dialog owns. */
+		setForeground(id: string | null) {
+			foregroundId = id;
+		},
 
 		/** Wire event listeners and pull current status + history. Safe to call repeatedly. */
 		async init() {
@@ -266,12 +306,12 @@ function createGdriveStore() {
 		refreshHistory,
 		connect,
 		disconnect,
-		upload,
+		startUpload,
+		retry,
 		cancelUpload,
 		dismissUpload,
 		forgetUpload,
 		getRecordForPath,
-		getActiveUploadForPath,
 	};
 }
 
