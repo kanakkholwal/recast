@@ -50,6 +50,7 @@ export async function openProjectInNewWindow(path: string): Promise<void> {
     height: 960,
     center: true,
     decorations: false,
+    transparent: true,
   });
   // No PII: the path never leaves.
   analytics.capture("editor_opened");

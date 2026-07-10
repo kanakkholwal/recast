@@ -443,6 +443,8 @@ pub fn run() {
             commands::set_close_to_tray,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
+            commands::get_window_transparency,
+            commands::set_window_transparency,
             commands::set_telemetry_consent,
             commands::gdrive_connect,
             commands::gdrive_status,

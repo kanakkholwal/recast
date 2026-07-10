@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clock, clockCentis, clockDecis, compactDuration } from "./time";
+import { clock, clockCentis, clockDecis, compactDuration, etaLabel } from "./time";
 
 describe("clock (M:SS)", () => {
 	it("formats minutes and zero-padded seconds", () => {
@@ -39,5 +39,23 @@ describe("compactDuration", () => {
 		expect(compactDuration(1.5)).toBe("1.5s");
 		expect(compactDuration(0.5)).toBe("500ms");
 		expect(compactDuration(0.04)).toBe("40ms");
+	});
+});
+
+describe("etaLabel", () => {
+	it("rounds seconds up and stays under a minute", () => {
+		expect(etaLabel(0.4)).toBe("almost done");
+		expect(etaLabel(1)).toBe("~1s left");
+		expect(etaLabel(44.2)).toBe("~45s left");
+		expect(etaLabel(59)).toBe("~59s left");
+	});
+	it("splits into minutes and seconds past a minute", () => {
+		expect(etaLabel(60)).toBe("~1m left");
+		expect(etaLabel(130)).toBe("~2m 10s left");
+	});
+	it("clamps negatives and non-finite", () => {
+		expect(etaLabel(-5)).toBe("almost done");
+		expect(etaLabel(NaN)).toBe("almost done");
+		expect(etaLabel(Infinity)).toBe("almost done");
 	});
 });

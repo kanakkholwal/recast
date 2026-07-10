@@ -14,10 +14,14 @@
     getHidePanelFromCapture,
     getLastSource,
     getOutputDir,
+    getWindowTransparency,
     setCloseToTray,
     setHidePanelFromCapture,
     setOutputDir,
+    setWindowTransparency,
   } from "$lib/ipc";
+  import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+  import { emit } from "@tauri-apps/api/event";
   import {
     loadRecordingFps,
     loadRecordingQuality,
@@ -95,6 +99,7 @@
   let editorWindow = $state<EditorBehavior>("navigate");
   let countdown = $state<CountdownSeconds>(3);
   let closeToTray = $state(true);
+  let windowTransparency = $state(false);
   let hidePanelFromCapture = $state(true);
   // Content protection is a compile-time no-op on Linux (tao gates it to
   // macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
@@ -228,6 +233,11 @@
       // the UI render the optimistic value.
     }
     try {
+      windowTransparency = await getWindowTransparency();
+    } catch {
+      // Leave the default off.
+    }
+    try {
       hidePanelFromCapture = await getHidePanelFromCapture();
     } catch {
       // Older builds or non-Tauri preview, so keep the optimistic default.
@@ -242,6 +252,19 @@
     } catch (e) {
       // Roll back on failure so the UI mirrors the actual persisted state.
       closeToTray = !next;
+      toast.error(`Could not update setting: ${e}`);
+    }
+  }
+
+  async function toggleWindowTransparency() {
+    const next = !windowTransparency;
+    windowTransparency = next;
+    try {
+      await setWindowTransparency(next);
+      // Every open window re-applies its backdrop off this broadcast.
+      await emit(BACKDROP_CHANGED_EVENT, next);
+    } catch (e) {
+      windowTransparency = !next;
       toast.error(`Could not update setting: ${e}`);
     }
   }
@@ -676,6 +699,21 @@
                     onValueChange={(v) => (layoutMode.current = v)}
                     fill={false}
                     aria-label="Window chrome layout"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window transparency"
+                  description={isLinux
+                    ? "Not available on Linux."
+                    : windowTransparency
+                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
+                      : "The window uses a solid background."}
+                >
+                  <Switch
+                    checked={!isLinux && windowTransparency}
+                    disabled={isLinux}
+                    onCheckedChange={() => toggleWindowTransparency()}
+                    aria-label="Window transparency"
                   />
                 </SettingsRow>
               </SectionCard>

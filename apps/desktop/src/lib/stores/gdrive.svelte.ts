@@ -1,3 +1,4 @@
+import { createRateTracker } from "$lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
@@ -29,6 +30,8 @@ export type GdriveUpload = {
 	fileName: string;
 	bytesSent: number;
 	totalBytes: number;
+	/** Smoothed transfer rate (bytes/sec) for the ETA readout; unset until sampled. */
+	bytesPerSec?: number;
 	status: GdriveUploadStatus;
 	webViewLink?: string;
 	error?: string;
@@ -51,6 +54,9 @@ function createGdriveStore() {
 	// center hides this one so it isn't doubled; clearing it (minimize) hands
 	// tracking back to the activity center.
 	let foregroundId = $state<string | null>(null);
+
+	// Per-upload transfer-rate estimate, feeding the dialog's ETA readout.
+	const rate = createRateTracker();
 
 	let listenersAttached = false;
 
@@ -187,8 +193,10 @@ function createGdriveStore() {
 					...existing,
 					bytesSent: p.bytesSent,
 					totalBytes: p.totalBytes,
+					bytesPerSec: rate.sample(uploadId, p.bytesSent),
 				};
 			});
+			rate.clear(uploadId);
 			// Success is the resolved result (the data the old `upload-complete`
 			// event carried), so update the card + history here.
 			const existing = uploads[uploadId];
@@ -210,6 +218,7 @@ function createGdriveStore() {
 			// confirm the same way.
 			toast.success("Uploaded to Google Drive.", { description: fileName });
 		} catch (e) {
+			rate.clear(uploadId);
 			// A user cancel also rejects here. `cancelUpload` flips the status to
 			// "cancelled" first (the detached `gdrive:upload-error` event backs
 			// that up), so only a genuine failure toasts.
@@ -248,6 +257,7 @@ function createGdriveStore() {
 
 	function dismissUpload(uploadId: string) {
 		delete uploads[uploadId];
+		rate.clear(uploadId);
 	}
 
 	/** Drop a path from upload history (e.g. local file deleted). The Drive

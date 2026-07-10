@@ -7,6 +7,7 @@
 	 * uploads can be cancelled, so the running state offers Cancel.
 	 */
 	import { formatSize } from "$lib/format/files";
+	import { etaLabel } from "$lib/format/time";
 	import { gdrive } from "$lib/stores/gdrive.svelte";
 	import {
 	  AlertTriangle,
@@ -35,12 +36,17 @@
 			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
 			: null,
 	);
-	// Byte readout during the transfer so a multi-minute upload feels in-control.
-	const sizeLabel = $derived(
-		upload && upload.totalBytes > 0
-			? `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`
-			: null,
-	);
+	// Byte + ETA readout during the transfer so a multi-minute upload feels
+	// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+	const transferLabel = $derived.by(() => {
+		if (!upload || upload.totalBytes <= 0) return null;
+		const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
+		const eta =
+			upload.bytesPerSec && upload.bytesPerSec > 0
+				? etaLabel((upload.totalBytes - upload.bytesSent) / upload.bytesPerSec)
+				: null;
+		return eta ? `${size} · ${eta}` : size;
+	});
 	// Determinate once bytes are flowing; a short indeterminate sweep before then.
 	const indeterminate = $derived(status === "uploading" && pct == null);
 
@@ -178,7 +184,7 @@
 					     never the dialog's default focus. -->
 					<div class="flex items-center justify-between gap-2">
 						<span class="text-[10px] font-medium tabular-nums text-muted-foreground">
-							{sizeLabel ?? ""}
+							{transferLabel ?? ""}
 						</span>
 						<button
 							type="button"

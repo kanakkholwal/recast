@@ -183,6 +183,26 @@ pub fn set_close_to_tray(
 }
 
 #[tauri::command]
+pub fn get_window_transparency(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().window_transparency)
+}
+
+#[tauri::command]
+pub fn set_window_transparency(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.window_transparency = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
+#[tauri::command]
 pub fn get_hide_panel_from_capture(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().hide_panel_from_capture)
 }

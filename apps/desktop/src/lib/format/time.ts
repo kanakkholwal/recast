@@ -37,3 +37,17 @@ export function clockDecis(sec: number): string {
 export function compactDuration(sec: number): string {
 	return sec >= 1 ? `${sec.toFixed(1)}s` : `${Math.round(sec * 1000)}ms`;
 }
+
+/**
+ * Rough time-remaining label for uploads/transfers, e.g. `~45s left`,
+ * `~2m 10s left`. Rounds up so it never reads 0 while work remains; under a
+ * second reads "almost done".
+ */
+export function etaLabel(secondsRemaining: number): string {
+	const t = safe(secondsRemaining);
+	if (t < 1) return "almost done";
+	if (t < 60) return `~${Math.ceil(t)}s left`;
+	const m = Math.floor(t / 60);
+	const s = Math.round(t % 60);
+	return s > 0 ? `~${m}m ${s}s left` : `~${m}m left`;
+}

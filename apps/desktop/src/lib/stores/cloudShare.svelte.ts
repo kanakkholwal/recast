@@ -1,3 +1,4 @@
+import { createRateTracker } from "$lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
@@ -40,6 +41,8 @@ export type CloudUpload = {
 	/** Byte-level progress for the upload PUT (0/0 until the first event). */
 	bytesSent: number;
 	totalBytes: number;
+	/** Smoothed transfer rate (bytes/sec) for the ETA readout; unset until sampled. */
+	bytesPerSec?: number;
 	shareUrl?: string;
 	error?: string;
 };
@@ -100,6 +103,9 @@ function createCloudShareStore() {
 	// The corner-notification card suppresses this one to avoid double UI; it
 	// reappears when the dialog is minimized (cleared).
 	let foregroundPath = $state<string | null>(null);
+
+	// Per-upload transfer-rate estimate, feeding the dialog's ETA readout.
+	const rate = createRateTracker();
 
 	// True after the first `init()`. Lets the share flow open the picker from
 	// the cached workspace list instead of a blocking round-trip per click.
@@ -235,11 +241,13 @@ function createCloudShareStore() {
 						...existing,
 						bytesSent: e.bytesSent,
 						totalBytes: e.totalBytes,
+						bytesPerSec: rate.sample(path, e.bytesSent),
 						phase: "uploading",
 						status: "uploading",
 					};
 				}
 			});
+			rate.clear(path);
 			// Success is the resolved result (identical data the old
 			// `recast-cloud:complete` event carried), so update the card + manifest here.
 			const existing = uploads[path];
@@ -263,6 +271,7 @@ function createCloudShareStore() {
 			toast.success("Shared to Recast Cloud.", { description: fileName });
 			return result;
 		} catch (e) {
+			rate.clear(path);
 			// Rust also fires a detached `recast-cloud:error`; ensure the card
 			// reflects the failure even if that event was missed, then re-throw.
 			const existing = uploads[path];
@@ -276,6 +285,7 @@ function createCloudShareStore() {
 
 	function dismiss(path: string) {
 		delete uploads[path];
+		rate.clear(path);
 	}
 
 	/**

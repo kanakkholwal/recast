@@ -10,6 +10,7 @@
     "beforeBuildCommand": "pnpm run ui:build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -21,7 +22,7 @@
         "fullscreen": false,
         "maximizable": true,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "center": true,
         "shadow": false
       }

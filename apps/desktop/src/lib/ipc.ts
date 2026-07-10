@@ -1131,6 +1131,15 @@ export function setCloseToTray(enabled: boolean): Promise<void> {
 	return invoke<void>("set_close_to_tray", { enabled });
 }
 
+/** Whether the window uses a translucent OS backdrop (Mica/Acrylic/vibrancy). */
+export function getWindowTransparency(): Promise<boolean> {
+	return invoke<boolean>("get_window_transparency");
+}
+
+export function setWindowTransparency(enabled: boolean): Promise<void> {
+	return invoke<void>("set_window_transparency", { enabled });
+}
+
 /** Open the app's log directory in the OS file manager; returns the path. */
 export function openLogDir(): Promise<string> {
 	return invoke<string>("open_log_dir");

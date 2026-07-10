@@ -165,6 +165,10 @@ pub struct AppConfig {
     /// the rotating log file for a support bundle. See `apply_log_level`.
     #[serde(default)]
     pub diagnostic_logging: bool,
+    /// Translucent window backdrop (Win11 Mica/Acrylic, macOS vibrancy). Off by
+    /// default; solid on Win10 and unsupported GPUs regardless.
+    #[serde(default)]
+    pub window_transparency: bool,
 }
 
 fn default_close_to_tray() -> bool {
@@ -191,6 +195,7 @@ impl Default for AppConfig {
             install_id: None,
             cloud_api_url: None,
             diagnostic_logging: false,
+            window_transparency: false,
         }
     }
 }

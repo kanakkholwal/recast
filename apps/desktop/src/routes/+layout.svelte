@@ -11,6 +11,10 @@
   import { launchRecordingPanel, takePendingOpenFile } from "$lib/ipc";
   import { openProjectFromExternalPath } from "$lib/openProject";
   import { updater } from "$lib/stores/updater.svelte";
+  import {
+    applyWindowBackdrop,
+    BACKDROP_CHANGED_EVENT,
+  } from "$lib/windowBackdrop";
 
   let { children } = $props();
 
@@ -231,6 +235,17 @@
       unlistenFn?.();
       unlistenDeepLink?.();
       unlistenPanelFn?.();
+    };
+  });
+
+  // Translucent backdrop for the app windows (main, editor). Overlays opt out.
+  // Re-applies live when the setting is toggled from anywhere.
+  onMount(() => {
+    if (isTransparentRoute) return;
+    void applyWindowBackdrop();
+    const un = listen(BACKDROP_CHANGED_EVENT, () => void applyWindowBackdrop());
+    return () => {
+      void un.then((fn) => fn());
     };
   });
 
