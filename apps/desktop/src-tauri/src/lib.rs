@@ -10,6 +10,8 @@ mod cursor;
 mod encoder;
 pub mod ffmpeg;
 mod fonts;
+#[cfg(windows)]
+mod jumplist;
 mod permissions;
 mod power;
 mod project;
@@ -152,6 +154,10 @@ pub fn run() {
                     log::warn!("emit app://open-recast failed: {e}");
                 }
             }
+            // Jump list "New Recording" task on a running app.
+            if argv.iter().any(|a| a == "--new-recording") {
+                let _ = app.emit("global-shortcut:launch-panel", ());
+            }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -246,6 +252,8 @@ pub fn run() {
             // `take_pending_open_file`. None for a normal launch.
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
+            let launched_for_new_recording =
+                cold_open_file.iter().any(|a| a == "--new-recording");
 
             app.manage(AppState {
                 recording_manager: std::sync::Arc::new(RecordingManager::default()),
@@ -255,6 +263,9 @@ pub fn run() {
                 auth_poller: Mutex::new(None),
                 pending_open_file: Mutex::new(pending_open_file),
                 power: crate::power::PowerManager::new(),
+                pending_new_recording: std::sync::atomic::AtomicBool::new(
+                    launched_for_new_recording,
+                ),
             });
 
             // Register the `recast://` scheme at runtime for dev builds. In
@@ -310,6 +321,9 @@ pub fn run() {
             if let Err(e) = tray::init(handle) {
                 log::warn!("tray init failed: {e}");
             }
+
+            #[cfg(windows)]
+            jumplist::update(handle);
 
             // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
             // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
@@ -462,6 +476,7 @@ pub fn run() {
             commands::recast_cloud_forget_upload,
             commands::take_pending_open_file,
             commands::peek_recast_project,
+            commands::take_pending_new_recording,
             commands::is_recording_active,
             tray::refresh_tray
         ])

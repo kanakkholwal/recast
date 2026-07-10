@@ -95,6 +95,10 @@ pub fn rebuild_menu(app: &AppHandle) {
         };
         let _ = tray.set_tooltip(Some(tooltip));
     }
+
+    // Keep the taskbar jump list's Recent Projects in sync with new recordings.
+    #[cfg(windows)]
+    crate::jumplist::update(app);
 }
 
 fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {

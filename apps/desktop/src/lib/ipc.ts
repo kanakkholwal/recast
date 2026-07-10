@@ -1151,6 +1151,11 @@ export function takePendingOpenFile(): Promise<string | null> {
 	return invoke<string | null>("take_pending_open_file");
 }
 
+/** Whether the app was cold-launched via the jump list "New Recording" task. */
+export function takePendingNewRecording(): Promise<boolean> {
+	return invoke<boolean>("take_pending_new_recording");
+}
+
 /** Whether a capture session is currently active (recording or paused). */
 export function isRecordingActive(): Promise<boolean> {
 	return invoke<boolean>("is_recording_active");

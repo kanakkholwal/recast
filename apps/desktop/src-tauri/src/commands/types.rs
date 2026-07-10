@@ -331,4 +331,8 @@ pub struct AppState {
     /// Display/system-sleep inhibitor. Recording holds it across start→stop;
     /// `export_video` takes a scoped lease. See `crate::power`.
     pub power: crate::power::PowerManager,
+    /// Set when the app was launched via the jump list's "New Recording" task
+    /// (`--new-recording` in argv). The main window drains it on mount and opens
+    /// the recording panel. Warm-start launches use the single-instance event.
+    pub pending_new_recording: AtomicBool,
 }

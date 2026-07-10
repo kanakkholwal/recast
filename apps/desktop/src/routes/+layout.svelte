@@ -8,7 +8,11 @@
   import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";
   import { handleDeepLink } from "$lib/deepLink";
-  import { launchRecordingPanel, takePendingOpenFile } from "$lib/ipc";
+  import {
+    launchRecordingPanel,
+    takePendingNewRecording,
+    takePendingOpenFile,
+  } from "$lib/ipc";
   import { openProjectFromExternalPath } from "$lib/openProject";
   import { updater } from "$lib/stores/updater.svelte";
   import {
@@ -184,6 +188,15 @@
         }
       } catch (e) {
         console.warn("[open-recast] cold-start drain failed", e);
+      }
+
+      // Jump list "New Recording" cold start: open the panel once ready.
+      try {
+        if (!cancelled && (await takePendingNewRecording())) {
+          void launchRecordingPanel();
+        }
+      } catch (e) {
+        console.warn("[new-recording] cold-start drain failed", e);
       }
 
       const unlistenPromise = listen<string>(
