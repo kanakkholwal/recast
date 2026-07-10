@@ -157,6 +157,7 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         // JS-injecting plugin — must be on the Builder before any window,
         // same constraint as dialog/os (see the comment block below).
         .plugin(tauri_plugin_sharekit::init())

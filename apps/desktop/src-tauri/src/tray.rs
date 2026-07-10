@@ -19,7 +19,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use tauri::{
-    menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{IsMenuItem, Menu, MenuEvent, MenuItem, PredefinedMenuItem, Submenu},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Wry,
 };
@@ -43,6 +43,7 @@ pub fn is_recording_active() -> bool {
 const TRAY_ID: &str = "recast.main";
 const MENU_ID_SHOW_HIDE: &str = "tray.show_hide";
 const MENU_ID_RECORD_TOGGLE: &str = "tray.record_toggle";
+const MENU_ID_PAUSE_TOGGLE: &str = "tray.pause_toggle";
 const MENU_ID_CHECK_UPDATES: &str = "tray.check_updates";
 const MENU_ID_QUIT: &str = "tray.quit";
 const MENU_ID_RECENT_PREFIX: &str = "tray.recent:";
@@ -83,10 +84,16 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 /// Rebuild + swap the tray menu. Reads the current `IS_RECORDING` flag and
 /// window visibility to label the Show/Hide and Start/Stop items.
 pub fn rebuild_menu(app: &AppHandle) {
-    if let Ok(menu) = build_menu(app) {
-        if let Some(tray) = app.tray_by_id(TRAY_ID) {
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        if let Ok(menu) = build_menu(app) {
             let _ = tray.set_menu(Some(menu));
         }
+        let tooltip = if IS_RECORDING.load(Ordering::Relaxed) {
+            "Recast (Recording)"
+        } else {
+            "Recast"
+        };
+        let _ = tray.set_tooltip(Some(tooltip));
     }
 }
 
@@ -95,7 +102,8 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
         Some(true) => "Hide Recast",
         _ => "Show Recast",
     };
-    let record_label = if IS_RECORDING.load(Ordering::Relaxed) {
+    let is_recording = IS_RECORDING.load(Ordering::Relaxed);
+    let record_label = if is_recording {
         "Stop Recording"
     } else {
         "Start Recording"
@@ -104,6 +112,29 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let show_hide = MenuItem::with_id(app, MENU_ID_SHOW_HIDE, show_hide_label, true, None::<&str>)?;
     let record_toggle =
         MenuItem::with_id(app, MENU_ID_RECORD_TOGGLE, record_label, true, None::<&str>)?;
+
+    // Pause/Resume is only meaningful mid-recording, so it appears then. The
+    // label reflects the manager's live pause state.
+    let pause_toggle = if is_recording {
+        let paused = app
+            .try_state::<AppState>()
+            .map(|s| s.recording_manager.is_paused())
+            .unwrap_or(false);
+        let label = if paused {
+            "Resume Recording"
+        } else {
+            "Pause Recording"
+        };
+        Some(MenuItem::with_id(
+            app,
+            MENU_ID_PAUSE_TOGGLE,
+            label,
+            true,
+            None::<&str>,
+        )?)
+    } else {
+        None
+    };
     let check_updates = MenuItem::with_id(
         app,
         MENU_ID_CHECK_UPDATES,
@@ -121,20 +152,13 @@ fn build_menu(app: &AppHandle) -> tauri::Result<Menu<Wry>> {
     let sep3 = PredefinedMenuItem::separator(app)?;
     let sep4 = PredefinedMenuItem::separator(app)?;
 
-    Menu::with_items(
-        app,
-        &[
-            &show_hide,
-            &sep1,
-            &record_toggle,
-            &sep2,
-            &recent_submenu,
-            &check_updates,
-            &sep3,
-            &quit,
-            &sep4,
-        ],
-    )
+    let mut items: Vec<&dyn IsMenuItem<Wry>> = vec![&show_hide, &sep1, &record_toggle];
+    if let Some(ref pause) = pause_toggle {
+        items.push(pause);
+    }
+    items.extend_from_slice(&[&sep2, &recent_submenu, &check_updates, &sep3, &quit, &sep4]);
+
+    Menu::with_items(app, &items)
 }
 
 fn build_recent_submenu(app: &AppHandle, recents: &[RecentExport]) -> tauri::Result<Submenu<Wry>> {
@@ -221,6 +245,9 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         MENU_ID_SHOW_HIDE => toggle_main_window(app),
         MENU_ID_RECORD_TOGGLE => {
             let _ = app.emit("tray:record-toggle", ());
+        }
+        MENU_ID_PAUSE_TOGGLE => {
+            let _ = app.emit("tray:pause-toggle", ());
         }
         MENU_ID_CHECK_UPDATES => {
             // Surface the window first so the corner card the frontend

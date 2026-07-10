@@ -40,6 +40,12 @@
     hasBlurUnderZoom,
     runExport,
   } from "$lib/services/export";
+  import { notifyJobDone } from "$lib/notify";
+  import {
+    clearJobProgress,
+    setJobProgress,
+    setJobProgressIndeterminate,
+  } from "$lib/taskbarProgress";
   import { isShareSupported, shareRecording } from "$lib/share";
   import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
   import { cloudShare } from "$lib/stores/cloudShare.svelte";
@@ -929,6 +935,7 @@
   function handleExportState(event: ExportStateEvent) {
     switch (event.status) {
       case "started":
+        void setJobProgressIndeterminate();
         return;
       case "preparing":
         exportPrepDetail = event.detail ?? null;
@@ -943,6 +950,7 @@
           store.exportProgress = Math.max(current, next);
         }
         exportHasProgress = true;
+        void setJobProgress(next);
         // Safety net only: Rust emits a real `finalizing` event now, so this just
         // catches the rare case where that event is dropped.
         if (!exportFinalizing && next >= 99.95) {
@@ -952,15 +960,23 @@
       }
       case "finalizing":
         exportFinalizing = true;
+        void setJobProgressIndeterminate();
         return;
       case "success":
         setExportResult({ kind: "success", path: event.path });
+        void clearJobProgress();
+        void notifyJobDone(
+          "Export complete",
+          basename(event.path) ?? "Your recording is ready.",
+        );
         return;
       case "cancelled":
         setExportResult({ kind: "cancelled" });
+        void clearJobProgress();
         return;
       case "error":
         setExportResult({ kind: "error", message: event.message });
+        void clearJobProgress();
         return;
     }
   }

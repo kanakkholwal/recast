@@ -369,6 +369,11 @@
       void togglePause();
     });
 
+    // Tray "Pause/Resume Recording" routes here (shown only while recording).
+    const unlistenTrayPause = listen("tray:pause-toggle", () => {
+      void togglePause();
+    });
+
     return () => {
       window.clearInterval(timer);
       if (profileFlashTimer) clearTimeout(profileFlashTimer);
@@ -379,6 +384,7 @@
       closeReq.then((fn) => fn());
       unlistenTrayToggle.then((fn) => fn());
       unlistenGlobalPause.then((fn) => fn());
+      unlistenTrayPause.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });
@@ -827,6 +833,8 @@
         pausedSince = Date.now();
         isPaused = true;
       }
+      // Rebuild the tray so its Pause/Resume label matches the new state.
+      void refreshTray(true);
     } catch (e) {
       notify("error", `Pause/resume failed: ${e}`, 8000);
     }

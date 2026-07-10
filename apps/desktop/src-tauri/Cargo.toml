@@ -90,6 +90,7 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["downloa
 # when we want Whisper models. See docs/captions-transcription-plan.md.
 transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
 keepawake = "0.6.0"
+tauri-plugin-notification = "2.3.3"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
