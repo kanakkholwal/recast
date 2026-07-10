@@ -105,18 +105,6 @@ export function countdownToken(cd: number | null | undefined): string {
 	return cd == null ? "inherit" : String(cd);
 }
 
-/** Public profile combo shape: each side is the on/off + device identity.
- *  `null` deviceId with kind=true means "use system default at runtime". */
-export type ProfileCombo = {
-	systemAudio: boolean;
-	microphone: boolean;
-	micDeviceId: string | null;
-	camera: boolean;
-	cameraDeviceId: string | null;
-	/** Countdown override for the auto-picked slot (`null` = inherit global). */
-	countdown: number | null;
-};
-
 function micSlot(
 	p: Pick<RecordingProfile, "microphone" | "micDeviceId">,
 ): string {
@@ -138,73 +126,6 @@ function camSlot(
  */
 export function capSig(p: RecordingProfile): string {
 	return `${+p.systemAudio}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
-}
-
-/**
- * Total possible profile slots given currently-attached devices:
- * `#countdowns × 2 (sysAudio) × (2 + #mics) × (2 + #cams)`, where each device
- * kind's slot space is { off, default, ...each specific device }.
- */
-export function maxCombinations(micCount: number, camCount: number): number {
-	return COUNTDOWN_OPTIONS.length * 2 * (2 + micCount) * (2 + camCount);
-}
-
-interface DeviceLite {
-	id: string;
-	name: string;
-}
-interface CameraLite {
-	deviceId: string;
-	label: string;
-}
-
-/**
- * First combo in the cartesian product of attached devices that no profile in
- * `list` already uses, or null when every attainable slot is taken.
- *
- * Walk order is intentional: off/default slots before specific device ids
- * (so a one-mic user doesn't land on a literal-id slot first), and countdown
- * outermost with `inherit` first (exhaust the device cartesian before pinning
- * a pre-roll).
- */
-export function firstFreeCombo(
-	list: RecordingProfile[],
-	mics: DeviceLite[],
-	cams: CameraLite[],
-): ProfileCombo | null {
-	const taken = new Set(list.map(capSig));
-
-	const micOptions: { slot: string; id: string | null }[] = [
-		{ slot: OFF_SLOT, id: null },
-		{ slot: DEFAULT_SLOT, id: null },
-		...mics.map((m) => ({ slot: m.id, id: m.id })),
-	];
-	const camOptions: { slot: string; id: string | null }[] = [
-		{ slot: OFF_SLOT, id: null },
-		{ slot: DEFAULT_SLOT, id: null },
-		...cams.map((c) => ({ slot: c.deviceId, id: c.deviceId })),
-	];
-
-	for (const cd of COUNTDOWN_OPTIONS) {
-		const cdSlot = countdownToken(cd);
-		for (const sa of [true, false]) {
-			for (const mic of micOptions) {
-				for (const cam of camOptions) {
-					const sig = `${+sa}|${mic.slot}|${cam.slot}|${cdSlot}`;
-					if (taken.has(sig)) continue;
-					return {
-						systemAudio: sa,
-						microphone: mic.slot !== OFF_SLOT,
-						micDeviceId: mic.id,
-						camera: cam.slot !== OFF_SLOT,
-						cameraDeviceId: cam.id,
-						countdown: cd,
-					};
-				}
-			}
-		}
-	}
-	return null;
 }
 
 /** Enforce the "exactly one default" invariant in-place (returns a new array). */

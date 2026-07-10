@@ -1,0 +1,176 @@
+<script lang="ts">
+	/**
+	 * Foreground progress for a Recast Cloud share, shown after workspace
+	 * selection. Reads live upload state from the cloudShare store (phase + byte
+	 * counts + result/error) rather than routing feedback through a toast. When
+	 * the upload finishes it shows the share settings inline (link, visibility,
+	 * password, expiry) like the web QuickUpload flow. Minimize keeps the upload
+	 * running behind the corner card.
+	 */
+	import CloudShareSettings from "./CloudShareSettings.svelte";
+	import { cloudShare } from "$lib/stores/cloudShare.svelte";
+	import { Button } from "@recast/ui/button";
+	import * as Dialog from "@recast/ui/dialog";
+	import { cn } from "@recast/ui/utils";
+	import {
+		AlertTriangle,
+		Check,
+		Cloud,
+		LoaderCircle,
+		Minus,
+	} from "@lucide/svelte";
+
+	let {
+		path,
+		fileName,
+		onMinimize,
+		onClose,
+		onRetry,
+	}: {
+		path: string;
+		fileName: string;
+		/** Background the upload and dismiss the dialog (upload keeps running). */
+		onMinimize: () => void;
+		/** Terminal-state dismiss: clears the store entry and closes. */
+		onClose: () => void;
+		onRetry: () => void;
+	} = $props();
+
+	const upload = $derived(cloudShare.uploads[path]);
+	const record = $derived(cloudShare.uploadHistory[path]);
+	const status = $derived(upload?.status ?? "uploading");
+	const phase = $derived(upload?.phase ?? "preparing");
+	const pct = $derived(
+		upload && upload.totalBytes > 0
+			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
+			: null,
+	);
+
+	const phaseLabel = $derived(
+		status === "error"
+			? "Upload failed"
+			: phase === "preparing"
+				? "Preparing…"
+				: phase === "uploading"
+					? pct != null
+						? `Uploading… ${pct}%`
+						: "Uploading…"
+					: phase === "finalizing"
+						? "Finalizing…"
+						: "Creating share link…",
+	);
+
+	// Determinate only during the byte upload; other phases sweep indeterminately.
+	const indeterminate = $derived(status === "uploading" && pct == null);
+
+	let save = $state<() => Promise<boolean>>(async () => true);
+	let saving = $state(false);
+	let loading = $state(true);
+
+	async function done() {
+		if (await save()) onClose();
+	}
+</script>
+
+<Dialog.Root
+	open={true}
+	onOpenChange={(v) => {
+		if (v) return;
+		// Backdrop / Esc: background it while still uploading, else dismiss.
+		if (status === "uploading") onMinimize();
+		else onClose();
+	}}
+>
+	<Dialog.Content
+		showCloseButton={false}
+		class="max-h-[min(88vh,720px)] overflow-y-auto sm:max-w-lg"
+	>
+		<Dialog.Header>
+			<Dialog.Title class="flex items-center gap-2">
+				<span
+					class={cn(
+						"grid size-7 place-items-center rounded-lg",
+						status === "error"
+							? "bg-destructive/10 text-destructive"
+							: "bg-primary/10 text-primary",
+					)}
+				>
+					{#if status === "complete"}
+						<Check class="size-3.5" />
+					{:else if status === "error"}
+						<AlertTriangle class="size-3.5" />
+					{:else}
+						<Cloud class="size-3.5" />
+					{/if}
+				</span>
+				{status === "complete" ? "Shared to Recast Cloud" : "Share to Recast Cloud"}
+			</Dialog.Title>
+			<Dialog.Description class="truncate">{fileName}</Dialog.Description>
+		</Dialog.Header>
+
+		{#if status === "complete" && record}
+			<CloudShareSettings
+				recastId={record.recastId}
+				slug={record.slug}
+				shareUrl={record.shareUrl}
+				bind:save
+				bind:saving
+				bind:loading
+			/>
+		{:else}
+			<div class="space-y-2.5">
+				<div class="flex items-center justify-between gap-2 text-xs">
+					<span
+						class={cn(
+							"font-medium",
+							status === "error" ? "text-destructive" : "text-foreground",
+						)}
+					>
+						{phaseLabel}
+					</span>
+					{#if status === "uploading"}
+						<LoaderCircle
+							class="size-3.5 shrink-0 animate-spin text-muted-foreground"
+						/>
+					{/if}
+				</div>
+
+				{#if status !== "error"}
+					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+						{#if indeterminate}
+							<div class="h-full w-1/3 animate-pulse rounded-full bg-primary"></div>
+						{:else}
+							<div
+								class="h-full rounded-full bg-primary transition-[width] duration-200"
+								style="width: {pct ?? 0}%"
+							></div>
+						{/if}
+					</div>
+				{/if}
+
+				{#if status === "error"}
+					<p class="text-[11px] leading-relaxed text-muted-foreground">
+						{upload?.error ?? "Something went wrong during the upload."}
+					</p>
+				{/if}
+			</div>
+		{/if}
+
+		<Dialog.Footer class="gap-2">
+			{#if status === "uploading"}
+				<Button variant="secondary" class="gap-1.5" onclick={onMinimize}>
+					<Minus class="size-3.5" />
+					Minimize
+				</Button>
+			{:else if status === "complete"}
+				<Button disabled={saving || loading} class="gap-2" onclick={done}>
+					{saving ? "Saving…" : "Done"}
+					{#if !saving}<Check class="size-4" />{/if}
+				</Button>
+			{:else}
+				<Button variant="ghost" onclick={onClose}>Close</Button>
+				<Button onclick={onRetry}>Try again</Button>
+			{/if}
+		</Dialog.Footer>
+	</Dialog.Content>
+</Dialog.Root>

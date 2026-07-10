@@ -159,6 +159,9 @@ pub fn run() {
         // JS-injecting plugin — must be on the Builder before any window,
         // same constraint as dialog/os (see the comment block below).
         .plugin(tauri_plugin_sharekit::init())
+        // Deep-link injects JS (onOpenUrl/getCurrent) into the webview, so it
+        // sits in the pre-window group like dialog/os/sharekit.
+        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_os::init());
 
     // JS-injecting plugins (dialog, os) MUST be added on the Builder before
@@ -226,6 +229,33 @@ pub fn run() {
                 auth_poller: Mutex::new(None),
                 pending_open_file: Mutex::new(pending_open_file),
             });
+
+            // Register the `recast://` scheme at runtime for dev builds. In
+            // release the installer writes the Windows registry / Linux .desktop
+            // entry from tauri.conf; macOS uses the generated Info.plist and
+            // cannot register at runtime.
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(e) = app.deep_link().register("recast") {
+                    log::warn!("deep-link register failed: {e}");
+                }
+            }
+
+            // Bring the app forward when a `recast://` URL arrives (esp. macOS
+            // in-process delivery and close-to-tray). Routing itself is done in
+            // the frontend via getCurrent()/onOpenUrl() → handleDeepLink.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let focus_handle = handle.clone();
+                app.deep_link().on_open_url(move |_event| {
+                    if let Some(w) = focus_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                        let _ = w.set_focus();
+                    }
+                });
+            }
 
             // Native crash reporting. Installed after AppState is managed so the
             // panic hook can read the consent flag + install id. Gated on the
@@ -394,6 +424,47 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // macOS/iOS deliver file-association opens (a double-clicked
+            // `.recast` in Finder) and URL opens via RunEvent::Opened, NOT argv
+            // — so the argv/single-instance path that works on Windows/Linux
+            // never fires here. Route file:// paths through the same
+            // `app://open-recast` bridge. `recast://` scheme URLs are owned by
+            // the deep-link plugin's on_open_url, so filter to file:// to avoid
+            // double-handling.
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    if url.scheme() != "file" {
+                        continue;
+                    }
+                    let Ok(path) = url.to_file_path() else {
+                        continue;
+                    };
+                    let is_recast = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.eq_ignore_ascii_case("recast"));
+                    if !is_recast || !path.exists() {
+                        continue;
+                    }
+                    // Warm path: main's JS listener catches the event (close-to-
+                    // tray keeps it alive). Cold path: stash so the mount-time
+                    // drain picks it up. Both are safe — openProjectInNewWindow
+                    // dedupes by window label, so a double-fire just refocuses.
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        *state.pending_open_file.lock() = Some(path.clone());
+                    }
+                    let payload = path.to_string_lossy().to_string();
+                    if let Err(e) = app_handle.emit("app://open-recast", payload) {
+                        log::warn!("emit app://open-recast (macOS Opened) failed: {e}");
+                    }
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+            }
+
             // Main-window close handling has two modes, gated by the user's
             // `close_to_tray` setting (default on):
             //

@@ -201,5 +201,9 @@ tauri-plugin-process = "2"
 # protocol handler, or tray "Show" while a hidden instance is still alive)
 # spawns a duplicate process that owns its own recording manager and tray
 # icon. The plugin gives us a callback to focus + show the existing main
-# window instead.
-tauri-plugin-single-instance = "2"
+# window instead. The `deep-link` feature makes it forward a `recast://` URL
+# from the second process's argv into the deep-link plugin's on_open_url.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Custom `recast://` URL scheme. Transport only — parsing/routing lives in the
+# frontend (src/lib/deepLink.ts). See docs/deep-linking-plan.md.
+tauri-plugin-deep-link = "2"

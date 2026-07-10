@@ -423,24 +423,26 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
+  /* Dark is the canonical theme — token values mirror `@recast/design`
+     (index.css) and the desktop `app.css` overrides 1:1 so this page reads
+     as the same surface as the in-app Settings/Cloud panes. */
   :root {{
     color-scheme: dark light;
-    --bg: #0b0c0e;
-    --bg-grad-a: #0c1213;
-    --bg-grad-b: #07090a;
-    --card: rgba(255,255,255,0.04);
-    --card-border: rgba(255,255,255,0.08);
-    --card-ring: rgba(255,255,255,0.04);
-    --fg: #ededed;
-    --fg-muted: rgba(237,237,237,0.62);
-    --fg-subtle: rgba(237,237,237,0.42);
-    --primary: oklch(92% 0.23 125.904);
-    --primary-soft: oklch(92% 0.23 125.904 / 0.15);
-    --primary-ring: oklch(92% 0.23 125.904 / 0.3);
-    --error: oklch(70% 0.2 25);
-    --error-soft: oklch(70% 0.2 25 / 0.14);
-    --error-ring: oklch(70% 0.2 25 / 0.28);
-    --code-bg: rgba(255,255,255,0.06);
+    --bg: oklch(20.352% 0.00157 197.844);
+    --bg-grad-a: oklch(33.881% 0.00279 16.535);
+    --bg-grad-b: oklch(22.213% 0.00003 271.152);
+    --card: oklch(0.27 0 0);
+    --card-border: color-mix(in oklab, oklch(23.929% 0.00003 271.152) 40%, transparent);
+    --fg: oklch(95.514% 0.00011 271.152);
+    --fg-muted: oklch(64.009% 0.00007 271.152);
+    --fg-subtle: color-mix(in oklab, var(--fg) 42%, transparent);
+    --primary: oklch(92.249% 0.23442 125.904);
+    --primary-soft: oklch(92.249% 0.23442 125.904 / 0.15);
+    --primary-ring: oklch(92.249% 0.23442 125.904 / 0.3);
+    --error: oklch(63.575% 0.20881 25.397);
+    --error-soft: oklch(63.575% 0.20881 25.397 / 0.15);
+    --error-ring: oklch(63.575% 0.20881 25.397 / 0.3);
+    --code-bg: color-mix(in oklab, var(--fg) 8%, transparent);
     /* Brand mark colors — mirror `logo.svelte`'s dark-mode mapping:
        white rounded square (the "background") with black bars on top. */
     --brand-fill: #ffffff;
@@ -448,22 +450,21 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   }}
   @media (prefers-color-scheme: light) {{
     :root {{
-      --bg: #f5f5f4;
-      --bg-grad-a: #fafafa;
-      --bg-grad-b: #ececec;
-      --card: rgba(255,255,255,0.92);
-      --card-border: rgba(0,0,0,0.06);
-      --card-ring: rgba(0,0,0,0.04);
-      --fg: #0b0b0c;
-      --fg-muted: rgba(11,11,12,0.62);
-      --fg-subtle: rgba(11,11,12,0.42);
+      --bg: oklch(0.985 0 0);
+      --bg-grad-a: oklch(97.357% 0.00561 84.444);
+      --bg-grad-b: oklch(97.357% 0.00561 84.444);
+      --card: oklch(100% 0.00011 271.152);
+      --card-border: color-mix(in oklab, oklch(0.91 0 0) 70%, transparent);
+      --fg: oklch(21.779% 0.00002 271.152);
+      --fg-muted: oklch(55.102% 0.02343 264.389);
+      --fg-subtle: color-mix(in oklab, var(--fg) 45%, transparent);
       --primary: oklch(76% 0.21 125.904);
       --primary-soft: oklch(76% 0.21 125.904 / 0.12);
       --primary-ring: oklch(76% 0.21 125.904 / 0.3);
-      --error: oklch(63% 0.21 25);
-      --error-soft: oklch(63% 0.21 25 / 0.12);
-      --error-ring: oklch(63% 0.21 25 / 0.28);
-      --code-bg: rgba(0,0,0,0.05);
+      --error: oklch(63.681% 0.20784 25.315);
+      --error-soft: oklch(63.681% 0.20784 25.315 / 0.12);
+      --error-ring: oklch(63.681% 0.20784 25.315 / 0.3);
+      --code-bg: color-mix(in oklab, var(--fg) 6%, transparent);
       /* Light-mode mark: black rounded square, white bars. */
       --brand-fill: #000000;
       --brand-bars: #ffffff;
@@ -473,8 +474,8 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   html, body {{ height: 100%; }}
   body {{
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
-                 system-ui, sans-serif;
+    font-family: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont,
+                 "Inter", "Segoe UI", system-ui, sans-serif;
     color: var(--fg);
     background:
       radial-gradient(60rem 40rem at 50% -10%, var(--primary-soft), transparent 60%),
@@ -508,22 +509,25 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   }}
   .card {{
     width: min(28rem, 100%);
-    border-radius: 1rem;
-    background: var(--card);
+    /* `craft-card`: rounded-[18px], bg-card/80, border-border/40,
+       shadow-craft-floating, backdrop-blur-xl. */
+    border-radius: 18px;
+    background: color-mix(in oklab, var(--card) 80%, transparent);
     border: 1px solid var(--card-border);
     box-shadow:
-      0 1px 0 var(--card-ring) inset,
-      0 20px 50px -20px rgba(0,0,0,0.55),
-      0 8px 16px -8px rgba(0,0,0,0.35);
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 1px 2px 0 rgba(0, 0, 0, 0.05),
+      0 4px 12px 0 rgba(0, 0, 0, 0.05),
+      0 12px 24px -4px rgba(0, 0, 0, 0.05);
     padding: 1.75rem 1.75rem 1.5rem;
     text-align: left;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
   }}
   .icon {{
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: 0.75rem;
+    border-radius: calc(0.75rem - 2px);
     display: inline-flex;
     align-items: center;
     justify-content: center;

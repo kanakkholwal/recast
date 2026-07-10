@@ -4,7 +4,6 @@
     Check,
     Mic,
     SlidersHorizontal as SlidersIcon,
-    Sparkles,
     Star,
     Volume2,
     X,
@@ -139,9 +138,9 @@
           >
             <div
               class={cn(
-                "size-7 shrink-0 rounded-md ring-1 ring-inset flex items-center justify-center",
+                "size-7 shrink-0 rounded-md ring-1 ring-inset flex items-center justify-center text-[11px] font-semibold",
                 profile.isDefault
-                  ? "bg-warning/10 text-warning ring-warning/30"
+                  ? "bg-primary/10 text-primary ring-primary/30"
                   : active
                     ? "bg-primary text-primary-foreground ring-primary/40"
                     : "bg-muted text-muted-foreground ring-border/40",
@@ -150,7 +149,7 @@
               {#if profile.isDefault}
                 <Star size={11} />
               {:else}
-                <SlidersIcon size={11} />
+                {profile.name.trim().charAt(0).toUpperCase() || "?"}
               {/if}
             </div>
 
@@ -161,13 +160,6 @@
                 >
                   {profile.name}
                 </span>
-                {#if profile.isDefault}
-                  <Sparkles
-                    size={9}
-                    class="shrink-0 text-warning"
-                    aria-label="Default profile"
-                  />
-                {/if}
               </div>
               <div
                 class="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-muted-foreground"

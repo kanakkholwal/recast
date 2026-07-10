@@ -718,7 +718,7 @@
     open={true}
     title={`Move ${selectedCount} recording${selectedCount === 1 ? "" : "s"} to trash?`}
     description="The selected recordings will be sent to the recycle bin. You can restore them from there if needed."
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={selection.bulkDelete}
     onOpenChange={(v) => {
@@ -747,7 +747,7 @@
     open={true}
     title="Move recording to trash?"
     description={`“${deleteTarget.filename}” will be sent to the recycle bin. You can restore it from there if needed.`}
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={async () => {
       await handleDelete(deleteTarget!);

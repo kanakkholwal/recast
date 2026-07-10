@@ -4,9 +4,7 @@
  * normalization. No store, DOM, or IPC: callers pass probed devices in.
  */
 
-import type { BrowserCamera } from "$lib/camera/browser-devices";
-import type { AudioDeviceInfo } from "$lib/ipc";
-import type { ProfileCombo, RecordingProfile } from "$lib/profiles";
+import type { RecordingProfile } from "$lib/profiles";
 
 // Device pickers live in a side panel so the dialog grows wider, not taller,
 // when a capability is enabled. Below `sm` they fall back inline.
@@ -51,44 +49,26 @@ export function summarize(profile: RecordingProfile): string {
 }
 
 /**
- * A saveable draft for the next free capability combination. Resolves device
- * labels for any specific id the combo picked so the dropdown opens pre-filled
- * and the saved profile carries an identity.
+ * A saveable draft for a brand-new profile: screen plus system audio, no mic or
+ * camera, inheriting the global countdown. The user tunes it from there.
  */
-export function buildDraftFromCombo(
-	combo: ProfileCombo,
-	mics: AudioDeviceInfo[],
-	cameras: BrowserCamera[],
-	profileCount: number,
-): RecordingProfile {
-	const micDevice = combo.micDeviceId
-		? mics.find((m) => m.id === combo.micDeviceId)
-		: null;
-	const camDevice = combo.cameraDeviceId
-		? cameras.find((c) => c.deviceId === combo.cameraDeviceId)
-		: null;
+export function buildNewDraft(profileCount: number): RecordingProfile {
 	return {
 		id: crypto.randomUUID(),
 		name: `Profile ${profileCount + 1}`,
-		systemAudio: combo.systemAudio,
-		microphone: combo.microphone,
-		micDeviceId: combo.micDeviceId,
-		micLabel: micDevice?.name ?? null,
-		camera: combo.camera,
-		cameraDeviceId: combo.cameraDeviceId,
-		cameraLabel: camDevice?.label ?? null,
-		// Carry the auto-picked countdown so the profile lands on the free combo
-		// instead of serializing as "inherit" and colliding.
-		countdown: combo.countdown,
+		systemAudio: true,
+		microphone: false,
+		micDeviceId: null,
+		micLabel: null,
+		camera: false,
+		cameraDeviceId: null,
+		cameraLabel: null,
+		countdown: null,
 		isDefault: profileCount === 0,
 	};
 }
 
-/**
- * A non-default copy of `profile` under a fresh id. Opened as a draft: the
- * user must change a capability before Save (the duplicate-signature check
- * would otherwise reject it).
- */
+/** A non-default copy of `profile` under a fresh id, opened as an editable draft. */
 export function buildDuplicate(profile: RecordingProfile): RecordingProfile {
 	return {
 		...profile,

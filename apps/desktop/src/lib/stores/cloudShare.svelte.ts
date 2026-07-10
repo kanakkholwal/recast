@@ -90,6 +90,11 @@ function createCloudShareStore() {
 	const uploads = $state<Record<string, CloudUpload>>({});
 	const uploadHistory = $state<Record<string, CloudUploadRecord>>({});
 
+	// Path of the upload currently shown in a foreground progress dialog, if any.
+	// The corner-notification card suppresses this one to avoid double UI; it
+	// reappears when the dialog is minimized (cleared).
+	let foregroundPath = $state<string | null>(null);
+
 	// True after the first `init()`. Lets the share flow open the picker from
 	// the cached workspace list instead of a blocking round-trip per click.
 	let initialized = $state(false);
@@ -334,6 +339,14 @@ function createCloudShareStore() {
 		},
 		get activeUploads() {
 			return Object.values(uploads);
+		},
+		/** Path currently shown in a foreground dialog (suppressed in the corner). */
+		get foregroundPath() {
+			return foregroundPath;
+		},
+		/** Mark (or clear) the upload that a foreground progress dialog owns. */
+		setForeground(path: string | null) {
+			foregroundPath = path;
 		},
 		get uploadHistory() {
 			return uploadHistory;

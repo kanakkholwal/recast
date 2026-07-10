@@ -7,6 +7,7 @@
 
   import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";
+  import { handleDeepLink } from "$lib/deepLink";
   import { launchRecordingPanel, takePendingOpenFile } from "$lib/ipc";
   import { openProjectFromExternalPath } from "$lib/openProject";
   import { updater } from "$lib/stores/updater.svelte";
@@ -163,6 +164,7 @@
     if (isTransparentRoute) return;
     let cancelled = false;
     let unlistenFn: (() => void) | undefined;
+    let unlistenDeepLink: (() => void) | undefined;
 
     const setup = async () => {
       const { getCurrentWebviewWindow } = await import(
@@ -190,6 +192,25 @@
         if (cancelled) fn();
         else unlistenFn = fn;
       });
+
+      // recast:// deep links. Cold start: getCurrent() returns the launch URL.
+      // Warm start: onOpenUrl fires. Both route through handleDeepLink.
+      try {
+        const { getCurrent, onOpenUrl } = await import(
+          "@tauri-apps/plugin-deep-link"
+        );
+        const startUrls = await getCurrent();
+        if (!cancelled && startUrls) {
+          for (const u of startUrls) void handleDeepLink(u);
+        }
+        const fn = await onOpenUrl((urls) => {
+          for (const u of urls) void handleDeepLink(u);
+        });
+        if (cancelled) fn();
+        else unlistenDeepLink = fn;
+      } catch (e) {
+        console.warn("[deep-link] setup failed", e);
+      }
     };
 
     void setup();
@@ -197,6 +218,7 @@
     return () => {
       cancelled = true;
       unlistenFn?.();
+      unlistenDeepLink?.();
     };
   });
 

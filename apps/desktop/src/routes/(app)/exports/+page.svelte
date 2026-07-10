@@ -1,8 +1,10 @@
 <script lang="ts">
   import { goto } from "$app/navigation";
+  import CloudShareDialog from "$components/cloud/CloudShareDialog.svelte";
   import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
   import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
   import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
+  import { formatSize, getExtension, isImageFile } from "$lib/format/files";
   import {
     deleteFile,
     listExports,
@@ -10,7 +12,6 @@
     renameFile,
     type RecordingEntry,
   } from "$lib/ipc";
-  import { formatSize, getExtension } from "$lib/format/files";
   import {
     filterEntries,
     sortEntries,
@@ -36,6 +37,7 @@
     CopyIcon,
     Download,
     ExternalLink,
+    Eye,
     FolderOpen,
     Grid3x3,
     HardDriveUpload,
@@ -58,7 +60,6 @@
   import { ButtonGroup } from "@recast/ui/button-group";
   import { Cutout } from "@recast/ui/cutout";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Kbd } from "@recast/ui/kbd";
   import { safeStorage } from "@recast/ui/persisted-state";
   import * as Select from "@recast/ui/select";
   import { Skeleton } from "@recast/ui/skeleton";
@@ -82,6 +83,14 @@
   let playTarget = $state<RecordingEntry | null>(null);
   // Set when a share needs a workspace choice (user is in >1 workspace).
   let workspacePick = $state<{ path: string; title: string; fileName: string } | null>(null);
+  // Set while a cloud share is shown in the foreground progress dialog. The
+  // upload keeps running if minimized (shareTarget cleared, card strip shows).
+  let shareTarget = $state<{
+    path: string;
+    fileName: string;
+    title: string;
+    workspaceId?: string;
+  } | null>(null);
 
   // Multi-select: a toolbar "Select" toggle flips the page into selection
   // mode, where clicking a card checks it instead of opening the file.
@@ -106,6 +115,14 @@
 
   $effect(() => {
     safeStorage.set("exports-view", view);
+  });
+
+  // While the foreground share dialog is open, suppress that upload's corner
+  // card so it isn't shown twice; minimizing or closing clears it and the corner
+  // card takes over. Reset on unmount so nothing stays hidden.
+  $effect(() => {
+    cloudShare.setForeground(shareTarget?.path ?? null);
+    return () => cloudShare.setForeground(null);
   });
 
   async function fetchExports() {
@@ -186,22 +203,35 @@
       void cloudShare.refreshStatus();
       return;
     }
-    await performCloudShare(entry.path, title);
+    beginCloudShare(entry.path, title, entry.filename);
   }
 
-  /** Upload + create a link for an already-targeted share, then copy it. */
-  async function performCloudShare(path: string, title: string, workspaceId?: string) {
-    try {
-      const result = await cloudShare.share(path, title, workspaceId);
-      try {
-        await navigator.clipboard.writeText(result.shareUrl);
-        toast.success("Shared. Link copied to clipboard.");
-      } catch {
-        toast.success("Shared to Recast Cloud.");
-      }
-    } catch (e) {
-      toast.error(`Cloud share failed: ${(e as Error)?.message ?? e}`);
-    }
+  /**
+   * Start an upload + share and show it in the foreground progress dialog. Both
+   * the dialog and (once minimized) the corner-notification card render live
+   * phase/byte/result/error state straight from the store, so there's no toast:
+   * the store's catch already records the failure, so the rejection is swallowed.
+   */
+  function beginCloudShare(
+    path: string,
+    title: string,
+    fileName: string,
+    workspaceId?: string,
+  ) {
+    shareTarget = { path, fileName, title, workspaceId };
+    void cloudShare.share(path, title, workspaceId).catch(() => {});
+  }
+
+  function retryCloudShare() {
+    const t = shareTarget;
+    if (!t) return;
+    cloudShare.dismiss(t.path);
+    beginCloudShare(t.path, t.title, t.fileName, t.workspaceId);
+  }
+
+  function closeCloudShare() {
+    if (shareTarget) cloudShare.dismiss(shareTarget.path);
+    shareTarget = null;
   }
 
   async function copyCloudLink(entry: RecordingEntry) {
@@ -549,6 +579,7 @@
         >
           {#each displayed as entry, i (entry.path)}
             {@const isSelected = selection.has(entry.path)}
+            {@const isImage = isImageFile(entry.filename)}
             {@const activeUpload = gdrive.getActiveUploadForPath(entry.path)}
             {@const uploadPct = activeUpload && activeUpload.totalBytes
               ? Math.min(
@@ -596,12 +627,16 @@
                   <div
                     class="grid size-full place-items-center text-muted-foreground/50"
                   >
-                    <Play
-                      class={cn(
-                        "translate-x-px",
-                        view === "grid" ? "size-6" : "size-4",
-                      )}
-                    />
+                    {#if isImage}
+                      <Eye class={view === "grid" ? "size-6" : "size-4"} />
+                    {:else}
+                      <Play
+                        class={cn(
+                          "translate-x-px",
+                          view === "grid" ? "size-6" : "size-4",
+                        )}
+                      />
+                    {/if}
                   </div>
                 {/if}
 
@@ -625,7 +660,11 @@
                     <span
                       class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
                     >
-                      <Play class="size-4 translate-x-px" />
+                      {#if isImage}
+                        <Eye class="size-4" />
+                      {:else}
+                        <Play class="size-4 translate-x-px" />
+                      {/if}
                     </span>
                   </div>
                 {/if}
@@ -706,17 +745,11 @@
                         onSelect={() => openFileLocation(entry.path)}
                       >
                         <FolderOpen /> Show in folder
-                        <DropdownMenu.Shortcut>
-                          <Kbd>⌘O</Kbd>
-                        </DropdownMenu.Shortcut>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item
                         onSelect={() => (renameTarget = entry)}
                       >
                         <Pencil /> Rename…
-                        <DropdownMenu.Shortcut>
-                          <Kbd>⌘R</Kbd>
-                        </DropdownMenu.Shortcut>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item onSelect={() => copyPath(entry)}>
                         <CopyIcon /> Copy path
@@ -744,7 +777,7 @@
                         <DropdownMenu.Separator />
                         <DropdownMenu.Item
                           onSelect={() => forgetDriveLink(entry)}
-                          class="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
                           <Unlink2 /> Forget Drive link
                         </DropdownMenu.Item>
@@ -840,7 +873,6 @@
       <Button
         variant="ghost"
         size="xs"
-        class="h-7 text-[11px]"
         onclick={() => selection.toggleAll(filtered)}
         disabled={filtered.length === 0}
       >
@@ -849,7 +881,6 @@
       <Button
         variant="destructive"
         size="xs"
-        class="h-7 gap-1.5 text-[11px]"
         onclick={() => (bulkDeleteOpen = true)}
         disabled={selectedCount === 0}
       >
@@ -857,9 +888,8 @@
         Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
       </Button>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="xs"
-        class="h-7 text-[11px] text-muted-foreground hover:text-foreground"
         onclick={selection.exit}
       >
         Cancel
@@ -873,7 +903,7 @@
     open={true}
     title={`Move ${selectedCount} export${selectedCount === 1 ? "" : "s"} to trash?`}
     description="The selected exports will be sent to the recycle bin. You can restore them from there if needed."
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={selection.bulkDelete}
     onOpenChange={(v) => {
@@ -902,7 +932,7 @@
     open={true}
     title="Move export to trash?"
     description={`“${deleteTarget.filename}” will be sent to the recycle bin. You can restore it from there if needed.`}
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={async () => {
       await handleDelete(deleteTarget!);
@@ -939,10 +969,20 @@
       const pick = workspacePick;
       if (!pick) return;
       if (remember) cloudShare.setWorkspace(workspaceId);
-      void performCloudShare(pick.path, pick.title, workspaceId);
+      beginCloudShare(pick.path, pick.title, pick.fileName, workspaceId);
     }}
     onOpenChange={(v: boolean) => {
       if (!v) workspacePick = null;
     }}
+  />
+{/if}
+
+{#if shareTarget}
+  <CloudShareDialog
+    path={shareTarget.path}
+    fileName={shareTarget.fileName}
+    onMinimize={() => (shareTarget = null)}
+    onClose={closeCloudShare}
+    onRetry={retryCloudShare}
   />
 {/if}

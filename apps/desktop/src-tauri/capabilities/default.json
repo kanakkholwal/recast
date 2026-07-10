@@ -31,6 +31,7 @@
     "core:window:allow-set-resizable",
     "core:webview:allow-create-webview-window",
     "core:event:default",
+    "deep-link:default",
     "dialog:default",
     "os:default",
     "opener:default",
