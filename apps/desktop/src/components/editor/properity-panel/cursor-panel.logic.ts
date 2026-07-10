@@ -5,12 +5,12 @@
 
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 
-/** Default bounce window (ms) — the "untouched" value for the reset check. */
+/** Default bounce window (ms): the "untouched" value for the reset check. */
 const DEFAULT_BOUNCE_SPEED_MS = 220;
 
 /**
  * Data-URL for a cursor SVG. Rendered via an `<img>` (not `{@html}`) so the SVG
- * loads in secure static mode — no script execution from untrusted packs.
+ * loads in secure static mode, so no script executes from untrusted packs.
  */
 export function svgSwatchUrl(svg: string): string {
 	return (

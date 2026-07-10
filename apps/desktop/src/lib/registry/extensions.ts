@@ -57,7 +57,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 	const contributes = ext.manifest.contributes ?? {};
 	const entries: RegistryEntry[] = [];
 
-	// Cursors — need the SVG text; load rest (+ optional press) concurrently.
+	// Cursors need the SVG text; load rest (+ optional press) concurrently.
 	for (const c of contributes.cursors ?? []) {
 		const restPath = assets.get(c.rest)?.path;
 		if (!restPath) {
@@ -99,7 +99,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 		});
 	}
 
-	// Backgrounds — wireValue is the pack's absolute image path.
+	// Backgrounds: wireValue is the pack's absolute image path.
 	for (const b of contributes.backgrounds ?? []) {
 		const mainAsset = assets.get(b.asset);
 		const full = mainAsset?.path;
@@ -166,7 +166,7 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 		});
 	}
 
-	// Caption themes — the whole style payload travels in the manifest (no
+	// Caption themes: the whole style payload travels in the manifest (no
 	// hydrated asset), so this maps the contribution fields straight across.
 	for (const p of contributes.captionPresets ?? []) {
 		entries.push({

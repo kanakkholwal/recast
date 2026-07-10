@@ -64,13 +64,13 @@
 		onError: () => void;
 		onSeeked?: () => void;
 		/** True once the WebCodecs preview engine is decoding for this source (so
-		 *  the picture clock — not the `<video>` element — owns playback time).
+		 *  the picture clock, not the `<video>` element, owns playback time).
 		 *  The parent reads this to stop echoing `videoEl.currentTime` back into
 		 *  `store.currentTime`, which otherwise fights the clock across cuts.
 		 *  False whenever the legacy `<video>` path is active (flag off or the
 		 *  source couldn't be demuxed/decoded). */
 		webcodecsActive?: boolean;
-		/** Exposed method — captures the current preview canvas as a PNG
+		/** Exposed method that captures the current preview canvas as a PNG
 		 *  blob (composite: video + background + zoom + blur + cursor, i.e.
 		 *  WYSIWYG). Returns null if the WebGL context isn't ready or the
 		 *  encode fails. Bind in the parent so other UI (player controls
@@ -95,7 +95,7 @@
 	}: Props = $props();
 
 	let canvasEl: HTMLCanvasElement | null = $state(null);
-	// WebView doesn't expose WebGL2 — surface an actionable message rather than a
+	// WebView doesn't expose WebGL2, so surface an actionable message rather than a
 	// silently blank canvas (old integrated GPUs, broken/outdated drivers).
 	let webgl2Unsupported = $state(false);
 	let containerEl: HTMLDivElement | null = $state(null);
@@ -115,10 +115,10 @@
 	let lastBgKey = "";
 
 	// WebCodecs preview engine (behind the `webcodecsPreview` experimental flag).
-	// When active, the composite samples a frame WE decode — not the <video>
-	// element's pixels — so jumping over a cut never waits on the native seek.
+	// When active, the composite samples a frame WE decode, not the <video>
+	// element's pixels, so jumping over a cut never waits on the native seek.
 	// The <video> element still drives the clock and audio sync (hybrid). Not
-	// $state — read only from the imperative draw loop.
+	// $state: read only from the imperative draw loop.
 	let wcSource: WebCodecsVideoSource | null = null;
 	let wcReady = false;
 	let loadedWcSrc = "";
@@ -126,7 +126,7 @@
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
 	let hasRenderedFrame = false;
-	// Last original time published to store.currentTime. Throttled — the write
+	// Last original time published to store.currentTime. Throttled because the write
 	// fans out to overlays/timeline/waveform; every-rAF writes starve frame delivery.
 	let lastPublishedTime = -1;
 	// Guards the end-of-timeline stop so it fires once per play session, not every
@@ -157,7 +157,7 @@
 	let loadedCursorPath = "";
 
 	// SVG cursor overlay state, updated each draw() for non-`dot` styles and
-	// consumed by the absolutely-positioned <img>. Not $derived — the data is
+	// consumed by the absolutely-positioned <img>. Not $derived: the data is
 	// pulled from the draw loop where the cursor sample is already evaluated.
 	let svgCursor = $state<{
 		visible: boolean;
@@ -166,12 +166,12 @@
 		pressed: boolean;
 		right: boolean; // active press was a right-click (sprite slot)
 		dragging: boolean; // active press is a drag (sprite slot)
-		scale: number; // JS-driven press impact curve — see pressStateAt
+		scale: number; // JS-driven press impact curve; see pressStateAt
 		canvasX: number; // source-pixel space, includes padding offset
 		canvasY: number;
 		compW: number;
 		compH: number;
-		spritePx: number; // sprite size in source pixels — render width = (spritePx/compW)*100%
+		spritePx: number; // sprite size in source pixels; render width = (spritePx/compW)*100%
 	}>({
 		visible: false,
 		alpha: 0,
@@ -190,7 +190,7 @@
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
 
-	// Press-event model — drives click feedback. One event per click
+	// Press-event model that drives click feedback. One event per click
 	// ({downUs, upUs}) read from RAW samples, never the smoothed array:
 	// smoothing must NEVER nudge click timing, since the visual press has to
 	// land on the exact frame the audio click plays. Each event also carries the
@@ -207,7 +207,7 @@
 	//                                                            │ sprite returns to rest
 	//                                                            │ cursor fades back to idleAlpha
 	//
-	// The snap at downUs is the visual analogue of the audible click — a smooth
+	// The snap at downUs is the visual analogue of the audible click; a smooth
 	// crossfade there would feel mushy and desync from the audio.
 	let pressEvents: PressEvent[] = [];
 
@@ -312,7 +312,7 @@
 			if (!wire || wire.startsWith("#")) return "";
 			return convertFileSrc(wire);
 		}
-		// Defensive: keep gradient/colour values away from convertFileSrc — a
+		// Defensive: keep gradient/colour values away from convertFileSrc, since a
 		// stray write leaving a CSS gradient here while type briefly reads "image"
 		// would otherwise log a bogus "File does not exist" via the asset protocol.
 		if (value.includes("gradient(") || value.startsWith("#")) return "";
@@ -335,7 +335,7 @@
 			// from the frontend's static/ dir.
 			return value;
 		}
-		// Raw filesystem path — convert to the Tauri asset protocol.
+		// Raw filesystem path: convert to the Tauri asset protocol.
 		return convertFileSrc(value);
 	}
 
@@ -408,7 +408,7 @@
 			smoothingSignature = "";
 			// Publish raw samples for the Cursor panel's trajectory minimap.
 			store.cursorSamplesRaw = cursorSamplesRaw;
-			// Press events come from raw samples — smoothing-independent.
+			// Press events come from raw samples, smoothing-independent.
 			// Rebuild once per track load; the result is keyed by sample
 			// timestamps, which never move regardless of smoothing settings.
 			pressEvents = buildPressEvents(cursorSamplesRaw);
@@ -430,10 +430,10 @@
 	}
 
 	// Recompute the smoothed cursor path whenever the inputs change. Called once
-	// per draw() — cheap signature check, real work only on deltas. The signature
+	// per draw(): cheap signature check, real work only on deltas. The signature
 	// is set immediately (in-flight marker) so the per-frame call doesn't re-fire
 	// the request while the worker runs; the result is applied async via the
-	// smoother's callback. `sigmaMs <= 0` is the raw path — applied inline since
+	// smoother's callback. `sigmaMs <= 0` is the raw path, applied inline since
 	// there's nothing to compute.
 	function ensureSmoothingCurrent() {
 		if (cursorSamplesRaw.length === 0) {
@@ -536,7 +536,7 @@
 	// Uploads a WebCodecs-decoded VideoFrame into the sampling texture. A
 	// VideoFrame is a TexImageSource, so texImage2D accepts it directly (same
 	// hardware-accelerated path as a <video> element). The frame is owned by the
-	// source's cache — we only read it, never close it.
+	// source's cache; we only read it, never close it.
 	function uploadFrameObject(frame: VideoFrame): boolean {
 		if (!gl || !videoTex) return false;
 		gl.activeTexture(gl.TEXTURE0);
@@ -556,7 +556,7 @@
 
 	// AnnotationOverlay reads this canvas back via drawImage from its OWN rAF
 	// loop. With preserveDrawingBuffer:false the GL buffer is only valid for a
-	// cross-canvas read within the SAME task as draw() — an out-of-task read
+	// cross-canvas read within the SAME task as draw(); an out-of-task read
 	// samples a cleared buffer (the blur "flicker"). Fix: mirror the composite
 	// into a 2D canvas in-task after each draw() and have the overlay sample
 	// that. Maintained only while a blur exists, so the common path pays nothing.
@@ -598,7 +598,7 @@
 	// How early (s) to start pre-decoding the post-cut frame on the SCOUT
 	// element, and how early to actually jump the primary. The scout window is
 	// larger so the post-cut frame is decoded and ready by the time we reach
-	// the boundary — that decoded frame masks the primary's seek latency.
+	// the boundary, so that decoded frame masks the primary's seek latency.
 	const SCOUT_PRESEEK_LOOKAHEAD = 0.6;
 	const CUT_JUMP_LOOKAHEAD = 0.12;
 	// WebCodecs cross-cut decode-ahead: how far ahead (in OUTPUT seconds) of an
@@ -663,7 +663,7 @@
 				onEnded?.();
 			}
 			// Publish to the store (drives overlays/timeline/audio) at ~25 Hz, not
-			// every rAF frame — that fan-out is expensive and was starving decoded-
+			// every rAF frame, because that fan-out is expensive and was starving decoded-
 			// frame delivery. Always publish on a backward step or a jump so cuts
 			// and seeks stay exact.
 			if (
@@ -673,7 +673,7 @@
 				store.currentTime = playbackTime;
 				lastPublishedTime = playbackTime;
 			}
-			// Keep the <video>/audio transport aligned — a rare correction that
+			// Keep the <video>/audio transport aligned: a rare correction that
 			// fires once at each cut boundary, where original time jumps.
 			if (
 				videoEl &&
@@ -683,7 +683,7 @@
 				videoEl.currentTime = playbackTime;
 			}
 		} else {
-			// Paused (or legacy path): the <video> transport owns the time — a
+			// Paused (or legacy path): the <video> transport owns the time, so a
 			// scrub or frame-step sets it directly. handleSeeked realigns the
 			// picture clock so resuming continues from here.
 			playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
@@ -696,13 +696,13 @@
 		//      audio correct); while it settles we sample the scout's already-
 		//      decoded frame, so there's no visible freeze. Both land on the same
 		//      time/content, so the swap is seamless.
-		// Seek issued ONCE per cut — re-assigning currentTime mid-seek thrashes the
+		// Seek issued ONCE per cut: re-assigning currentTime mid-seek thrashes the
 		// decoder into a multi-second stall. Scrubbing into a cut stays allowed
 		// (gated on isPlaying); `cutsEnabled` off bypasses it.
 		let frameEl: HTMLVideoElement | null = videoEl;
 		const activeCuts = store.effectiveCuts;
 		// Legacy <video> cut-skip (scout + primary seek). OFF for the WebCodecs
-		// path: its output clock is gapless, so there's no gap to skip — crossing a
+		// path: its output clock is gapless, so there's no gap to skip. Crossing a
 		// cut is just the scheduler resetting to the post-cut GOP, and the frame
 		// selector holds (never steps back) until that GOP decodes. Critically we
 		// must NOT decode through the removed region, which would flood the decoder.
@@ -735,7 +735,7 @@
 							videoEl.currentTime = cut.end;
 						}
 						if (scoutReadyAt(cut.end)) {
-							// Draw the scout's frame this tick — no visible freeze.
+							// Draw the scout's frame this tick, no visible freeze.
 							frameEl = scoutEl;
 						} else {
 							// Scout not ready (e.g. sparse keyframes): hold the last
@@ -743,12 +743,12 @@
 							return;
 						}
 					} else {
-						// Approaching but not yet at the boundary — keep playing the
+						// Approaching but not yet at the boundary: keep playing the
 						// primary normally; the jump hasn't happened.
 						cutSkipTarget = null;
 					}
 			} else {
-				// Outside any cut window — clear so the next cut can fire.
+				// Outside any cut window: clear so the next cut can fire.
 				cutSkipTarget = null;
 				scoutSeekTarget = null;
 			}
@@ -759,7 +759,7 @@
 		// crossing is seamless instead of freezing while the primary re-decodes
 		// from a keyframe. Output time is gapless, so we look ahead in OUTPUT time
 		// and map back to original to find the next cut we'll reach. Issued every
-		// frame while approaching — the worker dedupes per post-cut GOP.
+		// frame while approaching; the worker dedupes per post-cut GOP.
 		if (
 			usingPicClock &&
 			store.isPlaying &&
@@ -823,7 +823,7 @@
 		);
 		const sx = canvasEl.width / Math.max(1, geom.canvasW);
 		const sy = canvasEl.height / Math.max(1, geom.canvasH);
-		// Scene entrance/exit animation — a per-segment transform on the video
+		// Scene entrance/exit animation: a per-segment transform on the video
 		// layer only (background stays put). Evaluated in original/timeline time
 		// against the segment's window, exactly like zoom, so preview and the
 		// (tail-retimed) export graph stay in sync.
@@ -878,7 +878,7 @@
 		}
 		gl.uniform1f(uniforms.u_bgBlurPx, bgBlurPx);
 
-		// Border radius — user-provided as a percentage of the shorter video edge
+		// Border radius, user-provided as a percentage of the shorter video edge
 		// (0..50). Convert to canvas pixels using the same scale as padding.
 		const shorterEdge = Math.min(meta.width, meta.height);
 		const radiusSource = ((store.borderRadius ?? 0) / 100) * shorterEdge;
@@ -887,7 +887,7 @@
 		const radiusPx = radiusSource * sx;
 		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
 
-		// Zoom — eased per-frame scale + focus centre + motion-blur strength.
+		// Zoom: eased per-frame scale + focus centre + motion-blur strength.
 		const zoom = store.focusEnabled
 			? evaluateZoomAt(store.zoomRegions, playbackTime)
 			: { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
@@ -924,7 +924,7 @@
 		if (cs.enabled && cursorSamples.length > 0) {
 			const ts = Math.max(0, playbackTime) * 1_000_000;
 
-			// Idle visibility — smooth fade rather than a binary cut. Outside
+			// Idle visibility: smooth fade rather than a binary cut. Outside
 			// any idle period the alpha is 1; deep inside it's 0; near each
 			// boundary we linearly ramp over CURSOR_IDLE_FADE_US so the cursor
 			// dissolves in/out instead of popping.
@@ -964,7 +964,7 @@
 				}
 			}
 
-			// Pinned click highlight — computed independent of the cursor's own
+			// Pinned click highlight, computed independent of the cursor's own
 			// visibility and smoothing so the ring lands EXACTLY at the captured
 			// click point and the click instant (riding the smoothed cursor made
 			// it lag behind, reading as delayed/off-target feedback). Uses the
@@ -996,7 +996,7 @@
 		);
 		// Push to reactive state so the HTML overlay updates each frame.
 		// We mirror the shader's cursor-zoom math so the SVG tracks the dot
-		// pixel-for-pixel — the shader applies `(uv - center)*scale + center`
+		// pixel-for-pixel: the shader applies `(uv - center)*scale + center`
 		// to the cursor UV; we do the same here before mapping to canvas px.
 		let svgUvX = cursorPosX;
 		let svgUvY = cursorPosY;
@@ -1025,7 +1025,7 @@
 		};
 		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
 		// Multiplied by the press scale curve so the soft-dot pulses on
-		// click in lockstep with the SVG sprite — matches `bounce_scale`
+		// click in lockstep with the SVG sprite, matching `bounce_scale`
 		// on the dot path in cursor_export.rs so preview and rendered MP4
 		// agree even on the default style.
 		const cursorRadiusCanvas = cs.size * 2 * sx * cursorScale;
@@ -1036,7 +1036,7 @@
 		gl.uniform1f(uniforms.u_highlightAlpha, highlightAlpha);
 		gl.uniform2f(uniforms.u_highlightPos, highlightPosX, highlightPosY);
 
-		// Drop shadow — offsets/blur/spread expressed in "video pixels" so the
+		// Drop shadow: offsets/blur/spread expressed in "video pixels" so the
 		// look scales consistently with the canvas at different container
 		// sizes. Same source-pixel → canvas-pixel factor as padding/radius.
 		const shadow = store.shadow;
@@ -1081,7 +1081,7 @@
 		if (experimentalStore.webcodecsPreview) {
 			// WebCodecs path: drive the loop with rAF, NOT the <video> element's
 			// requestVideoFrameCallback. rVFC fires only when the element presents
-			// a new frame, which STALLS during the seek we issue at a cut — the
+			// a new frame, which STALLS during the seek we issue at a cut, the
 			// very moment we need to keep painting. The clock is still
 			// videoEl.currentTime, which updates continuously during play and
 			// jumps instantly when we set it at the boundary, so an rAF loop
@@ -1120,7 +1120,7 @@
 	}
 
 	/**
-	 * Capture the current preview frame as a PNG blob — the full composite
+	 * Capture the current preview frame as a PNG blob: the full composite
 	 * (video + background + zoom + blur + cursor), so the screenshot matches
 	 * what the user sees rather than the raw recording.
 	 *
@@ -1177,7 +1177,7 @@
 		}
 	});
 
-	// WebCodecs frame source (re)create when the media src changes — or when the
+	// WebCodecs frame source (re)create when the media src changes, or when the
 	// `webcodecsPreview` experiment is toggled. Owns its own worker + decoder;
 	// disposed and rebuilt per source. A demux/codec failure leaves wcSource null
 	// so draw() falls back to the <video> element.
@@ -1309,7 +1309,7 @@
 			// Seed + start the picture clock ONLY on the paused→playing transition.
 			// This effect ALSO re-runs whenever effectiveCuts/outPoint change; the
 			// `!picClock.playing` guard stops those re-runs from re-seeding the clock
-			// to the (lagging) <video> time mid-playback — which jumped it BACKWARD
+			// to the (lagging) <video> time mid-playback, which jumped it BACKWARD
 			// and forced the decoder into a reset-thrash (the ~8 fps bug).
 			if (experimentalStore.webcodecsPreview && !picClock.playing) {
 				// Capture the end state before setDuration re-clamps the time.
@@ -1340,7 +1340,7 @@
 
 	// Hook video element events
 	function handleSeeked() {
-		// While PAUSED, a scrub/frame-step moved the transport — realign the
+		// While PAUSED, a scrub/frame-step moved the transport, so realign the
 		// picture clock to it. During play the clock is the master, so ignore the
 		// `seeked` events our own drift-correction triggers.
 		if (experimentalStore.webcodecsPreview && !store.isPlaying && videoEl) {
@@ -1378,7 +1378,7 @@
 			class="block max-h-full max-w-full transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-90"
 		></canvas>
 		{#if webgl2Unsupported}
-			<!-- Actionable message instead of a blank canvas — reads as a
+			<!-- Actionable message instead of a blank canvas: reads as a
 			     graphics-driver issue, not a broken app. -->
 			<div
 				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
@@ -1424,7 +1424,7 @@
 			{@const hotPctY = (hot.y / 64) * 100}
 			<!-- Custom SVG cursor. Wrapper owns left/top/width/opacity (per-frame
 			     motion + visibility ramp). Inner img owns the press transform:
-			     `scale` is computed in JS per frame, NOT a CSS transition — a
+			     `scale` is computed in JS per frame, NOT a CSS transition; a
 			     transition would lag the impact and desync from the audio.
 			     transform-origin = hotspot keeps the cursor tip pinned. -->
 			<div

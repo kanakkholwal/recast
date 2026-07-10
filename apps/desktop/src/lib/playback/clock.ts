@@ -1,14 +1,14 @@
 /**
- * PlaybackClock — master timeline clock for the editor preview.
+ * PlaybackClock: master timeline clock for the editor preview.
  *
  * A pure real-time integrator: while playing, `time` advances with wall-clock
- * at `rate`; paused, it holds. Nothing decodes here — the render loop samples
+ * at `rate`; paused, it holds. Nothing decodes here; the render loop samples
  * `time` and asks the video source for the matching frame; audio slaves to it.
  * Decoupling from `videoEl.currentTime` is the point: the decoder's seek
  * latency is what made playback freeze at cut boundaries.
  *
  * Knows nothing of cuts/trims; runs over a single gapless **output-time**
- * domain `[0, duration]` (recording with cuts removed — see timeline/cuts.ts).
+ * domain `[0, duration]` (recording with cuts removed; see timeline/cuts.ts).
  * The owner maps output→original via `outputToOriginal` where original media
  * time is still needed (frame lookup, cursor/zoom eval, audio `currentTime`).
  *

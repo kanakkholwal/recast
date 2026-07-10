@@ -73,7 +73,7 @@
     recents = pushRecentColor(color);
   }
 
-  // Mode tabs only choose which preset list is shown — they don't mutate the
+  // Mode tabs only choose which preset list is shown; they don't mutate the
   // background (only an explicit preset pick does), so browsing other modes
   // keeps the applied background intact.
   let displayedMode = $state<BackgroundType>(store.backgroundType);
@@ -294,7 +294,7 @@
   </PanelSection>
 
   <!-- Background mode switcher + per-mode preset lists. Placed last as the
-       tall, browse-heavy section. The active tab is decoupled from the store —
+       tall, browse-heavy section. The active tab is decoupled from the store;
        it only picks the preset list shown (see `displayedMode`). -->
   <Tabs.Root
     value={displayedMode}

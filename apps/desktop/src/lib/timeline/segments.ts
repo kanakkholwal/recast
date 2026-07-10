@@ -1,9 +1,9 @@
 /**
- * Timeline segment model — the basis for split + ripple-delete editing.
+ * Timeline segment model: the basis for split + ripple-delete editing.
  *
  * Kept content = `[trimStart, trimEnd]` minus the union of `cuts`. `splitPoints`
  * (original-recording seconds) subdivide that kept content into addressable
- * **segments** without removing anything — a split only matters once one of the
+ * **segments** without removing anything; a split only matters once one of the
  * segments is deleted (which becomes a `manual` cut). All functions are pure.
  * See ./cuts.ts for the time-remapping that closes gaps left by deletes.
  */
@@ -37,7 +37,7 @@ export interface ClipShape {
  * Derive the ordered list of kept segments. The kept region `[trimStart,
  * trimEnd]` has the cuts removed, then each surviving interval is sliced at any
  * split points that fall strictly inside it. Zero-length results are dropped,
- * and stray split points (outside the clip or inside a cut) are ignored — so
+ * and stray split points (outside the clip or inside a cut) are ignored, so
  * the result stays valid even after a trim or cut moves under a split.
  */
 export function deriveSegments(shape: ClipShape): Segment[] {
@@ -78,7 +78,7 @@ export function deriveSegments(shape: ClipShape): Segment[] {
  * A collapsed cut between two kept segments. On the output (post-cut) timeline
  * the removed span has zero width, so the editor renders it as a single seam
  * marker at `gapStart` (== the previous segment's end). `removed` is how much
- * original time was taken out — shown in the restore tooltip.
+ * original time was taken out, shown in the restore tooltip.
  */
 export interface Seam {
 	/** Original time where the gap begins (previous segment's end). */
@@ -90,7 +90,7 @@ export interface Seam {
 }
 
 /**
- * Derive the seams between adjacent kept segments — every place a cut was
+ * Derive the seams between adjacent kept segments: every place a cut was
  * ripple-removed, collapsing two segments together. Segments that merely *touch*
  * (a split, no removed time) yield no seam.
  */
@@ -153,7 +153,7 @@ export interface DeletePlan {
 /**
  * Plan a ripple-delete of `seg`: the segment's range becomes a cut, and any
  * split points that sat inside (or on the edges of) the deleted range are
- * pruned — they no longer separate two kept segments once the range is gone.
+ * pruned, since they no longer separate two kept segments once the range is gone.
  * The caller applies the cut (the existing time-remap closes the gap) and
  * stores the returned split points.
  */

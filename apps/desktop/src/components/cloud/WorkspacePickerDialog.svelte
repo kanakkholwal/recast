@@ -2,7 +2,7 @@
 	/**
 	 * Pick which workspace a recast uploads into, shown at share time when the
 	 * user belongs to more than one. Mirrors the web's per-upload `workspaceId`
-	 * contract — the choice is passed straight to `recast_cloud_upload`, and the
+	 * contract. The choice is passed straight to `recast_cloud_upload`, and the
 	 * server re-validates membership on `/api/uploads/init`. Optionally remembers
 	 * the pick as the desktop's default (a local preference; it never touches the
 	 * web session's active org).

@@ -1,5 +1,5 @@
 // Registry resolvers: stored id/value → what a consumer needs. Resolvers never
-// throw — a missing `ext:` id (pack uninstalled) degrades to a built-in default
+// throw: a missing `ext:` id (pack uninstalled) degrades to a built-in default
 // and logs, so export/preview can't crash on a removed pack.
 
 import { log } from "$lib/logger";

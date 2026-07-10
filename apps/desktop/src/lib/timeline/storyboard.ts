@@ -1,5 +1,5 @@
 /**
- * Pure geometry for the YouTube-style hover storyboard sprite — the grid sizing
+ * Pure geometry for the YouTube-style hover storyboard sprite: the grid sizing
  * (how many cells, the column/row layout) and the time↔cell↔crop mapping. Shared
  * by the decode worker (filmstrip-worker.ts), which packs frames into the sheet,
  * and the hover preview (Timeline.svelte), which crops one cell as a CSS
@@ -29,7 +29,7 @@ export function planStoryboard(durationSec: number): StoryboardPlan {
 	return { count, cols, rows };
 }
 
-/** Original-time sampled by cell `cell` — its centre, so the frame represents
+/** Original-time sampled by cell `cell`, its centre, so the frame represents
  *  the middle of the cell's slice rather than its leading edge. */
 export function storyboardSampleSec(
 	cell: number,
@@ -51,7 +51,7 @@ export function storyboardCellIndex(
 	return Math.min(count - 1, Math.max(0, i));
 }
 
-/** The built sprite's grid + cell pixel size (no URL — that's the caller's). */
+/** The built sprite's grid + cell pixel size (no URL; that's the caller's). */
 export interface StoryboardMeta {
 	cols: number;
 	rows: number;

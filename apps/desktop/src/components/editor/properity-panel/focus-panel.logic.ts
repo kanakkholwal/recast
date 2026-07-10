@@ -66,7 +66,7 @@ export function scaleAt(r: ZoomRegion, t: number): number {
 }
 
 /**
- * SVG path for a region's zoom envelope across a `w × h` box — a normalised
+ * SVG path for a region's zoom envelope across a `w × h` box: a normalised
  * 1.0 → scale → 1.0 curve sampled at 41 points.
  */
 export function sparklinePath(r: ZoomRegion, w: number, h: number): string {

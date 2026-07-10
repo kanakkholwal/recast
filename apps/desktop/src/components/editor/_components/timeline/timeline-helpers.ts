@@ -84,7 +84,7 @@ export interface TimeMarker {
 	emphasis: boolean;
 }
 
-// Major ruler labels — interval picked to keep ~50px between labels.
+// Major ruler labels: interval picked to keep ~50px between labels.
 export function buildTimeMarkers(
 	duration: number,
 	pixelsPerSecond: number,

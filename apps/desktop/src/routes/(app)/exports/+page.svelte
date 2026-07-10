@@ -153,7 +153,7 @@
     await deleteFile(entry.path);
     entries = entries.filter((e) => e.path !== entry.path);
     thumbnails = removeThumbnail(thumbnails, entry.path);
-    // Local file is gone — drop its upload records so the row doesn't return
+    // Local file is gone, so drop its upload records so the row doesn't return
     // next session claiming a copy. The remote objects are left untouched.
     void gdrive.forgetUpload(entry.path);
     void cloudShare.forget(entry.path);
@@ -162,7 +162,7 @@
 
   /**
    * Share an export to Recast Cloud: upload, create a public link, copy it.
-   * Routes to Settings when signed out — device sign-in opens a browser tab
+   * Routes to Settings when signed out, because device sign-in opens a browser tab
    * and shouldn't happen inline from a menu.
    */
   async function shareToCloud(entry: RecordingEntry) {
@@ -233,7 +233,7 @@
 
   /**
    * Drive upload from the exports list. Routes to Settings when Drive isn't
-   * connected — the consent flow opens a browser tab, not inline.
+   * connected, because the consent flow opens a browser tab, not inline.
    */
   async function uploadToDrive(entry: RecordingEntry) {
     await gdrive.init();
@@ -249,7 +249,7 @@
     }
   }
 
-  // `navigator.share` exposure is static — sample once at module load so the
+  // `navigator.share` exposure is static, so sample once at module load so the
   // dropdown can conditionally render the Share item without a reactive read.
   const shareSupported = isShareSupported();
 
@@ -278,7 +278,7 @@
     }
   }
 
-  /** Copy the recorded Drive link from the local manifest — no network. */
+  /** Copy the recorded Drive link from the local manifest (no network). */
   async function copyDriveLink(entry: RecordingEntry) {
     const record = gdrive.getRecordForPath(entry.path);
     if (!record?.webViewLink) {
@@ -823,7 +823,7 @@
   </div>
 </div>
 
-<!-- Floating bulk-action bar — visible whenever selection mode is on. -->
+<!-- Floating bulk-action bar, visible whenever selection mode is on. -->
 {#if selection.selectMode}
   <div
     in:fly={{ y: 24, duration: 220, easing: cubicOut }}

@@ -73,8 +73,8 @@ async function renderTextToDataUrl(
   const fontPx = Math.max(1, Math.round(k.fontSize * canvasHeight));
   const font = `${k.fontWeight} ${fontPx}px ${k.fontFamily}`;
 
-  // Wrap on a scratch context first so we can size the canvas to the content —
-  // the preview grows the box (min-height) rather than clipping overflow.
+  // Wrap on a scratch context first so we can size the canvas to the content.
+  // The preview grows the box (min-height) rather than clipping overflow.
   const scratch = document.createElement("canvas").getContext("2d");
   if (!scratch) return null;
   scratch.font = font;

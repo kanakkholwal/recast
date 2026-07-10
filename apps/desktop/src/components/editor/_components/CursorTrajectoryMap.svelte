@@ -96,7 +96,7 @@
         class="text-primary"
         vector-effect="non-scaling-stroke"
       />
-      <!-- Click markers — anchored exactly to the press position. -->
+      <!-- Click markers, anchored exactly to the press position. -->
       {#each clickMarks as mark, i (i)}
         <circle
           cx={mark.x}

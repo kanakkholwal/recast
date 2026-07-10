@@ -45,7 +45,7 @@ export function smoothCursorPath(
 	raw: CursorSampleLike[],
 	opts: SmoothingOptions
 ): SmoothResult {
-	// Detect click-down transitions even when smoothing is off — callers still
+	// Detect click-down transitions even when smoothing is off; callers still
 	// use these for the visualisation.
 	const clickAnchors: ClickAnchor[] = [];
 	for (let i = 1; i < raw.length; i++) {

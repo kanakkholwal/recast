@@ -27,7 +27,7 @@ export function groupModelsByFamily(
 /**
  * Default model id when none is selected (or the selection went stale): prefer a
  * runnable+installed default, then any usable model, then any flagged default,
- * then the first model — null only when the list is empty.
+ * then the first model. Null only when the list is empty.
  */
 export function pickDefaultModelId(models: CaptionModelInfo[]): string | null {
 	const usable = models.filter((m) => m.installed && m.runnable);
@@ -59,7 +59,7 @@ export function downloadProgressPct(downloaded: number, total: number): number {
 }
 
 /**
- * Whether the current caption style equals a preset field-for-field — the test
+ * Whether the current caption style equals a preset field-for-field. This is the test
  * behind "which preset is active" (null → the user has tweaked to Custom).
  * Animation is intentionally excluded (matches the picker's original compare).
  */

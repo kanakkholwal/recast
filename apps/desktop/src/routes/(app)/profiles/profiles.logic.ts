@@ -1,7 +1,7 @@
 /**
  * Pure profile-dialog helpers: the card sub-line summary, dialog sizing, draft
  * construction for new/duplicated profiles, and the pre-save device-pointer
- * normalization. No store, DOM, or IPC — callers pass probed devices in.
+ * normalization. No store, DOM, or IPC: callers pass probed devices in.
  */
 
 import type { BrowserCamera } from "$lib/camera/browser-devices";
@@ -34,7 +34,7 @@ export function computeDialogWidth(
 
 /**
  * Header sub-line. The faceplate already shows WHICH sources are on, so this
- * carries only the specifics — device names + an explicit countdown override.
+ * carries only the specifics: device names + an explicit countdown override.
  */
 export function summarize(profile: RecordingProfile): string {
 	const parts: string[] = [];
@@ -85,7 +85,7 @@ export function buildDraftFromCombo(
 }
 
 /**
- * A non-default copy of `profile` under a fresh id. Opened as a draft — the
+ * A non-default copy of `profile` under a fresh id. Opened as a draft: the
  * user must change a capability before Save (the duplicate-signature check
  * would otherwise reject it).
  */

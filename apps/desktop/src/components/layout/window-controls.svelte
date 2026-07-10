@@ -1,5 +1,5 @@
 <script module lang="ts">
-  // Windows/Linux control button — same look as the editor titlebar.
+  // Windows/Linux control button, same look as the editor titlebar.
   const winBtn =
     "group cursor-pointer inline-flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground";
 </script>
@@ -58,7 +58,7 @@
 {#if isTauri}
   {#if kind === "mac"}
     <!-- Faux traffic lights (no native titlebar). Literal OS colours instead
-         of theme tokens here are by design — window-chrome mimicry. -->
+         of theme tokens here are by design: window-chrome mimicry. -->
     <div
       class={cn("group/lights flex items-center gap-2", className)}
       onmousedown={(e) => e.stopPropagation()}

@@ -28,7 +28,7 @@
     onDuplicate,
   }: Props = $props();
 
-  // Last writer wins — only one card drags at a time.
+  // Last writer wins, only one card drags at a time.
   let activeSnap = $state<SnapTarget | null>(null);
   // Snap targets are original times; place the guide on the output axis.
   const snapX = $derived(

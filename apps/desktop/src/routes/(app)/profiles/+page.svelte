@@ -339,7 +339,7 @@
           <Tooltip.Trigger>
             {#snippet child({ props })}
               <!-- Wrap the disabled button so the tooltip trigger still gets
-                   hover — disabled native buttons swallow pointer events. -->
+                   hover, because disabled native buttons swallow pointer events. -->
               <span {...props as Record<string, unknown>} class="shrink-0">
                 <Button
                   onclick={addProfile}
@@ -512,7 +512,7 @@
                 : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
             )}
           >
-            <!-- Identity region — same treatment as a thumbnail-less recasts
+            <!-- Identity region, same treatment as a thumbnail-less recasts
                  card: muted surface, centered mark, and a `.recast`-style cutout
                  tab (here it carries the capability glyphs). -->
             <div class="relative h-24 shrink-0 overflow-hidden bg-muted/40">
@@ -571,7 +571,7 @@
               </div>
             </div>
 
-            <!-- Actions — same placement/treatment as the recasts card. -->
+            <!-- Actions, same placement/treatment as the recasts card. -->
             <div
               role="presentation"
               onclick={(e) => e.stopPropagation()}

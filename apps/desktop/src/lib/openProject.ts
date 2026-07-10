@@ -2,7 +2,7 @@
  * External-open pipeline for `.recast` files (today: OS file association).
  *
  * External opens always land in a fresh editor window, never navigating the
- * main window — the library view stays put and unsaved edits elsewhere aren't
+ * main window, so the library view stays put and unsaved edits elsewhere aren't
  * disturbed. Same path opened twice → focus the existing window (label dedupe).
  */
 import { analytics } from "$lib/analytics/client";
@@ -51,7 +51,7 @@ export async function openProjectInNewWindow(path: string): Promise<void> {
     center: true,
     decorations: false,
   });
-  // No PII — the path never leaves.
+  // No PII: the path never leaves.
   analytics.capture("editor_opened");
 }
 
@@ -66,7 +66,7 @@ export async function openProjectInNewWindow(path: string): Promise<void> {
 export async function openProjectFromExternalPath(
   path: string,
 ): Promise<void> {
-  // Best-effort guard — a failed IPC treats it as "not recording" rather than
+  // Best-effort guard: a failed IPC treats it as "not recording" rather than
   // blocking the open.
   let recording = false;
   try {

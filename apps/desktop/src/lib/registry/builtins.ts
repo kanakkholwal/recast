@@ -1,5 +1,5 @@
 /**
- * Built-in catalog registration — the single place where Recast's shipped
+ * Built-in catalog registration: the single place where Recast's shipped
  * visual presets enter the registry. Imported for its side effect by
  * `lib/registry/index.ts`, so any consumer that imports `$lib/registry` is
  * guaranteed to see built-ins registered.
@@ -7,7 +7,7 @@
  * Built-in entries keep their *exact legacy storage form* as their `id`
  * (cursor → bare style id; background → `asset:<id>` wire string; gradient →
  * CSS string; colour → hex; easing/smoothing → preset id). That's what makes
- * old project files resolve unchanged — no migration.
+ * old project files resolve unchanged, with no migration.
  *
  * Dependency direction: this module imports the catalog source files; those
  * files must NOT import the registry index back (editor-store imports the

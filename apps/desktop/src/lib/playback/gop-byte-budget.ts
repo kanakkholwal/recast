@@ -7,7 +7,7 @@
  * whereas encoded GOP bytes are cheap CPU RAM, so a generous byte ceiling lets
  * scrubbing back and forth over the same cut stay re-fetch-free.
  *
- * Pure accounting only — the caller owns the actual bytes (sample `.data`) and
+ * Pure accounting only. The caller owns the actual bytes (sample `.data`) and
  * frees the keys this returns.
  */
 export class GopByteBudget {

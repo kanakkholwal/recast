@@ -1,5 +1,5 @@
 /**
- * Minimal WebGL2 shader/program helpers. Pure w.r.t. the component — every call
+ * Minimal WebGL2 shader/program helpers. Pure w.r.t. the component: every call
  * takes the GL context as its first argument, so these can be unit-tested with a
  * mock context and shared across compositors.
  */

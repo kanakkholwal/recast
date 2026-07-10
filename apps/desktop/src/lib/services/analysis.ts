@@ -1,5 +1,5 @@
 /**
- * Analysis service — "understand this recording and suggest edits" orchestration
+ * Analysis service: "understand this recording and suggest edits" orchestration
  * (currently smart auto-zoom). Owns NO UI state: does IPC + computation +
  * persistence and returns a structured outcome; the caller surfaces it. This is
  * the surface a future MCP "auto-edit" tool calls. See ./README.md for layering.
@@ -26,7 +26,7 @@ export interface GenerateAutoZoomOptions {
  * Detect focus candidates from a cursor track and place focus regions, under a
  * single coalesced undo entry. Sets the persisted `autoZoomApplied` latch before
  * autosave so a crash can't re-run on reopen. Does NOT toast or guard concurrent
- * runs — those are the caller's concern.
+ * runs; those are the caller's concern.
  */
 export async function generateAutoZoom(
 	store: EditorStore,

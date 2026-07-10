@@ -85,7 +85,7 @@ describe("needsReset", () => {
 	});
 
 	it("resets on a forward jump across a gap (e.g. a cut) we haven't fed to", () => {
-		// Playing in GOP@0 (fed to 20), user jumps to GOP@90 — gap.
+		// Playing in GOP@0 (fed to 20), user jumps to GOP@90: gap.
 		expect(needsReset(0, 20, 90)).toBe(true);
 	});
 

@@ -169,7 +169,7 @@
     </div>
   {/if}
 
-  <!-- Google Drive uploads — one card each; cancel aborts an in-flight upload. -->
+  <!-- Google Drive uploads: one card each; cancel aborts an in-flight upload. -->
   {#each gdrive.activeUploads as upload (upload.uploadId)}
     {@const up = upload}
     <div
@@ -262,7 +262,7 @@
     </div>
   {/each}
 
-  <!-- Recast Cloud shares — one card each; PUT shows byte-%, other phases pulse. -->
+  <!-- Recast Cloud shares: one card each; PUT shows byte-%, other phases pulse. -->
   {#each cloudShare.activeUploads as up (up.sourcePath)}
     <div
       class="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg ring-1 ring-black/5"

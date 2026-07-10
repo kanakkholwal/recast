@@ -37,7 +37,7 @@ export function sortEntries(
 	return list;
 }
 
-/** The six most recent entries — the home page's activity strips. */
+/** The six most recent entries: the home page's activity strips. */
 export function recentSix(entries: RecordingEntry[]): RecordingEntry[] {
 	return sortEntries(entries, "recent").slice(0, 6);
 }

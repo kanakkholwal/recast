@@ -25,7 +25,7 @@ export function rectFromPoints(
 
 /**
  * Local rect → virtual-desktop `RegionRect` (+ label): shift by the overlay's
- * origin and scale to physical pixels — what the Rust resolver expects.
+ * origin and scale to physical pixels, which is what the Rust resolver expects.
  */
 export function toRegionPayload(
 	rect: Rect,

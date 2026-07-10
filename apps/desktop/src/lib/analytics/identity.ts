@@ -1,5 +1,5 @@
 /**
- * Persistent anonymous install id — the analytics `distinct_id` before sign-in.
+ * Persistent anonymous install id: the analytics `distinct_id` before sign-in.
  * Shares the `trace_install_id` localStorage key with `user-store` and the Rust
  * crash reporter so all three attribute to the same anonymous person.
  *

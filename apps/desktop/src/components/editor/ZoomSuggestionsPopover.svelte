@@ -92,7 +92,7 @@
     const bounds = clipBounds();
     if (!bounds) return;
     const plan = planPlacement(currentOccupied(), bounds.start, bounds.end, sug.timestampUs / 1_000_000);
-    if (!plan) return; // blocked — button should already be disabled
+    if (!plan) return; // blocked, button should already be disabled
     store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
     pending = pending.filter((_, i) => i !== idx);
     if (pending.length === 0) status = "empty";

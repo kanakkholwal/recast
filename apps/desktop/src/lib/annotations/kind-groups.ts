@@ -10,7 +10,7 @@ export function isShape(kind: AnnotationKindName): boolean {
 	return kind === "rect" || kind === "ellipse" || kind === "arrow";
 }
 
-/** Kinds framed by a stroke — shapes plus images (which get a border). */
+/** Kinds framed by a stroke: shapes plus images (which get a border). */
 export function hasStroke(kind: AnnotationKindName): boolean {
 	return isShape(kind) || kind === "image";
 }
@@ -20,7 +20,7 @@ export function hasFill(kind: AnnotationKindName): boolean {
 	return kind === "rect" || kind === "ellipse";
 }
 
-/** Box-model kinds positioned by an (x, y, w, h) rect — everything but arrow. */
+/** Box-model kinds positioned by an (x, y, w, h) rect: everything but arrow. */
 export function isBoxKind(
 	kind: AnnotationKind,
 ): kind is Extract<AnnotationKind, { w: number }> {

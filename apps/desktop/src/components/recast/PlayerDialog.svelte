@@ -17,7 +17,7 @@
     onclose: () => void;
   } = $props();
 
-  // Tauri's asset:// URL — needed because the WebView can't read raw OS
+  // Tauri's asset:// URL, needed because the WebView can't read raw OS
   // paths. Recomputed if the parent swaps `entry` in place (rename flow).
   const src = $derived(convertFileSrc(entry.path));
 </script>
@@ -58,7 +58,7 @@
     </header>
 
     <!-- autohide={-1}: WebView2 honours autoplay, and media-chrome hides the
-         bar while user-inactive — so an autoplaying clip would look control-less. -->
+         bar while user-inactive, so an autoplaying clip would look control-less. -->
     <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
          metadata-only preload range-fetches the tail over the asset protocol and
          stalls in NETWORK_LOADING (black frame) in release. "auto" streams from

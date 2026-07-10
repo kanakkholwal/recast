@@ -5,7 +5,7 @@
  * (../timeline/filmstrip-worker.ts) need the same first step: mp4box parses the
  * file into encoded samples (decode order) plus the codec config. This owns that
  * one dance so neither worker reimplements it. The progressive (HTTP-range) path
- * stays in webcodecs-worker.ts — only whole-file ingestion is shared.
+ * stays in webcodecs-worker.ts; only whole-file ingestion is shared.
  */
 
 import {
@@ -37,7 +37,7 @@ export interface DemuxResult {
 /**
  * Demux an in-memory MP4 into its sample table and decoder config. Throws if the
  * WebView lacks WebCodecs, the file has no decodable video track, or the codec
- * isn't supported — the caller should fall back to a non-WebCodecs path.
+ * isn't supported; the caller should fall back to a non-WebCodecs path.
  */
 export async function demuxWholeFile(ab: ArrayBuffer): Promise<DemuxResult> {
 	if (typeof VideoDecoder === "undefined") {
@@ -47,7 +47,7 @@ export async function demuxWholeFile(ab: ArrayBuffer): Promise<DemuxResult> {
 	const collected: ChunkMeta[] = [];
 
 	// Resolve with track + config so they reach the linear flow as non-null
-	// locals — TS can't see assignments inside these mp4box callbacks.
+	// locals; TS can't see assignments inside these mp4box callbacks.
 	const ready = new Promise<{ track: Track; cfg: VideoDecoderConfig }>(
 		(resolve, reject) => {
 			let track: Track | null = null;

@@ -106,7 +106,7 @@
   let videoEl: HTMLVideoElement | null = $state(null);
   // True while the WebCodecs engine drives the picture (its clock owns
   // `store.currentTime`). When set, handleTimeUpdate must NOT echo
-  // `videoEl.currentTime` — the element free-runs through the un-cut recording,
+  // `videoEl.currentTime`, because the element free-runs through the un-cut recording,
   // so feeding its time to the store snaps playback back across a cut.
   let webcodecsActive = $state(false);
   // WYSIWYG screenshot (composite, not raw frame); bound from VideoPreview.
@@ -133,7 +133,7 @@
         JSON.stringify({ sidebar: showSidebar, timeline: showTimeline }),
       );
     } catch {
-      // localStorage can throw in private-mode/quota edge cases — the toggle
+      // localStorage can throw in private-mode/quota edge cases. The toggle
       // still works for the session, it just won't be remembered.
     }
   });
@@ -181,7 +181,7 @@
     autosaveTimer = setInterval(async () => {
       if (!documentPath || isLoading) return;
       // Skip the full-state serialize when nothing changed since the last
-      // save/autosave — most idle ticks are clean, so the 30s timer stays off
+      // save/autosave. Most idle ticks are clean, so the 30s timer stays off
       // the main thread entirely until there's real work to persist.
       if (!store.isDirty) return;
       try {
@@ -218,7 +218,7 @@
     for (const el of [systemAudioEl, micAudioEl]) {
       if (el) el.currentTime = start;
     }
-    // play() can reject (user-gesture) — log instead of stalling silently.
+    // play() can reject (user-gesture), so log instead of stalling silently.
     void videoEl.play().catch((err) => {
       console.warn("loop replay failed:", err);
     });
@@ -245,7 +245,7 @@
         }
       }
       // Drift correction: catch audio up when it falls behind the picture, but
-      // never rewind it to chase a picture that stalled under load — that
+      // never rewind it to chase a picture that stalled under load, because that
       // replays a slice as a live echo. Picture catch-up is owned by the rAF
       // sync loop (syncAudioToClock), so here we only nudge lagging audio.
       const videoT = videoEl.currentTime;
@@ -279,7 +279,7 @@
   // skip the same cuts. Normal playback stays locked at 1×; the only corrections
   // are one snap per cut boundary and per seek. Audio that falls behind by more
   // than this is nudged forward; audio that runs ahead of a stalled picture is
-  // NOT rewound (that replays a slice as a live echo) — see reconcileAvDrift.
+  // NOT rewound (that replays a slice as a live echo). See reconcileAvDrift.
   const AUDIO_SYNC_THRESHOLD = 0.12;
   // A cut crossing or scrub jumps the playhead far past one publish quantum;
   // detecting it snaps audio exactly on cuts of any length, including short ones.
@@ -309,12 +309,12 @@
     lastAudioTarget = target;
     for (const el of [systemAudioEl, micAudioEl]) {
       // CRITICAL: never stack a seek on an element that's still seeking (e.g.
-      // cold-start buffering) — each new currentTime= interrupts the last, so it
+      // cold-start buffering). Each new currentTime= interrupts the last, so it
       // never settles and the audio cuts out entirely. Wait for the current seek.
       if (!el || el.paused || el.seeking || el.readyState < 2) continue;
       // Snap on a cut/seek or when audio falls behind; when audio runs ahead of a
       // stalled picture, advance the picture rather than rewind audio (a rewind
-      // replays a slice as a live echo — the record-while-previewing symptom).
+      // replays a slice as a live echo, the record-while-previewing symptom).
       const action = reconcileAvDrift({
         audioTime: el.currentTime,
         pictureTime: target,
@@ -342,7 +342,7 @@
   onDestroy(() => audioEngine?.dispose());
   onDestroy(disposeTileProvider);
 
-  // Kept audio regions and current OUTPUT time — what the Web Audio engine
+  // Kept audio regions and current OUTPUT time: what the Web Audio engine
   // schedules against. Regions are the kept SEGMENTS (trim − cuts, split-bounded)
   // each carrying its clip speed, so audio speeds up/down with the segment.
   // Output time is the warped axis (store.timeMap), matching the picture clock.
@@ -422,7 +422,7 @@
         el.pause();
       }
     }
-    // Run the rAF sync whenever the <audio> elements are the audio source —
+    // Run the rAF sync whenever the <audio> elements are the audio source:
     // both the legacy <video> path AND the engine-failed WebCodecs fallback.
     // It keeps them locked to the master (video time / output clock) so cuts
     // are skipped tightly, not just on the coarse `timeupdate` tick.
@@ -478,7 +478,7 @@
     audioEngine?.setVolume(settings.volume, settings.muted);
   });
 
-  // Transport seek for `store.seek()` — seeks from outside the player (a
+  // Transport seek for `store.seek()`: seeks from outside the player (a
   // transcript line, chapters, …). Most in-player seeks (timeline scrub,
   // frame-step) already set `videoEl.currentTime` themselves; this gives panels
   // the same reach. Moving the <video> works for both the legacy path and the
@@ -503,7 +503,7 @@
     const t = videoEl.currentTime;
     // Publish the jumped position immediately. During playback the <video>
     // cut-skip seeks to cut.end, but `store.currentTime` otherwise only catches
-    // up on the next 4 Hz `timeupdate` — so captions/overlays (which key off
+    // up on the next 4 Hz `timeupdate`, so captions/overlays (which key off
     // `store.currentTime`) lagged the cut by up to ~250 ms. Snap them here.
     store.currentTime = t;
     for (const el of [systemAudioEl, micAudioEl]) {
@@ -608,7 +608,7 @@
     }
     // Warm the silence-detection cache off the back of the waveform pass (one
     // FFmpeg decode at a time, never on the load path). The result is discarded
-    // here — `detectSilence` writes it to the file-identity cache the review
+    // here. `detectSilence` writes it to the file-identity cache the review
     // popover reads, so opening that popover is instant. Default options match
     // the popover's "balanced" sensitivity.
     void warmSilenceCache();
@@ -674,7 +674,7 @@
     try {
       const document = await loadEditorDocument(data.filePath);
       if (document.needsMigration) {
-        // Stop before loading anything — prompt to update the format first.
+        // Stop before loading anything, and prompt to update the format first.
         isLoading = false;
         showMigration = true;
         return;
@@ -752,12 +752,12 @@
     if (autoZoomRunning) return;
     if (!store.autoZoomEnabled || store.autoZoomApplied) return;
     if (!cursorPath) {
-      // No cursor track to analyse — latch the flag so we don't retry on reopen.
+      // No cursor track to analyse, so latch the flag so we don't retry on reopen.
       store.autoZoomApplied = true;
       return;
     }
     if (store.zoomRegions.length > 0) {
-      // Regions already exist (autosave-restored or manual) — skip silently.
+      // Regions already exist (autosave-restored or manual), so skip silently.
       store.autoZoomApplied = true;
       return;
     }
@@ -810,7 +810,7 @@
     return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
   });
 
-  // Export lifecycle UI state — in the route, not the store, since the overlay
+  // Export lifecycle UI state, in the route, not the store, since the overlay
   // owns success/cancel/error reveals that don't belong in global state.
   let exportStartedAt = $state<number>(0);
   let exportNow = $state<number>(Date.now());
@@ -820,7 +820,7 @@
   let activeExportId = $state<string | null>(null);
   // Backend prep sub-step (e.g. "Rendering cursor & annotations") emitted by Rust
   // while it runs the synchronous prep passes AFTER hand-off but before the encode
-  // reports real progress — otherwise the checklist's "Encode frames" step sits
+  // reports real progress. Otherwise the checklist's "Encode frames" step sits
   // stalled during that window.
   let exportPrepDetail = $state<string | null>(null);
 
@@ -994,7 +994,7 @@
           },
         });
 
-      // Warn (but don't block) if any image annotation can't be loaded — the
+      // Warn (but don't block) if any image annotation can't be loaded. The
       // export skips them silently otherwise, shipping a video with them gone.
       const missingImages = await findMissingImageAnnotations(store);
       if (missingImages.length > 0) {
@@ -1004,7 +1004,7 @@
         );
       }
 
-      // A blur can't follow a zoom in the export — warn so a redaction doesn't
+      // A blur can't follow a zoom in the export, so warn so a redaction doesn't
       // silently slide off the thing it was covering.
       if (hasBlurUnderZoom(store)) {
         toast.warning(
@@ -1012,7 +1012,7 @@
         );
       }
 
-      // The settings this export ran with — key when a user reports a bad export.
+      // The settings this export ran with, key when a user reports a bad export.
       log.info("export", "export_started", {
         exportId,
         format: store.exportFormat,
@@ -1104,7 +1104,7 @@
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
-  // export dialog — ExportFlowDialog portals over the player otherwise. Size and
+  // export dialog, because ExportFlowDialog portals over the player otherwise. Size and
   // created come from the exports listing (accurate); a minimal entry is the
   // fallback so playback never hinges on the listing succeeding.
   let playTarget = $state<RecordingEntry | null>(null);
@@ -1149,7 +1149,7 @@
   const isExportFlowOpen = $derived(exportPhase !== null);
 
   // Silence cuts only. Manual ripple deletes are always honoured, so they must
-  // not trip the "enable Silence detection" banner — only auto cuts depend on it.
+  // not trip the "enable Silence detection" banner. Only auto cuts depend on it.
   const silenceCutCount = $derived(
     store.cuts.filter((c) => c.source === "silence").length,
   );
@@ -1343,7 +1343,7 @@
     isSaving = true;
     // Paint the saving state before the synchronous serialize so the button
     // reflects the click immediately. The serialize itself stays on the main
-    // thread by necessity — Tauri's IPC bridge JSON-encodes command args on the
+    // thread by necessity, because Tauri's IPC bridge JSON-encodes command args on the
     // main thread anyway, so a worker would only add a proxy-stripping clone of
     // equal cost; the win is gating autosave on isDirty (see startAutosave).
     await tick();
@@ -1555,7 +1555,7 @@
   />
 
   <!-- Project has silence cuts but the flag is off, so they're hidden and
-       skipped on export — surface an inline opt-in so work isn't lost. -->
+       skipped on export, so surface an inline opt-in so work isn't lost. -->
   {#if !isLoading && !error && silenceCutCount > 0 && !experimentalStore.silenceDetection}
     <div
       class="flex items-center gap-2.5 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-warning"
@@ -2141,7 +2141,7 @@
 
     <!-- Share/upload tiles, grouped out of the footer so they read as one
          "where does this go?" choice. The Drive tile drops out once an upload
-         exists — the Drive row above owns it then. -->
+         exists, because the Drive row above owns it then. -->
     <div class="border-t border-border/40 bg-muted/15 px-5 py-3.5">
       <p
         class="mb-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"

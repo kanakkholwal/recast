@@ -13,7 +13,7 @@ export function isCornerHandle(h: HandleName): boolean {
 	return h === "nw" || h === "ne" || h === "se" || h === "sw";
 }
 
-/** Constrain a signed box to a visual square — equal on-screen pixels. */
+/** Constrain a signed box to a visual square: equal on-screen pixels. */
 export function constrainSquare(
 	w: number,
 	h: number,

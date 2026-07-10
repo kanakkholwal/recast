@@ -1,4 +1,4 @@
-// Shared annotation palette constants — centralised so the main panel and the
+// Shared annotation palette constants, centralised so the main panel and the
 // appearance sub-panel can't drift out of sync.
 
 /** Quick stroke / text color swatches. Mirrors the cursor highlight palette. */

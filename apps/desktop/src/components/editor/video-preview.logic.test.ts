@@ -13,7 +13,7 @@ import {
 	type IdlePeriodJS,
 } from "./video-preview.logic";
 
-// A linear-eased region so the eased scale is a plain lerp — locks the ramp
+// A linear-eased region so the eased scale is a plain lerp, which locks the ramp
 // shape (ramp-in → hold → ramp-out) without depending on a bezier's curvature.
 function region(overrides: Partial<ZoomRegion> = {}): ZoomRegion {
 	return {

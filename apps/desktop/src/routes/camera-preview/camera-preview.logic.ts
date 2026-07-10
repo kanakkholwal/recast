@@ -13,7 +13,7 @@ export const ASPECT_RATIO: Record<AspectKey, number> = {
 	"16:9": 16 / 9,
 };
 
-/** CSS px radius for the "rounded" shape — matches the rounded-3xl token. */
+/** CSS px radius for the "rounded" shape, matching the rounded-3xl token. */
 export const WINDOW_RADIUS = 20;
 
 /** Max preview size as a fraction of the screen, so it never covers recorded
@@ -31,7 +31,7 @@ export const MIN_LOGICAL_SIZE = CONTROL_BAR_MIN_WIDTH;
 export const CONTROL_BAR_HEIGHT = 40;
 
 /**
- * Circle is 1:1-only — on a non-square aspect it'd be an ellipse, which the
+ * Circle is 1:1-only. On a non-square aspect it'd be an ellipse, which the
  * composited bubble in the editor doesn't render.
  */
 export function allowedShapesFor(a: AspectKey): ShapeKey[] {

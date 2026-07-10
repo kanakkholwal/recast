@@ -13,7 +13,7 @@ export const HANDLE_RADIUS_PX = 5.5;
 /** CSS-px corner radius drawn on annotation resize handles. */
 export const HANDLE_CORNER_PX = 2;
 
-/** Zoom transform that maps UV straight through — used for frame-anchored annotations, which ignore zoom. */
+/** Zoom transform that maps UV straight through, used for frame-anchored annotations, which ignore zoom. */
 export const IDENTITY_ZOOM: ZoomTransform = { scale: 1, cx: 0.5, cy: 0.5 };
 
 /** Canvas dash array for a stroke style, scaled by stroke width. Empty = solid. */
@@ -61,7 +61,7 @@ export function blurTint(
  * Multiply a CSS colour's alpha by `factor`, returning an `rgba(...)` string.
  * Handles `#rrggbb`, `#rrggbbaa`, and `rgb()/rgba()`; any other form (tokens,
  * named colours) is returned unchanged. Used to bake glow opacity into the
- * shadow colour so the cast glow dims without fading the shape itself — which
+ * shadow colour so the cast glow dims without fading the shape itself, which
  * is how the export treats `glow.opacity` (cursor_export.rs draw_*_shadow).
  */
 export function withAlpha(color: string, factor: number): string {
@@ -135,7 +135,7 @@ export function arrowGeometry(
 /**
  * Emit a rounded-rectangle sub-path into `ctx` (caller owns beginPath/fill/
  * stroke). Radius is clamped to half the shorter side so a full-radius box
- * rounds cleanly regardless of dimensions. Path-building only — no ctx state
+ * rounds cleanly regardless of dimensions. Path-building only, no ctx state
  * is mutated beyond the current path.
  */
 export function roundRectPath(

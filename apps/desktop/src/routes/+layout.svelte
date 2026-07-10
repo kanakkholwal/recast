@@ -13,7 +13,7 @@
 
   let { children } = $props();
 
-  // First-run privacy prompt — shown once in the main window only.
+  // First-run privacy prompt, shown once in the main window only.
   let showFirstRun = $state(false);
 
   // Analytics + global error capture. Overlay windows are skipped; the main
@@ -36,7 +36,7 @@
         const { platform } = await import("@tauri-apps/plugin-os");
         analytics.register({ os: platform() });
       } catch {
-        // Non-Tauri preview — leave os unset.
+        // Non-Tauri preview, so leave os unset.
       }
       analytics.capture("app_opened");
 
@@ -158,7 +158,7 @@
   // argv and emits `app://open-recast`. Both funnel through
   // openProjectFromExternalPath, which always spawns a fresh editor window
   // (never navigates main). Gated to the main window so secondary windows don't
-  // race to spawn — editor windows are labelled `editor-*`, see the check below.
+  // race to spawn. Editor windows are labelled `editor-*`, see the check below.
   onMount(() => {
     if (isTransparentRoute) return;
     let cancelled = false;
@@ -246,7 +246,7 @@
 
   // Logs modifier-involved keydowns to trace "phantom shortcut" reports. Gated
   // through log.debug (dev / diagnostic only). If a bare-modifier `key`
-  // ("Control"/"Meta") triggers an action, it's a stale HMR listener — restart
+  // ("Control"/"Meta") triggers an action, it's a stale HMR listener, so restart
   // `pnpm tauri dev`. The same keydown logged twice means listeners are leaking.
   function logKeyDiagnostic(e: KeyboardEvent) {
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) return;

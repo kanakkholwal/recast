@@ -132,14 +132,14 @@ export class CloudAuth {
 	start(): void {
 		this.loadStatus();
 
-		// Each handler ignores the firing if the view left "waiting" — defense in
+		// Each handler ignores the firing if the view left "waiting". Defense in
 		// depth over `auth_cancel`, in case a poll landed between Cancel and abort.
 		void (async () => {
 			const handles = await Promise.all([
 				listen<AuthStatus>("auth:signed-in", (event) => {
 					if (this.#view.kind !== "waiting") return;
 					const s = event.payload;
-					// Payload already carries the full profile (plan + usage) — no refetch.
+					// Payload already carries the full profile (plan + usage), no refetch.
 					this.#view = {
 						kind: "signed-in",
 						...toProfile(s ?? ({} as AuthStatus)),
@@ -168,7 +168,7 @@ export class CloudAuth {
 					this.loadStatus();
 				}),
 			]);
-			// dispose() may have run while the listens were resolving — release now.
+			// dispose() may have run while the listens were resolving, so release now.
 			if (this.#destroyed) {
 				for (const un of handles) un();
 				return;

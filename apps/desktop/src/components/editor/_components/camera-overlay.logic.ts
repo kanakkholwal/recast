@@ -11,7 +11,7 @@ import type {
 /**
  * Inline style placing the bubble as canvas percentages. Bubble UV is in VIDEO
  * space, so it's offset by the video rect inside the padded canvas. Height is
- * omitted — `aspect-ratio: 1` keeps the bubble square regardless of video
+ * omitted, so `aspect-ratio: 1` keeps the bubble square regardless of video
  * aspect. Returns `display:none` when geometry isn't ready.
  */
 export function bubblePlacementStyle(

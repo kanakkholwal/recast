@@ -61,7 +61,7 @@ export function evalZoom(zoomRegions: ZoomRegionLike[], t: number): ZoomTransfor
 		const eased = atHold ? 1 : bezierY(curve, phase);
 		return {
 			scale: 1 + (r.scale - 1) * eased,
-			// Centre is PINNED at the target for the whole region — only scale
+			// Centre is PINNED at the target for the whole region; only scale
 			// eases. Must match VideoPreview's `evaluateZoomAt` 1:1: the shader
 			// dollies straight in, so easing the centre would slide overlays off
 			// their content pixels during the ramp while the video stays put.

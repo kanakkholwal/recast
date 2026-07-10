@@ -55,7 +55,7 @@
   let showPresetsPicker = $state(false);
   let showRevertConfirm = $state(false);
 
-  // Mod+P via the central shortcut registry — avoids a per-component window listener leaking under HMR.
+  // Mod+P via the central shortcut registry, which avoids a per-component window listener leaking under HMR.
   onMount(() =>
     registerShortcutHandlers({
       "editor.presets": () => {

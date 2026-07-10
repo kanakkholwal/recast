@@ -43,7 +43,7 @@ export function bgPreviewStyle(p: PresetLike): string {
 
 /**
  * WYSIWYG frame inset percent. `padding` is a percent of the shorter source edge
- * applied each side, so the video occupies `1/(1+2p)` of that edge — mirrored
+ * applied each side, so the video occupies `1/(1+2p)` of that edge, mirrored
  * here so the thumbnail frames like the real export. Capped at 20%.
  */
 export function frameInsetPct(padding: number): number {

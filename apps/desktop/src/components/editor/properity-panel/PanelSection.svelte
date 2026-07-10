@@ -4,13 +4,13 @@
   import InspectorHint from "../InspectorHint.svelte";
 
   interface Props {
-    /** Section title — small uppercase label. Omit to render a header-less group. */
+    /** Section title: small uppercase label. Omit to render a header-less group. */
     title?: string;
     /** Optional explanatory tooltip rendered next to the title. */
     hint?: string;
     /** Right-aligned action slot (button, toggle, badge, count). */
     action?: Snippet;
-    /** Body content. Optional — header-only sections (e.g. just a toggle) are valid. */
+    /** Body content. Optional, so header-only sections (e.g. just a toggle) are valid. */
     children?: Snippet;
     /** When true, child layout sets its own spacing. Default wraps in a `space-y-2.5` group. */
     flush?: boolean;

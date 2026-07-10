@@ -333,7 +333,7 @@
   }
 
   // Vertical move: jump a whole row, preserving the column (clamped when the
-  // target row is shorter) — see `rowMoveIndex`. No-op at the top/bottom edge.
+  // target row is shorter). See `rowMoveIndex`. No-op at the top/bottom edge.
   function moveRow(dir: 1 | -1) {
     const next = rowMoveIndex(model, selectedIndex, dir);
     if (next === null) return;

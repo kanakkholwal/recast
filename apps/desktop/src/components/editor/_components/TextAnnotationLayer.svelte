@@ -25,7 +25,7 @@
   interface Props {
     store: EditorStore;
     videoEl: HTMLVideoElement | null;
-    /** The container that wraps the WebGL preview canvas — we stretch to fit. */
+    /** The container that wraps the WebGL preview canvas, which we stretch to fit. */
     targetEl: HTMLElement | null;
   }
 
@@ -110,7 +110,7 @@
   }
 
   // Track the layer size with a ResizeObserver. A $effect (not onMount) so it
-  // re-attaches when `layerEl` binds — `targetEl` (the parent's bind:this) is
+  // re-attaches when `layerEl` binds. `targetEl` (the parent's bind:this) is
   // still null at this child's onMount, which is why the old onMount observer
   // never attached and `layerSize` froze, drifting the text off its selection
   // box on any preview resize. Observe the always-present local `layerEl`.
@@ -193,7 +193,7 @@
       ) as HTMLElement | null;
       if (el) {
         el.focus();
-        // Select all on entry — Keynote behaviour.
+        // Select all on entry. Keynote behaviour.
         const range = document.createRange();
         range.selectNodeContents(el);
         const sel = window.getSelection();
@@ -253,7 +253,7 @@
       pointerStartUV: pointerUV,
       moved: false,
     };
-    // Selecting on press matches Figma/Keynote — the rest of the panel
+    // Selecting on press matches Figma/Keynote, so the rest of the panel
     // updates immediately even before the user commits to a drag. Undo is
     // pushed on the first real move (below), so a pure select doesn't bloat it.
     store.selectedAnnotationId = a.id;
@@ -303,7 +303,7 @@
     try {
       target.releasePointerCapture(e.pointerId);
     } catch {
-      // capture may have already been released by the browser — ignore.
+      // capture may have already been released by the browser, so ignore.
     }
     delete target.dataset.dragStartX;
     delete target.dataset.dragStartY;

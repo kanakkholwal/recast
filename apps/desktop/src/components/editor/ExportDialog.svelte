@@ -57,7 +57,7 @@
     { value: "source", label: "Source", desc: "Original resolution" },
   ];
 
-  // Encoder effort — orthogonal to resolution; trades encode time for file size.
+  // Encoder effort, orthogonal to resolution; trades encode time for file size.
   const speeds: { value: ExportSpeed; label: string; desc: string }[] = [
     { value: "fast", label: "Fast", desc: "Quicker · larger" },
     { value: "balanced", label: "Balanced", desc: "Recommended" },

@@ -1,7 +1,7 @@
 /**
  * Pure timecode formatters for the editor panels. All take SECONDS, clamp
  * negatives to 0, and treat non-finite as 0 (NaN → zero clock, not `NaN:NaN`).
- * Minutes are never rolled into hours — recordings are short.
+ * Minutes are never rolled into hours, because recordings are short.
  */
 
 function safe(sec: number): number {

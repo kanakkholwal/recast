@@ -4,11 +4,11 @@
  * The recording's audio covers the FULL original timeline. To play the EDITED
  * timeline we don't seek a media element around the cuts (fragile, drifts,
  * stalls); instead we schedule each KEPT region as its own `AudioBufferSourceNode`
- * on the audio clock, so the cuts become gaps in the schedule — sample-accurate
+ * on the audio clock, so the cuts become gaps in the schedule: sample-accurate
  * and silent by construction. Two pure steps:
- *   1. `keptRegions` — original-time intervals that survive (trim minus cuts),
+ *   1. `keptRegions`: original-time intervals that survive (trim minus cuts),
  *      cut-bounded (NOT split by editor split points, which don't remove audio).
- *   2. `planAudioSchedule` — given those regions and the current OUTPUT time,
+ *   2. `planAudioSchedule`: given those regions and the current OUTPUT time,
  *      map each to a `start(when, offset, duration)`.
  */
 
@@ -22,7 +22,7 @@ export interface Region {
 	end: number;
 	/** Playback speed (>0); 1 = normal. A 2× region plays its audio twice as
 	 *  fast (and occupies half the output time), matching the per-segment clip
-	 *  speed. Optional — absent/≤0 means 1×. */
+	 *  speed. Optional; absent/≤0 means 1×. */
 	speed?: number;
 }
 

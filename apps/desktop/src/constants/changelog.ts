@@ -34,7 +34,7 @@ export const KIND_META: Record<
 // root CHANGELOG.md by `pnpm sync:changelog` (and automatically before each
 // desktop build via the `predev` / `prebuild` hook). Edit CHANGELOG.md, not
 // this array.
-// RELEASES:START — auto-generated, do not edit by hand
+// RELEASES:START, auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
 		version: '0.3.1',

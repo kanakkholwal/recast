@@ -33,7 +33,7 @@ export function rankCommands(
 
 /**
  * When the query is empty, group by category. Otherwise show a flat, relevance-
- * ranked list under a single "Results" heading — matches the search-results
+ * ranked list under a single "Results" heading, which matches the search-results
  * mental model.
  */
 export function groupCommands(

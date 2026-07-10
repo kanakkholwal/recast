@@ -143,7 +143,7 @@
 				</Button>
 			</div>
 
-			<!-- Default workspace — only meaningful when the user belongs to
+			<!-- Default workspace, only meaningful when the user belongs to
 				 more than one. Uploads target this workspace unless overridden
 				 at share time. Backed by the shared cloudShare store (which the
 				 share flow reads), persisted locally; it never changes the
@@ -216,7 +216,7 @@
 				</div>
 			{/if}
 
-			<!-- Usage stats — only render if we got profile data back. The
+			<!-- Usage stats, only render if we got profile data back. The
 				 fallback get-session path leaves `usage` null; rather than
 				 stub zeros (which read as "you have nothing") we hide the
 				 row entirely. -->

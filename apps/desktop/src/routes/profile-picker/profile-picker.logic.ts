@@ -8,7 +8,7 @@ export function parseSelectedParam(search: string): string | null {
 
 /**
  * One-line capture summary chips for a profile (audio/mic/camera, or "Silent
- * capture" when nothing is on). Distinct from the profiles-page summary — this
+ * capture" when nothing is on). Distinct from the profiles-page summary, this
  * shape favours the compact picker row.
  */
 export function summarize(profile: RecordingProfile): string[] {

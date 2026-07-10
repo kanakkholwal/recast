@@ -1,5 +1,5 @@
 /**
- * Asset registry — public entry point.
+ * Asset registry: public entry point.
  *
  * Importing `$lib/registry` guarantees the built-in catalogs are registered
  * (via the `./builtins` side effect) before any `registry.list(kind)` /

@@ -8,7 +8,7 @@
   import { checkCapability, loadCapabilities } from "$lib/capabilities";
 
   // Wayland (KWin in particular) can trap focus on undecorated transparent
-  // alwaysOnTop windows — drop the flag on Linux. See ipc.ts for context.
+  // alwaysOnTop windows, so drop the flag on Linux. See ipc.ts for context.
   const IS_LINUX = platform() === "linux";
   import {
     getAudioDevices,
@@ -144,7 +144,7 @@
     }
 
     // Tween the bar to the new measured width (instant under reduced motion).
-    // The window never moves — the bar morphs centered within it.
+    // The window never moves; the bar morphs centered within it.
     if (prefersReducedMotion) barWidth.set(measuredBarW, { duration: 0 });
     else barWidth.target = measuredBarW;
   });
@@ -164,13 +164,13 @@
     void refreshTray(isRecording);
   });
 
-  // `pausedAccumMs` banks completed pauses; `pausedSince` marks one in progress
-  // — the elapsed timer subtracts both so it freezes.
+  // `pausedAccumMs` banks completed pauses; `pausedSince` marks one in progress,
+  // and the elapsed timer subtracts both so it freezes.
   let isPaused = $state(false);
   let pausedAccumMs = $state(0);
   let pausedSince: number | null = $state(null);
 
-  // While paused, re-prompt every 5 minutes — the camera keeps recording
+  // While paused, re-prompt every 5 minutes, because the camera keeps recording
   // through a pause, so a forgotten pause quietly wastes disk.
   const PAUSE_PROMPT_INTERVAL_MS = 5 * 60 * 1000;
   let pausePromptOpen = $state(false);
@@ -199,7 +199,7 @@
   let cameras = $state<BrowserCamera[]>([]);
 
   // Which profile is currently driving the panel state, if any. Manual toggle
-  // overrides don't clear this — the chip is just a "last applied" marker.
+  // overrides don't clear this; the chip is just a "last applied" marker.
   let activeProfileId = $state<string | null>(null);
   // Briefly highlights the profile-switcher button after a successful apply
   // so the user gets a confirmation cue without us popping a toast.
@@ -223,7 +223,7 @@
       return;
     }
 
-    // Skip browser MediaDevices ids (hex hashes) — the Rust validator only
+    // Skip browser MediaDevices ids (hex hashes); the Rust validator only
     // knows DirectShow names; openCameraStream is the source of truth there.
     if (isBrowserDeviceId(deviceId)) {
       cameraValidation = {
@@ -408,7 +408,7 @@
   }
 
   /**
-   * Apply a profile to the panel state — toggles + device selections —
+   * Apply a profile to the panel state (toggles + device selections),
    * resolving devices against the current hardware list. Fallback / missing
    * outcomes are recorded into `micWarning` / `cameraWarning` so the device
    * button tooltips surface them on hover (Sonner toasts would overflow the
@@ -466,7 +466,7 @@
     }
 
     // The countdown follows the active profile live via the `countdownSeconds`
-    // derived — setting `activeProfileId` is all that's needed; no snapshot.
+    // derived, so setting `activeProfileId` is all that's needed; no snapshot.
     activeProfileId = profile.id;
   }
 
@@ -698,7 +698,7 @@
   }
 
   async function toggleRecording() {
-    // While counting down, the Record button isn't shown — but a tray toggle
+    // While counting down, the Record button isn't shown, but a tray toggle
     // or shortcut could still land here; treat it as "cancel the countdown".
     if (countdownValue !== null) {
       cancelCountdown();
@@ -712,7 +712,7 @@
       beginRecording();
       return;
     }
-    // A stop is already in flight — ignore repeat clicks so we don't fire a
+    // A stop is already in flight, so ignore repeat clicks so we don't fire a
     // second `stopRecording()` that races the first and errors out.
     if (isStopping) return;
     try {
@@ -720,8 +720,8 @@
       await stopRecording();
     } catch (e) {
       // Show the actual error, not a misleading "ffmpeg not installed"
-      // suffix. By the time stop runs, start has already succeeded —
-      // FFmpeg was available, so a stop failure is something else
+      // suffix. By the time stop runs, start has already succeeded, so
+      // FFmpeg was available, and a stop failure is something else
       // (encoder thread panic, disk full, codec mismatch in the
       // bundled binary, etc.). Misattributing to FFmpeg sent users
       // chasing missing-binary red herrings on bundles where FFmpeg
@@ -730,7 +730,7 @@
     } finally {
       // ALWAYS reset client-side state, even on stop failure. The Rust
       // `RecordingManager::stop()` does `guard.take()` as its first
-      // operation — once that succeeds, the session is gone from the
+      // operation, so once that succeeds, the session is gone from the
       // manager regardless of what later fails. Leaving `isRecording`
       // stuck at `true` traps the user into clicking Stop again, which
       // then errors with "recording is not running" because the session
@@ -742,7 +742,7 @@
       pausedSince = null;
       emit("camera-recording-stopped");
       emit("refresh-recordings");
-      // Back to "idle" phase — the ResizeObserver → Tween effect expands the
+      // Back to "idle" phase, so the ResizeObserver → Tween effect expands the
       // bar back out to the full control set (centered in the fixed window).
       isRecording = false;
       isStopping = false;
@@ -760,13 +760,13 @@
       microphoneDeviceId: micOn ? selectedMicId : null,
       camera: cameraOn,
       // Rust feeds this directly to FFmpeg dshow as a DirectShow friendly
-      // name — pass the label, not the browser deviceId hash.
+      // name, so pass the label, not the browser deviceId hash.
       cameraDeviceId: cameraOn ? selectedCameraName : null,
       // Global capture preferences set in Settings → Recording, read fresh at
       // start time (localStorage is shared across the app's webviews). The
       // backend clamps/validates both, so a stale or missing value is safe.
       // The desired fps is additionally capped to the selected monitor's
-      // refresh — capturing above it only duplicates frames, so e.g. a 144 fps
+      // refresh, because capturing above it only duplicates frames, so e.g. a 144 fps
       // preference records at 60 on a 60 Hz display while still recording 144
       // on a 144 Hz one. The user's preference itself is left untouched.
       fps: clampFpsToDisplay(loadRecordingFps(), selectedSource),
@@ -800,7 +800,7 @@
         notify("warning", result.warnings.join("\n"), 8000);
       }
     } catch (e) {
-      // Start failed — drop out of "starting" so the bar morphs back to idle
+      // Start failed, so drop out of "starting" so the bar morphs back to idle
       // instead of being stuck showing the recording transport.
       isStarting = false;
       notify("error", `Recording failed: ${e}`, 10000);
@@ -855,7 +855,7 @@
       if (resume && isPaused) {
         await togglePause();
       } else {
-        // Stay paused — re-arm so we prompt again in another 5 minutes.
+        // Stay paused, so re-arm so we prompt again in another 5 minutes.
         lastPausePromptAt = Date.now();
       }
     } catch {
@@ -1158,7 +1158,7 @@
   >
     {#if !isRecording}
     <div class="inline-flex items-center gap-1" out:fade={{ duration: 120 }}>
-    <!-- Opens a separate window, not a popover — the panel is too short to host
+    <!-- Opens a separate window, not a popover, because the panel is too short to host
          an in-place dropdown without resizing. -->
     {#if profilesStore.enabled && profilesStore.profiles.length > 0}
       <Button

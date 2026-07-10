@@ -33,7 +33,7 @@ describe("reconcileAvDrift", () => {
 
 	it("advances the picture when it stalls far behind the audio", () => {
 		// Audio 1.6, picture 1.0 → 0.6s lead (> maxLead). Catch the picture up
-		// instead of rewinding audio — no echo, and the lead can't accumulate.
+		// instead of rewinding audio: no echo, and the lead can't accumulate.
 		expect(act(1.6, 1.0)).toBe("catch-picture");
 	});
 

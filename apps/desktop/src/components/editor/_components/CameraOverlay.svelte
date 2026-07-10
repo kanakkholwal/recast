@@ -11,7 +11,7 @@
     store: EditorStore;
     /** The screen video element, used as the time-base for camera sync. */
     videoEl: HTMLVideoElement | null;
-    /** Preview rectangle (canvas-sized div) — positioning parent and drag-coord reference. */
+    /** Preview rectangle (canvas-sized div): positioning parent and drag-coord reference. */
     targetEl: HTMLDivElement | null;
     /** `convertFileSrc(camera.mp4)`, or empty when no camera was recorded (renders nothing). */
     cameraSrc: string;
@@ -111,7 +111,7 @@
     try {
       (e.target as HTMLElement).releasePointerCapture(e.pointerId);
     } catch {
-      // Ignore — pointer capture may already have been released.
+      // Ignore, pointer capture may already have been released.
     }
   }
 </script>

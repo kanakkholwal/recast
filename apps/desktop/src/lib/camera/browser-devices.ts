@@ -31,7 +31,7 @@ export function isVirtualCameraLabel(label: string): boolean {
 }
 
 /**
- * Why enumeration couldn't produce a usable device — only the *blocker* cases:
+ * Why enumeration couldn't produce a usable device. Only the *blocker* cases:
  *   - `unavailable` → no MediaDevices API at all (macOS WKWebView without
  *     NSCameraUsageDescription, or Linux WebKitGTK with media-stream off).
  *   - `denied` → a camera exists but capture was refused.
@@ -49,7 +49,7 @@ export class CameraAccessError extends Error {
 	}
 }
 
-/** A getUserMedia rejection that means "blocked" — not "device busy" / other. */
+/** A getUserMedia rejection that means "blocked", not "device busy" / other. */
 function isPermissionDenied(e: unknown): boolean {
 	return (
 		e instanceof DOMException &&

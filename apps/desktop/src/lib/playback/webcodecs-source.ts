@@ -1,5 +1,5 @@
 /**
- * WebCodecsVideoSource — frame-accurate video decode for the editor preview.
+ * WebCodecsVideoSource: frame-accurate video decode for the editor preview.
  *
  * Fixes "playback freezes at a cut". The old `<video>`-element preview crossed a
  * cut via `video.currentTime = cut.end`, a native seek whose decode-from-keyframe
@@ -9,8 +9,8 @@
  *     presentation-time index.
  *   - a WebCodecs `VideoDecoder` decodes on demand into `VideoFrame`s that WebGL
  *     uploads directly (`texImage2D(..., videoFrame)`).
- *   - decoded frames live in a bounded cache so frames around the playhead — and
- *     across an upcoming cut — are already in memory; a "seek" becomes a cache
+ *   - decoded frames live in a bounded cache so frames around the playhead (and
+ *     across an upcoming cut) are already in memory; a "seek" becomes a cache
  *     lookup + a short decode scheduled ahead of time, not a black-box stall.
  *
  * Threading: demux, decoder, and decode-ahead all run in `webcodecs-worker.ts`.
@@ -18,7 +18,7 @@
  * (frames transferred from the worker), answers the render loop synchronously,
  * and tells the worker where the playhead is.
  *
- * Ownership: `frameAt()` returns a frame owned by the cache — upload it
+ * Ownership: `frameAt()` returns a frame owned by the cache, so upload it
  * synchronously, do NOT close it. `VideoFrame`s are GPU-backed and refcounted;
  * leaking them exhausts the decoder, so every cached frame has exactly one close
  * path (eviction or `dispose()`).
@@ -48,7 +48,7 @@ export class WebCodecsVideoSource {
 	/** Resolution-adaptive caps (set in the constructor from `frameBudget`). */
 	#cacheMax: number;
 	#holdoutMax: number;
-	/** Last requested presentation time (µs) — drives eviction. */
+	/** Last requested presentation time (µs) that drives eviction. */
 	#currentUs = 0;
 	#disposed = false;
 
@@ -62,13 +62,13 @@ export class WebCodecsVideoSource {
 	/**
 	 * Called after a newly-decoded frame lands in the cache. The render loop is
 	 * driven by playback, so while PAUSED (a scrub) nothing would repaint when
-	 * the worker finishes decoding the seeked-to frame — wire this to a redraw.
+	 * the worker finishes decoding the seeked-to frame, so wire this to a redraw.
 	 */
 	onFrame: (() => void) | null = null;
 
 	/**
 	 * Emitted once on `dispose()` with aggregate decode throughput for this
-	 * source — the production `webcodecs_preview_perf` signal that gates the
+	 * source, the production `webcodecs_preview_perf` signal that gates the
 	 * default-on decision. Not called if playback never ran long enough to
 	 * sample a full window (e.g. the user only opened and closed the editor).
 	 */
@@ -117,7 +117,7 @@ export class WebCodecsVideoSource {
 	/**
 	 * Spawn the decode worker, demux `url`, and resolve once the source can
 	 * answer `frameAt`. Rejects if the file has no decodable video track or the
-	 * codec/WebView isn't supported by WebCodecs — the caller should fall back
+	 * codec/WebView isn't supported by WebCodecs, so the caller should fall back
 	 * to the `<video>` path.
 	 *
 	 * `sizeBytes` (from the backend probe) selects the ingestion strategy: small
@@ -199,7 +199,7 @@ export class WebCodecsVideoSource {
 						`format=${f.format} declaredMeta=${this.width}x${this.height}`,
 				);
 			}
-			// Throughput sampling (always on — a few int ops per frame).
+			// Throughput sampling (always on: a few int ops per frame).
 			this.#perfFrames++;
 			this.#perfMaxLateMs = Math.max(
 				this.#perfMaxLateMs,
@@ -232,7 +232,7 @@ export class WebCodecsVideoSource {
 			const ts = msg.frame.timestamp;
 			if (msg.fromScout) {
 				// Scout frame for an upcoming post-cut GOP. If the primary already
-				// has this timestamp, the scout copy is redundant — drop it.
+				// has this timestamp, the scout copy is redundant, so drop it.
 				if (this.#cache.has(ts)) {
 					msg.frame.close();
 					return;
@@ -250,7 +250,7 @@ export class WebCodecsVideoSource {
 			}
 			this.#cache.get(ts)?.close(); // never leak a replaced frame
 			this.#cache.set(ts, msg.frame);
-			// The primary now owns this timestamp for real — discard any scout copy.
+			// The primary now owns this timestamp for real, so discard any scout copy.
 			this.#prefetchCache.get(ts)?.close();
 			this.#prefetchCache.delete(ts);
 			this.#evict();
@@ -265,7 +265,7 @@ export class WebCodecsVideoSource {
 	 * nothing close enough is decoded yet (caller should hold the previous
 	 * frame). Nudges the worker to decode toward the requested time.
 	 *
-	 * The returned frame is owned by the cache — upload it, don't close it.
+	 * The returned frame is owned by the cache; upload it, don't close it.
 	 */
 	frameAt(originalSec: number, floorSec = 0): VideoFrame | null {
 		if (this.#disposed) return null;
@@ -277,7 +277,7 @@ export class WebCodecsVideoSource {
 	}
 
 	/**
-	 * Pre-decode the GOP at `originalSec` without moving the playhead — used to
+	 * Pre-decode the GOP at `originalSec` without moving the playhead, used to
 	 * warm the frames just after a cut so the jump is seamless.
 	 */
 	prefetch(originalSec: number): void {
@@ -287,7 +287,7 @@ export class WebCodecsVideoSource {
 
 	/**
 	 * Best cached frame to show at `tUs`: the greatest timestamp in [floorUs, tUs].
-	 * `floorUs` is the start of the current kept segment — frames before it are in
+	 * `floorUs` is the start of the current kept segment; frames before it are in
 	 * a removed cut and must NOT be shown, or the picture steps BACK into deleted
 	 * content right after a cut. Returns the closest at-or-before frame even if a
 	 * little stale; null only when no in-segment frame is decoded yet (caller holds
@@ -302,7 +302,7 @@ export class WebCodecsVideoSource {
 				best = frame;
 			}
 		}
-		// Also consider the scout holdout — right after a cut the only in-segment
+		// Also consider the scout holdout: right after a cut the only in-segment
 		// frame yet decoded is the one the scout pre-warmed, which is what makes
 		// the crossing seamless instead of a hold.
 		for (const [ts, frame] of this.#prefetchCache) {
@@ -329,7 +329,7 @@ export class WebCodecsVideoSource {
 		for (const ts of this.#cache.keys()) {
 			if (ts <= this.#currentUs && ts > displayTs) displayTs = ts;
 		}
-		// Frames strictly before the display frame are spent — forward playback
+		// Frames strictly before the display frame are spent; forward playback
 		// won't revisit them, and a backward seek resets + refills the decoder.
 		for (const [ts, frame] of this.#cache) {
 			if (ts < displayTs) {

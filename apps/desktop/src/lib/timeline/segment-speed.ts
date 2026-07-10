@@ -1,5 +1,5 @@
 /**
- * Per-segment speed overrides — the data model behind Cap-style "edit this cut
+ * Per-segment speed overrides: the data model behind Cap-style "edit this cut
  * differently". A kept segment can play at a speed other than 1×; an override is
  * anchored to the segment's ORIGINAL start time, which is stable under cuts and
  * ripple-deletes (they don't move original times). A trim or split that orphans

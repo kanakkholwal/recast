@@ -32,7 +32,7 @@ export function lerpHex(c0: string, c1: string, f: number): string {
 
 /**
  * Colour of a gradient at `pos` (0..100), interpolating surrounding stops in
- * sRGB — mirrors the renderer so an inserted stop is visually neutral. Stops
+ * sRGB, mirroring the renderer so an inserted stop is visually neutral. Stops
  * need not be pre-sorted.
  */
 export function sampleStopColor(stops: GradientStop[], pos: number): string {

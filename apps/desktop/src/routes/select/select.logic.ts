@@ -101,7 +101,7 @@ export function filterByType(
 	return sources.filter((s) => s.type === type);
 }
 
-/** Identity match on (type, id) — a source is "selected" when both agree. */
+/** Identity match on (type, id): a source is "selected" when both agree. */
 export function isSameSource(
 	selected: TargetSource | null,
 	source: TargetSource,

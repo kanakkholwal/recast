@@ -1,7 +1,7 @@
 /**
  * Feature flags for in-progress / platform-gated functionality.
  *
- * These gate UI surfaces only — capture/render/export stay wired up, so
+ * These gate UI surfaces only. Capture/render/export stay wired up, so
  * flipping a flag back to `true` re-enables the feature without other changes.
  * See the matching design note under `apps/desktop/docs/`.
  */
@@ -15,4 +15,4 @@
 export const CAMERA_OVERLAY_UI_ENABLED = false;
 
 // The WebCodecs preview toggle now lives in the experimental-features store
-// (`experimentalStore.webcodecsPreview`) — see `$lib/stores/experimental.svelte`.
+// (`experimentalStore.webcodecsPreview`); see `$lib/stores/experimental.svelte`.

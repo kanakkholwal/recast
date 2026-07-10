@@ -90,8 +90,8 @@ describe("originalToOutput / outputToOriginal", () => {
 	});
 
 	it("is monotonic non-decreasing in original time", () => {
-		// The output axis must never run backwards as the playhead advances —
-		// that's what keeps the timeline (and the playhead) from jittering at cuts.
+		// The output axis must never run backwards as the playhead advances.
+		// That's what keeps the timeline (and the playhead) from jittering at cuts.
 		let prev = -Infinity;
 		for (let t = 0; t <= 10; t += 0.1) {
 			const o = originalToOutput(cuts, t);

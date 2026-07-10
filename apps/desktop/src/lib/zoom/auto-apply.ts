@@ -1,5 +1,5 @@
 /**
- * Smart Auto-Zoom — shared placement helpers used by both the manual
+ * Smart Auto-Zoom: shared placement helpers used by both the manual
  * "Auto-focus" popover and the on-load auto-apply hook.
  *
  * Detection (`suggestZoomRegions`) lives in Rust. This module owns:
@@ -18,7 +18,7 @@ import type { EditorStore } from "$lib/stores/editor-store.svelte";
 // ~0.3 s and read as a flicker.
 export const ZOOM_LEAD_IN = 0.6; // before the trigger
 export const ZOOM_HOLD = 2.4; // after the trigger
-// Floor when a neighbour forces a shrink — shorter barely clears the ramps.
+// Floor when a neighbour forces a shrink: shorter barely clears the ramps.
 export const MIN_REGION_DURATION = 1.2;
 export const MIN_GAP = 0.08; // guardband so adjacent regions don't visually touch
 // 1.8× crops too aggressively; ~1.6× keeps surrounding context visible.

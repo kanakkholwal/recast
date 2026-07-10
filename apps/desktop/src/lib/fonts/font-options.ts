@@ -1,6 +1,6 @@
 // Combined font catalog (system + Google) shared by the caption and annotation
 // font pickers, plus the on-demand loader hook. One source of truth so both
-// pickers — and any future one — stay in sync.
+// pickers (and any future one) stay in sync.
 import {
 	GOOGLE_FONTS,
 	googleFamilyFromStack,

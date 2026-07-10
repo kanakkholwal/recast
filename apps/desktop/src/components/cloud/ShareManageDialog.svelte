@@ -2,7 +2,7 @@
 	/**
 	 * Manage an existing Recast Cloud share from the desktop: copy/open the
 	 * link, change who can view, set/remove a password, set/clear expiry, or
-	 * delete the cloud copy. Deleting NEVER touches the local export — that
+	 * delete the cloud copy. Deleting NEVER touches the local export. That
 	 * stays the source of truth.
 	 *
 	 * Current state is primed from `recast_cloud_list_shares` on open; if that
