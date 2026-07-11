@@ -373,7 +373,7 @@ function validatePack(dir) {
 	return res;
 }
 
-// ---- main -------------------------------------------------------------------
+// - main -
 
 const dirs = listPackDirs();
 if (dirs.length === 0) {

@@ -5,13 +5,16 @@ mod audio;
 mod cache;
 mod camera;
 mod capture;
+pub mod cli;
 mod commands;
+mod control;
 mod cursor;
 mod encoder;
 pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+mod path_install;
 mod permissions;
 mod power;
 mod project;
@@ -208,9 +211,9 @@ pub fn run() {
     // silent — when a user hit a recording error there was no way to ask
     // them for a log file, so every report had to be reproduced live.
     // `tauri_plugin_log`'s defaults write to both stdout AND a rotating
-    // file under the OS log dir (Windows: `%LOCALAPPDATA%\com.nexonauts.recast\logs\`,
-    // macOS: `~/Library/Logs/com.nexonauts.recast/`, Linux:
-    // `~/.local/share/com.nexonauts.recast/logs/`).
+    // file under the OS log dir (Windows: `%LOCALAPPDATA%\com.kanakkholwal.recast\logs\`,
+    // macOS: `~/Library/Logs/com.kanakkholwal.recast/`, Linux:
+    // `~/.local/share/com.kanakkholwal.recast/logs/`).
     //
     // The dispatch is built permissively (Trace); the EFFECTIVE level is set at
     // runtime by `commands::system::apply_log_level` from the persisted
@@ -235,7 +238,18 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle();
-            let config = load_config(handle);
+            let mut config = load_config(handle);
+
+            // First run: default the output location to <Videos>/Recast so
+            // recordings land somewhere discoverable and durable, not the temp
+            // dir the OS periodically purges. Persisted so it shows in Settings
+            // and the user can still change it.
+            if config.output_dir.is_none() {
+                let default_dir = commands::system::default_output_dir(handle);
+                let _ = std::fs::create_dir_all(&default_dir);
+                config.output_dir = Some(default_dir.to_string_lossy().to_string());
+                commands::system::save_config(handle, &config);
+            }
 
             // Apply the saved log verbosity now (the plugin was built at Trace).
             // Off by default → release stays at Warn; on → Debug captures
@@ -323,6 +337,11 @@ pub fn run() {
 
             #[cfg(windows)]
             jumplist::update(handle);
+
+            // Local control server for the `recast` CLI (status, rec ...).
+            // Non-fatal if it can't bind: the GUI is unaffected, the CLI just
+            // can't reach this instance.
+            control::spawn_server(handle.clone());
 
             // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
             // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
@@ -432,6 +451,10 @@ pub fn run() {
             transcription::transcribe_project,
             transcription::has_transcribable_audio,
             transcription::export_captions,
+            transcription::list_remote_asr_endpoints,
+            transcription::set_remote_asr_endpoint,
+            transcription::delete_remote_asr_endpoint,
+            transcription::set_remote_asr_key,
             fonts::ensure_google_font,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,
@@ -444,6 +467,9 @@ pub fn run() {
             commands::diagnose_ffmpeg,
             commands::probe_video_encoders,
             commands::capture_capabilities,
+            commands::cli_install_status,
+            commands::install_cli,
+            commands::uninstall_cli,
             commands::auth_start,
             commands::auth_status,
             commands::auth_sign_out,

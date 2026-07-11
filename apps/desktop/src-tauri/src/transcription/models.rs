@@ -21,7 +21,7 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
     Parakeet,
@@ -29,6 +29,67 @@ pub enum Engine {
     GigaAM,
     Cohere,
     Whisper,
+    /// Not a local architecture: transcription runs on a remote
+    /// OpenAI-compatible endpoint. The server owns the real model.
+    Remote,
+}
+
+/// The inference backend a model runs on. Independent of `Engine` (the model
+/// architecture): several architectures share one runtime. This is the axis the
+/// UI gates availability on, since a build may ship one runtime and not another.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum Runtime {
+    /// transcribe-rs over `ort` (ONNX). Shipped today.
+    Onnx,
+    /// whisper.cpp. Not built yet (needs the `whisper-cpp` LLVM+CMake toolchain);
+    /// models may install but can't run until then.
+    WhisperCpp,
+    /// OpenAI-compatible `/audio/transcriptions` endpoint (on-device, self-hosted,
+    /// or third-party). No local files; config + a keyring-held key.
+    Remote,
+}
+
+impl Engine {
+    /// The runtime this architecture runs on. Keeps the two axes in sync from one
+    /// place, so a new `Engine` arm can't forget to declare its backend.
+    pub fn runtime(self) -> Runtime {
+        match self {
+            Engine::Parakeet | Engine::Canary | Engine::GigaAM | Engine::Cohere => Runtime::Onnx,
+            Engine::Whisper => Runtime::WhisperCpp,
+            Engine::Remote => Runtime::Remote,
+        }
+    }
+}
+
+/// Where a catalog entry came from. Drives a provenance badge and tells the UI
+/// a model is managed via the Extensions tab rather than the built-in catalog.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum ModelSource {
+    Builtin,
+    Extension,
+    /// A user-configured remote OpenAI-compatible endpoint.
+    Remote,
+}
+
+/// Whether a runtime can actually run in this build, plus a user-facing reason
+/// when it can't. Composed with the device-capability check (`evaluate`) to
+/// decide if a model is offerable.
+pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
+    match runtime {
+        Runtime::Onnx => (true, None),
+        Runtime::WhisperCpp => (
+            false,
+            Some("The Whisper runtime arrives in a later build.".into()),
+        ),
+        // No remote endpoints are configured yet (added in a later phase); until
+        // then a remote model is present in the catalog but not runnable.
+        Runtime::Remote => (
+            false,
+            Some("Configure a remote transcription endpoint to use this model.".into()),
+        ),
+    }
 }
 
 /// One file that makes up a model. Whisper is a single `.bin`; Parakeet is a
@@ -57,7 +118,7 @@ pub struct CaptionModel {
     pub approx_size_bytes: Option<u64>,
     pub is_default: bool,
     pub files: Vec<ModelFile>,
-    // ---- device requirements (drive UI gating; see capabilities.rs) ----
+    // - device requirements (drive UI gating; see capabilities.rs) -
     /// Hard requirement: no supported GPU → model is disabled.
     #[serde(default)]
     pub requires_gpu: bool,
@@ -67,6 +128,17 @@ pub struct CaptionModel {
     /// Soft: warn when the device has less than this much RAM.
     #[serde(default)]
     pub min_ram_bytes: Option<u64>,
+    /// Built-in catalog entry vs. one contributed by an installed extension.
+    #[serde(default = "source_builtin")]
+    pub source: ModelSource,
+    /// Present only for `Engine::Remote` models: the endpoint to POST audio to.
+    /// `None` for every local (onnx/whisperCpp) model.
+    #[serde(default)]
+    pub remote: Option<super::remote::RemoteEndpoint>,
+}
+
+fn source_builtin() -> ModelSource {
+    ModelSource::Builtin
 }
 
 /// The int8 ONNX file set `transcribe-rs`'s `ParakeetModel::load(dir, Int8)`
@@ -108,6 +180,8 @@ fn parakeet(
         requires_gpu: false, // Parakeet is CPU-optimized
         prefers_gpu: false,
         min_ram_bytes: Some(2_000_000_000),
+        source: ModelSource::Builtin,
+        remote: None,
     }
 }
 
@@ -159,6 +233,8 @@ fn onnx(
         requires_gpu: false,
         prefers_gpu: false,
         min_ram_bytes: Some(2_000_000_000),
+        source: ModelSource::Builtin,
+        remote: None,
     }
 }
 
@@ -185,7 +261,7 @@ pub fn registry() -> Vec<CaptionModel> {
             false,
             false,
         ),
-        // ---- Canary (multilingual + translation) ----
+        // - Canary (multilingual + translation) -
         onnx(
             "canary-180m-flash",
             "Canary 180M Flash",
@@ -206,7 +282,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             691_000_000,
         ),
-        // ---- GigaAM (Russian) ----
+        // - GigaAM (Russian) -
         onnx(
             "gigaam-v3",
             "GigaAM v3 (Russian)",
@@ -217,7 +293,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["ru".into()],
             151_000_000,
         ),
-        // ---- Cohere (large, multilingual) ----
+        // - Cohere (large, multilingual) -
         onnx(
             "cohere",
             "Cohere",
@@ -231,8 +307,27 @@ pub fn registry() -> Vec<CaptionModel> {
     ]
 }
 
-pub fn find(id: &str) -> Option<CaptionModel> {
-    registry().into_iter().find(|m| m.id == id)
+/// The full catalog this build offers: built-ins plus caption models
+/// contributed by installed+enabled extensions. A pack model whose id collides
+/// with a built-in is dropped (built-ins win), so a pack can't shadow a shipped
+/// model.
+pub fn all_models(app: &AppHandle) -> Vec<CaptionModel> {
+    let mut models = registry();
+    let builtin_ids: std::collections::HashSet<String> =
+        models.iter().map(|m| m.id.clone()).collect();
+    for m in super::packs::pack_models(app) {
+        if !builtin_ids.contains(&m.id) {
+            models.push(m);
+        }
+    }
+    // User-configured remote endpoints. Their ids are namespaced (`remote:<id>`)
+    // so they can't collide with built-ins or packs.
+    models.extend(super::remote::remote_models(app));
+    models
+}
+
+pub fn find(app: &AppHandle, id: &str) -> Option<CaptionModel> {
+    all_models(app).into_iter().find(|m| m.id == id)
 }
 
 pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {

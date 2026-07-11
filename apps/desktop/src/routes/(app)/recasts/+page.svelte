@@ -3,6 +3,7 @@
   import { formatSize } from "$lib/format/files";
   import {
     deleteFile,
+    launchRecordingPanel,
     listRecasts,
     migrateProject,
     openFileLocation,
@@ -48,13 +49,13 @@
     Share2,
     SortAsc,
     Trash2,
+    Video,
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
   import { Cutout } from "@recast/ui/cutout";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Kbd } from "@recast/ui/kbd";
   import { safeStorage } from "@recast/ui/persisted-state";
   import * as Select from "@recast/ui/select";
   import { Skeleton } from "@recast/ui/skeleton";
@@ -110,6 +111,17 @@
   $effect(() => {
     safeStorage.set("recasts-view", view);
   });
+
+  // Opens the floating recorder (same entry point as ⌘⇧R and the command
+  // palette). Surfaced from the header and the empty state so the core loop
+  // starts from the library, not just Home.
+  async function newRecording() {
+    try {
+      await launchRecordingPanel();
+    } catch (e) {
+      toast.error(`Couldn't open the recorder: ${e}`);
+    }
+  }
 
   async function fetchRecasts() {
     isLoading = true;
@@ -250,30 +262,37 @@
     <!-- Hero -->
     <header
       in:fly={{ y: 12, duration: 320, easing: cubicOut }}
-      class="flex flex-col gap-3"
+      class="flex items-start justify-between gap-4"
     >
-      <span
-        class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
-      >
-        <Film class="size-3 text-primary" />
-        Library
-      </span>
-      <h1
-        class="text-balance text-[28px] font-semibold leading-tight tracking-tight text-foreground md:text-[32px]"
-      >
+      <div class="flex flex-col gap-3">
         <span
-          class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
+          class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
         >
-          {entries.length === 0
-            ? "No recordings yet"
-            : entries.length === 1
-              ? "1 recording"
-              : `${entries.length} recordings`}
+          <Film class="size-3 text-primary" />
+          Library
         </span>
-      </h1>
-      <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        {formatSize(totalSize)} on disk · open any clip in the editor or use ⌘K to jump anywhere.
-      </p>
+        <h1
+          class="text-balance text-[28px] font-semibold leading-tight tracking-tight text-foreground md:text-[32px]"
+        >
+          <span
+            class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
+          >
+            {entries.length === 0
+              ? "No recordings yet"
+              : entries.length === 1
+                ? "1 recording"
+                : `${entries.length} recordings`}
+          </span>
+        </h1>
+        <p class="text-[12.5px] leading-relaxed text-muted-foreground">
+          {formatSize(totalSize)} on disk · open any clip in the editor or use ⌘K to jump anywhere.
+        </p>
+      </div>
+
+      <Button class="mt-1 shrink-0 gap-2" onclick={newRecording}>
+        <Video class="size-4" />
+        New recording
+      </Button>
     </header>
 
     <!-- Search bar -->
@@ -326,7 +345,7 @@
               title="Update older projects to the current format"
             >
               {#if migrating}
-                <RefreshCw size={11} class="animate-spin" />
+                <RefreshCw size={11} class="motion-safe:animate-spin" />
               {:else}
                 <History size={11} />
               {/if}
@@ -369,16 +388,16 @@
             </Select.Trigger>
             <Select.Content align="end" sideOffset={6} class="w-36 p-1">
               <Select.Item value="recent" label="Recent" class="text-[11.5px]">
-             <Clock class="size-3 text-muted-foreground" /> 
-             Recent
+                <Clock class="size-3 text-muted-foreground" />
+                Recent
               </Select.Item>
               <Select.Item value="name" label="Name" class="text-[11.5px]">
                 <SortAsc class="size-3 text-muted-foreground" />
-                 Name
+                Name
               </Select.Item>
               <Select.Item value="size" label="Size" class="text-[11.5px]">
                 <Film class="size-3 text-muted-foreground" />
-                 Size
+                Size
               </Select.Item>
             </Select.Content>
           </Select.Root>
@@ -411,7 +430,7 @@
           >
             <RefreshCw
               size={12}
-              class={isLoading ? "animate-spin" : ""}
+              class={isLoading ? "motion-safe:animate-spin" : ""}
             />
           </Button>
         </div>
@@ -450,9 +469,19 @@
           <p class="mt-1 text-[11.5px] text-muted-foreground">
             {query
               ? `Nothing matches "${query}".`
-              : "Capture your first clip from the recording panel."}
+              : "Record your screen and it lands here, ready to edit."}
           </p>
         </div>
+        {#if query}
+          <Button variant="secondary" size="sm" onclick={() => (query = "")}>
+            Clear search
+          </Button>
+        {:else}
+          <Button class="gap-2" onclick={newRecording}>
+            <Video class="size-4" />
+            Start recording
+          </Button>
+        {/if}
       </div>
     {:else}
       <!-- Grid and list share one keyed {#each} so each card is the same
@@ -497,7 +526,7 @@
                   src={thumbnails[entry.path]}
                   alt=""
                   draggable="false"
-                  class="size-full object-cover transition-transform duration-300 group-hover/card:scale-[1.03]"
+                  class="size-full object-cover transition-transform duration-300 motion-safe:group-hover/card:scale-[1.03]"
                 />
               {:else}
                 <div
@@ -609,24 +638,15 @@
                     </DropdownMenu.Item>
                     <DropdownMenu.Item onSelect={() => openInNewWindow(entry)}>
                       <ExternalLink class="size-3" /> New window
-                      <DropdownMenu.Shortcut>
-                        <Kbd>⌘↵</Kbd>
-                      </DropdownMenu.Shortcut>
                     </DropdownMenu.Item>
                     <DropdownMenu.Separator />
                     <DropdownMenu.Item onSelect={() => (renameTarget = entry)}>
                       <Pencil class="size-3" /> Rename…
-                      <DropdownMenu.Shortcut>
-                        <Kbd>⌘R</Kbd>
-                      </DropdownMenu.Shortcut>
                     </DropdownMenu.Item>
                     <DropdownMenu.Item
                       onSelect={() => openFileLocation(entry.path)}
                     >
                       <FolderOpen class="size-3" /> Show in folder
-                      <DropdownMenu.Shortcut>
-                        <Kbd>⌘O</Kbd>
-                      </DropdownMenu.Shortcut>
                     </DropdownMenu.Item>
                     <DropdownMenu.Item onSelect={() => copyPath(entry)}>
                       <CopyIcon class="size-3" /> Copy path

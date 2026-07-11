@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from "$app/state";
   import { platform } from "@tauri-apps/plugin-os";
 
   import {
@@ -6,10 +7,6 @@
     type BrowserCamera,
   } from "$lib/camera/browser-devices";
   import { checkCapability, loadCapabilities } from "$lib/capabilities";
-
-  // Wayland (KWin in particular) can trap focus on undecorated transparent
-  // alwaysOnTop windows, so drop the flag on Linux. See ipc.ts for context.
-  const IS_LINUX = platform() === "linux";
   import {
     getAudioDevices,
     getDisplays,
@@ -32,7 +29,10 @@
     resolveMic,
     type RecordingProfile,
   } from "$lib/profiles";
+  import { isBrowserDeviceId } from "$lib/runtime/device-id";
   import { profilesStore } from "$lib/stores/profiles.svelte";
+  import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
+  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
   import {
     AppWindow,
     Camera,
@@ -41,11 +41,11 @@
     Circle,
     Crop,
     GripVertical,
-    Pause,
-    Play,
     Mic,
     MicOff,
     Monitor,
+    Pause,
+    Play,
     SlidersHorizontal as SlidersIcon,
     Square,
     Volume2,
@@ -54,14 +54,14 @@
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
-  import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
-  import { ask } from "@tauri-apps/plugin-dialog";
   import { emit, listen } from "@tauri-apps/api/event";
   import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { ask } from "@tauri-apps/plugin-dialog";
   import { onMount } from "svelte";
-  import { isBrowserDeviceId } from "$lib/runtime/device-id";
-  import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
+  import { cubicOut } from "svelte/easing";
+  import { Tween } from "svelte/motion";
+  import { fade, scale } from "svelte/transition";
   import {
     clampFpsToDisplay,
     formatRecordingTimer,
@@ -69,9 +69,6 @@
     targetToLastSource,
     type TargetSource,
   } from "./panel.logic";
-  import { Tween } from "svelte/motion";
-  import { cubicOut } from "svelte/easing";
-  import { fade, scale } from "svelte/transition";
 
   // The panel is too small for its own Toaster, so emit `ui:toast` for the main
   // window to render (see +layout.svelte). alert() is the fallback if emit throws.
@@ -116,6 +113,10 @@
   const prefersReducedMotion =
     typeof window !== "undefined" &&
     window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+  // Linux (tao) doesn't honor always-on-top for these overlay windows, matching
+  // the guards in $lib/ipc for the panel + camera-preview windows.
+  const IS_LINUX = platform() === "linux";
 
   // Tween the bar to the content's natural width. Border box so the bar wraps
   // exactly; rounded to whole px so sub-pixel jitter can't retrigger.
@@ -341,7 +342,29 @@
           }
         });
       })
-      .catch(() => {});
+      .catch(() => {})
+      // Apply a launch intent (home mode tiles) only after the last source has
+      // been restored, so "screen" wins over the restored source and the picker
+      // modes open on top of a sensible base.
+      .finally(() => void applyCaptureIntent(page.url.searchParams.get("intent")));
+
+    // The panel may already be open when a mode tile is clicked; the intent
+    // then arrives as an event instead of a URL param.
+    const unlistenIntent = listen<{ intent: string }>(
+      "panel-capture-intent",
+      (event) => void applyCaptureIntent(event.payload.intent),
+    );
+
+    // Keep the camera toggle honest: if the preview window is closed by any
+    // means (its own button, an OS close), reflect that instead of leaving the
+    // button lit. Camera changes are locked during recording, so this only
+    // applies before/after a take.
+    const unlistenCameraClosed = listen("camera-preview-closed", () => {
+      if (isRecording || !cameraOn) return;
+      cameraOn = false;
+      cameraValidation = null;
+      cameraWarning = null;
+    });
 
     profilesStore.hydrate();
 
@@ -385,6 +408,8 @@
       unlistenTrayToggle.then((fn) => fn());
       unlistenGlobalPause.then((fn) => fn());
       unlistenTrayPause.then((fn) => fn());
+      unlistenIntent.then((fn) => fn());
+      unlistenCameraClosed.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });
@@ -430,7 +455,7 @@
   function applyProfile(profile: RecordingProfile) {
     systemAudioOn = profile.systemAudio;
 
-    // ---- Microphone
+    // - Microphone
     const micResult = resolveMic(profile, mics);
     if (micResult.kind === "matched") {
       micOn = true;
@@ -450,7 +475,7 @@
       micWarning = null;
     }
 
-    // ---- Camera
+    // - Camera
     const camResult = resolveCamera(profile, cameras);
     if (camResult.kind === "matched") {
       cameraOn = true;
@@ -522,10 +547,17 @@
     }
   }
 
-  function openSourceSelector() {
+  function openSourceSelector(
+    tab?: "monitor" | "window" | "region",
+    autostart = false,
+  ) {
     if (isRecording) return;
+    const params = new URLSearchParams();
+    if (tab) params.set("tab", tab);
+    if (autostart) params.set("autostart", "1");
+    const qs = params.toString();
     void spawnOverlayWindow("source-selector", {
-      url: "/select",
+      url: qs ? `/select?${qs}` : "/select",
       title: "Select Source",
       width: 560,
       height: 440,
@@ -535,6 +567,47 @@
       shadow: false,
       resizable: false,
     });
+  }
+
+  // Apply a capture intent handed over from the home mode tiles (via the panel
+  // URL on first launch, or the "panel-capture-intent" event when already open).
+  // Additive only: never touches an in-progress recording.
+  async function applyCaptureIntent(intent: string | null | undefined) {
+    if (!intent || isRecording) return;
+    switch (intent) {
+      case "screen": {
+        // Full screen is unambiguous, so pick the primary display directly
+        // rather than making the user confirm in the source picker.
+        try {
+          const displays = await getDisplays();
+          const primary = displays.find((d) => d.isPrimary) ?? displays[0];
+          if (primary) {
+            selectedSource = {
+              type: "monitor",
+              id: primary.id,
+              label: primary.isPrimary
+                ? "Primary Display"
+                : `Display ${primary.id}`,
+              refreshHz: primary.refreshHz || undefined,
+            };
+          }
+        } catch {
+          // Leave whatever the panel restored.
+        }
+        break;
+      }
+      case "window":
+        openSourceSelector("window");
+        break;
+      case "region":
+        openSourceSelector("region", true);
+        break;
+      case "camera":
+        // No webcam-only source exists; add the camera overlay to the current
+        // (screen) source. toggleCamera opens the camera picker when it's off.
+        if (!cameraOn) void toggleCamera();
+        break;
+    }
   }
 
   function openProfilePicker() {
@@ -909,7 +982,7 @@
   // size so it no longer contributes to the content's measured width while it
   // fades. The entering block sits in normal flow, so ResizeObserver reports
   // the *new* width immediately and the bar Tween animates to it concurrent
-  // with the crossfade. Mirrors ExportFlowDialog's `phaseOut`.
+  // with the crossfade. Same technique the export flow uses to swap phases.
   function phaseOut(node: HTMLElement) {
     const w = node.offsetWidth;
     const h = node.offsetHeight;
@@ -1126,7 +1199,7 @@
   <Button
     size="sm"
     disabled={isRecording}
-    onclick={openSourceSelector}
+    onclick={() => openSourceSelector()}
     onmousedown={(e: MouseEvent) => e.stopPropagation()}
     variant="ghost"
     class="group/source hover:scale-none"

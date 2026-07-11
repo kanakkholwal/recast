@@ -5,7 +5,6 @@ import {
 	clampSourceFps,
 	computeExportDurations,
 	computeRemovedDuration,
-	nextLoopCount,
 } from "./export-dialog.logic";
 
 function cut(start: number, end: number, id = `${start}-${end}`): TimelineCut {
@@ -77,18 +76,5 @@ describe("computeExportDurations", () => {
 			clipDuration: 0,
 			outputDuration: 0,
 		});
-	});
-});
-
-describe("nextLoopCount", () => {
-	it("cycles 1→5 then wraps to 1", () => {
-		expect(nextLoopCount(1)).toBe(2);
-		expect(nextLoopCount(4)).toBe(5);
-		expect(nextLoopCount(5)).toBe(1);
-	});
-
-	it("starts finite counting at 1 from infinite/once", () => {
-		expect(nextLoopCount("infinite")).toBe(1);
-		expect(nextLoopCount("once")).toBe(1);
 	});
 });

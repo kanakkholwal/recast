@@ -249,7 +249,7 @@ pub enum ZoomTriggerReason {
     SettleAfterMotion,
 }
 
-// --- Tunables ----------------------------------------------------------
+//  Tunables -
 // Clicks closer than this in time AND space are the same interaction.
 const CLICK_CLUSTER_GAP_US: u64 = 1_400_000;
 const CLICK_CLUSTER_RADIUS_PX: f64 = 160.0;

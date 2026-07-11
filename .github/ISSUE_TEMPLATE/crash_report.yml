@@ -71,9 +71,9 @@ body:
         Please attach app logs and any OS-level crash dump.
 
         **Recast logs:**
-        - Windows: `%APPDATA%\com.nexonauts.recast\logs`
-        - macOS: `~/Library/Logs/com.nexonauts.recast`
-        - Linux: `~/.config/com.nexonauts.recast/logs`
+        - Windows: `%APPDATA%\com.kanakkholwal.recast\logs`
+        - macOS: `~/Library/Logs/com.kanakkholwal.recast`
+        - Linux: `~/.config/com.kanakkholwal.recast/logs`
 
         **OS crash reports:**
         - Windows: Event Viewer → Windows Logs → Application

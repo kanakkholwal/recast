@@ -42,7 +42,7 @@ use tokio::net::TcpListener;
 
 use super::error::{AppError, AppResult};
 
-const KEYRING_SERVICE: &str = "com.nexonauts.recast";
+const KEYRING_SERVICE: &str = "com.kanakkholwal.recast";
 const KEYRING_ENTRY: &str = "gdrive-refresh-token";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
 const AUTH_URL: &str = "https://accounts.google.com/o/oauth2/v2/auth";

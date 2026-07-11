@@ -43,7 +43,7 @@ export type CapabilityStatus =
 	| { supported: true }
 	| { supported: false; reason: string };
 
-// --- API presence (cheap, synchronous) ---------------------------------------
+//  API presence (cheap, synchronous) 
 
 const present = (name: string): boolean =>
 	typeof (globalThis as Record<string, unknown>)[name] !== "undefined";
@@ -56,7 +56,7 @@ export const hasImageDecoder = (): boolean => present("ImageDecoder");
 /** Workers + transferable VideoFrames — the floor for any decode/encode tool. */
 export const hasWorkers = (): boolean => present("Worker");
 
-// --- Per-codec probes (async, authoritative) ---------------------------------
+//  Per-codec probes (async, authoritative) 
 
 export async function probeVideoDecode(c: VideoCodecCheck): Promise<boolean> {
 	if (!hasVideoDecoder()) return false;
@@ -116,7 +116,7 @@ export async function probeAudioEncode(c: AudioCodecCheck): Promise<boolean> {
 	}
 }
 
-// --- Tool-level evaluation ----------------------------------------------------
+//  Tool-level evaluation -
 
 /**
  * Resolve a tool's requirements to one answer for the UI. Container-tier tools

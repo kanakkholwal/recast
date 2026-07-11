@@ -1074,6 +1074,12 @@ impl RecordingManager {
             .map(|s| s.clock.is_paused())
             .unwrap_or(false)
     }
+
+    /// Whether a capture session is live (between a successful start and stop).
+    /// Authoritative engine state, unlike the frontend-mirrored tray flag.
+    pub fn is_recording(&self) -> bool {
+        self.session.lock().is_some()
+    }
 }
 
 /// Re-encode `path` in place, dropping every frame inside one of the

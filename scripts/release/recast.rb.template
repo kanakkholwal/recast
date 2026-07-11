@@ -53,15 +53,20 @@ cask "recast" do
 
   app "Recast.app"
 
+  # Symlink the CLI into Homebrew's bin so `recast <verb>` works in any
+  # terminal (Homebrew puts its bin on PATH). The GUI still launches from the
+  # .app; this is the same binary, invoked with a subcommand.
+  binary "#{appdir}/Recast.app/Contents/MacOS/recast"
+
   # On `brew uninstall --cask --zap recast`, remove the user-data
   # directories Recast writes outside the app bundle. Bundle identifier
   # mirrors the macOS app's CFBundleIdentifier — verify against
   # `apps/desktop/src-tauri/tauri.conf.json#identifier` if it changes.
   zap trash: [
-    "~/Library/Application Support/com.nexonauts.recast",
-    "~/Library/Caches/com.nexonauts.recast",
-    "~/Library/Preferences/com.nexonauts.recast.plist",
-    "~/Library/Saved Application State/com.nexonauts.recast.savedState",
-    "~/Library/WebKit/com.nexonauts.recast",
+    "~/Library/Application Support/com.kanakkholwal.recast",
+    "~/Library/Caches/com.kanakkholwal.recast",
+    "~/Library/Preferences/com.kanakkholwal.recast.plist",
+    "~/Library/Saved Application State/com.kanakkholwal.recast.savedState",
+    "~/Library/WebKit/com.kanakkholwal.recast",
   ]
 end

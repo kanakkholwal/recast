@@ -43,7 +43,7 @@ tauri-plugin-opener = "2"
 # payloads via `canShare`, which made the web approach useless for
 # sharing recordings.
 tauri-plugin-sharekit = "0.3"
-reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json"] }
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls", "json", "multipart"] }
 sha2 = "0.10"
 futures-util = "0.3"
 hex = "0.4"
@@ -91,6 +91,18 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["downloa
 transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
 keepawake = "0.6.0"
 tauri-plugin-notification = "2.3.3"
+# Argument parser for the headless CLI branch in `main`. One parser covers the
+# `recast <verb>` automation surface; the GUI launch path is untouched. See
+# docs/cli-automation-plan.md.
+clap = { version = "4", features = ["derive"] }
+# Cross-platform local IPC (named pipe on Windows, Unix socket on macOS/Linux)
+# for the CLI control server the running app hosts. One code path instead of
+# per-OS pipe/socket FFI. See control.rs.
+interprocess = "2"
+# Human-readable CLI output. Data stays JSON internally; the CLI renders YAML
+# for terminals (far more readable than JSON for nested lists) and keeps JSON
+# for pipes/agents. Archived-but-stable; a display formatter only. See cli.rs.
+serde_yaml = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
@@ -103,6 +115,11 @@ windows = { version = "0.58.0", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Media_Audio",
     "Win32_System_SystemInformation",
+    # AttachConsole + CONOUT$/CONIN$ rebind so the headless CLI branch can
+    # print to the launching terminal from the GUI-subsystem release exe.
+    "Win32_System_Console",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_UI_Shell",
@@ -111,6 +128,9 @@ windows = { version = "0.58.0", features = [
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }
+# Safe user PATH edits for the CLI install action (REG_EXPAND_SZ preserved, no
+# NSIS string-truncation footgun). See path_install.rs.
+winreg = "0.52"
 
 # Native Wayland screen-capture stack. The portal (`ashpd`) negotiates
 # permission and hands us a PipeWire node ID + file descriptor; `pipewire`

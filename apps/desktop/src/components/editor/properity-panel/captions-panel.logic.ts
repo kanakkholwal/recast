@@ -30,7 +30,7 @@ export function groupModelsByFamily(
  * then the first model. Null only when the list is empty.
  */
 export function pickDefaultModelId(models: CaptionModelInfo[]): string | null {
-	const usable = models.filter((m) => m.installed && m.runnable);
+	const usable = models.filter((m) => m.installed && m.runnable && m.runtimeAvailable);
 	return (
 		usable.find((m) => m.isDefault)?.id ??
 		usable[0]?.id ??

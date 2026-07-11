@@ -60,7 +60,7 @@ pub(crate) fn build_cut_select_expr(cuts: &[(f64, f64)]) -> String {
     format!("not({})", terms.join("+"))
 }
 
-// --- Per-segment speed (Cap-style "edit this cut differently") -------------
+//  Per-segment speed (Cap-style "edit this cut differently") -
 //
 // Overlays (zoom/cursor/blur) are computed on the continuous post-trim timeline
 // and cuts are applied last as a pure frame-drop (see the main pass below), so

@@ -127,7 +127,7 @@ const RESERVED_NAMES: [&str; 22] = [
 /// extension's own directory — no path separators, parent refs, drive prefixes,
 /// control chars, trailing dot/space (Windows trims them), or reserved device
 /// names. This is the primary traversal defense.
-fn is_safe_filename(name: &str) -> bool {
+pub(crate) fn is_safe_filename(name: &str) -> bool {
     if name.is_empty() || name.len() > 255 {
         return false;
     }
@@ -150,7 +150,7 @@ fn is_safe_filename(name: &str) -> bool {
 }
 
 /// The extension id doubles as a directory name, so it must be a path-safe slug.
-fn is_safe_ext_id(id: &str) -> bool {
+pub(crate) fn is_safe_ext_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 64
         && id != "."
@@ -309,6 +309,29 @@ pub async fn install_extension(
     write_state(&dir, true).await;
 
     Ok(build_installed(&dir, manifest, true))
+}
+
+/// Manifests of installed **and enabled** packs, read from disk. Used by other
+/// subsystems (e.g. caption models) that merge extension contributions into
+/// their own registries without going through the frontend. Disabled packs and
+/// unreadable dirs are silently skipped.
+pub(crate) fn enabled_manifests(app: &AppHandle) -> Vec<ExtensionManifest> {
+    let Ok(base) = extensions_dir(app) else {
+        return Vec::new();
+    };
+    let Ok(read) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    let mut out: Vec<ExtensionManifest> = read
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| p.is_dir())
+        .filter(|dir| read_state(dir).enabled)
+        .filter_map(|dir| read_lock(&dir))
+        .collect();
+    // Stable order so a merged catalog's ordering doesn't depend on read_dir.
+    out.sort_by(|a, b| a.id.cmp(&b.id));
+    out
 }
 
 /// No-network: enumerate installed packs from disk (used for startup hydration).

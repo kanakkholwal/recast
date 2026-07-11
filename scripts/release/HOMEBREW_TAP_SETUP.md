@@ -42,7 +42,7 @@ brew install --cask recast
 - **Updates.** `auto_updates true` in the cask defers to Tauri's in-app updater,
   so `brew upgrade` does not fight it. `brew livecheck` still detects new tags.
 - **Uninstall.** `brew uninstall --cask --zap recast` also removes the
-  `com.nexonauts.recast` user-data directories listed in the cask's `zap`.
+  `com.kanakkholwal.recast` user-data directories listed in the cask's `zap`.
 - **Identifier drift.** The cask's `zap` paths mirror the macOS
   `CFBundleIdentifier`. If `tauri.conf.json#identifier` ever changes, update the
   template's `zap` list to match.

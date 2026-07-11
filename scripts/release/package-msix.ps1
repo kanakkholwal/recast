@@ -97,10 +97,10 @@ $manifest = @"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
   IgnorableNamespaces="uap rescap">
-  <Identity Name="com.nexonauts.recast" Publisher="CN=Nexonauts" Version="$msixVersion" ProcessorArchitecture="x64" />
+  <Identity Name="com.kanakkholwal.recast" Publisher="CN=KanakKholwal" Version="$msixVersion" ProcessorArchitecture="x64" />
   <Properties>
     <DisplayName>Recast</DisplayName>
-    <PublisherDisplayName>Nexonauts</PublisherDisplayName>
+    <PublisherDisplayName>KanakKholwal</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>

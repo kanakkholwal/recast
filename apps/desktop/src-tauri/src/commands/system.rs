@@ -110,6 +110,20 @@ pub fn get_active_output_dir(state: &State<'_, AppState>) -> PathBuf {
     }
 }
 
+/// First-run default output location: a `Recast` folder in the OS video
+/// directory (Videos on Windows/Linux, Movies on macOS), so recordings land
+/// somewhere discoverable and durable rather than the purged temp dir. Falls
+/// back to Documents, then Home, then temp if the OS can't report a video dir.
+pub fn default_output_dir(app: &AppHandle) -> PathBuf {
+    let base = app
+        .path()
+        .video_dir()
+        .or_else(|_| app.path().document_dir())
+        .or_else(|_| app.path().home_dir())
+        .unwrap_or_else(|_| env::temp_dir());
+    base.join("Recast")
+}
+
 /// True on Linux + Wayland. xcap's per-source `capture_image()` triggers
 /// an `xdg-desktop-portal.ScreenCast` permission dialog *per source* on
 /// Wayland — calling it across every monitor/window during the picker hot
@@ -371,7 +385,9 @@ pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
                 height: monitor.height().unwrap_or_default(),
                 is_primary: monitor.is_primary().unwrap_or_default(),
                 thumbnail: capture_monitor_thumbnail(monitor),
-                // Round to the nearest whole Hz; 0 if xcap can't report it.
+                // The display's current refresh rate, rounded; 0 if unreported.
+                // This is the *current* rate, not the panel's max, so a 144 Hz
+                // monitor running at 60 correctly reports 60.
                 refresh_hz: monitor
                     .frequency()
                     .ok()
@@ -1569,6 +1585,24 @@ pub async fn capture_capabilities() -> AppResult<CaptureCapabilities> {
     tauri::async_runtime::spawn_blocking(build_capture_capabilities)
         .await
         .map_err(|e| AppError::msg(format!("capture_capabilities join error: {e}")))
+}
+
+/// Whether `recast` currently resolves as a bare terminal command.
+#[tauri::command]
+pub fn cli_install_status() -> crate::path_install::InstallStatus {
+    crate::path_install::status()
+}
+
+/// Put `recast` on the user's PATH (the in-app "Install command line tool").
+#[tauri::command]
+pub fn install_cli() -> AppResult<String> {
+    crate::path_install::install().map_err(AppError::msg)
+}
+
+/// Remove `recast` from the user's PATH.
+#[tauri::command]
+pub fn uninstall_cli() -> AppResult<String> {
+    crate::path_install::uninstall().map_err(AppError::msg)
 }
 
 #[derive(Debug, Serialize)]

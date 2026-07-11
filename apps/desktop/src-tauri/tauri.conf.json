@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "recast",
   "version": "0.0.0-0",
-  "identifier": "com.nexonauts.recast",
+  "identifier": "com.kanakkholwal.recast",
   "build": {
     "frontendDist": "../build",
     "devUrl": "http://localhost:4421",
@@ -47,7 +47,7 @@
       "deb",
       "dmg"
     ],
-    "publisher": "Nexonauts",
+    "publisher": "KanakKholwal",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

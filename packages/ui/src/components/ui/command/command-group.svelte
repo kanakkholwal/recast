@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Command as CommandPrimitive, useId } from "bits-ui";
 	import { cn } from "@recast/ui/utils";
+	import { Command as CommandPrimitive, useId } from "bits-ui";
 
 	let {
 		ref = $bindable(null),
@@ -18,7 +18,7 @@
 	bind:ref
 	data-slot="command-group"
 	class={cn("text-foreground **:[[cmdk-group-heading]]:text-muted-foreground overflow-hidden p-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1.5 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium", className)}
-	value={value ?? heading ?? `----${useId()}`}
+	value={value ?? heading ?? `-${useId()}`}
 	{...restProps}
 >
 	{#if heading}

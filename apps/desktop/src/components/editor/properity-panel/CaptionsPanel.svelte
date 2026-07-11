@@ -14,6 +14,7 @@
     type CaptionModelInfo,
     type DeviceCapabilities,
   } from "$lib/ipc";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { registry } from "$lib/registry";
   import type { CaptionPresetValue } from "$lib/registry/types";
   import {
@@ -79,7 +80,9 @@
   let error = $state<string | null>(null);
 
   const selected = $derived(models.find((m) => m.id === selectedModelId) ?? null);
-  const usable = $derived(models.filter((m) => m.installed && m.runnable));
+  const usable = $derived(
+    models.filter((m) => m.installed && m.runnable && m.runtimeAvailable),
+  );
   // A recording can have an audio path but no actual audio stream (mic + system
   // audio off), so `hasAudio` is the ffprobe result, not just path existence.
   // `null` = not yet probed → fall back to path presence so the UI doesn't flash
@@ -119,7 +122,11 @@
 
   async function refresh() {
     try {
-      models = await listCaptionModels();
+      const list = await listCaptionModels();
+      // Remote endpoints are an experimental surface; hide them (and any models
+      // they contribute) unless the user opted in.
+      const showRemote = experimentalStore.isEnabled("remoteTranscription");
+      models = showRemote ? list : list.filter((m) => m.source !== "remote");
       if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
         selectedModelId = pickDefaultModelId(models);
       }
@@ -167,7 +174,14 @@
   }
 
   async function generate() {
-    if (!selected || !selected.installed || !selected.runnable || !hasAudio) return;
+    if (
+      !selected ||
+      !selected.installed ||
+      !selected.runnable ||
+      !selected.runtimeAvailable ||
+      !hasAudio
+    )
+      return;
     transcribing = true;
     phase = "extracting";
     error = null;
@@ -413,8 +427,21 @@
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
-            {selected.engine === "parakeet" ? "Parakeet" : "Whisper"}
+            {selected.family}
           </span>
+          {#if selected.source === "extension"}
+            <span
+              class="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary"
+            >
+              Extension
+            </span>
+          {:else if selected.source === "remote"}
+            <span
+              class="rounded bg-warning/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-warning"
+            >
+              Experimental
+            </span>
+          {/if}
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
           >
@@ -472,6 +499,18 @@
               </div>
               <span class="text-[10px] tabular-nums text-muted-foreground">{downloadPct}%</span>
             </div>
+          {:else if selected.source === "remote"}
+            <!-- Remote endpoints are managed in Settings; the panel only reflects
+                 their readiness (key present) here. -->
+            {#if selected.runtimeAvailable}
+              <p class="flex items-center gap-1.5 text-[11px] font-medium text-success">
+                <Check size={13} /> Endpoint ready
+              </p>
+            {:else}
+              <p class="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                <Lock size={12} /> Add an API key in Settings
+              </p>
+            {/if}
           {:else if selected.installed}
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-1.5 text-[11px] font-medium text-success">
@@ -509,7 +548,10 @@
         variant="default"
         size="sm"
         class="w-full gap-1.5"
-        disabled={!selected?.installed || !selected?.runnable || transcribing}
+        disabled={!selected?.installed ||
+          !selected?.runnable ||
+          !selected?.runtimeAvailable ||
+          transcribing}
         onclick={generate}
       >
         {#if transcribing}

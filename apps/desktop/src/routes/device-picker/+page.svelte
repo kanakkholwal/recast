@@ -47,6 +47,16 @@
   const isMic = deviceType === "mic";
   const title = isMic ? "Microphone" : "Camera";
 
+  let listEl = $state<HTMLElement | null>(null);
+
+  // Keep the selected row visible when arrowing through a longer device list.
+  $effect(() => {
+    void currentSelectedId;
+    listEl
+      ?.querySelector<HTMLElement>('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  });
+
   onMount(() => {
     fetchDevices();
   });
@@ -151,7 +161,7 @@
       onclick={closeWindow}
       size="icon-sm"
       variant="ghost"
-      class="opacity-0 group-hover/root:opacity-100 transition-opacity"
+      class="opacity-0 transition-opacity group-hover/root:opacity-100 focus-visible:opacity-100"
       title="Close (Esc)"
     >
       <X size={11} strokeWidth={2.5} />
@@ -170,7 +180,7 @@
         <div class="mb-1 flex items-center gap-2 px-2 py-1.5">
           <RefreshCw
             size={12}
-            class="animate-spin text-muted-foreground"
+            class="motion-safe:animate-spin text-muted-foreground"
             strokeWidth={2}
           />
           <span class="text-[11px] font-medium text-muted-foreground">
@@ -179,7 +189,7 @@
         </div>
         {#each Array.from({ length: 3 }) as _, i (i)}
           <div
-            class="flex animate-pulse items-center gap-2 rounded-md px-2 py-1.5"
+            class="flex items-center gap-2 rounded-md px-2 py-1.5 motion-safe:animate-pulse"
             style="animation-delay: {i * 120}ms"
           >
             <div class="size-6 shrink-0 rounded-sm bg-muted/70"></div>
@@ -228,13 +238,15 @@
         {/if}
       </div>
     {:else}
-      <div class="flex flex-col gap-0.5">
+      <div class="flex flex-col gap-0.5" bind:this={listEl}>
         {#each devices as device (device.id)}
           {@const active = currentSelectedId === device.id}
           <button
             type="button"
             onclick={() => selectDevice(device.id)}
             onmousedown={(e) => e.stopPropagation()}
+            aria-pressed={active}
+            data-active={active}
             class={cn(
               "group flex items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors",
               "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -293,7 +305,7 @@
       size="xs"
       class="gap-1.5"
     >
-      <RefreshCw size={11} class={isLoading ? "animate-spin" : ""} />
+      <RefreshCw size={11} class={isLoading ? "motion-safe:animate-spin" : ""} />
       Rescan
     </Button>
 

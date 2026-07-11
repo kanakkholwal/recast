@@ -171,6 +171,25 @@ pub(crate) fn synthesize_words(seg: &TranscriptSegment) -> Vec<TranscriptWord> {
     words
 }
 
+/// One caption block spanning `[0, end_secs]`, used when an engine returns text
+/// but no timing. Synthesizes per-word timing so animation still has something
+/// to drive. Empty text yields no segment.
+pub(crate) fn whole_clip_segment(text: &str, end_secs: f64) -> Vec<TranscriptSegment> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Vec::new();
+    }
+    let mut seg = TranscriptSegment {
+        id: "seg-0".into(),
+        start: 0.0,
+        end: end_secs.max(0.0),
+        text,
+        words: Vec::new(),
+    };
+    seg.words = synthesize_words(&seg);
+    vec![seg]
+}
+
 /// Fill per-word timing for any segment missing it (in place).
 pub(crate) fn fill_segment_words(segments: &mut [TranscriptSegment]) {
     for seg in segments.iter_mut() {

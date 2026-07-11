@@ -39,7 +39,7 @@ use super::error::{AppError, AppResult};
 use super::system::save_config;
 use super::types::AppState;
 
-const KEYRING_SERVICE: &str = "com.nexonauts.recast";
+const KEYRING_SERVICE: &str = "com.kanakkholwal.recast";
 const KEYRING_ENTRY: &str = "cloud-session-token";
 const CLIENT_ID: &str = "recast-desktop";
 const DEFAULT_CLOUD_API_URL: &str = "https://recast.li";

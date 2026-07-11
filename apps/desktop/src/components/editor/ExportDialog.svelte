@@ -13,15 +13,18 @@
     clampSourceFps,
     computeExportDurations,
     computeRemovedDuration,
-    nextLoopCount,
   } from "./export-dialog.logic";
   import {
     Check,
+    ChevronDown,
     Circle,
     Film,
     Image as ImageIcon,
     Infinity as InfinityIcon,
+    Minus,
+    Plus,
     RotateCcw,
+    Settings2,
     Upload,
     Video,
   } from "@lucide/svelte";
@@ -29,7 +32,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly, scale } from "svelte/transition";
+  import { fade, fly, scale, slide } from "svelte/transition";
 
   interface Props {
     store: EditorStore;
@@ -64,15 +67,17 @@
     { value: "quality", label: "Quality", desc: "Slower · smaller" },
   ];
 
+  // Swatch is a brand-tinted intensity ramp (faint to full primary) so it reads
+  // as "more color richness", not a red/amber/green judgement of good vs bad.
   const gifQualities: {
     value: GifQuality;
     label: string;
     desc: string;
     swatch: string;
   }[] = [
-    { value: "low", label: "Lite", desc: "Smallest file", swatch: "from-rose-300 to-rose-500" },
-    { value: "medium", label: "Standard", desc: "Best balance", swatch: "from-amber-300 to-amber-500" },
-    { value: "high", label: "Vivid", desc: "Richest colors", swatch: "from-emerald-300 to-emerald-500" },
+    { value: "low", label: "Lite", desc: "Smallest file", swatch: "from-primary/20 to-primary/45" },
+    { value: "medium", label: "Standard", desc: "Best balance", swatch: "from-primary/45 to-primary/70" },
+    { value: "high", label: "Vivid", desc: "Richest colors", swatch: "from-primary/75 to-primary" },
   ];
 
   const ditherModes: { value: GifDither; label: string; desc: string }[] = [
@@ -155,22 +160,6 @@
     ditherModes.find((d) => d.value === store.gifSettings.dither),
   );
 
-  // Two columns on roomy viewports, single stacked column when tight. The
-  // flow-dialog wrapper morphs its chrome to the width this body reports.
-  let viewportWidth = $state(
-    typeof window !== "undefined" ? window.innerWidth : 1280,
-  );
-  $effect(() => {
-    const onResize = () => (viewportWidth = window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  });
-  const isCompact = $derived(viewportWidth < 720);
-  const bodyWidth = $derived(
-    isCompact ? Math.min(460, viewportWidth - 32) : 680,
-  );
-
   function setLoop(value: "infinite" | "once" | number) {
     store.updateGifSettings({ loop: value });
   }
@@ -184,9 +173,25 @@
     store.updateGifSettings({ fps: null });
   }
 
-  function cycleLoopCount() {
-    setLoop(nextLoopCount(store.gifSettings.loop));
+  // Loop-count stepper (2x..5x). "Once" already covers a single play, so the
+  // numeric range starts at 2. Stepping while on Forever/Once switches to count.
+  const LOOP_MIN = 2;
+  const LOOP_MAX = 5;
+  const loopCount = $derived(
+    typeof store.gifSettings.loop === "number" ? store.gifSettings.loop : null,
+  );
+  function stepLoop(delta: number) {
+    // First press from Forever/Once switches to count mode at the minimum.
+    if (loopCount === null) {
+      setLoop(LOOP_MIN);
+      return;
+    }
+    setLoop(Math.min(LOOP_MAX, Math.max(LOOP_MIN, loopCount + delta)));
   }
+
+  // Frame rate + Speed are power-user tuning, tucked behind a disclosure so the
+  // common Format/Quality choices lead.
+  let advancedOpen = $state(false);
 
   function resetGifDefaults() {
     store.updateGifSettings({
@@ -210,7 +215,7 @@
 {#snippet sectionLabel(label: string, description?: string)}
   <div class="flex flex-col gap-0.5">
     <span
-      class="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70"
+      class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
     >
       {label}
     </span>
@@ -221,9 +226,11 @@
 {/snippet}
 
 {#snippet gifSettingsBody()}
-  <div class="flex flex-col gap-4 px-5 py-4">
-    <div class="flex items-start justify-between gap-3">
-      {@render sectionLabel("GIF settings", "Tune palette, gradients, and loop.")}
+  <!-- No outer padding or heading of its own: it slots into the Advanced
+       accordion body alongside the other sections so GIF matches the other
+       export modes instead of reading as a separate, deeper-inset card. -->
+  <div class="flex flex-col gap-4">
+    <div class="flex justify-end">
       <Button
         variant="ghost"
         size="xs"
@@ -293,7 +300,7 @@
               class={cn(
                 "group flex w-full flex-col items-center gap-1 rounded-md border px-1.5 py-1.5 transition-all duration-200",
                 sel
-                  ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                  ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                   : "border-border/40 bg-card/40 hover:border-border/70 hover:bg-card/70",
               )}
             >
@@ -341,7 +348,7 @@
               class={cn(
                 "w-full rounded-md border px-2 py-1.5 text-[10.5px] font-semibold transition-all duration-200",
                 sel
-                  ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+                  ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
                   : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
               )}
             >
@@ -376,7 +383,7 @@
           class={cn(
             "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
             store.gifSettings.loop === "infinite"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
               : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
           )}
         >
@@ -390,29 +397,52 @@
           class={cn(
             "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
             store.gifSettings.loop === "once"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
               : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
           )}
         >
           <Circle class="size-3" />
           Once
         </button>
-        <button
-          type="button"
-          onclick={cycleLoopCount}
-          aria-pressed={typeof store.gifSettings.loop === "number"}
-          title="Click to cycle 1× → 2× → … → 5×"
+        <div
           class={cn(
-            "flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 font-mono text-[11px] tabular-nums transition-all duration-200",
-            typeof store.gifSettings.loop === "number"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
-              : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
+            "flex flex-1 items-center justify-between rounded-md border transition-all duration-200",
+            loopCount !== null
+              ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
+              : "border-border/40 bg-card/40",
           )}
         >
-          {typeof store.gifSettings.loop === "number"
-            ? `${store.gifSettings.loop}×`
-            : "N×"}
-        </button>
+          <button
+            type="button"
+            onclick={() => stepLoop(-1)}
+            disabled={loopCount !== null && loopCount <= LOOP_MIN}
+            aria-label="Fewer loops"
+            class="grid size-7 place-items-center rounded-l-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Minus class="size-3" />
+          </button>
+          <button
+            type="button"
+            onclick={() => loopCount === null && setLoop(LOOP_MIN)}
+            aria-pressed={loopCount !== null}
+            title="Loop a set number of times"
+            class={cn(
+              "font-mono text-[11px] tabular-nums transition-colors",
+              loopCount !== null ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            {loopCount !== null ? `${loopCount}×` : "Count"}
+          </button>
+          <button
+            type="button"
+            onclick={() => stepLoop(1)}
+            disabled={loopCount !== null && loopCount >= LOOP_MAX}
+            aria-label="More loops"
+            class="grid size-7 place-items-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Plus class="size-3" />
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -439,7 +469,7 @@
             class={cn(
               "group relative flex w-full flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -490,7 +520,7 @@
             class={cn(
               "group flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -547,7 +577,7 @@
             class={cn(
               "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -593,7 +623,7 @@
             class={cn(
               "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -620,19 +650,13 @@
 {#snippet captionsSection()}
   <!-- Only shown once a transcript exists. Two independent choices: burn the
        captions into the pixels, and/or save a sidecar file (the sidecar is also
-       what Cloud uploads as a selectable track). Renders full-width below the
-       encoding grid; splits into two balanced columns when there's room. -->
+       what Cloud uploads as a selectable track). Stacked in the rail. -->
   <section
-    in:fly={{ y: 8, duration: 240, delay: 215, easing: cubicOut }}
+    in:fly={{ y: 8, duration: 220, delay: 140, easing: cubicOut }}
     class="flex flex-col gap-2.5"
   >
     {@render sectionLabel("Captions", "From your transcript, burn in and/or export a file.")}
-    <div
-      class={cn(
-        "grid items-start gap-x-6 gap-y-3",
-        !isGif && !isCompact ? "grid-cols-2" : "grid-cols-1",
-      )}
-    >
+    <div class="grid grid-cols-1 items-start gap-x-6 gap-y-3">
       {#if !isGif}
         <div class="flex flex-col gap-1.5">
           {@render captionSubLabel("Burn into video")}
@@ -685,7 +709,7 @@
     class={cn(
       "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
       selected
-        ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+        ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
         : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
     )}
   >
@@ -701,133 +725,128 @@
   </button>
 {/snippet}
 
-<div class="flex flex-col" style="width: {bodyWidth}px;">
-  <!-- Header -->
-  <header
-    in:fly={{ y: -6, duration: 220, delay: 30, easing: cubicOut }}
-    class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
-  >
-    <div
-      class="flex size-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
+<div class="flex h-full min-h-0 flex-col">
+  <!-- Pinned header + summary. Stays put while the option list scrolls, so the
+       "what am I exporting" anchor is always visible. -->
+  <div class="shrink-0">
+    <header
+      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
     >
-      <Upload class="size-4" />
-    </div>
-    <div class="min-w-0 flex-1 pt-0.5">
-      <h3
-        id="export-flow-title"
-        class="text-[14px] font-semibold tracking-tight text-foreground"
+      <div
+        class="flex size-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
       >
-        Export recording
-      </h3>
-      <p class="mt-0.5 text-[11px] text-muted-foreground">
-        Choose a format and quality, then start the export.
+        <Upload class="size-4" />
+      </div>
+      <div class="min-w-0 flex-1 pt-0.5">
+        <h3
+          id="export-flow-title"
+          class="text-[14px] font-semibold tracking-tight text-foreground"
+        >
+          Export recording
+        </h3>
+        <p class="mt-0.5 text-[11px] text-muted-foreground">
+          Choose a format and quality, then start the export.
+        </p>
+      </div>
+    </header>
+
+    <section
+      class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
+    >
+      <div class="flex flex-1 flex-col gap-0.5 pr-4">
+        <span
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+        >
+          Output
+        </span>
+        <span class="font-mono text-[12px] tabular-nums text-foreground">
+          {formatTime(outputDuration)}
+        </span>
+      </div>
+      <div class="flex flex-1 flex-col gap-0.5 pl-4">
+        <span
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+        >
+          Range
+        </span>
+        <span class="font-mono text-[12px] tabular-nums text-foreground">
+          {formatTime(store.trimStart)} – {formatTime(clipEnd)}
+        </span>
+      </div>
+    </section>
+    {#if removedDuration > 0.05}
+      <p
+        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
+      >
+        Cuts remove
+        <span class="mx-1 font-mono tabular-nums text-foreground">
+          {formatTime(removedDuration)}
+        </span>
+        from the {formatTime(clipDuration)} trimmed clip
       </p>
-    </div>
-  </header>
-
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 70, easing: cubicOut }}
-    class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
-  >
-    <div class="flex flex-1 flex-col gap-0.5 pr-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+    {/if}
+    {#if hasTrim}
+      <p
+        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
       >
-        Output
-      </span>
-      <span class="font-mono text-[12px] tabular-nums text-foreground">
-        {formatTime(outputDuration)}
-      </span>
-    </div>
-    <div class="flex flex-1 flex-col gap-0.5 pl-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Range
-      </span>
-      <span class="font-mono text-[12px] tabular-nums text-foreground">
-        {formatTime(store.trimStart)} – {formatTime(clipEnd)}
-      </span>
-    </div>
-  </section>
-  {#if removedDuration > 0.05}
-    <p
-      class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      in:fade={{ duration: 200, delay: 190 }}
-    >
-      Cuts remove
-      <span class="mx-1 font-mono tabular-nums text-foreground">
-        {formatTime(removedDuration)}
-      </span>
-      from the {formatTime(clipDuration)} trimmed clip
-    </p>
-  {/if}
-  {#if hasTrim}
-    <p
-      class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      in:fade={{ duration: 200, delay: 200 }}
-    >
-      Source length
-      <span class="ml-1 font-mono tabular-nums text-foreground">
-        {formatTime(sourceDuration)}
-      </span>
-    </p>
-  {/if}
+        Source length
+        <span class="ml-1 font-mono tabular-nums text-foreground">
+          {formatTime(sourceDuration)}
+        </span>
+      </p>
+    {/if}
+  </div>
 
-  <!-- GIF settings, wrapped so it reads as one panel in either layout. -->
-  {#snippet gifSettingsCard()}
-    <div
-    >
-      {@render gifSettingsBody()}
-    </div>
-  {/snippet}
-
-  {#if isCompact}
-    <!-- Narrow viewports: a single stacked column. -->
+  <!-- Scrollable option list. Format + Quality lead; Frame rate + Speed are
+       tucked under Advanced so the common decisions aren't buried in tuning. -->
+  <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <div class="flex flex-col gap-4 px-5 py-4">
       {@render formatSection()}
       {@render qualitySection()}
-      {#if showFps}{@render fpsSection()}{/if}
-      {#if !isGif}{@render speedSection()}{/if}
-      {#if isGif}
-        <section in:fade={{ duration: 220, delay: 100 }}>
-          {@render gifSettingsCard()}
-        </section>
-      {/if}
+      <!-- Advanced tuning, collapsed by default in every mode so Format +
+           Quality lead. GIF puts its palette/loop settings here; MP4/WebM put
+           frame rate + speed. -->
+      <div class="flex flex-col gap-3">
+        <button
+          type="button"
+          onclick={() => (advancedOpen = !advancedOpen)}
+          aria-expanded={advancedOpen}
+          class="group flex cursor-pointer items-center justify-between gap-2 rounded-md py-0.5 text-left outline-none transition-colors focus-visible:text-foreground"
+        >
+          <span
+            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover:text-muted-foreground"
+          >
+            <Settings2 class="size-3" />
+            Advanced
+          </span>
+          <ChevronDown
+            class={cn(
+              "size-3.5 text-muted-foreground/70 transition-transform duration-200",
+              advancedOpen && "rotate-180",
+            )}
+          />
+        </button>
+        {#if advancedOpen}
+          <div
+            class="flex flex-col gap-4"
+            transition:slide={{ duration: 200, easing: cubicOut }}
+          >
+            {#if isGif}
+              {@render gifSettingsBody()}
+            {:else}
+              {#if showFps}{@render fpsSection()}{/if}
+              {@render speedSection()}
+            {/if}
+          </div>
+        {/if}
+      </div>
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>
-  {:else}
-    <!-- Two columns for the encoding knobs; Captions spans full width below so
-         the grid stays balanced no matter which caption options are shown. -->
-    <div class="flex flex-col gap-5 px-5 py-5">
-      <div class="grid grid-cols-2 items-start gap-x-6 gap-y-5">
-        <div class="flex min-w-0 flex-col gap-5">
-          {@render formatSection()}
-          {@render qualitySection()}
-        </div>
-        <div class="flex min-w-0 flex-col gap-5">
-          {#if isGif}
-            <section in:fade={{ duration: 220, delay: 160 }}>
-              {@render gifSettingsCard()}
-            </section>
-          {:else}
-            {#if showFps}{@render fpsSection()}{/if}
-            {@render speedSection()}
-          {/if}
-        </div>
-      </div>
-      {#if hasCaptions}
-        <div class="border-t border-border/40 pt-5">
-          {@render captionsSection()}
-        </div>
-      {/if}
-    </div>
-  {/if}
+  </div>
 
-  <!-- Footer -->
+  <!-- Sticky footer. -->
   <footer
-    in:fly={{ y: 6, duration: 240, delay: 240, easing: cubicOut }}
-    class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+    class="flex shrink-0 items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
   >
     <Button variant="ghost" size="xs" onclick={onCancel}>Cancel</Button>
     <Button
@@ -841,3 +860,12 @@
     </Button>
   </footer>
 </div>
+
+<style>
+  /* Native buttons default to the arrow cursor. Every raw button in this panel
+     is a selectable toggle or action, so show the pointer (disabled ones keep
+     the default). */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+</style>

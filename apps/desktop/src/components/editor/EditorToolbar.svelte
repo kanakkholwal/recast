@@ -3,6 +3,8 @@
   import {
     ArrowLeft,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     PanelBottom,
     PanelRight,
     RotateCcw,
@@ -27,6 +29,12 @@
     onexport?: () => void;
     onsave?: () => void | Promise<void>;
     isSaving?: boolean;
+    // Drives the Export button's label/icon/action:
+    //   export   idle, opens the export surface
+    //   close    options picker is open, closes it
+    //   minimize export surface is foregrounded, sends it to the activity center
+    //   show     export is running/finished but minimized, reopens it
+    exportMode?: "export" | "close" | "minimize" | "show";
     showSidebar?: boolean;
     showTimeline?: boolean;
     onToggleSidebar?: () => void;
@@ -39,15 +47,24 @@
     onexport,
     onsave,
     isSaving = false,
+    exportMode = "export",
     showSidebar = true,
     showTimeline = true,
     onToggleSidebar,
     onToggleTimeline,
   }: Props = $props();
 
+  // The panel/timeline toggles are meaningless while the export surface owns the
+  // layout, so they're disabled then rather than silently doing nothing. (A
+  // minimized export is back in the normal editing layout, so they stay live.)
+  const exportOpen = $derived(
+    exportMode === "close" || exportMode === "minimize",
+  );
+
   const toggleClass = (active: boolean) =>
     cn(
       "cursor-pointer flex size-6 items-center justify-center rounded-md transition-colors duration-150",
+      "disabled:pointer-events-none disabled:opacity-40",
       active
         ? "text-foreground shadow-(--shadow-craft-inset)"
         : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
@@ -108,8 +125,9 @@
     return PRESETS.find((p) => p.id === id) ?? null;
   });
 
-  function openExport() {
-    if (store.isExporting) return;
+  // The action (open / close / minimize / show) is decided by the parent from
+  // exportMode; this just forwards the click.
+  function onExportClick() {
     onexport?.();
   }
 </script>
@@ -267,20 +285,49 @@
       </Tooltip.Content>
     </Tooltip.Root>
 
-    <Button
-      onclick={openExport}
-      disabled={store.isExporting}
-      size="xs"
-      class="gap-1.5 text-[11px]"
-    >
-      {#if store.isExporting}
-        <LoaderCircle size={12} class="animate-spin" />
-        Exporting…
-      {:else}
+    {#if exportMode === "close"}
+      <Button
+        onclick={onExportClick}
+        variant="secondary"
+        size="xs"
+        aria-pressed="true"
+        class="gap-1.5 text-[11px]"
+      >
+        <X size={12} />
+        Close
+      </Button>
+    {:else if exportMode === "minimize"}
+      <Button
+        onclick={onExportClick}
+        variant="secondary"
+        size="xs"
+        aria-pressed="true"
+        class="gap-1.5 text-[11px]"
+      >
+        <Minimize2 size={12} />
+        Minimize
+      </Button>
+    {:else if exportMode === "show"}
+      <Button
+        onclick={onExportClick}
+        variant="secondary"
+        size="xs"
+        class="gap-1.5 text-[11px]"
+      >
+        {#if store.isExporting}
+          <LoaderCircle size={12} class="animate-spin" />
+          Exporting…
+        {:else}
+          <Maximize2 size={12} />
+          Show export
+        {/if}
+      </Button>
+    {:else}
+      <Button onclick={onExportClick} size="xs" class="gap-1.5 text-[11px]">
         <Upload size={12} />
         Export
-      {/if}
-    </Button>
+      </Button>
+    {/if}
         <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 
       <Tooltip.Root>
@@ -288,6 +335,7 @@
           <button
             type="button"
             onclick={() => onToggleTimeline?.()}
+            disabled={exportOpen}
             aria-label="Toggle timeline"
             aria-pressed={showTimeline}
             class={toggleClass(showTimeline)}
@@ -308,6 +356,7 @@
           <button
             type="button"
             onclick={() => onToggleSidebar?.()}
+            disabled={exportOpen}
             aria-label="Toggle properties panel"
             aria-pressed={showSidebar}
             class={toggleClass(showSidebar)}

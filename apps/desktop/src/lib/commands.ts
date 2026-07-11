@@ -1,6 +1,7 @@
 import { goto } from "$app/navigation";
 import { config } from "$constants/app";
 import { getOutputDir, launchRecordingPanel, openFileLocation } from "$lib/ipc";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
 import type { PaletteCommand } from "$lib/stores/command-palette.svelte";
 import {
 	Camera,
@@ -92,7 +93,7 @@ export function buildGlobalCommands(): PaletteCommand[] {
 			category: "Recording",
 			icon: Radio,
 			keywords: ["record", "start", "panel", "capture"],
-			shortcut: "⌘⇧R",
+			shortcut: chordLabel("general.record"),
 			action: () => launchRecordingPanel(),
 		},
 		{

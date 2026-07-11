@@ -13,7 +13,7 @@
 
 :root,
 [data-theme="light"] {
-  /* ---- Framer surfaces (light counterpart) ---- */
+  /* - Framer surfaces (light counterpart) - */
   --canvas: oklch(98% 0.002 60);
   --surface-1: oklch(95% 0.002 60);
   --surface-2: oklch(92% 0.002 60);
@@ -22,21 +22,21 @@
   --hairline: oklch(0% 0 0 / 0.10);
   --hairline-soft: oklch(0% 0 0 / 0.06);
 
-  /* ---- Ink (binary text hierarchy) ---- */
+  /* - Ink (binary text hierarchy) - */
   --ink: oklch(15% 0 0);
   --ink-muted: oklch(45% 0 0);
 
-  /* ---- Signal accent (links, focus, selection only) ---- */
+  /* - Signal accent (links, focus, selection only) - */
   --accent-blue: oklch(63% 0.19 245);
   --accent-blue-soft: oklch(63% 0.19 245 / 0.15);
 
-  /* ---- Gradient spotlight base anchors ---- */
+  /* - Gradient spotlight base anchors - */
   --gradient-violet: oklch(55% 0.24 290);
   --gradient-magenta: oklch(60% 0.27 350);
   --gradient-orange: oklch(72% 0.18 50);
   --gradient-coral: oklch(70% 0.18 20);
 
-  /* ---- Legacy shadcn tokens (original values; Framer tokens above are opt-in) ---- */
+  /* - Legacy shadcn tokens (original values; Framer tokens above are opt-in) - */
   --background: oklch(92.823% 0.00458 215.437);
   --foreground: oklch(21.779% 0.00002 271.152);
 
@@ -116,7 +116,7 @@
 
 .dark,
 [data-theme="dark"] {
-  /* ---- Framer surfaces (the canonical dark) ---- */
+  /* - Framer surfaces (the canonical dark) - */
   --canvas: oklch(0.16 0 0);            /* near-black with faint warmth */
   --surface-1: oklch(16% 0.005 60);        /* charcoal lift — cards */
   --surface-2: oklch(22% 0.005 60);        /* featured / selected lift */
@@ -125,21 +125,21 @@
   --hairline: oklch(100% 0 0 / 0.10);
   --hairline-soft: oklch(100% 0 0 / 0.06);
 
-  /* ---- Ink (binary, no mid-tone grays) ---- */
+  /* - Ink (binary, no mid-tone grays) - */
   --ink: oklch(100% 0 0);
   --ink-muted: oklch(64% 0 0);             /* ≈ #999999 */
 
-  /* ---- Signal accent ---- */
+  /* - Signal accent - */
   --accent-blue: oklch(68% 0.19 240);
   --accent-blue-soft: oklch(68% 0.19 240 / 0.15);
 
-  /* ---- Gradient spotlight base anchors ---- */
+  /* - Gradient spotlight base anchors - */
   --gradient-violet: oklch(58% 0.25 290);
   --gradient-magenta: oklch(62% 0.27 350);
   --gradient-orange: oklch(72% 0.19 50);
   --gradient-coral: oklch(70% 0.18 20);
 
-  /* ---- Legacy shadcn tokens (original values; Framer tokens above are opt-in) ---- */
+  /* - Legacy shadcn tokens (original values; Framer tokens above are opt-in) - */
   --primary: oklch(92.249% 0.23442 125.904);
   --primary-foreground: oklch(15.907% 0.00002 271.152);
 
@@ -188,7 +188,7 @@
 }
 
 @theme {
-  /* ---- Radius scale (preserved formula, with Framer's pill + spotlight additions) ---- */
+  /* - Radius scale (preserved formula, with Framer's pill + spotlight additions) - */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -199,7 +199,7 @@
   --radius-spotlight: 1.875rem;  /* 30px — gradient spotlight cards */
   --radius-pill: 100px;          /* pill CTAs */
 
-  /* ---- Surface colors ---- */
+  /* - Surface colors - */
   --color-canvas: var(--canvas);
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
@@ -207,11 +207,11 @@
   --color-hairline: var(--hairline);
   --color-hairline-soft: var(--hairline-soft);
 
-  /* ---- Ink ---- */
+  /* - Ink - */
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
 
-  /* ---- Signal & gradients ---- */
+  /* - Signal & gradients - */
   --color-accent-blue: var(--accent-blue);
   --color-accent-blue-soft: var(--accent-blue-soft);
   --color-gradient-violet: var(--gradient-violet);
@@ -219,7 +219,7 @@
   --color-gradient-orange: var(--gradient-orange);
   --color-gradient-coral: var(--gradient-coral);
 
-  /* ---- Legacy color aliases (kept) ---- */
+  /* - Legacy color aliases (kept) - */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -249,7 +249,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* ---- Fonts (preserved) ---- */
+  /* - Fonts (preserved) - */
   --font-sans: 'Geist Variable', sans-serif;
   --font-mono: 'Space Mono', 'Fira Code', 'Courier New', monospace;
   --font-heading: 'Geist Variable', sans-serif;
@@ -260,7 +260,7 @@
      control utility classes (max-w-md, text-xs, tracking-tight) and
      defining named keys here collapses widths and breaks tooltips. */
 
-  /* ---- Elevation (Framer's four shadow signatures) ----
+  /* - Elevation (Framer's four shadow signatures) -
      Level 0 — flat (no shadow)
      Level 1 — surface lift (use surface-1/-2, no shadow)
      Level 2 — light-edge + drop (floating cards, modals)
@@ -290,13 +290,13 @@
     0 4px 12px 0 rgba(0, 0, 0, 0.05),
     0 12px 24px -4px rgba(0, 0, 0, 0.05);
 
-  /* ---- Gradient utilities (spotlight card backgrounds) ---- */
+  /* - Gradient utilities (spotlight card backgrounds) - */
   --gradient-spotlight-violet: radial-gradient(120% 100% at 30% 20%, oklch(70% 0.25 290) 0%, oklch(45% 0.22 285) 60%, oklch(28% 0.16 280) 100%);
   --gradient-spotlight-magenta: radial-gradient(120% 100% at 30% 20%, oklch(72% 0.27 350) 0%, oklch(50% 0.25 340) 60%, oklch(30% 0.18 335) 100%);
   --gradient-spotlight-orange: radial-gradient(120% 100% at 30% 20%, oklch(82% 0.18 60) 0%, oklch(65% 0.20 40) 60%, oklch(40% 0.15 30) 100%);
   --gradient-spotlight-coral: radial-gradient(120% 100% at 30% 20%, oklch(80% 0.16 25) 0%, oklch(62% 0.20 15) 60%, oklch(38% 0.14 10) 100%);
 
-  /* ---- Animations (kept) ---- */
+  /* - Animations (kept) - */
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 

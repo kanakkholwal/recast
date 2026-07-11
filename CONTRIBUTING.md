@@ -140,9 +140,9 @@ wallpapers without cutting a new app version.
 
 **Cache location** (delete to force a full re-download):
 
-- Windows: `%APPDATA%\com.nexonauts.recast\assets\`
-- macOS: `~/Library/Application Support/com.nexonauts.recast/assets/`
-- Linux: `~/.local/share/com.nexonauts.recast/assets/`
+- Windows: `%APPDATA%\com.kanakkholwal.recast\assets\`
+- macOS: `~/Library/Application Support/com.kanakkholwal.recast/assets/`
+- Linux: `~/.local/share/com.kanakkholwal.recast/assets/`
 
 The folder contains each downloaded file plus a `manifest.lock.json` — the
 persisted snapshot used for offline hydration.

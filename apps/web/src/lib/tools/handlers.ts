@@ -44,7 +44,7 @@ function result(data: Uint8Array | ArrayBuffer, name: string, ext: string, mime:
 const videoMime = (kind: "mp4" | "webm") => (kind === "webm" ? "video/webm" : "video/mp4");
 const cancelled = () => new ConvertError("cancelled", "Cancelled.");
 
-// --- Tier A / C: MediaBunny Conversion ---------------------------------------
+//  Tier A / C: MediaBunny Conversion 
 
 const trim: ConvertHandler = async (job, ctx) => {
 	const input = await openInput(job.file);
@@ -167,7 +167,7 @@ const resize: ConvertHandler = async (job, ctx) => {
 	}
 };
 
-// --- Tier B: sinks + small encoders ------------------------------------------
+//  Tier B: sinks + small encoders 
 
 const videoToGif: ConvertHandler = async (job, ctx) => {
 	const fps = clamp(job.options.fps ?? 12, 1, 30);
@@ -264,7 +264,7 @@ const extractFrames: ConvertHandler = async (job, ctx) => {
 	}
 };
 
-// --- canvas / buffer helpers --------------------------------------------------
+//  canvas / buffer helpers --
 
 function canvasRgba(canvas: HTMLCanvasElement | OffscreenCanvas): Uint8ClampedArray {
 	const ctx2d = canvas.getContext("2d") as
@@ -298,7 +298,7 @@ function concatFloat(parts: Float32Array[]): Float32Array {
 	return out;
 }
 
-// --- registry -----------------------------------------------------------------
+//  registry --
 
 export const handlers: Partial<Record<ConvertJob["op"], ConvertHandler>> = {
 	trim,

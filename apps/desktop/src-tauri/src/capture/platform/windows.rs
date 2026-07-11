@@ -14,9 +14,9 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     Ok(Box::new(fallback))
 }
 
-// ---------------------------------------------------------------------------
+//
 // XCap fallback
-// ---------------------------------------------------------------------------
+//
 
 struct XCapSource {
     monitor: Monitor,
@@ -63,9 +63,9 @@ impl CaptureSource for XCapSource {
     }
 }
 
-// ---------------------------------------------------------------------------
+//
 // DXGI hardware capture
-// ---------------------------------------------------------------------------
+//
 
 struct DxgiSource {
     duplication: ::windows::Win32::Graphics::Dxgi::IDXGIOutputDuplication,
@@ -77,18 +77,18 @@ struct DxgiSource {
 
 impl DxgiSource {
     fn new(target: &CaptureTarget) -> Result<Self> {
-        use ::windows::core::Interface;
-        use ::windows::Win32::Foundation::RECT;
-        use ::windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
-        use ::windows::Win32::Graphics::Direct3D11::{
+        use windows::core::Interface;
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_UNKNOWN;
+        use windows::Win32::Graphics::Direct3D11::{
             D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, D3D11_CPU_ACCESS_READ,
             D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11_TEXTURE2D_DESC,
             D3D11_USAGE_STAGING,
         };
-        use ::windows::Win32::Graphics::Dxgi::Common::{
+        use windows::Win32::Graphics::Dxgi::Common::{
             DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
         };
-        use ::windows::Win32::Graphics::Dxgi::{
+        use windows::Win32::Graphics::Dxgi::{
             CreateDXGIFactory1, IDXGIAdapter, IDXGIAdapter1, IDXGIFactory1, IDXGIOutput,
             IDXGIOutput1,
         };
@@ -185,11 +185,11 @@ impl DxgiSource {
 
 impl CaptureSource for DxgiSource {
     fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>> {
-        use ::windows::core::Interface;
-        use ::windows::Win32::Graphics::Direct3D11::{
+        use windows::core::Interface;
+        use windows::Win32::Graphics::Direct3D11::{
             ID3D11Resource, ID3D11Texture2D, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
         };
-        use ::windows::Win32::Graphics::Dxgi::{
+        use windows::Win32::Graphics::Dxgi::{
             IDXGIResource, DXGI_ERROR_WAIT_TIMEOUT, DXGI_OUTDUPL_FRAME_INFO,
         };
 

@@ -415,7 +415,7 @@ pub fn build_gif_palette_prepass_filter(
 mod gif_tests {
     use super::*;
 
-    // --- pre-pass `-vf` builder (pass 1: source → palette PNG) ---
+    //  pre-pass `-vf` builder (pass 1: source → palette PNG)
 
     #[test]
     fn prepass_filter_includes_fps_and_palettegen() {
@@ -475,7 +475,7 @@ mod gif_tests {
         assert!(vf.contains("max_colors=2"), "got: {vf}");
     }
 
-    // --- pass-2 paletteuse-only chain (palette wired in as external input) ---
+    //  pass-2 paletteuse-only chain (palette wired in as external input)
 
     #[test]
     fn paletteuse_chain_references_palette_input_index() {

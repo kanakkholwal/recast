@@ -14,6 +14,8 @@ mod audio;
 mod capabilities;
 mod engine;
 mod models;
+mod packs;
+pub(crate) mod remote;
 pub(crate) mod subtitles;
 mod words;
 
@@ -22,7 +24,7 @@ use tauri::{ipc::Channel, AppHandle};
 use tokio::fs;
 
 use capabilities::DeviceCapabilities;
-use models::{CaptionModel, Engine as ModelEngine};
+use models::{CaptionModel, Engine as ModelEngine, ModelSource, Runtime};
 
 use crate::commands::error::{AppError, AppResult};
 
@@ -30,7 +32,7 @@ use crate::commands::error::{AppError, AppResult};
 // external silero_vad.onnx; the download/verify path lives in `models`).
 pub(crate) use models::{download_file, models_dir};
 
-// ---- Transcript data model (mirrors the planned project-format `transcript` section) ----
+// - Transcript data model (mirrors the planned project-format `transcript` section) -
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -153,6 +155,11 @@ pub struct CaptionModelInfo {
     pub id: String,
     pub display_name: String,
     pub engine: ModelEngine,
+    /// Inference backend (derived from `engine`). The axis the UI gates
+    /// availability on; several engines share one runtime.
+    pub runtime: Runtime,
+    /// Built-in vs. contributed by an installed extension (provenance badge).
+    pub source: ModelSource,
     pub family: String,
     pub languages: Vec<String>,
     pub approx_size_bytes: Option<u64>,
@@ -165,7 +172,13 @@ pub struct CaptionModelInfo {
     pub min_ram_bytes: Option<u64>,
     /// Can this device run the model at all? (false → hard-disabled in the UI).
     pub runnable: bool,
-    /// Non-blocking caveat for this device (slow on CPU, low RAM, …).
+    /// Is this model's runtime usable in this build? False for a not-yet-built
+    /// backend (Whisper) or an unconfigured remote endpoint. Download is still
+    /// allowed; only Generate is gated on this, so a model can be pre-fetched
+    /// before its runtime ships.
+    pub runtime_available: bool,
+    /// Non-blocking caveat for this device (slow on CPU, low RAM, …), or the
+    /// reason the runtime is unavailable when that's the blocker.
     pub warning: Option<String>,
 }
 
@@ -194,7 +207,7 @@ fn evaluate(model: &CaptionModel, caps: &DeviceCapabilities) -> (bool, Option<St
     (true, (!notes.is_empty()).then(|| notes.join(" ")))
 }
 
-// ---- Channel payloads ----
+// - Channel payloads -
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -213,23 +226,48 @@ pub(crate) struct TranscribeProgress {
     phase: String, // "extracting" | "transcribing" | "done"
 }
 
-// ---- Commands ----
+// - Commands -
 
 /// Catalog + per-model install state. Cheap disk checks; async to honour the
 /// no-sync-commands rule.
 #[tauri::command]
 pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelInfo>> {
     let caps = capabilities::detect();
-    let infos = models::registry()
+    let infos = models::all_models(&app)
         .into_iter()
         .map(|m| {
-            let installed = models::is_installed(&app, &m).unwrap_or(false);
+            let runtime = m.engine.runtime();
             let downloadable = !m.files.is_empty();
-            let (runnable, warning) = evaluate(&m, &caps);
+            // Availability is evaluated differently for a remote endpoint (is a
+            // key configured?) than a local model (runtime built + device caps +
+            // files present).
+            let (installed, runnable, runtime_available, warning) = match m.remote.as_ref() {
+                Some(ep) => {
+                    let has_key = remote::has_key(&ep.id);
+                    let warn = (!has_key)
+                        .then(|| "Add an API key for this endpoint to use it.".to_string());
+                    (has_key, true, has_key, warn)
+                }
+                None => {
+                    let installed = models::is_installed(&app, &m).unwrap_or(false);
+                    let (rt_available, rt_reason) = models::runtime_status(runtime);
+                    let (runnable, device_warning) = evaluate(&m, &caps);
+                    // An unavailable runtime is the dominant blocker, so its reason
+                    // wins over a soft device caveat when both apply.
+                    (
+                        installed,
+                        runnable,
+                        rt_available,
+                        rt_reason.or(device_warning),
+                    )
+                }
+            };
             CaptionModelInfo {
                 id: m.id,
                 display_name: m.display_name,
                 engine: m.engine,
+                runtime,
+                source: m.source,
                 family: m.family,
                 languages: m.languages,
                 approx_size_bytes: m.approx_size_bytes,
@@ -240,6 +278,7 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
                 prefers_gpu: m.prefers_gpu,
                 min_ram_bytes: m.min_ram_bytes,
                 runnable,
+                runtime_available,
                 warning,
             }
         })
@@ -263,8 +302,8 @@ pub async fn download_caption_model(
     id: String,
     on_progress: Channel<DownloadProgress>,
 ) -> AppResult<()> {
-    let model =
-        models::find(&id).ok_or_else(|| AppError::msg(format!("unknown caption model: {id}")))?;
+    let model = models::find(&app, &id)
+        .ok_or_else(|| AppError::msg(format!("unknown caption model: {id}")))?;
     if model.files.is_empty() {
         return Err(AppError::msg(format!(
             "model '{id}' has no downloadable files defined yet"
@@ -332,40 +371,86 @@ pub async fn transcribe_project(
     language: Option<String>,
     on_phase: Channel<TranscribeProgress>,
 ) -> AppResult<Transcript> {
-    let model = models::find(&model_id)
+    let model = models::find(&app, &model_id)
         .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
-    let (runnable, _) = evaluate(&model, &capabilities::detect());
-    if !runnable {
-        return Err(AppError::msg(format!(
-            "model '{model_id}' can't run on this device"
-        )));
+
+    // Availability gate: a remote model needs a stored key; a local model needs
+    // its runtime built, the device to support it, and its files present.
+    let remote_ep = model.remote.clone();
+    match remote_ep.as_ref() {
+        Some(ep) => {
+            if !remote::has_key(&ep.id) {
+                return Err(AppError::from("Add an API key for this endpoint first."));
+            }
+        }
+        None => {
+            let (runtime_available, runtime_reason) =
+                models::runtime_status(model.engine.runtime());
+            if !runtime_available {
+                return Err(AppError::msg(runtime_reason.unwrap_or_else(|| {
+                    format!("model '{model_id}' runtime is unavailable in this build")
+                })));
+            }
+            let (runnable, _) = evaluate(&model, &capabilities::detect());
+            if !runnable {
+                return Err(AppError::msg(format!(
+                    "model '{model_id}' can't run on this device"
+                )));
+            }
+            if !models::is_installed(&app, &model)? {
+                return Err(AppError::msg(format!(
+                    "model '{model_id}' is not downloaded"
+                )));
+            }
+        }
     }
-    if !models::is_installed(&app, &model)? {
-        return Err(AppError::msg(format!(
-            "model '{model_id}' is not downloaded"
-        )));
-    }
-    let model_dir = models::model_dir(&app, &model.id)?;
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "extracting".into(),
     });
 
+    // Decode audio to 16 kHz mono f32 off the UI thread (CPU + ffmpeg), for both
+    // paths.
     let sources: Vec<String> = [audio_path, microphone_path]
         .into_iter()
         .flatten()
         .collect();
-    let lang = language.clone();
-    let transcript = tokio::task::spawn_blocking(move || {
+    let samples: Vec<f32> = tokio::task::spawn_blocking(move || {
         let refs: Vec<&str> = sources.iter().map(|s| s.as_str()).collect();
         let samples = audio::extract_pcm_f32(&refs)?;
         if samples.is_empty() {
             return Err("no audio to transcribe".to_string());
         }
-        engine::transcribe(&model, &model_dir, &samples, lang.as_deref())
+        Ok::<Vec<f32>, String>(samples)
     })
     .await
-    .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??;
+    .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
+
+    let _ = on_phase.send(TranscribeProgress {
+        phase: "transcribing".into(),
+    });
+
+    let transcript = match remote_ep.as_ref() {
+        // Remote: the network call is async, so it must NOT run on a blocking
+        // thread. The key is read here in Rust and never crosses IPC.
+        Some(ep) => {
+            let key = remote::read_key(&ep.id)
+                .ok_or_else(|| AppError::from("Add an API key for this endpoint first."))?;
+            remote::transcribe_remote(ep, &key, &samples, language.as_deref())
+                .await
+                .map_err(AppError::msg)?
+        }
+        // Local: inference is CPU-bound, so run it on a blocking thread.
+        None => {
+            let model_dir = models::model_dir(&app, &model.id)?;
+            let lang = language.clone();
+            tokio::task::spawn_blocking(move || {
+                engine::transcribe(&model, &model_dir, &samples, lang.as_deref())
+            })
+            .await
+            .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??
+        }
+    };
 
     let _ = on_phase.send(TranscribeProgress {
         phase: "done".into(),
@@ -387,6 +472,62 @@ pub async fn has_transcribable_audio(paths: Vec<String>) -> AppResult<bool> {
     })
     .await
     .map_err(|e| AppError::msg(format!("audio probe task panicked: {e}")))
+}
+
+// - Remote transcription endpoints (OpenAI-compatible) -
+
+/// A configured remote endpoint plus whether its API key is stored. Never
+/// carries the key itself.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RemoteAsrEndpointInfo {
+    #[serde(flatten)]
+    endpoint: remote::RemoteEndpoint,
+    has_key: bool,
+}
+
+/// List configured remote endpoints (with key-present flags, not the keys).
+#[tauri::command]
+pub async fn list_remote_asr_endpoints(app: AppHandle) -> AppResult<Vec<RemoteAsrEndpointInfo>> {
+    Ok(remote::read_endpoints(&app)
+        .into_iter()
+        .map(|ep| {
+            let has_key = remote::has_key(&ep.id);
+            RemoteAsrEndpointInfo {
+                endpoint: ep,
+                has_key,
+            }
+        })
+        .collect())
+}
+
+/// Add or update a remote endpoint's (non-secret) config. Returns the stored,
+/// normalized form.
+#[tauri::command]
+pub async fn set_remote_asr_endpoint(
+    app: AppHandle,
+    endpoint: remote::RemoteEndpoint,
+) -> AppResult<remote::RemoteEndpoint> {
+    remote::upsert_endpoint(&app, endpoint).map_err(AppError::msg)
+}
+
+/// Remove a remote endpoint and its stored key.
+#[tauri::command]
+pub async fn delete_remote_asr_endpoint(app: AppHandle, id: String) -> AppResult<()> {
+    remote::delete_endpoint(&app, &id).map_err(AppError::msg)
+}
+
+/// Store (or, with an empty value, clear) a remote endpoint's API key in the OS
+/// keyring. Write-only by design: there is no command that returns the key.
+#[tauri::command]
+pub async fn set_remote_asr_key(app: AppHandle, id: String, key: String) -> AppResult<()> {
+    if !remote::read_endpoints(&app).iter().any(|e| e.id == id) {
+        return Err(AppError::from("unknown remote endpoint"));
+    }
+    if key.trim().is_empty() {
+        return remote::delete_key(&id).map_err(AppError::msg);
+    }
+    remote::store_key(&id, &key).map_err(AppError::msg)
 }
 
 /// Serialize a transcript to a subtitle sidecar (`srt` | `vtt`) and write it to

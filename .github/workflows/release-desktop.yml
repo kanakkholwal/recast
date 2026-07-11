@@ -441,7 +441,7 @@ jobs:
         if: ${{ env.WINGET_TOKEN != '' }}
         uses: vedantmgoyal9/winget-releaser@v2
         with:
-          identifier: Nexonauts.Recast
+          identifier: KanakKholwal.Recast
           installers-regex: '_x64-setup\.exe$'
           release-tag: ${{ needs.create-release.outputs.tag_name }}
           token: ${{ env.WINGET_TOKEN }}

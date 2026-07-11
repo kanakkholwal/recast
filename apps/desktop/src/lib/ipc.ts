@@ -147,6 +147,29 @@ export function diagnoseFfmpeg(): Promise<FfmpegDiagnostics> {
 	return invoke<FfmpegDiagnostics>("diagnose_ffmpeg");
 }
 
+/** Whether the `recast` CLI resolves as a bare terminal command. Mirrors the
+ *  Rust `InstallStatus` (`cli_install_status`). */
+export interface CliInstallStatus {
+	onPath: boolean;
+	binDir: string;
+	detail: string;
+}
+
+/** Current PATH state of the `recast` command line tool. */
+export function cliInstallStatus(): Promise<CliInstallStatus> {
+	return invoke<CliInstallStatus>("cli_install_status");
+}
+
+/** Put `recast` on the user's PATH. Returns a human-readable result message. */
+export function installCli(): Promise<string> {
+	return invoke<string>("install_cli");
+}
+
+/** Remove `recast` from the user's PATH. Returns a human-readable result message. */
+export function uninstallCli(): Promise<string> {
+	return invoke<string>("uninstall_cli");
+}
+
 /**
  * Lock a window's resize to a fixed aspect ratio and cap its width at a
  * fraction of its monitor. On Windows this is a real-time WM_SIZING constraint
@@ -643,12 +666,32 @@ export function extractWaveform(
 
 // Captions / transcription commands (offline ASR, M1 foundation)
 
-export type CaptionEngine = "parakeet" | "whisper";
+/** Model architecture (drives the loader + timestamp handling in Rust).
+ *  `remote` is not a local architecture: the server owns the model. */
+export type CaptionEngine =
+	| "parakeet"
+	| "canary"
+	| "gigaam"
+	| "cohere"
+	| "whisper"
+	| "remote";
+
+/** Inference backend. `onnx` ships today; `whisperCpp` is gated; `remote` posts
+ *  to an OpenAI-compatible endpoint. */
+export type CaptionRuntime = "onnx" | "whisperCpp" | "remote";
+
+/** Where a catalog entry came from: the built-in list, an installed pack, or a
+ *  user-configured remote endpoint. */
+export type CaptionModelSource = "builtin" | "extension" | "remote";
 
 export interface CaptionModelInfo {
 	id: string;
 	displayName: string;
 	engine: CaptionEngine;
+	/** Inference backend (derived from `engine`); the availability axis. */
+	runtime: CaptionRuntime;
+	/** Built-in vs. contributed by an installed extension (provenance badge). */
+	source: CaptionModelSource;
 	/** Display group for the picker, e.g. "Parakeet" / "Whisper". */
 	family: string;
 	languages: string[];
@@ -662,8 +705,41 @@ export interface CaptionModelInfo {
 	minRamBytes: number | null;
 	/** False → this device can't run the model (hard-disabled in the UI). */
 	runnable: boolean;
-	/** Non-blocking caveat for this device (slow on CPU, low RAM, …). */
+	/** False → this model's runtime isn't usable in this build (Whisper not yet
+	 *  built, or no remote endpoint configured). Download stays allowed; only
+	 *  Generate is gated on this. */
+	runtimeAvailable: boolean;
+	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
+	 *  runtime is unavailable when that's the blocker. */
 	warning: string | null;
+}
+
+/** One weight file of a pack-contributed caption model. Third-party weights
+ *  MUST pin a sha256 (built-ins may leave it null until a revision is locked). */
+export interface CaptionModelPackFile {
+	relPath: string;
+	url: string;
+	sha256: string;
+}
+
+/**
+ * A `contributes.captionModels[]` entry in an `asset-pack` extension manifest.
+ * `runtime` + `engine` are closed allowlists validated in Rust; `engine` must
+ * belong to `runtime`. Weight files download into `models/<id>/`, so a pack can
+ * only reuse an existing backend, never introduce one.
+ */
+export interface CaptionModelContribution {
+	id: string;
+	displayName: string;
+	runtime: CaptionRuntime;
+	engine: CaptionEngine;
+	family: string;
+	languages: string[];
+	approxSizeBytes?: number | null;
+	files: CaptionModelPackFile[];
+	requiresGpu?: boolean;
+	prefersGpu?: boolean;
+	minRamBytes?: number | null;
 }
 
 export interface GpuInfo {
@@ -790,6 +866,47 @@ export function hasTranscribableAudio(paths: (string | null | undefined)[]): Pro
 	return invoke<boolean>("has_transcribable_audio", {
 		paths: paths.filter((p): p is string => !!p),
 	});
+}
+
+// Remote transcription endpoints (OpenAI-compatible /audio/transcriptions)
+
+/** A user-configured remote endpoint. Non-secret: the API key is NOT here (it
+ *  lives in the OS keyring and never crosses IPC). */
+export interface RemoteAsrEndpoint {
+	/** Stable slug; doubles as the keyring entry suffix and catalog id. */
+	id: string;
+	displayName: string;
+	/** Base URL up to (not including) `/audio/transcriptions`. */
+	baseUrl: string;
+	/** Model name the endpoint expects, e.g. `whisper-large-v3`. */
+	model: string;
+	languages: string[];
+}
+
+/** A configured endpoint plus whether its API key is stored. */
+export interface RemoteAsrEndpointInfo extends RemoteAsrEndpoint {
+	hasKey: boolean;
+}
+
+/** List configured remote endpoints (with key-present flags, not the keys). */
+export function listRemoteAsrEndpoints(): Promise<RemoteAsrEndpointInfo[]> {
+	return invoke<RemoteAsrEndpointInfo[]>("list_remote_asr_endpoints");
+}
+
+/** Add or update a remote endpoint's config. Returns the stored, normalized form. */
+export function setRemoteAsrEndpoint(endpoint: RemoteAsrEndpoint): Promise<RemoteAsrEndpoint> {
+	return invoke<RemoteAsrEndpoint>("set_remote_asr_endpoint", { endpoint });
+}
+
+/** Remove a remote endpoint and its stored key. */
+export function deleteRemoteAsrEndpoint(id: string): Promise<void> {
+	return invoke("delete_remote_asr_endpoint", { id });
+}
+
+/** Store (or, with an empty value, clear) a remote endpoint's API key in the OS
+ *  keyring. Write-only: there is no getter. */
+export function setRemoteAsrKey(id: string, key: string): Promise<void> {
+	return invoke("set_remote_asr_key", { id, key });
 }
 
 // Autosave / Recovery commands
@@ -1000,10 +1117,19 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 }
 
 
- export async function launchRecordingPanel() {
+/** What the panel should preselect on open. Sent from the home mode tiles. */
+export type CaptureIntent = "screen" | "window" | "region" | "camera";
+
+ export async function launchRecordingPanel(intent?: CaptureIntent) {
     const existing = await WebviewWindow.getByLabel("recording-panel");
     if (existing) {
       await existing.setFocus();
+      // The window is already mounted, so a query param wouldn't re-trigger;
+      // hand the intent over on an event the panel listens for.
+      if (intent) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("panel-capture-intent", { intent });
+      }
       return;
     }
 
@@ -1012,7 +1138,7 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
     const panelWidth = 520;
     const panelHeight = 72;
     const panelWin = new WebviewWindow("recording-panel", {
-      url: "/panel",
+      url: intent ? `/panel?intent=${intent}` : "/panel",
       title: "Recast Panel",
       width: panelWidth,
       height: panelHeight,

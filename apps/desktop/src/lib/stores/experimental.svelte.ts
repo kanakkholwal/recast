@@ -9,7 +9,8 @@ import { PersistedState } from "@recast/ui/persisted-state";
 export type ExperimentalFlag =
 	| "silenceDetection"
 	| "webcodecsPreview"
-	| "selfHosting";
+	| "selfHosting"
+	| "remoteTranscription";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -36,12 +37,19 @@ export const FLAG_META: FlagMeta[] = [
 		description:
 			"Point the app at your own Recast Cloud server. Cloud isn't ready yet, so this is for early self-hosters only.",
 	},
+	{
+		key: "remoteTranscription",
+		label: "Remote transcription endpoints",
+		description:
+			"Transcribe captions through an OpenAI-compatible endpoint (LM Studio, a self-hosted server, or a third-party API) instead of an on-device model. Response formats vary between servers, so treat this as early.",
+	},
 ];
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
-	webcodecsPreview: false,
+	webcodecsPreview: true,
 	selfHosting: false,
+	remoteTranscription: false,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";

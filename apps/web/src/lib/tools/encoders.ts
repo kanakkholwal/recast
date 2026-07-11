@@ -9,7 +9,7 @@ import { Mp3Encoder } from "@breezystack/lamejs";
 import { applyPalette, GIFEncoder, quantize } from "gifenc";
 import { zipSync } from "fflate";
 
-// --- GIF ----------------------------------------------------------------------
+//  GIF -
 
 export interface GifWriter {
 	/** Add one frame from RGBA pixels; `delayMs` is how long it shows. */
@@ -38,7 +38,7 @@ export function createGifWriter(): GifWriter {
 	};
 }
 
-// --- PCM helpers --------------------------------------------------------------
+//  PCM helpers --
 
 /** Interleave planar float channels into one Int16 PCM buffer. */
 function interleaveToInt16(channels: Float32Array[], frames: number): Int16Array {
@@ -53,7 +53,7 @@ function interleaveToInt16(channels: Float32Array[], frames: number): Int16Array
 	return out;
 }
 
-// --- WAV (16-bit PCM, no library) --------------------------------------------
+//  WAV (16-bit PCM, no library) --
 
 /** Encode planar float channels to a 16-bit PCM WAV file. */
 export function encodeWav(channels: Float32Array[], sampleRate: number): Uint8Array {
@@ -84,7 +84,7 @@ export function encodeWav(channels: Float32Array[], sampleRate: number): Uint8Ar
 	return new Uint8Array(buffer);
 }
 
-// --- MP3 (lamejs) -------------------------------------------------------------
+//  MP3 (lamejs) -
 
 /** Encode planar float channels to MP3 (mono or stereo). */
 export function encodeMp3(
@@ -132,7 +132,7 @@ function concat(parts: Uint8Array[]): Uint8Array {
 	return out;
 }
 
-// --- ZIP (fflate) -------------------------------------------------------------
+//  ZIP (fflate) -
 
 /** Zip a set of already-compressed files (images) with no extra compression. */
 export function zipFiles(files: Record<string, Uint8Array>): Uint8Array {
