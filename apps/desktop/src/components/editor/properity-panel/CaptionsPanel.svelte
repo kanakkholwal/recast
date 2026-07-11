@@ -79,7 +79,9 @@
   let error = $state<string | null>(null);
 
   const selected = $derived(models.find((m) => m.id === selectedModelId) ?? null);
-  const usable = $derived(models.filter((m) => m.installed && m.runnable));
+  const usable = $derived(
+    models.filter((m) => m.installed && m.runnable && m.runtimeAvailable),
+  );
   // A recording can have an audio path but no actual audio stream (mic + system
   // audio off), so `hasAudio` is the ffprobe result, not just path existence.
   // `null` = not yet probed → fall back to path presence so the UI doesn't flash
@@ -167,7 +169,14 @@
   }
 
   async function generate() {
-    if (!selected || !selected.installed || !selected.runnable || !hasAudio) return;
+    if (
+      !selected ||
+      !selected.installed ||
+      !selected.runnable ||
+      !selected.runtimeAvailable ||
+      !hasAudio
+    )
+      return;
     transcribing = true;
     phase = "extracting";
     error = null;
@@ -413,7 +422,7 @@
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
           >
-            {selected.engine === "parakeet" ? "Parakeet" : "Whisper"}
+            {selected.family}
           </span>
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
@@ -509,7 +518,10 @@
         variant="default"
         size="sm"
         class="w-full gap-1.5"
-        disabled={!selected?.installed || !selected?.runnable || transcribing}
+        disabled={!selected?.installed ||
+          !selected?.runnable ||
+          !selected?.runtimeAvailable ||
+          transcribing}
         onclick={generate}
       >
         {#if transcribing}

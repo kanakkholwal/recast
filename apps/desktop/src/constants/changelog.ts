@@ -52,6 +52,7 @@ export const RELEASES: readonly ChangelogRelease[] = [
 			{ kind: 'added', summary: 'Windows taskbar jump list. Right-click the taskbar or Start icon for a "New Recording" action and your recent projects.' },
 			{ kind: 'added', summary: '"Open in Recast" in the right-click menu for .recast files on Windows.' },
 			{ kind: 'added', summary: 'Translucent window backdrop (Mica on Windows 11, vibrancy on macOS), off by default under Settings, Appearance.' },
+			{ kind: 'changed', summary: 'New recordings and exports save to a Recast folder in your Videos directory by default, instead of a temporary folder the system can clear. Change it anytime in Settings.' },
 			{ kind: 'changed', summary: 'Recording and exporting keep the display and system awake, so a long capture or export is never cut short by the screen or machine going to sleep.' },
 			{ kind: 'changed', summary: 'The Windows installer and update windows now carry the Recast icon and artwork.' },
 			{ kind: 'changed', summary: 'Refreshed the Google Drive connection page to match the app.' },

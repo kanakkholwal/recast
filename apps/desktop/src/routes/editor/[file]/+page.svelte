@@ -49,6 +49,7 @@
   import { isShareSupported, shareRecording } from "$lib/share";
   import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
   import { cloudShare } from "$lib/stores/cloudShare.svelte";
+  import { exportActivity } from "$lib/stores/exportActivity.svelte";
   import {
     createEditorStore,
     type VideoMetadata,
@@ -211,6 +212,9 @@
     if (documentPath) {
       clearAutosave(documentPath).catch(() => {});
     }
+    // Export is bound to this editor session; drop it so its progress/result
+    // doesn't linger in the app-wide activity center after leaving.
+    exportActivity.dismiss();
   });
 
   // Seek video + audio back to trimStart and resume. Used by both loop paths
@@ -893,30 +897,34 @@
     });
   }
 
-  let exportResult = $state<
+  // Terminal result of the current export. The exportActivity store is the
+  // single source of truth (the editor reads it back, the activity center
+  // surfaces it); `exportResult` is a local read alias for the terminal job.
+  type ExportResult =
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
-    | { kind: "error"; message: string }
-    | null
-  >(null);
+    | { kind: "error"; message: string };
+  const exportResult = $derived<ExportResult | null>(
+    exportActivity.job?.status === "success"
+      ? { kind: "success", path: exportActivity.job.path ?? "" }
+      : exportActivity.job?.status === "cancelled"
+        ? { kind: "cancelled" }
+        : exportActivity.job?.status === "error"
+          ? { kind: "error", message: exportActivity.job.error ?? "" }
+          : null,
+  );
 
-  function setExportResult(next: NonNullable<typeof exportResult>) {
-    let alreadySame = false;
-    if (exportResult?.kind === next.kind) {
-      if (next.kind === "success" && exportResult.kind === "success") {
-        alreadySame = exportResult.path === next.path;
-      } else if (next.kind === "error" && exportResult.kind === "error") {
-        alreadySame = exportResult.message === next.message;
-      } else if (
-        next.kind === "cancelled" &&
-        exportResult.kind === "cancelled"
-      ) {
-        alreadySame = true;
-      }
+  function setExportResult(next: ExportResult) {
+    // The pipeline can emit the same terminal event twice; only the first wins.
+    if (exportResult?.kind === next.kind) return;
+
+    if (next.kind === "success") {
+      exportActivity.succeed(next.path);
+    } else if (next.kind === "cancelled") {
+      exportActivity.markCancelled();
+    } else {
+      exportActivity.fail(next.message);
     }
-    if (alreadySame) return;
-
-    exportResult = next;
     exportFinalizing = false;
     exportCancelling = false;
 
@@ -948,6 +956,7 @@
         // bar monotonic and ignore sub-0.1% jitter so it doesn't flicker at 99%.
         if (!exportHasProgress || next >= 100 || next > current + 0.1) {
           store.exportProgress = Math.max(current, next);
+          exportActivity.setProgress(store.exportProgress);
         }
         exportHasProgress = true;
         void setJobProgress(next);
@@ -960,6 +969,7 @@
       }
       case "finalizing":
         exportFinalizing = true;
+        exportActivity.setPhase("finalizing");
         void setJobProgressIndeterminate();
         return;
       case "success":
@@ -991,7 +1001,7 @@
     exportFinalizing = false;
     exportPrepDetail = null;
     activeExportId = exportId;
-    exportResult = null;
+    exportActivity.begin(exportId, data.filename);
     exportStartedAt = Date.now();
     exportNow = exportStartedAt;
     resetPrep();
@@ -1114,7 +1124,7 @@
   }
 
   function dismissExportResult() {
-    exportResult = null;
+    exportActivity.dismiss();
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
@@ -1160,7 +1170,41 @@
               ? "options"
               : null,
   );
-  const isExportFlowOpen = $derived(exportPhase !== null);
+  // The panel is shown only when a phase is active AND it's foregrounded.
+  // Minimizing keeps the export alive but hands tracking to the activity center.
+  const isExportFlowOpen = $derived(
+    exportPhase !== null && exportActivity.foreground,
+  );
+
+  // Drives the toolbar Export button: open the surface, close the picker,
+  // minimize a running/finished export to the activity center, or reopen it.
+  type ExportButtonMode = "export" | "close" | "minimize" | "show";
+  const exportButtonMode: ExportButtonMode = $derived(
+    exportPhase === null
+      ? "export"
+      : exportPhase === "options"
+        ? "close"
+        : exportActivity.foreground
+          ? "minimize"
+          : "show",
+  );
+
+  function onExportButton() {
+    switch (exportButtonMode) {
+      case "export":
+        openExportOptions();
+        break;
+      case "close":
+        dismissExportOptions();
+        break;
+      case "minimize":
+        exportActivity.minimize();
+        break;
+      case "show":
+        exportActivity.show();
+        break;
+    }
+  }
 
   // Silence cuts only. Manual ripple deletes are always honoured, so they must
   // not trip the "enable Silence detection" banner. Only auto cuts depend on it.
@@ -1170,19 +1214,8 @@
 
   function openExportOptions() {
     if (store.isExporting) return;
+    exportActivity.show();
     exportOptionsOpen = true;
-  }
-
-  // Toolbar Export button doubles as the mode toggle: open the export surface
-  // when editing, or leave it (dismiss the current phase) when it's already up.
-  // A running encode is never toggled off from here (the panel owns Cancel).
-  function toggleExportMode() {
-    if (store.isExporting) return;
-    if (isExportFlowOpen) {
-      handleExportEscape();
-    } else {
-      openExportOptions();
-    }
   }
 
   function dismissExportOptions() {
@@ -1507,8 +1540,8 @@
     <EditorToolbar
       {store}
       filename={data.filename}
-      onexport={toggleExportMode}
-      exportActive={isExportFlowOpen && !store.isExporting}
+      onexport={onExportButton}
+      exportMode={exportButtonMode}
       onsave={handleSave}
       {isSaving}
       {showSidebar}

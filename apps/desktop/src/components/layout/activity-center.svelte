@@ -7,6 +7,8 @@
 	 */
 	import { cloudShare } from "$lib/stores/cloudShare.svelte";
 	import { gdrive } from "$lib/stores/gdrive.svelte";
+	import { exportActivity } from "$lib/stores/exportActivity.svelte";
+	import { openFileLocation } from "$lib/ipc";
 	import { cloudPhaseLabel, uploadPct } from "../corner-notifications.logic";
 	import { Button } from "@recast/ui/button";
 	import * as Popover from "@recast/ui/popover";
@@ -18,6 +20,8 @@
 		Cloud,
 		Copy,
 		ExternalLink,
+		Film,
+		FolderOpen,
 		Inbox,
 		RefreshCw,
 		TriangleAlert,
@@ -35,13 +39,42 @@
 	const driveItems = $derived(
 		gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId),
 	);
-	const total = $derived(cloudItems.length + driveItems.length);
+	// The current export, hidden here while its panel is foregrounded in the
+	// editor (it reappears on minimize).
+	const exportJob = $derived(
+		exportActivity.foreground ? null : exportActivity.job,
+	);
+	const total = $derived(
+		cloudItems.length + driveItems.length + (exportJob ? 1 : 0),
+	);
 	const busy = $derived(
-		cloudItems.some((u) => u.status === "uploading") ||
+		exportJob?.status === "running" ||
+			cloudItems.some((u) => u.status === "uploading") ||
 			driveItems.some((u) => u.status === "uploading"),
 	);
 
+	const exportPhaseLabel: Record<string, string> = {
+		preparing: "Preparing export",
+		encoding: "Encoding video",
+		finalizing: "Finalising file",
+		cancelling: "Cancelling export",
+	};
+
 	let open = $state(false);
+
+	// Reopen the export panel in the editor.
+	function openExportPanel() {
+		open = false;
+		exportActivity.show();
+	}
+
+	async function showExportInFolder(path: string) {
+		try {
+			await openFileLocation(path);
+		} catch (e) {
+			toast.error(`Could not open folder: ${e}`);
+		}
+	}
 
 	// Reopen the foreground share dialog for a Recast Cloud upload: progress while
 	// it runs, share settings once it lands. Closes the popover so the two
@@ -122,6 +155,104 @@
 			<div
 				class="flex max-h-[min(70vh,420px)] flex-col divide-y divide-border/40 overflow-y-auto"
 			>
+				<!-- Current export. Clicking the info area reopens the editor's export
+				     panel; the action buttons are siblings so nothing interactive is
+				     nested. -->
+				{#if exportJob}
+					<div class="flex flex-col gap-2 px-3 py-2.5">
+						<div class="flex items-start gap-2.5">
+							<button
+								type="button"
+								title="Open export"
+								onclick={openExportPanel}
+								class="-my-1 flex min-w-0 flex-1 items-start gap-2.5 rounded-md py-1 text-left outline-none transition-colors hover:bg-foreground/3 focus-visible:bg-foreground/3"
+							>
+								<span
+									class={cn(
+										"grid size-7 shrink-0 place-items-center rounded-lg",
+										exportJob.status === "error"
+											? "bg-destructive/10 text-destructive"
+											: "bg-primary/10 text-primary",
+									)}
+								>
+									{#if exportJob.status === "running"}
+										<Film class="size-3.5 motion-safe:animate-pulse" />
+									{:else if exportJob.status === "success"}
+										<CheckCircle2 class="size-3.5" />
+									{:else if exportJob.status === "cancelled"}
+										<X class="size-3.5" />
+									{:else}
+										<TriangleAlert class="size-3.5" />
+									{/if}
+								</span>
+								<div class="min-w-0 flex-1">
+									<p class="text-[12px] font-semibold leading-tight text-foreground">
+										{#if exportJob.status === "running"}
+											{exportPhaseLabel[exportJob.phase]}
+										{:else if exportJob.status === "success"}
+											Export complete
+										{:else if exportJob.status === "cancelled"}
+											Export cancelled
+										{:else}
+											Export failed
+										{/if}
+									</p>
+									<p
+										class="mt-0.5 truncate text-[11px] text-muted-foreground"
+										title={exportJob.filename}
+									>
+										{exportJob.status === "error" && exportJob.error
+											? exportJob.error
+											: exportJob.filename}
+									</p>
+								</div>
+							</button>
+							<button
+								type="button"
+								class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-foreground/5 hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+								aria-label="Dismiss"
+								disabled={exportJob.status === "running"}
+								onclick={() => exportActivity.dismiss()}
+							>
+								<X class="size-3.5" />
+							</button>
+						</div>
+						{#if exportJob.status === "running"}
+							<div class="h-1 overflow-hidden rounded-full bg-muted">
+								{#if exportJob.phase === "encoding"}
+									<div
+										class="h-full rounded-full bg-primary transition-[width] duration-200"
+										style="width: {Math.round(exportJob.progress)}%"
+									></div>
+								{:else}
+									<div
+										class="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse"
+									></div>
+								{/if}
+							</div>
+							{#if exportJob.phase === "encoding"}
+								<div class="flex justify-end">
+									<span
+										class="text-[10px] font-medium tabular-nums text-muted-foreground"
+									>
+										{Math.round(exportJob.progress)}%
+									</span>
+								</div>
+							{/if}
+						{:else if exportJob.status === "success" && exportJob.path}
+							<div class="flex items-center justify-end gap-1.5">
+								<Button
+									size="xs"
+									class="h-7 gap-1.5"
+									onclick={() => showExportInFolder(exportJob.path!)}
+								>
+									<FolderOpen class="size-3" /> Show in folder
+								</Button>
+							</div>
+						{/if}
+					</div>
+				{/if}
+
 				<!-- Recast Cloud shares. The info area is the click target that reopens
 				     the dialog; the action buttons are siblings, so no interactive
 				     control is nested inside another. -->

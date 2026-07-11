@@ -643,12 +643,23 @@ export function extractWaveform(
 
 // Captions / transcription commands (offline ASR, M1 foundation)
 
-export type CaptionEngine = "parakeet" | "whisper";
+/** Model architecture (drives the loader + timestamp handling in Rust). */
+export type CaptionEngine =
+	| "parakeet"
+	| "canary"
+	| "gigaam"
+	| "cohere"
+	| "whisper";
+
+/** Inference backend. `onnx` ships today; `whisperCpp` and `remote` are gated. */
+export type CaptionRuntime = "onnx" | "whisperCpp" | "remote";
 
 export interface CaptionModelInfo {
 	id: string;
 	displayName: string;
 	engine: CaptionEngine;
+	/** Inference backend (derived from `engine`); the availability axis. */
+	runtime: CaptionRuntime;
 	/** Display group for the picker, e.g. "Parakeet" / "Whisper". */
 	family: string;
 	languages: string[];
@@ -662,7 +673,12 @@ export interface CaptionModelInfo {
 	minRamBytes: number | null;
 	/** False → this device can't run the model (hard-disabled in the UI). */
 	runnable: boolean;
-	/** Non-blocking caveat for this device (slow on CPU, low RAM, …). */
+	/** False → this model's runtime isn't usable in this build (Whisper not yet
+	 *  built, or no remote endpoint configured). Download stays allowed; only
+	 *  Generate is gated on this. */
+	runtimeAvailable: boolean;
+	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
+	 *  runtime is unavailable when that's the blocker. */
 	warning: string | null;
 }
 

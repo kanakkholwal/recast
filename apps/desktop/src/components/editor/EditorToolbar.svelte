@@ -3,6 +3,8 @@
   import {
     ArrowLeft,
     LoaderCircle,
+    Maximize2,
+    Minimize2,
     PanelBottom,
     PanelRight,
     RotateCcw,
@@ -27,10 +29,12 @@
     onexport?: () => void;
     onsave?: () => void | Promise<void>;
     isSaving?: boolean;
-    // True while the export surface is open (options/result phase, not actively
-    // encoding), so the button becomes a "leave export" toggle instead of a
-    // second "Export" affordance.
-    exportActive?: boolean;
+    // Drives the Export button's label/icon/action:
+    //   export   idle, opens the export surface
+    //   close    options picker is open, closes it
+    //   minimize export surface is foregrounded, sends it to the activity center
+    //   show     export is running/finished but minimized, reopens it
+    exportMode?: "export" | "close" | "minimize" | "show";
     showSidebar?: boolean;
     showTimeline?: boolean;
     onToggleSidebar?: () => void;
@@ -43,7 +47,7 @@
     onexport,
     onsave,
     isSaving = false,
-    exportActive = false,
+    exportMode = "export",
     showSidebar = true,
     showTimeline = true,
     onToggleSidebar,
@@ -51,8 +55,11 @@
   }: Props = $props();
 
   // The panel/timeline toggles are meaningless while the export surface owns the
-  // layout, so they're disabled then rather than silently doing nothing.
-  const exportOpen = $derived(exportActive || store.isExporting);
+  // layout, so they're disabled then rather than silently doing nothing. (A
+  // minimized export is back in the normal editing layout, so they stay live.)
+  const exportOpen = $derived(
+    exportMode === "close" || exportMode === "minimize",
+  );
 
   const toggleClass = (active: boolean) =>
     cn(
@@ -118,8 +125,9 @@
     return PRESETS.find((p) => p.id === id) ?? null;
   });
 
-  function openExport() {
-    if (store.isExporting) return;
+  // The action (open / close / minimize / show) is decided by the parent from
+  // exportMode; this just forwards the click.
+  function onExportClick() {
     onexport?.();
   }
 </script>
@@ -277,24 +285,45 @@
       </Tooltip.Content>
     </Tooltip.Root>
 
-    {#if store.isExporting}
-      <Button disabled size="xs" class="gap-1.5 text-[11px]">
-        <LoaderCircle size={12} class="animate-spin" />
-        Exporting…
-      </Button>
-    {:else if exportActive}
+    {#if exportMode === "close"}
       <Button
-        onclick={openExport}
+        onclick={onExportClick}
         variant="secondary"
         size="xs"
         aria-pressed="true"
         class="gap-1.5 text-[11px]"
       >
         <X size={12} />
-        Close export
+        Close
+      </Button>
+    {:else if exportMode === "minimize"}
+      <Button
+        onclick={onExportClick}
+        variant="secondary"
+        size="xs"
+        aria-pressed="true"
+        class="gap-1.5 text-[11px]"
+      >
+        <Minimize2 size={12} />
+        Minimize
+      </Button>
+    {:else if exportMode === "show"}
+      <Button
+        onclick={onExportClick}
+        variant="secondary"
+        size="xs"
+        class="gap-1.5 text-[11px]"
+      >
+        {#if store.isExporting}
+          <LoaderCircle size={12} class="animate-spin" />
+          Exporting…
+        {:else}
+          <Maximize2 size={12} />
+          Show export
+        {/if}
       </Button>
     {:else}
-      <Button onclick={openExport} size="xs" class="gap-1.5 text-[11px]">
+      <Button onclick={onExportClick} size="xs" class="gap-1.5 text-[11px]">
         <Upload size={12} />
         Export
       </Button>
