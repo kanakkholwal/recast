@@ -40,7 +40,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/s3-presigned-post": "^3.1057.0",
-    "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@azure/storage-blob": "^12.31.0",
     "@breezystack/lamejs": "^1.2.7",
     "@fontsource-variable/instrument-sans": "^5.2.8",
