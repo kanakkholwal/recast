@@ -27,6 +27,10 @@
     onexport?: () => void;
     onsave?: () => void | Promise<void>;
     isSaving?: boolean;
+    // True while the export surface is open (options/result phase, not actively
+    // encoding), so the button becomes a "leave export" toggle instead of a
+    // second "Export" affordance.
+    exportActive?: boolean;
     showSidebar?: boolean;
     showTimeline?: boolean;
     onToggleSidebar?: () => void;
@@ -39,15 +43,21 @@
     onexport,
     onsave,
     isSaving = false,
+    exportActive = false,
     showSidebar = true,
     showTimeline = true,
     onToggleSidebar,
     onToggleTimeline,
   }: Props = $props();
 
+  // The panel/timeline toggles are meaningless while the export surface owns the
+  // layout, so they're disabled then rather than silently doing nothing.
+  const exportOpen = $derived(exportActive || store.isExporting);
+
   const toggleClass = (active: boolean) =>
     cn(
       "cursor-pointer flex size-6 items-center justify-center rounded-md transition-colors duration-150",
+      "disabled:pointer-events-none disabled:opacity-40",
       active
         ? "text-foreground shadow-(--shadow-craft-inset)"
         : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
@@ -267,20 +277,28 @@
       </Tooltip.Content>
     </Tooltip.Root>
 
-    <Button
-      onclick={openExport}
-      disabled={store.isExporting}
-      size="xs"
-      class="gap-1.5 text-[11px]"
-    >
-      {#if store.isExporting}
+    {#if store.isExporting}
+      <Button disabled size="xs" class="gap-1.5 text-[11px]">
         <LoaderCircle size={12} class="animate-spin" />
         Exporting…
-      {:else}
+      </Button>
+    {:else if exportActive}
+      <Button
+        onclick={openExport}
+        variant="secondary"
+        size="xs"
+        aria-pressed="true"
+        class="gap-1.5 text-[11px]"
+      >
+        <X size={12} />
+        Close export
+      </Button>
+    {:else}
+      <Button onclick={openExport} size="xs" class="gap-1.5 text-[11px]">
         <Upload size={12} />
         Export
-      {/if}
-    </Button>
+      </Button>
+    {/if}
         <Separator orientation="vertical" class="mx-0.5 h-3.5" />
 
       <Tooltip.Root>
@@ -288,6 +306,7 @@
           <button
             type="button"
             onclick={() => onToggleTimeline?.()}
+            disabled={exportOpen}
             aria-label="Toggle timeline"
             aria-pressed={showTimeline}
             class={toggleClass(showTimeline)}
@@ -308,6 +327,7 @@
           <button
             type="button"
             onclick={() => onToggleSidebar?.()}
+            disabled={exportOpen}
             aria-label="Toggle properties panel"
             aria-pressed={showSidebar}
             class={toggleClass(showSidebar)}

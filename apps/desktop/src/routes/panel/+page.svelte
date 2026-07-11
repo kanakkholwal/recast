@@ -982,7 +982,7 @@
   // size so it no longer contributes to the content's measured width while it
   // fades. The entering block sits in normal flow, so ResizeObserver reports
   // the *new* width immediately and the bar Tween animates to it concurrent
-  // with the crossfade. Mirrors ExportFlowDialog's `phaseOut`.
+  // with the crossfade. Same technique the export flow uses to swap phases.
   function phaseOut(node: HTMLElement) {
     const w = node.offsetWidth;
     const h = node.offsetHeight;

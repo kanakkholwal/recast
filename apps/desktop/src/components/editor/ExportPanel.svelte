@@ -1,0 +1,78 @@
+<script lang="ts" module>
+  export type ExportPanelPhase =
+    | "options"
+    | "progress"
+    | "success"
+    | "cancelled"
+    | "error";
+</script>
+
+<script lang="ts">
+  import type { Snippet } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import { fade } from "svelte/transition";
+
+  // Inline right-rail export surface: the same phase snippets that used to live
+  // in a portaled modal, re-homed where the properties panel was so the live
+  // preview stays mounted beside it (no overlay covering the video). Each phase
+  // brings its own header/footer, so this is just a scroll host that crossfades
+  // between phases.
+  interface Props {
+    phase: ExportPanelPhase | null;
+    onEscape?: () => void;
+    options?: Snippet;
+    progress?: Snippet;
+    success?: Snippet;
+    cancelled?: Snippet;
+    error?: Snippet;
+  }
+
+  let {
+    phase,
+    onEscape,
+    options,
+    progress,
+    success,
+    cancelled,
+    error,
+  }: Props = $props();
+
+  // Only mounted while a phase is active, so Escape here always means "leave the
+  // export flow" (cancel a run, dismiss a result, or close the picker).
+  function handleKeydown(e: KeyboardEvent) {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      onEscape?.();
+    }
+  }
+</script>
+
+<svelte:window onkeydown={handleKeydown} />
+
+<section
+  aria-label="Export"
+  class="@container/export relative h-full min-h-0 w-full overflow-hidden bg-background"
+>
+  <!-- Each phase fills the rail so its own footer can pin to the bottom while
+       the body scrolls. Phases are absolutely stacked so they crossfade in
+       place rather than shoving each other during the swap. -->
+  {#key phase}
+    <div
+      class="absolute inset-0 flex flex-col"
+      in:fade={{ duration: 180, delay: 120, easing: cubicOut }}
+      out:fade={{ duration: 120, easing: cubicOut }}
+    >
+      {#if phase === "options"}
+        {@render options?.()}
+      {:else if phase === "progress"}
+        {@render progress?.()}
+      {:else if phase === "success"}
+        {@render success?.()}
+      {:else if phase === "cancelled"}
+        {@render cancelled?.()}
+      {:else if phase === "error"}
+        {@render error?.()}
+      {/if}
+    </div>
+  {/key}
+</section>

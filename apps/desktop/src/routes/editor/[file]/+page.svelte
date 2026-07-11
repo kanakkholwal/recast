@@ -5,9 +5,9 @@
   import PlayerDialog from "$components/recast/PlayerDialog.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import ExportDialog from "$components/editor/ExportDialog.svelte";
-  import ExportFlowDialog, {
-    type ExportFlowPhase,
-  } from "$components/editor/ExportFlowDialog.svelte";
+  import ExportPanel, {
+    type ExportPanelPhase,
+  } from "$components/editor/ExportPanel.svelte";
   import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
@@ -1118,9 +1118,9 @@
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
-  // export dialog, because ExportFlowDialog portals over the player otherwise. Size and
-  // created come from the exports listing (accurate); a minimal entry is the
-  // fallback so playback never hinges on the listing succeeding.
+  // export panel so the player isn't behind it. Size and created come from the
+  // exports listing (accurate); a minimal entry is the fallback so playback
+  // never hinges on the listing succeeding.
   let playTarget = $state<RecordingEntry | null>(null);
 
   async function playExportedFile() {
@@ -1147,7 +1147,7 @@
   // Options phase is UI-only (the picker before Export); progress/result phases
   // derive from the pipeline state, so the dialog is one surface that morphs.
   let exportOptionsOpen = $state(false);
-  const exportPhase: ExportFlowPhase | null = $derived(
+  const exportPhase: ExportPanelPhase | null = $derived(
     store.isExporting
       ? "progress"
       : exportResult?.kind === "success"
@@ -1173,6 +1173,18 @@
     exportOptionsOpen = true;
   }
 
+  // Toolbar Export button doubles as the mode toggle: open the export surface
+  // when editing, or leave it (dismiss the current phase) when it's already up.
+  // A running encode is never toggled off from here (the panel owns Cancel).
+  function toggleExportMode() {
+    if (store.isExporting) return;
+    if (isExportFlowOpen) {
+      handleExportEscape();
+    } else {
+      openExportOptions();
+    }
+  }
+
   function dismissExportOptions() {
     exportOptionsOpen = false;
   }
@@ -1183,7 +1195,7 @@
   }
 
   // Esc per phase: cancel a running export, dismiss a finished one, close the
-  // picker. Backdrop click is the same but never cancels a running export.
+  // picker (which returns the timeline and properties panel).
   function handleExportEscape() {
     if (store.isExporting) {
       void handleCancelExport();
@@ -1196,15 +1208,6 @@
     if (exportOptionsOpen) {
       dismissExportOptions();
     }
-  }
-
-  function handleExportBackdrop() {
-    if (store.isExporting) return;
-    if (exportResult) {
-      dismissExportResult();
-      return;
-    }
-    if (exportOptionsOpen) dismissExportOptions();
   }
 
   async function revealExportInFolder() {
@@ -1360,7 +1363,8 @@
     // Bail on auto-repeat so a held key counts once.
     if (e.defaultPrevented || e.repeat) return;
 
-    // The flow dialog owns Esc routing; bail so global shortcuts don't fire under it.
+    // The export panel owns Esc routing while open; bail so global shortcuts
+    // (play/pause, frame step) don't fire behind it.
     if (isExportFlowOpen) return;
 
     // Never hijack typing in inputs / textareas / contenteditable.
@@ -1503,7 +1507,8 @@
     <EditorToolbar
       {store}
       filename={data.filename}
-      onexport={openExportOptions}
+      onexport={toggleExportMode}
+      exportActive={isExportFlowOpen && !store.isExporting}
       onsave={handleSave}
       {isSaving}
       {showSidebar}
@@ -1615,23 +1620,44 @@
         </div>
 
         <!-- `slide` (axis:y) animates the wrapper height to 0 while the inner
-             keeps its height, so the preview reclaims space smoothly. -->
-        {#if showTimeline}
+             keeps its height, so the preview reclaims space smoothly. Timeline
+             folds away in export mode so the preview owns the full height. -->
+        {#if showTimeline && !isExportFlowOpen}
           <div
             class="shrink-0 overflow-hidden"
-            transition:slide={{ axis: "y", duration: 240, easing: cubicOut }}
+            transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
           >
             <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
           </div>
         {/if}
       </div>
 
-      <!-- Inner div holds the fixed width so `slide` (axis:x) clips cleanly
-           instead of reflowing the panel's container queries. -->
-      {#if showSidebar}
+      <!-- Right rail. Editing shows the properties panel; entering export swaps
+           it for the export surface. Both slide on the x-axis with the SAME
+           duration/easing so the leaving and entering widths cancel to a
+           monotonic reflow (no mid-swap wobble). The inner fixed-width div lets
+           `slide` clip cleanly instead of reflowing container queries. -->
+      {#if isExportFlowOpen}
         <aside
           class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
-          transition:slide={{ axis: "x", duration: 240, easing: cubicOut }}
+          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
+        >
+          <div class="h-full w-[26rem]">
+            <ExportPanel
+              phase={exportPhase}
+              onEscape={handleExportEscape}
+              {options}
+              {progress}
+              {success}
+              {cancelled}
+              error={errorPanel}
+            />
+          </div>
+        </aside>
+      {:else if showSidebar}
+        <aside
+          class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
+          transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
         >
           <div class="h-full w-80 xl:w-88">
             <PropertiesPanel {store} {cameraPath} />
@@ -1661,18 +1687,6 @@
       class="hidden"
     ></audio>
   {/if}
-
-  <ExportFlowDialog
-    open={isExportFlowOpen}
-    phase={exportPhase}
-    onEscape={handleExportEscape}
-    onBackdropClick={handleExportBackdrop}
-    {options}
-    {progress}
-    {success}
-    {cancelled}
-    error={errorPanel}
-  />
 
   {#if playTarget}
     <PlayerDialog entry={playTarget} onclose={() => (playTarget = null)} />
@@ -1766,9 +1780,9 @@
       : Math.min(100, Math.max(0, displayPct))}
   {@const RING_R = 52}
 
-  <div class="flex flex-col" style="width: 540px;">
+  <div class="flex h-full min-h-0 flex-col">
     <header
-      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
+      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
     >
       <div
         class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
@@ -1806,9 +1820,10 @@
 
     {@render exportSpecStrip()}
 
-    <div
-      class="mx-auto flex w-full max-w-xs flex-col items-center gap-3 px-5 pt-5 pb-3"
-    >
+    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
+      <div
+        class="mx-auto flex w-full max-w-xs flex-col items-center gap-3 px-5 pt-5 pb-3"
+      >
       <div class="relative size-32" aria-live="polite">
         <svg
           viewBox="0 0 120 120"
@@ -1963,9 +1978,10 @@
               {/each}
             </ul>
           </div>
+    </div>
 
     <footer
-      class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+      class="flex shrink-0 items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
     >
       <Button
         variant="destructive_soft"
@@ -1982,8 +1998,8 @@
 {/snippet}
 
 {#snippet success()}
-  <div class="flex flex-col" style="width: 540px;">
-    <header class="flex items-start gap-3 border-b border-border/40 px-5 py-4">
+  <div class="flex h-full min-h-0 flex-col">
+    <header class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4">
       <div
         class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-success/30 bg-success/10 text-success shadow-(--shadow-craft-inset)"
       >
@@ -2009,6 +2025,7 @@
 
     {@render exportSpecStrip()}
 
+    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <!-- Share/upload tiles, grouped out of the footer so they read as one
          "where does this go?" choice. Upload progress is never shown inline
          here; it opens the foreground dialog and tracks in the activity center. -->
@@ -2068,9 +2085,10 @@
         {/if}
       </div>
     </div>
+    </div>
 
     <footer
-      class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+      class="flex shrink-0 items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
     >
       <Button
         variant="ghost"
@@ -2107,9 +2125,9 @@
 {/snippet}
 
 {#snippet cancelled()}
-  <div class="flex flex-col" style="width: 540px;">
+  <div class="flex h-full min-h-0 flex-col">
     <header
-      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
+      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
     >
       <div
         class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted text-muted-foreground shadow-(--shadow-craft-inset)"
@@ -2130,10 +2148,12 @@
       </div>
     </header>
 
-    {@render exportSpecStrip()}
+    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
+      {@render exportSpecStrip()}
+    </div>
 
     <footer
-      class="flex items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+      class="flex shrink-0 items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
     >
       <Button variant="ghost" size="xs" onclick={dismissExportResult}
         >Dismiss</Button
@@ -2152,9 +2172,9 @@
 {/snippet}
 
 {#snippet errorPanel()}
-  <div class="flex flex-col" style="width: 540px;">
+  <div class="flex h-full min-h-0 flex-col">
     <header
-      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
+      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
     >
       <div
         class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-destructive/30 bg-destructive/10 text-destructive shadow-(--shadow-craft-inset)"
@@ -2177,10 +2197,10 @@
 
     {@render exportSpecStrip()}
 
-    <!-- Raw FFmpeg/pipeline message, scrollable so a long stack doesn't blow out
-         the dialog height. -->
+    <!-- Raw FFmpeg/pipeline message; fills the rail and scrolls so a long stack
+         stays contained above the pinned footer. -->
     <div
-      class="max-h-40 overflow-y-auto border-b border-border/40 px-5 py-3"
+      class="min-h-0 flex-1 overflow-y-auto border-b border-border/40 px-5 py-3 scrollbar-transparent"
     >
       <p
         class="mb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
@@ -2193,7 +2213,7 @@
       {/if}
     </div>
     <footer
-      class="flex items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+      class="flex shrink-0 items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
     >
       <Button variant="ghost" size="xs" onclick={dismissExportResult}
         >Dismiss</Button

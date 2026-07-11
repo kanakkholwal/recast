@@ -155,22 +155,6 @@
     ditherModes.find((d) => d.value === store.gifSettings.dither),
   );
 
-  // Two columns on roomy viewports, single stacked column when tight. The
-  // flow-dialog wrapper morphs its chrome to the width this body reports.
-  let viewportWidth = $state(
-    typeof window !== "undefined" ? window.innerWidth : 1280,
-  );
-  $effect(() => {
-    const onResize = () => (viewportWidth = window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  });
-  const isCompact = $derived(viewportWidth < 720);
-  const bodyWidth = $derived(
-    isCompact ? Math.min(460, viewportWidth - 32) : 680,
-  );
-
   function setLoop(value: "infinite" | "once" | number) {
     store.updateGifSettings({ loop: value });
   }
@@ -620,19 +604,13 @@
 {#snippet captionsSection()}
   <!-- Only shown once a transcript exists. Two independent choices: burn the
        captions into the pixels, and/or save a sidecar file (the sidecar is also
-       what Cloud uploads as a selectable track). Renders full-width below the
-       encoding grid; splits into two balanced columns when there's room. -->
+       what Cloud uploads as a selectable track). Stacked in the rail. -->
   <section
-    in:fly={{ y: 8, duration: 240, delay: 215, easing: cubicOut }}
+    in:fly={{ y: 8, duration: 220, delay: 140, easing: cubicOut }}
     class="flex flex-col gap-2.5"
   >
     {@render sectionLabel("Captions", "From your transcript, burn in and/or export a file.")}
-    <div
-      class={cn(
-        "grid items-start gap-x-6 gap-y-3",
-        !isGif && !isCompact ? "grid-cols-2" : "grid-cols-1",
-      )}
-    >
+    <div class="grid grid-cols-1 items-start gap-x-6 gap-y-3">
       {#if !isGif}
         <div class="flex flex-col gap-1.5">
           {@render captionSubLabel("Burn into video")}
@@ -701,133 +679,97 @@
   </button>
 {/snippet}
 
-<div class="flex flex-col" style="width: {bodyWidth}px;">
-  <!-- Header -->
-  <header
-    in:fly={{ y: -6, duration: 220, delay: 30, easing: cubicOut }}
-    class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
-  >
-    <div
-      class="flex size-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
+<div class="flex h-full min-h-0 flex-col">
+  <!-- Pinned header + summary. Stays put while the option list scrolls, so the
+       "what am I exporting" anchor is always visible. -->
+  <div class="shrink-0">
+    <header
+      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
     >
-      <Upload class="size-4" />
-    </div>
-    <div class="min-w-0 flex-1 pt-0.5">
-      <h3
-        id="export-flow-title"
-        class="text-[14px] font-semibold tracking-tight text-foreground"
+      <div
+        class="flex size-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
       >
-        Export recording
-      </h3>
-      <p class="mt-0.5 text-[11px] text-muted-foreground">
-        Choose a format and quality, then start the export.
+        <Upload class="size-4" />
+      </div>
+      <div class="min-w-0 flex-1 pt-0.5">
+        <h3
+          id="export-flow-title"
+          class="text-[14px] font-semibold tracking-tight text-foreground"
+        >
+          Export recording
+        </h3>
+        <p class="mt-0.5 text-[11px] text-muted-foreground">
+          Choose a format and quality, then start the export.
+        </p>
+      </div>
+    </header>
+
+    <section
+      class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
+    >
+      <div class="flex flex-1 flex-col gap-0.5 pr-4">
+        <span
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+        >
+          Output
+        </span>
+        <span class="font-mono text-[12px] tabular-nums text-foreground">
+          {formatTime(outputDuration)}
+        </span>
+      </div>
+      <div class="flex flex-1 flex-col gap-0.5 pl-4">
+        <span
+          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+        >
+          Range
+        </span>
+        <span class="font-mono text-[12px] tabular-nums text-foreground">
+          {formatTime(store.trimStart)} – {formatTime(clipEnd)}
+        </span>
+      </div>
+    </section>
+    {#if removedDuration > 0.05}
+      <p
+        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
+      >
+        Cuts remove
+        <span class="mx-1 font-mono tabular-nums text-foreground">
+          {formatTime(removedDuration)}
+        </span>
+        from the {formatTime(clipDuration)} trimmed clip
       </p>
-    </div>
-  </header>
-
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 70, easing: cubicOut }}
-    class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
-  >
-    <div class="flex flex-1 flex-col gap-0.5 pr-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+    {/if}
+    {#if hasTrim}
+      <p
+        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
       >
-        Output
-      </span>
-      <span class="font-mono text-[12px] tabular-nums text-foreground">
-        {formatTime(outputDuration)}
-      </span>
-    </div>
-    <div class="flex flex-1 flex-col gap-0.5 pl-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Range
-      </span>
-      <span class="font-mono text-[12px] tabular-nums text-foreground">
-        {formatTime(store.trimStart)} – {formatTime(clipEnd)}
-      </span>
-    </div>
-  </section>
-  {#if removedDuration > 0.05}
-    <p
-      class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      in:fade={{ duration: 200, delay: 190 }}
-    >
-      Cuts remove
-      <span class="mx-1 font-mono tabular-nums text-foreground">
-        {formatTime(removedDuration)}
-      </span>
-      from the {formatTime(clipDuration)} trimmed clip
-    </p>
-  {/if}
-  {#if hasTrim}
-    <p
-      class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      in:fade={{ duration: 200, delay: 200 }}
-    >
-      Source length
-      <span class="ml-1 font-mono tabular-nums text-foreground">
-        {formatTime(sourceDuration)}
-      </span>
-    </p>
-  {/if}
+        Source length
+        <span class="ml-1 font-mono tabular-nums text-foreground">
+          {formatTime(sourceDuration)}
+        </span>
+      </p>
+    {/if}
+  </div>
 
-  <!-- GIF settings, wrapped so it reads as one panel in either layout. -->
-  {#snippet gifSettingsCard()}
-    <div
-    >
-      {@render gifSettingsBody()}
-    </div>
-  {/snippet}
-
-  {#if isCompact}
-    <!-- Narrow viewports: a single stacked column. -->
+  <!-- Scrollable option list. -->
+  <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <div class="flex flex-col gap-4 px-5 py-4">
       {@render formatSection()}
       {@render qualitySection()}
       {#if showFps}{@render fpsSection()}{/if}
       {#if !isGif}{@render speedSection()}{/if}
       {#if isGif}
-        <section in:fade={{ duration: 220, delay: 100 }}>
-          {@render gifSettingsCard()}
+        <section in:fade={{ duration: 200, delay: 80 }}>
+          {@render gifSettingsBody()}
         </section>
       {/if}
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>
-  {:else}
-    <!-- Two columns for the encoding knobs; Captions spans full width below so
-         the grid stays balanced no matter which caption options are shown. -->
-    <div class="flex flex-col gap-5 px-5 py-5">
-      <div class="grid grid-cols-2 items-start gap-x-6 gap-y-5">
-        <div class="flex min-w-0 flex-col gap-5">
-          {@render formatSection()}
-          {@render qualitySection()}
-        </div>
-        <div class="flex min-w-0 flex-col gap-5">
-          {#if isGif}
-            <section in:fade={{ duration: 220, delay: 160 }}>
-              {@render gifSettingsCard()}
-            </section>
-          {:else}
-            {#if showFps}{@render fpsSection()}{/if}
-            {@render speedSection()}
-          {/if}
-        </div>
-      </div>
-      {#if hasCaptions}
-        <div class="border-t border-border/40 pt-5">
-          {@render captionsSection()}
-        </div>
-      {/if}
-    </div>
-  {/if}
+  </div>
 
-  <!-- Footer -->
+  <!-- Sticky footer. -->
   <footer
-    in:fly={{ y: 6, duration: 240, delay: 240, easing: cubicOut }}
-    class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+    class="flex shrink-0 items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
   >
     <Button variant="ghost" size="xs" onclick={onCancel}>Cancel</Button>
     <Button
