@@ -107,12 +107,13 @@ jobs:
             tauri_args: --target aarch64-apple-darwin
           # macos-x64 (Intel) now builds WITH on-device captions: the ggml engine
           # (transcribe.cpp) compiles from source, so unlike the old `ort` it has
-          # an x86_64-apple-darwin build. Runs on a native Intel runner (macos-13)
-          # so ggml's C/C++ builds for the host, mirroring ci-desktop's macos-x64
-          # gate. If that CI leg ever goes red, fall back to `os: macos-latest` +
-          # `--target x86_64-apple-darwin -- --no-default-features` (remote-only).
+          # an x86_64-apple-darwin build. CROSS-COMPILED on the arm64 runner
+          # (`os: macos-latest`, `--target x86_64-apple-darwin`) because GitHub is
+          # retiring the native Intel image (macos-13), whose runners queue for
+          # hours. If cross-compiling ggml for x86_64 ever fails, fall back to
+          # `-- --no-default-features` (Intel ships remote-only, non-breaking).
           - name: macos-x64
-            os: macos-13
+            os: macos-latest
             rust_target: x86_64-apple-darwin
             tauri_args: --target x86_64-apple-darwin
           - name: linux-x64

@@ -73,14 +73,19 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
-          # Intel Mac. The on-device engine (ggml / transcribe.cpp) compiles from
-          # source here, unlike the old `ort`, which had no x86_64-apple-darwin
-          # prebuilt. This leg is the gate before release flips Intel Mac to the
-          # default (ggml) build; keep it green.
+          # Intel Mac, CROSS-COMPILED on the arm64 runner (`--target
+          # x86_64-apple-darwin`). GitHub is retiring the native Intel image
+          # (macos-13), whose runners queue for hours, so we build x86_64 on the
+          # plentiful arm64 runner instead. This proves the on-device engine (ggml
+          # / transcribe.cpp) compiles for x86_64 (the old `ort` had no such
+          # build). `cross: true` skips the test RUN below (an x86_64 binary can't
+          # run on arm64 without Rosetta); the OS-agnostic tests already run on the
+          # macos-arm64 leg, so this stays a pure compile gate.
           - name: macos-x64
-            os: macos-13
+            os: macos-latest
             rust_target: x86_64-apple-darwin
             tauri_args: --target x86_64-apple-darwin
+            cross: true
           - name: windows-x64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
@@ -216,7 +221,11 @@ jobs:
       # same `tauri_args` target reuses the artifacts the compile step just
       # built, so this is the test-harness compile + run, not a fresh build.
       # Deliberately no `continue-on-error`: a failing test must fail the build.
+      # Skipped on the cross-compiled Intel leg (`cross: true`): its x86_64 test
+      # binary can't run on the arm64 host, and the same OS-agnostic tests already
+      # run on the macos-arm64 leg.
       - name: Run Rust unit tests
+        if: ${{ !matrix.platform.cross }}
         run: cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml --lib --release ${{ matrix.platform.tauri_args }}
 
       # Clippy after the build so the compile gate above is the hard failure

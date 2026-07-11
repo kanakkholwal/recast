@@ -306,6 +306,13 @@ struct WgcSource {
     _device: windows::Win32::Graphics::Direct3D11::ID3D11Device,
     width: u32,
     height: u32,
+    /// Minimum gap between GPU→CPU readbacks. WGC delivers a frame on every
+    /// window repaint (often far above the encode rate); each readback maps GPU
+    /// memory (a GPU stall), so we skip-and-close surplus frames and only extract
+    /// one per interval. Set from the recording fps via `set_target_fps`.
+    min_extract_interval: Duration,
+    /// Earliest instant the next readback may run.
+    next_extract_at: std::time::Instant,
 }
 
 // SAFETY: every COM object is created and used only on the capture thread. The
@@ -380,6 +387,9 @@ impl WgcSource {
             _device: device,
             width,
             height,
+            // Default to 60 fps until the pipeline calls set_target_fps.
+            min_extract_interval: Duration::from_nanos(1_000_000_000 / 60),
+            next_extract_at: std::time::Instant::now(),
         })
     }
 
@@ -455,24 +465,45 @@ impl Drop for WgcSource {
 
 impl CaptureSource for WgcSource {
     fn capture_next(&mut self, timeout: Duration) -> Result<Option<Vec<u8>>> {
-        // TryGetNextFrame returns Err when the pool is empty (no new frame since
-        // the last pull), so treat any error as "nothing yet" and retry until
-        // the timeout, then yield None — the same contract as DXGI's poll.
+        use windows::Graphics::Capture::Direct3D11CaptureFrame;
+
         let deadline = std::time::Instant::now() + timeout;
         loop {
-            match self.frame_pool.TryGetNextFrame() {
-                Ok(frame) => {
+            // Drain the pool to the NEWEST frame, closing the ones we skip.
+            // Closing returns a buffer to the pool (required to keep capture
+            // flowing) but does NOT map GPU memory, so it's cheap — unlike the
+            // extract below. WGC delivers a frame per window repaint, well above
+            // the encode rate, so most frames are drained and dropped here.
+            let mut latest: Option<Direct3D11CaptureFrame> = None;
+            loop {
+                match self.frame_pool.TryGetNextFrame() {
+                    Ok(frame) => {
+                        if let Some(old) = latest.replace(frame) {
+                            let _ = old.Close();
+                        }
+                    }
+                    // Err = pool empty (no newer frame); stop draining.
+                    Err(_) => break,
+                }
+            }
+
+            if let Some(frame) = latest {
+                let now = std::time::Instant::now();
+                // Only pay the GPU→CPU readback at the encode rate; otherwise
+                // drop this frame and let the pipeline reuse the last one.
+                if now >= self.next_extract_at {
+                    self.next_extract_at = now + self.min_extract_interval;
                     let bytes = self.extract(&frame)?;
                     let _ = frame.Close();
                     return Ok(Some(bytes));
                 }
-                Err(_) => {
-                    if std::time::Instant::now() >= deadline {
-                        return Ok(None);
-                    }
-                    std::thread::sleep(Duration::from_millis(1));
-                }
+                let _ = frame.Close();
             }
+
+            if std::time::Instant::now() >= deadline {
+                return Ok(None);
+            }
+            std::thread::sleep(Duration::from_millis(1));
         }
     }
 
@@ -482,6 +513,13 @@ impl CaptureSource for WgcSource {
 
     fn height(&self) -> u32 {
         self.height
+    }
+
+    fn set_target_fps(&mut self, fps: u32) {
+        // Extract a touch faster than the encode rate (÷1.25) so a fresh frame
+        // is usually ready when the pacer ticks, without going back to per-paint.
+        let fps = fps.max(1) as u64;
+        self.min_extract_interval = Duration::from_nanos(800_000_000 / fps);
     }
 }
 
