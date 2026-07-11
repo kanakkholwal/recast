@@ -73,6 +73,14 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
+          # Intel Mac. The on-device engine (ggml / transcribe.cpp) compiles from
+          # source here, unlike the old `ort`, which had no x86_64-apple-darwin
+          # prebuilt. This leg is the gate before release flips Intel Mac to the
+          # default (ggml) build; keep it green.
+          - name: macos-x64
+            os: macos-13
+            rust_target: x86_64-apple-darwin
+            tauri_args: --target x86_64-apple-darwin
           - name: windows-x64
             os: windows-latest
             rust_target: x86_64-pc-windows-msvc
@@ -148,6 +156,13 @@ jobs:
         # Shared with release-desktop.yml. See the script for the
         # PipeWire/libspa header version trap that the PPA resolves.
         run: bash scripts/release/install-linux-deps.sh
+
+      # The on-device engine (transcribe.cpp) compiles ggml from source, so it
+      # needs CMake + a C/C++ compiler. macOS/Windows runners ship them; ensure
+      # CMake on Linux. (ggml is vendored in-tree, so no submodule checkout.)
+      - name: Ensure CMake (Linux)
+        if: matrix.platform.os == 'ubuntu-24.04'
+        run: sudo apt-get install -y cmake
 
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile

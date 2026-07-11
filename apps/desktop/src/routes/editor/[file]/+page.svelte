@@ -15,10 +15,9 @@
   import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-  import type { ExportStateEvent, RecordingEntry } from "$lib/ipc";
+  import type { RecordingEntry } from "$lib/ipc";
   import {
     autosaveProject,
-    cancelExport,
     clearAutosave,
     createExportId,
     detectSilence,
@@ -28,7 +27,6 @@
     loadEditorDocument,
     migrateProject,
     openFileLocation,
-    refreshTray,
     saveProjectEdits,
   } from "$lib/ipc";
   import { generateAutoZoom } from "$lib/services/analysis";
@@ -38,14 +36,7 @@
     buildExportRenderState,
     findMissingImageAnnotations,
     hasBlurUnderZoom,
-    runExport,
   } from "$lib/services/export";
-  import { notifyJobDone } from "$lib/notify";
-  import {
-    clearJobProgress,
-    setJobProgress,
-    setJobProgressIndeterminate,
-  } from "$lib/taskbarProgress";
   import { isShareSupported, shareRecording } from "$lib/share";
   import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
   import { cloudShare } from "$lib/stores/cloudShare.svelte";
@@ -66,6 +57,7 @@
   import {
     ArrowLeft,
     CheckCircle2,
+    Clock,
     Cloud,
     FlaskConical,
     FolderOpen,
@@ -209,6 +201,14 @@
   onMount(() => {
     exportActivity.setEditorPresent(true);
     exportActivity.minimize();
+    // Re-adopt a still-running/queued export for THIS project so its panel (ring
+    // or "Queued") can be reopened after navigating back.
+    const mine = exportActivity.items.find(
+      (i) =>
+        i.filePath === data.filePath &&
+        (i.status === "running" || i.status === "queued"),
+    );
+    if (mine) myExportId = mine.id;
     return () => exportActivity.setEditorPresent(false);
   });
 
@@ -827,19 +827,27 @@
     return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
   });
 
-  // Export lifecycle UI state, in the route, not the store, since the overlay
-  // owns success/cancel/error reveals that don't belong in global state.
-  let exportStartedAt = $state<number>(0);
+  // Export lifecycle UI. The exportActivity store owns the queue + run; this
+  // editor tracks the item it enqueued (myExportId) and maps it back to the
+  // values the export snippets read.
+  let myExportId = $state<string | null>(null);
+  const myItem = $derived(myExportId ? exportActivity.item(myExportId) : null);
+  // True while this editor rasterizes its edits (buildExportRenderState) before
+  // the item is enqueued: the frontend "preparing" window with its sub-steps.
+  let buildingExport = $state(false);
+  const isExportingHere = $derived(
+    buildingExport || myItem?.status === "running",
+  );
+
   let exportNow = $state<number>(Date.now());
-  let exportCancelling = $state(false);
-  let exportFinalizing = $state(false);
-  let exportHasProgress = $state(false);
-  let activeExportId = $state<string | null>(null);
-  // Backend prep sub-step (e.g. "Rendering cursor & annotations") emitted by Rust
-  // while it runs the synchronous prep passes AFTER hand-off but before the encode
-  // reports real progress. Otherwise the checklist's "Encode frames" step sits
-  // stalled during that window.
-  let exportPrepDetail = $state<string | null>(null);
+  const exportStartedAt = $derived(myItem?.startedAt ?? 0);
+  const exportCancelling = $derived(myItem?.phase === "cancelling");
+  const exportFinalizing = $derived(myItem?.phase === "finalizing");
+  const exportHasProgress = $derived((myItem?.progress ?? 0) > 0);
+  // Items ahead of this editor's queued export (the running one counts).
+  const queueAhead = $derived(
+    myExportId ? exportActivity.queuePosition(myExportId) : 0,
+  );
 
 
   let encodeMessageIndex = $state(0);
@@ -859,7 +867,7 @@
   let displayPct = $state(0);
   let easeRafHandle: number | null = null;
   $effect(() => {
-    if (!store.isExporting) {
+    if (myItem?.status !== "running") {
       if (easeRafHandle !== null) {
         cancelAnimationFrame(easeRafHandle);
         easeRafHandle = null;
@@ -871,7 +879,7 @@
     function tick(now: number) {
       const target = exportFinalizing
         ? 99.5
-        : Math.min(99.5, Math.max(0, store.exportProgress ?? 0));
+        : Math.min(99.5, Math.max(0, myItem?.progress ?? 0));
       const dt = lastTs === null ? 16 : Math.max(1, Math.min(64, now - lastTs));
       lastTs = now;
       // Critically-damped follower (~250ms tau): ease-out toward target, no overshoot.
@@ -900,125 +908,40 @@
     return computeExportEtaMs({
       hasProgress: exportHasProgress,
       finalizing: exportFinalizing,
-      progress: store.exportProgress ?? 0,
+      progress: myItem?.progress ?? 0,
       now: exportNow,
       startedAt: exportStartedAt,
     });
   }
 
-  // Terminal result of the current export. The exportActivity store is the
-  // single source of truth (the editor reads it back, the activity center
-  // surfaces it); `exportResult` is a local read alias for the terminal job.
+  // Terminal result of THIS editor's export, read from its queue item. The store
+  // owns the run + toasts + notification; the snippets just read this.
   type ExportResult =
     | { kind: "success"; path: string }
     | { kind: "cancelled" }
     | { kind: "error"; message: string };
   const exportResult = $derived<ExportResult | null>(
-    exportActivity.job?.status === "success"
-      ? { kind: "success", path: exportActivity.job.path ?? "" }
-      : exportActivity.job?.status === "cancelled"
+    myItem?.status === "success"
+      ? { kind: "success", path: myItem.path ?? "" }
+      : myItem?.status === "cancelled"
         ? { kind: "cancelled" }
-        : exportActivity.job?.status === "error"
-          ? { kind: "error", message: exportActivity.job.error ?? "" }
+        : myItem?.status === "error"
+          ? { kind: "error", message: myItem.error ?? "" }
           : null,
   );
 
-  function setExportResult(next: ExportResult) {
-    // The pipeline can emit the same terminal event twice; only the first wins.
-    if (exportResult?.kind === next.kind) return;
-
-    if (next.kind === "success") {
-      exportActivity.succeed(next.path);
-    } else if (next.kind === "cancelled") {
-      exportActivity.markCancelled();
-    } else {
-      exportActivity.fail(next.message);
-    }
-    exportFinalizing = false;
-    exportCancelling = false;
-
-    if (next.kind === "success") {
-      toast.success("Export complete");
-      // Refresh the tray's Recent Exports. `null` = "list changed, leave the
-      // recording flag alone" (the panel window owns that).
-      void refreshTray(null).catch(() => {});
-    } else if (next.kind === "cancelled") {
-      toast.info("Export cancelled");
-    } else {
-      toast.error("Export failed");
-    }
-  }
-
-  function handleExportState(event: ExportStateEvent) {
-    switch (event.status) {
-      case "started":
-        void setJobProgressIndeterminate();
-        return;
-      case "preparing":
-        exportPrepDetail = event.detail ?? null;
-        return;
-      case "progress": {
-        const next = Math.min(Math.max(event.progress, 0), 100);
-        const current = store.exportProgress ?? 0;
-
-        // FFmpeg progress is noisy near the end on some Windows builds; keep the
-        // bar monotonic and ignore sub-0.1% jitter so it doesn't flicker at 99%.
-        if (!exportHasProgress || next >= 100 || next > current + 0.1) {
-          store.exportProgress = Math.max(current, next);
-          exportActivity.setProgress(store.exportProgress);
-        }
-        exportHasProgress = true;
-        void setJobProgress(next);
-        // Safety net only: Rust emits a real `finalizing` event now, so this just
-        // catches the rare case where that event is dropped.
-        if (!exportFinalizing && next >= 99.95) {
-          exportFinalizing = true;
-        }
-        return;
-      }
-      case "finalizing":
-        exportFinalizing = true;
-        exportActivity.setPhase("finalizing");
-        void setJobProgressIndeterminate();
-        return;
-      case "success":
-        setExportResult({ kind: "success", path: event.path });
-        void clearJobProgress();
-        void notifyJobDone(
-          "Export complete",
-          basename(event.path) ?? "Your recording is ready.",
-        );
-        return;
-      case "cancelled":
-        setExportResult({ kind: "cancelled" });
-        void clearJobProgress();
-        return;
-      case "error":
-        setExportResult({ kind: "error", message: event.message });
-        void clearJobProgress();
-        return;
-    }
-  }
-
   async function handleExport() {
-    if (store.isExporting) return;
+    if (isExportingHere) return;
     const exportId = createExportId();
-    store.isExporting = true;
-    store.exportProgress = 0;
-    exportHasProgress = false;
-    exportCancelling = false;
-    exportFinalizing = false;
-    exportPrepDetail = null;
-    activeExportId = exportId;
-    exportSessionActive = true;
-    exportActivity.begin(exportId, data.filename);
-    exportStartedAt = Date.now();
-    exportNow = exportStartedAt;
     resetPrep();
+    buildingExport = true;
+    myExportId = exportId;
+    exportActivity.show(exportId);
+    exportNow = Date.now();
 
     try {
       // Build the payload Rust renders (text→PNG, cursor→sprite sheet); the
-      // hooks drive the "Preparing…" sub-stages.
+      // hooks drive the frontend "Preparing…" sub-stages.
       const { renderState: finalRenderState, metadata: meta } =
         await buildExportRenderState(store, {
           hooks: {
@@ -1059,32 +982,28 @@
         padding: finalRenderState.padding ?? 0,
         durationSec: meta ? Math.round(meta.duration) : undefined,
       });
-      const path = await runExport({
-        inputPath: documentPath || data.filePath,
-        format: store.exportFormat,
-        quality: store.exportQuality,
-        renderState: finalRenderState,
-        exportId,
-        gifSettings:
-          store.exportFormat === "gif" ? store.gifSettings : undefined,
-        speed: store.exportSpeed,
-        // GIF carries fps in gifSettings; MP4/WebM use the picker (null = source).
-        fps: store.exportFormat === "gif" ? undefined : store.exportFps,
-        // No-op unless a transcript exists and caption options are enabled.
-        captions: buildCaptionExport(store),
-        // Drop stray events from a run the user already cancelled or replaced,
-        // so a background teardown can't disturb the current flow (or re-toast).
-        onState: (e) => {
-          if (activeExportId === exportId) handleExportState(e);
+
+      // Hand the fully-built export to the queue; the store runs it (after any
+      // already-running one), so it survives leaving this editor.
+      exportActivity.enqueue({
+        id: exportId,
+        filename: data.filename,
+        // Stable route path for identity/adoption; the actual media path is in
+        // params.inputPath below.
+        filePath: data.filePath,
+        params: {
+          inputPath: documentPath || data.filePath,
+          format: store.exportFormat,
+          quality: store.exportQuality,
+          renderState: finalRenderState,
+          gifSettings:
+            store.exportFormat === "gif" ? store.gifSettings : undefined,
+          speed: store.exportSpeed,
+          // GIF carries fps in gifSettings; MP4/WebM use the picker (null=source).
+          fps: store.exportFormat === "gif" ? undefined : store.exportFps,
+          // No-op unless a transcript exists and caption options are enabled.
+          captions: buildCaptionExport(store),
         },
-      });
-      // Fall back to the Promise result if the success event was missed.
-      if (!exportResult) {
-        setExportResult({ kind: "success", path });
-      }
-      log.info("export", "export_completed", {
-        exportId,
-        elapsedMs: Date.now() - exportStartedAt,
       });
     } catch (err) {
       const message =
@@ -1093,49 +1012,25 @@
           : err instanceof Error
             ? err.message
             : String(err);
-      if (!exportResult) {
-        if (message.toLowerCase().includes("cancel")) {
-          setExportResult({ kind: "cancelled" });
-          log.info("export", "export_cancelled", { exportId });
-        } else {
-          console.error("Export failed:", err);
-          log.error("export", "export_failed", { exportId, message });
-          setExportResult({ kind: "error", message });
-        }
-      }
+      console.error("Export prep failed:", err);
+      log.error("export", "export_failed", { exportId, message });
+      toast.error(`Couldn't prepare the export: ${message}`);
+      myExportId = null;
     } finally {
-      // Only tear down shared export state if THIS run still owns the flow.
-      // After an optimistic cancel the user may have already kicked off a new
-      // export; this (old) run completing in the background must not clobber the
-      // new one's isExporting/progress.
-      if (activeExportId === exportId) {
-        activeExportId = null;
-        store.isExporting = false;
-        store.exportProgress = null;
-        exportHasProgress = false;
-        exportCancelling = false;
-        exportFinalizing = false;
-      }
+      buildingExport = false;
     }
   }
 
-  async function handleCancelExport() {
-    if (!store.isExporting || !activeExportId) return;
-    const id = activeExportId;
-    // Optimistic cancel: signal the backend, then release the UI to "cancelled"
-    // immediately instead of waiting for ffmpeg to die. The pipeline still kills
-    // ffmpeg (watchdog, ≤250ms) and removes the partial file in the background;
-    // its eventual rejection is a no-op (exportResult is already set, and the
-    // finally only clears a still-matching activeExportId). This keeps cancel
-    // snappy so the user can get back to editing right away.
-    void cancelExport(id).catch((err) => console.warn("cancel_export failed", err));
-    store.isExporting = false;
-    setExportResult({ kind: "cancelled" });
+  // Cancel this editor's export: the store stops a running one (or drops it from
+  // the queue if it hasn't started).
+  function handleCancelExport() {
+    if (myExportId) void exportActivity.cancel(myExportId);
   }
 
   function dismissExportResult() {
-    exportActivity.dismiss();
-    exportSessionActive = false;
+    if (myExportId) exportActivity.dismiss(myExportId);
+    myExportId = null;
+    exportActivity.minimize();
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
@@ -1168,25 +1063,24 @@
   // Options phase is UI-only (the picker before Export); progress/result phases
   // derive from the pipeline state, so the dialog is one surface that morphs.
   let exportOptionsOpen = $state(false);
-  // This editor drives the export UI only for an export it started (or is
-  // picking options for). Exports run in the background (Rust process + a global
-  // state listener), so a job from another editor session shows in the activity
-  // center but must not hijack this panel/toolbar; this flag gates that.
-  let exportSessionActive = $state(false);
+  // The panel reflects only the export THIS editor enqueued (myItem), plus its
+  // own options picker. A queued item waits behind the running one.
   const exportPhase: ExportPanelPhase | null = $derived(
-    !exportSessionActive
-      ? null
-      : store.isExporting
-        ? "progress"
-        : exportResult?.kind === "success"
-          ? "success"
-          : exportResult?.kind === "cancelled"
-            ? "cancelled"
-            : exportResult?.kind === "error"
-              ? "error"
-              : exportOptionsOpen
-                ? "options"
-                : null,
+    buildingExport
+      ? "progress"
+      : myItem?.status === "queued"
+        ? "queued"
+        : myItem?.status === "running"
+          ? "progress"
+          : exportResult?.kind === "success"
+            ? "success"
+            : exportResult?.kind === "cancelled"
+              ? "cancelled"
+              : exportResult?.kind === "error"
+                ? "error"
+                : exportOptionsOpen
+                  ? "options"
+                  : null,
   );
   // The panel is shown only when a phase is active AND it's foregrounded.
   // Minimizing keeps the export alive but hands tracking to the activity center.
@@ -1219,7 +1113,7 @@
         exportActivity.minimize();
         break;
       case "show":
-        exportActivity.show();
+        exportActivity.show(myExportId);
         break;
     }
   }
@@ -1231,21 +1125,13 @@
   );
 
   function openExportOptions() {
-    if (store.isExporting) return;
-    // One export at a time: a background export (this session's or another's)
-    // must finish first, so a second FFmpeg doesn't fight it for the CPU.
-    if (exportActivity.running) {
-      toast.info("An export is already running. It will finish in the background.");
-      return;
-    }
-    exportSessionActive = true;
+    if (isExportingHere) return;
     exportActivity.show();
     exportOptionsOpen = true;
   }
 
   function dismissExportOptions() {
     exportOptionsOpen = false;
-    exportSessionActive = false;
     exportActivity.minimize();
   }
 
@@ -1257,8 +1143,8 @@
   // Esc per phase: cancel a running export, dismiss a finished one, close the
   // picker (which returns the timeline and properties panel).
   function handleExportEscape() {
-    if (store.isExporting) {
-      void handleCancelExport();
+    if (myItem?.status === "running" || myItem?.status === "queued") {
+      handleCancelExport();
       return;
     }
     if (exportResult) {
@@ -1499,7 +1385,7 @@
   });
 
   $effect(() => {
-    if (!store.isExporting) return;
+    if (myItem?.status !== "running") return;
     exportNow = Date.now();
     // Elapsed-time timer for the status strip.
     const timer = setInterval(() => {
@@ -1510,7 +1396,7 @@
 
   // Cycle the encode status messages while an export is running.
   $effect(() => {
-    if (!store.isExporting) {
+    if (myItem?.status !== "running") {
       encodeMessageIndex = 0;
       return;
     }
@@ -1520,44 +1406,45 @@
     return () => clearInterval(timer);
   });
 
-  const stages = $derived([
-    {
-      key: "text" as const,
-      label: "Render text overlays",
-      state: prepText,
-      skip: prepText === "done" && !renderStateHasText(),
-    },
-    {
-      key: "cursor" as const,
-      label: "Render cursor sprites",
-      state: prepCursor,
-      skip: prepCursor === "done" && store.cursorSettings.style === "dot",
-    },
-    {
-      key: "ship" as const,
-      label: "Hand off to encoder",
-      state: prepSending,
-    },
-    {
-      key: "encode" as const,
-      // The single FFmpeg pass composites (stitches cuts, overlays cursor /
-      // annotations / captions, applies zoom) AND encodes every frame, so
-      // "Render frames" names the real work, not just the codec half. Live hint:
-      // show the backend's prep sub-step until real progress arrives so this row
-      // is never a stalled "Render frames · pending" during the Rust prep window.
-      label: exportFinalizing
-        ? "Finalise file"
-        : !exportHasProgress && exportPrepDetail
-          ? exportPrepDetail
-          : "Render frames",
-      state:
-        prepSending !== "done"
+  // Substages. During the frontend prep window (buildingExport) the rasterize
+  // sub-steps drive text/cursor/ship; once enqueued, the render state is built,
+  // so those are done and the single FFmpeg pass (which stitches cuts + overlays
+  // cursor/annotations/captions/zoom AND encodes) is the "Render frames" step.
+  const stages = $derived.by(() => {
+    const prepFinished = !buildingExport;
+    const running = myItem?.status === "running";
+    const textState = prepFinished ? "done" : prepText;
+    const cursorState = prepFinished ? "done" : prepCursor;
+    const shipState = prepFinished ? "done" : prepSending;
+    return [
+      {
+        key: "text" as const,
+        label: "Render text overlays",
+        state: textState,
+        skip: textState === "done" && !renderStateHasText(),
+      },
+      {
+        key: "cursor" as const,
+        label: "Render cursor sprites",
+        state: cursorState,
+        skip: cursorState === "done" && store.cursorSettings.style === "dot",
+      },
+      {
+        key: "ship" as const,
+        label: "Hand off to encoder",
+        state: shipState,
+      },
+      {
+        key: "encode" as const,
+        label: exportFinalizing ? "Finalise file" : "Render frames",
+        state: (!prepFinished
           ? "pending"
-          : exportFinalizing || exportHasProgress || exportPrepDetail !== null
+          : running || exportFinalizing
             ? "running"
-            : "pending",
-    },
-  ]);
+            : "pending") as "pending" | "running" | "done",
+      },
+    ];
+  });
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -1571,6 +1458,7 @@
       filename={data.filename}
       onexport={onExportButton}
       exportMode={exportButtonMode}
+      exportRunning={myItem?.status === "running"}
       onsave={handleSave}
       {isSaving}
       {showSidebar}
@@ -1709,6 +1597,7 @@
               phase={exportPhase}
               onEscape={handleExportEscape}
               {options}
+              {queued}
               {progress}
               {success}
               {cancelled}
@@ -1761,6 +1650,67 @@
     onConfirm={confirmExportOptions}
     onCancel={dismissExportOptions}
   />
+{/snippet}
+
+{#snippet queued()}
+  <div class="flex h-full min-h-0 flex-col">
+    <header
+      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
+    >
+      <div
+        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
+      >
+        <Clock class="size-4" />
+      </div>
+      <div class="min-w-0 flex-1 pt-0.5">
+        <h3
+          id="export-flow-title"
+          class="text-[14px] font-semibold tracking-tight text-foreground"
+        >
+          Queued for export
+        </h3>
+        <p class="mt-0.5 text-[11px] text-muted-foreground">
+          Waiting for the current export to finish. You can keep working.
+        </p>
+      </div>
+    </header>
+
+    {@render exportSpecStrip()}
+
+    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
+      <div
+        class="mx-auto flex min-h-full w-full max-w-xs flex-col items-center justify-center gap-3 px-5 py-6 text-center"
+      >
+        <span class="relative flex size-3 items-center justify-center">
+          <span
+            class="absolute inline-flex size-full rounded-full bg-primary/40 motion-safe:animate-ping"
+          ></span>
+          <span
+            class="relative inline-flex size-2.5 rounded-full bg-primary"
+          ></span>
+        </span>
+        <p class="text-[11px] text-muted-foreground">
+          {queueAhead > 0
+            ? `${queueAhead} export${queueAhead === 1 ? "" : "s"} ahead of yours`
+            : "Starting soon…"}
+        </p>
+      </div>
+    </div>
+
+    <footer
+      class="flex shrink-0 items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
+    >
+      <Button
+        variant="destructive_soft"
+        size="xs"
+        class="gap-1.5"
+        onclick={handleCancelExport}
+      >
+        <X class="size-3" />
+        Remove from queue
+      </Button>
+    </footer>
+  </div>
 {/snippet}
 
 {#snippet exportSpecStrip()}

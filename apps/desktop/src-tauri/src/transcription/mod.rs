@@ -5,14 +5,19 @@
 //!   model download (verified) → FFmpeg decode to 16 kHz mono f32 → engine.
 //!
 //! Everything here is async + `spawn_blocking` for CPU/FFmpeg work — sync Tauri
-//! commands freeze the macOS WebView (see the recording-IPC hardening). The
-//! engine call is the one piece still gated/blocked (see `engine.rs`).
+//! commands freeze the macOS WebView (see the recording-IPC hardening). On-device
+//! inference runs through the ggml engine (see `engine.rs` / `ggml.rs`); remote
+//! endpoints post audio over HTTP (see `remote.rs`).
 //!
 //! Full design: `apps/desktop/docs/captions-transcription-plan.md`.
 
 mod audio;
 mod capabilities;
 mod engine;
+// The on-device engine (transcribe.cpp / ggml). On by default; absent in a
+// `--no-default-features` build, which then transcribes via remote endpoints.
+#[cfg(feature = "ggml")]
+mod ggml;
 mod models;
 mod packs;
 pub(crate) mod remote;
@@ -165,17 +170,16 @@ pub struct CaptionModelInfo {
     pub approx_size_bytes: Option<u64>,
     pub is_default: bool,
     pub installed: bool,
-    /// False until the model's files are defined (Parakeet V3 is pending).
+    /// False for a model with no files defined (e.g. a remote endpoint).
     pub downloadable: bool,
     pub requires_gpu: bool,
     pub prefers_gpu: bool,
     pub min_ram_bytes: Option<u64>,
     /// Can this device run the model at all? (false → hard-disabled in the UI).
     pub runnable: bool,
-    /// Is this model's runtime usable in this build? False for a not-yet-built
-    /// backend (Whisper) or an unconfigured remote endpoint. Download is still
-    /// allowed; only Generate is gated on this, so a model can be pre-fetched
-    /// before its runtime ships.
+    /// Is this model's runtime usable in this build? False when the on-device
+    /// engine isn't compiled in (`--no-default-features`) or a remote endpoint has
+    /// no key. Download is still allowed; only Generate is gated on this.
     pub runtime_available: bool,
     /// Non-blocking caveat for this device (slow on CPU, low RAM, …), or the
     /// reason the runtime is unavailable when that's the blocker.

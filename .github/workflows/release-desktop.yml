@@ -105,18 +105,16 @@ jobs:
             os: macos-latest
             rust_target: aarch64-apple-darwin
             tauri_args: --target aarch64-apple-darwin
-          # macos-x64 (Intel) builds WITHOUT captions (`--no-default-features`):
-          # ort rc.12 has no x86_64-apple-darwin ONNX Runtime prebuilt (Microsoft
-          # dropped Intel-Mac at 1.24). Silence detection runs on pure-Rust tract,
-          # so the rest of the app builds fine; the UI warns captions are
-          # unavailable on Intel Mac.
-          # NOTE: the `tauri` CLI has no `--no-default-features` flag of its own,
-          # so it MUST come after a `--` passthrough to reach cargo. Do not drop
-          # the `--` (pnpm 10 forwards it intact).
+          # macos-x64 (Intel) now builds WITH on-device captions: the ggml engine
+          # (transcribe.cpp) compiles from source, so unlike the old `ort` it has
+          # an x86_64-apple-darwin build. Runs on a native Intel runner (macos-13)
+          # so ggml's C/C++ builds for the host, mirroring ci-desktop's macos-x64
+          # gate. If that CI leg ever goes red, fall back to `os: macos-latest` +
+          # `--target x86_64-apple-darwin -- --no-default-features` (remote-only).
           - name: macos-x64
-            os: macos-latest
+            os: macos-13
             rust_target: x86_64-apple-darwin
-            tauri_args: "--target x86_64-apple-darwin -- --no-default-features"
+            tauri_args: --target x86_64-apple-darwin
           - name: linux-x64
             os: ubuntu-24.04
             rust_target: x86_64-unknown-linux-gnu
@@ -199,6 +197,12 @@ jobs:
       - name: Install Linux system dependencies
         if: matrix.platform.os == 'ubuntu-24.04'
         run: bash scripts/release/install-linux-deps.sh
+
+      # transcribe.cpp compiles ggml from source (needs CMake + a C/C++ compiler;
+      # ggml is vendored, no submodules). macOS/Windows runners ship CMake.
+      - name: Ensure CMake (Linux)
+        if: matrix.platform.os == 'ubuntu-24.04'
+        run: sudo apt-get install -y cmake
 
       - name: Install workspace dependencies
         run: pnpm install --frozen-lockfile

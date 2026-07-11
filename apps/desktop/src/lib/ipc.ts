@@ -727,19 +727,15 @@ export function extractWaveform(
 
 // Captions / transcription commands (offline ASR, M1 foundation)
 
-/** Model architecture (drives the loader + timestamp handling in Rust).
- *  `remote` is not a local architecture: the server owns the model. */
-export type CaptionEngine =
-	| "parakeet"
-	| "canary"
-	| "gigaam"
-	| "cohere"
-	| "whisper"
-	| "remote";
+/** How a model runs. `ggml` is the on-device engine (transcribe.cpp, any GGUF
+ *  model family); `remote` posts to an OpenAI-compatible endpoint the server owns.
+ *  The GGUF file decides the architecture, so the family (Parakeet / Whisper) is
+ *  display metadata (`family`), not a separate engine. */
+export type CaptionEngine = "ggml" | "remote";
 
-/** Inference backend. `onnx` ships today; `whisperCpp` is gated; `remote` posts
- *  to an OpenAI-compatible endpoint. */
-export type CaptionRuntime = "onnx" | "whisperCpp" | "remote";
+/** Inference backend (the availability axis). Mirrors `CaptionEngine`: `ggml`
+ *  ships in a default build; `remote` posts to an OpenAI-compatible endpoint. */
+export type CaptionRuntime = "ggml" | "remote";
 
 /** Where a catalog entry came from: the built-in list, an installed pack, or a
  *  user-configured remote endpoint. */
@@ -759,16 +755,16 @@ export interface CaptionModelInfo {
 	approxSizeBytes: number | null;
 	isDefault: boolean;
 	installed: boolean;
-	/** False until the model's files are defined (Parakeet V3 is pending). */
+	/** False for a model with no files defined (e.g. a remote endpoint). */
 	downloadable: boolean;
 	requiresGpu: boolean;
 	prefersGpu: boolean;
 	minRamBytes: number | null;
 	/** False → this device can't run the model (hard-disabled in the UI). */
 	runnable: boolean;
-	/** False → this model's runtime isn't usable in this build (Whisper not yet
-	 *  built, or no remote endpoint configured). Download stays allowed; only
-	 *  Generate is gated on this. */
+	/** False → this model's runtime isn't usable in this build (on-device engine
+	 *  not compiled in, or a remote endpoint has no key). Download stays allowed;
+	 *  only Generate is gated on this. */
 	runtimeAvailable: boolean;
 	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
 	 *  runtime is unavailable when that's the blocker. */
@@ -815,8 +811,9 @@ export interface DeviceCapabilities {
 	arch: string;
 	totalRamBytes: number | null;
 	gpu: GpuInfo;
-	/** Whether the on-device caption engine is in this build. False on the
-	 *  Intel-Mac build (no ONNX Runtime for x86_64-apple-darwin). */
+	/** Whether the on-device caption engine (ggml / transcribe.cpp) is compiled
+	 *  into this build. False in a `--no-default-features` build, where only remote
+	 *  endpoints can transcribe. */
 	captionsAvailable: boolean;
 }
 

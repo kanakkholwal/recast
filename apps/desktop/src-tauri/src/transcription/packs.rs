@@ -164,17 +164,16 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn valid_onnx() -> Value {
+    fn valid_ggml() -> Value {
         json!({
             "id": "acme.parakeet-hi",
             "displayName": "Parakeet Hindi",
-            "runtime": "onnx",
-            "engine": "parakeet",
+            "runtime": "ggml",
+            "engine": "ggml",
             "family": "Parakeet",
             "languages": ["hi"],
             "files": [
-                { "relPath": "encoder-model.int8.onnx", "url": "https://x/enc", "sha256": "aa" },
-                { "relPath": "vocab.txt", "url": "https://x/vocab", "sha256": "bb" }
+                { "relPath": "parakeet-hi-Q8_0.gguf", "url": "https://x/model", "sha256": "aa" }
             ]
         })
     }
@@ -184,73 +183,73 @@ mod tests {
     }
 
     #[test]
-    fn accepts_a_valid_onnx_model() {
-        let models = one(json!({ "captionModels": [valid_onnx()] }));
+    fn accepts_a_valid_ggml_model() {
+        let models = one(json!({ "captionModels": [valid_ggml()] }));
         assert_eq!(models.len(), 1);
         let m = &models[0];
         assert_eq!(m.id, "acme.parakeet-hi");
         assert_eq!(m.source, ModelSource::Extension);
         assert!(!m.is_default, "a pack must not seize the default slot");
-        assert_eq!(m.files.len(), 2);
+        assert_eq!(m.files.len(), 1);
         assert_eq!(m.files[0].sha256.as_deref(), Some("aa"));
     }
 
     #[test]
     fn rejects_engine_runtime_mismatch() {
-        let mut c = valid_onnx();
-        c["runtime"] = json!("onnx");
-        c["engine"] = json!("whisper"); // whisper runs on whisperCpp, not onnx
+        let mut c = valid_ggml();
+        c["runtime"] = json!("ggml");
+        c["engine"] = json!("remote"); // remote runs on the remote runtime, not ggml
         assert!(one(json!({ "captionModels": [c] })).is_empty());
     }
 
     #[test]
     fn rejects_missing_sha256() {
-        let mut c = valid_onnx();
+        let mut c = valid_ggml();
         c["files"][0]["sha256"] = json!("");
         assert!(one(json!({ "captionModels": [c] })).is_empty());
     }
 
     #[test]
     fn rejects_unsafe_id_and_paths() {
-        let mut bad_id = valid_onnx();
+        let mut bad_id = valid_ggml();
         bad_id["id"] = json!("../escape");
         assert!(one(json!({ "captionModels": [bad_id] })).is_empty());
 
-        let mut bad_path = valid_onnx();
+        let mut bad_path = valid_ggml();
         bad_path["files"][0]["relPath"] = json!("../../etc/passwd");
         assert!(one(json!({ "captionModels": [bad_path] })).is_empty());
     }
 
     #[test]
     fn rejects_empty_files_or_languages() {
-        let mut no_files = valid_onnx();
+        let mut no_files = valid_ggml();
         no_files["files"] = json!([]);
         assert!(one(json!({ "captionModels": [no_files] })).is_empty());
 
-        let mut no_langs = valid_onnx();
+        let mut no_langs = valid_ggml();
         no_langs["languages"] = json!([]);
         assert!(one(json!({ "captionModels": [no_langs] })).is_empty());
     }
 
     #[test]
     fn rejects_unknown_runtime_or_engine() {
-        let mut bad_rt = valid_onnx();
+        let mut bad_rt = valid_ggml();
         bad_rt["runtime"] = json!("tensorrt");
         assert!(one(json!({ "captionModels": [bad_rt] })).is_empty());
 
-        let mut bad_eng = valid_onnx();
+        let mut bad_eng = valid_ggml();
         bad_eng["engine"] = json!("moonshine");
         assert!(one(json!({ "captionModels": [bad_eng] })).is_empty());
     }
 
     #[test]
     fn keeps_valid_entries_and_drops_invalid_ones() {
-        let mut bad = valid_onnx();
+        let mut bad = valid_ggml();
         bad["id"] = json!("acme.good-2");
         bad["files"] = json!([]); // invalid
-        let mut good2 = valid_onnx();
+        let mut good2 = valid_ggml();
         good2["id"] = json!("acme.good-2-ok");
-        let models = one(json!({ "captionModels": [valid_onnx(), bad, good2] }));
+        let models = one(json!({ "captionModels": [valid_ggml(), bad, good2] }));
         let ids: Vec<&str> = models.iter().map(|m| m.id.as_str()).collect();
         assert_eq!(ids, vec!["acme.parakeet-hi", "acme.good-2-ok"]);
     }
