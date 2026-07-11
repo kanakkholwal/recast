@@ -10,7 +10,10 @@ mod cursor;
 mod encoder;
 pub mod ffmpeg;
 mod fonts;
+#[cfg(windows)]
+mod jumplist;
 mod permissions;
+mod power;
 mod project;
 mod recording;
 mod render;
@@ -151,14 +154,46 @@ pub fn run() {
                     log::warn!("emit app://open-recast failed: {e}");
                 }
             }
+            // Jump list "New Recording" task on a running app.
+            if argv.iter().any(|a| a == "--new-recording") {
+                let _ = app.emit("global-shortcut:launch-panel", ());
+            }
         }))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         // JS-injecting plugin — must be on the Builder before any window,
         // same constraint as dialog/os (see the comment block below).
         .plugin(tauri_plugin_sharekit::init())
+        // Deep-link injects JS (onOpenUrl/getCurrent) into the webview, so it
+        // sits in the pre-window group like dialog/os/sharekit.
+        .plugin(tauri_plugin_deep_link::init())
+        // OS-wide recording hotkeys, handled in Rust so they fire when Recast is
+        // unfocused. Alt+Shift+R stops (routed to the panel via tray:record-toggle)
+        // when recording, else launches the panel; Alt+Shift+P pauses/resumes.
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut, ShortcutState};
+                    if event.state() != ShortcutState::Pressed {
+                        return;
+                    }
+                    let mods = Modifiers::ALT | Modifiers::SHIFT;
+                    let recording = crate::tray::is_recording_active();
+                    if shortcut == &Shortcut::new(Some(mods), Code::KeyR) {
+                        let _ = if recording {
+                            app.emit("tray:record-toggle", ())
+                        } else {
+                            app.emit("global-shortcut:launch-panel", ())
+                        };
+                    } else if shortcut == &Shortcut::new(Some(mods), Code::KeyP) && recording {
+                        let _ = app.emit("global-shortcut:toggle-pause", ());
+                    }
+                })
+                .build(),
+        )
         .plugin(tauri_plugin_os::init());
 
     // JS-injecting plugins (dialog, os) MUST be added on the Builder before
@@ -217,6 +252,7 @@ pub fn run() {
             // `take_pending_open_file`. None for a normal launch.
             let cold_open_file: Vec<String> = std::env::args().collect();
             let pending_open_file = parse_open_arg(&cold_open_file);
+            let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
 
             app.manage(AppState {
                 recording_manager: std::sync::Arc::new(RecordingManager::default()),
@@ -225,7 +261,53 @@ pub fn run() {
                 export_cancel: Mutex::new(HashMap::new()),
                 auth_poller: Mutex::new(None),
                 pending_open_file: Mutex::new(pending_open_file),
+                power: crate::power::PowerManager::new(),
+                pending_new_recording: std::sync::atomic::AtomicBool::new(
+                    launched_for_new_recording,
+                ),
             });
+
+            // Register the `recast://` scheme at runtime for dev builds. In
+            // release the installer writes the Windows registry / Linux .desktop
+            // entry from tauri.conf; macOS uses the generated Info.plist and
+            // cannot register at runtime.
+            #[cfg(any(target_os = "linux", all(debug_assertions, windows)))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                if let Err(e) = app.deep_link().register("recast") {
+                    log::warn!("deep-link register failed: {e}");
+                }
+            }
+
+            // Bring the app forward when a `recast://` URL arrives (esp. macOS
+            // in-process delivery and close-to-tray). Routing itself is done in
+            // the frontend via getCurrent()/onOpenUrl() → handleDeepLink.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                let focus_handle = handle.clone();
+                app.deep_link().on_open_url(move |_event| {
+                    if let Some(w) = focus_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.unminimize();
+                        let _ = w.set_focus();
+                    }
+                });
+            }
+
+            // Register the OS-wide hotkeys. Non-fatal: a conflict (another app
+            // owns the combo) just makes that hotkey unavailable.
+            {
+                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+                let mods = Modifiers::ALT | Modifiers::SHIFT;
+                for sc in [
+                    Shortcut::new(Some(mods), Code::KeyR),
+                    Shortcut::new(Some(mods), Code::KeyP),
+                ] {
+                    if let Err(e) = app.global_shortcut().register(sc) {
+                        log::warn!("global shortcut register failed: {e}");
+                    }
+                }
+            }
 
             // Native crash reporting. Installed after AppState is managed so the
             // panic hook can read the consent flag + install id. Gated on the
@@ -238,6 +320,9 @@ pub fn run() {
             if let Err(e) = tray::init(handle) {
                 log::warn!("tray init failed: {e}");
             }
+
+            #[cfg(windows)]
+            jumplist::update(handle);
 
             // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
             // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
@@ -372,6 +457,8 @@ pub fn run() {
             commands::set_close_to_tray,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
+            commands::get_window_transparency,
+            commands::set_window_transparency,
             commands::set_telemetry_consent,
             commands::gdrive_connect,
             commands::gdrive_status,
@@ -388,12 +475,54 @@ pub fn run() {
             commands::recast_cloud_forget_upload,
             commands::take_pending_open_file,
             commands::peek_recast_project,
+            commands::take_pending_new_recording,
             commands::is_recording_active,
             tray::refresh_tray
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // macOS/iOS deliver file-association opens (a double-clicked
+            // `.recast` in Finder) and URL opens via RunEvent::Opened, NOT argv
+            // — so the argv/single-instance path that works on Windows/Linux
+            // never fires here. Route file:// paths through the same
+            // `app://open-recast` bridge. `recast://` scheme URLs are owned by
+            // the deep-link plugin's on_open_url, so filter to file:// to avoid
+            // double-handling.
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            if let tauri::RunEvent::Opened { urls } = &event {
+                for url in urls {
+                    if url.scheme() != "file" {
+                        continue;
+                    }
+                    let Ok(path) = url.to_file_path() else {
+                        continue;
+                    };
+                    let is_recast = path
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .is_some_and(|e| e.eq_ignore_ascii_case("recast"));
+                    if !is_recast || !path.exists() {
+                        continue;
+                    }
+                    // Warm path: main's JS listener catches the event (close-to-
+                    // tray keeps it alive). Cold path: stash so the mount-time
+                    // drain picks it up. Both are safe — openProjectInNewWindow
+                    // dedupes by window label, so a double-fire just refocuses.
+                    if let Some(state) = app_handle.try_state::<AppState>() {
+                        *state.pending_open_file.lock() = Some(path.clone());
+                    }
+                    let payload = path.to_string_lossy().to_string();
+                    if let Err(e) = app_handle.emit("app://open-recast", payload) {
+                        log::warn!("emit app://open-recast (macOS Opened) failed: {e}");
+                    }
+                    if let Some(w) = app_handle.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+            }
+
             // Main-window close handling has two modes, gated by the user's
             // `close_to_tray` setting (default on):
             //

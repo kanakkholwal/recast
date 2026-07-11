@@ -15,10 +15,10 @@ export interface CursorSpriteBundle {
 	/** PNG data URL of the pressed sprite. Falls back to `rest` when the
 	 *  active style has no pressed-state variant. */
 	press: string;
-	/** PNG data URL of the right-click sprite — only set when the style ships
+	/** PNG data URL of the right-click sprite, only set when the style ships
 	 *  distinct art (Rust falls back to press → rest otherwise). */
 	rightPress?: string;
-	/** PNG data URL of the drag sprite — only set when the style ships distinct
+	/** PNG data URL of the drag sprite, only set when the style ships distinct
 	 *  art (Rust falls back to press → rest otherwise). */
 	drag?: string;
 	/** Hotspot in 0..1 sprite UV. Used by Rust to anchor each sprite's
@@ -27,19 +27,19 @@ export interface CursorSpriteBundle {
 	pressHotspot: [number, number];
 	rightPressHotspot?: [number, number];
 	dragHotspot?: [number, number];
-	/** Sprite render size in source pixels — Rust composites at this size,
+	/** Sprite render size in source pixels. Rust composites at this size,
 	 *  scaled by the canvas pixel ratio (the same factor `cursorRadiusCanvas`
 	 *  uses). Cached so the rest of the pipeline can label by size. */
 	pixelSize: number;
 }
 
-// Keyed by `${style}:${size}` — SVG strings and size don't change between
+// Keyed by `${style}:${size}`; SVG strings and size don't change between
 // consecutive exports of the same project.
 const cache = new Map<string, CursorSpriteBundle>();
 
 /**
  * Rasterize the active cursor style's sprites at the requested source-pixel
- * size. Returns `null` for the soft-dot style — Rust draws that itself.
+ * size. Returns `null` for the soft-dot style, which Rust draws itself.
  */
 export async function rasterizeCursorSprites(
 	styleId: string,
@@ -64,7 +64,7 @@ export async function rasterizeCursorSprites(
 		if (pressed) press = pressed;
 	}
 
-	// Right-click / drag are emitted ONLY when the style ships distinct art —
+	// Right-click / drag are emitted ONLY when the style ships distinct art.
 	// Rust falls back to press → rest per-frame when these are absent, so we
 	// don't waste a decode shipping duplicates of `press`.
 	const uv = (h: { x: number; y: number }): [number, number] => [h.x / 64, h.y / 64];

@@ -97,7 +97,7 @@
   }
 
 
-  // Zoom regions and annotations a cut must not bisect — splitting one would
+  // Zoom regions and annotations a cut must not bisect: splitting one would
   // need overlay-time surgery the MVP intentionally avoids.
   const blockers = $derived.by(() => [
     ...store.zoomRegions.map((z) => ({ start: z.start, end: z.end })),

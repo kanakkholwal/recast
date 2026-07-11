@@ -52,7 +52,7 @@
 		if (busy) return;
 		const trimmed = value.trim();
 		if (!trimmed) {
-			error = "Name cannot be empty";
+			error = "Name can't be empty";
 			return;
 		}
 		if (trimmed === initialValue) {
@@ -97,18 +97,18 @@
 >
 	<Dialog.Content
 		showCloseButton={false}
-		class="top-[28%] max-w-md translate-y-0 overflow-hidden rounded-xl p-0 ring-1 ring-border"
+		class="top-[28%] max-w-md translate-y-0 overflow-hidden rounded-2xl p-0 ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong)"
 	>
-		<Dialog.Header class="border-b border-border px-4 py-2.5">
-			<Dialog.Title class="text-[13px] font-semibold tracking-tight text-foreground">
+		<Dialog.Header class="px-4 py-3">
+			<Dialog.Title class="text-sm font-semibold tracking-tight text-foreground">
 				{title}
 			</Dialog.Title>
-			<Dialog.Description class="text-[11px] text-muted-foreground">
+			<Dialog.Description class="text-xs text-muted-foreground">
 				Extension is preserved if you omit it.
 			</Dialog.Description>
 		</Dialog.Header>
 
-		<div class="flex flex-col gap-1.5 px-4 py-3">
+		<div class="flex flex-col gap-1.5 px-4">
 			<label for="rename-input" class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
 				{label}
 			</label>
@@ -118,7 +118,7 @@
 				bind:value
 				onkeydown={handleKeydown}
 				disabled={busy}
-				class="h-8 rounded-md border border-input bg-input px-2.5 text-[12px] text-foreground outline-none focus:border-primary disabled:opacity-50"
+				class="h-8 w-full rounded-md border border-border/50 bg-input px-2.5 text-[12px] text-foreground outline-none transition-colors focus:border-primary/60 disabled:opacity-50"
 			/>
 			{#if error}
 				<p class="text-[11px] text-destructive">{error}</p>
@@ -126,24 +126,15 @@
 		</div>
 
 		<footer
-			class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+			class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2"
 		>
-			<div class="flex items-center gap-3">
-				<span class="flex items-center gap-1">
-					<Kbd>↵</Kbd>
-					<span>Save</span>
-				</span>
-				<span class="flex items-center gap-1">
-					<Kbd>Esc</Kbd>
-					<span>Cancel</span>
-				</span>
-			</div>
-			<div class="flex items-center gap-1.5">
-				<Button variant="ghost" size="xs" onclick={close} disabled={busy}>Cancel</Button>
-				<Button variant="default" size="xs" onclick={commit} disabled={busy}>
-					{busy ? "Saving…" : "Save"}
-				</Button>
-			</div>
+			<Button variant="ghost" size="xs" onclick={close} disabled={busy}>Cancel</Button>
+			<Button variant="default" size="xs" class="gap-2" onclick={commit} disabled={busy}>
+				{busy ? "Saving…" : "Save"}
+				{#if !busy}
+					<Kbd class="bg-primary-foreground/10 text-primary-foreground/80">↵</Kbd>
+				{/if}
+			</Button>
 		</footer>
 	</Dialog.Content>
 </Dialog.Root>

@@ -40,7 +40,7 @@
     clipWidth: number;
     thumbnailWidth: number;
     timeMode: TimeMode;
-    /** What fills the clip bar — thumbnails or the audio waveform, never both. */
+    /** What fills the clip bar: thumbnails or the audio waveform, never both. */
     content: "thumbnails" | "waveform";
     /** Pointer clientX → output seconds (pre-map); trim maps it via a frozen map. */
     clientXToOutput: (clientX: number) => number;
@@ -287,7 +287,7 @@
       const next = clampTrimOut(t, duration, store.inPoint, min);
       store.trimEnd = next;
       if (scrub) {
-        // Show the last kept frame (one before the cut) — the frame being decided on.
+        // Show the last kept frame (one before the cut), the frame being decided on.
         const previewAt = Math.max(store.inPoint, next - frameStep(fps));
         store.currentTime = previewAt;
         if (videoEl) videoEl.currentTime = previewAt;

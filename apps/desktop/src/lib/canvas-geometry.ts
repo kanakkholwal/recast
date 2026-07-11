@@ -8,7 +8,7 @@
 //   3. Otherwise extend whichever axis is too short for the target aspect; the
 //      comp stays centred, new bars (one axis only) filled by the background.
 //
-// We never CROP the comp — only extend around it — so every annotation, cursor,
+// We never CROP the comp, only extend around it, so every annotation, cursor,
 // and focus region keeps its source-pixel coordinates across aspect changes.
 
 import { aspectRatio, type OutputAspect } from "$lib/stores/editor-store.svelte";
@@ -21,7 +21,7 @@ export interface CanvasGeometry {
 	/** Top-left of the source video inside the canvas (NOT the comp). */
 	videoX: number;
 	videoY: number;
-	/** The source video's own dimensions (passthrough — convenience). */
+	/** The source video's own dimensions (passthrough, convenience). */
 	videoW: number;
 	videoH: number;
 	/** Padding around the source itself (the v1 uniform value). */

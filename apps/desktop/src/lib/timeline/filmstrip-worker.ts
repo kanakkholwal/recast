@@ -1,12 +1,12 @@
 /// <reference lib="webworker" />
 /**
- * Filmstrip decode worker — random-access thumbnail extraction, off the main
+ * Filmstrip decode worker: random-access thumbnail extraction, off the main
  * thread. Separate from the preview decoder (webcodecs-worker.ts) because the
  * access pattern is the opposite: sparse seeks that decode one frame and stop,
  * not sequential decode-ahead. Sharing the preview's cache would make the two
  * fight; here each thumbnail is decoded, downscaled, and the frame released.
  *
- * Decode requests are drained from a FIFO queue one batch at a time — the single
+ * Decode requests are drained from a FIFO queue one batch at a time; the single
  * decoder can't be driven concurrently. Within a batch, requests are grouped by
  * GOP keyframe so one keyframe decode serves every tile in it, then matching
  * frames are drawn onto a small OffscreenCanvas and emitted as JPEG blobs.
@@ -331,7 +331,7 @@ function pickFrame(frames: VideoFrame[], targetTs: number): VideoFrame | null {
 			best = f;
 		}
 	}
-	// Before the first frame's cts (rare rounding) — fall back to the earliest.
+	// Before the first frame's cts (rare rounding), fall back to the earliest.
 	if (!best && frames.length > 0) {
 		best = frames.reduce((a, b) => (a.timestamp <= b.timestamp ? a : b));
 	}

@@ -1,7 +1,7 @@
 /**
- * Export service — turns an editor project into a rendered file. Sits between
+ * Export service: turns an editor project into a rendered file. Sits between
  * the UI and the Rust pipeline; the agent-facing surface a future MCP server
- * calls. Owns NO UI state — progress is surfaced via an optional `onState`
+ * calls. Owns NO UI state; progress is surfaced via an optional `onState`
  * callback. See ./README.md for the headless-core layering.
  */
 
@@ -66,7 +66,7 @@ export async function buildExportRenderState(
 	hooks?.onText?.(hasText ? "running" : "done");
 	hooks?.onCursor?.(hasStyledCursor ? "running" : "done");
 
-	// Run both hybrid-raster passes in parallel — independent, and the cursor SVG
+	// Run both hybrid-raster passes in parallel: independent, and the cursor SVG
 	// decode is non-trivial on cold boot (Image() onload is async even for blobs).
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
 		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then(
@@ -119,7 +119,7 @@ function canLoadImage(src: string): Promise<boolean> {
 
 /**
  * File paths of image annotations whose source can't be loaded (missing, moved,
- * or undecodable) — so the caller can warn before an export ships with them
+ * or undecodable), so the caller can warn before an export ships with them
  * silently absent. Image annotations store an absolute path, so moving the
  * project or deleting the file leaves a valid-looking editor but a broken export.
  * Skips data-URL images (rasterized text), hidden annotations, and the case
@@ -148,7 +148,7 @@ export async function findMissingImageAnnotations(store: EditorStore): Promise<s
  * per-frame scale/translate. So a video-anchored blur (which tracks the zoomed
  * content in the preview) stays put in export and can expose what it hid.
  * Frame-anchored blurs are static by design, so they're already correct and
- * don't trigger the warning — anchoring the blur to the frame is the fix.
+ * don't trigger the warning; anchoring the blur to the frame is the fix.
  */
 export function hasBlurUnderZoom(store: EditorStore): boolean {
 	if (store.annotationsGloballyHidden || !store.focusEnabled) return false;
@@ -250,7 +250,7 @@ function withExtension(path: string, ext: string): string {
  * Run an export end to end: register the progress listener, invoke the Rust
  * pipeline, tear the listener down when finished. Resolves to the output path;
  * rejects (or emits an `error`/`cancelled` event) on failure. UI lifecycle
- * stays with the caller — this owns only the IPC round-trip and listener.
+ * stays with the caller; this owns only the IPC round-trip and listener.
  */
 export async function runExport(opts: RunExportOptions): Promise<string> {
 	const unlisten = opts.onState
@@ -269,7 +269,7 @@ export async function runExport(opts: RunExportOptions): Promise<string> {
 			opts.captions?.burnCaptions ?? false,
 		);
 		// Sidecar subtitle file next to the export, on the output timeline so it
-		// lines up with the rendered video. Best-effort — a sidecar failure must
+		// lines up with the rendered video. Best-effort: a sidecar failure must
 		// not fail an otherwise-good export.
 		const sidecar = opts.captions?.sidecar;
 		if (sidecar) {

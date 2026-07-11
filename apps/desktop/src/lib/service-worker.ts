@@ -39,7 +39,7 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
     if (event.request.method !== 'GET') return;
 
-    // Only handle http/https — ignore chrome-extension://, blob://, data://, etc.
+    // Only handle http/https; ignore chrome-extension://, blob://, data://, etc.
     const { protocol } = new URL(event.request.url);
     if (protocol !== 'http:' && protocol !== 'https:' && !isTauri) return;
 

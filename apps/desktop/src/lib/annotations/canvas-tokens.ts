@@ -5,18 +5,18 @@
  * hardcode a raw blue that didn't even match the design system. Here we resolve
  * the real tokens once through a probe element (which the browser resolves
  * against the `:root` cascade) and normalise them to an sRGB triplet via a 1x1
- * canvas readback — that last step matters because engines serialise computed
+ * canvas readback. That last step matters because engines serialise computed
  * `oklch()` values inconsistently, but the canvas parser always yields sRGB.
  *
  * The result is cached and refreshed when the theme changes.
  */
 
 export interface SelectionPalette {
-  /** Solid primary — selection outline and handle border. */
+  /** Solid primary: selection outline and handle border. */
   accent: string;
-  /** Primary at low alpha — soft outer ring around the selection. */
+  /** Primary at low alpha: soft outer ring around the selection. */
   accentRing: string;
-  /** Primary at mid alpha — hover flash and snap guides. */
+  /** Primary at mid alpha: hover flash and snap guides. */
   accentMuted: string;
   /** Handle interior fill (background token). */
   surface: string;
@@ -62,7 +62,7 @@ function resolveTriplet(expr: string): string {
 }
 
 /** Resolve a token (e.g. `var(--primary)`) to an opaque `rgb()` string for
- *  baking into annotation content — a concrete colour the export can render. */
+ *  baking into annotation content: a concrete colour the export can render. */
 export function resolveTokenRgb(expr: string): string {
   return `rgb(${resolveTriplet(expr)})`;
 }

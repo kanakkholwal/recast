@@ -6,13 +6,13 @@
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
 import type { CaptionAnimation } from "$lib/captions/animation";
 import { analytics } from "$lib/analytics/client";
-import { invoke } from "@tauri-apps/api/core";
+import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { platform } from "@tauri-apps/plugin-os";
 
 // Some Linux compositors (KWin/Wayland) let an undecorated transparent
-// always-on-top window trap input focus, breaking the main window's controls —
+// always-on-top window trap input focus, breaking the main window's controls,
 // so drop `alwaysOnTop` on Linux. Lazy, not a top-level `const`: calling
 // `platform()` at module-eval time would make this module unsafe to import
 // outside the Tauri webview (web/SSR builds import it but guard calls).
@@ -65,7 +65,7 @@ export interface EditorDocument {
 	cameraPath?: string | null;
 	metadata: VideoMetadata;
 	renderState: EditorRenderState;
-	/** True for a legacy bundle — migrate before loading the editor. */
+	/** True for a legacy bundle: migrate before loading the editor. */
 	needsMigration: boolean;
 }
 
@@ -83,7 +83,7 @@ export interface EncoderAvailability {
 	name: string;
 	label: string;
 	vendor: string;
-	/** Codec family — "H.264" or "HEVC" — used to group the matrix. */
+	/** Codec family ("H.264" or "HEVC"), used to group the matrix. */
 	family: string;
 	hardware: boolean;
 	available: boolean;
@@ -103,7 +103,7 @@ export interface FfmpegDiagnostics {
 
 /** Probe which video encoders actually work on this device (real init
  *  probe, not just "compiled in"). Each hardware probe spawns ffmpeg, so
- *  this can take up to ~2s cold — call it off the render path. */
+ *  this can take up to ~2s cold, so call it off the render path. */
 export function probeVideoEncoders(): Promise<EncoderAvailability[]> {
 	return invoke<EncoderAvailability[]>("probe_video_encoders");
 }
@@ -120,9 +120,9 @@ export interface CaptureCapability {
 	key: string;
 	label: string;
 	supported: boolean;
-	/** Tri-state refinement of `supported` — see `CapabilityStatus`. */
+	/** Tri-state refinement of `supported`; see `CapabilityStatus`. */
 	status: CapabilityStatus;
-	/** Native API in use — e.g. "DXGI Desktop Duplication", "FFmpeg AVFoundation". */
+	/** Native API in use, e.g. "DXGI Desktop Duplication", "FFmpeg AVFoundation". */
 	backend: string;
 	note: string | null;
 }
@@ -154,7 +154,7 @@ export function diagnoseFfmpeg(): Promise<FfmpegDiagnostics> {
  * snap-to-aspect fallback. Re-call when the ratio changes.
  *
  * @param minWidthPx minimum width in *physical* pixels (the OS drag rect is
- *   physical too) — pass `logicalMin * devicePixelRatio`.
+ *   physical too); pass `logicalMin * devicePixelRatio`.
  * @param chromePx fixed, non-scaling vertical space (physical px) reserved at
  *   the bottom of the window for a control bar outside the video. The aspect
  *   applies to `height - chromePx`. Pass 0 for a video-only window.
@@ -220,7 +220,7 @@ export interface RecordingOptions {
 	cameraDeviceId?: string | null;
 	/** Capture frame rate. Omitted/out-of-range (24–240) → backend default 60. */
 	fps?: number | null;
-	/** Capture quality tier: "auto" (default — backend picks high on a hardware
+	/** Capture quality tier: "auto" (default: backend picks high on a hardware
 	 *  encoder, balanced on software), or explicit "balanced"/"high"/"pristine". */
 	quality?: "auto" | "balanced" | "high" | "pristine" | null;
 }
@@ -274,7 +274,7 @@ export function startRecording(
 	options?: RecordingOptions,
 	region?: RegionRect | null,
 ): Promise<RecordingStartResult> {
-	// No PII — source kind, capture rate, quality tier only.
+	// No PII: source kind, capture rate, quality tier only.
 	analytics.capture("recording_started", {
 		source_kind: targetType,
 		fps: options?.fps ?? "default",
@@ -364,13 +364,23 @@ export interface CloudUploadRecord {
 	uploadedAt: number;
 }
 
+/** Live progress for an in-flight cloud upload, streamed on the request-scoped
+ *  channel. Terminal states aren't here: success is the resolved
+ *  {@link CloudShareResult}, failure the rejection. */
+export type CloudUploadEvent =
+	| { kind: "phase"; phase: CloudPhase }
+	| { kind: "progress"; bytesSent: number; totalBytes: number };
+
+/** Phase strings the upload streams, in order. */
+export type CloudPhase = "preparing" | "uploading" | "finalizing" | "sharing";
+
 /**
  * Upload an already-exported MP4 to Recast Cloud and create a public share
  * link. The caller runs `exportVideo` first; `workspaceId` comes from the
- * desktop profile's `defaultWorkspaceId`. Emits `recast-cloud:progress`
- * (coarse phase), `recast-cloud:upload-progress` (`{ bytesSent, totalBytes }`
- * during the file PUT), `recast-cloud:complete`, and `recast-cloud:error` —
- * all keyed by `path`.
+ * desktop profile's `defaultWorkspaceId`. Progress (coarse phase + byte
+ * counts during the PUT) streams on a request-scoped channel, with no path
+ * correlation. Resolves with the share result; rejects on failure (a detached
+ * `recast-cloud:error` event still fires for corner notifications).
  */
 export function recastCloudUpload(
 	path: string,
@@ -378,12 +388,16 @@ export function recastCloudUpload(
 	workspaceId?: string,
 	/** Output-time transcript to publish as a selectable caption track. */
 	captionsTranscript?: Transcript | null,
+	onEvent?: (e: CloudUploadEvent) => void,
 ): Promise<CloudShareResult> {
+	const channel = new Channel<CloudUploadEvent>();
+	if (onEvent) channel.onmessage = onEvent;
 	return invoke<CloudShareResult>("recast_cloud_upload", {
 		path,
 		title,
 		workspaceId,
 		captionsTranscript: captionsTranscript ?? null,
+		onEvent: channel,
 	});
 }
 
@@ -416,7 +430,7 @@ export function recastCloudDelete(recastId: string, path?: string): Promise<void
  *  The Rust command passes the server's JSON through verbatim (`serde_json::Value`),
  *  so this types the subset the manage UI actually consumes rather than the full
  *  server payload. `visibility` stays a `string` (not a union) because the server
- *  is the source of truth — the UI normalizes it with its own `toVisibility`. */
+ *  is the source of truth; the UI normalizes it with its own `toVisibility`. */
 export interface CloudShareLink {
 	slug: string;
 	visibility: string;
@@ -441,7 +455,7 @@ export function recastCloudListUploads(): Promise<Record<string, CloudUploadReco
 	return invoke<Record<string, CloudUploadRecord>>("recast_cloud_list_uploads");
 }
 
-/** Drop a manifest entry (no network) — e.g. the local file moved. */
+/** Drop a manifest entry (no network), e.g. the local file moved. */
 export function recastCloudForgetUpload(path: string): Promise<void> {
 	return invoke<void>("recast_cloud_forget_upload", { path });
 }
@@ -551,7 +565,7 @@ export interface ZoomSuggestion {
 	x: number;
 	y: number;
 	reason: ZoomSuggestionReason;
-	/** Confidence in [0,1] — how strongly this moment warrants a zoom. */
+	/** Confidence in [0,1]: how strongly this moment warrants a zoom. */
 	score?: number;
 }
 
@@ -583,7 +597,7 @@ export interface SilenceDetectOptions {
 export interface SilenceSegment {
 	start: number;
 	end: number;
-	/** 0..1 — how strongly this range warrants a cut. */
+	/** 0..1: how strongly this range warrants a cut. */
 	confidence: number;
 	micSilent: boolean;
 	systemSilent: boolean;
@@ -592,7 +606,7 @@ export interface SilenceSegment {
 }
 
 /**
- * Analyse a recording for silence — ranges a Silero voice-activity model
+ * Analyse a recording for silence: ranges a Silero voice-activity model
  * scores as non-speech. An idle cursor over the range raises confidence but is
  * no longer required. Implementation lives in `silence.rs` (Rust).
  */
@@ -612,7 +626,7 @@ export function detectSilence(
 
 /**
  * Decode a recording's audio (mic + system mixed) into a compact peak
- * envelope — `buckets` normalised values in [0,1] — for drawing a waveform
+ * envelope (`buckets` normalised values in [0,1]) for drawing a waveform
  * on the timeline. Returns an empty array when the clip has no audio.
  */
 export function extractWaveform(
@@ -627,7 +641,7 @@ export function extractWaveform(
 	});
 }
 
-// Captions / transcription commands (offline ASR — M1 foundation)
+// Captions / transcription commands (offline ASR, M1 foundation)
 
 export type CaptionEngine = "parakeet" | "whisper";
 
@@ -714,35 +728,63 @@ export function listCaptionModels(): Promise<CaptionModelInfo[]> {
 	return invoke<CaptionModelInfo[]>("list_caption_models");
 }
 
-/** Download a model's files. Emits `captions:download-progress` events. */
-export function downloadCaptionModel(id: string): Promise<void> {
-	return invoke("download_caption_model", { id });
+/** Progress tick for a caption-model download. `total` is 0 when the server
+ *  didn't report a content length; `file` is empty on the terminal tick. */
+export interface CaptionDownloadProgress {
+	modelId: string;
+	file: string;
+	downloaded: number;
+	total: number;
+}
+
+/**
+ * Download a model's files. Progress streams on a request-scoped channel: one
+ * channel per download, torn down when the call settles, so the caller never
+ * filters ticks by model id (contrast the old global `captions:download-progress`
+ * event). Omit `onProgress` if you don't need progress.
+ */
+export function downloadCaptionModel(
+	id: string,
+	onProgress?: (p: CaptionDownloadProgress) => void,
+): Promise<void> {
+	const channel = new Channel<CaptionDownloadProgress>();
+	if (onProgress) channel.onmessage = onProgress;
+	return invoke("download_caption_model", { id, onProgress: channel });
 }
 
 export function deleteCaptionModel(id: string): Promise<void> {
 	return invoke("delete_caption_model", { id });
 }
 
+/** Coarse phase of a transcription run: "extracting" | "transcribing" | "done". */
+export interface TranscribeProgress {
+	phase: string;
+}
+
 /**
- * Transcribe a recording's audio with the chosen model. Emits
- * `captions:transcribe-progress` ("extracting" | "transcribing" | "done").
+ * Transcribe a recording's audio with the chosen model. Phase updates stream on
+ * a request-scoped channel (`onPhase`); pass it to drive UI state, or omit it.
  */
 export function transcribeProject(args: {
 	audioPath?: string | null;
 	microphonePath?: string | null;
 	modelId: string;
 	language?: string | null;
+	onPhase?: (p: TranscribeProgress) => void;
 }): Promise<Transcript> {
+	const onPhase = new Channel<TranscribeProgress>();
+	if (args.onPhase) onPhase.onmessage = args.onPhase;
 	return invoke<Transcript>("transcribe_project", {
 		audioPath: args.audioPath ?? null,
 		microphonePath: args.microphonePath ?? null,
 		modelId: args.modelId,
 		language: args.language ?? null,
+		onPhase,
 	});
 }
 
 /** True when at least one given media file actually carries an audio stream
- *  (ffprobe). The caption tab gates its Generate UI on this — a recording can
+ *  (ffprobe). The caption tab gates its Generate UI on this, since a recording can
  *  have a path but no audio track. */
 export function hasTranscribableAudio(paths: (string | null | undefined)[]): Promise<boolean> {
 	return invoke<boolean>("has_transcribable_audio", {
@@ -802,7 +844,7 @@ export function getCachedAssetPath(id: string): Promise<string | null> {
 }
 
 /** Read the on-disk manifest lock and return which assets are already cached.
- *  No network traffic — safe to call on offline launches before `ensure`. */
+ *  No network traffic, so safe to call on offline launches before `ensure`. */
 export function hydrateCachedAssets(): Promise<HydratedAsset[]> {
 	return invoke<HydratedAsset[]>("hydrate_cached_assets");
 }
@@ -871,7 +913,7 @@ export interface ExtSmoothingContribution {
 	snapToClicks: boolean;
 	snapWindowMs: number;
 }
-/** A caption theme contributed by a pack — the visual fields of a caption
+/** A caption theme contributed by a pack: the visual fields of a caption
  *  style. Mirrors the built-in `CaptionPreset.style` shape. */
 export interface ExtCaptionPresetContribution {
 	id: string;
@@ -1006,7 +1048,7 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 // MUST be excluded from screen capture or DXGI Desktop Duplication bakes the
 // camera bubble into the recorded screen video. `exclude_window_from_capture`
 // (Windows: SetWindowDisplayAffinity WDA_EXCLUDEFROMCAPTURE) runs on
-// `tauri://created` — any earlier and the HWND isn't reachable yet.
+// `tauri://created`; any earlier and the HWND isn't reachable yet.
 export async function openCameraPreviewWindow() {
   const existing = await WebviewWindow.getByLabel("camera-preview");
   if (existing) {
@@ -1055,7 +1097,7 @@ export async function openCameraPreviewWindow() {
 }
 
 // System tray, diagnostics & misc commands.
-// These wrappers are thin — web-safe callers guard with `isTauriApp()` themselves.
+// These wrappers are thin; web-safe callers guard with `isTauriApp()` themselves.
 
 /** Exclude a window (by Tauri label) from screen capture (Windows
  *  `SetWindowDisplayAffinity`, macOS `NSWindow.sharingType`). No-op on Linux,
@@ -1089,6 +1131,15 @@ export function setCloseToTray(enabled: boolean): Promise<void> {
 	return invoke<void>("set_close_to_tray", { enabled });
 }
 
+/** Whether the window uses a translucent OS backdrop (Mica/Acrylic/vibrancy). */
+export function getWindowTransparency(): Promise<boolean> {
+	return invoke<boolean>("get_window_transparency");
+}
+
+export function setWindowTransparency(enabled: boolean): Promise<void> {
+	return invoke<void>("set_window_transparency", { enabled });
+}
+
 /** Open the app's log directory in the OS file manager; returns the path. */
 export function openLogDir(): Promise<string> {
 	return invoke<string>("open_log_dir");
@@ -1098,6 +1149,11 @@ export function openLogDir(): Promise<string> {
  *  if one is pending. Returns `null` when there's nothing queued. */
 export function takePendingOpenFile(): Promise<string | null> {
 	return invoke<string | null>("take_pending_open_file");
+}
+
+/** Whether the app was cold-launched via the jump list "New Recording" task. */
+export function takePendingNewRecording(): Promise<boolean> {
+	return invoke<boolean>("take_pending_new_recording");
 }
 
 /** Whether a capture session is currently active (recording or paused). */
@@ -1124,7 +1180,7 @@ export function setDiagnosticLogging(enabled: boolean): Promise<void> {
 	return invoke<void>("set_diagnostic_logging", { enabled });
 }
 
-// Recast Cloud — account / auth.
+// Recast Cloud: account / auth.
 // All are `#[serde(rename_all = "camelCase")]` on the Rust side EXCEPT
 // `AuthStartResult` (noted inline).
 
@@ -1149,7 +1205,7 @@ export interface CloudWorkspace {
 	name: string;
 	/** "owner" | "admin" | "member". */
 	role: string;
-	/** "free" | "pro" | "enterprise" — the org's plan. */
+	/** "free" | "pro" | "enterprise": the org's plan. */
 	plan: string;
 	/** Live (non-deleted) recast count in the workspace. */
 	recastsCount: number;
@@ -1212,7 +1268,7 @@ export function setCloudApiUrl(url: string | null): Promise<CloudApiConfig> {
 	return invoke<CloudApiConfig>("set_cloud_api_url", { url });
 }
 
-// Google Drive — `gdrive_*` commands (OAuth + Drive upload). Thin wrappers; the
+// Google Drive: `gdrive_*` commands (OAuth + Drive upload). Thin wrappers; the
 // gdrive store guards every call with `isTauriApp()`.
 
 export interface GdriveStatus {
@@ -1253,8 +1309,27 @@ export function gdriveDisconnect(): Promise<void> {
 	return invoke<void>("gdrive_disconnect");
 }
 
-export function gdriveUpload(path: string, uploadId: string): Promise<GdriveUploadResult> {
-	return invoke<GdriveUploadResult>("gdrive_upload", { path, uploadId });
+/** Byte progress for an in-flight Drive upload, streamed on the request-scoped
+ *  channel (one per upload → no id to correlate). */
+export interface GdriveUploadProgress {
+	bytesSent: number;
+	totalBytes: number;
+}
+
+/**
+ * Upload an exported file to Drive. Byte progress streams on a request-scoped
+ * channel (`onProgress`); success is the resolved {@link GdriveUploadResult},
+ * failure the rejection (plus a detached `gdrive:upload-error` event carrying
+ * the cancelled/failed distinction for the corner card).
+ */
+export function gdriveUpload(
+	path: string,
+	uploadId: string,
+	onProgress?: (p: GdriveUploadProgress) => void,
+): Promise<GdriveUploadResult> {
+	const channel = new Channel<GdriveUploadProgress>();
+	if (onProgress) channel.onmessage = onProgress;
+	return invoke<GdriveUploadResult>("gdrive_upload", { path, uploadId, onProgress: channel });
 }
 
 export function gdriveCancelUpload(uploadId: string): Promise<void> {
@@ -1266,7 +1341,7 @@ export function gdriveForgetUpload(localPath: string): Promise<void> {
 }
 
 /** Validate a `.recast` project file, throwing if it isn't a readable, valid
- *  project. Used purely as a guard before opening — the backend returns the
+ *  project. Used purely as a guard before opening; the backend returns the
  *  project metadata, but no caller surfaces it, so it's intentionally not typed
  *  out here (kept as `void`). */
 export function peekRecastProject(path: string): Promise<void> {

@@ -1,11 +1,11 @@
 /**
- * Per-segment scene animations — how a clip animates INTO and OUT OF view.
+ * Per-segment scene animations: how a clip animates INTO and OUT OF view.
  *
  * Sibling to per-segment speed (../timeline/segment-speed.ts): an override is
  * anchored to the segment's ORIGINAL start time, which is stable under cuts and
  * ripple-deletes. Unlike speed (a time-domain warp on the shared time-map), an
- * animation is a purely visual transform on the video layer — opacity, position
- * and scale over the segment's window — evaluated in ../scenes/eval.ts
+ * animation is a purely visual transform on the video layer (opacity, position
+ * and scale over the segment's window) evaluated in ../scenes/eval.ts
  * and mirrored by the Rust export graph. It never changes duration or timing.
  */
 
@@ -21,7 +21,7 @@ export const DEFAULT_ANIM_MS = 500;
 
 // Per-kind magnitude defaults. Shared by the evaluator (../scenes/eval.ts) and
 // the intensity slider (intensityRange, below); mirrored verbatim in the Rust
-// export (render/scene_anim.rs) — keep the three in lockstep.
+// export (render/scene_anim.rs); keep the three in lockstep.
 export const DEFAULT_SLIDE = 0.6; // fraction of the canvas travelled
 export const DEFAULT_SCALE_DELTA = 0.3; // grow-from / settle-to delta
 export const DEFAULT_POP_DELTA = 0.35;
@@ -60,7 +60,7 @@ export interface SceneAnimSpec {
 	/** Ramp length in OUTPUT-time milliseconds (what the viewer perceives). */
 	durationMs: number;
 	easing: Easing;
-	/** Slide only — the direction the clip travels FROM (in) / TO (out). */
+	/** Slide only: the direction the clip travels FROM (in) / TO (out). */
 	dir?: SceneAnimDir;
 	/** Kind-specific magnitude: slide distance (fraction of canvas) or scale
 	 *  delta. Omitted → the per-kind default in `presenceTransform`. */
@@ -69,7 +69,7 @@ export interface SceneAnimSpec {
 
 /** Entrance and/or exit animation pinned to the segment starting at `start`. */
 export interface SegmentAnim {
-	/** Segment's original start time (seconds) — the stable anchor. */
+	/** Segment's original start time (seconds): the stable anchor. */
 	start: number;
 	in?: SceneAnimSpec;
 	out?: SceneAnimSpec;
@@ -84,7 +84,7 @@ export function clampAnimMs(ms: number): number {
 /**
  * Project-wide motion style. Shapes the easing, duration, and intensity baked
  * into scene specs, so the whole video reads as calm, standard, or lively without
- * per-clip fiddling. It's an authoring concept only — the concrete values land in
+ * per-clip fiddling. It's an authoring concept only; the concrete values land in
  * each `SceneAnimSpec`, so the preview/export pipeline (and its parity fixture)
  * never sees `MotionTone` and stays unchanged. `balanced` reproduces the original
  * defaults exactly.
@@ -141,7 +141,7 @@ export function retuneSpecForTone(
 	return spec.kind === "slide" ? { ...base, dir: spec.dir ?? base.dir } : base;
 }
 
-/** Restyle every animation to `tone` — the effect of switching the motion dial. */
+/** Restyle every animation to `tone`: the effect of switching the motion dial. */
 export function retuneAnimsForTone(
 	anims: ReadonlyArray<SegmentAnim>,
 	tone: MotionTone,

@@ -3,14 +3,14 @@
  *
  * Replaces the old fixed 8–12 stretched strip. Tiles are laid per kept segment
  * block on the OUTPUT axis (each block is cut-free internally), and the count
- * scales with the block's pixel width — so a long clip gets more, sharper tiles
+ * scales with the block's pixel width, so a long clip gets more, sharper tiles
  * instead of a dozen blurry stretched ones, and zooming in adds tiles rather
  * than magnifying the same images.
  *
  * A tile's sample time is interpolated across the block's ORIGINAL range, so it
  * stays correct under per-segment speed for free: speeding a segment narrows its
  * output width (fewer tiles) without touching its original span. Only tiles that
- * intersect the viewport (plus overscan) are emitted — the decoder never works on
+ * intersect the viewport (plus overscan) are emitted; the decoder never works on
  * off-screen frames. See ./time-map.ts for the axis the block widths come from.
  */
 
@@ -38,7 +38,7 @@ export interface FilmstripViewport {
 export interface FilmstripOptions {
 	/** Target tile width, px; tiles per block = ceil(blockWidth / this). */
 	tileWidthPx: number;
-	/** Tile height, px — part of the cache key, since sharpness depends on it. */
+	/** Tile height, px; part of the cache key, since sharpness depends on it. */
 	tileHeightPx: number;
 	/** Extra px decoded beyond each viewport edge. Default 0. */
 	overscanPx?: number;
@@ -116,7 +116,7 @@ export function planFilmstrip(
 
 /**
  * Bounded LRU keyed by string. Reads refresh recency; inserts past `max` evict
- * the least-recently-used entry and call `onEvict` — the hook that closes an
+ * the least-recently-used entry and call `onEvict`, the hook that closes an
  * ImageBitmap so decoded tiles don't leak GPU memory.
  */
 export class LruCache<V> {

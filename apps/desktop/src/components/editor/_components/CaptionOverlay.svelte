@@ -21,7 +21,7 @@
   let { store }: { store: EditorStore } = $props();
 
   // Fetch + register the selected Google font (idempotent) so the preview
-  // renders it — covers picker changes and reloading a saved project.
+  // renders it. Covers picker changes and reloading a saved project.
   $effect(() => {
     ensureFontLoaded(store.captionStyle.fontFamily, store.captionStyle.fontWeight);
   });
@@ -54,7 +54,7 @@
 
   // The video rect inside the output canvas (with padding + aspect bars around
   // it). Captions are placed relative to it so top/bottom sit in the padding,
-  // not over the video — mirrors the Rust ASS generator.
+  // not over the video, mirroring the Rust ASS generator.
   const box = $derived.by(() => {
     const s = store.captionStyle;
     const m = store.metadata;
@@ -181,7 +181,7 @@
     display: inline-block;
     transform: scale(1.14);
   }
-  /* Per-chunk entrance — the keyed line re-mounts on chunk change, re-running
+  /* Per-chunk entrance: the keyed line re-mounts on chunk change, re-running
      these. `none` has no rule (renders instantly). */
   .entrance-fade {
     animation: cap-fade var(--entrance-ms, 220ms) ease-out both;

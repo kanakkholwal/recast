@@ -1,4 +1,4 @@
-// Display helpers for annotations — kind-aware label and icon. Used by the
+// Display helpers for annotations: kind-aware label and icon. Used by the
 // layer panel, the status rail, and the selected-annotation header.
 
 import type { Annotation, AnnotationKindName } from "$lib/stores/editor-store.svelte";

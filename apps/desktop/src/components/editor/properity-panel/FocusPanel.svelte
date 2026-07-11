@@ -235,7 +235,7 @@
           {@const isActive = region.id === store.selectedZoomRegionId}
           {@const isHidden = region.hidden === true}
           <!-- Absolute-inset select button so the whole row picks the region,
-               with action buttons on their own z-layer — nesting <button>s
+               with action buttons on their own z-layer, since nesting <button>s
                would be invalid markup. -->
           <div
             in:fly={{ y: 4, duration: 200, delay: i * 25, easing: cubicOut }}

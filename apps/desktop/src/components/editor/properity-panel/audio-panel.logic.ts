@@ -45,7 +45,7 @@ export function activePreset(settings: {
 
 /**
  * dB-ish display: 20·log10(volume/100), so "0 dB" at 100%. Intentionally not the
- * ffmpeg `volume=` curve (a linear multiplier) — this matches user intuition.
+ * ffmpeg `volume=` curve (a linear multiplier), because this matches user intuition.
  */
 export function dbForVolume(v: number): string {
 	if (v <= 0) return "−∞ dB";

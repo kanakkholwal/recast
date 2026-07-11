@@ -1,11 +1,11 @@
 /**
- * Filmstrip tile providers — the main-thread side of the clip-bar thumbnails.
+ * Filmstrip tile providers: the main-thread side of the clip-bar thumbnails.
  *
  * The clip bar plans virtualized tiles (./filmstrip.ts) and asks the provider
  * for each tile's image URL. WebCodecsTileProvider decodes per-tile frames in
  * filmstrip-worker.ts, downscaled, cached as object URLs (sharp, density-aware);
  * whole-file inputs only. `createTileProvider` returns null for huge/progressive
- * files or a WebView without WebCodecs — the clip bar then keeps its existing
+ * files or a WebView without WebCodecs; the clip bar then keeps its existing
  * stretched Rust-strip rendering. Only on-screen tiles are ever requested, so
  * decode work tracks what virtualization shows.
  */
@@ -14,7 +14,7 @@ import { chooseIngestion } from "../playback/mp4-sample-table";
 import { type FilmstripTile, LruCache } from "./filmstrip";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
-/** A built storyboard sprite — one image of `cols`×`rows` cells (`cellW`×`cellH`
+/** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
  *  (col `i%cols`, row `i/cols`) samples `((i+0.5)/count)·durationSec`. */
 export interface Storyboard {
@@ -35,13 +35,13 @@ export interface TileProvider {
 	/** A decoded frame URL near `originalSec` for hover-scrub, or undefined while
 	 *  it decodes (the call also queues the decode). */
 	previewAt(originalSec: number): string | undefined;
-	/** The storyboard sprite for instant hover-scrub, or undefined until built —
+	/** The storyboard sprite for instant hover-scrub, or undefined until built;
 	 *  the first call kicks off the one-time build. */
 	storyboard(): Storyboard | undefined;
 	dispose(): void;
 }
 
-/** Hover-scrub time bucket (seconds) — coarser than the filmstrip so dragging the
+/** Hover-scrub time bucket (seconds), coarser than the filmstrip so dragging the
  *  cursor doesn't decode a frame per pixel. */
 const HOVER_QUANTUM = 0.05;
 
@@ -233,7 +233,7 @@ export interface TileProviderInput {
 
 /**
  * Build the WebCodecs tile provider for whole-file inputs in a capable WebView.
- * Returns null for huge/progressive files or on decoder failure — the caller
+ * Returns null for huge/progressive files or on decoder failure; the caller
  * falls back to the stretched Rust strip. Never throws.
  */
 export async function createTileProvider(

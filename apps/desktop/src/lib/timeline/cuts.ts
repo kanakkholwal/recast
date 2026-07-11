@@ -4,7 +4,7 @@
  * A `TimelineCut` is a removed range on the **original-recording** timeline
  * (the same space zoom regions and annotations use); output = recording minus
  * the union of all cuts. Mapping original↔output time is piecewise because cuts
- * remove time from the middle — these helpers own that arithmetic so playhead,
+ * remove time from the middle, and these helpers own that arithmetic so playhead,
  * scrubber, and preview agree.
  */
 
@@ -88,7 +88,7 @@ export function outputToOriginal(cuts: TimelineCut[], t: number): number {
 }
 
 /**
- * True when `[start, end)` overlaps any cut — used to gate silence
+ * True when `[start, end)` overlaps any cut, used to gate silence
  * suggestions that would bisect an existing zoom region or annotation.
  */
 export function overlapsAny(

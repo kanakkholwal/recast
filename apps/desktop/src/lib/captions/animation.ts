@@ -1,5 +1,5 @@
 /**
- * Caption animation model — the shared spec both renderers derive from.
+ * Caption animation model: the shared spec both renderers derive from.
  *
  * Animated captions have two renderers: the CSS preview overlay and the ASS
  * burn-in (libass) generator in Rust. To keep them from drifting, the animation
@@ -32,7 +32,7 @@ export interface CaptionAnimation {
 	holdGaps: boolean;
 }
 
-/** Static default — `chunk: line`, no emphasis, no entrance — renders exactly
+/** Static default (`chunk: line`, no emphasis, no entrance) renders exactly
  *  like a non-animated caption, so an absent animation == today's behaviour. */
 export const DEFAULT_CAPTION_ANIMATION: CaptionAnimation = {
 	chunk: "line",
@@ -65,7 +65,7 @@ export interface CaptionChunkRun {
 
 /**
  * Split a line's words into display chunks per the animation spec. This is the
- * algorithm the Rust ASS generator mirrors exactly — keep them in sync.
+ * algorithm the Rust ASS generator mirrors exactly. Keep them in sync.
  *
  * - `line`  → one chunk with every word (emphasis still tracks the active word).
  * - `word`  → one chunk per word.

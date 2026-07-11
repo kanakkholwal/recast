@@ -33,7 +33,7 @@
   import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
   // Three clusters: EDIT (split + trim to playhead) · INSERT (focus/suggest/
-  // silence) · VIEW (zoom + display options). Popovers are portalled — the
+  // silence) · VIEW (zoom + display options). Popovers are portalled because the
   // timeline lives in an `overflow-hidden` slide wrapper that would clip them.
 
   interface Props {
@@ -247,7 +247,7 @@
       </Popover.Root>
     </div>
 
-    <!-- Gated behind the experimental flag (Settings → Experimental) — in-progress UI. -->
+    <!-- Gated behind the experimental flag (Settings → Experimental): in-progress UI. -->
     {#if experimentalStore.silenceDetection}
       <Popover.Root open={showSilence} onOpenChange={(v) => (showSilence = v)}>
         <Popover.Trigger>
@@ -435,7 +435,7 @@
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content size="sm" align="end" class="w-52">
-        <!-- Preview rate is a VIEWING aid only (not the export) — kept here, away
+        <!-- Preview rate is a VIEWING aid only (not the export), kept here, away
              from the per-clip Clip speed in the sidebar, so the two never read alike. -->
         <DropdownMenu.Label class="flex items-center gap-1.5">
           <FastForward class="size-3" />

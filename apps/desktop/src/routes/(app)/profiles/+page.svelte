@@ -3,7 +3,9 @@
     Camera,
     CheckCircle2,
     Copy,
+    Info,
     Mic,
+    MicOff,
     MoreHorizontal,
     Pencil,
     Plus,
@@ -13,7 +15,9 @@
     Star,
     Timer,
     Trash2,
+    VideoOff,
     Volume2,
+    VolumeX,
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -22,8 +26,9 @@
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
   import * as Select from "@recast/ui/select";
+  import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
   import { toast } from "@recast/ui/sonner";
-  import * as Tooltip from "@recast/ui/tooltip";
+  import { Switch } from "@recast/ui/switch";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
@@ -34,11 +39,15 @@
     type BrowserCamera,
   } from "$lib/camera/browser-devices";
   import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
-  import { COUNTDOWN_OPTIONS, type RecordingProfile } from "$lib/profiles";
+  import {
+    COUNTDOWN_OPTIONS,
+    countdownToken,
+    type RecordingProfile,
+  } from "$lib/profiles";
   import { profilesStore } from "$lib/stores/profiles.svelte";
   import {
-    buildDraftFromCombo,
     buildDuplicate,
+    buildNewDraft,
     computeDialogWidth,
     DIALOG_ASIDE_W,
     DIALOG_MAIN_W,
@@ -59,14 +68,6 @@
   let mics = $state<AudioDeviceInfo[]>([]);
   let cameras = $state<BrowserCamera[]>([]);
   let devicesLoading = $state(false);
-
-  // Combination cap = #countdowns × 2 × (2+#mics) × (2+#cams); each attached
-  // mic/camera and each countdown override is its own dimension.
-  const totalCombinations = $derived(
-    profilesStore.maxCombinations(mics, cameras),
-  );
-  const remainingSlots = $derived(profilesStore.freeSlots(mics, cameras));
-  const isFull = $derived(remainingSlots === 0);
 
   let viewportWidth = $state(
     typeof window !== "undefined" ? window.innerWidth : 1280,
@@ -106,35 +107,10 @@
   }
 
   function addProfile() {
-    if (isFull) {
-      toast.info(
-        `All ${totalCombinations} capability combinations are in use`,
-      );
-      return;
-    }
-    const combo = profilesStore.nextFreeCombo(mics, cameras);
-    if (!combo) {
-      toast.info(
-        `All ${totalCombinations} capability combinations are in use`,
-      );
-      return;
-    }
-    const draftProfile = buildDraftFromCombo(
-      combo,
-      mics,
-      cameras,
-      profilesStore.profiles.length,
-    );
-    openDialog("create", draftProfile);
+    openDialog("create", buildNewDraft(profilesStore.profiles.length));
   }
 
   function duplicateProfile(profile: RecordingProfile) {
-    if (isFull) {
-      toast.info(
-        `All ${totalCombinations} capability combinations are in use`,
-      );
-      return;
-    }
     openDialog("create", buildDuplicate(profile));
   }
 
@@ -172,18 +148,10 @@
     if (!mode || !draft) return;
     const trimmed = draft.name.trim();
     if (!trimmed) {
-      toast.error("Name cannot be empty");
+      toast.error("Name can't be empty");
       return;
     }
     const next = normalizeProfileForSave({ ...draft, name: trimmed });
-
-    const conflict = profilesStore.duplicateOf(next);
-    if (conflict) {
-      toast.error(
-        `"${conflict.name}" already uses this combination. Change a toggle or device.`,
-      );
-      return;
-    }
 
     if (mode === "create") {
       profilesStore.insert(next);
@@ -196,6 +164,12 @@
     mode = null;
     draft = null;
   }
+
+  // Soft nudge: another saved profile with identical capture settings. Profiles
+  // are told apart by name, so this informs without blocking the save.
+  const twin = $derived.by(() =>
+    draft ? profilesStore.twinOf(normalizeProfileForSave(draft)) : null,
+  );
 
   function cancelEditing() {
     mode = null;
@@ -257,9 +231,17 @@
       label: value == null ? "Default" : value === 0 ? "Off" : `${value}s`,
     }));
 
+  const countdownSegments: SegmentedOption<string>[] = countdownChoices.map(
+    (c) => ({ value: countdownToken(c.value), label: c.label }),
+  );
+
   function setDraftCountdown(value: number | null) {
     if (!draft) return;
     draft = { ...draft, countdown: value };
+  }
+
+  function setDraftCountdownToken(token: string) {
+    setDraftCountdown(token === "inherit" ? null : Number(token));
   }
 
   function handleGlobalShortcut(e: KeyboardEvent) {
@@ -293,18 +275,18 @@
   });
 
   // Capture sources rendered as the faceplate readout at the bottom of each
-  // card. `short` is the mono channel label; on/off is conveyed by lighting the
-  // whole cell in `primary`.
+  // card. On/off is carried by icon shape (Mic vs MicOff) as well as color, so
+  // it doesn't depend on color alone.
   type Cap = {
     field: "systemAudio" | "microphone" | "camera";
     label: string;
-    short: string;
-    icon: typeof Volume2;
+    iconOn: typeof Volume2;
+    iconOff: typeof Volume2;
   };
   const capabilities: Cap[] = [
-    { field: "systemAudio", label: "System audio", short: "Audio", icon: Volume2 },
-    { field: "microphone", label: "Microphone", short: "Mic", icon: Mic },
-    { field: "camera", label: "Camera", short: "Cam", icon: Camera },
+    { field: "systemAudio", label: "System audio", iconOn: Volume2, iconOff: VolumeX },
+    { field: "microphone", label: "Microphone", iconOn: Mic, iconOff: MicOff },
+    { field: "camera", label: "Camera", iconOn: Camera, iconOff: VideoOff },
   ];
 </script>
 
@@ -331,55 +313,21 @@
             {profilesStore.profiles.length === 0
               ? "No profiles yet"
               : profilesStore.profiles.length === 1
-                ? "1 recording preset"
-                : `${profilesStore.profiles.length} recording presets`}
+                ? "1 profile"
+                : `${profilesStore.profiles.length} profiles`}
           </span>
         </h1>
-        <Tooltip.Root>
-          <Tooltip.Trigger>
-            {#snippet child({ props })}
-              <!-- Wrap the disabled button so the tooltip trigger still gets
-                   hover — disabled native buttons swallow pointer events. -->
-              <span {...props as Record<string, unknown>} class="shrink-0">
-                <Button
-                  onclick={addProfile}
-                  size="sm"
-                  class="h-9 gap-1.5"
-                  disabled={isFull}
-                >
-                  <Plus size={13} />
-                  New profile
-                  <Kbd
-                    class="bg-primary-foreground/15 text-primary-foreground/90"
-                    >⌘N</Kbd
-                  >
-                </Button>
-              </span>
-            {/snippet}
-          </Tooltip.Trigger>
-          <Tooltip.Content
-            side="bottom"
-            class="max-w-xs text-[11px] leading-relaxed"
+        <Button
+          onclick={addProfile}
+          size="sm"
+          class="h-9 shrink-0 gap-1.5"
+        >
+          <Plus size={13} />
+          New profile
+          <Kbd class="bg-primary-foreground/15 text-primary-foreground/90"
+            >⌘N</Kbd
           >
-            {#if isFull}
-              <div class="flex flex-col gap-1">
-                <span class="font-semibold text-foreground"
-                  >No combinations left</span
-                >
-                <span class="text-muted-foreground">
-                  Profiles are unique by audio · mic · camera · countdown,
-                  including which specific device is picked. All {totalCombinations}
-                  combinations for your current devices are taken. Plug in another
-                  mic or camera, or edit an existing profile to free a slot.
-                </span>
-              </div>
-            {:else}
-              New profile <Kbd
-                class="bg-foreground/10 text-foreground/80 ml-1">⌘N</Kbd
-              >
-            {/if}
-          </Tooltip.Content>
-        </Tooltip.Root>
+        </Button>
       </div>
       <p
         in:fly={{ y: 8, duration: 280, delay: 100, easing: cubicOut }}
@@ -387,13 +335,6 @@
       >
         Save what to capture (system audio, mic, camera) and pick the default
         that loads on launch.
-        {#if profilesStore.profiles.length > 0}
-          <span class="text-muted-foreground/70">
-            {remainingSlots === 0
-              ? `All ${totalCombinations} combinations in use.`
-              : `${remainingSlots} of ${totalCombinations} combinations free.`}
-          </span>
-        {/if}
       </p>
     </header>
 
@@ -476,7 +417,7 @@
           <p class="mt-1 text-[11.5px] text-muted-foreground">
             {query
               ? `Nothing matches "${query}".`
-              : "Create a profile to save your recording presets."}
+              : "Create a profile to save what to capture."}
           </p>
         </div>
         {#if !query}
@@ -512,14 +453,14 @@
                 : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
             )}
           >
-            <!-- Identity region — same treatment as a thumbnail-less recasts
+            <!-- Identity region, same treatment as a thumbnail-less recasts
                  card: muted surface, centered mark, and a `.recast`-style cutout
                  tab (here it carries the capability glyphs). -->
             <div class="relative h-24 shrink-0 overflow-hidden bg-muted/40">
               <div class="grid size-full place-items-center">
                 <span
                   class={cn(
-                    "flex size-12 items-center justify-center rounded-xl border transition-colors",
+                    "flex size-12 items-center justify-center rounded-xl border text-[17px] font-semibold transition-colors",
                     profile.isDefault
                       ? "border-primary/30 bg-primary/10 text-primary"
                       : "border-border/50 bg-card text-muted-foreground group-hover/card:text-foreground",
@@ -528,7 +469,7 @@
                   {#if profile.isDefault}
                     <Star class="size-5" />
                   {:else}
-                    <SlidersIcon class="size-5" />
+                    {profile.name.trim().charAt(0).toUpperCase() || "?"}
                   {/if}
                 </span>
               </div>
@@ -549,11 +490,11 @@
               >
                 {#each capabilities as cap (cap.field)}
                   {@const on = profile[cap.field]}
-                  {@const Icon = cap.icon}
+                  {@const Icon = on ? cap.iconOn : cap.iconOff}
                   <Icon
                     class={cn(
                       "size-3 transition-colors",
-                      on ? "text-primary" : "text-muted-foreground/30",
+                      on ? "text-primary" : "text-muted-foreground/40",
                     )}
                     aria-label={`${cap.label}: ${on ? "on" : "off"}`}
                   />
@@ -571,7 +512,7 @@
               </div>
             </div>
 
-            <!-- Actions — same placement/treatment as the recasts card. -->
+            <!-- Actions, same placement/treatment as the recasts card. -->
             <div
               role="presentation"
               onclick={(e) => e.stopPropagation()}
@@ -595,18 +536,9 @@
                 <DropdownMenu.Content align="end" size="sm" class="w-44">
                   <DropdownMenu.Item onSelect={() => startEditing(profile)}>
                     <Pencil class="size-3" /> Edit profile
-                    <DropdownMenu.Shortcut>
-                      <Kbd>⌘R</Kbd>
-                    </DropdownMenu.Shortcut>
                   </DropdownMenu.Item>
-                  <DropdownMenu.Item
-                    disabled={isFull}
-                    onSelect={() => duplicateProfile(profile)}
-                  >
+                  <DropdownMenu.Item onSelect={() => duplicateProfile(profile)}>
                     <Copy class="size-3" /> Duplicate
-                    <DropdownMenu.Shortcut>
-                      <Kbd>⌘D</Kbd>
-                    </DropdownMenu.Shortcut>
                   </DropdownMenu.Item>
                   {#if !profile.isDefault}
                     <DropdownMenu.Item onSelect={() => setDefault(profile.id)}>
@@ -626,33 +558,31 @@
           </div>
         {/each}
 
-        {#if !isFull}
-          <button
-            type="button"
-            onclick={addProfile}
-            in:fly={{
-              y: 8,
-              duration: 240,
-              delay: Math.min(filtered.length * 40, 280),
-              easing: cubicOut,
-            }}
-            class="group/add flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        <button
+          type="button"
+          onclick={addProfile}
+          in:fly={{
+            y: 8,
+            duration: 240,
+            delay: Math.min(filtered.length * 40, 280),
+            easing: cubicOut,
+          }}
+          class="group/add flex h-full min-h-36 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border/60 bg-card/30 p-6 text-center text-muted-foreground transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/5 hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/60"
+        >
+          <span
+            class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-all duration-200 group-hover/add:scale-110 group-hover/add:bg-primary/10 group-hover/add:text-primary group-hover/add:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
           >
-            <span
-              class="flex size-9 items-center justify-center rounded-lg bg-foreground/5 text-foreground transition-all duration-200 group-hover/add:scale-110 group-hover/add:bg-primary/10 group-hover/add:text-primary group-hover/add:shadow-[0_0_0_4px_color-mix(in_srgb,var(--color-primary)_12%,transparent)]"
-            >
-              <Plus class="size-4 transition-transform duration-300 group-hover/add:rotate-90" />
-            </span>
-            <div>
-              <div class="text-[12.5px] font-semibold text-foreground">
-                New profile
-              </div>
-              <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
-                Save another preset
-              </div>
+            <Plus class="size-4 transition-transform duration-300 group-hover/add:rotate-90" />
+          </span>
+          <div>
+            <div class="text-[12.5px] font-semibold text-foreground">
+              New profile
             </div>
-          </button>
-        {/if}
+            <div class="mt-0.5 text-[10.5px] text-muted-foreground/80">
+              Save another capture setup
+            </div>
+          </div>
+        </button>
       </div>
     {/if}
   </div>
@@ -664,11 +594,7 @@
   label: string,
   hint: string,
 )}
-  <button
-    type="button"
-    onclick={() => toggleDraft(field)}
-    class="flex w-full items-center gap-3 px-5 py-3 text-left transition-colors hover:bg-foreground/4 focus-visible:bg-foreground/4 focus-visible:outline-none"
-  >
+  <div class="flex items-center gap-3 px-5 py-3">
     <span
       class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-background/70 text-muted-foreground ring-1 ring-inset ring-border/40"
     >
@@ -682,22 +608,12 @@
         >{hint}</span
       >
     </span>
-    <span
-      class={cn(
-        "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-        draft?.[field]
-          ? "bg-primary"
-          : "bg-input ring-1 ring-inset ring-border/50",
-      )}
-    >
-      <span
-        class={cn(
-          "size-4 rounded-full bg-card shadow-sm transition-transform",
-          draft?.[field] ? "translate-x-4.5" : "translate-x-0.5",
-        )}
-      ></span>
-    </span>
-  </button>
+    <Switch
+      checked={!!draft?.[field]}
+      onCheckedChange={() => toggleDraft(field)}
+      aria-label={label}
+    />
+  </div>
 {/snippet}
 
 {#snippet deviceRow(
@@ -824,7 +740,7 @@
           <Dialog.Title
             class="text-[14px] font-semibold tracking-tight text-foreground"
           >
-            {mode === "edit" ? "Edit Profile" : "New Profile"}
+            {mode === "edit" ? "Edit profile" : "New profile"}
           </Dialog.Title>
           <Dialog.Description
             class="mt-0.5 text-[11px] font-medium text-muted-foreground"
@@ -834,7 +750,7 @@
         </div>
         {#if draft.isDefault}
           <span
-            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-warning/20 bg-warning/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-warning"
+            class="inline-flex shrink-0 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-primary"
           >
             <Star size={11} />
             Default
@@ -919,29 +835,13 @@
                 Seconds before capture starts.
               </span>
             </span>
-            <div
-              class="flex items-center gap-0.5 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-              role="radiogroup"
+            <Segmented
+              options={countdownSegments}
+              value={countdownToken(draft.countdown ?? null)}
+              onValueChange={setDraftCountdownToken}
+              fill={false}
               aria-label="Countdown before recording"
-            >
-              {#each countdownChoices as c (c.label)}
-                {@const active = (draft.countdown ?? null) === c.value}
-                <button
-                  type="button"
-                  role="radio"
-                  aria-checked={active}
-                  onclick={() => setDraftCountdown(c.value)}
-                  class={cn(
-                    "flex h-6 items-center rounded-lg px-2 text-[10.5px] font-semibold tabular-nums transition-all duration-200",
-                    active
-                      ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                >
-                  {c.label}
-                </button>
-              {/each}
-            </div>
+            />
           </div>
         </div>
 
@@ -973,6 +873,18 @@
           </aside>
         {/if}
       </div>
+
+      {#if twin}
+        <div
+          class="flex items-center gap-2 border-t border-border/30 bg-muted/20 px-5 py-2.5 text-[11px] text-muted-foreground"
+        >
+          <Info class="size-3.5 shrink-0 text-muted-foreground/70" />
+          <span>
+            Same capture settings as
+            <span class="font-semibold text-foreground">{twin.name}</span>.
+          </span>
+        </div>
+      {/if}
 
       <footer
         class="flex items-center justify-between gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"

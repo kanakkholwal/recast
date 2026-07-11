@@ -1,5 +1,5 @@
 /**
- * Central keyboard-shortcut registry — single source of truth for every shortcut.
+ * Central keyboard-shortcut registry: single source of truth for every shortcut.
  *
  * Two jobs:
  *   1. `shortcutDefs` documents every shortcut so the Shortcuts dialog renders an
@@ -11,7 +11,7 @@
  *      this was built to kill).
  *
  * Plain-key / focus-scoped shortcuts (annotation tools, timeline JKL, nudge, mute)
- * are deliberately NOT centrally dispatched — they reuse letters across contexts
+ * are deliberately NOT centrally dispatched: they reuse letters across contexts
  * and rely on focus/panel state to disambiguate. They live in their components
  * (each on its own `<svelte:window>` so HMR can't leak them) and appear here as
  * `central: false` for the dialog.
@@ -36,7 +36,7 @@ export interface ShortcutDef {
 	/** Grouping heading in the Shortcuts dialog. */
 	category: string;
 	/** When true, the central dispatcher owns this chord (needs a handler or
-	 *  `action`). When false/undefined it's documentation-only — its component
+	 *  `action`). When false/undefined it's documentation-only; its component
 	 *  handles the key locally. */
 	central?: boolean;
 	/** Fire even when a text input / contenteditable is focused. Default false. */
@@ -125,7 +125,7 @@ export function formatChordTokens(keys: string): string[] {
 // --- the master list --------------------------------------------------------
 
 export const shortcutDefs: ShortcutDef[] = [
-	// General — available everywhere.
+	// General: available everywhere.
 	{
 		id: "general.palette",
 		keys: "Mod+K",
@@ -158,12 +158,30 @@ export const shortcutDefs: ShortcutDef[] = [
 		},
 	},
 
-	// Editing — editor route registers these handlers.
+	// Global (OS-wide) recording hotkeys, registered by the Rust global-shortcut
+	// plugin, not the window dispatcher (hence central: false). Listed here so
+	// the Shortcuts dialog documents them.
+	{
+		id: "global.recordToggle",
+		keys: "Alt+Shift+R",
+		label: "Start / stop recording",
+		category: "General",
+		scopeNote: "Works anywhere, even when Recast is in the background",
+	},
+	{
+		id: "global.pauseToggle",
+		keys: "Alt+Shift+P",
+		label: "Pause / resume recording",
+		category: "General",
+		scopeNote: "While recording, from any app",
+	},
+
+	// Editing: editor route registers these handlers.
 	{ id: "editor.undo", keys: "Mod+Z", label: "Undo", category: "Editing", central: true },
 	{ id: "editor.redo", keys: "Mod+Shift+Z", label: "Redo", category: "Editing", central: true },
 	{ id: "editor.save", keys: "Mod+S", label: "Save", category: "Editing", central: true },
 
-	// View — editor route.
+	// View: editor route.
 	{
 		id: "editor.toggleSidebar",
 		keys: "Mod+B",
@@ -192,7 +210,7 @@ export const shortcutDefs: ShortcutDef[] = [
 		category: "View",
 	},
 
-	// Playback — editor route (plain keys, kept local).
+	// Playback: editor route (plain keys, kept local).
 	{ id: "editor.playPause", keys: "Space", label: "Play / pause", category: "Playback" },
 	{
 		id: "editor.prevFrame",
@@ -203,7 +221,7 @@ export const shortcutDefs: ShortcutDef[] = [
 	},
 	{ id: "editor.nextFrame", keys: "ArrowRight", label: "Next frame", category: "Playback" },
 
-	// Annotation tools — active on the Annotations tab.
+	// Annotation tools: active on the Annotations tab.
 	{ id: "tool.select", keys: "V", label: "Select tool", category: "Annotation tools" },
 	{ id: "tool.rect", keys: "R", label: "Rectangle", category: "Annotation tools" },
 	{ id: "tool.ellipse", keys: "O", label: "Ellipse", category: "Annotation tools" },
@@ -211,7 +229,7 @@ export const shortcutDefs: ShortcutDef[] = [
 	{ id: "tool.text", keys: "T", label: "Text", category: "Annotation tools" },
 	{ id: "tool.blur", keys: "B", label: "Blur", category: "Annotation tools" },
 
-	// Annotations — with a selection.
+	// Annotations: with a selection.
 	{ id: "anno.delete", keys: "Delete", label: "Delete annotation", category: "Annotations" },
 	{ id: "anno.deselect", keys: "Escape", label: "Deselect / cancel tool", category: "Annotations" },
 	{
@@ -232,10 +250,10 @@ export const shortcutDefs: ShortcutDef[] = [
 		scopeNote: "when selected",
 	},
 
-	// Audio — active on the Audio tab.
+	// Audio: active on the Audio tab.
 	{ id: "audio.mute", keys: "M", label: "Toggle mute", category: "Audio" },
 
-	// Timeline — when the timeline has focus.
+	// Timeline: when the timeline has focus.
 	{ id: "timeline.in", keys: "I", label: "Set in point", category: "Timeline", scopeNote: "timeline focused" },
 	{ id: "timeline.out", keys: "O", label: "Set out point", category: "Timeline", scopeNote: "timeline focused" },
 	{ id: "timeline.reverse", keys: "J", label: "Shuttle reverse", category: "Timeline", scopeNote: "timeline focused" },
@@ -247,7 +265,7 @@ export const shortcutDefs: ShortcutDef[] = [
 	{ id: "timeline.trimOut", keys: "Alt+]", label: "Trim out point", category: "Timeline", scopeNote: "timeline focused" },
 	{ id: "timeline.paste", keys: "Mod+V", label: "Paste region", category: "Timeline", scopeNote: "timeline focused" },
 
-	// Navigation — the app sidebar (library routes). Same chord as the editor's
+	// Navigation: the app sidebar (library routes). Same chord as the editor's
 	// properties panel, but a different route, so they never collide at runtime.
 	{ id: "app.sidebar", keys: "Mod+B", label: "Toggle sidebar", category: "Navigation" },
 ];

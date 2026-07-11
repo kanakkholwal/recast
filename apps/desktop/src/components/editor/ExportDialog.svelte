@@ -57,7 +57,7 @@
     { value: "source", label: "Source", desc: "Original resolution" },
   ];
 
-  // Encoder effort — orthogonal to resolution; trades encode time for file size.
+  // Encoder effort, orthogonal to resolution; trades encode time for file size.
   const speeds: { value: ExportSpeed; label: string; desc: string }[] = [
     { value: "fast", label: "Fast", desc: "Quicker · larger" },
     { value: "balanced", label: "Balanced", desc: "Recommended" },
@@ -777,7 +777,6 @@
   <!-- GIF settings, wrapped so it reads as one panel in either layout. -->
   {#snippet gifSettingsCard()}
     <div
-      class="rounded-xl border border-border/50 bg-card/50 shadow-(--shadow-craft-inset) backdrop-blur"
     >
       {@render gifSettingsBody()}
     </div>

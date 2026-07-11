@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from "$app/state";
+  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CornerNotifications from "$components/corner-notifications.svelte";
+  import ActivityCenter from "$components/layout/activity-center.svelte";
   import AppSidebar from "$components/layout/app-sidebar.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import WindowControls from "$components/layout/window-controls.svelte";
@@ -139,6 +141,7 @@
         </span>
       </div>
       <div class="h-full flex-1" data-tauri-drag-region></div>
+      <ActivityCenter />
       <button
         type="button"
         onclick={() => shortcutsDialog.show()}
@@ -164,3 +167,4 @@
 
 <WhatsNewDialog />
 <CornerNotifications />
+<UploadDialogsHost />

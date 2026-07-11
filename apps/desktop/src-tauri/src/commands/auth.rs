@@ -35,6 +35,7 @@ use reqwest::header;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, State};
 
+use super::error::{AppError, AppResult};
 use super::system::save_config;
 use super::types::AppState;
 
@@ -400,10 +401,7 @@ fn parse_profile_body(body: &serde_json::Value) -> AuthStatus {
 /// Returns an error if a sign-in flow is already in progress, or if the
 /// user is already signed in (the caller should `auth_sign_out` first).
 #[tauri::command]
-pub async fn auth_start(
-    app: AppHandle,
-    state: State<'_, AppState>,
-) -> Result<AuthStartResult, String> {
+pub async fn auth_start(app: AppHandle, state: State<'_, AppState>) -> AppResult<AuthStartResult> {
     // Abort any previous poller first. There's a sub-instant race in the
     // poller between "/device/token returned approved → token written to
     // keyring" and "abort fires at the next await" — `store_session_token`
@@ -432,7 +430,8 @@ pub async fn auth_start(
         let _ = delete_session_token();
     }
 
-    let client = http_client().map_err(|e| format!("http client init failed: {e}"))?;
+    let client =
+        http_client().map_err(|e| AppError::msg(format!("http client init failed: {e}")))?;
     let base = cloud_api_url();
 
     let resp = client
@@ -443,18 +442,20 @@ pub async fn auth_start(
         }))
         .send()
         .await
-        .map_err(|e| format!("device/code request failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("device/code request failed: {e}")))?;
 
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("device/code returned {status}: {body}"));
+        return Err(AppError::msg(format!(
+            "device/code returned {status}: {body}"
+        )));
     }
 
     let code: DeviceCodeResp = resp
         .json()
         .await
-        .map_err(|e| format!("device/code response parse failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("device/code response parse failed: {e}")))?;
 
     let open_url = code
         .verification_uri_complete
@@ -507,7 +508,7 @@ pub async fn auth_start(
 /// Returns `Ok(())` whether or not a poller was running — Cancel is
 /// idempotent.
 #[tauri::command]
-pub fn auth_cancel(state: State<'_, AppState>) -> Result<(), String> {
+pub fn auth_cancel(state: State<'_, AppState>) -> AppResult<()> {
     if let Some(handle) = state.auth_poller.lock().take() {
         handle.abort();
     }
@@ -650,14 +651,15 @@ async fn fetch_status(client: &reqwest::Client, base: &str, token: &str) -> Auth
 ///
 /// [1]: see project memory `project_overview.md`.
 #[tauri::command]
-pub async fn auth_status() -> Result<AuthStatus, String> {
+pub async fn auth_status() -> AppResult<AuthStatus> {
     let Some(token) = read_session_token() else {
         return Ok(AuthStatus {
             signed_in: false,
             ..Default::default()
         });
     };
-    let client = http_client().map_err(|e| format!("http client init failed: {e}"))?;
+    let client =
+        http_client().map_err(|e| AppError::msg(format!("http client init failed: {e}")))?;
     let base = cloud_api_url();
 
     // Hit the desktop profile endpoint first — it both validates the token
@@ -697,7 +699,7 @@ pub async fn auth_status() -> Result<AuthStatus, String> {
         let body: serde_json::Value = resp
             .json()
             .await
-            .map_err(|e| format!("desktop/profile parse failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("desktop/profile parse failed: {e}")))?;
         if body.is_null() || body.get("user").is_none() {
             let _ = delete_session_token();
             return Ok(AuthStatus {
@@ -718,7 +720,7 @@ pub async fn auth_status() -> Result<AuthStatus, String> {
 /// because a stale UI state is worse than a still-valid server session
 /// (which can be revoked from the dashboard's Devices list later).
 #[tauri::command]
-pub async fn auth_sign_out() -> Result<(), String> {
+pub async fn auth_sign_out() -> AppResult<()> {
     let token = read_session_token();
     if let Some(token) = token {
         if let Ok(client) = http_client() {
@@ -730,7 +732,7 @@ pub async fn auth_sign_out() -> Result<(), String> {
                 .await;
         }
     }
-    delete_session_token()
+    delete_session_token().map_err(Into::into)
 }
 
 /// Current cloud-endpoint configuration, surfaced to Settings → Cloud so a
@@ -780,10 +782,10 @@ pub fn set_cloud_api_url(
     app: AppHandle,
     state: State<'_, AppState>,
     url: Option<String>,
-) -> Result<CloudApiConfig, String> {
+) -> AppResult<CloudApiConfig> {
     let normalized = match url {
         Some(raw) if !raw.trim().is_empty() => Some(normalize_api_url(&raw).ok_or_else(|| {
-            "Enter a valid http(s) URL, e.g. https://recast.example.com".to_string()
+            AppError::from("Enter a valid http(s) URL, e.g. https://recast.example.com")
         })?),
         _ => None,
     };
@@ -821,4 +823,89 @@ pub fn set_cloud_api_url(
 #[allow(dead_code)]
 pub fn current_session_token() -> Option<String> {
     read_session_token()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn normalize_accepts_http_and_https_and_strips_trailing_slash() {
+        assert_eq!(
+            normalize_api_url("https://recast.example.com/"),
+            Some("https://recast.example.com".to_string())
+        );
+        assert_eq!(
+            normalize_api_url("  http://localhost:3000  "),
+            Some("http://localhost:3000".to_string())
+        );
+    }
+
+    #[test]
+    fn normalize_rejects_empty_bad_scheme_and_hostless() {
+        assert_eq!(normalize_api_url(""), None);
+        assert_eq!(normalize_api_url("   "), None);
+        assert_eq!(normalize_api_url("ftp://example.com"), None);
+        assert_eq!(normalize_api_url("not a url"), None);
+    }
+
+    #[test]
+    fn session_body_extracts_identity_and_marks_signed_in() {
+        let body = serde_json::json!({
+            "user": { "email": "a@b.com", "name": "Ada", "image": "http://img/x.png" }
+        });
+        let status = parse_session_body(&body);
+        assert!(status.signed_in);
+        assert_eq!(status.email.as_deref(), Some("a@b.com"));
+        assert_eq!(status.name.as_deref(), Some("Ada"));
+        assert_eq!(status.image.as_deref(), Some("http://img/x.png"));
+        assert!(status.plan.is_none());
+        assert!(status.workspaces.is_empty());
+    }
+
+    #[test]
+    fn session_body_stays_signed_in_when_shape_unexpected() {
+        let status = parse_session_body(&serde_json::json!({}));
+        assert!(status.signed_in);
+        assert!(status.email.is_none());
+    }
+
+    #[test]
+    fn profile_body_populates_plan_usage_and_workspaces() {
+        let body = serde_json::json!({
+            "user": { "email": "a@b.com", "name": "Ada" },
+            "plan": { "id": "pro", "name": "Pro", "status": "active", "cancelAtPeriodEnd": true },
+            "usage": { "recordings": 3, "storageBytes": 1024, "activeShares": 1, "sharesLimit": 10 },
+            "workspaces": [ { "id": "w1", "name": "Team", "role": "owner", "plan": "pro", "recastsCount": 5 } ],
+            "defaultWorkspaceId": "w1"
+        });
+        let status = parse_profile_body(&body);
+        let plan = status.plan.expect("plan present");
+        assert_eq!(plan.id, "pro");
+        assert!(plan.cancel_at_period_end);
+        let usage = status.usage.expect("usage present");
+        assert_eq!(usage.recordings, 3);
+        assert_eq!(usage.shares_limit, Some(10));
+        assert_eq!(status.workspaces.len(), 1);
+        assert_eq!(status.workspaces[0].id, "w1");
+        assert_eq!(status.default_workspace_id.as_deref(), Some("w1"));
+    }
+
+    #[test]
+    fn profile_body_defaults_plan_fields_when_absent() {
+        let body = serde_json::json!({
+            "user": { "email": "a@b.com" },
+            "plan": {},
+            "usage": {}
+        });
+        let status = parse_profile_body(&body);
+        let plan = status.plan.expect("plan present");
+        assert_eq!(plan.id, "free");
+        assert_eq!(plan.name, "Free");
+        assert_eq!(plan.status, "active");
+        assert!(!plan.cancel_at_period_end);
+        let usage = status.usage.expect("usage present");
+        assert_eq!(usage.recordings, 0);
+        assert_eq!(usage.shares_limit, None);
+    }
 }

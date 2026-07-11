@@ -12,6 +12,7 @@
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";
+  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
   import type { ExportStateEvent, RecordingEntry } from "$lib/ipc";
@@ -39,6 +40,12 @@
     hasBlurUnderZoom,
     runExport,
   } from "$lib/services/export";
+  import { notifyJobDone } from "$lib/notify";
+  import {
+    clearJobProgress,
+    setJobProgress,
+    setJobProgressIndeterminate,
+  } from "$lib/taskbarProgress";
   import { isShareSupported, shareRecording } from "$lib/share";
   import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
   import { cloudShare } from "$lib/stores/cloudShare.svelte";
@@ -48,6 +55,7 @@
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { AudioTimelineEngine } from "$lib/playback/audio-engine";
+  import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { originalToOutput } from "$lib/timeline/time-map";
   import {
     createTileProvider,
@@ -59,14 +67,11 @@
     CheckCircle2,
     Circle,
     Cloud,
-    ExternalLink,
     FlaskConical,
     FolderOpen,
     HardDriveUpload,
-    Link2,
     LoaderCircle,
     Play,
-    RefreshCw,
     Share2,
     TriangleAlert,
     Upload,
@@ -105,7 +110,7 @@
   let videoEl: HTMLVideoElement | null = $state(null);
   // True while the WebCodecs engine drives the picture (its clock owns
   // `store.currentTime`). When set, handleTimeUpdate must NOT echo
-  // `videoEl.currentTime` — the element free-runs through the un-cut recording,
+  // `videoEl.currentTime`, because the element free-runs through the un-cut recording,
   // so feeding its time to the store snaps playback back across a cut.
   let webcodecsActive = $state(false);
   // WYSIWYG screenshot (composite, not raw frame); bound from VideoPreview.
@@ -132,7 +137,7 @@
         JSON.stringify({ sidebar: showSidebar, timeline: showTimeline }),
       );
     } catch {
-      // localStorage can throw in private-mode/quota edge cases — the toggle
+      // localStorage can throw in private-mode/quota edge cases. The toggle
       // still works for the session, it just won't be remembered.
     }
   });
@@ -180,7 +185,7 @@
     autosaveTimer = setInterval(async () => {
       if (!documentPath || isLoading) return;
       // Skip the full-state serialize when nothing changed since the last
-      // save/autosave — most idle ticks are clean, so the 30s timer stays off
+      // save/autosave. Most idle ticks are clean, so the 30s timer stays off
       // the main thread entirely until there's real work to persist.
       if (!store.isDirty) return;
       try {
@@ -217,7 +222,7 @@
     for (const el of [systemAudioEl, micAudioEl]) {
       if (el) el.currentTime = start;
     }
-    // play() can reject (user-gesture) — log instead of stalling silently.
+    // play() can reject (user-gesture), so log instead of stalling silently.
     void videoEl.play().catch((err) => {
       console.warn("loop replay failed:", err);
     });
@@ -243,12 +248,21 @@
           }
         }
       }
-      // Cheap drift correction: if audio elements drift > 150ms from video, snap them back.
+      // Drift correction: catch audio up when it falls behind the picture, but
+      // never rewind it to chase a picture that stalled under load, because that
+      // replays a slice as a live echo. Picture catch-up is owned by the rAF
+      // sync loop (syncAudioToClock), so here we only nudge lagging audio.
       const videoT = videoEl.currentTime;
       for (const el of [systemAudioEl, micAudioEl]) {
-        if (el && !el.paused && Math.abs(el.currentTime - videoT) > 0.15) {
-          el.currentTime = videoT;
-        }
+        if (!el || el.paused) continue;
+        const action = reconcileAvDrift({
+          audioTime: el.currentTime,
+          pictureTime: videoT,
+          isJump: false,
+          syncThreshold: 0.15,
+          maxLead: AUDIO_MAX_LEAD,
+        });
+        if (action === "resync-audio") el.currentTime = videoT;
       }
     }
   }
@@ -267,12 +281,17 @@
 
   // Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
   // skip the same cuts. Normal playback stays locked at 1×; the only corrections
-  // are one snap per cut boundary and per seek. Steady-state drift past this
-  // threshold hard-seeks audio back; loose enough the ~25Hz publish doesn't thrash.
+  // are one snap per cut boundary and per seek. Audio that falls behind by more
+  // than this is nudged forward; audio that runs ahead of a stalled picture is
+  // NOT rewound (that replays a slice as a live echo). See reconcileAvDrift.
   const AUDIO_SYNC_THRESHOLD = 0.12;
   // A cut crossing or scrub jumps the playhead far past one publish quantum;
   // detecting it snaps audio exactly on cuts of any length, including short ones.
   const AUDIO_JUMP = 0.12;
+  // How far the audio may lead a stalled picture before we advance the PICTURE
+  // to catch up (a brief visual skip) instead of leaving the gap. Bounds the
+  // lip-sync drift that a decode stall under load would otherwise accumulate.
+  const AUDIO_MAX_LEAD = 0.5;
   let audioSyncRaf: number | null = null;
   let lastAudioTarget = -1;
   function syncAudioToClock() {
@@ -294,12 +313,23 @@
     lastAudioTarget = target;
     for (const el of [systemAudioEl, micAudioEl]) {
       // CRITICAL: never stack a seek on an element that's still seeking (e.g.
-      // cold-start buffering) — each new currentTime= interrupts the last, so it
+      // cold-start buffering). Each new currentTime= interrupts the last, so it
       // never settles and the audio cuts out entirely. Wait for the current seek.
       if (!el || el.paused || el.seeking || el.readyState < 2) continue;
-      // Snap exactly on a cut/seek (any length), or when steady drift grows.
-      if (jumped || Math.abs(el.currentTime - target) > AUDIO_SYNC_THRESHOLD) {
+      // Snap on a cut/seek or when audio falls behind; when audio runs ahead of a
+      // stalled picture, advance the picture rather than rewind audio (a rewind
+      // replays a slice as a live echo, the record-while-previewing symptom).
+      const action = reconcileAvDrift({
+        audioTime: el.currentTime,
+        pictureTime: target,
+        isJump: jumped,
+        syncThreshold: AUDIO_SYNC_THRESHOLD,
+        maxLead: AUDIO_MAX_LEAD,
+      });
+      if (action === "resync-audio") {
         el.currentTime = target;
+      } else if (action === "catch-picture" && videoEl) {
+        videoEl.currentTime = el.currentTime;
       }
     }
   }
@@ -316,7 +346,7 @@
   onDestroy(() => audioEngine?.dispose());
   onDestroy(disposeTileProvider);
 
-  // Kept audio regions and current OUTPUT time — what the Web Audio engine
+  // Kept audio regions and current OUTPUT time: what the Web Audio engine
   // schedules against. Regions are the kept SEGMENTS (trim − cuts, split-bounded)
   // each carrying its clip speed, so audio speeds up/down with the segment.
   // Output time is the warped axis (store.timeMap), matching the picture clock.
@@ -396,7 +426,7 @@
         el.pause();
       }
     }
-    // Run the rAF sync whenever the <audio> elements are the audio source —
+    // Run the rAF sync whenever the <audio> elements are the audio source:
     // both the legacy <video> path AND the engine-failed WebCodecs fallback.
     // It keeps them locked to the master (video time / output clock) so cuts
     // are skipped tightly, not just on the coarse `timeupdate` tick.
@@ -452,7 +482,7 @@
     audioEngine?.setVolume(settings.volume, settings.muted);
   });
 
-  // Transport seek for `store.seek()` — seeks from outside the player (a
+  // Transport seek for `store.seek()`: seeks from outside the player (a
   // transcript line, chapters, …). Most in-player seeks (timeline scrub,
   // frame-step) already set `videoEl.currentTime` themselves; this gives panels
   // the same reach. Moving the <video> works for both the legacy path and the
@@ -477,7 +507,7 @@
     const t = videoEl.currentTime;
     // Publish the jumped position immediately. During playback the <video>
     // cut-skip seeks to cut.end, but `store.currentTime` otherwise only catches
-    // up on the next 4 Hz `timeupdate` — so captions/overlays (which key off
+    // up on the next 4 Hz `timeupdate`, so captions/overlays (which key off
     // `store.currentTime`) lagged the cut by up to ~250 ms. Snap them here.
     store.currentTime = t;
     for (const el of [systemAudioEl, micAudioEl]) {
@@ -582,7 +612,7 @@
     }
     // Warm the silence-detection cache off the back of the waveform pass (one
     // FFmpeg decode at a time, never on the load path). The result is discarded
-    // here — `detectSilence` writes it to the file-identity cache the review
+    // here. `detectSilence` writes it to the file-identity cache the review
     // popover reads, so opening that popover is instant. Default options match
     // the popover's "balanced" sensitivity.
     void warmSilenceCache();
@@ -648,7 +678,7 @@
     try {
       const document = await loadEditorDocument(data.filePath);
       if (document.needsMigration) {
-        // Stop before loading anything — prompt to update the format first.
+        // Stop before loading anything, and prompt to update the format first.
         isLoading = false;
         showMigration = true;
         return;
@@ -726,12 +756,12 @@
     if (autoZoomRunning) return;
     if (!store.autoZoomEnabled || store.autoZoomApplied) return;
     if (!cursorPath) {
-      // No cursor track to analyse — latch the flag so we don't retry on reopen.
+      // No cursor track to analyse, so latch the flag so we don't retry on reopen.
       store.autoZoomApplied = true;
       return;
     }
     if (store.zoomRegions.length > 0) {
-      // Regions already exist (autosave-restored or manual) — skip silently.
+      // Regions already exist (autosave-restored or manual), so skip silently.
       store.autoZoomApplied = true;
       return;
     }
@@ -784,7 +814,7 @@
     return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
   });
 
-  // Export lifecycle UI state — in the route, not the store, since the overlay
+  // Export lifecycle UI state, in the route, not the store, since the overlay
   // owns success/cancel/error reveals that don't belong in global state.
   let exportStartedAt = $state<number>(0);
   let exportNow = $state<number>(Date.now());
@@ -794,7 +824,7 @@
   let activeExportId = $state<string | null>(null);
   // Backend prep sub-step (e.g. "Rendering cursor & annotations") emitted by Rust
   // while it runs the synchronous prep passes AFTER hand-off but before the encode
-  // reports real progress — otherwise the checklist's "Encode frames" step sits
+  // reports real progress. Otherwise the checklist's "Encode frames" step sits
   // stalled during that window.
   let exportPrepDetail = $state<string | null>(null);
 
@@ -905,6 +935,7 @@
   function handleExportState(event: ExportStateEvent) {
     switch (event.status) {
       case "started":
+        void setJobProgressIndeterminate();
         return;
       case "preparing":
         exportPrepDetail = event.detail ?? null;
@@ -919,6 +950,7 @@
           store.exportProgress = Math.max(current, next);
         }
         exportHasProgress = true;
+        void setJobProgress(next);
         // Safety net only: Rust emits a real `finalizing` event now, so this just
         // catches the rare case where that event is dropped.
         if (!exportFinalizing && next >= 99.95) {
@@ -928,15 +960,23 @@
       }
       case "finalizing":
         exportFinalizing = true;
+        void setJobProgressIndeterminate();
         return;
       case "success":
         setExportResult({ kind: "success", path: event.path });
+        void clearJobProgress();
+        void notifyJobDone(
+          "Export complete",
+          basename(event.path) ?? "Your recording is ready.",
+        );
         return;
       case "cancelled":
         setExportResult({ kind: "cancelled" });
+        void clearJobProgress();
         return;
       case "error":
         setExportResult({ kind: "error", message: event.message });
+        void clearJobProgress();
         return;
     }
   }
@@ -968,7 +1008,7 @@
           },
         });
 
-      // Warn (but don't block) if any image annotation can't be loaded — the
+      // Warn (but don't block) if any image annotation can't be loaded. The
       // export skips them silently otherwise, shipping a video with them gone.
       const missingImages = await findMissingImageAnnotations(store);
       if (missingImages.length > 0) {
@@ -978,7 +1018,7 @@
         );
       }
 
-      // A blur can't follow a zoom in the export — warn so a redaction doesn't
+      // A blur can't follow a zoom in the export, so warn so a redaction doesn't
       // silently slide off the thing it was covering.
       if (hasBlurUnderZoom(store)) {
         toast.warning(
@@ -986,7 +1026,7 @@
         );
       }
 
-      // The settings this export ran with — key when a user reports a bad export.
+      // The settings this export ran with, key when a user reports a bad export.
       log.info("export", "export_started", {
         exportId,
         format: store.exportFormat,
@@ -1078,7 +1118,7 @@
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
-  // export dialog — ExportFlowDialog portals over the player otherwise. Size and
+  // export dialog, because ExportFlowDialog portals over the player otherwise. Size and
   // created come from the exports listing (accurate); a minimal entry is the
   // fallback so playback never hinges on the listing succeeding.
   let playTarget = $state<RecordingEntry | null>(null);
@@ -1123,7 +1163,7 @@
   const isExportFlowOpen = $derived(exportPhase !== null);
 
   // Silence cuts only. Manual ripple deletes are always honoured, so they must
-  // not trip the "enable Silence detection" banner — only auto cuts depend on it.
+  // not trip the "enable Silence detection" banner. Only auto cuts depend on it.
   const silenceCutCount = $derived(
     store.cuts.filter((c) => c.source === "silence").length,
   );
@@ -1186,13 +1226,10 @@
       void goto("/settings");
       return;
     }
-    try {
-      await gdrive.upload(exportResult.path);
-      // Progress surfaces inline via successUpload and the corner-notifications
-      // store, so the upload stays trackable after dismissing the card.
-    } catch (e) {
-      toast.error(`Drive upload failed: ${e}`);
-    }
+    // Progress lives in the foreground dialog (and the activity center once
+    // minimized), never in-place on the card. The store toasts the outcome.
+    const id = gdrive.startUpload(exportResult.path);
+    requestAnimationFrame(() => gdrive.setForeground(id));
   }
 
   // Share the export to Recast Cloud and copy the link; routes to Settings if
@@ -1208,6 +1245,8 @@
     const title =
       basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
     try {
+      // The store surfaces success/error toasts and tracks progress in the
+      // activity center, so just copy the link on success here.
       const result = await cloudShare.share(
         exportResult.path,
         title,
@@ -1216,47 +1255,11 @@
       );
       try {
         await navigator.clipboard.writeText(result.shareUrl);
-        toast.success("Shared. Link copied to clipboard.");
       } catch {
-        toast.success("Shared to Recast Cloud.");
+        // Clipboard blocked; the link is still in the activity center.
       }
-    } catch (e) {
-      toast.error(`Cloud share failed: ${(e as Error)?.message ?? e}`);
-    }
-  }
-
-  // The success card's path, so the upload state can key off it. Null unless the
-  // dialog is in the success state.
-  const successPath = $derived(
-    exportResult?.kind === "success" ? exportResult.path : null,
-  );
-  // Most-recent upload for the exported file; drives the inline progress in the
-  // success card and survives status transitions.
-  const successUpload = $derived.by(() => {
-    if (!successPath) return undefined;
-    const list = gdrive.activeUploads.filter(
-      (u) => u.sourcePath === successPath,
-    );
-    list.sort((a, b) => b.uploadId.localeCompare(a.uploadId));
-    return list[0];
-  });
-  const successUploadPct = $derived(
-    successUpload && successUpload.totalBytes
-      ? Math.min(
-          100,
-          Math.round(
-            (successUpload.bytesSent / successUpload.totalBytes) * 100,
-          ),
-        )
-      : 0,
-  );
-
-  async function copyDriveLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      toast.success("Drive link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
+    } catch {
+      // The store already surfaced the failure.
     }
   }
 
@@ -1267,8 +1270,9 @@
   async function shareExportedFile() {
     if (exportResult?.kind !== "success") return;
     const fileName = basename(exportResult.path) ?? "recording";
-    const fallbackLink =
-      successUpload?.status === "complete" ? successUpload.webViewLink : undefined;
+    // OS share sheets can't attach a local file everywhere; fall back to a
+    // recorded Drive link if this export already has one.
+    const fallbackLink = gdrive.getRecordForPath(exportResult.path)?.webViewLink;
     const result = await shareRecording({
       path: exportResult.path,
       fileName,
@@ -1285,15 +1289,6 @@
       );
     } else {
       toast.error(`Share failed: ${result.message ?? "unknown error"}`);
-    }
-  }
-
-  async function openDriveLink(link: string) {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(link);
-    } catch {
-      window.open(link, "_blank", "noopener");
     }
   }
 
@@ -1317,7 +1312,7 @@
     isSaving = true;
     // Paint the saving state before the synchronous serialize so the button
     // reflects the click immediately. The serialize itself stays on the main
-    // thread by necessity — Tauri's IPC bridge JSON-encodes command args on the
+    // thread by necessity, because Tauri's IPC bridge JSON-encodes command args on the
     // main thread anyway, so a worker would only add a proxy-stripping clone of
     // equal cost; the win is gating autosave on isDirty (see startAutosave).
     await tick();
@@ -1518,6 +1513,10 @@
     />
   </CustomTitlebar>
 
+  <!-- Foreground upload dialogs (cloud share + Drive), reopened by clicking an
+       upload in the activity center; store-driven so they survive navigation. -->
+  <UploadDialogsHost />
+
   <ConfirmDialog
     bind:open={showMigration}
     title="Update project format"
@@ -1529,7 +1528,7 @@
   />
 
   <!-- Project has silence cuts but the flag is off, so they're hidden and
-       skipped on export — surface an inline opt-in so work isn't lost. -->
+       skipped on export, so surface an inline opt-in so work isn't lost. -->
   {#if !isLoading && !error && silenceCutCount > 0 && !experimentalStore.silenceDetection}
     <div
       class="flex items-center gap-2.5 border-b border-warning/30 bg-warning/10 px-3 py-1.5 text-[11px] text-warning"
@@ -2010,112 +2009,9 @@
 
     {@render exportSpecStrip()}
 
-    {#if successUpload}
-      <!-- Drive status row with inline progress and a trailing action that
-           tracks the upload state (cancel / copy-link / retry). -->
-      <div
-        class="flex items-center gap-3 border-t border-border/40 bg-muted/15 px-5 py-3"
-        aria-live="polite"
-      >
-        <div
-          class="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset)"
-        >
-          {#if successUpload.status === "uploading"}
-            <RefreshCw class="size-3.5 animate-spin text-primary" />
-          {:else if successUpload.status === "complete"}
-            <HardDriveUpload class="size-3.5 text-success" />
-          {:else if successUpload.status === "cancelled"}
-            <X class="size-3.5" />
-          {:else}
-            <TriangleAlert class="size-3.5 text-destructive" />
-          {/if}
-        </div>
-
-        <div class="min-w-0 flex-1">
-          <p class="text-[12px] font-medium text-foreground">
-            {#if successUpload.status === "uploading"}
-              Uploading to Drive
-            {:else if successUpload.status === "complete"}
-              Uploaded to Drive
-            {:else if successUpload.status === "cancelled"}
-              Upload cancelled
-            {:else}
-              Upload failed
-            {/if}
-          </p>
-          {#if successUpload.status === "uploading"}
-            <div class="mt-1 flex items-center gap-2">
-              <div class="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                <div
-                  class="h-full rounded-full bg-primary transition-[width] duration-200"
-                  style="width: {successUploadPct}%"
-                ></div>
-              </div>
-              <span
-                class="font-mono text-[10px] tabular-nums text-muted-foreground"
-              >
-                {successUploadPct}%
-              </span>
-            </div>
-          {:else if successUpload.status === "error" && successUpload.error}
-            <p
-              class="truncate text-[10.5px] leading-snug text-muted-foreground"
-              title={successUpload.error}
-            >
-              {successUpload.error}
-            </p>
-          {/if}
-        </div>
-
-        <!-- The Drive row owns its lifecycle so the footer carries no Drive action. -->
-        {#if successUpload.status === "uploading"}
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-muted-foreground"
-            onclick={() => gdrive.cancelUpload(successUpload!.uploadId)}
-          >
-            <X class="size-3" />
-            Cancel
-          </Button>
-        {:else if successUpload.status === "complete" && successUpload.webViewLink}
-          <div class="flex shrink-0 items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="xs"
-              class="gap-1.5 text-primary hover:text-primary"
-              onclick={() => copyDriveLink(successUpload!.webViewLink!)}
-            >
-              <Link2 class="size-3" />
-              Copy link
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              class="text-muted-foreground"
-              title="Open in Drive"
-              onclick={() => openDriveLink(successUpload!.webViewLink!)}
-            >
-              <ExternalLink class="size-3" />
-            </Button>
-          </div>
-        {:else}
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-muted-foreground"
-            onclick={uploadExportToDrive}
-          >
-            <RefreshCw class="size-3" />
-            Retry
-          </Button>
-        {/if}
-      </div>
-    {/if}
-
     <!-- Share/upload tiles, grouped out of the footer so they read as one
-         "where does this go?" choice. The Drive tile drops out once an upload
-         exists — the Drive row above owns it then. -->
+         "where does this go?" choice. Upload progress is never shown inline
+         here; it opens the foreground dialog and tracks in the activity center. -->
     <div class="border-t border-border/40 bg-muted/15 px-5 py-3.5">
       <p
         class="mb-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
@@ -2138,22 +2034,20 @@
           </span>
         </button>
 
-        {#if !successUpload}
-          <button
-            type="button"
-            onclick={uploadExportToDrive}
-            class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+        <button
+          type="button"
+          onclick={uploadExportToDrive}
+          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+        >
+          <span
+            class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <span
-              class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
-            >
-              <HardDriveUpload class="size-4" />
-            </span>
-            <span class="text-[11px] font-medium leading-none text-foreground">
-              Google Drive
-            </span>
-          </button>
-        {/if}
+            <HardDriveUpload class="size-4" />
+          </span>
+          <span class="text-[11px] font-medium leading-none text-foreground">
+            Google Drive
+          </span>
+        </button>
 
         {#if shareSupported}
           <button

@@ -1,5 +1,5 @@
 /**
- * Web Audio timeline engine — sample-accurate, cut-aware audio playback for the
+ * Web Audio timeline engine: sample-accurate, cut-aware audio playback for the
  * WebCodecs editor preview.
  *
  * Instead of seeking an `<audio>` element to the playhead (drifts across cuts,
@@ -36,7 +36,7 @@ export class AudioTimelineEngine {
 	/**
 	 * Create the engine for the given audio source URLs (system + mic; nulls
 	 * skipped), decoding each into an `AudioBuffer`. Throws if Web Audio is
-	 * unavailable or nothing decodes — caller falls back to the `<audio>` elements.
+	 * unavailable or nothing decodes; caller falls back to the `<audio>` elements.
 	 */
 	static async create(urls: ReadonlyArray<string | null | undefined>): Promise<AudioTimelineEngine> {
 		const Ctx: typeof AudioContext | undefined =
@@ -112,7 +112,7 @@ export class AudioTimelineEngine {
 				if (playDur <= 0) continue;
 				const node = this.#ctx.createBufferSource();
 				node.buffer = t.buffer;
-				// Per-segment speed: play the slice faster/slower (pitch shifts —
+				// Per-segment speed: play the slice faster/slower (pitch shifts,
 				// matches the sped-up video; pitch-preserved stretch is a follow-up).
 				node.playbackRate.value = c.rate;
 				node.connect(t.gain);
@@ -146,7 +146,7 @@ export class AudioTimelineEngine {
 	}
 
 	/**
-	 * Re-plan playback to a new OUTPUT time — on a scrub, or when the cut set
+	 * Re-plan playback to a new OUTPUT time: on a scrub, or when the cut set
 	 * changes while playing. No-op while paused (the next `play` will schedule).
 	 */
 	reschedule(regions: ReadonlyArray<Region>, fromOutputTime: number): void {

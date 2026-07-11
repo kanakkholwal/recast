@@ -16,7 +16,7 @@
 
   let { store, pixelsPerSecond, duration }: Props = $props();
 
-  // Cuts shorter than this are dropped — a sub-100ms removal reads as a glitch.
+  // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
   const MIN_CUT = 0.1;
 
   let laneEl = $state<HTMLDivElement | null>(null);
@@ -47,7 +47,7 @@
   }
 
   function onLaneDown(e: PointerEvent) {
-    // Only the bare lane background starts a create-drag — bands and their
+    // Only the bare lane background starts a create-drag; bands and their
     // handles stop propagation in their own handlers.
     if (e.target !== laneEl || duration <= 0) return;
     // Stop the timeline's scrub handler from also claiming this drag.

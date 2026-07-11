@@ -2,11 +2,11 @@
  * External-asset download/cache helper.
  *
  * Startup flow:
- *   1. `hydrateCachedAssets()` — offline read of the on-disk lock file, so the
+ *   1. `hydrateCachedAssets()`: offline read of the on-disk lock file, so the
  *      UI upgrades past the placeholder immediately.
- *   2. `ensureAssetsInstalled(manifestUrl)` — fetch manifest, SHA-256-verified
+ *   2. `ensureAssetsInstalled(manifestUrl)`: fetch manifest, SHA-256-verified
  *      download of missing/mismatched assets (thumbs first so the grid is usable).
- *   3. On `window.online` — retry failed downloads.
+ *   3. On `window.online`, retry failed downloads.
  *
  * Manifest URL from `PUBLIC_ASSETS_MANIFEST_URL`, falling back to the
  * `wallpapers-v1` release so dev builds work out of the box.

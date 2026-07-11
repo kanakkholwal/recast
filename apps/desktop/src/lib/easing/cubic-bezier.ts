@@ -45,7 +45,7 @@ function sampleDerivative(t: number, a: number, b: number, c: number): number {
 
 export function bezierY(easing: Easing, x: number): number {
 	const { x1, y1, x2, y2 } = easing;
-	// Degenerate / identity linear — skip the solve.
+	// Degenerate / identity linear: skip the solve.
 	if (x1 === y1 && x2 === y2) return x;
 	if (x <= 0) return 0;
 	if (x >= 1) return 1;
@@ -63,7 +63,7 @@ export function bezierY(easing: Easing, x: number): number {
 		t -= xt / dxt;
 	}
 
-	// Bisection fallback — guaranteed convergence on a monotonic x(t).
+	// Bisection fallback, guaranteed convergence on a monotonic x(t).
 	let lo = 0;
 	let hi = 1;
 	t = x;
@@ -78,7 +78,7 @@ export function bezierY(easing: Easing, x: number): number {
 	return sample(t, ay, by, cy);
 }
 
-// Build a sampled curve for drawing — returns N+1 (x,y) points from t=0..1.
+// Build a sampled curve for drawing: returns N+1 (x,y) points from t=0..1.
 // Uses the t parameter directly (not x-inverse) since we're stroking the path.
 export function sampleCurve(easing: Easing, segments = 32): Array<[number, number]> {
 	const { x1, y1, x2, y2 } = easing;

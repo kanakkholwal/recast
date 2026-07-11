@@ -17,7 +17,7 @@
     /**
      * Path to the captured `camera.mp4` for this project, or null/empty
      * when the recording was made without a camera. Drives the empty-state
-     * UI — the panel is always present in the tab strip but stays in
+     * UI. The panel is always present in the tab strip but stays in
      * "no camera track" mode unless this resolves to a real file.
      */
     cameraPath: string | null | undefined;
@@ -93,7 +93,7 @@
   {/if}
 
   {#if !hasCamera}
-    <!-- Empty state — the panel stays in the tab strip for a predictable
+    <!-- Empty state. The panel stays in the tab strip for a predictable
          layout, collapsed to an actionable hint. -->
     <div
       class="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-3"

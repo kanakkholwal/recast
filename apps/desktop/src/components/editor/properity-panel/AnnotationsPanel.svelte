@@ -72,7 +72,7 @@
     hotkey: string;
   };
 
-  // Working tools only — disabled/locked roadmap tiles are clutter.
+  // Working tools only. Disabled/locked roadmap tiles are clutter.
   const tools: ToolDef[] = [
     { id: "select", label: "Select", icon: MousePointer2, hotkey: "V" },
     { id: "rect", label: "Rectangle", icon: Square, hotkey: "R" },
@@ -230,7 +230,7 @@
     <AnnotationLayerPanel {store} />
   {/if}
 
-  <!-- Selected annotation editor — appearance/content lead; timing, fade
+  <!-- Selected annotation editor: appearance/content lead; timing, fade
        curves, geometry collapse below. -->
   {#if selected}
     {@const a = selected}

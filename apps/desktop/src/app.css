@@ -298,3 +298,18 @@ input[type="number"]:has(class) {
 	top: var(--os-titlebar-h);
 	height: calc(100svh - var(--os-titlebar-h));
 }
+
+/*
+ * Translucent window backdrop (Win11 Mica, macOS vibrancy). The class lands on
+ * <html> via windowBackdrop.ts when "Window transparency" is on. The frame,
+ * sidebar, and titlebar go see-through so the OS material shows; the content
+ * card keeps its surface so text stays readable.
+ */
+:root.window-transparent body {
+	background-color: transparent;
+	background-image: none;
+}
+:root.window-transparent [data-sidebar="sidebar"],
+:root.window-transparent [data-recast-titlebar] {
+	background-color: transparent;
+}

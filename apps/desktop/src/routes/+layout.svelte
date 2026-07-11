@@ -7,13 +7,22 @@
 
   import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";
-  import { launchRecordingPanel, takePendingOpenFile } from "$lib/ipc";
+  import { handleDeepLink } from "$lib/deepLink";
+  import {
+    launchRecordingPanel,
+    takePendingNewRecording,
+    takePendingOpenFile,
+  } from "$lib/ipc";
   import { openProjectFromExternalPath } from "$lib/openProject";
   import { updater } from "$lib/stores/updater.svelte";
+  import {
+    applyWindowBackdrop,
+    BACKDROP_CHANGED_EVENT,
+  } from "$lib/windowBackdrop";
 
   let { children } = $props();
 
-  // First-run privacy prompt — shown once in the main window only.
+  // First-run privacy prompt, shown once in the main window only.
   let showFirstRun = $state(false);
 
   // Analytics + global error capture. Overlay windows are skipped; the main
@@ -36,7 +45,7 @@
         const { platform } = await import("@tauri-apps/plugin-os");
         analytics.register({ os: platform() });
       } catch {
-        // Non-Tauri preview — leave os unset.
+        // Non-Tauri preview, so leave os unset.
       }
       analytics.capture("app_opened");
 
@@ -158,11 +167,13 @@
   // argv and emits `app://open-recast`. Both funnel through
   // openProjectFromExternalPath, which always spawns a fresh editor window
   // (never navigates main). Gated to the main window so secondary windows don't
-  // race to spawn — editor windows are labelled `editor-*`, see the check below.
+  // race to spawn. Editor windows are labelled `editor-*`, see the check below.
   onMount(() => {
     if (isTransparentRoute) return;
     let cancelled = false;
     let unlistenFn: (() => void) | undefined;
+    let unlistenDeepLink: (() => void) | undefined;
+    let unlistenPanelFn: (() => void) | undefined;
 
     const setup = async () => {
       const { getCurrentWebviewWindow } = await import(
@@ -179,6 +190,15 @@
         console.warn("[open-recast] cold-start drain failed", e);
       }
 
+      // Jump list "New Recording" cold start: open the panel once ready.
+      try {
+        if (!cancelled && (await takePendingNewRecording())) {
+          void launchRecordingPanel();
+        }
+      } catch (e) {
+        console.warn("[new-recording] cold-start drain failed", e);
+      }
+
       const unlistenPromise = listen<string>(
         "app://open-recast",
         ({ payload }) => {
@@ -190,6 +210,35 @@
         if (cancelled) fn();
         else unlistenFn = fn;
       });
+
+      // Global hotkey (Alt+Shift+R while idle) asks the main window to bring up
+      // the recording panel. Stop/pause are routed to the panel itself in Rust.
+      const unlistenLaunchPanel = listen("global-shortcut:launch-panel", () => {
+        void launchRecordingPanel();
+      });
+      unlistenLaunchPanel.then((fn) => {
+        if (cancelled) fn();
+        else unlistenPanelFn = fn;
+      });
+
+      // recast:// deep links. Cold start: getCurrent() returns the launch URL.
+      // Warm start: onOpenUrl fires. Both route through handleDeepLink.
+      try {
+        const { getCurrent, onOpenUrl } = await import(
+          "@tauri-apps/plugin-deep-link"
+        );
+        const startUrls = await getCurrent();
+        if (!cancelled && startUrls) {
+          for (const u of startUrls) void handleDeepLink(u);
+        }
+        const fn = await onOpenUrl((urls) => {
+          for (const u of urls) void handleDeepLink(u);
+        });
+        if (cancelled) fn();
+        else unlistenDeepLink = fn;
+      } catch (e) {
+        console.warn("[deep-link] setup failed", e);
+      }
     };
 
     void setup();
@@ -197,6 +246,19 @@
     return () => {
       cancelled = true;
       unlistenFn?.();
+      unlistenDeepLink?.();
+      unlistenPanelFn?.();
+    };
+  });
+
+  // Translucent backdrop for the app windows (main, editor). Overlays opt out.
+  // Re-applies live when the setting is toggled from anywhere.
+  onMount(() => {
+    if (isTransparentRoute) return;
+    void applyWindowBackdrop();
+    const un = listen(BACKDROP_CHANGED_EVENT, () => void applyWindowBackdrop());
+    return () => {
+      void un.then((fn) => fn());
     };
   });
 
@@ -246,7 +308,7 @@
 
   // Logs modifier-involved keydowns to trace "phantom shortcut" reports. Gated
   // through log.debug (dev / diagnostic only). If a bare-modifier `key`
-  // ("Control"/"Meta") triggers an action, it's a stale HMR listener — restart
+  // ("Control"/"Meta") triggers an action, it's a stale HMR listener, so restart
   // `pnpm tauri dev`. The same keydown logged twice means listeners are leaking.
   function logKeyDiagnostic(e: KeyboardEvent) {
     if (!e.ctrlKey && !e.metaKey && !e.altKey && e.key.length === 1) return;

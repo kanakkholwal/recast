@@ -57,7 +57,6 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
-  import { listen } from "@tauri-apps/api/event";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
@@ -103,7 +102,7 @@
       .then((present) => {
         if (!cancelled) audioProbe = present;
       })
-      // Don't hard-block on a probe failure — let the transcribe call be the
+      // Don't hard-block on a probe failure. Let the transcribe call be the
       // authority (it reports "no audio" if the extract is truly empty).
       .catch(() => {
         if (!cancelled) audioProbe = true;
@@ -134,22 +133,6 @@
     captionCapabilities()
       .then((c) => (caps = c))
       .catch(() => {});
-    const unDownload = listen<{
-      modelId: string;
-      file: string;
-      downloaded: number;
-      total: number;
-    }>("captions:download-progress", (e) => {
-      if (e.payload.modelId !== downloadingId) return;
-      downloadPct = downloadProgressPct(e.payload.downloaded, e.payload.total);
-    });
-    const unPhase = listen<{ phase: string }>("captions:transcribe-progress", (e) => {
-      phase = e.payload.phase;
-    });
-    return () => {
-      void unDownload.then((f) => f());
-      void unPhase.then((f) => f());
-    };
   });
 
   function pick(id: string) {
@@ -161,7 +144,10 @@
     downloadingId = id;
     downloadPct = 0;
     try {
-      await downloadCaptionModel(id);
+      // Progress is scoped to this download's channel, so no model-id filtering.
+      await downloadCaptionModel(id, (p) => {
+        downloadPct = downloadProgressPct(p.downloaded, p.total);
+      });
       toast.success("Model downloaded");
       await refresh();
     } catch (e) {
@@ -190,6 +176,9 @@
         audioPath: store.audioPath,
         microphonePath: store.microphonePath,
         modelId: selected.id,
+        onPhase: (p) => {
+          phase = p.phase;
+        },
       });
     } catch (e) {
       error = `${e}`;
@@ -211,7 +200,7 @@
       });
       if (!dest) return;
       // Map onto the output timeline (trim + cuts + speed) so cues line up with
-      // the exported video, not the raw recording — same warp the export dialog
+      // the exported video, not the raw recording, using the same warp the export dialog
       // and Cloud track apply.
       await exportCaptions(toOutputTimeTranscript(store, t), format, dest);
       toast.success(`Exported ${format.toUpperCase()}`);
@@ -265,7 +254,7 @@
     recents = pushRecentColor(c);
   }
 
-  // Caption themes from the asset registry — built-ins first, extension packs
+  // Caption themes from the asset registry: built-ins first, extension packs
   // appended. Applying one overwrites the style fields but keeps `enabled`.
   const captionPresets = $derived(registry.list("captionPreset"));
   // Preload each preset's font so the picker's live preview chips render in the
@@ -315,7 +304,7 @@
     {/snippet}
 
     {#if caps && !caps.captionsAvailable}
-      <!-- On-device captions aren't in this build (Intel Mac — no ONNX Runtime
+      <!-- On-device captions aren't in this build (Intel Mac, no ONNX Runtime
            for x86_64-apple-darwin). The rest of the editor works normally. -->
       <div
         class="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-card/40 px-4 py-6 text-center"

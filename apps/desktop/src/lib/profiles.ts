@@ -11,7 +11,7 @@ import type { AudioDeviceInfo } from "$lib/ipc";
 import type { BrowserCamera } from "$lib/camera/browser-devices";
 import { findCamera } from "$lib/camera/browser-devices";
 
-/** Stored profile record. v2 schema — adds device identity fields over v1. */
+/** Stored profile record. v2 schema, adding device identity fields over v1. */
 export interface RecordingProfile {
 	id: string;
 	name: string;
@@ -22,9 +22,9 @@ export interface RecordingProfile {
 	/** Display label for the saved mic; used as fallback identity if id stale. */
 	micLabel: string | null;
 	camera: boolean;
-	/** DirectShow-friendly name — what the Rust recorder consumes. */
+	/** DirectShow-friendly name: what the Rust recorder consumes. */
 	cameraLabel: string | null;
-	/** Browser MediaDevices id — what the camera-preview window consumes. */
+	/** Browser MediaDevices id: what the camera-preview window consumes. */
 	cameraDeviceId: string | null;
 	/**
 	 * Per-profile countdown override (seconds). `null`/absent = inherit the
@@ -49,7 +49,7 @@ export const PROFILES_STORAGE_KEY = "recast-recording-profiles";
 export const PROFILES_ENABLED_STORAGE_KEY = "recast-profiles-enabled";
 
 // Global capture quality + frame rate. Capture-WIDE preferences (like the
-// global countdown), so they live outside profile records — kept clear of
+// global countdown), so they live outside profile records, kept clear of
 // `capSig` and the combination cap, applied to every recording.
 
 export const RECORDING_QUALITY_STORAGE_KEY = "recast-recording-quality";
@@ -81,12 +81,12 @@ export function persistRecordingFps(fps: number | null): void {
 	safeStorage.set(RECORDING_FPS_STORAGE_KEY, fps);
 }
 
-// Slot sentinels — distinct from any specific device id and from each other.
+// Slot sentinels, distinct from any specific device id and from each other.
 const DEFAULT_SLOT = "default";
 const OFF_SLOT = "off";
 
 /**
- * Countdown override option space — single source of truth for the editor UI,
+ * Countdown override option space: single source of truth for the editor UI,
  * `capSig`, and the combination cap. `null` = inherit global; `0` = off; rest
  * pin an explicit pre-roll. Keep `null` first so the auto-pick walk exhausts
  * every device combo at "inherit" before introducing pinned countdowns.
@@ -105,18 +105,6 @@ export function countdownToken(cd: number | null | undefined): string {
 	return cd == null ? "inherit" : String(cd);
 }
 
-/** Public profile combo shape: each side is the on/off + device identity.
- *  `null` deviceId with kind=true means "use system default at runtime". */
-export type ProfileCombo = {
-	systemAudio: boolean;
-	microphone: boolean;
-	micDeviceId: string | null;
-	camera: boolean;
-	cameraDeviceId: string | null;
-	/** Countdown override for the auto-picked slot (`null` = inherit global). */
-	countdown: number | null;
-};
-
 function micSlot(
 	p: Pick<RecordingProfile, "microphone" | "micDeviceId">,
 ): string {
@@ -131,80 +119,13 @@ function camSlot(
 }
 
 /**
- * Capability fingerprint — dedup key, **including** device identity (same
+ * Capability fingerprint: dedup key, **including** device identity (same
  * on/off shape with different mic/cam ids are intentionally distinct presets).
  * Slots: `off`, `default` (runtime picks system default), or a literal device
  * id; trailing segment is the countdown slot. See `COUNTDOWN_OPTIONS`.
  */
 export function capSig(p: RecordingProfile): string {
 	return `${+p.systemAudio}|${micSlot(p)}|${camSlot(p)}|${countdownToken(p.countdown)}`;
-}
-
-/**
- * Total possible profile slots given currently-attached devices:
- * `#countdowns × 2 (sysAudio) × (2 + #mics) × (2 + #cams)`, where each device
- * kind's slot space is { off, default, ...each specific device }.
- */
-export function maxCombinations(micCount: number, camCount: number): number {
-	return COUNTDOWN_OPTIONS.length * 2 * (2 + micCount) * (2 + camCount);
-}
-
-interface DeviceLite {
-	id: string;
-	name: string;
-}
-interface CameraLite {
-	deviceId: string;
-	label: string;
-}
-
-/**
- * First combo in the cartesian product of attached devices that no profile in
- * `list` already uses, or null when every attainable slot is taken.
- *
- * Walk order is intentional: off/default slots before specific device ids
- * (so a one-mic user doesn't land on a literal-id slot first), and countdown
- * outermost with `inherit` first (exhaust the device cartesian before pinning
- * a pre-roll).
- */
-export function firstFreeCombo(
-	list: RecordingProfile[],
-	mics: DeviceLite[],
-	cams: CameraLite[],
-): ProfileCombo | null {
-	const taken = new Set(list.map(capSig));
-
-	const micOptions: { slot: string; id: string | null }[] = [
-		{ slot: OFF_SLOT, id: null },
-		{ slot: DEFAULT_SLOT, id: null },
-		...mics.map((m) => ({ slot: m.id, id: m.id })),
-	];
-	const camOptions: { slot: string; id: string | null }[] = [
-		{ slot: OFF_SLOT, id: null },
-		{ slot: DEFAULT_SLOT, id: null },
-		...cams.map((c) => ({ slot: c.deviceId, id: c.deviceId })),
-	];
-
-	for (const cd of COUNTDOWN_OPTIONS) {
-		const cdSlot = countdownToken(cd);
-		for (const sa of [true, false]) {
-			for (const mic of micOptions) {
-				for (const cam of camOptions) {
-					const sig = `${+sa}|${mic.slot}|${cam.slot}|${cdSlot}`;
-					if (taken.has(sig)) continue;
-					return {
-						systemAudio: sa,
-						microphone: mic.slot !== OFF_SLOT,
-						micDeviceId: mic.id,
-						camera: cam.slot !== OFF_SLOT,
-						cameraDeviceId: cam.id,
-						countdown: cd,
-					};
-				}
-			}
-		}
-	}
-	return null;
 }
 
 /** Enforce the "exactly one default" invariant in-place (returns a new array). */
@@ -371,7 +292,7 @@ export type DeviceResolution<T> =
  *   3. System default exists → fallback (saved device gone).
  *   4. Nothing available → missing.
  *
- * Pure — never reads the store or toasts; callers surface the result.
+ * Pure: never reads the store or toasts; callers surface the result.
  */
 export function resolveMic(
 	profile: RecordingProfile,

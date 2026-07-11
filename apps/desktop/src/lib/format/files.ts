@@ -13,6 +13,27 @@ export function getExtension(filename: string): string {
 	return dot >= 0 ? filename.slice(dot + 1).toUpperCase() : "FILE";
 }
 
+/** Extensions previewed as an image, not loaded into the video player. */
+const IMAGE_EXTENSIONS = new Set([
+	"gif",
+	"webp",
+	"apng",
+	"png",
+	"jpg",
+	"jpeg",
+	"avif",
+]);
+
+/**
+ * True when a file should be previewed as an image (e.g. a GIF export) rather
+ * than in the `<video>`-based player, which can't render a GIF.
+ */
+export function isImageFile(filename: string): boolean {
+	const dot = filename.lastIndexOf(".");
+	if (dot < 0) return false;
+	return IMAGE_EXTENSIONS.has(filename.slice(dot + 1).toLowerCase());
+}
+
 /** Absolute short date, e.g. `Apr 10`. `unix` is epoch SECONDS. */
 export function formatShortDate(unix: number): string {
 	return new Date(unix * 1000).toLocaleDateString(undefined, {

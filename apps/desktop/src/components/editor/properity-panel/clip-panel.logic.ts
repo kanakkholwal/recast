@@ -6,7 +6,7 @@ export function fmtSpeed(s: number): string {
 }
 
 /**
- * Whether two second/anchor values are equal within float tolerance — segments
+ * Whether two second/anchor values are equal within float tolerance. Segments
  * are matched by their original start time, and speeds compared to presets.
  */
 export function anchorMatches(a: number, b: number): boolean {

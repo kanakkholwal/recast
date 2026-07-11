@@ -2,7 +2,7 @@
  * Focus/zoom-region overlay geometry: the UV-space box a region occupies, its
  * resize-handle positions, hit-testing, and the cursor for a handle.
  *
- * NOTE: this is the zoom-region editor's own source-space geometry — it does NOT
+ * NOTE: this is the zoom-region editor's own source-space geometry. It does NOT
  * use the zoom-aware/aspect-aware helpers in `$lib/annotations/uv.ts` (those are
  * for annotations, which live in zoomed space). Keep the two separate.
  */

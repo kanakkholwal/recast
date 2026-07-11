@@ -292,7 +292,7 @@
           </SliderControl>
         {/if}
 
-        <!-- Motion easing — opt-in, presets-first with a hidden custom graph -->
+        <!-- Motion easing: opt-in, presets-first with a hidden custom graph -->
         <div
           class="space-y-2 rounded-xl border border-border/60 bg-card/40 p-2 shadow-(--shadow-craft-inset)"
         >

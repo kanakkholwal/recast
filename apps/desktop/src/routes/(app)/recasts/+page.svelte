@@ -162,7 +162,7 @@
     }
   }
 
-  // `navigator.share` exposure is static — sample once at module load so the
+  // `navigator.share` exposure is static, so sample once at module load so the
   // dropdown can conditionally render the Share item without a reactive read.
   const shareSupported = isShareSupported();
 
@@ -212,7 +212,7 @@
   const selectedCount = $derived(selection.count);
   const allFilteredSelected = $derived(selection.allSelected(filtered));
 
-  // Migrate every legacy bundle sequentially — each `migrateProject` runs off
+  // Migrate every legacy bundle sequentially. Each `migrateProject` runs off
   // the Rust main thread, and awaiting one at a time avoids parallel disk
   // re-zips. Failures are surfaced, not thrown, so the dialog still closes.
   async function handleMigrateAll() {
@@ -655,7 +655,7 @@
   </div>
 </div>
 
-<!-- Floating bulk-action bar — visible whenever selection mode is on. -->
+<!-- Floating bulk-action bar, visible whenever selection mode is on. -->
 {#if selection.selectMode}
   <div
     in:fly={{ y: 24, duration: 220, easing: cubicOut }}
@@ -718,7 +718,7 @@
     open={true}
     title={`Move ${selectedCount} recording${selectedCount === 1 ? "" : "s"} to trash?`}
     description="The selected recordings will be sent to the recycle bin. You can restore them from there if needed."
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={selection.bulkDelete}
     onOpenChange={(v) => {
@@ -747,7 +747,7 @@
     open={true}
     title="Move recording to trash?"
     description={`“${deleteTarget.filename}” will be sent to the recycle bin. You can restore it from there if needed.`}
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={async () => {
       await handleDelete(deleteTarget!);

@@ -60,7 +60,7 @@
   let timeMode = $state<TimeMode>("smpte");
 
   // Layer visibility (the toolbar's Layers menu). The clip track is always shown
-  // (the editing spine); its content is thumbnails OR the waveform — never both,
+  // (the editing spine); its content is thumbnails OR the waveform, never both,
   // so they can't overlap. Zoom/Markup lanes show/hide independently. Persisted
   // to localStorage so the choice survives reopening the editor.
   type ClipContent = "thumbnails" | "waveform";
@@ -112,7 +112,7 @@
         }),
       );
     } catch {
-      /* storage full / unavailable — view prefs are best-effort */
+      /* storage full / unavailable; view prefs are best-effort */
     }
   });
 
@@ -278,7 +278,7 @@
   const totalWidth = $derived(
     Math.max(outputDuration * pixelsPerSecond, timelineWidth),
   );
-  // Canonical axis transforms — every lane positions with `xOf` and resolves pointers with `tOf`.
+  // Canonical axis transforms: every lane positions with `xOf` and resolves pointers with `tOf`.
   const xOf = (t: number) => originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (x: number) => outputToOriginal(store.timeMap, x / pixelsPerSecond);
   const clipLeft = $derived(xOf(store.inPoint));
@@ -318,7 +318,7 @@
   }
 
   function handleTimelinePointerDown(event: PointerEvent) {
-    // Right/middle button is for the context menu — never seek/razor on it.
+    // Right/middle button is for the context menu, never seek/razor on it.
     if (event.button !== 0) return;
     // Razor mode owns the click: place an anchor / carve a cut, never seek/drag.
     if (razorActive) {
@@ -381,7 +381,7 @@
     return snapTime(rawOriginal, targets, tolerance, effectiveFps()).time;
   }
 
-  // Original time under the pointer, clamped then snapped — the razor's click
+  // Original time under the pointer, clamped then snapped to the razor's click
   // resolution (so a cut lands on the same frame preview and export use).
   function clientXToOriginal(clientX: number): number {
     if (!timelineEl) return 0;
@@ -480,7 +480,7 @@
       return;
     }
 
-    // Paste works anywhere in the timeline (cards own copy/duplicate — they need focus).
+    // Paste works anywhere in the timeline (cards own copy/duplicate, so they need focus).
     if (mod && (event.key === "v" || event.key === "V")) {
       if (zoomClipboard) {
         event.preventDefault();
@@ -530,8 +530,8 @@
       }
     }
 
-    // Alt+[ shrinks from head, Alt+] from tail (Shift = 1s). Match `event.code` —
-    // shifted brackets become "{"/"}" on some layouts.
+    // Alt+[ shrinks from head, Alt+] from tail (Shift = 1s). Match `event.code`
+    // because shifted brackets become "{"/"}" on some layouts.
     if (event.altKey && event.code === "BracketLeft") {
       event.preventDefault();
       nudgeTrim("in", 1, event.shiftKey);
@@ -555,7 +555,7 @@
       if (videoEl) videoEl.currentTime = t;
     }
 
-    // Split the clip at the playhead (NLE razor — "S").
+    // Split the clip at the playhead (NLE razor, "S").
     if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       splitAtPlayhead();
@@ -693,7 +693,7 @@
     syncVideoTime();
   }
 
-  // Editable fields only — id/source are regenerated on paste so it never collides with an existing region.
+  // Editable fields only: id/source are regenerated on paste so it never collides with an existing region.
   type ZoomClipboard = Omit<ZoomRegion, "id" | "source">;
   let zoomClipboard = $state<ZoomClipboard | null>(null);
 

@@ -10,6 +10,7 @@
     "beforeBuildCommand": "pnpm run ui:build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -21,7 +22,7 @@
         "fullscreen": false,
         "maximizable": true,
         "decorations": false,
-        "transparent": false,
+        "transparent": true,
         "center": true,
         "shadow": false
       }
@@ -60,7 +61,17 @@
     ],
     "windows": {
       "digestAlgorithm": "sha256",
-      "timestampUrl": "http://timestamp.digicert.com"
+      "timestampUrl": "http://timestamp.digicert.com",
+      "nsis": {
+        "installerHooks": "./installer-hooks.nsh",
+        "installerIcon": "icons/icon.ico",
+        "headerImage": "installer/header.bmp",
+        "sidebarImage": "installer/sidebar.bmp"
+      },
+      "wix": {
+        "bannerPath": "installer/wix-banner.bmp",
+        "dialogImagePath": "installer/wix-dialog.bmp"
+      }
     },
     "macOS": {
       "minimumSystemVersion": "13.0",
@@ -81,6 +92,11 @@
     ]
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["recast"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2Mzg5MEYxRDMxNTQ3RUIKUldUclJ4WFQ4WkE0MXFhYXNVOVhhdCtRM2FSRjRMMU01YTk1NHNvZS9VUUxCVjRCNDZDcm1Jb1AK",
       "endpoints": [

@@ -1,8 +1,8 @@
 /**
- * Cut-seam transitions — smoothing the jump where a cut (silence or manual)
+ * Cut-seam transitions: smoothing the jump where a cut (silence or manual)
  * removed content between two kept segments. A seam transition is not a new data
- * type: it's a matched pair of per-segment animations — an exit on the segment
- * before the seam and a complementary entrance on the segment after — so it rides
+ * type: it's a matched pair of per-segment animations, an exit on the segment
+ * before the seam and a complementary entrance on the segment after, so it rides
  * the existing scene pipeline (../scenes/eval.ts + the Rust export graph) with no
  * new export surface. The "push" family slides the old content off while the new
  * content slides in from the opposite edge. (Dip-to-background, a paired fade,
@@ -30,7 +30,7 @@ export const PUSH_TRANSITIONS: Exclude<SeamTransition, "none">[] = [
 ];
 
 // The paired directions a push writes: the left segment's exit travels `out`, the
-// right segment's entrance comes FROM `in` (the opposite edge) — together reading
+// right segment's entrance comes FROM `in` (the opposite edge), together reading
 // as one continuous push in the exit's direction.
 const PUSH_DIRS: Record<Exclude<SeamTransition, "none">, { out: SceneAnimDir; in: SceneAnimDir }> = {
 	"push-left": { out: "left", in: "right" },
@@ -45,7 +45,7 @@ function slideSpec(side: "in" | "out", dir: SceneAnimDir, tone: MotionTone): Sce
 
 /**
  * Set (or clear, for `none`) the transition across the seam between the segment
- * anchored at `leftStart` and the one at `rightStart`. Returns a new anim list —
+ * anchored at `leftStart` and the one at `rightStart`. Returns a new anim list;
  * the caller prunes/undo-tracks. `tone` styles the paired slides.
  */
 export function setSeamTransition(

@@ -9,7 +9,7 @@ type ShareData = {
 };
 
 export function useShare(getData: () => ShareData) {
-  // `navigator.share` isn't reactive — read it once rather than via `$effect`.
+  // `navigator.share` isn't reactive, so read it once rather than via `$effect`.
   const isNativeShareSupported =
     typeof navigator !== "undefined" && typeof navigator.share === "function";
 

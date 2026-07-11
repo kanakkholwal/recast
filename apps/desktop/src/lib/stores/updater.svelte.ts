@@ -80,7 +80,7 @@ function createUpdaterStore() {
 			version = found.version;
 			notes = found.body ?? null;
 			dismissed = false;
-			// Don't auto-download — wait for explicit opt-in (metered connections).
+			// Don't auto-download; wait for explicit opt-in (metered connections).
 			status = "update-available";
 		} catch (e) {
 			console.error("[updater] check failed", e);
@@ -111,7 +111,7 @@ function createUpdaterStore() {
 
 		/**
 		 * Whether the corner card should render. We stay silent while idle,
-		 * checking, or already up to date — the card only appears once there's
+		 * checking, or already up to date; the card only appears once there's
 		 * something actionable (or a failure worth retrying).
 		 */
 		get visible() {

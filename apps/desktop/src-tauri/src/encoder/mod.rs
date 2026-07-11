@@ -15,6 +15,10 @@ use anyhow::{anyhow, Context, Result};
 
 use crate::recording::{pipeline::RecordingPipeline, CaptureArea};
 
+pub mod h264;
+
+use h264::{EncodePurpose, H264Encoder};
+
 /// Maximum stderr tail retained for diagnostics. The fatal line is always at
 /// the end (codec error, disk full, etc.); FFmpeg's startup chatter is noise.
 const STDERR_TAIL_LIMIT: usize = 8192;
@@ -126,7 +130,7 @@ impl RecordingQuality {
     pub fn resolve(label: Option<&str>, encoder: &str) -> Self {
         match label {
             Some("auto") | None => {
-                if is_hardware_encoder(encoder) {
+                if H264Encoder::from_ffmpeg_name(encoder).is_hardware() {
                     Self::High
                 } else {
                     Self::Balanced
@@ -134,185 +138,6 @@ impl RecordingQuality {
             }
             other => Self::from_label(other),
         }
-    }
-}
-
-/// Whether the FFmpeg encoder name is a GPU/hardware encoder (vs the `libx264`
-/// software fallback). Hardware encoders can sustain a higher quality tier
-/// during live capture without dropping frames, so `"auto"` defaults them up.
-fn is_hardware_encoder(encoder: &str) -> bool {
-    matches!(
-        encoder,
-        "h264_nvenc" | "h264_amf" | "h264_qsv" | "h264_videotoolbox"
-    )
-}
-
-/// Build the codec + rate-control args (from `-c:v` onward) for a live
-/// recording, given the probed hardware encoder and the requested quality
-/// tier. `Balanced` reproduces the exact historical args for every encoder.
-fn recording_codec_args(encoder: &str, quality: RecordingQuality) -> Vec<String> {
-    let v = |args: &[&str]| args.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    use RecordingQuality::*;
-    match (encoder, quality) {
-        ("h264_videotoolbox", Balanced) => v(&[
-            "-c:v",
-            "h264_videotoolbox",
-            "-realtime",
-            "1",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_videotoolbox", High) => v(&[
-            "-c:v",
-            "h264_videotoolbox",
-            "-realtime",
-            "1",
-            "-q:v",
-            "65", // 1-100 quality scale
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_videotoolbox", Pristine) => v(&[
-            "-c:v",
-            "h264_videotoolbox",
-            "-realtime",
-            "1",
-            "-q:v",
-            "80", // Pristine quality
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        // NVIDIA NVENC — `cq` is constant-quality (lower = better, 0..51).
-        ("h264_nvenc", Balanced) => v(&[
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p5",
-            "-tune",
-            "ll",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_nvenc", High) => v(&[
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p6",
-            "-tune",
-            "hq",
-            "-rc",
-            "vbr",
-            "-cq",
-            "21",
-            "-b:v",
-            "0",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_nvenc", Pristine) => v(&[
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p7",
-            "-tune",
-            "hq",
-            "-rc",
-            "vbr",
-            "-cq",
-            "16",
-            "-b:v",
-            "0",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-
-        // AMD AMF — `qp_i/qp_p` mirror the NVENC cq range.
-        ("h264_amf", Balanced) => v(&[
-            "-c:v",
-            "h264_amf",
-            "-quality",
-            "speed",
-            "-usage",
-            "lowlatency",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_amf", High) => v(&[
-            "-c:v",
-            "h264_amf",
-            "-quality",
-            "balanced",
-            "-usage",
-            "transcoding",
-            "-rc",
-            "cqp",
-            "-qp_i",
-            "21",
-            "-qp_p",
-            "21",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        ("h264_amf", Pristine) => v(&[
-            "-c:v",
-            "h264_amf",
-            "-quality",
-            "quality",
-            "-usage",
-            "transcoding",
-            "-rc",
-            "cqp",
-            "-qp_i",
-            "16",
-            "-qp_p",
-            "16",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-
-        // Intel Quick Sync — `global_quality` is its constant-quality knob.
-        ("h264_qsv", Balanced) => v(&[
-            "-c:v", "h264_qsv", "-preset", "veryfast", "-pix_fmt", "nv12",
-        ]),
-        ("h264_qsv", High) => v(&[
-            "-c:v",
-            "h264_qsv",
-            "-preset",
-            "medium",
-            "-global_quality",
-            "21",
-            "-pix_fmt",
-            "nv12",
-        ]),
-        ("h264_qsv", Pristine) => v(&[
-            "-c:v",
-            "h264_qsv",
-            "-preset",
-            "slow",
-            "-global_quality",
-            "16",
-            "-pix_fmt",
-            "nv12",
-        ]),
-
-        // libx264 software fallback. Balanced keeps zerolatency/ultrafast so
-        // weak CPUs don't drop; higher tiers drop zerolatency and lower CRF.
-        (_, Balanced) => v(&[
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-tune",
-            "zerolatency",
-            "-pix_fmt",
-            "yuv420p",
-        ]),
-        (_, High) => v(&[
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-pix_fmt", "yuv420p",
-        ]),
-        (_, Pristine) => v(&[
-            "-c:v", "libx264", "-preset", "faster", "-crf", "16", "-pix_fmt", "yuv420p",
-        ]),
     }
 }
 
@@ -359,7 +184,7 @@ pub fn spawn_encoder_loop(
     thread::Builder::new()
         .name("recast-encoder".into())
         .spawn(move || {
-            let encoder = crate::ffmpeg::preferred_h264_encoder();
+            let encoder = H264Encoder::from_ffmpeg_name(crate::ffmpeg::preferred_h264_encoder());
             let mut args = vec![
                 "-y".to_string(),
                 "-f".to_string(),
@@ -385,7 +210,10 @@ pub fn spawn_encoder_loop(
             // cost of real-time headroom. libx264 stays on `ultrafast` for the
             // default tier so weak CPUs (older laptops, no GPU at all) don't
             // drop frames during recording.
-            args.extend(recording_codec_args(encoder, config.quality));
+            args.extend(h264::codec_args(
+                encoder,
+                EncodePurpose::RealtimeCapture(config.quality),
+            ));
 
             // Force a ~0.5-second keyframe interval (GOP). Every encoder here would
             // otherwise use its default (~250 frames ≈ 4s at 60fps), which makes the
@@ -548,7 +376,7 @@ pub fn spawn_encoder_loop(
 
 #[cfg(test)]
 mod tests {
-    use super::{build_video_filter, dup_count, recording_codec_args, RecordingQuality};
+    use super::{build_video_filter, dup_count, RecordingQuality};
     use crate::recording::CaptureArea;
 
     #[test]
@@ -616,98 +444,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn balanced_tier_reproduces_historical_args_exactly() {
-        // Regression guard: the default tier must be byte-identical to the
-        // pre-quality-tier encoder args so existing recordings don't change.
-        assert_eq!(
-            recording_codec_args("h264_nvenc", RecordingQuality::Balanced),
-            [
-                "-c:v",
-                "h264_nvenc",
-                "-preset",
-                "p5",
-                "-tune",
-                "ll",
-                "-pix_fmt",
-                "yuv420p"
-            ]
-        );
-        assert_eq!(
-            recording_codec_args("h264_amf", RecordingQuality::Balanced),
-            [
-                "-c:v",
-                "h264_amf",
-                "-quality",
-                "speed",
-                "-usage",
-                "lowlatency",
-                "-pix_fmt",
-                "yuv420p"
-            ]
-        );
-        assert_eq!(
-            recording_codec_args("h264_qsv", RecordingQuality::Balanced),
-            ["-c:v", "h264_qsv", "-preset", "veryfast", "-pix_fmt", "nv12"]
-        );
-        assert_eq!(
-            recording_codec_args("libx264", RecordingQuality::Balanced),
-            [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-tune",
-                "zerolatency",
-                "-pix_fmt",
-                "yuv420p"
-            ]
-        );
-        // Unknown encoder string falls back to the libx264 software path.
-        assert_eq!(
-            recording_codec_args("something_else", RecordingQuality::Balanced),
-            [
-                "-c:v",
-                "libx264",
-                "-preset",
-                "ultrafast",
-                "-tune",
-                "zerolatency",
-                "-pix_fmt",
-                "yuv420p"
-            ]
-        );
-    }
-
-    #[test]
-    fn higher_tiers_stay_420_and_add_quality_rate_control() {
-        for enc in [
-            "h264_videotoolbox",
-            "h264_nvenc",
-            "h264_amf",
-            "h264_qsv",
-            "libx264",
-        ] {
-            for q in [RecordingQuality::High, RecordingQuality::Pristine] {
-                let args = recording_codec_args(enc, q);
-                // Never emit a 4:4:4 pixel format — the editor preview can't
-                // decode it.
-                assert!(
-                    !args.iter().any(|a| a.contains("444")),
-                    "{enc}/{q:?} must stay 4:2:0, got {args:?}"
-                );
-                // Must carry an explicit quality target (cq / qp / global_quality
-                // / crf) so it's actually higher quality than Balanced.
-                assert!(
-                    args.iter().any(|a| matches!(
-                        a.as_str(),
-                        "-cq" | "-qp_i" | "-global_quality" | "-crf" | "-q:v"
-                    )),
-                    "{enc}/{q:?} must set an explicit quality target, got {args:?}"
-                );
-            }
-        }
-    }
+    // Per-encoder argument construction (byte-compat regression guard, 4:2:0
+    // invariant, quality-target checks) moved to `encoder::h264` tests.
 
     /// Simulate the encoder's emit accounting over a whole recording and
     /// assert the load-bearing invariant: total frames written to FFmpeg

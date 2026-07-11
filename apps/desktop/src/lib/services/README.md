@@ -2,7 +2,7 @@
 
 Orchestration that spans the editor store + Tauri IPC + browser-side
 rasterization. A service takes a project (`EditorStore`) plus parameters and
-performs a complete operation — building an export payload, running an export,
+performs a complete operation: building an export payload, running an export,
 analyzing a recording for auto-zoom, etc.
 
 This is the **headless-core** layer. Both the Svelte UI and a future in-app MCP
@@ -37,7 +37,7 @@ editor through the exact code paths the GUI uses.
   component.
 - **Decouple from UI singletons.** Pass feature flags in (e.g.
   `silenceDetectionEnabled`) rather than importing `experimentalStore` here.
-- **Serializable in, serializable out** where possible — that's what makes an
+- **Serializable in, serializable out** where possible. That's what makes an
   operation callable by an agent.
 
 ## Convention for the rest of the app
@@ -49,10 +49,10 @@ does not live in `.svelte` files.
 
 ## Current services
 
-- `export.ts` — `buildExportRenderState` (hybrid-raster + per-lane toggles →
+- `export.ts`: `buildExportRenderState` (hybrid-raster + per-lane toggles →
   the exact `EditorRenderState` Rust renders) and `runExport` (progress-listener
   lifecycle + `exportVideo`).
-- `analysis.ts` — `generateAutoZoom` (suggest focus regions from the cursor
+- `analysis.ts`: `generateAutoZoom` (suggest focus regions from the cursor
   track, place them, persist).
 
 Verify changes with `pnpm --filter ./apps/desktop run check`.

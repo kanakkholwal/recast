@@ -5,32 +5,35 @@
 	interface Props {
 		label: string;
 		description?: string;
+		/** Optional leading glyph in the section eyebrow. */
+		icon?: Snippet;
+		/** Anchor id (used by the command palette to jump to a section). */
+		id?: string;
 		children: Snippet;
 		class?: string;
 	}
 
-	let { label, description, children, class: className }: Props = $props();
+	let { label, description, icon, id, children, class: className }: Props =
+		$props();
 </script>
 
-<section
-	class={cn(
-		"rounded-2xl bg-card/40 ring-1 ring-inset ring-border/50 shadow-(--shadow-craft-inset)",
-		className,
-	)}
->
-	<header class="border-b border-border/30 px-5 py-3">
+<section {id} class={cn("flex flex-col gap-3", className)}>
+	<div class="px-1">
 		<h2
-			class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground"
+			class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
 		>
+			{#if icon}{@render icon()}{/if}
 			{label}
 		</h2>
 		{#if description}
-			<p class="mt-1 text-[11px] font-medium text-muted-foreground/70">
+			<p class="mt-0.5 text-[11px] leading-relaxed text-muted-foreground/80">
 				{description}
 			</p>
 		{/if}
-	</header>
-	<div class="divide-y divide-border/30">
+	</div>
+	<div
+		class="divide-y divide-border/40 overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+	>
 		{@render children()}
 	</div>
 </section>

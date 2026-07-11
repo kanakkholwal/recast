@@ -17,6 +17,7 @@ use crate::audio::{
 use crate::cursor::{
     shift_cursor_track, spawn_cursor_capture, write_cursor_track, CursorCaptureFrame, CursorTrack,
 };
+use crate::encoder::h264::{self, EncodePurpose, H264Encoder};
 use crate::encoder::{spawn_encoder_loop, EncoderConfig};
 use crate::render::node_types::{CameraMotionSegment, CameraOverlaySettings, CameraPlacement};
 use pipeline::{spawn_capture_loop, PipelineSnapshot, RecordingPipeline};
@@ -423,6 +424,11 @@ pub struct RecordingArtifacts {
     pub recording_path: PathBuf,
     pub cursor_path: PathBuf,
     pub audio_path: PathBuf,
+    /// Whether a real system-audio (loopback) track was captured. False when
+    /// the user disabled system audio — `audio_path` then points at a silent
+    /// fallback WAV, so downstream muxing is unaffected but the project
+    /// metadata reports the track as absent.
+    pub has_system_audio: bool,
     pub microphone_path: Option<PathBuf>,
     pub camera_path: Option<PathBuf>,
     pub camera_overlay: CameraOverlaySettings,
@@ -820,16 +826,26 @@ impl RecordingManager {
             }
         };
 
-        // Start system audio capture. If it fails, log and continue.
-        let audio_session = match AudioCaptureSession::start(AudioCaptureConfig {
-            output_path: audio_path.clone(),
-            pause_flag: pause_flag.clone(),
-        }) {
-            Ok(session) => Some(session),
-            Err(e) => {
-                log::warn!("audio capture unavailable, recording without audio: {e}");
-                None
+        // Start system/loopback audio capture — but only when the user asked
+        // for it. Gating here (mirroring the microphone/camera blocks below) is
+        // what makes the "System audio" toggle real: loopback used to run
+        // unconditionally, so it recorded *everything* on the default output —
+        // including Recast's own editor playback — which is the record-while-
+        // previewing echo. When off, `stop()` falls back to a silent WAV so
+        // downstream muxing still has a track.
+        let audio_session = if options.system_audio {
+            match AudioCaptureSession::start(AudioCaptureConfig {
+                output_path: audio_path.clone(),
+                pause_flag: pause_flag.clone(),
+            }) {
+                Ok(session) => Some(session),
+                Err(e) => {
+                    log::warn!("audio capture unavailable, recording without audio: {e}");
+                    None
+                }
             }
+        } else {
+            None
         };
 
         // Start microphone capture as a separate track.
@@ -915,6 +931,10 @@ impl RecordingManager {
 
         // Stop the system-audio / mic / camera OS sessions regardless of how the
         // threads fared — each reaps its own FFmpeg child / releases its device.
+        // Capture whether a loopback session actually ran before consuming it, so
+        // the project metadata can report system audio honestly (a disabled
+        // toggle writes silence below but must not claim a real track).
+        let has_system_audio = session.audio_session.is_some();
         let audio_stop = session.audio_session.map(|s| s.stop());
         let microphone_stop = session.microphone_session.map(|s| s.stop());
         let camera_stop = session.camera_session.map(|s| s.stop());
@@ -1010,6 +1030,7 @@ impl RecordingManager {
             recording_path: session.recording_path,
             cursor_path: session.cursor_path,
             audio_path,
+            has_system_audio,
             microphone_path,
             camera_path,
             camera_overlay: session.camera_overlay.overlay,
@@ -1088,56 +1109,14 @@ fn trim_video_pause_intervals(path: &Path, intervals: &[(u64, u64)]) -> Result<(
     // instead of the CPU. The CPU path drops to libx264 ultrafast for
     // the same reason — quality is fine for a 720p camera bubble.
     let mut command = std::process::Command::new(crate::ffmpeg::ffmpeg_path());
-    let codec_args: &[&str] = match crate::ffmpeg::preferred_h264_encoder() {
-        "h264_videotoolbox" => &[
-            "-c:v",
-            "h264_videotoolbox",
-            "-q:v",
-            "60", // Good quality for a 720p camera bubble
-            "-pix_fmt",
-            "yuv420p",
-        ],
-        "h264_nvenc" => &[
-            "-c:v",
-            "h264_nvenc",
-            "-preset",
-            "p5",
-            "-rc",
-            "vbr",
-            "-cq",
-            "26",
-            "-b:v",
-            "0",
-            "-pix_fmt",
-            "yuv420p",
-        ],
-        "h264_amf" => &[
-            "-c:v", "h264_amf", "-quality", "speed", "-rc", "cqp", "-qp_i", "26", "-qp_p", "26",
-            "-pix_fmt", "yuv420p",
-        ],
-        "h264_qsv" => &[
-            "-c:v",
-            "h264_qsv",
-            "-preset",
-            "veryfast",
-            "-global_quality",
-            "26",
-            "-pix_fmt",
-            "nv12",
-        ],
-        _ => &[
-            "-c:v",
-            "libx264",
-            "-preset",
-            "ultrafast",
-            "-crf",
-            "23",
-            "-pix_fmt",
-            "yuv420p",
-        ],
-    };
+    // Route through the same probed encoder the recorder uses (NVENC/AMF/QSV →
+    // GPU, else libx264 ultrafast) so trim time scales with the GPU, not the CPU.
+    let codec_args = h264::codec_args(
+        H264Encoder::from_ffmpeg_name(crate::ffmpeg::preferred_h264_encoder()),
+        EncodePurpose::QuickTrim,
+    );
     command.args(["-y", "-i", in_path.as_str(), "-vf", vf.as_str(), "-an"]);
-    command.args(codec_args);
+    command.args(&codec_args);
     command.arg(out_path.as_str());
     crate::ffmpeg::configure_silent_command(&mut command);
     let output = command
@@ -1277,5 +1256,35 @@ mod scale_tests {
         // Crop stays inside the captured frame.
         assert!(t.crop.x + t.crop.width as i32 <= t.source.x + t.source.width as i32);
         assert!(t.crop.y + t.crop.height as i32 <= t.source.y + t.source.height as i32);
+    }
+}
+
+#[cfg(test)]
+mod options_tests {
+    use super::*;
+
+    // The panel sends `systemAudio` (camelCase); it must land on `system_audio`
+    // and actually gate loopback in `start()`. This guards the serde bridge that
+    // the record-while-previewing echo fix depends on — if the rename or default
+    // regresses, the toggle silently goes dead again.
+    #[test]
+    fn system_audio_toggle_deserializes_from_camel_case() {
+        let off: RecordingOptions = serde_json::from_str(r#"{"systemAudio": false}"#).unwrap();
+        assert!(
+            !off.system_audio,
+            "systemAudio:false must disable system audio"
+        );
+
+        let on: RecordingOptions = serde_json::from_str(r#"{"systemAudio": true}"#).unwrap();
+        assert!(on.system_audio);
+    }
+
+    #[test]
+    fn system_audio_defaults_on_when_omitted() {
+        // A profile/older client that omits the field keeps the historical
+        // capture-by-default behaviour.
+        let opts: RecordingOptions = serde_json::from_str("{}").unwrap();
+        assert!(opts.system_audio);
+        assert!(RecordingOptions::default().system_audio);
     }
 }

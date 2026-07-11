@@ -12,7 +12,7 @@ export function planLabel(plan: string): string {
 	return "Free";
 }
 
-/** "K", "KK", "?" — feeds the avatar fallback. */
+/** "K", "KK", "?": feeds the avatar fallback. */
 export function initials(name: string | null, email: string | null): string {
 	const source = (name ?? email ?? "").trim();
 	if (!source) return "?";

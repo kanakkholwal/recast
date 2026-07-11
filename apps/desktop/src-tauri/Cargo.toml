@@ -19,12 +19,13 @@ tauri-build = { version = "2.5.6", features = [] }
 
 [dependencies]
 anyhow = "1.0"
+thiserror = "2.0"
 crossbeam-queue = "0.3"
 serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
-tauri = { version = "2.10.3", features = ["protocol-asset", "tray-icon", "image-png"] }
+tauri = { version = "2.10.3", features = ["macos-private-api", "protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 xcap = "0.8.3"
 tokio = { version = "1.50.0", features = ["full"] }
@@ -88,6 +89,8 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["downloa
 # feature) is intentionally OFF — it would add the LLVM+CMake toolchain; revisit
 # when we want Whisper models. See docs/captions-transcription-plan.md.
 transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
+keepawake = "0.6.0"
+tauri-plugin-notification = "2.3.3"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
@@ -103,6 +106,7 @@ windows = { version = "0.58.0", features = [
     "Win32_System_Com",
     "Win32_System_Com_StructuredStorage",
     "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
@@ -200,5 +204,12 @@ tauri-plugin-process = "2"
 # protocol handler, or tray "Show" while a hidden instance is still alive)
 # spawns a duplicate process that owns its own recording manager and tray
 # icon. The plugin gives us a callback to focus + show the existing main
-# window instead.
-tauri-plugin-single-instance = "2"
+# window instead. The `deep-link` feature makes it forward a `recast://` URL
+# from the second process's argv into the deep-link plugin's on_open_url.
+tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+# Custom `recast://` URL scheme. Transport only — parsing/routing lives in the
+# frontend (src/lib/deepLink.ts). See docs/deep-linking-plan.md.
+tauri-plugin-deep-link = "2"
+# OS-wide hotkeys (stop/pause a recording while another app is focused). Desktop
+# only. Registered + handled in Rust; routes to the panel/main via events.
+tauri-plugin-global-shortcut = "2.3.2"

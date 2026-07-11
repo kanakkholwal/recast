@@ -1,9 +1,9 @@
 /**
  * Pure MP4 sample-table arithmetic for the WebCodecs progressive (HTTP-range)
- * path — split out so it's unit-testable without a real decoder/MP4/mp4box.
+ * path, split out so it's unit-testable without a real decoder/MP4/mp4box.
  *
  * Progressive mode fetches only the `moov` index first, then each GOP's bytes on
- * demand — which needs the full per-sample map (time, duration, sync flag, and
+ * demand, which needs the full per-sample map (time, duration, sync flag, and
  * the byte offset+size) reconstructed from the ISO-BMFF `stbl` tables:
  *
  *   - stsz  → sample sizes (or one constant size)
@@ -189,7 +189,7 @@ export function gopByteRange(
 
 /**
  * Size threshold (bytes) above which the source switches from whole-file load to
- * progressive HTTP-range ingestion — progressive trades whole-file's simplicity
+ * progressive HTTP-range ingestion; progressive trades whole-file's simplicity
  * for a flat memory footprint on multi-GB recordings that would blow the heap.
  */
 export const PROGRESSIVE_THRESHOLD_BYTES = 500 * 1024 * 1024;

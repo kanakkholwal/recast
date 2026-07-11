@@ -24,6 +24,7 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 
 use super::assets::{ensure_one, AssetEntry};
+use super::error::{AppError, AppResult};
 
 /// Manifest as published by a pack author / curated registry. `contributes` is
 /// kept opaque (`serde_json::Value`) — the frontend interprets the per-kind
@@ -248,43 +249,45 @@ fn build_installed(dir: &Path, manifest: ExtensionManifest, enabled: bool) -> In
 pub async fn install_extension(
     app: AppHandle,
     manifest_url: String,
-) -> Result<InstalledExtension, String> {
+) -> AppResult<InstalledExtension> {
     if !url_allowed(&manifest_url) {
-        return Err("manifest URL must be https (localhost allowed for dev)".into());
+        return Err(AppError::from(
+            "manifest URL must be https (localhost allowed for dev)",
+        ));
     }
     let client = http_client()?;
     let manifest_bytes = client
         .get(&manifest_url)
         .send()
         .await
-        .map_err(|e| format!("manifest request: {e}"))?
+        .map_err(|e| AppError::msg(format!("manifest request: {e}")))?
         .error_for_status()
-        .map_err(|e| format!("manifest http: {e}"))?
+        .map_err(|e| AppError::msg(format!("manifest http: {e}")))?
         .bytes()
         .await
-        .map_err(|e| format!("manifest read: {e}"))?;
+        .map_err(|e| AppError::msg(format!("manifest read: {e}")))?;
 
-    let manifest: ExtensionManifest =
-        serde_json::from_slice(&manifest_bytes).map_err(|e| format!("manifest parse: {e}"))?;
+    let manifest: ExtensionManifest = serde_json::from_slice(&manifest_bytes)
+        .map_err(|e| AppError::msg(format!("manifest parse: {e}")))?;
     validate_manifest(&manifest)?;
     verify_signature(&manifest_bytes, manifest.signature.as_deref())?;
 
     let dir = extensions_dir(&app)?.join(&manifest.id);
     fs::create_dir_all(&dir)
         .await
-        .map_err(|e| format!("create dir: {e}"))?;
+        .map_err(|e| AppError::msg(format!("create dir: {e}")))?;
 
     for entry in &manifest.assets {
         if !url_allowed(&entry.url) {
-            return Err(format!(
+            return Err(AppError::msg(format!(
                 "asset '{}' url must be https (localhost allowed for dev)",
                 entry.id
-            ));
+            )));
         }
         let target = dir.join(&entry.filename);
         ensure_one(&client, &entry.url, &entry.sha256, &target)
             .await
-            .map_err(|e| format!("asset '{}': {e}", entry.id))?;
+            .map_err(|e| AppError::msg(format!("asset '{}': {e}", entry.id)))?;
 
         if let (Some(tn), Some(tu), Some(th)) = (
             entry.thumb_filename.as_ref(),
@@ -301,7 +304,7 @@ pub async fn install_extension(
     if let Ok(json) = serde_json::to_vec_pretty(&manifest) {
         fs::write(&lock_path, json)
             .await
-            .map_err(|e| format!("write lock: {e}"))?;
+            .map_err(|e| AppError::msg(format!("write lock: {e}")))?;
     }
     write_state(&dir, true).await;
 
@@ -310,7 +313,7 @@ pub async fn install_extension(
 
 /// No-network: enumerate installed packs from disk (used for startup hydration).
 #[tauri::command]
-pub fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledExtension>, String> {
+pub fn list_installed_extensions(app: AppHandle) -> AppResult<Vec<InstalledExtension>> {
     let base = extensions_dir(&app)?;
     let mut out = Vec::new();
     let Ok(read) = std::fs::read_dir(&base) else {
@@ -334,17 +337,15 @@ pub fn list_installed_extensions(app: AppHandle) -> Result<Vec<InstalledExtensio
 
 /// Toggle a pack's enabled flag (without deleting its files).
 #[tauri::command]
-pub async fn set_extension_enabled(
-    app: AppHandle,
-    ext_id: String,
-    enabled: bool,
-) -> Result<(), String> {
+pub async fn set_extension_enabled(app: AppHandle, ext_id: String, enabled: bool) -> AppResult<()> {
     if !is_safe_ext_id(&ext_id) {
-        return Err(format!("unsafe extension id '{ext_id}'"));
+        return Err(AppError::msg(format!("unsafe extension id '{ext_id}'")));
     }
     let dir = extensions_dir(&app)?.join(&ext_id);
     if !dir.is_dir() {
-        return Err(format!("extension '{ext_id}' is not installed"));
+        return Err(AppError::msg(format!(
+            "extension '{ext_id}' is not installed"
+        )));
     }
     write_state(&dir, enabled).await;
     Ok(())
@@ -352,15 +353,15 @@ pub async fn set_extension_enabled(
 
 /// Remove a pack and all its files.
 #[tauri::command]
-pub async fn uninstall_extension(app: AppHandle, ext_id: String) -> Result<(), String> {
+pub async fn uninstall_extension(app: AppHandle, ext_id: String) -> AppResult<()> {
     if !is_safe_ext_id(&ext_id) {
-        return Err(format!("unsafe extension id '{ext_id}'"));
+        return Err(AppError::msg(format!("unsafe extension id '{ext_id}'")));
     }
     let dir = extensions_dir(&app)?.join(&ext_id);
     if dir.is_dir() {
         fs::remove_dir_all(&dir)
             .await
-            .map_err(|e| format!("remove extension: {e}"))?;
+            .map_err(|e| AppError::msg(format!("remove extension: {e}")))?;
     }
     Ok(())
 }
@@ -369,21 +370,23 @@ pub async fn uninstall_extension(app: AppHandle, ext_id: String) -> Result<(), S
 /// frontend gallery to render. The index is expected to list packs with their
 /// manifest URLs + display metadata.
 #[tauri::command]
-pub async fn fetch_extension_registry(index_url: String) -> Result<serde_json::Value, String> {
+pub async fn fetch_extension_registry(index_url: String) -> AppResult<serde_json::Value> {
     if !url_allowed(&index_url) {
-        return Err("registry index URL must be https (localhost allowed for dev)".into());
+        return Err(AppError::from(
+            "registry index URL must be https (localhost allowed for dev)",
+        ));
     }
     let client = http_client()?;
     client
         .get(&index_url)
         .send()
         .await
-        .map_err(|e| format!("registry request: {e}"))?
+        .map_err(|e| AppError::msg(format!("registry request: {e}")))?
         .error_for_status()
-        .map_err(|e| format!("registry http: {e}"))?
+        .map_err(|e| AppError::msg(format!("registry http: {e}")))?
         .json()
         .await
-        .map_err(|e| format!("registry parse: {e}"))
+        .map_err(|e| AppError::msg(format!("registry parse: {e}")))
 }
 
 #[cfg(test)]

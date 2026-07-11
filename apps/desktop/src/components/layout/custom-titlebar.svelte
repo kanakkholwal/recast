@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ActivityCenter from "$components/layout/activity-center.svelte";
   import WindowControls from "$components/layout/window-controls.svelte";
   import { shortcutsDialog } from "$lib/shortcuts/registry.svelte";
   import { layoutMode } from "$lib/stores/layout-mode.svelte";
@@ -43,7 +44,9 @@
     {/if}
   </div>
 
-  <!-- Outside the drag region so the click registers. -->
+  <!-- Outside the drag region so clicks register. -->
+  <ActivityCenter />
+
   <button
     type="button"
     onclick={() => shortcutsDialog.show()}

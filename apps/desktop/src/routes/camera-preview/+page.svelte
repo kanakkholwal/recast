@@ -134,7 +134,7 @@
               validation.statusMessage ?? "Camera source requires validation.";
           }
         } catch {
-          // Non-fatal — preview can still open via browser enumeration.
+          // Non-fatal. Preview can still open via browser enumeration.
         }
       }
 
@@ -244,7 +244,7 @@
         Math.round(CONTROL_BAR_HEIGHT * dpr),
       );
     } catch (e) {
-      // Non-Windows / older build — the JS snap-to-aspect path still applies.
+      // Non-Windows / older build. The JS snap-to-aspect path still applies.
       console.warn("native aspect lock unavailable:", e);
     }
   }
@@ -285,7 +285,7 @@
     if (isSnapping) return;
     const factor = window.devicePixelRatio || 1;
     const w = physWidth / factor;
-    // Drag deltas arrive as *window* dimensions — peel off the control strip to
+    // Drag deltas arrive as *window* dimensions, so peel off the control strip to
     // get the video box the aspect ratio actually governs.
     const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
     const target = ASPECT_RATIO[aspect];
@@ -349,7 +349,7 @@
     }
   });
 
-  // Icon + tooltip for the current shape — drives the cycle button's label.
+  // Icon + tooltip for the current shape, drives the cycle button's label.
   const shapeMeta = $derived.by(() => {
     switch (shape) {
       case "circle":
@@ -394,7 +394,7 @@
   class="group/root relative flex h-screen w-full select-none flex-col scroll-m-0 scrollbar-none"
   
 >
-  <!-- Video bubble — the only clipped/rounded surface; `flex-1` is the window
+  <!-- Video bubble, the only clipped/rounded surface; `flex-1` is the window
        height minus the control strip, the region the aspect lock governs. -->
   <div
     class="relative min-h-0 w-full flex-1 overflow-hidden bg-card transition-[border-radius] duration-150 ease-out motion-reduce:transition-none"

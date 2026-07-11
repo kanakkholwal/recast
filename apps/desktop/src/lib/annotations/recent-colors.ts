@@ -1,5 +1,5 @@
 // Workspace-scoped LRU (max 12) of recently picked annotation colors, synced to
-// localStorage. Bleeds across projects deliberately — the palette follows the
+// localStorage. Bleeds across projects deliberately: the palette follows the
 // user, not the file.
 
 import { safeStorage } from "@recast/ui/persisted-state";
@@ -27,7 +27,7 @@ export function getRecentColors(): string[] {
 
 /**
  * Push `color` to the front of the LRU. No-op when `color` is empty,
- * "transparent", or `inherit` — those aren't meaningful entries to recall.
+ * "transparent", or `inherit`, since those aren't meaningful entries to recall.
  */
 export function pushRecentColor(color: string): string[] {
 	const trimmed = color.trim();

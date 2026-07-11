@@ -19,7 +19,7 @@ export type TargetSource = {
 
 /**
  * Cap a desired capture fps to a monitor source's refresh rate. `null` (Auto)
- * and non-monitor / unknown-refresh sources pass through unchanged — the
+ * and non-monitor / unknown-refresh sources pass through unchanged. The
  * backend still clamps to its 24–240 range.
  */
 export function clampFpsToDisplay(

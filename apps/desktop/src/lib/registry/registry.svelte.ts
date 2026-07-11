@@ -36,7 +36,7 @@ class Registry {
 			const list = this.#entries[entry.kind];
 			const idx = list.findIndex((e) => e.id === entry.id);
 			if (idx >= 0) {
-				// Replace in place — keep ordering stable so pickers don't jump.
+				// Replace in place to keep ordering stable so pickers don't jump.
 				this.#entries[entry.kind] = [
 					...list.slice(0, idx),
 					entry,

@@ -1,13 +1,13 @@
 /**
  * Parity-sensitive preview maths, extracted as pure param-in functions. Each
- * mirrors a Rust export path 1:1 — preview and the rendered MP4 MUST agree, so
+ * mirrors a Rust export path 1:1: preview and the rendered MP4 MUST agree, so
  * any behaviour change here is a regression. Callers thread the relevant store
  * slice in as an argument (zoom regions, cursor samples, idle periods, …).
  */
 
 // Runtime import via relative path (not `$lib`): the standalone vitest config
 // has no `$lib` alias, and this module is unit-tested. Type-only `$lib` imports
-// elsewhere are fine — they're erased before the test runs.
+// elsewhere are fine; they're erased before the test runs.
 import { bezierY } from "../../lib/easing/cubic-bezier";
 import type { Easing } from "$lib/easing/cubic-bezier";
 import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
@@ -62,7 +62,7 @@ export function evaluateZoomAt(regions: ZoomRegion[], timeSec: number): ZoomStat
 		phase = Math.max(0, Math.min(1, phase));
 		const eased = atHold ? 1 : bezierY(curve, phase);
 		const scale = 1.0 + (r.scale - 1.0) * eased;
-		// Focus point is CONSTANT at the target for the whole region — only the
+		// Focus point is CONSTANT at the target for the whole region; only the
 		// scale eases. The affine zoom `(uv - c)/scale + c` is the identity at
 		// scale≈1 (no first-frame offset regardless of c) and dollies straight
 		// into the target as it ramps. Easing the centre from 0.5→target instead
@@ -76,7 +76,7 @@ export function evaluateZoomAt(regions: ZoomRegion[], timeSec: number): ZoomStat
 }
 
 /**
- * Cursor position/state at `timestampUs` — mirror of
+ * Cursor position/state at `timestampUs`, mirror of
  * `cursor::smoothing::interpolate_at`. Samples must be sorted by timestamp.
  * `easing` reshapes the interpolation parameter between adjacent captured
  * samples; boolean states still flip at the midpoint of the linear param.
@@ -117,7 +117,7 @@ export function interpolateCursor(
 	};
 }
 
-// Idle hide fade — shared 200ms ramp at each end of an idle period.
+// Idle hide fade: shared 200ms ramp at each end of an idle period.
 // Mirrored 1:1 in `cursor_export.rs` so preview and export agree.
 export const CURSOR_IDLE_FADE_US = 200_000;
 
@@ -159,7 +159,7 @@ export function resolutionTier(w: number, h: number): string {
 }
 
 // Map a source-init failure to a coarse, PII-safe reason. The raw message can
-// in principle carry a URL/path, so we NEVER send it — only this enum.
+// in principle carry a URL/path, so we NEVER send it; only this enum.
 export function classifyWcError(err: unknown): string {
 	const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
 	if (m.includes("unavailable") || m.includes("worker") || m.includes("videoframe"))

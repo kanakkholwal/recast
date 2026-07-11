@@ -54,7 +54,7 @@
   let probing = $state(true);
   let probeError = $state<string | null>(null);
 
-  // Capture-support matrix — what this device's native APIs can actually
+  // Capture-support matrix: what this device's native APIs can actually
   // record, probed at runtime rather than hardcoded per platform.
   let captureCaps = $state<CaptureCapabilities | null>(null);
   let captureProbing = $state(true);
@@ -81,7 +81,7 @@
         /* optional */
       }
     } catch {
-      // Not running under Tauri (browser preview) — leave the defaults.
+      // Not running under Tauri (browser preview), leave the defaults.
     }
   }
 

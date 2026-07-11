@@ -15,10 +15,11 @@
 //!   5. POST /api/recasts/{id}/share { visibility: "public" } → share link.
 //!
 //! Auth reuses the device-flow bearer token from `auth.rs` (OS keyring) —
-//! the frontend never sees the raw token. Progress is emitted as coarse
-//! phase events (`recast-cloud:progress|complete|error`); the long-running
-//! granular progress is the export step, which has its own `export-state`
-//! events.
+//! the frontend never sees the raw token. Live progress (coarse phase + PUT
+//! byte counts) streams on the command's request-scoped `on_event` channel;
+//! success is the resolved `CloudShareResult`, and failure additionally fires
+//! a detached `recast-cloud:error` event for corner notifications. The
+//! long-running granular progress is the export step (its own `export-state`).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -26,9 +27,10 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use reqwest::header;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 
 use super::auth::{cloud_api_url, current_session_token, user_agent};
+use super::error::{AppError, AppResult};
 
 // ──────────────────────────────────────────────────────────────────────────
 // HTTP helper (shared base + authed client, reused from the auth module)
@@ -161,28 +163,26 @@ fn now_unix() -> u64 {
 // Events
 // ──────────────────────────────────────────────────────────────────────────
 
+/// Live progress for an in-flight upload, streamed on the per-call `on_event`
+/// channel (one channel per upload → no path correlation). Terminal
+/// success/failure aren't repeated here: success rides the command's resolved
+/// `CloudShareResult`, failure its rejection (plus the `recast-cloud:error`
+/// broadcast below, for detached corner notifications).
 #[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct CloudProgress<'a> {
-    path: &'a str,
-    /// "preparing" | "uploading" | "finalizing" | "sharing"
-    phase: &'a str,
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub(crate) enum CloudUploadEvent {
+    /// Coarse phase: preparing | uploading | finalizing | sharing.
+    Phase { phase: String },
+    /// Cumulative bytes handed to the transport during the file PUT — drives the
+    /// determinate bar (mirrors Google Drive's byte progress).
+    #[serde(rename_all = "camelCase")]
+    Progress { bytes_sent: u64, total_bytes: u64 },
 }
 
-fn emit_progress(app: &AppHandle, path: &str, phase: &str) {
-    let _ = app.emit("recast-cloud:progress", CloudProgress { path, phase });
-}
-
-/// Byte-level progress for the long-running PUT, so the share card can render a
-/// determinate bar instead of an indeterminate pulse (mirrors Google Drive's
-/// `gdrive:progress`). Keyed by the local file path, like every other
-/// `recast-cloud:*` event.
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct CloudUploadProgress<'a> {
-    path: &'a str,
-    bytes_sent: u64,
-    total_bytes: u64,
+fn send_phase(on_event: &Channel<CloudUploadEvent>, phase: &str) {
+    let _ = on_event.send(CloudUploadEvent::Phase {
+        phase: phase.to_string(),
+    });
 }
 
 /// Emit a failure event AND return the message, so the awaiting promise and
@@ -253,12 +253,13 @@ pub async fn recast_cloud_upload(
     // Output-time transcript to publish as a selectable caption track. None /
     // empty → no track uploaded. Serialized to VTT here.
     captions_transcript: Option<crate::transcription::Transcript>,
-) -> Result<CloudShareResult, String> {
+    on_event: Channel<CloudUploadEvent>,
+) -> AppResult<CloudShareResult> {
     let token = token_or_err().map_err(|e| fail(&app, &path, e))?;
     let client = cloud_client().map_err(|e| fail(&app, &path, e))?;
     let base = cloud_api_url();
 
-    emit_progress(&app, &path, "preparing");
+    send_phase(&on_event, "preparing");
 
     // Probe the exported MP4 for the real dimensions / duration / size. This
     // is authoritative; we don't trust caller-supplied numbers.
@@ -316,11 +317,7 @@ pub async fn recast_cloud_upload(
     if !init_resp.status().is_success() {
         let status = init_resp.status();
         let body = init_resp.text().await.unwrap_or_default();
-        return Err(fail(
-            &app,
-            &path,
-            humanize_init_error(status.as_u16(), &body),
-        ));
+        return Err(fail(&app, &path, humanize_init_error(status.as_u16(), &body)).into());
     }
 
     let init: InitResp = init_resp
@@ -333,7 +330,8 @@ pub async fn recast_cloud_upload(
             &app,
             &path,
             "This storage provider isn't supported by the desktop uploader yet.".into(),
-        ));
+        )
+        .into());
     }
 
     // ── PUT the file ──────────────────────────────────────────────────
@@ -343,21 +341,17 @@ pub async fn recast_cloud_upload(
     // otherwise defaults to `Transfer-Encoding: chunked`. Free uploads are
     // 720p-capped (~150 MB), comfortably in RAM; only one ~1 MiB chunk is
     // copied out of the buffer at a time.
-    emit_progress(&app, &path, "uploading");
+    send_phase(&on_event, "uploading");
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|e| fail(&app, &path, format!("Couldn't read export file: {e}")))?;
     let total_bytes = bytes.len() as u64;
 
     // Surface the bar at 0% before the first chunk flushes.
-    let _ = app.emit(
-        "recast-cloud:upload-progress",
-        CloudUploadProgress {
-            path: &path,
-            bytes_sent: 0,
-            total_bytes,
-        },
-    );
+    let _ = on_event.send(CloudUploadEvent::Progress {
+        bytes_sent: 0,
+        total_bytes,
+    });
 
     let envelope_headers = init.upload.headers.unwrap_or_default();
     let has_content_type = envelope_headers
@@ -365,27 +359,21 @@ pub async fn recast_cloud_upload(
         .any(|k| k.eq_ignore_ascii_case("content-type"));
 
     const PUT_CHUNK_SIZE: usize = 1024 * 1024; // 1 MiB → smooth bar, bounded event count
-    let progress_app = app.clone();
-    let progress_path = path.clone();
+    let progress_channel = on_event.clone();
     let body_stream = futures_util::stream::unfold((bytes, 0usize), move |(buf, offset)| {
-        let progress_app = progress_app.clone();
-        let progress_path = progress_path.clone();
+        let progress_channel = progress_channel.clone();
         async move {
             if offset >= buf.len() {
                 return None;
             }
             let end = (offset + PUT_CHUNK_SIZE).min(buf.len());
             let chunk = buf[offset..end].to_vec();
-            // Cumulative bytes handed to the transport, keyed by local path
-            // to match the store's `uploads` map.
-            let _ = progress_app.emit(
-                "recast-cloud:upload-progress",
-                CloudUploadProgress {
-                    path: &progress_path,
-                    bytes_sent: end as u64,
-                    total_bytes,
-                },
-            );
+            // Cumulative bytes handed to the transport. The channel is scoped to
+            // this upload, so no path key is needed to correlate on the client.
+            let _ = progress_channel.send(CloudUploadEvent::Progress {
+                bytes_sent: end as u64,
+                total_bytes,
+            });
             Some((Ok::<Vec<u8>, std::io::Error>(chunk), (buf, end)))
         }
     });
@@ -407,7 +395,7 @@ pub async fn recast_cloud_upload(
         .map_err(|e| fail(&app, &path, format!("Upload failed: {e}")))?;
     if !put_resp.status().is_success() {
         let status = put_resp.status();
-        return Err(fail(&app, &path, format!("Upload rejected ({status}).")));
+        return Err(fail(&app, &path, format!("Upload rejected ({status}).")).into());
     }
 
     // ── PUT the poster (best-effort) ────────────────────────────────────
@@ -461,7 +449,7 @@ pub async fn recast_cloud_upload(
     }
 
     // ── complete ──────────────────────────────────────────────────────
-    emit_progress(&app, &path, "finalizing");
+    send_phase(&on_event, "finalizing");
     let complete_resp = client
         .post(format!("{base}/api/uploads/complete"))
         .header(header::AUTHORIZATION, bearer(&token))
@@ -481,15 +469,11 @@ pub async fn recast_cloud_upload(
     if !complete_resp.status().is_success() {
         let status = complete_resp.status();
         let body = complete_resp.text().await.unwrap_or_default();
-        return Err(fail(
-            &app,
-            &path,
-            humanize_complete_error(status.as_u16(), &body),
-        ));
+        return Err(fail(&app, &path, humanize_complete_error(status.as_u16(), &body)).into());
     }
 
     // ── share (public link) ───────────────────────────────────────────
-    emit_progress(&app, &path, "sharing");
+    send_phase(&on_event, "sharing");
     let share_resp = client
         .post(format!("{base}/api/recasts/{}/share", init.recast_id))
         .header(header::AUTHORIZATION, bearer(&token))
@@ -505,7 +489,8 @@ pub async fn recast_cloud_upload(
             &app,
             &path,
             format!("Creating share link failed ({status}): {body}"),
-        ));
+        )
+        .into());
     }
 
     let share: ShareResp = share_resp
@@ -530,16 +515,6 @@ pub async fn recast_cloud_upload(
         },
     );
 
-    let _ = app.emit(
-        "recast-cloud:complete",
-        serde_json::json!({
-            "path": path,
-            "recastId": result.recast_id,
-            "slug": result.slug,
-            "shareUrl": result.share_url,
-        }),
-    );
-
     Ok(result)
 }
 
@@ -553,7 +528,7 @@ pub async fn recast_cloud_update_share(
     visibility: Option<String>,
     password: Option<String>,
     expires_at: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -565,7 +540,7 @@ pub async fn recast_cloud_update_share(
             "public" => "public",
             "workspace" | "team" => "team",
             "private" => "private",
-            other => return Err(format!("Unknown visibility: {other}")),
+            other => return Err(AppError::msg(format!("Unknown visibility: {other}"))),
         };
         let resp = client
             .patch(format!("{base}/api/share/{slug}/access"))
@@ -573,11 +548,13 @@ pub async fn recast_cloud_update_share(
             .json(&serde_json::json!({ "visibility": mapped }))
             .send()
             .await
-            .map_err(|e| format!("Updating visibility failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("Updating visibility failed: {e}")))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Updating visibility failed ({status}): {body}"));
+            return Err(AppError::msg(format!(
+                "Updating visibility failed ({status}): {body}"
+            )));
         }
     }
 
@@ -611,11 +588,13 @@ pub async fn recast_cloud_update_share(
             .json(&settings)
             .send()
             .await
-            .map_err(|e| format!("Updating share settings failed: {e}"))?;
+            .map_err(|e| AppError::msg(format!("Updating share settings failed: {e}")))?;
         if !resp.status().is_success() {
             let status = resp.status();
             let body = resp.text().await.unwrap_or_default();
-            return Err(format!("Updating share settings failed ({status}): {body}"));
+            return Err(AppError::msg(format!(
+                "Updating share settings failed ({status}): {body}"
+            )));
         }
     }
 
@@ -630,7 +609,7 @@ pub async fn recast_cloud_delete(
     app: AppHandle,
     recast_id: String,
     path: Option<String>,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -640,13 +619,15 @@ pub async fn recast_cloud_delete(
         .header(header::AUTHORIZATION, bearer(&token))
         .send()
         .await
-        .map_err(|e| format!("Deleting cloud copy failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("Deleting cloud copy failed: {e}")))?;
 
     // 404 = already gone; treat as success so the local manifest can heal.
     if !resp.status().is_success() && resp.status().as_u16() != 404 {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Deleting cloud copy failed ({status}): {body}"));
+        return Err(AppError::msg(format!(
+            "Deleting cloud copy failed ({status}): {body}"
+        )));
     }
 
     if let Some(p) = path {
@@ -660,7 +641,7 @@ pub async fn recast_cloud_delete(
 /// List the shares for a recast (owner-only). Returned verbatim as JSON so
 /// the manage UI can render whatever the server provides.
 #[tauri::command]
-pub async fn recast_cloud_list_shares(recast_id: String) -> Result<serde_json::Value, String> {
+pub async fn recast_cloud_list_shares(recast_id: String) -> AppResult<serde_json::Value> {
     let token = token_or_err()?;
     let client = cloud_client()?;
     let base = cloud_api_url();
@@ -670,15 +651,17 @@ pub async fn recast_cloud_list_shares(recast_id: String) -> Result<serde_json::V
         .header(header::AUTHORIZATION, bearer(&token))
         .send()
         .await
-        .map_err(|e| format!("Listing shares failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("Listing shares failed: {e}")))?;
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("Listing shares failed ({status}): {body}"));
+        return Err(AppError::msg(format!(
+            "Listing shares failed ({status}): {body}"
+        )));
     }
     resp.json()
         .await
-        .map_err(|e| format!("Share list parse failed: {e}"))
+        .map_err(|e| AppError::msg(format!("Share list parse failed: {e}")))
 }
 
 /// All locally-recorded cloud uploads, keyed by local export path.
@@ -700,10 +683,10 @@ pub async fn recast_cloud_list_uploads(app: AppHandle) -> HashMap<String, CloudU
 /// for the same reason as `recast_cloud_list_uploads`: keep the manifest
 /// read-modify-write off the UI thread.
 #[tauri::command]
-pub async fn recast_cloud_forget_upload(app: AppHandle, path: String) -> Result<(), String> {
+pub async fn recast_cloud_forget_upload(app: AppHandle, path: String) -> AppResult<()> {
     tauri::async_runtime::spawn_blocking(move || forget_path(&app, &path))
         .await
-        .map_err(|e| format!("Forgetting upload failed: {e}"))
+        .map_err(|e| AppError::msg(format!("Forgetting upload failed: {e}")))
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -750,5 +733,67 @@ fn humanize_complete_error(status: u16, body: &str) -> String {
             "Your plan caps cloud sharing at 720p. Export at 720p, or upgrade for HD.".into()
         }
         _ => format!("Finalize failed ({status})."),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bearer_prefixes_the_token() {
+        assert_eq!(bearer("abc123"), "Bearer abc123");
+    }
+
+    #[test]
+    fn reason_of_reads_top_level_reason() {
+        assert_eq!(
+            reason_of(r#"{"reason":"storage_over_cap"}"#).as_deref(),
+            Some("storage_over_cap"),
+        );
+    }
+
+    #[test]
+    fn reason_of_reads_nested_denial_reason() {
+        assert_eq!(
+            reason_of(r#"{"denial":{"reason":"duration_over_cap"}}"#).as_deref(),
+            Some("duration_over_cap"),
+        );
+    }
+
+    #[test]
+    fn reason_of_returns_none_for_non_json_or_missing_reason() {
+        assert_eq!(reason_of("not json at all"), None);
+        assert_eq!(reason_of(r#"{"foo":"bar"}"#), None);
+    }
+
+    #[test]
+    fn humanize_init_error_prefers_reason_over_status() {
+        assert_eq!(
+            humanize_init_error(500, r#"{"reason":"storage_over_cap"}"#),
+            "You're out of cloud storage. Upgrade or free up space.",
+        );
+    }
+
+    #[test]
+    fn humanize_init_error_falls_back_to_status() {
+        assert_eq!(
+            humanize_init_error(401, "{}"),
+            "Your Recast Cloud session expired. Sign in again.",
+        );
+        assert_eq!(
+            humanize_init_error(403, "{}"),
+            "You don't have access to that workspace.",
+        );
+        assert_eq!(humanize_init_error(500, "{}"), "Upload init failed (500).");
+    }
+
+    #[test]
+    fn humanize_complete_error_maps_reason_and_status() {
+        assert_eq!(
+            humanize_complete_error(200, r#"{"reason":"upload_missing"}"#),
+            "The upload didn't arrive — please try again.",
+        );
+        assert_eq!(humanize_complete_error(500, "{}"), "Finalize failed (500).");
     }
 }

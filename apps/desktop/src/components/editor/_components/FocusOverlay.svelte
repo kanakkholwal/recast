@@ -22,7 +22,7 @@
   interface Props {
     store: EditorStore;
     videoEl: HTMLVideoElement | null;
-    /** The container wrapping the WebGL preview — we stretch to fit its rect. */
+    /** The container wrapping the WebGL preview, which we stretch to fit its rect. */
     targetEl: HTMLElement | null;
   }
 

@@ -11,7 +11,7 @@
  * High-frequency inputs (slider drags, scrubbing) must use `debounced` to coalesce
  * into one counted line instead of flooding the file.
  *
- * LOCAL only — PostHog is handled separately by `$lib/analytics`.
+ * LOCAL only. PostHog is handled separately by `$lib/analytics`.
  */
 
 import { diagnostics } from "./diagnostics.svelte";
@@ -21,7 +21,7 @@ type Level = "debug" | "info" | "warn" | "error";
 const IS_DEV = import.meta.env.DEV;
 
 interface RecastScope {
-	/** Short stable hash of the project path — distinguishes recasts in a log. */
+	/** Short stable hash of the project path, distinguishing recasts in a log. */
 	id: string;
 	/** Human label (the file's basename) for quick reading. */
 	label: string;
@@ -91,7 +91,7 @@ let logPlugin: typeof import("@tauri-apps/plugin-log") | null = null;
 let logPluginFailed = false;
 
 async function toFile(level: Level, msg: string): Promise<void> {
-	// warn/error are never verbose — always persist them (release keeps Warn+).
+	// warn/error are never verbose, so always persist them (release keeps Warn+).
 	// debug/info only when dev or diagnostics is on.
 	const always = level === "warn" || level === "error";
 	if (!always && !verboseEnabled()) return;
@@ -100,7 +100,7 @@ async function toFile(level: Level, msg: string): Promise<void> {
 		if (!logPlugin) logPlugin = await import("@tauri-apps/plugin-log");
 		await logPlugin[level](msg);
 	} catch {
-		// Not running under Tauri — stop retrying the dynamic import.
+		// Not running under Tauri, so stop retrying the dynamic import.
 		logPluginFailed = true;
 	}
 }
@@ -174,7 +174,7 @@ export const log = {
 	 * Coalesce rapid repeats of the SAME logical action (slider drag, scrub) into
 	 * one trailing `debug` line, annotated with `coalesced` when >1 call merged.
 	 * Keyed so distinct controls don't collapse into each other. Always pass the
-	 * LATEST value as `data` — the last call before the quiet period wins.
+	 * LATEST value as `data`: the last call before the quiet period wins.
 	 */
 	debounced(
 		key: string,

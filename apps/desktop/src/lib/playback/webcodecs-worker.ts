@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
 /**
- * WebCodecs decode worker — the off-main-thread half of the preview engine.
+ * WebCodecs decode worker: the off-main-thread half of the preview engine.
  *
  * The decode itself runs on the browser's internal threads; what we move here is
  * everything around it that would otherwise hit the WebView's main thread: the
@@ -41,7 +41,7 @@ let decodeAhead = 6;
 const QUEUE_MAX = 4;
 /**
  * A forward jump in requested time bigger than this (µs) is treated as a seek or
- * cut — the only case where we reset the decoder to a downstream keyframe and
+ * cut: the only case where we reset the decoder to a downstream keyframe and
  * skip ahead. A smaller forward step is normal playback or a lagging decoder;
  * there we keep streaming contiguously so no on-screen content is skipped. (A
  * cut shorter than this streams through its removed frames, which the
@@ -63,7 +63,7 @@ const TIER1_BUDGET_BYTES = 256 * 1024 * 1024;
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
-// Dev-only diagnostics: decoder output rate, queue depth, reset count — to tell
+// Dev-only diagnostics: decoder output rate, queue depth, reset count, to tell
 // whether the decoder is slow vs. frames arriving late on main.
 const DIAG = import.meta.env.DEV;
 let diagDecoded = 0;
@@ -78,7 +78,7 @@ let config: VideoDecoderConfig | null = null;
 let anchorKey = -1;
 let feedCursor = 0;
 let currentUs = 0;
-/** Requested time (µs) at the previous schedule() — to tell a seek/cut jump from
+/** Requested time (µs) at the previous schedule(), to tell a seek/cut jump from
  * smooth playback (incl. a lagging decoder). -1 until the first request. */
 let lastScheduleUs = -1;
 let disposed = false;
@@ -110,7 +110,7 @@ let lastTarget = 0;
 let scoutDecoder: VideoDecoder | null = null;
 /** Keyframe decode-index the scout is currently warming (dedup). -1 = idle. */
 let scoutAnchorKf = -1;
-/** Only scout frames at/after this presentation time (µs) are forwarded — the
+/** Only scout frames at/after this presentation time (µs) are forwarded: the
  * displayable post-cut frame onward; earlier GOP-internal frames are decode
  * dependencies we don't show. */
 let scoutTargetTs = Number.POSITIVE_INFINITY;
@@ -164,7 +164,7 @@ function makeDecoder(): VideoDecoder {
 					diagLastLogMs = nowMs;
 				}
 			}
-			// Transfer to main; do NOT close after — transfer detaches our handle.
+			// Transfer to main; do NOT close after; transfer detaches our handle.
 			post({ type: "frame", frame }, [frame]);
 		},
 		error: (e) => post({ type: "error", message: String(e) }),
@@ -177,7 +177,7 @@ function makeDecoder(): VideoDecoder {
 function makeScoutDecoder(): VideoDecoder {
 	return new VideoDecoder({
 		output: (frame) => {
-			// Drop the GOP-internal frames before the display target — they're only
+			// Drop the GOP-internal frames before the display target; they're only
 			// decode dependencies. Forward the rest into the main cache's holdout.
 			if (disposed || frame.timestamp < scoutTargetTs) {
 				frame.close();
@@ -201,7 +201,7 @@ function makeScoutDecoder(): VideoDecoder {
 
 /**
  * Fetch a byte range from the asset URL. Throws if the server ignored the Range
- * header (status 200 with the whole body) — that means progressive ingestion is
+ * header (status 200 with the whole body); that means progressive ingestion is
  * impossible on this platform and the caller should fall back to `<video>`.
  */
 async function fetchRange(
@@ -366,7 +366,7 @@ async function loadGop(kfIndex: number): Promise<void> {
 	inflight.set(kfIndex, controller);
 	try {
 		const buf = await fetchRange(sourceUrl, startByte, endByte, controller.signal);
-		if (disposed || gen !== currentGen) return; // superseded — drop it
+		if (disposed || gen !== currentGen) return; // superseded, drop it
 		const view = new Uint8Array(buf);
 		const end = gopEnd(kfIndex);
 		for (let i = kfIndex; i < end; i++) {
@@ -381,7 +381,7 @@ async function loadGop(kfIndex: number): Promise<void> {
 				freeGop(ev);
 			}
 		}
-		schedule(lastTarget); // bytes are here — continue feeding
+		schedule(lastTarget); // bytes are here, continue feeding
 	} catch (err) {
 		if (!disposed && (err as { name?: string })?.name !== "AbortError" && DIAG) {
 			console.warn("[wc-worker] GOP load failed", kfIndex, err);
@@ -399,7 +399,7 @@ function ensureGopLoaded(kfIndex: number): void {
 }
 
 /** Cancel all in-flight GOP fetches and bump the generation (on a reset/seek so
- * their late bytes are ignored). Resident GOP bytes survive — that's the cache. */
+ * their late bytes are ignored). Resident GOP bytes survive; that's the cache. */
 function cancelInflight(): void {
 	currentGen++;
 	for (const c of inflight.values()) c.abort();
@@ -433,7 +433,7 @@ function schedule(target: number): void {
 	while (feedCursor <= end && decoder.decodeQueueSize < QUEUE_MAX) {
 		const c = chunks[feedCursor];
 		// Progressive: if this GOP's media bytes aren't resident yet, kick off a
-		// range fetch and stop — loadGop() resumes feeding when the bytes land.
+		// range fetch and stop; loadGop() resumes feeding when the bytes land.
 		if (progressive && c.data === null) {
 			ensureGopLoaded(keyframeAtOrBefore(keyframes, feedCursor));
 			break;
@@ -465,7 +465,7 @@ function prefetch(originalSec: number): void {
 	// warming it.
 	if (kf === anchorKey || kf === scoutAnchorKf) return;
 	// Progressive: the GOP's media bytes must be resident first. Kick the loader
-	// and bail — the next prefetch tick retries once the bytes land.
+	// and bail; the next prefetch tick retries once the bytes land.
 	if (progressive) {
 		const end = gopEnd(kf);
 		for (let i = kf; i < end; i++) {
@@ -495,7 +495,7 @@ function prefetch(originalSec: number): void {
 	const feedEnd = Math.min(target + 2, chunks.length - 1);
 	for (let i = kf; i <= feedEnd; i++) {
 		const c = chunks[i];
-		if (c.data === null) break; // progressive byte gap — retry next tick
+		if (c.data === null) break; // progressive byte gap, retry next tick
 		scoutDecoder.decode(
 			new EncodedVideoChunk({
 				type: c.key ? "key" : "delta",

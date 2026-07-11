@@ -2,7 +2,7 @@
  * GLSL sources for the editor preview compositor. Kept as plain strings so the
  * shader logic (background gradient, rounded-rect mask, zoom, motion blur,
  * cursor + click highlight, drop shadow) lives in one place. Several branches
- * mirror the Rust export rasteriser 1:1 — keep the two in lockstep.
+ * mirror the Rust export rasteriser 1:1. Keep the two in lockstep.
  */
 
 export const VERT_SRC = `#version 300 es
@@ -25,8 +25,8 @@ uniform vec2 u_canvasSize;        // pixels
 // u_paddingPx so we can letterbox/pillarbox to a target aspect ratio
 // (the bars between the comp and the canvas edge are filled by the
 // background).
-uniform vec2 u_videoOrigin;       // pixels — top-left of source video
-uniform vec2 u_videoSize;         // pixels — source video w/h
+uniform vec2 u_videoOrigin;       // pixels: top-left of source video
+uniform vec2 u_videoSize;         // pixels: source video w/h
 uniform int u_bgType;             // 0=color, 1=gradient, 2=image
 uniform vec4 u_bgColor;           // [0..1]
 // Multi-stop linear gradient. Colors + their positions (0..1) along the
@@ -51,7 +51,7 @@ uniform float u_cursorRadius;     // pixels (canvas)
 uniform vec4 u_cursorColor;
 uniform vec4 u_highlightColor;
 uniform float u_highlightAlpha;   // 0 if no click highlight
-uniform vec2 u_highlightPos;      // [0..1] video UV, ALREADY zoom-transformed — the
+uniform vec2 u_highlightPos;      // [0..1] video UV, ALREADY zoom-transformed: the
                                   // captured click point, independent of the cursor
 
 // Drop shadow cast by the video rect onto the background.
@@ -70,7 +70,7 @@ vec4 sampleBackground(vec2 uv) {
 		// Multi-stop linear gradient with a real CSS angle. Project the pixel
 		// onto the gradient line in PIXEL space (aspect-aware) so the visual
 		// angle matches the picker swatch and the exported PNG exactly. The
-		// Rust rasteriser uses identical math — keep the two in lockstep.
+		// Rust rasteriser uses identical math. Keep the two in lockstep.
 		vec2 dir = vec2(sin(u_gradAngle), -cos(u_gradAngle));
 		vec2 p = (uv - 0.5) * u_canvasSize;
 		float ext = abs(dir.x) * u_canvasSize.x + abs(dir.y) * u_canvasSize.y;
@@ -89,11 +89,11 @@ vec4 sampleBackground(vec2 uv) {
 		}
 		return col;
 	}
-	// Image / wallpaper — optionally blurred with a cheap separable-ish 9-tap kernel.
+	// Image / wallpaper, optionally blurred with a cheap separable-ish 9-tap kernel.
 	if (u_bgBlurPx <= 0.5) {
 		return texture(u_background, uv);
 	}
-	// Multi-tap gaussian approximation — 9 samples in a diamond/cross pattern
+	// Multi-tap gaussian approximation: 9 samples in a diamond/cross pattern
 	// with radius in UV space. Good enough for background blur at small
 	// radii; heavier blur is faked by larger step and stronger weights.
 	vec2 step = vec2(u_bgBlurPx, u_bgBlurPx) / u_canvasSize;
@@ -129,7 +129,7 @@ void main() {
 	// Rounded-rect mask for the video region.
 	vec2 videoCenter = (videoMin + videoMax) * 0.5;
 	// Scene rotation: spin the whole card about its centre by inverse-rotating the
-	// sampling coordinate — the mask, video UV, cursor and highlight all derive
+	// sampling coordinate: the mask, video UV, cursor and highlight all derive
 	// from canvasPx, so rotating it here rotates the card as one.
 	if (abs(u_videoRotation) > 0.0001) {
 		float rs = sin(u_videoRotation);
@@ -145,7 +145,7 @@ void main() {
 	// Coverage = 1 inside, fading to 0 over ~1 px at the edge for AA.
 	float videoCoverage = 1.0 - smoothstep(-1.0, 0.0, sd);
 
-	// Drop shadow — computed before the video mix so it sits under the rect.
+	// Drop shadow, computed before the video mix so it sits under the rect.
 	// Reuse sdRoundRect against an offset, spread-expanded clone of the video
 	// rectangle, then falls off across u_shadowBlurPx pixels.
 	if (u_shadowEnabled == 1 && u_shadowColor.a > 0.0) {
@@ -171,7 +171,7 @@ void main() {
 
 		// Radial motion blur centred on the focus point. Direction = vector
 		// from zoom centre outward; magnitude driven by d(scale)/dt in JS.
-		// 7 taps with a triangular weight — cheap enough per fragment.
+		// 7 taps with a triangular weight, cheap enough per fragment.
 		vec4 videoColor;
 		if (u_motionBlurPx > 0.5) {
 			vec2 dir = (videoUV - u_zoomCenter) * (u_motionBlurPx / max(u_canvasSize.x, 1.0));
@@ -189,7 +189,7 @@ void main() {
 			videoColor = texture(u_video, videoUV);
 		}
 
-		// Click highlight halo — PINNED to the captured click point
+		// Click highlight halo, PINNED to the captured click point
 		// (u_highlightPos, already zoom-transformed), drawn under the cursor and
 		// independent of the cursor sprite / its visibility. This is what makes
 		// the ring land exactly where AND when the click happened even with

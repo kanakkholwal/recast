@@ -3,8 +3,8 @@
  * Rust `AppConfig` so the native crash reporter can read the `errors` flag.
  *
  * Defaults:
- *   - `product` (behaviour analytics): OFF — strictly opt-in.
- *   - `errors`  (crash reporting):     ON  — default opt-in, toggle to disable.
+ *   - `product` (behaviour analytics): OFF, strictly opt-in.
+ *   - `errors`  (crash reporting):     ON, default opt-in, toggle to disable.
  *
  * `PersistedState` gives cross-window `storage` sync (Tauri v2 webviews share a
  * localStorage origin, so a toggle in Settings reaches open editor windows
@@ -32,7 +32,7 @@ const SEEN_KEY = "recast-consent-seen";
  */
 function mirrorToRust(consent: DesktopConsent) {
 	void setTelemetryConsent(consent.product, consent.errors, getInstallId()).catch(() => {
-		// Non-Tauri preview — JS-side gating still applies.
+		// Non-Tauri preview: JS-side gating still applies.
 	});
 }
 

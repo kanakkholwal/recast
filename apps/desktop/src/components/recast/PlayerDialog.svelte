@@ -1,8 +1,15 @@
 <script lang="ts">
-  import { formatDateTime, formatSize } from "$lib/format/files";
+  import { formatDateTime, formatSize, isImageFile } from "$lib/format/files";
   import type { RecordingEntry } from "$lib/ipc";
   import { openFileLocation } from "$lib/ipc";
-  import { Clock, Download, FolderOpen, Video, X } from "@lucide/svelte";
+  import {
+    Clock,
+    Download,
+    FolderOpen,
+    Image as ImageIcon,
+    Video,
+    X,
+  } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { RecastPlayer } from "@recast/player";
   import { convertFileSrc } from "@tauri-apps/api/core";
@@ -17,9 +24,13 @@
     onclose: () => void;
   } = $props();
 
-  // Tauri's asset:// URL — needed because the WebView can't read raw OS
+  // Tauri's asset:// URL, needed because the WebView can't read raw OS
   // paths. Recomputed if the parent swaps `entry` in place (rename flow).
   const src = $derived(convertFileSrc(entry.path));
+
+  // GIF (and other image) exports can't play in the video element, so they get
+  // an <img> preview instead. GIFs loop on their own.
+  const isImage = $derived(isImageFile(entry.filename));
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
@@ -40,7 +51,11 @@
     <header
       class="flex items-center gap-3 border-b border-border/50 px-4 py-3"
     >
-      <Video class="size-4 shrink-0 text-primary" />
+      {#if isImage}
+        <ImageIcon class="size-4 shrink-0 text-primary" />
+      {:else}
+        <Video class="size-4 shrink-0 text-primary" />
+      {/if}
       <span
         class="min-w-0 flex-1 truncate text-sm font-semibold text-foreground"
         title={entry.filename}
@@ -57,13 +72,32 @@
       </Button>
     </header>
 
-    <!-- autohide={-1}: WebView2 honours autoplay, and media-chrome hides the
-         bar while user-inactive — so an autoplaying clip would look control-less. -->
-    <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
-         metadata-only preload range-fetches the tail over the asset protocol and
-         stalls in NETWORK_LOADING (black frame) in release. "auto" streams from
-         byte 0. -->
-    <RecastPlayer {src} title={entry.filename} preload="auto" autoplay autohide={-1} />
+    {#if isImage}
+      <div
+        class="flex max-h-[65vh] items-center justify-center overflow-hidden bg-muted/30"
+      >
+        <img
+          {src}
+          alt={entry.filename}
+          draggable="false"
+          class="max-h-[65vh] max-w-full object-contain"
+        />
+      </div>
+    {:else}
+      <!-- autohide={-1}: WebView2 honours autoplay, and media-chrome hides the
+           bar while user-inactive, so an autoplaying clip would look control-less. -->
+      <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
+           metadata-only preload range-fetches the tail over the asset protocol and
+           stalls in NETWORK_LOADING (black frame) in release. "auto" streams from
+           byte 0. -->
+      <RecastPlayer
+        {src}
+        title={entry.filename}
+        preload="auto"
+        autoplay
+        autohide={-1}
+      />
+    {/if}
 
     <footer
       class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 text-xs text-muted-foreground"

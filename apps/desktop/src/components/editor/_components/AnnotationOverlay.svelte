@@ -50,7 +50,7 @@
   interface Props {
     store: EditorStore;
     videoEl: HTMLVideoElement | null;
-    /** The container that wraps the WebGL preview canvas — we stretch to fit. */
+    /** The container that wraps the WebGL preview canvas, which we stretch to fit. */
     targetEl: HTMLElement | null;
     /** The WebGL composite canvas. Used as the source for blur annotations,
      *  so we can blur the actual rendered frame (background + padding +
@@ -194,7 +194,7 @@
     // Blur bypasses the fade ramps in preview: a fresh blur (start ≈ currentTime)
     // would ramp from opacity 0 and early-return, and a half-transparent blur
     // copy over the unblurred canvas reads as flicker (globalAlpha applies to
-    // drawImage). When a blur is selected, render it even outside [start, end] —
+    // drawImage). When a blur is selected, render it even outside [start, end]:
     // float drift between a.start and t flickered fresh blurs on placement.
     // Export still honours start/end exactly.
     const isBlur = a.kind.kind === "blur";
@@ -263,7 +263,7 @@
       }
     } else if (a.kind.kind === "blur") {
       // Copy the WebGL composite into the overlay canvas, blurred via the 2D
-      // context's native `filter` — reliable across WebView backends, unlike
+      // context's native `filter`, which is reliable across WebView backends, unlike
       // backdrop-filter on a GPU-promoted canvas.
       const k = a.kind;
       if (compositeCanvasEl && w > 1 && h > 1) {
@@ -281,7 +281,7 @@
           // Sample a margin of real surrounding pixels around the region so the
           // blur has content to pull from. Without it, a large radius samples
           // the transparent edge, its alpha washes out, and the sharp video
-          // shows through — which reads as LESS blur past ~40% strength. (The
+          // shows through, which reads as LESS blur past ~40% strength. (The
           // export box-blurs an edge-clamped crop, the same idea.)
           const m = Math.ceil(blurPx);
           const ex = x - m;
@@ -405,7 +405,7 @@
   });
 
   // Offscreen scratch canvas for blur. We render the blur + tint here
-  // (rectangular) then composite onto the overlay under a rounded clip — a
+  // (rectangular) then composite onto the overlay under a rounded clip. A
   // rounded `ctx.clip()` is NOT reliably honoured while `ctx.filter = blur()`
   // is active (WebView2/Chromium blurs to the full bounding box), so the
   // corners are applied afterwards with no filter in effect.
@@ -582,7 +582,7 @@
     const w = bottomRight.x - topLeft.x;
     const h = bottomRight.y - topLeft.y;
 
-    // Soft outer ring then the crisp primary border — mirrors the recording
+    // Soft outer ring then the crisp primary border, mirroring the recording
     // area selection's `border-primary ring-primary/40`.
     ctx.strokeStyle = palette.accentRing;
     ctx.lineWidth = 3 * dpr;
@@ -753,7 +753,7 @@
     if (!canvasEl) return;
     // Fallback: if the cached size is still unknown (target not yet laid out
     // when the observer was set up), measure live so the canvas never gets
-    // stuck at 1x1 — a 1x1 backing stretched over the preview renders the first
+    // stuck at 1x1. A 1x1 backing stretched over the preview renders the first
     // near-white handle as a full-screen white wash.
     if ((targetSize.w <= 0 || targetSize.h <= 0) && targetEl) {
       const r = targetEl.getBoundingClientRect();
@@ -877,7 +877,7 @@
       return;
     }
 
-    // No hit — if a tool is active, start placing a new annotation.
+    // No hit. If a tool is active, start placing a new annotation.
     const tool = store.annotationTool;
     if (tool) {
       // New annotations default to the video anchor.
@@ -963,7 +963,7 @@
     return { x: result.x, y: result.y };
   }
 
-  /** Refresh the hover state used for cursor affordance — runs only when no
+  /** Refresh the hover state used for cursor affordance. Runs only when no
    *  drag is in flight so the cursor flips between grab/resize as the user
    *  passes over annotations. */
   function refreshHover(pt: { x: number; y: number }, t: number) {
@@ -1180,7 +1180,7 @@
         }
       }
       // After placement, drop the tool so the user doesn't create stacked
-      // shapes on their next click — matches Figma/Keynote behaviour.
+      // shapes on their next click. Matches Figma/Keynote behaviour.
       store.annotationTool = null;
     } else if (drag.kind === "resize" || drag.kind === "move") {
       const anno = store.annotations.find((a) => a.id === drag!.id);
@@ -1277,7 +1277,7 @@
       }
     }
 
-    // Arrow-key nudge — only when annotations tab is active and a non-locked
+    // Arrow-key nudge: only when annotations tab is active and a non-locked
     // annotation is selected. Step is 1 device-px / 10 device-px in UV.
     if (
       store.activePanel === "annotations" &&
@@ -1346,7 +1346,7 @@
   });
 </script>
 
-<!-- Local annotation editing keys (delete, deselect, Mod+D/[/], arrow nudge —
+<!-- Local annotation editing keys (delete, deselect, Mod+D/[/], arrow nudge,
      documented in the central shortcut registry). `<svelte:window>` so HMR
      rebinds rather than leaks the listener. -->
 <svelte:window onkeydown={handleKeyDown} />

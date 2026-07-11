@@ -12,7 +12,7 @@
     /** Classes applied to the `<img>` (e.g. `object-cover`). */
     class?: string;
     /**
-     * Strict box sizing — the component reserves this space on first paint,
+     * Strict box sizing. The component reserves this space on first paint,
      * before any network I/O, so the skeleton → image transition never shifts
      * surrounding layout. Any CSS `aspect-ratio` value.
      */
@@ -23,8 +23,8 @@
     height?: string;
     /**
      * Which cached tier to render.
-     *  - `"thumb"`: use the WebP thumbnail only — right for grids and pickers.
-     *  - `"full"`: use the full-resolution file only — right for hero/preview.
+     *  - `"thumb"`: use the WebP thumbnail only, right for grids and pickers.
+     *  - `"full"`: use the full-resolution file only, right for hero/preview.
      *  - `"auto"` (default): full-res preferred, thumb as fallback.
      *
      * Grids should pass `"thumb"`. Decoding 23×4K PNGs in a thumbnail picker

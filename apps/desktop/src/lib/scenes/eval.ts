@@ -2,14 +2,14 @@
  * Pure evaluator for per-segment scene animations. Given the current time and a
  * segment's window, returns the video-layer transform (opacity, position, scale).
  * Mirrors what the WebGL preview applies to `u_videoOrigin`/`u_videoSize`/
- * `u_videoOpacity` and what the Rust export graph reproduces on the video layer —
+ * `u_videoOpacity` and what the Rust export graph reproduces on the video layer:
  * the same "two evaluators stay in sync" contract as zoom, locked by the
  * scene-parity fixture.
  *
  * Evaluated in ORIGINAL/timeline time against each segment's ORIGINAL window,
  * exactly like zoom regions: the export samples the identical curve on the
  * continuous post-trim axis and the tail cut+speed stage re-times it. Animation
- * durations are therefore in source time — a sped-up clip plays its animation
+ * durations are therefore in source time: a sped-up clip plays its animation
  * proportionally faster, the same way its zoom ramps do.
  */
 
@@ -27,10 +27,10 @@ import type { SceneAnimSpec, SegmentAnim } from "./segment-anim";
 
 const EPS = 1e-4;
 
-// Below this a segment is too short to animate — it stays static. Each ramp is
+// Below this a segment is too short to animate, so it stays static. Each ramp is
 // capped to this fraction of the window so a hold always remains between the two
 // sides. Together they stop tiny fragments (e.g. from aggressive silence-cutting)
-// from sitting in a permanent in→out ramp — a constant wobble. Mirrored in the
+// from sitting in a permanent in→out ramp, a constant wobble. Mirrored in the
 // Rust export evaluator (render/scene_anim.rs); keep the two in lockstep.
 const MIN_ANIMATABLE_SEC = 0.2;
 const MAX_SIDE_FRACTION = 0.4;
@@ -116,7 +116,7 @@ export function presenceTransform(spec: SceneAnimSpec, p: number): SceneTransfor
  * exit eases 1→0 over the last `out.durationMs`; the hold between is identity. Each
  * side is capped to `MAX_SIDE_FRACTION` of the window (so the two never overlap and
  * a hold always remains), and a segment shorter than `MIN_ANIMATABLE_SEC` stays
- * static — both guards defeat the silence-cut wobble.
+ * static; both guards defeat the silence-cut wobble.
  */
 export function evalSegmentTransform(
 	anim: SegmentAnim | null,

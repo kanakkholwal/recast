@@ -29,7 +29,7 @@ const OS_LABEL: Record<string, string> = {
 /**
  * Decide whether `key` (a `CaptureCapability.key`) is usable on this device.
  * On `ok: false` the `message` is a finished, user-facing sentence ready to
- * drop into a toast — the caller just picks the surface.
+ * drop into a toast. The caller just picks the surface.
  */
 export async function checkCapability(
 	key: string,
@@ -39,7 +39,7 @@ export async function checkCapability(
 	try {
 		caps = await loadCapabilities();
 	} catch {
-		// Probe failed — let them try and surface the real error at use time.
+		// Probe failed, so let them try and surface the real error at use time.
 		return { ok: true };
 	}
 

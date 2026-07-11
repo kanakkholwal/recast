@@ -1,6 +1,6 @@
 // Hit-testing primitives for annotations: handle picking, body picking, and
 // topmost selection. All functions take container-pixel inputs and return
-// container-pixel positions or string handle IDs — no DOM dependencies.
+// container-pixel positions or string handle IDs, with no DOM dependencies.
 
 import type { Annotation } from "$lib/stores/editor-store.svelte";
 import { normaliseBox } from "./uv";
@@ -50,7 +50,7 @@ export function handlePositions(
 }
 
 export interface HitOptions {
-	/** Projects a UV point for a given annotation into container pixels — the
+	/** Projects a UV point for a given annotation into container pixels; the
 	 *  caller chooses the rect + zoom per annotation (video vs frame anchor). */
 	project: (a: Annotation, ux: number, uy: number) => Point;
 	t: number;

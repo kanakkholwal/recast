@@ -1,5 +1,5 @@
 /**
- * Asset registry shared types — Tier 0 of the extensions architecture: one
+ * Asset registry shared types: Tier 0 of the extensions architecture, one
  * addressable catalog for the editor's visual assets (cursors, backgrounds,
  * gradients, colours, easing, smoothing presets).
  *
@@ -58,7 +58,7 @@ export interface BackgroundValue {
 	wireValue: string;
 }
 export interface GradientValue {
-	/** CSS `linear-gradient(...)` string — the source of truth both renderers parse. */
+	/** CSS `linear-gradient(...)` string: the source of truth both renderers parse. */
 	value: string;
 }
 export interface ColorValue {
@@ -73,7 +73,7 @@ export interface SmoothingValue {
 	snapToClicks: boolean;
 	snapWindowMs: number;
 }
-/** A caption look — the visual half of `CaptionStyle` (everything except
+/** A caption look: the visual half of `CaptionStyle` (everything except
  *  `enabled`). Applied wholesale to the editor's caption style; built-ins ship
  *  a few themes and extension packs can contribute more. Kept structurally in
  *  sync with `CaptionStyle` in the editor store (this module can't import the
@@ -115,7 +115,7 @@ export type RegistryValueFor<K extends AssetKind> = K extends "cursor"
 							: never;
 
 export interface RegistryEntry<K extends AssetKind = AssetKind> {
-	/** Storage id — see module docs. Unique within a kind. */
+	/** Storage id; see module docs. Unique within a kind. */
 	id: string;
 	kind: K;
 	label: string;

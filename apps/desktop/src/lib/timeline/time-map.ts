@@ -4,7 +4,7 @@
  * Generalizes the cut model (./cuts.ts) so a kept span can play at a speed other
  * than 1×. Each kept span maps original→output with slope `1/speed`; removed
  * (trimmed or cut) original time has no output image and collapses to the seam.
- * With every span at speed 1 this reduces exactly to the cut translation map —
+ * With every span at speed 1 this reduces exactly to the cut translation map,
  * proven in ./time-map.test.ts against the shared cut-parity fixtures.
  *
  * This is the substrate per-segment speed sits on: build the map from the kept
@@ -134,8 +134,8 @@ export function displayTimeMap(args: {
 
 /**
  * Map an original-timeline time to output time. A time in a removed gap (or
- * before the first span) collapses onto the next kept span's output start — the
- * seam — matching cuts.ts, where a time inside a cut maps to the cut's start.
+ * before the first span) collapses onto the next kept span's output start (the
+ * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.
  */
 export function originalToOutput(map: TimeMap, t: number): number {
 	for (const s of map.spans) {

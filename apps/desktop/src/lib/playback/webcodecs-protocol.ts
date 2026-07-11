@@ -32,7 +32,7 @@ export type FromWorker =
 	  }
 	/**
 	 * A decoded frame, transferred. `fromScout` marks frames from the prefetch
-	 * decoder for an upcoming post-cut GOP — the main side parks those in a
+	 * decoder for an upcoming post-cut GOP; the main side parks those in a
 	 * protected holdout so the primary's eviction can't drop them before the cut.
 	 */
 	| { type: "frame"; frame: VideoFrame; fromScout?: boolean }

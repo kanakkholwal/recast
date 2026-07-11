@@ -1,7 +1,7 @@
 /**
  * Pure export-option maths for ExportDialog: cut/duration derivations, the fps
  * option list, and the GIF loop-count cycle. `computeRemovedDuration` mirrors
- * the Rust export's `collect_export_cuts` — keep the two in lockstep.
+ * the Rust export's `collect_export_cuts`. Keep the two in lockstep.
  */
 
 // Runtime import via relative path (not `$lib`): this module is unit-tested and
@@ -21,7 +21,7 @@ export function clampSourceFps(fps: number | undefined | null): number {
 }
 
 /**
- * Source rate plus standard lower rates only — never higher (duplicating frames
+ * Source rate plus standard lower rates only, never higher (duplicating frames
  * adds size without smoothness). A stored choice above the current source falls
  * back to Original via the Rust-side clamp.
  */

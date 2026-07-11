@@ -1,6 +1,6 @@
 // Client for the cursor-smoothing worker: keeps the raw track in the worker,
 // debounces + supersedes rapid slider changes, and falls back to a synchronous
-// pass if the worker can't be created. Owns no rendering — callers apply the
+// pass if the worker can't be created. Owns no rendering; callers apply the
 // result (the smoothed sample array) however they like.
 
 import {
@@ -31,7 +31,7 @@ export class CursorSmoother {
 				{ type: "module" },
 			);
 			this.#worker.onmessage = (e: MessageEvent<ResultMsg>) => {
-				// Drop superseded results — only the latest request matters.
+				// Drop superseded results: only the latest request matters.
 				if (e.data.id !== this.#reqId) return;
 				this.#onResult(e.data.samples);
 			};

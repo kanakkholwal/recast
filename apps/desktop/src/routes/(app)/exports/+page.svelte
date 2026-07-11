@@ -3,6 +3,7 @@
   import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
   import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
   import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
+  import { formatSize, getExtension, isImageFile } from "$lib/format/files";
   import {
     deleteFile,
     listExports,
@@ -10,7 +11,6 @@
     renameFile,
     type RecordingEntry,
   } from "$lib/ipc";
-  import { formatSize, getExtension } from "$lib/format/files";
   import {
     filterEntries,
     sortEntries,
@@ -36,6 +36,7 @@
     CopyIcon,
     Download,
     ExternalLink,
+    Eye,
     FolderOpen,
     Grid3x3,
     HardDriveUpload,
@@ -58,7 +59,6 @@
   import { ButtonGroup } from "@recast/ui/button-group";
   import { Cutout } from "@recast/ui/cutout";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Kbd } from "@recast/ui/kbd";
   import { safeStorage } from "@recast/ui/persisted-state";
   import * as Select from "@recast/ui/select";
   import { Skeleton } from "@recast/ui/skeleton";
@@ -153,7 +153,7 @@
     await deleteFile(entry.path);
     entries = entries.filter((e) => e.path !== entry.path);
     thumbnails = removeThumbnail(thumbnails, entry.path);
-    // Local file is gone — drop its upload records so the row doesn't return
+    // Local file is gone, so drop its upload records so the row doesn't return
     // next session claiming a copy. The remote objects are left untouched.
     void gdrive.forgetUpload(entry.path);
     void cloudShare.forget(entry.path);
@@ -162,7 +162,7 @@
 
   /**
    * Share an export to Recast Cloud: upload, create a public link, copy it.
-   * Routes to Settings when signed out — device sign-in opens a browser tab
+   * Routes to Settings when signed out, because device sign-in opens a browser tab
    * and shouldn't happen inline from a menu.
    */
   async function shareToCloud(entry: RecordingEntry) {
@@ -186,22 +186,22 @@
       void cloudShare.refreshStatus();
       return;
     }
-    await performCloudShare(entry.path, title);
+    beginCloudShare(entry.path, title);
   }
 
-  /** Upload + create a link for an already-targeted share, then copy it. */
-  async function performCloudShare(path: string, title: string, workspaceId?: string) {
-    try {
-      const result = await cloudShare.share(path, title, workspaceId);
-      try {
-        await navigator.clipboard.writeText(result.shareUrl);
-        toast.success("Shared. Link copied to clipboard.");
-      } catch {
-        toast.success("Shared to Recast Cloud.");
-      }
-    } catch (e) {
-      toast.error(`Cloud share failed: ${(e as Error)?.message ?? e}`);
-    }
+  /**
+   * Start an upload + share and surface it in the global foreground dialog
+   * (CloudShareHost). No toast: the store records phase/byte/result/error and the
+   * dialog reads it live, so the store's rejection is swallowed here.
+   *
+   * The dialog is opened on the next frame so a closing overlay (the row's
+   * dropdown, or the workspace picker) fully settles first. Opening a second
+   * modal in the same tick makes bits-ui hand focus back and the new dialog never
+   * appears, which read as "no dialog showed up".
+   */
+  function beginCloudShare(path: string, title: string, workspaceId?: string) {
+    void cloudShare.share(path, title, workspaceId).catch(() => {});
+    requestAnimationFrame(() => cloudShare.setForeground(path));
   }
 
   async function copyCloudLink(entry: RecordingEntry) {
@@ -233,7 +233,7 @@
 
   /**
    * Drive upload from the exports list. Routes to Settings when Drive isn't
-   * connected — the consent flow opens a browser tab, not inline.
+   * connected, because the consent flow opens a browser tab, not inline.
    */
   async function uploadToDrive(entry: RecordingEntry) {
     await gdrive.init();
@@ -242,14 +242,13 @@
       void goto("/settings");
       return;
     }
-    try {
-      await gdrive.upload(entry.path);
-    } catch (e) {
-      toast.error(`Drive upload failed: ${e}`);
-    }
+    // Progress lives in the foreground dialog (and the activity center once
+    // minimized), never in-place on the card. The store toasts the outcome.
+    const id = gdrive.startUpload(entry.path);
+    requestAnimationFrame(() => gdrive.setForeground(id));
   }
 
-  // `navigator.share` exposure is static — sample once at module load so the
+  // `navigator.share` exposure is static, so sample once at module load so the
   // dropdown can conditionally render the Share item without a reactive read.
   const shareSupported = isShareSupported();
 
@@ -278,7 +277,7 @@
     }
   }
 
-  /** Copy the recorded Drive link from the local manifest — no network. */
+  /** Copy the recorded Drive link from the local manifest (no network). */
   async function copyDriveLink(entry: RecordingEntry) {
     const record = gdrive.getRecordForPath(entry.path);
     if (!record?.webViewLink) {
@@ -549,14 +548,7 @@
         >
           {#each displayed as entry, i (entry.path)}
             {@const isSelected = selection.has(entry.path)}
-            {@const activeUpload = gdrive.getActiveUploadForPath(entry.path)}
-            {@const uploadPct = activeUpload && activeUpload.totalBytes
-              ? Math.min(
-                  100,
-                  Math.round((activeUpload.bytesSent / activeUpload.totalBytes) * 100),
-                )
-              : 0}
-            {@const cloudActive = cloudShare.getActiveForPath(entry.path)}
+            {@const isImage = isImageFile(entry.filename)}
             <div
               in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
               animate:morph={{ duration: 340 }}
@@ -596,12 +588,16 @@
                   <div
                     class="grid size-full place-items-center text-muted-foreground/50"
                   >
-                    <Play
-                      class={cn(
-                        "translate-x-px",
-                        view === "grid" ? "size-6" : "size-4",
-                      )}
-                    />
+                    {#if isImage}
+                      <Eye class={view === "grid" ? "size-6" : "size-4"} />
+                    {:else}
+                      <Play
+                        class={cn(
+                          "translate-x-px",
+                          view === "grid" ? "size-6" : "size-4",
+                        )}
+                      />
+                    {/if}
                   </div>
                 {/if}
 
@@ -625,7 +621,11 @@
                     <span
                       class="flex size-9 items-center justify-center rounded-full bg-background/85 text-foreground shadow-craft-sm backdrop-blur"
                     >
-                      <Play class="size-4 translate-x-px" />
+                      {#if isImage}
+                        <Eye class="size-4" />
+                      {:else}
+                        <Play class="size-4 translate-x-px" />
+                      {/if}
                     </span>
                   </div>
                 {/if}
@@ -643,16 +643,6 @@
                       {getExtension(entry.filename)}
                     </span>
                   </Cutout>
-                {/if}
-
-                <!-- Drive upload progress chip on the thumbnail (paired with the bottom bar). -->
-                {#if activeUpload}
-                  <span
-                    class="absolute left-1.5 top-1.5 flex h-4 items-center gap-1 rounded-md bg-background/85 px-1.5 text-[9px] font-semibold tracking-wide text-foreground shadow-craft-sm backdrop-blur"
-                  >
-                    <RefreshCw class="size-2.5 animate-spin text-primary" />
-                    {uploadPct}%
-                  </span>
                 {/if}
               </div>
 
@@ -706,17 +696,11 @@
                         onSelect={() => openFileLocation(entry.path)}
                       >
                         <FolderOpen /> Show in folder
-                        <DropdownMenu.Shortcut>
-                          <Kbd>⌘O</Kbd>
-                        </DropdownMenu.Shortcut>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item
                         onSelect={() => (renameTarget = entry)}
                       >
                         <Pencil /> Rename…
-                        <DropdownMenu.Shortcut>
-                          <Kbd>⌘R</Kbd>
-                        </DropdownMenu.Shortcut>
                       </DropdownMenu.Item>
                       <DropdownMenu.Item onSelect={() => copyPath(entry)}>
                         <CopyIcon /> Copy path
@@ -744,7 +728,7 @@
                         <DropdownMenu.Separator />
                         <DropdownMenu.Item
                           onSelect={() => forgetDriveLink(entry)}
-                          class="text-destructive focus:bg-destructive/10 focus:text-destructive"
+                          class="text-destructive hover:bg-destructive/10 hover:text-destructive"
                         >
                           <Unlink2 /> Forget Drive link
                         </DropdownMenu.Item>
@@ -792,29 +776,6 @@
                 </div>
               {/if}
 
-              <!-- Drive upload progress strip; width tracks the bytes-sent ratio
-                   the Rust side emits between resumable-upload chunks. -->
-              {#if activeUpload}
-                <div
-                  class="pointer-events-none absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-muted/30"
-                  aria-hidden="true"
-                >
-                  <div
-                    class="h-full rounded-r-sm bg-primary/85 transition-[width] duration-200"
-                    style="width: {uploadPct}%"
-                  ></div>
-                </div>
-              {/if}
-
-              <!-- Cloud share strip: phase-based (no byte %), so an indeterminate pulse. -->
-              {#if cloudActive}
-                <div
-                  class="pointer-events-none absolute inset-x-0 bottom-0 h-1 overflow-hidden bg-muted/30"
-                  aria-hidden="true"
-                >
-                  <div class="h-full w-1/3 animate-pulse rounded-r-sm bg-primary/85"></div>
-                </div>
-              {/if}
             </div>
           {/each}
         </div>
@@ -823,7 +784,7 @@
   </div>
 </div>
 
-<!-- Floating bulk-action bar — visible whenever selection mode is on. -->
+<!-- Floating bulk-action bar, visible whenever selection mode is on. -->
 {#if selection.selectMode}
   <div
     in:fly={{ y: 24, duration: 220, easing: cubicOut }}
@@ -840,7 +801,6 @@
       <Button
         variant="ghost"
         size="xs"
-        class="h-7 text-[11px]"
         onclick={() => selection.toggleAll(filtered)}
         disabled={filtered.length === 0}
       >
@@ -849,7 +809,6 @@
       <Button
         variant="destructive"
         size="xs"
-        class="h-7 gap-1.5 text-[11px]"
         onclick={() => (bulkDeleteOpen = true)}
         disabled={selectedCount === 0}
       >
@@ -857,9 +816,8 @@
         Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
       </Button>
       <Button
-        variant="ghost"
+        variant="secondary"
         size="xs"
-        class="h-7 text-[11px] text-muted-foreground hover:text-foreground"
         onclick={selection.exit}
       >
         Cancel
@@ -873,7 +831,7 @@
     open={true}
     title={`Move ${selectedCount} export${selectedCount === 1 ? "" : "s"} to trash?`}
     description="The selected exports will be sent to the recycle bin. You can restore them from there if needed."
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={selection.bulkDelete}
     onOpenChange={(v) => {
@@ -902,7 +860,7 @@
     open={true}
     title="Move export to trash?"
     description={`“${deleteTarget.filename}” will be sent to the recycle bin. You can restore it from there if needed.`}
-    confirmLabel="Move to Trash"
+    confirmLabel="Move to trash"
     variant="destructive"
     onConfirm={async () => {
       await handleDelete(deleteTarget!);
@@ -939,7 +897,7 @@
       const pick = workspacePick;
       if (!pick) return;
       if (remember) cloudShare.setWorkspace(workspaceId);
-      void performCloudShare(pick.path, pick.title, workspaceId);
+      beginCloudShare(pick.path, pick.title, workspaceId);
     }}
     onOpenChange={(v: boolean) => {
       if (!v) workspacePick = null;

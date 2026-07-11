@@ -18,6 +18,7 @@ use std::path::PathBuf;
 use tauri::State;
 use zip::ZipArchive;
 
+use crate::commands::error::AppResult;
 use crate::commands::types::AppState;
 use crate::project::ProjectMetadata;
 use crate::tray;
@@ -31,9 +32,18 @@ pub fn take_pending_open_file(state: State<'_, AppState>) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+/// Whether the app was cold-launched via the jump list "New Recording" task.
+/// Drained once by the main window on mount, which then opens the panel.
 #[tauri::command]
-pub fn peek_recast_project(path: String) -> Result<ProjectMetadata, String> {
-    peek_recast_project_inner(&PathBuf::from(&path)).map_err(|e| format!("{e:#}"))
+pub fn take_pending_new_recording(state: State<'_, AppState>) -> bool {
+    state
+        .pending_new_recording
+        .swap(false, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub fn peek_recast_project(path: String) -> AppResult<ProjectMetadata> {
+    Ok(peek_recast_project_inner(&PathBuf::from(&path))?)
 }
 
 fn peek_recast_project_inner(path: &std::path::Path) -> anyhow::Result<ProjectMetadata> {

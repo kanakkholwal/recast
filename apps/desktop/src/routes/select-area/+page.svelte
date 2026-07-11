@@ -11,7 +11,7 @@
   } from "./select-area.logic";
 
   // Overlay spans all monitors from the virtual-desktop origin, so pointer
-  // coords are virtual-desktop pixels — what the Rust resolver expects.
+  // coords are virtual-desktop pixels, which is what the Rust resolver expects.
   let originX = $state(0);
   let originY = $state(0);
 
@@ -89,7 +89,7 @@
   function onKey(e: KeyboardEvent) {
     if (e.key === "Escape") {
       e.preventDefault();
-      // Esc always exits — users expect the window to close. Use the
+      // Esc always exits. Users expect the window to close. Use the
       // explicit "Redraw" button to clear a selection without exiting.
       cancel();
     } else if (e.key === "Enter" && rect) {

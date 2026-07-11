@@ -16,7 +16,7 @@
 	export const buttonVariants = tv({
 		base: [
 			"group/button inline-flex shrink-0 items-center justify-center gap-2 whitespace-nowrap cursor-pointer user-select-none",
-			"rounded-md border border-border/40 bg-clip-padding font-medium outline-none transition-all duration-200 select-none",
+			"rounded-sm border border-border/40 bg-clip-padding font-medium outline-none transition-all duration-200 select-none",
 			"focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-3",
 			"aria-invalid:border-destructive aria-invalid:ring-destructive/20 aria-invalid:ring-3",
 			"dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
@@ -55,12 +55,12 @@
 			size: {
 				default: "h-9 rounded-xl px-5 py-2.5 text-sm font-medium gap-2 [&_svg:not([class*='size-'])]:size-4",
 				lg: "h-11 rounded-2xl px-8 text-base font-semibold gap-2 [&_svg:not([class*='size-'])]:size-5",
-				sm: "h-8 rounded-lg px-3 text-xs gap-1.5 [&_svg:not([class*='size-'])]:size-3",
+				sm: "h-8 rounded-lg px-3 text-xs gap-1.5 [&_svg:not([class*='size-'])]:size-3.5",
 				xs: "h-6 rounded-md px-2 text-[11px] gap-1.5 [&_svg:not([class*='size-'])]:size-3",
 				icon: "size-9 rounded-xl",
-				"icon-sm": "size-8 rounded-lg",
+				"icon-sm": "size-8 rounded-lg [&_svg:not([class*='size-'])]:size-4",
 				"icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
-				"icon-lg": "size-11 rounded-2xl",
+				"icon-lg": "size-11 rounded-2xl [&_svg:not([class*='size-'])]:size-5",
 				raw: "",
 			},
 		},

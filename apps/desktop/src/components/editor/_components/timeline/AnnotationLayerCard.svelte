@@ -59,7 +59,7 @@
   let drag = $state<DragContext | null>(null);
 
   const isSelected = $derived(annotation.id === store.selectedAnnotationId);
-  // Output (post-cut) axis — see ZoomLayerCard for the rationale.
+  // Output (post-cut) axis. See ZoomLayerCard for the rationale.
   const xOf = (t: number) =>
     originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>

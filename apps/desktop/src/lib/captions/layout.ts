@@ -4,7 +4,7 @@
  * The output frame (canvas) is the video plus padding plus any letterbox bars.
  * Anchoring captions to the frame edge means a top/bottom caption lands ON the
  * video once padding is added. Instead we anchor to the video's edge and push
- * the caption OUTWARD into the padding, so it never covers the video — with a
+ * the caption OUTWARD into the padding, so it never covers the video, with a
  * clamp so a no-padding video still shows captions (they fall back to the frame
  * edge, over the video, as before).
  *
@@ -21,8 +21,8 @@ export interface VideoRect {
 	bottom: number;
 }
 
-/** Largest caption block height we ever reserve, as a fraction of the frame —
- *  keeps the clamp from pushing captions past the frame centre. */
+/** Largest caption block height we ever reserve, as a fraction of the frame.
+ *  Keeps the clamp from pushing captions past the frame centre. */
 const MAX_CAP_FRAC = 0.7;
 /** Line-height + breathing room factor for the height estimate. */
 const LINE_FACTOR = 1.35;
@@ -36,7 +36,7 @@ export function captionHeightFrac(fontSizePct: number, maxLines: number): number
 
 /**
  * Fraction-from-top of the caption block's TOP edge (the block grows downward).
- * `null` means centre — vertically centred on the video (which is itself centred
+ * `null` means centre: vertically centred on the video (which is itself centred
  * in the canvas), handled by the caller. `capFrac` comes from
  * {@link captionHeightFrac}.
  */

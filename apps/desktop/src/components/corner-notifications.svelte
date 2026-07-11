@@ -2,27 +2,20 @@
   import { goto } from "$app/navigation";
   import { config } from "$constants/app";
   import { LATEST_RELEASE } from "$constants/changelog";
-  import { gdrive } from "$lib/stores/gdrive.svelte";
-  import { cloudShare } from "$lib/stores/cloudShare.svelte";
   import { updater } from "$lib/stores/updater.svelte";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
   import {
     ArrowRight,
     CircleCheck,
-    Cloud,
-    Copy,
     Download,
-    ExternalLink,
     RefreshCw,
     Sparkles,
     TriangleAlert,
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
-  import { toast } from "@recast/ui/sonner";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
-  import { cloudPhaseLabel, uploadPct } from "./corner-notifications.logic";
 
   const pct = $derived(Math.round(updater.progress * 100));
 
@@ -30,35 +23,6 @@
     whatsNew.dismissCard();
     goto("/whats-new");
   }
-
-  async function copyLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      toast.success("Drive link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
-    }
-  }
-
-  async function openDriveLink(link: string) {
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(link);
-    } catch {
-      // Browser/non-Tauri fallback.
-      window.open(link, "_blank", "noopener");
-    }
-  }
-
-  async function copyShareLink(link: string) {
-    try {
-      await navigator.clipboard.writeText(link);
-      toast.success("Share link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
-    }
-  }
-
 </script>
 
 <!-- Non-blocking notification stack, bottom-right; never traps focus. -->
@@ -168,184 +132,6 @@
       {/if}
     </div>
   {/if}
-
-  <!-- Google Drive uploads — one card each; cancel aborts an in-flight upload. -->
-  {#each gdrive.activeUploads as upload (upload.uploadId)}
-    {@const up = upload}
-    <div
-      class="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg ring-1 ring-black/5"
-      transition:fly={{ y: 16, x: 8, duration: 240, easing: cubicOut }}
-    >
-      <div class="flex items-start gap-3 px-4 py-3">
-        <div
-          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
-        >
-          {#if up.status === "uploading"}
-            <RefreshCw class="size-4 animate-spin" />
-          {:else if up.status === "complete"}
-            <CircleCheck class="size-4" />
-          {:else}
-            <TriangleAlert class="size-4 text-destructive" />
-          {/if}
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-[12.5px] font-semibold leading-tight text-foreground">
-            {#if up.status === "uploading"}
-              Uploading to Drive
-            {:else if up.status === "complete"}
-              Uploaded to Drive
-            {:else if up.status === "cancelled"}
-              Upload cancelled
-            {:else}
-              Upload failed
-            {/if}
-          </p>
-          <p
-            class="mt-0.5 truncate text-[11.5px] leading-snug text-muted-foreground"
-            title={up.fileName}
-          >
-            {#if up.status === "error" && up.error}
-              {up.error}
-            {:else}
-              {up.fileName}
-            {/if}
-          </p>
-        </div>
-        <button
-          type="button"
-          class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
-          aria-label="Dismiss"
-          onclick={() => gdrive.dismissUpload(up.uploadId)}
-        >
-          <X class="size-3.5" />
-        </button>
-      </div>
-      {#if up.status === "uploading"}
-        <div class="px-4 pb-3">
-          <div class="h-1 overflow-hidden rounded-full bg-muted">
-            <div
-              class="h-full rounded-full bg-primary transition-[width] duration-200"
-              style="width: {uploadPct(up.bytesSent, up.totalBytes)}%"
-            ></div>
-          </div>
-          <div class="mt-1 flex items-center justify-between">
-            <span class="text-[10px] font-medium text-muted-foreground">
-              {uploadPct(up.bytesSent, up.totalBytes)}%
-            </span>
-            <button
-              type="button"
-              class="text-[10px] font-medium text-muted-foreground/80 underline-offset-2 hover:text-foreground hover:underline"
-              onclick={() => gdrive.cancelUpload(up.uploadId)}
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      {:else if up.status === "complete" && up.webViewLink}
-        <div
-          class="flex items-center justify-end gap-1.5 border-t border-border/50 bg-muted/30 px-3 py-2"
-        >
-          <Button
-            size="xs"
-            variant="ghost"
-            onclick={() => copyLink(up.webViewLink!)}
-          >
-            <Copy class="mr-1 size-3" />
-            Copy link
-          </Button>
-          <Button size="xs" onclick={() => openDriveLink(up.webViewLink!)}>
-            <ExternalLink class="mr-1 size-3" />
-            Open in Drive
-          </Button>
-        </div>
-      {/if}
-    </div>
-  {/each}
-
-  <!-- Recast Cloud shares — one card each; PUT shows byte-%, other phases pulse. -->
-  {#each cloudShare.activeUploads as up (up.sourcePath)}
-    <div
-      class="pointer-events-auto overflow-hidden rounded-xl border border-border bg-card shadow-lg ring-1 ring-black/5"
-      transition:fly={{ y: 16, x: 8, duration: 240, easing: cubicOut }}
-    >
-      <div class="flex items-start gap-3 px-4 py-3">
-        <div
-          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
-        >
-          {#if up.status === "uploading"}
-            <Cloud class="size-4 animate-pulse" />
-          {:else if up.status === "complete"}
-            <CircleCheck class="size-4" />
-          {:else}
-            <TriangleAlert class="size-4 text-destructive" />
-          {/if}
-        </div>
-        <div class="min-w-0 flex-1">
-          <p class="text-[12.5px] font-semibold leading-tight text-foreground">
-            {#if up.status === "uploading"}
-              {cloudPhaseLabel(up.phase)}
-            {:else if up.status === "complete"}
-              Shared to Recast Cloud
-            {:else}
-              Share failed
-            {/if}
-          </p>
-          <p
-            class="mt-0.5 truncate text-[11.5px] leading-snug text-muted-foreground"
-            title={up.fileName}
-          >
-            {#if up.status === "error" && up.error}
-              {up.error}
-            {:else}
-              {up.fileName}
-            {/if}
-          </p>
-        </div>
-        <button
-          type="button"
-          class="-mr-1 -mt-0.5 shrink-0 rounded-md p-1 text-muted-foreground/70 transition-colors hover:bg-foreground/5 hover:text-foreground"
-          aria-label="Dismiss"
-          onclick={() => cloudShare.dismiss(up.sourcePath)}
-        >
-          <X class="size-3.5" />
-        </button>
-      </div>
-      {#if up.status === "uploading"}
-        <div class="px-4 pb-3">
-          {#if up.phase === "uploading" && up.totalBytes > 0}
-            <div class="h-1 overflow-hidden rounded-full bg-muted">
-              <div
-                class="h-full rounded-full bg-primary transition-[width] duration-200"
-                style="width: {uploadPct(up.bytesSent, up.totalBytes)}%"
-              ></div>
-            </div>
-            <div class="mt-1 flex justify-end">
-              <span class="text-[10px] font-medium tabular-nums text-muted-foreground">
-                {uploadPct(up.bytesSent, up.totalBytes)}%
-              </span>
-            </div>
-          {:else}
-            <div class="h-1 overflow-hidden rounded-full bg-muted">
-              <div class="h-full w-1/3 animate-pulse rounded-full bg-primary"></div>
-            </div>
-          {/if}
-        </div>
-      {:else if up.status === "complete" && up.shareUrl}
-        <div
-          class="flex items-center justify-end gap-1.5 border-t border-border/50 bg-muted/30 px-3 py-2"
-        >
-          <Button size="xs" variant="ghost" onclick={() => copyShareLink(up.shareUrl!)}>
-            <Copy class="mr-1 size-3" />
-            Copy link
-          </Button>
-          <Button size="xs" onclick={() => openDriveLink(up.shareUrl!)}>
-            <ExternalLink class="mr-1 size-3" />
-            Open
-          </Button>
-        </div>
-      {/if}
-    </div>
-  {/each}
 
   {#if whatsNew.cardVisible}
     <div

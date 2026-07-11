@@ -87,7 +87,7 @@
 			</div>
 		{/if}
 
-		<!-- CRT-style corner brackets (smaller than the web card — denser tile). -->
+		<!-- CRT-style corner brackets (smaller than the web card, denser tile). -->
 		<span aria-hidden="true" class="pointer-events-none absolute left-1.5 top-1.5 z-10 size-2 border-l border-t border-foreground/30"></span>
 		<span aria-hidden="true" class="pointer-events-none absolute right-1.5 top-1.5 z-10 size-2 border-r border-t border-foreground/30"></span>
 		<span aria-hidden="true" class="pointer-events-none absolute bottom-1.5 left-1.5 z-10 size-2 border-b border-l border-foreground/30"></span>

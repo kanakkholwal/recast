@@ -40,14 +40,14 @@ const PRESS_RECOVERY_US = 380_000; // recovery duration after click snap
 const PRESS_LIFT = 0.04; // anticipation peak: scale = 1 + LIFT
 const PRESS_PUNCH = 0.16; // click compression: scale = 1 - PUNCH
 const PRESS_BOUNCE = 0.03; // recovery overshoot above 1
-// Always-on click snap — cosine ramp pulls the rendered cursor x/y through the
+// Always-on click snap: a cosine ramp pulls the rendered cursor x/y through the
 // captured click anchor inside ±CLICK_SNAP_HALF_US so the impact frame ALWAYS
 // lands on the click target, regardless of smoothing strength / snap toggle.
 const CLICK_SNAP_HALF_US = 200_000;
 const HIGHLIGHT_FADE_IN_US = 40_000;
 const HIGHLIGHT_FADE_OUT_US = 220_000;
 
-/** 3t² − 2t³ smoothstep — clamped, C1-continuous, cheap. */
+/** 3t² − 2t³ smoothstep, clamped, C1-continuous, cheap. */
 export function smoothStep01(t: number): number {
 	if (t <= 0) return 0;
 	if (t >= 1) return 1;
@@ -56,7 +56,7 @@ export function smoothStep01(t: number): number {
 
 /**
  * Collapse raw cursor samples into one press event per click. Button state is
- * read from RAW samples — smoothing reshapes x/y but must never move click timing/position.
+ * read from RAW samples: smoothing reshapes x/y but must never move click timing/position.
  */
 export function buildPressEvents(samples: PressSample[]): PressEvent[] {
 	const events: PressEvent[] = [];
@@ -237,9 +237,9 @@ export function pressStateAt(events: PressEvent[], tsUs: number): PressState {
 	const pressedSprite =
 		tsUs >= bestEv.downUs - PRESS_PREROLL_US && tsUs <= bestHoldEnd;
 
-	// Scale curve — three phases keyed on `dt = tsUs - downUs`.
+	// Scale curve: three phases keyed on `dt = tsUs - downUs`.
 	//   dt ∈ [-ANTICIP, 0):  1 → 1+LIFT (smooth lift)
-	//   dt = 0:              snap to 1-PUNCH (click frame — sync point)
+	//   dt = 0:              snap to 1-PUNCH (click frame, the sync point)
 	//   dt ∈ [0, RECOVERY]:  1-PUNCH → 1+BOUNCE → 1
 	let scale = 1;
 	const dt = tsUs - bestEv.downUs;

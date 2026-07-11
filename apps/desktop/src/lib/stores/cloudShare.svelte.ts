@@ -1,4 +1,6 @@
+import { createRateTracker } from "$lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
+import { toast } from "@recast/ui/sonner";
 import {
 	authStatus,
 	recastCloudDelete,
@@ -15,7 +17,7 @@ import {
 export type { CloudWorkspace };
 
 /**
- * Recast Cloud share store — sibling of {@link import("./gdrive.svelte").gdrive}.
+ * Recast Cloud share store, sibling of {@link import("./gdrive.svelte").gdrive}.
  * A `$state`-backed singleton holding sign-in state (from `auth_status`), an
  * `uploads` map of in-flight shares keyed by export path, and the persisted
  * `uploadHistory` manifest from `commands/cloud.rs`. Nothing runs unless the
@@ -26,14 +28,21 @@ export type CloudPhase = "preparing" | "uploading" | "finalizing" | "sharing";
 export type CloudUploadStatus = "uploading" | "complete" | "error";
 
 export type CloudUpload = {
-	/** Local export path — also the event key from the Rust side. */
+	/** Local export path, also the event key from the Rust side. */
 	sourcePath: string;
 	fileName: string;
+	/** Original share args, kept so a retry (from the dialog or activity center)
+	 * reproduces the same request without the caller re-threading them. */
+	title: string;
+	workspaceId?: string;
+	captionsTranscript?: Transcript | null;
 	phase: CloudPhase;
 	status: CloudUploadStatus;
 	/** Byte-level progress for the upload PUT (0/0 until the first event). */
 	bytesSent: number;
 	totalBytes: number;
+	/** Smoothed transfer rate (bytes/sec) for the ETA readout; unset until sampled. */
+	bytesPerSec?: number;
 	shareUrl?: string;
 	error?: string;
 };
@@ -53,7 +62,7 @@ export type CloudAuth = {
 /**
  * Preferred upload workspace (org id). Validated against live membership on
  * each status refresh and dropped if the user no longer belongs. Desktop-local
- * — never mutates the server session's active org, so the desktop's upload
+ * and never mutates the server session's active org, so the desktop's upload
  * target stays independent of the web dashboard.
  */
 const WORKSPACE_PREF_KEY = "recast-cloud-workspace";
@@ -71,7 +80,7 @@ function writeWorkspacePref(id: string | null): void {
 		if (id) globalThis.localStorage?.setItem(WORKSPACE_PREF_KEY, id);
 		else globalThis.localStorage?.removeItem(WORKSPACE_PREF_KEY);
 	} catch {
-		// Private mode / disabled storage — selection won't persist across
+		// Private mode / disabled storage: selection won't persist across
 		// launches, but the in-memory choice still holds.
 	}
 }
@@ -90,60 +99,29 @@ function createCloudShareStore() {
 	const uploads = $state<Record<string, CloudUpload>>({});
 	const uploadHistory = $state<Record<string, CloudUploadRecord>>({});
 
+	// Path of the upload currently shown in a foreground progress dialog, if any.
+	// The corner-notification card suppresses this one to avoid double UI; it
+	// reappears when the dialog is minimized (cleared).
+	let foregroundPath = $state<string | null>(null);
+
+	// Per-upload transfer-rate estimate, feeding the dialog's ETA readout.
+	const rate = createRateTracker();
+
 	// True after the first `init()`. Lets the share flow open the picker from
 	// the cached workspace list instead of a blocking round-trip per click.
 	let initialized = $state(false);
 	let listenersAttached = false;
 
+	// Only the terminal error stays a global broadcast; it's a detached corner
+	// notification, and the `share()` catch already covers the awaited path.
+	// Live progress now streams on each upload's own channel (see `share`), and
+	// success comes back on the resolved `recastCloudUpload` promise.
 	async function attachListeners() {
 		if (listenersAttached) return;
 		if (!(await isTauriApp())) return;
 		listenersAttached = true;
 		const { listen } = await import("@tauri-apps/api/event");
 
-		await listen<{ path: string; phase: CloudPhase }>(
-			"recast-cloud:progress",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (!existing) return;
-				uploads[payload.path] = { ...existing, phase: payload.phase, status: "uploading" };
-			},
-		);
-		// Byte-level progress during the upload PUT — drives the determinate bar.
-		await listen<{ path: string; bytesSent: number; totalBytes: number }>(
-			"recast-cloud:upload-progress",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (!existing) return;
-				uploads[payload.path] = {
-					...existing,
-					bytesSent: payload.bytesSent,
-					totalBytes: payload.totalBytes,
-					phase: "uploading",
-					status: "uploading",
-				};
-			},
-		);
-		await listen<{ path: string; recastId: string; slug: string; shareUrl: string }>(
-			"recast-cloud:complete",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (existing) {
-					uploads[payload.path] = {
-						...existing,
-						status: "complete",
-						phase: "sharing",
-						shareUrl: payload.shareUrl,
-					};
-				}
-				uploadHistory[payload.path] = {
-					recastId: payload.recastId,
-					slug: payload.slug,
-					shareUrl: payload.shareUrl,
-					uploadedAt: Math.floor(Date.now() / 1000),
-				};
-			},
-		);
 		await listen<{ path: string; message: string }>(
 			"recast-cloud:error",
 			({ payload }) => {
@@ -232,12 +210,15 @@ function createCloudShareStore() {
 		captionsTranscript?: Transcript | null,
 	): Promise<CloudShareResult> {
 		// Seed SYNCHRONOUSLY (before any await) so the "Preparing…" card renders
-		// the instant Share is clicked — the awaits below would otherwise leave
+		// the instant Share is clicked; the awaits below would otherwise leave
 		// the screen looking frozen for a beat.
 		const fileName = path.split(/[\\/]/).pop() ?? path;
 		uploads[path] = {
 			sourcePath: path,
 			fileName,
+			title,
+			workspaceId,
+			captionsTranscript,
 			phase: "preparing",
 			status: "uploading",
 			bytesSent: 0,
@@ -249,20 +230,75 @@ function createCloudShareStore() {
 		// lets Rust fall back to the server profile's defaultWorkspaceId.
 		const target = workspaceId ?? resolveActiveWorkspaceId() ?? undefined;
 		try {
-			return await recastCloudUpload(path, title, target, captionsTranscript);
+			// Progress rides this upload's own channel: phase + byte counts.
+			const result = await recastCloudUpload(path, title, target, captionsTranscript, (e) => {
+				const existing = uploads[path];
+				if (!existing) return;
+				if (e.kind === "phase") {
+					uploads[path] = { ...existing, phase: e.phase, status: "uploading" };
+				} else {
+					uploads[path] = {
+						...existing,
+						bytesSent: e.bytesSent,
+						totalBytes: e.totalBytes,
+						bytesPerSec: rate.sample(path, e.bytesSent),
+						phase: "uploading",
+						status: "uploading",
+					};
+				}
+			});
+			rate.clear(path);
+			// Success is the resolved result (identical data the old
+			// `recast-cloud:complete` event carried), so update the card + manifest here.
+			const existing = uploads[path];
+			if (existing) {
+				uploads[path] = {
+					...existing,
+					status: "complete",
+					phase: "sharing",
+					shareUrl: result.shareUrl,
+				};
+			}
+			uploadHistory[path] = {
+				recastId: result.recastId,
+				slug: result.slug,
+				shareUrl: result.shareUrl,
+				uploadedAt: Math.floor(Date.now() / 1000),
+			};
+			// Toast alongside the dialog/activity card so feedback still lands when
+			// the share was minimized. This is the one place every entry point
+			// (exports, editor, retry) funnels through.
+			toast.success("Shared to Recast Cloud.", { description: fileName });
+			return result;
 		} catch (e) {
-			// Rust emitted `recast-cloud:error`; ensure the card reflects it even
-			// if the event was missed, then re-throw.
+			rate.clear(path);
+			// Rust also fires a detached `recast-cloud:error`; ensure the card
+			// reflects the failure even if that event was missed, then re-throw.
 			const existing = uploads[path];
 			if (existing && existing.status !== "error") {
 				uploads[path] = { ...existing, status: "error", error: String(e) };
 			}
+			toast.error(`Couldn't share to Recast Cloud: ${(e as Error)?.message ?? e}`);
 			throw e;
 		}
 	}
 
 	function dismiss(path: string) {
 		delete uploads[path];
+		rate.clear(path);
+	}
+
+	/**
+	 * Re-run a share with its original args. Reads them off the existing entry
+	 * (title, workspace, captions) before dropping it, so a retry from the dialog
+	 * or the activity center reproduces the same request. No-op if the entry is gone.
+	 */
+	function retry(path: string) {
+		const u = uploads[path];
+		if (!u) return;
+		const { title, workspaceId, captionsTranscript } = u;
+		dismiss(path);
+		void share(path, title, workspaceId, captionsTranscript).catch(() => {});
 	}
 
 	/** Delete the cloud copy (blob + row + shares). Local file untouched. */
@@ -288,7 +324,7 @@ function createCloudShareStore() {
 		await recastCloudUpdateShare(slug, opts);
 	}
 
-	/** Drop a manifest entry (no network) — e.g. the local file moved/deleted. */
+	/** Drop a manifest entry (no network), e.g. the local file moved/deleted. */
 	async function forget(path: string) {
 		delete uploadHistory[path];
 		if (!(await isTauriApp())) return;
@@ -301,11 +337,6 @@ function createCloudShareStore() {
 
 	function getRecordForPath(path: string): CloudUploadRecord | undefined {
 		return uploadHistory[path];
-	}
-
-	function getActiveForPath(path: string): CloudUpload | undefined {
-		const u = uploads[path];
-		return u && u.status === "uploading" ? u : undefined;
 	}
 
 	return {
@@ -341,6 +372,14 @@ function createCloudShareStore() {
 		get activeUploads() {
 			return Object.values(uploads);
 		},
+		/** Path currently shown in a foreground dialog (suppressed in the corner). */
+		get foregroundPath() {
+			return foregroundPath;
+		},
+		/** Mark (or clear) the upload that a foreground progress dialog owns. */
+		setForeground(path: string | null) {
+			foregroundPath = path;
+		},
 		get uploadHistory() {
 			return uploadHistory;
 		},
@@ -358,11 +397,11 @@ function createCloudShareStore() {
 		setWorkspace,
 		share,
 		dismiss,
+		retry,
 		deleteCloud,
 		updateShare,
 		forget,
 		getRecordForPath,
-		getActiveForPath,
 	};
 }
 

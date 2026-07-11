@@ -36,9 +36,11 @@ use rand::Rng;
 use reqwest::{header, Client};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
+
+use super::error::{AppError, AppResult};
 
 const KEYRING_SERVICE: &str = "com.nexonauts.recast";
 const KEYRING_ENTRY: &str = "gdrive-refresh-token";
@@ -421,24 +423,26 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{title}</title>
 <style>
+  /* Dark is the canonical theme — token values mirror `@recast/design`
+     (index.css) and the desktop `app.css` overrides 1:1 so this page reads
+     as the same surface as the in-app Settings/Cloud panes. */
   :root {{
     color-scheme: dark light;
-    --bg: #0b0c0e;
-    --bg-grad-a: #0c1213;
-    --bg-grad-b: #07090a;
-    --card: rgba(255,255,255,0.04);
-    --card-border: rgba(255,255,255,0.08);
-    --card-ring: rgba(255,255,255,0.04);
-    --fg: #ededed;
-    --fg-muted: rgba(237,237,237,0.62);
-    --fg-subtle: rgba(237,237,237,0.42);
-    --primary: oklch(92% 0.23 125.904);
-    --primary-soft: oklch(92% 0.23 125.904 / 0.15);
-    --primary-ring: oklch(92% 0.23 125.904 / 0.3);
-    --error: oklch(70% 0.2 25);
-    --error-soft: oklch(70% 0.2 25 / 0.14);
-    --error-ring: oklch(70% 0.2 25 / 0.28);
-    --code-bg: rgba(255,255,255,0.06);
+    --bg: oklch(20.352% 0.00157 197.844);
+    --bg-grad-a: oklch(33.881% 0.00279 16.535);
+    --bg-grad-b: oklch(22.213% 0.00003 271.152);
+    --card: oklch(0.27 0 0);
+    --card-border: color-mix(in oklab, oklch(23.929% 0.00003 271.152) 40%, transparent);
+    --fg: oklch(95.514% 0.00011 271.152);
+    --fg-muted: oklch(64.009% 0.00007 271.152);
+    --fg-subtle: color-mix(in oklab, var(--fg) 42%, transparent);
+    --primary: oklch(92.249% 0.23442 125.904);
+    --primary-soft: oklch(92.249% 0.23442 125.904 / 0.15);
+    --primary-ring: oklch(92.249% 0.23442 125.904 / 0.3);
+    --error: oklch(63.575% 0.20881 25.397);
+    --error-soft: oklch(63.575% 0.20881 25.397 / 0.15);
+    --error-ring: oklch(63.575% 0.20881 25.397 / 0.3);
+    --code-bg: color-mix(in oklab, var(--fg) 8%, transparent);
     /* Brand mark colors — mirror `logo.svelte`'s dark-mode mapping:
        white rounded square (the "background") with black bars on top. */
     --brand-fill: #ffffff;
@@ -446,22 +450,21 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   }}
   @media (prefers-color-scheme: light) {{
     :root {{
-      --bg: #f5f5f4;
-      --bg-grad-a: #fafafa;
-      --bg-grad-b: #ececec;
-      --card: rgba(255,255,255,0.92);
-      --card-border: rgba(0,0,0,0.06);
-      --card-ring: rgba(0,0,0,0.04);
-      --fg: #0b0b0c;
-      --fg-muted: rgba(11,11,12,0.62);
-      --fg-subtle: rgba(11,11,12,0.42);
+      --bg: oklch(0.985 0 0);
+      --bg-grad-a: oklch(97.357% 0.00561 84.444);
+      --bg-grad-b: oklch(97.357% 0.00561 84.444);
+      --card: oklch(100% 0.00011 271.152);
+      --card-border: color-mix(in oklab, oklch(0.91 0 0) 70%, transparent);
+      --fg: oklch(21.779% 0.00002 271.152);
+      --fg-muted: oklch(55.102% 0.02343 264.389);
+      --fg-subtle: color-mix(in oklab, var(--fg) 45%, transparent);
       --primary: oklch(76% 0.21 125.904);
       --primary-soft: oklch(76% 0.21 125.904 / 0.12);
       --primary-ring: oklch(76% 0.21 125.904 / 0.3);
-      --error: oklch(63% 0.21 25);
-      --error-soft: oklch(63% 0.21 25 / 0.12);
-      --error-ring: oklch(63% 0.21 25 / 0.28);
-      --code-bg: rgba(0,0,0,0.05);
+      --error: oklch(63.681% 0.20784 25.315);
+      --error-soft: oklch(63.681% 0.20784 25.315 / 0.12);
+      --error-ring: oklch(63.681% 0.20784 25.315 / 0.3);
+      --code-bg: color-mix(in oklab, var(--fg) 6%, transparent);
       /* Light-mode mark: black rounded square, white bars. */
       --brand-fill: #000000;
       --brand-bars: #ffffff;
@@ -471,8 +474,8 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   html, body {{ height: 100%; }}
   body {{
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI",
-                 system-ui, sans-serif;
+    font-family: "Geist Variable", "Geist", -apple-system, BlinkMacSystemFont,
+                 "Inter", "Segoe UI", system-ui, sans-serif;
     color: var(--fg);
     background:
       radial-gradient(60rem 40rem at 50% -10%, var(--primary-soft), transparent 60%),
@@ -506,22 +509,25 @@ fn render_callback_page(error: Option<&str>) -> (String, &'static str) {
   }}
   .card {{
     width: min(28rem, 100%);
-    border-radius: 1rem;
-    background: var(--card);
+    /* `craft-card`: rounded-[18px], bg-card/80, border-border/40,
+       shadow-craft-floating, backdrop-blur-xl. */
+    border-radius: 18px;
+    background: color-mix(in oklab, var(--card) 80%, transparent);
     border: 1px solid var(--card-border);
     box-shadow:
-      0 1px 0 var(--card-ring) inset,
-      0 20px 50px -20px rgba(0,0,0,0.55),
-      0 8px 16px -8px rgba(0,0,0,0.35);
+      0 0 0 1px rgba(0, 0, 0, 0.05),
+      0 1px 2px 0 rgba(0, 0, 0, 0.05),
+      0 4px 12px 0 rgba(0, 0, 0, 0.05),
+      0 12px 24px -4px rgba(0, 0, 0, 0.05);
     padding: 1.75rem 1.75rem 1.5rem;
     text-align: left;
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
   }}
   .icon {{
     width: 2.5rem;
     height: 2.5rem;
-    border-radius: 0.75rem;
+    border-radius: calc(0.75rem - 2px);
     display: inline-flex;
     align-items: center;
     justify-content: center;
@@ -725,7 +731,7 @@ async fn fetch_email(client: &Client, access_token: &str) -> Option<String> {
 /// page, awaits the redirect, exchanges the code for tokens, persists the
 /// refresh token, and emits `gdrive:connected` on success.
 #[tauri::command]
-pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
+pub async fn gdrive_connect(app: AppHandle) -> AppResult<()> {
     let (client_id, _) = require_credentials()?;
     let client = http_client()?;
 
@@ -734,10 +740,10 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
     // 127.0.0.1 port as valid.
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
-        .map_err(|e| format!("loopback bind failed: {e}"))?;
+        .map_err(|e| AppError::msg(format!("loopback bind failed: {e}")))?;
     let port = listener
         .local_addr()
-        .map_err(|e| format!("loopback local_addr failed: {e}"))?
+        .map_err(|e| AppError::msg(format!("loopback local_addr failed: {e}")))?
         .port();
     let redirect_uri = format!("http://127.0.0.1:{port}/callback");
 
@@ -764,9 +770,10 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
     let tokens = exchange_code_for_tokens(&client, &code, &verifier, &redirect_uri).await?;
 
     let refresh = tokens.refresh_token.clone().ok_or_else(|| {
-        "Google did not return a refresh token. Try disconnecting and reconnecting; \
-             the consent prompt must request offline access."
-            .to_string()
+        AppError::from(
+            "Google did not return a refresh token. Try disconnecting and reconnecting; \
+             the consent prompt must request offline access.",
+        )
     })?;
     store_refresh_token(&refresh)?;
     *ACCESS_TOKEN.lock() = Some(CachedAccessToken {
@@ -786,7 +793,7 @@ pub async fn gdrive_connect(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn gdrive_status() -> Result<GdriveStatus, String> {
+pub async fn gdrive_status() -> AppResult<GdriveStatus> {
     if read_refresh_token().is_none() {
         return Ok(GdriveStatus {
             connected: false,
@@ -815,7 +822,7 @@ pub async fn gdrive_status() -> Result<GdriveStatus, String> {
 }
 
 #[tauri::command]
-pub async fn gdrive_disconnect() -> Result<(), String> {
+pub async fn gdrive_disconnect() -> AppResult<()> {
     let token = read_refresh_token();
     if let Some(token) = token {
         if let Ok(client) = http_client() {
@@ -831,7 +838,7 @@ pub async fn gdrive_disconnect() -> Result<(), String> {
         }
     }
     *ACCESS_TOKEN.lock() = None;
-    delete_refresh_token()
+    delete_refresh_token().map_err(Into::into)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -931,37 +938,30 @@ pub struct GdriveUploadResult {
     pub web_view_link: Option<String>,
 }
 
+/// Byte progress for an in-flight Drive upload, streamed on the command's
+/// request-scoped `on_progress` channel. Scoped per upload, so — unlike the old
+/// `gdrive:progress` broadcast — it carries no upload id to correlate on.
 #[derive(Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
-struct UploadCompleteEvent<'a> {
-    upload_id: &'a str,
-    /// Source path on this machine. The frontend uses this to index the
-    /// upload-history map so the exports list can flip its menu state
-    /// based on whether this exact file was previously uploaded.
-    source_path: &'a str,
-    #[serde(flatten)]
-    result: &'a GdriveUploadResult,
-}
-
-#[derive(Serialize, Clone)]
-#[serde(rename_all = "camelCase")]
-struct UploadProgressEvent<'a> {
-    upload_id: &'a str,
+pub(crate) struct GdriveUploadProgress {
     bytes_sent: u64,
     total_bytes: u64,
 }
 
-/// Resumable upload of `path` into the `/Recast/` folder. Streams the file
-/// in chunks, emits `gdrive:progress` events between chunks, and honors a
-/// cancel flag the frontend can flip via `gdrive_cancel_upload`.
+/// Resumable upload of `path` into the `/Recast/` folder. Streams the file in
+/// chunks, sending byte progress on the `on_progress` channel between chunks,
+/// and honors a cancel flag the frontend can flip via `gdrive_cancel_upload`.
+/// Resolves with the Drive file result; a detached `gdrive:upload-error` event
+/// still fires on failure (with the cancelled flag) for the corner card.
 #[tauri::command]
 pub async fn gdrive_upload(
     app: AppHandle,
     path: String,
     upload_id: String,
-) -> Result<GdriveUploadResult, String> {
+    on_progress: Channel<GdriveUploadProgress>,
+) -> AppResult<GdriveUploadResult> {
     let cancel = upload_cancel_flag(&upload_id);
-    let result = gdrive_upload_inner(&app, &path, &upload_id, cancel.clone()).await;
+    let result = gdrive_upload_inner(&on_progress, &path, cancel.clone()).await;
     drop_upload_cancel_flag(&upload_id);
     match &result {
         Ok(payload) => {
@@ -984,15 +984,8 @@ pub async fn gdrive_upload(
                     uploaded_at,
                 },
             );
-
-            let _ = app.emit(
-                "gdrive:upload-complete",
-                UploadCompleteEvent {
-                    upload_id: upload_id.as_str(),
-                    source_path: path.as_str(),
-                    result: payload,
-                },
-            );
+            // Success is the resolved `GdriveUploadResult`; the store updates its
+            // card + history from that, so no separate `upload-complete` event.
         }
         Err(err) => {
             let cancelled = cancel.load(Ordering::Relaxed);
@@ -1006,13 +999,12 @@ pub async fn gdrive_upload(
             );
         }
     }
-    result
+    result.map_err(Into::into)
 }
 
 async fn gdrive_upload_inner(
-    app: &AppHandle,
+    on_progress: &Channel<GdriveUploadProgress>,
     path: &str,
-    upload_id: &str,
     cancel: Arc<AtomicBool>,
 ) -> Result<GdriveUploadResult, String> {
     let file_path = PathBuf::from(path);
@@ -1109,14 +1101,10 @@ async fn gdrive_upload_inner(
                 .await
                 .map_err(|e| format!("final response parse failed: {e}"))?;
             bytes_sent += n as u64;
-            let _ = app.emit(
-                "gdrive:progress",
-                UploadProgressEvent {
-                    upload_id,
-                    bytes_sent,
-                    total_bytes,
-                },
-            );
+            let _ = on_progress.send(GdriveUploadProgress {
+                bytes_sent,
+                total_bytes,
+            });
             let file_id = body
                 .get("id")
                 .and_then(|v| v.as_str())
@@ -1142,14 +1130,10 @@ async fn gdrive_upload_inner(
             // confirms received; on a fresh start that's exactly the
             // chunk we just sent, so this is a sanity-check no-op.
             bytes_sent += n as u64;
-            let _ = app.emit(
-                "gdrive:progress",
-                UploadProgressEvent {
-                    upload_id,
-                    bytes_sent,
-                    total_bytes,
-                },
-            );
+            let _ = on_progress.send(GdriveUploadProgress {
+                bytes_sent,
+                total_bytes,
+            });
             continue;
         }
         let body = resp.text().await.unwrap_or_default();
@@ -1165,7 +1149,7 @@ pub fn gdrive_cancel_upload(upload_id: String) {
 /// Returns the local upload history — a map of `localPath -> UploadRecord`
 /// for every export the user has uploaded from this machine. Cheap (single
 /// JSON file read); the frontend caches the result in a Svelte store and
-/// merges in new entries as `gdrive:upload-complete` events fire.
+/// merges in new entries as each `gdrive_upload` call resolves.
 #[tauri::command]
 pub fn gdrive_list_uploads(app: AppHandle) -> HashMap<String, UploadRecord> {
     read_manifest(&app)
@@ -1179,5 +1163,67 @@ pub fn gdrive_forget_upload(app: AppHandle, local_path: String) {
     let mut manifest = read_manifest(&app);
     if manifest.remove(&local_path).is_some() {
         write_manifest(&app, &manifest);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn html_escape_replaces_all_markup_sensitive_chars() {
+        assert_eq!(
+            html_escape(r#"<a href="x&y">'q'</a>"#),
+            "&lt;a href=&quot;x&amp;y&quot;&gt;&#39;q&#39;&lt;/a&gt;",
+        );
+    }
+
+    #[test]
+    fn html_escape_leaves_plain_text_untouched() {
+        assert_eq!(html_escape("access_denied"), "access_denied");
+    }
+
+    #[test]
+    fn guess_mime_type_maps_known_video_extensions() {
+        assert_eq!(guess_mime_type(Path::new("clip.mp4")), "video/mp4");
+        assert_eq!(guess_mime_type(Path::new("clip.webm")), "video/webm");
+        assert_eq!(guess_mime_type(Path::new("clip.gif")), "image/gif");
+        assert_eq!(guess_mime_type(Path::new("clip.mov")), "video/quicktime");
+        assert_eq!(guess_mime_type(Path::new("clip.mkv")), "video/x-matroska");
+    }
+
+    #[test]
+    fn guess_mime_type_is_case_insensitive() {
+        assert_eq!(guess_mime_type(Path::new("CLIP.MP4")), "video/mp4");
+    }
+
+    #[test]
+    fn guess_mime_type_falls_back_to_octet_stream() {
+        assert_eq!(
+            guess_mime_type(Path::new("data.bin")),
+            "application/octet-stream",
+        );
+        assert_eq!(
+            guess_mime_type(Path::new("noext")),
+            "application/octet-stream",
+        );
+    }
+
+    #[test]
+    fn pkce_challenge_matches_rfc_7636_test_vector() {
+        // RFC 7636 Appendix B.
+        assert_eq!(
+            pkce_challenge("dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk"),
+            "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM",
+        );
+    }
+
+    #[test]
+    fn random_url_safe_string_has_requested_length_and_charset() {
+        const ALPHABET: &[u8] =
+            b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+        let s = random_url_safe_string(64);
+        assert_eq!(s.len(), 64);
+        assert!(s.bytes().all(|b| ALPHABET.contains(&b)));
     }
 }

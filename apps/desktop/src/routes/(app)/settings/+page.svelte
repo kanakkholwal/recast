@@ -1,5 +1,7 @@
 <script lang="ts">
   import Logo from "$components/logo.svelte";
+  import SectionCard from "$components/layout/SectionCard.svelte";
+  import SettingsRow from "$components/layout/SettingsRow.svelte";
   import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
   import CloudSignIn from "$components/settings/CloudSignIn.svelte";
   import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
@@ -12,10 +14,14 @@
     getHidePanelFromCapture,
     getLastSource,
     getOutputDir,
+    getWindowTransparency,
     setCloseToTray,
     setHidePanelFromCapture,
     setOutputDir,
+    setWindowTransparency,
   } from "$lib/ipc";
+  import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+  import { emit } from "@tauri-apps/api/event";
   import {
     loadRecordingFps,
     loadRecordingQuality,
@@ -33,17 +39,13 @@
     ArrowUpRight,
     Cloud,
     Cpu,
-    ExternalLink,
     EyeOff,
     FlaskConical,
     FolderOpen,
     Globe,
     HardDrive,
-    Info,
     Monitor,
     Moon,
-    Navigation,
-    PanelsTopLeft,
     Server,
     Settings as SettingsIcon,
     Shield,
@@ -52,13 +54,15 @@
     Sun,
     Timer,
     Video,
+    Wrench,
   } from "@lucide/svelte";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
+  import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
   import { toast } from "@recast/ui/sonner";
+  import { Switch } from "@recast/ui/switch";
   import * as Tabs from "@recast/ui/tabs";
   import { setMode } from "@recast/ui/theme";
-  import { cn } from "@recast/ui/utils";
   import { listen } from "@tauri-apps/api/event";
   import { platform } from "@tauri-apps/plugin-os";
   import { onMount } from "svelte";
@@ -86,18 +90,16 @@
 
   type Theme = "light" | "dark" | "system";
   type EditorBehavior = "navigate" | "new-window";
-  type SettingsTab =
-    | "general"
-    | "recording"
-    | "cloud"
-    | "experimental"
-    | "about";
+  // Experimental + About + device/diagnostics collapse into one "Advanced"
+  // section. Low-frequency, expert-facing config kept out of the main tabs.
+  type SettingsTab = "general" | "recording" | "cloud" | "advanced";
 
   let outputDir = $state("");
   let currentTheme = $state<Theme>("system");
   let editorWindow = $state<EditorBehavior>("navigate");
   let countdown = $state<CountdownSeconds>(3);
   let closeToTray = $state(true);
+  let windowTransparency = $state(false);
   let hidePanelFromCapture = $state(true);
   // Content protection is a compile-time no-op on Linux (tao gates it to
   // macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
@@ -106,7 +108,7 @@
   // Global recording prefs, read by the recording panel via shared localStorage.
   let recordingQuality = $state<RecordingQuality>("auto");
   let recordingFps = $state<number>(60);
-  // Highest display refresh — capture can't produce more unique fps than this,
+  // Highest display refresh. Capture can't produce more unique fps than this,
   // so fps options are capped to it. 60 until displays are probed.
   let maxRefreshHz = $state(60);
   let activeTab = $state<SettingsTab>("general");
@@ -227,13 +229,18 @@
     try {
       closeToTray = await getCloseToTray();
     } catch {
-      // Pre-tray builds or non-Tauri preview — leave the default and let
+      // Pre-tray builds or non-Tauri preview, so leave the default and let
       // the UI render the optimistic value.
+    }
+    try {
+      windowTransparency = await getWindowTransparency();
+    } catch {
+      // Leave the default off.
     }
     try {
       hidePanelFromCapture = await getHidePanelFromCapture();
     } catch {
-      // Older builds or non-Tauri preview — keep the optimistic default.
+      // Older builds or non-Tauri preview, so keep the optimistic default.
     }
   }
 
@@ -245,6 +252,19 @@
     } catch (e) {
       // Roll back on failure so the UI mirrors the actual persisted state.
       closeToTray = !next;
+      toast.error(`Could not update setting: ${e}`);
+    }
+  }
+
+  async function toggleWindowTransparency() {
+    const next = !windowTransparency;
+    windowTransparency = next;
+    try {
+      await setWindowTransparency(next);
+      // Every open window re-applies its backdrop off this broadcast.
+      await emit(BACKDROP_CHANGED_EVENT, next);
+    } catch (e) {
+      windowTransparency = !next;
       toast.error(`Could not update setting: ${e}`);
     }
   }
@@ -300,24 +320,33 @@
     }
   }
 
-  const layoutModeIcons: Record<LayoutMode, typeof Monitor> = {
-    "os-native": Monitor,
-    recast: PanelsTopLeft,
-  };
-
   const themes: { value: Theme; label: string; icon: typeof Sun }[] = [
     { value: "light", label: "Light", icon: Sun },
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },
   ];
 
-  const editorBehaviors: {
-    value: EditorBehavior;
-    label: string;
-    icon: typeof Navigation;
-  }[] = [
-    { value: "navigate", label: "Navigate", icon: Navigation },
-    { value: "new-window", label: "New window", icon: ExternalLink },
+  // Segmented-control option lists, derived from the tables above so labels
+  // stay in one place. Values are strings (Segmented is string-keyed); numeric
+  // settings parse back on change.
+  const themeSegments: SegmentedOption<Theme>[] = themes.map((t) => ({
+    value: t.value,
+    label: t.label,
+  }));
+  const layoutSegments: SegmentedOption<LayoutMode>[] = LAYOUT_MODES.map(
+    (m) => ({ value: m.value, label: m.label }),
+  );
+  const countdownSegments: SegmentedOption<string>[] = countdownOptions.map(
+    (o) => ({ value: String(o.value), label: o.label }),
+  );
+  const qualitySegments: SegmentedOption<RecordingQuality>[] =
+    recordingQualityOptions.map((o) => ({ value: o.value, label: o.label }));
+  const fpsSegments = $derived(
+    fpsOptions.map((rate) => ({ value: String(rate), label: String(rate) })),
+  );
+  const editorSegments: SegmentedOption<EditorBehavior>[] = [
+    { value: "navigate", label: "Navigate" },
+    { value: "new-window", label: "New window" },
   ];
 </script>
 
@@ -361,7 +390,7 @@
       >
         <Tabs.List
           variant="soft"
-          class="grid w-full max-w-2xl grid-cols-5 gap-1 p-1"
+          class="grid w-full max-w-xl grid-cols-4 gap-1 p-1"
         >
           <Tabs.Trigger value="general" class="gap-1.5 px-2">
             <SettingsIcon class="size-3.5" />
@@ -375,461 +404,224 @@
             <Cloud class="size-3.5" />
             <span class="text-[12px] font-semibold">Cloud</span>
           </Tabs.Trigger>
-          <Tabs.Trigger value="experimental" class="gap-1.5 px-2">
-            <FlaskConical class="size-3.5" />
-            <span class="text-[12px] font-semibold">Experimental</span>
-          </Tabs.Trigger>
-          <Tabs.Trigger value="about" class="gap-1.5 px-2">
-            <Info class="size-3.5" />
-            <span class="text-[12px] font-semibold">About</span>
+          <Tabs.Trigger value="advanced" class="gap-1.5 px-2">
+            <Wrench class="size-3.5" />
+            <span class="text-[12px] font-semibold">Advanced</span>
           </Tabs.Trigger>
         </Tabs.List>
 
         <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
-              <!-- Storage / Output directory -->
-              <section id="settings-storage" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Storage
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Where Recast keeps your recordings.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-storage"
+                label="Storage"
+                description="Where Recast keeps your recordings."
+              >
+                <SettingsRow
+                  label="Output directory"
+                  description="New recordings save here. Existing files stay where they are."
+                  stacked
                 >
-                  <div class="flex flex-col gap-1 px-4 py-3">
-                    <span class="text-[12px] font-semibold text-foreground">
-                      Output directory
+                  <div
+                    class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/40 bg-background/60 px-3 font-mono text-[11px] text-muted-foreground"
+                    title={outputDir || "Default temporary directory"}
+                  >
+                    <FolderOpen
+                      class="size-3.5 shrink-0 text-muted-foreground/70"
+                    />
+                    <span class="truncate">
+                      {outputDir || "Default temporary directory"}
                     </span>
-                    <span class="text-[11px] text-muted-foreground">
-                      New recordings save here. Existing files stay where they are.
-                    </span>
-                    <div class="mt-2 flex items-center gap-2">
-                      <div
-                        class="flex h-9 min-w-0 flex-1 items-center gap-2 rounded-lg border border-border/40 bg-background/60 px-3 font-mono text-[11px] text-muted-foreground"
-                        title={outputDir || "Default temporary directory"}
-                      >
-                        <FolderOpen class="size-3.5 shrink-0 text-muted-foreground/70" />
-                        <span class="truncate">
-                          {outputDir || "Default temporary directory"}
-                        </span>
-                      </div>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        class="h-9 shrink-0 gap-1.5"
-                        onclick={pickDirectory}
-                      >
-                        <FolderOpen class="size-3.5" />
-                        Change
-                      </Button>
-                    </div>
                   </div>
-                </div>
-              </section>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    class="h-9 shrink-0 gap-1.5"
+                    onclick={pickDirectory}
+                  >
+                    <FolderOpen class="size-3.5" />
+                    Change
+                  </Button>
+                </SettingsRow>
+              </SectionCard>
 
               <!-- Read by the recording panel via shared localStorage; profiles
                    can override it per-profile. -->
-              <section id="settings-countdown" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Timer class="size-3 text-primary" />
-                    Countdown
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Wait a beat before capture starts, so you can switch windows.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-countdown"
+                label="Countdown"
+                description="Wait a beat before capture starts, so you can switch windows."
+              >
+                {#snippet icon()}
+                  <Timer class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Countdown before recording"
+                  description={countdown === 0
+                    ? "Recording starts immediately."
+                    : `A ${countdown}-second countdown shows in the panel first.`}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Countdown before recording
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {countdown === 0
-                          ? "Recording starts immediately."
-                          : `A ${countdown}-second countdown shows in the panel first.`}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Countdown before recording"
-                    >
-                      {#each countdownOptions as o (o.value)}
-                        {@const active = countdown === o.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateCountdown(o.value)}
-                          class={cn(
-                            "flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold tabular-nums transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {o.label}
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={countdownSegments}
+                    value={String(countdown)}
+                    onValueChange={(v) =>
+                      updateCountdown(Number(v) as CountdownSeconds)}
+                    fill={false}
+                    aria-label="Countdown before recording"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
               <!-- Higher tiers raise fidelity at the cost of encode headroom; if
                    the GPU can't keep up the result is judder, never desync. -->
-              <section id="settings-capture-quality" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Sparkles class="size-3 text-primary" />
-                    Capture quality
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    How crisp the recorded master is. The editor re-encodes on
-                    export, but detail lost here can't be recovered later.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-capture-quality"
+                label="Capture quality"
+                description="How crisp the recorded master is. The editor re-encodes on export, but detail lost here can't be recovered later."
+              >
+                {#snippet icon()}
+                  <Sparkles class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Recording quality"
+                  description={recordingQualityOptions.find(
+                    (o) => o.value === recordingQuality,
+                  )?.desc}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Recording quality
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {recordingQualityOptions.find(
-                          (o) => o.value === recordingQuality,
-                        )?.desc}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Recording quality"
-                    >
-                      {#each recordingQualityOptions as o (o.value)}
-                        {@const active = recordingQuality === o.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateRecordingQuality(o.value)}
-                          class={cn(
-                            "flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {o.label}
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={qualitySegments}
+                    value={recordingQuality}
+                    onValueChange={updateRecordingQuality}
+                    fill={false}
+                    aria-label="Recording quality"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
               <!-- Options gated by display refresh: capturing above it only
                    duplicates frames. 60 is always available. -->
-              <section id="settings-capture-fps" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Video class="size-3 text-primary" />
-                    Frame rate
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    {#if fpsOptions.length > 1}
-                      Higher frame rates capture smoother motion. Your display
-                      supports up to {maxRefreshHz} Hz.
-                    {:else}
-                      Smoother motion needs a higher-refresh display. Yours runs
-                      at {maxRefreshHz} Hz, so 60 fps is the max useful rate.
-                    {/if}
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-capture-fps"
+                label="Frame rate"
+                description={fpsOptions.length > 1
+                  ? `Higher frame rates capture smoother motion. Your display supports up to ${maxRefreshHz} Hz.`
+                  : `Smoother motion needs a higher-refresh display. Yours runs at ${maxRefreshHz} Hz, so 60 fps is the max useful rate.`}
+              >
+                {#snippet icon()}
+                  <Video class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Recording frame rate"
+                  description={recordingFps > effectiveFps
+                    ? `Set to ${recordingFps} fps, but this display runs at ${maxRefreshHz} Hz, so capture uses ${effectiveFps} fps here.`
+                    : `${recordingFps} fps. Bigger files and more encode load at higher rates.`}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Recording frame rate
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {#if recordingFps > effectiveFps}
-                          Set to {recordingFps} fps, but this display runs at {maxRefreshHz}
-                          Hz, so capture uses {effectiveFps} fps here.
-                        {:else}
-                          {recordingFps} fps. Bigger files and more encode load at
-                          higher rates.
-                        {/if}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Recording frame rate"
-                    >
-                      {#each fpsOptions as rate (rate)}
-                        {@const active = effectiveFps === rate}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateRecordingFps(rate)}
-                          class={cn(
-                            "flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold tabular-nums transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          {rate}
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={fpsSegments}
+                    value={String(effectiveFps)}
+                    onValueChange={(v) => updateRecordingFps(Number(v))}
+                    fill={false}
+                    aria-label="Recording frame rate"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
-              <!-- Recording panel visibility -->
-              <section id="settings-panel-capture" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <EyeOff class="size-3 text-primary" />
-                    Recording panel
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Whether Recast's own floating controls show up in the video.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-panel-capture"
+                label="Recording panel"
+                description="Whether Recast's own floating controls show up in the video."
+              >
+                {#snippet icon()}
+                  <EyeOff class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Hide recording panel from captures"
+                  description={isLinux
+                    ? "Not available on Linux. X11 and Wayland provide no way for an app to exclude its own window from screen capture."
+                    : hidePanelFromCapture
+                      ? "The floating Recast panel is kept out of your recordings, including one that's already open."
+                      : "The floating Recast panel appears in your recordings like any other window."}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Hide recording panel from captures
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {#if isLinux}
-                          Not available on Linux. X11 and Wayland provide no way
-                          for an app to exclude its own window from screen
-                          capture.
-                        {:else if hidePanelFromCapture}
-                          The floating Recast panel is kept out of your
-                          recordings, including one that's already open.
-                        {:else}
-                          The floating Recast panel appears in your recordings
-                          like any other window.
-                        {/if}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Hide recording panel from captures"
-                      aria-checked={!isLinux && hidePanelFromCapture}
-                      disabled={isLinux}
-                      onclick={toggleHidePanelFromCapture}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
-                        isLinux
-                          ? "cursor-not-allowed bg-input opacity-50 ring-1 ring-inset ring-border/50"
-                          : cn(
-                              "cursor-pointer",
-                              hidePanelFromCapture
-                                ? "bg-primary"
-                                : "bg-input ring-1 ring-inset ring-border/50",
-                            ),
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          !isLinux && hidePanelFromCapture
-                            ? "translate-x-4.5"
-                            : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                </div>
-              </section>
+                  <Switch
+                    checked={!isLinux && hidePanelFromCapture}
+                    disabled={isLinux}
+                    onCheckedChange={() => toggleHidePanelFromCapture()}
+                    aria-label="Hide recording panel from captures"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
-              <!-- Editor -->
-              <section id="settings-editor" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Editor
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Behavior when you open a recording.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-editor"
+                label="Editor"
+                description="Behavior when you open a recording."
+              >
+                <SettingsRow
+                  label="Window behavior"
+                  description="Replace the current view or pop the editor into its own window."
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Window behavior
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        Replace the current view or pop the editor into its own
-                        window.
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Window behavior"
-                    >
-                      {#each editorBehaviors as b (b.value)}
-                        {@const Icon = b.icon}
-                        {@const active = editorWindow === b.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateEditorWindow(b.value)}
-                          class={cn(
-                            "flex h-7 items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon class="size-3.5" />
-                          <span>{b.label}</span>
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={editorSegments}
+                    value={editorWindow}
+                    onValueChange={updateEditorWindow}
+                    fill={false}
+                    aria-label="Window behavior"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
-              <!-- Recording profiles -->
-              <section id="settings-profiles" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Recording profiles
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Save preset combinations of audio, mic, and camera.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-profiles"
+                label="Recording profiles"
+                description="Save preset combinations of audio, mic, and camera."
+              >
+                <SettingsRow
+                  label="Use profile system"
+                  description={profilesStore.enabled
+                    ? "Recording panel auto-applies the default profile and shows a switcher."
+                    : "Recording panel resets to manual toggles every launch."}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Use profile system
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {profilesStore.enabled
-                          ? "Recording panel auto-applies the default profile and shows a switcher."
-                          : "Recording panel resets to manual toggles every launch."}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Use profile system"
-                      aria-checked={profilesStore.enabled}
-                      onclick={toggleProfilesEnabled}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        profilesStore.enabled
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
+                  <Switch
+                    checked={profilesStore.enabled}
+                    onCheckedChange={() => toggleProfilesEnabled()}
+                    aria-label="Use profile system"
+                  />
+                </SettingsRow>
+                {#if profilesStore.enabled}
+                  <SettingsRow
+                    label="Manage profiles"
+                    description={profilesStore.profiles.length === 0
+                      ? "No profiles yet."
+                      : profilesStore.profiles.length === 1
+                        ? "1 profile saved."
+                        : `${profilesStore.profiles.length} profiles saved.`}
+                  >
+                    <Button
+                      href="/profiles"
+                      variant="secondary"
+                      size="sm"
+                      class="h-8 gap-1.5"
                     >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          profilesStore.enabled ? "translate-x-4.5" : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                  {#if profilesStore.enabled}
-                    <div
-                      class="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-3"
-                    >
-                      <div class="min-w-0">
-                        <div class="text-[12px] font-semibold text-foreground">
-                          Manage profiles
-                        </div>
-                        <div class="text-[11px] text-muted-foreground">
-                          {profilesStore.profiles.length === 0
-                            ? "No profiles yet."
-                            : profilesStore.profiles.length === 1
-                              ? "1 profile saved."
-                              : `${profilesStore.profiles.length} profiles saved.`}
-                        </div>
-                      </div>
-                      <Button
-                        href="/profiles"
-                        variant="secondary"
-                        size="sm"
-                        class="h-8 gap-1.5"
-                      >
-                        <SlidersIcon class="size-3.5" />
-                        <span class="text-[11.5px]">Open profiles</span>
-                      </Button>
-                    </div>
-                  {/if}
-                </div>
-              </section>
+                      <SlidersIcon class="size-3.5" />
+                      <span class="text-[11.5px]">Open profiles</span>
+                    </Button>
+                  </SettingsRow>
+                {/if}
+              </SectionCard>
         </Tabs.Content>
 
         <Tabs.Content value="cloud" class="flex min-w-0 flex-col gap-8">
               <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
                    tier = 10 active links + watermark; paid removes both. -->
-              <section id="settings-cloud" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Cloud class="size-3 text-primary" />
-                    Recast Cloud
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Share recordings as Loom-style links with viewer analytics,
-                    password protection, and custom branding, layered on top of
-                    your local recordings.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <CloudSignIn />
-                </div>
-              </section>
+              <SectionCard
+                id="settings-cloud"
+                label="Recast Cloud"
+                description="Share recordings as Loom-style links, layered on top of your local recordings."
+              >
+                {#snippet icon()}
+                  <Cloud class="size-3 text-primary" />
+                {/snippet}
+                <CloudSignIn />
+              </SectionCard>
 
               <!-- Gated behind the `selfHosting` flag: Cloud's server isn't
                    shipped, so there's nothing to point at by default. -->
@@ -863,355 +655,168 @@
 
               <!-- Separate auth from Recast Cloud above; both are external
                    integrations that take exports off this machine. -->
-              <section id="settings-google-drive" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <HardDrive class="size-3 text-primary" />
-                    Google Drive
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Upload exports to your own Drive. Files land in a private
-                    /Recast/ folder.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <GoogleDriveConnection />
-                </div>
-              </section>
+              <SectionCard
+                id="settings-google-drive"
+                label="Google Drive"
+                description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
+              >
+                {#snippet icon()}
+                  <HardDrive class="size-3 text-primary" />
+                {/snippet}
+                <GoogleDriveConnection />
+              </SectionCard>
         </Tabs.Content>
 
         <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
-              <!-- Appearance -->
-              <section id="settings-appearance" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Appearance
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Match your system or pick a fixed mode.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-appearance"
+                label="Appearance"
+                description="How Recast looks and how the window is arranged."
+              >
+                <SettingsRow
+                  label="Theme"
+                  description={currentTheme === "system"
+                    ? "Following your OS preference."
+                    : `Locked to ${currentTheme} mode.`}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Theme
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {currentTheme === "system"
-                          ? "Following your OS preference."
-                          : `Locked to ${currentTheme} mode.`}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Theme"
-                    >
-                      {#each themes as t (t.value)}
-                        {@const Icon = t.icon}
-                        {@const active = currentTheme === t.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => updateTheme(t.value)}
-                          class={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon class="size-3.5" />
-                          <span>{t.label}</span>
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
+                  <Segmented
+                    options={themeSegments}
+                    value={currentTheme}
+                    onValueChange={updateTheme}
+                    fill={false}
+                    aria-label="Theme"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window chrome"
+                  description={LAYOUT_MODES.find(
+                    (m) => m.value === layoutMode.current,
+                  )?.hint}
+                >
+                  <Segmented
+                    options={layoutSegments}
+                    value={layoutMode.current}
+                    onValueChange={(v) => (layoutMode.current = v)}
+                    fill={false}
+                    aria-label="Window chrome layout"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window transparency"
+                  description={isLinux
+                    ? "Not available on Linux."
+                    : windowTransparency
+                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
+                      : "The window uses a solid background."}
+                >
+                  <Switch
+                    checked={!isLinux && windowTransparency}
+                    disabled={isLinux}
+                    onCheckedChange={() => toggleWindowTransparency()}
+                    aria-label="Window transparency"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
-              <!-- Layout -->
-              <section id="settings-layout" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    Layout
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    How the window titlebar and controls are arranged.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+              <SectionCard
+                id="settings-system"
+                label="System"
+                description="Behavior when you close the main window."
+              >
+                <SettingsRow
+                  label="Minimize to tray on close"
+                  description={closeToTray
+                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+                    : "Closing the window quits Recast immediately."}
                 >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Window chrome
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {LAYOUT_MODES.find((m) => m.value === layoutMode.current)
-                          ?.hint}
-                      </div>
-                    </div>
-                    <div
-                      class="flex items-center gap-1 rounded-xl bg-muted/30 p-1 ring-1 ring-inset ring-border/40"
-                      role="radiogroup"
-                      aria-label="Window chrome layout"
-                    >
-                      {#each LAYOUT_MODES as m (m.value)}
-                        {@const Icon = layoutModeIcons[m.value]}
-                        {@const active = layoutMode.current === m.value}
-                        <button
-                          type="button"
-                          role="radio"
-                          aria-checked={active}
-                          onclick={() => (layoutMode.current = m.value)}
-                          class={cn(
-                            "flex h-7 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-[11px] whitespace-nowrap font-semibold transition-all duration-200",
-                            active
-                              ? "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40"
-                              : "text-muted-foreground hover:text-foreground",
-                          )}
-                        >
-                          <Icon class="size-3.5" />
-                          <span>{m.label}</span>
-                        </button>
-                      {/each}
-                    </div>
-                  </div>
-                </div>
-              </section>
-
-              <!-- System -->
-              <section id="settings-system" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    System
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Behavior when you close the main window.
-                  </p>
-                </div>
-                <div
-                  class="rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Minimize to tray on close
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        {closeToTray
-                          ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
-                          : "Closing the window quits Recast immediately."}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Minimize to tray on close"
-                      aria-checked={closeToTray}
-                      onclick={toggleCloseToTray}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        closeToTray
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          closeToTray ? "translate-x-4.5" : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                </div>
-              </section>
+                  <Switch
+                    checked={closeToTray}
+                    onCheckedChange={() => toggleCloseToTray()}
+                    aria-label="Minimize to tray on close"
+                  />
+                </SettingsRow>
+              </SectionCard>
 
               <!-- Two locally-stored opt-ins: usage analytics (default off) and
                    crash reports (default on, PII-scrubbed). -->
-              <section id="settings-privacy" class="flex flex-col gap-3">
+              <SectionCard
+                id="settings-privacy"
+                label="Privacy & Telemetry"
+                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+              >
+                {#snippet icon()}
+                  <Shield class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Share anonymous usage analytics"
+                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
+                >
+                  <Switch
+                    checked={desktopConsent.product}
+                    onCheckedChange={() => toggleProductAnalytics()}
+                    aria-label="Share anonymous usage analytics"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Send anonymous crash reports"
+                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+                >
+                  <Switch
+                    checked={desktopConsent.errors}
+                    onCheckedChange={() => toggleCrashReports()}
+                    aria-label="Send anonymous crash reports"
+                  />
+                </SettingsRow>
+              </SectionCard>
+        </Tabs.Content>
+
+        <Tabs.Content value="advanced" class="flex min-w-0 flex-col gap-8">
+              <SectionCard
+                id="settings-experimental"
+                label="Experimental"
+                description="Unfinished features, off by default. Turn one on to try it; it may change or break."
+              >
+                {#snippet icon()}
+                  <FlaskConical class="size-3 text-primary" />
+                {/snippet}
+                {#each FLAG_META as flag (flag.key)}
+                  {@const on = experimentalStore.isEnabled(flag.key)}
+                  <SettingsRow label={flag.label} description={flag.description}>
+                    <Switch
+                      checked={on}
+                      onCheckedChange={() =>
+                        toggleExperimental(flag.key, flag.label)}
+                      aria-label={flag.label}
+                    />
+                  </SettingsRow>
+                {/each}
+              </SectionCard>
+
+              <!-- Encoder availability is probed live against this GPU (not just
+                   "compiled in"), so the matrix reflects what's actually usable. -->
+              <section id="settings-device" class="flex flex-col gap-3">
                 <div class="px-1">
                   <h2
                     class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
                   >
-                    <Shield class="size-3 text-primary" />
-                    Privacy & Telemetry
+                    <Cpu class="size-3 text-primary" />
+                    Device & diagnostics
                   </h2>
                   <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Recast is offline-first, so your recordings never leave this
-                    machine. These control anonymous diagnostics only.
+                    Your platform and which video encoders this device supports.
                   </p>
                 </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  <div class="flex items-center justify-between gap-3 px-4 py-3">
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Share anonymous usage analytics
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        Which features you use, so we know what to improve. Off by
-                        default. Nothing is sent unless you turn this on.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Share anonymous usage analytics"
-                      aria-checked={desktopConsent.product}
-                      onclick={toggleProductAnalytics}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        desktopConsent.product
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          desktopConsent.product
-                            ? "translate-x-4.5"
-                            : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                  <div
-                    class="flex items-center justify-between gap-3 border-t border-border/40 px-4 py-3"
-                  >
-                    <div class="min-w-0">
-                      <div class="text-[12px] font-semibold text-foreground">
-                        Send anonymous crash reports
-                      </div>
-                      <div class="text-[11px] text-muted-foreground">
-                        Scrubbed error details when something breaks, with no file
-                        names or paths. On by default.
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-label="Send anonymous crash reports"
-                      aria-checked={desktopConsent.errors}
-                      onclick={toggleCrashReports}
-                      class={cn(
-                        "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                        desktopConsent.errors
-                          ? "bg-primary"
-                          : "bg-input ring-1 ring-inset ring-border/50",
-                      )}
-                    >
-                      <span
-                        class={cn(
-                          "size-4 rounded-full bg-card shadow-sm transition-transform",
-                          desktopConsent.errors
-                            ? "translate-x-4.5"
-                            : "translate-x-0.5",
-                        )}
-                      ></span>
-                    </button>
-                  </div>
-                </div>
+                <DeviceCapabilities />
               </section>
 
               <DiagnosticsPanel />
-        </Tabs.Content>
 
-        <Tabs.Content value="experimental" class="flex min-w-0 flex-col gap-8">
-              <!-- Experimental features -->
-              <section id="settings-experimental" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <FlaskConical class="size-3 text-primary" />
-                    Experimental
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Unfinished features, off by default. Turn one on to try it;
-                    it may change or break.
-                  </p>
-                </div>
-                <div
-                  class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
-                  {#each FLAG_META as flag, i (flag.key)}
-                    {@const on = experimentalStore.isEnabled(flag.key)}
-                    <div
-                      class={cn(
-                        "flex items-center justify-between gap-3 px-4 py-3",
-                        i > 0 && "border-t border-border/40",
-                      )}
-                    >
-                      <div class="min-w-0">
-                        <div class="text-[12px] font-semibold text-foreground">
-                          {flag.label}
-                        </div>
-                        <div class="text-[11px] text-muted-foreground">
-                          {flag.description}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        role="switch"
-                        aria-label={flag.label}
-                        aria-checked={on}
-                        onclick={() => toggleExperimental(flag.key, flag.label)}
-                        class={cn(
-                          "flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full transition-colors",
-                          on
-                            ? "bg-primary"
-                            : "bg-input ring-1 ring-inset ring-border/50",
-                        )}
-                      >
-                        <span
-                          class={cn(
-                            "size-4 rounded-full bg-card shadow-sm transition-transform",
-                            on ? "translate-x-4.5" : "translate-x-0.5",
-                          )}
-                        ></span>
-                      </button>
-                    </div>
-                  {/each}
-                </div>
-              </section>
-        </Tabs.Content>
-
-        <Tabs.Content value="about" class="flex min-w-0 flex-col gap-8">
-              <!-- About -->
-              <section id="settings-about" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    About
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Version info and where to find us.
-                  </p>
-                </div>
-                <div
-                  class="flex flex-col gap-3 rounded-xl border border-border/60 bg-card/70 p-4 shadow-(--shadow-craft-inset) backdrop-blur"
-                >
+              <SectionCard
+                id="settings-about"
+                label="About"
+                description="Version info and where to find us."
+              >
+                <div class="flex flex-col gap-3 px-4 py-4">
                   <div class="flex items-center gap-3">
                     <div
                       class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-foreground/5 text-foreground ring-1 ring-inset ring-border/40"
@@ -1228,11 +833,7 @@
                     </div>
                   </div>
                   <div class="flex flex-wrap gap-2">
-                    <Button
-                      href="/whats-new"
-                      variant="outline"
-                      size="xs"
-                    >
+                    <Button href="/whats-new" variant="outline" size="xs">
                       <Sparkles class="text-primary" />
                       <span>What's new</span>
                       <ArrowUpRight class="text-muted-foreground" />
@@ -1259,24 +860,7 @@
                     </Button>
                   </div>
                 </div>
-              </section>
-
-              <!-- Encoder availability is probed live against this GPU (not just
-                   "compiled in"), so the matrix reflects what's actually usable. -->
-              <section id="settings-device" class="flex flex-col gap-3">
-                <div class="px-1">
-                  <h2
-                    class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-                  >
-                    <Cpu class="size-3 text-primary" />
-                    Device & diagnostics
-                  </h2>
-                  <p class="mt-0.5 text-[11px] text-muted-foreground/80">
-                    Your platform and which video encoders this device supports.
-                  </p>
-                </div>
-                <DeviceCapabilities />
-              </section>
+              </SectionCard>
         </Tabs.Content>
       </Tabs.Root>
     </div>

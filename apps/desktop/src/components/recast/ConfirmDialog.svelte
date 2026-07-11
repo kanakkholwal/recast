@@ -2,7 +2,6 @@
 	import { AlertTriangle } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
-	import { Kbd } from "@recast/ui/kbd";
 	import { toErrorMessage } from "./dialog.logic";
 
 	interface Props {
@@ -78,7 +77,7 @@
 >
 	<Dialog.Content
 		showCloseButton={false}
-		class="top-[30%] max-w-md translate-y-0 overflow-hidden rounded-xl p-0 ring-1 ring-border"
+		class="top-[30%] max-w-md translate-y-0 overflow-hidden rounded-2xl p-0 ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong)"
 	>
 		<Dialog.Header class="sr-only">
 			<Dialog.Title>{title}</Dialog.Title>
@@ -87,9 +86,9 @@
 			{/if}
 		</Dialog.Header>
 
-		<div class="flex items-start gap-3 px-4 py-4" onkeydown={handleKeydown} role="alertdialog" tabindex="-1">
+		<div class="flex items-start gap-3 px-4 py-3.5" onkeydown={handleKeydown} role="alertdialog" tabindex="-1">
 			{#if variant === "destructive"}
-				<div class="flex size-8 shrink-0 items-center justify-center rounded-md border border-destructive/20 bg-destructive/10 text-destructive">
+				<div class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-destructive/20 bg-destructive/10 text-destructive">
 					<AlertTriangle size={14} />
 				</div>
 			{/if}
@@ -105,31 +104,19 @@
 		</div>
 
 		<footer
-			class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+			class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2"
 		>
-			<div class="flex items-center gap-3">
-				<span class="hidden items-center gap-1 sm:flex">
-					<Kbd>⌘↵</Kbd>
-					<span>Confirm</span>
-				</span>
-				<span class="flex items-center gap-1">
-					<Kbd>Esc</Kbd>
-					<span>Cancel</span>
-				</span>
-			</div>
-			<div class="flex items-center gap-1.5">
-				<Button variant="ghost" size="xs" onclick={close} disabled={busy}>
-					{cancelLabel}
-				</Button>
-				<Button
-					variant={variant === "destructive" ? "destructive" : "default"}
-					size="xs"
-					onclick={confirm}
-					disabled={busy}
-				>
-					{busy ? "Working…" : confirmLabel}
-				</Button>
-			</div>
+			<Button variant="ghost" size="xs" onclick={close} disabled={busy}>
+				{cancelLabel}
+			</Button>
+			<Button
+				variant={variant === "destructive" ? "destructive" : "default"}
+				size="xs"
+				onclick={confirm}
+				disabled={busy}
+			>
+				{busy ? "Working…" : confirmLabel}
+			</Button>
 		</footer>
 	</Dialog.Content>
 </Dialog.Root>

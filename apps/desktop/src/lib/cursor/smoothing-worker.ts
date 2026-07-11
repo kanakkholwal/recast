@@ -1,6 +1,6 @@
 /// <reference lib="webworker" />
-// Off-main-thread cursor smoothing. The Gaussian pass is O(N·window) — hundreds
-// of ms on a long high-σ track — so it must not run on the UI thread. The raw
+// Off-main-thread cursor smoothing. The Gaussian pass is O(N·window), which is hundreds
+// of ms on a long high-σ track, so it must not run on the UI thread. The raw
 // track is sent once via `load`; each slider change then ships only the tiny
 // opts, and the smoothed path comes back without ever touching the main thread.
 

@@ -18,11 +18,13 @@ pub(crate) mod subtitles;
 mod words;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{ipc::Channel, AppHandle};
 use tokio::fs;
 
 use capabilities::DeviceCapabilities;
 use models::{CaptionModel, Engine as ModelEngine};
+
+use crate::commands::error::{AppError, AppResult};
 
 // Reused by silence detection to fetch the Silero VAD model (vad-rs needs an
 // external silero_vad.onnx; the download/verify path lives in `models`).
@@ -192,11 +194,11 @@ fn evaluate(model: &CaptionModel, caps: &DeviceCapabilities) -> (bool, Option<St
     (true, (!notes.is_empty()).then(|| notes.join(" ")))
 }
 
-// ---- Event payloads ----
+// ---- Channel payloads ----
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct DownloadProgress {
+pub(crate) struct DownloadProgress {
     model_id: String,
     /// File currently downloading (empty on the final "complete" tick).
     file: String,
@@ -207,7 +209,7 @@ struct DownloadProgress {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
-struct TranscribeProgress {
+pub(crate) struct TranscribeProgress {
     phase: String, // "extracting" | "transcribing" | "done"
 }
 
@@ -216,7 +218,7 @@ struct TranscribeProgress {
 /// Catalog + per-model install state. Cheap disk checks; async to honour the
 /// no-sync-commands rule.
 #[tauri::command]
-pub async fn list_caption_models(app: AppHandle) -> Result<Vec<CaptionModelInfo>, String> {
+pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelInfo>> {
     let caps = capabilities::detect();
     let infos = models::registry()
         .into_iter()
@@ -248,28 +250,35 @@ pub async fn list_caption_models(app: AppHandle) -> Result<Vec<CaptionModelInfo>
 /// Report this device's OS / arch / RAM / GPU so the UI can explain why a model
 /// is disabled or warned.
 #[tauri::command]
-pub async fn caption_capabilities() -> Result<DeviceCapabilities, String> {
+pub async fn caption_capabilities() -> AppResult<DeviceCapabilities> {
     Ok(capabilities::detect())
 }
 
-/// Download every file for a model, emitting `captions:download-progress`.
+/// Download every file for a model, streaming progress on the `on_progress`
+/// channel (request-scoped — one channel per download, so the caller never has
+/// to correlate ticks to a model id).
 #[tauri::command]
-pub async fn download_caption_model(app: AppHandle, id: String) -> Result<(), String> {
-    let model = models::find(&id).ok_or_else(|| format!("unknown caption model: {id}"))?;
+pub async fn download_caption_model(
+    app: AppHandle,
+    id: String,
+    on_progress: Channel<DownloadProgress>,
+) -> AppResult<()> {
+    let model =
+        models::find(&id).ok_or_else(|| AppError::msg(format!("unknown caption model: {id}")))?;
     if model.files.is_empty() {
-        return Err(format!(
+        return Err(AppError::msg(format!(
             "model '{id}' has no downloadable files defined yet"
-        ));
+        )));
     }
     let dir = models::model_dir(&app, &id)?;
     fs::create_dir_all(&dir)
         .await
-        .map_err(|e| format!("create model dir: {e}"))?;
+        .map_err(|e| AppError::msg(format!("create model dir: {e}")))?;
 
     let client = reqwest::Client::builder()
         .user_agent("recast-desktop")
         .build()
-        .map_err(|e| format!("client: {e}"))?;
+        .map_err(|e| AppError::msg(format!("client: {e}")))?;
 
     for f in &model.files {
         let dest = dir.join(&f.rel_path);
@@ -280,40 +289,34 @@ pub async fn download_caption_model(app: AppHandle, id: String) -> Result<(), St
             f.sha256.as_deref(),
             &dest,
             |downloaded, total| {
-                let _ = app.emit(
-                    "captions:download-progress",
-                    DownloadProgress {
-                        model_id: id.clone(),
-                        file: rel.clone(),
-                        downloaded,
-                        total,
-                    },
-                );
+                let _ = on_progress.send(DownloadProgress {
+                    model_id: id.clone(),
+                    file: rel.clone(),
+                    downloaded,
+                    total,
+                });
             },
         )
         .await?;
     }
 
-    let _ = app.emit(
-        "captions:download-progress",
-        DownloadProgress {
-            model_id: id.clone(),
-            file: String::new(),
-            downloaded: 1,
-            total: 1,
-        },
-    );
+    let _ = on_progress.send(DownloadProgress {
+        model_id: id.clone(),
+        file: String::new(),
+        downloaded: 1,
+        total: 1,
+    });
     Ok(())
 }
 
 /// Remove a downloaded model's files.
 #[tauri::command]
-pub async fn delete_caption_model(app: AppHandle, id: String) -> Result<(), String> {
+pub async fn delete_caption_model(app: AppHandle, id: String) -> AppResult<()> {
     let dir = models::model_dir(&app, &id)?;
     if dir.exists() {
         fs::remove_dir_all(&dir)
             .await
-            .map_err(|e| format!("delete model: {e}"))?;
+            .map_err(|e| AppError::msg(format!("delete model: {e}")))?;
     }
     Ok(())
 }
@@ -327,24 +330,26 @@ pub async fn transcribe_project(
     microphone_path: Option<String>,
     model_id: String,
     language: Option<String>,
-) -> Result<Transcript, String> {
-    let model =
-        models::find(&model_id).ok_or_else(|| format!("unknown caption model: {model_id}"))?;
+    on_phase: Channel<TranscribeProgress>,
+) -> AppResult<Transcript> {
+    let model = models::find(&model_id)
+        .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
     let (runnable, _) = evaluate(&model, &capabilities::detect());
     if !runnable {
-        return Err(format!("model '{model_id}' can't run on this device"));
+        return Err(AppError::msg(format!(
+            "model '{model_id}' can't run on this device"
+        )));
     }
     if !models::is_installed(&app, &model)? {
-        return Err(format!("model '{model_id}' is not downloaded"));
+        return Err(AppError::msg(format!(
+            "model '{model_id}' is not downloaded"
+        )));
     }
     let model_dir = models::model_dir(&app, &model.id)?;
 
-    let _ = app.emit(
-        "captions:transcribe-progress",
-        TranscribeProgress {
-            phase: "extracting".into(),
-        },
-    );
+    let _ = on_phase.send(TranscribeProgress {
+        phase: "extracting".into(),
+    });
 
     let sources: Vec<String> = [audio_path, microphone_path]
         .into_iter()
@@ -360,14 +365,11 @@ pub async fn transcribe_project(
         engine::transcribe(&model, &model_dir, &samples, lang.as_deref())
     })
     .await
-    .map_err(|e| format!("transcription task panicked: {e}"))??;
+    .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??;
 
-    let _ = app.emit(
-        "captions:transcribe-progress",
-        TranscribeProgress {
-            phase: "done".into(),
-        },
-    );
+    let _ = on_phase.send(TranscribeProgress {
+        phase: "done".into(),
+    });
     Ok(transcript)
 }
 
@@ -376,7 +378,7 @@ pub async fn transcribe_project(
 /// a video path but no audio track (recorded with mic + system audio off), and
 /// there's nothing to transcribe then. ffprobe subprocess → async + blocking.
 #[tauri::command]
-pub async fn has_transcribable_audio(paths: Vec<String>) -> Result<bool, String> {
+pub async fn has_transcribable_audio(paths: Vec<String>) -> AppResult<bool> {
     tokio::task::spawn_blocking(move || {
         paths
             .iter()
@@ -384,7 +386,7 @@ pub async fn has_transcribable_audio(paths: Vec<String>) -> Result<bool, String>
             .any(|p| crate::commands::ffmpeg::has_audio(std::path::Path::new(p)))
     })
     .await
-    .map_err(|e| format!("audio probe task panicked: {e}"))
+    .map_err(|e| AppError::msg(format!("audio probe task panicked: {e}")))
 }
 
 /// Serialize a transcript to a subtitle sidecar (`srt` | `vtt`) and write it to
@@ -394,13 +396,50 @@ pub async fn export_captions(
     transcript: Transcript,
     format: String,
     dest_path: String,
-) -> Result<(), String> {
+) -> AppResult<()> {
     let body = match format.as_str() {
         "srt" => subtitles::to_srt(&transcript),
         "vtt" => subtitles::to_vtt(&transcript),
-        other => return Err(format!("unsupported subtitle format: {other}")),
+        other => {
+            return Err(AppError::msg(format!(
+                "unsupported subtitle format: {other}"
+            )))
+        }
     };
     fs::write(&dest_path, body)
         .await
-        .map_err(|e| format!("write subtitles: {e}"))
+        .map_err(|e| AppError::msg(format!("write subtitles: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CaptionAnimation;
+
+    #[test]
+    fn default_animation_is_static() {
+        // The default spec (line chunks, no emphasis, no entrance) must take the
+        // static one-Dialogue-per-line generator path.
+        assert!(CaptionAnimation::default().is_static());
+    }
+
+    #[test]
+    fn any_visible_effect_makes_it_non_static() {
+        let word_chunked = CaptionAnimation {
+            chunk: "word".into(),
+            ..Default::default()
+        };
+        assert!(!word_chunked.is_static());
+
+        let emphasized = CaptionAnimation {
+            emphasis: "color".into(),
+            ..Default::default()
+        };
+        assert!(!emphasized.is_static());
+
+        let with_entrance = CaptionAnimation {
+            entrance: "fade".into(),
+            ..Default::default()
+        };
+        assert!(!with_entrance.is_static());
+    }
 }
