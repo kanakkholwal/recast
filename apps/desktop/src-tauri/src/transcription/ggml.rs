@@ -41,6 +41,16 @@ pub(crate) fn transcribe_gguf(
         .run(samples, &opts)
         .map_err(|e| format!("ggml transcription failed: {e}"))?;
 
+    // Shape varies by family (Whisper: many segments; Parakeet: one segment +
+    // per-word times). Logged so a missing-timing report can be diagnosed.
+    log::info!(
+        "ggml {model_id}: kind={:?} segments={} words={} tokens={}",
+        result.timestamp_kind,
+        result.segments.len(),
+        result.words.len(),
+        result.tokens.len()
+    );
+
     let total_secs = samples.len() as f64 / 16_000.0;
     let segs: Vec<RawSeg> = result
         .segments
@@ -48,8 +58,6 @@ pub(crate) fn transcribe_gguf(
         .map(|s| RawSeg {
             t0_ms: s.t0_ms,
             t1_ms: s.t1_ms,
-            first_word: s.first_word as i64,
-            n_words: s.n_words as i64,
             text: s.text.clone(),
         })
         .collect();
