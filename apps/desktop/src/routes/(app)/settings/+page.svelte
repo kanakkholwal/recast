@@ -7,18 +7,23 @@
   import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
   import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
   import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
+  import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
   import { config } from "$constants/app";
   import {
+    cliInstallStatus,
     getCloseToTray,
     getDisplays,
     getHidePanelFromCapture,
     getLastSource,
     getOutputDir,
     getWindowTransparency,
+    installCli,
     setCloseToTray,
     setHidePanelFromCapture,
     setOutputDir,
     setWindowTransparency,
+    uninstallCli,
+    type CliInstallStatus,
   } from "$lib/ipc";
   import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
   import { emit } from "@tauri-apps/api/event";
@@ -52,6 +57,7 @@
     SlidersHorizontal as SlidersIcon,
     Sparkles,
     Sun,
+    Terminal,
     Timer,
     Video,
     Wrench,
@@ -112,9 +118,13 @@
   // so fps options are capped to it. 60 until displays are probed.
   let maxRefreshHz = $state(60);
   let activeTab = $state<SettingsTab>("general");
+  // `recast` command-line tool PATH state. null until the first probe.
+  let cliStatus = $state<CliInstallStatus | null>(null);
+  let cliBusy = $state(false);
 
   onMount(() => {
     fetchSettings();
+    void refreshCliStatus();
     profilesStore.hydrate();
     // `mode-watcher-mode` is owned by mode-watcher; we only read it to reflect
     // the current choice in the radio group.
@@ -277,6 +287,30 @@
     } catch (e) {
       hidePanelFromCapture = !next;
       toast.error(`Could not update setting: ${e}`);
+    }
+  }
+
+  async function refreshCliStatus() {
+    try {
+      cliStatus = await cliInstallStatus();
+    } catch {
+      // Non-Tauri preview or an older build without the command.
+      cliStatus = null;
+    }
+  }
+
+  async function toggleCliInstall() {
+    cliBusy = true;
+    try {
+      const message = cliStatus?.onPath
+        ? await uninstallCli()
+        : await installCli();
+      toast.success(message);
+      await refreshCliStatus();
+    } catch (e) {
+      toast.error(`Could not update the command line tool: ${e}`);
+    } finally {
+      cliBusy = false;
     }
   }
 
@@ -790,6 +824,69 @@
                     />
                   </SettingsRow>
                 {/each}
+              </SectionCard>
+
+              <!-- Gated behind `remoteTranscription`: response formats vary
+                   across OpenAI-compatible servers, so this is early. -->
+              {#if experimentalStore.isEnabled("remoteTranscription")}
+                <section id="settings-remote-asr" class="flex flex-col gap-3">
+                  <div class="px-1">
+                    <h2
+                      class="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+                    >
+                      <Server class="size-3 text-primary" />
+                      Remote transcription
+                      <span
+                        class="inline-flex items-center gap-1 rounded-full bg-warning/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-warning"
+                      >
+                        <FlaskConical class="size-2.5" />
+                        Experimental
+                      </span>
+                    </h2>
+                    <p class="mt-0.5 text-[11px] text-muted-foreground/80">
+                      Transcribe captions through an OpenAI-compatible endpoint.
+                      Keys are stored in your OS keyring, never in the project.
+                    </p>
+                  </div>
+                  <div
+                    class="overflow-hidden rounded-xl border border-border/60 bg-card/70 shadow-(--shadow-craft-inset) backdrop-blur"
+                  >
+                    <RemoteEndpoints />
+                  </div>
+                </section>
+              {/if}
+
+              <!-- Power-user: exposes the same `recast` binary as a CLI so a
+                   terminal or an AI agent can drive recording. -->
+              <SectionCard
+                id="settings-cli"
+                label="Command line tool"
+                description="Control Recast from a terminal or an AI agent with the recast command."
+              >
+                {#snippet icon()}
+                  <Terminal class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Install the recast command"
+                  description={cliStatus === null
+                    ? "Checking availability."
+                    : cliStatus.onPath
+                      ? "Available in any terminal. Try recast --help."
+                      : "Not on your PATH yet. Install it to run recast from any terminal."}
+                >
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    class="h-8 gap-1.5"
+                    disabled={cliBusy}
+                    onclick={() => toggleCliInstall()}
+                  >
+                    <Terminal class="size-3.5" />
+                    <span class="text-[11.5px]">
+                      {cliStatus?.onPath ? "Remove" : "Install"}
+                    </span>
+                  </Button>
+                </SettingsRow>
               </SectionCard>
 
               <!-- Encoder availability is probed live against this GPU (not just

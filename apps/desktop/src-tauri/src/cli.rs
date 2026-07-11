@@ -1,11 +1,14 @@
 //! Headless CLI branch. Parsed in `main` before the Tauri app boots so agents
-//! and scripts can enumerate capture sources as JSON without a running window.
+//! and scripts can drive Recast without a running window.
 //!
-//! Phase 1 is read only (see docs/cli-automation-plan.md): it reuses the same
-//! enumeration functions the UI invokes and prints their results. Live control
-//! (recording, selection) arrives in later phases over a local control socket.
+//! Enumeration verbs reuse the same functions the UI invokes; control verbs
+//! (status, rec) talk to a running app over the local socket (see control.rs).
+//! Output is YAML at a terminal and JSON when piped or captured, overridable
+//! with `--format`. See docs/cli-automation-plan.md.
 
-use clap::{Parser, Subcommand};
+use std::io::IsTerminal;
+
+use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
 use serde_json::{json, Value};
 
@@ -55,6 +58,16 @@ pub fn run_and_exit() -> ! {
     std::process::exit(code);
 }
 
+/// Rendered output format. Data is always modelled as JSON internally; this
+/// only controls how it is printed.
+#[derive(Clone, Copy, ValueEnum)]
+enum Format {
+    /// Human-readable, the default at a terminal.
+    Yaml,
+    /// Machine-readable single line, the default when piped or captured.
+    Json,
+}
+
 #[derive(Parser)]
 #[command(
     name = "recast",
@@ -62,9 +75,9 @@ pub fn run_and_exit() -> ! {
     disable_help_subcommand = true
 )]
 struct Cli {
-    /// Print compact single-line JSON instead of pretty-printed.
-    #[arg(long, global = true)]
-    compact: bool,
+    /// Output format. Defaults to YAML at a terminal, JSON when piped or captured.
+    #[arg(long, short = 'f', global = true, value_enum)]
+    format: Option<Format>,
     /// Include base64 thumbnails in display/window output (large, off by default).
     #[arg(long, global = true)]
     thumbnails: bool,
@@ -223,26 +236,26 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                 microphones: mics()?,
                 cameras: cameras()?,
             };
-            emit(&payload, cli.compact)
+            emit(&payload, cli.format)
         }
-        Command::Displays { .. } => emit(&displays(cli.thumbnails)?, cli.compact),
+        Command::Displays { .. } => emit(&displays(cli.thumbnails)?, cli.format),
         Command::Windows {
             action: WindowsAction::List { pid, app, title },
         } => emit(
             &windows(cli.thumbnails, *pid, app.as_deref(), title.as_deref())?,
-            cli.compact,
+            cli.format,
         ),
-        Command::Mics { .. } => emit(&mics()?, cli.compact),
+        Command::Mics { .. } => emit(&mics()?, cli.format),
         Command::Cameras {
             action: CamerasAction::List { validate },
         } => {
             if *validate {
-                emit(&validated_cameras()?, cli.compact)
+                emit(&validated_cameras()?, cli.format)
             } else {
-                emit(&cameras()?, cli.compact)
+                emit(&cameras()?, cli.format)
             }
         }
-        Command::Capabilities => emit(&capabilities()?, cli.compact),
+        Command::Capabilities => emit(&capabilities()?, cli.format),
         Command::Doctor => {
             let caps = capabilities()?;
             let ready = caps.capabilities.iter().all(|c| c.supported);
@@ -251,7 +264,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                     ready,
                     capabilities: caps,
                 },
-                cli.compact,
+                cli.format,
             )
         }
         Command::Install => {
@@ -259,12 +272,12 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             let message = crate::path_install::install()?;
             emit(
                 &json!({ "message": message, "binDir": status.bin_dir }),
-                cli.compact,
+                cli.format,
             )
         }
         Command::Uninstall => {
             let message = crate::path_install::uninstall()?;
-            emit(&json!({ "message": message }), cli.compact)
+            emit(&json!({ "message": message }), cli.format)
         }
         Command::Status => control(cli, "status", Value::Null),
         Command::Rec { action } => match action {
@@ -280,7 +293,7 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
 /// Send a control request to the running app and print its result.
 fn control(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
     let value = crate::control::send(method, params, !cli.no_launch, cli.timeout_ms)?;
-    emit(&value, cli.compact)
+    emit(&value, cli.format)
 }
 
 fn build_start_params(args: &StartArgs) -> Result<Value, String> {
@@ -417,14 +430,30 @@ fn block_on<T, E: std::fmt::Display>(
     tauri::async_runtime::block_on(fut).map_err(|e| e.to_string())
 }
 
-fn emit<T: Serialize>(value: &T, compact: bool) -> Result<(), String> {
-    let json = if compact {
-        serde_json::to_string(value)
-    } else {
-        serde_json::to_string_pretty(value)
+/// Print a value in the chosen (or auto-detected) format. Data is JSON-modelled
+/// throughout; YAML is a render-time convenience for human eyes.
+fn emit<T: Serialize>(value: &T, format: Option<Format>) -> Result<(), String> {
+    let format = format.unwrap_or_else(|| {
+        // A terminal reader wants YAML; a pipe or `$x = recast ...` capture
+        // wants machine-parseable JSON. `is_terminal` reflects the rebound
+        // console handle on Windows too (see attach_parent_console).
+        if std::io::stdout().is_terminal() {
+            Format::Yaml
+        } else {
+            Format::Json
+        }
+    });
+    match format {
+        // serde_yaml already ends its output with a newline.
+        Format::Yaml => {
+            let yaml = serde_yaml::to_string(value).map_err(|e| e.to_string())?;
+            print!("{yaml}");
+        }
+        Format::Json => {
+            let json = serde_json::to_string(value).map_err(|e| e.to_string())?;
+            println!("{json}");
+        }
     }
-    .map_err(|e| e.to_string())?;
-    println!("{json}");
     Ok(())
 }
 

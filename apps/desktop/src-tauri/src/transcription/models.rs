@@ -21,7 +21,7 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
     Parakeet,
@@ -29,6 +29,9 @@ pub enum Engine {
     GigaAM,
     Cohere,
     Whisper,
+    /// Not a local architecture: transcription runs on a remote
+    /// OpenAI-compatible endpoint. The server owns the real model.
+    Remote,
 }
 
 /// The inference backend a model runs on. Independent of `Engine` (the model
@@ -54,6 +57,7 @@ impl Engine {
         match self {
             Engine::Parakeet | Engine::Canary | Engine::GigaAM | Engine::Cohere => Runtime::Onnx,
             Engine::Whisper => Runtime::WhisperCpp,
+            Engine::Remote => Runtime::Remote,
         }
     }
 }
@@ -65,6 +69,8 @@ impl Engine {
 pub enum ModelSource {
     Builtin,
     Extension,
+    /// A user-configured remote OpenAI-compatible endpoint.
+    Remote,
 }
 
 /// Whether a runtime can actually run in this build, plus a user-facing reason
@@ -125,6 +131,10 @@ pub struct CaptionModel {
     /// Built-in catalog entry vs. one contributed by an installed extension.
     #[serde(default = "source_builtin")]
     pub source: ModelSource,
+    /// Present only for `Engine::Remote` models: the endpoint to POST audio to.
+    /// `None` for every local (onnx/whisperCpp) model.
+    #[serde(default)]
+    pub remote: Option<super::remote::RemoteEndpoint>,
 }
 
 fn source_builtin() -> ModelSource {
@@ -171,6 +181,7 @@ fn parakeet(
         prefers_gpu: false,
         min_ram_bytes: Some(2_000_000_000),
         source: ModelSource::Builtin,
+        remote: None,
     }
 }
 
@@ -223,6 +234,7 @@ fn onnx(
         prefers_gpu: false,
         min_ram_bytes: Some(2_000_000_000),
         source: ModelSource::Builtin,
+        remote: None,
     }
 }
 
@@ -308,6 +320,9 @@ pub fn all_models(app: &AppHandle) -> Vec<CaptionModel> {
             models.push(m);
         }
     }
+    // User-configured remote endpoints. Their ids are namespaced (`remote:<id>`)
+    // so they can't collide with built-ins or packs.
+    models.extend(super::remote::remote_models(app));
     models
 }
 

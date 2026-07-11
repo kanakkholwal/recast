@@ -60,6 +60,9 @@ pub fn transcribe(
         Engine::Whisper => Err("Whisper (whisper.cpp) isn't enabled in this build yet — \
              use a Parakeet or Canary model. See docs/captions-transcription-plan.md."
             .into()),
+        // Remote models are transcribed over HTTP in `transcribe_project` before
+        // reaching the local engine, so this arm is never hit in practice.
+        Engine::Remote => Err("remote models are transcribed via the remote path".into()),
     }
 }
 
@@ -101,7 +104,7 @@ fn parakeet_transcribe(
         .unwrap_or_default();
 
     let segments = if words.is_empty() {
-        whole_clip_segment(&result.text, samples)
+        super::words::whole_clip_segment(&result.text, samples.len() as f64 / 16_000.0)
     } else {
         super::words::group_words_into_segments(words)
     };
@@ -112,27 +115,6 @@ fn parakeet_transcribe(
         language: None,
         segments,
     })
-}
-
-/// One caption block spanning the whole clip, used when an engine returns text
-/// but no timing. Synthesizes per-word timing so animation still has something
-/// to drive.
-#[cfg(feature = "captions")]
-fn whole_clip_segment(text: &str, samples: &[f32]) -> Vec<super::TranscriptSegment> {
-    use super::TranscriptSegment;
-    let text = text.trim().to_string();
-    if text.is_empty() {
-        return Vec::new();
-    }
-    let mut seg = TranscriptSegment {
-        id: "seg-0".into(),
-        start: 0.0,
-        end: samples.len() as f64 / 16_000.0,
-        text,
-        words: Vec::new(),
-    };
-    seg.words = super::words::synthesize_words(&seg);
-    vec![seg]
 }
 
 /// Run any engine that implements `SpeechModel` with default options, then map
@@ -173,7 +155,7 @@ fn build_transcript(
                 words: Vec::new(),
             })
             .collect(),
-        _ => whole_clip_segment(&result.text, samples),
+        _ => super::words::whole_clip_segment(&result.text, samples.len() as f64 / 16_000.0),
     };
     // These engines give sentence timing only — synthesize per-word timing so
     // animated caption styles have something to drive (lower accuracy than real
@@ -186,6 +168,7 @@ fn build_transcript(
         Engine::GigaAM => "gigaam",
         Engine::Cohere => "cohere",
         Engine::Whisper => "whisper",
+        Engine::Remote => "remote",
     };
 
     Transcript {

@@ -14,6 +14,7 @@
     type CaptionModelInfo,
     type DeviceCapabilities,
   } from "$lib/ipc";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { registry } from "$lib/registry";
   import type { CaptionPresetValue } from "$lib/registry/types";
   import {
@@ -121,7 +122,11 @@
 
   async function refresh() {
     try {
-      models = await listCaptionModels();
+      const list = await listCaptionModels();
+      // Remote endpoints are an experimental surface; hide them (and any models
+      // they contribute) unless the user opted in.
+      const showRemote = experimentalStore.isEnabled("remoteTranscription");
+      models = showRemote ? list : list.filter((m) => m.source !== "remote");
       if (!selectedModelId || !models.some((m) => m.id === selectedModelId)) {
         selectedModelId = pickDefaultModelId(models);
       }
@@ -430,6 +435,12 @@
             >
               Extension
             </span>
+          {:else if selected.source === "remote"}
+            <span
+              class="rounded bg-warning/12 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-warning"
+            >
+              Experimental
+            </span>
           {/if}
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
@@ -488,6 +499,18 @@
               </div>
               <span class="text-[10px] tabular-nums text-muted-foreground">{downloadPct}%</span>
             </div>
+          {:else if selected.source === "remote"}
+            <!-- Remote endpoints are managed in Settings; the panel only reflects
+                 their readiness (key present) here. -->
+            {#if selected.runtimeAvailable}
+              <p class="flex items-center gap-1.5 text-[11px] font-medium text-success">
+                <Check size={13} /> Endpoint ready
+              </p>
+            {:else}
+              <p class="flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                <Lock size={12} /> Add an API key in Settings
+              </p>
+            {/if}
           {:else if selected.installed}
             <div class="flex items-center justify-between">
               <span class="flex items-center gap-1.5 text-[11px] font-medium text-success">

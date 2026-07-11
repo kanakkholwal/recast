@@ -81,7 +81,10 @@ fn to_caption_model(c: CaptionModelContribution) -> Result<CaptionModel, String>
     let mut files = Vec::with_capacity(c.files.len());
     for f in c.files {
         if !is_safe_filename(&f.rel_path) {
-            return Err(format!("unsafe file path '{}' in model '{}'", f.rel_path, c.id));
+            return Err(format!(
+                "unsafe file path '{}' in model '{}'",
+                f.rel_path, c.id
+            ));
         }
         if f.sha256.trim().is_empty() {
             return Err(format!(
@@ -109,6 +112,7 @@ fn to_caption_model(c: CaptionModelContribution) -> Result<CaptionModel, String>
         prefers_gpu: c.prefers_gpu,
         min_ram_bytes: c.min_ram_bytes,
         source: ModelSource::Extension,
+        remote: None,
     })
 }
 

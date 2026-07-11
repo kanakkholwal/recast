@@ -226,9 +226,11 @@
 {/snippet}
 
 {#snippet gifSettingsBody()}
-  <div class="flex flex-col gap-4 px-5 py-4">
-    <div class="flex items-start justify-between gap-3">
-      {@render sectionLabel("GIF settings", "Tune palette, gradients, and loop.")}
+  <!-- No outer padding or heading of its own: it slots into the Advanced
+       accordion body alongside the other sections so GIF matches the other
+       export modes instead of reading as a separate, deeper-inset card. -->
+  <div class="flex flex-col gap-4">
+    <div class="flex justify-end">
       <Button
         variant="ghost"
         size="xs"
@@ -801,42 +803,43 @@
     <div class="flex flex-col gap-4 px-5 py-4">
       {@render formatSection()}
       {@render qualitySection()}
-      {#if isGif}
-        <section in:fade={{ duration: 200, delay: 80 }}>
-          {@render gifSettingsBody()}
-        </section>
-      {:else}
-        <div class="flex flex-col gap-3">
-          <button
-            type="button"
-            onclick={() => (advancedOpen = !advancedOpen)}
-            aria-expanded={advancedOpen}
-            class="group flex items-center justify-between gap-2 rounded-md py-0.5 text-left outline-none transition-colors focus-visible:text-foreground"
+      <!-- Advanced tuning, collapsed by default in every mode so Format +
+           Quality lead. GIF puts its palette/loop settings here; MP4/WebM put
+           frame rate + speed. -->
+      <div class="flex flex-col gap-3">
+        <button
+          type="button"
+          onclick={() => (advancedOpen = !advancedOpen)}
+          aria-expanded={advancedOpen}
+          class="group flex cursor-pointer items-center justify-between gap-2 rounded-md py-0.5 text-left outline-none transition-colors focus-visible:text-foreground"
+        >
+          <span
+            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover:text-muted-foreground"
           >
-            <span
-              class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover:text-muted-foreground"
-            >
-              <Settings2 class="size-3" />
-              Advanced
-            </span>
-            <ChevronDown
-              class={cn(
-                "size-3.5 text-muted-foreground/70 transition-transform duration-200",
-                advancedOpen && "rotate-180",
-              )}
-            />
-          </button>
-          {#if advancedOpen}
-            <div
-              class="flex flex-col gap-4"
-              transition:slide={{ duration: 200, easing: cubicOut }}
-            >
+            <Settings2 class="size-3" />
+            Advanced
+          </span>
+          <ChevronDown
+            class={cn(
+              "size-3.5 text-muted-foreground/70 transition-transform duration-200",
+              advancedOpen && "rotate-180",
+            )}
+          />
+        </button>
+        {#if advancedOpen}
+          <div
+            class="flex flex-col gap-4"
+            transition:slide={{ duration: 200, easing: cubicOut }}
+          >
+            {#if isGif}
+              {@render gifSettingsBody()}
+            {:else}
               {#if showFps}{@render fpsSection()}{/if}
               {@render speedSection()}
-            </div>
-          {/if}
-        </div>
-      {/if}
+            {/if}
+          </div>
+        {/if}
+      </div>
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>
   </div>
@@ -857,3 +860,12 @@
     </Button>
   </footer>
 </div>
+
+<style>
+  /* Native buttons default to the arrow cursor. Every raw button in this panel
+     is a selectable toggle or action, so show the pointer (disabled ones keep
+     the default). */
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+</style>

@@ -93,7 +93,9 @@ mod platform {
             .unwrap_or_default()
             .split(';')
             .any(|p| p.trim().eq_ignore_ascii_case(&dir));
-        let in_registry = open_env().map(|e| contains(&read_path(&e), &dir)).unwrap_or(false);
+        let in_registry = open_env()
+            .map(|e| contains(&read_path(&e), &dir))
+            .unwrap_or(false);
         let on_path = in_process || in_registry;
         InstallStatus {
             detail: if on_path {
@@ -170,7 +172,9 @@ mod platform {
     use std::path::PathBuf;
 
     fn home() -> PathBuf {
-        std::env::var_os("HOME").map(PathBuf::from).unwrap_or_default()
+        std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default()
     }
 
     fn bin_dir() -> PathBuf {

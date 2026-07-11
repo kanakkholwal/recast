@@ -8,13 +8,13 @@ mod capture;
 pub mod cli;
 mod commands;
 mod control;
-mod path_install;
 mod cursor;
 mod encoder;
 pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+mod path_install;
 mod permissions;
 mod power;
 mod project;
@@ -451,6 +451,10 @@ pub fn run() {
             transcription::transcribe_project,
             transcription::has_transcribable_audio,
             transcription::export_captions,
+            transcription::list_remote_asr_endpoints,
+            transcription::set_remote_asr_endpoint,
+            transcription::delete_remote_asr_endpoint,
+            transcription::set_remote_asr_key,
             fonts::ensure_google_font,
             commands::ensure_assets_installed,
             commands::get_cached_asset_path,

@@ -99,6 +99,10 @@ clap = { version = "4", features = ["derive"] }
 # for the CLI control server the running app hosts. One code path instead of
 # per-OS pipe/socket FFI. See control.rs.
 interprocess = "2"
+# Human-readable CLI output. Data stays JSON internally; the CLI renders YAML
+# for terminals (far more readable than JSON for nested lists) and keeps JSON
+# for pipes/agents. Archived-but-stable; a display formatter only. See cli.rs.
+serde_yaml = "0.9"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
