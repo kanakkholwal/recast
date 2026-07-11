@@ -1,6 +1,6 @@
 /** Pure mappers + fps/timer math for the recording panel window. */
 
-import type { LastSource } from "$lib/ipc";
+import type { CaptureIntentState, LastSource } from "$lib/ipc";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";
@@ -87,6 +87,34 @@ export function intentToTargetType(
 	if (t === "display") return "monitor";
 	if (t === "window" || t === "region") return t;
 	return null;
+}
+
+/**
+ * Canonical string form of a capture intent, for the panel's echo guard. The
+ * backend serializes `CaptureIntent`/`RecordingOptions` with
+ * `skip_serializing_if = "Option::is_none"`, so its `capture-intent:changed`
+ * echo OMITS null fields (region, device ids, countdown, activeProfileId) that
+ * the panel writes explicitly. Raw `JSON.stringify` therefore never matched the
+ * echo of what the panel just sent, spinning the push `$effect` and the change
+ * listener into an infinite loop that froze the panel on open. Stripping nullish
+ * fields and sorting keys makes the TS-null and Rust-omit shapes compare equal.
+ */
+export function canonicalIntent(intent: CaptureIntentState | null): string {
+	if (intent == null) return "";
+	return JSON.stringify(stripNullish(intent));
+}
+
+function stripNullish(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(stripNullish);
+	if (value !== null && typeof value === "object") {
+		const out: Record<string, unknown> = {};
+		for (const key of Object.keys(value as Record<string, unknown>).sort()) {
+			const v = stripNullish((value as Record<string, unknown>)[key]);
+			if (v !== null && v !== undefined) out[key] = v;
+		}
+		return out;
+	}
+	return value;
 }
 
 /** Elapsed seconds → `MM:SS` (minutes zero-padded; recordings stay short). */

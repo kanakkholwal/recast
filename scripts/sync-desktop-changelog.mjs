@@ -224,5 +224,18 @@ async function main() {
 
 main().catch((e) => {
 	stderr.write(`sync-desktop-changelog: ${e.message}\n`);
-	exit(1);
+	// `--check` (CI parity verification) must fail hard so a drift is caught.
+	if (argv.slice(2).includes("--check")) {
+		exit(1);
+	}
+	// Build/dev mode: NEVER exit non-zero here. `ui:build` is
+	// `sync:changelog && vite build`, so an exit(1) short-circuits the chain
+	// and skips `vite build` entirely, leaving `tauri build` to bundle a STALE
+	// `build/` (the "player CSS broken in release" class of bug). A changelog
+	// problem is not worth shipping a stale frontend, so warn loudly and let the
+	// real build run with a stale changelog.
+	stderr.write(
+		"sync-desktop-changelog: WARNING continuing the build with a STALE changelog; fix CHANGELOG.md and its markers.\n",
+	);
+	exit(0);
 });
