@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import type { CaptureIntentState } from "$lib/ipc";
 import {
+  canonicalIntent,
   clampFpsToDisplay,
   formatRecordingTimer,
   intentToTargetType,
@@ -66,6 +68,58 @@ describe("fps clamping to display", () => {
     expect(clampFpsToDisplay(null, { type: "monitor", id: 1, label: "d", refreshHz: 60 })).toBeNull();
     expect(clampFpsToDisplay(120, { type: "window", id: 1, label: "w" })).toBe(120);
     expect(clampFpsToDisplay(120, null)).toBe(120);
+  });
+});
+
+describe("canonicalIntent (echo-guard against the freeze loop)", () => {
+  it("treats explicit TS nulls the same as the backend's omitted fields", () => {
+    // What the panel sends: explicit nulls for empty optionals.
+    const sent: CaptureIntentState = {
+      targetType: "display",
+      targetId: 1,
+      region: null,
+      options: {
+        systemAudio: true,
+        microphone: false,
+        microphoneDeviceId: null,
+        camera: false,
+        cameraDeviceId: null,
+      },
+      countdown: null,
+      activeProfileId: null,
+    };
+    // What the backend echoes back (skip_serializing_if omits the Nones).
+    const echoed: CaptureIntentState = {
+      targetType: "display",
+      targetId: 1,
+      options: { systemAudio: true, microphone: false, camera: false },
+    };
+    // These MUST compare equal, or the push effect + listener loop forever.
+    expect(canonicalIntent(sent)).toBe(canonicalIntent(echoed));
+  });
+
+  it("is independent of key order", () => {
+    const a = { targetId: 2, targetType: "window", options: { camera: true, systemAudio: false } };
+    const b = { options: { systemAudio: false, camera: true }, targetType: "window", targetId: 2 };
+    expect(canonicalIntent(a as CaptureIntentState)).toBe(canonicalIntent(b as CaptureIntentState));
+  });
+
+  it("still distinguishes genuinely different intents", () => {
+    const base: CaptureIntentState = { targetType: "display", targetId: 1, options: { systemAudio: true } };
+    const otherSource: CaptureIntentState = { targetType: "window", targetId: 1, options: { systemAudio: true } };
+    const otherDevice: CaptureIntentState = {
+      targetType: "display",
+      targetId: 1,
+      options: { systemAudio: true, microphone: true, microphoneDeviceId: "mic-1" },
+    };
+    expect(canonicalIntent(base)).not.toBe(canonicalIntent(otherSource));
+    expect(canonicalIntent(base)).not.toBe(canonicalIntent(otherDevice));
+  });
+
+  it("null and empty compare equal to itself (idempotent)", () => {
+    expect(canonicalIntent(null)).toBe("");
+    const i: CaptureIntentState = { targetId: 0, options: { systemAudio: true } };
+    expect(canonicalIntent(i)).toBe(canonicalIntent({ ...i }));
   });
 });
 

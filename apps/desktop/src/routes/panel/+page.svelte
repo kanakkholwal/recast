@@ -67,6 +67,7 @@
   import { Tween } from "svelte/motion";
   import { fade, scale } from "svelte/transition";
   import {
+    canonicalIntent,
     clampFpsToDisplay,
     formatRecordingTimer,
     intentToTargetType,
@@ -344,7 +345,9 @@
   $effect(() => {
     const next = buildIntentFromPanel();
     if (!intentSyncReady) return;
-    if (JSON.stringify(next) === JSON.stringify(lastIntent)) return;
+    // Canonical compare: the backend echo omits null fields we send explicitly,
+    // so a raw JSON compare never matches and would loop forever (panel froze).
+    if (canonicalIntent(next) === canonicalIntent(lastIntent)) return;
     lastIntent = next;
     setCaptureIntent(next).catch(() => {});
   });
@@ -510,7 +513,9 @@
       (event) => {
         if (isRecording) return; // selections are locked during a take
         const incoming = event.payload;
-        if (JSON.stringify(incoming) === JSON.stringify(lastIntent)) return;
+        // Canonical compare (see the push effect): ignore our own echo, whose
+        // shape differs only by omitted-null fields, so we don't re-apply + loop.
+        if (canonicalIntent(incoming) === canonicalIntent(lastIntent)) return;
         lastIntent = incoming;
         applyIntentToPanel(incoming);
       },
