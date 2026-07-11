@@ -126,7 +126,7 @@ pub struct CaptureArea {
     pub height: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CaptureKind {
     Display,
@@ -290,6 +290,48 @@ fn resolve_window_target(target_id: u32) -> Result<CaptureTarget> {
     };
     let center_x = crop.x + (crop.width as i32 / 2);
     let center_y = crop.y + (crop.height as i32 / 2);
+
+    // True per-window capture (Windows Graphics Capture) records only the
+    // window's own surface, so the "source" IS the window — no monitor, no
+    // crop. This isolates a maximized or overlapped window, which the
+    // monitor-plus-crop path below cannot. `create_source` selects the WGC
+    // backend on the same predicate, so the two stay consistent. Other
+    // platforms (and older Windows) fall through to monitor-plus-crop.
+    #[cfg(windows)]
+    if crate::capture::platform::windows::wgc_window_capture_supported() {
+        // Even dims for libx264/NVENC; the WGC source clamps its copy to match.
+        let win = CaptureArea {
+            x: crop.x,
+            y: crop.y,
+            width: crop.width & !1,
+            height: crop.height & !1,
+        };
+        // display_id is the monitor the window sits on, used only to re-base the
+        // cursor track onto the window's origin.
+        let display_id = Monitor::all()
+            .ok()
+            .and_then(|monitors| {
+                monitors.into_iter().find(|monitor| {
+                    let x = monitor.x().unwrap_or_default();
+                    let y = monitor.y().unwrap_or_default();
+                    let width = monitor.width().unwrap_or_default() as i32;
+                    let height = monitor.height().unwrap_or_default() as i32;
+                    center_x >= x && center_x < x + width && center_y >= y && center_y < y + height
+                })
+            })
+            .and_then(|monitor| monitor.id().ok())
+            .unwrap_or_default();
+
+        return Ok(CaptureTarget {
+            kind: CaptureKind::Window,
+            id: target_id,
+            display_id,
+            label: window.title().unwrap_or_else(|_| "Window".into()),
+            source: win,
+            crop: win,
+            scale_factor: 1.0,
+        });
+    }
 
     let source_monitor = Monitor::all()?
         .into_iter()

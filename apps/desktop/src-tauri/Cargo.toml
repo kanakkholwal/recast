@@ -104,6 +104,12 @@ interprocess = "2"
 # for terminals (far more readable than JSON for nested lists) and keeps JSON
 # for pipes/agents. Archived-but-stable; a display formatter only. See cli.rs.
 serde_yaml = "0.9"
+# Embedded local store (src/db): the operational/index layer. `bundled` compiles
+# SQLite from source (vendored, like keyring/ggml) so there is no system
+# libsqlite3 requirement on any target. Files stay authoritative for documents
+# (.recast bundles, media); this holds structured operational state: first the
+# export queue, later the recordings/exports index. See src/db/mod.rs.
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [
@@ -128,6 +134,16 @@ windows = { version = "0.58.0", features = [
     "Win32_UI_Shell_PropertiesSystem",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
+    # Windows Graphics Capture (WGC): true per-window capture bound to an HWND,
+    # so a maximized/overlapped app records only its own pixels (see
+    # capture/platform/windows.rs WgcSource). The WinRT half + the Win32 interop
+    # (item-from-HWND, D3D device wrap, surface->texture access).
+    "Foundation",
+    "Graphics_Capture",
+    "Graphics_DirectX",
+    "Graphics_DirectX_Direct3D11",
+    "Win32_System_WinRT_Direct3D11",
+    "Win32_System_WinRT_Graphics_Capture",
 ] }
 # Safe user PATH edits for the CLI install action (REG_EXPAND_SZ preserved, no
 # NSIS string-truncation footgun). See path_install.rs.

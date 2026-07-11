@@ -460,7 +460,7 @@ export type CloudPhase = "preparing" | "uploading" | "finalizing" | "sharing";
 
 /**
  * Upload an already-exported MP4 to Recast Cloud and create a public share
- * link. The caller runs `exportVideo` first; `workspaceId` comes from the
+ * link. The caller exports the file first; `workspaceId` comes from the
  * desktop profile's `defaultWorkspaceId`. Progress (coarse phase + byte
  * counts during the PUT) streams on a request-scoped channel, with no path
  * correlation. Resolves with the share result; rejects on failure (a detached
@@ -592,6 +592,14 @@ export function listenToExportState(
 	});
 }
 
+/** Listen to `export-state` for EVERY export (no id filter). The activity store
+ *  uses this to drive live progress across the whole queue. */
+export function listenToAllExportState(
+	onState: (event: ExportStateEvent) => void,
+): Promise<() => void> {
+	return listen<ExportStateEvent>(EXPORT_STATE_EVENT, (event) => onState(event.payload));
+}
+
 export interface ExportGifSettings {
 	fps: number | null;
 	quality: 'low' | 'medium' | 'high';
@@ -603,38 +611,101 @@ export interface ExportGifSettings {
  *  reproduces the historical encoder settings exactly. */
 export type ExportSpeed = "fast" | "balanced" | "quality";
 
-export function exportVideo(
-	inputPath: string,
-	format: string,
-	quality: string,
-	renderState: EditorRenderState,
-	exportId: string,
-	gifSettings?: ExportGifSettings,
-	speed: ExportSpeed = "balanced",
+/** Everything the backend queue needs to run one export. Built in the browser
+ *  (render state is rasterized there); handed off via {@link enqueueExport}. */
+export interface EnqueueExportRequest {
+	inputPath: string;
+	format: string;
+	quality: string;
+	renderState: EditorRenderState;
+	exportId: string;
+	gifSettings?: ExportGifSettings;
+	speed?: ExportSpeed;
 	/** Output frame rate for MP4/WebM. `null`/omitted keeps the source rate. */
-	fps?: number | null,
+	fps?: number | null;
 	/** Burn the generated captions into the video. No-op without a transcript. */
-	burnCaptions = false,
-): Promise<string> {
-	analytics.capture("export_started", { format, quality, speed, fps: fps ?? "source" });
-	return invoke<string>("export_video", {
+	burnCaptions?: boolean;
+	/** Subtitle sidecar to write next to the export on success, or null. */
+	captionSidecar?: { format: "vtt" | "srt"; transcript: Transcript } | null;
+}
+
+/**
+ * Queue an export. The backend persists the payload, runs it on the single serial
+ * worker (so two exports never fight for CPU/GPU), and drives progress via
+ * `export-state` events. Resolves once the job is durably queued; the export runs
+ * in the background and survives closing this editor.
+ */
+export function enqueueExport(req: EnqueueExportRequest): Promise<void> {
+	analytics.capture("export_started", {
+		format: req.format,
+		quality: req.quality,
+		speed: req.speed ?? "balanced",
+		fps: req.fps ?? "source",
+	});
+	return invoke("enqueue_export", {
 		request: {
-			exportId,
-			inputPath,
-			format,
-			quality,
-			speed,
-			renderState,
-			gifSettings,
-			fps: fps ?? null,
-			burnCaptions,
+			exportId: req.exportId,
+			inputPath: req.inputPath,
+			format: req.format,
+			quality: req.quality,
+			speed: req.speed ?? "balanced",
+			renderState: req.renderState,
+			gifSettings: req.gifSettings,
+			fps: req.fps ?? null,
+			burnCaptions: req.burnCaptions ?? false,
+			captionSidecar: req.captionSidecar ?? null,
 		},
 	});
 }
 
+/** A queue row as the backend reports it (source of truth for the activity UI). */
+export interface ExportJobDto {
+	id: string;
+	filename: string;
+	/** Source project path. */
+	filePath: string;
+	status: "queued" | "running" | "success" | "error" | "cancelled" | "interrupted";
+	phase: "preparing" | "encoding" | "finalizing" | "cancelling";
+	progress: number;
+	/** Output path once it succeeds. */
+	path?: string | null;
+	error?: string | null;
+	createdAt: number;
+	startedAt?: number | null;
+	finishedAt?: number | null;
+}
+
+/** The whole export queue (queued, running, and undismissed results), oldest first. */
+export function listExportJobs(): Promise<ExportJobDto[]> {
+	return invoke<ExportJobDto[]>("list_export_jobs");
+}
+
+/** Cancel a running export or drop a queued one from the queue. */
+export function cancelExportJob(id: string): Promise<void> {
+	return invoke("cancel_export_job", { id });
+}
+
+/** Remove a finished (non-running) job from the queue list. */
+export function dismissExportJob(id: string): Promise<void> {
+	return invoke("dismiss_export_job", { id });
+}
+
+/** Requeue a failed/cancelled/interrupted job (its payload is still on disk). */
+export function retryExportJob(id: string): Promise<void> {
+	return invoke("retry_export_job", { id });
+}
+
+const EXPORT_JOBS_CHANGED_EVENT = "export-jobs-changed";
+
+/** Fires whenever queue membership or a job's status changes; re-fetch the list. */
+export function listenToExportJobsChanged(onChange: () => void): Promise<() => void> {
+	return listen(EXPORT_JOBS_CHANGED_EVENT, () => onChange());
+}
+
 /**
- * Signal any running export to abort. Causes `exportVideo` to reject with
- * `"export cancelled"`. Safe to call when no export is running.
+ * Signal a running export to abort by its session id. Prefer
+ * {@link cancelExportJob}, which also drops a still-queued job; this lower-level
+ * call only flips the running export's cancel flag. Safe when nothing is running.
  */
 export function cancelExport(exportId: string): Promise<void> {
 	return invoke("cancel_export", { exportId });

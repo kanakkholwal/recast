@@ -187,7 +187,7 @@
 								<span
 									class={cn(
 										"grid size-7 shrink-0 place-items-center rounded-lg",
-										item.status === "error"
+										item.status === "error" || item.status === "interrupted"
 											? "bg-destructive/10 text-destructive"
 											: item.status === "queued"
 												? "bg-muted text-muted-foreground"
@@ -216,6 +216,8 @@
 											Export complete
 										{:else if item.status === "cancelled"}
 											Export cancelled
+										{:else if item.status === "interrupted"}
+											Export interrupted
 										{:else}
 											Export failed
 										{/if}
@@ -224,7 +226,8 @@
 										class="mt-0.5 truncate text-[11px] text-muted-foreground"
 										title={item.filename}
 									>
-										{item.status === "error" && item.error
+										{(item.status === "error" || item.status === "interrupted") &&
+										item.error
 											? item.error
 											: item.filename}
 									</p>
@@ -291,6 +294,17 @@
 									onclick={() => openExportItem(item)}
 								>
 									<ExternalLink class="size-3" /> Exports
+								</Button>
+							</div>
+						{:else if item.status === "error" || item.status === "cancelled" || item.status === "interrupted"}
+							<div class="flex items-center justify-end">
+								<Button
+									size="xs"
+									variant="ghost"
+									class="h-7 gap-1.5"
+									onclick={() => exportActivity.retry(item.id)}
+								>
+									<RefreshCw class="size-3" /> Retry
 								</Button>
 							</div>
 						{/if}

@@ -9,6 +9,7 @@ pub mod cli;
 mod commands;
 mod control;
 mod cursor;
+mod db;
 mod encoder;
 pub mod ffmpeg;
 mod fonts;
@@ -288,7 +289,18 @@ pub fn run() {
                 capture_intent: parking_lot::RwLock::new(commands::types::CaptureIntent::default()),
                 profiles: parking_lot::RwLock::new(profiles_state),
                 profiles_initialized: std::sync::atomic::AtomicBool::new(profiles_initialized),
+                db: crate::db::Db::open(handle),
+                export_wake: std::sync::Arc::new(tokio::sync::Notify::new()),
             });
+
+            // Export queue: recover any job left mid-run by an unclean shutdown
+            // (mark it interrupted), then start the single serial worker that
+            // drains the queue. Must run after AppState is managed.
+            commands::export_queue::reconcile_on_load(handle);
+            commands::export_queue::spawn_export_worker(handle.clone());
+            // GC stale queue entries (terminal jobs older than the TTL) + orphaned
+            // payloads. Runs on a blocking worker so it never stalls startup.
+            commands::export_queue::sweep_stale_jobs(handle);
 
             // Register the `recast://` scheme at runtime for dev builds. In
             // release the installer writes the Windows registry / Linux .desktop
@@ -438,8 +450,12 @@ pub fn run() {
             commands::load_editor_document,
             commands::migrate_project,
             commands::generate_thumbnails,
-            commands::export_video,
             commands::cancel_export,
+            commands::enqueue_export,
+            commands::list_export_jobs,
+            commands::cancel_export_job,
+            commands::dismiss_export_job,
+            commands::retry_export_job,
             commands::get_audio_devices,
             commands::get_camera_devices,
             commands::validate_camera_source,
