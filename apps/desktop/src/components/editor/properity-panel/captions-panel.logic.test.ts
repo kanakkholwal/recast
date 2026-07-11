@@ -12,8 +12,8 @@ function model(over: Partial<CaptionModelInfo> = {}): CaptionModelInfo {
 	return {
 		id: "m",
 		displayName: "Model",
-		engine: "parakeet",
-		runtime: "onnx",
+		engine: "ggml",
+		runtime: "ggml",
 		source: "builtin",
 		family: "Parakeet",
 		languages: ["en"],
@@ -45,10 +45,10 @@ describe("pickDefaultModelId", () => {
 	});
 
 	it("skips a model whose runtime is unavailable even if it is the default", () => {
-		// A whisperCpp default is installed but its runtime isn't built yet, so it
-		// must not be auto-selected over a usable onnx model.
+		// A default model whose runtime isn't usable here (e.g. a remote endpoint
+		// with no key) must not be auto-selected over a usable on-device model.
 		const models = [
-			model({ id: "whisper", isDefault: true, runtimeAvailable: false }),
+			model({ id: "remote", isDefault: true, runtimeAvailable: false }),
 			model({ id: "parakeet" }),
 		];
 		expect(pickDefaultModelId(models)).toBe("parakeet");
@@ -77,13 +77,13 @@ describe("groupModelsByFamily", () => {
 	it("groups by family, preserving first-seen order", () => {
 		const models = [
 			model({ id: "p1", family: "Parakeet" }),
-			model({ id: "c1", family: "Canary" }),
+			model({ id: "w1", family: "Whisper" }),
 			model({ id: "p2", family: "Parakeet" }),
 		];
 		const groups = groupModelsByFamily(models);
-		expect(groups.map((g) => g.name)).toEqual(["Parakeet", "Canary"]);
+		expect(groups.map((g) => g.name)).toEqual(["Parakeet", "Whisper"]);
 		expect(groups[0].models.map((m) => m.id)).toEqual(["p1", "p2"]);
-		expect(groups[1].models.map((m) => m.id)).toEqual(["c1"]);
+		expect(groups[1].models.map((m) => m.id)).toEqual(["w1"]);
 	});
 });
 

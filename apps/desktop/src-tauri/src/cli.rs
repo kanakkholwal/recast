@@ -29,6 +29,11 @@ const CLI_VERBS: &[&str] = &[
     "doctor",
     "status",
     "rec",
+    "select",
+    "set",
+    "selection",
+    "profile",
+    "watch",
     "install",
     "uninstall",
 ];
@@ -129,6 +134,32 @@ enum Command {
         #[command(subcommand)]
         action: RecAction,
     },
+    /// Stage the source/mic/camera for the next recording (the capture intent).
+    Select {
+        #[command(subcommand)]
+        action: SelectAction,
+    },
+    /// Tweak capture options on the staged intent.
+    Set {
+        #[command(subcommand)]
+        action: SetAction,
+    },
+    /// Inspect or reset the staged capture intent.
+    Selection {
+        #[command(subcommand)]
+        action: SelectionAction,
+    },
+    /// List, inspect, or apply saved recording profiles.
+    Profile {
+        #[command(subcommand)]
+        action: ProfileAction,
+    },
+    /// Stream backend events (recording + selection + profiles) until interrupted.
+    Watch {
+        /// Comma-separated event groups: `rec`, `selection`, `profiles` (default: all).
+        #[arg(long)]
+        events: Option<String>,
+    },
     /// Put `recast` on your PATH so it runs as a bare command in any terminal.
     Install,
     /// Remove `recast` from your PATH.
@@ -147,6 +178,71 @@ enum RecAction {
     Resume,
     /// Print the current recording/paused state.
     Status,
+}
+
+#[derive(Subcommand)]
+enum SelectAction {
+    /// Record a display by id (from `displays list`).
+    Screen { id: u32 },
+    /// Record a window by id (from `windows list`).
+    Window { id: u32 },
+    /// Record a region given as X,Y,W,H in physical pixels.
+    Region {
+        #[arg(value_name = "X,Y,W,H")]
+        spec: String,
+    },
+    /// Microphone: a device id, `default`, or `none`.
+    Mic {
+        #[arg(value_name = "ID|default|none")]
+        value: String,
+    },
+    /// Camera: a device id or `none`.
+    Camera {
+        #[arg(value_name = "ID|none")]
+        value: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetAction {
+    /// System audio capture, `on` or `off`.
+    SystemAudio {
+        #[arg(value_name = "ON|OFF")]
+        value: String,
+    },
+    /// Capture frame rate.
+    Fps { value: u32 },
+    /// Encode quality: auto, balanced, high, or pristine.
+    Quality { value: String },
+    /// Pre-roll countdown in seconds, or `off`.
+    Countdown {
+        #[arg(value_name = "SECONDS|off")]
+        value: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SelectionAction {
+    /// Print the staged capture intent.
+    Show,
+    /// Reset the intent to defaults (no source, system audio on).
+    Reset,
+}
+
+#[derive(Subcommand)]
+enum ProfileAction {
+    /// List all saved profiles.
+    List,
+    /// Apply a profile (by id or name) to the staged capture intent.
+    Use {
+        #[arg(value_name = "ID|NAME")]
+        id: String,
+    },
+    /// Print one profile (by id or name).
+    Show {
+        #[arg(value_name = "ID|NAME")]
+        id: String,
+    },
 }
 
 #[derive(clap::Args)]
@@ -175,6 +271,10 @@ struct StartArgs {
     /// Encode quality: auto, balanced, high, or pristine.
     #[arg(long)]
     quality: Option<String>,
+    /// Auto-stop after this long, e.g. `30s`, `5m`, or a plain number of seconds.
+    /// Backend-owned, so it fires even after the CLI process exits.
+    #[arg(long, value_name = "DURATION")]
+    timeout: Option<String>,
 }
 
 #[derive(Subcommand)]
@@ -287,7 +387,77 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             RecAction::Resume => control(cli, "rec.resume", Value::Null),
             RecAction::Status => control(cli, "rec.status", Value::Null),
         },
+        Command::Select { action } => control(cli, "intent.patch", select_patch(action)?),
+        Command::Set { action } => control(cli, "intent.patch", set_patch(action)?),
+        Command::Selection { action } => match action {
+            SelectionAction::Show => control(cli, "intent.get", Value::Null),
+            SelectionAction::Reset => control(cli, "intent.reset", Value::Null),
+        },
+        Command::Profile { action } => match action {
+            ProfileAction::List => control(cli, "profile.list", Value::Null),
+            ProfileAction::Use { id } => control(cli, "profile.use", json!({ "id": id })),
+            ProfileAction::Show { id } => show_profile(cli, id),
+        },
+        Command::Watch { events } => {
+            let params = match events {
+                Some(list) => {
+                    let groups: Vec<&str> = list
+                        .split(',')
+                        .map(str::trim)
+                        .filter(|s| !s.is_empty())
+                        .collect();
+                    json!({ "events": groups })
+                }
+                None => Value::Null,
+            };
+            crate::control::watch(params, !cli.no_launch, cli.timeout_ms, |frame| {
+                let _ = emit(frame, cli.format);
+            })
+        }
     }
+}
+
+/// Build an intent patch from a `select` verb.
+fn select_patch(action: &SelectAction) -> Result<Value, String> {
+    Ok(match action {
+        SelectAction::Screen { id } => {
+            json!({ "targetType": "display", "targetId": id, "region": null })
+        }
+        SelectAction::Window { id } => {
+            json!({ "targetType": "window", "targetId": id, "region": null })
+        }
+        SelectAction::Region { spec } => {
+            json!({ "targetType": "region", "targetId": 0, "region": parse_region(spec)? })
+        }
+        SelectAction::Mic { value } => match value.as_str() {
+            "none" => json!({ "microphone": false, "microphoneDeviceId": null }),
+            "default" => json!({ "microphone": true, "microphoneDeviceId": null }),
+            id => json!({ "microphone": true, "microphoneDeviceId": id }),
+        },
+        SelectAction::Camera { value } => match value.as_str() {
+            "none" => json!({ "camera": false, "cameraDeviceId": null }),
+            id => json!({ "camera": true, "cameraDeviceId": id }),
+        },
+    })
+}
+
+/// Build an intent patch from a `set` verb.
+fn set_patch(action: &SetAction) -> Result<Value, String> {
+    Ok(match action {
+        SetAction::SystemAudio { value } => json!({ "systemAudio": parse_on_off(value)? }),
+        SetAction::Fps { value } => json!({ "fps": value }),
+        SetAction::Quality { value } => json!({ "quality": value }),
+        SetAction::Countdown { value } => {
+            let seconds = if value.eq_ignore_ascii_case("off") {
+                Value::Null
+            } else {
+                json!(value
+                    .parse::<u32>()
+                    .map_err(|_| "countdown must be a number of seconds or `off`".to_string())?)
+            };
+            json!({ "countdown": seconds })
+        }
+    })
 }
 
 /// Send a control request to the running app and print its result.
@@ -296,16 +466,54 @@ fn control(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
     emit(&value, cli.format)
 }
 
+/// Fetch the profile list and print the single entry matching `id` (by id, or
+/// case-insensitive name). Filtering client-side keeps the control surface to
+/// one `profile.list` method.
+fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
+    let snapshot =
+        crate::control::send("profile.list", Value::Null, !cli.no_launch, cli.timeout_ms)?;
+    let matched = snapshot
+        .get("profiles")
+        .and_then(Value::as_array)
+        .and_then(|list| {
+            list.iter().find(|p| {
+                p.get("id").and_then(Value::as_str) == Some(id)
+                    || p.get("name")
+                        .and_then(Value::as_str)
+                        .is_some_and(|n| n.eq_ignore_ascii_case(id))
+            })
+        });
+    match matched {
+        Some(profile) => emit(profile, cli.format),
+        None => Err(format!("no profile matching '{id}'")),
+    }
+}
+
+/// Build `rec.start` params. With a target flag it is a full one-off; with no
+/// target flag it is empty, so the server records the stored capture intent.
 fn build_start_params(args: &StartArgs) -> Result<Value, String> {
-    let (target_type, target_id, region) = if let Some(id) = args.screen {
-        ("display", id, Value::Null)
+    let mut params = serde_json::Map::new();
+    // Auto-stop applies to both the explicit and intent-based start paths.
+    if let Some(t) = &args.timeout {
+        params.insert("timeoutMs".into(), json!(parse_duration_ms(t)?));
+    }
+    if let Some(id) = args.screen {
+        params.insert("targetType".into(), json!("display"));
+        params.insert("targetId".into(), json!(id));
     } else if let Some(id) = args.window {
-        ("window", id, Value::Null)
+        params.insert("targetType".into(), json!("window"));
+        params.insert("targetId".into(), json!(id));
     } else if let Some(spec) = &args.region {
-        ("region", 0, parse_region(spec)?)
-    } else {
-        return Err("specify a target: --screen <id>, --window <id>, or --region X,Y,W,H".into());
-    };
+        params.insert("targetType".into(), json!("region"));
+        params.insert("targetId".into(), json!(0));
+        params.insert("region".into(), parse_region(spec)?);
+    }
+
+    // Option flags only apply to the explicit path; the stored intent carries
+    // its own. Without a target, the flags are ignored (the intent wins).
+    if !params.contains_key("targetType") {
+        return Ok(Value::Object(params));
+    }
 
     let mut options = serde_json::Map::new();
     if let Some(sa) = &args.system_audio {
@@ -334,13 +542,6 @@ fn build_start_params(args: &StartArgs) -> Result<Value, String> {
     if let Some(q) = &args.quality {
         options.insert("quality".into(), Value::String(q.clone()));
     }
-
-    let mut params = serde_json::Map::new();
-    params.insert("targetType".into(), Value::String(target_type.into()));
-    params.insert("targetId".into(), json!(target_id));
-    if !region.is_null() {
-        params.insert("region".into(), region);
-    }
     if !options.is_empty() {
         params.insert("options".into(), Value::Object(options));
     }
@@ -365,6 +566,28 @@ fn parse_on_off(v: &str) -> Result<bool, String> {
         "off" | "false" | "0" | "no" => Ok(false),
         other => Err(format!("expected on/off, got {other}")),
     }
+}
+
+/// Parse `30s` / `5m` / `2h` / `500ms` / a plain number of seconds into ms.
+fn parse_duration_ms(spec: &str) -> Result<u64, String> {
+    let spec = spec.trim();
+    // Check `ms` before `s` since both end in `s`.
+    let (num, mult) = if let Some(n) = spec.strip_suffix("ms") {
+        (n, 1u64)
+    } else if let Some(n) = spec.strip_suffix('s') {
+        (n, 1_000)
+    } else if let Some(n) = spec.strip_suffix('m') {
+        (n, 60_000)
+    } else if let Some(n) = spec.strip_suffix('h') {
+        (n, 3_600_000)
+    } else {
+        (spec, 1_000)
+    };
+    let value: u64 = num
+        .trim()
+        .parse()
+        .map_err(|_| format!("invalid duration: {spec}"))?;
+    Ok(value * mult)
 }
 
 fn displays(thumbnails: bool) -> Result<Vec<DisplayInfo>, String> {
@@ -501,5 +724,166 @@ fn attach_parent_console() {
             let _ = SetStdHandle(STD_OUTPUT_HANDLE, handle);
             let _ = SetStdHandle(STD_ERROR_HANDLE, handle);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn duration_parsing() {
+        assert_eq!(parse_duration_ms("30").unwrap(), 30_000);
+        assert_eq!(parse_duration_ms("30s").unwrap(), 30_000);
+        assert_eq!(parse_duration_ms("5m").unwrap(), 300_000);
+        assert_eq!(parse_duration_ms("2h").unwrap(), 7_200_000);
+        assert_eq!(parse_duration_ms("500ms").unwrap(), 500);
+        assert_eq!(parse_duration_ms(" 10s ").unwrap(), 10_000);
+        assert!(parse_duration_ms("abc").is_err());
+        assert!(parse_duration_ms("").is_err());
+    }
+
+    #[test]
+    fn region_parsing() {
+        assert_eq!(
+            parse_region("1,2,3,4").unwrap(),
+            json!({"x":1,"y":2,"width":3,"height":4})
+        );
+        assert_eq!(
+            parse_region(" 10, 20, 30, 40 ").unwrap(),
+            json!({"x":10,"y":20,"width":30,"height":40})
+        );
+        assert!(parse_region("1,2,3").is_err());
+        assert!(parse_region("a,b,c,d").is_err());
+    }
+
+    #[test]
+    fn on_off_parsing() {
+        assert!(parse_on_off("on").unwrap());
+        assert!(parse_on_off("ON").unwrap());
+        assert!(!parse_on_off("off").unwrap());
+        assert!(parse_on_off("bad").is_err());
+    }
+
+    #[test]
+    fn select_patch_builds_targets_and_devices() {
+        assert_eq!(
+            select_patch(&SelectAction::Screen { id: 7 }).unwrap(),
+            json!({"targetType":"display","targetId":7,"region":null})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Window { id: 9 }).unwrap(),
+            json!({"targetType":"window","targetId":9,"region":null})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Mic {
+                value: "none".into()
+            })
+            .unwrap(),
+            json!({"microphone":false,"microphoneDeviceId":null})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Mic {
+                value: "default".into()
+            })
+            .unwrap(),
+            json!({"microphone":true,"microphoneDeviceId":null})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Mic {
+                value: "usb-1".into()
+            })
+            .unwrap(),
+            json!({"microphone":true,"microphoneDeviceId":"usb-1"})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Camera {
+                value: "none".into()
+            })
+            .unwrap(),
+            json!({"camera":false,"cameraDeviceId":null})
+        );
+        assert_eq!(
+            select_patch(&SelectAction::Camera {
+                value: "Webcam".into()
+            })
+            .unwrap(),
+            json!({"camera":true,"cameraDeviceId":"Webcam"})
+        );
+    }
+
+    #[test]
+    fn set_patch_builds_options() {
+        assert_eq!(
+            set_patch(&SetAction::SystemAudio {
+                value: "off".into()
+            })
+            .unwrap(),
+            json!({"systemAudio":false})
+        );
+        assert_eq!(
+            set_patch(&SetAction::Fps { value: 60 }).unwrap(),
+            json!({"fps":60})
+        );
+        assert_eq!(
+            set_patch(&SetAction::Quality {
+                value: "high".into()
+            })
+            .unwrap(),
+            json!({"quality":"high"})
+        );
+        assert_eq!(
+            set_patch(&SetAction::Countdown {
+                value: "off".into()
+            })
+            .unwrap(),
+            json!({"countdown":null})
+        );
+        assert_eq!(
+            set_patch(&SetAction::Countdown { value: "3".into() }).unwrap(),
+            json!({"countdown":3})
+        );
+        assert!(set_patch(&SetAction::Countdown { value: "x".into() }).is_err());
+    }
+
+    fn blank_start_args() -> StartArgs {
+        StartArgs {
+            screen: None,
+            window: None,
+            region: None,
+            mic: None,
+            camera: None,
+            system_audio: None,
+            fps: None,
+            quality: None,
+            timeout: None,
+        }
+    }
+
+    #[test]
+    fn start_params_no_target_is_empty() {
+        // No target flag => empty params, so the server records the stored intent.
+        assert_eq!(build_start_params(&blank_start_args()).unwrap(), json!({}));
+    }
+
+    #[test]
+    fn start_params_timeout_without_target() {
+        let mut a = blank_start_args();
+        a.timeout = Some("30s".into());
+        assert_eq!(build_start_params(&a).unwrap(), json!({"timeoutMs":30_000}));
+    }
+
+    #[test]
+    fn start_params_explicit_target_with_options() {
+        let mut a = blank_start_args();
+        a.screen = Some(5);
+        a.mic = Some("default".into());
+        a.system_audio = Some("off".into());
+        let p = build_start_params(&a).unwrap();
+        assert_eq!(p["targetType"], json!("display"));
+        assert_eq!(p["targetId"], json!(5));
+        assert_eq!(p["options"]["microphone"], json!(true));
+        assert_eq!(p["options"]["systemAudio"], json!(false));
     }
 }

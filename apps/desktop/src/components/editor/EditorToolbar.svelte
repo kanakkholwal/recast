@@ -35,6 +35,9 @@
     //   minimize export surface is foregrounded, sends it to the activity center
     //   show     export is running/finished but minimized, reopens it
     exportMode?: "export" | "close" | "minimize" | "show";
+    /** Whether this editor's export is actively encoding (for the minimized
+     *  "Exporting…" label). */
+    exportRunning?: boolean;
     showSidebar?: boolean;
     showTimeline?: boolean;
     onToggleSidebar?: () => void;
@@ -48,6 +51,7 @@
     onsave,
     isSaving = false,
     exportMode = "export",
+    exportRunning = false,
     showSidebar = true,
     showTimeline = true,
     onToggleSidebar,
@@ -314,7 +318,7 @@
         size="xs"
         class="gap-1.5 text-[11px]"
       >
-        {#if store.isExporting}
+        {#if exportRunning}
           <LoaderCircle size={12} class="animate-spin" />
           Exporting…
         {:else}

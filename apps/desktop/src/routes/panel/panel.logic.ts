@@ -74,6 +74,21 @@ export function targetToLastSource(source: TargetSource): LastSource {
 	};
 }
 
+/** Panel source type → the backend `CaptureIntent.targetType` ("monitor" is
+ *  the panel's word for a full display). */
+export function targetTypeToIntent(type: TargetSource["type"]): string {
+	return type === "monitor" ? "display" : type;
+}
+
+/** `CaptureIntent.targetType` → the panel's source type, or null if unset. */
+export function intentToTargetType(
+	t: string | null | undefined,
+): TargetSource["type"] | null {
+	if (t === "display") return "monitor";
+	if (t === "window" || t === "region") return t;
+	return null;
+}
+
 /** Elapsed seconds → `MM:SS` (minutes zero-padded; recordings stay short). */
 export function formatRecordingTimer(elapsedSeconds: number): string {
 	const s = Math.max(0, Math.floor(elapsedSeconds));

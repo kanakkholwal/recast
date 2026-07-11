@@ -5,6 +5,9 @@
 
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
 import type { CaptionAnimation } from "$lib/captions/animation";
+// Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
+// imports value bindings from here).
+import type { RecordingProfile } from "$lib/profiles";
 import { analytics } from "$lib/analytics/client";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -145,6 +148,64 @@ export function captureCapabilities(): Promise<CaptureCapabilities> {
 /** Resolved ffmpeg paths, version, and which export codecs are present. */
 export function diagnoseFfmpeg(): Promise<FfmpegDiagnostics> {
 	return invoke<FfmpegDiagnostics>("diagnose_ffmpeg");
+}
+
+/** Backend-owned staged selection for the next recording. Mirrors the Rust
+ *  `CaptureIntent` struct (`commands/intent.rs`). The CLI mutates it and the
+ *  panel renders it; `capture-intent:changed` fires on every edit. */
+export interface CaptureIntentState {
+	/** "display" | "window" | "region"; absent until a source is chosen. */
+	targetType?: string | null;
+	targetId: number;
+	region?: RegionRect | null;
+	options: RecordingOptions;
+	countdown?: number | null;
+	activeProfileId?: string | null;
+}
+
+/** Event name broadcast by the backend whenever the capture intent changes. */
+export const CAPTURE_INTENT_CHANGED_EVENT = "capture-intent:changed";
+
+/** Read the current staged capture intent. */
+export function getCaptureIntent(): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("get_capture_intent");
+}
+
+/** Replace the staged capture intent (broadcasts `capture-intent:changed`). */
+export function setCaptureIntent(
+	intent: CaptureIntentState,
+): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("set_capture_intent", { intent });
+}
+
+/** Backend-owned recording profiles snapshot. Mirrors the Rust `ProfilesSnapshot`
+ *  (`commands/profiles.rs`). `initialized` is false while the backend holds only
+ *  the in-memory seed, which the store uses to migrate `localStorage` once. */
+export interface ProfilesSnapshot {
+	profiles: RecordingProfile[];
+	enabled: boolean;
+	initialized: boolean;
+}
+
+/** Event broadcast by the backend whenever the saved profile set changes. */
+export const RECORDING_PROFILES_CHANGED_EVENT = "recording-profiles:changed";
+
+/** Read the backend-owned profile set. */
+export function getProfiles(): Promise<ProfilesSnapshot> {
+	return invoke<ProfilesSnapshot>("get_profiles");
+}
+
+/** Replace the backend-owned profile set (broadcasts `recording-profiles:changed`). */
+export function setProfiles(
+	profiles: RecordingProfile[],
+	enabled: boolean,
+): Promise<ProfilesSnapshot> {
+	return invoke<ProfilesSnapshot>("set_profiles", { profiles, enabled });
+}
+
+/** Apply a saved profile (by id or name) to the staged capture intent. */
+export function useProfile(id: string): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("use_profile", { id });
 }
 
 /** Whether the `recast` CLI resolves as a bare terminal command. Mirrors the
@@ -666,19 +727,15 @@ export function extractWaveform(
 
 // Captions / transcription commands (offline ASR, M1 foundation)
 
-/** Model architecture (drives the loader + timestamp handling in Rust).
- *  `remote` is not a local architecture: the server owns the model. */
-export type CaptionEngine =
-	| "parakeet"
-	| "canary"
-	| "gigaam"
-	| "cohere"
-	| "whisper"
-	| "remote";
+/** How a model runs. `ggml` is the on-device engine (transcribe.cpp, any GGUF
+ *  model family); `remote` posts to an OpenAI-compatible endpoint the server owns.
+ *  The GGUF file decides the architecture, so the family (Parakeet / Whisper) is
+ *  display metadata (`family`), not a separate engine. */
+export type CaptionEngine = "ggml" | "remote";
 
-/** Inference backend. `onnx` ships today; `whisperCpp` is gated; `remote` posts
- *  to an OpenAI-compatible endpoint. */
-export type CaptionRuntime = "onnx" | "whisperCpp" | "remote";
+/** Inference backend (the availability axis). Mirrors `CaptionEngine`: `ggml`
+ *  ships in a default build; `remote` posts to an OpenAI-compatible endpoint. */
+export type CaptionRuntime = "ggml" | "remote";
 
 /** Where a catalog entry came from: the built-in list, an installed pack, or a
  *  user-configured remote endpoint. */
@@ -698,16 +755,16 @@ export interface CaptionModelInfo {
 	approxSizeBytes: number | null;
 	isDefault: boolean;
 	installed: boolean;
-	/** False until the model's files are defined (Parakeet V3 is pending). */
+	/** False for a model with no files defined (e.g. a remote endpoint). */
 	downloadable: boolean;
 	requiresGpu: boolean;
 	prefersGpu: boolean;
 	minRamBytes: number | null;
 	/** False → this device can't run the model (hard-disabled in the UI). */
 	runnable: boolean;
-	/** False → this model's runtime isn't usable in this build (Whisper not yet
-	 *  built, or no remote endpoint configured). Download stays allowed; only
-	 *  Generate is gated on this. */
+	/** False → this model's runtime isn't usable in this build (on-device engine
+	 *  not compiled in, or a remote endpoint has no key). Download stays allowed;
+	 *  only Generate is gated on this. */
 	runtimeAvailable: boolean;
 	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
 	 *  runtime is unavailable when that's the blocker. */
@@ -754,8 +811,9 @@ export interface DeviceCapabilities {
 	arch: string;
 	totalRamBytes: number | null;
 	gpu: GpuInfo;
-	/** Whether the on-device caption engine is in this build. False on the
-	 *  Intel-Mac build (no ONNX Runtime for x86_64-apple-darwin). */
+	/** Whether the on-device caption engine (ggml / transcribe.cpp) is compiled
+	 *  into this build. False in a `--no-default-features` build, where only remote
+	 *  endpoints can transcribe. */
 	captionsAvailable: boolean;
 }
 

@@ -454,6 +454,21 @@ fn ass_text(text: &str, uppercase: bool) -> String {
     }
 }
 
+/// `HH:MM:SS<sep>mmm` — SRT uses `,` before milliseconds, WebVTT uses `.`.
+fn ts(seconds: f64, sep: char) -> String {
+    let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
+    let ms = total_ms % 1000;
+    let total_s = total_ms / 1000;
+    format!(
+        "{:02}:{:02}:{:02}{}{:03}",
+        total_s / 3600,
+        (total_s / 60) % 60,
+        total_s % 60,
+        sep,
+        ms
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,19 +709,4 @@ mod tests {
             &t, &center, 1920, 1080, video, 0.0, 10.0, false
         ))));
     }
-}
-
-/// `HH:MM:SS<sep>mmm` — SRT uses `,` before milliseconds, WebVTT uses `.`.
-fn ts(seconds: f64, sep: char) -> String {
-    let total_ms = (seconds.max(0.0) * 1000.0).round() as u64;
-    let ms = total_ms % 1000;
-    let total_s = total_ms / 1000;
-    format!(
-        "{:02}:{:02}:{:02}{}{:03}",
-        total_s / 3600,
-        (total_s / 60) % 60,
-        total_s % 60,
-        sep,
-        ms
-    )
 }

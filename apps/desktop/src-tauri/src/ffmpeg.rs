@@ -418,6 +418,7 @@ pub struct EncoderAvailability {
 pub fn probe_recordable_encoders() -> Vec<EncoderAvailability> {
     // (name, label, vendor, family, hardware, extra_args). H.264 first so
     // the `active` lookup below lands on the codec the recorder uses.
+    #[allow(clippy::type_complexity)] // one-off literal table; a type alias wouldn't help
     let candidates: [(&str, &str, &str, &str, bool, &[&str]); 10] = [
         (
             "h264_videotoolbox",

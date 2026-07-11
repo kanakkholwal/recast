@@ -298,6 +298,27 @@ pub struct ExportProfile {
     pub gif_fps: u32,
 }
 
+/// Backend-owned staging config for the next recording. The CLI mutates it
+/// (`select`/`set`), `rec start` without explicit flags uses it, and the panel
+/// renders it (Phase 3b). Maps directly onto `start_recording`'s arguments.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CaptureIntent {
+    /// "display" | "window" | "region". None until a source is chosen.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub target_type: Option<String>,
+    pub target_id: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<crate::recording::RegionRect>,
+    pub options: crate::recording::RecordingOptions,
+    /// Pre-roll seconds. The countdown is a frontend concern, stored here so the
+    /// panel and CLI agree. None inherits the global default.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub countdown: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_profile_id: Option<String>,
+}
+
 pub struct AppState {
     // `Arc` so `stop_recording` can hand an owned handle to a `spawn_blocking`
     // worker. `stop()` joins the encoder/capture threads and (with a paused
@@ -335,4 +356,16 @@ pub struct AppState {
     /// (`--new-recording` in argv). The main window drains it on mount and opens
     /// the recording panel. Warm-start launches use the single-instance event.
     pub pending_new_recording: AtomicBool,
+    /// Backend-owned selection for the next recording. Mutated by the CLI
+    /// (`select`/`set`) and, in Phase 3b, the panel; `capture-intent:changed`
+    /// broadcasts edits. RwLock: read at start, written on each tweak.
+    pub capture_intent: parking_lot::RwLock<CaptureIntent>,
+    /// Backend-owned recording profiles, shared by the panel, profile picker,
+    /// and CLI (`recast profile list/use`). Persisted to `recast_profiles.json`;
+    /// `recording-profiles:changed` broadcasts edits. See `commands::profiles`.
+    pub profiles: parking_lot::RwLock<crate::commands::profiles::ProfilesState>,
+    /// False while `profiles` is the ephemeral in-memory seed (no profiles file
+    /// yet). The frontend reads this to migrate its `localStorage` profiles into
+    /// the backend exactly once; `set_profiles` flips it true.
+    pub profiles_initialized: AtomicBool,
 }

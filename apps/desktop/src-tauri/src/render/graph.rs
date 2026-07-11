@@ -367,6 +367,7 @@ impl RenderGraph {
             .unwrap_or((0.0, 0.0))
     }
 
+    #[allow(clippy::too_many_arguments)] // render-plan builder: many independent knobs
     pub fn build_export_plan_with(
         &self,
         source: SourceVideoMetadata,
@@ -609,6 +610,7 @@ impl RenderGraph {
     }
 }
 
+#[allow(clippy::too_many_arguments)] // filter builder: many independent geometry/color inputs
 fn build_color_background_filter(
     background: &BackgroundNode,
     prelude_segments: Vec<String>,

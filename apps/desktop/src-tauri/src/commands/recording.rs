@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Local, TimeZone};
-use tauri::State;
+use tauri::{Emitter, State};
 
 use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
@@ -26,6 +26,7 @@ fn exports_dir(state: &State<'_, AppState>) -> PathBuf {
 
 #[tauri::command]
 pub async fn start_recording(
+    app: tauri::AppHandle,
     target_type: String,
     target_id: u32,
     region: Option<RegionRect>,
@@ -113,12 +114,21 @@ pub async fn start_recording(
     // Only on success so a failed start doesn't leak a hold.
     if outcome.is_ok() {
         state.power.acquire();
+        // Broadcast so observers (panel transport, tray, `recast watch`) reflect
+        // the recording regardless of who started it (UI button or CLI).
+        let _ = app.emit(
+            "recording:started",
+            serde_json::json!({ "startedAtUnixMs": Local::now().timestamp_millis() }),
+        );
     }
     outcome
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
+pub async fn stop_recording(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
     // `stop()` joins the capture/cursor/encoder threads, finalizes the muxer,
     // stops the audio/mic/camera sessions, and — when the camera was recorded
     // through pauses — runs a full FFmpeg re-encode to cut the paused spans out
@@ -215,7 +225,14 @@ pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
     state.power.release();
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
-    Ok(project_path.to_string_lossy().to_string())
+    let path_str = project_path.to_string_lossy().to_string();
+    // Broadcast so the panel/tray return to idle even for a CLI- or timeout-
+    // driven stop.
+    let _ = app.emit(
+        "recording:stopped",
+        serde_json::json!({ "projectPath": path_str }),
+    );
+    Ok(path_str)
 }
 
 #[tauri::command]
@@ -329,9 +346,10 @@ mod tests {
     #[test]
     fn recording_commands_stay_async_off_the_ui_thread() {
         fn drive<F: std::future::Future>(_: F) {}
-        let _assert_stop = |state: State<'_, AppState>| drive(stop_recording(state));
-        let _assert_start = |state: State<'_, AppState>| {
-            drive(start_recording(String::new(), 0, None, None, state))
+        let _assert_stop =
+            |app: tauri::AppHandle, state: State<'_, AppState>| drive(stop_recording(app, state));
+        let _assert_start = |app: tauri::AppHandle, state: State<'_, AppState>| {
+            drive(start_recording(app, String::new(), 0, None, None, state))
         };
     }
 }

@@ -26,9 +26,9 @@ pub struct DeviceCapabilities {
     pub arch: String,
     pub total_ram_bytes: Option<u64>,
     pub gpu: GpuInfo,
-    /// Whether the on-device caption engine is compiled into this build. False on
-    /// the Intel-Mac build (no `ort`/ONNX Runtime for x86_64-apple-darwin), where
-    /// the UI shows a "captions unavailable" notice instead of the generator.
+    /// Whether the on-device caption engine (ggml / transcribe.cpp) is compiled
+    /// into this build. False in a `--no-default-features` build, where the UI
+    /// offers remote endpoints instead of the on-device generator.
     pub captions_available: bool,
 }
 
@@ -38,7 +38,7 @@ pub fn detect() -> DeviceCapabilities {
         arch: std::env::consts::ARCH.to_string(),
         total_ram_bytes: total_ram(),
         gpu: detect_gpu(),
-        captions_available: cfg!(feature = "captions"),
+        captions_available: cfg!(feature = "ggml"),
     }
 }
 

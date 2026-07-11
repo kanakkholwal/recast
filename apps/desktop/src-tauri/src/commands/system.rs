@@ -92,7 +92,7 @@ pub(crate) fn save_config(app: &AppHandle, config: &AppConfig) {
     }
 }
 
-fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
+pub(crate) fn write_atomic(tmp: &Path, dest: &Path, bytes: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     let mut file = fs::File::create(tmp)?;
     file.write_all(bytes)?;
@@ -299,9 +299,9 @@ pub fn set_last_source(
 /// reaches the rotating file — for the Rust backend AND the webview logs the
 /// frontend forwards through the same plugin.
 ///
-///   - off (default) → release builds stay quiet (Warn); debug builds keep Info
-///   - on            → Debug everywhere, capturing backend processing +
-///                     editor-interaction traces for a support bundle
+/// - off (default) → release builds stay quiet (Warn); debug builds keep Info.
+/// - on → Debug everywhere, capturing backend processing + editor-interaction
+///   traces for a support bundle.
 pub(crate) fn apply_log_level(diagnostic: bool) {
     let level = if diagnostic {
         log::LevelFilter::Debug

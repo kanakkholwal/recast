@@ -5,12 +5,11 @@
 //! download/verify path mirrors `commands/assets.rs` (streamed `.tmp` + atomic
 //! rename) but emits per-byte progress so the UI can show a real bar.
 //!
-//! NOTE ON DATA: the Whisper entries use the canonical `ggerganov/whisper.cpp`
-//! GGML files (stable URLs). Their `sha256` is left `None` for now (skip-verify
-//! with a warning) — fill them in when locking exact revisions. The **Parakeet
-//! V3** entry has no `files` yet: the exact ONNX file set `transcribe-rs`
-//! expects must be confirmed against its loader before we can pin URLs/hashes.
-//! `download`/`transcribe` guard against the empty file list.
+//! NOTE ON DATA: every model is a single GGUF file hosted under the
+//! `handy-computer` HuggingFace org (the canonical transcribe.cpp catalog).
+//! `sha256` is left `None` for now (skip-verify with a warning) — pin the hashes
+//! before release once the exact files are locked. `download`/`transcribe` guard
+//! against an empty file list.
 
 use std::path::{Path, PathBuf};
 
@@ -21,42 +20,42 @@ use tauri::{AppHandle, Manager};
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 
+/// How a model runs. There are exactly two engines: `ggml` (on-device,
+/// transcribe.cpp) and `remote` (an OpenAI-compatible endpoint). The GGUF file
+/// decides the model architecture for the ggml engine, so the architecture
+/// (Parakeet / Whisper / ...) is display-only metadata (`CaptionModel::family`),
+/// not a separate code path.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Engine {
-    Parakeet,
-    Canary,
-    GigaAM,
-    Cohere,
-    Whisper,
+    /// On-device, transcribe.cpp over ggml. Runs any supported GGUF file.
+    Ggml,
     /// Not a local architecture: transcription runs on a remote
     /// OpenAI-compatible endpoint. The server owns the real model.
     Remote,
 }
 
-/// The inference backend a model runs on. Independent of `Engine` (the model
-/// architecture): several architectures share one runtime. This is the axis the
-/// UI gates availability on, since a build may ship one runtime and not another.
+/// The inference backend a model runs on. This is the axis the UI gates
+/// availability on: a `ggml` build ships the on-device engine, a
+/// `--no-default-features` build does not. Kept as its own enum (rather than
+/// folded into `Engine`) so the UI's `runtime` / `runtimeAvailable` contract is
+/// stable.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Runtime {
-    /// transcribe-rs over `ort` (ONNX). Shipped today.
-    Onnx,
-    /// whisper.cpp. Not built yet (needs the `whisper-cpp` LLVM+CMake toolchain);
-    /// models may install but can't run until then.
-    WhisperCpp,
+    /// transcribe.cpp / ggml (on-device). Present when built with `ggml`.
+    Ggml,
     /// OpenAI-compatible `/audio/transcriptions` endpoint (on-device, self-hosted,
     /// or third-party). No local files; config + a keyring-held key.
     Remote,
 }
 
 impl Engine {
-    /// The runtime this architecture runs on. Keeps the two axes in sync from one
-    /// place, so a new `Engine` arm can't forget to declare its backend.
+    /// The runtime this engine runs on. One-to-one today, but kept as a mapping so
+    /// the two-axis UI contract (engine + runtime) has a single source of truth.
     pub fn runtime(self) -> Runtime {
         match self {
-            Engine::Parakeet | Engine::Canary | Engine::GigaAM | Engine::Cohere => Runtime::Onnx,
-            Engine::Whisper => Runtime::WhisperCpp,
+            Engine::Ggml => Runtime::Ggml,
             Engine::Remote => Runtime::Remote,
         }
     }
@@ -78,13 +77,18 @@ pub enum ModelSource {
 /// decide if a model is offerable.
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
-        Runtime::Onnx => (true, None),
-        Runtime::WhisperCpp => (
+        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
+        // in). A `--no-default-features` build reports it unavailable, so the UI
+        // falls back to remote endpoints.
+        #[cfg(feature = "ggml")]
+        Runtime::Ggml => (true, None),
+        #[cfg(not(feature = "ggml"))]
+        Runtime::Ggml => (
             false,
-            Some("The Whisper runtime arrives in a later build.".into()),
+            Some("On-device transcription isn't available in this build.".into()),
         ),
-        // No remote endpoints are configured yet (added in a later phase); until
-        // then a remote model is present in the catalog but not runnable.
+        // Remote availability is decided per-endpoint (is a key stored?), so the
+        // global gate is always "not available" with guidance.
         Runtime::Remote => (
             false,
             Some("Configure a remote transcription endpoint to use this model.".into()),
@@ -92,12 +96,12 @@ pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     }
 }
 
-/// One file that makes up a model. Whisper is a single `.bin`; Parakeet is a
-/// directory of ONNX files (hence `rel_path`).
+/// One file that makes up a model. A ggml model is a single `.gguf` file; the
+/// `rel_path` doubles as its on-disk name under the model dir.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ModelFile {
-    /// Path under the model dir, e.g. `ggml-small.bin` or `encoder.onnx`.
+    /// Path under the model dir, e.g. `parakeet-tdt-0.6b-v3-Q8_0.gguf`.
     pub rel_path: String,
     pub url: String,
     /// Expected sha256; `None`/empty skips verification (logged).
@@ -132,7 +136,7 @@ pub struct CaptionModel {
     #[serde(default = "source_builtin")]
     pub source: ModelSource,
     /// Present only for `Engine::Remote` models: the endpoint to POST audio to.
-    /// `None` for every local (onnx/whisperCpp) model.
+    /// `None` for every local (ggml) model.
     #[serde(default)]
     pub remote: Option<super::remote::RemoteEndpoint>,
 }
@@ -141,95 +145,35 @@ fn source_builtin() -> ModelSource {
     ModelSource::Builtin
 }
 
-/// The int8 ONNX file set `transcribe-rs`'s `ParakeetModel::load(dir, Int8)`
-/// expects in the model directory.
-const PARAKEET_FILES: [&str; 4] = [
-    "encoder-model.int8.onnx",
-    "decoder_joint-model.int8.onnx",
-    "nemo128.onnx",
-    "vocab.txt",
-];
-
-/// Parakeet (NVIDIA, ONNX via `transcribe-rs`, CPU-optimized). Downloaded from
-/// the `istupakov/parakeet-tdt-0.6b-*-onnx` HuggingFace repos.
-fn parakeet(
-    id: &str,
-    name: &str,
-    hf_repo: &str,
-    multilingual: bool,
-    is_default: bool,
-) -> CaptionModel {
-    let base = format!("https://huggingface.co/{hf_repo}/resolve/main");
-    let files = PARAKEET_FILES
-        .iter()
-        .map(|f| ModelFile {
-            rel_path: (*f).into(),
-            url: format!("{base}/{f}"),
-            sha256: None, // TODO: pin once we lock a revision
-        })
-        .collect();
-    CaptionModel {
-        id: id.into(),
-        display_name: name.into(),
-        engine: Engine::Parakeet,
-        family: "Parakeet".into(),
-        languages: vec![if multilingual { "multi" } else { "en" }.into()],
-        approx_size_bytes: Some(660_000_000),
-        is_default,
-        files,
-        requires_gpu: false, // Parakeet is CPU-optimized
-        prefers_gpu: false,
-        min_ram_bytes: Some(2_000_000_000),
-        source: ModelSource::Builtin,
-        remote: None,
-    }
-}
-
-// File sets per engine (int8), matching what each transcribe-rs ONNX loader
-// resolves. Repos per transcribe-rs README's model table.
-const CANARY_FILES: [&str; 4] = [
-    "encoder-model.int8.onnx",
-    "decoder-model.int8.onnx",
-    "nemo128.onnx",
-    "vocab.txt",
-];
-const GIGAAM_FILES: [&str; 2] = ["model.int8.onnx", "vocab.txt"];
-const COHERE_FILES: [&str; 3] = [
-    "cohere-encoder.int4.onnx",
-    "cohere-decoder.int4.onnx",
-    "tokens.txt",
-];
-/// Generic ONNX model entry (Canary / GigaAM / …) downloaded from a HuggingFace
-/// repo. `files` are stored flat in the model dir, where transcribe-rs loads them.
+/// A built-in ggml model: one GGUF file from a `handy-computer` HuggingFace repo.
+/// `family` is the display group for the picker; the GGUF itself tells
+/// transcribe.cpp which architecture to run.
 #[allow(clippy::too_many_arguments)]
-fn onnx(
+fn ggml_model(
     id: &str,
     name: &str,
     family: &str,
-    engine: Engine,
     hf_repo: &str,
-    files: &[&str],
+    file: &str,
     languages: Vec<String>,
     size: u64,
+    is_default: bool,
 ) -> CaptionModel {
-    let base = format!("https://huggingface.co/{hf_repo}/resolve/main");
-    let files = files
-        .iter()
-        .map(|f| ModelFile {
-            rel_path: (*f).into(),
-            url: format!("{base}/{f}"),
-            sha256: None, // TODO: pin once we lock a revision
-        })
-        .collect();
+    let url = format!("https://huggingface.co/{hf_repo}/resolve/main/{file}");
     CaptionModel {
         id: id.into(),
         display_name: name.into(),
-        engine,
+        engine: Engine::Ggml,
         family: family.into(),
         languages,
         approx_size_bytes: Some(size),
-        is_default: false,
-        files,
+        is_default,
+        files: vec![ModelFile {
+            rel_path: file.into(),
+            url,
+            sha256: None, // TODO: pin before release once revisions are locked
+        }],
+        // ggml runs on CPU (tinyBLAS); GPU is opt-in and only speeds it up.
         requires_gpu: false,
         prefers_gpu: false,
         min_ram_bytes: Some(2_000_000_000),
@@ -238,71 +182,52 @@ fn onnx(
     }
 }
 
-/// The model catalog. Currently the Parakeet ONNX models (run via the
-/// `transcribe-rs` `onnx` engine — no extra toolchain). Parakeet V3 is the
-/// default. The broader Handy-style ONNX catalog (Moonshine / Canary /
-/// SenseVoice / GigaAM / Cohere) is the next addition — each needs its own HF
-/// repo + file set wired here and an engine arm in `engine.rs`. Whisper models
-/// wait on the `whisper-cpp` build (LLVM + CMake).
+/// The built-in model catalog: single-file GGUF models run by the ggml
+/// (transcribe.cpp) engine. Parakeet V3 (multilingual, word-timestamped) is the
+/// default. Whisper is offered as an alternative family. All entries are plain
+/// data and compile in every build; whether they can RUN is gated at runtime by
+/// `runtime_status` (the `ggml` feature).
 pub fn registry() -> Vec<CaptionModel> {
     vec![
-        parakeet(
+        ggml_model(
             "parakeet-v3",
             "Parakeet V3 (0.6B)",
-            "istupakov/parakeet-tdt-0.6b-v3-onnx",
-            true,
+            "Parakeet",
+            "handy-computer/parakeet-tdt-0.6b-v3-gguf",
+            "parakeet-tdt-0.6b-v3-Q8_0.gguf",
+            vec!["multi".into()],
+            660_000_000,
             true,
         ),
-        // TODO: confirm the v2 (English) repo id / file names before shipping.
-        parakeet(
+        ggml_model(
             "parakeet-v2",
             "Parakeet V2 (0.6B, English)",
-            "istupakov/parakeet-tdt-0.6b-v2-onnx",
+            "Parakeet",
+            "handy-computer/parakeet-tdt-0.6b-v2-gguf",
+            "parakeet-tdt-0.6b-v2-Q8_0.gguf",
+            vec!["en".into()],
+            660_000_000,
             false,
+        ),
+        ggml_model(
+            "whisper-base",
+            "Whisper Base",
+            "Whisper",
+            "handy-computer/whisper-base-gguf",
+            "whisper-base-Q5_K_M.gguf",
+            vec!["multi".into()],
+            60_000_000,
             false,
         ),
-        // - Canary (multilingual + translation) -
-        onnx(
-            "canary-180m-flash",
-            "Canary 180M Flash",
-            "Canary",
-            Engine::Canary,
-            "istupakov/canary-180m-flash-onnx",
-            &CANARY_FILES,
+        ggml_model(
+            "whisper-small",
+            "Whisper Small",
+            "Whisper",
+            "handy-computer/whisper-small-gguf",
+            "whisper-small-Q5_K_M.gguf",
             vec!["multi".into()],
-            146_000_000,
-        ),
-        onnx(
-            "canary-1b-v2",
-            "Canary 1B v2",
-            "Canary",
-            Engine::Canary,
-            "istupakov/canary-1b-v2-onnx",
-            &CANARY_FILES,
-            vec!["multi".into()],
-            691_000_000,
-        ),
-        // - GigaAM (Russian) -
-        onnx(
-            "gigaam-v3",
-            "GigaAM v3 (Russian)",
-            "GigaAM",
-            Engine::GigaAM,
-            "istupakov/gigaam-v3-onnx",
-            &GIGAAM_FILES,
-            vec!["ru".into()],
-            151_000_000,
-        ),
-        // - Cohere (large, multilingual) -
-        onnx(
-            "cohere",
-            "Cohere",
-            "Cohere",
-            Engine::Cohere,
-            "cstr/cohere-transcribe-onnx-int4",
-            &COHERE_FILES,
-            vec!["multi".into()],
-            1_700_000_000,
+            190_000_000,
+            false,
         ),
     ]
 }
@@ -442,4 +367,52 @@ pub async fn download_file(
         .await
         .map_err(|e| format!("rename: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_maps_to_its_runtime() {
+        assert_eq!(Engine::Ggml.runtime(), Runtime::Ggml);
+        assert_eq!(Engine::Remote.runtime(), Runtime::Remote);
+    }
+
+    #[test]
+    fn ggml_availability_tracks_the_feature() {
+        // The on-device engine needs the `ggml` feature (transcribe.cpp compiled
+        // in); a `--no-default-features` build must report it unavailable so the
+        // UI falls back to remote endpoints.
+        let (available, reason) = runtime_status(Runtime::Ggml);
+        assert_eq!(available, cfg!(feature = "ggml"));
+        assert_eq!(reason.is_none(), cfg!(feature = "ggml"));
+    }
+
+    #[test]
+    fn remote_runtime_is_never_globally_available() {
+        // Remote availability is decided per-endpoint (key present), so the
+        // global gate is always "not available" with a reason.
+        let (available, reason) = runtime_status(Runtime::Remote);
+        assert!(!available);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn registry_nominates_exactly_one_default() {
+        assert_eq!(registry().iter().filter(|m| m.is_default).count(), 1);
+    }
+
+    #[test]
+    fn every_builtin_is_a_single_gguf_ggml_model() {
+        for m in registry() {
+            assert!(matches!(m.engine, Engine::Ggml), "{} is not ggml", m.id);
+            assert_eq!(m.files.len(), 1, "{} should be one GGUF file", m.id);
+            assert!(
+                m.files[0].rel_path.ends_with(".gguf"),
+                "{} file is not a .gguf",
+                m.id
+            );
+        }
+    }
 }

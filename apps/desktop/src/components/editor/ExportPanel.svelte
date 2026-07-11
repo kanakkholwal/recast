@@ -1,6 +1,7 @@
 <script lang="ts" module>
   export type ExportPanelPhase =
     | "options"
+    | "queued"
     | "progress"
     | "success"
     | "cancelled"
@@ -21,6 +22,7 @@
     phase: ExportPanelPhase | null;
     onEscape?: () => void;
     options?: Snippet;
+    queued?: Snippet;
     progress?: Snippet;
     success?: Snippet;
     cancelled?: Snippet;
@@ -31,6 +33,7 @@
     phase,
     onEscape,
     options,
+    queued,
     progress,
     success,
     cancelled,
@@ -64,6 +67,8 @@
     >
       {#if phase === "options"}
         {@render options?.()}
+      {:else if phase === "queued"}
+        {@render queued?.()}
       {:else if phase === "progress"}
         {@render progress?.()}
       {:else if phase === "success"}

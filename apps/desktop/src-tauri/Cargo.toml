@@ -6,7 +6,10 @@ authors = ["kanak kholwal"]
 license = ""
 repository = "https://github.com/kanakkholwal/recast"
 edition = "2021"
-rust-version = "1.77.2"
+# Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82
+# (PanicHookInfo, etc.). CI builds on stable, so this only documents the floor
+# and keeps clippy's `incompatible_msrv` honest.
+rust-version = "1.82.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -77,18 +80,16 @@ rand = "0.8"
 # old `vad-rs` (which pulled `ort`). `silero_vad.onnx` is downloaded on first use
 # (see silence.rs); tract runs its Conv+LSTM graph natively.
 tract-onnx = "0.21"
-# `ort` (ONNX Runtime, native) is needed ONLY by the captions engine, so it's
-# optional and gated behind `captions`. `download-binaries` fetches the prebuilt
-# runtime. NOTE: ort rc.12 ships NO x86_64-apple-darwin prebuilt (Microsoft
-# dropped Intel-Mac at ONNX Runtime 1.24), so the Intel-Mac CI job builds with
-# `--no-default-features` (captions off → no ort); the app warns that captions
-# aren't available there. Pin must match transcribe-rs (rc.12); no libclang/CMake.
-ort = { version = "=2.0.0-rc.12", default-features = false, features = ["download-binaries"], optional = true }
-# Offline transcription — Parakeet via ONNX (ort rc.12, prebuilt runtime, NO
-# libclang/CMake). Optional, behind `captions`. whisper.cpp (the `whisper-cpp`
-# feature) is intentionally OFF — it would add the LLVM+CMake toolchain; revisit
-# when we want Whisper models. See docs/captions-transcription-plan.md.
-transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
+# On-device transcription engine: Handy's transcribe.cpp — a ggml-native engine
+# (GGUF) that runs 16+ model families (Parakeet, Whisper, Canary, ...) from a
+# single .gguf file. Built from source (its -sys crate runs CMake, ggml vendored
+# in-tree so NO git submodules), so unlike `ort` it has no prebuilt-binary gap and
+# builds on Intel Mac, restoring on-device captions there. Optional + behind the
+# default `ggml` feature so a target that can't compile it falls back to
+# remote-only. GPU backends (metal/vulkan/cuda) are opt-in features, kept OFF for
+# now: CPU (tinyBLAS) is portable; add Metal as a later perf pass. Real per-word
+# timing comes back in the run `Transcript` — no synthesis needed.
+transcribe-cpp = { version = "0.1.2", optional = true }
 keepawake = "0.6.0"
 tauri-plugin-notification = "2.3.3"
 # Argument parser for the headless CLI branch in `main`. One parser covers the
@@ -194,24 +195,18 @@ device_query = "2.1"
 screencapturekit = { version = "6.0", default-features = false, features = ["macos_13_0"], optional = true }
 
 [features]
-# Captions on by default: the Parakeet/ONNX engine builds with no extra toolchain
-# (ort ships a prebuilt runtime via download-binaries). Silence detection is NOT
-# gated — it runs on pure-Rust `tract`, so the app (minus captions) builds on
-# every target. The Intel-Mac CI job builds `--no-default-features` (no `ort`,
-# which has no x86_64-apple-darwin prebuilt); captions are then unavailable there.
-default = ["captions"]
-# Offline captions / transcription engine. Will gate the `transcribe-rs`
-# (Parakeet) + `whisper-rs` deps. BLOCKED for now: `transcribe-rs` pins
-# `ort = "=2.0.0-rc.12"` while `voice_activity_detector` (silence detection)
-# pins `ort = "=2.0.0-rc.10"` — `ort-sys` uses `links`, so they can't coexist.
-# DECIDED: align everything on rc.12. No VAD release > 0.2.1 exists, so this
-# needs a `[patch.crates-io]` fork of `voice_activity_detector` re-pinned to
-# rc.12, landed together with the engine deps so one `cargo build` verifies
-# Offline captions engine (Parakeet/ONNX via transcribe-rs). Pulls the native
-# `ort` runtime — hence excluded from the Intel-Mac build. The transcription
-# module's non-engine plumbing (model list, download, device caps) compiles
-# without the feature; the engine seam returns a "not available" error.
-captions = ["dep:transcribe-rs", "dep:ort"]
+# On-device captions on by default via the ggml (transcribe.cpp) engine. It builds
+# from source (CMake + a C/C++ compiler; ggml is vendored, no submodules) on every
+# target INCLUDING Intel Mac, so there's no prebuilt-binary gap like `ort` had.
+# Silence detection is NOT gated — it runs on pure-Rust `tract`. A target that
+# can't compile ggml can still ship with `--no-default-features`: the transcription
+# plumbing (catalog, download, device caps, remote endpoints) compiles without the
+# feature and the on-device engine seam reports "not available in this build",
+# leaving remote endpoints as the transcription path (graceful degradation).
+default = ["ggml"]
+# The on-device transcription engine (transcribe.cpp / ggml). Pulls `transcribe-cpp`,
+# which compiles ggml from source. captions_available == cfg!(feature = "ggml").
+ggml = ["dep:transcribe-cpp"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test
 # checklist before flipping this on for a release build.
