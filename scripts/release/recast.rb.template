@@ -53,6 +53,11 @@ cask "recast" do
 
   app "Recast.app"
 
+  # Symlink the CLI into Homebrew's bin so `recast <verb>` works in any
+  # terminal (Homebrew puts its bin on PATH). The GUI still launches from the
+  # .app; this is the same binary, invoked with a subcommand.
+  binary "#{appdir}/Recast.app/Contents/MacOS/recast"
+
   # On `brew uninstall --cask --zap recast`, remove the user-data
   # directories Recast writes outside the app bundle. Bundle identifier
   # mirrors the macOS app's CFBundleIdentifier — verify against

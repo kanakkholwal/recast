@@ -424,6 +424,13 @@
           >
             {selected.family}
           </span>
+          {#if selected.source === "extension"}
+            <span
+              class="rounded bg-primary/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wider text-primary"
+            >
+              Extension
+            </span>
+          {/if}
           <span
             class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground"
           >

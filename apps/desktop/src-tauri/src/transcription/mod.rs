@@ -14,6 +14,7 @@ mod audio;
 mod capabilities;
 mod engine;
 mod models;
+mod packs;
 pub(crate) mod subtitles;
 mod words;
 
@@ -22,7 +23,7 @@ use tauri::{ipc::Channel, AppHandle};
 use tokio::fs;
 
 use capabilities::DeviceCapabilities;
-use models::{CaptionModel, Engine as ModelEngine};
+use models::{CaptionModel, Engine as ModelEngine, ModelSource, Runtime};
 
 use crate::commands::error::{AppError, AppResult};
 
@@ -153,6 +154,11 @@ pub struct CaptionModelInfo {
     pub id: String,
     pub display_name: String,
     pub engine: ModelEngine,
+    /// Inference backend (derived from `engine`). The axis the UI gates
+    /// availability on; several engines share one runtime.
+    pub runtime: Runtime,
+    /// Built-in vs. contributed by an installed extension (provenance badge).
+    pub source: ModelSource,
     pub family: String,
     pub languages: Vec<String>,
     pub approx_size_bytes: Option<u64>,
@@ -165,7 +171,13 @@ pub struct CaptionModelInfo {
     pub min_ram_bytes: Option<u64>,
     /// Can this device run the model at all? (false → hard-disabled in the UI).
     pub runnable: bool,
-    /// Non-blocking caveat for this device (slow on CPU, low RAM, …).
+    /// Is this model's runtime usable in this build? False for a not-yet-built
+    /// backend (Whisper) or an unconfigured remote endpoint. Download is still
+    /// allowed; only Generate is gated on this, so a model can be pre-fetched
+    /// before its runtime ships.
+    pub runtime_available: bool,
+    /// Non-blocking caveat for this device (slow on CPU, low RAM, …), or the
+    /// reason the runtime is unavailable when that's the blocker.
     pub warning: Option<String>,
 }
 
@@ -220,16 +232,20 @@ pub(crate) struct TranscribeProgress {
 #[tauri::command]
 pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelInfo>> {
     let caps = capabilities::detect();
-    let infos = models::registry()
+    let infos = models::all_models(&app)
         .into_iter()
         .map(|m| {
             let installed = models::is_installed(&app, &m).unwrap_or(false);
             let downloadable = !m.files.is_empty();
-            let (runnable, warning) = evaluate(&m, &caps);
+            let runtime = m.engine.runtime();
+            let (runtime_available, runtime_reason) = models::runtime_status(runtime);
+            let (runnable, device_warning) = evaluate(&m, &caps);
             CaptionModelInfo {
                 id: m.id,
                 display_name: m.display_name,
                 engine: m.engine,
+                runtime,
+                source: m.source,
                 family: m.family,
                 languages: m.languages,
                 approx_size_bytes: m.approx_size_bytes,
@@ -240,7 +256,10 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
                 prefers_gpu: m.prefers_gpu,
                 min_ram_bytes: m.min_ram_bytes,
                 runnable,
-                warning,
+                runtime_available,
+                // An unavailable runtime is the dominant blocker, so its reason
+                // wins over a soft device caveat when both apply.
+                warning: runtime_reason.or(device_warning),
             }
         })
         .collect();
@@ -263,8 +282,8 @@ pub async fn download_caption_model(
     id: String,
     on_progress: Channel<DownloadProgress>,
 ) -> AppResult<()> {
-    let model =
-        models::find(&id).ok_or_else(|| AppError::msg(format!("unknown caption model: {id}")))?;
+    let model = models::find(&app, &id)
+        .ok_or_else(|| AppError::msg(format!("unknown caption model: {id}")))?;
     if model.files.is_empty() {
         return Err(AppError::msg(format!(
             "model '{id}' has no downloadable files defined yet"
@@ -332,8 +351,14 @@ pub async fn transcribe_project(
     language: Option<String>,
     on_phase: Channel<TranscribeProgress>,
 ) -> AppResult<Transcript> {
-    let model = models::find(&model_id)
+    let model = models::find(&app, &model_id)
         .ok_or_else(|| AppError::msg(format!("unknown caption model: {model_id}")))?;
+    let (runtime_available, runtime_reason) = models::runtime_status(model.engine.runtime());
+    if !runtime_available {
+        return Err(AppError::msg(runtime_reason.unwrap_or_else(|| {
+            format!("model '{model_id}' runtime is unavailable in this build")
+        })));
+    }
     let (runnable, _) = evaluate(&model, &capabilities::detect());
     if !runnable {
         return Err(AppError::msg(format!(

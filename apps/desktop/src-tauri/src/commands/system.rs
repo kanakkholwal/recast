@@ -1587,6 +1587,24 @@ pub async fn capture_capabilities() -> AppResult<CaptureCapabilities> {
         .map_err(|e| AppError::msg(format!("capture_capabilities join error: {e}")))
 }
 
+/// Whether `recast` currently resolves as a bare terminal command.
+#[tauri::command]
+pub fn cli_install_status() -> crate::path_install::InstallStatus {
+    crate::path_install::status()
+}
+
+/// Put `recast` on the user's PATH (the in-app "Install command line tool").
+#[tauri::command]
+pub fn install_cli() -> AppResult<String> {
+    crate::path_install::install().map_err(AppError::msg)
+}
+
+/// Remove `recast` from the user's PATH.
+#[tauri::command]
+pub fn uninstall_cli() -> AppResult<String> {
+    crate::path_install::uninstall().map_err(AppError::msg)
+}
+
 #[derive(Debug, Serialize)]
 pub struct FfmpegDiagnostics {
     pub ffmpeg_path: String,

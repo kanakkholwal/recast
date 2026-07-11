@@ -68,8 +68,3 @@ export function computeExportDurations(
 	const outputDuration = Math.max(0, clipDuration - removedDuration);
 	return { clipDuration, outputDuration };
 }
-
-/** GIF finite-loop cycle: 1× → 2× → … → 5× → 1×; from infinite/once it starts at 1. */
-export function nextLoopCount(cur: number | "infinite" | "once"): number {
-	return typeof cur === "number" ? (cur >= 5 ? 1 : cur + 1) : 1;
-}

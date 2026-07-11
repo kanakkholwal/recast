@@ -654,12 +654,17 @@ export type CaptionEngine =
 /** Inference backend. `onnx` ships today; `whisperCpp` and `remote` are gated. */
 export type CaptionRuntime = "onnx" | "whisperCpp" | "remote";
 
+/** Where a catalog entry came from: the built-in list, or an installed pack. */
+export type CaptionModelSource = "builtin" | "extension";
+
 export interface CaptionModelInfo {
 	id: string;
 	displayName: string;
 	engine: CaptionEngine;
 	/** Inference backend (derived from `engine`); the availability axis. */
 	runtime: CaptionRuntime;
+	/** Built-in vs. contributed by an installed extension (provenance badge). */
+	source: CaptionModelSource;
 	/** Display group for the picker, e.g. "Parakeet" / "Whisper". */
 	family: string;
 	languages: string[];
@@ -680,6 +685,34 @@ export interface CaptionModelInfo {
 	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
 	 *  runtime is unavailable when that's the blocker. */
 	warning: string | null;
+}
+
+/** One weight file of a pack-contributed caption model. Third-party weights
+ *  MUST pin a sha256 (built-ins may leave it null until a revision is locked). */
+export interface CaptionModelPackFile {
+	relPath: string;
+	url: string;
+	sha256: string;
+}
+
+/**
+ * A `contributes.captionModels[]` entry in an `asset-pack` extension manifest.
+ * `runtime` + `engine` are closed allowlists validated in Rust; `engine` must
+ * belong to `runtime`. Weight files download into `models/<id>/`, so a pack can
+ * only reuse an existing backend, never introduce one.
+ */
+export interface CaptionModelContribution {
+	id: string;
+	displayName: string;
+	runtime: CaptionRuntime;
+	engine: CaptionEngine;
+	family: string;
+	languages: string[];
+	approxSizeBytes?: number | null;
+	files: CaptionModelPackFile[];
+	requiresGpu?: boolean;
+	prefersGpu?: boolean;
+	minRamBytes?: number | null;
 }
 
 export interface GpuInfo {

@@ -13,15 +13,18 @@
     clampSourceFps,
     computeExportDurations,
     computeRemovedDuration,
-    nextLoopCount,
   } from "./export-dialog.logic";
   import {
     Check,
+    ChevronDown,
     Circle,
     Film,
     Image as ImageIcon,
     Infinity as InfinityIcon,
+    Minus,
+    Plus,
     RotateCcw,
+    Settings2,
     Upload,
     Video,
   } from "@lucide/svelte";
@@ -29,7 +32,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly, scale } from "svelte/transition";
+  import { fade, fly, scale, slide } from "svelte/transition";
 
   interface Props {
     store: EditorStore;
@@ -64,15 +67,17 @@
     { value: "quality", label: "Quality", desc: "Slower · smaller" },
   ];
 
+  // Swatch is a brand-tinted intensity ramp (faint to full primary) so it reads
+  // as "more color richness", not a red/amber/green judgement of good vs bad.
   const gifQualities: {
     value: GifQuality;
     label: string;
     desc: string;
     swatch: string;
   }[] = [
-    { value: "low", label: "Lite", desc: "Smallest file", swatch: "from-rose-300 to-rose-500" },
-    { value: "medium", label: "Standard", desc: "Best balance", swatch: "from-amber-300 to-amber-500" },
-    { value: "high", label: "Vivid", desc: "Richest colors", swatch: "from-emerald-300 to-emerald-500" },
+    { value: "low", label: "Lite", desc: "Smallest file", swatch: "from-primary/20 to-primary/45" },
+    { value: "medium", label: "Standard", desc: "Best balance", swatch: "from-primary/45 to-primary/70" },
+    { value: "high", label: "Vivid", desc: "Richest colors", swatch: "from-primary/75 to-primary" },
   ];
 
   const ditherModes: { value: GifDither; label: string; desc: string }[] = [
@@ -168,9 +173,25 @@
     store.updateGifSettings({ fps: null });
   }
 
-  function cycleLoopCount() {
-    setLoop(nextLoopCount(store.gifSettings.loop));
+  // Loop-count stepper (2x..5x). "Once" already covers a single play, so the
+  // numeric range starts at 2. Stepping while on Forever/Once switches to count.
+  const LOOP_MIN = 2;
+  const LOOP_MAX = 5;
+  const loopCount = $derived(
+    typeof store.gifSettings.loop === "number" ? store.gifSettings.loop : null,
+  );
+  function stepLoop(delta: number) {
+    // First press from Forever/Once switches to count mode at the minimum.
+    if (loopCount === null) {
+      setLoop(LOOP_MIN);
+      return;
+    }
+    setLoop(Math.min(LOOP_MAX, Math.max(LOOP_MIN, loopCount + delta)));
   }
+
+  // Frame rate + Speed are power-user tuning, tucked behind a disclosure so the
+  // common Format/Quality choices lead.
+  let advancedOpen = $state(false);
 
   function resetGifDefaults() {
     store.updateGifSettings({
@@ -194,7 +215,7 @@
 {#snippet sectionLabel(label: string, description?: string)}
   <div class="flex flex-col gap-0.5">
     <span
-      class="text-[10px] font-bold uppercase tracking-[0.18em] text-muted-foreground/70"
+      class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
     >
       {label}
     </span>
@@ -277,7 +298,7 @@
               class={cn(
                 "group flex w-full flex-col items-center gap-1 rounded-md border px-1.5 py-1.5 transition-all duration-200",
                 sel
-                  ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                  ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                   : "border-border/40 bg-card/40 hover:border-border/70 hover:bg-card/70",
               )}
             >
@@ -325,7 +346,7 @@
               class={cn(
                 "w-full rounded-md border px-2 py-1.5 text-[10.5px] font-semibold transition-all duration-200",
                 sel
-                  ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+                  ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
                   : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
               )}
             >
@@ -360,7 +381,7 @@
           class={cn(
             "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
             store.gifSettings.loop === "infinite"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
               : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
           )}
         >
@@ -374,29 +395,52 @@
           class={cn(
             "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
             store.gifSettings.loop === "once"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
+              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
               : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
           )}
         >
           <Circle class="size-3" />
           Once
         </button>
-        <button
-          type="button"
-          onclick={cycleLoopCount}
-          aria-pressed={typeof store.gifSettings.loop === "number"}
-          title="Click to cycle 1× → 2× → … → 5×"
+        <div
           class={cn(
-            "flex flex-1 items-center justify-center gap-1 rounded-md border px-2 py-1.5 font-mono text-[11px] tabular-nums transition-all duration-200",
-            typeof store.gifSettings.loop === "number"
-              ? "border-primary/40 bg-primary/8 text-primary ring-1 ring-primary/25"
-              : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
+            "flex flex-1 items-center justify-between rounded-md border transition-all duration-200",
+            loopCount !== null
+              ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
+              : "border-border/40 bg-card/40",
           )}
         >
-          {typeof store.gifSettings.loop === "number"
-            ? `${store.gifSettings.loop}×`
-            : "N×"}
-        </button>
+          <button
+            type="button"
+            onclick={() => stepLoop(-1)}
+            disabled={loopCount !== null && loopCount <= LOOP_MIN}
+            aria-label="Fewer loops"
+            class="grid size-7 place-items-center rounded-l-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Minus class="size-3" />
+          </button>
+          <button
+            type="button"
+            onclick={() => loopCount === null && setLoop(LOOP_MIN)}
+            aria-pressed={loopCount !== null}
+            title="Loop a set number of times"
+            class={cn(
+              "font-mono text-[11px] tabular-nums transition-colors",
+              loopCount !== null ? "text-primary" : "text-muted-foreground",
+            )}
+          >
+            {loopCount !== null ? `${loopCount}×` : "Count"}
+          </button>
+          <button
+            type="button"
+            onclick={() => stepLoop(1)}
+            disabled={loopCount !== null && loopCount >= LOOP_MAX}
+            aria-label="More loops"
+            class="grid size-7 place-items-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+          >
+            <Plus class="size-3" />
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -423,7 +467,7 @@
             class={cn(
               "group relative flex w-full flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -474,7 +518,7 @@
             class={cn(
               "group flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -531,7 +575,7 @@
             class={cn(
               "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -577,7 +621,7 @@
             class={cn(
               "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
               selected
-                ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
                 : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
             )}
           >
@@ -663,7 +707,7 @@
     class={cn(
       "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
       selected
-        ? "border-primary/40 bg-primary/8 ring-1 ring-primary/25"
+        ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
         : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
     )}
   >
@@ -751,17 +795,47 @@
     {/if}
   </div>
 
-  <!-- Scrollable option list. -->
+  <!-- Scrollable option list. Format + Quality lead; Frame rate + Speed are
+       tucked under Advanced so the common decisions aren't buried in tuning. -->
   <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <div class="flex flex-col gap-4 px-5 py-4">
       {@render formatSection()}
       {@render qualitySection()}
-      {#if showFps}{@render fpsSection()}{/if}
-      {#if !isGif}{@render speedSection()}{/if}
       {#if isGif}
         <section in:fade={{ duration: 200, delay: 80 }}>
           {@render gifSettingsBody()}
         </section>
+      {:else}
+        <div class="flex flex-col gap-3">
+          <button
+            type="button"
+            onclick={() => (advancedOpen = !advancedOpen)}
+            aria-expanded={advancedOpen}
+            class="group flex items-center justify-between gap-2 rounded-md py-0.5 text-left outline-none transition-colors focus-visible:text-foreground"
+          >
+            <span
+              class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover:text-muted-foreground"
+            >
+              <Settings2 class="size-3" />
+              Advanced
+            </span>
+            <ChevronDown
+              class={cn(
+                "size-3.5 text-muted-foreground/70 transition-transform duration-200",
+                advancedOpen && "rotate-180",
+              )}
+            />
+          </button>
+          {#if advancedOpen}
+            <div
+              class="flex flex-col gap-4"
+              transition:slide={{ duration: 200, easing: cubicOut }}
+            >
+              {#if showFps}{@render fpsSection()}{/if}
+              {@render speedSection()}
+            </div>
+          {/if}
+        </div>
       {/if}
       {#if hasCaptions}{@render captionsSection()}{/if}
     </div>

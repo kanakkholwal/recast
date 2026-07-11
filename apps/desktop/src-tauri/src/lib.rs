@@ -5,7 +5,10 @@ mod audio;
 mod cache;
 mod camera;
 mod capture;
+pub mod cli;
 mod commands;
+mod control;
+mod path_install;
 mod cursor;
 mod encoder;
 pub mod ffmpeg;
@@ -335,6 +338,11 @@ pub fn run() {
             #[cfg(windows)]
             jumplist::update(handle);
 
+            // Local control server for the `recast` CLI (status, rec ...).
+            // Non-fatal if it can't bind: the GUI is unaffected, the CLI just
+            // can't reach this instance.
+            control::spawn_server(handle.clone());
+
             // FFmpeg path resolution probes ffmpeg/ffprobe `-version` against
             // up to 4 candidate locations, each spawn taking ~100–300 ms cold.
             // Doing this on the main thread froze the splash window for up to
@@ -455,6 +463,9 @@ pub fn run() {
             commands::diagnose_ffmpeg,
             commands::probe_video_encoders,
             commands::capture_capabilities,
+            commands::cli_install_status,
+            commands::install_cli,
+            commands::uninstall_cli,
             commands::auth_start,
             commands::auth_status,
             commands::auth_sign_out,
