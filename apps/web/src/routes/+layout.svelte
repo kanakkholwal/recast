@@ -27,6 +27,7 @@
 // Player theme — imported once at the root so any /share or dashboard
   // route that mounts <RecastPlayer> picks up the branded CSS variables.
   import "@recast/player/styles.css";
+  import "@recast/application/styles.css";
 
   let { children } = $props();
 

@@ -15,6 +15,9 @@ pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+// On-device OCR for screen understanding (agent automation). Off by default.
+#[cfg(feature = "ocr")]
+mod ocr;
 mod path_install;
 mod permissions;
 mod power;
@@ -434,6 +437,7 @@ pub fn run() {
             commands::set_output_dir,
             commands::get_displays,
             commands::get_windows,
+            commands::capture_screenshot,
             commands::get_last_source,
             commands::set_last_source,
             commands::start_recording,

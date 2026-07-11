@@ -308,6 +308,27 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let intent = crate::commands::use_profile_by_id(app, id)?;
             serde_json::to_value(intent).map_err(|e| e.to_string())
         }
+        "app.screenshot" => {
+            use crate::commands::screenshot::{ShotOptions, DEFAULT_MAX_EDGE};
+            let label = params.get("window").and_then(Value::as_str);
+            let opts = ShotOptions {
+                out: params.get("out").and_then(Value::as_str).map(PathBuf::from),
+                // Absent => default cap; the CLI sends 0 for a full-res request.
+                max_edge: params
+                    .get("maxEdge")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32)
+                    .unwrap_or(DEFAULT_MAX_EDGE),
+                base64: params
+                    .get("base64")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            };
+            // xcap capture can stall; safe here because each connection runs on
+            // its own thread, never the GTK/main thread.
+            let shot = crate::commands::screenshot::capture_app_window(app, label, &opts)?;
+            serde_json::to_value(shot).map_err(|e| e.to_string())
+        }
         "rec.start" => {
             // Read the auto-stop before `params` is consumed below.
             let timeout_ms = params.get("timeoutMs").and_then(Value::as_u64);

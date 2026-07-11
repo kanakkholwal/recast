@@ -90,6 +90,15 @@ tract-onnx = "0.21"
 # now: CPU (tinyBLAS) is portable; add Metal as a later perf pass. Real per-word
 # timing comes back in the run `Transcript` — no synthesis needed.
 transcribe-cpp = { version = "0.1.2", optional = true }
+# On-device OCR (screen understanding for agent automation), behind the off-by-
+# default `ocr` feature. `ocrs` runs on its own `rten` runtime, which is PURE
+# RUST with no C / ONNX-Runtime dependency, so it builds on every target incl.
+# x86_64-apple-darwin (the reason we use tract for VAD and avoid `ort`). Models
+# are the ~10 MB ocrs `.rten` detection + recognition files (download-on-first-
+# use, like the Silero VAD model). Version set matches ocrs 0.12.2's own pins.
+ocrs = { version = "0.12.2", optional = true }
+rten = { version = "0.24", optional = true }
+rten-imageproc = { version = "0.24", optional = true }
 keepawake = "0.6.0"
 tauri-plugin-notification = "2.3.3"
 # Argument parser for the headless CLI branch in `main`. One parser covers the
@@ -223,6 +232,11 @@ default = ["ggml"]
 # The on-device transcription engine (transcribe.cpp / ggml). Pulls `transcribe-cpp`,
 # which compiles ggml from source. captions_available == cfg!(feature = "ggml").
 ggml = ["dep:transcribe-cpp"]
+# On-device OCR for screen understanding (agent automation). Pulls the pure-Rust
+# ocrs/rten stack. OFF by default until the screenshot capture + model-download
+# wiring lands; the engine module (src/ocr/) is self-contained and pure-Rust, so
+# it builds on every target including Intel Mac (same rationale as tract for VAD).
+ocr = ["dep:ocrs", "dep:rten", "dep:rten-imageproc"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test
 # checklist before flipping this on for a release build.

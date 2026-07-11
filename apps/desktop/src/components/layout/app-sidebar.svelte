@@ -6,6 +6,7 @@
   import {
     Download,
     Film,
+    Image,
     LayoutDashboard,
     Radio,
     Settings,
@@ -35,12 +36,17 @@
 
   // Split destinations (things you make/browse) from configuration so Settings
   // and Profiles read as a distinct band rather than trailing the content nav.
+  // The screenshot editor is still WIP, so it's only linked in dev builds for
+  // now (the route stays reachable by URL); drop the guard once it ships.
   const navGroups = [
     {
       label: "Workspace",
       links: [
         { title: "Home", href: "/", icon: LayoutDashboard },
         { title: "Recasts", href: "/recasts", icon: Film },
+        ...(import.meta.env.DEV
+          ? [{ title: "Screenshot", href: "/screenshot", icon: Image }]
+          : []),
         { title: "Exports", href: "/exports", icon: Download },
       ],
     },
