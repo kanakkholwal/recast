@@ -8,6 +8,7 @@
     Crop,
     Monitor as MonitorIcon,
     RefreshCw,
+    Search,
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
@@ -32,6 +33,13 @@
   let isFetching = $state(true);
   // Last region remembered between sessions (loaded from config).
   let lastRegion = $state<TargetSource | null>(null);
+  // Filter for the screens/windows lists; reset when the tab changes so a stale
+  // query never hides everything on the next tab.
+  let query = $state("");
+  $effect(() => {
+    void tab;
+    query = "";
+  });
 
   onMount(() => {
     fetchSources();
@@ -140,6 +148,15 @@
         ? windowSources
         : regionSources,
   );
+  // Offer the filter only once a list is long enough to warrant it.
+  const showFilter = $derived(tab !== "region" && filteredSources.length > 6);
+  const visibleSources = $derived(
+    query.trim()
+      ? filteredSources.filter((s) =>
+          s.label.toLowerCase().includes(query.trim().toLowerCase()),
+        )
+      : filteredSources,
+  );
 
   function isSelected(source: TargetSource) {
     return isSameSource(selectedSource, source);
@@ -168,7 +185,7 @@
       variant="ghost"
       size="icon-sm"
       onclick={closeWindow}
-      class="opacity-0 group-hover/root:opacity-100 transition-opacity"
+      class="opacity-0 transition-opacity group-hover/root:opacity-100 focus-visible:opacity-100"
       title="Close (Esc)"
     >
       <X size={11} strokeWidth={2.5} />
@@ -281,6 +298,7 @@
             type="button"
             onclick={() => (selectedSource = source)}
             ondblclick={confirmSelection}
+            aria-pressed={selected}
             class={cn(
               "flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-left transition-colors focus:outline-none focus:ring-1 focus:ring-ring",
               selected
@@ -326,13 +344,46 @@
         </p>
       </div>
     {:else}
+      {#if showFilter}
+        <label
+          class="mb-2 flex h-8 items-center gap-2 rounded-md border border-border-subtle bg-muted/40 px-2.5 focus-within:border-border focus-within:bg-card"
+        >
+          <Search size={12} class="shrink-0 text-muted-foreground" />
+          <input
+            bind:value={query}
+            type="text"
+            placeholder={tab === "monitor" ? "Filter screens…" : "Filter windows…"}
+            aria-label={tab === "monitor" ? "Filter screens" : "Filter windows"}
+            class="flex-1 bg-transparent text-[11px] font-medium text-foreground placeholder:text-muted-foreground/70 focus:outline-none"
+          />
+          {#if query}
+            <button
+              type="button"
+              onclick={() => (query = "")}
+              class="shrink-0 rounded-sm p-0.5 text-muted-foreground hover:text-foreground"
+              title="Clear filter"
+              aria-label="Clear filter"
+            >
+              <X size={11} />
+            </button>
+          {/if}
+        </label>
+      {/if}
+      {#if visibleSources.length === 0}
+        <div
+          class="flex h-24 w-full items-center justify-center rounded-md border border-dashed border-border bg-card/40 px-4 text-center text-[11px] text-muted-foreground"
+        >
+          No {tab === "monitor" ? "screens" : "windows"} match “{query}”
+        </div>
+      {:else}
       <div class="grid grid-cols-2 gap-2">
-        {#each filteredSources as source (source.type + source.id)}
+        {#each visibleSources as source (source.type + source.id)}
           {@const selected = isSelected(source)}
           <button
             type="button"
             onclick={() => (selectedSource = source)}
             ondblclick={confirmSelection}
+            aria-pressed={selected}
             class={cn(
               "group/tile relative flex flex-col overflow-hidden rounded-md border text-left transition-colors",
               "focus:outline-none focus:ring-1 focus:ring-ring",
@@ -397,6 +448,7 @@
           </button>
         {/each}
       </div>
+      {/if}
     {/if}
   </div>
 
@@ -411,7 +463,7 @@
       size="xs"
       class="gap-1.5"
     >
-      <RefreshCw size={11} class={isFetching ? "animate-spin" : ""} />
+      <RefreshCw size={11} class={isFetching ? "motion-safe:animate-spin" : ""} />
       Rescan
     </Button>
 

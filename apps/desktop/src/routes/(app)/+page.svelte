@@ -228,7 +228,7 @@
     <button
       type="button"
       onclick={() => commandPalette.show()}
-      in:fly={{ y: 12, duration: 360, delay: 60, easing: cubicOut }}
+      in:fly={rise(70)}
       class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 text-left shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
     >
       <Search
@@ -244,10 +244,7 @@
     </button>
 
     <!-- Recording modes -->
-    <section
-      in:fly={{ y: 12, duration: 360, delay: 120, easing: cubicOut }}
-      class="flex flex-col gap-3"
-    >
+    <section in:fly={rise(140)} class="flex flex-col gap-3">
       <div class="flex items-baseline justify-between px-1">
         <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
           Start a recording
@@ -263,17 +260,11 @@
         </Button>
       </div>
       <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {#each modes as mode, i (mode.id)}
+        {#each modes as mode (mode.id)}
           {@const Icon = mode.icon}
           <button
             type="button"
             onclick={() => launchRecordingPanel(mode.intent)}
-            in:fly={{
-              y: 8,
-              duration: 320,
-              delay: 160 + i * 40,
-              easing: cubicOut,
-            }}
             class={cn(
               "group/mode relative flex aspect-[5/4] flex-col items-start justify-between overflow-hidden rounded-xl border border-border/60 bg-card/70 p-3 text-left shadow-(--shadow-craft-inset) backdrop-blur",
               "transition-all duration-200 hover:border-border hover:shadow-craft-sm motion-safe:hover:-translate-y-0.5",
@@ -304,10 +295,7 @@
     </section>
 
     <!-- Primary CTA + quick action chips -->
-    <section
-      in:fly={{ y: 12, duration: 360, delay: 200, easing: cubicOut }}
-      class="flex flex-col gap-3"
-    >
+    <section in:fly={rise(210)} class="flex flex-col gap-3">
       <Button
         onclick={() => launchRecordingPanel()}
         size="lg"
@@ -336,7 +324,7 @@
 
     <!-- Recent strips -->
     {#if recasts.length > 0 || isLoading}
-      <section class="flex flex-col gap-3">
+      <section in:fly={rise(280)} class="flex flex-col gap-3">
         <div class="flex items-baseline justify-between px-1">
           <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
             Recent recordings
@@ -366,7 +354,7 @@
               <button
                 type="button"
                 onclick={() => openInEditor(entry)}
-                in:fade={{ duration: 220, delay: i * 40 }}
+                in:fade={{ duration: reduceMotion ? 0 : 220, delay: reduceMotion ? 0 : i * 40 }}
                 class="group/card flex w-44 shrink-0 flex-col gap-1.5 rounded-lg p-1 text-left transition-all duration-200 hover:bg-card/60 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
               >
                 <div
@@ -400,7 +388,7 @@
     {/if}
 
     {#if exports_.length > 0}
-      <section class="flex flex-col gap-3">
+      <section in:fly={rise(350)} class="flex flex-col gap-3">
         <div class="flex items-baseline justify-between px-1">
           <h2 class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
             Recent exports
@@ -461,6 +449,7 @@
 
     {#if !isLoading && recasts.length === 0 && exports_.length === 0}
       <div
+        in:fly={rise(280)}
         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-8 text-center"
       >
         <div
