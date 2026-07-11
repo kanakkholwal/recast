@@ -534,12 +534,22 @@ pub(crate) fn poster_webp_for_export(path: &str) -> Option<Vec<u8>> {
     extract_poster_webp(&input, meta.duration * 0.25, 960)
 }
 
-#[tauri::command]
-pub async fn export_video(
+/// Run one export end to end: build the FFmpeg filter graph from the render
+/// state, spawn the encode on a blocking worker, and emit `export-state` events
+/// keyed by `request.export_id`. Returns the output path, or an `Err` whose
+/// message contains "cancel" when the user aborted.
+///
+/// This is the single execution path for an export. It is NOT a Tauri command:
+/// exports are started by enqueuing them (`commands::export_queue::enqueue_export`),
+/// and the serial export worker is this function's only caller (a future CLI
+/// export verb would call it too). It still owns its own cancel token in
+/// `state.export_cancel` (so `cancel_export` finds it by id) and takes a power
+/// lease for the run.
+pub(crate) async fn run_export_job(
     app: AppHandle,
     mut request: ExportRequest,
-    state: State<'_, AppState>,
 ) -> AppResult<String> {
+    let state = app.state::<AppState>();
     let export_id = request.export_id.clone();
 
     // Keep display + system awake for the whole export. RAII: released on every
@@ -1419,12 +1429,16 @@ pub async fn export_video(
     // Clone the handle so we retain one outside the closure for the
     // panic-fallback emit in the match below.
     let app_for_fallback = app.clone();
+    // Move a CLONE into the encode task, not the original: `state` (derived from
+    // `app`) is still needed below to remove the cancel token, so `app` must
+    // outlive the task rather than be moved into it.
+    let app_for_task = app.clone();
     let export_id_for_task = export_id.clone();
     let export_id_for_fallback = export_id.clone();
     let task_result = tokio::task::spawn_blocking(move || {
         run_encode(
             args,
-            app,
+            app_for_task,
             export_id_for_task,
             cancel_flag,
             output_path_str,

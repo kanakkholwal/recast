@@ -1,5 +1,5 @@
 #[cfg(windows)]
-mod windows;
+pub(crate) mod windows;
 
 #[cfg(target_os = "linux")]
 pub mod linux_wayland;

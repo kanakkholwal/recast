@@ -925,7 +925,7 @@
       ? { kind: "success", path: myItem.path ?? "" }
       : myItem?.status === "cancelled"
         ? { kind: "cancelled" }
-        : myItem?.status === "error"
+        : myItem?.status === "error" || myItem?.status === "interrupted"
           ? { kind: "error", message: myItem.error ?? "" }
           : null,
   );

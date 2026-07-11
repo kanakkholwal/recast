@@ -200,7 +200,7 @@ impl Default for AppConfig {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GifSettings {
     /// Override frame rate. `None` means use the quality profile's `gif_fps`.
@@ -259,7 +259,22 @@ impl GifSettings {
     }
 }
 
-#[derive(Deserialize)]
+/// A subtitle sidecar to write next to a successful export, on the OUTPUT
+/// timeline (trim + cuts + speed already applied by the frontend). Written by the
+/// export worker after the encode so it survives closing the source editor; the
+/// frontend used to write it after the invoke resolved.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptionSidecar {
+    /// "vtt" | "srt".
+    pub format: String,
+    pub transcript: crate::transcription::Transcript,
+}
+
+// Serialize as well as Deserialize: the export queue persists the whole request
+// (render state included) to a payload file on disk so a queued job can run after
+// its editor is closed and survive an app restart. Heavy but self-contained.
+#[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
     pub export_id: String,
@@ -285,6 +300,10 @@ pub struct ExportRequest {
     /// passthrough; this is a no-op when there's no transcript. Ignored for GIF.
     #[serde(default)]
     pub burn_captions: bool,
+    /// Optional subtitle sidecar to write next to the export on success. `None`
+    /// when the user chose no sidecar or there is no transcript.
+    #[serde(default)]
+    pub caption_sidecar: Option<CaptionSidecar>,
 }
 
 #[derive(Clone, Copy)]
@@ -368,4 +387,11 @@ pub struct AppState {
     /// yet). The frontend reads this to migrate its `localStorage` profiles into
     /// the backend exactly once; `set_profiles` flips it true.
     pub profiles_initialized: AtomicBool,
+    /// Embedded local store (SQLite). Backs the export queue and, later, the
+    /// recordings/exports index. See `crate::db`.
+    pub db: crate::db::Db,
+    /// Wakes the serial export worker whenever the queue changes (enqueue, cancel
+    /// of a queued item, retry). The worker `await`s this, then drains all queued
+    /// jobs one at a time. See `commands::export_queue`.
+    pub export_wake: Arc<tokio::sync::Notify>,
 }

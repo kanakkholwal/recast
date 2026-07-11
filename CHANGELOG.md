@@ -63,6 +63,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Recording and exporting keep the display and system awake, so a long capture or export is never cut short by the screen or machine going to sleep.
 - The Windows installer and update windows now carry the Recast icon and artwork.
 - Refreshed the Google Drive connection page to match the app.
+- On-device captions now work on Intel Macs, which the previous speech engine could not support. Apple Silicon, Windows, and Linux are unchanged.
 
 ### Fixed
 - Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.

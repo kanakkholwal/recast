@@ -146,6 +146,9 @@ pub fn spawn_capture_loop(
         .name("recast-capture".into())
         .spawn(move || {
             let mut source = create_capture_source(&target)?;
+            // Let frame-pushing sources (WGC) throttle their GPU readback to the
+            // encode rate instead of doing one per window repaint.
+            source.set_target_fps(target_fps);
             let fps = target_fps.max(1) as u64;
             // Exact per-tick schedule: tick `k` (counting from the pacer's
             // current anchor) fires at `base + k/fps` seconds, computed in

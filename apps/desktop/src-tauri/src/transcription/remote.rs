@@ -24,6 +24,7 @@ use tauri::{AppHandle, Manager};
 use crate::commands::extensions::is_safe_ext_id;
 
 use super::models::{CaptionModel, Engine, ModelSource};
+use super::words::{RawSeg, RawWord};
 use super::{Transcript, TranscriptSegment};
 
 const KEYRING_SERVICE: &str = "com.kanakkholwal.recast";
@@ -242,37 +243,72 @@ pub(crate) fn pcm_f32_to_wav(samples: &[f32], sample_rate: u32) -> Vec<u8> {
 
 // ── Response mapping ────────────────────────────────────────────────────────
 
-/// Map an OpenAI-compatible transcription response into caption segments.
-/// Prefers `segments[]` (verbose_json); falls back to a single block from
-/// `text`. Per-word timing is synthesized so animated styles work (the endpoint
-/// may not return word timestamps). Pure, so it's unit-tested.
+/// Seconds (as the OpenAI API reports) to the integer milliseconds
+/// `build_segments` works in.
+fn secs_to_ms(v: f64) -> i64 {
+    (v * 1000.0).round() as i64
+}
+
+/// Map an OpenAI-compatible transcription response into caption segments via the
+/// shared `build_segments`, so remote captions come out identical to on-device:
+/// `words[]` (real word timing, requested via `timestamp_granularities[]`) is
+/// preferred and grouped into display lines; otherwise `segments[]`; otherwise a
+/// single block from `text`. Pure, so it's unit-tested.
 pub(crate) fn response_to_segments(body: &Value, total_secs: f64) -> Vec<TranscriptSegment> {
-    let mut segments: Vec<TranscriptSegment> = match body.get("segments").and_then(Value::as_array)
-    {
-        Some(segs) if !segs.is_empty() => segs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, s)| {
-                let text = s.get("text").and_then(Value::as_str)?.trim().to_string();
-                if text.is_empty() {
-                    return None;
-                }
-                Some(TranscriptSegment {
-                    id: format!("seg-{i}"),
-                    start: s.get("start").and_then(Value::as_f64).unwrap_or(0.0),
-                    end: s.get("end").and_then(Value::as_f64).unwrap_or(0.0),
-                    text,
-                    words: Vec::new(),
+    // OpenAI word rows use the key `word`; segment rows use `text`. Times are in
+    // seconds on both. A server that ignores the word-granularity request simply
+    // returns no `words[]`, and build_segments falls back to segments/text.
+    let words: Vec<RawWord> = body
+        .get("words")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|w| {
+                    let text = w
+                        .get("word")
+                        .or_else(|| w.get("text"))
+                        .and_then(Value::as_str)?
+                        .trim()
+                        .to_string();
+                    if text.is_empty() {
+                        return None;
+                    }
+                    let start = w.get("start").and_then(Value::as_f64).unwrap_or(0.0);
+                    let end = w.get("end").and_then(Value::as_f64).unwrap_or(start);
+                    Some(RawWord {
+                        t0_ms: secs_to_ms(start),
+                        t1_ms: secs_to_ms(end),
+                        text,
+                    })
                 })
-            })
-            .collect(),
-        _ => {
-            let text = body.get("text").and_then(Value::as_str).unwrap_or("");
-            super::words::whole_clip_segment(text, total_secs)
-        }
-    };
-    super::words::fill_segment_words(&mut segments);
-    segments
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let segs: Vec<RawSeg> = body
+        .get("segments")
+        .and_then(Value::as_array)
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|s| {
+                    let text = s.get("text").and_then(Value::as_str)?.trim().to_string();
+                    if text.is_empty() {
+                        return None;
+                    }
+                    let start = s.get("start").and_then(Value::as_f64).unwrap_or(0.0);
+                    let end = s.get("end").and_then(Value::as_f64).unwrap_or(start);
+                    Some(RawSeg {
+                        t0_ms: secs_to_ms(start),
+                        t1_ms: secs_to_ms(end),
+                        text,
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let text = body.get("text").and_then(Value::as_str).unwrap_or("");
+    super::words::build_segments(text, total_secs, &segs, &words)
 }
 
 // ── Transcription ───────────────────────────────────────────────────────────
@@ -295,7 +331,14 @@ pub async fn transcribe_remote(
     let mut form = multipart::Form::new()
         .part("file", file_part)
         .text("model", endpoint.model.clone())
-        .text("response_format", "verbose_json");
+        .text("response_format", "verbose_json")
+        // Ask for word-level timestamps so captions render word-by-word like the
+        // on-device engine. OpenAI wants `timestamp_granularities[]` as a repeated
+        // field; also request `segment` so a fallback has data. A server that
+        // doesn't support it ignores the fields (build_segments then uses whatever
+        // shape came back).
+        .text("timestamp_granularities[]", "word")
+        .text("timestamp_granularities[]", "segment");
     // Omit for auto-detect; a bogus/empty value would make some servers 400.
     if let Some(lang) = language.filter(|l| !l.is_empty() && *l != "auto") {
         form = form.text("language", lang.to_string());
@@ -420,7 +463,29 @@ mod tests {
     }
 
     #[test]
-    fn response_prefers_segments() {
+    fn response_prefers_words_over_coarse_segments() {
+        // Word timestamps requested + returned: they win over a single coarse
+        // segment so remote captions render word-by-word like on-device.
+        let body = json!({
+            "text": "hello world. foo",
+            "segments": [ { "start": 0.0, "end": 2.0, "text": "hello world. foo" } ],
+            "words": [
+                { "word": "hello", "start": 0.0, "end": 0.3 },
+                { "word": "world.", "start": 0.3, "end": 0.6 },
+                { "word": "foo", "start": 0.7, "end": 1.0 }
+            ]
+        });
+        let segs = response_to_segments(&body, 2.0);
+        assert!(segs.len() >= 2, "a sentence break must split the line");
+        assert_eq!(segs[0].text, "hello world.");
+        assert_eq!(segs[1].text, "foo");
+        // Real timing preserved (seconds -> secs), not synthesized.
+        assert!((segs[0].words[1].start - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn response_falls_back_to_segments_without_words() {
+        // Server ignored the word-granularity request: only segments came back.
         let body = json!({
             "text": "hello world foo",
             "segments": [

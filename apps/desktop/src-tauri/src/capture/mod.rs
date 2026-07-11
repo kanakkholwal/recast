@@ -21,6 +21,14 @@ pub trait CaptureSource: Send {
 
     /// Height of the captured frames in pixels.
     fn height(&self) -> u32;
+
+    /// Hint the recording frame rate. Sources that receive frames faster than
+    /// the encoder consumes them — Windows Graphics Capture delivers on every
+    /// window repaint — use this to throttle the expensive GPU→CPU readback down
+    /// to the encode rate. A per-frame readback maps GPU memory (a GPU stall), so
+    /// doing it hundreds of times a second stalls the whole GPU. Default: ignore
+    /// (DXGI/xcap only produce a frame when the screen actually changes).
+    fn set_target_fps(&mut self, _fps: u32) {}
 }
 
 /// Create the best available capture source for the current platform.

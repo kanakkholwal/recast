@@ -1,6 +1,17 @@
-import { runExport, type RunExportOptions } from "$lib/services/export";
+import { browser } from "$app/environment";
+import { enqueueExport, type RunExportOptions } from "$lib/services/export";
 import { notifyJobDone } from "$lib/notify";
-import { cancelExport, refreshTray, type ExportStateEvent } from "$lib/ipc";
+import {
+  type ExportJobDto,
+  type ExportStateEvent,
+  cancelExportJob,
+  dismissExportJob,
+  listExportJobs,
+  listenToAllExportState,
+  listenToExportJobsChanged,
+  refreshTray,
+  retryExportJob,
+} from "$lib/ipc";
 import {
   clearJobProgress,
   setJobProgress,
@@ -9,15 +20,20 @@ import {
 import { toast } from "@recast/ui/sonner";
 
 /**
- * Export activity store: a `$state`-backed singleton that owns the export QUEUE
- * and runs it. It is the single source of truth for every export's progress and
- * result. The editor builds a self-contained item (render state captured at
- * enqueue) and hands it off here; this store runs items one at a time (no two
- * FFmpegs fighting for CPU/GPU), so an export survives closing its editor.
+ * Export activity store: a `$state`-backed singleton that mirrors the
+ * BACKEND-owned export queue (`commands::export_queue`). The backend is the single
+ * source of truth: it persists, runs (one at a time), and reports every export.
+ * This store is a READ-MODEL over that, driven by two event streams:
  *
- * The editor panel reads back the item it enqueued (ring / "Queued"), and the
- * titlebar activity center lists the whole queue. Mirrors the cloudShare /
- * gdrive upload stores.
+ *  - `export-jobs-changed` -> re-fetch `list_export_jobs` (membership + status)
+ *  - `export-state`        -> live progress/phase for the running job, and the
+ *                             one-shot success/cancel/error user feedback
+ *
+ * The editor builds a self-contained payload in the browser (render state is
+ * rasterized there) and hands it off via {@link enqueue}; from then on the job
+ * lives in the backend and survives closing its editor or restarting the app.
+ * `show`/`minimize`/`foreground` are purely local UI state (which job the editor
+ * panel is showing). Mirrors the cloudShare / gdrive upload stores.
  */
 
 export type ExportItemStatus =
@@ -25,7 +41,8 @@ export type ExportItemStatus =
   | "running"
   | "success"
   | "error"
-  | "cancelled";
+  | "cancelled"
+  | "interrupted";
 
 export type ExportItemPhase =
   | "preparing"
@@ -33,8 +50,8 @@ export type ExportItemPhase =
   | "finalizing"
   | "cancelling";
 
-/** Everything needed to run an export, captured at enqueue so it can run after
- *  the source editor is closed. */
+/** Everything needed to run an export, captured at enqueue time (render state
+ *  included) so the backend can run it after the source editor is closed. */
 export type ExportRunParams = Omit<RunExportOptions, "exportId" | "onState">;
 
 export interface ExportItem {
@@ -52,23 +69,34 @@ export interface ExportItem {
   path?: string;
   /** Failure message once it errors. */
   error?: string;
-  params: ExportRunParams;
 }
 
 function messageOf(e: unknown): string {
-  return typeof e === "string"
-    ? e
-    : e instanceof Error
-      ? e.message
-      : String(e);
+  return typeof e === "string" ? e : e instanceof Error ? e.message : String(e);
 }
 
 function baseName(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
+function fromDto(d: ExportJobDto): ExportItem {
+  return {
+    id: d.id,
+    filename: d.filename,
+    filePath: d.filePath,
+    status: d.status,
+    phase: d.phase,
+    progress: d.progress,
+    startedAt: d.startedAt ?? null,
+    path: d.path ?? undefined,
+    error: d.error ?? undefined,
+  };
+}
+
 function createExportActivityStore() {
-  // Running + queued + terminal-not-yet-dismissed items, in enqueue order.
+  // The queue as the backend reports it (queued + running + undismissed
+  // terminal), oldest first. Mutated in place (splice/push) so the array
+  // identity stays stable for Svelte reactivity.
   const items = $state<ExportItem[]>([]);
   // Whether the editor's export panel is shown. Minimizing hands tracking to the
   // activity center; reopening from there (or the toolbar) sets it back.
@@ -83,17 +111,68 @@ function createExportActivityStore() {
   const find = (id: string) => items.find((i) => i.id === id);
   const runningItem = () => items.find((i) => i.status === "running");
 
-  // Progress/phase updates from the Rust pipeline. Terminal outcomes come from
-  // the runExport promise below, so those events are ignored here.
-  function applyState(id: string, e: ExportStateEvent) {
-    const it = find(id);
-    if (!it || it.status !== "running") return;
+  /** Reconcile the local list with the backend, preserving the live progress of a
+   *  still-running job (the DB snapshot is coarse; `export-state` carries the
+   *  smooth value). */
+  async function refreshList() {
+    let rows: ExportJobDto[];
+    try {
+      rows = await listExportJobs();
+    } catch (e) {
+      console.warn("[exportActivity] list failed", e);
+      return;
+    }
+    const prev = new Map(items.map((i) => [i.id, i]));
+    const next = rows.map((d) => {
+      const item = fromDto(d);
+      const p = prev.get(d.id);
+      if (item.status === "running" && p && p.status === "running") {
+        item.progress = Math.max(item.progress, p.progress);
+        item.phase = p.phase;
+      }
+      return item;
+    });
+    items.splice(0, items.length, ...next);
+  }
+
+  /** One-shot user feedback + taskbar clear on a terminal outcome. Fired from the
+   *  `export-state` stream (the live signal) so it happens exactly once. */
+  function finishFeedback(
+    it: ExportItem,
+    status: "success" | "cancelled" | "error",
+    path?: string,
+    error?: string,
+  ) {
+    it.status = status;
+    if (status === "success") {
+      it.progress = 100;
+      it.path = path;
+    } else if (status === "error") {
+      it.error = error;
+    }
+    void clearJobProgress();
+    if (status === "success") {
+      toast.success("Export complete", { description: it.filename });
+      void notifyJobDone("Export complete", baseName(path ?? it.filename));
+      void refreshTray(null).catch(() => {});
+    } else if (status === "cancelled") {
+      toast.info("Export cancelled");
+    } else {
+      toast.error("Export failed");
+    }
+  }
+
+  /** Live progress/phase + terminal feedback from the Rust pipeline. */
+  function applyState(e: ExportStateEvent) {
+    const it = find(e.exportId);
+    if (!it) return;
     switch (e.status) {
       case "started":
       case "preparing":
-        it.phase = "preparing";
+        if (it.status === "running") it.phase = "preparing";
         break;
       case "progress": {
+        if (it.status !== "running") return;
         const next = Math.min(100, Math.max(0, e.progress));
         if (it.phase === "preparing") it.phase = "encoding";
         it.progress = Math.max(it.progress, next);
@@ -101,58 +180,34 @@ function createExportActivityStore() {
         break;
       }
       case "finalizing":
-        it.phase = "finalizing";
-        void setJobProgressIndeterminate();
+        if (it.status === "running") {
+          it.phase = "finalizing";
+          void setJobProgressIndeterminate();
+        }
+        break;
+      case "success":
+        finishFeedback(it, "success", e.path);
+        break;
+      case "cancelled":
+        finishFeedback(it, "cancelled");
+        break;
+      case "error":
+        finishFeedback(it, "error", undefined, e.message);
         break;
     }
   }
 
-  async function runItem(it: ExportItem) {
-    it.status = "running";
-    it.phase = "preparing";
-    it.progress = 0;
-    it.startedAt = Date.now();
-    void setJobProgressIndeterminate();
-    try {
-      const path = await runExport({
-        ...it.params,
-        exportId: it.id,
-        onState: (e) => applyState(it.id, e),
-      });
-      const cur = find(it.id);
-      if (cur) {
-        cur.status = "success";
-        cur.path = path;
-        cur.progress = 100;
-      }
-      toast.success("Export complete", { description: it.filename });
-      void notifyJobDone("Export complete", baseName(path));
-      void refreshTray(null).catch(() => {});
-    } catch (e) {
-      const msg = messageOf(e);
-      const cur = find(it.id);
-      if (cur) {
-        if (cur.phase === "cancelling" || /cancel/i.test(msg)) {
-          cur.status = "cancelled";
-          toast.info("Export cancelled");
-        } else {
-          cur.status = "error";
-          cur.error = msg;
-          toast.error("Export failed");
-        }
-      }
-    } finally {
-      void clearJobProgress();
-      processQueue();
-    }
+  // Module-singleton wiring: hydrate once and keep the read-model live. Guarded to
+  // the browser so importing this during SSR/prerender doesn't touch Tauri.
+  let initialized = false;
+  function ensureInit() {
+    if (initialized || !browser) return;
+    initialized = true;
+    void refreshList();
+    void listenToExportJobsChanged(() => void refreshList());
+    void listenToAllExportState((e) => applyState(e));
   }
-
-  // One export at a time: start the next queued item only when nothing runs.
-  function processQueue() {
-    if (runningItem()) return;
-    const next = items.find((i) => i.status === "queued");
-    if (next) void runItem(next);
-  }
+  ensureInit();
 
   return {
     get items() {
@@ -201,43 +256,54 @@ function createExportActivityStore() {
       foreground = false;
     },
 
-    /** Add a fully-built export to the queue; starts immediately if idle. */
+    /** Hand a fully-built export to the backend queue. Inserts an optimistic
+     *  `queued` item so the editor's ring/panel show immediately, then reconciles
+     *  with the backend on the next `export-jobs-changed`. */
     enqueue(spec: {
       id: string;
       filename: string;
       filePath: string;
       params: ExportRunParams;
     }) {
-      items.push({
-        id: spec.id,
-        filename: spec.filename,
-        filePath: spec.filePath,
-        status: "queued",
-        phase: "preparing",
-        progress: 0,
-        startedAt: null,
-        params: spec.params,
+      if (!find(spec.id)) {
+        items.push({
+          id: spec.id,
+          filename: spec.filename,
+          filePath: spec.filePath,
+          status: "queued",
+          phase: "preparing",
+          progress: 0,
+          startedAt: null,
+        });
+      }
+      void enqueueExport({ ...spec.params, exportId: spec.id }).catch((e) => {
+        const idx = items.findIndex((i) => i.id === spec.id);
+        if (idx >= 0) items.splice(idx, 1);
+        toast.error("Couldn't queue the export", {
+          description: messageOf(e),
+        });
+        console.error("[exportActivity] enqueue failed", e);
       });
-      processQueue();
     },
 
-    /** Cancel/remove an item: a queued one is dropped; a running one is stopped
-     *  (the runExport promise then rejects and flips it to cancelled). */
+    /** Cancel/remove an item: a queued one is dropped; a running one is stopped.
+     *  Optimistic locally, then reconciled via `export-jobs-changed`. */
     async cancel(id: string) {
       const it = find(id);
-      if (!it) return;
-      if (it.status === "queued") {
-        const idx = items.indexOf(it);
-        if (idx >= 0) items.splice(idx, 1);
-        return;
-      }
-      if (it.status === "running") {
-        it.phase = "cancelling";
-        try {
-          await cancelExport(id);
-        } catch (e) {
-          console.warn("[exportActivity] cancel failed", e);
+      if (it) {
+        if (it.status === "queued") {
+          const idx = items.indexOf(it);
+          if (idx >= 0) items.splice(idx, 1);
+        } else if (it.status === "running") {
+          it.phase = "cancelling";
         }
+      }
+      try {
+        await cancelExportJob(id);
+      } catch (e) {
+        // The optimistic change may now disagree with the backend; resync.
+        console.warn("[exportActivity] cancel failed", e);
+        void refreshList();
       }
     },
 
@@ -245,6 +311,27 @@ function createExportActivityStore() {
     dismiss(id: string) {
       const idx = items.findIndex((i) => i.id === id);
       if (idx >= 0 && items[idx].status !== "running") items.splice(idx, 1);
+      void dismissExportJob(id).catch((e) => {
+        console.warn("[exportActivity] dismiss failed", e);
+        void refreshList();
+      });
+    },
+
+    /** Requeue a failed/cancelled/interrupted item (payload is still on disk). */
+    retry(id: string) {
+      const it = find(id);
+      if (it) {
+        it.status = "queued";
+        it.phase = "preparing";
+        it.progress = 0;
+        it.startedAt = null;
+        it.path = undefined;
+        it.error = undefined;
+      }
+      void retryExportJob(id).catch((e) => {
+        console.warn("[exportActivity] retry failed", e);
+        void refreshList();
+      });
     },
   };
 }

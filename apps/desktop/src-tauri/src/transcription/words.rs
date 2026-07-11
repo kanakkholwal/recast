@@ -1,17 +1,18 @@
 //! Word-timestamp post-processing for captions.
 //!
-//! transcribe.cpp hands us a `Transcript` that may carry segments, per-word
-//! timing, both, or (for a text-only model) neither. Animated captions need
-//! clean, per-word timing in every case, so this module:
+//! An engine reply (ggml on-device, or a remote endpoint) may carry segments,
+//! per-word timing, both, or (for a text-only model) neither. Animated captions
+//! need clean, per-word timing in every case, so this module:
 //!   - normalizes word times (monotonic, non-overlapping, a minimum on-screen
 //!     duration so single-frame flicker doesn't read as a glitch),
 //!   - groups a flat word stream into display-line segments,
 //!   - synthesizes approximate word times for segments that arrived without any,
 //!     and
-//!   - maps the ggml result (`build_segments`) through the fallbacks above.
+//!   - maps a reply (`build_segments`) through those fallbacks so on-device and
+//!     remote captions come out identical.
 //!
-//! Pure functions over the transcript types — compiled and unit-tested
-//! regardless of the on-device engine feature.
+//! Pure functions over the transcript types — compiled and unit-tested in every
+//! build (the remote path uses them unconditionally).
 
 use super::{TranscriptSegment, TranscriptWord};
 
@@ -19,17 +20,11 @@ use super::{TranscriptSegment, TranscriptWord};
 /// styles flicker.
 const MIN_WORD_DUR: f64 = 0.06;
 /// Word count that forces a new caption line.
-/// Word-stream grouping (below) is only reached through the ggml engine and the
-/// tests; in a `--no-default-features` build it's dead but must still compile
-/// (`words` is always built), so silence dead-code there rather than gate it out.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 const MAX_WORDS_PER_LINE: usize = 7;
 /// A silent gap (seconds) between words that forces a new caption line.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 const LINE_GAP: f64 = 0.6;
 
 /// A token that is only punctuation — glued onto the prior word, not shown alone.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 fn is_punctuation(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty()
@@ -38,7 +33,6 @@ fn is_punctuation(text: &str) -> bool {
 }
 
 /// True when the token ends a sentence (forces a line break after it).
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 fn ends_sentence(text: &str) -> bool {
     matches!(
         text.trim_end().chars().last(),
@@ -81,7 +75,6 @@ pub(crate) fn clean_word_times(words: &mut [TranscriptWord]) {
 
 /// Glue pure-punctuation tokens onto the preceding word (Parakeet can emit a
 /// trailing `.`/`,` as its own token).
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 fn glue_punctuation(words: Vec<TranscriptWord>) -> Vec<TranscriptWord> {
     let mut out: Vec<TranscriptWord> = Vec::with_capacity(words.len());
     for w in words {
@@ -97,7 +90,6 @@ fn glue_punctuation(words: Vec<TranscriptWord>) -> Vec<TranscriptWord> {
     out
 }
 
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 fn push_segment(
     segments: &mut Vec<TranscriptSegment>,
     cur: &mut Vec<TranscriptWord>,
@@ -127,7 +119,6 @@ fn push_segment(
 /// Group a flat, time-ordered word stream into display-line segments, breaking
 /// on sentence punctuation, a long pause, or a max word count. Times are cleaned
 /// first, so the returned segments carry normalized per-word timing.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 pub(crate) fn group_words_into_segments(words: Vec<TranscriptWord>) -> Vec<TranscriptSegment> {
     let mut words = glue_punctuation(words);
     clean_word_times(&mut words);
@@ -210,48 +201,52 @@ pub(crate) fn fill_segment_words(segments: &mut [TranscriptSegment]) {
     }
 }
 
-// - ggml result mapping -
+// - Engine result mapping -
 //
-// transcribe.cpp returns flat `segments` and `words` in milliseconds; segments
-// index into the word list via `first_word`/`n_words`. These plain structs let
-// the mapping (`build_segments`) be unit-tested without loading a model. Used
-// only by the ggml engine, so they're dead in a `--no-default-features` build.
+// Both engines feed captions the same way: the ggml engine and the remote path
+// each reduce their reply to these plain (ms) structs and call `build_segments`,
+// so on-device and remote captions come out identical. Plain structs also let the
+// mapping be unit-tested without a model or a network call.
 
-/// A transcribe.cpp segment, reduced to what caption mapping needs. Times in ms.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
+/// A segment row, reduced to what caption mapping needs (used only when a reply
+/// carries no per-word timing). Times in ms.
 pub(crate) struct RawSeg {
     pub t0_ms: i64,
     pub t1_ms: i64,
-    /// Index of this segment's first word in the flat word list (-1 = none).
-    pub first_word: i64,
-    pub n_words: i64,
     pub text: String,
 }
 
-/// A transcribe.cpp word, reduced to what caption mapping needs. Times in ms.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
+/// A word row, reduced to what caption mapping needs. Times in ms.
 pub(crate) struct RawWord {
     pub t0_ms: i64,
     pub t1_ms: i64,
     pub text: String,
 }
 
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
 fn ms_to_secs(v: i64) -> f64 {
     v as f64 / 1000.0
 }
 
-/// Map a segment's `[first_word, first_word + n_words)` slice of the flat word
-/// list into caption words, dropping empties. Bounds-checked: an out-of-range or
-/// negative index yields no words (the caller then synthesizes them).
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
-fn slice_words(words: &[RawWord], first: i64, n: i64) -> Vec<TranscriptWord> {
-    if first < 0 || n <= 0 || first as usize >= words.len() {
-        return Vec::new();
-    }
-    let start = first as usize;
-    let end = ((first + n) as usize).min(words.len());
-    words[start..end]
+/// Turn a transcribe.cpp result into caption segments. Captions want consistent,
+/// word-timed display lines regardless of how the model chunks its output, so:
+///   1. real per-word timing (the primary path) -> group the flat word stream
+///      into display lines. Whisper emits many short segments and Parakeet emits
+///      one long segment holding every word; grouping the words gives both the
+///      same word-by-word lines (this is the behavior the old ONNX Parakeet path
+///      produced),
+///   2. segment timing only, no words -> map each segment, synthesizing per-word
+///      timing so animation still has something to drive,
+///   3. text only -> one block spanning the clip with synthesized word timing.
+pub(crate) fn build_segments(
+    full_text: &str,
+    total_secs: f64,
+    segs: &[RawSeg],
+    words: &[RawWord],
+) -> Vec<TranscriptSegment> {
+    // 1. Prefer real word timing over the model's own segmentation. A model that
+    //    returns the whole utterance as one segment (Parakeet) must not become a
+    //    single caption line when it carried per-word times.
+    let flat: Vec<TranscriptWord> = words
         .iter()
         .filter_map(|w| {
             let text = w.text.trim().to_string();
@@ -261,42 +256,29 @@ fn slice_words(words: &[RawWord], first: i64, n: i64) -> Vec<TranscriptWord> {
                 text,
             })
         })
-        .collect()
-}
+        .collect();
+    if !flat.is_empty() {
+        return group_words_into_segments(flat);
+    }
 
-/// Turn a transcribe.cpp result into caption segments, richest-shape-first:
-///   1. real segments -> map each, attaching its real word timing (synthesizing
-///      per-word timing only where a segment carried none),
-///   2. no segments but a flat word stream -> group words into display lines,
-///   3. text only -> one block spanning the clip with synthesized word timing.
-#[cfg_attr(not(feature = "ggml"), allow(dead_code))]
-pub(crate) fn build_segments(
-    full_text: &str,
-    total_secs: f64,
-    segs: &[RawSeg],
-    words: &[RawWord],
-) -> Vec<TranscriptSegment> {
+    // 2. Segment timing only: map each segment and synthesize per-word timing.
     if !segs.is_empty() {
         let mut out: Vec<TranscriptSegment> = Vec::with_capacity(segs.len());
         for (i, s) in segs.iter().enumerate() {
             let text = s.text.trim().to_string();
-            let mut seg_words = slice_words(words, s.first_word, s.n_words);
-            if text.is_empty() && seg_words.is_empty() {
+            if text.is_empty() {
                 continue;
             }
             let start = ms_to_secs(s.t0_ms).max(0.0);
             let end = ms_to_secs(s.t1_ms).max(start);
-            clean_word_times(&mut seg_words);
             let mut seg = TranscriptSegment {
                 id: format!("seg-{i}"),
                 start,
                 end,
                 text,
-                words: seg_words,
+                words: Vec::new(),
             };
-            if seg.words.is_empty() {
-                seg.words = synthesize_words(&seg);
-            }
+            seg.words = synthesize_words(&seg);
             out.push(seg);
         }
         if !out.is_empty() {
@@ -304,23 +286,7 @@ pub(crate) fn build_segments(
         }
     }
 
-    if !words.is_empty() {
-        let flat: Vec<TranscriptWord> = words
-            .iter()
-            .filter_map(|w| {
-                let text = w.text.trim().to_string();
-                (!text.is_empty()).then(|| TranscriptWord {
-                    start: ms_to_secs(w.t0_ms).max(0.0),
-                    end: ms_to_secs(w.t1_ms),
-                    text,
-                })
-            })
-            .collect();
-        if !flat.is_empty() {
-            return group_words_into_segments(flat);
-        }
-    }
-
+    // 3. Text only.
     let mut segments = whole_clip_segment(full_text, total_secs);
     fill_segment_words(&mut segments);
     segments
@@ -462,46 +428,36 @@ mod tests {
     }
 
     #[test]
-    fn build_uses_real_segment_and_word_timing() {
-        // Two segments indexing into a flat 3-word list.
+    fn build_prefers_real_word_timing_over_model_segmentation() {
+        // Parakeet-style: ONE segment covering the whole clip, but real per-word
+        // times. Words must win so it becomes word-timed lines, not one blob line.
         let words = vec![
             rw(0, 300, "hello"),
-            rw(300, 600, "world"),
+            rw(300, 600, "world."),
             rw(700, 1000, "next"),
         ];
-        let segs = vec![
-            RawSeg {
-                t0_ms: 0,
-                t1_ms: 600,
-                first_word: 0,
-                n_words: 2,
-                text: "hello world".into(),
-            },
-            RawSeg {
-                t0_ms: 700,
-                t1_ms: 1000,
-                first_word: 2,
-                n_words: 1,
-                text: "next".into(),
-            },
-        ];
-        let out = build_segments("hello world next", 1.0, &segs, &words);
-        assert_eq!(out.len(), 2);
-        assert_eq!(out[0].words.len(), 2);
-        assert!((out[0].start - 0.0).abs() < 1e-9);
-        assert!((out[0].words[1].start - 0.3).abs() < 1e-9); // real ms -> secs
-        assert_eq!(out[1].text, "next");
-        assert_eq!(out[1].words.len(), 1);
-    }
-
-    #[test]
-    fn build_synthesizes_words_for_a_segment_without_any() {
-        // Segment present but no word rows (first_word = -1) -> synthesize.
         let segs = vec![RawSeg {
             t0_ms: 0,
             t1_ms: 1000,
-            first_word: -1,
-            n_words: 0,
+            text: "hello world. next".into(),
+        }];
+        let out = build_segments("hello world. next", 1.0, &segs, &words);
+        assert!(
+            out.len() >= 2,
+            "a single blob segment must be split into word-timed lines"
+        );
+        assert_eq!(out[0].text, "hello world.");
+        assert_eq!(out[1].text, "next");
+        // Real ms -> secs timing preserved (not synthesized).
+        assert!((out[0].words[1].start - 0.3).abs() < 1e-9);
+    }
+
+    #[test]
+    fn build_synthesizes_words_for_segments_without_word_timing() {
+        // Segment-only model (no word rows) -> map the segment, synthesize words.
+        let segs = vec![RawSeg {
+            t0_ms: 0,
+            t1_ms: 1000,
             text: "one two three".into(),
         }];
         let out = build_segments("one two three", 1.0, &segs, &[]);

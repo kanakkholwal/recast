@@ -72,6 +72,27 @@
 		cancelling: "Cancelling export",
 	};
 
+	// "Clear all" dismisses every FINISHED item across the panel, leaving anything
+	// still in progress or queued/uploading. Reuses each store's per-item dismiss.
+	const clearableExports = $derived(
+		exportItems.filter((i) => i.status !== "running" && i.status !== "queued"),
+	);
+	const clearableCloud = $derived(
+		cloudItems.filter((u) => u.status !== "uploading"),
+	);
+	const clearableDrive = $derived(
+		driveItems.filter((u) => u.status !== "uploading"),
+	);
+	const clearableCount = $derived(
+		clearableExports.length + clearableCloud.length + clearableDrive.length,
+	);
+
+	function clearAll() {
+		for (const it of clearableExports) exportActivity.dismiss(it.id);
+		for (const u of clearableCloud) cloudShare.dismiss(u.sourcePath);
+		for (const u of clearableDrive) gdrive.dismissUpload(u.uploadId);
+	}
+
 	let open = $state(false);
 
 	// A finished export opens the Exports page; an active/queued one reopens its
@@ -148,12 +169,23 @@
 		{/snippet}
 	</Popover.Trigger>
 	<Popover.Content align="end" sideOffset={8} class="w-80 p-0">
-		<div class="border-b border-border/50 px-3 py-2">
+		<div
+			class="flex items-center justify-between gap-2 border-b border-border/50 px-3 py-2"
+		>
 			<span
 				class="text-[11px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
 			>
 				Activity
 			</span>
+			{#if clearableCount > 0}
+				<button
+					type="button"
+					onclick={clearAll}
+					class="cursor-pointer rounded text-[10.5px] font-medium text-muted-foreground/70 transition-colors hover:text-foreground focus-visible:text-foreground focus-visible:outline-none"
+				>
+					Clear all
+				</button>
+			{/if}
 		</div>
 
 		{#if total === 0}
@@ -187,7 +219,7 @@
 								<span
 									class={cn(
 										"grid size-7 shrink-0 place-items-center rounded-lg",
-										item.status === "error"
+										item.status === "error" || item.status === "interrupted"
 											? "bg-destructive/10 text-destructive"
 											: item.status === "queued"
 												? "bg-muted text-muted-foreground"
@@ -216,6 +248,8 @@
 											Export complete
 										{:else if item.status === "cancelled"}
 											Export cancelled
+										{:else if item.status === "interrupted"}
+											Export interrupted
 										{:else}
 											Export failed
 										{/if}
@@ -224,7 +258,8 @@
 										class="mt-0.5 truncate text-[11px] text-muted-foreground"
 										title={item.filename}
 									>
-										{item.status === "error" && item.error
+										{(item.status === "error" || item.status === "interrupted") &&
+										item.error
 											? item.error
 											: item.filename}
 									</p>
@@ -291,6 +326,17 @@
 									onclick={() => openExportItem(item)}
 								>
 									<ExternalLink class="size-3" /> Exports
+								</Button>
+							</div>
+						{:else if item.status === "error" || item.status === "cancelled" || item.status === "interrupted"}
+							<div class="flex items-center justify-end">
+								<Button
+									size="xs"
+									variant="ghost"
+									class="h-7 gap-1.5"
+									onclick={() => exportActivity.retry(item.id)}
+								>
+									<RefreshCw class="size-3" /> Retry
 								</Button>
 							</div>
 						{/if}

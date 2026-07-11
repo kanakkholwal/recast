@@ -11,11 +11,8 @@ import { expandTextAnnotations } from "$lib/export/rasterize-text";
 import {
 	type ExportGifSettings,
 	type ExportSpeed,
-	type ExportStateEvent,
 	type Transcript,
-	exportCaptions,
-	exportVideo,
-	listenToExportState,
+	enqueueExport as enqueueExportIpc,
 } from "$lib/ipc";
 import {
 	type EditorRenderState,
@@ -39,7 +36,7 @@ export interface BuildExportRenderStateOptions {
 }
 
 export interface ExportRenderStatePayload {
-	/** The render state to hand to {@link runExport} / `exportVideo`. */
+	/** The render state to hand to {@link enqueueExport}. */
 	renderState: EditorRenderState;
 	metadata: VideoMetadata | null;
 }
@@ -48,7 +45,7 @@ export interface ExportRenderStatePayload {
  * Build the render payload the Rust pipeline consumes from a project: runs the
  * two hybrid-raster passes (text → PNG, cursor → sprite sheet) and honors the
  * per-lane enable toggles (focus/annotations/cuts) without mutating the store.
- * Fully serializable, so an agent can build, inspect, and pass it to {@link runExport}.
+ * Fully serializable, so an agent can build, inspect, and pass it to {@link enqueueExport}.
  */
 export async function buildExportRenderState(
 	store: EditorStore,
@@ -236,55 +233,30 @@ export interface RunExportOptions {
 	fps?: number | null;
 	/** Caption emission (burn-in + sidecar). Built via {@link buildCaptionExport}. */
 	captions?: CaptionExportPayload;
-	/** Progress/lifecycle events from the Rust pipeline. The service manages
-	 *  listener registration and teardown around the export call. */
-	onState?(event: ExportStateEvent): void;
-}
-
-/** Swap a file path's extension, e.g. `foo.mp4` → `foo.vtt`. */
-function withExtension(path: string, ext: string): string {
-	return path.replace(/\.[^./\\]+$/, "") + "." + ext;
 }
 
 /**
- * Run an export end to end: register the progress listener, invoke the Rust
- * pipeline, tear the listener down when finished. Resolves to the output path;
- * rejects (or emits an `error`/`cancelled` event) on failure. UI lifecycle
- * stays with the caller; this owns only the IPC round-trip and listener.
+ * Queue an export on the backend. The Rust export queue owns the run: it persists
+ * the payload, executes it on the single serial worker (so two exports never
+ * fight for CPU/GPU), writes the caption sidecar on success, and reports progress
+ * via `export-state` events. Resolves once the job is durably queued; the export
+ * then runs in the background and survives closing the editor that built it.
+ *
+ * Editor-independent, so a headless/MCP caller can build a render state and hand
+ * it off the same way. Progress + completion are observed via the queue (see
+ * `listExportJobs` / `export-state`), not a returned promise of the output path.
  */
-export async function runExport(opts: RunExportOptions): Promise<string> {
-	const unlisten = opts.onState
-		? await listenToExportState(opts.exportId, opts.onState)
-		: null;
-	try {
-		const path = await exportVideo(
-			opts.inputPath,
-			opts.format,
-			opts.quality,
-			opts.renderState,
-			opts.exportId,
-			opts.gifSettings,
-			opts.speed ?? "balanced",
-			opts.fps,
-			opts.captions?.burnCaptions ?? false,
-		);
-		// Sidecar subtitle file next to the export, on the output timeline so it
-		// lines up with the rendered video. Best-effort: a sidecar failure must
-		// not fail an otherwise-good export.
-		const sidecar = opts.captions?.sidecar;
-		if (sidecar) {
-			try {
-				await exportCaptions(
-					sidecar.transcript,
-					sidecar.format,
-					withExtension(path, sidecar.format),
-				);
-			} catch (e) {
-				console.warn("caption sidecar write failed", e);
-			}
-		}
-		return path;
-	} finally {
-		unlisten?.();
-	}
+export async function enqueueExport(opts: RunExportOptions): Promise<void> {
+	await enqueueExportIpc({
+		inputPath: opts.inputPath,
+		format: opts.format,
+		quality: opts.quality,
+		renderState: opts.renderState,
+		exportId: opts.exportId,
+		gifSettings: opts.gifSettings,
+		speed: opts.speed,
+		fps: opts.fps,
+		burnCaptions: opts.captions?.burnCaptions ?? false,
+		captionSidecar: opts.captions?.sidecar ?? null,
+	});
 }
