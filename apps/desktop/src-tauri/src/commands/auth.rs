@@ -87,6 +87,7 @@ pub(crate) fn init_cloud_api_override(value: Option<String>) {
 ///      builds skip this so a stray/injected env can't silently redirect
 ///      auth traffic to an attacker host.
 ///   3. The bundled default endpoint.
+///
 /// Trailing slashes are stripped at every layer.
 pub(crate) fn cloud_api_url() -> String {
     if let Some(raw) = CLOUD_API_OVERRIDE.read().clone() {

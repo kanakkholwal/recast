@@ -248,18 +248,65 @@ export function loadProfiles(): RecordingProfile[] {
 	return ensureExactlyOneDefault(migrated);
 }
 
-/** Persist profiles to localStorage. Silently no-ops if storage is unavailable. */
-export function persistProfiles(list: RecordingProfile[]): void {
-	safeStorage.set(PROFILES_STORAGE_KEY, list);
-}
-
 /** Read the on/off flag for the whole profile system. Defaults to enabled. */
 export function loadProfilesEnabled(): boolean {
 	return safeStorage.get<boolean>(PROFILES_ENABLED_STORAGE_KEY, true);
 }
 
-export function persistProfilesEnabled(enabled: boolean): void {
-	safeStorage.set(PROFILES_ENABLED_STORAGE_KEY, enabled);
+/**
+ * Read the pre-backend `localStorage` profiles, or `null` when the key was never
+ * written. The backend is now the store; this exists only so the store can
+ * migrate an existing user's saved profiles into it once, then delete the key.
+ * A present-but-empty key still returns a (migrated) list so `enabled` carries
+ * over. Distinguished from `loadProfiles`, which seeds instead of returning null.
+ */
+export function readLegacyProfiles():
+	| { profiles: RecordingProfile[]; enabled: boolean }
+	| null {
+	// `null` sentinel: absent key -> null; present key -> the parsed value.
+	const raw = safeStorage.get<unknown[] | null>(PROFILES_STORAGE_KEY, null);
+	if (raw === null) return null;
+	return { profiles: loadProfiles(), enabled: loadProfilesEnabled() };
+}
+
+/** Delete the legacy `localStorage` profile keys once migrated to the backend. */
+export function clearLegacyProfileStorage(): void {
+	safeStorage.remove(PROFILES_STORAGE_KEY);
+	safeStorage.remove(PROFILES_ENABLED_STORAGE_KEY);
+}
+
+/**
+ * Resolve the profile set on hydrate, given the backend snapshot and this
+ * client's legacy `localStorage` read (`null` if it never had one). Returns the
+ * set to show plus whether to persist it back to the backend:
+ *   - backend already persisted (`initialized`) -> adopt it, no push (steady state).
+ *   - backend only seeded + legacy present -> migrate the user's saved profiles up.
+ *   - backend only seeded + no legacy (fresh install) -> persist the backend seed.
+ * Pure so it can be unit-tested.
+ */
+export function reconcileProfileHydration(
+	backend: { profiles: RecordingProfile[]; enabled: boolean; initialized: boolean },
+	legacy: { profiles: RecordingProfile[]; enabled: boolean } | null,
+): { profiles: RecordingProfile[]; enabled: boolean; push: boolean } {
+	if (backend.initialized) {
+		return {
+			profiles: ensureExactlyOneDefault(backend.profiles),
+			enabled: backend.enabled,
+			push: false,
+		};
+	}
+	if (legacy) {
+		return {
+			profiles: ensureExactlyOneDefault(legacy.profiles),
+			enabled: legacy.enabled,
+			push: true,
+		};
+	}
+	return {
+		profiles: ensureExactlyOneDefault(backend.profiles),
+		enabled: backend.enabled,
+		push: true,
+	};
 }
 
 /** The default profile, or the first one if no default flag is set; null only

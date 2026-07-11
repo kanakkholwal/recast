@@ -1994,6 +1994,9 @@ fn smoothstep(edge0: f64, edge1: f64, x: f64) -> f64 {
     t * t * (3.0 - 2.0 * t)
 }
 
+// Hot per-pixel blend: discrete channel args avoid packing/unpacking a struct
+// in the inner loop.
+#[allow(clippy::too_many_arguments)]
 fn blend_pixel(buf: &mut [u8], width: usize, x: usize, y: usize, r: u8, g: u8, b: u8, alpha: f64) {
     if alpha <= 0.0 {
         return;

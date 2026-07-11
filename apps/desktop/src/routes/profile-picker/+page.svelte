@@ -24,11 +24,14 @@
   let highlightedId = $state<string | null>(initialSelected);
 
   onMount(() => {
-    profilesStore.hydrate();
-    if (!highlightedId) {
-      const def = profilesStore.default();
-      if (def) highlightedId = def.id;
-    }
+    // Profiles load from the backend now (async); highlight the default once
+    // they arrive rather than reading synchronously on mount.
+    void profilesStore.hydrate().then(() => {
+      if (!highlightedId) {
+        const def = profilesStore.default();
+        if (def) highlightedId = def.id;
+      }
+    });
   });
 
   function selectProfile(profile: RecordingProfile) {

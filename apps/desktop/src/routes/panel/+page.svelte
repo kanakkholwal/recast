@@ -516,6 +516,34 @@
       },
     );
 
+    // Reflect a recording the panel did NOT start (CLI `rec start`, or a
+    // `--timeout` auto-stop) in the transport. Panel-initiated takes set these
+    // flags first, so the guard makes this a no-op for them.
+    const unlistenRecStarted = listen<{ startedAtUnixMs: number }>(
+      "recording:started",
+      (event) => {
+        if (isRecording || isStarting) return;
+        clearCountdown();
+        now = Date.now();
+        recordingStartTime = event.payload.startedAtUnixMs ?? now;
+        isPaused = false;
+        pausedAccumMs = 0;
+        pausedSince = null;
+        isRecording = true;
+      },
+    );
+    const unlistenRecStopped = listen("recording:stopped", () => {
+      if (!isRecording) return;
+      recordingStartTime = null;
+      isPaused = false;
+      pausedAccumMs = 0;
+      pausedSince = null;
+      isRecording = false;
+      isStopping = false;
+      closeCameraPreview();
+      emit("refresh-recordings");
+    });
+
     window.addEventListener("keydown", handleGlobalShortcut);
 
     // Intercept close during a live recording so it's finalized, not lost.
@@ -555,6 +583,8 @@
       unlistenIntent.then((fn) => fn());
       unlistenCameraClosed.then((fn) => fn());
       unlistenIntentChanged.then((fn) => fn());
+      unlistenRecStarted.then((fn) => fn());
+      unlistenRecStopped.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });
@@ -584,6 +614,9 @@
       void refreshCameraValidation(defaultCam.deviceId);
     }
 
+    // Profiles load from the backend now (async), so wait for them before
+    // applying the default; the seeded device defaults above stand until then.
+    await profilesStore.hydrate();
     if (!profilesStore.enabled) return;
     const def = profilesStore.default();
     if (!def) return;

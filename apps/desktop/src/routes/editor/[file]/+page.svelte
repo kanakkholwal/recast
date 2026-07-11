@@ -203,6 +203,15 @@
     }
   }
 
+  // Tell the export store a panel-hosting editor is on screen. A fresh editor
+  // never has the panel open yet, so clear any stale foreground left by an
+  // "Open export" click from another route.
+  onMount(() => {
+    exportActivity.setEditorPresent(true);
+    exportActivity.minimize();
+    return () => exportActivity.setEditorPresent(false);
+  });
+
   onDestroy(() => {
     stopAutosave();
     log.clearRecast();
@@ -210,9 +219,11 @@
     if (documentPath) {
       clearAutosave(documentPath).catch(() => {});
     }
-    // Export is bound to this editor session; drop it so its progress/result
-    // doesn't linger in the app-wide activity center after leaving.
-    exportActivity.dismiss();
+    // Leave any in-flight/finished export in the store so it keeps tracking in
+    // the activity center after navigation (the Rust process + global state
+    // listener outlive this page). Just drop the foreground flag so the bell
+    // shows it instead of assuming its panel is still on screen.
+    exportActivity.minimize();
   });
 
   // Seek video + audio back to trimStart and resume. Used by both loop paths
@@ -999,6 +1010,7 @@
     exportFinalizing = false;
     exportPrepDetail = null;
     activeExportId = exportId;
+    exportSessionActive = true;
     exportActivity.begin(exportId, data.filename);
     exportStartedAt = Date.now();
     exportNow = exportStartedAt;
@@ -1123,6 +1135,7 @@
 
   function dismissExportResult() {
     exportActivity.dismiss();
+    exportSessionActive = false;
   }
 
   // Watch the finished export in the in-app player. Opening it dismisses the
@@ -1155,18 +1168,25 @@
   // Options phase is UI-only (the picker before Export); progress/result phases
   // derive from the pipeline state, so the dialog is one surface that morphs.
   let exportOptionsOpen = $state(false);
+  // This editor drives the export UI only for an export it started (or is
+  // picking options for). Exports run in the background (Rust process + a global
+  // state listener), so a job from another editor session shows in the activity
+  // center but must not hijack this panel/toolbar; this flag gates that.
+  let exportSessionActive = $state(false);
   const exportPhase: ExportPanelPhase | null = $derived(
-    store.isExporting
-      ? "progress"
-      : exportResult?.kind === "success"
-        ? "success"
-        : exportResult?.kind === "cancelled"
-          ? "cancelled"
-          : exportResult?.kind === "error"
-            ? "error"
-            : exportOptionsOpen
-              ? "options"
-              : null,
+    !exportSessionActive
+      ? null
+      : store.isExporting
+        ? "progress"
+        : exportResult?.kind === "success"
+          ? "success"
+          : exportResult?.kind === "cancelled"
+            ? "cancelled"
+            : exportResult?.kind === "error"
+              ? "error"
+              : exportOptionsOpen
+                ? "options"
+                : null,
   );
   // The panel is shown only when a phase is active AND it's foregrounded.
   // Minimizing keeps the export alive but hands tracking to the activity center.
@@ -1212,12 +1232,21 @@
 
   function openExportOptions() {
     if (store.isExporting) return;
+    // One export at a time: a background export (this session's or another's)
+    // must finish first, so a second FFmpeg doesn't fight it for the CPU.
+    if (exportActivity.running) {
+      toast.info("An export is already running. It will finish in the background.");
+      return;
+    }
+    exportSessionActive = true;
     exportActivity.show();
     exportOptionsOpen = true;
   }
 
   function dismissExportOptions() {
     exportOptionsOpen = false;
+    exportSessionActive = false;
+    exportActivity.minimize();
   }
 
   function confirmExportOptions() {
@@ -1511,14 +1540,16 @@
     },
     {
       key: "encode" as const,
-      // Live hint: show the backend's prep sub-step ("Rendering cursor &
-      // annotations") until real encode progress arrives, so this row is never a
-      // stalled "Encode frames · pending" during the Rust prep window.
+      // The single FFmpeg pass composites (stitches cuts, overlays cursor /
+      // annotations / captions, applies zoom) AND encodes every frame, so
+      // "Render frames" names the real work, not just the codec half. Live hint:
+      // show the backend's prep sub-step until real progress arrives so this row
+      // is never a stalled "Render frames · pending" during the Rust prep window.
       label: exportFinalizing
         ? "Finalise file"
         : !exportHasProgress && exportPrepDetail
           ? exportPrepDetail
-          : "Encode frames",
+          : "Render frames",
       state:
         prepSending !== "done"
           ? "pending"
@@ -1832,7 +1863,7 @@
           {:else if isPreparing}
             Preparing export
           {:else}
-            Encoding video
+            Rendering video
           {/if}
         </h3>
         <p class="mt-0.5 text-[11px] text-muted-foreground">

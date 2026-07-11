@@ -18,11 +18,17 @@ use super::{TranscriptSegment, TranscriptWord};
 /// styles flicker.
 const MIN_WORD_DUR: f64 = 0.06;
 /// Word count that forces a new caption line.
+/// Word-stream grouping (below) is only consumed by the Parakeet captions engine
+/// and the tests; in a captions-off build it's dead but must still compile
+/// (`words` is always built), so silence dead-code there rather than gate it out.
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 const MAX_WORDS_PER_LINE: usize = 7;
 /// A silent gap (seconds) between words that forces a new caption line.
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 const LINE_GAP: f64 = 0.6;
 
 /// A token that is only punctuation — glued onto the prior word, not shown alone.
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 fn is_punctuation(text: &str) -> bool {
     let t = text.trim();
     !t.is_empty()
@@ -31,6 +37,7 @@ fn is_punctuation(text: &str) -> bool {
 }
 
 /// True when the token ends a sentence (forces a line break after it).
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 fn ends_sentence(text: &str) -> bool {
     matches!(
         text.trim_end().chars().last(),
@@ -73,6 +80,7 @@ pub(crate) fn clean_word_times(words: &mut [TranscriptWord]) {
 
 /// Glue pure-punctuation tokens onto the preceding word (Parakeet can emit a
 /// trailing `.`/`,` as its own token).
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 fn glue_punctuation(words: Vec<TranscriptWord>) -> Vec<TranscriptWord> {
     let mut out: Vec<TranscriptWord> = Vec::with_capacity(words.len());
     for w in words {
@@ -88,6 +96,7 @@ fn glue_punctuation(words: Vec<TranscriptWord>) -> Vec<TranscriptWord> {
     out
 }
 
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 fn push_segment(
     segments: &mut Vec<TranscriptSegment>,
     cur: &mut Vec<TranscriptWord>,
@@ -117,6 +126,7 @@ fn push_segment(
 /// Group a flat, time-ordered word stream into display-line segments, breaking
 /// on sentence punctuation, a long pause, or a max word count. Times are cleaned
 /// first, so the returned segments carry normalized per-word timing.
+#[cfg_attr(not(feature = "captions"), allow(dead_code))]
 pub(crate) fn group_words_into_segments(words: Vec<TranscriptWord>) -> Vec<TranscriptSegment> {
     let mut words = glue_punctuation(words);
     clean_word_times(&mut words);

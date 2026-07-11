@@ -83,6 +83,10 @@
   const usable = $derived(
     models.filter((m) => m.installed && m.runnable && m.runtimeAvailable),
   );
+  // Remote endpoints transcribe over HTTP, so they work even where the on-device
+  // engine isn't in the build (Intel Mac). Their presence lets us offer captions
+  // there instead of a dead end.
+  const hasRemoteModels = $derived(models.some((m) => m.source === "remote"));
   // A recording can have an audio path but no actual audio stream (mic + system
   // audio off), so `hasAudio` is the ffprobe result, not just path existence.
   // `null` = not yet probed → fall back to path presence so the UI doesn't flash
@@ -317,17 +321,22 @@
       {/if}
     {/snippet}
 
-    {#if caps && !caps.captionsAvailable}
+    {#if caps && !caps.captionsAvailable && !hasRemoteModels}
       <!-- On-device captions aren't in this build (Intel Mac, no ONNX Runtime
-           for x86_64-apple-darwin). The rest of the editor works normally. -->
+           for x86_64-apple-darwin). Remote endpoints still work here, so point
+           the user at them rather than dead-ending. -->
       <div
         class="flex flex-col items-center gap-1.5 rounded-lg border border-dashed border-border/60 bg-card/40 px-4 py-6 text-center"
       >
         <Cpu size={20} class="text-muted-foreground" />
-        <p class="text-[12px] font-medium text-foreground">Captions not available on Intel Mac</p>
-        <p class="max-w-60 text-[10.5px] leading-relaxed text-muted-foreground">
-          On-device transcription needs a runtime Apple no longer ships for Intel
-          Macs. Everything else in the editor works. Captions run on Apple Silicon,
+        <p class="text-[12px] font-medium text-foreground">
+          On-device captions aren't available on this Mac
+        </p>
+        <p class="max-w-64 text-[10.5px] leading-relaxed text-muted-foreground">
+          Apple no longer ships the runtime on-device models need for Intel Macs.
+          You can still caption through a remote endpoint: enable
+          <span class="font-medium text-foreground">Remote transcription</span> in
+          Settings &rsaquo; Advanced. On-device captions run on Apple Silicon,
           Windows, and Linux.
         </p>
       </div>
@@ -345,6 +354,17 @@
         </p>
       </div>
     {:else}
+    {#if caps && !caps.captionsAvailable}
+      <!-- On-device engine absent (Intel Mac), but remote endpoints work here.
+           Explain why only remote models are selectable. -->
+      <div
+        class="mb-2 flex items-start gap-1.5 rounded-lg border border-warning/30 bg-warning/10 px-2.5 py-2 text-[10.5px] leading-tight text-warning"
+      >
+        <Cpu size={12} class="mt-px shrink-0" />
+        <span>On-device models aren't available on this Mac. Only remote endpoints
+          can transcribe here.</span>
+      </div>
+    {/if}
     <!-- Combobox selector: only the chosen model shows here; the full list
          lives in the popover so the tab stays compact. -->
     <Popover.Root open={pickerOpen} onOpenChange={(v) => (pickerOpen = v)}>

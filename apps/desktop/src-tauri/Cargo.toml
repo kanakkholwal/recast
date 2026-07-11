@@ -6,7 +6,10 @@ authors = ["kanak kholwal"]
 license = ""
 repository = "https://github.com/kanakkholwal/recast"
 edition = "2021"
-rust-version = "1.77.2"
+# Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82
+# (PanicHookInfo, etc.). CI builds on stable, so this only documents the floor
+# and keeps clippy's `incompatible_msrv` honest.
+rust-version = "1.82.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -89,6 +92,15 @@ ort = { version = "=2.0.0-rc.12", default-features = false, features = ["downloa
 # feature) is intentionally OFF — it would add the LLVM+CMake toolchain; revisit
 # when we want Whisper models. See docs/captions-transcription-plan.md.
 transcribe-rs = { version = "0.3.8", default-features = false, features = ["onnx"], optional = true }
+# PROTOTYPE (behind the `ggml` feature, off by default): Handy's transcribe.cpp
+# — a ggml-native engine (GGUF) covering 16+ model families with Metal/Vulkan/CUDA
+# + tinyBLAS CPU. Built from source (its sys crate runs CMake), so unlike `ort` it
+# has NO prebuilt-binary gap → would restore on-device captions on Intel Mac and
+# unify the engine. Git dep (not yet on crates.io); pin to a rev before shipping.
+# We're evaluating build feasibility + CI cost via `--features ggml` (see the
+# ci-ggml-prototype workflow) before deciding to adopt it. NOT wired into the
+# picker yet.
+transcribe-cpp = { git = "https://github.com/handy-computer/transcribe.cpp", optional = true }
 keepawake = "0.6.0"
 tauri-plugin-notification = "2.3.3"
 # Argument parser for the headless CLI branch in `main`. One parser covers the
@@ -220,6 +232,11 @@ captions = ["dep:transcribe-rs", "dep:ort"]
 # (models.rs). Not yet exercised in CI — treat as experimental until a whisper
 # build is wired into the pipeline.
 whisper = ["captions", "transcribe-rs/whisper-cpp"]
+# PROTOTYPE engine (off by default): Handy's transcribe.cpp / ggml backend.
+# Independent of `captions`/`ort` on purpose — the whole point is to evaluate it
+# as a toolchain-from-source replacement that also builds on Intel Mac. Needs
+# CMake + a C/C++ compiler. Evaluate with `cargo check --features ggml`.
+ggml = ["dep:transcribe-cpp"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test
 # checklist before flipping this on for a release build.

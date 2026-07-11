@@ -73,17 +73,45 @@ fn run_server(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("bind {SOCKET_NAME}: {e}"))?;
     log::info!("cli control server listening on {SOCKET_NAME}");
 
+    // One thread per connection so a long-lived `watch` never blocks other
+    // commands (`status`, `rec ...`) from being accepted and answered.
     for incoming in listener.incoming() {
         match incoming {
             Ok(mut stream) => {
-                if let Err(e) = handle_conn(app, &mut stream, &token) {
-                    log::debug!("cli control connection error: {e}");
-                }
+                let app = app.clone();
+                let token = token.clone();
+                std::thread::spawn(move || {
+                    if let Err(e) = handle_conn(&app, &mut stream, &token) {
+                        log::debug!("cli control connection error: {e}");
+                    }
+                });
             }
             Err(e) => log::debug!("cli control accept error: {e}"),
         }
     }
     Ok(())
+}
+
+fn err_response(message: String) -> Response {
+    Response {
+        ok: false,
+        result: None,
+        error: Some(message),
+    }
+}
+
+fn write_frame(stream: &mut Stream, frame: &str) -> Result<(), String> {
+    stream
+        .write_all(frame.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.write_all(b"\n").map_err(|e| e.to_string())?;
+    stream.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+fn write_response(stream: &mut Stream, response: &Response) -> Result<(), String> {
+    let json = serde_json::to_string(response).map_err(|e| e.to_string())?;
+    write_frame(stream, &json)
 }
 
 fn handle_conn(app: &tauri::AppHandle, stream: &mut Stream, token: &str) -> Result<(), String> {
@@ -93,37 +121,95 @@ fn handle_conn(app: &tauri::AppHandle, stream: &mut Stream, token: &str) -> Resu
         reader.read_line(&mut line).map_err(|e| e.to_string())?;
     }
 
-    let response = match serde_json::from_str::<Request>(&line) {
-        Ok(req) if req.token == token => match dispatch(app, &req.method, req.params) {
-            Ok(result) => Response {
-                ok: true,
-                result: Some(result),
-                error: None,
-            },
-            Err(error) => Response {
-                ok: false,
-                result: None,
-                error: Some(error),
-            },
-        },
-        Ok(_) => Response {
-            ok: false,
-            result: None,
-            error: Some("unauthorized".into()),
-        },
-        Err(e) => Response {
-            ok: false,
-            result: None,
-            error: Some(format!("bad request: {e}")),
-        },
+    let req = match serde_json::from_str::<Request>(&line) {
+        Ok(r) => r,
+        Err(e) => return write_response(stream, &err_response(format!("bad request: {e}"))),
     };
+    if req.token != token {
+        return write_response(stream, &err_response("unauthorized".into()));
+    }
+    // `watch` takes over the connection and streams frames until the client
+    // hangs up, rather than returning a single response.
+    if req.method == "watch" {
+        return handle_watch(app, stream, &req.params);
+    }
 
-    let mut out = serde_json::to_string(&response).map_err(|e| e.to_string())?;
-    out.push('\n');
-    stream
-        .write_all(out.as_bytes())
-        .map_err(|e| e.to_string())?;
-    stream.flush().map_err(|e| e.to_string())?;
+    let response = match dispatch(app, &req.method, req.params) {
+        Ok(result) => Response {
+            ok: true,
+            result: Some(result),
+            error: None,
+        },
+        Err(error) => err_response(error),
+    };
+    write_response(stream, &response)
+}
+
+/// Resolve the requested event-group names (`rec`, `selection`) to concrete
+/// event names. Empty/absent selects everything.
+fn watch_event_names(params: &Value) -> Vec<String> {
+    const REC: &[&str] = &["recording:started", "recording:stopped"];
+    const SELECTION: &[&str] = &["capture-intent:changed"];
+    const PROFILES: &[&str] = &["recording-profiles:changed"];
+    let mut out: Vec<String> = Vec::new();
+    match params.get("events").and_then(Value::as_array) {
+        Some(groups) if !groups.is_empty() => {
+            for group in groups {
+                match group.as_str() {
+                    Some("rec") => out.extend(REC.iter().map(|s| s.to_string())),
+                    Some("selection") => out.extend(SELECTION.iter().map(|s| s.to_string())),
+                    Some("profiles") => out.extend(PROFILES.iter().map(|s| s.to_string())),
+                    _ => {}
+                }
+            }
+        }
+        _ => {
+            out.extend(REC.iter().map(|s| s.to_string()));
+            out.extend(SELECTION.iter().map(|s| s.to_string()));
+            out.extend(PROFILES.iter().map(|s| s.to_string()));
+        }
+    }
+    out.sort();
+    out.dedup();
+    out
+}
+
+/// Subscribe to the requested events and forward each as a `{event, data}` frame
+/// until the client hangs up. A 15s heartbeat (`{"event":"ping"}`) detects a
+/// disconnect during an idle stretch so the listeners get unregistered.
+fn handle_watch(app: &tauri::AppHandle, stream: &mut Stream, params: &Value) -> Result<(), String> {
+    use std::sync::mpsc::{channel, RecvTimeoutError};
+    use std::time::Duration;
+    use tauri::Listener;
+
+    let names = watch_event_names(params);
+    let (tx, rx) = channel::<String>();
+    let mut ids = Vec::new();
+    for name in &names {
+        let tx = tx.clone();
+        let event_name = name.clone();
+        let id = app.listen(name.clone(), move |event| {
+            let data: Value = serde_json::from_str(event.payload()).unwrap_or(Value::Null);
+            let _ = tx.send(json!({ "event": event_name, "data": data }).to_string());
+        });
+        ids.push(id);
+    }
+    drop(tx); // only the listener-held senders keep the channel open
+
+    let ready = json!({ "event": "watch.ready", "data": { "events": names } }).to_string();
+    let outcome = write_frame(stream, &ready).and_then(|()| loop {
+        match rx.recv_timeout(Duration::from_secs(15)) {
+            Ok(frame) => write_frame(stream, &frame)?,
+            Err(RecvTimeoutError::Timeout) => write_frame(stream, "{\"event\":\"ping\"}")?,
+            Err(RecvTimeoutError::Disconnected) => break Ok(()),
+        }
+    });
+
+    for id in ids {
+        app.unlisten(id);
+    }
+    // A write error just means the client hung up; not a server error.
+    let _ = outcome;
     Ok(())
 }
 
@@ -211,7 +297,20 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let next = crate::commands::update_intent(app, |i| apply_patch(i, &params));
             serde_json::to_value(next).map_err(|e| e.to_string())
         }
+        "profile.list" => {
+            serde_json::to_value(crate::commands::profiles_snapshot(app)).map_err(|e| e.to_string())
+        }
+        "profile.use" => {
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("profile.use requires an id")?;
+            let intent = crate::commands::use_profile_by_id(app, id)?;
+            serde_json::to_value(intent).map_err(|e| e.to_string())
+        }
         "rec.start" => {
+            // Read the auto-stop before `params` is consumed below.
+            let timeout_ms = params.get("timeoutMs").and_then(Value::as_u64);
             // Explicit target flags are a one-off; without them we record the
             // stored capture intent (set via `recast select`/`set`).
             let explicit = params.get("targetType").and_then(|v| v.as_str()).is_some();
@@ -228,6 +327,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 }
             };
             let result = tauri::async_runtime::block_on(crate::commands::start_recording(
+                app.clone(),
                 target_type,
                 target_id,
                 region,
@@ -235,11 +335,17 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 state,
             ))
             .map_err(|e| e.to_string())?;
+            // Backend-owned auto-stop: survives the CLI process exiting. Only
+            // stops if still recording (a manual stop first is a no-op).
+            if let Some(ms) = timeout_ms {
+                schedule_auto_stop(app.clone(), ms);
+            }
             serde_json::to_value(result).map_err(|e| e.to_string())
         }
         "rec.stop" => {
-            let path = tauri::async_runtime::block_on(crate::commands::stop_recording(state))
-                .map_err(|e| e.to_string())?;
+            let path =
+                tauri::async_runtime::block_on(crate::commands::stop_recording(app.clone(), state))
+                    .map_err(|e| e.to_string())?;
             Ok(json!({ "projectPath": path }))
         }
         "rec.pause" => {
@@ -252,6 +358,22 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         }
         other => Err(format!("unknown method: {other}")),
     }
+}
+
+/// Stop the recording after `ms` on Tauri's runtime. Runs independently of the
+/// CLI connection, so `recast rec start --timeout 30s` finalizes even after the
+/// CLI process exits. A no-op if a manual stop already ended the session.
+fn schedule_auto_stop(app: tauri::AppHandle, ms: u64) {
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(ms)).await;
+        use tauri::Manager;
+        let state = app.state::<crate::commands::types::AppState>();
+        if state.recording_manager.is_recording() {
+            if let Err(e) = crate::commands::stop_recording(app.clone(), state).await {
+                log::warn!("auto-stop failed: {e}");
+            }
+        }
+    });
 }
 
 fn write_token() -> Result<String, String> {
@@ -321,6 +443,55 @@ pub fn send(
     }
 }
 
+/// Open a `watch` stream and invoke `on_frame` for each event frame until the
+/// server closes the connection (app exit / interrupt).
+pub fn watch(
+    params: Value,
+    auto_launch: bool,
+    timeout_ms: u64,
+    mut on_frame: impl FnMut(&Value),
+) -> Result<(), String> {
+    let mut stream = match connect() {
+        Ok(s) => s,
+        Err(_) if auto_launch => {
+            launch_app()?;
+            connect_with_retry(timeout_ms)?
+        }
+        Err(e) => {
+            return Err(format!(
+                "Recast is not running ({e}). Launch it, or drop --no-launch to auto-start."
+            ))
+        }
+    };
+    let token = read_token_with_retry(timeout_ms)?;
+    let mut req = serde_json::to_string(&json!({
+        "token": token,
+        "method": "watch",
+        "params": params,
+    }))
+    .map_err(|e| e.to_string())?;
+    req.push('\n');
+    stream
+        .write_all(req.as_bytes())
+        .map_err(|e| e.to_string())?;
+    stream.flush().map_err(|e| e.to_string())?;
+
+    let reader = BufReader::new(&mut stream);
+    for line in reader.lines() {
+        let line = line.map_err(|e| e.to_string())?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let frame: Value = serde_json::from_str(&line).map_err(|e| e.to_string())?;
+        // Heartbeats are internal; don't surface them.
+        if frame.get("event").and_then(Value::as_str) == Some("ping") {
+            continue;
+        }
+        on_frame(&frame);
+    }
+    Ok(())
+}
+
 fn connect() -> Result<Stream, String> {
     let name = SOCKET_NAME
         .to_ns_name::<GenericNamespaced>()
@@ -360,4 +531,93 @@ fn launch_app() -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("failed to launch Recast: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::types::CaptureIntent;
+    use serde_json::json;
+
+    #[test]
+    fn patch_merges_fields_without_clobbering() {
+        let mut intent = CaptureIntent::default();
+        assert!(intent.options.system_audio); // default on
+        apply_patch(&mut intent, &json!({"targetType":"display","targetId":3}));
+        apply_patch(
+            &mut intent,
+            &json!({"microphone":true,"microphoneDeviceId":"mic-1"}),
+        );
+        apply_patch(&mut intent, &json!({"systemAudio":false}));
+        apply_patch(&mut intent, &json!({"fps":60}));
+        assert_eq!(intent.target_type.as_deref(), Some("display"));
+        assert_eq!(intent.target_id, 3);
+        assert!(intent.options.microphone);
+        assert_eq!(
+            intent.options.microphone_device_id.as_deref(),
+            Some("mic-1")
+        );
+        assert!(!intent.options.system_audio);
+        assert_eq!(intent.options.fps, Some(60));
+    }
+
+    #[test]
+    fn patch_null_clears_but_absent_preserves() {
+        let mut intent = CaptureIntent::default();
+        apply_patch(
+            &mut intent,
+            &json!({"microphone":true,"microphoneDeviceId":"mic-1"}),
+        );
+        assert_eq!(
+            intent.options.microphone_device_id.as_deref(),
+            Some("mic-1")
+        );
+        // A patch that does not mention the id leaves it alone.
+        apply_patch(&mut intent, &json!({"fps":30}));
+        assert_eq!(
+            intent.options.microphone_device_id.as_deref(),
+            Some("mic-1")
+        );
+        // An explicit null clears it.
+        apply_patch(&mut intent, &json!({"microphoneDeviceId":null}));
+        assert_eq!(intent.options.microphone_device_id, None);
+    }
+
+    #[test]
+    fn intent_serializes_camelcase_and_omits_none() {
+        let v = serde_json::to_value(CaptureIntent::default()).unwrap();
+        assert!(v.get("targetType").is_none());
+        assert!(v.get("region").is_none());
+        assert!(v.get("countdown").is_none());
+        assert!(v.get("activeProfileId").is_none());
+        assert_eq!(v["targetId"], json!(0));
+        assert_eq!(v["options"]["systemAudio"], json!(true));
+        assert!(v["options"].get("fps").is_none());
+        assert!(v["options"].get("microphoneDeviceId").is_none());
+    }
+
+    #[test]
+    fn watch_names_default_all_and_by_group() {
+        let all = watch_event_names(&Value::Null);
+        assert!(all.contains(&"recording:started".to_string()));
+        assert!(all.contains(&"recording:stopped".to_string()));
+        assert!(all.contains(&"capture-intent:changed".to_string()));
+        assert!(all.contains(&"recording-profiles:changed".to_string()));
+
+        assert_eq!(
+            watch_event_names(&json!({"events":["rec"]})),
+            vec![
+                "recording:started".to_string(),
+                "recording:stopped".to_string()
+            ]
+        );
+        assert_eq!(
+            watch_event_names(&json!({"events":["selection"]})),
+            vec!["capture-intent:changed".to_string()]
+        );
+        assert_eq!(
+            watch_event_names(&json!({"events":["profiles"]})),
+            vec!["recording-profiles:changed".to_string()]
+        );
+    }
 }

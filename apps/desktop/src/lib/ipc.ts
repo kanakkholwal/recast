@@ -5,6 +5,9 @@
 
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
 import type { CaptionAnimation } from "$lib/captions/animation";
+// Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
+// imports value bindings from here).
+import type { RecordingProfile } from "$lib/profiles";
 import { analytics } from "$lib/analytics/client";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -173,6 +176,36 @@ export function setCaptureIntent(
 	intent: CaptureIntentState,
 ): Promise<CaptureIntentState> {
 	return invoke<CaptureIntentState>("set_capture_intent", { intent });
+}
+
+/** Backend-owned recording profiles snapshot. Mirrors the Rust `ProfilesSnapshot`
+ *  (`commands/profiles.rs`). `initialized` is false while the backend holds only
+ *  the in-memory seed, which the store uses to migrate `localStorage` once. */
+export interface ProfilesSnapshot {
+	profiles: RecordingProfile[];
+	enabled: boolean;
+	initialized: boolean;
+}
+
+/** Event broadcast by the backend whenever the saved profile set changes. */
+export const RECORDING_PROFILES_CHANGED_EVENT = "recording-profiles:changed";
+
+/** Read the backend-owned profile set. */
+export function getProfiles(): Promise<ProfilesSnapshot> {
+	return invoke<ProfilesSnapshot>("get_profiles");
+}
+
+/** Replace the backend-owned profile set (broadcasts `recording-profiles:changed`). */
+export function setProfiles(
+	profiles: RecordingProfile[],
+	enabled: boolean,
+): Promise<ProfilesSnapshot> {
+	return invoke<ProfilesSnapshot>("set_profiles", { profiles, enabled });
+}
+
+/** Apply a saved profile (by id or name) to the staged capture intent. */
+export function useProfile(id: string): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("use_profile", { id });
 }
 
 /** Whether the `recast` CLI resolves as a bare terminal command. Mirrors the

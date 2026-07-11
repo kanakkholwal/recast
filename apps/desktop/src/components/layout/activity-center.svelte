@@ -39,10 +39,13 @@
 	const driveItems = $derived(
 		gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId),
 	);
-	// The current export, hidden here while its panel is foregrounded in the
-	// editor (it reappears on minimize).
+	// The current export. Hidden here only while its panel is actually on screen
+	// (foregrounded AND an editor is mounted); on any other route it stays visible
+	// so a background export is never hidden with nowhere to show it.
 	const exportJob = $derived(
-		exportActivity.foreground ? null : exportActivity.job,
+		exportActivity.foreground && exportActivity.editorPresent
+			? null
+			: exportActivity.job,
 	);
 	const total = $derived(
 		cloudItems.length + driveItems.length + (exportJob ? 1 : 0),
@@ -55,7 +58,7 @@
 
 	const exportPhaseLabel: Record<string, string> = {
 		preparing: "Preparing export",
-		encoding: "Encoding video",
+		encoding: "Rendering video",
 		finalizing: "Finalising file",
 		cancelling: "Cancelling export",
 	};
@@ -230,15 +233,26 @@
 									></div>
 								{/if}
 							</div>
-							{#if exportJob.phase === "encoding"}
-								<div class="flex justify-end">
-									<span
-										class="text-[10px] font-medium tabular-nums text-muted-foreground"
-									>
-										{Math.round(exportJob.progress)}%
-									</span>
-								</div>
-							{/if}
+							<div class="flex items-center justify-between">
+								<span
+									class="font-mono text-[11px] font-semibold tabular-nums text-primary"
+								>
+									{exportJob.phase === "encoding" ||
+									exportJob.phase === "finalizing"
+										? `${Math.round(exportJob.progress)}%`
+										: exportJob.phase === "preparing"
+											? "Preparing…"
+											: ""}
+								</span>
+								<button
+									type="button"
+									class="text-[10px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
+									disabled={exportJob.phase === "cancelling"}
+									onclick={() => exportActivity.cancel()}
+								>
+									{exportJob.phase === "cancelling" ? "Cancelling…" : "Cancel"}
+								</button>
+							</div>
 						{:else if exportJob.status === "success" && exportJob.path}
 							<div class="flex items-center justify-end gap-1.5">
 								<Button

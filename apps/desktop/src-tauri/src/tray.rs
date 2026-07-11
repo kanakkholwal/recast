@@ -265,7 +265,11 @@ fn handle_menu_event(app: &AppHandle, event: MenuEvent) {
         }
         other if other.starts_with(MENU_ID_RECENT_PREFIX) => {
             let path = other[MENU_ID_RECENT_PREFIX.len()..].to_string();
-            let _ = crate::commands::system::open_file_location(path);
+            // `open_file_location` is async; this handler is sync, so spawn it
+            // rather than dropping the future unrun (which silently did nothing).
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::commands::system::open_file_location(path).await;
+            });
         }
         _ => {}
     }

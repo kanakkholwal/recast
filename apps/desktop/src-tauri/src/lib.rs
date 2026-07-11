@@ -268,6 +268,12 @@ pub fn run() {
             let pending_open_file = parse_open_arg(&cold_open_file);
             let launched_for_new_recording = cold_open_file.iter().any(|a| a == "--new-recording");
 
+            // Load the saved recording profiles into the shared store so the CLI
+            // (`recast profile list/use`) and the panel read one source. Absent
+            // file => in-memory seed, initialized=false (frontend migrates once).
+            let (profiles_state, profiles_initialized) =
+                commands::profiles::load_profiles_state(handle);
+
             app.manage(AppState {
                 recording_manager: std::sync::Arc::new(RecordingManager::default()),
                 last_file_path: Mutex::new(None),
@@ -280,6 +286,8 @@ pub fn run() {
                     launched_for_new_recording,
                 ),
                 capture_intent: parking_lot::RwLock::new(commands::types::CaptureIntent::default()),
+                profiles: parking_lot::RwLock::new(profiles_state),
+                profiles_initialized: std::sync::atomic::AtomicBool::new(profiles_initialized),
             });
 
             // Register the `recast://` scheme at runtime for dev builds. In
@@ -473,6 +481,9 @@ pub fn run() {
             commands::uninstall_cli,
             commands::get_capture_intent,
             commands::set_capture_intent,
+            commands::get_profiles,
+            commands::set_profiles,
+            commands::use_profile,
             commands::auth_start,
             commands::auth_status,
             commands::auth_sign_out,

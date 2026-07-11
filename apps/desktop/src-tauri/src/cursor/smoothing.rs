@@ -152,12 +152,12 @@ pub fn smooth_cursor_path(
         let mut sum_w = 0.0;
         let mut sum_x = 0.0;
         let mut sum_y = 0.0;
-        for j in lo..hi {
-            let dt = (raw[j].timestamp_us as i64 - center_ts) as f64;
+        for s in &raw[lo..hi] {
+            let dt = (s.timestamp_us as i64 - center_ts) as f64;
             let w = (-(dt * dt) * inv_2sigma2).exp();
             sum_w += w;
-            sum_x += w * raw[j].x as f64;
-            sum_y += w * raw[j].y as f64;
+            sum_x += w * s.x as f64;
+            sum_y += w * s.y as f64;
         }
         if sum_w > 0.0 {
             out[i].x = sum_x / sum_w;
@@ -315,8 +315,8 @@ fn nearest_idx(samples: &[CursorSample], ts: u64) -> Option<usize> {
 fn dwell_from(samples: &[CursorSample], from: usize, radius: f64) -> (usize, u64) {
     let (ax, ay) = (samples[from].x, samples[from].y);
     let mut end = from;
-    for k in (from + 1)..samples.len() {
-        if dist_px(samples[k].x, samples[k].y, ax, ay) > radius {
+    for (k, s) in samples.iter().enumerate().skip(from + 1) {
+        if dist_px(s.x, s.y, ax, ay) > radius {
             break;
         }
         end = k;

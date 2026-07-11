@@ -125,7 +125,10 @@ pub async fn start_recording(
 }
 
 #[tauri::command]
-pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
+pub async fn stop_recording(
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
     // `stop()` joins the capture/cursor/encoder threads, finalizes the muxer,
     // stops the audio/mic/camera sessions, and — when the camera was recorded
     // through pauses — runs a full FFmpeg re-encode to cut the paused spans out
@@ -222,7 +225,14 @@ pub async fn stop_recording(state: State<'_, AppState>) -> AppResult<String> {
     state.power.release();
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
-    Ok(project_path.to_string_lossy().to_string())
+    let path_str = project_path.to_string_lossy().to_string();
+    // Broadcast so the panel/tray return to idle even for a CLI- or timeout-
+    // driven stop.
+    let _ = app.emit(
+        "recording:stopped",
+        serde_json::json!({ "projectPath": path_str }),
+    );
+    Ok(path_str)
 }
 
 #[tauri::command]
@@ -336,9 +346,10 @@ mod tests {
     #[test]
     fn recording_commands_stay_async_off_the_ui_thread() {
         fn drive<F: std::future::Future>(_: F) {}
-        let _assert_stop = |state: State<'_, AppState>| drive(stop_recording(state));
-        let _assert_start = |state: State<'_, AppState>| {
-            drive(start_recording(String::new(), 0, None, None, state))
+        let _assert_stop =
+            |app: tauri::AppHandle, state: State<'_, AppState>| drive(stop_recording(app, state));
+        let _assert_start = |app: tauri::AppHandle, state: State<'_, AppState>| {
+            drive(start_recording(app, String::new(), 0, None, None, state))
         };
     }
 }

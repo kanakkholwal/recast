@@ -604,6 +604,9 @@ mod gif_tests {
 
 #[cfg(test)]
 mod blur_tests {
+    // Assertions use `2*r + 1 <= dim` (odd kernel size fits the plane); the
+    // `+ 1` is the kernel semantics, so keep it over clippy's `2*r < dim`.
+    #![allow(clippy::int_plus_one)]
     use super::*;
 
     fn region_with(variant: &'static str, start: f64, end: f64) -> BlurRegion<'static> {
@@ -1333,6 +1336,9 @@ mod blur_serde_tests {
 
 #[cfg(test)]
 mod gif_settings_tests {
+    // Tests mutate one `GifSettings` across successive asserts, so the
+    // default-then-reassign pattern is intentional (not a struct-init case).
+    #![allow(clippy::field_reassign_with_default)]
     use super::super::types::GifSettings;
     use serde_json::json;
 

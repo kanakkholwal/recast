@@ -336,7 +336,7 @@ fn resolve_region_target(rect: RegionRect) -> Result<CaptureTarget> {
             // The frontend Region Picker passes coordinates in PHYSICAL pixels,
             // but xcap's Monitor bounds are in LOGICAL pixels.
             // We must un-scale the physical center point to find the matching monitor.
-            let scale = display_scale_factor(monitor) as f32;
+            let scale = display_scale_factor(monitor);
             let cx = (center_x as f32 / scale).round() as i32;
             let cy = (center_y as f32 / scale).round() as i32;
 
@@ -349,7 +349,7 @@ fn resolve_region_target(rect: RegionRect) -> Result<CaptureTarget> {
         .context("unable to locate the display containing the selected region")?;
 
     let scale = display_scale_factor(&monitor);
-    let scale_f32 = scale as f32;
+    let scale_f32 = scale;
 
     // Convert the physical rect back to logical pixels so it shares the same
     // coordinate space as the monitor for clamping.

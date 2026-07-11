@@ -30,6 +30,9 @@ use crate::render::graph::RenderState;
 /// to consume every input frame before emitting its one output, so the
 /// encoder's `out_time_us` stayed at 0 the entire palette phase and the bar
 /// sat at 0% while only the elapsed counter ticked.
+// ffmpeg invocation with many discrete inputs (paths, trim window, durations);
+// bundling them into a struct wouldn't add clarity here.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn run_gif_palette_prepass(
     app: &AppHandle,
     export_id: &str,

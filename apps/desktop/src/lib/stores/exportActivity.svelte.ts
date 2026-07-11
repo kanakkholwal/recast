@@ -38,6 +38,10 @@ function createExportActivityStore() {
   // Whether the editor's export panel is shown. Minimizing hands tracking to the
   // activity center; reopening from there (or the toolbar) sets it back.
   let foreground = $state(false);
+  // Whether an editor (which hosts the export panel) is currently mounted. Off
+  // any other route, so the activity center knows a "foregrounded" job actually
+  // has a panel and doesn't hide a background job with nowhere to show it.
+  let editorPresent = $state(false);
 
   return {
     get job() {
@@ -52,6 +56,14 @@ function createExportActivityStore() {
     },
     get foreground() {
       return foreground;
+    },
+    get editorPresent() {
+      return editorPresent;
+    },
+    /** Editor mount lifecycle sets this so the activity center can tell whether
+     *  a foregrounded job actually has a panel on screen. */
+    setEditorPresent(present: boolean) {
+      editorPresent = present;
     },
 
     /** Start tracking a new export. */
@@ -86,6 +98,24 @@ function createExportActivityStore() {
     markCancelled() {
       if (!job) return;
       job.status = "cancelled";
+    },
+
+    /**
+     * Cancel a running export from anywhere (e.g. the activity center after the
+     * editor was left). Signals the backend; the still-attached export-state
+     * listener flips the job to "cancelled" and toasts when FFmpeg dies, so this
+     * only nudges the phase for instant feedback and fires the IPC.
+     */
+    async cancel() {
+      if (!job || job.status !== "running") return;
+      const id = job.id;
+      job.phase = "cancelling";
+      try {
+        const { cancelExport } = await import("$lib/ipc");
+        await cancelExport(id);
+      } catch (e) {
+        console.warn("[exportActivity] cancel failed", e);
+      }
     },
 
     /** Show the export panel in the editor. */

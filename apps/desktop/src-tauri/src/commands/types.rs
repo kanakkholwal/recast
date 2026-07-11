@@ -360,4 +360,12 @@ pub struct AppState {
     /// (`select`/`set`) and, in Phase 3b, the panel; `capture-intent:changed`
     /// broadcasts edits. RwLock: read at start, written on each tweak.
     pub capture_intent: parking_lot::RwLock<CaptureIntent>,
+    /// Backend-owned recording profiles, shared by the panel, profile picker,
+    /// and CLI (`recast profile list/use`). Persisted to `recast_profiles.json`;
+    /// `recording-profiles:changed` broadcasts edits. See `commands::profiles`.
+    pub profiles: parking_lot::RwLock<crate::commands::profiles::ProfilesState>,
+    /// False while `profiles` is the ephemeral in-memory seed (no profiles file
+    /// yet). The frontend reads this to migrate its `localStorage` profiles into
+    /// the backend exactly once; `set_profiles` flips it true.
+    pub profiles_initialized: AtomicBool,
 }

@@ -78,7 +78,15 @@ pub enum ModelSource {
 /// decide if a model is offerable.
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
+        // ONNX needs the `captions` feature (the `ort` runtime). Absent on the
+        // Intel-Mac build, where on-device models must report as unavailable.
+        #[cfg(feature = "captions")]
         Runtime::Onnx => (true, None),
+        #[cfg(not(feature = "captions"))]
+        Runtime::Onnx => (
+            false,
+            Some("On-device transcription isn't available in this build.".into()),
+        ),
         // Available only in a build compiled with the `whisper` feature (which
         // pulls the LLVM/CMake toolchain). Default builds report it as pending.
         #[cfg(feature = "whisper")]
@@ -524,10 +532,12 @@ mod tests {
     }
 
     #[test]
-    fn onnx_runtime_is_always_available() {
+    fn onnx_availability_tracks_the_captions_feature() {
+        // ONNX (Parakeet/Canary/…) needs the `ort` runtime the `captions` feature
+        // pulls; the Intel-Mac build (captions off) must report it unavailable.
         let (available, reason) = runtime_status(Runtime::Onnx);
-        assert!(available);
-        assert!(reason.is_none());
+        assert_eq!(available, cfg!(feature = "captions"));
+        assert_eq!(reason.is_none(), cfg!(feature = "captions"));
     }
 
     #[test]
