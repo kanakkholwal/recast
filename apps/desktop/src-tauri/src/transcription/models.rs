@@ -57,7 +57,7 @@ pub struct CaptionModel {
     pub approx_size_bytes: Option<u64>,
     pub is_default: bool,
     pub files: Vec<ModelFile>,
-    // ---- device requirements (drive UI gating; see capabilities.rs) ----
+    // - device requirements (drive UI gating; see capabilities.rs) -
     /// Hard requirement: no supported GPU → model is disabled.
     #[serde(default)]
     pub requires_gpu: bool,
@@ -185,7 +185,7 @@ pub fn registry() -> Vec<CaptionModel> {
             false,
             false,
         ),
-        // ---- Canary (multilingual + translation) ----
+        // - Canary (multilingual + translation) -
         onnx(
             "canary-180m-flash",
             "Canary 180M Flash",
@@ -206,7 +206,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             691_000_000,
         ),
-        // ---- GigaAM (Russian) ----
+        // - GigaAM (Russian) -
         onnx(
             "gigaam-v3",
             "GigaAM v3 (Russian)",
@@ -217,7 +217,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["ru".into()],
             151_000_000,
         ),
-        // ---- Cohere (large, multilingual) ----
+        // - Cohere (large, multilingual) -
         onnx(
             "cohere",
             "Cohere",

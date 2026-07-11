@@ -57,7 +57,7 @@ const PCM_SAMPLE_RATE: u32 = 48_000;
 const PCM_CHANNELS: u16 = 2;
 const PCM_BITS: u16 = 16;
 
-// -- System audio (loopback) -------------------------------------------------
+// -- System audio (loopback) -
 
 /// Backend variant for `PlatformAudioSession`. The macOS happy path is
 /// `Sckit` (ScreenCaptureKit — no virtual driver needed); `Live` runs
@@ -178,7 +178,7 @@ impl PlatformAudioSession {
     }
 }
 
-// -- Microphone --------------------------------------------------------------
+// -- Microphone --
 
 pub struct PlatformMicrophoneSession {
     stop_flag: Arc<AtomicBool>,
@@ -226,7 +226,7 @@ impl PlatformMicrophoneSession {
     }
 }
 
-// -- Shared FFmpeg PCM capture ----------------------------------------------
+// -- Shared FFmpeg PCM capture -
 
 #[derive(Clone)]
 struct PcmSource {
@@ -377,7 +377,7 @@ fn spawn_stop_watcher(
         .expect("watcher thread spawn should not fail")
 }
 
-// -- Source detection (platform-specific) -----------------------------------
+// -- Source detection (platform-specific) --
 
 #[cfg(target_os = "macos")]
 fn detect_loopback_source() -> Option<PcmSource> {

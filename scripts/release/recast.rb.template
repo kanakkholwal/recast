@@ -58,10 +58,10 @@ cask "recast" do
   # mirrors the macOS app's CFBundleIdentifier — verify against
   # `apps/desktop/src-tauri/tauri.conf.json#identifier` if it changes.
   zap trash: [
-    "~/Library/Application Support/com.nexonauts.recast",
-    "~/Library/Caches/com.nexonauts.recast",
-    "~/Library/Preferences/com.nexonauts.recast.plist",
-    "~/Library/Saved Application State/com.nexonauts.recast.savedState",
-    "~/Library/WebKit/com.nexonauts.recast",
+    "~/Library/Application Support/com.kanakkholwal.recast",
+    "~/Library/Caches/com.kanakkholwal.recast",
+    "~/Library/Preferences/com.kanakkholwal.recast.plist",
+    "~/Library/Saved Application State/com.kanakkholwal.recast.savedState",
+    "~/Library/WebKit/com.kanakkholwal.recast",
   ]
 end

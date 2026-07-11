@@ -80,9 +80,9 @@ body:
       label: Logs, screenshots, or recordings
       description: |
         Drag-and-drop attachments here. Tauri logs live at:
-        - Windows: `%APPDATA%\com.nexonauts.recast\logs`
-        - macOS: `~/Library/Logs/com.nexonauts.recast`
-        - Linux: `~/.config/com.nexonauts.recast/logs`
+        - Windows: `%APPDATA%\com.kanakkholwal.recast\logs`
+        - macOS: `~/Library/Logs/com.kanakkholwal.recast`
+        - Linux: `~/.config/com.kanakkholwal.recast/logs`
   - type: checkboxes
     id: prereqs
     attributes:

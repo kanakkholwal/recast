@@ -1,5 +1,5 @@
-import type { Component } from "svelte";
 import { Bug, RefreshCw, Sparkles, Wrench } from "@lucide/svelte";
+import type { Component } from "svelte";
 
 export type ChangeKind = "added" | "changed" | "fixed" | "deprecated";
 
@@ -36,6 +36,28 @@ export const KIND_META: Record<
 // this array.
 // RELEASES:START, auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
+	{
+		version: '0.4.0',
+		date: '2026-07-11',
+		highlights: [
+			'Control recording from any app with global shortcuts, and never lose a take to the screen going to sleep.',
+			'Watch export progress on the Windows taskbar or macOS dock, and get a notification when it finishes.',
+			'Right-click the Windows taskbar icon to start a new recording or reopen a recent project.',
+			'An optional translucent window backdrop that matches Windows 11 and macOS.',
+		],
+		changes: [
+			{ kind: 'added', summary: 'Global recording shortcuts. Start or stop a recording with Alt+Shift+R and pause or resume with Alt+Shift+P from any app, so you can control capture while Recast is in the background.' },
+			{ kind: 'added', summary: 'A notification when an export finishes, plus live export progress on the Windows taskbar and the macOS dock.' },
+			{ kind: 'added', summary: 'Pause and resume from the tray menu, which now also shows when a recording is in progress.' },
+			{ kind: 'added', summary: 'Windows taskbar jump list. Right-click the taskbar or Start icon for a "New Recording" action and your recent projects.' },
+			{ kind: 'added', summary: '"Open in Recast" in the right-click menu for .recast files on Windows.' },
+			{ kind: 'added', summary: 'Translucent window backdrop (Mica on Windows 11, vibrancy on macOS), off by default under Settings, Appearance.' },
+			{ kind: 'changed', summary: 'Recording and exporting keep the display and system awake, so a long capture or export is never cut short by the screen or machine going to sleep.' },
+			{ kind: 'changed', summary: 'The Windows installer and update windows now carry the Recast icon and artwork.' },
+			{ kind: 'changed', summary: 'Refreshed the Google Drive connection page to match the app.' },
+			{ kind: 'fixed', summary: 'Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.' },
+		],
+	},
 	{
 		version: '0.3.1',
 		date: '2026-07-05',

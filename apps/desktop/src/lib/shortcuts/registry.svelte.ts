@@ -52,7 +52,7 @@ const IS_MAC =
 	typeof navigator !== "undefined" &&
 	/mac|iphone|ipad/i.test(navigator.platform || navigator.userAgent || "");
 
-// --- chord parsing / matching ----------------------------------------------
+//  chord parsing / matching -
 
 const MODIFIER_KEYS = new Set([
 	"Control",
@@ -95,7 +95,7 @@ function chordFromKeys(keys: string): string {
 	);
 }
 
-// --- display ----------------------------------------------------------------
+//  display 
 
 const KEY_GLYPHS: Record<string, string> = {
 	Mod: IS_MAC ? "⌘" : "Ctrl",
@@ -122,7 +122,19 @@ export function formatChordTokens(keys: string): string[] {
 		.map((tok) => KEY_GLYPHS[tok] ?? (tok.length === 1 ? tok.toUpperCase() : tok));
 }
 
-// --- the master list --------------------------------------------------------
+/**
+ * Display label for a registered shortcut by id, platform-aware and always in
+ * sync with its real binding (e.g. "⌘⌥R" on macOS, "Ctrl+Alt+R" elsewhere).
+ * Returns "" for an unknown id. Prefer this over hardcoding chords in the UI.
+ */
+export function chordLabel(id: string): string {
+	const def = shortcutDefs.find((d) => d.id === id);
+	if (!def) return "";
+	const tokens = def.display ?? formatChordTokens(def.keys);
+	return IS_MAC ? tokens.join("") : tokens.join("+");
+}
+
+//  the master list --
 
 export const shortcutDefs: ShortcutDef[] = [
 	// General: available everywhere.
@@ -280,7 +292,7 @@ export function shortcutsByCategory(): [string, ShortcutDef[]][] {
 	return Array.from(map.entries());
 }
 
-// --- central dispatch -------------------------------------------------------
+//  central dispatch -
 
 const centralByChord = new Map<string, ShortcutDef>();
 for (const def of shortcutDefs) {
@@ -334,7 +346,7 @@ export function dispatchShortcut(e: KeyboardEvent): void {
 	void handler();
 }
 
-// --- shortcuts dialog open-state -------------------------------------------
+//  shortcuts dialog open-state -
 
 class ShortcutsDialogState {
 	open = $state(false);

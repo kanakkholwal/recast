@@ -110,6 +110,20 @@ pub fn get_active_output_dir(state: &State<'_, AppState>) -> PathBuf {
     }
 }
 
+/// First-run default output location: a `Recast` folder in the OS video
+/// directory (Videos on Windows/Linux, Movies on macOS), so recordings land
+/// somewhere discoverable and durable rather than the purged temp dir. Falls
+/// back to Documents, then Home, then temp if the OS can't report a video dir.
+pub fn default_output_dir(app: &AppHandle) -> PathBuf {
+    let base = app
+        .path()
+        .video_dir()
+        .or_else(|_| app.path().document_dir())
+        .or_else(|_| app.path().home_dir())
+        .unwrap_or_else(|_| env::temp_dir());
+    base.join("Recast")
+}
+
 /// True on Linux + Wayland. xcap's per-source `capture_image()` triggers
 /// an `xdg-desktop-portal.ScreenCast` permission dialog *per source* on
 /// Wayland — calling it across every monitor/window during the picker hot
@@ -356,28 +370,79 @@ pub fn open_log_dir(app: AppHandle) -> AppResult<String> {
 // any blocking work there freezes the entire window: close/minimize/maximize
 // stop responding because the WM can't deliver events. Pushing both onto a
 // blocking worker keeps the GTK loop free even if xcap hangs.
+/// Highest current refresh rate (Hz) the OS reports across attached displays.
+/// xcap's `Monitor::frequency()` returns 0 on some Windows setups, which would
+/// wrongly cap the recording-fps options at 60; this is the fallback so
+/// high-refresh panels still get their 120/144/240 tiers.
+#[cfg(windows)]
+fn windows_max_refresh_hz() -> u32 {
+    use windows::core::PCWSTR;
+    use windows::Win32::Graphics::Gdi::{
+        EnumDisplayDevicesW, EnumDisplaySettingsW, DEVMODEW, DISPLAY_DEVICEW, ENUM_CURRENT_SETTINGS,
+    };
+
+    let mut max_hz = 0u32;
+    let mut index = 0u32;
+    loop {
+        let mut device = DISPLAY_DEVICEW {
+            cb: std::mem::size_of::<DISPLAY_DEVICEW>() as u32,
+            ..Default::default()
+        };
+        let listed = unsafe { EnumDisplayDevicesW(PCWSTR::null(), index, &mut device, 0) };
+        index += 1;
+        if !listed.as_bool() {
+            break;
+        }
+        let mut mode = DEVMODEW {
+            dmSize: std::mem::size_of::<DEVMODEW>() as u16,
+            ..Default::default()
+        };
+        let ok = unsafe {
+            EnumDisplaySettingsW(
+                PCWSTR(device.DeviceName.as_ptr()),
+                ENUM_CURRENT_SETTINGS,
+                &mut mode,
+            )
+        };
+        // 0 or 1 means "hardware default / unknown", so skip those.
+        if ok.as_bool() && mode.dmDisplayFrequency > 1 {
+            max_hz = max_hz.max(mode.dmDisplayFrequency);
+        }
+    }
+    max_hz
+}
+
 #[tauri::command]
 pub async fn get_displays() -> AppResult<Vec<DisplayInfo>> {
     tauri::async_runtime::spawn_blocking(|| -> AppResult<Vec<DisplayInfo>> {
         let monitors = Monitor::all().map_err(|e| e.to_string())?;
+        #[cfg(windows)]
+        let native_max_hz = windows_max_refresh_hz();
         Ok(monitors
             .iter()
-            .map(|monitor| DisplayInfo {
-                id: monitor.id().unwrap_or_default(),
-                name: monitor.name().unwrap_or_default(),
-                x: monitor.x().unwrap_or_default(),
-                y: monitor.y().unwrap_or_default(),
-                width: monitor.width().unwrap_or_default(),
-                height: monitor.height().unwrap_or_default(),
-                is_primary: monitor.is_primary().unwrap_or_default(),
-                thumbnail: capture_monitor_thumbnail(monitor),
-                // Round to the nearest whole Hz; 0 if xcap can't report it.
-                refresh_hz: monitor
+            .map(|monitor| {
+                // xcap's rate when it reports one; 0 otherwise.
+                let xcap_hz = monitor
                     .frequency()
                     .ok()
                     .filter(|hz| hz.is_finite() && *hz >= 1.0)
                     .map(|hz| hz.round() as u32)
-                    .unwrap_or(0),
+                    .unwrap_or(0);
+                #[cfg(windows)]
+                let refresh_hz = if xcap_hz > 0 { xcap_hz } else { native_max_hz };
+                #[cfg(not(windows))]
+                let refresh_hz = xcap_hz;
+                DisplayInfo {
+                    id: monitor.id().unwrap_or_default(),
+                    name: monitor.name().unwrap_or_default(),
+                    x: monitor.x().unwrap_or_default(),
+                    y: monitor.y().unwrap_or_default(),
+                    width: monitor.width().unwrap_or_default(),
+                    height: monitor.height().unwrap_or_default(),
+                    is_primary: monitor.is_primary().unwrap_or_default(),
+                    thumbnail: capture_monitor_thumbnail(monitor),
+                    refresh_hz,
+                }
             })
             .collect())
     })

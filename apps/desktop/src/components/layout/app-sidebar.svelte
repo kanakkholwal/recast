@@ -15,10 +15,10 @@
   import * as Sidebar from "@recast/ui/sidebar";
   import { useSidebar } from "@recast/ui/sidebar";
   import { cn } from "@recast/ui/utils";
-  import { isActive } from "./app-sidebar.logic";
   import type { ComponentProps } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { crossfade, fade } from "svelte/transition";
+  import { isActive } from "./app-sidebar.logic";
 
   let {
     ref = $bindable(null),
@@ -172,11 +172,11 @@
 
   <Sidebar.Footer class="border-t border-border/30 p-2">
     <Button
-      onclick={launchRecordingPanel}
+      onclick={() => launchRecordingPanel()}
       size="sm"
       class={cn(
-        "group/launch h-9 w-full justify-center gap-1.5 overflow-hidden rounded-lg transition-[padding] duration-200 ease-linear",
-        open ? "px-3" : "px-0",
+        "group/launch h-9 w-full justify-center overflow-hidden rounded-lg transition-[padding] duration-200 ease-linear",
+        open ? "px-3 gap-1.5" : "px-0 gap-0",
       )}
       title="Launch Recording Panel (⌘⇧R)"
     >

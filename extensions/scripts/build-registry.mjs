@@ -33,14 +33,14 @@
 
 import { createHash } from "node:crypto";
 import {
-	copyFileSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	readdirSync,
-	rmSync,
-	statSync,
-	writeFileSync,
+    copyFileSync,
+    existsSync,
+    mkdirSync,
+    readFileSync,
+    readdirSync,
+    rmSync,
+    statSync,
+    writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -149,7 +149,7 @@ export function buildRegistry({ baseUrl, tag } = {}) {
 	return { dir: DIST_DIR, base, tag: releaseTag, entries };
 }
 
-// ---- CLI --------------------------------------------------------------------
+// - CLI --
 
 const invokedDirectly =
 	process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;

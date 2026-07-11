@@ -42,6 +42,31 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-07-11
+
+### Highlights
+- Control recording from any app with global shortcuts, and never lose a take to the screen going to sleep.
+- Watch export progress on the Windows taskbar or macOS dock, and get a notification when it finishes.
+- Right-click the Windows taskbar icon to start a new recording or reopen a recent project.
+- An optional translucent window backdrop that matches Windows 11 and macOS.
+
+### Added
+- Global recording shortcuts. Start or stop a recording with Alt+Shift+R and pause or resume with Alt+Shift+P from any app, so you can control capture while Recast is in the background.
+- A notification when an export finishes, plus live export progress on the Windows taskbar and the macOS dock.
+- Pause and resume from the tray menu, which now also shows when a recording is in progress.
+- Windows taskbar jump list. Right-click the taskbar or Start icon for a "New Recording" action and your recent projects.
+- "Open in Recast" in the right-click menu for .recast files on Windows.
+- Translucent window backdrop (Mica on Windows 11, vibrancy on macOS), off by default under Settings, Appearance.
+
+### Changed
+- New recordings and exports save to a Recast folder in your Videos directory by default, instead of a temporary folder the system can clear. Change it anytime in Settings.
+- Recording and exporting keep the display and system awake, so a long capture or export is never cut short by the screen or machine going to sleep.
+- The Windows installer and update windows now carry the Recast icon and artwork.
+- Refreshed the Google Drive connection page to match the app.
+
+### Fixed
+- Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.
+
 ## [0.3.1] — 2026-07-05
 
 ### Highlights

@@ -44,7 +44,7 @@ use parking_lot::Mutex;
 use crate::capture::CaptureSource;
 use crate::recording::CaptureTarget;
 
-// -- Cross-thread handoff ----------------------------------------------------
+// -- Cross-thread handoff -
 
 /// Negotiated portal stream that survives between the
 /// `start_recording` Tauri command (where it's created) and the capture
@@ -82,7 +82,7 @@ pub struct PortalStream {
     pub height: u32,
 }
 
-// -- Portal handshake (sync wrapper around ashpd's async API) ---------------
+// -- Portal handshake (sync wrapper around ashpd's async API)
 
 /// Synchronously run the xdg-desktop-portal ScreenCast handshake.
 ///
@@ -170,7 +170,7 @@ async fn portal_handshake_async() -> Result<PortalStream> {
     })
 }
 
-// -- CaptureSource implementation -------------------------------------------
+// -- CaptureSource implementation -
 
 pub fn create_source(_target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
     let stream = take_pending_stream().context(
@@ -271,7 +271,7 @@ impl Drop for WaylandCaptureSource {
     }
 }
 
-// -- PipeWire main loop ------------------------------------------------------
+// -- PipeWire main loop
 
 fn pipewire_capture_loop(
     stream: PortalStream,
@@ -538,7 +538,7 @@ fn pipewire_capture_loop(
     Ok(())
 }
 
-// -- SPA POD format-param construction --------------------------------------
+// -- SPA POD format-param construction --
 
 /// Build the EnumFormat POD that we send to pipewire as a stream-connect
 /// parameter. This is the most version-sensitive part of the integration:

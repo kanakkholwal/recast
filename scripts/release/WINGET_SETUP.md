@@ -10,7 +10,7 @@ is configured. Below is the one-time bootstrap.
 
 ## Package identifier
 
-`Nexonauts.Recast` (publisher `Nexonauts`, package `Recast`), matching the
+`KanakKholwal.Recast` (publisher `KanakKholwal`, package `Recast`), matching the
 `publisher` in `tauri.conf.json`. To change it, edit the `identifier` in the
 `publish-winget` job.
 
@@ -34,7 +34,7 @@ is configured. Below is the one-time bootstrap.
    wingetcreate new https://github.com/kanakkholwal/recast/releases/download/vX.Y.Z/recast_X.Y.Z_x64-setup.exe
    ```
 
-   Set `PackageIdentifier` to `Nexonauts.Recast`, installer type `nullsoft`,
+   Set `PackageIdentifier` to `KanakKholwal.Recast`, installer type `nullsoft`,
    silent switch `/S`. `wingetcreate submit --token <PAT>` opens the PR. Once it
    merges, the package exists in winget-pkgs.
 

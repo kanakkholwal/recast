@@ -28,7 +28,7 @@ for arg in "$@"; do
   esac
 done
 
-# --- colours / logging ------------------------------------------------------
+#  colours / logging 
 
 if [ -t 1 ]; then
   C_CYAN=$'\033[36m'; C_GREEN=$'\033[32m'; C_YELLOW=$'\033[33m'
@@ -44,7 +44,7 @@ fail() { printf '\n%sFAILED: %s%s\n' "$C_RED" "$1" "$C_RESET" >&2; exit 1; }
 
 has() { command -v "$1" >/dev/null 2>&1; }
 
-# --- locate repo root -------------------------------------------------------
+#  locate repo root -
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -53,7 +53,7 @@ BIN_DIR="$DESKTOP_DIR/src-tauri/binaries"
 
 [ -f "$REPO_ROOT/pnpm-workspace.yaml" ] || fail "Could not locate the repo root."
 
-# --- 1. detect platform / target triple ------------------------------------
+#  1. detect platform / target triple 
 
 step "Detecting platform"
 OS="$(uname -s)"
@@ -78,7 +78,7 @@ ok "$PLATFORM / $ARCH  ->  target triple: $TRIPLE"
 echo "Recast desktop — local setup ($PLATFORM)"
 info "Repo: $REPO_ROOT"
 
-# --- 2. toolchains ----------------------------------------------------------
+#  2. toolchains -
 
 step "Checking toolchains"
 [ "$SKIP_TOOLCHAINS" -eq 1 ] && warn "--skip-toolchains set; only verifying."
@@ -190,7 +190,7 @@ hash -r 2>/dev/null || true
 has pnpm || fail "pnpm not available after corepack. Run 'corepack enable pnpm' in a new terminal, then re-run."
 ok "pnpm $(cd "$REPO_ROOT" && pnpm --version)"
 
-# --- 3. FFmpeg + ffprobe sidecars ------------------------------------------
+#  3. FFmpeg + ffprobe sidecars 
 
 step "Setting up FFmpeg sidecar binaries"
 FFMPEG_DST="$BIN_DIR/ffmpeg-$TRIPLE"
@@ -237,13 +237,13 @@ else
   ok "ffprobe-$TRIPLE"
 fi
 
-# --- 4. install workspace dependencies -------------------------------------
+#  4. install workspace dependencies -
 
 step "Installing workspace dependencies (pnpm install)"
 ( cd "$REPO_ROOT" && pnpm install ) || fail "pnpm install failed."
 ok "Dependencies installed"
 
-# --- 5. debug build ---------------------------------------------------------
+#  5. debug build 
 
 if [ "$SKIP_BUILD" -eq 1 ]; then
   step "Skipping build (--skip-build)"
@@ -254,7 +254,7 @@ else
   ok "Debug build complete"
 fi
 
-# --- done -------------------------------------------------------------------
+#  done -
 
 printf '\n%sSetup complete.%s\n' "$C_GREEN" "$C_RESET"
 echo "Start the desktop app in dev mode with:"

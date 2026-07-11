@@ -38,7 +38,7 @@ impl PowerManager {
                                     .sleep(true)
                                     .reason("Recast is recording or exporting")
                                     .app_name("Recast")
-                                    .app_reverse_domain("com.nexonauts.recast")
+                                    .app_reverse_domain("com.kanakkholwal.recast")
                                     .create()
                                 {
                                     Ok(g) => guard = Some(g),

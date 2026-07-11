@@ -31,7 +31,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-# --- helpers ----------------------------------------------------------------
+#  helpers -
 
 function Write-Step  ($m) { Write-Host "`n==> $m" -ForegroundColor Cyan }
 function Write-Ok    ($m) { Write-Host "    OK  $m" -ForegroundColor Green }
@@ -63,7 +63,7 @@ function Install-WingetPackage ($id, $label, $override) {
   Sync-Path
 }
 
-# --- locate repo root -------------------------------------------------------
+#  locate repo root -
 
 $RepoRoot   = Split-Path -Parent $PSScriptRoot
 $DesktopDir = Join-Path $RepoRoot 'apps\desktop'
@@ -76,7 +76,7 @@ if (-not (Test-Path (Join-Path $RepoRoot 'pnpm-workspace.yaml'))) {
 Write-Host "Recast desktop - local setup (Windows)" -ForegroundColor White
 Write-Info "Repo: $RepoRoot"
 
-# --- 1. detect architecture / target triple --------------------------------
+#  1. detect architecture / target triple --
 
 Write-Step "Detecting platform"
 $arch = $env:PROCESSOR_ARCHITECTURE
@@ -87,7 +87,7 @@ switch ($arch) {
 }
 Write-Ok "Windows / $arch  ->  target triple: $triple"
 
-# --- 2. toolchains ----------------------------------------------------------
+#  2. toolchains -
 
 Write-Step "Checking toolchains"
 
@@ -175,7 +175,7 @@ if (-not (Test-Cmd 'pnpm')) {
 Push-Location $RepoRoot
 try { Write-Ok "pnpm $(pnpm --version)" } finally { Pop-Location }
 
-# --- 3. FFmpeg + ffprobe sidecars ------------------------------------------
+#  3. FFmpeg + ffprobe sidecars 
 
 Write-Step "Setting up FFmpeg sidecar binaries"
 
@@ -210,7 +210,7 @@ if ((Test-Path $ffmpegDst) -and (Test-Path $ffprobeDst)) {
   }
 }
 
-# --- 4. install workspace dependencies -------------------------------------
+#  4. install workspace dependencies -
 
 Write-Step "Installing workspace dependencies (pnpm install)"
 Push-Location $RepoRoot
@@ -222,7 +222,7 @@ try {
   Pop-Location
 }
 
-# --- 5. debug build ---------------------------------------------------------
+#  5. debug build 
 
 if ($SkipBuild) {
   Write-Step "Skipping build (-SkipBuild)"
@@ -238,7 +238,7 @@ if ($SkipBuild) {
   }
 }
 
-# --- done -------------------------------------------------------------------
+#  done -
 
 Write-Host "`nSetup complete." -ForegroundColor Green
 Write-Host "Start the desktop app in dev mode with:" -ForegroundColor White

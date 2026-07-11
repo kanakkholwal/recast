@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from "$app/state";
   import SourceSelectorSkeleton from "$components/skeletons/SourceSelectorSkeleton.svelte";
   import { getDisplays, getLastSource, getWindows } from "$lib/ipc";
   import {
@@ -34,6 +35,17 @@
 
   onMount(() => {
     fetchSources();
+
+    // Open on the tab the caller asked for (home mode tiles pass ?tab=window,
+    // ?tab=region&autostart=1, etc.), and jump straight into the area drag when
+    // the region intent asked to autostart.
+    const wantTab = page.url.searchParams.get("tab");
+    if (wantTab === "monitor" || wantTab === "window" || wantTab === "region") {
+      tab = wantTab;
+    }
+    if (tab === "region" && page.url.searchParams.get("autostart")) {
+      void openAreaPicker();
+    }
 
     // Pick up region drawn by the overlay window.
     const unlistenRegion = listen<{

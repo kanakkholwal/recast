@@ -40,7 +40,7 @@ export const FLAG_META: FlagMeta[] = [
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
-	webcodecsPreview: false,
+	webcodecsPreview: true,
 	selfHosting: false,
 };
 

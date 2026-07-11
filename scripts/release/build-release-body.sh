@@ -69,7 +69,7 @@ fi
   echo "## Downloads"
   echo
   echo "| Platform | Asset |"
-  echo "| --- | --- |"
+  echo "|  |  |"
   echo "| Windows 10/11 (x64) — installer | \`recast_${version}_x64-setup.exe\` or \`recast_${version}_x64_en-US.msi\` |"
   echo "| Windows 10/11 (x64) — Store package | \`recast_${version}_x64.msix\` |"
   echo "| macOS (Apple Silicon) — beta | \`recast_${version}_aarch64.dmg\` · or \`brew install --cask kanakkholwal/recast/recast\` |"
@@ -164,7 +164,7 @@ fi
 
 # 7. Issues / feedback footer.
 {
-  echo "---"
+  echo ""
   echo
   echo "Found a bug or have a feature request? [Open an issue](https://github.com/${REPO}/issues/new/choose)."
 } >> "$body_file"

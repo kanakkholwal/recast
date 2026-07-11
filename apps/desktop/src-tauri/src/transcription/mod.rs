@@ -30,7 +30,7 @@ use crate::commands::error::{AppError, AppResult};
 // external silero_vad.onnx; the download/verify path lives in `models`).
 pub(crate) use models::{download_file, models_dir};
 
-// ---- Transcript data model (mirrors the planned project-format `transcript` section) ----
+// - Transcript data model (mirrors the planned project-format `transcript` section) -
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -194,7 +194,7 @@ fn evaluate(model: &CaptionModel, caps: &DeviceCapabilities) -> (bool, Option<St
     (true, (!notes.is_empty()).then(|| notes.join(" ")))
 }
 
-// ---- Channel payloads ----
+// - Channel payloads -
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -213,7 +213,7 @@ pub(crate) struct TranscribeProgress {
     phase: String, // "extracting" | "transcribing" | "done"
 }
 
-// ---- Commands ----
+// - Commands -
 
 /// Catalog + per-model install state. Cheap disk checks; async to honour the
 /// no-sync-commands rule.

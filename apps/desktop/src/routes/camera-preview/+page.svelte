@@ -9,7 +9,7 @@
     X,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
-  import { listen } from "@tauri-apps/api/event";
+  import { emit, listen } from "@tauri-apps/api/event";
   import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
   import { onMount } from "svelte";
 
@@ -200,6 +200,10 @@
   }
 
   function closeWindow() {
+    // Tell the panel the user dismissed the preview so its camera toggle syncs.
+    // Only the user paths (this button + Escape) run through here; the panel's
+    // own programmatic closes use a raw close() and must not flip the toggle.
+    void emit("camera-preview-closed");
     stopCamera();
     getCurrentWindow().close();
   }

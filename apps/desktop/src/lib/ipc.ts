@@ -1000,10 +1000,19 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 }
 
 
- export async function launchRecordingPanel() {
+/** What the panel should preselect on open. Sent from the home mode tiles. */
+export type CaptureIntent = "screen" | "window" | "region" | "camera";
+
+ export async function launchRecordingPanel(intent?: CaptureIntent) {
     const existing = await WebviewWindow.getByLabel("recording-panel");
     if (existing) {
       await existing.setFocus();
+      // The window is already mounted, so a query param wouldn't re-trigger;
+      // hand the intent over on an event the panel listens for.
+      if (intent) {
+        const { emit } = await import("@tauri-apps/api/event");
+        await emit("panel-capture-intent", { intent });
+      }
       return;
     }
 
@@ -1012,7 +1021,7 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
     const panelWidth = 520;
     const panelHeight = 72;
     const panelWin = new WebviewWindow("recording-panel", {
-      url: "/panel",
+      url: intent ? `/panel?intent=${intent}` : "/panel",
       title: "Recast Panel",
       width: panelWidth,
       height: panelHeight,

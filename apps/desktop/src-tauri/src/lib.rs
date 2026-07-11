@@ -208,9 +208,9 @@ pub fn run() {
     // silent — when a user hit a recording error there was no way to ask
     // them for a log file, so every report had to be reproduced live.
     // `tauri_plugin_log`'s defaults write to both stdout AND a rotating
-    // file under the OS log dir (Windows: `%LOCALAPPDATA%\com.nexonauts.recast\logs\`,
-    // macOS: `~/Library/Logs/com.nexonauts.recast/`, Linux:
-    // `~/.local/share/com.nexonauts.recast/logs/`).
+    // file under the OS log dir (Windows: `%LOCALAPPDATA%\com.kanakkholwal.recast\logs\`,
+    // macOS: `~/Library/Logs/com.kanakkholwal.recast/`, Linux:
+    // `~/.local/share/com.kanakkholwal.recast/logs/`).
     //
     // The dispatch is built permissively (Trace); the EFFECTIVE level is set at
     // runtime by `commands::system::apply_log_level` from the persisted
@@ -235,7 +235,18 @@ pub fn run() {
         })
         .setup(|app| {
             let handle = app.handle();
-            let config = load_config(handle);
+            let mut config = load_config(handle);
+
+            // First run: default the output location to <Videos>/Recast so
+            // recordings land somewhere discoverable and durable, not the temp
+            // dir the OS periodically purges. Persisted so it shows in Settings
+            // and the user can still change it.
+            if config.output_dir.is_none() {
+                let default_dir = commands::system::default_output_dir(handle);
+                let _ = std::fs::create_dir_all(&default_dir);
+                config.output_dir = Some(default_dir.to_string_lossy().to_string());
+                commands::system::save_config(handle, &config);
+            }
 
             // Apply the saved log verbosity now (the plugin was built at Trace).
             // Off by default → release stays at Warn; on → Debug captures
