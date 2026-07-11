@@ -447,25 +447,25 @@ pub struct RecordingOptions {
     #[serde(default)]
     pub microphone: bool,
     /// Microphone device ID (None = default device).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub microphone_device_id: Option<String>,
     /// Capture camera video.
     #[serde(default)]
     pub camera: bool,
     /// Camera device ID / DirectShow device name (None = first available).
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub camera_device_id: Option<String>,
     /// Capture frame rate. `None` (or out of the supported 24..=240 range)
     /// falls back to [`RECORDING_FPS`]. The pacer and encoder both run at this
     /// rate; values above the monitor's refresh just duplicate frames, so the
     /// UI gates the offered options by the detected display refresh.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fps: Option<u32>,
     /// Capture quality tier — `"auto"` (default), `"balanced"`, `"high"`, or
     /// `"pristine"`. `"auto"`/unknown resolve against the detected encoder
     /// (hardware → high, software → balanced). See
     /// [`crate::encoder::RecordingQuality::resolve`].
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub quality: Option<String>,
 }
 

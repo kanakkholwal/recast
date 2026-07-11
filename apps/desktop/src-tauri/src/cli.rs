@@ -29,6 +29,9 @@ const CLI_VERBS: &[&str] = &[
     "doctor",
     "status",
     "rec",
+    "select",
+    "set",
+    "selection",
     "install",
     "uninstall",
 ];
@@ -129,6 +132,21 @@ enum Command {
         #[command(subcommand)]
         action: RecAction,
     },
+    /// Stage the source/mic/camera for the next recording (the capture intent).
+    Select {
+        #[command(subcommand)]
+        action: SelectAction,
+    },
+    /// Tweak capture options on the staged intent.
+    Set {
+        #[command(subcommand)]
+        action: SetAction,
+    },
+    /// Inspect or reset the staged capture intent.
+    Selection {
+        #[command(subcommand)]
+        action: SelectionAction,
+    },
     /// Put `recast` on your PATH so it runs as a bare command in any terminal.
     Install,
     /// Remove `recast` from your PATH.
@@ -147,6 +165,55 @@ enum RecAction {
     Resume,
     /// Print the current recording/paused state.
     Status,
+}
+
+#[derive(Subcommand)]
+enum SelectAction {
+    /// Record a display by id (from `displays list`).
+    Screen { id: u32 },
+    /// Record a window by id (from `windows list`).
+    Window { id: u32 },
+    /// Record a region given as X,Y,W,H in physical pixels.
+    Region {
+        #[arg(value_name = "X,Y,W,H")]
+        spec: String,
+    },
+    /// Microphone: a device id, `default`, or `none`.
+    Mic {
+        #[arg(value_name = "ID|default|none")]
+        value: String,
+    },
+    /// Camera: a device id or `none`.
+    Camera {
+        #[arg(value_name = "ID|none")]
+        value: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SetAction {
+    /// System audio capture, `on` or `off`.
+    SystemAudio {
+        #[arg(value_name = "ON|OFF")]
+        value: String,
+    },
+    /// Capture frame rate.
+    Fps { value: u32 },
+    /// Encode quality: auto, balanced, high, or pristine.
+    Quality { value: String },
+    /// Pre-roll countdown in seconds, or `off`.
+    Countdown {
+        #[arg(value_name = "SECONDS|off")]
+        value: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SelectionAction {
+    /// Print the staged capture intent.
+    Show,
+    /// Reset the intent to defaults (no source, system audio on).
+    Reset,
 }
 
 #[derive(clap::Args)]
@@ -287,7 +354,56 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             RecAction::Resume => control(cli, "rec.resume", Value::Null),
             RecAction::Status => control(cli, "rec.status", Value::Null),
         },
+        Command::Select { action } => control(cli, "intent.patch", select_patch(action)?),
+        Command::Set { action } => control(cli, "intent.patch", set_patch(action)?),
+        Command::Selection { action } => match action {
+            SelectionAction::Show => control(cli, "intent.get", Value::Null),
+            SelectionAction::Reset => control(cli, "intent.reset", Value::Null),
+        },
     }
+}
+
+/// Build an intent patch from a `select` verb.
+fn select_patch(action: &SelectAction) -> Result<Value, String> {
+    Ok(match action {
+        SelectAction::Screen { id } => {
+            json!({ "targetType": "display", "targetId": id, "region": null })
+        }
+        SelectAction::Window { id } => {
+            json!({ "targetType": "window", "targetId": id, "region": null })
+        }
+        SelectAction::Region { spec } => {
+            json!({ "targetType": "region", "targetId": 0, "region": parse_region(spec)? })
+        }
+        SelectAction::Mic { value } => match value.as_str() {
+            "none" => json!({ "microphone": false, "microphoneDeviceId": null }),
+            "default" => json!({ "microphone": true, "microphoneDeviceId": null }),
+            id => json!({ "microphone": true, "microphoneDeviceId": id }),
+        },
+        SelectAction::Camera { value } => match value.as_str() {
+            "none" => json!({ "camera": false, "cameraDeviceId": null }),
+            id => json!({ "camera": true, "cameraDeviceId": id }),
+        },
+    })
+}
+
+/// Build an intent patch from a `set` verb.
+fn set_patch(action: &SetAction) -> Result<Value, String> {
+    Ok(match action {
+        SetAction::SystemAudio { value } => json!({ "systemAudio": parse_on_off(value)? }),
+        SetAction::Fps { value } => json!({ "fps": value }),
+        SetAction::Quality { value } => json!({ "quality": value }),
+        SetAction::Countdown { value } => {
+            let seconds = if value.eq_ignore_ascii_case("off") {
+                Value::Null
+            } else {
+                json!(value
+                    .parse::<u32>()
+                    .map_err(|_| "countdown must be a number of seconds or `off`".to_string())?)
+            };
+            json!({ "countdown": seconds })
+        }
+    })
 }
 
 /// Send a control request to the running app and print its result.
@@ -296,16 +412,27 @@ fn control(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
     emit(&value, cli.format)
 }
 
+/// Build `rec.start` params. With a target flag it is a full one-off; with no
+/// target flag it is empty, so the server records the stored capture intent.
 fn build_start_params(args: &StartArgs) -> Result<Value, String> {
-    let (target_type, target_id, region) = if let Some(id) = args.screen {
-        ("display", id, Value::Null)
+    let mut params = serde_json::Map::new();
+    if let Some(id) = args.screen {
+        params.insert("targetType".into(), json!("display"));
+        params.insert("targetId".into(), json!(id));
     } else if let Some(id) = args.window {
-        ("window", id, Value::Null)
+        params.insert("targetType".into(), json!("window"));
+        params.insert("targetId".into(), json!(id));
     } else if let Some(spec) = &args.region {
-        ("region", 0, parse_region(spec)?)
-    } else {
-        return Err("specify a target: --screen <id>, --window <id>, or --region X,Y,W,H".into());
-    };
+        params.insert("targetType".into(), json!("region"));
+        params.insert("targetId".into(), json!(0));
+        params.insert("region".into(), parse_region(spec)?);
+    }
+
+    // Option flags only apply to the explicit path; the stored intent carries
+    // its own. Without a target, the flags are ignored (the intent wins).
+    if !params.contains_key("targetType") {
+        return Ok(Value::Object(params));
+    }
 
     let mut options = serde_json::Map::new();
     if let Some(sa) = &args.system_audio {
@@ -333,13 +460,6 @@ fn build_start_params(args: &StartArgs) -> Result<Value, String> {
     }
     if let Some(q) = &args.quality {
         options.insert("quality".into(), Value::String(q.clone()));
-    }
-
-    let mut params = serde_json::Map::new();
-    params.insert("targetType".into(), Value::String(target_type.into()));
-    params.insert("targetId".into(), json!(target_id));
-    if !region.is_null() {
-        params.insert("region".into(), region);
     }
     if !options.is_empty() {
         params.insert("options".into(), Value::Object(options));

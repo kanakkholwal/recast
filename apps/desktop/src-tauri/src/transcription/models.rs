@@ -79,6 +79,11 @@ pub enum ModelSource {
 pub fn runtime_status(runtime: Runtime) -> (bool, Option<String>) {
     match runtime {
         Runtime::Onnx => (true, None),
+        // Available only in a build compiled with the `whisper` feature (which
+        // pulls the LLVM/CMake toolchain). Default builds report it as pending.
+        #[cfg(feature = "whisper")]
+        Runtime::WhisperCpp => (true, None),
+        #[cfg(not(feature = "whisper"))]
         Runtime::WhisperCpp => (
             false,
             Some("The Whisper runtime arrives in a later build.".into()),
@@ -245,7 +250,8 @@ fn onnx(
 /// repo + file set wired here and an engine arm in `engine.rs`. Whisper models
 /// wait on the `whisper-cpp` build (LLVM + CMake).
 pub fn registry() -> Vec<CaptionModel> {
-    vec![
+    #[allow(unused_mut)]
+    let mut models = vec![
         parakeet(
             "parakeet-v3",
             "Parakeet V3 (0.6B)",
@@ -303,6 +309,65 @@ pub fn registry() -> Vec<CaptionModel> {
             &COHERE_FILES,
             vec!["multi".into()],
             1_700_000_000,
+        ),
+    ];
+    // Built-in Whisper (whisper.cpp) models only exist in a `whisper`-feature
+    // build; otherwise they'd be perpetually un-runnable downloads in the picker.
+    #[cfg(feature = "whisper")]
+    models.extend(whisper_models());
+    models
+}
+
+/// GGML Whisper model file entry. whisper.cpp loads a single `.bin`; the file
+/// name doubles as the on-disk name under the model dir. Files come from the
+/// canonical `ggerganov/whisper.cpp` HuggingFace repo.
+#[cfg(feature = "whisper")]
+fn whisper(id: &str, name: &str, ggml_file: &str, multilingual: bool, size: u64) -> CaptionModel {
+    let url = format!("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/{ggml_file}");
+    CaptionModel {
+        id: id.into(),
+        display_name: name.into(),
+        engine: Engine::Whisper,
+        family: "Whisper".into(),
+        languages: vec![if multilingual { "multi" } else { "en" }.into()],
+        approx_size_bytes: Some(size),
+        is_default: false,
+        files: vec![ModelFile {
+            rel_path: ggml_file.into(),
+            url,
+            sha256: None, // TODO: pin once we lock a revision
+        }],
+        requires_gpu: false, // whisper.cpp runs on CPU (GPU accel is opt-in)
+        prefers_gpu: false,
+        min_ram_bytes: Some(2_000_000_000),
+        source: ModelSource::Builtin,
+        remote: None,
+    }
+}
+
+#[cfg(feature = "whisper")]
+fn whisper_models() -> Vec<CaptionModel> {
+    vec![
+        whisper(
+            "whisper-base",
+            "Whisper Base",
+            "ggml-base.bin",
+            true,
+            148_000_000,
+        ),
+        whisper(
+            "whisper-small",
+            "Whisper Small",
+            "ggml-small.bin",
+            true,
+            488_000_000,
+        ),
+        whisper(
+            "whisper-medium",
+            "Whisper Medium",
+            "ggml-medium.bin",
+            true,
+            1_530_000_000,
         ),
     ]
 }
@@ -442,4 +507,57 @@ pub async fn download_file(
         .await
         .map_err(|e| format!("rename: {e}"))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn engine_maps_to_its_runtime() {
+        assert_eq!(Engine::Parakeet.runtime(), Runtime::Onnx);
+        assert_eq!(Engine::Canary.runtime(), Runtime::Onnx);
+        assert_eq!(Engine::GigaAM.runtime(), Runtime::Onnx);
+        assert_eq!(Engine::Cohere.runtime(), Runtime::Onnx);
+        assert_eq!(Engine::Whisper.runtime(), Runtime::WhisperCpp);
+        assert_eq!(Engine::Remote.runtime(), Runtime::Remote);
+    }
+
+    #[test]
+    fn onnx_runtime_is_always_available() {
+        let (available, reason) = runtime_status(Runtime::Onnx);
+        assert!(available);
+        assert!(reason.is_none());
+    }
+
+    #[test]
+    fn whisper_availability_tracks_the_feature() {
+        let (available, reason) = runtime_status(Runtime::WhisperCpp);
+        // The `whisper` build activates the runtime; every other build reports it
+        // as pending with a reason.
+        assert_eq!(available, cfg!(feature = "whisper"));
+        assert_eq!(reason.is_none(), cfg!(feature = "whisper"));
+    }
+
+    #[test]
+    fn remote_runtime_is_never_globally_available() {
+        // Remote availability is decided per-endpoint (key present), so the
+        // global gate is always "not available" with a reason.
+        let (available, reason) = runtime_status(Runtime::Remote);
+        assert!(!available);
+        assert!(reason.is_some());
+    }
+
+    #[test]
+    fn registry_nominates_exactly_one_default() {
+        assert_eq!(registry().iter().filter(|m| m.is_default).count(), 1);
+    }
+
+    #[test]
+    fn whisper_models_present_only_in_whisper_build() {
+        let has_whisper = registry()
+            .iter()
+            .any(|m| matches!(m.engine, Engine::Whisper));
+        assert_eq!(has_whisper, cfg!(feature = "whisper"));
+    }
 }

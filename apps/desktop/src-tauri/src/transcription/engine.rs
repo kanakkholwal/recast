@@ -57,12 +57,45 @@ pub fn transcribe(
                 .map_err(|e| format!("load Cohere model: {e}"))?;
             run_speech_model(m, model, samples)
         }
-        Engine::Whisper => Err("Whisper (whisper.cpp) isn't enabled in this build yet — \
-             use a Parakeet or Canary model. See docs/captions-transcription-plan.md."
-            .into()),
+        Engine::Whisper => whisper_transcribe(model, model_dir, samples),
         // Remote models are transcribed over HTTP in `transcribe_project` before
         // reaching the local engine, so this arm is never hit in practice.
         Engine::Remote => Err("remote models are transcribed via the remote path".into()),
+    }
+}
+
+/// Whisper (whisper.cpp via transcribe-rs). Gated behind the `whisper` Cargo
+/// feature because it pulls the LLVM+CMake toolchain; without it, Whisper models
+/// report a clear "build with --features whisper" error. The GGML model is a
+/// single `.bin` file inside the model dir.
+#[cfg(feature = "captions")]
+fn whisper_transcribe(
+    model: &CaptionModel,
+    model_dir: &Path,
+    samples: &[f32],
+) -> Result<Transcript, String> {
+    #[cfg(feature = "whisper")]
+    {
+        use transcribe_rs::whisper_cpp::WhisperEngine;
+        let bin = model
+            .files
+            .first()
+            .map(|f| model_dir.join(&f.rel_path))
+            .ok_or_else(|| "Whisper model has no file defined".to_string())?;
+        // WhisperEngine implements `SpeechModel`, so grouping/mapping reuses the
+        // same path as the ONNX trait engines.
+        let engine = WhisperEngine::load(&bin).map_err(|e| format!("load Whisper model: {e}"))?;
+        run_speech_model(engine, model, samples)
+    }
+    #[cfg(not(feature = "whisper"))]
+    {
+        let _ = (model, model_dir, samples);
+        Err(
+            "Whisper (whisper.cpp) isn't enabled in this build. Rebuild with \
+             `--features whisper` (needs the LLVM/Clang + CMake toolchain), or use a \
+             Parakeet/Canary model."
+                .into(),
+        )
     }
 }
 

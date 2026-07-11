@@ -2,7 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use chrono::{Local, TimeZone};
-use tauri::State;
+use tauri::{Emitter, State};
 
 use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
@@ -26,6 +26,7 @@ fn exports_dir(state: &State<'_, AppState>) -> PathBuf {
 
 #[tauri::command]
 pub async fn start_recording(
+    app: tauri::AppHandle,
     target_type: String,
     target_id: u32,
     region: Option<RegionRect>,
@@ -113,6 +114,12 @@ pub async fn start_recording(
     // Only on success so a failed start doesn't leak a hold.
     if outcome.is_ok() {
         state.power.acquire();
+        // Broadcast so observers (panel transport, tray, `recast watch`) reflect
+        // the recording regardless of who started it (UI button or CLI).
+        let _ = app.emit(
+            "recording:started",
+            serde_json::json!({ "startedAtUnixMs": Local::now().timestamp_millis() }),
+        );
     }
     outcome
 }

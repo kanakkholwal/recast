@@ -8,18 +8,22 @@
   } from "$lib/camera/browser-devices";
   import { checkCapability, loadCapabilities } from "$lib/capabilities";
   import {
+    CAPTURE_INTENT_CHANGED_EVENT,
     getAudioDevices,
+    getCaptureIntent,
     getDisplays,
     getLastSource,
     pauseRecording,
     refreshTray,
     resumeRecording,
+    setCaptureIntent,
     setLastSource,
     startRecording,
     stopRecording,
     validateCameraSource,
     type AudioDeviceInfo,
     type CameraValidationResult,
+    type CaptureIntentState,
     type RecordingOptions,
   } from "$lib/ipc";
   import {
@@ -65,8 +69,10 @@
   import {
     clampFpsToDisplay,
     formatRecordingTimer,
+    intentToTargetType,
     lastSourceToTarget,
     targetToLastSource,
+    targetTypeToIntent,
     type TargetSource,
   } from "./panel.logic";
 
@@ -218,6 +224,131 @@
     activeProfile?.countdown ?? recordingCountdown.value,
   );
 
+  // --- Backend capture-intent sync (Phase 3b) -----------------------------
+  // The panel and the backend `CaptureIntent` stay in sync both ways: the panel
+  // pushes its selection so `recast selection show` reflects the live UI, and it
+  // applies external edits (from `recast select`/`set`) that arrive as
+  // `capture-intent:changed`. `lastIntent` is the last value we sent or received;
+  // comparing before writing/applying breaks the echo loop between the two.
+  let lastIntent = $state<CaptureIntentState | null>(null);
+  let intentSyncReady = $state(false);
+
+  // Preserve fields the panel does not own (fps/quality/countdown/profile) from
+  // the last intent; the panel only drives source + audio/mic/camera.
+  function buildIntentFromPanel(): CaptureIntentState {
+    const base: CaptureIntentState = lastIntent ?? {
+      targetId: 0,
+      options: { systemAudio: true },
+    };
+    return {
+      ...base,
+      targetType: selectedSource ? targetTypeToIntent(selectedSource.type) : null,
+      targetId: selectedSource?.id ?? 0,
+      region:
+        selectedSource?.type === "region" && selectedSource.region
+          ? selectedSource.region
+          : null,
+      options: {
+        ...base.options,
+        systemAudio: systemAudioOn,
+        microphone: micOn,
+        microphoneDeviceId: micOn ? selectedMicId : null,
+        camera: cameraOn,
+        // Rust wants the DirectShow friendly name, matching startActualRecording.
+        cameraDeviceId: cameraOn ? selectedCameraName : null,
+      },
+    };
+  }
+
+  // Apply an externally-set intent (a CLI `select`/`set`) to the panel state.
+  function applyIntentToPanel(intent: CaptureIntentState) {
+    const type = intentToTargetType(intent.targetType);
+    if (type) {
+      selectedSource = {
+        type,
+        id: intent.targetId,
+        label:
+          type === "window"
+            ? `Window ${intent.targetId}`
+            : type === "region"
+              ? "Region"
+              : `Display ${intent.targetId}`,
+        region: type === "region" ? (intent.region ?? undefined) : undefined,
+      };
+      // Enrich a monitor with its real name + refresh for the label and fps cap.
+      if (type === "monitor") {
+        const wantId = intent.targetId;
+        getDisplays()
+          .then((displays) => {
+            const d = displays.find((x) => x.id === wantId);
+            if (d && selectedSource?.id === wantId) {
+              selectedSource = {
+                ...selectedSource,
+                label: d.isPrimary ? "Primary Display" : `Display ${d.id}`,
+                refreshHz: d.refreshHz || undefined,
+              };
+            }
+          })
+          .catch(() => {});
+      }
+    }
+
+    systemAudioOn = intent.options.systemAudio ?? true;
+
+    // Mic ids are the same Rust audio ids the panel already uses.
+    if (intent.options.microphone) {
+      micOn = true;
+      selectedMicId = intent.options.microphoneDeviceId ?? selectedMicId;
+      selectedMicName =
+        mics.find((m) => m.id === selectedMicId)?.name ?? selectedMicName;
+      micWarning = null;
+    } else {
+      micOn = false;
+    }
+
+    // Camera: the intent carries the DirectShow name; match a browser device by
+    // label to drive the preview window.
+    if (intent.options.camera) {
+      const name = intent.options.cameraDeviceId ?? selectedCameraName;
+      cameraOn = true;
+      selectedCameraName = name;
+      const match = cameras.find((c) => c.label === name);
+      if (match) {
+        selectedCameraId = match.deviceId;
+        void refreshCameraValidation(match.deviceId);
+        openCameraPreview(match.deviceId);
+      }
+      cameraWarning = null;
+    } else if (cameraOn) {
+      cameraOn = false;
+      cameraValidation = null;
+      closeCameraPreview();
+    }
+  }
+
+  // On mount (after devices load): adopt a source the CLI staged before the
+  // panel opened, then seed the guard so the first push does not clobber it.
+  async function initIntentSync() {
+    try {
+      const intent = await getCaptureIntent();
+      lastIntent = intent;
+      if (intentToTargetType(intent.targetType)) applyIntentToPanel(intent);
+      intentSyncReady = true;
+    } catch {
+      // Non-Tauri preview or older build: leave sync off.
+    }
+  }
+
+  // Push the panel selection to the backend whenever it changes, unless it
+  // already matches (our own echo, or a value we just applied).
+  $effect(() => {
+    const next = buildIntentFromPanel();
+    if (!intentSyncReady) return;
+    if (JSON.stringify(next) === JSON.stringify(lastIntent)) return;
+    lastIntent = next;
+    setCaptureIntent(next).catch(() => {});
+  });
+
   async function refreshCameraValidation(deviceId: string | null) {
     if (!deviceId) {
       cameraValidation = null;
@@ -368,9 +499,22 @@
 
     profilesStore.hydrate();
 
-    void initDevicesAndProfile();
+    // Load devices/profile, then adopt any CLI-staged intent and enable sync.
+    void initDevicesAndProfile().then(() => initIntentSync());
     // Warm the capability probe so the first device toggle resolves instantly.
     void loadCapabilities();
+
+    // Apply external intent edits (from `recast select`/`set`) to the panel.
+    const unlistenIntentChanged = listen<CaptureIntentState>(
+      CAPTURE_INTENT_CHANGED_EVENT,
+      (event) => {
+        if (isRecording) return; // selections are locked during a take
+        const incoming = event.payload;
+        if (JSON.stringify(incoming) === JSON.stringify(lastIntent)) return;
+        lastIntent = incoming;
+        applyIntentToPanel(incoming);
+      },
+    );
 
     window.addEventListener("keydown", handleGlobalShortcut);
 
@@ -410,6 +554,7 @@
       unlistenTrayPause.then((fn) => fn());
       unlistenIntent.then((fn) => fn());
       unlistenCameraClosed.then((fn) => fn());
+      unlistenIntentChanged.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });

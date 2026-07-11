@@ -66,12 +66,10 @@
   import {
     ArrowLeft,
     CheckCircle2,
-    Circle,
     Cloud,
     FlaskConical,
     FolderOpen,
     HardDriveUpload,
-    LoaderCircle,
     Play,
     Share2,
     TriangleAlert,
@@ -1753,11 +1751,11 @@
           : "Source"}
   {@const fpsLabel = isGifFmt
     ? store.gifSettings.fps
-      ? `${store.gifSettings.fps} fps`
+      ? `${store.gifSettings.fps}`
       : "Auto"
     : store.exportFps
-      ? `${store.exportFps} fps`
-      : `${srcFps} fps`}
+      ? `${store.exportFps}`
+      : `${srcFps}`}
   <!-- Carries the committed export settings forward so every later phase stays
        anchored to "what you're exporting". -->
   <section
@@ -1784,7 +1782,7 @@
     <div class="flex min-w-0 flex-1 flex-col gap-0.5 px-4">
       <span
         class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >Frame rate</span
+        >FPS</span
       >
       <span class="truncate text-[12px] font-medium tabular-nums text-foreground">
         {fpsLabel}
@@ -1855,7 +1853,7 @@
 
     <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
       <div
-        class="mx-auto flex w-full max-w-xs flex-col items-center gap-3 px-5 pt-5 pb-3"
+        class="mx-auto flex min-h-full w-full max-w-xs flex-col items-center justify-center gap-5 px-5 py-6"
       >
       <div class="relative size-32" aria-live="polite">
         <svg
@@ -1967,45 +1965,48 @@
               </div>
             {/if}
 
-            <!-- Substage list; collapses to a single "Encoding…" line once Rust takes over. -->
-            <ul class="flex flex-col gap-1 self-stretch text-[11px]">
-              {#each stages as s}
+            <!-- Substage stepper: done steps check off, the active step is the
+                 highlighted row with a live pulsing dot, the rest stay dim. One
+                 clear "which is happening now" language across all substages. -->
+            <ul class="flex w-full flex-col gap-0.5 self-stretch text-[11px]">
+              {#each stages as s (s.key)}
                 {#if !s.skip}
-                  <li class="flex items-center gap-2">
-                    {#if s.state === "done"}
-                      <CheckCircle2 size={11} class="shrink-0 text-success" />
-                      <span
-                        class="text-muted-foreground line-through decoration-muted-foreground/40"
-                        >{s.label}</span
-                      >
-                    {:else if s.state === "running" && s.key === "ship"}
-                      <!-- Dots travel through a pipe, suggesting the render state
-                           being piped to the encoder. -->
-                      <span
-                        class="ship-beam relative flex h-2.5 w-3.5 shrink-0 items-center overflow-hidden rounded-full bg-primary/15"
-                      >
-                        <span class="ship-dot ship-dot-1"></span>
-                        <span class="ship-dot ship-dot-2"></span>
-                        <span class="ship-dot ship-dot-3"></span>
-                      </span>
-                      <span class="text-foreground">{s.label}</span>
-                      <span
-                        class="ml-auto font-mono text-[9px] tabular-nums text-muted-foreground"
-                        >shipping…</span
-                      >
-                    {:else if s.state === "running"}
-                      <LoaderCircle
-                        size={11}
-                        class="shrink-0 animate-spin text-primary"
-                      />
-                      <span class="text-foreground">{s.label}</span>
-                    {:else}
-                      <Circle
-                        size={11}
-                        class="shrink-0 text-muted-foreground/40"
-                      />
-                      <span class="text-muted-foreground/60">{s.label}</span>
-                    {/if}
+                  {@const done = s.state === "done"}
+                  {@const active = s.state === "running"}
+                  <li
+                    class="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors duration-200 {active
+                      ? 'bg-primary/5'
+                      : ''}"
+                  >
+                    <span class="grid size-3.5 shrink-0 place-items-center">
+                      {#if done}
+                        <CheckCircle2 size={13} class="text-success" />
+                      {:else if active}
+                        <span
+                          class="relative flex size-2.5 items-center justify-center"
+                        >
+                          <span
+                            class="absolute inline-flex size-full rounded-full bg-primary/50 motion-safe:animate-ping"
+                          ></span>
+                          <span
+                            class="relative inline-flex size-2 rounded-full bg-primary"
+                          ></span>
+                        </span>
+                      {:else}
+                        <span
+                          class="size-2 rounded-full border border-muted-foreground/30"
+                        ></span>
+                      {/if}
+                    </span>
+                    <span
+                      class="min-w-0 flex-1 truncate {active
+                        ? 'font-medium text-foreground'
+                        : done
+                          ? 'text-muted-foreground'
+                          : 'text-muted-foreground/50'}"
+                    >
+                      {s.label}{active ? "…" : ""}
+                    </span>
                   </li>
                 {/if}
               {/each}
@@ -2181,9 +2182,10 @@
       </div>
     </header>
 
-    <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
-      {@render exportSpecStrip()}
-    </div>
+    {@render exportSpecStrip()}
+    <!-- Nothing was written, so the body is intentionally empty; the spacer
+         keeps the strip anchored under the header and the actions at the base. -->
+    <div class="min-h-0 flex-1"></div>
 
     <footer
       class="flex shrink-0 items-center justify-end gap-1.5 border-t border-border/40 bg-muted/30 px-3 py-2.5"
@@ -2265,29 +2267,6 @@
 {/snippet}
 
 <style>
-  /* Three dots travel left → right with offset, reading as data being piped. */
-  .ship-beam {
-    box-shadow: inset 0 0 0 1px hsl(var(--border) / 0.3);
-  }
-  .ship-dot {
-    position: absolute;
-    width: 3px;
-    height: 3px;
-    border-radius: 9999px;
-    background: hsl(var(--primary));
-    top: 50%;
-    transform: translate(-50%, -50%);
-    animation: ship-beam-travel 1.1s linear infinite;
-  }
-  .ship-dot-1 {
-    animation-delay: 0s;
-  }
-  .ship-dot-2 {
-    animation-delay: 0.36s;
-  }
-  .ship-dot-3 {
-    animation-delay: 0.72s;
-  }
   /* Primary-tinted highlight sweeps across muted text for a subtle shimmer. */
   .export-shimmer {
     background: linear-gradient(
@@ -2316,23 +2295,6 @@
     .export-shimmer {
       animation: none;
       background-position: 50% 0;
-    }
-  }
-
-  @keyframes ship-beam-travel {
-    0% {
-      left: 0%;
-      opacity: 0;
-    }
-    20% {
-      opacity: 1;
-    }
-    80% {
-      opacity: 1;
-    }
-    100% {
-      left: 100%;
-      opacity: 0;
     }
   }
 </style>

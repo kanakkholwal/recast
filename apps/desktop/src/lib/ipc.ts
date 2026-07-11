@@ -147,6 +147,34 @@ export function diagnoseFfmpeg(): Promise<FfmpegDiagnostics> {
 	return invoke<FfmpegDiagnostics>("diagnose_ffmpeg");
 }
 
+/** Backend-owned staged selection for the next recording. Mirrors the Rust
+ *  `CaptureIntent` struct (`commands/intent.rs`). The CLI mutates it and the
+ *  panel renders it; `capture-intent:changed` fires on every edit. */
+export interface CaptureIntentState {
+	/** "display" | "window" | "region"; absent until a source is chosen. */
+	targetType?: string | null;
+	targetId: number;
+	region?: RegionRect | null;
+	options: RecordingOptions;
+	countdown?: number | null;
+	activeProfileId?: string | null;
+}
+
+/** Event name broadcast by the backend whenever the capture intent changes. */
+export const CAPTURE_INTENT_CHANGED_EVENT = "capture-intent:changed";
+
+/** Read the current staged capture intent. */
+export function getCaptureIntent(): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("get_capture_intent");
+}
+
+/** Replace the staged capture intent (broadcasts `capture-intent:changed`). */
+export function setCaptureIntent(
+	intent: CaptureIntentState,
+): Promise<CaptureIntentState> {
+	return invoke<CaptureIntentState>("set_capture_intent", { intent });
+}
+
 /** Whether the `recast` CLI resolves as a bare terminal command. Mirrors the
  *  Rust `InstallStatus` (`cli_install_status`). */
 export interface CliInstallStatus {

@@ -212,6 +212,14 @@ default = ["captions"]
 # module's non-engine plumbing (model list, download, device caps) compiles
 # without the feature; the engine seam returns a "not available" error.
 captions = ["dep:transcribe-rs", "dep:ort"]
+# Whisper (whisper.cpp) transcription, OFF by default. Pulls transcribe-rs's
+# `whisper-cpp` feature → `whisper-rs`, which builds whisper.cpp from source and
+# needs the LLVM/Clang + CMake toolchain (bindgen). We keep it opt-in so the
+# default build (and CI) stays toolchain-light; a build with `--features whisper`
+# activates the engine arm (engine.rs) and the built-in Whisper model catalog
+# (models.rs). Not yet exercised in CI — treat as experimental until a whisper
+# build is wired into the pipeline.
+whisper = ["captions", "transcribe-rs/whisper-cpp"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test
 # checklist before flipping this on for a release build.

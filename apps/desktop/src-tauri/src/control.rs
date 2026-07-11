@@ -139,6 +139,49 @@ struct StartParams {
     options: Option<crate::recording::RecordingOptions>,
 }
 
+/// Merge a partial patch (only the keys the CLI verb supplied) into the intent.
+/// Key presence is authoritative, so `microphoneDeviceId: null` clears the id
+/// while an absent key leaves it untouched.
+fn apply_patch(intent: &mut crate::commands::types::CaptureIntent, params: &Value) {
+    let Some(map) = params.as_object() else {
+        return;
+    };
+    if let Some(v) = map.get("targetType") {
+        intent.target_type = v.as_str().map(str::to_string);
+    }
+    if let Some(n) = map.get("targetId").and_then(Value::as_u64) {
+        intent.target_id = n as u32;
+    }
+    if map.contains_key("region") {
+        intent.region = serde_json::from_value(map["region"].clone()).ok();
+    }
+    if let Some(b) = map.get("systemAudio").and_then(Value::as_bool) {
+        intent.options.system_audio = b;
+    }
+    if let Some(b) = map.get("microphone").and_then(Value::as_bool) {
+        intent.options.microphone = b;
+    }
+    if map.contains_key("microphoneDeviceId") {
+        intent.options.microphone_device_id =
+            map["microphoneDeviceId"].as_str().map(str::to_string);
+    }
+    if let Some(b) = map.get("camera").and_then(Value::as_bool) {
+        intent.options.camera = b;
+    }
+    if map.contains_key("cameraDeviceId") {
+        intent.options.camera_device_id = map["cameraDeviceId"].as_str().map(str::to_string);
+    }
+    if map.contains_key("fps") {
+        intent.options.fps = map["fps"].as_u64().map(|n| n as u32);
+    }
+    if map.contains_key("quality") {
+        intent.options.quality = map["quality"].as_str().map(str::to_string);
+    }
+    if map.contains_key("countdown") {
+        intent.countdown = map["countdown"].as_u64().map(|n| n as u32);
+    }
+}
+
 /// Route a method to the existing command functions. Reuses the exact command
 /// logic (power management, project write) by handing them a `State` obtained
 /// from the `AppHandle`, so there is no duplicated recording logic here.
@@ -157,13 +200,38 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             "recording": manager.is_recording(),
             "paused": manager.is_paused(),
         })),
+        "intent.get" => {
+            serde_json::to_value(crate::commands::get_intent(app)).map_err(|e| e.to_string())
+        }
+        "intent.reset" => {
+            let next = crate::commands::update_intent(app, |i| *i = Default::default());
+            serde_json::to_value(next).map_err(|e| e.to_string())
+        }
+        "intent.patch" => {
+            let next = crate::commands::update_intent(app, |i| apply_patch(i, &params));
+            serde_json::to_value(next).map_err(|e| e.to_string())
+        }
         "rec.start" => {
-            let p: StartParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
+            // Explicit target flags are a one-off; without them we record the
+            // stored capture intent (set via `recast select`/`set`).
+            let explicit = params.get("targetType").and_then(|v| v.as_str()).is_some();
+            let (target_type, target_id, region, options) = if explicit {
+                let p: StartParams = serde_json::from_value(params).map_err(|e| e.to_string())?;
+                (p.target_type, p.target_id, p.region, p.options)
+            } else {
+                let intent = crate::commands::get_intent(app);
+                match intent.target_type {
+                    Some(tt) => (tt, intent.target_id, intent.region, Some(intent.options)),
+                    None => {
+                        return Err("no source selected. Pass --screen/--window/--region, or run `recast select ...` first.".into())
+                    }
+                }
+            };
             let result = tauri::async_runtime::block_on(crate::commands::start_recording(
-                p.target_type,
-                p.target_id,
-                p.region,
-                p.options,
+                target_type,
+                target_id,
+                region,
+                options,
                 state,
             ))
             .map_err(|e| e.to_string())?;

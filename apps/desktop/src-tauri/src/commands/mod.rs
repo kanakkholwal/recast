@@ -8,6 +8,7 @@ pub(crate) mod extensions;
 pub(crate) mod ffmpeg;
 pub(crate) mod files;
 pub(crate) mod gdrive;
+pub(crate) mod intent;
 mod recording;
 pub(crate) mod system;
 pub(crate) mod types;
@@ -19,6 +20,7 @@ pub use editor::*;
 pub use extensions::*;
 pub use files::*;
 pub use gdrive::*;
+pub use intent::*;
 pub use recording::*;
 pub use system::*;
 

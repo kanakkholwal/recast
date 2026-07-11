@@ -279,6 +279,7 @@ pub fn run() {
                 pending_new_recording: std::sync::atomic::AtomicBool::new(
                     launched_for_new_recording,
                 ),
+                capture_intent: parking_lot::RwLock::new(commands::types::CaptureIntent::default()),
             });
 
             // Register the `recast://` scheme at runtime for dev builds. In
@@ -470,6 +471,8 @@ pub fn run() {
             commands::cli_install_status,
             commands::install_cli,
             commands::uninstall_cli,
+            commands::get_capture_intent,
+            commands::set_capture_intent,
             commands::auth_start,
             commands::auth_status,
             commands::auth_sign_out,
