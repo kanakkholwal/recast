@@ -35,18 +35,18 @@
     "svelte-check": "^4.4.2",
     "tailwindcss": "^4.2.1",
     "typescript": "^5.9.3",
-    "vite": "^7.3.1"
+    "vite": "^8.1.4"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1057.0",
     "@aws-sdk/s3-presigned-post": "^3.1057.0",
-    "@aws-sdk/s3-request-presigner": "^3.1057.0",
+    "@aws-sdk/s3-request-presigner": "^3.1075.0",
     "@azure/storage-blob": "^12.31.0",
     "@breezystack/lamejs": "^1.2.7",
     "@fontsource-variable/instrument-sans": "^5.2.8",
     "@lucide/svelte": "^1.21.0",
     "@polar-sh/better-auth": "^1.8.4",
-    "@polar-sh/sdk": "^0.47.1",
+    "@polar-sh/sdk": "^0.48.1",
     "@sveltejs/adapter-auto": "^6.0.4",
     "@takumi-rs/wasm": "^1.6.0",
     "aws4fetch": "^1.0.20",
