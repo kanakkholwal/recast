@@ -7,6 +7,8 @@
     radius: number;
     /** Ready-to-use CSS `box-shadow` value, or "none". */
     shadow: string;
+    /** Ready-to-use CSS `border` value, or "none". */
+    border: string;
     src: string;
     alt: string;
   }
@@ -15,10 +17,22 @@
 <script lang="ts">
   import { ArrowLeft, ArrowRight, Lock, Plus, RotateCw } from "@lucide/svelte";
 
-  let { mockup, radius, shadow, src, alt }: MockupFrameProps = $props();
+  let { mockup, radius, shadow, border, src, alt }: MockupFrameProps = $props();
 
   const isBrowser = $derived(mockup.kind === "safari" || mockup.kind === "chrome");
+  const isDevice = $derived(mockup.kind === "phone" || mockup.kind === "tablet");
 </script>
+
+{#if isDevice}
+  <!-- Device frame: a fixed-aspect bezel, screenshot cover-filled like a real
+       screen. Uses its own radii; the drop shadow still applies. -->
+  <div class="device" class:phone={mockup.kind === "phone"} class:tablet={mockup.kind === "tablet"} style:box-shadow={shadow}>
+    <img class="device-screen" {src} {alt} />
+    {#if mockup.kind === "phone"}
+      <span class="notch" aria-hidden="true"></span>
+    {/if}
+  </div>
+{:else}
 
 <!-- The frame fills the padded stage; the image contains inside the content
      area so any aspect mismatch reads as a browser showing a page, not a
@@ -29,6 +43,7 @@
   class:dark={mockup.theme === "dark"}
   style:border-radius={`${radius}px`}
   style:box-shadow={shadow}
+  style:border={border}
 >
   {#if mockup.kind === "chrome"}
     <div class="bar tabstrip">
@@ -57,6 +72,7 @@
     <img class="shot" {src} {alt} />
   </div>
 </div>
+{/if}
 
 <style>
   .mockup {
@@ -196,5 +212,44 @@
     width: 100%;
     height: 100%;
     object-fit: contain;
+  }
+
+  /* Device frames: fixed aspect, dark bezel, cover-filled screen. */
+  .device {
+    position: relative;
+    max-width: 100%;
+    max-height: 100%;
+    background: #0b0b0d;
+    overflow: hidden;
+  }
+  .device.phone {
+    aspect-ratio: 9 / 19.5;
+    height: 100%;
+    border-radius: clamp(1.5rem, 8%, 3rem);
+    padding: clamp(0.35rem, 1.6%, 0.7rem);
+  }
+  .device.tablet {
+    aspect-ratio: 3 / 4;
+    height: 100%;
+    border-radius: clamp(0.75rem, 3%, 1.5rem);
+    padding: clamp(0.5rem, 2%, 1rem);
+  }
+  .device-screen {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: inherit;
+  }
+  .notch {
+    position: absolute;
+    top: clamp(0.6rem, 2.4%, 1.1rem);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 34%;
+    height: clamp(0.5rem, 2.2%, 1rem);
+    background: #0b0b0d;
+    border-radius: 9999px;
+    z-index: 1;
   }
 </style>

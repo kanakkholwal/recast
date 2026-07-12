@@ -17,7 +17,8 @@
   "dependencies": {
     "@lucide/svelte": "^1.21.0",
     "@recast/ui": "workspace:*",
-    "modern-screenshot": "^4.6.6"
+    "modern-screenshot": "^4.6.6",
+    "mp4-muxer": "^5.2.2"
   },
   "devDependencies": {
     "svelte": "^5.56.1"

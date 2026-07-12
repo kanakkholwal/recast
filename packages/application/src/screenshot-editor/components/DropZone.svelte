@@ -4,16 +4,22 @@
     hasCapture: boolean;
     /** Whether an image is currently being dragged over the editor. */
     dragging: boolean;
+    /** Whether a URL capture is in flight. */
+    urlBusy: boolean;
     onupload: () => void;
     oncapture?: () => void;
+    onwebsite: (url: string) => void;
   }
 </script>
 
 <script lang="ts">
   import { Button } from "@recast/ui/button";
-  import { Camera, ImageUp, Clipboard } from "@lucide/svelte";
+  import { Input } from "@recast/ui/input";
+  import { Camera, Globe, ImageUp, Clipboard, Loader2 } from "@lucide/svelte";
 
-  let { hasCapture, dragging, onupload, oncapture }: DropZoneProps = $props();
+  let { hasCapture, dragging, urlBusy, onupload, oncapture, onwebsite }: DropZoneProps = $props();
+
+  let url = $state("");
 </script>
 
 <div
@@ -50,4 +56,24 @@
     <kbd class="bg-muted rounded px-1.5 py-0.5 font-mono text-[11px]">Ctrl/Cmd + V</kbd>
     to paste
   </p>
+
+  <form
+    class="mt-6 flex w-full max-w-sm items-center gap-2"
+    onsubmit={(e) => {
+      e.preventDefault();
+      if (url.trim()) onwebsite(url);
+    }}
+  >
+    <div class="relative flex-1">
+      <Globe class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2" />
+      <Input bind:value={url} placeholder="Paste a website URL" class="pl-8" aria-label="Website URL" />
+    </div>
+    <Button type="submit" variant="outline" size="sm" disabled={urlBusy || !url.trim()}>
+      {#if urlBusy}
+        <Loader2 class="animate-spin" />
+      {:else}
+        Capture
+      {/if}
+    </Button>
+  </form>
 </div>

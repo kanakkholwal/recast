@@ -9,6 +9,7 @@
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { SliderControl } from "@recast/ui/slider-control";
+  import { ColorField } from "@recast/ui/color-field";
 
   let { editor }: FrameControlProps = $props();
 </script>
@@ -33,11 +34,19 @@
     onchange={(v) => editor.patchFrame({ radius: v })}
   />
   <SliderControl
-    label="Shadow"
-    value={editor.frame.shadow}
+    label="Border"
+    value={editor.frame.border.width}
     min={0}
-    max={100}
+    max={20}
     step={1}
-    onchange={(v) => editor.patchFrame({ shadow: v })}
+    unit="px"
+    onchange={(v) => editor.patchBorder({ width: v })}
   />
+  {#if editor.frame.border.width > 0}
+    <ColorField
+      label="Border color"
+      value={editor.frame.border.color}
+      oncommit={(c) => editor.patchBorder({ color: c })}
+    />
+  {/if}
 </PanelSection>

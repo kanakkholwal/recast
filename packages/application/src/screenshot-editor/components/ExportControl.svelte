@@ -14,7 +14,7 @@
   import { PanelSection } from "@recast/ui/panel-section";
   import { Segmented } from "@recast/ui/segmented";
   import { Button } from "@recast/ui/button";
-  import { Copy, Download as DownloadIcon, Loader2 } from "@lucide/svelte";
+  import { Copy, Download as DownloadIcon, Film, Loader2 } from "@lucide/svelte";
   import {
     canCopyImage,
     copyToClipboard,
@@ -22,12 +22,39 @@
     download,
     snapshot,
   } from "../export";
+  import { canExportVideo, exportVideo } from "../video";
   import type { ExportFormat } from "../types";
 
   let { editor, getStage, onnotify }: ExportControlProps = $props();
 
   let busy = $state<null | "download" | "copy">(null);
   const copyable = canCopyImage();
+
+  const videoSupported = canExportVideo();
+  let videoBusy = $state(false);
+  let videoProgress = $state(0);
+
+  async function doVideo() {
+    const node = getStage();
+    const preset = editor.animationPreset;
+    if (!node || videoBusy) return;
+    if (!preset) {
+      onnotify?.("Pick a motion in the Animate panel first", "error");
+      return;
+    }
+    if (editor.playing) editor.togglePlay(); // freeze playback while capturing
+    videoBusy = true;
+    videoProgress = 0;
+    try {
+      const blob = await exportVideo(node, preset, 30, (p) => (videoProgress = p));
+      download(blob, "screenshot.mp4");
+      onnotify?.("Video saved", "success");
+    } catch (e) {
+      onnotify?.(e instanceof Error ? e.message : "Video export failed", "error");
+    } finally {
+      videoBusy = false;
+    }
+  }
 
   async function doDownload() {
     const node = getStage();
@@ -105,3 +132,28 @@
     </div>
   </div>
 </PanelSection>
+
+{#if videoSupported}
+  <PanelSection title="Video">
+    {#if editor.animationPreset}
+      <p class="text-muted-foreground text-xs">
+        Motion: <span class="text-foreground font-medium">{editor.animationPreset.name}</span>
+        · {(editor.animationPreset.duration / 1000).toFixed(1)}s
+      </p>
+      <Button class="w-full" variant="default" size="sm" disabled={videoBusy} onclick={doVideo}>
+        {#if videoBusy}
+          <Loader2 class="animate-spin" />
+          Encoding {Math.round(videoProgress * 100)}%
+        {:else}
+          <Film />
+          Export MP4
+        {/if}
+      </Button>
+    {:else}
+      <p class="text-muted-foreground text-xs">
+        Choose a motion in the <span class="text-foreground font-medium">Animate</span> panel to export
+        a clip.
+      </p>
+    {/if}
+  </PanelSection>
+{/if}
