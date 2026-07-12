@@ -156,6 +156,9 @@ fn is_usable_pair(ffmpeg: &Path, ffprobe: &Path) -> bool {
         && ffprobe.exists()
         && command_succeeds(ffmpeg, "-version")
         && command_succeeds(ffprobe, "-version")
+        // CRITICAL FIX: Explicitly test if the binary has the subtitle filter compiled in.
+        // If it doesn't, we reject it and force the app to fall back to the system PATH (Homebrew).
+        && command_contains(ffmpeg, "-filters", " ass ")
 }
 
 fn command_succeeds(path: &Path, arg: &str) -> bool {
@@ -165,6 +168,17 @@ fn command_succeeds(path: &Path, arg: &str) -> bool {
     command
         .output()
         .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+// Helper to scan FFmpeg's capabilities
+fn command_contains(path: &Path, arg: &str, expected: &str) -> bool {
+    let mut command = Command::new(path);
+    command.arg(arg);
+    configure_silent_command(&mut command);
+    command
+        .output()
+        .map(|output| String::from_utf8_lossy(&output.stdout).contains(expected))
         .unwrap_or(false)
 }
 
