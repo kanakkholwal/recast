@@ -1,0 +1,64 @@
+name: Build macOS FFmpeg (with libass)
+
+on:
+  workflow_dispatch: # Allows the team to run this manually from the Actions tab
+
+jobs:
+  build-mac-ffmpeg:
+    name: Compile FFmpeg for Apple Silicon
+    runs-on: macos-latest # GitHub's M-series Apple Silicon runners
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          brew update
+          # Install the font and subtitle engines that standard providers strip out
+          brew install pkg-config nasm yasm x264 x265 fribidi freetype fontconfig libass
+
+      - name: Clone FFmpeg Source Code
+        run: |
+          git clone --depth 1 --branch release/6.1 https://git.ffmpeg.org/ffmpeg.git ffmpeg-src
+
+      - name: Compile Custom FFmpeg
+        run: |
+          cd ffmpeg-src
+          
+          # Configure FFmpeg with Apple Hardware Acceleration AND Subtitle support
+          ./configure \
+            --prefix=../ffmpeg-build \
+            --pkg-config-flags="--static" \
+            --extra-cflags="-I$(brew --prefix)/include" \
+            --extra-ldflags="-L$(brew --prefix)/lib" \
+            --enable-gpl \
+            --enable-version3 \
+            --enable-videotoolbox \
+            --enable-audiotoolbox \
+            --enable-libx264 \
+            --enable-libx265 \
+            --enable-libass \
+            --enable-fontconfig \
+            --enable-libfreetype \
+            --enable-libfribidi \
+            --disable-ffplay \
+            --disable-doc \
+            --disable-shared \
+            --enable-static
+
+          # Compile using all available CPU cores
+          make -j$(sysctl -n hw.ncpu)
+          make install
+
+      - name: Rename Binaries for Tauri
+        run: |
+          mkdir -p final-binaries
+          cp ffmpeg-build/bin/ffmpeg final-binaries/ffmpeg-aarch64-apple-darwin
+          cp ffmpeg-build/bin/ffprobe final-binaries/ffprobe-aarch64-apple-darwin
+
+      - name: Upload Binaries to GitHub
+        uses: actions/upload-artifact@v4
+        with:
+          name: recast-macos-ffmpeg-sidecars
+          path: final-binaries/*
