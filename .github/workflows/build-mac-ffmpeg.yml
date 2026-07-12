@@ -1,6 +1,6 @@
 name: Build macOS FFmpeg (with libass)
 
-on:
+on:.
   workflow_dispatch: # Allows the team to run this manually from the Actions tab
 
 jobs:
