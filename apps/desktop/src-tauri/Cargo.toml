@@ -263,3 +263,18 @@ tauri-plugin-deep-link = "2"
 # OS-wide hotkeys (stop/pause a recording while another app is focused). Desktop
 # only. Registered + handled in Rust; routes to the panel/main via events.
 tauri-plugin-global-shortcut = "2.3.2"
+
+# Optimize DEPENDENCIES even in a debug build, while leaving our own crate at
+# opt-level 0 so incremental rebuilds stay fast and stack traces stay useful.
+#
+# This is load-bearing, not a nicety. `rten` (the OCR inference runtime) is a
+# tensor library running convolutions; unoptimized it does bounds-checked scalar
+# math with no SIMD and no inlining, which made a `tauri dev` OCR pass over a
+# 7-second clip take minutes instead of seconds. The same applies to `image`
+# (resize/encode per frame) and the audio/video decode paths. Anything doing
+# per-pixel or per-sample work in a loop is unusable at opt-level 0.
+#
+# Cost: dependencies compile optimized on a clean build (slower the first time,
+# then cached). Our own crate is untouched, so the edit-compile loop is unchanged.
+[profile.dev.package."*"]
+opt-level = 3

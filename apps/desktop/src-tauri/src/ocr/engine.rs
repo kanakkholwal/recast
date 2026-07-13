@@ -2,10 +2,14 @@
 //! ships now; native OS engines (Apple Vision, Windows.Media.Ocr) can slot in
 //! behind the same trait later without touching the timeline code.
 
+#[cfg(feature = "ocr")]
 use std::path::Path;
 
+#[cfg(feature = "ocr")]
 use ocrs::{ImageSource, OcrEngine as Ocrs, OcrEngineParams};
+#[cfg(feature = "ocr")]
 use rten::Model;
+#[cfg(feature = "ocr")]
 use rten_imageproc::{BoundingRect, RotatedRect};
 
 /// One recognized line of text with its axis-aligned bounding box, in the pixel
@@ -32,10 +36,18 @@ pub trait OcrEngine {
 /// Pure-Rust ocrs on the rten runtime. The detection and recognition models are
 /// loaded ONCE at construction and reused for every frame; loading them per
 /// frame would dominate the runtime of a whole-video pass.
+///
+/// This is the only part of the OCR module that needs the ocrs/rten crates, so it
+/// is the only part behind the `ocr` feature. Everything else (frame sampling, the
+/// timeline shape, the command surface) compiles unconditionally and reports
+/// "not available in this build" without it, mirroring how `ggml` gates the
+/// on-device captions engine while its plumbing always compiles.
+#[cfg(feature = "ocr")]
 pub struct OcrsEngine {
     inner: Ocrs,
 }
 
+#[cfg(feature = "ocr")]
 impl OcrsEngine {
     pub fn new(det_model: &Path, rec_model: &Path) -> Result<Self, String> {
         let detection_model =
@@ -52,6 +64,7 @@ impl OcrsEngine {
     }
 }
 
+#[cfg(feature = "ocr")]
 impl OcrEngine for OcrsEngine {
     fn recognize(&self, rgba: &[u8], width: u32, height: u32) -> Result<Vec<OcrLine>, String> {
         // ocrs wants RGB; drop the alpha channel from the frame's RGBA buffer.
@@ -104,6 +117,7 @@ impl OcrEngine for OcrsEngine {
 }
 
 /// Axis-aligned union of a line's word rectangles as `(x, y, width, height)`.
+#[cfg(feature = "ocr")]
 fn union_bounds(words: &[RotatedRect]) -> Option<(i32, i32, i32, i32)> {
     let mut iter = words.iter();
     let first = iter.next()?.bounding_rect();

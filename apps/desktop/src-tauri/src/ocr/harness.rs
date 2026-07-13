@@ -4,10 +4,10 @@
 //! the pure logic is covered by the unit tests in the sibling modules, and the
 //! Rust CI job deliberately never executes FFmpeg.
 //!
-//! Run them by hand:
+//! Run them by hand (`ocr` is a default feature, so no extra flag is needed):
 //!
 //! ```text
-//! cargo test --features ocr --lib ocr::harness -- --ignored --nocapture
+//! cargo test --lib ocr::harness -- --ignored --nocapture
 //! ```
 
 use std::path::{Path, PathBuf};
@@ -17,7 +17,7 @@ use crate::ffmpeg::{configure_silent_command, ffmpeg_path};
 
 use super::engine::{OcrEngine, OcrsEngine};
 use super::frames::{probe_dims, sample_frames, SampleOpts};
-use super::timeline::build_timeline;
+use super::timeline::{build_timeline, TimelineOpts};
 
 /// Build a video with `scenes` hard cuts between flat colours, each `secs` long.
 ///
@@ -141,8 +141,14 @@ fn ocr_reads_text_off_a_real_video() {
     let frames = sample_frames(&video, &SampleOpts::default()).expect("sample");
     assert!(!frames.is_empty());
 
-    let timeline = build_timeline(&frames, duration, &engine).expect("timeline");
+    let opts = TimelineOpts { previews: true };
+    let timeline = build_timeline(&frames, duration, &engine, &opts).expect("timeline");
     assert!(!timeline.spans.is_empty(), "no spans produced");
+    // Previews were requested, so the review UI has something to show.
+    assert!(timeline.spans.iter().all(|s| s
+        .preview
+        .as_deref()
+        .is_some_and(|p| p.starts_with("data:image/jpeg;base64,"))));
 
     let text: String = timeline
         .spans
@@ -160,21 +166,111 @@ fn ocr_reads_text_off_a_real_video() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Fetch the two ocrs models into `dir`, returning `(detection, recognition)`.
-/// Bypasses the app's `AppHandle`-based model dir so the harness stays headless.
-fn download_models(dir: &Path) -> Result<(PathBuf, PathBuf), String> {
+/// Fetch the two ocrs models, returning `(detection, recognition)`. Bypasses the
+/// app's `AppHandle`-based model dir so the harness stays headless. Cached in a
+/// STABLE dir across runs, so a repeat run does not re-download 12 MB and the
+/// timings in the benchmark below measure compute, not the network.
+fn download_models(_dir: &Path) -> Result<(PathBuf, PathBuf), String> {
     const DETECTION: &str = "https://ocrs-models.s3-accelerate.amazonaws.com/text-detection.rten";
     const RECOGNITION: &str =
         "https://ocrs-models.s3-accelerate.amazonaws.com/text-recognition.rten";
 
-    let det = dir.join("text-detection.rten");
-    let rec = dir.join("text-recognition.rten");
+    let cache = std::env::temp_dir().join("recast-ocr-models");
+    std::fs::create_dir_all(&cache).map_err(|e| format!("create model cache: {e}"))?;
+    let det = cache.join("text-detection.rten");
+    let rec = cache.join("text-recognition.rten");
+    if det.exists() && rec.exists() {
+        return Ok((det, rec));
+    }
+
     let rt = tokio::runtime::Runtime::new().map_err(|e| format!("tokio runtime: {e}"))?;
     rt.block_on(async {
         let client = reqwest::Client::new();
-        crate::transcription::download_file(&client, DETECTION, None, &det, |_, _| {}).await?;
-        crate::transcription::download_file(&client, RECOGNITION, None, &rec, |_, _| {}).await?;
+        if !det.exists() {
+            crate::transcription::download_file(&client, DETECTION, None, &det, |_, _| {}).await?;
+        }
+        if !rec.exists() {
+            crate::transcription::download_file(&client, RECOGNITION, None, &rec, |_, _| {})
+                .await?;
+        }
         Ok::<(), String>(())
     })?;
     Ok((det, rec))
+}
+
+/// Where the time actually goes on a realistic clip. Prints per-stage timings so
+/// a slow read can be attributed rather than guessed at.
+///
+/// Run it against both profiles to see the build-mode gap:
+/// ```text
+/// cargo test --lib ocr::harness::benchmark -- --ignored --nocapture
+/// cargo test --release --lib ocr::harness::benchmark -- --ignored --nocapture
+/// ```
+#[test]
+#[ignore = "benchmark: needs ffmpeg + models"]
+fn benchmark_where_the_time_goes() {
+    use std::time::Instant;
+
+    let dir = temp_dir("bench");
+    // A 7s 1080p clip with text, i.e. the shape of a real screen recording.
+    let video = dir.join("bench.mp4");
+    let mut cmd = Command::new(ffmpeg_path());
+    cmd.args([
+        "-nostdin",
+        "-y",
+        "-loglevel",
+        "error",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=white:s=1920x1080:d=7:r=30",
+        "-vf",
+        "drawtext=text='Export Settings':fontcolor=black:fontsize=48:x=100:y=100,\
+         drawtext=text='Frame rate 60fps':fontcolor=black:fontsize=48:x=100:y=200",
+        "-pix_fmt",
+        "yuv420p",
+    ]);
+    cmd.arg(&video);
+    configure_silent_command(&mut cmd);
+    assert!(cmd.output().expect("ffmpeg").status.success());
+
+    let profile = if cfg!(debug_assertions) {
+        "DEBUG"
+    } else {
+        "RELEASE"
+    };
+
+    let (_, _, duration) = probe_dims(&video).expect("probe");
+
+    let t = Instant::now();
+    let frames = sample_frames(&video, &SampleOpts::default()).expect("sample");
+    let sample_ms = t.elapsed().as_millis();
+
+    let models = download_models(&dir).expect("models");
+    let t = Instant::now();
+    let engine = OcrsEngine::new(&models.0, &models.1).expect("engine");
+    let load_ms = t.elapsed().as_millis();
+
+    let t = Instant::now();
+    let timeline =
+        build_timeline(&frames, duration, &engine, &TimelineOpts::default()).expect("timeline");
+    let ocr_ms = t.elapsed().as_millis();
+
+    let per_frame = if frames.is_empty() {
+        0
+    } else {
+        ocr_ms / frames.len() as u128
+    };
+    println!(
+        "\n[{profile}] {duration:.1}s video, {} frames OCR'd, {} spans\n  \
+         sample (decode+gate): {sample_ms} ms\n  \
+         model load:           {load_ms} ms\n  \
+         OCR:                  {ocr_ms} ms  ({per_frame} ms/frame)\n  \
+         TOTAL:                {} ms\n",
+        frames.len(),
+        timeline.spans.len(),
+        sample_ms + load_ms + ocr_ms
+    );
+
+    let _ = std::fs::remove_dir_all(&dir);
 }

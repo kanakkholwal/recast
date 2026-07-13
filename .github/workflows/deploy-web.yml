@@ -17,7 +17,6 @@ env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   NODE_VERSION: "22"
-  PNPM_VERSION: "10.23.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
   
@@ -36,10 +35,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # pnpm version comes from the root package.json `packageManager` field.
+      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
+      # while the repo had moved to 11.
       - name: Install pnpm
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Install dependencies

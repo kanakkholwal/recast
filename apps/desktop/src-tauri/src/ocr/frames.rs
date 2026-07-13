@@ -49,6 +49,12 @@ pub struct SampleOpts {
     /// Timestamps (seconds) that must be sampled regardless of change score, e.g.
     /// cursor clicks. Empty in slice 1 (cursor enrichment is a later layer).
     pub forced_timestamps: Vec<f64>,
+    /// Source-time ranges (seconds) that survive the current edit: the kept
+    /// segments after trim and cuts. Frames outside them are footage the user
+    /// removed, so reading them would produce spans for content that is not in the
+    /// video and would waste an OCR pass (~390ms) on each. EMPTY means the whole
+    /// file, which is what a headless/CLI caller with no edit context wants.
+    pub include_ranges: Vec<(f64, f64)>,
 }
 
 impl Default for SampleOpts {
@@ -61,6 +67,7 @@ impl Default for SampleOpts {
             max_gap_secs: 8.0,
             max_dim: 1600,
             forced_timestamps: Vec::new(),
+            include_ranges: Vec::new(),
         }
     }
 }
@@ -191,6 +198,15 @@ pub fn sample_frames(media: &Path, opts: &SampleOpts) -> Result<Vec<SampledFrame
     while read_full(&mut stdout, &mut frame).map_err(|e| format!("read frame: {e}"))? {
         let t = index as f64 / opts.base_fps as f64;
 
+        // Skip footage the edit removed (outside the trim, or inside a cut) before
+        // doing any work on it. Decoding is one cheap streaming pass, but OCR is
+        // ~390ms a frame, so this is both a correctness fix (no spans for deleted
+        // content) and the cheapest speed win available.
+        if !in_ranges(t, &opts.include_ranges) {
+            index += 1;
+            continue;
+        }
+
         let dyn_img = DynamicImage::ImageRgba8(
             RgbaImage::from_raw(tw, th, frame.clone())
                 .ok_or("frame buffer size mismatch during sampling")?,
@@ -274,6 +290,15 @@ fn is_changed(score: f32, recent_avg: f32, adaptive_ratio: f32) -> bool {
 fn is_forced(t: f64, forced: &[f64], base_fps: f32) -> bool {
     let tol = 0.5 / base_fps as f64;
     forced.iter().any(|f| (f - t).abs() <= tol)
+}
+
+/// Whether `t` falls inside the kept (post-edit) source ranges. An empty range
+/// list means "no edit context", i.e. read the whole file.
+fn in_ranges(t: f64, ranges: &[(f64, f64)]) -> bool {
+    if ranges.is_empty() {
+        return true;
+    }
+    ranges.iter().any(|(start, end)| t >= *start && t < *end)
 }
 
 /// The keep decision for one coarse frame. Pure, so the whole matrix is testable.
@@ -451,6 +476,24 @@ mod tests {
         assert!(!is_changed(10.0, 5.0, 3.0));
         // Clearly above the recent average: a real transition.
         assert!(is_changed(30.0, 5.0, 3.0));
+    }
+
+    #[test]
+    fn in_ranges_respects_trim_and_cuts() {
+        // No edit context: read the whole file.
+        assert!(in_ranges(5.0, &[]));
+
+        // Two kept segments with a cut between 3s and 6s, trimmed to end at 9s.
+        let kept = [(1.0, 3.0), (6.0, 9.0)];
+        assert!(in_ranges(1.0, &kept)); // start of a segment is inclusive
+        assert!(in_ranges(2.5, &kept));
+        assert!(in_ranges(6.0, &kept));
+        assert!(in_ranges(8.9, &kept));
+
+        assert!(!in_ranges(0.5, &kept)); // trimmed off the head
+        assert!(!in_ranges(4.0, &kept)); // inside the cut
+        assert!(!in_ranges(9.5, &kept)); // trimmed off the tail
+        assert!(!in_ranges(3.0, &kept)); // segment end is exclusive
     }
 
     #[test]

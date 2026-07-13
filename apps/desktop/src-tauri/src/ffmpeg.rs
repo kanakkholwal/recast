@@ -636,6 +636,56 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     }
 }
 
+/// Whether the resolved FFmpeg was compiled with `name` as a filter.
+///
+/// A binary can ship every encoder the export needs and still be missing a
+/// *filter*: libass, freetype and fontconfig are separate `--enable-` flags, and
+/// some prebuilt FFmpegs (notably the `ffmpeg-static` npm package) drop them. So
+/// `-encoders` says nothing about whether caption burn-in can run, and a missing
+/// `ass` filter only surfaces at export time as FFmpeg's cryptic
+/// `No such filter: 'ass'`. Callers probe this up front to fail with something
+/// actionable instead.
+///
+/// A missing filter is NOT grounds for rejecting the binary in `is_usable_pair`:
+/// an FFmpeg without libass still records, probes and exports everything else, and
+/// disqualifying it would drop the app to the PATH fallback (or to no FFmpeg at
+/// all) over a feature the user may not even be using.
+pub fn has_filter(name: &str) -> bool {
+    static CACHED: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    let filters = CACHED.get_or_init(|| {
+        let mut command = Command::new(ffmpeg_path());
+        command.args(["-hide_banner", "-filters"]);
+        configure_silent_command(&mut command);
+        match command.output() {
+            Ok(out) => parse_filter_names(&String::from_utf8_lossy(&out.stdout)),
+            Err(e) => {
+                log::warn!("ffmpeg filter probe failed: {e}");
+                std::collections::HashSet::new()
+            }
+        }
+    });
+    filters.contains(name)
+}
+
+/// Pull filter names out of `ffmpeg -filters` stdout.
+///
+/// Rows look like `.. ass  V->V  Render ASS subtitles...`: flag column, name,
+/// then an `in->out` spec. Requiring the arrow is what separates a real row from
+/// the legend block at the top (`T.. = Timeline support`), whose lines share the
+/// same leading-flag shape.
+fn parse_filter_names(stdout: &str) -> std::collections::HashSet<String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut tokens = line.split_whitespace();
+            let _flags = tokens.next()?;
+            let name = tokens.next()?;
+            tokens.next().filter(|io| io.contains("->"))?;
+            Some(name.to_string())
+        })
+        .collect()
+}
+
 /// Check if ffmpeg is available. Returns an error message if not.
 pub fn check_availability() -> Result<(), String> {
     let mut command = Command::new(ffmpeg_path());
@@ -661,6 +711,52 @@ pub fn check_availability() -> Result<(), String> {
 mod tests {
     #[allow(unused_imports)]
     use super::*;
+
+    /// Verbatim shape of `ffmpeg -filters` stdout: the legend block first, then
+    /// the real rows. Trimmed to the entries the parser has to get right.
+    const FILTERS_STDOUT: &str = "\
+Filters:
+  T.. = Timeline support
+  .S. = Slice threading
+  ..C = Command support
+  A = Audio input/output
+  V = Video input/output
+  | = Source or sink filter
+ ... abench            A->A       Benchmark part of a filtergraph.
+ ..C ass               V->V       Render ASS subtitles onto input video using the libass library.
+ T.. drawtext          V->V       Draw text on top of video frames using libfreetype library.
+ ... subtitles         V->V       Render text subtitles onto input video using the libass library.
+ ..C overlay           VV->V      Overlay a video source on top of the input.
+ ... color             |->V       Provide an uniformly colored input.
+";
+
+    /// The legend rows (`T.. = Timeline support`) have the same leading-flag
+    /// shape as a real filter row, so a naive "second token is the name" parse
+    /// silently admits `=` as a filter. Keying off the `in->out` arrow is what
+    /// keeps them out.
+    #[test]
+    fn parses_filter_names_and_skips_the_legend() {
+        let filters = parse_filter_names(FILTERS_STDOUT);
+
+        for name in ["ass", "subtitles", "drawtext", "overlay", "color", "abench"] {
+            assert!(filters.contains(name), "{name} should be parsed as a filter");
+        }
+        assert!(!filters.contains("="), "legend rows must not parse as filters");
+        assert!(!filters.contains("Filters:"));
+        assert_eq!(filters.len(), 6, "exactly the six real rows");
+    }
+
+    /// The libass-less binaries this guard exists for are otherwise complete, so
+    /// the absent filter is the ONLY signal. An empty/garbage probe must report
+    /// "no such filter" rather than optimistically claiming support.
+    #[test]
+    fn missing_ass_filter_is_detected() {
+        let without_libass = parse_filter_names(
+            " ... abench            A->A       Benchmark part of a filtergraph.\n",
+        );
+        assert!(!without_libass.contains("ass"));
+        assert!(parse_filter_names("").is_empty());
+    }
 
     /// The install prefixes must be ABSOLUTE. The whole point is to resolve
     /// ffmpeg when the inherited PATH is minimal (a Finder-launched .app), so a

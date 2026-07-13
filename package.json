@@ -9,12 +9,6 @@
 		"husky": "^9.1.7",
 		"turbo": "^2.9.16"
 	},
-	"pnpm": {
-		"overrides": {
-			"svelte": "5.56.3",
-			"@lucide/svelte": "1.21.0"
-		}
-	},
 	"scripts": {
 		"prepare": "husky",
 		"setup:ffmpeg": "node scripts/setup.mjs",

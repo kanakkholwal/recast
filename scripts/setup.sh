@@ -237,6 +237,17 @@ else
   ok "ffprobe-$TRIPLE"
 fi
 
+# Encoders and filters are separate `--enable-` flags at FFmpeg build time, so a
+# binary can carry every codec and still lack the libass `ass` filter that caption
+# burn-in needs, and the export then dies with `No such filter: 'ass'`. Some prebuilt
+# FFmpegs (e.g. the `ffmpeg-static` npm package) drop it. Checked even when the
+# sidecar was already present, since a stale bad binary is the case worth catching.
+# A warning, not a hard failure: everything except caption burn-in still works.
+if ! "$FFMPEG_DST" -hide_banner -filters 2>/dev/null | grep -qE '^\s*\S+\s+ass\s+\S+->\S+'; then
+  warn "This ffmpeg has no libass ('ass' filter), so caption burn-in on export will fail."
+  warn "Replace $FFMPEG_DST with a build that has libass (macOS/Linux: the Homebrew/BtbN builds do)."
+fi
+
 #  4. install workspace dependencies -
 
 step "Installing workspace dependencies (pnpm install)"

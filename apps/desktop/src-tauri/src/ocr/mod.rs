@@ -24,7 +24,12 @@ pub mod timeline;
 
 /// End-to-end tests that drive the real FFmpeg decode (and, for the OCR leg, the
 /// real models). All `#[ignore]`d: CI never executes FFmpeg, so they run by hand.
-#[cfg(test)]
+/// Needs the real engine, so it is gated with the feature as well as `test`.
+#[cfg(all(test, feature = "ocr"))]
 mod harness;
 
+// NOTE: `read_video_text` is deliberately NOT re-exported here. `#[tauri::command]`
+// generates a companion `__cmd__*` item in the module that DEFINES the command, and
+// a `pub use` does not carry it along, so `generate_handler!` must be given the
+// defining path (`ocr::command::read_video_text`).
 pub use command::run;

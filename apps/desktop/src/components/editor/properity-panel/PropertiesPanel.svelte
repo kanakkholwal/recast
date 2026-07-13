@@ -8,6 +8,7 @@
     Info,
     MousePointer,
     Pencil,
+    ScanText,
     Target,
     Video,
     Volume2
@@ -21,6 +22,7 @@
   import CaptionsPanel from "./CaptionsPanel.svelte";
   import ClipPanel from "./ClipPanel.svelte";
   import CursorPanel from "./CursorPanel.svelte";
+  import DevOcrPanel from "./DevOcrPanel.svelte";
   import ExtensionsPanel from "./ExtensionsPanel.svelte";
   import FocusPanel from "./FocusPanel.svelte";
   import InfoPanel from "./InfoPanel.svelte";
@@ -51,6 +53,11 @@
     { id: "captions", label: "Captions", icon: Captions },
     { id: "extensions", label: "Extensions", icon: Blocks },
     { id: "info", label: "Info", icon: Info },
+    // Experimental on-device OCR review surface. Dev builds only; tree-shaken out
+    // of production by `import.meta.env.DEV`.
+    ...(import.meta.env.DEV
+      ? [{ id: "dev" as PanelTab, label: "Screen text (dev)", icon: ScanText }]
+      : []),
   ];
 
   let { store, cameraPath = null }: Props = $props();
@@ -168,5 +175,11 @@
     <Tabs.Content value="info" class={tabContentClass}>
       <InfoPanel {store} />
     </Tabs.Content>
+
+    {#if import.meta.env.DEV}
+      <Tabs.Content value="dev" class={tabContentClass}>
+        <DevOcrPanel {store} />
+      </Tabs.Content>
+    {/if}
   </Tabs.Root>
 </aside>

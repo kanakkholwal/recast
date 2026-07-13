@@ -4,6 +4,10 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  svelte: 5.56.3
+  '@lucide/svelte': 1.21.0
+
 importers:
 
   .:
@@ -34,7 +38,7 @@ importers:
         specifier: ^5.2.1
         version: 5.2.1
       '@lucide/svelte':
-        specifier: ^1.21.0
+        specifier: 1.21.0
         version: 1.21.0(svelte@5.56.3)
       '@recast/player':
         specifier: workspace:*
@@ -134,7 +138,7 @@ importers:
         specifier: ^0.34.5
         version: 0.34.5
       svelte:
-        specifier: ^5.56.1
+        specifier: 5.56.3
         version: 5.56.3
       svelte-check:
         specifier: ^4.4.2
@@ -182,7 +186,7 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@lucide/svelte':
-        specifier: ^1.21.0
+        specifier: 1.21.0
         version: 1.21.0(svelte@5.56.3)
       '@polar-sh/better-auth':
         specifier: ^1.8.4
@@ -306,7 +310,7 @@ importers:
         specifier: ^0.10.3
         version: 0.10.3
       svelte:
-        specifier: ^5.56.1
+        specifier: 5.56.3
         version: 5.56.3
       svelte-check:
         specifier: ^4.4.2
@@ -337,7 +341,7 @@ importers:
   packages/application:
     dependencies:
       '@lucide/svelte':
-        specifier: ^1.21.0
+        specifier: 1.21.0
         version: 1.21.0(svelte@5.56.3)
       '@recast/ui':
         specifier: workspace:*
@@ -350,7 +354,7 @@ importers:
         version: 5.2.2
     devDependencies:
       svelte:
-        specifier: ^5.56.1
+        specifier: 5.56.3
         version: 5.56.3
 
   packages/design:
@@ -365,7 +369,7 @@ importers:
   packages/player:
     dependencies:
       '@lucide/svelte':
-        specifier: ^1.21.0
+        specifier: 1.21.0
         version: 1.21.0(svelte@5.56.3)
       '@recast/ui':
         specifier: workspace:*
@@ -378,13 +382,13 @@ importers:
         version: 4.19.0(react@19.2.6)
     devDependencies:
       svelte:
-        specifier: ^5.56.1
+        specifier: 5.56.3
         version: 5.56.3
 
   packages/ui:
     dependencies:
       '@lucide/svelte':
-        specifier: ^1.21.0
+        specifier: 1.21.0
         version: 1.21.0(svelte@5.56.3)
       '@tabler/icons-svelte':
         specifier: ^3.44.0
@@ -421,7 +425,7 @@ importers:
         specifier: ^3.12.2
         version: 3.12.2
       svelte:
-        specifier: ^5.56.3
+        specifier: 5.56.3
         version: 5.56.3
       tailwindcss:
         specifier: ^4.3.1
@@ -1672,7 +1676,7 @@ packages:
   '@lucide/svelte@1.21.0':
     resolution: {integrity: sha512-MEv//A7Jv3kHukZowv/DWp1MAtUzJKYwtJsmnQ7X98lCgtac3z3NbaToDl3Q6jO3gS9sougFpcD+t+YuxOkRMw==}
     peerDependencies:
-      svelte: ^5
+      svelte: 5.56.3
 
   '@manypkg/find-root@1.1.0':
     resolution: {integrity: sha512-mki5uBvhHzO8kYYix/WRy2WX8S3B5wdVSc9D6KcU5lQNglP2yt58/VfLuAK49glRXChosY8ap2oJ1qgma3GUVA==}
@@ -2210,7 +2214,7 @@ packages:
     peerDependencies:
       '@opentelemetry/api': ^1.0.0
       '@sveltejs/vite-plugin-svelte': ^3.0.0 || ^4.0.0-next.1 || ^5.0.0 || ^6.0.0-next.0 || ^7.0.0
-      svelte: ^4.0.0 || ^5.0.0-next.0
+      svelte: 5.56.3
       typescript: ^5.3.3 || ^6.0.0
       vite: ^5.0.3 || ^6.0.0 || ^7.0.0-beta.0 || ^8.0.0
     peerDependenciesMeta:
@@ -2224,14 +2228,14 @@ packages:
     engines: {node: ^20.19 || ^22.12 || >=24}
     peerDependencies:
       '@sveltejs/vite-plugin-svelte': ^6.0.0-next.0
-      svelte: ^5.0.0
+      svelte: 5.56.3
       vite: ^6.3.0 || ^7.0.0
 
   '@sveltejs/vite-plugin-svelte@6.2.4':
     resolution: {integrity: sha512-ou/d51QSdTyN26D7h6dSpusAKaZkAiGM55/AKYi+9AGZw7q85hElbjK3kEyzXHhLSnRISHOYzVge6x0jRZ7DXA==}
     engines: {node: ^20.19 || ^22.12 || >=24}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
       vite: ^6.3.0 || ^7.0.0
 
   '@swc/helpers@0.5.23':
@@ -2240,7 +2244,7 @@ packages:
   '@tabler/icons-svelte@3.44.0':
     resolution: {integrity: sha512-ZJJMCHoqpvb9hLVn9dU+pn8LCdX/e+mJ/fC+EUaJT5nHEm0+IW4aKKYkYQI+rFMzN8ivj36MnMC5TGFi4H6zew==}
     peerDependencies:
-      svelte: '>=3 <6 || >=5.0.0-next.0'
+      svelte: 5.56.3
 
   '@tabler/icons@3.44.0':
     resolution: {integrity: sha512-Wn0AOZG9sg0L+bjfMqq4eNhC6pQjIrk94LvvWYNYkY8KH8wC3YILRzQlrnVJc4FUeMxH/AK97QsYCX35H3LndA==}
@@ -2519,7 +2523,7 @@ packages:
     resolution: {integrity: sha512-ggDIzqWyTWHl3oHAGRk2bgmIS8XDlrwe2kxRnMno5ZdcKwo+6T8Hb0zsu2oVngnI/m9HlzFWFLqssbNSVUEKJA==}
     peerDependencies:
       clsx: ^2.1.1
-      svelte: ^5.0.0
+      svelte: 5.56.3
       tailwind-merge: ^3.0.1
 
   '@turbo/darwin-64@2.9.16':
@@ -2634,7 +2638,7 @@ packages:
   '@unpic/svelte@1.0.1':
     resolution: {integrity: sha512-/vjp0rybdHjAlTuobhUFFDyDXCzwMBJi1OjI6Ib8Jt4ouTHvbyE6ggKnfLLhYgzrpaBGuHUEY1S1TZ/qcMByGw==}
     peerDependencies:
-      svelte: ^5
+      svelte: 5.56.3
 
   '@vitest/expect@3.2.6':
     resolution: {integrity: sha512-1+7q9BtaKzEmO+fmNT3kYvoNn5Y71XWAx2Q5HRim4tTVRQVRv4uJFAQ5FbK0OPUeNP/WmVCpxYxoJdvuHVjzBQ==}
@@ -2749,7 +2753,7 @@ packages:
       react: ^18.0.0 || ^19.0.0
       react-dom: ^18.0.0 || ^19.0.0
       solid-js: ^1.0.0
-      svelte: ^4.0.0 || ^5.0.0
+      svelte: 5.56.3
       vitest: ^2.0.0 || ^3.0.0 || ^4.0.0
       vue: ^3.0.0
     peerDependenciesMeta:
@@ -2809,14 +2813,14 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@internationalized/date': ^3.8.1
-      svelte: ^5.33.0
+      svelte: 5.56.3
 
   bits-ui@2.18.1:
     resolution: {integrity: sha512-KkemzKFH4T3gt3H+P86JcnAWExjByv/6vlwjm/BoCwTPHu03yiCdxbghdJLvFReQTe0acCAiRcKfmixxD6XvlA==}
     engines: {node: '>=20'}
     peerDependencies:
       '@internationalized/date': ^3.8.1
-      svelte: ^5.33.0
+      svelte: 5.56.3
 
   body-parser@2.2.2:
     resolution: {integrity: sha512-oP5VkATKlNwcgvxi0vM0p/D3n2C3EReYVX+DNYs5TjZFn/oQt2j+4sVJtSMr18pdRr8wjTcBl6LoV+FUwzPmNA==}
@@ -3719,7 +3723,7 @@ packages:
   layerchart@2.0.0-next.48:
     resolution: {integrity: sha512-XoEYBztamA8lMxtF/Jz3aDX0HMk8dI+o4fK9fSl8ecT2Tdx3DQUjtKGtlQAOFdwC/AWifeLmKq5cMTQt9COZPQ==}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   lightningcss-android-arm64@1.32.0:
     resolution: {integrity: sha512-YK7/ClTt4kAK0vo6w3X+Pnm0D2cf2vPHbhOXdoNti1Ga0al1P4TBZhwjATvjNwLEBCnKvjJc2jQgHXH0NEwlAg==}
@@ -4004,7 +4008,7 @@ packages:
   mode-watcher@1.1.0:
     resolution: {integrity: sha512-mUT9RRGPDYenk59qJauN1rhsIMKBmWA3xMF+uRwE8MW/tjhaDSCCARqkSuDTq8vr4/2KcAxIGVjACxTjdk5C3g==}
     peerDependencies:
-      svelte: ^5.27.0
+      svelte: 5.56.3
 
   modern-screenshot@4.7.0:
     resolution: {integrity: sha512-9YxN+ddPSMMlhylOv25VHzXrl9u67QRxoh7+SEewGtgUw7t6hHTrjptSDJUSne9oG4Xk/h2cwG15nIt4Hc9ujg==}
@@ -4345,23 +4349,23 @@ packages:
   runed@0.23.4:
     resolution: {integrity: sha512-9q8oUiBYeXIDLWNK5DfCWlkL0EW3oGbk845VdKlPeia28l751VpfesaB/+7pI6rnbx1I6rqoZ2fZxptOJLxILA==}
     peerDependencies:
-      svelte: ^5.7.0
+      svelte: 5.56.3
 
   runed@0.25.0:
     resolution: {integrity: sha512-7+ma4AG9FT2sWQEA0Egf6mb7PBT2vHyuHail1ie8ropfSjvZGtEAx8YTmUjv/APCsdRRxEVvArNjALk9zFSOrg==}
     peerDependencies:
-      svelte: ^5.7.0
+      svelte: 5.56.3
 
   runed@0.28.0:
     resolution: {integrity: sha512-k2xx7RuO9hWcdd9f+8JoBeqWtYrm5CALfgpkg2YDB80ds/QE4w0qqu34A7fqiAwiBBSBQOid7TLxwxVC27ymWQ==}
     peerDependencies:
-      svelte: ^5.7.0
+      svelte: 5.56.3
 
   runed@0.35.1:
     resolution: {integrity: sha512-2F4Q/FZzbeJTFdIS/PuOoPRSm92sA2LhzTnv6FXhCoENb3huf5+fDuNOg1LNvGOouy3u/225qxmuJvcV3IZK5Q==}
     peerDependencies:
       '@sveltejs/kit': ^2.21.0
-      svelte: ^5.7.0
+      svelte: 5.56.3
     peerDependenciesMeta:
       '@sveltejs/kit':
         optional: true
@@ -4370,7 +4374,7 @@ packages:
     resolution: {integrity: sha512-MeFY73xBW8IueWBm012nNFIGy19WUGPLtknavyUPMpnyt350M47PhGSGrGoSLbidwn+Zlt/O0cp8/OZE3LASWA==}
     peerDependencies:
       '@sveltejs/kit': ^2.21.0
-      svelte: ^5.7.0
+      svelte: 5.56.3
       zod: ^4.1.0
     peerDependenciesMeta:
       '@sveltejs/kit':
@@ -4414,7 +4418,7 @@ packages:
     resolution: {integrity: sha512-mWuQk4H4gtV+J2wJQ7nEPKNnB/v86AALFryZU0SSM7ChHmJJMZ1kH+qIuxYKrXm9vOOOcSWHRsWzPDB71DnjYA==}
     hasBin: true
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   sharp@0.34.5:
     resolution: {integrity: sha512-Ou9I5Ft9WNcCbXrU9cMgPBcCK8LiwLqcbywW3t4oDV37n1pzpuNLsYiAV8eODnjbtQlSDwZ2cUEeQz4E54Hltg==}
@@ -4524,30 +4528,30 @@ packages:
     engines: {node: '>= 18.0.0'}
     hasBin: true
     peerDependencies:
-      svelte: ^4.0.0 || ^5.0.0-next.0
+      svelte: 5.56.3
       typescript: '>=5.0.0'
 
   svelte-sonner@1.1.0:
     resolution: {integrity: sha512-3lYM6ZIqWe+p9vwwWHGWP/ZdvHiUtzURsud2quIxivrX4rvpXh6i+geBGn0m3JS6KwW6W8VgbOl3xQMcDuh6gg==}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   svelte-sonner@1.1.1:
     resolution: {integrity: sha512-5cd3p7wa4cq0NsqslMwdlPb7x1JglEZ/GKrLePWNr5bCxR1nagAVrY01FRFrXfUGs41miLt3C327+8XJo5BzZw==}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   svelte-toolbelt@0.10.6:
     resolution: {integrity: sha512-YWuX+RE+CnWYx09yseAe4ZVMM7e7GRFZM6OYWpBKOb++s+SQ8RBIMMe+Bs/CznBMc0QPLjr+vDBxTAkozXsFXQ==}
     engines: {node: '>=18', pnpm: '>=8.7.0'}
     peerDependencies:
-      svelte: ^5.30.2
+      svelte: 5.56.3
 
   svelte-toolbelt@0.7.1:
     resolution: {integrity: sha512-HcBOcR17Vx9bjaOceUvxkY3nGmbBmCBBbuWLLEWO6jtmWH8f/QoWmbyUfQZrpDINH39en1b8mptfPQT9VKQ1xQ==}
     engines: {node: '>=18', pnpm: '>=8.7.0'}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   svelte@5.56.3:
     resolution: {integrity: sha512-w7JvrM5IFl5cmfbY0TLik9o7mjRUJmRMhOR51tBPu708Gr/MjbGs7VnJnr/B0CaXeI4vtnOh7RKxDr0cwhMdDA==}
@@ -4703,7 +4707,7 @@ packages:
     resolution: {integrity: sha512-7zN7Bi3dFQixvvbUJY9uGDe7Ws/dGZeBQR2pXdXmzQiakjrxBvWo0QrmsX3HK+VH+SZOltz378cmgmCS9f9rSg==}
     engines: {node: '>=18', pnpm: '>=8.7.0'}
     peerDependencies:
-      svelte: ^5.0.0
+      svelte: 5.56.3
 
   vfile-location@5.0.3:
     resolution: {integrity: sha512-5yXvWDEgqeiYiBe1lbxYF7UMAIm/IcopxMHrMQDq3nvKcjPKIhZklUKL+AE7J7uApI4kwe2snsK+eI6UTj9EHg==}

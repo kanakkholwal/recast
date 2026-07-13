@@ -36,9 +36,11 @@ pub struct ScreenStateSpan {
     pub start: f64,
     pub end: f64,
     pub elements: Vec<ScreenElement>,
-    /// Optional relative path to a stored reference image (multimodal path).
-    /// Always `None` in slice 1; thumbnails are a later, opt-in layer.
-    pub thumbnail: Option<String>,
+    /// Optional inline preview of the span's representative frame, as a
+    /// `data:image/jpeg;base64,...` URI. Off unless `TimelineOpts::previews` is
+    /// set, because it is only for humans reviewing the output; the structured
+    /// `elements` are what a model consumes.
+    pub preview: Option<String>,
 }
 
 /// The full structured read of a video.
@@ -53,12 +55,24 @@ pub struct VideoTextTimeline {
 /// How similar two spans' text must be to be treated as the same screen state.
 const MERGE_JACCARD: f32 = 0.9;
 
+/// Long edge of the inline preview image. Small on purpose: it exists so a human
+/// can scan the spans in a list, not as a reference image for a vision model.
+const PREVIEW_MAX_DIM: u32 = 480;
+
+/// Options for building the timeline.
+#[derive(Debug, Clone, Default)]
+pub struct TimelineOpts {
+    /// Attach a small JPEG preview of each span's frame (for review UIs).
+    pub previews: bool,
+}
+
 /// OCR every sampled frame and collapse near-identical neighbors into spans.
 /// `total_secs` closes the final span's end.
 pub fn build_timeline(
     frames: &[SampledFrame],
     total_secs: f64,
     engine: &dyn OcrEngine,
+    opts: &TimelineOpts,
 ) -> Result<VideoTextTimeline, String> {
     let source = engine.source().to_string();
 
@@ -66,6 +80,7 @@ pub fn build_timeline(
         start: f64,
         elements: Vec<ScreenElement>,
         texts: Vec<String>,
+        preview: Option<String>,
     }
     let mut builds: Vec<Build> = Vec::new();
 
@@ -96,10 +111,17 @@ pub fn build_timeline(
             })
             .collect();
 
+        let preview = if opts.previews {
+            encode_preview(&frame.rgba, frame.width, frame.height)
+        } else {
+            None
+        };
+
         builds.push(Build {
             start: frame.t_secs,
             elements,
             texts,
+            preview,
         });
     }
 
@@ -115,7 +137,7 @@ pub fn build_timeline(
             start,
             end,
             elements: builds[i].elements.clone(),
-            thumbnail: None,
+            preview: builds[i].preview.clone(),
         });
     }
 
@@ -123,6 +145,30 @@ pub fn build_timeline(
         engine: source,
         spans,
     })
+}
+
+/// Encode a frame as a small JPEG `data:` URI for the review UI. Returns `None`
+/// rather than failing the whole read: a missing preview is cosmetic, and the
+/// structured elements are the real payload.
+fn encode_preview(rgba: &[u8], width: u32, height: u32) -> Option<String> {
+    use base64::Engine as _;
+    use image::codecs::jpeg::JpegEncoder;
+
+    let img = image::RgbaImage::from_raw(width, height, rgba.to_vec())?;
+    let scaled = image::DynamicImage::ImageRgba8(img)
+        .resize(
+            PREVIEW_MAX_DIM,
+            PREVIEW_MAX_DIM,
+            image::imageops::FilterType::Triangle,
+        )
+        .to_rgb8();
+
+    let mut buf = Vec::new();
+    JpegEncoder::new_with_quality(&mut buf, 75)
+        .encode_image(&scaled)
+        .ok()?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(&buf);
+    Some(format!("data:image/jpeg;base64,{b64}"))
 }
 
 /// Normalize a pixel box into 0..1 fractions of the frame, clamped.
@@ -221,7 +267,7 @@ mod tests {
             vec!["File", "Edit"],
             vec!["File", "Edit"],
         ]);
-        let tl = build_timeline(&frames, 3.0, &engine).unwrap();
+        let tl = build_timeline(&frames, 3.0, &engine, &TimelineOpts::default()).unwrap();
         assert_eq!(tl.spans.len(), 1);
         assert_eq!(tl.spans[0].start, 0.0);
         // The last span runs to the end of the video.
@@ -237,7 +283,7 @@ mod tests {
             vec!["File", "Edit"],
             vec!["Settings", "Privacy"], // a real change
         ]);
-        let tl = build_timeline(&frames, 4.0, &engine).unwrap();
+        let tl = build_timeline(&frames, 4.0, &engine, &TimelineOpts::default()).unwrap();
         assert_eq!(tl.spans.len(), 2);
         // First span is closed at the second span's start, not at its own frame.
         assert_eq!(tl.spans[0].start, 0.0);
@@ -249,7 +295,7 @@ mod tests {
     #[test]
     fn elements_carry_normalized_boxes_ids_and_source() {
         let engine = StubEngine::new(vec![vec!["Export"]]);
-        let tl = build_timeline(&[frame(0.0)], 1.0, &engine).unwrap();
+        let tl = build_timeline(&[frame(0.0)], 1.0, &engine, &TimelineOpts::default()).unwrap();
         let el = &tl.spans[0].elements[0];
         assert_eq!(el.id, 0);
         assert_eq!(el.kind, "text");
