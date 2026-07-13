@@ -11,6 +11,7 @@
     storyboardCoverCrop,
   } from "$lib/timeline/storyboard";
   import { deriveSeams } from "$lib/timeline/segments";
+  import { motionDuration } from "$lib/motion.svelte";
   import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@lucide/svelte";
   import * as ContextMenu from "@recast/ui/context-menu";
   import { fade } from "svelte/transition";
@@ -383,7 +384,9 @@
             data-selectable
             onpointerdown={(e) => {
               rememberMenuTime(e.clientX);
-              if (e.button === 0) store.selectedClipStart = block.start;
+              // A razor click carves through the clip; it must not also select it.
+              if (e.button === 0 && store.timelineTool !== "razor")
+                store.selectedClipStart = block.start;
             }}
             class="group/clip absolute inset-y-0 cursor-pointer overflow-hidden rounded-md border transition-[box-shadow,border-color] {selected
               ? 'border-primary ring-2 ring-primary/50'
@@ -432,7 +435,7 @@
               )}
               <!-- One sprite, cropped by background-position. Costs no decode. -->
               <div
-                in:fade={{ duration: 140 }}
+                in:fade={{ duration: motionDuration(140) }}
                 class="absolute inset-0"
                 style="background-image: url('{storyboard.url}'); background-repeat: no-repeat; background-size: {c.bgW}px {c.bgH}px; background-position: -{c.offX}px -{c.offY}px;"
               ></div>
@@ -441,7 +444,7 @@
               <!-- Sharper per-tile frame, only decoded when zoomed past the
                    sprite's density. Fades in ON TOP, so nothing ever blanks. -->
               <img
-                in:fade={{ duration: 120 }}
+                in:fade={{ duration: motionDuration(120) }}
                 src={url}
                 alt=""
                 class="absolute inset-0 h-full w-full object-cover"

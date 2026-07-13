@@ -1,0 +1,29 @@
+{
+  "name": "@recast/captions",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "svelte": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./box": {
+      "svelte": "./src/CaptionBox.svelte",
+      "default": "./src/CaptionBox.svelte"
+    }
+  },
+  "peerDependencies": {
+    "svelte": "^5.56.1"
+  },
+  "devDependencies": {
+    "svelte": "^5.56.1",
+    "vitest": "^3.2.4"
+  },
+  "scripts": {
+    "build": "exit 0",
+    "check": "exit 0",
+    "test:unit": "vitest run",
+    "test:unit:watch": "vitest"
+  }
+}

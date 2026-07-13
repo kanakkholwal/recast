@@ -57,8 +57,12 @@
 
   function onLaneDown(e: PointerEvent) {
     // Only the bare lane background starts a create-drag; bands and their
-    // handles stop propagation in their own handlers.
-    if (e.target !== laneEl || duration <= 0) return;
+    // handles stop propagation in their own handlers. Left button only: a
+    // right-drag is for the context menu, not for carving a cut.
+    if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
+    // The razor tool owns clicks timeline-wide: let this one bubble to the
+    // scroller's razor handler instead of starting a create-drag.
+    if (store.timelineTool === "razor") return;
     // Stop the timeline's scrub handler from also claiming this drag.
     e.preventDefault();
     e.stopPropagation();
@@ -76,6 +80,9 @@
   }
 
   function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
+    // Left button only; let a razor click carve through the band, not move it.
+    if (e.button !== 0) return;
+    if (store.timelineTool === "razor") return;
     e.preventDefault();
     e.stopPropagation();
     if (!laneEl) return;

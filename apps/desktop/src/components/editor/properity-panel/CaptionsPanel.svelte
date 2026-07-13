@@ -26,10 +26,7 @@
     pickDefaultModelId,
   } from "./captions-panel.logic";
   import { ensureFontLoaded } from "$lib/fonts/font-options";
-  import {
-    resolveCaptionAnimation,
-    type CaptionAnimation,
-  } from "$lib/captions/animation";
+  import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
   import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
   import { toOutputTimeTranscript } from "$lib/services/export";
   import {
@@ -247,6 +244,11 @@
     { value: "none", label: "None" },
     { value: "color", label: "Color" },
     { value: "scale", label: "Size" },
+  ];
+  const highlightOptions = [
+    { value: "none", label: "Off" },
+    { value: "active", label: "Active" },
+    { value: "progressive", label: "Progressive" },
   ];
   const entranceOptions = [
     { value: "none", label: "None" },
@@ -834,6 +836,32 @@
         {/if}
 
         <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] text-muted-foreground">Highlight</span>
+          <Segmented
+            size="xs"
+            fill={false}
+            aria-label="Spoken-word highlight"
+            value={ca.highlight ?? "none"}
+            options={highlightOptions}
+            onValueChange={(v) =>
+              updateAnimation({ highlight: v as CaptionAnimation["highlight"] })}
+          />
+        </div>
+
+        {#if (ca.highlight ?? "none") === "progressive"}
+          <ColorField
+            label="Unspoken color"
+            value={cs.mutedColor}
+            swatches={CAPTION_SWATCHES}
+            {recents}
+            oncommit={(c) => {
+              store.updateCaptionStyle({ mutedColor: c });
+              rememberColor(c);
+            }}
+          />
+        {/if}
+
+        <div class="flex items-center justify-between gap-2">
           <span class="text-[10px] text-muted-foreground">Active word</span>
           <Segmented
             size="xs"
@@ -942,6 +970,28 @@
             onchange={(next) => store.updateCaptionStyle({ backgroundOpacity: next })}
             formatValue={(v) => `${v}%`}
           />
+
+          <SliderControl
+            label="Corner radius"
+            value={cs.boxRadiusEm}
+            min={0}
+            max={2}
+            step={0.05}
+            unit="em"
+            onchange={(next) => store.updateCaptionStyle({ boxRadiusEm: next })}
+            formatValue={(v) => (v >= 1.2 ? "Pill" : v === 0 ? "Square" : v.toFixed(2))}
+          />
+
+          <SliderControl
+            label="Padding"
+            value={cs.boxPaddingXEm}
+            min={0}
+            max={2}
+            step={0.05}
+            unit="em"
+            onchange={(next) => store.updateCaptionStyle({ boxPaddingXEm: next })}
+            formatValue={(v) => `${v.toFixed(2)}em`}
+          />
         {/if}
 
         <SliderControl
@@ -977,6 +1027,28 @@
           unit="em"
           onchange={(next) => store.updateCaptionStyle({ letterSpacing: next })}
           formatValue={(v) => `${v.toFixed(2)}em`}
+        />
+
+        <SliderControl
+          label="Line height"
+          value={cs.lineHeight}
+          min={1}
+          max={2}
+          step={0.05}
+          unit=""
+          onchange={(next) => store.updateCaptionStyle({ lineHeight: next })}
+          formatValue={(v) => v.toFixed(2)}
+        />
+
+        <SliderControl
+          label="Wrap width"
+          value={cs.maxCharsPerLine}
+          min={16}
+          max={80}
+          step={1}
+          unit=""
+          onchange={(next) => store.updateCaptionStyle({ maxCharsPerLine: next })}
+          formatValue={(v) => `${v} chars`}
         />
       </div>
     </PanelSection>

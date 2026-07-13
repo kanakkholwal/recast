@@ -7,6 +7,7 @@
 import type { CaptionModelInfo, DeviceCapabilities } from "$lib/ipc";
 import type { CaptionPresetValue } from "$lib/registry/types";
 import type { CaptionStyle } from "$lib/stores/editor-store.svelte";
+import { resolveCaptionAnimation } from "@recast/captions";
 
 /** Models grouped by family, preserving first-seen order, for the picker. */
 export function groupModelsByFamily(
@@ -59,15 +60,18 @@ export function downloadProgressPct(downloaded: number, total: number): number {
 }
 
 /**
- * Whether the current caption style equals a preset field-for-field. This is the test
- * behind "which preset is active" (null → the user has tweaked to Custom).
- * Animation is intentionally excluded (matches the picker's original compare).
+ * Whether the current caption style equals a preset field-for-field, INCLUDING
+ * the pill fields and the (resolved) animation. This is the test behind "which
+ * preset is active" (null -> the user has tweaked to Custom). Animation must be
+ * compared: two presets can differ only in highlight/entrance, and a preset
+ * that adds progressive highlight to an otherwise-identical look would otherwise
+ * read as already active.
  */
 export function captionStyleMatchesPreset(
 	cs: CaptionStyle,
 	v: CaptionPresetValue,
 ): boolean {
-	return (
+	const styleMatches =
 		v.fontFamily === cs.fontFamily &&
 		v.fontWeight === cs.fontWeight &&
 		v.fontSizePct === cs.fontSizePct &&
@@ -75,13 +79,32 @@ export function captionStyleMatchesPreset(
 		v.align === cs.align &&
 		v.offsetPct === cs.offsetPct &&
 		v.color === cs.color &&
+		v.mutedColor === cs.mutedColor &&
 		v.uppercase === cs.uppercase &&
 		v.letterSpacing === cs.letterSpacing &&
 		v.background === cs.background &&
 		v.backgroundColor === cs.backgroundColor &&
 		v.backgroundOpacity === cs.backgroundOpacity &&
+		v.boxPaddingXEm === cs.boxPaddingXEm &&
+		v.boxPaddingYEm === cs.boxPaddingYEm &&
+		v.boxRadiusEm === cs.boxRadiusEm &&
+		v.lineHeight === cs.lineHeight &&
 		v.outlineWidth === cs.outlineWidth &&
 		v.outlineColor === cs.outlineColor &&
-		v.maxLines === cs.maxLines
+		v.maxLines === cs.maxLines &&
+		v.maxCharsPerLine === cs.maxCharsPerLine;
+	if (!styleMatches) return false;
+
+	const a = resolveCaptionAnimation(v.animation);
+	const b = resolveCaptionAnimation(cs.animation);
+	return (
+		a.chunk === b.chunk &&
+		a.chunkSize === b.chunkSize &&
+		a.emphasis === b.emphasis &&
+		a.emphasisColor === b.emphasisColor &&
+		(a.highlight ?? "none") === (b.highlight ?? "none") &&
+		a.entrance === b.entrance &&
+		a.entranceMs === b.entranceMs &&
+		a.holdGaps === b.holdGaps
 	);
 }

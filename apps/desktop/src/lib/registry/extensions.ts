@@ -18,6 +18,7 @@ import type { InstalledExtension } from "$lib/ipc";
 import { log } from "$lib/logger";
 import { registry } from "./registry.svelte";
 import { extEntryId, type RegistryEntry } from "./types";
+import { DEFAULT_CAPTION_STYLE } from "@recast/captions";
 
 type AssetMap = Map<string, { path: string | null; thumbPath: string | null }>;
 
@@ -183,14 +184,22 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 				align: p.align,
 				offsetPct: p.offsetPct,
 				color: p.color,
+				// New pill/highlight fields default from the base style so packs
+				// authored before they existed still register a complete look.
+				mutedColor: p.mutedColor ?? DEFAULT_CAPTION_STYLE.mutedColor,
 				uppercase: p.uppercase,
 				letterSpacing: p.letterSpacing,
 				background: p.background,
 				backgroundColor: p.backgroundColor,
 				backgroundOpacity: p.backgroundOpacity,
+				boxPaddingXEm: p.boxPaddingXEm ?? DEFAULT_CAPTION_STYLE.boxPaddingXEm,
+				boxPaddingYEm: p.boxPaddingYEm ?? DEFAULT_CAPTION_STYLE.boxPaddingYEm,
+				boxRadiusEm: p.boxRadiusEm ?? DEFAULT_CAPTION_STYLE.boxRadiusEm,
+				lineHeight: p.lineHeight ?? DEFAULT_CAPTION_STYLE.lineHeight,
 				outlineWidth: p.outlineWidth,
 				outlineColor: p.outlineColor,
 				maxLines: p.maxLines,
+				maxCharsPerLine: p.maxCharsPerLine ?? DEFAULT_CAPTION_STYLE.maxCharsPerLine,
 				animation: p.animation,
 			},
 		});

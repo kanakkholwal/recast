@@ -4,7 +4,7 @@
  */
 
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
-import type { CaptionAnimation } from "$lib/captions/animation";
+import type { CaptionAnimation } from "@recast/captions";
 // Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
 // imports value bindings from here).
 import type { RecordingProfile } from "$lib/profiles";
@@ -1300,6 +1300,14 @@ export interface ExtCaptionPresetContribution {
 	outlineWidth: number;
 	outlineColor: string;
 	maxLines: number;
+	// New pill/highlight fields, optional so packs authored before them still
+	// load (the registry mapping fills defaults from DEFAULT_CAPTION_STYLE).
+	mutedColor?: string;
+	boxPaddingXEm?: number;
+	boxPaddingYEm?: number;
+	boxRadiusEm?: number;
+	lineHeight?: number;
+	maxCharsPerLine?: number;
 	/** Optional word-by-word animation. */
 	animation?: CaptionAnimation;
 }

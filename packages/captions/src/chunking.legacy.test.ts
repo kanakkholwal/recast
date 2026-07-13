@@ -6,8 +6,8 @@ import {
 	DEFAULT_CAPTION_ANIMATION,
 	isStaticAnimation,
 	resolveCaptionAnimation,
-	type CaptionAnimation,
-} from "./animation";
+} from "./chunking";
+import type { CaptionAnimation } from "./types";
 
 const W = (start: number, end: number, text = "w") => ({ start, end, text });
 const anim = (over: Partial<CaptionAnimation>): CaptionAnimation => ({

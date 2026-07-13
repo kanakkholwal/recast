@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+  import { motionDuration } from "$lib/motion.svelte";
   import { X, ZoomIn } from "@lucide/svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
@@ -77,6 +78,8 @@
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
     if (duration <= 0) return;
+    // Let a razor click bubble through to carve, rather than dragging the card.
+    if (store.timelineTool === "razor") return;
     event.preventDefault();
     event.stopPropagation();
     store.selectedZoomRegionId = region.id;
@@ -173,6 +176,7 @@
 
   function onCardClick(event: MouseEvent) {
     // A real drag never fires this (window-level pointer handlers); only a static click does.
+    if (store.timelineTool === "razor") return; // razor click is not a select
     event.stopPropagation();
     store.selectedZoomRegionId = region.id;
   }
@@ -188,8 +192,8 @@
 </script>
 
 <div
-  in:fly={{ y: 10, duration: 180, easing: cubicOut }}
-  out:fade={{ duration: 140 }}
+  in:fly={{ y: 10, duration: motionDuration(180), easing: cubicOut }}
+  out:fade={{ duration: motionDuration(140) }}
   class="group/card absolute z-20 overflow-visible select-none"
   style="
     left: {left}px;

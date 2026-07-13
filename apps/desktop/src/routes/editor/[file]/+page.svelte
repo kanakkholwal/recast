@@ -46,7 +46,7 @@
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
-  import { activatesOnSpace } from "$lib/dom/keyboard";
+  import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
   import { AudioTimelineEngine } from "$lib/playback/audio-engine";
   import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { originalToOutput } from "$lib/timeline/time-map";
@@ -1328,6 +1328,19 @@
     // combo never trips a plain-key action below.
     if (e.ctrlKey || e.metaKey) return;
 
+    // Timeline editing commands (S/C/I/O/Home/End). These used to fire only when
+    // the timeline scroller held DOM focus, so the keycaps in the toolbar lied
+    // whenever focus sat anywhere else. Now they run at document scope, delegating
+    // to the timeline's registered handlers (which own the frame math). Shift/Alt
+    // variants stay scroller-local; a dropdown/popover open (isOverlayOpen) or a
+    // collapsed timeline (no registered commands) makes them no-op.
+    const runTimelineCommand = (run: (c: NonNullable<typeof store.timelineCommands>) => void) => {
+      const c = store.timelineCommands;
+      if (!c || !store.metadata || e.shiftKey || e.altKey || isOverlayOpen()) return;
+      e.preventDefault();
+      run(c);
+    };
+
     // Plain keys: play/pause, frame step, fullscreen.
     switch (e.key) {
       case " ":
@@ -1378,11 +1391,38 @@
         }
         break;
       }
+      case "s":
+      case "S":
+        runTimelineCommand((c) => c.splitAtPlayhead());
+        break;
+      case "c":
+      case "C":
+        runTimelineCommand((c) => c.toggleRazor());
+        break;
+      case "i":
+      case "I":
+        runTimelineCommand((c) => c.trimToPlayhead("in"));
+        break;
+      case "o":
+      case "O":
+        runTimelineCommand((c) => c.trimToPlayhead("out"));
+        break;
+      case "Home":
+        runTimelineCommand((c) => c.seekToEdge("in"));
+        break;
+      case "End":
+        runTimelineCommand((c) => c.seekToEdge("out"));
+        break;
       case "Escape":
-        // Deselect. The annotation overlay cancels an active tool on Escape and
-        // preventDefaults when it does, so we never fight it (we bail on
+        // Exit an armed tool first (the razor's emergency exit works from
+        // anywhere now, not just when the scroller has focus), then deselect.
+        // The annotation overlay cancels its own tool on Escape and
+        // preventDefaults when it does, so we never fight it (bail on
         // defaultPrevented above).
-        if (store.selection) {
+        if (store.timelineTool === "razor") {
+          store.timelineCommands?.exitTool();
+          e.preventDefault();
+        } else if (store.selection) {
           store.clearSelection();
           e.preventDefault();
         }

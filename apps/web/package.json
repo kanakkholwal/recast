@@ -28,6 +28,7 @@
 		"@fontsource-variable/geist": "^5.2.8",
 		"@recast/analytics": "workspace:*",
 		"@recast/application": "workspace:*",
+		"@recast/captions": "workspace:*",
 		"@recast/design": "workspace:*",
 		"@recast/player": "workspace:*",
 		"@recast/ui": "workspace:*",

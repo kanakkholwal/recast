@@ -87,6 +87,8 @@
     // Only the bare lane background starts a create-drag; cards stop propagation
     // in their own handlers.
     if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
+    // The razor tool owns clicks timeline-wide: let this bubble to the scroller.
+    if (store.timelineTool === "razor") return;
     // Stop the timeline's scrub handler from also claiming this drag.
     e.preventDefault();
     e.stopPropagation();

@@ -55,6 +55,7 @@ export default defineConfig({
 			'@recast/design',
 			'@recast/player',
 			'@recast/analytics',
+			'@recast/captions',
 		],
 	},
 	// Env variables starting with the item of `envPrefix` are exposed to the

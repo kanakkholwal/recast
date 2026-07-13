@@ -172,14 +172,20 @@
         "align": { "enum": ["left", "center", "right"] },
         "offsetPct": { "type": "number", "minimum": 0, "maximum": 40 },
         "color": { "$ref": "#/$defs/hexColor" },
+        "mutedColor": { "$ref": "#/$defs/hexColor", "description": "Unspoken-word colour for progressive highlight. Optional; defaults from the base style." },
         "uppercase": { "type": "boolean" },
         "letterSpacing": { "type": "number", "minimum": -0.2, "maximum": 1, "description": "em." },
         "background": { "enum": ["none", "soft", "box"] },
         "backgroundColor": { "$ref": "#/$defs/hexColor" },
         "backgroundOpacity": { "type": "number", "minimum": 0, "maximum": 100 },
+        "boxPaddingXEm": { "type": "number", "minimum": 0, "maximum": 4, "description": "Pill horizontal padding, em of font size. Optional." },
+        "boxPaddingYEm": { "type": "number", "minimum": 0, "maximum": 4, "description": "Pill vertical padding, em of font size. Optional." },
+        "boxRadiusEm": { "type": "number", "minimum": 0, "maximum": 10, "description": "Pill corner radius, em of font size (clamps to a stadium). Optional." },
+        "lineHeight": { "type": "number", "minimum": 0.8, "maximum": 2.5, "description": "Line height as a multiple of font size. Optional." },
         "outlineWidth": { "type": "number", "minimum": 0, "maximum": 20, "description": "Percent of font size." },
         "outlineColor": { "$ref": "#/$defs/hexColor" },
         "maxLines": { "type": "integer", "minimum": 1, "maximum": 6 },
+        "maxCharsPerLine": { "type": "integer", "minimum": 8, "maximum": 120, "description": "Greedy line-break width in characters. Optional." },
         "animation": { "$ref": "#/$defs/captionAnimation" }
       }
     },
@@ -193,6 +199,7 @@
         "chunkSize": { "type": "integer", "minimum": 1, "maximum": 12 },
         "emphasis": { "enum": ["none", "color", "scale"] },
         "emphasisColor": { "$ref": "#/$defs/hexColor" },
+        "highlight": { "enum": ["none", "active", "progressive"], "description": "Spoken vs unspoken colouring. Optional; absent = active (legacy)." },
         "entrance": { "enum": ["none", "fade", "pop", "slide"] },
         "entranceMs": { "type": "number", "minimum": 0, "maximum": 2000 },
         "holdGaps": { "type": "boolean" }

@@ -369,19 +369,42 @@
   // second commits `addCut(lo, hi)`. Stays armed for repeated cuts until toggled
   // off or Esc. While armed the cursor is a scissor and a destructive preview
   // band shows the span that will be removed.
-  let razorActive = $state(false);
+  // The tool lives in the store, not here: a tool is a mode of the whole
+  // timeline, and every lane needs to read it to decline the gesture the tool
+  // owns (else a razor click over the Cuts/Zoom lane starts a create-drag
+  // instead of carving). Local state couldn't reach them.
+  const razorActive = $derived(store.timelineTool === "razor");
   let razorAnchor = $state<number | null>(null);
 
   function toggleRazor() {
-    razorActive = !razorActive;
+    store.timelineTool = razorActive ? "select" : "razor";
     razorAnchor = null;
   }
 
   // Any other edit action exits the Cut tool, so the armed state always reflects
   // the last action (clicking Split while Cut is armed switches to Split).
   function disarmRazor() {
-    razorActive = false;
+    store.timelineTool = "select";
     razorAnchor = null;
+  }
+
+  // Esc: cancel a pending anchor first, then disarm. Registered so the route can
+  // exit the tool even when the scroller never held focus.
+  function exitTool() {
+    if (razorAnchor !== null) razorAnchor = null;
+    else disarmRazor();
+  }
+
+  // Jump the playhead to the in/out point (Home/End). Extracted so the route can
+  // drive it without the scroller holding focus.
+  function seekToEdge(which: "in" | "out") {
+    if (duration <= 0) return;
+    const t =
+      which === "in"
+        ? store.inPoint
+        : Math.max(store.inPoint, store.outPoint - frameStep());
+    store.currentTime = t;
+    if (videoEl) videoEl.currentTime = t;
   }
 
   function splitAtPlayhead() {
@@ -507,8 +530,7 @@
     // Razor (Cut) tool: C arms/disarms; Esc cancels a pending anchor, else disarms.
     if (event.key === "Escape" && razorActive) {
       event.preventDefault();
-      if (razorAnchor !== null) razorAnchor = null;
-      else razorActive = false;
+      exitTool();
       return;
     }
     if ((event.key === "c" || event.key === "C") && !mod) {
@@ -581,15 +603,11 @@
     // Home/End jump the playhead to the in/out points (NLE convention).
     if (event.key === "Home") {
       event.preventDefault();
-      const t = store.inPoint;
-      store.currentTime = t;
-      if (videoEl) videoEl.currentTime = t;
+      seekToEdge("in");
     }
     if (event.key === "End") {
       event.preventDefault();
-      const t = Math.max(store.inPoint, store.outPoint - frameStep());
-      store.currentTime = t;
-      if (videoEl) videoEl.currentTime = t;
+      seekToEdge("out");
     }
 
     // Split the clip at the playhead ("S").
@@ -825,7 +843,20 @@
     handleResize();
     const observer = new ResizeObserver(handleResize);
     if (timelineEl) observer.observe(timelineEl);
-    return () => observer.disconnect();
+    // The route-level keyboard handler drives these so the toolbar's S/C/I/O
+    // keycaps are honest whether or not the scroller holds focus. Unregistered
+    // on unmount, so they no-op while the timeline is collapsed.
+    const offCommands = store.registerTimelineCommands({
+      splitAtPlayhead,
+      toggleRazor,
+      exitTool,
+      trimToPlayhead: setTrimPoint,
+      seekToEdge,
+    });
+    return () => {
+      observer.disconnect();
+      offCommands();
+    };
   });
 </script>
 
@@ -920,7 +951,7 @@
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={store.currentTime}
-      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
       style={razorActive ? "cursor: none" : ""}
       onpointerdown={handleTimelinePointerDown}
       onpointermove={handleTimelinePointerMove}
@@ -997,6 +1028,7 @@
         leftPx={playheadOutput * pixelsPerSecond}
         fps={effectiveFps()}
         isDragging={isDraggingPlayhead}
+        isPlaying={store.isPlaying}
         {timeMode}
       />
 
