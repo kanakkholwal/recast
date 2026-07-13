@@ -19,9 +19,12 @@ const CONTACT_EMAIL = "mailto:try-recast@gmail.com";
 // Product links shared verbatim between Navbar and Footer.
 const FEATURES: NavLink = { label: "Features", href: "/features" };
 const EXTENSIONS: NavLink = { label: "Extensions", href: "/extensions" };
-const FREE_TOOLS: NavLink = { label: "Free Tools", href: "/tools" };
+// Not a product offering — a resource. They exist to catch people searching for
+// a quick browser tool, so they sit under Resources, not Product.
+const TOOLS: NavLink = { label: "Tools", href: "/tools" };
 const PRICING: NavLink = { label: "Pricing", href: "/pricing" };
 const CHANGELOG: NavLink = { label: "Changelog", href: "/changelog" };
+const BLOG: NavLink = { label: "Blog", href: "/blog" };
 
 export const footerCols: { title: string; links: NavLink[] }[] = [
 	{
@@ -29,7 +32,6 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 		links: [
 			FEATURES,
 			EXTENSIONS,
-			FREE_TOOLS,
 			PRICING,
 			{ label: "Download", href: "/download" },
 			{ label: "Join Waitlist", href: "/waitlist" },
@@ -38,6 +40,8 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 	{
 		title: "Resources",
 		links: [
+			TOOLS,
+			BLOG,
 			{ label: "Documentation", href: "#" },
 			{ label: "GitHub", href: GITHUB_URL, external: true },
 			{ label: "Releases", href: GITHUB_RELEASES_URL, external: true },
@@ -71,7 +75,6 @@ export const navMenuGroups: {
 		links: [
 			FEATURES,
 			EXTENSIONS,
-			FREE_TOOLS,
 			PRICING,
 			{ label: "Cloud Waitlist", href: "/waitlist" },
 		],
@@ -80,6 +83,8 @@ export const navMenuGroups: {
 		title: "Resources",
 		variant: "muted",
 		links: [
+			TOOLS,
+			BLOG,
 			CHANGELOG,
 			// GitHub stays in the menu too — the icon button is desktop-only
 			// (md:flex), and mobile users discover external links through

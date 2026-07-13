@@ -5,7 +5,7 @@ slug: bringing-recast-to-macos-and-linux
 date: 2026-06-27
 author: Kanak
 tags: [engineering, cross-platform, desktop, tauri, rust]
-published: false
+published: true
 ---
 
 Most of the work in making one app run well on three operating systems is not writing platform code. It is finding out which of your assumptions were really just Windows in disguise.

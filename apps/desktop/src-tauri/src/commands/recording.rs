@@ -146,83 +146,92 @@ pub async fn stop_recording(
     let manager = state.recording_manager.clone();
     let dest = recasts_dir(&state);
 
-    let project_path = tauri::async_runtime::spawn_blocking(move || -> AppResult<PathBuf> {
-        // `{:#}` formats the full anyhow chain (top message + every `.context()`
-        // below it), so the JS-side alert sees the real cause instead of just
-        // the outermost label. Without this, errors like "encoder thread
-        // panicked" hid the underlying FFmpeg-process exit code.
-        let artifacts = manager
-            .stop()
-            .inspect_err(|e| log::error!("stop_recording failed: {e:#}"))?;
-        // Human-readable, sortable, searchable name (local time of capture) —
-        // e.g. `Recast_2026-05-16_14-30-22.recast`.
-        let stamp = Local
-            .timestamp_millis_opt(artifacts.started_at_unix_ms as i64)
-            .single()
-            .unwrap_or_else(Local::now)
-            .format("%Y-%m-%d_%H-%M-%S");
-        let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
-        // The recording pipeline is the authoritative source for these values
-        // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
-        // Spawning ffprobe here just to confirm what we already know was
-        // adding 100–300ms to every stop, right when the UI wants to transition.
-        let metadata = ProjectMetadata {
-            schema_version: 1,
-            created_at_unix_ms: artifacts.started_at_unix_ms,
-            capture_target: artifacts.capture_target.clone(),
-            stats: artifacts.stats.clone(),
-            video: ProjectVideoMetadata {
-                width: artifacts.capture_target.crop.width,
-                height: artifacts.capture_target.crop.height,
-                // The pacer + encoder ran at the session's chosen capture rate
-                // (default 60); persist that, not a hard-coded const, so the
-                // editor and export source-fps detection are correct for
-                // high-refresh recordings.
-                fps: artifacts.stats.nominal_fps,
-                duration_ms: artifacts.stats.duration_ms,
-            },
-            media: Some(ProjectMediaMetadata {
-                has_system_audio: artifacts.has_system_audio,
-                has_microphone: artifacts.microphone_path.is_some(),
-                has_camera: artifacts.camera_path.is_some(),
-            }),
-        };
-        let default_render_state = RenderState {
-            trim_end: artifacts.stats.duration_ms as f64 / 1000.0,
-            camera_overlay: artifacts.camera_overlay.clone(),
-            ..RenderState::default()
-        };
-        let project_path = write_project(ProjectWriteRequest {
-            output_path: final_path.clone(),
-            metadata,
-            recording_path: artifacts.recording_path.clone(),
-            cursor_path: artifacts.cursor_path.clone(),
-            audio_path: Some(artifacts.audio_path.clone()),
-            microphone_path: artifacts.microphone_path.clone(),
-            camera_path: artifacts.camera_path.clone(),
-            edits_json: serde_json::to_string_pretty(&default_render_state)
-                .unwrap_or_else(|_| "{}".into()),
+    let (project_path, warnings) =
+        tauri::async_runtime::spawn_blocking(move || -> AppResult<(PathBuf, Vec<String>)> {
+            // `{:#}` formats the full anyhow chain (top message + every `.context()`
+            // below it), so the JS-side alert sees the real cause instead of just
+            // the outermost label. Without this, errors like "encoder thread
+            // panicked" hid the underlying FFmpeg-process exit code.
+            let artifacts = manager
+                .stop()
+                .inspect_err(|e| log::error!("stop_recording failed: {e:#}"))?;
+            // Non-fatal capture issues (e.g. mic/camera failed) to toast after save.
+            let warnings = artifacts.warnings.clone();
+            // Human-readable, sortable, searchable name (local time of capture) —
+            // e.g. `Recast_2026-05-16_14-30-22.recast`.
+            let stamp = Local
+                .timestamp_millis_opt(artifacts.started_at_unix_ms as i64)
+                .single()
+                .unwrap_or_else(Local::now)
+                .format("%Y-%m-%d_%H-%M-%S");
+            let final_path = super::unique_path(&dest, &format!("Recast_{stamp}"), "recast");
+            // The recording pipeline is the authoritative source for these values
+            // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
+            // Spawning ffprobe here just to confirm what we already know was
+            // adding 100–300ms to every stop, right when the UI wants to transition.
+            let metadata = ProjectMetadata {
+                schema_version: 1,
+                created_at_unix_ms: artifacts.started_at_unix_ms,
+                capture_target: artifacts.capture_target.clone(),
+                stats: artifacts.stats.clone(),
+                video: ProjectVideoMetadata {
+                    width: artifacts.capture_target.crop.width,
+                    height: artifacts.capture_target.crop.height,
+                    // The pacer + encoder ran at the session's chosen capture rate
+                    // (default 60); persist that, not a hard-coded const, so the
+                    // editor and export source-fps detection are correct for
+                    // high-refresh recordings.
+                    fps: artifacts.stats.nominal_fps,
+                    duration_ms: artifacts.stats.duration_ms,
+                },
+                media: Some(ProjectMediaMetadata {
+                    has_system_audio: artifacts.has_system_audio,
+                    has_microphone: artifacts.microphone_path.is_some(),
+                    has_camera: artifacts.camera_path.is_some(),
+                }),
+            };
+            let default_render_state = RenderState {
+                trim_end: artifacts.stats.duration_ms as f64 / 1000.0,
+                camera_overlay: artifacts.camera_overlay.clone(),
+                ..RenderState::default()
+            };
+            let project_path = write_project(ProjectWriteRequest {
+                output_path: final_path.clone(),
+                metadata,
+                recording_path: artifacts.recording_path.clone(),
+                cursor_path: artifacts.cursor_path.clone(),
+                audio_path: Some(artifacts.audio_path.clone()),
+                microphone_path: artifacts.microphone_path.clone(),
+                camera_path: artifacts.camera_path.clone(),
+                edits_json: serde_json::to_string_pretty(&default_render_state)
+                    .unwrap_or_else(|_| "{}".into()),
+            })
+            .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
+
+            // Clean up temporary session files.
+            let _ = fs::remove_file(&artifacts.recording_path);
+            let _ = fs::remove_file(&artifacts.cursor_path);
+            let _ = fs::remove_file(&artifacts.audio_path);
+            if let Some(ref mic_path) = artifacts.microphone_path {
+                let _ = fs::remove_file(mic_path);
+            }
+            if let Some(ref cam_path) = artifacts.camera_path {
+                let _ = fs::remove_file(cam_path);
+            }
+
+            Ok((project_path, warnings))
         })
-        .inspect_err(|e| log::error!("write_project failed: {e:#}"))?;
-
-        // Clean up temporary session files.
-        let _ = fs::remove_file(&artifacts.recording_path);
-        let _ = fs::remove_file(&artifacts.cursor_path);
-        let _ = fs::remove_file(&artifacts.audio_path);
-        if let Some(ref mic_path) = artifacts.microphone_path {
-            let _ = fs::remove_file(mic_path);
-        }
-        if let Some(ref cam_path) = artifacts.camera_path {
-            let _ = fs::remove_file(cam_path);
-        }
-
-        Ok(project_path)
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("stop_recording worker panicked: {e}")))??;
+        .await
+        .map_err(|e| AppError::msg(format!("stop_recording worker panicked: {e}")))??;
 
     // Finalized: release the sleep inhibitor from start_recording (success path).
     state.power.release();
+
+    // Surface non-fatal capture issues (mic/camera failed to record). The
+    // recording still saved; the frontend shows these as a warning toast.
+    if !warnings.is_empty() {
+        let _ = app.emit("recording:warnings", &warnings);
+    }
 
     *state.last_file_path.lock() = Some(project_path.to_string_lossy().to_string());
     let path_str = project_path.to_string_lossy().to_string();

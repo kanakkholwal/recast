@@ -148,6 +148,17 @@ impl PlatformAudioSession {
         }
     }
 
+    /// True when real system audio is being captured (ScreenCaptureKit or a
+    /// live loopback device). False for the `Silence` fallback, which runs
+    /// when no loopback source is reachable (macOS without SCKit or a virtual
+    /// driver, Linux without a PulseAudio monitor). Callers use this so the
+    /// project reports system audio honestly: the silence fallback still
+    /// writes a WAV to mux, but it is pure silence and must not be labelled a
+    /// captured track.
+    pub fn is_capturing(&self) -> bool {
+        !matches!(self.backend, LoopbackBackend::Silence { .. })
+    }
+
     pub fn stop(self) -> Result<PathBuf> {
         match self.backend {
             LoopbackBackend::Live {
@@ -228,7 +239,7 @@ impl PlatformMicrophoneSession {
 
 // -- Shared FFmpeg PCM capture -
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PcmSource {
     /// FFmpeg input format keyword (`avfoundation`, `pulse`, `alsa`, ...).
     format: &'static str,
@@ -475,16 +486,60 @@ fn resolve_microphone_source(device_id: &Option<String>) -> PcmSource {
 
 #[cfg(target_os = "linux")]
 fn resolve_microphone_source(device_id: &Option<String>) -> PcmSource {
-    let arg = match device_id.as_deref() {
-        Some(id) if !id.trim().is_empty() && !id.eq_ignore_ascii_case("default") => {
-            id.trim().to_string()
+    microphone_source_for(device_id, pulseaudio_available())
+}
+
+/// Pure half of [`resolve_microphone_source`]: pick the FFmpeg input format and
+/// device for a requested mic, given whether a PulseAudio server answered. Split
+/// from the `pactl` probe so the pulse/ALSA fallback matrix is unit-testable on
+/// a machine with no sound server at all.
+#[cfg(target_os = "linux")]
+fn microphone_source_for(device_id: &Option<String>, pulse_available: bool) -> PcmSource {
+    let requested = device_id.as_deref().and_then(|id| {
+        let trimmed = id.trim();
+        if trimmed.is_empty() || trimmed.eq_ignore_ascii_case("default") {
+            None
+        } else {
+            Some(trimmed.to_string())
         }
+    });
+
+    // Prefer PulseAudio / pipewire-pulse (what the device picker enumerates).
+    // On an ALSA-only host, or PipeWire without the pulse shim, `pulse` capture
+    // just errors and the mic track is silently dropped, so fall back to ALSA
+    // and record something instead of nothing.
+    if pulse_available {
+        return PcmSource {
+            format: "pulse",
+            device: requested.unwrap_or_else(|| "default".to_string()),
+        };
+    }
+
+    // Pulse source names don't map to ALSA devices, so only honour a requested
+    // id when it already looks like an ALSA device; otherwise use the ALSA
+    // default.
+    let device = match requested {
+        Some(id) if id.starts_with("hw:") || id.starts_with("plughw:") => id,
         _ => "default".to_string(),
     };
     PcmSource {
-        format: "pulse",
-        device: arg,
+        format: "alsa",
+        device,
     }
+}
+
+/// Whether a PulseAudio (or pipewire-pulse) server is reachable. Used to pick
+/// the microphone input format: `pulse` when a server answers, else `alsa`.
+#[cfg(target_os = "linux")]
+fn pulseaudio_available() -> bool {
+    Command::new("pactl")
+        .arg("info")
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .stdin(Stdio::null())
+        .status()
+        .map(|status| status.success())
+        .unwrap_or(false)
 }
 
 #[cfg(target_os = "macos")]
@@ -510,4 +565,118 @@ fn avfoundation_index(line: &str) -> Option<u32> {
     let open = bytes[..close].iter().rposition(|&b| b == b'[')?;
     let inner = std::str::from_utf8(&bytes[open + 1..close]).ok()?;
     inner.trim().parse::<u32>().ok()
+}
+
+/// Runs on the macOS + Linux CI legs (see `.github/workflows/ci-desktop.yml`),
+/// which is the only place this `cfg`-gated backend compiles at all.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The silence fallback must NOT be reported as captured system audio: it
+    /// writes a silent WAV purely so the muxer has a track. Reporting it as real
+    /// made the project claim a system-audio track that was pure silence (macOS
+    /// default build with no SCKit/BlackHole).
+    #[test]
+    fn silence_backend_is_not_capturing() {
+        let session = PlatformAudioSession {
+            backend: LoopbackBackend::Silence {
+                output_path: PathBuf::from("silent.wav"),
+                started_at: Instant::now(),
+            },
+        };
+        assert!(!session.is_capturing());
+    }
+
+    #[test]
+    fn live_backend_is_capturing() {
+        let session = PlatformAudioSession {
+            backend: LoopbackBackend::Live {
+                stop_flag: Arc::new(AtomicBool::new(true)),
+                thread_handle: thread::spawn(|| Ok(PathBuf::from("live.wav"))),
+            },
+        };
+        assert!(session.is_capturing());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_uses_pulse_default_when_pulse_is_available() {
+        assert_eq!(
+            microphone_source_for(&None, true),
+            PcmSource {
+                format: "pulse",
+                device: "default".to_string(),
+            }
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_honours_requested_pulse_source_when_pulse_is_available() {
+        let requested = Some("alsa_input.usb-Blue_Yeti.analog-stereo".to_string());
+        assert_eq!(
+            microphone_source_for(&requested, true),
+            PcmSource {
+                format: "pulse",
+                device: "alsa_input.usb-Blue_Yeti.analog-stereo".to_string(),
+            }
+        );
+    }
+
+    /// The whole point of the fallback: an ALSA-only host (or PipeWire without
+    /// the pulse shim) must still record a mic instead of silently dropping it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_falls_back_to_alsa_default_when_pulse_is_unavailable() {
+        assert_eq!(
+            microphone_source_for(&None, false),
+            PcmSource {
+                format: "alsa",
+                device: "default".to_string(),
+            }
+        );
+    }
+
+    /// A pulse source NAME is meaningless to ALSA, so it must be dropped for the
+    /// ALSA default rather than passed through as a bogus device.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_discards_pulse_source_name_on_the_alsa_fallback() {
+        let requested = Some("alsa_input.usb-Blue_Yeti.analog-stereo".to_string());
+        assert_eq!(
+            microphone_source_for(&requested, false),
+            PcmSource {
+                format: "alsa",
+                device: "default".to_string(),
+            }
+        );
+    }
+
+    /// An id that already names an ALSA device IS meaningful, so keep it.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_keeps_an_alsa_style_device_id_on_the_alsa_fallback() {
+        for id in ["hw:1,0", "plughw:0,0"] {
+            assert_eq!(
+                microphone_source_for(&Some(id.to_string()), false),
+                PcmSource {
+                    format: "alsa",
+                    device: id.to_string(),
+                }
+            );
+        }
+    }
+
+    /// "Default" / blank from the picker means "no explicit device", on either
+    /// backend, and must not be forwarded to FFmpeg as a literal device name.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn mic_treats_blank_and_default_ids_as_no_request() {
+        for id in ["", "   ", "default", "Default"] {
+            let requested = Some(id.to_string());
+            assert_eq!(microphone_source_for(&requested, true).device, "default");
+            assert_eq!(microphone_source_for(&requested, false).device, "default");
+        }
+    }
 }

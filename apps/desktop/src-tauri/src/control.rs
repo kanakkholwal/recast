@@ -377,6 +377,18 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             crate::commands::resume_recording(state).map_err(|e| e.to_string())?;
             Ok(Value::Null)
         }
+        // On-device OCR of a video into a structured text timeline. Behind the
+        // off-by-default `ocr` feature; absent otherwise (falls to unknown method).
+        #[cfg(feature = "ocr")]
+        "screen.read" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("screen.read requires a path")?;
+            // block_on is safe here: each connection runs on its own thread.
+            let timeline = tauri::async_runtime::block_on(crate::ocr::run(app, path, |_| {}))?;
+            serde_json::to_value(timeline).map_err(|e| e.to_string())
+        }
         other => Err(format!("unknown method: {other}")),
     }
 }

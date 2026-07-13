@@ -9,6 +9,8 @@
     shadow: string;
     /** Ready-to-use CSS `border` value, or "none". */
     border: string;
+    /** Ready-to-use CSS `filter` value for the screenshot only, or "none". */
+    filter?: string;
     src: string;
     alt: string;
   }
@@ -17,7 +19,7 @@
 <script lang="ts">
   import { ArrowLeft, ArrowRight, Lock, Plus, RotateCw } from "@lucide/svelte";
 
-  let { mockup, radius, shadow, border, src, alt }: MockupFrameProps = $props();
+  let { mockup, radius, shadow, border, filter = "none", src, alt }: MockupFrameProps = $props();
 
   const isBrowser = $derived(mockup.kind === "safari" || mockup.kind === "chrome");
   const isDevice = $derived(mockup.kind === "phone" || mockup.kind === "tablet");
@@ -27,7 +29,7 @@
   <!-- Device frame: a fixed-aspect bezel, screenshot cover-filled like a real
        screen. Uses its own radii; the drop shadow still applies. -->
   <div class="device" class:phone={mockup.kind === "phone"} class:tablet={mockup.kind === "tablet"} style:box-shadow={shadow}>
-    <img class="device-screen" {src} {alt} />
+    <img class="device-screen" {src} {alt} style:filter={filter === "none" ? undefined : filter} />
     {#if mockup.kind === "phone"}
       <span class="notch" aria-hidden="true"></span>
     {/if}
@@ -69,7 +71,7 @@
   {/if}
 
   <div class="content">
-    <img class="shot" {src} {alt} />
+    <img class="shot" {src} {alt} style:filter={filter === "none" ? undefined : filter} />
   </div>
 </div>
 {/if}

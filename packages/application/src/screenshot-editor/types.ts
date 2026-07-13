@@ -35,6 +35,42 @@ export interface Frame {
   border: { width: number; color: string };
 }
 
+/** One-click screenshot frame looks (mirrors the clone's `imageStylePreset`).
+ * `default` = no wrapper; the rest wrap the shot in a tinted/solid padded card. */
+export type ImageStylePreset =
+  | "default"
+  | "glass-light"
+  | "glass-dark"
+  | "outline"
+  | "border-light"
+  | "border-dark";
+
+/** The active style-frame wrapper: which preset, plus its two live controls. */
+export interface ImageStyle {
+  preset: ImageStylePreset;
+  /** Wrapper padding as a percent of the shot width (concentric card). */
+  padding: number;
+  /** Tint alpha for the glass/outline backgrounds (ignored by solid borders). */
+  opacity: number;
+}
+
+/** Named drop-shadow strengths (mirrors the clone's `shadowPreset`). */
+export type ShadowPreset = "none" | "hug" | "soft" | "strong";
+
+/** CSS filter adjustments applied to the screenshot itself. Percent-based
+ * values match the clone's `imageFilters` (100 = unchanged); `hueRotate` is in
+ * degrees, `blur` in pixels. Composed into a single CSS `filter` string. */
+export interface ImageFilters {
+  brightness: number;
+  contrast: number;
+  saturate: number;
+  grayscale: number;
+  sepia: number;
+  hueRotate: number;
+  invert: number;
+  blur: number;
+}
+
 /** Drop shadow beneath the framed screenshot. Composed into a CSS box-shadow. */
 export interface Shadow {
   x: number;

@@ -1,11 +1,14 @@
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
+import { docvia } from "@docvia/plugin-vite";
+import docviaConfig from "./docvia.config";
 
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
-		sveltekit()
+		sveltekit(),
+		docvia(docviaConfig)
 	],
 	clearScreen: false,
 	// `@takumi-rs/wasm` (used by /api/og) ships its WebAssembly binary as an

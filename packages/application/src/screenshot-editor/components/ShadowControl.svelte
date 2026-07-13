@@ -14,7 +14,7 @@
   let { editor }: ShadowControlProps = $props();
 </script>
 
-<PanelSection title="Shadow">
+<PanelSection title="Shadow" collapsible defaultOpen={false}>
   <SliderControl
     label="Opacity"
     value={editor.shadow.opacity}

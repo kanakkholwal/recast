@@ -1,4 +1,14 @@
 import { ASPECT_PRESETS, DEFAULT_ASPECT, DEFAULT_BACKGROUND, DEFAULT_TRANSFORM } from "./presets";
+import {
+  clipTime,
+  DEFAULT_FILTERS,
+  DEFAULT_FRAME,
+  DEFAULT_MOCKUP,
+  DEFAULT_SHADOW,
+  DEFAULT_STYLE,
+  SHADOW_PRESETS,
+  STYLE_PRESETS,
+} from "./defaults";
 import { presetById } from "./animation";
 
 /** Coalesce rapid edits (a slider drag) into one undo step. */
@@ -10,9 +20,13 @@ import type {
   EditorImage,
   ExportFormat,
   Frame,
+  ImageFilters,
+  ImageStyle,
+  ImageStylePreset,
   Mockup,
   Overlay,
   Shadow,
+  ShadowPreset,
   ShapeKind,
   ShapeOverlay,
   Template,
@@ -26,21 +40,6 @@ function newId(): string {
     : `ov-${Math.round(performance.now())}-${Math.round(performance.now() % 1000)}`;
 }
 
-const DEFAULT_FRAME: Frame = {
-  padding: 8,
-  radius: 12,
-  border: { width: 0, color: "#ffffff" },
-};
-const DEFAULT_SHADOW: Shadow = {
-  x: 0,
-  y: 24,
-  blur: 60,
-  spread: 0,
-  opacity: 0.35,
-  color: "#000000",
-};
-const DEFAULT_MOCKUP: Mockup = { kind: "none", theme: "light", url: "example.com" };
-
 /** Reactive state for one screenshot-editing session. One-way flow: the UI
  * calls these setters, the stage + controls read the getters. Nothing here
  * touches the DOM, so it stays unit-testable and SSR-safe. */
@@ -50,20 +49,53 @@ export class ScreenshotEditorState {
   backgroundId = $state<string>(DEFAULT_BACKGROUND.id);
   frame = $state<Frame>(structuredClone(DEFAULT_FRAME));
   shadow = $state<Shadow>({ ...DEFAULT_SHADOW });
+  shadowPreset = $state<ShadowPreset>("soft");
+  imageStyle = $state<ImageStyle>({ ...DEFAULT_STYLE });
   mockup = $state<Mockup>({ ...DEFAULT_MOCKUP });
   transform = $state<Transform3D>({ ...DEFAULT_TRANSFORM });
   aspect = $state<AspectPreset>(DEFAULT_ASPECT);
   overlays = $state<Overlay[]>([]);
   selectedId = $state<string | null>(null);
 
-  // Live animation (playback state is transient — not in history).
+  // Screenshot color adjustments + size/opacity (mirror the clone's
+  // imageFilters/imageScale/imageOpacity).
+  filters = $state<ImageFilters>({ ...DEFAULT_FILTERS });
+  imageScale = $state<number>(100); // percent of natural fit
+  imageOpacity = $state<number>(1); // 0..1
+
+  // Canvas (backdrop) treatment beyond the paint itself.
+  backgroundBlur = $state<number>(0); // px blur applied to the backdrop only
+  backgroundNoise = $state<number>(0); // 0..100 grain overlay opacity
+  canvasRadius = $state<number>(0); // px corner radius on the whole stage
+
+  // Live animation + timeline (playback state is transient — not in history).
+  // `playhead` is TIMELINE time; the clip maps it into preset-local time, so a
+  // clip can be moved and stretched without touching the preset itself.
   animationId = $state<string | null>(null);
   playing = $state(false);
-  playhead = $state(0); // ms into the animation
+  playhead = $state(0); // ms along the timeline
+  timelineDuration = $state(5000); // ms of track
+  loop = $state(true);
+  clipStart = $state(0); // ms where the clip begins
+  clipDuration = $state<number | null>(null); // ms; null = the preset's own length
 
   // Export options live with the session so they persist across edits.
   exportFormat = $state<ExportFormat>("png");
   exportScale = $state<number>(2);
+
+  // Editing guides. View-only, so they stay out of history and out of exports
+  // (their nodes carry `data-export-ignore`).
+  showRulers = $state(false);
+  showGrid = $state(false);
+  gridSize = $state(50); // px between grid lines
+
+  toggleRulers() {
+    this.showRulers = !this.showRulers;
+  }
+
+  toggleGrid() {
+    this.showGrid = !this.showGrid;
+  }
 
   // Undo/redo over the design (not the image); coalesced so a slider drag is
   // one step. Driven by a single $effect in the component (see `record`).
@@ -82,6 +114,15 @@ export class ScreenshotEditorState {
   );
   readonly animationPreset = $derived(presetById(this.animationId));
   readonly animationDuration = $derived(this.animationPreset?.duration ?? 0);
+  /** The clip's length on the timeline (stretched, if the user resized it). */
+  readonly clipLength = $derived(this.clipDuration ?? this.animationPreset?.duration ?? 0);
+  readonly clipEnd = $derived(this.clipStart + this.clipLength);
+  /** Timeline playhead mapped into preset-local time (see `clipTime`). */
+  readonly animationTime = $derived(
+    this.animationPreset
+      ? clipTime(this.playhead, this.clipStart, this.clipLength, this.animationPreset.duration)
+      : 0,
+  );
 
   setImage(image: EditorImage) {
     this.image = image;
@@ -114,12 +155,55 @@ export class ScreenshotEditorState {
     this.shadow = { ...this.shadow, ...patch };
   }
 
+  /** Apply a shadow strength preset, mapping to the structured Shadow. */
+  setShadowPreset(preset: ShadowPreset) {
+    this.shadowPreset = preset;
+    this.shadow = { ...SHADOW_PRESETS[preset] };
+  }
+
+  /** Apply a style-frame preset; seeds its padding/opacity from the clone map. */
+  setImageStylePreset(preset: ImageStylePreset) {
+    this.imageStyle = { preset, ...STYLE_PRESETS[preset] };
+  }
+
+  patchImageStyle(patch: Partial<ImageStyle>) {
+    this.imageStyle = { ...this.imageStyle, ...patch };
+  }
+
   patchMockup(patch: Partial<Mockup>) {
     this.mockup = { ...this.mockup, ...patch };
   }
 
   patchTransform(patch: Partial<Transform3D>) {
     this.transform = { ...this.transform, ...patch };
+  }
+
+  patchFilters(patch: Partial<ImageFilters>) {
+    this.filters = { ...this.filters, ...patch };
+  }
+
+  resetFilters() {
+    this.filters = { ...DEFAULT_FILTERS };
+  }
+
+  setImageScale(scale: number) {
+    this.imageScale = scale;
+  }
+
+  setImageOpacity(opacity: number) {
+    this.imageOpacity = Math.max(0, Math.min(1, opacity));
+  }
+
+  setBackgroundBlur(px: number) {
+    this.backgroundBlur = Math.max(0, px);
+  }
+
+  setBackgroundNoise(amount: number) {
+    this.backgroundNoise = Math.max(0, Math.min(100, amount));
+  }
+
+  setCanvasRadius(px: number) {
+    this.canvasRadius = Math.max(0, px);
   }
 
   setTransform(transform: Transform3D) {
@@ -137,6 +221,7 @@ export class ScreenshotEditorState {
     this.background = t.background;
     this.frame = { padding: t.padding, radius: t.radius, border: { width: 0, color: "#ffffff" } };
     this.shadow = { ...t.shadow };
+    this.imageStyle = { ...DEFAULT_STYLE };
     this.mockup = { ...t.mockup };
     this.transform = { ...t.transform };
   }
@@ -198,19 +283,43 @@ export class ScreenshotEditorState {
     this.selectedId = id;
   }
 
+  /** Move an overlay one step in z-order. Array order is paint order, so a
+   * higher index sits on top; `+1` raises, `-1` lowers. */
+  moveOverlay(id: string, delta: 1 | -1) {
+    const from = this.overlays.findIndex((o: Overlay) => o.id === id);
+    if (from < 0) return;
+    const to = from + delta;
+    if (to < 0 || to >= this.overlays.length) return;
+    const next = [...this.overlays];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    this.overlays = next;
+  }
+
   // --- Animation ---------------------------------------------------------
 
-  /** Select an animation and start playing it (null clears + stops). */
+  /** Select an animation and start playing it (null clears + stops). The clip
+   * lands at the start of the timeline at the preset's natural length. */
   setAnimation(id: string | null) {
     this.animationId = id;
     this.playhead = 0;
     this.playing = id !== null;
+    if (id) {
+      const preset = presetById(id);
+      const len = preset?.duration ?? 0;
+      this.clipStart = 0;
+      this.clipDuration = len;
+      // Grow the track if the clip wouldn't fit.
+      if (len > this.timelineDuration) this.timelineDuration = len;
+    }
   }
 
   clearAnimation() {
     this.animationId = null;
     this.playing = false;
     this.playhead = 0;
+    this.clipStart = 0;
+    this.clipDuration = null;
   }
 
   togglePlay() {
@@ -218,14 +327,43 @@ export class ScreenshotEditorState {
     this.playing = !this.playing;
   }
 
-  seek(ms: number) {
-    this.playhead = Math.max(0, Math.min(this.animationDuration, ms));
+  toggleLoop() {
+    this.loop = !this.loop;
   }
 
-  /** Advance playback by `dtMs`, looping. Called from the component's rAF. */
+  seek(ms: number) {
+    this.playhead = Math.max(0, Math.min(this.timelineDuration, ms));
+  }
+
+  setTimelineDuration(ms: number) {
+    this.timelineDuration = Math.max(1000, ms);
+    if (this.playhead > this.timelineDuration) this.playhead = this.timelineDuration;
+    // Keep the clip inside the track.
+    if (this.clipEnd > this.timelineDuration) {
+      this.clipStart = Math.max(0, this.timelineDuration - this.clipLength);
+    }
+  }
+
+  /** Move/resize the clip, clamped to the track. */
+  setClip(startMs: number, durationMs: number) {
+    const dur = Math.max(200, Math.min(this.timelineDuration, durationMs));
+    this.clipDuration = dur;
+    this.clipStart = Math.max(0, Math.min(this.timelineDuration - dur, startMs));
+  }
+
+  /** Advance playback by `dtMs` along the timeline. Loops, or stops at the end. */
   advance(dtMs: number) {
-    if (!this.playing || this.animationDuration <= 0) return;
-    this.playhead = (this.playhead + dtMs) % this.animationDuration;
+    if (!this.playing || this.timelineDuration <= 0) return;
+    const next = this.playhead + dtMs;
+    if (next >= this.timelineDuration) {
+      if (this.loop) this.playhead = next % this.timelineDuration;
+      else {
+        this.playhead = this.timelineDuration;
+        this.playing = false;
+      }
+    } else {
+      this.playhead = next;
+    }
   }
 
   reset() {
@@ -233,11 +371,19 @@ export class ScreenshotEditorState {
     this.backgroundId = DEFAULT_BACKGROUND.id;
     this.frame = structuredClone(DEFAULT_FRAME);
     this.shadow = { ...DEFAULT_SHADOW };
+    this.shadowPreset = "soft";
+    this.imageStyle = { ...DEFAULT_STYLE };
     this.mockup = { ...DEFAULT_MOCKUP };
     this.transform = { ...DEFAULT_TRANSFORM };
     this.aspect = DEFAULT_ASPECT;
     this.overlays = [];
     this.selectedId = null;
+    this.filters = { ...DEFAULT_FILTERS };
+    this.imageScale = 100;
+    this.imageOpacity = 1;
+    this.backgroundBlur = 0;
+    this.backgroundNoise = 0;
+    this.canvasRadius = 0;
     this.clearAnimation();
   }
 
@@ -250,10 +396,18 @@ export class ScreenshotEditorState {
       backgroundId: this.backgroundId,
       frame: this.frame,
       shadow: this.shadow,
+      shadowPreset: this.shadowPreset,
+      imageStyle: this.imageStyle,
       mockup: this.mockup,
       transform: this.transform,
       aspectId: this.aspect.id,
       overlays: this.overlays,
+      filters: this.filters,
+      imageScale: this.imageScale,
+      imageOpacity: this.imageOpacity,
+      backgroundBlur: this.backgroundBlur,
+      backgroundNoise: this.backgroundNoise,
+      canvasRadius: this.canvasRadius,
     });
   }
 
@@ -296,10 +450,18 @@ export class ScreenshotEditorState {
     this.backgroundId = d.backgroundId;
     this.frame = d.frame;
     this.shadow = d.shadow;
+    this.shadowPreset = d.shadowPreset ?? "soft";
+    this.imageStyle = d.imageStyle ?? { ...DEFAULT_STYLE };
     this.mockup = d.mockup;
     this.transform = d.transform;
     this.aspect = ASPECT_PRESETS.find((a: AspectPreset) => a.id === d.aspectId) ?? DEFAULT_ASPECT;
     this.overlays = d.overlays ?? [];
+    this.filters = d.filters ?? { ...DEFAULT_FILTERS };
+    this.imageScale = d.imageScale ?? 100;
+    this.imageOpacity = d.imageOpacity ?? 1;
+    this.backgroundBlur = d.backgroundBlur ?? 0;
+    this.backgroundNoise = d.backgroundNoise ?? 0;
+    this.canvasRadius = d.canvasRadius ?? 0;
     if (this.selectedId && !this.overlays.some((o: Overlay) => o.id === this.selectedId)) {
       this.selectedId = null;
     }

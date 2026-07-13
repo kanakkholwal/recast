@@ -1,6 +1,7 @@
 import { domToCanvas } from "modern-screenshot";
 import { ArrayBufferTarget, Muxer } from "mp4-muxer";
 import { type AnimationPreset, propsAtTime, propsToTransform } from "./animation";
+import { exportFilter } from "./export";
 
 /** True when this browser can encode H.264 via WebCodecs. */
 export function canExportVideo(): boolean {
@@ -27,6 +28,9 @@ export async function exportVideo(
   preset: AnimationPreset,
   fps: number,
   onProgress?: (progress: number) => void,
+  /** Wall-clock length of the clip; defaults to the preset's natural duration.
+   * A stretched timeline clip plays the same motion over a longer span. */
+  durationMs?: number,
 ): Promise<Blob> {
   if (!canExportVideo()) throw new Error("this browser can't encode video (needs WebCodecs)");
 
@@ -46,7 +50,7 @@ export async function exportVideo(
   try {
     // Probe frame 0 to size the output; force even dims, cap the long edge.
     applyFrame(persp, tilt, preset, 0);
-    const probe = await domToCanvas(stage, { scale: 2 });
+    const probe = await domToCanvas(stage, { scale: 2, filter: exportFilter });
     const cap = 1920;
     const longest = Math.max(probe.width, probe.height);
     const f = longest > cap ? cap / longest : 1;
@@ -72,11 +76,15 @@ export async function exportVideo(
     });
     encoder.configure({ codec: "avc1.42001f", width, height, bitrate: 6_000_000, framerate: fps });
 
-    const total = Math.max(2, Math.round((preset.duration / 1000) * fps));
+    // Frame count comes from the clip's wall-clock length; the motion itself is
+    // always sampled across the preset's full range, so a stretched clip plays
+    // the same animation more slowly.
+    const clipMs = durationMs && durationMs > 0 ? durationMs : preset.duration;
+    const total = Math.max(2, Math.round((clipMs / 1000) * fps));
     for (let i = 0; i < total; i++) {
       const time = (i / (total - 1)) * preset.duration;
       applyFrame(persp, tilt, preset, time);
-      const canvas = await domToCanvas(stage, { scale: 2 });
+      const canvas = await domToCanvas(stage, { scale: 2, filter: exportFilter });
       octx.clearRect(0, 0, width, height);
       octx.drawImage(canvas, 0, 0, width, height);
       const frame = new VideoFrame(out, {

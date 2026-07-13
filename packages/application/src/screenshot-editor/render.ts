@@ -1,4 +1,38 @@
-import type { Frame, Shadow, Transform3D } from "./types";
+import type { Frame, ImageFilters, ImageStyle, Shadow, Transform3D } from "./types";
+
+/** The wrapper background for a style-frame preset. Values mirror the clone's
+ * `styleConfig` (glass/outline are alpha-tinted; borders are solid). */
+export function styleFrameBackground(style: ImageStyle): string {
+  switch (style.preset) {
+    case "glass-light":
+      return `rgba(255, 255, 255, ${style.opacity})`;
+    case "glass-dark":
+      return `rgba(0, 0, 0, ${style.opacity})`;
+    case "outline":
+      return `rgba(255, 255, 255, ${style.opacity})`;
+    case "border-light":
+      return "rgb(255, 255, 255)";
+    case "border-dark":
+      return "rgb(26, 26, 26)";
+    default:
+      return "transparent";
+  }
+}
+
+/** Compose color adjustments into a CSS `filter`, or "none" when all neutral.
+ * Order mirrors the clone so exported output matches the preview. */
+export function filtersCss(f: ImageFilters): string {
+  const parts: string[] = [];
+  if (f.brightness !== 100) parts.push(`brightness(${f.brightness}%)`);
+  if (f.contrast !== 100) parts.push(`contrast(${f.contrast}%)`);
+  if (f.saturate !== 100) parts.push(`saturate(${f.saturate}%)`);
+  if (f.grayscale !== 0) parts.push(`grayscale(${f.grayscale}%)`);
+  if (f.sepia !== 0) parts.push(`sepia(${f.sepia}%)`);
+  if (f.hueRotate !== 0) parts.push(`hue-rotate(${f.hueRotate}deg)`);
+  if (f.invert !== 0) parts.push(`invert(${f.invert}%)`);
+  if (f.blur !== 0) parts.push(`blur(${f.blur}px)`);
+  return parts.length ? parts.join(" ") : "none";
+}
 
 /** Convert a `#rgb`/`#rrggbb` hex plus an alpha into a CSS `rgba()`. Falls back
  * to the input untouched if it isn't a hex (already `rgb()`/named), so callers

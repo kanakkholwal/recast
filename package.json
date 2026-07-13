@@ -1,43 +1,47 @@
 {
-  "name": "recast",
-  "private": true,
-  "dependencies": {
-    "sharp": "^0.34.5"
-  },
-  "devDependencies": {
-    "@changesets/cli": "^2.31.0",
-    "husky": "^9.1.7",
-    "turbo": "^2.9.16"
-  },
-  "pnpm": {
-    "overrides": {
-      "svelte": "5.56.3",
-      "@lucide/svelte": "1.21.0"
-    }
-  },
-  "scripts": {
-    "prepare": "husky",
-    "setup:ffmpeg": "node scripts/setup.mjs",
-    "dev": "turbo dev",
-    "dev:desktop": "turbo dev --filter=recast-desktop",
-    "dev:web": "turbo dev --filter=recast-web",
-    "build": "turbo build",
-    "build:desktop": "turbo build --filter=recast-desktop",
-    "build:web": "turbo build --filter=recast-web",
-    "build:packages": "turbo build --filter=@recast/*",
-    "check": "turbo check",
-    "fmt": "turbo fmt",
-    "fmt:check": "turbo fmt:check",
-    "lint": "turbo lint",
-    "lint:fix": "turbo lint:fix",
-    "prepare:assets-wallpapers": "node scripts/prepare-backgrounds.mjs",
-    "verify:extensions": "node extensions/scripts/verify-extensions.mjs",
-    "build:extensions-registry": "node extensions/scripts/build-registry.mjs",
-    "serve:extensions": "node extensions/scripts/serve-extensions.mjs",
-    "changeset": "changeset",
-    "changeset:status": "changeset status --verbose",
-    "release:prepare": "node scripts/release-prepare.mjs",
-    "sync:changelog": "node scripts/sync-desktop-changelog.mjs"
-  },
-  "packageManager": "pnpm@10.23.0"
+	"name": "recast",
+	"private": true,
+	"dependencies": {
+		"sharp": "^0.34.5"
+	},
+	"devDependencies": {
+		"@changesets/cli": "^2.31.0",
+		"husky": "^9.1.7",
+		"turbo": "^2.9.16"
+	},
+	"pnpm": {
+		"overrides": {
+			"svelte": "5.56.3",
+			"@lucide/svelte": "1.21.0"
+		}
+	},
+	"scripts": {
+		"prepare": "husky",
+		"setup:ffmpeg": "node scripts/setup.mjs",
+		"dev": "turbo dev",
+		"dev:desktop": "turbo dev --filter=recast-desktop",
+		"dev:web": "turbo dev --filter=recast-web",
+		"build": "turbo build",
+		"build:desktop": "turbo build --filter=recast-desktop",
+		"build:web": "turbo build --filter=recast-web",
+		"build:packages": "turbo build --filter=@recast/*",
+		"check": "turbo check",
+		"fmt": "turbo fmt",
+		"fmt:check": "turbo fmt:check",
+		"lint": "turbo lint",
+		"lint:fix": "turbo lint:fix",
+		"test": "pnpm test:web && pnpm test:desktop && pnpm test:rust",
+		"test:web": "pnpm --filter recast-web test:unit",
+		"test:desktop": "pnpm --filter recast-desktop test:unit",
+		"test:rust": "pnpm --filter recast-desktop test:rust",
+		"prepare:assets-wallpapers": "node scripts/prepare-backgrounds.mjs",
+		"verify:extensions": "node extensions/scripts/verify-extensions.mjs",
+		"build:extensions-registry": "node extensions/scripts/build-registry.mjs",
+		"serve:extensions": "node extensions/scripts/serve-extensions.mjs",
+		"changeset": "changeset",
+		"changeset:status": "changeset status --verbose",
+		"release:prepare": "node scripts/release-prepare.mjs",
+		"sync:changelog": "node scripts/sync-desktop-changelog.mjs"
+	},
+	"packageManager": "pnpm@11.12.0"
 }

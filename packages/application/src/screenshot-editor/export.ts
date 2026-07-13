@@ -1,6 +1,16 @@
 import { domToBlob } from "modern-screenshot";
 import type { ExportSpec } from "./types";
 
+/** Editing affordances that live inside the stage but must never be baked into
+ * the output (rulers, grid, selection handles). Mark such nodes with
+ * `data-export-ignore` and every snapshot path drops them. */
+export const EXPORT_IGNORE_ATTR = "data-export-ignore";
+
+/** modern-screenshot node filter: keep everything except ignored guide nodes. */
+export function exportFilter(node: Node): boolean {
+  return !(node instanceof Element && node.hasAttribute(EXPORT_IGNORE_ATTR));
+}
+
 /** Snapshot the stage node to a Blob. Because the stage is the real DOM tree
  * the user edits, the export is pixel-identical to the preview; `scale` raises
  * the device-pixel ratio for crisp high-res output. */
@@ -9,6 +19,7 @@ export async function snapshot(node: HTMLElement, spec: ExportSpec): Promise<Blo
     type: spec.format === "jpeg" ? "image/jpeg" : "image/png",
     quality: spec.format === "jpeg" ? 0.95 : undefined,
     scale: spec.scale,
+    filter: exportFilter,
     // Never inherit the app's page background; the stage paints its own.
     backgroundColor: spec.format === "jpeg" ? "#ffffff" : undefined,
   });

@@ -548,6 +548,18 @@
       closeCameraPreview();
       emit("refresh-recordings");
     });
+    // Non-fatal capture issues from stop (mic/camera failed to record, macOS
+    // permission denied). The recording saved; surface these so the missing
+    // track isn't a silent surprise in the editor.
+    const unlistenRecWarnings = listen<string[]>(
+      "recording:warnings",
+      (event) => {
+        const messages = event.payload ?? [];
+        if (messages.length > 0) {
+          notify("warning", messages.join("\n"), 8000);
+        }
+      },
+    );
 
     window.addEventListener("keydown", handleGlobalShortcut);
 
@@ -590,6 +602,7 @@
       unlistenIntentChanged.then((fn) => fn());
       unlistenRecStarted.then((fn) => fn());
       unlistenRecStopped.then((fn) => fn());
+      unlistenRecWarnings.then((fn) => fn());
       window.removeEventListener("keydown", handleGlobalShortcut);
     };
   });

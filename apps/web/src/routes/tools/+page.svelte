@@ -5,6 +5,7 @@
   import {
     ArrowRight,
     Download,
+    Image,
     MousePointerClick,
     ShieldCheck,
     Upload,
@@ -62,6 +63,45 @@
         leave your device.
       </p>
     </header>
+  </Container>
+
+  <!-- Featured: the screenshot editor is not a worker op, so it sits outside the
+       TOOLS registry and gets its own card. -->
+  <Container size="wide" class="mb-5">
+    <a
+      href="/tools/screenshot-editor"
+      class="group border-border/50 bg-card relative flex flex-col gap-3 overflow-hidden rounded-2xl border p-6 shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-border hover:shadow-md sm:flex-row sm:items-center sm:gap-6"
+    >
+      <Cutout
+        corner="tr"
+        surface="background"
+        radius={14}
+        class="flex items-center pt-2 pr-3 pb-4 pl-4"
+      >
+        <span class="text-primary text-[10px] font-bold tracking-[0.12em] uppercase">
+          Editor
+        </span>
+      </Cutout>
+
+      <span class="bg-primary/10 text-primary grid size-11 shrink-0 place-items-center rounded-xl">
+        <Image class="size-5" />
+      </span>
+
+      <div class="min-w-0 flex-1">
+        <h3 class="text-base font-semibold tracking-tight">Screenshot Editor</h3>
+        <p class="text-muted-foreground mt-1 text-sm leading-relaxed">
+          Give a plain screenshot a gradient backdrop, a browser frame, a shadow, and a
+          3D tilt, then export at up to 4x.
+        </p>
+      </div>
+
+      <span
+        class="text-primary inline-flex shrink-0 items-center gap-1.5 text-xs font-semibold sm:pr-6"
+      >
+        Open editor
+        <ArrowRight class="size-3.5 transition-transform group-hover:translate-x-0.5" />
+      </span>
+    </a>
   </Container>
 
   <!-- Tools grid -->

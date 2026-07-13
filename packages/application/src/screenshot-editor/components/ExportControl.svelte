@@ -46,7 +46,13 @@
     videoBusy = true;
     videoProgress = 0;
     try {
-      const blob = await exportVideo(node, preset, 30, (p) => (videoProgress = p));
+      const blob = await exportVideo(
+        node,
+        preset,
+        30,
+        (p) => (videoProgress = p),
+        editor.clipLength,
+      );
       download(blob, "screenshot.mp4");
       onnotify?.("Video saved", "success");
     } catch (e) {

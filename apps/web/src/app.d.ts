@@ -1,3 +1,10 @@
+// docvia generates `docvia-env.d.ts` (the `virtual:docvia/source` module types)
+// at the project root, which SvelteKit's generated tsconfig does not `include`.
+// Pull it in from here — the same bootstrap `svelte-kit sync` does for `$types`.
+// It is written by `docvia build` (wired into `pnpm check`) and by the dev
+// server, so a fresh clone materializes it on the first `pnpm dev` or `check`.
+/// <reference path="../docvia-env.d.ts" />
+
 // See https://svelte.dev/docs/kit/types#app.d.ts
 // for information about these interfaces
 declare global {

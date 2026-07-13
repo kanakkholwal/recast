@@ -228,14 +228,19 @@ screencapturekit = { version = "6.0", default-features = false, features = ["mac
 # plumbing (catalog, download, device caps, remote endpoints) compiles without the
 # feature and the on-device engine seam reports "not available in this build",
 # leaving remote endpoints as the transcription path (graceful degradation).
-default = ["ggml"]
+default = ["ggml", "ocr"]
 # The on-device transcription engine (transcribe.cpp / ggml). Pulls `transcribe-cpp`,
 # which compiles ggml from source. captions_available == cfg!(feature = "ggml").
 ggml = ["dep:transcribe-cpp"]
 # On-device OCR for screen understanding (agent automation). Pulls the pure-Rust
-# ocrs/rten stack. OFF by default until the screenshot capture + model-download
-# wiring lands; the engine module (src/ocr/) is self-contained and pure-Rust, so
-# it builds on every target including Intel Mac (same rationale as tract for VAD).
+# ocrs/rten stack, which needs no C toolchain and builds on every target including
+# Intel Mac (same rationale as tract for VAD, and lighter than ggml, which is
+# already default). ON by default: `tauri build` takes default features, so gating
+# this off would ship a binary where the `screen-read` CLI verb / `screen.read`
+# control method simply do not exist. Being in `default` also means the plain
+# `cargo test` / `cargo clippy` everyone runs covers src/ocr/ with no extra flag.
+# The models are fetched on first use, not bundled, so this costs no install size.
+# `--no-default-features` still drops it (and ggml) for a minimal build.
 ocr = ["dep:ocrs", "dep:rten", "dep:rten-imageproc"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test

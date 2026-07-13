@@ -23,6 +23,10 @@ export function isChromeless(pathname: string): boolean {
 		pathname.startsWith("/admin") ||
 		pathname.startsWith("/onboarding") ||
 		pathname.startsWith("/share/") ||
+		// The screenshot editor is a full-height app, not a marketing page: it
+		// ships its own top bar. Its landing (/tools/screenshot-editor) keeps the
+		// site chrome.
+		pathname.startsWith("/tools/screenshot-editor/edit") ||
 		pathname === "/accept-invitation" ||
 		pathname === "/verify-email" ||
 		CHROMELESS_PATHS.has(pathname)

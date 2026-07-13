@@ -475,15 +475,10 @@ impl CaptureSource for WgcSource {
             // extract below. WGC delivers a frame per window repaint, well above
             // the encode rate, so most frames are drained and dropped here.
             let mut latest: Option<Direct3D11CaptureFrame> = None;
-            loop {
-                match self.frame_pool.TryGetNextFrame() {
-                    Ok(frame) => {
-                        if let Some(old) = latest.replace(frame) {
-                            let _ = old.Close();
-                        }
-                    }
-                    // Err = pool empty (no newer frame); stop draining.
-                    Err(_) => break,
+            // Err = pool empty (no newer frame); stop draining.
+            while let Ok(frame) = self.frame_pool.TryGetNextFrame() {
+                if let Some(old) = latest.replace(frame) {
+                    let _ = old.Close();
                 }
             }
 

@@ -1,3 +1,4 @@
+import { listPosts } from "$lib/blog";
 import { getPublicEnv } from "$lib/env/public";
 import { TOOLS } from "$lib/tools/registry";
 import type { RequestHandler } from "./$types";
@@ -13,9 +14,14 @@ const STATIC_PATHS = [
 	"/pricing",
 	"/download",
 	"/changelog",
+	"/blog",
 	"/privacy-policy",
 	"/terms-of-service",
 	"/tools",
+	// The screenshot editor is not a WebCodecs worker op, so it is absent from
+	// TOOLS and has to be listed by hand. Its landing page is the indexable one;
+	// /tools/screenshot-editor/edit is the client-only app and stays out.
+	"/tools/screenshot-editor",
 ];
 
 function siteOrigin(fallback: string): string {
@@ -26,9 +32,16 @@ function siteOrigin(fallback: string): string {
 	}
 }
 
-export const GET: RequestHandler = ({ url }) => {
+export const GET: RequestHandler = async ({ url }) => {
 	const origin = siteOrigin(url.origin);
-	const paths = [...STATIC_PATHS, ...TOOLS.map((t) => `/tools/${t.slug}`)];
+	// Only published posts: `listPosts` drops drafts in production, so an
+	// unfinished article is never advertised to a crawler.
+	const posts = await listPosts();
+	const paths = [
+		...STATIC_PATHS,
+		...TOOLS.map((t) => `/tools/${t.slug}`),
+		...posts.map((post) => post.url),
+	];
 	const urls = paths
 		.map((p) => `  <url>\n    <loc>${origin}${p === "/" ? "" : p}</loc>\n  </url>`)
 		.join("\n");

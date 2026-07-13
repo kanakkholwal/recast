@@ -30,6 +30,14 @@ impl AudioCaptureSession {
         Ok(Self { inner })
     }
 
+    /// Whether real system audio is being captured, as opposed to the silence
+    /// fallback used when no loopback source is reachable. Lets project
+    /// metadata report system audio honestly instead of claiming a captured
+    /// track that is actually silent.
+    pub fn is_capturing(&self) -> bool {
+        self.inner.is_capturing()
+    }
+
     pub fn stop(self) -> Result<PathBuf> {
         self.inner.stop()
     }

@@ -34,6 +34,7 @@ const CLI_VERBS: &[&str] = &[
     "selection",
     "profile",
     "screenshot",
+    "screen-read",
     "watch",
     "install",
     "uninstall",
@@ -160,6 +161,13 @@ enum Command {
     Screenshot {
         #[command(subcommand)]
         target: ScreenshotTarget,
+    },
+    /// Read a video file into a timestamped, structured text timeline (OCR). Lets
+    /// an agent understand what happened in a recording without narration. Needs
+    /// the app's `ocr` feature; routes through the running instance.
+    ScreenRead {
+        /// Path to the video file (e.g. an .mp4) to read.
+        input: String,
     },
     /// Stream backend events (recording + selection + profiles) until interrupted.
     Watch {
@@ -466,6 +474,10 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             ProfileAction::Show { id } => show_profile(cli, id),
         },
         Command::Screenshot { target } => screenshot(cli, target),
+        Command::ScreenRead { input } => {
+            let abs = crate::commands::screenshot::absolutize(std::path::PathBuf::from(input));
+            control(cli, "screen.read", json!({ "path": abs.to_string_lossy() }))
+        }
         Command::Watch { events } => {
             let params = match events {
                 Some(list) => {

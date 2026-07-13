@@ -476,6 +476,11 @@ pub struct RecordingArtifacts {
     pub camera_overlay: CameraOverlaySettings,
     pub started_at_unix_ms: u64,
     pub stats: RecordingStats,
+    /// Non-fatal issues to surface to the user after a successful stop, e.g. a
+    /// requested camera or microphone track that failed to capture (device in
+    /// use, or on macOS Camera/Microphone permission denied). The recording
+    /// still succeeds without those tracks; the caller shows these as a toast.
+    pub warnings: Vec<String>,
 }
 
 /// Options controlling what gets captured in a recording session.
@@ -569,6 +574,22 @@ impl Default for RecordingManager {
     }
 }
 
+impl Drop for RecordingManager {
+    fn drop(&mut self) {
+        // A session still present at manager-drop time means the recording never
+        // went through `stop()` (the app quit mid-recording, or a panic unwound
+        // the owner). Reap it so we don't orphan the capture/audio/mic FFmpeg
+        // children, which on macOS/Linux are subprocesses that keep recording
+        // and hold the device (a stuck mic / screen grab), and so no capture
+        // thread spins forever. The normal path already took the session out, so
+        // this usually finds `None` and does nothing.
+        if let Some(session) = self.session.lock().take() {
+            log::warn!("recording manager dropped with a live session; aborting it");
+            session.abort();
+        }
+    }
+}
+
 #[derive(Clone)]
 struct CameraOverlayTracker {
     overlay: CameraOverlaySettings,
@@ -601,6 +622,33 @@ struct RecordingSession {
     camera_overlay: CameraOverlayTracker,
     /// Capture rate this session was started at (pacer + encoder + metadata).
     recording_fps: u32,
+}
+
+impl RecordingSession {
+    /// Best-effort teardown for an abnormal shutdown (see `Drop for
+    /// RecordingManager`). Mirrors the reaping half of `stop()` without
+    /// assembling artifacts. `RecordingSession` deliberately does NOT implement
+    /// `Drop` so `stop()` can still move fields out of it; this consuming helper
+    /// is the abnormal-path equivalent.
+    fn abort(self) {
+        self.stop_flag.store(true, Ordering::Release);
+        // Joining lets each thread run its own cleanup: the capture thread drops
+        // its `CaptureSource` (which kills the screen-capture FFmpeg child), and
+        // the encoder/cursor threads finalize and exit.
+        let _ = self.capture_handle.join();
+        let _ = self.cursor_handle.join();
+        let _ = self.encoder_handle.join();
+        // Each OS session reaps its own FFmpeg child / releases its device.
+        if let Some(session) = self.audio_session {
+            let _ = session.stop();
+        }
+        if let Some(session) = self.microphone_session {
+            let _ = session.stop();
+        }
+        if let Some(session) = self.camera_session {
+            let _ = session.stop();
+        }
+    }
 }
 
 impl RecordingManager {
@@ -880,7 +928,22 @@ impl RecordingManager {
                 output_path: audio_path.clone(),
                 pause_flag: pause_flag.clone(),
             }) {
-                Ok(session) => Some(session),
+                Ok(session) => {
+                    // System audio was requested, but on macOS without
+                    // ScreenCaptureKit or a virtual driver (and Linux without a
+                    // PulseAudio monitor) no loopback source is reachable, so
+                    // the session falls back to writing silence. Tell the user
+                    // rather than delivering a mute track that looks captured.
+                    if !session.is_capturing() {
+                        warnings.push(
+                            "System audio could not be captured on this device, \
+                             so the recording will have no system sound. Your \
+                             microphone and video are not affected."
+                                .to_string(),
+                        );
+                    }
+                    Some(session)
+                }
                 Err(e) => {
                     log::warn!("audio capture unavailable, recording without audio: {e}");
                     None
@@ -973,10 +1036,15 @@ impl RecordingManager {
 
         // Stop the system-audio / mic / camera OS sessions regardless of how the
         // threads fared — each reaps its own FFmpeg child / releases its device.
-        // Capture whether a loopback session actually ran before consuming it, so
-        // the project metadata can report system audio honestly (a disabled
-        // toggle writes silence below but must not claim a real track).
-        let has_system_audio = session.audio_session.is_some();
+        // Report system audio honestly before consuming the session: it counts
+        // only when a real track was captured. A disabled toggle (no session) and
+        // the silence fallback (session present but no reachable loopback source,
+        // e.g. macOS without SCKit/BlackHole) both write silence below purely to
+        // give the muxer a track, and neither must claim captured system audio.
+        let has_system_audio = session
+            .audio_session
+            .as_ref()
+            .is_some_and(|s| s.is_capturing());
         let audio_stop = session.audio_session.map(|s| s.stop());
         let microphone_stop = session.microphone_session.map(|s| s.stop());
         let camera_stop = session.camera_session.map(|s| s.stop());
@@ -1012,11 +1080,23 @@ impl RecordingManager {
             }
         };
 
+        // Non-fatal capture issues to surface to the user after the save. A
+        // requested mic/camera track that failed (device in use, or on macOS
+        // Camera/Microphone permission denied so the device produced no frames)
+        // otherwise vanished silently: the recording succeeds minus that track.
+        let mut warnings: Vec<String> = Vec::new();
+
         // Microphone path if its capture succeeded.
         let microphone_path = match microphone_stop {
             Some(Ok(path)) => Some(path),
             Some(Err(e)) => {
                 log::warn!("microphone capture stop failed: {e}");
+                warnings.push(
+                    "Microphone could not be captured, so the recording has no mic \
+                     track. Check the microphone is connected and not in use (on \
+                     macOS, that Recast has Microphone permission)."
+                        .to_string(),
+                );
                 None
             }
             None => None,
@@ -1027,6 +1107,12 @@ impl RecordingManager {
             Some(Ok(path)) => Some(path),
             Some(Err(e)) => {
                 log::warn!("camera capture stop failed: {e}");
+                warnings.push(
+                    "Camera could not be captured, so the recording has no camera \
+                     track. Check the webcam is connected and not in use by another \
+                     app (on macOS, that Recast has Camera permission)."
+                        .to_string(),
+                );
                 None
             }
             None => None,
@@ -1078,6 +1164,7 @@ impl RecordingManager {
             camera_overlay: session.camera_overlay.overlay,
             started_at_unix_ms: session.started_at_unix_ms,
             stats,
+            warnings,
         })
     }
 
@@ -1334,5 +1421,71 @@ mod options_tests {
         let opts: RecordingOptions = serde_json::from_str("{}").unwrap();
         assert!(opts.system_audio);
         assert!(RecordingOptions::default().system_audio);
+    }
+}
+
+/// Cross-platform (runs on every CI leg AND locally on Windows).
+#[cfg(test)]
+mod session_tests {
+    use super::*;
+
+    fn area(x: i32, y: i32, width: u32, height: u32) -> CaptureArea {
+        CaptureArea {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    fn target(kind: CaptureKind, source: CaptureArea, crop: CaptureArea) -> CaptureTarget {
+        CaptureTarget {
+            kind,
+            id: 1,
+            label: "test".into(),
+            source,
+            crop,
+            display_id: 1,
+            scale_factor: 1.0,
+        }
+    }
+
+    /// The CaptureSource contract every backend must honour: the encoder is
+    /// configured for `source` dimensions and crops with THIS rectangle, so a
+    /// backend must emit full-`source`-sized frames. The X11 backend used to
+    /// pre-crop instead, so the encoder cropped an already-cropped buffer and
+    /// corrupted region/window recordings. Offsets are relative to the source
+    /// origin, not the virtual desktop.
+    #[test]
+    fn crop_is_reported_relative_to_the_captured_source() {
+        // Source is the second monitor, so the crop's desktop-space x/y (2000,
+        // 50) must become source-relative (80, 50).
+        let t = target(
+            CaptureKind::Region,
+            area(1920, 0, 1920, 1080),
+            area(2000, 50, 800, 600),
+        );
+        let crop = t.crop_relative_to_source().expect("region must crop");
+        assert_eq!((crop.x, crop.y), (80, 50));
+        assert_eq!((crop.width, crop.height), (800, 600));
+    }
+
+    /// Full-display capture needs no crop filter at all.
+    #[test]
+    fn full_display_capture_needs_no_crop() {
+        let full = area(0, 0, 1920, 1080);
+        let t = target(CaptureKind::Display, full, full);
+        assert!(t.crop_relative_to_source().is_none());
+    }
+
+    /// `Drop for RecordingManager` takes the session lock to reap a live
+    /// recording. Dropping an idle manager must be a silent no-op: this pins
+    /// that it neither panics nor deadlocks on its own mutex (a deadlock would
+    /// hang this test rather than fail it).
+    #[test]
+    fn dropping_an_idle_manager_is_a_noop() {
+        let manager = RecordingManager::default();
+        assert!(!manager.is_recording());
+        drop(manager);
     }
 }

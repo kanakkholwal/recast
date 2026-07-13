@@ -9,6 +9,14 @@
       "svelte": "./src/screenshot-editor/index.ts",
       "default": "./src/screenshot-editor/index.ts"
     },
+    "./screenshot-editor/defaults": {
+      "svelte": "./src/screenshot-editor/defaults.ts",
+      "default": "./src/screenshot-editor/defaults.ts"
+    },
+    "./screenshot-editor/render": {
+      "svelte": "./src/screenshot-editor/render.ts",
+      "default": "./src/screenshot-editor/render.ts"
+    },
     "./styles.css": "./src/styles.css"
   },
   "peerDependencies": {

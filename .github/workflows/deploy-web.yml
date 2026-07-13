@@ -49,9 +49,14 @@ jobs:
         run: pnpm run lint
         continue-on-error: true
 
-      - name: Run tests (optional)
-        run: pnpm run test
-        continue-on-error: true
+      # Blocking on purpose: a deploy should not ship past a red test. It used to
+      # be `continue-on-error: true`, so the suite could go red indefinitely.
+      # NOTE: every step here runs with `working-directory: apps/web` (see
+      # `defaults` above), so this must be a script that exists in
+      # apps/web/package.json. `test:web` only exists in the ROOT package.json and
+      # would fail here with "Missing script".
+      - name: Run web unit tests
+        run: pnpm run test:unit
 
       # Database migrations
       - name: Apply DB migrations (Production only)

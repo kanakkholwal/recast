@@ -21,6 +21,13 @@ impl PlatformAudioSession {
         })
     }
 
+    /// This backend only ever writes silence, so it never captures real system
+    /// audio. Matches the other platforms' method so callers report system
+    /// audio honestly.
+    pub fn is_capturing(&self) -> bool {
+        false
+    }
+
     pub fn stop(self) -> Result<PathBuf> {
         let duration = self.started_at.elapsed().as_secs_f64();
         write_silence_wav(&self.config.output_path, 48_000, 2, duration)?;

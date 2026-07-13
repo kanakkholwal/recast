@@ -4,16 +4,13 @@
   export interface BackgroundControlProps {
     editor: ScreenshotEditorState;
   }
-
-  type Mode = "gradient" | "pattern" | "solid" | "image" | "transparent";
 </script>
 
 <script lang="ts">
   import { PanelSection } from "@recast/ui/panel-section";
   import { ColorPicker } from "@recast/ui/color-picker";
-  import { Segmented } from "@recast/ui/segmented";
-  import { Button } from "@recast/ui/button";
-  import { ImageUp } from "@lucide/svelte";
+  import { cn } from "@recast/ui/utils";
+  import { ImageUp, X } from "@lucide/svelte";
   import { GRADIENT_PRESETS, MESH_PRESETS, PATTERN_PRESETS, SOLID_PRESETS } from "../presets";
   import { imageFromFile } from "../image-input";
   import type { BackgroundPreset } from "../types";
@@ -21,33 +18,34 @@
   let { editor }: BackgroundControlProps = $props();
 
   let bgFileInput = $state<HTMLInputElement | null>(null);
+  let lastColor = $state("#7dd4ad");
 
   const gradients = [...GRADIENT_PRESETS, ...MESH_PRESETS];
 
-  const mode = $derived<Mode>(
-    editor.background.kind === "transparent"
-      ? "transparent"
-      : editor.backgroundId === "image"
-        ? "image"
-        : PATTERN_PRESETS.some((p) => p.id === editor.backgroundId)
-          ? "pattern"
-          : editor.backgroundId === "custom" ||
-              SOLID_PRESETS.some((p) => p.id === editor.backgroundId)
-            ? "solid"
-            : "gradient",
-  );
+  // Which of the three custom-background tiles reads as active. A preset swatch
+  // selection leaves all three inactive.
+  const customType = $derived.by(() => {
+    if (editor.background.kind === "transparent") return "transparent";
+    if (editor.backgroundId === "image") return "image";
+    if (editor.backgroundId === "custom") return "color";
+    return null;
+  });
 
-  function setMode(next: Mode) {
-    if (next === mode) return;
-    if (next === "transparent") editor.setBackground("transparent", { kind: "transparent" });
-    else if (next === "solid") pick(SOLID_PRESETS[0]);
-    else if (next === "pattern") pick(PATTERN_PRESETS[0]);
-    else if (next === "gradient") pick(gradients[0]);
-    else if (next === "image") bgFileInput?.click();
-  }
+  const isImage = $derived(editor.backgroundId === "image");
+  const imageCss = $derived(
+    editor.background.kind === "gradient" ? editor.background.css : "",
+  );
+  const currentColor = $derived(
+    editor.background.kind === "solid" ? editor.background.color : lastColor,
+  );
 
   function pick(preset: BackgroundPreset) {
     editor.setBackground(preset.id, preset.background);
+  }
+
+  function chooseColor(next: string) {
+    lastColor = next;
+    editor.setCustomColor(next);
   }
 
   async function onBgFile(e: Event) {
@@ -62,64 +60,154 @@
     });
   }
 
-  const currentColor = $derived(
-    editor.background.kind === "solid" ? editor.background.color : "#f4f4f5",
-  );
+  const tileClass = (active: boolean) =>
+    cn(
+      "flex flex-col items-center justify-center gap-1.5 rounded-xl border py-2.5 transition-colors",
+      active
+        ? "border-primary/50 bg-primary/5 ring-primary/20 ring-1"
+        : "border-border/40 bg-muted/30 hover:bg-accent hover:border-border/60",
+    );
 
-  const swatches = $derived(
-    mode === "pattern" ? PATTERN_PRESETS : mode === "gradient" ? gradients : SOLID_PRESETS,
-  );
+  const swatchClass = (active: boolean) =>
+    cn(
+      "border-border/30 aspect-square border transition-transform hover:scale-105",
+      active ? "ring-primary rounded-full ring-2 ring-offset-1" : "rounded-lg",
+    );
 </script>
 
 <input bind:this={bgFileInput} type="file" accept="image/*" class="hidden" onchange={onBgFile} />
 
-<PanelSection title="Background">
-  <Segmented
-    options={[
-      { value: "gradient", label: "Gradient" },
-      { value: "pattern", label: "Pattern" },
-      { value: "solid", label: "Solid" },
-      { value: "image", label: "Image" },
-      { value: "transparent", label: "None" },
-    ]}
-    value={mode}
-    onValueChange={(v) => setMode(v as Mode)}
-    size="xs"
-    aria-label="Background type"
-  />
+<!-- Custom Background: Image / Color / Transparent (clone's 3-tile grid). -->
+<PanelSection title="Custom Background" collapsible defaultOpen>
+  <div class="grid grid-cols-3 gap-2">
+    <button type="button" class={tileClass(customType === "image")} onclick={() => bgFileInput?.click()}>
+      <span
+        class={cn(
+          "flex size-7 items-center justify-center rounded-lg",
+          customType === "image" ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground",
+        )}
+      >
+        <ImageUp class="size-3.5" />
+      </span>
+      <span
+        class={cn(
+          "text-[10px] font-medium",
+          customType === "image" ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        Image
+      </span>
+    </button>
 
-  {#if mode === "gradient" || mode === "pattern" || mode === "solid"}
-    <div class="grid grid-cols-8 gap-1.5">
-      {#each swatches as preset (preset.id)}
-        <button
-          type="button"
-          class="ring-offset-background focus-visible:ring-ring aspect-square rounded-md border transition focus-visible:ring-2 focus-visible:outline-none"
-          class:ring-2={editor.backgroundId === preset.id}
-          class:ring-primary={editor.backgroundId === preset.id}
-          class:border-transparent={editor.backgroundId === preset.id}
-          class:border-border={editor.backgroundId !== preset.id}
-          style:background={preset.swatch}
-          title={preset.label}
-          aria-label={preset.label}
-          aria-pressed={editor.backgroundId === preset.id}
-          onclick={() => pick(preset)}
-        ></button>
-      {/each}
+    <button
+      type="button"
+      class={tileClass(customType === "color")}
+      onclick={() => chooseColor(currentColor)}
+    >
+      <span class="border-border/50 size-7 rounded-lg border" style:background={currentColor}></span>
+      <span
+        class={cn(
+          "text-[10px] font-medium",
+          customType === "color" ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        Color
+      </span>
+    </button>
+
+    <button
+      type="button"
+      class={tileClass(customType === "transparent")}
+      onclick={() => editor.setBackground("transparent", { kind: "transparent" })}
+    >
+      <span
+        class={cn(
+          "flex size-7 items-center justify-center rounded-lg",
+          customType === "transparent" ? "bg-primary/10" : "bg-muted",
+        )}
+      >
+        <span
+          class="border-border/50 size-3.5 rounded-full border"
+          style="background:repeating-conic-gradient(#808080 0% 25%, #fff 0% 50%) 50% / 6px 6px;"
+        ></span>
+      </span>
+      <span
+        class={cn(
+          "text-[10px] font-medium",
+          customType === "transparent" ? "text-foreground" : "text-muted-foreground",
+        )}
+      >
+        Transparent
+      </span>
+    </button>
+  </div>
+
+  {#if customType === "color"}
+    <ColorPicker value={currentColor} oncommit={chooseColor} allowAlpha={false} />
+  {/if}
+
+  {#if isImage}
+    <div class="border-border/40 bg-muted/50 relative aspect-video overflow-hidden rounded-lg">
+      <div class="size-full" style:background={imageCss}></div>
+      <button
+        type="button"
+        class="bg-background/60 text-foreground hover:bg-destructive hover:text-destructive-foreground absolute right-2 top-2 rounded-md p-1 transition-colors"
+        aria-label="Remove background image"
+        onclick={() => pick(gradients[0])}
+      >
+        <X class="size-3.5" />
+      </button>
     </div>
   {/if}
+</PanelSection>
 
-  {#if mode === "solid"}
-    <ColorPicker
-      value={currentColor}
-      oncommit={(next) => editor.setCustomColor(next)}
-      allowAlpha={false}
-    />
-  {/if}
+<!-- Gradients (classic + mesh). -->
+<PanelSection title="Gradients" collapsible defaultOpen>
+  <div class="grid grid-cols-6 gap-2">
+    {#each gradients as preset (preset.id)}
+      <button
+        type="button"
+        class={swatchClass(editor.backgroundId === preset.id)}
+        style:background={preset.swatch}
+        title={preset.label}
+        aria-label={preset.label}
+        aria-pressed={editor.backgroundId === preset.id}
+        onclick={() => pick(preset)}
+      ></button>
+    {/each}
+  </div>
+</PanelSection>
 
-  {#if mode === "image"}
-    <Button variant="outline" size="sm" onclick={() => bgFileInput?.click()}>
-      <ImageUp />
-      {editor.backgroundId === "image" ? "Replace image" : "Choose image"}
-    </Button>
-  {/if}
+<!-- Patterns. -->
+<PanelSection title="Patterns" collapsible defaultOpen>
+  <div class="grid grid-cols-6 gap-2">
+    {#each PATTERN_PRESETS as preset (preset.id)}
+      <button
+        type="button"
+        class={swatchClass(editor.backgroundId === preset.id)}
+        style:background={preset.swatch}
+        title={preset.label}
+        aria-label={preset.label}
+        aria-pressed={editor.backgroundId === preset.id}
+        onclick={() => pick(preset)}
+      ></button>
+    {/each}
+  </div>
+</PanelSection>
+
+<!-- Solid colors. -->
+<PanelSection title="Solid" collapsible defaultOpen>
+  <div class="grid grid-cols-6 gap-2">
+    {#each SOLID_PRESETS as preset (preset.id)}
+      <button
+        type="button"
+        class={swatchClass(editor.backgroundId === preset.id)}
+        style:background={preset.swatch}
+        title={preset.label}
+        aria-label={preset.label}
+        aria-pressed={editor.backgroundId === preset.id}
+        onclick={() => pick(preset)}
+      ></button>
+    {/each}
+  </div>
 </PanelSection>

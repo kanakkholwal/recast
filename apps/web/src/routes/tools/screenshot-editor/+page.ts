@@ -1,4 +1,4 @@
-// The editor is a client-only app (canvas snapshot, clipboard, File APIs), so
-// skip SSR/prerender for this route and mount it in the browser.
-export const ssr = false;
-export const prerender = false;
+// The landing page is static marketing copy, so prerender it to plain HTML that
+// search engines can index. The editor itself is client-only and lives at
+// /tools/screenshot-editor/edit.
+export const prerender = true;

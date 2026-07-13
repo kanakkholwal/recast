@@ -82,6 +82,23 @@ fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
         }
     }
 
+    // Check common install locations on macOS/Linux.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    for &dir in common_ffmpeg_dirs() {
+        let (ffmpeg, ffprobe) = system_ffmpeg_pair(dir);
+        if is_usable_pair(&ffmpeg, &ffprobe) {
+            log::info!("using system ffmpeg: {}", ffmpeg.display());
+            return FfmpegPaths { ffmpeg, ffprobe };
+        }
+        if ffmpeg.exists() || ffprobe.exists() {
+            log::warn!(
+                "ignoring unusable system ffmpeg pair: {} / {}",
+                ffmpeg.display(),
+                ffprobe.display()
+            );
+        }
+    }
+
     // Fall back to PATH lookup. This is intentionally last because PATH may
     // contain broken package-manager shims.
     let ffmpeg = PathBuf::from(format!("ffmpeg{EXE_SUFFIX}"));
@@ -129,6 +146,37 @@ fn find_bundled_pair(app: Option<&tauri::AppHandle>) -> Option<FfmpegPaths> {
     }
 
     None
+}
+
+/// Well-known ffmpeg install prefixes, probed before the PATH fallback.
+///
+/// A Finder- or launcher-started `.app` inherits a minimal PATH (often just
+/// `/usr/bin:/bin`) that excludes Homebrew and MacPorts, so a PATH lookup alone
+/// reports "ffmpeg not found" even when it is installed. These are absolute, so
+/// they resolve regardless of the inherited PATH.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn common_ffmpeg_dirs() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/opt/homebrew/bin", // Apple Silicon Homebrew
+            "/usr/local/bin",    // Intel Homebrew
+            "/opt/local/bin",    // MacPorts
+        ]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        &["/usr/bin", "/usr/local/bin", "/bin", "/snap/bin"]
+    }
+}
+
+/// The `(ffmpeg, ffprobe)` pair inside a system install dir. Both must come from
+/// the SAME directory: mixing a Homebrew ffmpeg with a different ffprobe is the
+/// mismatched-pair bug `is_usable_pair` exists to reject.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn system_ffmpeg_pair(dir: &str) -> (PathBuf, PathBuf) {
+    let base = Path::new(dir);
+    (base.join("ffmpeg"), base.join("ffprobe"))
 }
 
 fn bundled_search_dirs(root: &Path) -> Vec<PathBuf> {
@@ -606,5 +654,60 @@ pub fn check_availability() -> Result<(), String> {
             "ffmpeg not found or not executable at {}. Bundle ffmpeg/ffprobe as Tauri sidecars, install ffmpeg, or place ffmpeg{EXE_SUFFIX} and ffprobe{EXE_SUFFIX} next to the application. Error: {e}",
             ffmpeg_path().display()
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    /// The install prefixes must be ABSOLUTE. The whole point is to resolve
+    /// ffmpeg when the inherited PATH is minimal (a Finder-launched .app), so a
+    /// relative entry here would defeat the fallback.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn common_ffmpeg_dirs_are_absolute_and_non_empty() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(!dirs.is_empty());
+        for dir in dirs {
+            assert!(
+                Path::new(dir).is_absolute(),
+                "{dir} must be absolute to survive a minimal PATH"
+            );
+        }
+    }
+
+    /// Both Homebrew prefixes must be covered: Apple Silicon installs to
+    /// /opt/homebrew, Intel to /usr/local. Missing either is the "ffmpeg not
+    /// found despite Homebrew" bug on that architecture.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_probes_both_homebrew_prefixes() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(
+            dirs.contains(&"/opt/homebrew/bin"),
+            "Apple Silicon Homebrew"
+        );
+        assert!(dirs.contains(&"/usr/local/bin"), "Intel Homebrew");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_probes_the_standard_bin_prefixes() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(dirs.contains(&"/usr/bin"));
+        assert!(dirs.contains(&"/usr/local/bin"));
+    }
+
+    /// ffmpeg and ffprobe must be taken from the SAME dir, so we never pair a
+    /// Homebrew ffmpeg with some other ffprobe.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn system_pair_takes_both_binaries_from_one_dir() {
+        let (ffmpeg, ffprobe) = system_ffmpeg_pair("/opt/homebrew/bin");
+        assert_eq!(ffmpeg, Path::new("/opt/homebrew/bin/ffmpeg"));
+        assert_eq!(ffprobe, Path::new("/opt/homebrew/bin/ffprobe"));
+        assert_eq!(ffmpeg.parent(), ffprobe.parent());
     }
 }
