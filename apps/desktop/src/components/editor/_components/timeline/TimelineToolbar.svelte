@@ -7,7 +7,6 @@
     Clock,
     Expand,
     FastForward,
-    ImageIcon,
     Keyboard,
     Layers,
     Maximize2,
@@ -47,17 +46,17 @@
     timeMode: TimeMode;
     hasSelectedRegion: boolean;
     razorActive: boolean;
-    clipContent: "thumbnails" | "waveform";
+    showAudioLane: boolean;
     showZoomLane: boolean;
     showMarkupLane: boolean;
-    showSilenceLane: boolean;
+    showCutLane: boolean;
     onSetTrim: (kind: "in" | "out") => void;
     onSplit: () => void;
     onToggleRazor: () => void;
-    onSetClipContent: (content: "thumbnails" | "waveform") => void;
+    onToggleAudioLane: () => void;
     onToggleZoomLane: () => void;
     onToggleMarkupLane: () => void;
-    onToggleSilenceLane: () => void;
+    onToggleCutLane: () => void;
     onAddFocusRegion: () => void;
     onResetTrim: () => void;
     onZoomTimeline: (dir: number) => void;
@@ -78,17 +77,17 @@
     timeMode,
     hasSelectedRegion,
     razorActive,
-    clipContent,
+    showAudioLane,
     showZoomLane,
     showMarkupLane,
-    showSilenceLane,
+    showCutLane,
     onSetTrim,
     onSplit,
     onToggleRazor,
-    onSetClipContent,
+    onToggleAudioLane,
     onToggleZoomLane,
     onToggleMarkupLane,
-    onToggleSilenceLane,
+    onToggleCutLane,
     onAddFocusRegion,
     onResetTrim,
     onZoomTimeline,
@@ -98,7 +97,7 @@
     onZoomToSelection,
   }: Props = $props();
 
-  const trimHint = `Set in/out points (I/O) to keep only part of the clip, split at the playhead (S) to cut a section out, or add zoom regions to highlight moments. Trace can also suggest zoom regions from your cursor activity.`;
+  const trimHint = `Set in/out points (I/O) to keep the ends you want. Remove a section with the Cut tool (C, click two points), by splitting at the playhead (S) and deleting the clip, or by dragging across the Cuts lane. Add zoom regions to highlight moments; Recast can also suggest them from your cursor activity.`;
 
   let suggestOpen = $state(false);
   let showSilence = $state(false);
@@ -354,25 +353,14 @@
         </button>
       </DropdownMenu.Trigger>
       <DropdownMenu.Content size="sm" align="end" class="w-48">
-        <DropdownMenu.Label>Clip content</DropdownMenu.Label>
-        <DropdownMenu.RadioGroup
-          value={clipContent}
-          onValueChange={(v) =>
-            onSetClipContent(v === "waveform" ? "waveform" : "thumbnails")}
-        >
-          <DropdownMenu.RadioItem value="thumbnails">
-            <ImageIcon class="size-3" />
-            Thumbnails
-          </DropdownMenu.RadioItem>
-          <DropdownMenu.RadioItem value="waveform">
-            <AudioLines class="size-3" />
-            Waveform
-          </DropdownMenu.RadioItem>
-        </DropdownMenu.RadioGroup>
-
-        <DropdownMenu.Separator />
-
         <DropdownMenu.Label>Show lanes</DropdownMenu.Label>
+        <DropdownMenu.CheckboxItem
+          checked={showAudioLane}
+          onCheckedChange={onToggleAudioLane}
+        >
+          <AudioLines class="size-3" />
+          Audio
+        </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
           checked={showZoomLane}
           onCheckedChange={onToggleZoomLane}
@@ -387,15 +375,13 @@
           <Pencil class="size-3" />
           Markup
         </DropdownMenu.CheckboxItem>
-        {#if experimentalStore.silenceDetection}
-          <DropdownMenu.CheckboxItem
-            checked={showSilenceLane}
-            onCheckedChange={onToggleSilenceLane}
-          >
-            <Scissors class="size-3" />
-            Silence
-          </DropdownMenu.CheckboxItem>
-        {/if}
+        <DropdownMenu.CheckboxItem
+          checked={showCutLane}
+          onCheckedChange={onToggleCutLane}
+        >
+          <Scissors class="size-3" />
+          Cuts
+        </DropdownMenu.CheckboxItem>
 
         <DropdownMenu.Separator />
 
@@ -415,15 +401,13 @@
           <Pencil class="size-3" />
           Markup
         </DropdownMenu.CheckboxItem>
-        {#if experimentalStore.silenceDetection}
-          <DropdownMenu.CheckboxItem
-            checked={store.cutsEnabled}
-            onCheckedChange={() => (store.cutsEnabled = !store.cutsEnabled)}
-          >
-            <Scissors class="size-3" />
-            Silence cuts
-          </DropdownMenu.CheckboxItem>
-        {/if}
+        <DropdownMenu.CheckboxItem
+          checked={store.cutsEnabled}
+          onCheckedChange={() => (store.cutsEnabled = !store.cutsEnabled)}
+        >
+          <Scissors class="size-3" />
+          Cuts
+        </DropdownMenu.CheckboxItem>
       </DropdownMenu.Content>
     </DropdownMenu.Root>
 

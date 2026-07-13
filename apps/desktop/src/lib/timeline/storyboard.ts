@@ -86,3 +86,36 @@ export function storyboardCrop(
 		offY: Math.floor(i / meta.cols) * displayH,
 	};
 }
+
+/** Seconds of source covered by one cell. The strip only needs its own decoded
+ *  frames when it is finer-grained than this. */
+export function storyboardCellSec(meta: StoryboardMeta): number {
+	if (meta.count <= 0) return Number.POSITIVE_INFINITY;
+	return meta.durationSec / meta.count;
+}
+
+/** CSS background geometry to fill an arbitrary `boxW`×`boxH` tile with the cell
+ *  covering `originalSec`, scaled to COVER and centre-cropped (object-fit:cover
+ *  for a sprite). Filmstrip tiles are variable width, so `storyboardCrop`'s
+ *  exact-width box does not fit them. */
+export function storyboardCoverCrop(
+	meta: StoryboardMeta,
+	originalSec: number,
+	boxW: number,
+	boxH: number,
+): { bgW: number; bgH: number; offX: number; offY: number } {
+	const i = storyboardCellIndex(originalSec, meta.count, meta.durationSec);
+	if (meta.cellW <= 0 || meta.cellH <= 0) {
+		return { bgW: 0, bgH: 0, offX: 0, offY: 0 };
+	}
+	const scale = Math.max(boxW / meta.cellW, boxH / meta.cellH);
+	const cw = meta.cellW * scale;
+	const ch = meta.cellH * scale;
+	return {
+		bgW: meta.cols * cw,
+		bgH: meta.rows * ch,
+		// Centre-crop the overflow so the frame stays centred in the tile.
+		offX: (i % meta.cols) * cw + (cw - boxW) / 2,
+		offY: Math.floor(i / meta.cols) * ch + (ch - boxH) / 2,
+	};
+}

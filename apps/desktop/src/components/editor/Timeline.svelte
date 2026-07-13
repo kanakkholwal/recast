@@ -3,10 +3,16 @@
     EditorStore,
     ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
-  import { experimentalStore } from "$lib/stores/experimental.svelte";
-  import { Film, Pencil, Scissors, Target } from "@lucide/svelte";
+  import {
+    AudioLines,
+    Pencil,
+    Scissors,
+    Video,
+    ZoomIn,
+  } from "@lucide/svelte";
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
+  import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
   import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
   import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
@@ -14,12 +20,15 @@
   import TimelineToolbar from "./_components/timeline/TimelineToolbar.svelte";
   import TimelineZoomLane from "./_components/timeline/TimelineZoomLane.svelte";
   import {
+    clampTimelineZoom,
     effectiveFps as effFps,
     formatTimeByMode,
     frameStep as frameStepOf,
     greatestCommonDivisor,
+    MIN_TIMELINE_ZOOM,
     minClipDuration as minClipDurOf,
     quantizeToFrame as quantizeToFrameOf,
+    steppedZoom,
   } from "./_components/timeline/timeline-helpers";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
   import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
@@ -60,16 +69,16 @@
   const timeMode = $derived(store.timeMode);
 
   // Layer visibility (the toolbar's Layers menu). The clip track is always shown
-  // (the editing spine); its content is thumbnails OR the waveform, never both,
-  // so they can't overlap. Zoom/Markup lanes show/hide independently. Persisted
-  // to localStorage so the choice survives reopening the editor.
-  type ClipContent = "thumbnails" | "waveform";
+  // (the editing spine); the waveform now rides ALONG its bottom edge rather than
+  // replacing the thumbnails, so it's an independent toggle, not a radio. Zoom/
+  // Markup/Cuts lanes show/hide independently. Persisted to localStorage so the
+  // choice survives reopening the editor.
   const VIEW_KEY = "recast.timeline.view";
   function loadView(): {
-    clipContent: ClipContent;
+    waveform: boolean;
     zoom: boolean;
     markup: boolean;
-    silence: boolean;
+    cuts: boolean;
   } {
     if (typeof localStorage !== "undefined") {
       try {
@@ -77,38 +86,38 @@
         if (raw) {
           const v = JSON.parse(raw);
           return {
-            clipContent: v.clipContent === "waveform" ? "waveform" : "thumbnails",
+            // Migrate the old `clipContent: "waveform" | "thumbnails"` radio: anyone
+            // who had chosen the waveform still wants to see it, now as an overlay.
+            waveform:
+              typeof v.waveform === "boolean"
+                ? v.waveform
+                : v.clipContent === "waveform",
             zoom: v.zoom !== false,
             markup: v.markup !== false,
-            silence: v.silence !== false,
+            cuts: v.cuts ?? v.silence ?? true,
           };
         }
       } catch {
         /* fall through to defaults */
       }
     }
-    return { clipContent: "thumbnails", zoom: true, markup: true, silence: true };
+    return { waveform: true, zoom: true, markup: true, cuts: true };
   }
   const _view = loadView();
-  let clipContent = $state<ClipContent>(_view.clipContent);
+  let showAudioLane = $state(_view.waveform);
   let showZoomLane = $state(_view.zoom);
   let showMarkupLane = $state(_view.markup);
-  let showSilenceLane = $state(_view.silence);
-  // The Silence lane only exists when the experimental flag is on; this gates
-  // both the rail header and the lane so the two never disagree.
-  const silenceLaneVisible = $derived(
-    experimentalStore.silenceDetection && showSilenceLane,
-  );
+  let showCutLane = $state(_view.cuts);
   $effect(() => {
     if (typeof localStorage === "undefined") return;
     try {
       localStorage.setItem(
         VIEW_KEY,
         JSON.stringify({
-          clipContent,
+          waveform: showAudioLane,
           zoom: showZoomLane,
           markup: showMarkupLane,
-          silence: showSilenceLane,
+          cuts: showCutLane,
         }),
       );
     } catch {
@@ -196,15 +205,17 @@
   }
 
   function zoomTimeline(dir: number) {
-    store.timelineZoom = Math.max(
-      0.5,
-      Math.min(5, store.timelineZoom + dir * 0.25),
+    store.timelineZoom = steppedZoom(
+      store.timelineZoom,
+      dir,
+      outputDuration,
+      timelineWidth,
     );
   }
 
   // timelineZoom=1 means "duration spans timelineWidth", so fit is just 1.0.
   function zoomToFit() {
-    store.timelineZoom = 1;
+    store.timelineZoom = MIN_TIMELINE_ZOOM;
     requestAnimationFrame(() => {
       if (timelineEl) timelineEl.scrollLeft = 0;
     });
@@ -219,7 +230,7 @@
     if (!region) return;
     const span = Math.max(0.001, region.end - region.start);
     const target = (duration / span) * 0.7;
-    const nextZoom = Math.max(0.5, Math.min(5, target));
+    const nextZoom = clampTimelineZoom(target, outputDuration, timelineWidth);
     store.timelineZoom = nextZoom;
     requestAnimationFrame(() => {
       if (!timelineEl || outputDuration <= 0) return;
@@ -324,7 +335,7 @@
   }
 
   function handleTimelinePointerDown(event: PointerEvent) {
-    // Right/middle button is for the context menu, never seek/razor on it.
+    // Right/middle button is for the context menu, never seek on it.
     if (event.button !== 0) return;
     // Razor mode owns the click: place an anchor / carve a cut, never seek/drag.
     if (razorActive) {
@@ -442,6 +453,20 @@
     void filmstripVersion;
     if (!hover || !tileProvider || hoverCell) return undefined;
     return tileProvider.previewAt(hover.originalSec);
+  });
+
+  // Last-resort hover frame: the nearest frame of the coarse Rust strip. The
+  // WebCodecs sprite/tiles are better, but when the decoder yields nothing the
+  // preview used to sit there as an empty grey box. A coarse frame beats none.
+  const hoverStripUrl = $derived.by(() => {
+    if (!hover || hoverCell || hoverUrl) return undefined;
+    const strip = store.thumbnailStrip;
+    if (strip.length === 0 || duration <= 0) return undefined;
+    const i = Math.min(
+      strip.length - 1,
+      Math.max(0, Math.floor((hover.originalSec / duration) * strip.length)),
+    );
+    return strip[i];
   });
 
   // Snapped end of the live razor span (for the preview band) while armed.
@@ -567,7 +592,7 @@
       if (videoEl) videoEl.currentTime = t;
     }
 
-    // Split the clip at the playhead (NLE razor, "S").
+    // Split the clip at the playhead ("S").
     if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       splitAtPlayhead();
@@ -621,6 +646,18 @@
     }
   }
 
+  // The zoom ceiling depends on clip length and viewport width, so a persisted
+  // zoom (or a window resize) can land outside the legal range. Pull it back.
+  $effect(() => {
+    if (outputDuration <= 0 || timelineWidth <= 0) return;
+    const legal = clampTimelineZoom(
+      store.timelineZoom,
+      outputDuration,
+      timelineWidth,
+    );
+    if (legal !== store.timelineZoom) store.timelineZoom = legal;
+  });
+
   function handleResize() {
     if (!timelineEl) return;
     timelineWidth = timelineEl.clientWidth;
@@ -640,8 +677,13 @@
       // Anchor in OUTPUT seconds so the point under the cursor stays put across the zoom.
       const anchorOut =
         duration > 0 ? (timelineEl.scrollLeft + anchorX) / pixelsPerSecond : 0;
-      const delta = event.deltaY < 0 ? 0.2 : -0.2;
-      const nextZoom = Math.max(0.5, Math.min(5, store.timelineZoom + delta));
+      // Multiplicative, so one wheel notch covers the same proportion of the
+      // range whether the clip is 10 seconds or 30 minutes long.
+      const nextZoom = clampTimelineZoom(
+        store.timelineZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
+        outputDuration,
+        timelineWidth,
+      );
       if (nextZoom === store.timelineZoom) return;
       store.timelineZoom = nextZoom;
       requestAnimationFrame(() => {
@@ -789,11 +831,11 @@
 
 <!-- Track-header chip for the fixed left rail: a square, icon stacked over the
      label, so the rail stays narrow and every row header reads the same. -->
-{#snippet railLabel(Icon: typeof Film, label: string, chipClass: string)}
+{#snippet railLabel(Icon: typeof Video, label: string, iconClass: string)}
   <span
-    class="inline-flex min-h-9 min-w-9 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 font-mono text-[7px] font-bold uppercase leading-none tracking-wide {chipClass}"
+    class="inline-flex min-h-9 min-w-9 flex-col items-center justify-center gap-0.5 rounded-md bg-muted/60 px-1 py-1 font-mono text-[7px] font-bold uppercase leading-none tracking-wide text-muted-foreground ring-1 ring-inset ring-border/40"
   >
-    <Icon class="size-3.5" />
+    <Icon class="size-3.5 {iconClass}" />
     {label}
   </span>
 {/snippet}
@@ -812,10 +854,10 @@
     {timeMode}
     hasSelectedRegion={!!store.selectedZoomRegionId}
     {razorActive}
-    clipContent={clipContent}
+    {showAudioLane}
     {showZoomLane}
     {showMarkupLane}
-    {showSilenceLane}
+    {showCutLane}
     onSetTrim={setTrimPoint}
     onSplit={splitAtPlayhead}
     onToggleRazor={toggleRazor}
@@ -826,10 +868,10 @@
     onSetTimeMode={(mode) => (store.timeMode = mode)}
     onZoomToFit={zoomToFit}
     onZoomToSelection={zoomToSelection}
-    onSetClipContent={(c) => (clipContent = c)}
+    onToggleAudioLane={() => (showAudioLane = !showAudioLane)}
     onToggleZoomLane={() => (showZoomLane = !showZoomLane)}
     onToggleMarkupLane={() => (showMarkupLane = !showMarkupLane)}
-    onToggleSilenceLane={() => (showSilenceLane = !showSilenceLane)}
+    onToggleCutLane={() => (showCutLane = !showCutLane)}
   />
 
   <!-- Rail lives OUTSIDE the scroller so lane names never overlap a card at t≈0.
@@ -845,21 +887,26 @@
       <div class="px-1 pb-2 pt-1.5">
         <!-- Headers are centered squares; enable/disable lives in the Layers menu. -->
         <div class="flex h-12 items-center justify-center">
-          {@render railLabel(Film, "Clip", "bg-foreground/10 text-foreground/80")}
+          {@render railLabel(Video, "Clip", "text-foreground/70")}
         </div>
+        {#if showAudioLane}
+          <div class="mt-1.5 flex h-9 items-center justify-center">
+            {@render railLabel(AudioLines, "Audio", "text-lane-audio")}
+          </div>
+        {/if}
         {#if showZoomLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Target, "Zoom", "bg-primary/15 text-primary")}
+            {@render railLabel(ZoomIn, "Zoom", "text-lane-zoom")}
           </div>
         {/if}
         {#if showMarkupLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Pencil, "Markup", "bg-warning/15 text-warning")}
+            {@render railLabel(Pencil, "Markup", "text-lane-markup")}
           </div>
         {/if}
-        {#if silenceLaneVisible}
+        {#if showCutLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Scissors, "Silence", "bg-destructive/15 text-destructive")}
+            {@render railLabel(Scissors, "Cuts", "text-lane-cut")}
           </div>
         {/if}
       </div>
@@ -906,13 +953,16 @@
           {clipWidth}
           {thumbnailWidth}
           {timeMode}
-          content={clipContent}
           {clientXToOutput}
           {tileProvider}
           {filmstripVersion}
           viewportLeftPx={Math.max(0, scrollLeft - LANE_PAD)}
           viewportWidthPx={timelineWidth}
         />
+
+        {#if showAudioLane}
+          <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
+        {/if}
 
         {#if showZoomLane}
           <TimelineZoomLane
@@ -937,7 +987,7 @@
           />
         {/if}
 
-        {#if silenceLaneVisible}
+        {#if showCutLane}
           <TimelineCutLane {store} {pixelsPerSecond} {duration} />
         {/if}
       </div>
@@ -960,20 +1010,20 @@
           {@const left = Math.min(anchorX, hoverX)}
           {@const w = Math.abs(hoverX - anchorX)}
           <div
-            class="pointer-events-none absolute inset-y-0 z-20 border-x border-destructive/70 bg-destructive/15"
-            style="left: {left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--destructive) 20%, transparent) 5px, color-mix(in srgb, var(--destructive) 20%, transparent) 10px);"
+            class="pointer-events-none absolute inset-y-0 z-20 border-x border-lane-cut/70 bg-lane-cut/15"
+            style="left: {left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 20%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 20%, transparent) 10px);"
           >
             {#if w > 36}
               <span
-                class="absolute left-1/2 top-1 -translate-x-1/2 whitespace-nowrap rounded bg-destructive px-1 py-0.5 font-mono text-[9px] font-bold text-destructive-foreground shadow-sm"
+                class="absolute left-1/2 top-1 -translate-x-1/2 whitespace-nowrap rounded bg-lane-cut px-1 py-0.5 font-mono text-[9px] font-bold text-background shadow-sm"
               >
-                −{Math.abs(endT - razorAnchor).toFixed(2)}s
+                âˆ’{Math.abs(endT - razorAnchor).toFixed(2)}s
               </span>
             {/if}
           </div>
         {/if}
         <div
-          class="pointer-events-none absolute inset-y-0 z-20 w-px bg-destructive"
+          class="pointer-events-none absolute inset-y-0 z-20 w-px bg-lane-cut"
           style="left: {anchorX}px;"
         ></div>
       {/if}
@@ -987,7 +1037,7 @@
      literally reads as a scissor while armed. -->
 {#if razorActive && hover}
   <div
-    class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 text-destructive drop-shadow-md"
+    class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 text-lane-cut drop-shadow-md"
     style="left: {hover.clientX}px; top: {hover.clientY}px;"
   >
     <Scissors class="size-5" />
@@ -996,7 +1046,7 @@
 
 <!-- Hover-scrub preview: fixed so it floats above the timeline without being
      clipped by the scroller's overflow. Only with the WebCodecs filmstrip. -->
-{#if hover && tileProvider && !isDraggingPlayhead && !razorActive}
+{#if hover && !isDraggingPlayhead && !razorActive && (tileProvider || hoverStripUrl)}
   <div
     class="pointer-events-none fixed z-50 flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1"
     style="left: {hover.clientX}px; top: {hover.top - 8}px;"
@@ -1013,6 +1063,13 @@
       {:else if hoverUrl}
         <img
           src={hoverUrl}
+          alt=""
+          class="block h-16 w-auto object-cover"
+          draggable="false"
+        />
+      {:else if hoverStripUrl}
+        <img
+          src={hoverStripUrl}
           alt=""
           class="block h-16 w-auto object-cover"
           draggable="false"

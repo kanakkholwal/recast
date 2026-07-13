@@ -51,6 +51,56 @@ export interface TimeMarker {
 	emphasis: boolean;
 }
 
+// ---- Zoom ------------------------------------------------------------------
+//
+// Zoom is expressed as a multiple of "the whole clip fits the viewport", so the
+// ceiling has to be derived from the clip's length, not fixed. It used to be a
+// flat 5x, which made maximum magnification a function of how long you recorded:
+// a 30-minute screencast bottomed out at 2.5 px/sec, i.e. 0.04px per frame, and
+// could not be trimmed precisely at all.
+
+/** Ceiling in pixels per second: ~6px per frame at 60fps, enough to aim at one. */
+export const MAX_PIXELS_PER_SECOND = 400;
+
+/** Zoom that fits the whole clip. Below this the viewport just grows dead space. */
+export const MIN_TIMELINE_ZOOM = 1;
+
+export function maxTimelineZoom(
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	if (outputDuration <= 0 || viewportWidth <= 0) return MIN_TIMELINE_ZOOM;
+	const zoomAtCeiling =
+		(MAX_PIXELS_PER_SECOND * outputDuration) / viewportWidth;
+	return Math.max(MIN_TIMELINE_ZOOM, zoomAtCeiling);
+}
+
+export function clampTimelineZoom(
+	zoom: number,
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	const max = maxTimelineZoom(outputDuration, viewportWidth);
+	return Math.min(Math.max(zoom, MIN_TIMELINE_ZOOM), max);
+}
+
+/**
+ * One zoom step. Multiplicative, not additive: the old +/-0.25 steps would need
+ * thousands of clicks to cross the range a long recording now spans.
+ */
+export const ZOOM_STEP_FACTOR = 1.5;
+
+export function steppedZoom(
+	zoom: number,
+	direction: number,
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	const next =
+		direction > 0 ? zoom * ZOOM_STEP_FACTOR : zoom / ZOOM_STEP_FACTOR;
+	return clampTimelineZoom(next, outputDuration, viewportWidth);
+}
+
 /** Spacing between ruler labels, chosen to keep them roughly 50px apart. */
 export function rulerInterval(pixelsPerSecond: number): number {
 	if (pixelsPerSecond < 26) return 10;

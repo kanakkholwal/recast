@@ -50,6 +50,45 @@ pub struct VideoTextTimeline {
     /// Engine that read the frames, e.g. `"ocrs"`.
     pub engine: String,
     pub spans: Vec<ScreenStateSpan>,
+    /// What the run actually did. Not part of the model-facing payload; it exists
+    /// so a human reviewing a read can see the work behind it (how many frames the
+    /// sampler walked, how many survived the gate, where the time went) instead of
+    /// being handed spans with no provenance.
+    pub stats: OcrStats,
+}
+
+/// Counters and per-stage timings for one read.
+///
+/// `build_timeline` fills in what it knows (the frames it read, the elements it
+/// found); the caller that owns the whole pass fills in the rest.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OcrStats {
+    /// Video length in seconds, per ffprobe.
+    pub duration_secs: f64,
+    /// Coarse frames the decode pass walked.
+    pub frames_scanned: u32,
+    /// Frames that survived the change gate and were actually OCR'd.
+    pub frames_read: u32,
+    /// Total recognized elements across every span.
+    pub elements: u32,
+    /// Decode + change-gate pass.
+    pub sample_ms: u64,
+    /// One-time model load.
+    pub model_load_ms: u64,
+    /// The OCR pass itself, which dominates the rest by a wide margin.
+    pub ocr_ms: u64,
+}
+
+/// Progress of the OCR pass, reported once per frame read.
+#[derive(Debug, Clone, Copy)]
+pub struct ReadTick {
+    /// Frames OCR'd so far.
+    pub done: u64,
+    /// Frames to OCR in total. Exact: the sampler has already finished.
+    pub total: u64,
+    /// Distinct screen states found so far.
+    pub spans: u64,
 }
 
 /// How similar two spans' text must be to be treated as the same screen state.
@@ -68,11 +107,16 @@ pub struct TimelineOpts {
 
 /// OCR every sampled frame and collapse near-identical neighbors into spans.
 /// `total_secs` closes the final span's end.
+///
+/// `on_tick` fires after every frame is recognized. This is the phase worth
+/// reporting: OCR runs at roughly a third of a second a frame, so it is where a
+/// read spends nearly all of its wall clock.
 pub fn build_timeline(
     frames: &[SampledFrame],
     total_secs: f64,
     engine: &dyn OcrEngine,
     opts: &TimelineOpts,
+    on_tick: &mut dyn FnMut(ReadTick),
 ) -> Result<VideoTextTimeline, String> {
     let source = engine.source().to_string();
 
@@ -83,8 +127,9 @@ pub fn build_timeline(
         preview: Option<String>,
     }
     let mut builds: Vec<Build> = Vec::new();
+    let mut element_count: u64 = 0;
 
-    for frame in frames {
+    for (i, frame) in frames.iter().enumerate() {
         let lines = engine.recognize(&frame.rgba, frame.width, frame.height)?;
         let texts: Vec<String> = lines
             .iter()
@@ -92,12 +137,26 @@ pub fn build_timeline(
             .filter(|t| !t.is_empty())
             .collect();
 
+        // Tick even for a frame that merges away, so a run of unchanged frames still
+        // advances the bar. They cost a full OCR pass each; only their output is
+        // discarded.
+        let tick = |builds: &[Build], on_tick: &mut dyn FnMut(ReadTick)| {
+            on_tick(ReadTick {
+                done: i as u64 + 1,
+                total: frames.len() as u64,
+                spans: builds.len() as u64,
+            });
+        };
+
         // Same screen state as the previous span? Extend it instead of adding one.
         if let Some(last) = builds.last() {
             if jaccard(&last.texts, &texts) >= MERGE_JACCARD {
+                tick(&builds, on_tick);
                 continue;
             }
         }
+
+        element_count += lines.len() as u64;
 
         let elements = lines
             .iter()
@@ -123,6 +182,8 @@ pub fn build_timeline(
             texts,
             preview,
         });
+
+        tick(&builds, on_tick);
     }
 
     // Close each span at the next one's start; the last runs to the video end.
@@ -143,6 +204,12 @@ pub fn build_timeline(
 
     Ok(VideoTextTimeline {
         engine: source,
+        stats: OcrStats {
+            duration_secs: total_secs,
+            frames_read: frames.len() as u32,
+            elements: element_count as u32,
+            ..Default::default()
+        },
         spans,
     })
 }
@@ -267,7 +334,8 @@ mod tests {
             vec!["File", "Edit"],
             vec!["File", "Edit"],
         ]);
-        let tl = build_timeline(&frames, 3.0, &engine, &TimelineOpts::default()).unwrap();
+        let tl =
+            build_timeline(&frames, 3.0, &engine, &TimelineOpts::default(), &mut |_| {}).unwrap();
         assert_eq!(tl.spans.len(), 1);
         assert_eq!(tl.spans[0].start, 0.0);
         // The last span runs to the end of the video.
@@ -283,7 +351,8 @@ mod tests {
             vec!["File", "Edit"],
             vec!["Settings", "Privacy"], // a real change
         ]);
-        let tl = build_timeline(&frames, 4.0, &engine, &TimelineOpts::default()).unwrap();
+        let tl =
+            build_timeline(&frames, 4.0, &engine, &TimelineOpts::default(), &mut |_| {}).unwrap();
         assert_eq!(tl.spans.len(), 2);
         // First span is closed at the second span's start, not at its own frame.
         assert_eq!(tl.spans[0].start, 0.0);
@@ -293,9 +362,44 @@ mod tests {
     }
 
     #[test]
+    fn progress_ticks_once_per_frame_even_when_a_frame_merges_away() {
+        // Three frames, two of them the same screen: the bar must still reach 3/3.
+        // Every frame costs a full OCR pass, so a merged frame that skipped its tick
+        // would stall the bar for a third of the run.
+        let frames = vec![frame(0.0), frame(1.0), frame(2.0)];
+        let engine = StubEngine::new(vec![
+            vec!["File"],
+            vec!["File"], // merges into the first span
+            vec!["Settings"],
+        ]);
+        let mut ticks: Vec<ReadTick> = Vec::new();
+        let tl = build_timeline(&frames, 3.0, &engine, &TimelineOpts::default(), &mut |t| {
+            ticks.push(t)
+        })
+        .unwrap();
+
+        assert_eq!(ticks.len(), 3, "one tick per frame read, merged or not");
+        assert_eq!(ticks.iter().map(|t| t.done).collect::<Vec<_>>(), [1, 2, 3]);
+        assert!(ticks.iter().all(|t| t.total == 3));
+        // Spans only grow on a real screen change.
+        assert_eq!(ticks.iter().map(|t| t.spans).collect::<Vec<_>>(), [1, 1, 2]);
+        // A merged frame's elements are discarded, so the count must not double up.
+        assert_eq!(tl.stats.elements, 2);
+        assert_eq!(tl.stats.frames_read, 3);
+        assert_eq!(tl.stats.duration_secs, 3.0);
+    }
+
+    #[test]
     fn elements_carry_normalized_boxes_ids_and_source() {
         let engine = StubEngine::new(vec![vec!["Export"]]);
-        let tl = build_timeline(&[frame(0.0)], 1.0, &engine, &TimelineOpts::default()).unwrap();
+        let tl = build_timeline(
+            &[frame(0.0)],
+            1.0,
+            &engine,
+            &TimelineOpts::default(),
+            &mut |_| {},
+        )
+        .unwrap();
         let el = &tl.spans[0].elements[0];
         assert_eq!(el.id, 0);
         assert_eq!(el.kind, "text");

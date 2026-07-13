@@ -208,9 +208,9 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-warning/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-warning/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-warning/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-warning)] hover:shadow-[inset_3px_0_0_0_var(--color-warning)]'
-      : 'border-warning/40 hover:border-warning/70 cursor-grab'} {drag?.mode ===
+    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-markup/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-markup/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
+      ? 'border-lane-markup/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-markup)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-markup)]'
+      : 'border-lane-markup/40 hover:border-lane-markup/70 cursor-grab'} {drag?.mode ===
     'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
@@ -221,7 +221,7 @@
       aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
       <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-warning/20 text-warning"
+        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-markup/20 text-lane-markup"
       >
         <Icon class="size-3" />
       </span>
@@ -266,7 +266,7 @@
     class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-warning/70 opacity-0 transition-opacity {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -287,7 +287,7 @@
     class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-warning/70 opacity-0 transition-opacity {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

@@ -73,11 +73,11 @@
 
   {#if activeSnap}
     <div
-      class="pointer-events-none absolute -top-25 z-40 h-50 w-px bg-warning/80"
+      class="pointer-events-none absolute -top-25 z-40 h-50 w-px bg-lane-markup/80"
       style="left: {snapX + 6}px;"
     ></div>
     <div
-      class="pointer-events-none absolute -top-25 z-40 -translate-x-1/2 rounded border border-warning/60 bg-warning px-1 py-0.5 font-mono text-[9px] text-warning-foreground shadow-craft-sm"
+      class="pointer-events-none absolute -top-25 z-40 -translate-x-1/2 rounded border border-lane-markup/60 bg-lane-markup px-1 py-0.5 font-mono text-[9px] text-background shadow-craft-sm"
       style="left: {snapX + 6}px;"
     >
       {snapLabel(activeSnap.kind)}

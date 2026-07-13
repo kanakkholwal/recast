@@ -266,6 +266,15 @@ export const shortcutDefs: ShortcutDef[] = [
 	{ id: "audio.mute", keys: "M", label: "Toggle mute", category: "Audio" },
 
 	// Timeline: when the timeline has focus.
+	{ id: "timeline.split", keys: "S", label: "Split at playhead", category: "Timeline", scopeNote: "timeline focused" },
+	{
+		id: "timeline.razor",
+		keys: "C",
+		label: "Cut tool",
+		description: "Click two points to remove a section. Esc to exit.",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
 	{ id: "timeline.in", keys: "I", label: "Set in point", category: "Timeline", scopeNote: "timeline focused" },
 	{ id: "timeline.out", keys: "O", label: "Set out point", category: "Timeline", scopeNote: "timeline focused" },
 	{ id: "timeline.reverse", keys: "J", label: "Shuttle reverse", category: "Timeline", scopeNote: "timeline focused" },

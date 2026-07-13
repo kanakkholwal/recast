@@ -79,7 +79,6 @@
 	const HANDLE_BUFFER = 8;
 	const LABEL_CSS_LEFT = 12;
 	const VALUE_CSS_RIGHT = 12;
-	const HOVER_REVEAL_MS = 800;
 
 	let wrapperEl: HTMLDivElement | null = $state(null);
 	let trackEl: HTMLDivElement | null = $state(null);
@@ -91,7 +90,10 @@
 	let isDragging = $state(false);
 	let isHovered = $state(false);
 	let isValueHovered = $state(false);
-	let isValueEditable = $state(false);
+	// The value is ALWAYS typeable. It used to unlock only after an 800ms hover,
+	// which meant keyboard and touch users could never enter an exact number into
+	// any of the ~45 sliders in the editor -- in a precision tool.
+	const isValueEditable = $derived(!disabled);
 	let showInput = $state(false);
 	let inputValue = $state("");
 
@@ -116,7 +118,6 @@
 	let isClick = true;
 	let trackRect: DOMRect | null = null;
 	let trackScale = 1;
-	let hoverTimer: ReturnType<typeof setTimeout> | null = null;
 
 	function percentFromValue(v: number) {
 		if (max <= min) return 0;
@@ -217,26 +218,6 @@
 		handleOpacityMv.set(handleOpacity);
 		handleScaleXMv.set(isActive ? 1 : 0.25);
 		handleScaleYMv.set(isActive && valueDodge ? 0.7 : 1);
-	});
-
-	$effect(() => {
-		if (hoverTimer) {
-			clearTimeout(hoverTimer);
-			hoverTimer = null;
-		}
-		if (isValueHovered && !showInput && !isValueEditable && !disabled) {
-			hoverTimer = setTimeout(() => {
-				isValueEditable = true;
-			}, HOVER_REVEAL_MS);
-		} else if (!isValueHovered && !showInput) {
-			isValueEditable = false;
-		}
-		return () => {
-			if (hoverTimer) {
-				clearTimeout(hoverTimer);
-				hoverTimer = null;
-			}
-		};
 	});
 
 	$effect(() => {
@@ -428,7 +409,6 @@
 		}
 		showInput = false;
 		isValueHovered = false;
-		isValueEditable = false;
 	}
 
 	function handleInputKeydown(e: KeyboardEvent) {
@@ -439,7 +419,6 @@
 			e.preventDefault();
 			showInput = false;
 			isValueHovered = false;
-			isValueEditable = false;
 		}
 	}
 
@@ -539,7 +518,7 @@
 			</span>
 		</div>
 
-		<!-- Value (right). Hover-to-reveal-edit; click reveals an input. -->
+		<!-- Value (right). Click, or focus and press Enter, to type an exact value. -->
 		{#if showInput}
 			<input
 				bind:this={inputEl}
@@ -561,11 +540,13 @@
 				role="button"
 				tabindex={isValueEditable ? 0 : -1}
 				aria-label={isValueEditable
-					? `${label} — click to edit value`
+					? `${label}: type an exact value`
 					: undefined}
 				class={cn(
 					"relative z-20 shrink-0 pl-3 font-mono text-[12px] font-medium tabular-nums text-foreground/85 transition-colors",
+					"focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-ring",
 					isValueEditable &&
+						isValueHovered &&
 						"rounded-sm bg-foreground/[0.06] px-1 text-foreground",
 				)}
 				onmouseenter={() => (isValueHovered = true)}

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { Search, X } from "@lucide/svelte";
+  import { X, ZoomIn } from "@lucide/svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
   import {
@@ -212,9 +212,9 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-primary/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-primary/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-primary cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-primary)] hover:shadow-[inset_3px_0_0_0_var(--color-primary)]'
-      : 'border-primary/30 hover:border-primary/60 cursor-grab'} {drag?.mode === 'move'
+    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-zoom/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-zoom/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
+      ? 'border-lane-zoom cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-zoom)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-zoom)]'
+      : 'border-lane-zoom/30 hover:border-lane-zoom/60 cursor-grab'} {drag?.mode === 'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
@@ -224,13 +224,13 @@
       aria-label={`Focus region from ${formatTimeByMode(outSec(region.start), timeMode, fps)} to ${formatTimeByMode(outSec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
       <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/20 text-primary"
+        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-zoom/20 text-lane-zoom"
       >
-        <Search class="size-3" />
+        <ZoomIn class="size-3" />
       </span>
       <div class="min-w-0 flex-1 pointer-events-none">
         <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
-          Zoom <span class="text-primary">{region.scale.toFixed(1)}×</span>
+          Zoom <span class="text-lane-zoom">{region.scale.toFixed(1)}×</span>
         </p>
         {#if showSubtitle}
           <p
@@ -273,7 +273,7 @@
     class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-primary/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -294,7 +294,7 @@
     class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-primary/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

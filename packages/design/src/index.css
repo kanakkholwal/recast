@@ -73,6 +73,24 @@
   --info: oklch(0.6 0.118 184.704);
   --info-foreground: oklch(0.985 0 0);
 
+  /* Timeline lane accents.
+     One hue per lane, so a block's colour tells you which lane it belongs to
+     without reading the rail. Semantic tokens were being reused for this and it
+     did not work: markup sat on `warning` (h 43) and cuts on `destructive`
+     (h 25), only 18 degrees apart, so the two lanes read as the same orange-red.
+     These are spaced around the wheel instead, anchored on the brand lime
+     (h 126) which the zoom lane keeps.
+       cut    h 22   soft red, the removal colour, pulled off pure red
+       zoom   h 128  the brand hue
+       audio  h 215  calm blue, the conventional audio-track colour
+       markup h 285  violet, furthest from both the brand and the cut red
+     Chroma is held well under the brand's 0.21 so four accents on screen at once
+     support the primary instead of competing with it. */
+  --lane-cut: oklch(0.58 0.15 22);
+  --lane-zoom: oklch(0.56 0.16 128);
+  --lane-audio: oklch(0.56 0.12 215);
+  --lane-markup: oklch(0.54 0.15 285);
+
   --border: oklch(96.115% 0.00011 271.152);
   --border-subtle: oklch(0% 0 0 / 0.05);
   /* Input surface — used as the fill for text fields and the off-state track
@@ -176,6 +194,12 @@
   --info: oklch(0.6 0.118 184.704);
   --info-foreground: oklch(0.985 0 0);
 
+  /* Same lane hues, lifted for a dark ground. See the light block for the why. */
+  --lane-cut: oklch(0.72 0.16 22);
+  --lane-zoom: oklch(0.82 0.17 128);
+  --lane-audio: oklch(0.74 0.12 215);
+  --lane-markup: oklch(0.74 0.15 285);
+
   --border: oklch(23.929% 0.00003 271.152);
   --border-subtle: oklch(100% 0.00011 271.152 / 0.05);
   /* Input surface — lifted above the card (0.27) and popover (0.205) surfaces so
@@ -244,6 +268,10 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-info: var(--info);
   --color-info-foreground: var(--info-foreground);
+  --color-lane-cut: var(--lane-cut);
+  --color-lane-zoom: var(--lane-zoom);
+  --color-lane-audio: var(--lane-audio);
+  --color-lane-markup: var(--lane-markup);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);

@@ -6,12 +6,16 @@
     planFilmstrip,
   } from "$lib/timeline/filmstrip";
   import type { TileProvider } from "$lib/timeline/filmstrip-source";
+  import {
+    storyboardCellSec,
+    storyboardCoverCrop,
+  } from "$lib/timeline/storyboard";
   import { deriveSeams } from "$lib/timeline/segments";
   import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@lucide/svelte";
   import * as ContextMenu from "@recast/ui/context-menu";
   import { fade } from "svelte/transition";
   import {
-    buildWaveformPath,
+
     formatTimeByMode,
     formatSmpte,
     frameStep,
@@ -40,8 +44,6 @@
     clipWidth: number;
     thumbnailWidth: number;
     timeMode: TimeMode;
-    /** What fills the clip bar: thumbnails or the audio waveform, never both. */
-    content: "thumbnails" | "waveform";
     /** Pointer clientX → output seconds (pre-map); trim maps it via a frozen map. */
     clientXToOutput: (clientX: number) => number;
     // Density-based filmstrip. When null, the stretched Rust strip is rendered.
@@ -61,7 +63,6 @@
     clipWidth,
     thumbnailWidth,
     timeMode,
-    content,
     clientXToOutput,
     tileProvider,
     filmstripVersion,
@@ -74,6 +75,8 @@
   const TILE_TARGET_W = 96;
   const TILE_KEY_HEIGHT = 48;
   const FILMSTRIP_OVERSCAN = 240;
+  /** Rendered height of the clip bar (`h-12`), the box a sprite cell fills. */
+  const CLIP_H = 48;
 
   const formatSpeed = (s: number) => `${s}×`;
 
@@ -113,6 +116,26 @@
         )
       : [],
   );
+  // The clip bar's base layer is the STORYBOARD SPRITE: one image, built once in
+  // the worker, cropped per tile with background-position. No per-tile decode, no
+  // cache to evict, and every tile has pixels the moment the sheet lands.
+  //
+  // Per-tile decodes are now only a REFINEMENT, requested when the strip is
+  // finer-grained than the sheet (i.e. zoomed in far enough that adjacent tiles
+  // would otherwise crop the same cell). They fade in over the sprite, so the
+  // strip is never blank and never stalls on a decoder.
+  const storyboard = $derived.by(() => {
+    void filmstripVersion;
+    return tileProvider?.storyboard();
+  });
+  const cellSec = $derived(
+    storyboard ? storyboardCellSec(storyboard) : Number.POSITIVE_INFINITY,
+  );
+  /** Seconds of source one tile spans at the current zoom. */
+  const tileSpanSec = $derived(pps > 0 ? TILE_TARGET_W / pps : Number.POSITIVE_INFINITY);
+  // 0.75 leaves a little hysteresis so a nudge of the zoom doesn't flap the decoder on.
+  const needsSharpTiles = $derived(!storyboard || tileSpanSec < cellSec * 0.75);
+
   const tilesByBlock = $derived.by(() => {
     const map = new Map<number, FilmstripTile[]>();
     for (const tile of filmstripTiles) {
@@ -134,6 +157,12 @@
     return map;
   });
   $effect(() => {
+    // Re-runs on `filmstripVersion` too, not just when the plan changes: a tile
+    // evicted from the LRU would otherwise stay grey forever, because nothing
+    // would ever ask for it again. `request` no-ops on cached/inflight tiles, so
+    // this settles immediately once the strip is populated.
+    void filmstripVersion;
+    if (!needsSharpTiles) return;
     if (tileProvider && filmstripTiles.length > 0) {
       tileProvider.request(filmstripTiles);
     }
@@ -180,18 +209,6 @@
   // Faint audio envelope over the footage, so you can see where to cut. Built in
   // output-pixel space (each bucket at `xOf(bucketTime)`) over the kept range
   // only; buckets inside a removed cut collapse onto the seam like the cut lane.
-  const WAVE_H = 48;
-  const waveformPath = $derived(
-    buildWaveformPath({
-      waveform: store.waveform,
-      duration,
-      xOf,
-      height: WAVE_H,
-      amp: WAVE_H / 2 - 3,
-      range: { start: store.inPoint, end: store.outPoint },
-    }),
-  );
-
   let activeTrimHandle = $state<"in" | "out" | null>(null);
   // Output-x of the active trim snap target (playhead/region/etc.), or null.
   let trimSnapX = $state<number | null>(null);
@@ -368,42 +385,27 @@
               rememberMenuTime(e.clientX);
               if (e.button === 0) store.selectedClipStart = block.start;
             }}
-            class="group/clip absolute inset-y-0 cursor-pointer overflow-hidden rounded-md border bg-primary/5 transition-[box-shadow,border-color] {selected
+            class="group/clip absolute inset-y-0 cursor-pointer overflow-hidden rounded-md border transition-[box-shadow,border-color] {selected
               ? 'border-primary ring-2 ring-primary/50'
-              : 'border-primary/40 hover:border-primary/70'}"
+              : 'border-border/70 hover:border-foreground/30'}"
             style="left: {block.left}px; width: {block.width}px;"
           >
-      {#if content === "thumbnails"}
-        {#if tileProvider}
-        {#each tilesByBlock.get(block.key) ?? [] as tile (tile.cacheKey)}
-          {@const url = tileUrls.get(tile.cacheKey)}
-          <div
-            class="absolute inset-y-0 overflow-hidden"
-            style="left: {tile.offsetPx}px; width: {tile.widthPx}px;"
-          >
-            {#if url}
-              <img
-                in:fade={{ duration: 120 }}
-                src={url}
-                alt=""
-                class="h-full w-full object-cover"
-                draggable="false"
-              />
-            {:else}
-              <div class="h-full w-full bg-muted/40"></div>
-            {/if}
-          </div>
-        {/each}
-      {:else if store.thumbnailStrip.length > 0}
+      <!-- Thumbnails are LAYERED, cheapest first, so the strip can never be blank:
+             1. the stretched Rust strip (8-12 frames, ready almost immediately),
+             2. the storyboard sprite (one image, cropped per tile, no decode),
+             3. per-tile decodes, only when zoomed past the sprite's density.
+           These used to be if/else branches, so the moment a WebCodecs provider
+           existed the Rust strip became unreachable and an undecoded tile showed
+           grey instead of the frame it already had. -->
+      {#if store.thumbnailStrip.length > 0}
         <div
-          class="flex h-full"
+          class="absolute inset-0 flex"
           style="width: {stripFullWidth}px; margin-left: {block.stripOffset}px;"
         >
           {#each store.thumbnailStrip as frame, index (frame + index)}
             <img
-              in:fade={{ duration: 180 }}
               src={frame}
-              alt="Timeline frame"
+              alt=""
               class="h-full shrink-0 object-cover"
               style="width: {thumbW}px;"
               draggable="false"
@@ -411,19 +413,50 @@
           {/each}
         </div>
       {:else}
-        <div
-          class="flex h-full items-center justify-center text-[10px] text-muted-foreground"
-        >
-          Generating thumbnails…
-        </div>
-        {/if}
+        <div class="absolute inset-0 bg-muted/40"></div>
+      {/if}
+
+      {#if tileProvider}
+        {#each tilesByBlock.get(block.key) ?? [] as tile (tile.cacheKey)}
+          {@const url = tileUrls.get(tile.cacheKey)}
+          <div
+            class="absolute inset-y-0 overflow-hidden"
+            style="left: {tile.offsetPx}px; width: {tile.widthPx}px;"
+          >
+            {#if storyboard}
+              {@const c = storyboardCoverCrop(
+                storyboard,
+                tile.sampleOriginalSec,
+                tile.widthPx,
+                CLIP_H,
+              )}
+              <!-- One sprite, cropped by background-position. Costs no decode. -->
+              <div
+                in:fade={{ duration: 140 }}
+                class="absolute inset-0"
+                style="background-image: url('{storyboard.url}'); background-repeat: no-repeat; background-size: {c.bgW}px {c.bgH}px; background-position: -{c.offX}px -{c.offY}px;"
+              ></div>
+            {/if}
+            {#if url}
+              <!-- Sharper per-tile frame, only decoded when zoomed past the
+                   sprite's density. Fades in ON TOP, so nothing ever blanks. -->
+              <img
+                in:fade={{ duration: 120 }}
+                src={url}
+                alt=""
+                class="absolute inset-0 h-full w-full object-cover"
+                draggable="false"
+              />
+            {/if}
+          </div>
+        {/each}
       {/if}
 
       <!-- Read-only speed badge (the editable control lives in the Clip panel). -->
       {#if speed !== 1}
         <div
           title="Clip speed. Edit in the Clip panel."
-          class="pointer-events-none absolute left-1 top-1 z-7 flex h-4 items-center gap-0.5 rounded bg-primary/90 px-1 font-mono text-[9px] font-bold text-primary-foreground"
+          class="pointer-events-none absolute left-1 top-1 z-7 flex h-4 items-center gap-0.5 rounded bg-foreground/85 px-1 font-mono text-[9px] font-bold text-background"
         >
           <Gauge class="size-2.5" />
           {formatSpeed(speed)}
@@ -438,7 +471,7 @@
           onpointerdown={(e) => e.stopPropagation()}
           onclick={() => deleteSegment(block.start, block.end)}
           title="Delete this clip and close the gap"
-          class="absolute right-1 top-1 z-7 flex size-4 items-center justify-center rounded bg-background/80 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:bg-destructive hover:text-destructive-foreground group-hover/clip:opacity-100"
+          class="absolute right-1 top-1 z-7 flex size-4 items-center justify-center rounded bg-background/80 text-muted-foreground opacity-0 backdrop-blur transition-opacity hover:bg-lane-cut hover:text-background group-hover/clip:opacity-100"
         >
           <Trash2 class="size-2.5" />
         </button>
@@ -491,20 +524,6 @@
     </ContextMenu.Root>
   {/each}
 
-  <!-- Audio waveform fills the clip bar when it's the chosen content (the radio
-       in the Layers menu), so it never overlaps the thumbnails. -->
-  {#if content === "waveform" && waveformPath && clipWidth > 0}
-    <svg
-      class="pointer-events-none absolute inset-y-0 left-0"
-      style="width: {clipWidth}px;"
-      viewBox="0 0 {clipWidth} {WAVE_H}"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path d={waveformPath} class="fill-primary/45" />
-    </svg>
-  {/if}
-
   <!-- Removed section collapsed to a restorable seam (click to restore). -->
   {#each seamMarkers as seam (seam.gapStart)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -519,7 +538,7 @@
       <!-- Notched destructive seam: two small triangles meeting at a hairline,
            reading as "content was pinched out here". -->
       <div
-        class="mx-auto h-full w-0.5 bg-destructive/70 transition-all group-hover/seam:w-1 group-hover/seam:bg-destructive"
+        class="mx-auto h-full w-0.5 bg-lane-cut/70 transition-all group-hover/seam:w-1 group-hover/seam:bg-lane-cut"
       ></div>
       <span
         class="pointer-events-none absolute bottom-full left-1/2 mb-1 hidden -translate-x-1/2 whitespace-nowrap rounded border border-border bg-popover px-1.5 py-0.5 font-mono text-[9px] text-foreground shadow-sm group-hover/seam:block"
@@ -541,7 +560,7 @@
       style="left: {marker.x}px;"
     >
       <div
-        class="mx-auto h-full w-px bg-warning transition-all group-hover/split:w-0.5"
+        class="mx-auto h-full w-px bg-lane-markup transition-all group-hover/split:w-0.5"
       ></div>
     </div>
   {/each}
