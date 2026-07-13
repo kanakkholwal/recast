@@ -33,7 +33,6 @@ concurrency:
 
 env:
   NODE_VERSION: "20"
-  PNPM_VERSION: "10.23.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
@@ -50,14 +49,19 @@ jobs:
         shell: bash
         run: echo "tag=${{ github.event.inputs.tag || github.ref_name }}" >> "$GITHUB_OUTPUT"
 
+      # pnpm version comes from the root package.json `packageManager` field.
+      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
+      # while the repo had moved to 11.
       - name: Install pnpm
+        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
+        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
+        # installs the pinned version directly and never takes that path.
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"

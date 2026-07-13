@@ -82,6 +82,23 @@ fn resolve_paths(app: Option<&tauri::AppHandle>) -> FfmpegPaths {
         }
     }
 
+    // Check common install locations on macOS/Linux.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    for &dir in common_ffmpeg_dirs() {
+        let (ffmpeg, ffprobe) = system_ffmpeg_pair(dir);
+        if is_usable_pair(&ffmpeg, &ffprobe) {
+            log::info!("using system ffmpeg: {}", ffmpeg.display());
+            return FfmpegPaths { ffmpeg, ffprobe };
+        }
+        if ffmpeg.exists() || ffprobe.exists() {
+            log::warn!(
+                "ignoring unusable system ffmpeg pair: {} / {}",
+                ffmpeg.display(),
+                ffprobe.display()
+            );
+        }
+    }
+
     // Fall back to PATH lookup. This is intentionally last because PATH may
     // contain broken package-manager shims.
     let ffmpeg = PathBuf::from(format!("ffmpeg{EXE_SUFFIX}"));
@@ -129,6 +146,37 @@ fn find_bundled_pair(app: Option<&tauri::AppHandle>) -> Option<FfmpegPaths> {
     }
 
     None
+}
+
+/// Well-known ffmpeg install prefixes, probed before the PATH fallback.
+///
+/// A Finder- or launcher-started `.app` inherits a minimal PATH (often just
+/// `/usr/bin:/bin`) that excludes Homebrew and MacPorts, so a PATH lookup alone
+/// reports "ffmpeg not found" even when it is installed. These are absolute, so
+/// they resolve regardless of the inherited PATH.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn common_ffmpeg_dirs() -> &'static [&'static str] {
+    #[cfg(target_os = "macos")]
+    {
+        &[
+            "/opt/homebrew/bin", // Apple Silicon Homebrew
+            "/usr/local/bin",    // Intel Homebrew
+            "/opt/local/bin",    // MacPorts
+        ]
+    }
+    #[cfg(target_os = "linux")]
+    {
+        &["/usr/bin", "/usr/local/bin", "/bin", "/snap/bin"]
+    }
+}
+
+/// The `(ffmpeg, ffprobe)` pair inside a system install dir. Both must come from
+/// the SAME directory: mixing a Homebrew ffmpeg with a different ffprobe is the
+/// mismatched-pair bug `is_usable_pair` exists to reject.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn system_ffmpeg_pair(dir: &str) -> (PathBuf, PathBuf) {
+    let base = Path::new(dir);
+    (base.join("ffmpeg"), base.join("ffprobe"))
 }
 
 fn bundled_search_dirs(root: &Path) -> Vec<PathBuf> {
@@ -588,6 +636,56 @@ fn probe_encoder(name: &str, extra_args: &[&str]) -> bool {
     }
 }
 
+/// Whether the resolved FFmpeg was compiled with `name` as a filter.
+///
+/// A binary can ship every encoder the export needs and still be missing a
+/// *filter*: libass, freetype and fontconfig are separate `--enable-` flags, and
+/// some prebuilt FFmpegs (notably the `ffmpeg-static` npm package) drop them. So
+/// `-encoders` says nothing about whether caption burn-in can run, and a missing
+/// `ass` filter only surfaces at export time as FFmpeg's cryptic
+/// `No such filter: 'ass'`. Callers probe this up front to fail with something
+/// actionable instead.
+///
+/// A missing filter is NOT grounds for rejecting the binary in `is_usable_pair`:
+/// an FFmpeg without libass still records, probes and exports everything else, and
+/// disqualifying it would drop the app to the PATH fallback (or to no FFmpeg at
+/// all) over a feature the user may not even be using.
+pub fn has_filter(name: &str) -> bool {
+    static CACHED: OnceLock<std::collections::HashSet<String>> = OnceLock::new();
+    let filters = CACHED.get_or_init(|| {
+        let mut command = Command::new(ffmpeg_path());
+        command.args(["-hide_banner", "-filters"]);
+        configure_silent_command(&mut command);
+        match command.output() {
+            Ok(out) => parse_filter_names(&String::from_utf8_lossy(&out.stdout)),
+            Err(e) => {
+                log::warn!("ffmpeg filter probe failed: {e}");
+                std::collections::HashSet::new()
+            }
+        }
+    });
+    filters.contains(name)
+}
+
+/// Pull filter names out of `ffmpeg -filters` stdout.
+///
+/// Rows look like `.. ass  V->V  Render ASS subtitles...`: flag column, name,
+/// then an `in->out` spec. Requiring the arrow is what separates a real row from
+/// the legend block at the top (`T.. = Timeline support`), whose lines share the
+/// same leading-flag shape.
+fn parse_filter_names(stdout: &str) -> std::collections::HashSet<String> {
+    stdout
+        .lines()
+        .filter_map(|line| {
+            let mut tokens = line.split_whitespace();
+            let _flags = tokens.next()?;
+            let name = tokens.next()?;
+            tokens.next().filter(|io| io.contains("->"))?;
+            Some(name.to_string())
+        })
+        .collect()
+}
+
 /// Check if ffmpeg is available. Returns an error message if not.
 pub fn check_availability() -> Result<(), String> {
     let mut command = Command::new(ffmpeg_path());
@@ -606,5 +704,112 @@ pub fn check_availability() -> Result<(), String> {
             "ffmpeg not found or not executable at {}. Bundle ffmpeg/ffprobe as Tauri sidecars, install ffmpeg, or place ffmpeg{EXE_SUFFIX} and ffprobe{EXE_SUFFIX} next to the application. Error: {e}",
             ffmpeg_path().display()
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    /// Verbatim shape of `ffmpeg -filters` stdout: the legend block first, then
+    /// the real rows. Trimmed to the entries the parser has to get right.
+    const FILTERS_STDOUT: &str = "\
+Filters:
+  T.. = Timeline support
+  .S. = Slice threading
+  ..C = Command support
+  A = Audio input/output
+  V = Video input/output
+  | = Source or sink filter
+ ... abench            A->A       Benchmark part of a filtergraph.
+ ..C ass               V->V       Render ASS subtitles onto input video using the libass library.
+ T.. drawtext          V->V       Draw text on top of video frames using libfreetype library.
+ ... subtitles         V->V       Render text subtitles onto input video using the libass library.
+ ..C overlay           VV->V      Overlay a video source on top of the input.
+ ... color             |->V       Provide an uniformly colored input.
+";
+
+    /// The legend rows (`T.. = Timeline support`) have the same leading-flag
+    /// shape as a real filter row, so a naive "second token is the name" parse
+    /// silently admits `=` as a filter. Keying off the `in->out` arrow is what
+    /// keeps them out.
+    #[test]
+    fn parses_filter_names_and_skips_the_legend() {
+        let filters = parse_filter_names(FILTERS_STDOUT);
+
+        for name in ["ass", "subtitles", "drawtext", "overlay", "color", "abench"] {
+            assert!(
+                filters.contains(name),
+                "{name} should be parsed as a filter"
+            );
+        }
+        assert!(
+            !filters.contains("="),
+            "legend rows must not parse as filters"
+        );
+        assert!(!filters.contains("Filters:"));
+        assert_eq!(filters.len(), 6, "exactly the six real rows");
+    }
+
+    /// The libass-less binaries this guard exists for are otherwise complete, so
+    /// the absent filter is the ONLY signal. An empty/garbage probe must report
+    /// "no such filter" rather than optimistically claiming support.
+    #[test]
+    fn missing_ass_filter_is_detected() {
+        let without_libass = parse_filter_names(
+            " ... abench            A->A       Benchmark part of a filtergraph.\n",
+        );
+        assert!(!without_libass.contains("ass"));
+        assert!(parse_filter_names("").is_empty());
+    }
+
+    /// The install prefixes must be ABSOLUTE. The whole point is to resolve
+    /// ffmpeg when the inherited PATH is minimal (a Finder-launched .app), so a
+    /// relative entry here would defeat the fallback.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn common_ffmpeg_dirs_are_absolute_and_non_empty() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(!dirs.is_empty());
+        for dir in dirs {
+            assert!(
+                Path::new(dir).is_absolute(),
+                "{dir} must be absolute to survive a minimal PATH"
+            );
+        }
+    }
+
+    /// Both Homebrew prefixes must be covered: Apple Silicon installs to
+    /// /opt/homebrew, Intel to /usr/local. Missing either is the "ffmpeg not
+    /// found despite Homebrew" bug on that architecture.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_probes_both_homebrew_prefixes() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(
+            dirs.contains(&"/opt/homebrew/bin"),
+            "Apple Silicon Homebrew"
+        );
+        assert!(dirs.contains(&"/usr/local/bin"), "Intel Homebrew");
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_probes_the_standard_bin_prefixes() {
+        let dirs = common_ffmpeg_dirs();
+        assert!(dirs.contains(&"/usr/bin"));
+        assert!(dirs.contains(&"/usr/local/bin"));
+    }
+
+    /// ffmpeg and ffprobe must be taken from the SAME dir, so we never pair a
+    /// Homebrew ffmpeg with some other ffprobe.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[test]
+    fn system_pair_takes_both_binaries_from_one_dir() {
+        let (ffmpeg, ffprobe) = system_ffmpeg_pair("/opt/homebrew/bin");
+        assert_eq!(ffmpeg, Path::new("/opt/homebrew/bin/ffmpeg"));
+        assert_eq!(ffprobe, Path::new("/opt/homebrew/bin/ffprobe"));
+        assert_eq!(ffmpeg.parent(), ffprobe.parent());
     }
 }

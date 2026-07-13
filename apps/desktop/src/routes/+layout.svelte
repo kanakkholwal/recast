@@ -4,6 +4,7 @@
   import "../app.css";
   // Loaded once globally so any route that mounts <RecastPlayer> gets its styling.
   import "@recast/player/styles.css";
+  import "@recast/application/styles.css";
 
   import { onNavigate } from "$app/navigation";
   import { page } from "$app/state";

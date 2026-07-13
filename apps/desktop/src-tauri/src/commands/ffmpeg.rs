@@ -1778,7 +1778,9 @@ pub fn make_thumbnail(img: &image::RgbaImage) -> image::RgbaImage {
     canvas
 }
 
-pub fn encode_thumbnail_base64(img: &image::RgbaImage) -> Option<String> {
+/// PNG-encode an RGBA image to raw bytes. Shared by the base64 thumbnail path
+/// and the screenshot file writer so there is one encoder, not two.
+pub fn encode_png_bytes(img: &image::RgbaImage) -> Option<Vec<u8>> {
     let mut buf = Cursor::new(Vec::new());
     let enc = PngEncoder::new(&mut buf);
     enc.write_image(
@@ -1788,6 +1790,10 @@ pub fn encode_thumbnail_base64(img: &image::RgbaImage) -> Option<String> {
         ColorType::Rgba8.into(),
     )
     .ok()?;
-    let b64 = general_purpose::STANDARD.encode(buf.into_inner());
+    Some(buf.into_inner())
+}
+
+pub fn encode_thumbnail_base64(img: &image::RgbaImage) -> Option<String> {
+    let b64 = general_purpose::STANDARD.encode(encode_png_bytes(img)?);
     Some(format!("data:image/png;base64,{b64}"))
 }

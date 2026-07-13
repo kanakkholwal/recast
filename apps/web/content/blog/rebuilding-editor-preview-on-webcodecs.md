@@ -5,7 +5,7 @@ slug: rebuilding-editor-preview-on-webcodecs
 date: 2026-06-27
 author: Kanak
 tags: [engineering, desktop, webcodecs, web-audio, video, tauri]
-published: false
+published: true
 ---
 
 An HTML video element is very good at playing a video file. It is the wrong tool for playing an edited one, and it took us a visible freeze on every cut to admit it.

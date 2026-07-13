@@ -277,6 +277,28 @@ export function getWindows(): Promise<WindowInfo[]> {
 	return invoke<WindowInfo[]>("get_windows");
 }
 
+/** A captured screenshot returned as a base64 data URL plus its pixel size. */
+export interface CapturedScreenshot {
+	path: string;
+	width: number;
+	height: number;
+	kind: string;
+	base64?: string;
+}
+
+/** Source for {@link captureScreenshot}. Omit to capture the primary display. */
+export type CaptureScreenshotSource =
+	| { kind: "display"; id: number }
+	| { kind: "window"; id: number }
+	| { kind: "app"; window?: string };
+
+/** Capture a screenshot natively (xcap) for the in-app screenshot editor. */
+export function captureScreenshot(
+	source?: CaptureScreenshotSource,
+): Promise<CapturedScreenshot> {
+	return invoke<CapturedScreenshot>("capture_screenshot", { source });
+}
+
 export function openFileLocation(path: string): Promise<void> {
 	return invoke("open_file_location", { path });
 }
@@ -984,6 +1006,72 @@ export function transcribeProject(args: {
 		microphonePath: args.microphonePath ?? null,
 		modelId: args.modelId,
 		language: args.language ?? null,
+		onPhase,
+	});
+}
+
+// ---------------------------------------------------------------------------
+// On-device OCR (experimental). Reads a recording into a timestamped, structured
+// text timeline so an agent can understand what happened on screen without any
+// narration. Surfaced only by the editor's dev-only OCR tab today.
+// ---------------------------------------------------------------------------
+
+/** One recognized text line, with a resolution-independent box. */
+export interface ScreenElement {
+	/** Stable within a span, for "element 7" style reference. */
+	id: number;
+	/** "text" today; "icon" once a detector is added. */
+	kind: string;
+	/** Normalized [x0, y0, x1, y1] in 0..1 of the frame. */
+	bbox: [number, number, number, number];
+	content: string;
+	/** Engine that read it, e.g. "ocrs". */
+	source: string;
+}
+
+/** A stretch of time over which the screen text stayed effectively the same. */
+export interface ScreenStateSpan {
+	/** Seconds on the video clock. */
+	start: number;
+	end: number;
+	elements: ScreenElement[];
+	/** Small JPEG data URI, only when previews were requested. */
+	preview?: string | null;
+}
+
+export interface VideoTextTimeline {
+	engine: string;
+	spans: ScreenStateSpan[];
+}
+
+/** Coarse phase of an OCR run: "downloading" | "reading" | "done". */
+export interface OcrProgress {
+	phase: string;
+}
+
+/**
+ * Read a recording into a screen-state timeline. `previews` attaches a small JPEG
+ * per span for review UIs; leave it off for machine consumers. The models are
+ * fetched on first use, which is what the "downloading" phase reports.
+ *
+ * `includeRanges` are `[start, end]` pairs in ORIGINAL-recording seconds naming
+ * the footage the edit actually keeps (the segments left after trim and cuts).
+ * Pass `store.segments` so removed footage is never read; omit it to read the
+ * whole file. Timestamps in the result are original-recording seconds, the same
+ * clock `store.seek()` takes.
+ */
+export function readVideoText(args: {
+	videoPath: string;
+	previews?: boolean;
+	includeRanges?: [number, number][];
+	onPhase?: (p: OcrProgress) => void;
+}): Promise<VideoTextTimeline> {
+	const onPhase = new Channel<OcrProgress>();
+	if (args.onPhase) onPhase.onmessage = args.onPhase;
+	return invoke<VideoTextTimeline>("read_video_text", {
+		videoPath: args.videoPath,
+		previews: args.previews ?? false,
+		includeRanges: args.includeRanges ?? [],
 		onPhase,
 	});
 }

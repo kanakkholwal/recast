@@ -120,8 +120,8 @@ fn realtime_capture_args(encoder: H264Encoder, quality: RecordingQuality) -> Vec
     // `ffmpeg_name()` so it isn't restated in every arm.
     let tail: &[&str] = match (encoder, quality) {
         (VideoToolbox, Balanced) => &["-realtime", "1", "-pix_fmt", "yuv420p"],
-        (VideoToolbox, High) => &["-realtime", "1", "-q:v", "65", "-pix_fmt", "yuv420p"],
-        (VideoToolbox, Pristine) => &["-realtime", "1", "-q:v", "80", "-pix_fmt", "yuv420p"],
+        (VideoToolbox, High) => &["-realtime", "1", "-b:v", "10M", "-pix_fmt", "yuv420p"],
+        (VideoToolbox, Pristine) => &["-realtime", "1", "-b:v", "20M", "-pix_fmt", "yuv420p"],
         // NVIDIA NVENC — `cq` is constant-quality (lower = better, 0..51).
         (Nvenc, Balanced) => &["-preset", "p5", "-tune", "ll", "-pix_fmt", "yuv420p"],
         (Nvenc, High) => &[
@@ -222,7 +222,7 @@ fn with_codec(encoder: H264Encoder, tail: &[&str]) -> Vec<String> {
 fn quick_trim_args(encoder: H264Encoder) -> Vec<String> {
     use H264Encoder::*;
     let tail: &[&str] = match encoder {
-        VideoToolbox => &["-q:v", "60", "-pix_fmt", "yuv420p"],
+        VideoToolbox => &["-b:v", "3M", "-pix_fmt", "yuv420p"],
         Nvenc => &[
             "-preset", "p5", "-rc", "vbr", "-cq", "26", "-b:v", "0", "-pix_fmt", "yuv420p",
         ],
@@ -252,7 +252,7 @@ fn export_args(encoder: H264Encoder, params: ExportEncodeParams<'_>) -> Vec<Stri
     let mut out = vec!["-c:v".to_string(), encoder.ffmpeg_name().to_string()];
     match encoder {
         VideoToolbox => out
-            .extend(["-profile:v", "high", "-pix_fmt", "yuv420p", "-q:v", "65"].map(String::from)),
+            .extend(["-profile:v", "high", "-pix_fmt", "yuv420p", "-b:v", "15M"].map(String::from)),
         Nvenc => out.extend(
             [
                 "-preset",
@@ -482,7 +482,7 @@ mod tests {
                     assert!(
                         args.iter().any(|a| matches!(
                             a.as_str(),
-                            "-cq" | "-qp_i" | "-global_quality" | "-crf" | "-q:v"
+                            "-cq" | "-qp_i" | "-global_quality" | "-crf" | "-b:v"
                         )),
                         "{enc}/{q:?} must set an explicit quality target, got {args:?}"
                     );
@@ -510,8 +510,8 @@ mod tests {
                 [
                     "-c:v",
                     "h264_videotoolbox",
-                    "-q:v",
-                    "60",
+                    "-b:v",
+                    "3M",
                     "-pix_fmt",
                     "yuv420p"
                 ]
@@ -622,8 +622,8 @@ mod tests {
                     "high",
                     "-pix_fmt",
                     "yuv420p",
-                    "-q:v",
-                    "65"
+                    "-b:v",
+                    "15M"
                 ]
             );
             assert_eq!(

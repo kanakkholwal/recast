@@ -4,6 +4,7 @@
 
 use tauri::AppHandle;
 
+use crate::commands::error::{AppError, AppResult};
 use crate::commands::ffmpeg::append_subtitles_to_complex;
 use crate::commands::types::ExportRequest;
 use crate::render::graph::CanvasGeometry;
@@ -14,9 +15,15 @@ use crate::render::graph::CanvasGeometry;
 /// the burned pixels with the rest.
 ///
 /// Returns the updated `(filter_complex, video_map)` when a caption stage was
-/// added, or `None` when there's nothing to burn (no `burn_captions`, GIF export
-/// — its paletteuse tail can't take another stage — an empty/absent transcript,
-/// or an ASS write failure, which degrades to no captions rather than failing).
+/// added, or `Ok(None)` when there's nothing to burn (no `burn_captions`, GIF
+/// export, whose paletteuse tail can't take another stage, an empty/absent
+/// transcript, or an ASS write failure, which degrades to no captions rather
+/// than failing).
+///
+/// Errors only when the user asked for captions and the resolved FFmpeg cannot
+/// render them. Silently exporting a caption-less video in that case would be
+/// worse: the user sees a "successful" export and only finds the missing
+/// captions after uploading it.
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn append_caption_burn_in(
     app: &AppHandle,
@@ -28,17 +35,33 @@ pub(crate) async fn append_caption_burn_in(
     duration: f64,
     filter_complex: Option<&str>,
     video_map: &str,
-) -> Option<(String, String)> {
+) -> AppResult<Option<(String, String)>> {
     if !(request.burn_captions && request.format != "gif") {
-        return None;
+        return Ok(None);
     }
-    let transcript: crate::transcription::Transcript = request
+    let transcript: crate::transcription::Transcript = match request
         .render_state
         .passthrough
         .get("transcript")
         .filter(|v| !v.is_null())
         .and_then(|v| serde_json::from_value(v.clone()).ok())
-        .filter(|t: &crate::transcription::Transcript| !t.segments.is_empty())?;
+        .filter(|t: &crate::transcription::Transcript| !t.segments.is_empty())
+    {
+        Some(t) => t,
+        None => return Ok(None),
+    };
+    // libass is a separate `--enable-libass` build flag, so an otherwise complete
+    // FFmpeg can be missing the `ass` filter entirely. Caught here, before the
+    // graph is built, so the user gets a fix instead of FFmpeg's bare
+    // `No such filter: 'ass'` in the export log.
+    if !crate::ffmpeg::has_filter("ass") {
+        return Err(AppError::msg(format!(
+            "Captions can't be burned in: the FFmpeg at {} was built without libass (no `ass` filter). \
+             Reinstall Recast to restore its bundled FFmpeg, or install one with libass \
+             (macOS: `brew install ffmpeg`). To export without captions, turn off caption burn-in.",
+            crate::ffmpeg::ffmpeg_path().display()
+        )));
+    }
     let style: crate::transcription::CaptionStyle = request
         .render_state
         .passthrough
@@ -77,15 +100,15 @@ pub(crate) async fn append_caption_burn_in(
     );
     let ass_path = std::env::temp_dir().join(format!("recast-captions-{}.ass", request.export_id));
     match std::fs::write(&ass_path, ass) {
-        Ok(()) => Some(append_subtitles_to_complex(
+        Ok(()) => Ok(Some(append_subtitles_to_complex(
             filter_complex,
             video_map,
             &ass_path.to_string_lossy(),
             fontsdir.as_deref(),
-        )),
+        ))),
         Err(e) => {
             log::warn!("caption burn-in: failed to write ASS script: {e}");
-            None
+            Ok(None)
         }
     }
 }

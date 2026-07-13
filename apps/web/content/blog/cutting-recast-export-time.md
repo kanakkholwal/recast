@@ -5,7 +5,7 @@ slug: cutting-recast-export-time
 date: 2026-07-02
 author: Kanak
 tags: [engineering, desktop, ffmpeg, performance, video, tauri]
-published: false
+published: true
 ---
 
 A 46-second screen recording took five minutes and forty-two seconds to export. The machine doing the work has an NVIDIA hardware H.264 encoder, the kind that can turn out a clip like that in ten or fifteen seconds. So the encoder was not the problem, even though for a while it looked like the only suspect. Getting from that number down to a minute and a half turned out to be a story about not trusting the obvious explanation.

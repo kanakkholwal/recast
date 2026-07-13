@@ -33,6 +33,8 @@ const CLI_VERBS: &[&str] = &[
     "set",
     "selection",
     "profile",
+    "screenshot",
+    "screen-read",
     "watch",
     "install",
     "uninstall",
@@ -154,6 +156,19 @@ enum Command {
         #[command(subcommand)]
         action: ProfileAction,
     },
+    /// Capture a PNG of a display, a window, or Recast's own UI. Lets an agent
+    /// see on-screen state and decide when a step is done or what to do next.
+    Screenshot {
+        #[command(subcommand)]
+        target: ScreenshotTarget,
+    },
+    /// Read a video file into a timestamped, structured text timeline (OCR). Lets
+    /// an agent understand what happened in a recording without narration. Needs
+    /// the app's `ocr` feature; routes through the running instance.
+    ScreenRead {
+        /// Path to the video file (e.g. an .mp4) to read.
+        input: String,
+    },
     /// Stream backend events (recording + selection + profiles) until interrupted.
     Watch {
         /// Comma-separated event groups: `rec`, `selection`, `profiles` (default: all).
@@ -243,6 +258,66 @@ enum ProfileAction {
         #[arg(value_name = "ID|NAME")]
         id: String,
     },
+}
+
+#[derive(Subcommand)]
+enum ScreenshotTarget {
+    /// A whole display by id (from `displays list`).
+    Display {
+        id: u32,
+        #[command(flatten)]
+        shot: ShotArgs,
+    },
+    /// One application window by id (from `windows list`).
+    Window {
+        id: u32,
+        #[command(flatten)]
+        shot: ShotArgs,
+    },
+    /// Recast's own UI: the focused window, or a specific one by label.
+    App {
+        /// Window label to capture (default: the focused Recast window).
+        #[arg(long)]
+        window: Option<String>,
+        #[command(flatten)]
+        shot: ShotArgs,
+    },
+}
+
+/// Output options shared by every screenshot target.
+#[derive(clap::Args)]
+struct ShotArgs {
+    /// Where to write the PNG. Defaults to a timestamped file in the temp dir.
+    #[arg(long, value_name = "PATH")]
+    out: Option<std::path::PathBuf>,
+    /// Cap the longest edge to this many pixels (keeps agent shots small).
+    #[arg(long, value_name = "PX", default_value_t = 1600)]
+    max: u32,
+    /// Capture at native resolution (ignore --max).
+    #[arg(long)]
+    full: bool,
+    /// Also print a base64 data URI of the image alongside the file path.
+    #[arg(long)]
+    base64: bool,
+}
+
+impl ShotArgs {
+    /// Longest-edge cap to pass down: 0 (native) when `--full`, else `--max`.
+    fn max_edge(&self) -> u32 {
+        if self.full {
+            0
+        } else {
+            self.max
+        }
+    }
+
+    /// Absolute output path, if one was given. Resolved against the CLI's CWD so
+    /// the `app` shot (written by the app process) lands where the agent expects.
+    fn resolved_out(&self) -> Option<std::path::PathBuf> {
+        self.out
+            .clone()
+            .map(crate::commands::screenshot::absolutize)
+    }
 }
 
 #[derive(clap::Args)]
@@ -398,6 +473,11 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
             ProfileAction::Use { id } => control(cli, "profile.use", json!({ "id": id })),
             ProfileAction::Show { id } => show_profile(cli, id),
         },
+        Command::Screenshot { target } => screenshot(cli, target),
+        Command::ScreenRead { input } => {
+            let abs = crate::commands::screenshot::absolutize(std::path::PathBuf::from(input));
+            control(cli, "screen.read", json!({ "path": abs.to_string_lossy() }))
+        }
         Command::Watch { events } => {
             let params = match events {
                 Some(list) => {
@@ -486,6 +566,43 @@ fn show_profile(cli: &Cli, id: &str) -> Result<(), String> {
     match matched {
         Some(profile) => emit(profile, cli.format),
         None => Err(format!("no profile matching '{id}'")),
+    }
+}
+
+/// Capture a screenshot. Display/window shots run headlessly here (like the
+/// enumeration verbs); the `app` shot goes through the running instance so it
+/// can target its own focused window.
+fn screenshot(cli: &Cli, target: &ScreenshotTarget) -> Result<(), String> {
+    use crate::commands::screenshot::{capture_display, capture_window, ShotOptions};
+    match target {
+        ScreenshotTarget::Display { id, shot } => {
+            let opts = ShotOptions {
+                out: shot.resolved_out(),
+                max_edge: shot.max_edge(),
+                base64: shot.base64,
+            };
+            emit(&capture_display(*id, &opts)?, cli.format)
+        }
+        ScreenshotTarget::Window { id, shot } => {
+            let opts = ShotOptions {
+                out: shot.resolved_out(),
+                max_edge: shot.max_edge(),
+                base64: shot.base64,
+            };
+            emit(&capture_window(*id, &opts)?, cli.format)
+        }
+        ScreenshotTarget::App { window, shot } => {
+            let mut params = serde_json::Map::new();
+            if let Some(w) = window {
+                params.insert("window".into(), json!(w));
+            }
+            if let Some(out) = shot.resolved_out() {
+                params.insert("out".into(), json!(out.to_string_lossy()));
+            }
+            params.insert("maxEdge".into(), json!(shot.max_edge()));
+            params.insert("base64".into(), json!(shot.base64));
+            control(cli, "app.screenshot", Value::Object(params))
+        }
     }
 }
 

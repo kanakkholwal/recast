@@ -63,16 +63,7 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
         ));
     }
 
-    // The crop rectangle is in virtual-desktop coordinates (the same
-    // space xcap reports). On X11 the root window IS the virtual
-    // desktop, so these coordinates pass through directly.
-    let x = i16::try_from(target.crop.x)
-        .context("X11 capture: crop.x out of i16 range — multi-monitor with extreme offset?")?;
-    let y = i16::try_from(target.crop.y).context("X11 capture: crop.y out of i16 range")?;
-    let width = u16::try_from(target.crop.width)
-        .context("X11 capture: crop.width exceeds u16 — display larger than 65535 px?")?;
-    let height =
-        u16::try_from(target.crop.height).context("X11 capture: crop.height exceeds u16")?;
+    let (x, y, width, height) = capture_rect(target)?;
 
     Ok(Box::new(X11CaptureSource {
         conn,
@@ -82,6 +73,41 @@ pub fn create_source(target: &CaptureTarget) -> Result<Box<dyn CaptureSource>> {
         width,
         height,
     }))
+}
+
+/// The root-window rectangle to `GetImage`, as `(x, y, width, height)`.
+///
+/// Capture the WHOLE selected `source` (the display) and emit
+/// full-`source`-sized frames; the encoder crops to the region/window via
+/// `crop_relative_to_source`. This is the cross-platform `CaptureSource`
+/// contract that the Windows DXGI/WGC and macOS AVFoundation backends also
+/// follow. Capturing `crop` here instead (the old behavior) double-cropped: the
+/// encoder is configured for `source` dimensions and applies its own crop
+/// filter, so crop-sized frames arrived mismatched and corrupted every region
+/// and window recording. Full-display capture happened to work only because
+/// there crop equals source.
+///
+/// `source` is in virtual-desktop coordinates (the space xcap reports). On X11
+/// the root window IS the virtual desktop, so these coordinates pass through to
+/// GetImage directly. Pure, so the source-not-crop contract is unit-testable
+/// without an X server.
+fn capture_rect(target: &CaptureTarget) -> Result<(i16, i16, u16, u16)> {
+    if target.source.width == 0 || target.source.height == 0 {
+        return Err(anyhow!(
+            "X11 capture: source has zero dimensions ({}x{}); the source \
+             picker did not report a usable size",
+            target.source.width,
+            target.source.height
+        ));
+    }
+    let x = i16::try_from(target.source.x)
+        .context("X11 capture: source.x out of i16 range (extreme multi-monitor offset?)")?;
+    let y = i16::try_from(target.source.y).context("X11 capture: source.y out of i16 range")?;
+    let width = u16::try_from(target.source.width)
+        .context("X11 capture: source.width exceeds u16 (display wider than 65535 px?)")?;
+    let height =
+        u16::try_from(target.source.height).context("X11 capture: source.height exceeds u16")?;
+    Ok((x, y, width, height))
 }
 
 struct X11CaptureSource {
@@ -155,5 +181,99 @@ impl CaptureSource for X11CaptureSource {
 
     fn height(&self) -> u32 {
         self.height as u32
+    }
+}
+
+/// Runs on the Linux CI leg (see `.github/workflows/ci-desktop.yml`), the only
+/// place this backend compiles. Pure geometry: no X server needed.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::recording::{CaptureArea, CaptureKind};
+
+    fn target(kind: CaptureKind, source: CaptureArea, crop: CaptureArea) -> CaptureTarget {
+        CaptureTarget {
+            kind,
+            id: 1,
+            label: "test".into(),
+            source,
+            crop,
+            display_id: 1,
+            scale_factor: 1.0,
+        }
+    }
+
+    /// THE regression test for the X11 corruption bug. A region capture has
+    /// crop != source. We must GetImage the SOURCE rect: the encoder is
+    /// configured for source dimensions and applies its own crop filter, so
+    /// emitting crop-sized frames fed it mismatched buffers and produced a
+    /// garbled recording. Capturing `crop` here is the bug; assert we don't.
+    #[test]
+    fn region_capture_uses_the_source_rect_not_the_crop_rect() {
+        let source = CaptureArea {
+            x: 0,
+            y: 0,
+            width: 2560,
+            height: 1440,
+        };
+        let crop = CaptureArea {
+            x: 100,
+            y: 200,
+            width: 640,
+            height: 480,
+        };
+        let (x, y, width, height) =
+            capture_rect(&target(CaptureKind::Region, source, crop)).unwrap();
+        assert_eq!(
+            (x, y, width, height),
+            (0, 0, 2560, 1440),
+            "must capture the full source; the encoder does the cropping"
+        );
+    }
+
+    /// Same contract for a window target, which also carries crop != source.
+    #[test]
+    fn window_capture_uses_the_source_rect_not_the_crop_rect() {
+        let source = CaptureArea {
+            x: 1920,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let crop = CaptureArea {
+            x: 2000,
+            y: 50,
+            width: 800,
+            height: 600,
+        };
+        let (x, y, width, height) =
+            capture_rect(&target(CaptureKind::Window, source, crop)).unwrap();
+        assert_eq!((x, y, width, height), (1920, 0, 1920, 1080));
+    }
+
+    /// Full-display capture is the case that accidentally worked before the fix
+    /// (crop == source), so it must keep working.
+    #[test]
+    fn full_display_capture_is_unchanged() {
+        let area = CaptureArea {
+            x: 0,
+            y: 0,
+            width: 1920,
+            height: 1080,
+        };
+        let (x, y, width, height) =
+            capture_rect(&target(CaptureKind::Display, area, area)).unwrap();
+        assert_eq!((x, y, width, height), (0, 0, 1920, 1080));
+    }
+
+    #[test]
+    fn zero_sized_source_is_rejected() {
+        let zero = CaptureArea {
+            x: 0,
+            y: 0,
+            width: 0,
+            height: 0,
+        };
+        assert!(capture_rect(&target(CaptureKind::Display, zero, zero)).is_err());
     }
 }

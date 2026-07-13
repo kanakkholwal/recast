@@ -32,6 +32,14 @@ impl PlatformAudioSession {
         })
     }
 
+    /// WASAPI loopback always captures the real output mix, so this is always
+    /// true on Windows. (Silence in the WAV means nothing was playing, which is
+    /// still a genuine system-audio track.) Mirrors the Unix backend's method
+    /// so callers can report captured system audio honestly on every platform.
+    pub fn is_capturing(&self) -> bool {
+        true
+    }
+
     pub fn stop(self) -> Result<PathBuf> {
         self.stop_flag.store(true, Ordering::Release);
         self.thread_handle

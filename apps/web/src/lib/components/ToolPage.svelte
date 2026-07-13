@@ -17,10 +17,11 @@
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import * as Card from "@recast/ui/card";
-	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import { Segmented } from "@recast/ui/segmented";
+	import { SliderControl } from "@recast/ui/slider-control";
 	import { Spinner } from "@recast/ui/spinner";
+	import ToolTrimRange from "./ToolTrimRange.svelte";
 	import {
 		Download,
 		FileArchive,
@@ -170,6 +171,59 @@
 	const segmentedOptions = (c: ToolControl) => (c.options ?? []).map((o) => ({ value: o.value, label: o.label }));
 
 	const jsonLd = $derived(buildToolJsonLd(tool));
+
+	// --- Preview media + direct manipulation ---------------------------------
+	// The registry gives no max for the trim bounds (it can't: it depends on the
+	// file). Read it off the loaded media so the sliders and the trim range have
+	// a real ceiling instead of an invented one.
+	let mediaEl = $state<HTMLMediaElement | null>(null);
+	let duration = $state(0);
+	let currentTime = $state(0);
+
+	const isTrim = $derived(tool.op === "trim");
+	const hasTrimBounds = $derived("startSec" in numberValues && "endSec" in numberValues);
+	/** The drag handles own the bounds once they render, so the equivalent
+	 * sliders are suppressed. If metadata never loads, the sliders stay as the
+	 * fallback rather than leaving trim with no controls at all. */
+	const trimRangeShown = $derived(isTrim && hasTrimBounds && duration > 0);
+
+	function onMeta() {
+		const d = mediaEl?.duration;
+		if (!d || !Number.isFinite(d)) return;
+		duration = d;
+		// Default the out-point to the end of the media, so the first drag is a
+		// refinement rather than a correction.
+		if (hasTrimBounds) {
+			numberValues.startSec = 0;
+			numberValues.endSec = Math.round(d * 10) / 10;
+		}
+	}
+
+	/** A slider ceiling for a control the registry left open-ended. */
+	function maxFor(c: ToolControl): number {
+		if (c.max !== undefined) return c.max;
+		if ((c.key === "startSec" || c.key === "endSec") && duration > 0) {
+			return Math.ceil(duration);
+		}
+		return Math.max(100, Number(c.default) * 4);
+	}
+
+	function setTrim(next: { start: number; end: number }) {
+		numberValues.startSec = Math.round(next.start * 10) / 10;
+		numberValues.endSec = Math.round(next.end * 10) / 10;
+	}
+
+	function seek(seconds: number) {
+		if (mediaEl) mediaEl.currentTime = seconds;
+	}
+
+	// A new file means new media: forget the old duration so a stale ceiling
+	// never leaks across files.
+	$effect(() => {
+		void file;
+		duration = 0;
+		currentTime = 0;
+	});
 </script>
 
 <SeoMeta title={tool.title} description={tool.description} eyebrow="Free tool" />
@@ -244,7 +298,11 @@
 					</p>
 				{/if}
 			{:else if phase === "ready"}
-				<!-- Stage 2: configure + preview -->
+				<!-- Stage 2: configure + preview. Deliberately ONE centred column, not
+				     an app shell: this is a transaction (drop, tweak, convert, leave),
+				     not a composition surface like the screenshot editor. The chrome
+				     should weigh no more than the task, and the copy + FAQ around it
+				     are what make the page rank and reassure a first-time visitor. -->
 				<Card.Root>
 					<Card.Content class="space-y-5 py-6">
 						<div class="flex items-center justify-between gap-4">
@@ -259,35 +317,66 @@
 
 						{#if inputUrl && isVideoInput}
 							<!-- svelte-ignore a11y_media_has_caption -->
-							<video src={inputUrl} controls class="aspect-video w-full rounded-lg bg-black"></video>
+							<video
+								bind:this={mediaEl}
+								src={inputUrl}
+								controls
+								onloadedmetadata={onMeta}
+								ontimeupdate={() => (currentTime = mediaEl?.currentTime ?? 0)}
+								class="max-h-[50vh] w-full rounded-lg bg-black"
+							></video>
 						{:else if inputUrl}
-							<audio src={inputUrl} controls class="w-full"></audio>
+							<audio
+								bind:this={mediaEl}
+								src={inputUrl}
+								controls
+								onloadedmetadata={onMeta}
+								ontimeupdate={() => (currentTime = mediaEl?.currentTime ?? 0)}
+								class="w-full"
+							></audio>
+						{/if}
+
+						<!-- Trim is the one tool where typing seconds is genuinely worse
+						     than dragging, so it gets real in/out handles on the media. -->
+						{#if trimRangeShown}
+							<ToolTrimRange
+								{duration}
+								{currentTime}
+								start={numberValues.startSec}
+								end={numberValues.endSec}
+								onchange={setTrim}
+								onseek={seek}
+							/>
 						{/if}
 
 						{#if tool.controls?.length}
-							<div class="grid grid-cols-1 gap-5 sm:grid-cols-2">
+							<div class="space-y-4">
 								{#each tool.controls as control (control.key)}
-									<div class="space-y-1.5 {control.type === 'select' ? 'sm:col-span-2' : ''}">
-										<Label>{control.label}</Label>
-										{#if control.type === "select"}
+									{#if control.type === "select"}
+										<div class="space-y-1.5">
+											<Label>{control.label}</Label>
 											<Segmented
 												options={segmentedOptions(control)}
 												value={selectValues[control.key]}
 												onValueChange={(v) => (selectValues[control.key] = v)}
 											/>
-										{:else}
-											<Input
-												type="number"
-												bind:value={numberValues[control.key]}
-												min={control.min}
-												max={control.max}
-												step={control.step}
-											/>
-										{/if}
-										{#if control.hint}
-											<p class="text-xs text-muted-foreground">{control.hint}</p>
-										{/if}
-									</div>
+											{#if control.hint}
+												<p class="text-xs text-muted-foreground">{control.hint}</p>
+											{/if}
+										</div>
+									{:else if !(trimRangeShown && (control.key === "startSec" || control.key === "endSec"))}
+										<!-- Drag, don't type. SliderControl still allows click-to-edit
+										     for anyone who wants to key in an exact value. -->
+										<SliderControl
+											label={control.label}
+											value={numberValues[control.key]}
+											min={control.min ?? 0}
+											max={maxFor(control)}
+											step={control.step ?? 1}
+											description={control.hint}
+											onchange={(v) => (numberValues[control.key] = v)}
+										/>
+									{/if}
 								{/each}
 							</div>
 						{/if}

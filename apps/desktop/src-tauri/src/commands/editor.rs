@@ -1199,7 +1199,7 @@ pub(crate) async fn run_export_job(
         filter_complex_after_cursor.as_deref(),
         &video_map_after_cursor,
     )
-    .await
+    .await?
     {
         filter_complex_after_cursor = Some(new_complex);
         video_map_after_cursor = new_map;

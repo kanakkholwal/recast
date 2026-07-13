@@ -308,6 +308,27 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             let intent = crate::commands::use_profile_by_id(app, id)?;
             serde_json::to_value(intent).map_err(|e| e.to_string())
         }
+        "app.screenshot" => {
+            use crate::commands::screenshot::{ShotOptions, DEFAULT_MAX_EDGE};
+            let label = params.get("window").and_then(Value::as_str);
+            let opts = ShotOptions {
+                out: params.get("out").and_then(Value::as_str).map(PathBuf::from),
+                // Absent => default cap; the CLI sends 0 for a full-res request.
+                max_edge: params
+                    .get("maxEdge")
+                    .and_then(Value::as_u64)
+                    .map(|n| n as u32)
+                    .unwrap_or(DEFAULT_MAX_EDGE),
+                base64: params
+                    .get("base64")
+                    .and_then(Value::as_bool)
+                    .unwrap_or(false),
+            };
+            // xcap capture can stall; safe here because each connection runs on
+            // its own thread, never the GTK/main thread.
+            let shot = crate::commands::screenshot::capture_app_window(app, label, &opts)?;
+            serde_json::to_value(shot).map_err(|e| e.to_string())
+        }
         "rec.start" => {
             // Read the auto-stop before `params` is consumed below.
             let timeout_ms = params.get("timeoutMs").and_then(Value::as_u64);
@@ -355,6 +376,26 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
         "rec.resume" => {
             crate::commands::resume_recording(state).map_err(|e| e.to_string())?;
             Ok(Value::Null)
+        }
+        // On-device OCR of a video into a structured text timeline. No previews:
+        // an agent consumes the structured elements, not base64 images.
+        "screen.read" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("screen.read requires a path")?;
+            // block_on is safe here: each connection runs on its own thread. No
+            // previews (an agent reads the structured elements, not base64 images)
+            // and no range filter: the CLI is handed a bare file with no edit
+            // context, so the whole thing is the clip.
+            let timeline = tauri::async_runtime::block_on(crate::ocr::run(
+                app,
+                path,
+                false,
+                Vec::new(),
+                |_| {},
+            ))?;
+            serde_json::to_value(timeline).map_err(|e| e.to_string())
         }
         other => Err(format!("unknown method: {other}")),
     }

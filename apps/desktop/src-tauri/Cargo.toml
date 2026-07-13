@@ -90,6 +90,15 @@ tract-onnx = "0.21"
 # now: CPU (tinyBLAS) is portable; add Metal as a later perf pass. Real per-word
 # timing comes back in the run `Transcript` — no synthesis needed.
 transcribe-cpp = { version = "0.1.2", optional = true }
+# On-device OCR (screen understanding for agent automation), behind the off-by-
+# default `ocr` feature. `ocrs` runs on its own `rten` runtime, which is PURE
+# RUST with no C / ONNX-Runtime dependency, so it builds on every target incl.
+# x86_64-apple-darwin (the reason we use tract for VAD and avoid `ort`). Models
+# are the ~10 MB ocrs `.rten` detection + recognition files (download-on-first-
+# use, like the Silero VAD model). Version set matches ocrs 0.12.2's own pins.
+ocrs = { version = "0.12.2", optional = true }
+rten = { version = "0.24", optional = true }
+rten-imageproc = { version = "0.24", optional = true }
 keepawake = "0.6.0"
 tauri-plugin-notification = "2.3.3"
 # Argument parser for the headless CLI branch in `main`. One parser covers the
@@ -219,10 +228,20 @@ screencapturekit = { version = "6.0", default-features = false, features = ["mac
 # plumbing (catalog, download, device caps, remote endpoints) compiles without the
 # feature and the on-device engine seam reports "not available in this build",
 # leaving remote endpoints as the transcription path (graceful degradation).
-default = ["ggml"]
+default = ["ggml", "ocr"]
 # The on-device transcription engine (transcribe.cpp / ggml). Pulls `transcribe-cpp`,
 # which compiles ggml from source. captions_available == cfg!(feature = "ggml").
 ggml = ["dep:transcribe-cpp"]
+# On-device OCR for screen understanding (agent automation). Pulls the pure-Rust
+# ocrs/rten stack, which needs no C toolchain and builds on every target including
+# Intel Mac (same rationale as tract for VAD, and lighter than ggml, which is
+# already default). ON by default: `tauri build` takes default features, so gating
+# this off would ship a binary where the `screen-read` CLI verb / `screen.read`
+# control method simply do not exist. Being in `default` also means the plain
+# `cargo test` / `cargo clippy` everyone runs covers src/ocr/ with no extra flag.
+# The models are fetched on first use, not bundled, so this costs no install size.
+# `--no-default-features` still drops it (and ggml) for a minimal build.
+ocr = ["dep:ocrs", "dep:rten", "dep:rten-imageproc"]
 # Enables the native ScreenCaptureKit audio loopback path on macOS.
 # See `audio/platform/macos_sckit.rs` for the runtime smoke-test
 # checklist before flipping this on for a release build.
@@ -244,3 +263,18 @@ tauri-plugin-deep-link = "2"
 # OS-wide hotkeys (stop/pause a recording while another app is focused). Desktop
 # only. Registered + handled in Rust; routes to the panel/main via events.
 tauri-plugin-global-shortcut = "2.3.2"
+
+# Optimize DEPENDENCIES even in a debug build, while leaving our own crate at
+# opt-level 0 so incremental rebuilds stay fast and stack traces stay useful.
+#
+# This is load-bearing, not a nicety. `rten` (the OCR inference runtime) is a
+# tensor library running convolutions; unoptimized it does bounds-checked scalar
+# math with no SIMD and no inlining, which made a `tauri dev` OCR pass over a
+# 7-second clip take minutes instead of seconds. The same applies to `image`
+# (resize/encode per frame) and the audio/video decode paths. Anything doing
+# per-pixel or per-sample work in a loop is unusable at opt-level 0.
+#
+# Cost: dependencies compile optimized on a clean build (slower the first time,
+# then cached). Our own crate is untouched, so the edit-compile loop is unchanged.
+[profile.dev.package."*"]
+opt-level = 3

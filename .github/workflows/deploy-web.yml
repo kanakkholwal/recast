@@ -17,7 +17,6 @@ env:
   VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
   VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
   NODE_VERSION: "22"
-  PNPM_VERSION: "10.23.0"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
   
@@ -36,11 +35,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # pnpm version comes from the root package.json `packageManager` field.
+      # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
+      # while the repo had moved to 11.
       - name: Install pnpm
+        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
+        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
+        # installs the pinned version directly and never takes that path.
         uses: pnpm/action-setup@v4
         with:
-          version: ${{ env.PNPM_VERSION }}
           run_install: false
+
+      # Must come after pnpm/action-setup: `cache: pnpm` shells out to
+      # `pnpm store path`. setup-node v6 only auto-caches npm, so pnpm has to
+      # be named explicitly.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --filter=recast-web --no-frozen-lockfile
@@ -49,9 +62,14 @@ jobs:
         run: pnpm run lint
         continue-on-error: true
 
-      - name: Run tests (optional)
-        run: pnpm run test
-        continue-on-error: true
+      # Blocking on purpose: a deploy should not ship past a red test. It used to
+      # be `continue-on-error: true`, so the suite could go red indefinitely.
+      # NOTE: every step here runs with `working-directory: apps/web` (see
+      # `defaults` above), so this must be a script that exists in
+      # apps/web/package.json. `test:web` only exists in the ROOT package.json and
+      # would fail here with "Missing script".
+      - name: Run web unit tests
+        run: pnpm run test:unit
 
       # Database migrations
       - name: Apply DB migrations (Production only)
@@ -61,8 +79,12 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
         run: pnpm db:migrate
 
+      # npm, not pnpm: `pnpm add -g` installs into $PNPM_HOME/bin, which
+      # action-setup@v4 does not put on PATH. `pnpm setup` cannot fix that from
+      # here either, since it edits a shell rc that these non-interactive steps
+      # never source. npm's global bin is already on PATH via setup-node.
       - name: Install Vercel CLI
-        run: pnpm install --global vercel@latest
+        run: npm install --global vercel@latest
         working-directory: .
 
       - name: Deploy to Vercel (Production)

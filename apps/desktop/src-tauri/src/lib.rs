@@ -15,6 +15,11 @@ pub mod ffmpeg;
 mod fonts;
 #[cfg(windows)]
 mod jumplist;
+// On-device OCR for screen understanding (agent automation). The plumbing always
+// compiles; only the ocrs engine seam is behind the `ocr` feature, so a
+// `--no-default-features` build still exposes the command and reports that the
+// engine is absent (same graceful degradation as the ggml captions engine).
+mod ocr;
 mod path_install;
 mod permissions;
 mod power;
@@ -434,6 +439,7 @@ pub fn run() {
             commands::set_output_dir,
             commands::get_displays,
             commands::get_windows,
+            commands::capture_screenshot,
             commands::get_last_source,
             commands::set_last_source,
             commands::start_recording,
@@ -469,6 +475,7 @@ pub fn run() {
             commands::suggest_zoom_regions,
             silence::detect_silence,
             silence::extract_waveform,
+            ocr::command::read_video_text,
             transcription::list_caption_models,
             transcription::caption_capabilities,
             transcription::download_caption_model,
