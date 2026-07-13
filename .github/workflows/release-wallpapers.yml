@@ -53,12 +53,12 @@ jobs:
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
       # while the repo had moved to 11.
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           run_install: false
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: "pnpm"

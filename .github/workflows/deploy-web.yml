@@ -39,9 +39,18 @@ jobs:
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
       # while the repo had moved to 11.
       - name: Install pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
         with:
           run_install: false
+
+      # Must come after pnpm/action-setup: `cache: pnpm` shells out to
+      # `pnpm store path`. setup-node v6 only auto-caches npm, so pnpm has to
+      # be named explicitly.
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: "pnpm"
 
       - name: Install dependencies
         run: pnpm install --filter=recast-web --no-frozen-lockfile
@@ -67,8 +76,11 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
         run: pnpm db:migrate
 
+      # No `pnpm setup` needed: pnpm/action-setup already exports PNPM_HOME and
+      # puts the global bin dir on PATH, and `pnpm setup` only writes a shell rc
+      # that a non-interactive CI step never sources.
       - name: Install Vercel CLI
-        run: pnpm setup && pnpm install --global vercel@latest
+        run: pnpm add --global vercel@latest
         working-directory: .
 
       - name: Deploy to Vercel (Production)
