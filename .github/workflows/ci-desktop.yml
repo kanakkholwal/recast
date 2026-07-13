@@ -72,7 +72,10 @@ jobs:
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
       # while the repo had moved to 11.
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
+        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
+        # installs the pinned version directly and never takes that path.
+        uses: pnpm/action-setup@v4
         with:
           run_install: false
       - name: Setup Node
@@ -168,7 +171,10 @@ jobs:
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
       # while the repo had moved to 11.
       - name: Install pnpm
-        uses: pnpm/action-setup@v6
+        # Pinned to v4 on purpose: v6 bootstraps an older pnpm and then runs `pnpm
+        # self-update`, which crashes on our pinned 11.12.0 (pnpm/pnpm#12959). v4
+        # installs the pinned version directly and never takes that path.
+        uses: pnpm/action-setup@v4
         with:
           run_install: false
 
