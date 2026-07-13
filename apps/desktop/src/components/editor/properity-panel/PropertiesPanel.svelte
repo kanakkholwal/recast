@@ -9,6 +9,7 @@
     MousePointer,
     Pencil,
     ScanText,
+    SquareSplitHorizontal,
     Target,
     Video,
     Volume2
@@ -40,8 +41,12 @@
   // TODO(camera-recording): re-add the Camera tab when CAMERA_OVERLAY_UI_ENABLED
   // flips back to true. The CameraPanel component itself is intact.
   // See apps/desktop/docs/camera-recording-todo.md.
+  //
+  // Clip must stay in this list. Selecting a clip force-switches `activePanel`
+  // to it (see the effect below), so without a trigger the panel lands in a tab
+  // that has no button, no highlight, and no way back except re-selecting a clip.
   const tabs: TabType[] = [
-    // { id: "clip", label: "Clip", icon: SquareSplitHorizontal },
+    { id: "clip", label: "Clip", icon: SquareSplitHorizontal },
     { id: "background", label: "Background", icon: ImageIcon },
     { id: "focus", label: "Zoom", icon: Target },
     { id: "annotations", label: "Markup", icon: Pencil },

@@ -8,6 +8,7 @@ import { type CaptionAnimation, DEFAULT_CAPTION_ANIMATION } from '../captions/an
 import { googleFontStack } from '../fonts/google-fonts';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
+import type { TimeMode } from '../editor/time';
 import { log } from '../logger';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
@@ -607,6 +608,19 @@ export function aspectRatio(a: OutputAspect): number | null {
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
+/** What the editor currently has selected. Exactly one, or nothing. */
+export type SelectionKind = 'clip' | 'zoom' | 'annotation';
+export interface EditorSelection {
+	kind: SelectionKind;
+	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
+	id: string | number;
+}
+export interface DeleteSelectionResult {
+	kind: SelectionKind;
+	/** Where to park the playhead after a clip delete; null for the others. */
+	joinAt: number | null;
+}
+
 // 'dev' is a dev-build-only tab (experimental OCR review); it is UI state only and
 // is never serialized into a project.
 export type PanelTab = 'clip' | 'background' | 'focus' | 'annotations' | 'cursor' | 'camera' | 'audio' | 'captions' | 'extensions' | 'info' | 'dev';
@@ -1167,6 +1181,12 @@ export function createEditorStore() {
 	// with handles for a feature whose panel isn't visible.
 	let activePanel = $state<PanelTab>('background');
 
+	// How every timecode in the editor renders. Lives here, not in Timeline.svelte,
+	// so the transport readout and the timeline agree: when this was timeline-local
+	// the player controls had their own hardcoded format and ignored the setting.
+	// UI-only, never serialized into a project.
+	let timeMode = $state<TimeMode>('smpte');
+
 	// Global cursor motion easing. `null` means linear (today's behaviour);
 	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
 	let cursorMotionEasing = $state<Easing | null>(null);
@@ -1458,7 +1478,7 @@ export function createEditorStore() {
 			source: "manual",
 		};
 		zoomRegions = [...zoomRegions, region];
-		selectedZoomRegionId = region.id;
+		selectZoomRegion(region.id);
 		log.info('focus', 'zoom_added', { id: region.id, start, end, scale });
 		return region.id;
 	}
@@ -1560,6 +1580,77 @@ export function createEditorStore() {
 		cameraOverlay = { ...cameraOverlay, ...updates };
 	}
 
+	// ---- Selection ---------------------------------------------------------
+	//
+	// Exactly one thing is selected at a time. The three backing fields used to be
+	// independent, so a clip, a zoom region and an annotation could all be lit at
+	// once; Delete then resolved against whichever DOM node held focus rather than
+	// against what was highlighted, and because one Delete handler was window-level
+	// and another was element-level, a single keypress could destroy two objects.
+	// Selecting anything now clears the others, and Delete is a document-level
+	// command over `selection` (see `deleteSelection`).
+
+	function selectClip(start: number | null) {
+		selectedClipStart = start;
+		if (start === null) return;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+	}
+
+	function selectZoomRegion(id: string | null) {
+		selectedZoomRegionId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedAnnotationId = null;
+	}
+
+	function selectAnnotation(id: string | null) {
+		selectedAnnotationId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+	}
+
+	function clearSelection() {
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+	}
+
+	const selection = $derived.by<EditorSelection | null>(() => {
+		if (selectedAnnotationId !== null) {
+			return { kind: 'annotation', id: selectedAnnotationId };
+		}
+		if (selectedZoomRegionId !== null) {
+			return { kind: 'zoom', id: selectedZoomRegionId };
+		}
+		if (selectedClipStart !== null) {
+			return { kind: 'clip', id: selectedClipStart };
+		}
+		return null;
+	});
+
+	/**
+	 * Delete whatever is selected. Returns the playhead's new home for a clip
+	 * delete (the join between the surviving segments), or null when nothing was
+	 * deleted -- including a clip delete refused because it is the only segment.
+	 */
+	function deleteSelection(): DeleteSelectionResult | null {
+		if (selectedAnnotationId !== null) {
+			removeAnnotation(selectedAnnotationId);
+			return { kind: 'annotation', joinAt: null };
+		}
+		if (selectedZoomRegionId !== null) {
+			removeZoomRegion(selectedZoomRegionId);
+			return { kind: 'zoom', joinAt: null };
+		}
+		if (selectedClipStart !== null) {
+			const joinAt = deleteSegmentAt(selectedClipStart);
+			return joinAt === null ? null : { kind: 'clip', joinAt };
+		}
+		return null;
+	}
+
 	function removeZoomRegion(id: string) {
 		pushUndoState();
 		zoomRegions = zoomRegions.filter((z) => z.id !== id);
@@ -1616,7 +1707,7 @@ export function createEditorStore() {
 			copy,
 			...zoomRegions.slice(idx + 1),
 		];
-		selectedZoomRegionId = copy.id;
+		selectZoomRegion(copy.id);
 		log.info('focus', 'zoom_duplicated', { from: id, id: copy.id });
 		return copy.id;
 	}
@@ -1644,10 +1735,6 @@ export function createEditorStore() {
 			}
 			return next;
 		});
-	}
-
-	function selectZoomRegion(id: string | null) {
-		selectedZoomRegionId = id;
 	}
 
 	function addAnnotation(kind: AnnotationKind, start?: number, end?: number): Annotation {
@@ -1681,7 +1768,7 @@ export function createEditorStore() {
 			opacity: 1,
 		};
 		annotations = [...annotations, annotation];
-		selectedAnnotationId = annotation.id;
+		selectAnnotation(annotation.id);
 		log.info('annotation', 'added', { id: annotation.id, kind: kind.kind });
 		return annotation;
 	}
@@ -1755,7 +1842,7 @@ export function createEditorStore() {
 			};
 		}
 		annotations = [...annotations, dup];
-		selectedAnnotationId = dup.id;
+		selectAnnotation(dup.id);
 		return dup;
 	}
 
@@ -2504,8 +2591,14 @@ export function createEditorStore() {
 		setMotionTone,
 		setSeamTransition,
 		seamTransitionAt,
+		// Setters route through the exclusive selectors, so every existing call site
+		// (and every future one) gets one-selection-at-a-time for free.
 		get selectedClipStart() { return selectedClipStart; },
-		set selectedClipStart(v: number | null) { selectedClipStart = v; },
+		set selectedClipStart(v: number | null) { selectClip(v); },
+
+		get selection() { return selection; },
+		clearSelection,
+		deleteSelection,
 		get focusEnabled() { return focusEnabled; },
 		set focusEnabled(v: boolean) { focusEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'focus', enabled: v }); },
 
@@ -2519,10 +2612,13 @@ export function createEditorStore() {
 		set cursorSamplesRaw(v: CursorSampleLike[]) { cursorSamplesRaw = v; },
 
 		get selectedZoomRegionId() { return selectedZoomRegionId; },
-		set selectedZoomRegionId(v: string | null) { selectedZoomRegionId = v; },
+		set selectedZoomRegionId(v: string | null) { selectZoomRegion(v); },
 
 		get activePanel() { return activePanel; },
 		set activePanel(v: PanelTab) { activePanel = v; },
+
+		get timeMode() { return timeMode; },
+		set timeMode(v: TimeMode) { timeMode = v; },
 
 		get cursorMotionEasing() { return cursorMotionEasing; },
 		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
@@ -2530,7 +2626,7 @@ export function createEditorStore() {
 		get annotations() { return annotations; },
 		get annotationsByZ() { return annotationsByZ(); },
 		get selectedAnnotationId() { return selectedAnnotationId; },
-		set selectedAnnotationId(v: string | null) { selectedAnnotationId = v; },
+		set selectedAnnotationId(v: string | null) { selectAnnotation(v); },
 		get annotationTool() { return annotationTool; },
 		set annotationTool(v: AnnotationKindName | null) { annotationTool = v; },
 		get hoveredAnnotationId() { return hoveredAnnotationId; },

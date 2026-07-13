@@ -64,6 +64,8 @@
     originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>
     outputToOriginal(store.timeMap, xPx / pixelsPerSecond);
+  // Labels read on the output axis, like the ruler and the playhead.
+  const outSec = (t: number) => originalToOutput(store.timeMap, t);
   const left = $derived(xOf(annotation.start));
   // 28px keeps a one-frame annotation grabbable.
   const width = $derived(
@@ -216,7 +218,7 @@
     <div
       class="relative flex h-full items-center gap-1.5 px-1.5"
       id={`annotation-region-${annotation.id}`}
-      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(annotation.start, timeMode, fps)} to ${formatTimeByMode(annotation.end, timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
+      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
       <span
         class="flex size-5 shrink-0 items-center justify-center rounded-md bg-warning/20 text-warning"
@@ -229,7 +231,7 @@
         </p>
         {#if showSubtitle}
           <p class="truncate text-[9px] leading-tight text-muted-foreground">
-            {formatTimeByMode(annotation.start, timeMode, fps)}
+            {formatTimeByMode(outSec(annotation.start), timeMode, fps)}
           </p>
         {/if}
       </div>

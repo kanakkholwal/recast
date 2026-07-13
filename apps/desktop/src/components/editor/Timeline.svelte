@@ -20,7 +20,6 @@
     greatestCommonDivisor,
     minClipDuration as minClipDurOf,
     quantizeToFrame as quantizeToFrameOf,
-    type TimeMode,
   } from "./_components/timeline/timeline-helpers";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
   import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
@@ -56,8 +55,9 @@
   const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
   let playbackSpeed = $state(1.0);
 
-  // Lives in the orchestrator so one click flips every timeline label at once.
-  let timeMode = $state<TimeMode>("smpte");
+  // Lives in the store, not here: the transport readout under the video reads it
+  // too, so one setting flips every timecode in the editor at once.
+  const timeMode = $derived(store.timeMode);
 
   // Layer visibility (the toolbar's Layers menu). The clip track is always shown
   // (the editing spine); its content is thumbnails OR the waveform, never both,
@@ -281,6 +281,12 @@
   // Canonical axis transforms: every lane positions with `xOf` and resolves pointers with `tOf`.
   const xOf = (t: number) => originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (x: number) => outputToOriginal(store.timeMap, x / pixelsPerSecond);
+  // The playhead reads on the OUTPUT axis, same as the ruler beneath it and the
+  // transport readout above it. Showing `store.currentTime` (original time) here
+  // made the chip disagree with the ruler it sits on the moment a cut existed.
+  const playheadOutput = $derived(
+    originalToOutput(store.timeMap, store.currentTime),
+  );
   const clipLeft = $derived(xOf(store.inPoint));
   const clipRight = $derived(xOf(store.outPoint));
   const clipWidth = $derived(Math.max(clipRight - clipLeft, 0));
@@ -325,6 +331,12 @@
       event.preventDefault();
       razorClickAt(event.clientX);
       return;
+    }
+    // Clicking bare timeline deselects. Cards stop propagation, but clip blocks
+    // deliberately don't (the click has to seek too), so they mark themselves
+    // `data-selectable` and we leave their selection alone.
+    if (!(event.target as HTMLElement).closest("[data-selectable]")) {
+      store.clearSelection();
     }
     isDraggingPlayhead = true;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -561,17 +573,11 @@
       splitAtPlayhead();
     }
 
-    // Ripple-delete the selected clip (or the one under the playhead); store returns the join to land on a kept frame.
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      disarmRazor();
-      const target = store.selectedClipStart ?? store.currentTime;
-      const joinAt = store.deleteSegmentAt(target);
-      if (joinAt !== null) {
-        store.currentTime = joinAt;
-        if (videoEl) videoEl.currentTime = joinAt;
-      }
-    }
+    // Delete is NOT handled here. It's a document-level command over the current
+    // selection, owned by the editor page: three handlers used to claim it (this
+    // one, the zoom card, the annotation overlay) and resolve against DOM focus
+    // instead of the selection, so it could destroy the object you weren't
+    // looking at, or two objects at once.
 
     // J/K/L transport (see shuttle state above).
     if (event.key === "k" || event.key === "K") {
@@ -817,7 +823,7 @@
     onResetTrim={resetTrim}
     onZoomTimeline={zoomTimeline}
     onSelectSpeed={(speed) => (playbackSpeed = speed)}
-    onSetTimeMode={(mode) => (timeMode = mode)}
+    onSetTimeMode={(mode) => (store.timeMode = mode)}
     onZoomToFit={zoomToFit}
     onZoomToSelection={zoomToSelection}
     onSetClipContent={(c) => (clipContent = c)}
@@ -879,7 +885,12 @@
       onkeydown={handleTimelineKeydown}
     >
       <div class="relative min-w-full" style="width: {totalWidth}px;">
-        <TimelineRuler duration={outputDuration} {pixelsPerSecond} />
+        <TimelineRuler
+          duration={outputDuration}
+          {pixelsPerSecond}
+          {timeMode}
+          fps={effectiveFps()}
+        />
 
       <!-- No horizontal padding: lanes must share the x-origin of the ruler and
            playhead (both direct children at x=0), or every tile sits offset from
@@ -932,8 +943,8 @@
       </div>
 
       <TimelinePlayhead
-        currentTime={store.currentTime}
-        leftPx={xOf(store.currentTime)}
+        outputTime={playheadOutput}
+        leftPx={playheadOutput * pixelsPerSecond}
         fps={effectiveFps()}
         isDragging={isDraggingPlayhead}
         {timeMode}

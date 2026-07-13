@@ -21,7 +21,10 @@
   import ConfirmDialog from "../recast/ConfirmDialog.svelte";
   import PresetPicker, { PRESETS, type Preset } from "./PresetPicker.svelte";
   import { onMount } from "svelte";
-  import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+  import {
+    chordLabel,
+    registerShortcutHandlers,
+  } from "$lib/shortcuts/registry.svelte";
 
   interface Props {
     store: EditorStore;
@@ -80,7 +83,11 @@
   onMount(() =>
     registerShortcutHandlers({
       "editor.presets": () => {
-        showPresetsPicker = true;
+        // The export surface owns the rail and its own Esc routing. Opening the
+        // picker over it strands Esc between two handlers, and the export one
+        // cancels the render. Every other editor chord already bails here.
+        if (exportOpen) return;
+        showPresetsPicker = !showPresetsPicker;
       },
     }),
   );
@@ -140,12 +147,24 @@
   class="flex h-full w-full items-center gap-1.5 px-2 text-[11px]"
   
 >
+  <!-- Every Tooltip.Trigger below uses `child` to merge its props onto our own
+       element. Without it the trigger renders a button AROUND the control:
+       nested interactive elements, two tab stops each, and a disabled control
+       whose tooltip still opens (the pointer falls through to the wrapper). -->
   <div class="flex items-center gap-0.5">
     <Tooltip.Root>
       <Tooltip.Trigger>
-        <Button variant="ghost" size="icon-sm" href="/recasts" aria-label="Back">
-          <ArrowLeft size={12} />
-        </Button>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost"
+            size="icon-sm"
+            href="/recasts"
+            aria-label="Back"
+          >
+            <ArrowLeft size={12} />
+          </Button>
+        {/snippet}
       </Tooltip.Trigger>
       <Tooltip.Content>Back to recordings</Tooltip.Content>
     </Tooltip.Root>
@@ -171,16 +190,19 @@
   <div class="mx-auto flex items-center gap-1.5">
     <Tooltip.Root>
       <Tooltip.Trigger>
-        <Button
-          variant="ghost"
-          size="xs"
-          class="gap-1.5 text-[11px] text-muted-foreground"
-          onclick={() => (showPresetsPicker = true)}
-        >
-          <Sparkles size={12} />
-          Presets
-          <Kbd class="ml-1">⌘P</Kbd>
-        </Button>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant="ghost"
+            size="xs"
+            class="gap-1.5 text-[11px] text-muted-foreground"
+            onclick={() => (showPresetsPicker = true)}
+          >
+            <Sparkles size={12} />
+            Presets
+            <Kbd class="ml-1">{chordLabel("editor.presets")}</Kbd>
+          </Button>
+        {/snippet}
       </Tooltip.Trigger>
       <Tooltip.Content>Browse social & studio presets</Tooltip.Content>
     </Tooltip.Root>
@@ -191,39 +213,47 @@
       >
         <Tooltip.Root>
           <Tooltip.Trigger>
-            <button
-              type="button"
-              onclick={() => (showPresetsPicker = true)}
-              class="flex h-full items-center gap-1.5 cursor-pointer"
-              aria-label="Change preset"
-            >
-              {#if activePreset}
-                <span class="text-[10px] uppercase tracking-wider text-primary/70">
-                  {activePreset.category}
-                </span>
-                <span class="text-foreground">{activePreset.label}</span>
-              {/if}
-              <span
-                class="inline-flex h-4 items-center rounded border border-primary/40 bg-background/60 px-1 font-mono text-[9px] font-semibold text-primary"
+            {#snippet child({ props })}
+              <button
+                {...props}
+                type="button"
+                onclick={() => (showPresetsPicker = true)}
+                class="flex h-full items-center gap-1.5 cursor-pointer"
+                aria-label="Change preset"
               >
-                {store.outputAspect === "source"
-                  ? "Source"
-                  : store.outputAspect}
-              </span>
-            </button>
+                {#if activePreset}
+                  <span
+                    class="text-[10px] uppercase tracking-wider text-primary/70"
+                  >
+                    {activePreset.category}
+                  </span>
+                  <span class="text-foreground">{activePreset.label}</span>
+                {/if}
+                <span
+                  class="inline-flex h-4 items-center rounded border border-primary/40 bg-background/60 px-1 font-mono text-[9px] font-semibold text-primary"
+                >
+                  {store.outputAspect === "source"
+                    ? "Source"
+                    : store.outputAspect}
+                </span>
+              </button>
+            {/snippet}
           </Tooltip.Trigger>
           <Tooltip.Content>Change preset</Tooltip.Content>
         </Tooltip.Root>
         <Tooltip.Root>
           <Tooltip.Trigger>
-            <button
-              type="button"
-              onclick={clearPreset}
-              aria-label="Reset to source aspect"
-              class="ml-0.5 flex size-5 cursor-pointer items-center justify-center rounded text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary"
-            >
-              <X size={10} strokeWidth={2.5} />
-            </button>
+            {#snippet child({ props })}
+              <button
+                {...props}
+                type="button"
+                onclick={clearPreset}
+                aria-label="Reset to source aspect"
+                class="ml-0.5 flex size-5 cursor-pointer items-center justify-center rounded text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary"
+              >
+                <X size={10} strokeWidth={2.5} />
+              </button>
+            {/snippet}
           </Tooltip.Trigger>
           <Tooltip.Content>
             Reset to source aspect (drops letterbox bars; keeps your other
@@ -241,47 +271,55 @@
     {#if store.canRevert}
       <Tooltip.Root>
         <Tooltip.Trigger>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5 text-[11px] text-muted-foreground hover:text-destructive"
-            onclick={() => (showRevertConfirm = true)}
-            disabled={isSaving}
-            aria-label="Revert unsaved changes"
-          >
-            <RotateCcw size={12} />
-            Revert
-          </Button>
+          {#snippet child({ props })}
+            <Button
+              {...props}
+              variant="ghost"
+              size="xs"
+              class="gap-1.5 text-[11px] text-muted-foreground hover:text-destructive"
+              onclick={() => (showRevertConfirm = true)}
+              disabled={isSaving}
+              aria-label="Revert unsaved changes"
+            >
+              <RotateCcw size={12} />
+              Revert
+            </Button>
+          {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>
-          Discard unsaved changes and restore the last saved state
+          {isSaving
+            ? "Saving. Wait for it to finish."
+            : "Discard unsaved changes and restore the last saved state"}
         </Tooltip.Content>
       </Tooltip.Root>
     {/if}
 
     <Tooltip.Root>
       <Tooltip.Trigger>
-        <Button
-          variant={store.isDirty ? "secondary" : "ghost"}
-          size="xs"
-          class="gap-1.5 text-[11px]"
-          onclick={() => onsave?.()}
-          disabled={isSaving || (!store.isDirty && !isSaving)}
-          aria-label="Save project"
-        >
-          {#if isSaving}
-            <LoaderCircle size={12} class="animate-spin" />
-            Saving…
-          {:else}
-            <Save size={12} />
-            {store.isDirty ? "Save" : "Saved"}
-          {/if}
-        </Button>
+        {#snippet child({ props })}
+          <Button
+            {...props}
+            variant={store.isDirty ? "secondary" : "ghost"}
+            size="xs"
+            class="gap-1.5 text-[11px]"
+            onclick={() => onsave?.()}
+            disabled={isSaving || (!store.isDirty && !isSaving)}
+            aria-label={store.isDirty ? "Save project" : "Project saved"}
+          >
+            {#if isSaving}
+              <LoaderCircle size={12} class="animate-spin" />
+              Saving…
+            {:else}
+              <Save size={12} />
+              {store.isDirty ? "Save" : "Saved"}
+            {/if}
+          </Button>
+        {/snippet}
       </Tooltip.Trigger>
       <Tooltip.Content>
         {#if store.isDirty}
           <span class="inline-flex items-center gap-1.5">
-            Save project <Kbd>Ctrl+S</Kbd>
+            Save project <Kbd>{chordLabel("editor.save")}</Kbd>
           </span>
         {:else}
           No unsaved changes
@@ -336,43 +374,57 @@
 
       <Tooltip.Root>
         <Tooltip.Trigger>
-          <button
-            type="button"
-            onclick={() => onToggleTimeline?.()}
-            disabled={exportOpen}
-            aria-label="Toggle timeline"
-            aria-pressed={showTimeline}
-            class={toggleClass(showTimeline)}
-          >
-            <PanelBottom size={12} />
-          </button>
+          {#snippet child({ props })}
+            <button
+              {...props}
+              type="button"
+              onclick={() => onToggleTimeline?.()}
+              disabled={exportOpen}
+              aria-label="Toggle timeline"
+              aria-pressed={!exportOpen && showTimeline}
+              class={toggleClass(showTimeline)}
+            >
+              <PanelBottom size={12} />
+            </button>
+          {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>
-          <span class="inline-flex items-center gap-1.5">
-            {showTimeline ? "Hide timeline" : "Show timeline"}
-            <Kbd>⌘J</Kbd>
-          </span>
+          {#if exportOpen}
+            Unavailable while the export panel is open
+          {:else}
+            <span class="inline-flex items-center gap-1.5">
+              {showTimeline ? "Hide timeline" : "Show timeline"}
+              <Kbd>{chordLabel("editor.toggleTimeline")}</Kbd>
+            </span>
+          {/if}
         </Tooltip.Content>
       </Tooltip.Root>
 
       <Tooltip.Root>
         <Tooltip.Trigger>
-          <button
-            type="button"
-            onclick={() => onToggleSidebar?.()}
-            disabled={exportOpen}
-            aria-label="Toggle properties panel"
-            aria-pressed={showSidebar}
-            class={toggleClass(showSidebar)}
-          >
-            <PanelRight size={12} />
-          </button>
+          {#snippet child({ props })}
+            <button
+              {...props}
+              type="button"
+              onclick={() => onToggleSidebar?.()}
+              disabled={exportOpen}
+              aria-label="Toggle properties panel"
+              aria-pressed={!exportOpen && showSidebar}
+              class={toggleClass(showSidebar)}
+            >
+              <PanelRight size={12} />
+            </button>
+          {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>
-          <span class="inline-flex items-center gap-1.5">
-            {showSidebar ? "Hide properties" : "Show properties"}
-            <Kbd>⌘B</Kbd>
-          </span>
+          {#if exportOpen}
+            Unavailable while the export panel is open
+          {:else}
+            <span class="inline-flex items-center gap-1.5">
+              {showSidebar ? "Hide properties" : "Show properties"}
+              <Kbd>{chordLabel("editor.toggleSidebar")}</Kbd>
+            </span>
+          {/if}
         </Tooltip.Content>
       </Tooltip.Root>
     </div>

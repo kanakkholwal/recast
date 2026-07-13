@@ -12,6 +12,7 @@
   import type { Snippet } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade } from "svelte/transition";
+  import { isOverlayOpen } from "$lib/dom/keyboard";
 
   // Inline right-rail export surface: the same phase snippets that used to live
   // in a portaled modal, re-homed where the properties panel was so the live
@@ -40,13 +41,16 @@
     error,
   }: Props = $props();
 
-  // Only mounted while a phase is active, so Escape here always means "leave the
-  // export flow" (cancel a run, dismiss a result, or close the picker).
+  // Only mounted while a phase is active, so Escape here means "leave the export
+  // flow" (cancel a run, dismiss a result, or close the picker) -- but ONLY when
+  // nothing is stacked on top of us. A dialog, a menu, or a Select inside the
+  // options form owns Escape while it's open; without the guard, dismissing one
+  // falls through to here and cancels the export behind it.
   function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      onEscape?.();
-    }
+    if (e.key !== "Escape") return;
+    if (e.defaultPrevented || isOverlayOpen()) return;
+    e.preventDefault();
+    onEscape?.();
   }
 </script>
 

@@ -13,7 +13,7 @@
   import {
     buildWaveformPath,
     formatTimeByMode,
-    formatTimecode,
+    formatSmpte,
     frameStep,
     minClipDuration,
     type TimeMode,
@@ -363,6 +363,7 @@
             {...props}
             role="button"
             tabindex="-1"
+            data-selectable
             onpointerdown={(e) => {
               rememberMenuTime(e.clientX);
               if (e.button === 0) store.selectedClipStart = block.start;
@@ -558,7 +559,7 @@
     aria-valuemin={0}
     aria-valuemax={duration}
     aria-valuenow={store.inPoint}
-    aria-valuetext={formatTimecode(store.inPoint, fps)}
+    aria-valuetext={formatSmpte(store.inPoint, fps)}
     onpointerdown={(e) => startTrimDrag(e, "in")}
     onkeydown={(e) => handleTrimHandleKey(e, "in")}
     class="group absolute inset-y-0 z-10 w-2 -translate-x-1 cursor-ew-resize focus-visible:outline-none"
@@ -589,7 +590,7 @@
     aria-valuemin={0}
     aria-valuemax={duration}
     aria-valuenow={store.outPoint}
-    aria-valuetext={formatTimecode(store.outPoint, fps)}
+    aria-valuetext={formatSmpte(store.outPoint, fps)}
     onpointerdown={(e) => startTrimDrag(e, "out")}
     onkeydown={(e) => handleTrimHandleKey(e, "out")}
     class="group absolute inset-y-0 z-10 w-2 -translate-x-1 cursor-ew-resize focus-visible:outline-none"

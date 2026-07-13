@@ -66,6 +66,10 @@
     originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>
     outputToOriginal(store.timeMap, xPx / pixelsPerSecond);
+  // Labels read on the output axis, like the ruler and the playhead. Regions are
+  // STORED in original time, so printing that raw would name a timecode the
+  // exported file never reaches once anything upstream is cut.
+  const outSec = (t: number) => originalToOutput(store.timeMap, t);
   const left = $derived(xOf(region.start));
   // 32px floor keeps even sub-frame regions clickable.
   const width = $derived(Math.max(xOf(region.end) - xOf(region.start), 32));
@@ -131,12 +135,8 @@
   function onCardKeydown(event: KeyboardEvent) {
     if (duration <= 0) return;
 
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      event.stopPropagation();
-      store.removeZoomRegion(region.id);
-      return;
-    }
+    // Delete is owned by the editor page and acts on the selection (this card is
+    // the selection whenever it has focus), so it is deliberately not handled here.
 
     // Paste lives at timeline scope so regions land at the playhead, not here.
     const isMod = event.ctrlKey || event.metaKey;
@@ -221,7 +221,7 @@
     <div
       class="relative flex h-full items-center gap-1.5 px-1.5"
       id={`zoom-region-${region.id}`}
-      aria-label={`Focus region from ${formatTimeByMode(region.start, timeMode, fps)} to ${formatTimeByMode(region.end, timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
+      aria-label={`Focus region from ${formatTimeByMode(outSec(region.start), timeMode, fps)} to ${formatTimeByMode(outSec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
       <span
         class="flex size-5 shrink-0 items-center justify-center rounded-md bg-primary/20 text-primary"
@@ -236,7 +236,7 @@
           <p
             class="truncate text-[9px] leading-tight tabular-nums text-muted-foreground"
           >
-            {formatTimeByMode(region.start, timeMode, fps)}
+            {formatTimeByMode(outSec(region.start), timeMode, fps)}
           </p>
         {/if}
       </div>

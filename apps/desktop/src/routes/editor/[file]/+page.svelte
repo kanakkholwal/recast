@@ -46,6 +46,7 @@
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
+  import { activatesOnSpace } from "$lib/dom/keyboard";
   import { AudioTimelineEngine } from "$lib/playback/audio-engine";
   import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { originalToOutput } from "$lib/timeline/time-map";
@@ -83,7 +84,7 @@
     formatElapsed,
     parseLayout,
   } from "./editor-page.logic";
-  import { formatTimecode, frameStepOutput } from "$lib/editor/time";
+  import { formatClock, frameStepOutput } from "$lib/editor/time";
   import { cubicOut } from "svelte/easing";
   import { fade, slide } from "svelte/transition";
 
@@ -1250,7 +1251,7 @@
   function getExportRangeLabel() {
     const duration = store.metadata?.duration ?? 0;
     const clipEnd = store.trimEnd > 0 ? store.trimEnd : duration;
-    return `${formatTimecode(store.trimStart)} - ${formatTimecode(clipEnd)}`;
+    return `${formatClock(store.trimStart)} - ${formatClock(clipEnd)}`;
   }
 
 
@@ -1330,6 +1331,11 @@
     // Plain keys: play/pause, frame step, fullscreen.
     switch (e.key) {
       case " ":
+        // Buttons and links fire their click on Space KEYUP, so preventing the
+        // keydown here would make every focused control in the editor dead to
+        // the keyboard. The focused control wins; Space only reaches the
+        // transport when nothing activatable holds focus.
+        if (activatesOnSpace(document.activeElement)) return;
         e.preventDefault();
         if (!videoEl) return;
         if (store.isPlaying) {
@@ -1353,6 +1359,32 @@
           void document.exitFullscreen();
         } else if (previewContainerEl) {
           void previewContainerEl.requestFullscreen();
+        }
+        break;
+      // Delete acts on the SELECTION, never on whatever holds DOM focus. It lives
+      // here, at document scope, because the timeline, the zoom card and the
+      // annotation overlay each used to claim it: Delete could remove the object
+      // you weren't looking at, or two objects on one keypress.
+      case "Delete":
+      case "Backspace": {
+        const removed = store.deleteSelection();
+        if (!removed) return;
+        e.preventDefault();
+        // A clip delete closes the gap; park the playhead on the join so it lands
+        // on a kept frame rather than inside the removed range.
+        if (removed.joinAt !== null) {
+          store.seek(removed.joinAt);
+          if (videoEl) videoEl.currentTime = removed.joinAt;
+        }
+        break;
+      }
+      case "Escape":
+        // Deselect. The annotation overlay cancels an active tool on Escape and
+        // preventDefaults when it does, so we never fight it (we bail on
+        // defaultPrevented above).
+        if (store.selection) {
+          store.clearSelection();
+          e.preventDefault();
         }
         break;
     }
@@ -1775,7 +1807,7 @@
         >Duration</span
       >
       <span class="truncate font-mono text-[12px] tabular-nums text-foreground">
-        {formatTimecode(getExportDuration())}
+        {formatClock(getExportDuration())}
       </span>
     </div>
   </section>

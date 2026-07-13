@@ -1240,13 +1240,10 @@
       }
       return;
     }
-    if ((e.key === "Delete" || e.key === "Backspace") && store.selectedAnnotationId) {
-      const target = e.target as HTMLElement | null;
-      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return;
-      e.preventDefault();
-      store.removeAnnotation(store.selectedAnnotationId);
-      return;
-    }
+    // Delete is owned by the editor page and acts on the current selection, so it
+    // is deliberately not handled here. This listener is on `window`, so claiming
+    // Delete meant a clip-scoped Delete elsewhere could ALSO delete a selected
+    // annotation on the same keypress.
 
     // Z-order shortcuts and duplicate, gated to annotations tab + selection
     // so they don't fight other editor surfaces.
