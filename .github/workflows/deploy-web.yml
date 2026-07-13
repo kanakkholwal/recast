@@ -79,11 +79,12 @@ jobs:
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
         run: pnpm db:migrate
 
-      # No `pnpm setup` needed: pnpm/action-setup already exports PNPM_HOME and
-      # puts the global bin dir on PATH, and `pnpm setup` only writes a shell rc
-      # that a non-interactive CI step never sources.
+      # npm, not pnpm: `pnpm add -g` installs into $PNPM_HOME/bin, which
+      # action-setup@v4 does not put on PATH. `pnpm setup` cannot fix that from
+      # here either, since it edits a shell rc that these non-interactive steps
+      # never source. npm's global bin is already on PATH via setup-node.
       - name: Install Vercel CLI
-        run: pnpm add --global vercel@latest
+        run: npm install --global vercel@latest
         working-directory: .
 
       - name: Deploy to Vercel (Production)
