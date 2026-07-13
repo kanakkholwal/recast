@@ -68,7 +68,7 @@ jobs:
         run: pnpm db:migrate
 
       - name: Install Vercel CLI
-        run: pnpm install --global vercel@latest
+        run: pnpm setup && pnpm install --global vercel@latest
         working-directory: .
 
       - name: Deploy to Vercel (Production)
