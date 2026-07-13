@@ -739,9 +739,15 @@ Filters:
         let filters = parse_filter_names(FILTERS_STDOUT);
 
         for name in ["ass", "subtitles", "drawtext", "overlay", "color", "abench"] {
-            assert!(filters.contains(name), "{name} should be parsed as a filter");
+            assert!(
+                filters.contains(name),
+                "{name} should be parsed as a filter"
+            );
         }
-        assert!(!filters.contains("="), "legend rows must not parse as filters");
+        assert!(
+            !filters.contains("="),
+            "legend rows must not parse as filters"
+        );
         assert!(!filters.contains("Filters:"));
         assert_eq!(filters.len(), 6, "exactly the six real rows");
     }
