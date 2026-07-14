@@ -51,11 +51,16 @@
 	  X,
 	  Zap,
 	} from "@lucide/svelte";
+	import { autoplayInView, prefersReducedMotion } from "$lib/motion-core";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
 	import { cubicOut } from "svelte/easing";
 	import { fly, slide } from "svelte/transition";
+
+	// Svelte transitions bypass the CSS reduced-motion guard (WAAPI), so gate
+	// the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
+	const reduced = $derived(prefersReducedMotion());
 
 	// Before/after proof clips. Drop URLs in here when assets are hosted
 	// (UploadThing while iterating → cdn.recast.li once locked). Empty string
@@ -440,6 +445,49 @@
 			ring: "text-primary ring-primary/25",
 		},
 	};
+
+	// Drag-to-scroll for the editor rail. Makes the `grab` cursor honest for
+	// mouse/pen users (wheel + trackpad already scroll natively; touch pans on
+	// its own) without pulling in a library. Snap is suspended for the duration
+	// of a drag so the pointer tracks 1:1, then restored so the rail settles to
+	// the nearest card on release. Keyboard users get the same reach via the
+	// rail's tabindex (native arrow-key scroll on a focused scroll container).
+	function dragScroll(node: HTMLElement) {
+		let down = false;
+		let startX = 0;
+		let startScroll = 0;
+		let snap = "";
+		function onDown(e: PointerEvent) {
+			if (e.pointerType === "touch") return;
+			down = true;
+			startX = e.clientX;
+			startScroll = node.scrollLeft;
+			snap = node.style.scrollSnapType;
+			node.style.scrollSnapType = "none";
+			node.setPointerCapture(e.pointerId);
+		}
+		function onMove(e: PointerEvent) {
+			if (!down) return;
+			node.scrollLeft = startScroll - (e.clientX - startX);
+		}
+		function onUp() {
+			if (!down) return;
+			down = false;
+			node.style.scrollSnapType = snap;
+		}
+		node.addEventListener("pointerdown", onDown);
+		node.addEventListener("pointermove", onMove);
+		node.addEventListener("pointerup", onUp);
+		node.addEventListener("pointercancel", onUp);
+		return {
+			destroy() {
+				node.removeEventListener("pointerdown", onDown);
+				node.removeEventListener("pointermove", onMove);
+				node.removeEventListener("pointerup", onUp);
+				node.removeEventListener("pointercancel", onUp);
+			},
+		};
+	}
 </script>
 
 <SeoMeta
@@ -540,6 +588,7 @@
 										{#if hasSrc}
 											<!-- svelte-ignore a11y_media_has_caption -->
 											<video
+												use:autoplayInView
 												src={clip.src}
 												autoplay
 												loop
@@ -788,7 +837,7 @@
 							<Icon class="size-5 text-primary" />
 							<div>
 								<div class="text-sm font-semibold text-foreground">{feature.title}</div>
-								<div class="mt-1.5 text-xs leading-relaxed text-muted-foreground">{feature.description}</div>
+								<div class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{feature.description}</div>
 							</div>
 						</div>
 					</Reveal>
@@ -860,8 +909,19 @@
 			     Container gutter on wide viewports while letting later cards
 			     flow off-screen. `scrollbar-hide` keeps the chrome clean — the
 			     edge fades + drag cursor already telegraph scrollability. -->
+			<!-- Focusable + labelled so keyboard/AT users can reach every card
+			     (arrow keys scroll a focused scroll container); `dragScroll` makes
+			     the grab cursor a real affordance for mouse/pen. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<!-- tabindex is intentional: a scroll container must be focusable to
+			     be keyboard-scrollable; the linter's rule is a known false
+			     positive for named scroll regions. -->
 			<div
-				class="editor-rail flex snap-x snap-mandatory gap-5 overflow-x-auto py-10 sm:gap-7"
+				use:dragScroll
+				tabindex="0"
+				role="group"
+				aria-label="Editor features, scroll horizontally to see all"
+				class="editor-rail flex snap-x snap-mandatory gap-5 overflow-x-auto py-10 outline-none ring-primary/50 focus-visible:ring-2 sm:gap-7"
 				style="--rail-inset: max(1.25rem, calc((100vw - 80rem) / 2 + 1.25rem)); padding-inline: var(--rail-inset);"
 			>
 				{#each editorFeatures as feature, i}
@@ -1005,15 +1065,21 @@
 				align="center"
 			/>
 
-			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4">
+			<!-- Deliberately NOT the seamless tile matrix used by Auto-polish:
+			     spaced, individually-bordered cards with an icon chip read as a
+			     lighter supporting beat, so the two 4-up sections don't look like
+			     the same module twice. -->
+			<div class="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 				{#each extensionBeat as item, i}
 					{@const Icon = item.icon}
-					<Reveal variant="morph" delay={i * 80} class="h-full">
-						<div class="flex h-full flex-col gap-3 bg-background/50 p-6 backdrop-blur-md">
-							<Icon class="size-5 text-primary" />
+					<Reveal variant="up" delay={i * 80} class="h-full">
+						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-colors hover:border-primary/30">
+							<span class="glass-chip grid size-10 place-items-center rounded-xl text-primary">
+								<Icon class="size-5" />
+							</span>
 							<div>
 								<div class="text-sm font-semibold text-foreground">{item.title}</div>
-								<div class="mt-1.5 text-xs leading-relaxed text-muted-foreground">{item.description}</div>
+								<div class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.description}</div>
 							</div>
 						</div>
 					</Reveal>
@@ -1225,7 +1291,7 @@
 								{#if joined}
 									<div
 										class="mt-7 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3.5"
-										in:fly={{ y: 8, duration: 400, easing: cubicOut }}
+										in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
 									>
 										<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
 											<Check class="size-4" />
@@ -1238,7 +1304,7 @@
 									<form
 										class="mt-7 flex flex-col gap-2.5 sm:flex-row"
 										onsubmit={joinWaitlist}
-										out:slide={{ duration: 250 }}
+										out:slide={{ duration: reduced ? 0 : 250 }}
 									>
 										<input
 											type="email"
@@ -1340,7 +1406,7 @@
 							<span class="text-sm text-muted-foreground">+ controls</span>
 						</div>
 						<p class="relative mt-3 text-sm leading-relaxed text-muted-foreground">
-							A Loom-style hosted layer with watch analytics, per-viewer access, link expiry, team workspaces, and custom branding, but storage-agnostic. Free tier brings your own (Drive today, Cloudinary + autorender.io planned); paid plans add Recast-managed storage or your own S3 / R2 / Azure / GCP bucket. Coming soon.
+							A Loom-style hosted layer: watch analytics, per-viewer access, link expiry, team workspaces, and custom branding. Storage stays your call, yours or ours. Coming soon.
 						</p>
 						<div class="relative mt-7">
 							<Button href="/pricing" class="group/cta gap-2">
@@ -1406,7 +1472,7 @@
 								</button>
 								{#if open}
 									<div
-										transition:slide={{ duration: 220, easing: cubicOut }}
+										transition:slide={{ duration: reduced ? 0 : 220, easing: cubicOut }}
 										class="overflow-hidden"
 									>
 										<p class="pb-5 pl-8 pr-2 text-sm leading-relaxed text-muted-foreground">
@@ -1447,7 +1513,7 @@
 								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
 								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
 							</span>
-							v0.2 beta · ready when you are
+							v0.4 beta · ready when you are
 						</div>
 
 						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
