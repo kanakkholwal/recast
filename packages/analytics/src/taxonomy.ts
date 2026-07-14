@@ -30,6 +30,10 @@ export const ANALYTICS_EVENTS = [
 	"share_viewed",
 	"share_player_error",
 	"share_signup_cta_click",
+	// Share funnel: play-rate, drop-off, and per-placement CTA click-through.
+	"share_play_started",
+	"share_watch_depth",
+	"share_cta_impression",
 	"editor_opened",
 	"cloud_connected",
 	"sign_in",
@@ -89,7 +93,27 @@ export interface EventPropMap {
 	};
 	share_signup_cta_click: {
 		/** Which acquisition surface converted the viewer. */
-		placement?: "header" | "end-card" | "watermark";
+		placement?:
+			| "header"
+			| "end-card"
+			| "watermark"
+			| "mid-watch"
+			| "positioning-chip";
+		visibility?: string;
+	};
+	share_play_started: {
+		visibility?: string;
+		/** Anonymous shareView session id (not identifying). */
+		share_session_id?: string;
+	};
+	share_watch_depth: {
+		/** Milestone reached: 25 / 50 / 75 / 100. */
+		pct?: number;
+		visibility?: string;
+	};
+	share_cta_impression: {
+		/** Which acquisition surface was actually shown, to pair with clicks. */
+		placement?: "end-card" | "mid-watch" | "positioning-chip";
 		visibility?: string;
 	};
 	recast_uploaded: {

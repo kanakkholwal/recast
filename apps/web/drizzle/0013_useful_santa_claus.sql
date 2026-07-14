@@ -1,0 +1,1 @@
+ALTER TABLE "share" ADD COLUMN "searchable" boolean DEFAULT false NOT NULL;

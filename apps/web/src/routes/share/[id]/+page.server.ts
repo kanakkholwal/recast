@@ -59,6 +59,7 @@ const DEMO: DemoOrResolved = {
 		commentsEnabled: true,
 		viewsCount: 1280,
 		watermark: true,
+		searchable: false,
 	},
 	canManage: false,
 };
