@@ -49,10 +49,10 @@
 				<div
 					class={cn(
 						"flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors duration-300",
-						i === active ? "bg-primary/10 text-foreground" : "text-muted-foreground",
+						i === active ? "bg-foreground/8 text-foreground" : "text-muted-foreground",
 					)}
 				>
-					<Icon class={cn("size-3.5", i === active && "text-primary")} />
+					<Icon class={cn("size-3.5", i === active ? "text-foreground" : "")} />
 					<span class="font-medium">{opt.label}</span>
 					{#if i === active}
 						<span

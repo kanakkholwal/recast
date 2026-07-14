@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Container, Footer, Section, SeoMeta } from "$lib/components";
+	import { Container, Footer, HeroBackdrop, Section, SeoMeta } from "$lib/components";
 	import { formatDate } from "$lib/blog/format";
 	import { Badge } from "@recast/ui/badge";
 	import DocviaContent from "$lib/blog/DocviaContent.svelte";
@@ -20,6 +20,7 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-32 pb-10 md:pt-40 md:pb-14">
+		<HeroBackdrop src="/background-blog.webp" />
 		<Container size="narrow">
 			<a
 				href="/blog"

@@ -58,6 +58,8 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 			{ label: "Contact", href: CONTACT_EMAIL },
 			{ label: "X / Twitter", href: TWITTER_URL, external: true },
 			{ label: "Discord", href: DISCORD_URL, external: true },
+			{ label: "Privacy Policy", href: "/privacy-policy" },
+			{ label: "Terms of Service", href: "/terms-of-service" },
 		],
 	},
 ];

@@ -63,7 +63,7 @@
       >
         <GithubBrand class="size-4" />
       </a>
-      <Button href="/download" size="sm" class="gap-1.5">
+      <Button href="/download" size="sm" variant="dark" class="gap-1.5">
         Download
       </Button>
       <button

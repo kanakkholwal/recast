@@ -1,6 +1,9 @@
 <script lang="ts">
   import { Container } from "$lib/components";
-  import { footerCols as cols, footerSocials as socials } from "$lib/components/nav-data";
+  import {
+    footerCols as cols,
+    footerSocials as socials,
+  } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";
 </script>
 
@@ -9,14 +12,13 @@
 
   <!-- Editorial backdrop, mirroring the hero: the photo sits in the lower half
        and fades into the page background so the columns stay readable up top.
-       Same asset as the hero; a missing file just leaves the clean gradient. -->
+       Different fade from HeroBackdrop — top-only dissolve, no bottom fade, so
+       the giant Recast wordmark below the columns stays on full-bleed photo. -->
   <div aria-hidden="true" class="pointer-events-none absolute inset-0">
     <div
       class="absolute inset-0 bg-cover bg-center opacity-90 dark:opacity-60"
-      style="background-image: url('/hero-background.webp');"
+      style="background-image: url('/background-section.webp');"
     ></div>
-    <!-- Top fade only: the photo is full-bleed and emerges from the page
-         background, like the reference. No side fade, so it reads edge to edge. -->
     <div
       class="absolute inset-0"
       style="background: linear-gradient(to bottom, var(--color-background) 0%, var(--color-background) 18%, transparent 52%);"
@@ -56,6 +58,9 @@
             </a>
           {/each}
         </div>
+        <p class="text-xs text-muted-foreground mt-7">
+          © {new Date().getFullYear()} Recast. All rights reserved.
+        </p>
       </div>
 
       <div class="grid gap-10 sm:grid-cols-3 md:col-span-7">
@@ -82,38 +87,6 @@
             </ul>
           </div>
         {/each}
-      </div>
-    </div>
-
-    <div
-      class="mt-20 flex flex-col items-start justify-between gap-4 border-t border-border-low/70 pt-8 md:flex-row md:items-center"
-    >
-      <p
-        class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-      >
-        Record once · Ship the demo
-      </p>
-      <div
-        class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5"
-      >
-        <nav class="flex items-center gap-5">
-          <a
-            href="/privacy-policy"
-            class="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Privacy Policy
-          </a>
-          <a
-            href="/terms-of-service"
-            class="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Terms of Service
-          </a>
-        </nav>
-        <span class="hidden text-muted-foreground/40 sm:inline">·</span>
-        <p class="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Recast. All rights reserved.
-        </p>
       </div>
     </div>
   </Container>

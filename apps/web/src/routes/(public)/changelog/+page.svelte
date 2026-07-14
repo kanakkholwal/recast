@@ -3,6 +3,7 @@
 		Container,
 		Eyebrow,
 		Footer,
+		HeroBackdrop,
 		Reveal,
 		Section,
 		SectionHeader,
@@ -39,6 +40,7 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
+		<HeroBackdrop src="/background-changelog.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<Eyebrow icon={Sparkles} variant="primary">Changelog</Eyebrow>

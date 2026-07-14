@@ -53,7 +53,7 @@
 				<span
 					class="ml-auto inline-flex items-center gap-1 rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 text-[10px] font-semibold text-foreground"
 				>
-					<Link2 class="size-3 text-primary" />
+					<Link2 class="size-3 text-muted-foreground" />
 					Copy link
 				</span>
 			</div>

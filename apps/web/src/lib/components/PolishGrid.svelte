@@ -36,15 +36,15 @@
 >
 	{#each features as feature, i (feature.title)}
 		{@const Icon = feature.icon}
-		<Reveal variant="morph" delay={i * 80} class="h-full">
+		<Reveal variant="up" delay={i * 70} class="h-full">
 			<div
 				class={cn(
 					"flex h-full flex-col gap-3 bg-background/50 p-6 backdrop-blur-md transition-colors duration-500",
-					i === applied && "bg-primary/5",
+					i === applied && "bg-foreground/3",
 				)}
 			>
 				<div class="flex items-center justify-between">
-					<Icon class="size-5 text-primary" />
+					<Icon class="size-5 text-foreground/70" />
 					<span
 						class={cn(
 							"inline-flex items-center gap-1 rounded-full bg-success/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-success ring-1 ring-inset ring-success/25 transition-opacity duration-500",

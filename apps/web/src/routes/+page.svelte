@@ -13,7 +13,7 @@
 	  SectionHeader,
 	  SeoMeta,
 	} from "$lib/components";
-	import { GithubBrand } from "@recast/ui/brand-icons";
+	import { prefersReducedMotion } from "$lib/motion-core";
 	import {
 	  Apple,
 	  ArrowRight,
@@ -53,7 +53,7 @@
 	  X,
 	  Zap,
 	} from "@lucide/svelte";
-	import { prefersReducedMotion } from "$lib/motion-core";
+	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
@@ -443,8 +443,8 @@
 		},
 		manual: {
 			label: "Manual",
-			dot: "bg-primary",
-			ring: "text-primary ring-primary/25",
+			dot: "bg-foreground/50",
+			ring: "text-foreground/70 ring-border-low/60",
 		},
 	};
 
@@ -521,7 +521,7 @@
 				<Reveal variant="up">
 					<div class="mx-auto flex max-w-3xl flex-col items-center gap-5 text-center">
 						<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-ink/80">
-							<Play class="size-3.5 text-primary" />
+							<Play class="size-3.5 text-ink/70" />
 							See it work
 						</span>
 						<h2 class="text-balance text-3xl font-semibold leading-[1.05] tracking-tight sm:text-4xl md:text-5xl">
@@ -645,12 +645,6 @@
 			/>
 
 			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-3xl shadow-craft-xl">
-				<!-- Soft primary glow biases the eye toward the Recast column. -->
-				<div
-					aria-hidden="true"
-					class="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 opacity-80"
-					style="background: radial-gradient(ellipse 90% 60% at 85% 50%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 72%);"
-				></div>
 				<div class="relative z-10">
 					<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
 						<div class="flex items-center gap-2 px-6 py-4 text-muted-foreground">
@@ -664,7 +658,7 @@
 						<Reveal variant={i % 2 === 0 ? "left" : "right"} delay={i * 70}>
 							<div class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low/30' : ''}">
 								<div class="px-6 py-5 text-sm text-muted-foreground">{row.os}</div>
-								<div class="flex items-start gap-2.5 border-l border-border-low/30 bg-primary/6 px-6 py-5 text-sm text-foreground">
+								<div class="flex items-start gap-2.5 border-l border-border-low/30 bg-foreground/2 px-6 py-5 text-sm text-foreground">
 									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
 									{row.recast}
 								</div>
@@ -694,7 +688,7 @@
 						{#each recordingFeatures as f, i}
 							{@const Icon = f.icon}
 							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3.5">
-								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-primary">
+								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-foreground/70">
 									<Icon class="size-4" />
 								</span>
 								<span>
@@ -728,7 +722,7 @@
 	</Section>
 
 	<!-- Step 2 — Auto-polish -->
-	<Section id="polish" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
+	<Section id="polish" class="overflow-hidden border-t border-border-low/60">
 		<Container>
 			<SectionHeader
 				eyebrow="Step 2 · Auto-polish"
@@ -811,7 +805,7 @@
 				{#each editorFeatures as feature, i}
 					{@const Icon = feature.icon}
 					{@const chip = kindChip[feature.kind]}
-					<Reveal variant="morph" delay={i * 60} class="snap-center shrink-0">
+					<Reveal variant="morph" delay={i * 70} class="snap-center shrink-0">
 						<article
 							class="group/feat relative flex w-70 flex-col gap-5 sm:w-[320px]"
 						>
@@ -826,13 +820,6 @@
 									aria-hidden="true"
 									class="pointer-events-none absolute inset-0 opacity-50"
 									style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 8%, transparent) 1px, transparent 1px); background-size: 16px 16px;"
-								></div>
-
-								<!-- Per-card primary glow blob. Sits behind the icon/image. -->
-								<div
-									aria-hidden="true"
-									class="pointer-events-none absolute -bottom-12 left-1/2 size-48 -translate-x-1/2 rounded-full opacity-70"
-									style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 75%);"
 								></div>
 
 								<!-- Corner accents. Tiny CRT-ish brackets to frame the
@@ -885,9 +872,7 @@
 										<div
 											class="relative grid size-28 place-items-center rounded-2xl border border-border-low/60 bg-card/40 shadow-craft-md backdrop-blur-sm"
 										>
-											<Icon
-												class="size-12 text-foreground/85 drop-shadow-[0_4px_12px_color-mix(in_srgb,var(--color-primary)_35%,transparent)]"
-											/>
+											<Icon class="size-12 text-foreground/85" />
 										</div>
 									</div>
 								{/if}
@@ -910,7 +895,7 @@
 							<div class="flex flex-col gap-2 px-1">
 								<div class="flex items-center gap-2">
 									<span
-										class="glass-chip grid size-7 place-items-center rounded-md text-foreground/80 transition-colors group-hover/feat:text-primary"
+										class="glass-chip grid size-7 place-items-center rounded-md text-foreground/80 transition-colors group-hover/feat:text-foreground"
 									>
 										<Icon class="size-3.5" />
 									</span>
@@ -956,9 +941,9 @@
 			<div class="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
 				{#each extensionBeat as item, i}
 					{@const Icon = item.icon}
-					<Reveal variant="up" delay={i * 80} class="h-full">
-						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-craft-lg">
-							<span class="glass-chip grid size-10 place-items-center rounded-xl text-primary">
+					<Reveal variant="up" delay={i * 70} class="h-full">
+						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-border-low hover:shadow-craft-lg">
+							<span class="glass-chip grid size-10 place-items-center rounded-xl text-foreground/70">
 								<Icon class="size-5" />
 							</span>
 							<div>
@@ -1002,7 +987,7 @@
 						{#each shareFeatures as f, i}
 							{@const Icon = f.icon}
 							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3.5">
-								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-primary">
+								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-foreground/70">
 									<Icon class="size-4" />
 								</span>
 								<span>
@@ -1017,15 +1002,9 @@
 				<div class="lg:col-span-6">
 					<Reveal variant="morph">
 						<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
-							<div
-								aria-hidden="true"
-								class="pointer-events-none absolute -top-24 right-0 size-72 rounded-full opacity-60"
-								style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 70%);"
-							></div>
-
 							<div class="relative">
 								<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-									<HardDriveUpload class="size-3.5 text-primary" />
+									<HardDriveUpload class="size-3.5 text-foreground/70" />
 									Google Drive · built in
 								</span>
 
@@ -1045,7 +1024,7 @@
 								</div>
 
 								<p class="mt-5 inline-flex items-center gap-2 text-xs text-muted-foreground">
-									<KeyRound class="size-3.5 text-primary" />
+									<KeyRound class="size-3.5 text-foreground/70" />
 									OAuth scoped to files Recast uploads. Revoke any time from your Google account.
 								</p>
 							</div>
@@ -1072,13 +1051,13 @@
 					<ul class="mt-10 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
 						{#each cloudFeatures as f, i}
 							{@const Icon = f.icon}
-							<Reveal as="li" variant="left" delay={i * 60} class="flex items-start gap-3">
-								<span class="glass-chip mt-0.5 grid size-7 shrink-0 place-items-center rounded-md text-primary">
+							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3">
+								<span class="glass-chip mt-0.5 grid size-7 shrink-0 place-items-center rounded-md text-foreground/70">
 									<Icon class="size-3.5" />
 								</span>
 								<span>
 									<span class="text-sm font-semibold text-foreground">{f.title}</span>
-									<span class="block text-xs leading-relaxed text-muted-foreground">{f.description}</span>
+									<span class="block text-[13px] leading-relaxed text-muted-foreground">{f.description}</span>
 								</span>
 							</Reveal>
 						{/each}
@@ -1088,16 +1067,16 @@
 				<div class="lg:col-span-6">
 					<Reveal variant="morph">
 						<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
-							<div
-								aria-hidden="true"
-								class="pointer-events-none absolute -top-24 right-0 size-72 rounded-full opacity-60"
-								style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 14%, transparent), transparent 70%);"
-							></div>
-
 							<div class="relative">
 								<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-									<Cloud class="size-3.5 text-primary" />
-									Recast Cloud · waitlist open
+									<Cloud class="size-3.5 text-foreground/70" />
+									Recast Cloud
+									<span class="text-muted-foreground/40">·</span>
+									<span class="relative flex size-1.5">
+										<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+										<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+									</span>
+									waitlist open
 								</span>
 
 								<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
@@ -1115,7 +1094,7 @@
 											class={cn(
 												"flex flex-col gap-2 rounded-xl border p-4",
 												t.tone === "primary"
-													? "border-primary/30 bg-primary/4"
+													? "border-primary/30 bg-background/60"
 													: "border-border-low/60 bg-background/60",
 											)}
 										>
@@ -1151,7 +1130,7 @@
 
 								{#if joined}
 									<div
-										class="mt-7 flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3.5"
+										class="mt-7 flex items-center gap-3 rounded-xl border border-border-low/60 bg-foreground/3 px-4 py-3.5"
 										in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
 									>
 										<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
@@ -1172,7 +1151,7 @@
 											required
 											bind:value={email}
 											placeholder="founder@startup.com"
-											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
 										/>
 										<Button type="submit" disabled={loading} class="gap-2">
 											{loading ? "Joining…" : "Join waitlist"}
@@ -1210,9 +1189,9 @@
 			<div class="mt-16 grid grid-cols-1 gap-4 md:grid-cols-3">
 				{#each founderUse as item, i}
 					{@const Icon = item.icon}
-					<Reveal variant="morph" delay={i * 90}>
+					<Reveal variant="up" delay={i * 70}>
 						<article class="glass-card group flex h-full flex-col rounded-2xl p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
-							<span class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-primary">
+							<span class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-foreground">
 								<Icon class="size-5" />
 							</span>
 							<h3 class="mt-6 text-lg font-semibold tracking-tight text-foreground">
@@ -1255,10 +1234,6 @@
 
 				<Reveal variant="right" delay={80}>
 					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
-						<div
-							aria-hidden="true"
-							class="pointer-events-none absolute -right-10 -top-10 size-48 rounded-full bg-primary/10 blur-2xl"
-						></div>
 						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
 							Recast Cloud
 						</span>
@@ -1310,37 +1285,48 @@
 				</div>
 
 				<div class="lg:col-span-8">
-					<ul class="border-y border-border-low/60">
+					<ul class="space-y-3">
 						{#each faqs as faq, i (faq.q)}
 							{@const open = openFaq === i}
-							<li class={i < faqs.length - 1 ? "border-b border-border-low/50" : ""}>
-								<button
-									type="button"
-									onclick={() => (openFaq = open ? null : i)}
-									aria-expanded={open}
-									class="flex w-full items-start gap-4 py-5 text-left transition-colors"
+							<li>
+								<div
+									class={cn(
+										"overflow-hidden rounded-2xl border transition-colors",
+										open
+											? "border-border-low bg-foreground/3"
+											: "border-border-low/60 bg-background/50 hover:border-border-low",
+									)}
 								>
-									<span class="mt-0.5 shrink-0 text-primary">
-										{#if open}
-											<Minus class="size-4" />
-										{:else}
-											<Plus class="size-4" />
-										{/if}
-									</span>
-									<span class="flex-1 text-[15px] font-semibold tracking-tight text-foreground sm:text-base">
-										{faq.q}
-									</span>
-								</button>
-								{#if open}
-									<div
-										transition:slide={{ duration: reduced ? 0 : 220, easing: cubicOut }}
-										class="overflow-hidden"
+									<button
+										type="button"
+										onclick={() => (openFaq = open ? null : i)}
+										aria-expanded={open}
+										aria-controls={`faq-panel-${i}`}
+										class="group flex w-full items-start gap-3.5 px-5 py-4 text-left"
 									>
-										<p class="pb-5 pl-8 pr-2 text-sm leading-relaxed text-muted-foreground">
-											{faq.a}
-										</p>
-									</div>
-								{/if}
+										<span aria-hidden="true" class="mt-0.5 shrink-0 text-muted-foreground">
+											{#if open}
+												<Minus class="size-4" />
+											{:else}
+												<Plus class="size-4" />
+											{/if}
+										</span>
+										<span class="flex-1 text-[15px] font-semibold tracking-tight text-foreground sm:text-base">
+											{faq.q}
+										</span>
+									</button>
+									{#if open}
+										<div
+											id={`faq-panel-${i}`}
+											transition:slide={{ duration: reduced ? 0 : 220, easing: cubicOut }}
+											class="overflow-hidden"
+										>
+											<p class="pb-5 pl-12 pr-5 text-sm leading-relaxed text-muted-foreground">
+												{faq.a}
+											</p>
+										</div>
+									{/if}
+								</div>
 							</li>
 						{/each}
 					</ul>
@@ -1349,26 +1335,14 @@
 		</Container>
 	</Section>
 
-	<!-- Final CTA -->
-	<Section id="cta" class="border-t border-border-low/60">
-		<Container>
+	<!-- Final CTA. Closing bookend: content floats over a faded editorial photo
+	     like the hero, so the page opens and closes on photography. A different
+	     asset from the footer's so the two stacked bands do not repeat. -->
+	<Section id="cta" class="relative overflow-hidden border-t border-border-low/60">
+	
+		<Container class="relative z-10 py-8 md:py-12">
 			<Reveal variant="scale">
-				<div
-					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
-					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
-				>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute -top-40 left-1/2 size-160 -translate-x-1/2 rounded-full opacity-60"
-						style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%);"
-					></div>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute inset-x-0 top-0 h-px"
-						style="background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-foreground) 18%, transparent), transparent);"
-					></div>
-
-					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
+				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
 							<span class="relative flex size-1.5">
 								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
@@ -1424,7 +1398,6 @@
 							<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
 						</a>
 					</div>
-				</div>
 			</Reveal>
 		</Container>
 	</Section>

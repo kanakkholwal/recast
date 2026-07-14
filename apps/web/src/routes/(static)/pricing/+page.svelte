@@ -3,6 +3,7 @@
 		Container,
 		Eyebrow,
 		Footer,
+		HeroBackdrop,
 		Reveal,
 		Section,
 		SectionHeader,
@@ -131,6 +132,7 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
+		<HeroBackdrop src="/background-footer.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<Eyebrow icon={Sparkles} variant="primary">Pricing</Eyebrow>

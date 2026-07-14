@@ -15,7 +15,7 @@ export const platforms = ["macOS", "Windows", "Linux"];
 // shows through, so the hero never renders broken. Kept here (not inline) so
 // the one place to change the art is obvious.
 export const backdropUrl =
-	"/hero-background.webp";
+	"/background-hero.webp";
 
 export const steps = [
 	{ icon: Video, label: "Record" },

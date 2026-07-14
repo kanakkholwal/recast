@@ -72,7 +72,7 @@
 		onpointerup={stop}
 		onpointercancel={stop}
 		onkeydown={onKeydown}
-		class="group relative aspect-video w-full cursor-ew-resize touch-pan-y overflow-hidden rounded-2xl border border-primary/40 bg-background shadow-craft-xl ring-1 ring-primary/20 outline-none select-none focus-visible:ring-2 focus-visible:ring-primary"
+		class="group relative aspect-video w-full cursor-ew-resize touch-pan-y overflow-hidden rounded-2xl border border-border/60 bg-background shadow-craft-xl ring-1 ring-border/40 outline-none select-none focus-visible:ring-2 focus-visible:ring-primary"
 	>
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
@@ -168,14 +168,9 @@
 			class="pointer-events-none absolute inset-0 opacity-40"
 			style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-foreground) 10%, transparent) 1px, transparent 1px); background-size: 18px 18px;"
 		></div>
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute left-1/2 top-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60"
-			style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 70%);"
-		></div>
 		<div class="relative flex flex-col items-center gap-3 text-center">
 			<span
-				class="grid size-14 place-items-center rounded-2xl border border-primary/30 bg-primary/10 text-primary backdrop-blur-sm"
+				class="grid size-14 place-items-center rounded-2xl border border-border-low/60 bg-foreground/5 text-muted-foreground backdrop-blur-sm"
 			>
 				<Film class="size-6" />
 			</span>

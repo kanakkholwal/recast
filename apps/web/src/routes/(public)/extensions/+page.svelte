@@ -2,6 +2,7 @@
 	import {
 		Container,
 		Footer,
+		HeroBackdrop,
 		Reveal,
 		Section,
 		SectionHeader,
@@ -61,7 +62,8 @@
 
 <main class="text-foreground">
 	<!-- Hero -->
-	<Section spacing="loose">
+	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
+		<HeroBackdrop src="/background-extensions.webp" />
 		<Container>
 			<SectionHeader
 				eyebrow="Extensions"

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Container, Eyebrow, Footer, Reveal, Section, SeoMeta } from "$lib/components";
+	import { Container, Eyebrow, Footer, HeroBackdrop, Reveal, Section, SeoMeta } from "$lib/components";
 	import { formatDate } from "$lib/blog/format";
 	import { Badge } from "@recast/ui/badge";
 	import { ArrowRight, Clock, PenLine } from "@lucide/svelte";
@@ -16,6 +16,7 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
+		<HeroBackdrop src="/background-blog.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<Eyebrow icon={PenLine} variant="primary">Blog</Eyebrow>
