@@ -27,7 +27,7 @@
 <div class="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
   <nav
     aria-label="Primary"
-    class="glass-strong bg-card flex w-full max-w-3xl items-center gap-2 rounded-2xl p-1.5"
+    class="glass-strong shadow-lg border-border-subtle flex w-full max-w-3xl items-center gap-2 rounded-xl p-1.5"
   >
     <a
       href="/"

@@ -17,7 +17,7 @@
 
 {#if webConsent.needsBanner}
 	<div
-		class="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg"
+		class="fixed bottom-4 left-4 z-50 max-w-sm rounded-lg border border-border bg-popover p-4 text-popover-foreground shadow-lg fade-in slide-in delay-3000"
 		role="dialog"
 		aria-label="Privacy preferences"
 	>

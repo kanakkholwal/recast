@@ -12,28 +12,18 @@
        Same asset as the hero; a missing file just leaves the clean gradient. -->
   <div aria-hidden="true" class="pointer-events-none absolute inset-0">
     <div
-      class="absolute inset-x-0 bottom-0 h-2/3 bg-cover bg-center opacity-40 dark:opacity-25"
-      style="background-image: url('/hero-background.png');"
+      class="absolute inset-0 bg-cover bg-center opacity-90 dark:opacity-60"
+      style="background-image: url('/hero-background.webp');"
     ></div>
+    <!-- Top fade only: the photo is full-bleed and emerges from the page
+         background, like the reference. No side fade, so it reads edge to edge. -->
     <div
       class="absolute inset-0"
-      style="background: linear-gradient(to bottom, var(--color-background) 28%, transparent 78%);"
+      style="background: linear-gradient(to bottom, var(--color-background) 0%, var(--color-background) 18%, transparent 52%);"
     ></div>
   </div>
 
-  <!-- Oversized wordmark, cut off at the bottom edge: the closing beat. -->
-  <div
-    aria-hidden="true"
-    class="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center overflow-hidden"
-  >
-    <span
-      class="translate-y-[26%] text-[24vw] font-bold leading-none tracking-tighter text-foreground/6 select-none"
-    >
-      Recast
-    </span>
-  </div>
-
-  <Container class="relative z-10 py-20 md:py-28" as="div">
+  <Container class="relative z-10 pt-20 pb-10 md:pt-28 md:pb-14" as="div">
     <div class="grid gap-14 md:grid-cols-12">
       <div class="md:col-span-5">
         <a href="/" class="inline-flex items-center gap-2.5">
@@ -127,4 +117,15 @@
       </div>
     </div>
   </Container>
+
+  <!-- Dedicated wordmark: a real in-flow band at the foot of the page (not an
+       absolutely positioned overlay), sitting over the full-bleed photo like the
+       reference. leading is tightened so the band hugs the type. -->
+  <div class="relative z-10 overflow-hidden px-4 pb-8 md:pb-12">
+    <span
+      class="block text-center text-[22vw] font-bold leading-[0.82] tracking-tighter text-background/40 dark:text-foreground/30 select-none"
+    >
+      Recast
+    </span>
+  </div>
 </footer>

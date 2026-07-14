@@ -10,12 +10,12 @@ export const words = ["demo.", "launch video.", "changelog clip."];
 
 export const platforms = ["macOS", "Windows", "Linux"];
 
-// Editorial hero backdrop. Swap for a local `/hero-backdrop.jpg` or any
+// Editorial hero backdrop. Swap for a local `/hero-backdrop.webp` or any
 // Unsplash/Pexels landscape. If it fails to load, the base gradient behind it
 // shows through, so the hero never renders broken. Kept here (not inline) so
 // the one place to change the art is obvious.
 export const backdropUrl =
-	"/hero-background.png";
+	"/hero-background.webp";
 
 export const steps = [
 	{ icon: Video, label: "Record" },

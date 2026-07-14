@@ -1,9 +1,13 @@
 <script lang="ts">
 	import {
+	  BeforeAfterSlider,
 	  Container,
+	  ExportMock,
 	  Footer,
 	  Hero,
 	  MacWindow,
+	  PolishGrid,
+	  RecordMock,
 	  Reveal,
 	  Section,
 	  SectionHeader,
@@ -20,7 +24,6 @@
 	  Cpu,
 	  Download,
 	  EyeOff,
-	  Film,
 	  HardDrive,
 	  HardDriveUpload,
 	  Highlighter,
@@ -33,7 +36,6 @@
 	  Mic2,
 	  Minus,
 	  Monitor,
-	  MonitorPlay,
 	  MousePointer2,
 	  Palette,
 	  Pause,
@@ -41,7 +43,6 @@
 	  Plus,
 	  Rocket,
 	  Scissors,
-	  Search,
 	  ShieldCheck,
 	  Sparkles,
 	  Target,
@@ -52,7 +53,7 @@
 	  X,
 	  Zap,
 	} from "@lucide/svelte";
-	import { autoplayInView, prefersReducedMotion } from "$lib/motion-core";
+	import { prefersReducedMotion } from "$lib/motion-core";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";
@@ -537,124 +538,31 @@
 
 				<Reveal variant="scale" delay={120}>
 					<!--
-					  Before/after proof pair. Stacked vertically (not side-by-side)
-					  so each clip stays full-width and readable, and so the polished
-					  one finishing first — when silence is trimmed — becomes a
-					  visible beat instead of getting lost in a side-by-side crop.
-					  Both <video>s autoplay muted-looped-playsinline. They run
-					  silent by design — the proof here is purely visual (zoom,
-					  cursor smoothing, silence-trim pacing), narration would
-					  fight the on-page copy. No controls, no scrub bar; this
-					  is a hero proof loop, not a player.
+					  Before/after wipe. One interactive comparison instead of two
+					  stacked clips: raw on the left, polished revealed on the right,
+					  drag the handle to wipe. Both clips autoplay at the same time
+					  and loop independently (they are not frame-synced on purpose:
+					  silence-trim changes the polished length, which is the point).
+					  The comparison is of the persistent look, so it reads at any
+					  handle position; the length delta is shown as proof.
 					-->
 					<div class="mx-auto mt-12 max-w-5xl">
-						<div class="grid grid-cols-1 gap-5">
-							{#each beforeAfterClips as clip (clip.tone)}
-								{@const Icon = clip.icon}
-								{@const hasSrc = clip.src.length > 0}
-								<figure
-									class={cn(
-										"relative overflow-hidden rounded-2xl border shadow-craft-xl",
-										clip.tone === "polished"
-											? "border-primary/40 ring-1 ring-primary/20"
-											: "border-hairline",
-									)}
-								>
-									<figcaption class="flex items-center justify-between gap-3 border-b border-hairline-soft bg-white/5 px-4 py-2.5">
-										<span
-											class={cn(
-												"inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.16em]",
-												clip.tone === "polished" ? "text-primary" : "text-ink-muted",
-											)}
-										>
-											<Icon class="size-3.5" />
-											{clip.label}
-										</span>
-										<span class="inline-flex items-center gap-3 text-[11px] font-medium text-ink-muted">
-											<span class="hidden sm:inline">{clip.hint}</span>
-											<span
-												class={cn(
-													"inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 font-mono text-[10px] font-semibold ring-1 ring-inset",
-													clip.tone === "polished"
-														? "bg-primary/10 text-primary ring-primary/25"
-														: "bg-white/5 text-ink-muted ring-hairline",
-												)}
-											>
-												{clip.durationLabel}
-											</span>
-										</span>
-									</figcaption>
-
-									<div class="relative aspect-video w-full bg-canvas">
-										{#if hasSrc}
-											<!-- svelte-ignore a11y_media_has_caption -->
-											<video
-												use:autoplayInView
-												src={clip.src}
-												autoplay
-												loop
-												muted
-												playsinline
-												preload="metadata"
-												class={cn(
-													"block size-full object-cover",
-													clip.tone === "raw" && "saturate-[0.85]",
-												)}
-											></video>
-										{:else}
-											<!-- Empty state. Renders when no URL is wired yet so the
-											     section reads as intentional, not broken. Mirrors the
-											     editor-rail card aesthetic: dot-grid backdrop, glow
-											     blob, corner brackets, icon-as-hero. Once a URL goes
-											     into `beforeAfterClips[*].src`, the <video> branch
-											     above takes over and this whole block falls away. -->
-											<div class="absolute inset-0 grid place-items-center overflow-hidden">
-												<div
-													aria-hidden="true"
-													class="pointer-events-none absolute inset-0 opacity-40"
-													style="background-image: radial-gradient(circle, color-mix(in srgb, var(--color-ink) 10%, transparent) 1px, transparent 1px); background-size: 18px 18px;"
-												></div>
-												<div
-													aria-hidden="true"
-													class="pointer-events-none absolute left-1/2 top-1/2 size-72 -translate-x-1/2 -translate-y-1/2 rounded-full opacity-60"
-													style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) {clip.tone === 'polished' ? 22 : 8}%, transparent), transparent 70%);"
-												></div>
-												<div class="relative flex flex-col items-center gap-3 text-center">
-													<span
-														class={cn(
-															"grid size-14 place-items-center rounded-2xl border backdrop-blur-sm",
-															clip.tone === "polished"
-																? "border-primary/30 bg-primary/10 text-primary"
-																: "border-hairline bg-white/5 text-ink-muted",
-														)}
-													>
-														<Film class="size-6" />
-													</span>
-													<div class="font-mono text-[10px] font-bold uppercase tracking-[0.18em] text-ink-muted">
-														Clip pending
-													</div>
-												</div>
-											</div>
-										{/if}
-
-										<!-- Applied-features chip strip. Polished slot only.
-										     Names what auto-polish did so the viewer attributes
-										     the visible delta to specific Recast features
-										     instead of treating it as generic "after". -->
-										{#if clip.tone === "polished" && clip.applied.length > 0}
-											<div class="pointer-events-none absolute inset-x-0 bottom-0 flex flex-wrap items-center justify-center gap-1.5 bg-linear-to-t from-black/55 via-black/20 to-transparent px-4 pb-3 pt-10">
-												{#each clip.applied as feat}
-													<span class="inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-0.5 text-[10px] font-semibold text-white/90 ring-1 ring-inset ring-white/15 backdrop-blur">
-														<Check class="size-2.5 text-primary" />
-														{feat}
-													</span>
-												{/each}
-											</div>
-										{/if}
-									</div>
-								</figure>
-							{/each}
-						</div>
+						<BeforeAfterSlider
+							raw={{
+								src: beforeAfterClips[0].src,
+								label: "Raw",
+								durationLabel: beforeAfterClips[0].durationLabel,
+							}}
+							polished={{
+								src: beforeAfterClips[1].src,
+								label: "Polished",
+								durationLabel: beforeAfterClips[1].durationLabel,
+							}}
+							applied={beforeAfterClips[1].applied}
+						/>
+						<p class="mt-4 text-center text-[12.5px] leading-relaxed text-ink-muted">
+							Drag to compare. Both clips play at once; the polished cut lands shorter once silence is trimmed.
+						</p>
 					</div>
 				</Reveal>
 			</Container>
@@ -671,11 +579,13 @@
 			  when wrapped so we don't get orphan separators.
 			-->
 			<Reveal variant="blur">
-				<ul class="mx-auto flex max-w-5xl flex-wrap items-center justify-center gap-x-6 gap-y-3">
+				<!-- Values as a clean editorial row (was pill chips): quieter and
+				     more considered, icons muted so nothing competes with the CTA. -->
+				<ul class="mx-auto flex max-w-4xl flex-wrap items-center justify-center gap-x-7 gap-y-3">
 					{#each openSourceClaims as claim (claim.label)}
 						{@const Icon = claim.icon}
-						<li class="inline-flex items-center gap-2 rounded-full border border-border-low/50 bg-card/40 px-3 py-1.5 text-[11.5px] font-semibold text-foreground/85 ring-1 ring-inset ring-border-low/30 backdrop-blur">
-							<Icon class="size-3.5 text-primary" />
+						<li class="inline-flex items-center gap-2 text-[13px] font-medium text-foreground/70">
+							<Icon class="size-4 text-foreground/40" />
 							{claim.label}
 						</li>
 					{/each}
@@ -683,10 +593,11 @@
 			</Reveal>
 
 			<Reveal variant="blur" delay={120}>
-				<p class="mt-14 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
+				<div class="divider-soft mx-auto mt-14 w-24"></div>
+				<p class="mt-10 text-center text-[11px] font-semibold uppercase tracking-[0.2em] text-muted-foreground">
 					Built on tools makers trust
 				</p>
-				<div class="mt-10 flex flex-wrap items-center justify-center gap-x-10 gap-y-7 sm:gap-x-14">
+				<div class="mt-9 flex flex-wrap items-center justify-center gap-x-10 gap-y-7 sm:gap-x-14">
 					{#each [
 						{ name: "Tauri", slug: "tauri", href: "https://tauri.app" },
 						{ name: "Rust", slug: "rust", href: "https://www.rust-lang.org" },
@@ -733,33 +644,33 @@
 				align="center"
 			/>
 
-			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-2xl shadow-craft-lg">
+			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-3xl shadow-craft-xl">
 				<!-- Soft primary glow biases the eye toward the Recast column. -->
 				<div
 					aria-hidden="true"
-					class="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 opacity-70"
-					style="background: radial-gradient(ellipse 90% 60% at 85% 50%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 72%);"
+					class="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 opacity-80"
+					style="background: radial-gradient(ellipse 90% 60% at 85% 50%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 72%);"
 				></div>
 				<div class="relative z-10">
-				<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
-					<div class="flex items-center gap-2 px-5 py-3 text-muted-foreground">
-						<X class="size-3.5" /> Built-in recorder
-					</div>
-					<div class="flex items-center gap-2 border-l border-border-low/50 px-5 py-3 text-primary">
-						<Sparkles class="size-3.5" /> Recast
-					</div>
-				</div>
-				{#each contrast as row, i}
-					<Reveal variant={i % 2 === 0 ? "left" : "right"} delay={i * 70}>
-						<div class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low/40' : ''}">
-							<div class="px-5 py-4 text-sm text-muted-foreground">{row.os}</div>
-							<div class="flex items-start gap-2.5 border-l border-border-low/40 bg-primary/4 px-5 py-4 text-sm text-foreground">
-								<Check class="mt-0.5 size-4 shrink-0 text-primary" />
-								{row.recast}
-							</div>
+					<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+						<div class="flex items-center gap-2 px-6 py-4 text-muted-foreground">
+							<X class="size-3.5" /> Built-in recorder
 						</div>
-					</Reveal>
-				{/each}
+						<div class="flex items-center gap-2 border-l border-border-low/50 px-6 py-4 text-primary">
+							<Sparkles class="size-3.5" /> Recast
+						</div>
+					</div>
+					{#each contrast as row, i}
+						<Reveal variant={i % 2 === 0 ? "left" : "right"} delay={i * 70}>
+							<div class="grid grid-cols-2 {i < contrast.length - 1 ? 'border-b border-border-low/30' : ''}">
+								<div class="px-6 py-5 text-sm text-muted-foreground">{row.os}</div>
+								<div class="flex items-start gap-2.5 border-l border-border-low/30 bg-primary/6 px-6 py-5 text-sm text-foreground">
+									<Check class="mt-0.5 size-4 shrink-0 text-primary" />
+									{row.recast}
+								</div>
+							</div>
+						</Reveal>
+					{/each}
 				</div>
 			</div>
 		</Container>
@@ -808,24 +719,7 @@
 							title="Recast"
 							class="transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-craft-lg"
 						>
-							<div class="p-5">
-								<div class="relative rounded-xl border border-border-low/60 bg-background/60 p-4 shadow-craft-inset">
-									<div class="flex items-center gap-3 rounded-lg border border-border-low/60 bg-background/80 px-3 py-2.5">
-										<Search class="size-4 text-muted-foreground" />
-										<span class="text-sm font-medium text-foreground/85">Start a recording…</span>
-										<span class="ml-auto rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">⌘ ⇧ R</span>
-									</div>
-									<div class="mt-3 space-y-1.5">
-										{#each [{ icon: MonitorPlay, label: "Record full screen" }, { icon: Layout, label: "Record region" }, { icon: Play, label: "Continue last project" }] as opt, i}
-											{@const Icon = opt.icon}
-											<div class="flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors {i === 0 ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}">
-												<Icon class="size-3.5" />
-												<span class="font-medium">{opt.label}</span>
-											</div>
-										{/each}
-									</div>
-								</div>
-							</div>
+							<RecordMock />
 						</MacWindow>
 					</Reveal>
 				</div>
@@ -843,20 +737,7 @@
 				align="center"
 			/>
 
-			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4">
-				{#each polishFeatures as feature, i}
-					{@const Icon = feature.icon}
-					<Reveal variant="morph" delay={i * 80} class="h-full">
-						<div class="flex h-full flex-col gap-3 bg-background/50 p-6 backdrop-blur-md">
-							<Icon class="size-5 text-primary" />
-							<div>
-								<div class="text-sm font-semibold text-foreground">{feature.title}</div>
-								<div class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{feature.description}</div>
-							</div>
-						</div>
-					</Reveal>
-				{/each}
-			</div>
+			<PolishGrid features={polishFeatures} />
 
 			<Reveal variant="up" class="mt-12">
 				<figure class="mx-auto max-w-5xl">
@@ -1156,34 +1037,11 @@
 								</p>
 
 								<!-- Mock of the export-success card. Mirrors the real
-								     desktop UI so the section reads as "this is what
-								     you'll actually see", not aspirational marketing. -->
-								<div
-									class="mt-7 rounded-xl border border-border-low/70 bg-background/80 p-4 shadow-craft-inset"
-								>
-									<div class="flex items-start gap-3">
-										<span class="grid size-9 shrink-0 place-items-center rounded-lg border border-success/30 bg-success/10 text-success">
-											<Check class="size-4" />
-										</span>
-										<div class="min-w-0 flex-1">
-											<div class="text-[13px] font-semibold tracking-tight text-foreground">
-												Export complete
-											</div>
-											<div class="mt-0.5 truncate font-mono text-[10px] text-muted-foreground">
-												~/Recordings/launch-demo.mp4
-											</div>
-										</div>
-									</div>
-									<div
-										class="mt-3 flex items-center gap-2 rounded-lg border border-border-low/60 bg-foreground/2 px-3 py-2"
-									>
-										<HardDriveUpload class="size-3.5 shrink-0 text-success" />
-										<span class="text-[11.5px] font-medium text-foreground">Uploaded to Drive</span>
-										<span class="ml-auto inline-flex items-center gap-1 rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
-											<Link2 class="size-3 text-primary" />
-											Copy link
-										</span>
-									</div>
+								     desktop UI (and now loops the upload flow) so the
+								     section reads as "this is what you'll actually see",
+								     not aspirational marketing. -->
+								<div class="mt-7">
+									<ExportMock />
 								</div>
 
 								<p class="mt-5 inline-flex items-center gap-2 text-xs text-muted-foreground">

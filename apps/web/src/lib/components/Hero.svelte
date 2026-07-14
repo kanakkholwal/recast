@@ -1,18 +1,17 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		MacWindow,
-		Section,
-		SelectionWord,
+	  Container,
+	  MacWindow,
+	  Section,
+	  SelectionWord,
 	} from "$lib/components";
 	import {
-		autoplayInView,
-		prefersReducedMotion,
-		scrollRecede,
-		TextLoop,
+	  autoplayInView,
+	  prefersReducedMotion,
+	  scrollRecede,
+	  TextLoop,
 	} from "$lib/motion-core";
-	import { ArrowRight, Download, Sparkles } from "@lucide/svelte";
+	import { ArrowRight, CloudDownloadIcon, Sparkles } from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { blur, fly } from "svelte/transition";
 	import { backdropUrl, platforms, rise, steps, words } from "./Hero.logic";
@@ -43,25 +42,38 @@
 		></div>
 		<div
 			use:scrollRecede
-			class="absolute inset-0 bg-cover bg-center opacity-60 will-change-transform dark:opacity-40"
+			class="absolute inset-0 bg-cover bg-center opacity-80 will-change-transform dark:opacity-50"
 			style={`background-image: url('${backdropUrl}');`}
 		></div>
+		<!-- Top/bottom fade: photo starts higher (~55%) and melts into the page
+		     at both ends so there is no hard horizontal edge. -->
 		<div
 			class="absolute inset-0"
-			style="background: linear-gradient(to bottom, var(--color-background) 34%, transparent 64%, transparent 82%, var(--color-background) 100%);"
+			style="background: linear-gradient(to bottom, var(--color-background) 26%, transparent 55%, transparent 84%, var(--color-background) 100%);"
+		></div>
+		<!-- Left/right fade: blends the side edges so the photo reads as part of
+		     the page, not a rectangle dropped on top. Same token both themes. -->
+		<div
+			class="absolute inset-0"
+			style="background: linear-gradient(to right, var(--color-background), transparent 12%, transparent 88%, var(--color-background));"
 		></div>
 	</div>
 	<Container class="relative z-10">
 		<div class="mx-auto flex max-w-6xl flex-col items-center text-center">
-			<a href="/changelog" class="group inline-block" in:blur={reduced ? { duration: 0 } : { duration: 600, amount: 6 }}>
-				<Eyebrow icon={Sparkles} variant="primary">
-					<span>what's new</span>
-					<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
-				</Eyebrow>
+			<!-- Understated changelog link (was a loud lime pill): muted text with a
+			     small icon, so it sits under the headline instead of competing. -->
+			<a
+				href="/changelog"
+				class="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
+				in:blur={reduced ? { duration: 0 } : { duration: 600, amount: 6 }}
+			>
+				<Sparkles class="size-3.5" />
+				What's new
+				<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
 			</a>
 
 			<h1
-				class="text-balance mt-7 text-5xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
+				class="text-balance mt-7 text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5.25rem]"
 				in:fly={riseM(80)}
 			>
 				Record once.
@@ -79,7 +91,7 @@
 			</h1>
 
 			<p
-				class="text-pretty mt-7 max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg md:text-xl"
+				class="text-pretty mt-7 max-w-2xl text-sm leading-relaxed text-muted-foreground sm:text-lg md:text-base"
 				in:fly={riseM(200)}
 			>
 				Smart zoom, cursor smoothing, and silence cuts happen while you record.
@@ -107,18 +119,18 @@
 				class="mt-9 flex flex-col items-center gap-3 sm:flex-row sm:gap-4"
 				in:fly={riseM(380)}
 			>
-				<Button href="/download" size="lg" class="gap-2.5">
-					<Download class="size-4" />
-					Download free
+				<Button href="/download" variant="dark" size="xl" class="gap-2.5">
+					<CloudDownloadIcon class="size-4" />
+					Download for Desktop
 				</Button>
-				<Button href="#proof" variant="outline" size="lg" class="group/cta gap-2">
+				<!-- <Button href="#proof" variant="outline" size="lg" class="group/cta gap-2">
 					Watch it work
 					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
-				</Button>
+				</Button> -->
 			</div>
 
 			<div
-				class="mt-8 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground/80"
+				class="mt-8 flex items-center gap-2 text-xs font-medium tracking-[0.16em] text-muted-foreground/80"
 				in:fly={riseM(460)}
 			>
 				<span class="relative flex size-1.5">

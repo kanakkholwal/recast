@@ -54,6 +54,7 @@
 			},
 			size: {
 				default: "h-9 rounded-lg px-5 py-2.5 text-sm font-medium gap-2 [&_svg:not([class*='size-'])]:size-4",
+				xl: "h-12.5 rounded-xl active:rounded-3xl py-3.5 px-7 text-lg font-medium gap-2.5 [&_svg:not([class*='size-'])]:size-6",
 				lg: "h-11 rounded-xl active:rounded-2xl px-8 text-base font-semibold gap-2 [&_svg:not([class*='size-'])]:size-5",
 				sm: "h-8 rounded-md px-3 text-xs gap-1.5 [&_svg:not([class*='size-'])]:size-3.5",
 				xs: "h-6 rounded-md px-2 text-[11px] gap-1.5 [&_svg:not([class*='size-'])]:size-3",
@@ -61,6 +62,7 @@
 				"icon-sm": "size-8 rounded-md [&_svg:not([class*='size-'])]:size-4",
 				"icon-xs": "size-6 rounded-md [&_svg:not([class*='size-'])]:size-3",
 				"icon-lg": "size-11 rounded-xl [&_svg:not([class*='size-'])]:size-5",
+				"icon-xl": "size-14 rounded-2xl [&_svg:not([class*='size-'])]:size-6",
 				raw: "",
 			},
 		},
