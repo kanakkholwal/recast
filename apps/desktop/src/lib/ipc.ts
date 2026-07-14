@@ -1108,6 +1108,13 @@ export function readVideoText(args: {
 	});
 }
 
+/** Write an already-serialized read (JSON, or the review panel's readable Markdown)
+ *  to `destPath`. The timeline lives here as an object, so it serializes on this
+ *  side; the backend only owns the disk write. */
+export function exportScreenText(body: string, destPath: string): Promise<void> {
+	return invoke<void>("export_screen_text", { body, destPath });
+}
+
 /** True when at least one given media file actually carries an audio stream
  *  (ffprobe). The caption tab gates its Generate UI on this, since a recording can
  *  have a path but no audio track. */

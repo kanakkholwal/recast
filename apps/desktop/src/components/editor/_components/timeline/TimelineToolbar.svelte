@@ -4,16 +4,19 @@
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import {
     AudioLines,
+    Clapperboard,
     Clock,
     Expand,
+    Eye,
     FastForward,
     Keyboard,
     Layers,
     Maximize2,
+    Minus,
     Pencil,
+    Plus,
     Redo2,
     Scissors,
-    Search,
     SlidersHorizontal,
     SquareSplitHorizontal,
     Target,
@@ -21,7 +24,6 @@
     VolumeX,
     Wand2,
     ZoomIn,
-    ZoomOut,
   } from "@lucide/svelte";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
@@ -105,6 +107,16 @@
   // Counts only silence-detected cuts; manual ripple deletes shouldn't inflate this.
   const silenceCutCount = $derived(
     store.cuts.filter((c) => c.source === "silence").length,
+  );
+
+  // How many export-affecting effects are currently switched off. Surfaced as a
+  // badge on the Layers button so "my cuts didn't apply" is visible without
+  // opening the menu: this is the state that changes the output file, unlike the
+  // lane-visibility toggles above it (which are purely cosmetic).
+  const effectsOff = $derived(
+    (store.cutsEnabled ? 0 : 1) +
+      (store.focusEnabled ? 0 : 1) +
+      (store.annotationsGloballyHidden ? 1 : 0),
   );
 
   // Shared control styling so every toolbar affordance reads the same.
@@ -216,7 +228,7 @@
         title="Punch in on the moment at the playhead (zoom region)"
         class={SEG}
       >
-        <Search class="size-3" />
+        <ZoomIn class="size-3" />
         Zoom
       </button>
       <Popover.Root open={suggestOpen} onOpenChange={(v) => (suggestOpen = v)}>
@@ -295,6 +307,24 @@
       </span>
     {/if}
 
+    <!-- Preview rate is a viewing aid, not the export. When it isn't 1x it used
+         to be invisible once the View menu closed, which reads as "the export is
+         wrong". Persist it as a chip you can click to reset. -->
+    {#if playbackSpeed !== 1}
+      <button
+        type="button"
+        onclick={() => onSelectSpeed(1)}
+        title="Preview is playing at {speedLabel(
+          playbackSpeed,
+        )} (viewing only, not the export). Click to reset to 1x."
+        class="inline-flex h-6 items-center gap-1 rounded-md border border-border/60 bg-muted/60 px-2 font-mono text-[10px] font-semibold tabular-nums text-foreground ring-1 ring-inset ring-border/40 transition-colors hover:bg-card"
+      >
+        <FastForward class="size-2.5" />
+        {speedLabel(playbackSpeed)}
+        <span class="font-sans font-medium text-muted-foreground">preview</span>
+      </button>
+    {/if}
+
     <div class={GROUP}>
       <button
         type="button"
@@ -302,7 +332,7 @@
         aria-label="Zoom out timeline"
         class={SEG_ICON}
       >
-        <ZoomOut class="size-3" />
+        <Minus class="size-3" />
       </button>
       <span
         class="min-w-9 text-center font-mono text-[10px] font-semibold tabular-nums text-foreground"
@@ -315,7 +345,7 @@
         aria-label="Zoom in timeline"
         class={SEG_ICON}
       >
-        <ZoomIn class="size-3" />
+        <Plus class="size-3" />
       </button>
       <button
         type="button"
@@ -332,8 +362,8 @@
         disabled={!hasSelectedRegion}
         aria-label="Zoom to selection"
         title={hasSelectedRegion
-          ? "Zoom in on the selected focus region"
-          : "Select a focus region first"}
+          ? "Zoom the timeline to fit the selection"
+          : "Select a zoom, markup, or cut first"}
         class={SEG_ICON}
       >
         <Target class="size-3" />
@@ -344,16 +374,32 @@
       <DropdownMenu.Trigger>
         <button
           type="button"
-          aria-label="Layers"
-          title="Show or hide timeline layers"
-          class={SOLO}
+          aria-label={effectsOff > 0
+            ? `Layers (${effectsOff} export effect${effectsOff > 1 ? "s" : ""} off)`
+            : "Layers"}
+          title={effectsOff > 0
+            ? `${effectsOff} export effect${effectsOff > 1 ? "s" : ""} turned off`
+            : "Show timeline lanes and choose what to apply on export"}
+          class={cn(SOLO, "relative")}
         >
           <Layers class="size-3" />
           <span class="hidden md:inline">Layers</span>
+          <!-- Warns that something that changes the output file is switched off. -->
+          {#if effectsOff > 0}
+            <span
+              class="flex size-3.5 items-center justify-center rounded-full bg-lane-cut text-[8px] font-bold leading-none text-background"
+            >
+              {effectsOff}
+            </span>
+          {/if}
         </button>
       </DropdownMenu.Trigger>
-      <DropdownMenu.Content size="sm" align="end" class="w-48">
-        <DropdownMenu.Label>Show lanes</DropdownMenu.Label>
+      <DropdownMenu.Content size="sm" align="end" class="w-56">
+        <!-- Cosmetic: which lanes are drawn. Never affects the export. -->
+        <DropdownMenu.Label class="flex items-center gap-1.5">
+          <Eye class="size-3" />
+          Show in timeline
+        </DropdownMenu.Label>
         <DropdownMenu.CheckboxItem
           checked={showAudioLane}
           onCheckedChange={onToggleAudioLane}
@@ -365,7 +411,7 @@
           checked={showZoomLane}
           onCheckedChange={onToggleZoomLane}
         >
-          <Target class="size-3" />
+          <ZoomIn class="size-3" />
           Zoom
         </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
@@ -385,13 +431,25 @@
 
         <DropdownMenu.Separator />
 
-        <DropdownMenu.Label>Apply to video</DropdownMenu.Label>
+        <!-- Functional: what gets baked into the exported file. Worded as verbs
+             so it never reads the same as the cosmetic lane rows above. -->
+        <DropdownMenu.Label class="flex items-center gap-1.5">
+          <Clapperboard class="size-3" />
+          Apply on export
+        </DropdownMenu.Label>
+        <DropdownMenu.CheckboxItem
+          checked={store.cutsEnabled}
+          onCheckedChange={() => (store.cutsEnabled = !store.cutsEnabled)}
+        >
+          <Scissors class="size-3" />
+          Apply cuts
+        </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
           checked={store.focusEnabled}
           onCheckedChange={() => (store.focusEnabled = !store.focusEnabled)}
         >
-          <Target class="size-3" />
-          Zoom effects
+          <ZoomIn class="size-3" />
+          Apply zoom
         </DropdownMenu.CheckboxItem>
         <DropdownMenu.CheckboxItem
           checked={!store.annotationsGloballyHidden}
@@ -399,14 +457,7 @@
             (store.annotationsGloballyHidden = !store.annotationsGloballyHidden)}
         >
           <Pencil class="size-3" />
-          Markup
-        </DropdownMenu.CheckboxItem>
-        <DropdownMenu.CheckboxItem
-          checked={store.cutsEnabled}
-          onCheckedChange={() => (store.cutsEnabled = !store.cutsEnabled)}
-        >
-          <Scissors class="size-3" />
-          Cuts
+          Apply markup
         </DropdownMenu.CheckboxItem>
       </DropdownMenu.Content>
     </DropdownMenu.Root>

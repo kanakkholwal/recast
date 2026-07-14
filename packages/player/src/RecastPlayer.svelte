@@ -31,6 +31,18 @@
 	import "hls-video-element";
 	import "media-chrome";
 
+	import CaptionBox from "@recast/captions/box";
+	import {
+		DEFAULT_CAPTION_STYLE,
+		resolveCaptionAnimation,
+		chunkWords,
+		activeChunkIndex,
+		activeWordIndex,
+		spokenWordCount,
+		parseKaraokeCue,
+		type TranscriptWord,
+	} from "@recast/captions";
+
 	const DEFAULT_CONTROLS: RecastPlayerControls = {
 		bigPlay: true,
 		seek: true,
@@ -71,6 +83,7 @@
 		poster = null,
 		thumbnails = null,
 		tracks = [],
+		captionStyle = {},
 		title = "",
 		autoplay = false,
 		preload = "metadata",
@@ -116,8 +129,94 @@
 	const pinControls = $derived(typeof autohide === "number" && autohide < 0);
 	const mergedControls = $derived({ ...DEFAULT_CONTROLS, ...controls });
 	const mergedFeatures = $derived({ ...DEFAULT_FEATURES, ...features });
-	const showCaptions = $derived(mergedControls.captions && showMenu);
 	const playerLabel = $derived(ariaLabel || title || "Video player");
+
+	// ── Styled caption overlay ──────────────────────────────────────────────
+	// Renders captions through the shared @recast/captions CaptionBox (the same
+	// look as the editor) instead of the browser's default cue boxes: word-by-word
+	// highlight when the VTT carries inline timestamps, else the whole cue.
+	const resolvedCaptionStyle = $derived({ ...DEFAULT_CAPTION_STYLE, ...captionStyle });
+	const captionAnim = $derived(resolveCaptionAnimation(resolvedCaptionStyle.animation));
+	const hasCaptionTrack = $derived(
+		tracks.some((t) => t.kind === "captions" || t.kind === "subtitles"),
+	);
+	let captionsEnabled = $state(true);
+	let cueWords = $state<TranscriptWord[]>([]);
+
+	// The chunk to show at the playhead + its progress, mirroring the editor's
+	// CaptionOverlay. Times are output-time seconds (the uploaded VTT is output-
+	// time-mapped), matching `currentTime`.
+	const captionView = $derived.by(() => {
+		if (!captionsEnabled || cueWords.length === 0) return null;
+		const runs = chunkWords(cueWords, captionAnim);
+		const ci = activeChunkIndex(runs, currentTime);
+		const chunk = runs[ci];
+		if (!chunk) return null;
+		return {
+			key: `${chunk.start}:${ci}`,
+			words: chunk.words,
+			spoken: spokenWordCount(chunk.words, currentTime),
+			wi: activeWordIndex(chunk.words, currentTime, captionAnim.holdGaps),
+		};
+	});
+	const captionVertical = $derived(
+		resolvedCaptionStyle.position === "center"
+			? "top: 50%; transform: translateY(-50%);"
+			: resolvedCaptionStyle.position === "top"
+				? `top: ${resolvedCaptionStyle.offsetPct}%;`
+				: `bottom: ${resolvedCaptionStyle.offsetPct}%;`,
+	);
+	const captionJustify = $derived(
+		resolvedCaptionStyle.align === "left"
+			? "flex-start"
+			: resolvedCaptionStyle.align === "right"
+				? "flex-end"
+				: "center",
+	);
+
+	// Bind the caption track: keep it "hidden" (cues stay parsed, but the UA never
+	// paints its default boxes — our overlay renders instead) and refresh the
+	// active cue's words on every cue change. Track + cues land async after mount,
+	// so poll until present.
+	$effect(() => {
+		const video = videoEl;
+		if (!video || !hasCaptionTrack) return;
+		let track: TextTrack | null = null;
+		const readActive = () => {
+			if (!track) return;
+			// Re-assert hidden so a stray "showing" (e.g. the `default` track attr)
+			// can't double-render native cues over our overlay.
+			if (track.mode === "showing") track.mode = "hidden";
+			const cue = track.activeCues?.[0] as VTTCue | undefined;
+			cueWords = cue ? parseKaraokeCue(cue.text, cue.startTime, cue.endTime) : [];
+		};
+		const attach = () => {
+			const found = Array.from(video.textTracks).find(
+				(t) => t.kind === "captions" || t.kind === "subtitles",
+			);
+			if (!found) return false;
+			track = found;
+			track.mode = "hidden";
+			track.addEventListener("cuechange", readActive);
+			readActive();
+			return true;
+		};
+		let iv: ReturnType<typeof setInterval> | null = null;
+		if (!attach()) {
+			let tries = 0;
+			iv = setInterval(() => {
+				if (attach() || ++tries > 25) {
+					if (iv) clearInterval(iv);
+					iv = null;
+				}
+			}, 200);
+		}
+		return () => {
+			if (iv) clearInterval(iv);
+			track?.removeEventListener("cuechange", readActive);
+			cueWords = [];
+		};
+	});
 	const resolvedBranding = $derived.by(() => {
 		if (branding === null) return null;
 		return { ...DEFAULT_BRANDING, ...branding };
@@ -631,6 +730,26 @@
 
 	<media-loading-indicator class="recast-loading"></media-loading-indicator>
 
+	{#if captionView}
+		<div class="recast-caption-layer">
+			<div
+				class="recast-caption-slot"
+				style="{captionVertical} justify-content: {captionJustify};"
+			>
+				{#key captionView.key}
+					<CaptionBox
+						words={captionView.words}
+						style={resolvedCaptionStyle}
+						anim={captionAnim}
+						spokenCount={captionView.spoken}
+						activeIndex={captionView.wi}
+						fontSize="{resolvedCaptionStyle.fontSizePct}cqh"
+					/>
+				{/key}
+			</div>
+		</div>
+	{/if}
+
 	{#if resolvedBranding?.src}
 		{#if resolvedBranding.href}
 			<a
@@ -767,11 +886,20 @@
 						></media-playback-rate-button>
 					{/if}
 
-					{#if showCaptions}
-						<media-captions-button class="recast-btn" aria-label="Captions">
-							<span slot="on" class="recast-icon"><Captions class="size-4" /></span>
-							<span slot="off" class="recast-icon recast-icon-muted"><Captions class="size-4" /></span>
-						</media-captions-button>
+					{#if hasCaptionTrack && showMenu}
+						<!-- Toggles OUR styled overlay, not the native track (kept hidden
+						     so the UA never paints its default boxes). -->
+						<button
+							type="button"
+							class="recast-btn"
+							aria-label="Captions"
+							aria-pressed={captionsEnabled}
+							onclick={() => (captionsEnabled = !captionsEnabled)}
+						>
+							<span class="recast-icon" class:recast-icon-muted={!captionsEnabled}>
+								<Captions class="size-4" />
+							</span>
+						</button>
 					{/if}
 
 					{#if mergedControls.pip}
@@ -806,6 +934,32 @@
 		height: 100%;
 		object-fit: var(--recast-player-object-fit, contain);
 		background: #000;
+	}
+
+	/* Styled caption overlay. Fills the media area (a size container so the
+	   caption's `cqh` font tracks the player height) and never eats pointer
+	   events. The active caption box is placed by `.recast-caption-slot`. */
+	.recast-caption-layer {
+		position: absolute;
+		inset: 0;
+		z-index: 2;
+		container-type: size;
+		pointer-events: none;
+	}
+	.recast-caption-slot {
+		position: absolute;
+		left: 0;
+		right: 0;
+		display: flex;
+		padding: 0 6%;
+	}
+	@media (prefers-reduced-motion: reduce) {
+		/* The player had no reduced-motion handling; CaptionBox drops its own
+		   entrance/scale, this covers the branding/control transitions too. */
+		:global(.recast-player *) {
+			transition-duration: 0.01ms !important;
+			animation-duration: 0.01ms !important;
+		}
 	}
 
 	.recast-branding {

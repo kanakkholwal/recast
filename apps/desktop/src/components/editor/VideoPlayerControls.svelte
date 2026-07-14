@@ -27,6 +27,10 @@
 		captureFrame?: (() => Promise<Blob | null>) | undefined;
 		/** Loop toggle. Just flips the flag here; the editor page does the seek-and-replay (needs audio + `ended`). */
 		loopEnabled?: boolean;
+		/** Show the inline progress scrubber. Off when the timeline is visible (it
+		 *  is the scrubber): two scrubbers for one position is redundant, and only
+		 *  the timeline shows cuts/zoom/markup. On when the timeline is collapsed. */
+		showScrubber?: boolean;
 	}
 
 	let {
@@ -35,6 +39,7 @@
 		fullscreenTargetEl = null,
 		captureFrame = undefined,
 		loopEnabled = $bindable(false),
+		showScrubber = true,
 	}: Props = $props();
 
 	let capturing = $state(false);
@@ -224,29 +229,33 @@
 		<span class="text-muted-foreground">{durationFormatted}</span>
 	</div>
 
+	<!-- Stays a flex-1 spacer even when hidden, so the transport and right-hand
+	     controls keep their positions whether or not the timeline is showing. -->
 	<div class="relative flex h-7 flex-1 items-center">
-		<div
-			class="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted/80 ring-1 ring-inset ring-border/40"
-			aria-hidden="true"
-		></div>
-		<div
-			class="pointer-events-none absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full bg-primary"
-			style="width: {progressPct}%"
-			aria-hidden="true"
-		></div>
-		<!-- Step is one frame, not 10ms: arrow keys here now move exactly as far as
-		     the frame-step buttons whose tooltips advertise the same arrows. -->
-		<input
-			type="range"
-			min="0"
-			max={outputDuration}
-			step={1 / fps}
-			value={currentOutput}
-			oninput={handleSeek}
-			class="relative z-10 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-(--shadow-craft-inset) [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-background [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125 active:[&::-webkit-slider-thumb]:scale-110"
-			aria-label="Video progress"
-			aria-valuetext={currentTimeFormatted}
-		/>
+		{#if showScrubber}
+			<div
+				class="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted/80 ring-1 ring-inset ring-border/40"
+				aria-hidden="true"
+			></div>
+			<div
+				class="pointer-events-none absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full bg-primary"
+				style="width: {progressPct}%"
+				aria-hidden="true"
+			></div>
+			<!-- Step is one frame, not 10ms: arrow keys here now move exactly as far as
+			     the frame-step buttons whose tooltips advertise the same arrows. -->
+			<input
+				type="range"
+				min="0"
+				max={outputDuration}
+				step={1 / fps}
+				value={currentOutput}
+				oninput={handleSeek}
+				class="relative z-10 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-(--shadow-craft-inset) [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-background [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125 active:[&::-webkit-slider-thumb]:scale-110"
+				aria-label="Video progress"
+				aria-valuetext={currentTimeFormatted}
+			/>
+		{/if}
 	</div>
 
 	<div

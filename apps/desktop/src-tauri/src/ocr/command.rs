@@ -254,3 +254,15 @@ pub async fn read_video_text(
     .await?;
     Ok(timeline)
 }
+
+/// Write an already-serialized read to `dest_path` (chosen by the caller via the
+/// save dialog). The caller owns the format: the timeline lives in the frontend as
+/// a plain object, so it serializes there (JSON, or the readable Markdown the review
+/// panel builds) rather than shipping the whole thing back here just to stringify
+/// it. This command only owns the disk write, so it needs no `ocr` feature.
+#[tauri::command]
+pub async fn export_screen_text(body: String, dest_path: String) -> AppResult<()> {
+    tokio::fs::write(&dest_path, body)
+        .await
+        .map_err(|e| crate::commands::error::AppError::msg(format!("write screen text: {e}")))
+}

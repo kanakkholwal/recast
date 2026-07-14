@@ -107,10 +107,10 @@
     class="flex min-h-0 flex-1 flex-col"
   >
     <div
-      class="shrink-0 flex items-center justify-between gap-2 border-b border-border/60 px-2 py-1.5"
+      class="shrink-0 flex flex-col gap-1.5 border-b border-border/60 px-2 py-1.5"
     >
       <Tabs.List
-        class="flex h-auto items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+        class="flex h-auto flex-wrap items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
         variant="soft"
       >
         {#each tabs as tab}
@@ -132,11 +132,13 @@
               </Tabs.Trigger>
         {/each}
       </Tabs.List>
-      <span
-        class="truncate text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
+      <!-- The active section's name as a heading for the content below, rather
+           than a label floating at the end of the icon row. -->
+      <h2
+        class="px-1 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
       >
         {activeTabLabel}
-      </span>
+      </h2>
     </div>
 
     <Tabs.Content value="clip" class={tabContentClass}>

@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { Plus } from "@lucide/svelte";
+  import { Plus, ZoomIn } from "@lucide/svelte";
   import type { TimeMode } from "./timeline-helpers";
   import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
   import ZoomLayerCard from "./ZoomLayerCard.svelte";
@@ -89,6 +89,9 @@
     if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
     // The razor tool owns clicks timeline-wide: let this bubble to the scroller.
     if (store.timelineTool === "razor") return;
+    // Bypassed track: refuse the edit rather than create a region that silently
+    // wouldn't apply. The inline hint says why.
+    if (!store.focusEnabled) return;
     // Stop the timeline's scrub handler from also claiming this drag.
     e.preventDefault();
     e.stopPropagation();
@@ -118,7 +121,7 @@
   // Empty-state affordance: the lane used to explain how to add a region without
   // letting you do it. Punches in around the playhead, like the toolbar button.
   function addAtPlayhead() {
-    if (duration <= 0) return;
+    if (duration <= 0 || !store.focusEnabled) return;
     const start = Math.max(store.inPoint, store.currentTime - 0.35);
     const end = Math.min(
       store.outPoint,
@@ -135,8 +138,7 @@
   onpointermove={onLaneMove}
   onpointerup={onLaneUp}
   onpointercancel={onLaneUp}
-  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-opacity"
-  class:opacity-50={!store.focusEnabled}
+  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
 >
   {#if store.zoomRegions.length === 0}
     <button
@@ -164,6 +166,16 @@
         {onDuplicate}
       />
     {/each}
+  {/if}
+
+  {#if !store.focusEnabled}
+    <!-- Bypassed: say why editing is refused rather than dimming silently. -->
+    <div
+      class="pointer-events-none absolute inset-0 z-30 flex items-center justify-center gap-1.5 rounded-md bg-background/60 text-[10px] font-medium text-foreground"
+    >
+      <ZoomIn class="size-3 text-lane-zoom" />
+      Zoom is off. Turn on "Apply zoom" in Layers to edit.
+    </div>
   {/if}
 
   {#if activeSnap}

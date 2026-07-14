@@ -6,16 +6,25 @@
   // output can be eyeballed against the real video before this is wired into the
   // agent/CLI surface for real.
   import { clock } from "$lib/format/time";
-  import { readVideoText, type OcrProgress, type ScreenStateSpan, type VideoTextTimeline } from "$lib/ipc";
+  import {
+    exportScreenText,
+    readVideoText,
+    type OcrProgress,
+    type ScreenStateSpan,
+    type VideoTextTimeline,
+  } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import { Progress } from "@recast/ui/progress";
-  import { FlaskConical, ImageOff, RotateCw, ScanText } from "@lucide/svelte";
+  import { toast } from "@recast/ui/sonner";
+  import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@lucide/svelte";
   import OcrFrameDialog from "./OcrFrameDialog.svelte";
   import PanelSection from "./PanelSection.svelte";
   import {
     etaLabel,
+    exportBodyFor,
+    exportFilename,
     phaseDetail,
     phaseTitle,
     progressValue,
@@ -104,6 +113,33 @@
     }
   }
 
+  let exporting = $state(false);
+
+  // Save the whole read to disk so it can move to another tool. The save dialog's
+  // format filter picks JSON (lossless, machine) or Markdown (readable, images
+  // embedded); the extension of the chosen path decides how it serializes.
+  async function exportRead() {
+    if (!timeline || exporting) return;
+    exporting = true;
+    try {
+      const { save } = await import("@tauri-apps/plugin-dialog");
+      const dest = await save({
+        defaultPath: exportFilename("json"),
+        filters: [
+          { name: "JSON", extensions: ["json"] },
+          { name: "Markdown", extensions: ["md"] },
+        ],
+      });
+      if (!dest) return;
+      await exportScreenText(exportBodyFor(dest, timeline, clock), dest);
+      toast.success("Exported screen text");
+    } catch (e) {
+      toast.error(`Export failed: ${e}`);
+    } finally {
+      exporting = false;
+    }
+  }
+
   $effect(() => () => {
     if (ticker) clearInterval(ticker);
   });
@@ -114,17 +150,11 @@
     title="Screen text"
     hint="Samples the frames where the screen changed, reads the text on each with on-device OCR, then collapses neighbouring frames that read the same into one screen state."
   >
-    <p class="text-muted-foreground text-xs leading-relaxed">
-      Reads the screen recording into timestamped spans. Only the footage you keep is
-      read, so trims and cuts are skipped, and the camera is never included. The first
-      run downloads about 12 MB of models.
-    </p>
-
     {#if !mediaPath}
-      <p class="text-muted-foreground mt-3 text-xs">No source recording is loaded.</p>
+      <p class="text-muted-foreground text-xs">No source recording is loaded.</p>
     {:else}
       <Button
-        class="mt-3 w-full"
+        class="w-full"
         variant="secondary"
         size="sm"
         disabled={status === "running"}
@@ -188,6 +218,18 @@
       hint="Each row is a stretch of time where the screen text stayed the same. Open one to see exactly what was read and where."
       flush
     >
+      {#snippet action()}
+        <Button
+          variant="ghost"
+          size="xs"
+          disabled={exporting}
+          onclick={exportRead}
+          title="Export the whole read as JSON or Markdown"
+        >
+          <Download class="size-3.5" />
+          Export
+        </Button>
+      {/snippet}
       {#if timeline.spans.length === 0}
         <p class="text-muted-foreground text-xs">
           No text was found in the footage you kept.

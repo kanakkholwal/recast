@@ -476,6 +476,7 @@ pub fn run() {
             silence::detect_silence,
             silence::extract_waveform,
             ocr::command::read_video_text,
+            ocr::command::export_screen_text,
             transcription::list_caption_models,
             transcription::caption_capabilities,
             transcription::download_caption_model,

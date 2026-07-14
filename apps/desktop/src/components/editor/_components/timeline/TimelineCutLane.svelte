@@ -2,7 +2,7 @@
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { type TimelineCut } from "$lib/timeline/cuts";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { X } from "@lucide/svelte";
+  import { Scissors, X } from "@lucide/svelte";
   import { buildWaveformPath } from "./timeline-helpers";
   import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
 
@@ -12,9 +12,14 @@
     store: EditorStore;
     pixelsPerSecond: number;
     duration: number;
+    /** Draw the faint audio envelope behind the bands. Off when the dedicated
+     *  Audio lane is visible right above (it already shows the same data), on
+     *  when that lane is hidden so you can still cut against the audio. */
+    showWaveform?: boolean;
   }
 
-  let { store, pixelsPerSecond, duration }: Props = $props();
+  let { store, pixelsPerSecond, duration, showWaveform = true }: Props =
+    $props();
 
   // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
   const MIN_CUT = 0.1;
@@ -63,6 +68,9 @@
     // The razor tool owns clicks timeline-wide: let this one bubble to the
     // scroller's razor handler instead of starting a create-drag.
     if (store.timelineTool === "razor") return;
+    // Bypassed track: refuse the edit rather than carve a cut that silently
+    // wouldn't apply. The inline hint says why.
+    if (!store.cutsEnabled) return;
     // Stop the timeline's scrub handler from also claiming this drag.
     e.preventDefault();
     e.stopPropagation();
@@ -83,9 +91,13 @@
     // Left button only; let a razor click carve through the band, not move it.
     if (e.button !== 0) return;
     if (store.timelineTool === "razor") return;
+    // Bypassed track: no move/resize (the X to restore a cut still works).
+    if (!store.cutsEnabled) return;
     e.preventDefault();
     e.stopPropagation();
     if (!laneEl) return;
+    // Selecting the band makes document-level Delete restore this exact cut.
+    store.selectedCutId = cut.id;
     // A drag is one discrete action → one undo entry.
     store.pushUndoState();
     drag = {
@@ -158,13 +170,15 @@
   // Peak envelope behind the bands, spanning the whole axis (buckets inside an
   // applied cut collapse onto the seam via xOf).
   const waveformPath = $derived(
-    buildWaveformPath({
-      waveform: store.waveform,
-      duration,
-      xOf,
-      height: 100,
-      amp: 46,
-    }),
+    showWaveform
+      ? buildWaveformPath({
+          waveform: store.waveform,
+          duration,
+          xOf,
+          height: 100,
+          amp: 46,
+        })
+      : "",
   );
 </script>
 
@@ -175,10 +189,9 @@
   onpointermove={onMove}
   onpointerup={onUp}
   onpointercancel={onUp}
-  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-opacity"
-  class:opacity-50={!store.cutsEnabled}
+  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
 >
-  {#if waveformPath}
+  {#if showWaveform && waveformPath}
     <svg
       class="pointer-events-none absolute left-0 top-1.5 bottom-1.5"
       style="width: {axisWidth}px;"
@@ -208,7 +221,15 @@
     </div>
   {/if}
 
-  {#if store.cuts.length === 0 && !pending}
+  {#if !store.cutsEnabled}
+    <!-- Bypassed: say why editing is refused rather than dimming silently. -->
+    <div
+      class="pointer-events-none absolute inset-0 z-20 flex items-center justify-center gap-1.5 rounded-md bg-background/60 text-[10px] font-medium text-foreground"
+    >
+      <Scissors class="size-3 text-lane-cut" />
+      Cuts are off. Turn on "Apply cuts" in Layers to edit.
+    </div>
+  {:else if store.cuts.length === 0 && !pending}
     <div
       class="pointer-events-none flex h-6 items-center justify-center text-[10px] text-muted-foreground"
     >
@@ -243,11 +264,26 @@
       </button>
     {:else}
       {@const w = Math.max(8, cutW)}
+      {@const isSel = store.selectedCutId === cut.id}
+      <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
-        role="presentation"
+        role="button"
+        tabindex="0"
+        data-selectable
+        aria-pressed={isSel}
+        aria-label={`Removed section, ${(cut.end - cut.start).toFixed(2)} seconds. Drag to move; press Delete to restore.`}
         onpointerdown={(e) => onBandDown(e, cut, "move")}
+        onfocus={() => (store.selectedCutId = cut.id)}
+        onkeydown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            store.selectedCutId = cut.id;
+          }
+        }}
         title="Removed section · {(cut.end - cut.start).toFixed(2)}s"
-        class="group/cut absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-sm border border-lane-cut/50 bg-lane-cut/20 active:cursor-grabbing"
+        class="group/cut absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-sm border bg-lane-cut/20 transition-shadow active:cursor-grabbing focus-visible:outline-none {isSel
+          ? 'border-lane-cut ring-2 ring-lane-cut/50'
+          : 'border-lane-cut/50'}"
         style="left: {cutLeft}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 10px);"
       >
         <!-- Edge resize handles -->

@@ -134,6 +134,82 @@
     }
   });
 
+  // Resizable properties panel. Width is user-set (drag the splitter or arrow
+  // keys) and persisted, so a chosen width survives reopening the editor. The
+  // floor is the panel's old fixed width (w-88, 352px): the dense panels were
+  // already tight there, so we never let it shrink below it, only grow.
+  const SIDEBAR_WIDTH_KEY = "recast-editor-sidebar-width";
+  const SIDEBAR_MIN = 352;
+  const SIDEBAR_MAX = 600;
+  const SIDEBAR_DEFAULT = 384;
+  const clampSidebar = (w: number) =>
+    Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
+  function loadSidebarWidth(): number {
+    if (!browser) return SIDEBAR_DEFAULT;
+    const raw = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+    return Number.isFinite(raw) && raw > 0 ? clampSidebar(raw) : SIDEBAR_DEFAULT;
+  }
+  let sidebarWidth = $state(loadSidebarWidth());
+  let resizingSidebar = $state(false);
+  $effect(() => {
+    if (!browser) return;
+    try {
+      localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    } catch {
+      // Best-effort, same as the layout prefs above.
+    }
+  });
+
+  // The panel is docked right, so dragging the splitter left widens it: width
+  // grows as the pointer's x decreases.
+  function startSidebarResize(e: PointerEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    resizingSidebar = true;
+    const startX = e.clientX;
+    const startW = sidebarWidth;
+    document.body.style.cursor = "col-resize";
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    const onMove = (ev: PointerEvent) => {
+      sidebarWidth = clampSidebar(startW - (ev.clientX - startX));
+    };
+    const onUp = () => {
+      resizingSidebar = false;
+      document.body.style.cursor = "";
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
+  // Keyboard resize (window-splitter pattern): Left widens, Right narrows, since
+  // Left moves the splitter toward the panel's growing edge. Home/End jump to the
+  // bounds. Shift takes a coarser step.
+  function onSidebarHandleKey(e: KeyboardEvent) {
+    const step = e.shiftKey ? 48 : 16;
+    switch (e.key) {
+      case "ArrowLeft":
+        e.preventDefault();
+        sidebarWidth = clampSidebar(sidebarWidth + step);
+        break;
+      case "ArrowRight":
+        e.preventDefault();
+        sidebarWidth = clampSidebar(sidebarWidth - step);
+        break;
+      case "Home":
+        e.preventDefault();
+        sidebarWidth = SIDEBAR_MAX;
+        break;
+      case "End":
+        e.preventDefault();
+        sidebarWidth = SIDEBAR_MIN;
+        break;
+    }
+  }
+
   let previewContainerEl: HTMLDivElement | null = $state(null);
   let systemAudioEl: HTMLAudioElement | null = $state(null);
   let micAudioEl: HTMLAudioElement | null = $state(null);
@@ -1089,6 +1165,22 @@
     exportPhase !== null && exportActivity.foreground,
   );
 
+  // The control focus was on when the export flow opened, so we can hand focus
+  // back when it closes (the panel moves focus into itself on open). Without this,
+  // closing the panel strands focus on <body> and keyboard users lose their place.
+  let exportReturnFocus: HTMLElement | null = null;
+  let exportWasOpen = false;
+  $effect(() => {
+    const open = isExportFlowOpen;
+    if (!open && exportWasOpen) {
+      const el = exportReturnFocus;
+      exportReturnFocus = null;
+      // After the panel unmounts and the rail re-renders back to the editor.
+      if (el?.isConnected) requestAnimationFrame(() => el.focus());
+    }
+    exportWasOpen = open;
+  });
+
   // Drives the toolbar Export button: open the surface, close the picker,
   // minimize a running/finished export to the activity center, or reopen it.
   type ExportButtonMode = "export" | "close" | "minimize" | "show";
@@ -1105,6 +1197,9 @@
   function onExportButton() {
     switch (exportButtonMode) {
       case "export":
+        // Remember where focus was (the Export button) so we can restore it when
+        // the flow closes; the panel takes focus on open.
+        exportReturnFocus = document.activeElement as HTMLElement | null;
         openExportOptions();
         break;
       case "close":
@@ -1638,6 +1733,7 @@
             {captureFrame}
             bind:loopEnabled
             fullscreenTargetEl={previewContainerEl}
+            showScrubber={!showTimeline}
           />
         </div>
 
@@ -1679,10 +1775,32 @@
         </aside>
       {:else if showSidebar}
         <aside
-          class="min-h-0 shrink-0 overflow-hidden border-l border-border/60"
+          class="relative min-h-0 shrink-0 overflow-hidden border-l border-border/60"
           transition:slide={{ axis: "x", duration: 280, easing: cubicOut }}
         >
-          <div class="h-full w-80 xl:w-88">
+          <!-- Splitter: drag or arrow-key to resize the panel. Sits in the left
+               padding gutter so it never overlaps a tab. Modelled as a vertical
+               slider (aria-valuenow = width), the same interactive-role idiom the
+               timeline's trim/resize handles use. -->
+          <div
+            role="slider"
+            tabindex="0"
+            aria-orientation="vertical"
+            aria-label="Resize properties panel"
+            aria-valuemin={SIDEBAR_MIN}
+            aria-valuemax={SIDEBAR_MAX}
+            aria-valuenow={sidebarWidth}
+            onpointerdown={startSidebarResize}
+            onkeydown={onSidebarHandleKey}
+            class="group absolute inset-y-0 left-0 z-20 w-1.5 cursor-col-resize focus-visible:outline-none"
+          >
+            <div
+              class="mx-auto h-full w-px bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingSidebar
+                ? 'bg-primary!'
+                : ''}"
+            ></div>
+          </div>
+          <div class="h-full" style="width: {sidebarWidth}px;">
             <PropertiesPanel {store} {cameraPath} />
           </div>
         </aside>

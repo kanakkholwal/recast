@@ -9,6 +9,7 @@
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
+  import { SegmentedToggle } from "@recast/ui/segmented";
   import { Check, Copy, SquareDashedMousePointer } from "@lucide/svelte";
   import { boxLabel, boxStyle, regionLabel, spanAsText } from "./dev-ocr-panel.logic";
 
@@ -19,6 +20,11 @@
     onSeek: (t: number) => void;
   }
   let { span, open, onOpenChange, onSeek }: Props = $props();
+
+  // Two ways to read the same frame: the raw capture, and the capture with every
+  // recognized box drawn on it. Toggling between them is how you check the OCR
+  // against what was actually on screen. Defaults to annotated (the reason to open).
+  let annotated = $state(true);
 
   // Hover/focus is a transient preview; a click pins the element so it survives the
   // pointer moving away. Highlighting either the box or the row lights up both.
@@ -65,38 +71,53 @@
       </Dialog.Header>
 
       <div class="grid gap-4 md:grid-cols-[1.6fr_1fr]">
-        <!-- The frame, with every recognized box drawn where it was found. -->
-        <div class="border-border bg-muted relative self-start overflow-hidden rounded-lg border">
-          {#if span.preview}
-            <img src={span.preview} alt="Frame read at {clock(span.start)}" class="block w-full" />
-          {:else}
-            <div class="text-muted-foreground flex aspect-video items-center justify-center text-xs">
-              No preview was captured for this frame.
-            </div>
-          {/if}
+        <div class="flex flex-col gap-2 self-start">
+          <SegmentedToggle
+            checked={annotated}
+            onCheckedChange={(v) => (annotated = v)}
+            offLabel="Original"
+            onLabel="Annotated"
+            size="xs"
+            fill
+            aria-label="Toggle the OCR overlay on the frame"
+          />
 
-          {#each span.elements as el (el.id)}
-            <button
-              type="button"
-              class="focus-visible:ring-ring absolute rounded-[2px] border transition-colors focus-visible:ring-2 focus-visible:outline-none {active ===
-              el.id
-                ? 'border-primary bg-primary/25'
-                : 'border-primary/70 bg-primary/10'}"
-              style={boxStyle(el.bbox)}
-              aria-label="Element {el.id}: {el.content}"
-              onclick={() => pin(el.id)}
-              onmouseenter={() => (previewed = el.id)}
-              onmouseleave={() => (previewed = null)}
-              onfocus={() => (previewed = el.id)}
-              onblur={() => (previewed = null)}
-            >
-              <span
-                class="bg-primary text-primary-foreground absolute -top-px -left-px rounded-[2px] px-1 text-[9px] leading-[13px] font-medium tabular-nums"
-              >
-                {el.id}
-              </span>
-            </button>
-          {/each}
+          <!-- The frame. In "Annotated" every recognized box is drawn where it was
+               found; in "Original" it is the raw capture, to check the read against. -->
+          <div class="border-border bg-muted relative overflow-hidden rounded-lg border">
+            {#if span.preview}
+              <img src={span.preview} alt="Frame read at {clock(span.start)}" class="block w-full" />
+            {:else}
+              <div class="text-muted-foreground flex aspect-video items-center justify-center text-xs">
+                No preview was captured for this frame.
+              </div>
+            {/if}
+
+            {#if annotated}
+              {#each span.elements as el (el.id)}
+                <button
+                  type="button"
+                  class="focus-visible:ring-ring absolute rounded-[2px] border transition-colors focus-visible:ring-2 focus-visible:outline-none {active ===
+                  el.id
+                    ? 'border-primary bg-primary/25'
+                    : 'border-primary/70 bg-primary/10'}"
+                  style={boxStyle(el.bbox)}
+                  aria-label="Element {el.id}: {el.content}"
+                  onclick={() => pin(el.id)}
+                  onmouseenter={() => (previewed = el.id)}
+                  onmouseleave={() => (previewed = null)}
+                  onfocus={() => (previewed = el.id)}
+                  onblur={() => (previewed = null)}
+                >
+                  <span
+                    class="bg-primary text-primary-foreground absolute -top-px -left-px rounded-[2px] px-1 text-[9px] leading-[13px] font-medium tabular-nums"
+                  >
+                    {el.id}
+                  </span>
+                </button>
+              {/each}
+            {/if}
+          </div>
         </div>
 
         <!-- The same elements, as prose. Numbered to match the boxes on the frame. -->

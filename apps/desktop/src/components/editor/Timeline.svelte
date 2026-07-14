@@ -221,22 +221,43 @@
     });
   }
 
-  // Selected region fills ~70% of the viewport (0.7 leaves context on both sides).
+  // The [start, end] of whatever is selected, in original time, or null. Drives
+  // Zoom-to-selection for any timed selection (zoom region, annotation, cut), not
+  // just a focus region. A clip selection has no meaningful frame-to (it is the
+  // spine), so it returns null.
+  function selectionSpan(): { start: number; end: number } | null {
+    const sel = store.selection;
+    if (!sel) return null;
+    if (sel.kind === "zoom") {
+      const r = store.zoomRegions.find((r) => r.id === sel.id);
+      return r ? { start: r.start, end: r.end } : null;
+    }
+    if (sel.kind === "annotation") {
+      const a = store.annotations.find((a) => a.id === sel.id);
+      return a ? { start: a.start, end: a.end } : null;
+    }
+    if (sel.kind === "cut") {
+      const c = store.cuts.find((c) => c.id === sel.id);
+      return c ? { start: c.start, end: c.end } : null;
+    }
+    return null;
+  }
+  const hasFramableSelection = $derived(selectionSpan() !== null);
+
+  // Selection fills ~70% of the viewport (0.7 leaves context on both sides).
   function zoomToSelection() {
     if (!timelineEl || duration <= 0) return;
-    const id = store.selectedZoomRegionId;
-    if (!id) return;
-    const region = store.zoomRegions.find((r) => r.id === id);
-    if (!region) return;
-    const span = Math.max(0.001, region.end - region.start);
-    const target = (duration / span) * 0.7;
+    const span = selectionSpan();
+    if (!span) return;
+    const width = Math.max(0.001, span.end - span.start);
+    const target = (duration / width) * 0.7;
     const nextZoom = clampTimelineZoom(target, outputDuration, timelineWidth);
     store.timelineZoom = nextZoom;
     requestAnimationFrame(() => {
       if (!timelineEl || outputDuration <= 0) return;
       const nextPps = (timelineEl.clientWidth * nextZoom) / outputDuration;
-      // Center on the region's midpoint in OUTPUT pixels.
-      const center = (region.start + region.end) * 0.5;
+      // Center on the selection's midpoint in OUTPUT pixels.
+      const center = (span.start + span.end) * 0.5;
       timelineEl.scrollLeft = Math.max(
         0,
         originalToOutput(store.timeMap, center) * nextPps - timelineEl.clientWidth * 0.5,
@@ -883,7 +904,7 @@
     {playbackSpeed}
     speeds={SPEEDS}
     {timeMode}
-    hasSelectedRegion={!!store.selectedZoomRegionId}
+    hasSelectedRegion={hasFramableSelection}
     {razorActive}
     {showAudioLane}
     {showZoomLane}
@@ -925,6 +946,11 @@
             {@render railLabel(AudioLines, "Audio", "text-lane-audio")}
           </div>
         {/if}
+        {#if showCutLane}
+          <div class="mt-1.5 flex min-h-9 items-center justify-center">
+            {@render railLabel(Scissors, "Cuts", "text-lane-cut")}
+          </div>
+        {/if}
         {#if showZoomLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
             {@render railLabel(ZoomIn, "Zoom", "text-lane-zoom")}
@@ -933,11 +959,6 @@
         {#if showMarkupLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
             {@render railLabel(Pencil, "Markup", "text-lane-markup")}
-          </div>
-        {/if}
-        {#if showCutLane}
-          <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Scissors, "Cuts", "text-lane-cut")}
           </div>
         {/if}
       </div>
@@ -995,6 +1016,18 @@
           <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
         {/if}
 
+        <!-- Cuts sit next to Audio: cutting against the waveform is the common
+             task. The cut lane draws its own faint waveform only when the Audio
+             lane is hidden, so the two are never stacked as a duplicate. -->
+        {#if showCutLane}
+          <TimelineCutLane
+            {store}
+            {pixelsPerSecond}
+            {duration}
+            showWaveform={!showAudioLane}
+          />
+        {/if}
+
         {#if showZoomLane}
           <TimelineZoomLane
             {store}
@@ -1016,10 +1049,6 @@
             {timeMode}
             onDuplicate={duplicateAnnotation}
           />
-        {/if}
-
-        {#if showCutLane}
-          <TimelineCutLane {store} {pixelsPerSecond} {duration} />
         {/if}
       </div>
 

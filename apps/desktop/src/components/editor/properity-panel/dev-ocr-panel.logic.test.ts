@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { OcrProgress, OcrStats, ScreenStateSpan } from "$lib/ipc";
+import type { OcrProgress, OcrStats, ScreenStateSpan, VideoTextTimeline } from "$lib/ipc";
 import {
 	boxLabel,
 	boxRect,
 	etaLabel,
 	etaSeconds,
+	exportBodyFor,
 	phaseDetail,
 	phaseTitle,
 	progressValue,
@@ -12,6 +13,7 @@ import {
 	spanAsText,
 	spanGist,
 	summaryRows,
+	timelineToMarkdown,
 } from "./dev-ocr-panel.logic";
 
 function progress(p: Partial<OcrProgress>): OcrProgress {
@@ -156,5 +158,53 @@ describe("span text", () => {
 		expect(text).toContain("Screen at 0:01 to 0:04 (2 elements)");
 		expect(text).toContain('0. "Export Settings"  [top left · x 10–40% · y 5–10%]');
 		expect(text).not.toContain("{");
+	});
+});
+
+describe("export", () => {
+	const timeline: VideoTextTimeline = {
+		engine: "ocrs",
+		stats: {
+			durationSecs: 4,
+			framesScanned: 12,
+			framesRead: 2,
+			elements: 2,
+			sampleMs: 100,
+			modelLoadMs: 30,
+			ocrMs: 700,
+		},
+		spans: [
+			{
+				start: 1,
+				end: 4,
+				preview: "data:image/jpeg;base64,AAAA",
+				elements: [
+					{ id: 0, kind: "text", bbox: [0.1, 0.05, 0.4, 0.1], content: "Export Settings", source: "ocrs" },
+				],
+			},
+			{ start: 4, end: 4, preview: null, elements: [] },
+		],
+	};
+	const tc = (t: number) => `0:0${Math.round(t)}`;
+
+	it("writes Markdown a person can read, with the frame embedded", () => {
+		const md = timelineToMarkdown(timeline, tc);
+		expect(md).toContain("# Screen text");
+		expect(md).toContain("ocrs · 2 of 12 frames read · 2 screen states · 2 elements");
+		expect(md).toContain("## 0:01 – 0:04");
+		// The preview data URI rides inside the file, so the image travels with it.
+		expect(md).toContain("![Frame at 0:01](data:image/jpeg;base64,AAAA)");
+		expect(md).toContain('- **0** "Export Settings" — top left (x 10–40% · y 5–10%)');
+		// A frame with no text still gets a section, explaining why it was kept.
+		expect(md).toContain("_No text read; kept because the picture changed._");
+	});
+
+	it("picks format by the chosen file extension, JSON as the lossless default", () => {
+		expect(exportBodyFor("C:/tmp/read.md", timeline, tc)).toContain("# Screen text");
+		// JSON is the exact timeline, previews included, so nothing is lost.
+		const json = exportBodyFor("C:/tmp/read.json", timeline, tc);
+		expect(JSON.parse(json)).toEqual(timeline);
+		// Anything unrecognized falls back to JSON rather than guessing.
+		expect(() => JSON.parse(exportBodyFor("C:/tmp/read.txt", timeline, tc))).not.toThrow();
 	});
 });

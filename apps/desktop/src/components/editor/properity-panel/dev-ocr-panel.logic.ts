@@ -5,7 +5,13 @@
  * places boxes over a preview frame are unit-testable without mounting anything.
  */
 
-import type { OcrProgress, OcrStats, ScreenElement, ScreenStateSpan } from "$lib/ipc";
+import type {
+	OcrProgress,
+	OcrStats,
+	ScreenElement,
+	ScreenStateSpan,
+	VideoTextTimeline,
+} from "$lib/ipc";
 
 /** What the panel is doing. `idle` and `error` are panel states; the rest mirror the backend's phases. */
 export type RunStatus = "idle" | "running" | "ready" | "error";
@@ -189,6 +195,58 @@ export function spanAsText(span: ScreenStateSpan, timecode: (t: number) => strin
 		(e) => `  ${e.id}. "${e.content}"  [${regionLabel(e.bbox)} · ${boxLabel(e.bbox)}]`,
 	);
 	return [head, ...lines].join("\n");
+}
+
+/**
+ * The whole read as Markdown: a summary line, then one section per screen state
+ * with its frame embedded (previews are data URIs, so the image travels inside the
+ * file) and its elements as a list. This is the human-and-portable export; the JSON
+ * export is the lossless machine one. Both are offered so a downstream consumer can
+ * take whichever it wants.
+ */
+export function timelineToMarkdown(
+	timeline: VideoTextTimeline,
+	timecode: (t: number) => string,
+): string {
+	const { stats, spans, engine } = timeline;
+	const head = [
+		"# Screen text",
+		"",
+		`${engine} · ${stats.framesRead} of ${stats.framesScanned} frames read · ${plural(spans.length, "screen state")} · ${plural(stats.elements, "element")}`,
+	];
+	const body = spans.map((span) => {
+		const lines = [
+			`## ${timecode(span.start)} – ${timecode(span.end)}`,
+			"",
+			...(span.preview ? [`![Frame at ${timecode(span.start)}](${span.preview})`, ""] : []),
+		];
+		if (span.elements.length === 0) {
+			lines.push("_No text read; kept because the picture changed._");
+		} else {
+			for (const el of span.elements) {
+				lines.push(`- **${el.id}** "${el.content}" — ${regionLabel(el.bbox)} (${boxLabel(el.bbox)})`);
+			}
+		}
+		return lines.join("\n");
+	});
+	return [...head, "", ...body].join("\n").concat("\n");
+}
+
+/** Default filename for an export, by format. */
+export function exportFilename(format: "json" | "md"): string {
+	return `screen-text.${format}`;
+}
+
+/** Serialize the read for `dest`, picking format by its extension. Falls back to
+ *  JSON, the lossless shape, for any unrecognized extension. */
+export function exportBodyFor(
+	dest: string,
+	timeline: VideoTextTimeline,
+	timecode: (t: number) => string,
+): string {
+	return dest.toLowerCase().endsWith(".md")
+		? timelineToMarkdown(timeline, timecode)
+		: JSON.stringify(timeline, null, 2);
 }
 
 function pct(v: number): number {

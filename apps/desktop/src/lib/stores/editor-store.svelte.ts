@@ -619,7 +619,7 @@ export function aspectRatio(a: OutputAspect): number | null {
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
 /** What the editor currently has selected. Exactly one, or nothing. */
-export type SelectionKind = 'clip' | 'zoom' | 'annotation';
+export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut';
 export interface EditorSelection {
 	kind: SelectionKind;
 	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
@@ -854,6 +854,8 @@ export function createEditorStore() {
 	// Transient UI selection: the start time of the highlighted clip block, or
 	// null. Not serialized (mirrors selectedZoomRegionId).
 	let selectedClipStart = $state<number | null>(null);
+	// Transient UI selection: the highlighted cut band's id, or null.
+	let selectedCutId = $state<string | null>(null);
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
@@ -1343,6 +1345,7 @@ export function createEditorStore() {
 		if (start === null) return;
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
+		selectedCutId = null;
 	}
 
 	function selectZoomRegion(id: string | null) {
@@ -1350,6 +1353,7 @@ export function createEditorStore() {
 		if (id === null) return;
 		selectedClipStart = null;
 		selectedAnnotationId = null;
+		selectedCutId = null;
 	}
 
 	function selectAnnotation(id: string | null) {
@@ -1357,12 +1361,22 @@ export function createEditorStore() {
 		if (id === null) return;
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
+		selectedCutId = null;
+	}
+
+	function selectCut(id: string | null) {
+		selectedCutId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
 	}
 
 	function clearSelection() {
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
+		selectedCutId = null;
 	}
 
 	const selection = $derived.by<EditorSelection | null>(() => {
@@ -1371,6 +1385,9 @@ export function createEditorStore() {
 		}
 		if (selectedZoomRegionId !== null) {
 			return { kind: 'zoom', id: selectedZoomRegionId };
+		}
+		if (selectedCutId !== null) {
+			return { kind: 'cut', id: selectedCutId };
 		}
 		if (selectedClipStart !== null) {
 			return { kind: 'clip', id: selectedClipStart };
@@ -1391,6 +1408,12 @@ export function createEditorStore() {
 		if (selectedZoomRegionId !== null) {
 			removeZoomRegion(selectedZoomRegionId);
 			return { kind: 'zoom', joinAt: null };
+		}
+		if (selectedCutId !== null) {
+			// Removing a cut restores the section; park on its (original) start.
+			const cut = cuts.find((c) => c.id === selectedCutId);
+			removeCut(selectedCutId);
+			return { kind: 'cut', joinAt: cut ? cut.start : null };
 		}
 		if (selectedClipStart !== null) {
 			const joinAt = deleteSegmentAt(selectedClipStart);
@@ -1738,6 +1761,7 @@ export function createEditorStore() {
 		if (!cuts.some((c) => c.id === id)) return;
 		pushUndoState();
 		cuts = cuts.filter((c) => c.id !== id);
+		if (selectedCutId === id) selectedCutId = null;
 	}
 
 	function clearCuts() {
@@ -2376,6 +2400,9 @@ export function createEditorStore() {
 
 		get selectedZoomRegionId() { return selectedZoomRegionId; },
 		set selectedZoomRegionId(v: string | null) { selectZoomRegion(v); },
+
+		get selectedCutId() { return selectedCutId; },
+		set selectedCutId(v: string | null) { selectCut(v); },
 
 		get activePanel() { return activePanel; },
 		set activePanel(v: PanelTab) { activePanel = v; },
