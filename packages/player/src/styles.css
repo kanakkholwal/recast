@@ -140,6 +140,34 @@
 	align-items: stretch;
 	padding: 0 16px 16px;
 	gap: 0;
+	/* Fade with the media-chrome autohide state rather than blinking. */
+	transition:
+		opacity 220ms ease,
+		transform 220ms ease;
+}
+
+/* media-chrome flags pointer inactivity with `userinactive` on the controller.
+   Fade the bar out then (but keep it while paused, the usual player behaviour);
+   it fades back on the next pointer move when the attribute clears. A control
+   bar marked `noautohide` (pinned surfaces) opts out. */
+media-controller.recast-player[userinactive]:not([mediapaused])
+	.recast-control-bar:not([noautohide]) {
+	opacity: 0;
+	transform: translateY(8px);
+	pointer-events: none;
+}
+
+/* Captions do NOT fade with the controls: they stay visible until toggled off.
+   A bottom caption instead lifts clear of the control bar while it's visible
+   (pointer active, or paused) and settles back to its normal margin when the
+   bar auto-hides, so the two never overlap. Only bottom captions shift; top and
+   centre never sit over the bar. */
+.recast-caption-slot {
+	transition: transform 220ms ease;
+}
+media-controller.recast-player:not([userinactive]) .recast-caption-bottom,
+media-controller.recast-player[mediapaused] .recast-caption-bottom {
+	transform: translateY(-4rem);
 }
 
 .recast-pill {
@@ -226,8 +254,15 @@ media-controller.recast-player.recast-player-theater {
 	height: 100%;
 }
 
-.recast-icon-muted :global(svg) {
-	opacity: 0.55;
+/* Captions toggle: the button only renders when a caption track exists, and
+   shows a clear on/off state. Lucide icons stroke with currentColor, so the
+   `color` here tints the icon. On = accent + a persistent tint; off = dimmed. */
+.recast-caption-btn[aria-pressed="true"] {
+	color: var(--media-primary-color, var(--primary, #cdec3a));
+	background: rgba(255, 255, 255, 0.12);
+}
+.recast-caption-btn[aria-pressed="false"] {
+	color: rgba(255, 255, 255, 0.55);
 }
 
 .recast-player :is(

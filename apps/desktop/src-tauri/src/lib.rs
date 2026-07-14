@@ -449,6 +449,7 @@ pub fn run() {
             commands::is_recording_paused,
             commands::list_recasts,
             commands::list_exports,
+            commands::caption_sidecar_vtt,
             commands::open_file_location,
             commands::delete_file,
             commands::rename_file,

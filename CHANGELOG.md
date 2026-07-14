@@ -42,6 +42,29 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ## [Unreleased]
 
+### Highlights
+- Redesigned the editor's properties panel: sections now live in a compact, grouped vertical rail with a clear active state, and you can drag the panel wider.
+- More precise timeline editing: the playhead tracks the video exactly, timecodes match everywhere, and the Cut tool works across every lane.
+
+### Added
+- A dedicated audio waveform lane in the timeline, shown alongside the thumbnails so you can cut against the sound.
+- Drag across the Zoom or Cuts lane to create a zoom region or remove a section, the same gesture in both.
+- A resizable properties panel: drag its edge to set the width, and it is remembered between sessions.
+- Cut sections are now selectable and can be removed from the keyboard, like zoom regions and markup.
+
+### Changed
+- The properties panel section switcher is now a grouped vertical icon rail instead of a wrapping row of icons, with consistent active states and calmer motion.
+- In the Background section, the controls follow the order you build a look: background first, then framing (padding and corner radius), then drop shadow. Corner radius has a tighter range and finer steps.
+- Timeline editing shortcuts (Split, Cut, and set in/out points) now work without clicking the timeline first, and the on-screen keys reflect that.
+- The smoother WebCodecs playback engine is now the default, so playback stays fluid across cuts and splits. It falls back to the standard player automatically where a device cannot use it.
+- The editor now respects the system "reduce motion" setting throughout.
+- The preview shows a scrubber only when the timeline is hidden, so there are no longer two scrubbers at once.
+
+### Fixed
+- The Cut (razor) tool now works when clicking over any lane, not only empty timeline space, and can be exited with the keyboard or Escape.
+- Undo now correctly reverses a cut dragged out on the Cuts lane.
+- The timeline playhead no longer lags behind the video during playback.
+
 ## [0.4.0] — 2026-07-11
 
 ### Highlights
@@ -57,6 +80,9 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Windows taskbar jump list. Right-click the taskbar or Start icon for a "New Recording" action and your recent projects.
 - "Open in Recast" in the right-click menu for .recast files on Windows.
 - Translucent window backdrop (Mica on Windows 11, vibrancy on macOS), off by default under Settings, Appearance.
+- Redesigned captions with a compact, Loom-style look: a rounded translucent pill and word-by-word highlighting, where each word brightens as it is spoken and stays lit. It is the default in both the editor preview and the shared web player, and every built-in and extension-pack preset was modernized to match, with smooth, subtle entrance motion.
+- New caption controls for the highlight mode, unspoken-word color, pill padding and corner radius, line height, and wrap width.
+- The player loads a caption sidecar automatically: previewing an export finds a matching .vtt or .srt next to the file, and sharing a recording from the exports library uploads that sidecar as the caption track, so library shares carry captions even without an open project.
 
 ### Changed
 - New recordings and exports save to a Recast folder in your Videos directory by default, instead of a temporary folder the system can clear. Change it anytime in Settings.
@@ -64,9 +90,11 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The Windows installer and update windows now carry the Recast icon and artwork.
 - Refreshed the Google Drive connection page to match the app.
 - On-device captions now work on Intel Macs, which the previous speech engine could not support. Apple Silicon, Windows, and Linux are unchanged.
+- The player control bar auto-hides after a couple of seconds of pointer inactivity and fades back on movement. Captions stay visible on their own (they no longer fade with the controls) and bottom captions lift clear of the bar while it is showing so they never overlap. The captions button only appears when a track is available and now shows a clear on/off state.
 
 ### Fixed
 - Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.
+- Burned-in captions now match the editor preview: correct size (they were rendering smaller because libass scales by the font's window metrics, not the em box, up to nearly half size for some display fonts), proper kerning, and the correct font at non-standard weights (a semibold previously fell back to a system face). Single-line captions get an exact rounded pill at export.
 
 ## [0.3.1] — 2026-07-05
 

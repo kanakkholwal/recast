@@ -731,9 +731,14 @@
 	<media-loading-indicator class="recast-loading"></media-loading-indicator>
 
 	{#if captionView}
-		<div class="recast-caption-layer">
+		<!-- `noautohide`: media-chrome fades every slotted controller child on
+		     inactivity EXCEPT slot=media/poster, role=dialog, or [noautohide].
+		     Without it the captions would fade out with the control bar; captions
+		     must stay until toggled off. -->
+		<div class="recast-caption-layer" {...{ noautohide: "" }}>
 			<div
 				class="recast-caption-slot"
+				class:recast-caption-bottom={resolvedCaptionStyle.position === "bottom"}
 				style="{captionVertical} justify-content: {captionJustify};"
 			>
 				{#key captionView.key}
@@ -891,12 +896,12 @@
 						     so the UA never paints its default boxes). -->
 						<button
 							type="button"
-							class="recast-btn"
-							aria-label="Captions"
+							class="recast-btn recast-caption-btn"
+							aria-label={captionsEnabled ? "Hide captions" : "Show captions"}
 							aria-pressed={captionsEnabled}
 							onclick={() => (captionsEnabled = !captionsEnabled)}
 						>
-							<span class="recast-icon" class:recast-icon-muted={!captionsEnabled}>
+							<span class="recast-icon">
 								<Captions class="size-4" />
 							</span>
 						</button>

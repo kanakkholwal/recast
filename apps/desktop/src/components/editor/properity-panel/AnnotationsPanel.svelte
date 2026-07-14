@@ -41,6 +41,9 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { Textarea } from "@recast/ui/textarea";
   import { cn } from "@recast/ui/utils";
+  import { cubicOut } from "svelte/easing";
+  import { fly } from "svelte/transition";
+  import { motionDuration } from "$lib/motion.svelte";
   import BezierEditor from "../_components/BezierEditor.svelte";
   import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
   import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
@@ -235,7 +238,10 @@
   {#if selected}
     {@const a = selected}
     {@const Icon = kindIcon(a)}
-    <div class="flex flex-col gap-3 border-t border-border/50 pt-3">
+    <div
+      in:fly={{ y: 6, duration: motionDuration(200), easing: cubicOut }}
+      class="flex flex-col gap-3 border-t border-border/50 pt-3"
+    >
       <div class="flex items-center justify-between gap-2">
         <div class="flex min-w-0 items-center gap-1.5">
           <span

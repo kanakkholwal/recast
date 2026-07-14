@@ -21,8 +21,8 @@
     LayoutTemplate,
     Move,
     Palette,
-    Sparkles,
     SquareRoundCorner,
+    Wallpaper,
   } from "@lucide/svelte";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
@@ -47,11 +47,11 @@
   type BackgroundMode = {
     type: BackgroundType;
     label: string;
-    icon: typeof Sparkles;
+    icon: typeof ImageIcon;
   };
 
   const backgroundModes: BackgroundMode[] = [
-    { type: "wallpaper", label: "Wallpaper", icon: Sparkles },
+    { type: "wallpaper", label: "Wallpaper", icon: Wallpaper },
     { type: "color", label: "Color", icon: Palette },
     { type: "gradient", label: "Gradient", icon: Blend },
     { type: "image", label: "Image", icon: ImageIcon },
@@ -156,159 +156,26 @@
     </SliderControl>
   {/snippet}
 
-  <!-- Frame + Drop shadow pinned above the background browser: they apply to
-       every background and are used often, so they keep a fixed position
-       instead of jumping with the variable-height background modes. -->
-  <PanelSection
-    title="Frame"
-    hint="Padding adds space around the recording; corner radius rounds its edges. Both apply to every background."
-  >
-    <SliderControl
-      label="Frame padding"
-      bind:value={paddingValue}
-      min={0}
-      max={MAX_FRAME_PADDING_PERCENT}
-      step={1}
-      unit="%"
-      onstart={() => store.pushUndoState()}
-      onchange={(next) => {
-        store.padding = next;
-      }}
-    >
-      {#snippet icon()}
-        <LayoutTemplate size={11} />
-      {/snippet}
-    </SliderControl>
-
-    <SliderControl
-      label="Corner radius"
-      bind:value={borderRadiusValue}
-      min={0}
-      max={50}
-      step={1}
-      unit="%"
-      onstart={() => store.pushUndoState()}
-      onchange={(next) => {
-        store.borderRadius = next;
-      }}
-    >
-      {#snippet icon()}
-        <SquareRoundCorner size={11} />
-      {/snippet}
-    </SliderControl>
-  </PanelSection>
-
-  <PanelSection
-    title="Drop shadow"
-    hint="Adds depth by casting a soft shadow under the recording onto the canvas background."
-    flush
-    collapsible
-    defaultOpen={store.shadow.enabled}
-  >
-    {#snippet action()}
-      <SegmentedToggle
-        checked={store.shadow.enabled}
-        size="xs"
-        aria-label="Drop shadow"
-        onCheckedChange={(next) => {
-          store.pushUndoState();
-          store.updateShadow({ enabled: next });
-        }}
-      />
-    {/snippet}
-
-    {#if store.shadow.enabled}
-      <div class="space-y-2.5">
-        <SliderControl
-          label="Blur"
-          value={store.shadow.blur}
-          min={0}
-          max={100}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ blur: v })}
-        >
-          {#snippet icon()}
-            <Blend size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Spread"
-          value={store.shadow.spread}
-          min={0}
-          max={50}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ spread: v })}
-        >
-          {#snippet icon()}
-            <SquareRoundCorner size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Offset Y"
-          value={store.shadow.offsetY}
-          min={-40}
-          max={40}
-          step={1}
-          unit="px"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ offsetY: v })}
-        >
-          {#snippet icon()}
-            <Move size={11} />
-          {/snippet}
-        </SliderControl>
-
-        <SliderControl
-          label="Opacity"
-          value={store.shadow.opacity}
-          min={0}
-          max={100}
-          step={1}
-          unit="%"
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => store.updateShadow({ opacity: v })}
-        />
-
-        <ColorField
-          label="Shadow color"
-          value={store.shadow.color || "#000000"}
-          {recents}
-          oncommit={(c: string) => {
-            store.pushUndoState();
-            store.updateShadow({ color: c });
-            rememberColor(c);
-          }}
-        />
-      </div>
-      {:else}
-        <div class="text-[11px] text-muted-foreground">
-          Drop shadow is disabled. Enable it to adjust its settings.
-        </div>
-    {/if}
-  </PanelSection>
-
-  <!-- Background mode switcher + per-mode preset lists. Placed last as the
-       tall, browse-heavy section. The active tab is decoupled from the store;
-       it only picks the preset list shown (see `displayedMode`). -->
+  <!-- Order follows the dependency chain: choose a background first, then frame
+       the recording on it (padding + radius), then the shadow that depth needs
+       both of those to read. Background sits first even though it is the taller,
+       variable-height section. -->
+  <!-- Background mode switcher + per-mode preset lists. The active tab is
+       decoupled from the store; it only picks the preset list shown (see
+       `displayedMode`). -->
   <Tabs.Root
     value={displayedMode}
     onValueChange={(v: string) => (displayedMode = v as BackgroundType)}
     class="flex flex-col gap-4"
   >
     <PanelSection
-      title="Background"
+      title="Canvas"
       hint="What fills the canvas behind your recording."
       flush
     >
       <Tabs.List
         variant="soft"
-        class="flex h-auto items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
+        class="flex flex-row h-auto items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40"
       >
         {#each backgroundModes as mode}
           {@const Icon = mode.icon}
@@ -512,4 +379,138 @@
     </PanelSection>
   </Tabs.Content>
   </Tabs.Root>
+
+  <PanelSection
+    title="Frame"
+    hint="Padding adds space around the recording; corner radius rounds its edges. Both apply to every background."
+  >
+    <SliderControl
+      label="Frame padding"
+      bind:value={paddingValue}
+      min={0}
+      max={MAX_FRAME_PADDING_PERCENT}
+      step={1}
+      unit="%"
+      onstart={() => store.pushUndoState()}
+      onchange={(next) => {
+        store.padding = next;
+      }}
+    >
+      {#snippet icon()}
+        <LayoutTemplate size={11} />
+      {/snippet}
+    </SliderControl>
+
+    <SliderControl
+      label="Corner radius"
+      bind:value={borderRadiusValue}
+      min={0}
+      max={25}
+      step={0.5}
+      unit="%"
+      onstart={() => store.pushUndoState()}
+      onchange={(next) => {
+        store.borderRadius = next;
+      }}
+    >
+      {#snippet icon()}
+        <SquareRoundCorner size={11} />
+      {/snippet}
+    </SliderControl>
+  </PanelSection>
+
+  <PanelSection
+    title="Drop shadow"
+    hint="Adds depth by casting a soft shadow under the recording onto the canvas background."
+    flush
+    collapsible
+    defaultOpen={store.shadow.enabled}
+  >
+    {#snippet action()}
+      <SegmentedToggle
+        checked={store.shadow.enabled}
+        size="xs"
+        aria-label="Drop shadow"
+        onCheckedChange={(next) => {
+          store.pushUndoState();
+          store.updateShadow({ enabled: next });
+        }}
+      />
+    {/snippet}
+
+    {#if store.shadow.enabled}
+      <div class="space-y-2.5">
+        <SliderControl
+          label="Blur"
+          value={store.shadow.blur}
+          min={0}
+          max={100}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ blur: v })}
+        >
+          {#snippet icon()}
+            <Blend size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Spread"
+          value={store.shadow.spread}
+          min={0}
+          max={50}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ spread: v })}
+        >
+          {#snippet icon()}
+            <SquareRoundCorner size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Offset Y"
+          value={store.shadow.offsetY}
+          min={-40}
+          max={40}
+          step={1}
+          unit="px"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ offsetY: v })}
+        >
+          {#snippet icon()}
+            <Move size={11} />
+          {/snippet}
+        </SliderControl>
+
+        <SliderControl
+          label="Opacity"
+          value={store.shadow.opacity}
+          min={0}
+          max={100}
+          step={1}
+          unit="%"
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => store.updateShadow({ opacity: v })}
+        />
+
+        <ColorField
+          label="Shadow color"
+          value={store.shadow.color || "#000000"}
+          {recents}
+          oncommit={(c: string) => {
+            store.pushUndoState();
+            store.updateShadow({ color: c });
+            rememberColor(c);
+          }}
+        />
+      </div>
+      {:else}
+        <div class="text-[11px] text-muted-foreground">
+          Drop shadow is disabled. Enable it to adjust its settings.
+        </div>
+    {/if}
+  </PanelSection>
 </div>

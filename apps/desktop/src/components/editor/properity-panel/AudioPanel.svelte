@@ -22,7 +22,8 @@
   import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cubicOut } from "svelte/easing";
-  import { fly, scale } from "svelte/transition";
+  import { scale } from "svelte/transition";
+  import { motionDuration } from "$lib/motion.svelte";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -83,10 +84,7 @@
 <!-- `M` toggles mute. `<svelte:window>` so Svelte rebinds it on each HMR patch. -->
 <svelte:window onkeydown={handleKey} />
 
-<div
-  class="flex flex-col gap-4"
-  in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
->
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Output"
     hint="Volume affects editor playback and export. Press M to toggle mute."
@@ -152,7 +150,7 @@
           </div>
           {#if volumeZone === "boost" || volumeZone === "hot"}
             <span
-              in:scale={{ start: 0.85, duration: 220, easing: cubicOut }}
+              in:scale={{ start: 0.85, duration: motionDuration(220), easing: cubicOut }}
               class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider {volumeZone ===
               'hot'
                 ? 'border-destructive/40 bg-destructive/10 text-destructive'

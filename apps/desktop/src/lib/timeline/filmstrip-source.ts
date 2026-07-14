@@ -254,11 +254,22 @@ export interface TileProviderInput {
 export async function createTileProvider(
 	input: TileProviderInput,
 ): Promise<TileProvider | null> {
-	const canDecode =
-		chooseIngestion(input.sizeBytes) === "whole" &&
-		typeof Worker !== "undefined" &&
-		typeof VideoFrame !== "undefined";
-	if (!canDecode) return null;
+	// Each condition logged on failure so a missing filmstrip is never a silent
+	// mystery: whole-file only (huge/progressive route to the Rust strip), and a
+	// WebView with Worker + WebCodecs.
+	const ingestion = chooseIngestion(input.sizeBytes);
+	if (ingestion !== "whole") {
+		console.info(
+			`Filmstrip: source too large for whole-file decode (${input.sizeBytes} bytes); using strip fallback.`,
+		);
+		return null;
+	}
+	if (typeof Worker === "undefined" || typeof VideoFrame === "undefined") {
+		console.info(
+			"Filmstrip: WebView lacks Worker/WebCodecs; using strip fallback.",
+		);
+		return null;
+	}
 	try {
 		return await WebCodecsTileProvider.create(
 			input.url,

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { formatDateTime, formatSize, isImageFile } from "$lib/format/files";
   import type { RecordingEntry } from "$lib/ipc";
-  import { openFileLocation } from "$lib/ipc";
+  import { captionSidecarVtt, openFileLocation } from "$lib/ipc";
   import {
     Clock,
     Download,
@@ -31,6 +31,32 @@
   // GIF (and other image) exports can't play in the video element, so they get
   // an <img> preview instead. GIFs loop on their own.
   const isImage = $derived(isImageFile(entry.filename));
+
+  // Auto-load a caption sidecar written next to the export (foo.vtt / foo.srt).
+  // The Rust side returns WebVTT (converting .srt); we hand it to the player as
+  // a blob-URL <track>, so a previewed file shows its captions with no project.
+  let captionSrc = $state<string | null>(null);
+  $effect(() => {
+    if (isImage) {
+      captionSrc = null;
+      return;
+    }
+    const path = entry.path;
+    let url: string | null = null;
+    let cancelled = false;
+    captionSidecarVtt(path)
+      .then((vtt) => {
+        if (cancelled || !vtt) return;
+        url = URL.createObjectURL(new Blob([vtt], { type: "text/vtt" }));
+        captionSrc = url;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      if (url) URL.revokeObjectURL(url);
+      captionSrc = null;
+    };
+  });
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onclose()} />
@@ -84,8 +110,9 @@
         />
       </div>
     {:else}
-      <!-- autohide={-1}: WebView2 honours autoplay, and media-chrome hides the
-           bar while user-inactive, so an autoplaying clip would look control-less. -->
+      <!-- autohide={2.5}: the control bar fades out after ~2.5s of pointer
+           inactivity and fades back on movement (see the .recast-control-bar
+           transition in the player), matching a normal video player. -->
       <!-- preload="auto" (not "metadata"): exports are moov-at-end, and a
            metadata-only preload range-fetches the tail over the asset protocol and
            stalls in NETWORK_LOADING (black frame) in release. "auto" streams from
@@ -95,7 +122,18 @@
         title={entry.filename}
         preload="auto"
         autoplay
-        autohide={-1}
+        autohide={2.5}
+        tracks={captionSrc
+          ? [
+              {
+                src: captionSrc,
+                kind: "captions",
+                label: "Captions",
+                srclang: "en",
+                default: true,
+              },
+            ]
+          : []}
       />
     {/if}
 

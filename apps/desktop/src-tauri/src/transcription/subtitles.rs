@@ -47,6 +47,40 @@ pub fn to_vtt(t: &Transcript) -> String {
     out
 }
 
+/// Convert an SRT subtitle string to WebVTT. VTT is SRT plus a `WEBVTT` header
+/// and `.` (not `,`) before the milliseconds; cue index lines are valid VTT cue
+/// identifiers, so they pass through untouched. Used to feed a sibling `.srt`
+/// file into the `<track>` element, which only accepts WebVTT.
+pub fn srt_to_vtt(srt: &str) -> String {
+    let mut out = String::from("WEBVTT\n\n");
+    for line in srt.lines() {
+        if line.contains("-->") {
+            out.push_str(&line.replace(',', "."));
+        } else {
+            out.push_str(line);
+        }
+        out.push('\n');
+    }
+    out
+}
+
+/// Read a caption sidecar sitting next to `media_path` (e.g. `foo.mp4` →
+/// `foo.vtt` or `foo.srt`) and return it as WebVTT, or `None` when neither
+/// exists. Prefers `.vtt` (already WebVTT); converts `.srt`. The export queue
+/// writes these sidecars next to an export, so a shared/previewed file can carry
+/// captions with no loaded project.
+pub(crate) fn read_caption_sidecar(media_path: &std::path::Path) -> Option<String> {
+    let vtt = media_path.with_extension("vtt");
+    if let Ok(text) = std::fs::read_to_string(&vtt) {
+        return Some(text);
+    }
+    let srt = media_path.with_extension("srt");
+    if let Ok(text) = std::fs::read_to_string(&srt) {
+        return Some(srt_to_vtt(&text));
+    }
+    None
+}
+
 /// The video rectangle inside the output canvas (source pixels). Captions are
 /// placed relative to it so they sit in the padding, not over the video.
 #[derive(Debug, Clone, Copy)]
@@ -1113,6 +1147,18 @@ mod tests {
         std::fs::write(&path, &ass).unwrap();
         eprintln!("wrote {}", path.display());
         assert!(ass.contains("\\p1"), "pill drawn");
+    }
+
+    #[test]
+    fn srt_to_vtt_adds_header_and_dots_timecodes() {
+        let srt =
+            "1\n00:00:01,000 --> 00:00:02,500\nHello\n\n2\n00:00:02,500 --> 00:00:03,000\nworld\n";
+        let vtt = srt_to_vtt(srt);
+        assert!(vtt.starts_with("WEBVTT\n\n"));
+        assert!(vtt.contains("00:00:01.000 --> 00:00:02.500"));
+        assert!(vtt.contains("Hello"));
+        // Only timecode commas flip to dots; text is untouched.
+        assert!(!vtt.contains(",500"));
     }
 
     #[test]

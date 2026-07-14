@@ -34,8 +34,6 @@
   import { toast } from "@recast/ui/sonner";
   import { openFileLocation } from "$lib/ipc";
   import { onDestroy, onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -181,10 +179,7 @@
   </button>
 {/snippet}
 
-<div
-  class="flex flex-col gap-4 text-xs"
-  in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
->
+<div class="flex flex-col gap-4 text-xs animate-in fade-in duration-200">
   <!-- Hero: filename + key specs + live save status -->
   <div
     class="rounded-xl border border-border/60 bg-card/40 p-3 shadow-(--shadow-craft-inset)"
@@ -219,21 +214,14 @@
             ? 'text-success'
             : 'text-muted-foreground'}"
       >
-        <span class="relative flex size-1.5" aria-hidden="true">
-          {#if saveStatus.tone === "ok"}
-            <span
-              class="absolute inline-flex h-full w-full animate-ping rounded-full bg-success/50 opacity-70"
-            ></span>
-          {/if}
-          <span
-            class="relative inline-flex size-1.5 rounded-full {saveStatus.tone ===
-            'warning'
-              ? 'bg-warning'
-              : saveStatus.tone === 'ok'
-                ? 'bg-success'
-                : 'bg-muted-foreground'}"
-          ></span>
-        </span>
+        <span
+          class="inline-flex size-1.5 rounded-full {saveStatus.tone === 'warning'
+            ? 'bg-warning'
+            : saveStatus.tone === 'ok'
+              ? 'bg-success'
+              : 'bg-muted-foreground'}"
+          aria-hidden="true"
+        ></span>
         {saveStatus.label}
       </span>
     </div>

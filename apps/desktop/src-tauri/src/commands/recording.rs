@@ -290,6 +290,19 @@ pub async fn list_exports(state: State<'_, AppState>) -> AppResult<Vec<Recording
         .map_err(|e| AppError::msg(format!("list_exports join error: {e}")))?
 }
 
+/// WebVTT for the caption sidecar next to `media_path` (e.g. `foo.mp4` →
+/// `foo.vtt`/`foo.srt`), or `None` when neither exists. Lets the player show a
+/// file's captions with no loaded project. Off the main thread (a sync command
+/// would freeze the macOS WebView).
+#[tauri::command]
+pub async fn caption_sidecar_vtt(media_path: String) -> AppResult<Option<String>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::transcription::subtitles::read_caption_sidecar(std::path::Path::new(&media_path))
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("caption_sidecar_vtt join error: {e}")))
+}
+
 /// One pass over `dir`, collecting any file whose extension is in `exts`.
 /// Sorts newest-first by mtime.
 fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEntry>> {

@@ -56,8 +56,6 @@
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
   import FontPicker from "./FontPicker.svelte";
   import PanelSection from "./PanelSection.svelte";
 
@@ -294,12 +292,23 @@
     return captionPresets.find((p) => captionStyleMatchesPreset(cs, p.value)) ?? null;
   });
   const activeThemeLabel = $derived(activeTheme?.label ?? "Custom");
+
+  // The transcript line under the playhead, highlighted so you can follow along
+  // as it plays. Deliberately no auto-scroll: yanking the scroll position while
+  // someone is reading is worse than a still list.
+  const activeSegmentId = $derived.by(() => {
+    const t = store.currentTime;
+    const segs = store.transcript?.segments ?? [];
+    let id: string | null = null;
+    for (const s of segs) {
+      if (s.start <= t) id = s.id;
+      else break;
+    }
+    return id;
+  });
 </script>
 
-<div
-  class="flex flex-col gap-4"
-  in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
->
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Generate captions"
     hint="Transcription runs on your device. No upload, no account."
@@ -1067,17 +1076,31 @@
 
       <div class="flex flex-col gap-0.5">
         {#each store.transcript.segments as seg (seg.id)}
+          {@const isActive = seg.id === activeSegmentId}
           <button
             type="button"
-            class="group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
+            aria-current={isActive ? "true" : undefined}
+            class={cn(
+              "group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
+              isActive ? "bg-primary/10" : "hover:bg-muted/60",
+            )}
             onclick={() => store.seek(seg.start)}
           >
             <span
-              class="shrink-0 pt-px font-mono text-[9.5px] tabular-nums text-muted-foreground/70 group-hover:text-foreground"
+              class={cn(
+                "shrink-0 pt-px font-mono text-[9.5px] tabular-nums",
+                isActive
+                  ? "text-primary"
+                  : "text-muted-foreground/70 group-hover:text-foreground",
+              )}
             >
               {clock(seg.start)}
             </span>
-            <span class="min-w-0 text-[11.5px] leading-snug text-foreground">{seg.text}</span>
+            <span
+              class={cn(
+                "min-w-0 text-[11.5px] leading-snug text-foreground",
+                isActive && "font-medium",
+              )}>{seg.text}</span>
           </button>
         {/each}
       </div>

@@ -87,7 +87,9 @@
 </script>
 
 {#if !selected}
-  <div class="flex flex-col items-center justify-center gap-2 px-3 py-12 text-center">
+  <div
+    class="flex flex-col items-center justify-center gap-2 px-3 py-12 text-center animate-in fade-in duration-200"
+  >
     <SquareSplitHorizontal class="size-6 text-muted-foreground/50" />
     <p class="text-[11px] leading-snug text-muted-foreground">
       Select a clip on the timeline to change its speed, split it, or remove it.
@@ -95,7 +97,7 @@
   </div>
 {:else}
   {@const duration = selected.end - selected.start}
-  <div class="space-y-3">
+  <div class="space-y-3 animate-in fade-in duration-200">
     <div class="rounded-lg border border-border/60 bg-card/40 px-3 py-2">
       <div class="flex items-baseline justify-between">
         <span class="text-[11px] text-muted-foreground">Clip duration</span>
@@ -171,11 +173,14 @@
         <div class="grid grid-cols-5 gap-1">
           {#each SEAM_TRANSITIONS as t (t.id)}
             {@const active = seamKind === t.id}
+            {@const seamLabel =
+              t.id === "none" ? "No transition" : t.id.replace("push-", "Push ")}
             <button
               type="button"
               onclick={() => setSeam(t.id)}
               aria-pressed={active}
-              aria-label={t.id}
+              aria-label={seamLabel}
+              title={seamLabel}
               class={cn(
                 "flex items-center justify-center rounded-md border px-1.5 py-1 text-[11px] font-medium transition-colors",
                 active

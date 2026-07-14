@@ -453,6 +453,13 @@ export function listExports(): Promise<RecordingEntry[]> {
 	return invoke<RecordingEntry[]>("list_exports");
 }
 
+/** WebVTT for the caption sidecar next to `mediaPath` (`foo.mp4` → `foo.vtt`/
+ *  `foo.srt`), or null when neither exists. Lets the player show a file's
+ *  captions with no loaded project. */
+export function captionSidecarVtt(mediaPath: string): Promise<string | null> {
+	return invoke<string | null>("caption_sidecar_vtt", { mediaPath });
+}
+
 // Recast Cloud commands
 
 /** Result of a successful cloud upload + share-link creation. */

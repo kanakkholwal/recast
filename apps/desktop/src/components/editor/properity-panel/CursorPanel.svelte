@@ -19,12 +19,13 @@
   import { cn } from "@recast/ui/utils";
   import { Image } from "@unpic/svelte";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly, scale } from "svelte/transition";
+  import { fade, fly } from "svelte/transition";
   import BezierEditor from "../_components/BezierEditor.svelte";
   import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
   import InspectorHint from "../InspectorHint.svelte";
   import PanelSection from "./PanelSection.svelte";
   import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
+  import { motionDuration } from "$lib/motion.svelte";
   const highlightColors = [
     "#3b82f6",
     "#ef4444",
@@ -97,15 +98,9 @@
       <div
         class="grid grid-cols-5 gap-1 rounded-lg border border-border/60 bg-muted/30 p-1 shadow-(--shadow-craft-inset)"
       >
-        {#each registry.list("cursor") as style, i (style.id)}
+        {#each registry.list("cursor") as style (style.id)}
           {@const isActive = store.cursorSettings.style === style.id}
           <button
-            in:fly={{
-              y: 6,
-              duration: 240,
-              delay: 60 + i * 35,
-              easing: cubicOut,
-            }}
             type="button"
             aria-pressed={isActive}
             aria-label={`${style.label} cursor`}
@@ -200,37 +195,27 @@
         {/if}
 
         <div class="flex flex-wrap gap-1">
-          {#each smoothingPresets as preset, i (preset.id)}
+          {#each smoothingPresets as preset (preset.id)}
             {@const isActive =
               store.cursorSettings.smoothing === preset.value.smoothing &&
               store.cursorSettings.snapToClicks === preset.value.snapToClicks &&
               store.cursorSettings.snapWindowMs === preset.value.snapWindowMs}
-            <span
-              class="inline-flex"
-              in:scale={{
-                start: 0.92,
-                duration: 220,
-                delay: 80 + i * 30,
-                easing: cubicOut,
+            <Button
+              type="button"
+              aria-pressed={isActive}
+              onclick={() => {
+                store.pushUndoState();
+                store.updateCursorSettings({
+                  smoothing: preset.value.smoothing,
+                  snapToClicks: preset.value.snapToClicks,
+                  snapWindowMs: preset.value.snapWindowMs,
+                });
               }}
+              size="xs"
+              variant={isActive ? "default_soft" : "outline"}
             >
-              <Button
-                type="button"
-                aria-pressed={isActive}
-                onclick={() => {
-                  store.pushUndoState();
-                  store.updateCursorSettings({
-                    smoothing: preset.value.smoothing,
-                    snapToClicks: preset.value.snapToClicks,
-                    snapWindowMs: preset.value.snapWindowMs,
-                  });
-                }}
-                size="xs"
-                variant={isActive ? "default_soft" : "outline"}
-              >
-                {preset.label}
-              </Button>
-            </span>
+              {preset.label}
+            </Button>
           {/each}
         </div>
 
@@ -385,29 +370,27 @@
           </Button>
         {/if}
       {/snippet}
-      <span
-        class="block"
-        in:fly={{ y: 4, duration: 220, delay: 60, easing: cubicOut }}
+      <SliderControl
+        label="Click bounce"
+        description="How much the cursor squashes when you click"
+        value={store.cursorSettings.clickBounce}
+        min={0}
+        max={5}
+        step={0.05}
+        unit="x"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCursorSettings({ clickBounce: next })}
       >
-        <SliderControl
-          label="Click bounce"
-          description="How much the cursor squashes when you click"
-          value={store.cursorSettings.clickBounce}
-          min={0}
-          max={5}
-          step={0.05}
-          unit="x"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ clickBounce: next })}
-        >
-          {#snippet icon()}
-            <Activity size={11} />
-          {/snippet}
-        </SliderControl>
-      </span>
+        {#snippet icon()}
+          <Activity size={11} />
+        {/snippet}
+      </SliderControl>
 
       {#if store.cursorSettings.clickBounce > 0}
-        <span class="block" in:fly={{ y: 4, duration: 200, easing: cubicOut }}>
+        <span
+          class="block"
+          in:fly={{ y: 4, duration: motionDuration(180), easing: cubicOut }}
+        >
           <SliderControl
             label="Bounce speed"
             description="Length of the bounce window"
@@ -427,47 +410,37 @@
         </span>
       {/if}
 
-      <span
-        class="block"
-        in:fly={{ y: 4, duration: 220, delay: 120, easing: cubicOut }}
+      <SliderControl
+        label="Cursor sway"
+        description="Subtle wobble during slow motion. Fades as you move faster."
+        value={store.cursorSettings.sway}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="x"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCursorSettings({ sway: next })}
       >
-        <SliderControl
-          label="Cursor sway"
-          description="Subtle wobble during slow motion. Fades as you move faster."
-          value={store.cursorSettings.sway}
-          min={0}
-          max={1}
-          step={0.01}
-          unit="x"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ sway: next })}
-        >
-          {#snippet icon()}
-            <Wind size={11} />
-          {/snippet}
-        </SliderControl>
-      </span>
+        {#snippet icon()}
+          <Wind size={11} />
+        {/snippet}
+      </SliderControl>
 
-      <span
-        class="block"
-        in:fly={{ y: 4, duration: 220, delay: 180, easing: cubicOut }}
+      <SliderControl
+        label="Motion blur"
+        description="Velocity-proportional trail behind fast cursor movement"
+        value={store.cursorSettings.motionBlur}
+        min={0}
+        max={1}
+        step={0.01}
+        unit="x"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCursorSettings({ motionBlur: next })}
       >
-        <SliderControl
-          label="Motion blur"
-          description="Velocity-proportional trail behind fast cursor movement"
-          value={store.cursorSettings.motionBlur}
-          min={0}
-          max={1}
-          step={0.01}
-          unit="x"
-          onstart={() => store.pushUndoState()}
-          onchange={(next) => store.updateCursorSettings({ motionBlur: next })}
-        >
-          {#snippet icon()}
-            <Sparkles size={11} />
-          {/snippet}
-        </SliderControl>
-      </span>
+        {#snippet icon()}
+          <Sparkles size={11} />
+        {/snippet}
+      </SliderControl>
     </PanelSection>
 
     <PanelSection
@@ -488,37 +461,30 @@
       {/snippet}
 
       {#if store.cursorSettings.highlightClicks}
-        <div class="grid grid-cols-8 gap-1" in:fade={{ duration: 160 }}>
-          {#each highlightColors as color, i (color)}
+        <div
+          class="grid grid-cols-8 gap-1"
+          in:fade={{ duration: motionDuration(140) }}
+        >
+          {#each highlightColors as color (color)}
             {@const isSelected = store.cursorSettings.highlightColor === color}
-            <span
-              class="inline-flex"
-              in:scale={{
-                start: 0.85,
-                duration: 220,
-                delay: 60 + i * 25,
-                easing: cubicOut,
-              }}
-            >
-              <Button
-                variant="raw"
-                size="raw"
-                onclick={() =>
-                  updateCursorSettings(
-                    { highlightColor: color },
-                    store.cursorSettings.highlightColor !== color,
-                  )}
-                aria-label="Use {color} click highlight color"
-                aria-pressed={isSelected}
-                class={cn(
-                  "aspect-square w-full rounded-md border-2 transition-all",
-                  isSelected
-                    ? "border-foreground shadow-sm"
-                    : "border-border/40 hover:border-border",
+            <Button
+              variant="raw"
+              size="raw"
+              onclick={() =>
+                updateCursorSettings(
+                  { highlightColor: color },
+                  store.cursorSettings.highlightColor !== color,
                 )}
-                style="background-color: {color}"
-              ></Button>
-            </span>
+              aria-label="Use {color} click highlight color"
+              aria-pressed={isSelected}
+              class={cn(
+                "aspect-square w-full rounded-md border-2 transition-all",
+                isSelected
+                  ? "border-foreground shadow-sm"
+                  : "border-border/40 hover:border-border",
+              )}
+              style="background-color: {color}"
+            ></Button>
           {/each}
         </div>
 
