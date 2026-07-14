@@ -60,7 +60,7 @@ export const RELEASES: readonly ChangelogRelease[] = [
 			{ kind: 'changed', summary: 'The Windows installer and update windows now carry the Recast icon and artwork.' },
 			{ kind: 'changed', summary: 'Refreshed the Google Drive connection page to match the app.' },
 			{ kind: 'changed', summary: 'On-device captions now work on Intel Macs, which the previous speech engine could not support. Apple Silicon, Windows, and Linux are unchanged.' },
-			{ kind: 'changed', summary: 'The player control bar now fades out after a couple of seconds of pointer inactivity and fades back on movement, and bottom captions lift clear of it while it is visible instead of overlapping.' },
+			{ kind: 'changed', summary: 'The player control bar auto-hides after a couple of seconds of pointer inactivity and fades back on movement. Captions stay visible on their own (they no longer fade with the controls) and bottom captions lift clear of the bar while it is showing so they never overlap. The captions button only appears when a track is available and now shows a clear on/off state.' },
 			{ kind: 'fixed', summary: 'Double-clicking a .recast file opens it on macOS, which previously worked only on Windows and Linux.' },
 			{ kind: 'fixed', summary: 'Burned-in captions now match the editor preview: correct size (they were rendering smaller because libass scales by the font\'s window metrics, not the em box, up to nearly half size for some display fonts), proper kerning, and the correct font at non-standard weights (a semibold previously fell back to a system face). Single-line captions get an exact rounded pill at export.' },
 		],
