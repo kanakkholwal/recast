@@ -7,9 +7,9 @@
 	  Building2,
 	  Check,
 	  ChevronsUpDown,
+	  Crown,
 	  LoaderCircle,
 	  Plus,
-	  Sparkles,
 	} from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -165,7 +165,7 @@
 		{#if active.plan === "free"}
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item onclick={() => goto("/pricing")}>
-				<Sparkles class="size-3.5 text-primary" />
+				<Crown class="size-3.5 text-primary" />
 				<span class="text-foreground">Upgrade to Pro</span>
 				<Badge variant="outline" class="ml-auto text-[10px]">50 seats</Badge>
 			</DropdownMenu.Item>

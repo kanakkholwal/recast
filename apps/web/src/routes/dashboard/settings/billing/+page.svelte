@@ -8,9 +8,10 @@
 		ArrowUpRight,
 		Check,
 		CreditCard,
+		Crown,
 		LoaderCircle,
+		Rocket,
 		ShieldCheck,
-		Sparkles,
 	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
@@ -129,7 +130,7 @@
 						{#if checkingOut}
 							<LoaderCircle class="size-3.5 animate-spin" />
 						{:else}
-							<Sparkles class="size-3.5" />
+							<Rocket class="size-3.5" />
 						{/if}
 						Upgrade to Pro
 					</Button>
@@ -169,7 +170,7 @@
 
 	<div in:fly={{ y: 14, duration: 420, delay: 80, easing: cubicOut }}>
 		<SettingsSection
-			icon={Sparkles}
+			icon={Crown}
 			title="Pro"
 			description="Best fit for active cloud sharing."
 			accent

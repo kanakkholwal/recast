@@ -12,7 +12,7 @@
 	import { Button } from "@recast/ui/button";
 	import { Badge } from "@recast/ui/badge";
 	import { Markdown } from "@recast/ui/markdown";
-	import { ArrowUpRight, ExternalLink, GitCommit, Sparkles } from "@lucide/svelte";
+	import { ArrowUpRight, ExternalLink, GitCommit } from "@lucide/svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -43,7 +43,7 @@
 		<HeroBackdrop src="/background-changelog.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Changelog</Eyebrow>
+				<Eyebrow icon={GitCommit} variant="primary">Changelog</Eyebrow>
 				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
 					Every release,
 					<span class="mt-2 block font-medium italic text-foreground/40">

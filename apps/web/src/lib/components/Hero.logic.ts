@@ -23,11 +23,23 @@ export const steps = [
 	{ icon: Share2, label: "Share" },
 ];
 
-/** Svelte native transition params: snappy in, lands gently. Duration kept in
- *  the 400-600ms band so the staggered ladder reads brisk, not sluggish. */
+/**
+ * Hero entrance choreography.
+ *
+ * Each element rises 12px and lands in 460ms on a `cubicOut` curve — under the
+ * 500ms UI ceiling so the first paint reads as decisive, not decorative. The
+ * per-element delays follow a tight 80ms ladder (was 120ms; the wider gap
+ * left a visible beat between the CTA and the preview figure). Total ladder
+ * ends ~960ms after first paint — slow enough to feel premium, short enough
+ * not to gate the visitor's scroll.
+ */
 export const rise = (delay: number) => ({
-	y: 16,
-	duration: 560,
+	y: 12,
+	duration: 460,
 	delay,
 	easing: cubicOut,
 });
+
+/** Stagger between consecutive hero elements. Tighter than the previous 120ms
+ *  reads as a single confident breath rather than a stage-by-stage march. */
+export const heroStagger = 80;

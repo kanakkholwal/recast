@@ -24,7 +24,6 @@ import {
 	  Monitor,
 	  MonitorSmartphone,
 	  ShieldCheck,
-	  Sparkles,
 	  Terminal,
 	  TriangleAlert,
 	  WifiOff,
@@ -332,7 +331,7 @@ import {
     <HeroBackdrop src="/background-section-3.webp" />
     <Container class="relative">
       <div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-        <Eyebrow icon={Sparkles} variant="primary">
+        <Eyebrow icon={Download} variant="primary">
           Latest release · {data.version}
         </Eyebrow>
 

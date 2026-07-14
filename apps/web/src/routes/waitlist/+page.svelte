@@ -2,7 +2,7 @@
 	import { page } from "$app/state";
 	import { SeoMeta } from "$lib/components";
 	import WaitlistForm from "$lib/components/WaitlistForm.svelte";
-	import { Sparkles } from "@lucide/svelte";
+	import { Lock } from "@lucide/svelte";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
@@ -29,7 +29,7 @@
 	<div class="w-full max-w-md" in:fly={{ y: 16, duration: 600, easing: cubicOut }}>
 		<div class="flex flex-col items-center text-center">
 			<span class="glass-chip inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
-				<Sparkles class="size-3" />
+				<Lock class="size-3" />
 				Invite-only
 			</span>
 			<h1 class="text-balance mt-5 text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">

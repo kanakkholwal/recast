@@ -9,12 +9,13 @@
 	  ChevronsUpDown,
 	  Command,
 	  CreditCard,
+	  Crown,
 	  LayoutDashboard,
 	  LogOut,
+	  Megaphone,
 	  Moon,
 	  Settings,
 	  Shield,
-	  Sparkles,
 	  Sun,
 	} from "@lucide/svelte";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
@@ -81,7 +82,7 @@
 		</DropdownMenu.Item>
 		<DropdownMenu.Item onclick={() => goto("/dashboard/settings/billing")}>
 			{#if isFree}
-				<Sparkles class="size-4 text-primary" />
+				<Crown class="size-4 text-primary" />
 				<span class="text-foreground">Upgrade plan</span>
 			{:else}
 				<CreditCard class="size-4 text-muted-foreground" />
@@ -108,7 +109,7 @@
 			</Kbd>
 		</DropdownMenu.Item>
 		<DropdownMenu.Item onclick={() => goto("/changelog")}>
-			<Sparkles class="size-4 text-muted-foreground" />
+			<Megaphone class="size-4 text-muted-foreground" />
 			What's new
 		</DropdownMenu.Item>
 

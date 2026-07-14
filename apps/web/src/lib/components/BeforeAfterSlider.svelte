@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { autoplayInView } from "$lib/motion-core";
 	import { Check, ChevronsLeftRight, Film } from "@lucide/svelte";
-	import { cn } from "@recast/ui/utils";
 
 	// Draggable wipe comparison. Raw fills the base; the polished clip is layered
 	// on top and clipped to the RIGHT of the handle, so dragging left/right wipes
@@ -85,6 +84,7 @@
 			playsinline
 			preload="metadata"
 			class="pointer-events-none absolute inset-0 size-full object-cover saturate-[0.85]"
+			draggable="false"
 		></video>
 		<!-- svelte-ignore a11y_media_has_caption -->
 		<video
@@ -98,6 +98,7 @@
 			preload="metadata"
 			class="pointer-events-none absolute inset-0 size-full object-cover"
 			style={`clip-path: inset(0 0 0 ${pos}%);`}
+			draggable="false"
 		></video>
 
 		<!-- Corner labels -->

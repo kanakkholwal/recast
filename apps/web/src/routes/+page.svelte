@@ -12,6 +12,7 @@
 	  Section,
 	  SectionHeader,
 	  SeoMeta,
+	  ShowcasePanel,
 	} from "$lib/components";
 	import { prefersReducedMotion } from "$lib/motion-core";
 	import {
@@ -21,9 +22,12 @@
 	  Camera,
 	  Check,
 	  Cloud,
+	  Code2,
+	  Compass,
 	  Cpu,
 	  Download,
 	  EyeOff,
+	  Gauge,
 	  HardDrive,
 	  HardDriveUpload,
 	  Highlighter,
@@ -44,7 +48,7 @@
 	  Rocket,
 	  Scissors,
 	  ShieldCheck,
-	  Sparkles,
+	  Star,
 	  Target,
 	  Terminal,
 	  UserX,
@@ -59,7 +63,6 @@
 	import { cn } from "@recast/ui/utils";
 	import { cubicOut } from "svelte/easing";
 	import { fly, slide } from "svelte/transition";
-
 	// Svelte transitions bypass the CSS reduced-motion guard (WAAPI), so gate
 	// the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
 	const reduced = $derived(prefersReducedMotion());
@@ -83,7 +86,6 @@
 		label: string;
 		hint: string;
 		tone: BeforeAfterTone;
-		icon: typeof Target;
 		durationLabel: string;
 		applied: string[];
 	}> = [
@@ -92,7 +94,6 @@
 			label: "Raw recording",
 			hint: "Built-in recorder, no edits",
 			tone: "raw",
-			icon: X,
 			durationLabel: "0:30",
 			applied: [],
 		},
@@ -101,7 +102,6 @@
 			label: "Polished automatically",
 			hint: "Same take, run through Recast",
 			tone: "polished",
-			icon: Sparkles,
 			durationLabel: "~0:22",
 			applied: ["Smart zoom", "Cursor smoothing", "Silence trim"],
 		},
@@ -190,7 +190,7 @@
 				"Investor walkthroughs and product demos that look funded. Record one between two meetings, ship it before the third.",
 		},
 		{
-			icon: Sparkles,
+			icon: Code2,
 			title: "For indie hackers",
 			description:
 				"Launch videos, changelog clips, and Twitter cuts on your own schedule. Save a profile for each one and hit record. Fully offline, ship at midnight, fix typos at 2 AM.",
@@ -229,14 +229,14 @@
 			os: "macOS",
 			icon: Apple,
 			href: "/download?os=macos",
-			variant: "outline" as const,
+			variant: "dark" as const,
 			stability: "beta" as const,
 		},
 		{
 			os: "Linux",
 			icon: Terminal,
 			href: "/download?os=linux",
-			variant: "outline" as const,
+			variant: "dark" as const,
 			stability: "beta" as const,
 		},
 	];
@@ -268,32 +268,24 @@
 		{ icon: Scissors, title: "Trim & ship", description: "Cut dead frames and export hardware-encoded MP4 in seconds." },
 	];
 
-	// Recording-side superpowers. These differentiate Recast from the OS
-	// built-in (which gives you a single source, one button, no resume) and
-	// from typical SaaS recorders (which lock profiles + pause/resume behind
-	// a paid tier). All free, all local.
+	// Recording-side superpowers. Two beats — kept short so the section
+	// reads as marketing copy, not a feature catalog.
 	const recordingFeatures = [
 		{
 			icon: Layers,
 			title: "Recording profiles",
-			description: "Save capture presets (region + window + camera + mic) and switch with one shortcut. Investor demo, changelog clip, tutorial: pick the profile, hit record.",
+			description: "Save capture presets and switch with one shortcut. Investor demo, changelog clip, tutorial: pick the profile, hit record.",
 		},
 		{
 			icon: Pause,
 			title: "Pause & resume mid-take",
-			description: "A knock at the door no longer means re-recording. Paused spans are trimmed cleanly out of the final video.",
-		},
-		{
-			icon: Mic2,
-			title: "Camera + mic + system audio",
-			description: "Capture any combination on one timeline. Per-source device picking and a floating webcam bubble with shape, border, and follow-cursor motion.",
+			description: "A knock at the door no longer means re-recording. Paused spans trim out cleanly.",
 		},
 	];
 
 	const shareFeatures = [
-		{ icon: HardDriveUpload, title: "Upload to your Drive", description: "Connect Google Drive once. The export dialog ships the file straight to your account, with no manual upload step." },
-		{ icon: Link2, title: "Copy a share link", description: "When the upload finishes, the Drive link is one click away. Send it however you already send links." },
-		{ icon: ShieldCheck, title: "You own the file", description: "The video lives in your Drive, not on a Recast server. Your retention, your sharing rules, your delete button." },
+		{ icon: HardDriveUpload, title: "Upload to your Drive", description: "Connect once. The export dialog ships the file straight to your account — no manual upload." },
+		{ icon: Link2, title: "Copy a share link", description: "When the upload finishes, the link is one click away. Send it however you already send links." },
 	];
 
 	// "Make it yours" beat — extensions as proof of the no-lock-in moat, not a
@@ -301,7 +293,7 @@
 	const extensionBeat = [
 		{ icon: MousePointer2, title: "Cursor packs", description: "Swap the pointer for a new style. Install a pack and it shows up in the cursor picker." },
 		{ icon: Palette, title: "Backgrounds & gradients", description: "Wallpapers, gradients and color sets that drop straight into the background picker." },
-		{ icon: Sparkles, title: "Motion presets", description: "Easing and cursor-smoothing presets, shared as packs you can install in a click." },
+		{ icon: Gauge, title: "Motion presets", description: "Easing and cursor-smoothing presets, shared as packs you can install in a click." },
 		{ icon: ShieldCheck, title: "Safe by design", description: "Every pack is a manifest plus static files. No code runs, every asset is hash-checked, and nothing asks for permission." },
 	];
 
@@ -448,47 +440,114 @@
 		},
 	};
 
-	// Drag-to-scroll for the editor rail. Makes the `grab` cursor honest for
-	// mouse/pen users (wheel + trackpad already scroll natively; touch pans on
-	// its own) without pulling in a library. Snap is suspended for the duration
-	// of a drag so the pointer tracks 1:1, then restored so the rail settles to
-	// the nearest card on release. Keyboard users get the same reach via the
-	// rail's tabindex (native arrow-key scroll on a focused scroll container).
+	// Drag-to-scroll for the editor rail with flick-to-fling momentum. Pointer
+	// tracks 1:1 while the button is held; on release we measure the last few
+	// moves as velocity, then animate a decaying rAF loop until the rail
+	// either settles or hits a bound. Snap is suspended during the drag (so
+	// the pointer never fights the snap), then restored so the rail settles
+	// to the nearest card on release. Keyboard users get the same reach via
+	// the rail's tabindex (native arrow-key scroll on a focused scroll
+	// container). Touch users pan natively — the rail only intercepts
+	// mouse/pen, so a finger flick never conflicts.
+	//
+	// Tuned so a quick 200px flick decays over ~700ms (4px initial velocity
+	// → ~0). Reduced motion keeps the action direct (no inertia).
 	function dragScroll(node: HTMLElement) {
+		const reduced =
+			typeof window !== "undefined" &&
+			window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
 		let down = false;
 		let startX = 0;
 		let startScroll = 0;
 		let snap = "";
+		// Velocity sample window: most recent N ms of pointer motion.
+		const samples: Array<{ x: number; t: number }> = [];
+		const SAMPLE_WINDOW_MS = 120;
+		let raf = 0;
+
 		function onDown(e: PointerEvent) {
 			if (e.pointerType === "touch") return;
+			cancelAnimationFrame(raf);
 			down = true;
 			startX = e.clientX;
 			startScroll = node.scrollLeft;
 			snap = node.style.scrollSnapType;
 			node.style.scrollSnapType = "none";
+			samples.length = 0;
+			samples.push({ x: e.clientX, t: performance.now() });
 			node.setPointerCapture(e.pointerId);
 		}
+
 		function onMove(e: PointerEvent) {
 			if (!down) return;
 			node.scrollLeft = startScroll - (e.clientX - startX);
+			const now = performance.now();
+			samples.push({ x: e.clientX, t: now });
+			// Drop samples outside the window.
+			while (
+				samples.length > 1 &&
+				now - samples[0]!.t > SAMPLE_WINDOW_MS
+			) {
+				samples.shift();
+			}
 		}
-		function onUp() {
+
+		function onUp(e: PointerEvent) {
 			if (!down) return;
 			down = false;
 			node.style.scrollSnapType = snap;
+			try {
+				node.releasePointerCapture(e.pointerId);
+			} catch {
+				// Some browsers throw if the capture was already released; ignore.
+			}
+			if (reduced) return;
+
+			// Velocity = Δx / Δt over the recent sample window. Negative because
+			// the rail scrolls opposite the pointer (drag right → rail moves
+			// leftward in scroll coordinates).
+			const first = samples[0];
+			const last = samples[samples.length - 1];
+			if (!first || !last || first === last) return;
+			const dt = last.t - first.t;
+			if (dt <= 0) return;
+			const vx = (last.x - first.x) / dt; // px/ms
+			const scrollV = -vx; // px/ms in scroll direction
+			if (Math.abs(scrollV) < 0.1) return; // too slow to bother
+
+			const FRICTION = 0.0014; // per-ms decay coefficient
+			let v = scrollV;
+			const max = node.scrollWidth - node.clientWidth;
+			const tick = () => {
+				v *= 1 - FRICTION * 16; // ~60fps frame budget
+				node.scrollLeft = clamp(node.scrollLeft + v * 16, 0, max);
+				if (Math.abs(v) < 0.05 || node.scrollLeft <= 0 || node.scrollLeft >= max) {
+					raf = 0;
+					return;
+				}
+				raf = requestAnimationFrame(tick);
+			};
+			raf = requestAnimationFrame(tick);
 		}
+
 		node.addEventListener("pointerdown", onDown);
 		node.addEventListener("pointermove", onMove);
 		node.addEventListener("pointerup", onUp);
 		node.addEventListener("pointercancel", onUp);
 		return {
 			destroy() {
+				cancelAnimationFrame(raf);
 				node.removeEventListener("pointerdown", onDown);
 				node.removeEventListener("pointermove", onMove);
 				node.removeEventListener("pointerup", onUp);
 				node.removeEventListener("pointercancel", onUp);
 			},
 		};
+
+		function clamp(v: number, lo: number, hi: number) {
+			return Math.min(hi, Math.max(lo, v));
+		}
 	}
 </script>
 
@@ -525,13 +584,13 @@
 							See it work
 						</span>
 						<h2 class="text-balance text-3xl font-semibold leading-[1.05] tracking-tight sm:text-4xl md:text-5xl">
-							From raw capture to ready-to-send,
+							Same take.
 							<span class="block font-medium italic text-ink/50">
-								in the time it took to record.
+								Polished demo.
 							</span>
 						</h2>
 						<p class="text-pretty max-w-xl text-sm leading-relaxed text-ink-muted sm:text-base">
-							The same thirty seconds. One with the OS recorder. One with Recast. Padding, cursor smoothing, smart zoom, and silence cuts already applied.
+							One with the OS recorder. One with Recast. Smart zoom, cursor smoothing, padding, and silence cuts already applied by the time you stop.
 						</p>
 					</div>
 				</Reveal>
@@ -651,7 +710,7 @@
 							<X class="size-3.5" /> Built-in recorder
 						</div>
 						<div class="flex items-center gap-2 border-l border-border-low/50 px-6 py-4 text-primary">
-							<Sparkles class="size-3.5" /> Recast
+							<Star class="size-3.5" /> Recast
 						</div>
 					</div>
 					{#each contrast as row, i}
@@ -671,90 +730,108 @@
 	</Section>
 
 	<!-- Step 1 — Record -->
-	<Section id="record" class="border-t border-border-low/60">
-		<Container>
-			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
-				<div class="lg:col-span-5">
-					<SectionHeader
-						eyebrow="Step 1 · Record"
-						title="Hit record. That's the whole setup."
-						description="Pick a region, a window, or your full screen, then start capturing with one shortcut. No projects to configure. No codecs to pick. No account to create."
-					/>
+	<Section id="record" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="blue">
+				<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
+					<div class="lg:col-span-5">
+						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							Step 1 · Record
+						</span>
+						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+							Hit record.
+							<span class="block font-medium italic text-foreground/45">That's the whole setup.</span>
+						</h2>
+						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Region, window, or full screen. One shortcut starts the capture. No projects, no codecs, no account.
+						</p>
 
-					<!-- Recording-side differentiators. Profiles and pause/resume
-					     are typically paywalled in SaaS recorders; both ship in
-					     the free local app. -->
-					<ul class="mt-9 space-y-4">
-						{#each recordingFeatures as f, i}
-							{@const Icon = f.icon}
-							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3.5">
-								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-foreground/70">
-									<Icon class="size-4" />
-								</span>
-								<span>
-									<span class="text-sm font-semibold text-foreground">{f.title}</span>
-									<span class="block text-sm leading-relaxed text-muted-foreground">{f.description}</span>
-								</span>
-							</Reveal>
-						{/each}
-					</ul>
+						<!-- Recording-side differentiators. Two beats only — both
+						     features are usually paywalled in SaaS recorders; here
+						     they're in the free local app. -->
+						<ul class="mt-10 space-y-5">
+							{#each recordingFeatures as f, i}
+								{@const Icon = f.icon}
+								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
+									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+										<Icon class="size-5" />
+									</span>
+									<span class="pt-1">
+										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
+										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+									</span>
+								</Reveal>
+							{/each}
+						</ul>
 
-					<div class="mt-10 flex items-center gap-3">
-						<Button href="/download" class="gap-2">
-							<Download class="size-4" />
-							Download free
-						</Button>
+						<div class="mt-10 flex items-center gap-3">
+							<Button href="/download" class="gap-2">
+								<Download class="size-4" />
+								Download free
+							</Button>
+						</div>
+					</div>
+
+					<div class="lg:col-span-7">
+						<Reveal variant="morph">
+							<MacWindow
+								title="Recast"
+								class="transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-craft-lg"
+							>
+								<RecordMock />
+							</MacWindow>
+						</Reveal>
 					</div>
 				</div>
-
-				<div class="lg:col-span-7">
-					<Reveal variant="morph">
-						<MacWindow
-							title="Recast"
-							class="transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-craft-lg"
-						>
-							<RecordMock />
-						</MacWindow>
-					</Reveal>
-				</div>
-			</div>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 
 	<!-- Step 2 — Auto-polish -->
-	<Section id="polish" class="overflow-hidden border-t border-border-low/60">
-		<Container>
-			<SectionHeader
-				eyebrow="Step 2 · Auto-polish"
-				title="The editing happens while you record."
-				description="Cursor smoothing, padding, backgrounds, zoom, and silence cuts happen while you record. By the time you stop, the demo is mostly done. Open the timeline only when you want to nudge something, and even then, it's the lightest editor you've ever opened."
-				align="center"
-			/>
+	<Section id="polish" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="green">
+				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
+					<div class="lg:col-span-5">
+						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							Step 2 · Auto-polish
+						</span>
+						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+							The editing happens
+							<span class="block font-medium italic text-foreground/45">while you record.</span>
+						</h2>
+						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Smart zoom, cursor smoothing, silence cuts, and padding apply as you record. By the time you stop, the demo is mostly done.
+						</p>
+					</div>
+					<div class="lg:col-span-7">
+						<PolishGrid features={polishFeatures} />
+					</div>
+				</div>
 
-			<PolishGrid features={polishFeatures} />
-
-			<Reveal variant="up" class="mt-12">
-				<figure class="mx-auto max-w-5xl">
-					<MacWindow title="Recast · Editor" class="shadow-craft-xl">
-						<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
-							<!-- `width`/`height` (the asset's true 1920×1080) reserve the
-							     16:9 box so this lazy screenshot can't shift layout in. -->
-							<img
-								src="/product_preview_hero.png"
-								alt="Recast editor"
-								width="1920"
-								height="1080"
-								loading="lazy"
-								decoding="async"
-								class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
-							/>
-						</div>
-					</MacWindow>
-					<figcaption class="mt-5 text-center text-[12.5px] leading-relaxed text-muted-foreground">
-						The full editor: timeline, zoom regions, annotations, and export presets in one window.
-					</figcaption>
-				</figure>
-			</Reveal>
+				<Reveal variant="up" class="mt-14">
+					<figure class="mx-auto max-w-5xl">
+						<MacWindow title="Recast · Editor" class="shadow-craft-xl">
+							<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
+								<img
+									src="/product_preview_hero.png"
+									alt="Recast editor"
+									width="1920"
+									height="1080"
+									loading="lazy"
+									decoding="async"
+									class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
+								/>
+							</div>
+						</MacWindow>
+						<figcaption class="mt-5 text-center text-[12.5px] leading-relaxed text-muted-foreground">
+							The full editor: timeline, zoom regions, annotations, and export presets in one window.
+						</figcaption>
+					</figure>
+				</Reveal>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 
@@ -812,7 +889,7 @@
 							<!-- Tilted visual. 3D perspective on the wrapper, the inner
 							     plate carries the rotation so hover can soften it. -->
 							<div
-								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-lg transition-shadow duration-500 group-hover/feat:shadow-craft-xl"
+								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-lg pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:shadow-craft-xl"
 								style="perspective: 1200px;"
 							>
 								<!-- Dot grid backdrop. Faint, decorative — the techy vibe. -->
@@ -848,7 +925,7 @@
 									     asset falls back to the icon-hero branch below
 									     instead of rendering a broken-image glyph. -->
 									<div
-										class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low/60 shadow-craft-md transition-transform duration-500 group-hover/feat:scale-[1.02]"
+										class="absolute inset-6 origin-center overflow-hidden rounded-lg border border-border-low/60 shadow-craft-md pointer-fine:transition-transform pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:scale-[1.02]"
 										style="transform: perspective(900px) rotateX(6deg) rotateY(-10deg); transform-origin: 50% 70%;"
 									>
 										<img
@@ -925,98 +1002,113 @@
 	<!-- Make it yours — extensions as proof of the open, no-lock-in moat.
 	     A supporting beat (not a headline) that reinforces "free, offline,
 	     yours" rather than pivoting to a generic marketplace pitch. -->
-	<Section id="extensions" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
-		<Container>
-			<SectionHeader
-				eyebrow="Make it yours"
-				title="Open packs. No lock-in."
-				description="Install community asset packs right inside the editor. Cursors, backgrounds, gradients and motion presets show up in the pickers you already use. Each pack is just a manifest and a few static files, checked by hash on the way in, with no code and no permissions. The app stays free, offline and yours."
-				align="center"
-			/>
+	<Section id="extensions" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="violet" padding="tight">
+				<div class="mx-auto flex max-w-2xl flex-col items-center text-center">
+					<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+						<span class="size-1.5 rounded-full bg-primary"></span>
+						Make it yours
+					</span>
+					<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+						Open packs.
+						<span class="block font-medium italic text-foreground/45">No lock-in.</span>
+					</h2>
+					<p class="text-pretty mt-5 max-w-lg text-base leading-relaxed text-muted-foreground sm:text-lg">
+						Community packs install straight into the editor's pickers. Each one is a manifest and a few static files — hash-checked, no code, no permissions.
+					</p>
+				</div>
 
-			<!-- Deliberately NOT the seamless tile matrix used by Auto-polish:
-			     spaced, individually-bordered cards with an icon chip read as a
-			     lighter supporting beat, so the two 4-up sections don't look like
-			     the same module twice. -->
-			<div class="mt-16 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-				{#each extensionBeat as item, i}
-					{@const Icon = item.icon}
-					<Reveal variant="up" delay={i * 70} class="h-full">
-						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-border-low hover:shadow-craft-lg">
-							<span class="glass-chip grid size-10 place-items-center rounded-xl text-foreground/70">
-								<Icon class="size-5" />
-							</span>
-							<div>
-								<div class="text-sm font-semibold text-foreground">{item.title}</div>
-								<div class="mt-1.5 text-sm leading-relaxed text-muted-foreground">{item.description}</div>
-							</div>
-						</div>
-					</Reveal>
-				{/each}
-			</div>
+				<!-- 4-card showcase. Each card is its own panel inside the larger
+				     violet showcase, so the grid reads as a sub-gallery of the
+				     parent section. -->
+				<div class="mt-10 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+					{#each extensionBeat as item, i}
+						{@const Icon = item.icon}
+						<Reveal variant="up" delay={i * 70} class="h-full">
+							<article class="group relative flex h-full flex-col gap-3 rounded-2xl border border-border-low/40 bg-background/85 p-6 shadow-craft-sm transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-border-low hover:shadow-craft-lg motion-reduce:transition-none">
+								<span class="grid size-10 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/75">
+									<Icon class="size-5" />
+								</span>
+								<div>
+									<div class="text-[15px] font-semibold tracking-tight text-foreground">{item.title}</div>
+									<div class="mt-1.5 text-[14px] leading-relaxed text-muted-foreground">{item.description}</div>
+								</div>
+							</article>
+						</Reveal>
+					{/each}
+				</div>
 
-			<Reveal variant="up" delay={120} class="mt-10 flex flex-wrap items-center justify-center gap-3">
-				<Button href="/extensions" class="gap-2">
-					<Sparkles class="size-4" />
-					Explore extensions
-				</Button>
-				<Button
-					href="https://github.com/kanakkholwal/recast/tree/main/extensions"
-					variant="ghost"
-					class="gap-2"
-				>
-					<GithubBrand class="size-4" />
-					Build a pack
-				</Button>
-			</Reveal>
+				<Reveal variant="up" delay={120} class="mt-10 flex flex-wrap items-center justify-center gap-3">
+					<Button href="/extensions" variant="dark" class="gap-2">
+						<Compass class="size-4" />
+						Explore extensions
+					</Button>
+					<Button
+						href="https://github.com/kanakkholwal/recast/tree/main/extensions"
+						variant="dark"
+						class="gap-2"
+					>
+						<GithubBrand class="size-4" />
+						Build a pack
+					</Button>
+				</Reveal>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 
 	<!-- Step 3 — Share (Google Drive, user-owned) -->
-	<Section id="share" class="border-t border-border-low/60">
-		<Container>
-			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
-				<div class="lg:col-span-6">
-					<SectionHeader
-						eyebrow="Step 3 · Share"
-						title="Ship a link. To your Drive."
-						description="Connect Google Drive once. From then on, the export dialog uploads the finished file straight to your own Drive and hands you a share-link. The video lives in your account, not on a Recast server. Your storage, your retention, your access controls."
-					/>
+	<Section id="share" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="yellow">
+				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
+					<div class="lg:col-span-5">
+						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							Step 3 · Share
+						</span>
+						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+							Ship a link.
+							<span class="block font-medium italic text-foreground/45">To your Drive.</span>
+						</h2>
+						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Connect Drive once. Exports upload straight to your account and hand you a share link. Your video, your storage.
+						</p>
 
-					<ul class="mt-10 space-y-3.5">
-						{#each shareFeatures as f, i}
-							{@const Icon = f.icon}
-							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3.5">
-								<span class="glass-chip mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg text-foreground/70">
-									<Icon class="size-4" />
-								</span>
-								<span>
-									<span class="text-sm font-semibold text-foreground">{f.title}</span>
-									<span class="block text-sm leading-relaxed text-muted-foreground">{f.description}</span>
-								</span>
-							</Reveal>
-						{/each}
-					</ul>
-				</div>
+						<ul class="mt-10 space-y-5">
+							{#each shareFeatures as f, i}
+								{@const Icon = f.icon}
+								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
+									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+										<Icon class="size-5" />
+									</span>
+									<span class="pt-1">
+										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
+										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+									</span>
+								</Reveal>
+							{/each}
+						</ul>
+					</div>
 
-				<div class="lg:col-span-6">
-					<Reveal variant="morph">
-						<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
-							<div class="relative">
-								<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-									<HardDriveUpload class="size-3.5 text-foreground/70" />
-									Google Drive · built in
-								</span>
+					<div class="lg:col-span-7">
+						<Reveal variant="morph">
+							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
+								<div class="relative">
+									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
+										<HardDriveUpload class="size-3.5 text-foreground/70" />
+										Google Drive · built in
+									</span>
 
-								<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
-									From export dialog to share link, in one click.
-								</h3>
-								<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-									When the encode finishes, the success card shows live upload progress to your Drive. The moment it's done, "Copy link" is right there. No second tab, no manual upload, no Recast servers in the middle.
-								</p>
+									<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
+										Export → upload → share. In one click.
+									</h3>
+									<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+										Live upload progress in the success card. The moment it's done, "Copy link" is right there. No second tab, no Recast servers in the middle.
+									</p>
 
-								<!-- Mock of the export-success card. Mirrors the real
-								     desktop UI (and now loops the upload flow) so the
+									<!-- Mock of the export-success card. Mirrors the real
+									     desktop UI (and now loops the upload flow) so the
 								     section reads as "this is what you'll actually see",
 								     not aspirational marketing. -->
 								<div class="mt-7">
@@ -1032,6 +1124,7 @@
 					</Reveal>
 				</div>
 			</div>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 
@@ -1190,7 +1283,7 @@
 				{#each founderUse as item, i}
 					{@const Icon = item.icon}
 					<Reveal variant="up" delay={i * 70}>
-						<article class="glass-card group flex h-full flex-col rounded-2xl p-7 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
+						<article class="glass-card group flex h-full flex-col rounded-2xl p-7 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
 							<span class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-foreground">
 								<Icon class="size-5" />
 							</span>
@@ -1208,11 +1301,11 @@
 	</Section>
 
 	<!-- Pricing teaser — the recorder is free, sharing is your storage. -->
-	<Section id="pricing-teaser" class="border-t border-border-low/60">
+	<Section id="pricing-teaser" class="border-t border-border-low/60 ">
 		<Container>
 			<div class="grid gap-4 md:grid-cols-2">
 				<Reveal variant="left">
-					<article class="glass-card flex h-full flex-col rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
+					<article class="glass-card flex h-full flex-col rounded-2xl p-8 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
 						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 							The app
 						</span>
@@ -1224,7 +1317,7 @@
 							Record, auto-polish, edit, and export, all of it offline and without an account. The whole recorder, no asterisk.
 						</p>
 						<div class="mt-7">
-							<Button href="/download" variant="outline" class="gap-2">
+							<Button href="/download" variant="dark" class="gap-2">
 								<Download class="size-4" />
 								Download
 							</Button>
@@ -1233,7 +1326,7 @@
 				</Reveal>
 
 				<Reveal variant="right" delay={80}>
-					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
+					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
 						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
 							Recast Cloud
 						</span>
@@ -1335,70 +1428,93 @@
 		</Container>
 	</Section>
 
-	<!-- Final CTA. Closing bookend: content floats over a faded editorial photo
-	     like the hero, so the page opens and closes on photography. A different
-	     asset from the footer's so the two stacked bands do not repeat. -->
+	<!-- Final CTA. Closing bookend. No photo backdrop here — the editorial
+	     rule is "no two consecutive photo bands", and the Footer that
+	     follows already has one — so the CTA carries its presence with a
+	     soft primary glow + staggered reveals. Each beat lands ~70ms after
+	     the previous so the visitor reads chip → headline → body → buttons
+	     as one confident breath instead of a single scale-burst. -->
 	<Section id="cta" class="relative overflow-hidden border-t border-border-low/60">
-	
-		<Container class="relative z-10 py-8 md:py-12">
-			<Reveal variant="scale">
-				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
-							<span class="relative flex size-1.5">
-								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
-								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
-							</span>
-							v0.4 beta · ready when you are
-						</div>
-
-						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
-							A demo, not a project.
-							<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
-						</h2>
-
-						<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Free forever. No account. Windows is daily-driver stable, macOS and Linux are in active beta.
-						</p>
-
-						<!--
-						  Platform-split downloads. Stability chips mirror /download
-						  so the marketing voice never over-promises macOS or Linux.
-						  Wraps to one column under sm: so the buttons stay
-						  full-width and tap-friendly on phones.
-						-->
-						<div class="mt-10 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-3">
-							{#each platformDownloads as p}
-								{@const Icon = p.icon}
-								{@const chip = stabilityChip[p.stability]}
-								<Button
-									href={p.href}
-									size="lg"
-									variant={p.variant}
-									class="group/dl gap-2.5"
-								>
-									<Icon class="size-4" />
-									Download for {p.os}
-									<span
-										class={cn(
-											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
-											chip.cls,
-										)}
-									>
-										{chip.label}
-									</span>
-								</Button>
-							{/each}
-						</div>
-
-						<a
-							href="/download"
-							class="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-						>
-							All downloads and checksums
-							<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
-						</a>
+		<!--
+		  Soft primary glow sits behind the headline, not the whole section,
+		  so it spotlights the closing statement without competing with the
+		  Footer's photo band that follows. Low-opacity so it reads as
+		  atmosphere, not decoration.
+		-->
+		<div
+			aria-hidden="true"
+			class="pointer-events-none absolute inset-x-0 top-0 -z-0 h-[60%]"
+			style="background: radial-gradient(60% 60% at 50% 30%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 75%);"
+		></div>
+		<Container class="relative z-10 py-16 md:py-24">
+			<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
+				<Reveal variant="scale" duration={420}>
+					<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
+						<span class="relative flex size-1.5">
+							<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+							<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+						</span>
+						v0.4 beta · ready when you are
 					</div>
-			</Reveal>
+				</Reveal>
+
+				<Reveal variant="up" delay={70} duration={520}>
+					<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
+						A demo, not a project.
+						<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
+					</h2>
+				</Reveal>
+
+				<Reveal variant="up" delay={140} duration={520}>
+					<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+						Free forever. No account. Windows is daily-driver stable, macOS and Linux are in active beta.
+					</p>
+				</Reveal>
+
+				<!--
+				  Platform-split downloads. Stability chips mirror /download
+				  so the marketing voice never over-promises macOS or Linux.
+				  Wraps to one column under sm: so the buttons stay
+				  full-width and tap-friendly on phones. Each button gets its
+				  own delay so they ripple in left-to-right instead of
+				  appearing in one lump.
+				-->
+				<div class="mt-10 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-3">
+					{#each platformDownloads as p, i}
+						{@const Icon = p.icon}
+						{@const chip = stabilityChip[p.stability]}
+						<Reveal variant="up" delay={210 + i * 70} duration={460} as="div" class="contents">
+							<Button
+								href={p.href}
+								size="lg"
+								variant={p.variant}
+								class="group/dl gap-2.5"
+							>
+								<Icon class="size-4" />
+								Download for {p.os}
+								<span
+									class={cn(
+										"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
+										chip.cls,
+									)}
+								>
+									{chip.label}
+								</span>
+							</Button>
+						</Reveal>
+					{/each}
+				</div>
+
+				<Reveal variant="up" delay={420} duration={460}>
+					<a
+						href="/download"
+						class="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+					>
+						All downloads and checksums
+						<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
+					</a>
+				</Reveal>
+			</div>
 		</Container>
 	</Section>
 

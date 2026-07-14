@@ -4,10 +4,11 @@
 	import { cn } from "@recast/ui/utils";
 	import { Check } from "@lucide/svelte";
 
-	// Step 2's auto-polish grid. A soft "Applied" check ticks through the cards
-	// one at a time, reading as edits being applied automatically while you
-	// record. Deliberately slower and gentler than Step 1's palette so the two
-	// steps don't compete. Reduced motion shows the grid with nothing ticking.
+	// Step 2's auto-polish grid. A soft "Applied" highlight ticks through the
+	// cards one at a time, reading as edits being applied automatically while
+	// you record. Deliberately slower and gentler than Step 1's palette so the
+	// two steps don't compete. Reduced motion shows the grid with nothing
+	// ticking — the visitor still reads each feature, just without the live cue.
 	type Feature = {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
 		icon: any;
@@ -36,19 +37,32 @@
 >
 	{#each features as feature, i (feature.title)}
 		{@const Icon = feature.icon}
+		{@const isApplied = i === applied}
 		<Reveal variant="up" delay={i * 70} class="h-full">
 			<div
 				class={cn(
-					"flex h-full flex-col gap-3 bg-background/50 p-6 backdrop-blur-md transition-colors duration-500",
-					i === applied && "bg-foreground/3",
+					// GPU-friendly props only (transform, color, opacity). The ring
+					// transition is the "this card is being polished" affordance; the
+					// subtle scale reads as the card leaning into focus.
+					"flex h-full flex-col gap-3 bg-background/60 p-6 backdrop-blur-md transition-[transform,box-shadow,background-color,border-color] duration-500 ease-out",
+					isApplied
+						? "scale-[1.015] bg-background/85 ring-1 ring-inset ring-primary/30 shadow-craft-md"
+						: "ring-1 ring-inset ring-transparent",
 				)}
 			>
 				<div class="flex items-center justify-between">
-					<Icon class="size-5 text-foreground/70" />
+					<Icon
+						class={cn(
+							"size-5 transition-colors duration-500",
+							isApplied ? "text-primary" : "text-foreground/70",
+						)}
+					/>
 					<span
 						class={cn(
-							"inline-flex items-center gap-1 rounded-full bg-success/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-success ring-1 ring-inset ring-success/25 transition-opacity duration-500",
-							i === applied ? "opacity-100" : "opacity-0",
+							"inline-flex items-center gap-1 rounded-full bg-success/12 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-[0.12em] text-success ring-1 ring-inset ring-success/25 transition-[opacity,transform] duration-500 ease-out",
+							isApplied
+								? "translate-y-0 opacity-100"
+								: "-translate-y-1 opacity-0",
 						)}
 					>
 						<Check class="size-2.5" />
@@ -65,3 +79,26 @@
 		</Reveal>
 	{/each}
 </div>
+
+<!--
+  Live-cursor strip: the same number of dots as tiles, filled in to mirror the
+  cycling "applied" index. Reads as a progress readout without text — pure
+  affordance, ignored under reduced motion (the inner dots never advance).
+-->
+{#if !reduced}
+	<div
+		aria-hidden="true"
+		class="mt-6 flex items-center justify-center gap-1.5"
+	>
+		{#each features as _, i}
+			<span
+				class={cn(
+					"size-1.5 rounded-full transition-[transform,background-color] duration-500 ease-out",
+					i === applied
+						? "scale-125 bg-primary"
+						: "bg-foreground/20",
+				)}
+			></span>
+		{/each}
+	</div>
+{/if}

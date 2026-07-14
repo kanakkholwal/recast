@@ -3,7 +3,7 @@
 	import { SeoMeta } from "$lib/components";
 	import WaitlistForm from "$lib/components/WaitlistForm.svelte";
 	import Logo from "$lib/logo.svelte";
-	import { Sparkles } from "@lucide/svelte";
+	import { Lock } from "@lucide/svelte";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
@@ -56,7 +56,7 @@
 			<span
 				class="glass-chip mt-7 inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-primary"
 			>
-				<Sparkles class="size-3" />
+				<Lock class="size-3" />
 				Invite-only
 			</span>
 

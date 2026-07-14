@@ -22,7 +22,7 @@
 		Mail,
 		Minus,
 		ShieldCheck,
-		Sparkles,
+		Tag,
 		Users,
 	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
@@ -135,7 +135,7 @@
 		<HeroBackdrop src="/background-footer.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Pricing</Eyebrow>
+				<Eyebrow variant="primary">Pricing</Eyebrow>
 				<h1 class="text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
 					Free, local,
 					<span class="block font-medium italic text-foreground/40">yours.</span>
@@ -151,7 +151,7 @@
 						<HardDriveUpload class="size-3.5 text-primary" /> Bring your own storage
 					</span>
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<Sparkles class="size-3.5 text-primary" /> No per-seat tax
+						<Tag class="size-3.5 text-primary" /> No per-seat tax
 					</span>
 				</div>
 			</div>

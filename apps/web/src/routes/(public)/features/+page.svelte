@@ -33,10 +33,10 @@
 		Pause,
 		Scissors,
 		ShieldCheck,
-		Sparkles,
 		Target,
 		Terminal,
 		VolumeX,
+		Wand2,
 		WifiOff,
 		Zap,
 	} from "@lucide/svelte";
@@ -46,7 +46,7 @@
 	// recorders either don't have at all or paywall.
 	const pillars = [
 		{
-			icon: Sparkles,
+			icon: Wand2,
 			title: "Auto-polish on the way in",
 			description:
 				"Smart zoom, cursor smoothing, and silence cuts happen while you record. By the time you stop, the demo is mostly done. No keyframes. No AI gate.",
@@ -246,7 +246,7 @@
 		<HeroBackdrop src="/background-features.webp" />
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 text-left md:items-center md:text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Features</Eyebrow>
+				<Eyebrow variant="primary">Features</Eyebrow>
 				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
 					Everything Recast
 					<span class="mt-2 flex justify-start font-medium italic text-foreground/40 md:justify-center">

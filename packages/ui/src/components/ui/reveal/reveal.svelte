@@ -14,6 +14,11 @@
 	 * - `blur` — focus-pull blur + fade
 	 * - `scale` — gentle scale + fade
 	 * - `morph` — combined blur + scale + slide (the "settle into place" feel)
+	 *
+	 * Duration capped at 500ms — 700ms (the old value) felt sluggish on the
+	 * long landing page; the section header, list item, etc. all reach the eye
+	 * in well under half a second, which matches the standard for marketing /
+	 * explanatory motion ("can be longer" — but not double).
 	 */
 	type Variant = "up" | "down" | "left" | "right" | "blur" | "scale" | "morph";
 
@@ -26,6 +31,7 @@
 		once?: boolean;
 		as?: Tag;
 		variant?: Variant;
+		duration?: number;
 	};
 
 	let {
@@ -37,6 +43,7 @@
 		once = true,
 		as: Tag = "div",
 		variant = "up",
+		duration = 500,
 	}: Props = $props();
 
 	let visible = $state(false);
@@ -78,9 +85,9 @@
 <svelte:element
 	this={Tag}
 	use:reveal
-	style={`transition-delay: ${delay}ms;`}
+	style={`transition-delay: ${delay}ms; transition-duration: ${duration}ms;`}
 	class={cn(
-		"transition-[opacity,transform,filter] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] will-change-[opacity,transform,filter] motion-reduce:transition-none",
+		"transition-[opacity,transform,filter] ease-[cubic-bezier(0.625,0.05,0,1)] will-change-[opacity,transform,filter] motion-reduce:transition-none motion-reduce:will-change-auto",
 		visible
 			? "opacity-100 translate-x-0 translate-y-0 scale-100 blur-0"
 			: cn(hidden[variant], "motion-reduce:translate-x-0 motion-reduce:translate-y-0 motion-reduce:scale-100 motion-reduce:blur-0 motion-reduce:opacity-100"),

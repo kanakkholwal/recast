@@ -18,12 +18,12 @@
 		Download,
 		Hash,
 		Image as ImageIcon,
+		Layers,
 		Lock,
 		MousePointer2,
 		Palette,
 		ShieldCheck,
 		Spline,
-		Sparkles,
 		Waves,
 	} from "@lucide/svelte";
 	import { GithubBrand } from "@recast/ui/brand-icons";
@@ -43,7 +43,7 @@
 	const steps = [
 		{ icon: Blocks, title: "Browse or paste", description: "Open the Extensions tab in the editor and browse the registry, or paste a pack URL to install one directly." },
 		{ icon: Download, title: "Install in a click", description: "The pack downloads, every asset gets checked against its hash, and it installs to your machine. No account, and nothing phones home to us." },
-		{ icon: Sparkles, title: "Use it everywhere", description: "Its cursors, backgrounds, gradients and presets show up in the pickers you already use. Toggle it off or remove it whenever you like." },
+		{ icon: Layers, title: "Use it everywhere", description: "Its cursors, backgrounds, gradients and presets show up in the pickers you already use. Toggle it off or remove it whenever you like." },
 	];
 
 	const trust = [
