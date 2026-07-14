@@ -35,7 +35,7 @@
 		{ icon: ImageIcon, title: "Backgrounds", description: "Wallpapers that drop straight into the canvas background picker." },
 		{ icon: Blend, title: "Gradients", description: "Curated gradient sets, rendered live in both the preview and the export." },
 		{ icon: Palette, title: "Colors", description: "Solid color swatches for the canvas, ready to click." },
-		{ icon: Captions, title: "Caption themes", description: "Ready-made caption looks — font, color, outline and backing — applied in one click to overlay and burned-in captions." },
+		{ icon: Captions, title: "Caption themes", description: "Ready-made caption looks (font, color, outline, backing), applied in one click to overlay and burned-in captions." },
 		{ icon: Spline, title: "Easing presets", description: "Named motion curves for zoom and cursor animation." },
 		{ icon: Waves, title: "Smoothing presets", description: "Cursor smoothing recipes, strength plus click snap, that you can share as packs." },
 	];
@@ -65,26 +65,30 @@
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
 		<HeroBackdrop src="/background-extensions.webp" />
 		<Container>
-			<SectionHeader
-				eyebrow="Extensions"
-				title="Make Recast yours."
-				description="Cursors, backgrounds, gradients and motion presets, installed right in the editor from an open community registry. Every pack is just a manifest and a few static files. Nothing runs, every asset is checked by hash, and the app stays free, offline and yours."
-				align="center"
-			/>
-			<Reveal variant="up" delay={120} class="mt-10 flex flex-wrap items-center justify-center gap-3">
-				<Button href="/download" class="gap-2">
-					<Download class="size-4" />
-					Get the app
-				</Button>
-				<Button
-					href="https://github.com/kanakkholwal/recast/tree/main/extensions"
-					variant="ghost"
-					class="gap-2"
-				>
-					<GithubBrand class="size-4" />
-					Browse the registry
-				</Button>
-			</Reveal>
+			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<Eyebrow variant="primary">Extensions</Eyebrow>
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
+					Make Recast yours.
+					<span class="block font-medium italic text-foreground/40">Open packs, no lock-in.</span>
+				</h1>
+				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+					Cursors, backgrounds, gradients and motion presets, installed right in the editor from an open community registry. Every pack is just a manifest and a few static files. Nothing runs, every asset is hash-checked, the app stays free, offline and yours.
+				</p>
+				<Reveal variant="up" delay={120} class="mt-2 flex flex-wrap items-center justify-center gap-3">
+					<Button href="/download" variant="dark" class="gap-2">
+						<Download class="size-4" />
+						Get the app
+					</Button>
+					<Button
+						href="https://github.com/kanakkholwal/recast/tree/main/extensions"
+						variant="dark"
+						class="gap-2"
+					>
+						<GithubBrand class="size-4" />
+						Browse the registry
+					</Button>
+				</Reveal>
+			</div>
 		</Container>
 	</Section>
 

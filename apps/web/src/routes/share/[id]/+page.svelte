@@ -1610,7 +1610,7 @@
 								<span class="grid size-11 place-items-center rounded-2xl bg-white/10 p-1.5 text-white ring-1 ring-white/15">
 									<Logo size="24" color="transparent" fill="currentColor" />
 								</span>
-								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this — free with Recast.</p>
+								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this. Free with Recast.</p>
 								<Button href="/signup" onclick={() => trackSignupCta("end-card")} size="lg" class="gap-2">
 									Record your own
 									<ArrowRight class="size-4" />

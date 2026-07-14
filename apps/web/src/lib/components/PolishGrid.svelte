@@ -33,7 +33,7 @@
 </script>
 
 <div
-	class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4"
+	class="mt-12 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4"
 >
 	{#each features as feature, i (feature.title)}
 		{@const Icon = feature.icon}
@@ -41,13 +41,16 @@
 		<Reveal variant="up" delay={i * 70} class="h-full">
 			<div
 				class={cn(
-					// GPU-friendly props only (transform, color, opacity). The ring
-					// transition is the "this card is being polished" affordance; the
-					// subtle scale reads as the card leaning into focus.
-					"flex h-full flex-col gap-3 bg-background/60 p-6 backdrop-blur-md transition-[transform,box-shadow,background-color,border-color] duration-500 ease-out",
+					// GPU-only props (transform, color, opacity). The ring
+					// transition is the "this card is being polished" affordance;
+					// the subtle scale reads as the card leaning into focus.
+					// Resting bg uses the page surface at 90% so the tile clearly
+					// sits above the showcase panel, even in dark mode where the
+					// panel is near-black.
+					"flex h-full flex-col gap-4 rounded-2xl border bg-background/90 p-7 backdrop-blur-md transition-[transform,box-shadow,background-color,border-color] duration-500 ease-out",
 					isApplied
-						? "scale-[1.015] bg-background/85 ring-1 ring-inset ring-primary/30 shadow-craft-md"
-						: "ring-1 ring-inset ring-transparent",
+						? "scale-[1.015] border-primary/30 bg-background shadow-craft-md"
+						: "border-border-low/40 shadow-craft-sm",
 				)}
 			>
 				<div class="flex items-center justify-between">
@@ -70,8 +73,8 @@
 					</span>
 				</div>
 				<div>
-					<div class="text-sm font-semibold text-foreground">{feature.title}</div>
-					<div class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+					<div class="text-[15px] font-semibold tracking-tight text-foreground">{feature.title}</div>
+					<div class="mt-2 text-[14px] leading-relaxed text-muted-foreground">
 						{feature.description}
 					</div>
 				</div>
@@ -82,7 +85,7 @@
 
 <!--
   Live-cursor strip: the same number of dots as tiles, filled in to mirror the
-  cycling "applied" index. Reads as a progress readout without text — pure
+  cycling "applied" index. Reads as a progress readout without text, pure
   affordance, ignored under reduced motion (the inner dots never advance).
 -->
 {#if !reduced}

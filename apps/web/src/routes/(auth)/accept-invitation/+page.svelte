@@ -106,18 +106,7 @@
 	<meta name="robots" content="noindex,nofollow" />
 </svelte:head>
 
-<div class="relative grid min-h-screen place-items-center px-6 py-16 text-foreground">
-	<div
-		aria-hidden="true"
-		class="pointer-events-none absolute inset-0 -z-10"
-		style="background: radial-gradient(ellipse 70% 50% at 50% 0%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 72%);"
-	></div>
-	<div
-		aria-hidden="true"
-		class="bg-grid bg-grid-fade pointer-events-none absolute inset-0 -z-10 opacity-30"
-	></div>
-
-	<div class="w-full max-w-md" in:fly={{ y: 16, duration: 520, easing: cubicOut }}>
+<div class="w-full max-w-md" in:fly={{ y: 16, duration: 520, easing: cubicOut }}>
 		<div class="flex flex-col items-center text-center">
 			<a href="/" class="group/logo flex items-center gap-2.5" aria-label="Recast home">
 				<span
@@ -252,8 +241,7 @@
 				</div>
 				<p class="mt-4 text-center text-[11px] text-muted-foreground">
 					Signed in as <span class="font-medium text-foreground">{data.viewer.email}</span>
-				</p>
-			{/if}
-		</div>
+			</p>
+		{/if}
 	</div>
 </div>

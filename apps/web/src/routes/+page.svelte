@@ -37,7 +37,6 @@
 	  Link2,
 	  LoaderCircle,
 	  Lock,
-	  Mic2,
 	  Minus,
 	  Monitor,
 	  MousePointer2,
@@ -52,10 +51,9 @@
 	  Target,
 	  Terminal,
 	  UserX,
-	  Users,
 	  VolumeX,
 	  X,
-	  Zap,
+	  Zap
 	} from "@lucide/svelte";
 	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
@@ -147,18 +145,15 @@
 	// Cloud preview features — the "more than a Drive link" promise. Kept
 	// short on purpose: this is a teaser, not a feature page.
 	const cloudFeatures = [
-		{ icon: BarChart3, title: "Watch analytics", description: "See who watched, how far they got, and what they replayed." },
-		{ icon: Lock, title: "Access controls", description: "Per-viewer access, password gates, link expiry, revoke any time." },
-		{ icon: Users, title: "Team workspaces", description: "Shared folders, roles, and per-team branding for your demos." },
-		{ icon: Palette, title: "Custom player", description: "Your colors, your logo, your domain on the player page." },
+		{ icon: BarChart3, title: "Watch analytics", description: "Who watched, how far they got, what they replayed." },
+		{ icon: Lock, title: "Access controls", description: "Per-viewer access, password gates, link expiry." },
 	];
 
 	// Storage tiers — Cloud is intentionally storage-agnostic. Free users
 	// bring their own (the Drive flow already shipping today, plus Cloudinary
 	// and autorender.io as additional BYO destinations on the roadmap).
 	// Paid users get Recast-hosted storage and the option to point uploads
-	// at their own S3 / R2 / Azure / GCP bucket — useful for teams that
-	// want data residency or to amortise existing cloud spend.
+	// at their own S3 / R2 / Azure / GCP bucket.
 	const storageTiers = [
 		{
 			tier: "Free with Cloud",
@@ -167,7 +162,7 @@
 			lines: [
 				"Google Drive (shipping today)",
 				"Cloudinary, autorender.io (planned)",
-				"Your account, your storage bill, your retention",
+				"Your account, your storage, your retention",
 			],
 		},
 		{
@@ -175,9 +170,9 @@
 			tone: "primary",
 			label: "Recast-hosted or your own bucket",
 			lines: [
-				"Recast-managed storage (turnkey, nothing to configure)",
-				"Custom S3, Cloudflare R2, Azure Blob, GCP Cloud Storage",
-				"Data residency + workspace billing in one place",
+				"Recast-managed storage",
+				"Custom S3, R2, Azure Blob, GCP",
+				"Data residency in one workspace bill",
 			],
 		},
 	];
@@ -284,7 +279,7 @@
 	];
 
 	const shareFeatures = [
-		{ icon: HardDriveUpload, title: "Upload to your Drive", description: "Connect once. The export dialog ships the file straight to your account — no manual upload." },
+		{ icon: HardDriveUpload, title: "Upload to your Drive", description: "Connect once. The export dialog ships the file straight to your account, no manual upload." },
 		{ icon: Link2, title: "Copy a share link", description: "When the upload finishes, the link is one click away. Send it however you already send links." },
 	];
 
@@ -733,8 +728,11 @@
 	<Section id="record" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
 			<ShowcasePanel tone="blue">
-				<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
-					<div class="lg:col-span-5">
+				<div class="grid items-center gap-16 lg:grid-cols-12 lg:gap-24">
+					<!-- Text column: 6/12 so the body copy and feature titles
+					     have real horizontal room instead of hugging a narrow
+					     rail. The visual (MacWindow) keeps the other half. -->
+					<div class="lg:col-span-6">
 						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
 							<span class="size-1.5 rounded-full bg-primary"></span>
 							Step 1 · Record
@@ -743,14 +741,14 @@
 							Hit record.
 							<span class="block font-medium italic text-foreground/45">That's the whole setup.</span>
 						</h2>
-						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+						<p class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 							Region, window, or full screen. One shortcut starts the capture. No projects, no codecs, no account.
 						</p>
 
 						<!-- Recording-side differentiators. Two beats only — both
 						     features are usually paywalled in SaaS recorders; here
 						     they're in the free local app. -->
-						<ul class="mt-10 space-y-5">
+						<ul class="mt-12 space-y-6">
 							{#each recordingFeatures as f, i}
 								{@const Icon = f.icon}
 								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
@@ -765,15 +763,15 @@
 							{/each}
 						</ul>
 
-						<div class="mt-10 flex items-center gap-3">
-							<Button href="/download" class="gap-2">
+						<div class="mt-12 flex items-center gap-3">
+							<Button href="/download" variant="dark" class="gap-2">
 								<Download class="size-4" />
 								Download free
 							</Button>
 						</div>
 					</div>
 
-					<div class="lg:col-span-7">
+					<div class="lg:col-span-6">
 						<Reveal variant="morph">
 							<MacWindow
 								title="Recast"
@@ -792,24 +790,25 @@
 	<Section id="polish" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
 			<ShowcasePanel tone="green">
-				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
-					<div class="lg:col-span-5">
-						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-							<span class="size-1.5 rounded-full bg-primary"></span>
-							Step 2 · Auto-polish
-						</span>
-						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
-							The editing happens
-							<span class="block font-medium italic text-foreground/45">while you record.</span>
-						</h2>
-						<p class="text-pretty mt-5 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
-							Smart zoom, cursor smoothing, silence cuts, and padding apply as you record. By the time you stop, the demo is mostly done.
-						</p>
-					</div>
-					<div class="lg:col-span-7">
-						<PolishGrid features={polishFeatures} />
-					</div>
+				<!-- Header: spans the full panel width so the headline and body
+				     can breathe. PolishGrid below gets the full panel width too,
+				     so each 4-up tile has room to actually fit its title and
+				     description on a single line each. -->
+				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
+					<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+						<span class="size-1.5 rounded-full bg-primary"></span>
+						Step 2 · Auto-polish
+					</span>
+					<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+						The editing happens
+						<span class="block font-medium italic text-foreground/45">while you record.</span>
+					</h2>
+					<p class="text-pretty mt-5 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+						Smart zoom, cursor smoothing, silence cuts, and padding apply as you record. By the time you stop, the demo is mostly done.
+					</p>
 				</div>
+
+				<PolishGrid features={polishFeatures} />
 
 				<Reveal variant="up" class="mt-14">
 					<figure class="mx-auto max-w-5xl">
@@ -1004,7 +1003,7 @@
 	     yours" rather than pivoting to a generic marketplace pitch. -->
 	<Section id="extensions" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
-			<ShowcasePanel tone="violet" padding="tight">
+			<ShowcasePanel tone="neutral" padding="tight">
 				<div class="mx-auto flex max-w-2xl flex-col items-center text-center">
 					<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
 						<span class="size-1.5 rounded-full bg-primary"></span>
@@ -1015,7 +1014,7 @@
 						<span class="block font-medium italic text-foreground/45">No lock-in.</span>
 					</h2>
 					<p class="text-pretty mt-5 max-w-lg text-base leading-relaxed text-muted-foreground sm:text-lg">
-						Community packs install straight into the editor's pickers. Each one is a manifest and a few static files — hash-checked, no code, no permissions.
+						Community packs install straight into the editor's pickers. Each one is a manifest and a few static files, hash-checked, with no code and no permissions.
 					</p>
 				</div>
 
@@ -1131,125 +1130,134 @@
 	<!-- Coming next - Recast Cloud (premium hosted offering, waitlist). The
 	     Drive flow above is the free, user-owned default; this section is the
 	     paid future for users who outgrow a raw Drive link. -->
-	<Section id="cloud" class="border-t border-border-low/60 bg-foreground/1.5 dark:bg-foreground/2">
-		<Container>
-			<div class="grid items-center gap-14 lg:grid-cols-12 lg:gap-20">
-				<div class="lg:col-span-6">
-					<SectionHeader
-						eyebrow="Coming next · Recast Cloud"
-						title="When a Drive link isn't enough."
-						description="For the moments a shared file can't express: knowing which prospect actually watched, gating an investor demo by viewer, branding the player as your product. Loom-style hosted demos, with more of the controls in your hands."
-					/>
+	<Section id="cloud" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="violet">
+				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
+					<div class="lg:col-span-5">
+						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							Coming next · Recast Cloud
+						</span>
+						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
+							When a Drive link
+							<span class="block font-medium italic text-foreground/45">isn't enough.</span>
+						</h2>
+						<p class="text-pretty mt-6 max-w-md text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Loom-style hosted demos, with more of the controls in your hands. Watch analytics, per-viewer access, link expiry.
+						</p>
 
-					<ul class="mt-10 grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
-						{#each cloudFeatures as f, i}
-							{@const Icon = f.icon}
-							<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-3">
-								<span class="glass-chip mt-0.5 grid size-7 shrink-0 place-items-center rounded-md text-foreground/70">
-									<Icon class="size-3.5" />
-								</span>
-								<span>
-									<span class="text-sm font-semibold text-foreground">{f.title}</span>
-									<span class="block text-[13px] leading-relaxed text-muted-foreground">{f.description}</span>
-								</span>
-							</Reveal>
-						{/each}
-					</ul>
-				</div>
-
-				<div class="lg:col-span-6">
-					<Reveal variant="morph">
-						<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
-							<div class="relative">
-								<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-									<Cloud class="size-3.5 text-foreground/70" />
-									Recast Cloud
-									<span class="text-muted-foreground/40">·</span>
-									<span class="relative flex size-1.5">
-										<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
-										<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+						<!-- Two beats only. The other two (team workspaces, custom player)
+						     moved to the pricing page so this section stays marketing-light. -->
+						<ul class="mt-10 space-y-5">
+							{#each cloudFeatures as f, i}
+								{@const Icon = f.icon}
+								<Reveal as="li" variant="left" delay={i * 70} class="flex items-start gap-4">
+									<span class="glass-chip mt-0.5 grid size-11 shrink-0 place-items-center rounded-xl text-foreground/70">
+										<Icon class="size-5" />
 									</span>
-									waitlist open
-								</span>
+									<span class="pt-1">
+										<span class="block text-[15px] font-semibold tracking-tight text-foreground">{f.title}</span>
+										<span class="mt-2 block text-[14px] leading-relaxed text-muted-foreground">{f.description}</span>
+									</span>
+								</Reveal>
+							{/each}
+						</ul>
+					</div>
 
-								<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
-									Storage-agnostic by design.
-								</h3>
-								<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
-									Most hosted recorders lock you to their bucket and bill you for the privilege. Recast Cloud is a sharing + analytics layer that points at <span class="font-semibold text-foreground">whichever storage you want</span>, yours or ours.
-								</p>
+					<div class="lg:col-span-7">
+						<Reveal variant="morph">
+							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
+								<div class="relative">
+									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
+										<Cloud class="size-3.5 text-foreground/70" />
+										Recast Cloud
+										<span class="text-muted-foreground/40">·</span>
+										<span class="relative flex size-1.5">
+											<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+											<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+										</span>
+										waitlist open
+									</span>
 
-								<!-- Storage tier mini-table. Free → BYO storage,
-								     Paid → Recast-hosted or your own bucket. -->
-								<div class="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-									{#each storageTiers as t}
-										<div
-											class={cn(
-												"flex flex-col gap-2 rounded-xl border p-4",
-												t.tone === "primary"
-													? "border-primary/30 bg-background/60"
-													: "border-border-low/60 bg-background/60",
-											)}
-										>
-											<span class="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
-												{t.tier}
-											</span>
-											<span
+									<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
+										Storage-agnostic by design.
+									</h3>
+									<p class="mt-2 text-sm leading-relaxed text-muted-foreground">
+										A sharing + analytics layer that points at whichever storage you want. Yours or ours.
+									</p>
+
+									<!-- Storage tier mini-table. Free → BYO storage,
+									     Paid → Recast-hosted or your own bucket. -->
+									<div class="mt-6 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+										{#each storageTiers as t}
+											<div
 												class={cn(
-													"text-sm font-semibold tracking-tight",
-													t.tone === "primary" ? "text-primary" : "text-foreground",
+													"flex flex-col gap-2 rounded-xl border p-4",
+													t.tone === "primary"
+														? "border-primary/30 bg-background/60"
+														: "border-border-low/60 bg-background/60",
 												)}
 											>
-												{t.label}
-											</span>
-											<ul class="space-y-1 text-[11.5px] leading-relaxed text-muted-foreground">
-												{#each t.lines as line}
-													<li class="flex items-start gap-1.5">
-														<span class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/40"></span>
-														<span>{line}</span>
-													</li>
-												{/each}
-											</ul>
-										</div>
-									{/each}
-								</div>
-
-								<h4 class="mt-7 text-[13px] font-semibold tracking-tight text-foreground">
-									Get early access.
-								</h4>
-								<p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-									Drop your email and we'll let you in before the public launch.
-								</p>
-
-								{#if joined}
-									<div
-										class="mt-7 flex items-center gap-3 rounded-xl border border-border-low/60 bg-foreground/3 px-4 py-3.5"
-										in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
-									>
-										<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
-											<Check class="size-4" />
-										</span>
-										<span class="text-sm font-medium text-foreground">
-											You're on the list. We'll be in touch.
-										</span>
+												<span class="text-[10px] font-bold uppercase tracking-[0.16em] text-muted-foreground">
+													{t.tier}
+												</span>
+												<span
+													class={cn(
+														"text-sm font-semibold tracking-tight",
+														t.tone === "primary" ? "text-primary" : "text-foreground",
+													)}
+												>
+													{t.label}
+												</span>
+												<ul class="space-y-1 text-[11.5px] leading-relaxed text-muted-foreground">
+													{#each t.lines as line}
+														<li class="flex items-start gap-1.5">
+															<span class="mt-1.5 size-1 shrink-0 rounded-full bg-foreground/40"></span>
+															<span>{line}</span>
+														</li>
+													{/each}
+												</ul>
+											</div>
+										{/each}
 									</div>
-								{:else}
-									<form
-										class="mt-7 flex flex-col gap-2.5 sm:flex-row"
-										onsubmit={joinWaitlist}
-										out:slide={{ duration: reduced ? 0 : 250 }}
-									>
-										<input
-											type="email"
-											required
-											bind:value={email}
-											placeholder="founder@startup.com"
-											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
-										/>
-										<Button type="submit" disabled={loading} class="gap-2">
-											{loading ? "Joining…" : "Join waitlist"}
-											{#if loading}
-												<LoaderCircle class="size-4 animate-spin" />
+
+									<h4 class="mt-7 text-[13px] font-semibold tracking-tight text-foreground">
+										Get early access.
+									</h4>
+									<p class="mt-1 text-sm leading-relaxed text-muted-foreground">
+										Drop your email and we'll let you in before the public launch.
+									</p>
+
+									{#if joined}
+										<div
+											class="mt-7 flex items-center gap-3 rounded-xl border border-border-low/60 bg-foreground/3 px-4 py-3.5"
+											in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
+										>
+											<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
+												<Check class="size-4" />
+											</span>
+											<span class="text-sm font-medium text-foreground">
+												You're on the list. We'll be in touch.
+											</span>
+										</div>
+									{:else}
+										<form
+											class="mt-7 flex flex-col gap-2.5 sm:flex-row"
+											onsubmit={joinWaitlist}
+											out:slide={{ duration: reduced ? 0 : 250 }}
+										>
+											<input
+												type="email"
+												required
+												bind:value={email}
+												placeholder="founder@startup.com"
+												class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
+											/>
+											<Button type="submit" disabled={loading} variant="dark" class="gap-2">
+												{loading ? "Joining…" : "Join waitlist"}
+												{#if loading}
+													<LoaderCircle class="size-4 animate-spin" />
 											{:else}
 												<ArrowRight class="size-4" />
 											{/if}
@@ -1266,6 +1274,7 @@
 					</Reveal>
 				</div>
 			</div>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 
@@ -1338,7 +1347,7 @@
 							A Loom-style hosted layer: watch analytics, per-viewer access, link expiry, team workspaces, and custom branding. Storage stays your call, yours or ours. Coming soon.
 						</p>
 						<div class="relative mt-7">
-							<Button href="/pricing" class="group/cta gap-2">
+							<Button href="/pricing" variant="dark" class="group/cta gap-2">
 								See what's planned
 								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 							</Button>
@@ -1430,91 +1439,92 @@
 
 	<!-- Final CTA. Closing bookend. No photo backdrop here — the editorial
 	     rule is "no two consecutive photo bands", and the Footer that
-	     follows already has one — so the CTA carries its presence with a
-	     soft primary glow + staggered reveals. Each beat lands ~70ms after
-	     the previous so the visitor reads chip → headline → body → buttons
-	     as one confident breath instead of a single scale-burst. -->
-	<Section id="cta" class="relative overflow-hidden border-t border-border-low/60">
-		<!--
-		  Soft primary glow sits behind the headline, not the whole section,
-		  so it spotlights the closing statement without competing with the
-		  Footer's photo band that follows. Low-opacity so it reads as
-		  atmosphere, not decoration.
-		-->
-		<div
-			aria-hidden="true"
-			class="pointer-events-none absolute inset-x-0 top-0 -z-0 h-[60%]"
-			style="background: radial-gradient(60% 60% at 50% 30%, color-mix(in srgb, var(--color-primary) 10%, transparent), transparent 75%);"
-		></div>
-		<Container class="relative z-10 py-16 md:py-24">
-			<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-				<Reveal variant="scale" duration={420}>
-					<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
-						<span class="relative flex size-1.5">
-							<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
-							<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
-						</span>
-						v0.4 beta · ready when you are
-					</div>
-				</Reveal>
+	     follows already has one. The CTA carries its presence with a subtle
+	     showcase panel + staggered reveals. Each beat lands ~70ms after the
+	     previous so the visitor reads chip → headline → body → buttons as
+	     one confident breath instead of a single scale-burst. -->
+	<Section id="cta" spacing="tight" class="border-t border-border-low/60">
+		<Container size="wide">
+			<ShowcasePanel tone="neutral" padding="loose">
+				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
+					<Reveal variant="scale" duration={420}>
+						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
+							<span class="relative flex size-1.5">
+								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
+								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
+							</span>
+							v0.4 beta · ready when you are
+						</div>
+					</Reveal>
 
-				<Reveal variant="up" delay={70} duration={520}>
-					<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
-						A demo, not a project.
-						<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
-					</h2>
-				</Reveal>
+					<Reveal variant="up" delay={70} duration={520}>
+						<h2 class="text-balance mt-7 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4rem]">
+							A demo, not a project.
+							<span class="block font-medium italic text-foreground/40">Ship it the same day.</span>
+						</h2>
+					</Reveal>
 
-				<Reveal variant="up" delay={140} duration={520}>
-					<p class="text-pretty mt-7 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-						Free forever. No account. Windows is daily-driver stable, macOS and Linux are in active beta.
-					</p>
-				</Reveal>
+					<Reveal variant="up" delay={140} duration={520}>
+						<p class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+							Free forever. No account. Windows is daily-driver stable, macOS and Linux are in active beta.
+						</p>
+					</Reveal>
+				</div>
 
 				<!--
-				  Platform-split downloads. Stability chips mirror /download
-				  so the marketing voice never over-promises macOS or Linux.
-				  Wraps to one column under sm: so the buttons stay
-				  full-width and tap-friendly on phones. Each button gets its
-				  own delay so they ripple in left-to-right instead of
-				  appearing in one lump.
+				  Platform downloads as a clean 3-col grid. Stacks on mobile.
+				  Windows is the primary, with a small "Recommended" pill
+				  above the button; macOS / Linux are equal-weight dark
+				  secondaries. Stability chip stays inside the button so
+				  the badge never reads as the headline of the row.
 				-->
-				<div class="mt-10 flex w-full flex-col items-stretch gap-3 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-3">
+				<div class="mt-10 grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 lg:gap-4">
 					{#each platformDownloads as p, i}
 						{@const Icon = p.icon}
 						{@const chip = stabilityChip[p.stability]}
-						<Reveal variant="up" delay={210 + i * 70} duration={460} as="div" class="contents">
-							<Button
-								href={p.href}
-								size="lg"
-								variant={p.variant}
-								class="group/dl gap-2.5"
-							>
-								<Icon class="size-4" />
-								Download for {p.os}
-								<span
-									class={cn(
-										"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
-										chip.cls,
-									)}
+						<Reveal variant="up" delay={210 + i * 70} duration={460} class="h-full">
+							<div class="flex h-full flex-col items-stretch gap-2">
+								{#if p.stability === "stable"}
+									<span class="self-center inline-flex items-center gap-1 rounded-full bg-primary/12 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-primary ring-1 ring-inset ring-primary/25">
+										Recommended
+									</span>
+								{:else}
+									<span class="self-center text-[9px] font-bold uppercase tracking-[0.14em] text-muted-foreground/0">
+										.
+									</span>
+								{/if}
+								<Button
+									href={p.href}
+									size="lg"
+									variant={p.variant}
+									class="group/dl w-full justify-center gap-2.5"
 								>
-									{chip.label}
-								</span>
-							</Button>
+									<Icon class="size-4" />
+									Download for {p.os}
+									<span
+										class={cn(
+											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
+											chip.cls,
+										)}
+									>
+										{chip.label}
+									</span>
+								</Button>
+							</div>
 						</Reveal>
 					{/each}
 				</div>
 
-				<Reveal variant="up" delay={420} duration={460}>
+				<Reveal variant="up" delay={420} duration={460} class="mt-8 flex justify-center">
 					<a
 						href="/download"
-						class="mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+						class="group/cta inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
 					>
 						All downloads and checksums
 						<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
 					</a>
 				</Reveal>
-			</div>
+			</ShowcasePanel>
 		</Container>
 	</Section>
 

@@ -1,45 +1,43 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		HeroBackdrop,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Eyebrow,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SectionHeader,
+	  SeoMeta,
 	} from "$lib/components";
+	import { TextLoop } from "$lib/motion-core";
+	import {
+	  Apple,
+	  ArrowRight,
+	  Camera,
+	  Check,
+	  Cpu,
+	  Crop,
+	  FileBox,
+	  HardDrive,
+	  HardDriveUpload,
+	  Highlighter,
+	  Keyboard,
+	  Layers,
+	  Layout,
+	  Monitor,
+	  MousePointer2,
+	  Pause,
+	  Scissors,
+	  Target,
+	  Terminal,
+	  VolumeX,
+	  Wand2,
+	  WifiOff,
+	  Zap
+	} from "@lucide/svelte";
+	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
 	import { cn } from "@recast/ui/utils";
-	import { TextLoop } from "$lib/motion-core";
-	import { GithubBrand } from "@recast/ui/brand-icons";
-	import {
-		Apple,
-		ArrowRight,
-		Camera,
-		Check,
-		Cpu,
-		Crop,
-		Download,
-		FileBox,
-		HardDrive,
-		HardDriveUpload,
-		Highlighter,
-		Keyboard,
-		Layers,
-		Layout,
-		Monitor,
-		MousePointer2,
-		Pause,
-		Scissors,
-		ShieldCheck,
-		Target,
-		Terminal,
-		VolumeX,
-		Wand2,
-		WifiOff,
-		Zap,
-	} from "@lucide/svelte";
 
 	// Three pillars chosen to lead with what makes Recast different, not
 	// generic "we have an editor too" copy. Each one is a feature that other
@@ -245,22 +243,22 @@
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
 		<HeroBackdrop src="/background-features.webp" />
 		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 text-left md:items-center md:text-center">
+			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<Eyebrow variant="primary">Features</Eyebrow>
-				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Everything Recast
-					<span class="mt-2 flex justify-start font-medium italic text-foreground/40 md:justify-center">
+					<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
 						<span class="inline-grid overflow-hidden">
 							<TextLoop class="text-primary" texts={verbs} interval={2800} />
 						</span>
 					</span>
 				</h1>
-				<p class="text-pretty max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
+				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 					A focused recorder for solo founders, indie hackers, and product engineers who'd rather ship than fiddle. Auto-polish for the 80% case, a minimal timeline for the moments you want to control.
 				</p>
 
 				<!-- Platform chips: honest about per-platform maturity. -->
-				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-semibold" style="animation-delay: 200ms">
+				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-semibold">
 					{#each platforms as p (p.label)}
 						{@const Icon = p.icon}
 						{@const chip = stabilityChip[p.stability]}
@@ -398,16 +396,7 @@
 					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
 					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
 				>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute -top-40 left-1/2 size-160 -translate-x-1/2 rounded-full opacity-60"
-						style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%);"
-					></div>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute inset-x-0 top-0 h-px"
-						style="background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-foreground) 18%, transparent), transparent);"
-					></div>
+			
 
 					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
 						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">

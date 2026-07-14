@@ -136,7 +136,7 @@
 		<Container>
 			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
 				<Eyebrow variant="primary">Pricing</Eyebrow>
-				<h1 class="text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Free, local,
 					<span class="block font-medium italic text-foreground/40">yours.</span>
 				</h1>

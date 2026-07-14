@@ -336,7 +336,7 @@ import {
         </Eyebrow>
 
         <h1
-          class="text-balance mt-7 animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl"
+          class="text-balance mt-7 text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
         >
           Get Recast for
           <span class="mt-2 block font-medium italic text-foreground/40">
@@ -345,8 +345,7 @@ import {
         </h1>
 
         <p
-          class="text-pretty mt-6 max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg"
-          style="animation-delay: 120ms"
+          class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
         >
           Free during beta. No sign-up. The native screen recorder for founders,
           indie hackers, and product engineers who'd rather ship than open a
@@ -354,8 +353,7 @@ import {
         </p>
 
         <div
-          class="mt-10 flex animate-fade-up flex-col items-center gap-3"
-          style="animation-delay: 240ms"
+          class="mt-10 flex flex-col items-center gap-3"
         >
           {#if primary?.link}
             {@const OSIcon = detectedIcon}
