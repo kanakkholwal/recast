@@ -3,6 +3,7 @@
 	  Container,
 	  Footer,
 	  Hero,
+	  MacWindow,
 	  Reveal,
 	  Section,
 	  SectionHeader,
@@ -117,7 +118,7 @@
 		if (!email.trim() || loading) return;
 		loading = true;
 		try {
-			await toast.promise(
+			toast.promise(
 				(async () => {
 					const res = await fetch("/api/waitlist", {
 						method: "POST",
@@ -194,10 +195,10 @@
 				"Launch videos, changelog clips, and Twitter cuts on your own schedule. Save a profile for each one and hit record. Fully offline, ship at midnight, fix typos at 2 AM.",
 		},
 		{
-			icon: MonitorPlay,
-			title: "For solopreneurs",
+			icon: Terminal,
+			title: "For dev teams & DevRel",
 			description:
-				"Onboarding videos and support replies that answer once and convert forever. Make it once. Let it work while you sleep.",
+				"Changelog clips, release notes, and tutorials your users actually watch. Record the feature, ship the walkthrough with the PR.",
 		},
 	];
 
@@ -732,7 +733,14 @@
 				align="center"
 			/>
 
-			<div class="mx-auto mt-14 max-w-3xl overflow-hidden rounded-2xl border border-border-low/50">
+			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-2xl shadow-craft-lg">
+				<!-- Soft primary glow biases the eye toward the Recast column. -->
+				<div
+					aria-hidden="true"
+					class="pointer-events-none absolute inset-y-0 right-0 z-0 w-1/2 opacity-70"
+					style="background: radial-gradient(ellipse 90% 60% at 85% 50%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 72%);"
+				></div>
+				<div class="relative z-10">
 				<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
 					<div class="flex items-center gap-2 px-5 py-3 text-muted-foreground">
 						<X class="size-3.5" /> Built-in recorder
@@ -752,6 +760,7 @@
 						</div>
 					</Reveal>
 				{/each}
+				</div>
 			</div>
 		</Container>
 	</Section>
@@ -795,24 +804,29 @@
 
 				<div class="lg:col-span-7">
 					<Reveal variant="morph">
-						<article class="glass-card flex flex-col gap-6 rounded-2xl p-7">
-							<div class="relative rounded-xl border border-border-low/60 bg-background/60 p-4 shadow-craft-inset">
-								<div class="flex items-center gap-3 rounded-lg border border-border-low/60 bg-background/80 px-3 py-2.5">
-									<Search class="size-4 text-muted-foreground" />
-									<span class="text-sm font-medium text-foreground/85">Start a recording…</span>
-									<span class="ml-auto rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">⌘ ⇧ R</span>
-								</div>
-								<div class="mt-3 space-y-1.5">
-									{#each [{ icon: MonitorPlay, label: "Record full screen" }, { icon: Layout, label: "Record region" }, { icon: Play, label: "Continue last project" }] as opt, i}
-										{@const Icon = opt.icon}
-										<div class="flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors {i === 0 ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}">
-											<Icon class="size-3.5" />
-											<span class="font-medium">{opt.label}</span>
-										</div>
-									{/each}
+						<MacWindow
+							title="Recast"
+							class="transition-[transform,box-shadow] duration-300 hover:-translate-y-1 hover:shadow-craft-lg"
+						>
+							<div class="p-5">
+								<div class="relative rounded-xl border border-border-low/60 bg-background/60 p-4 shadow-craft-inset">
+									<div class="flex items-center gap-3 rounded-lg border border-border-low/60 bg-background/80 px-3 py-2.5">
+										<Search class="size-4 text-muted-foreground" />
+										<span class="text-sm font-medium text-foreground/85">Start a recording…</span>
+										<span class="ml-auto rounded-md border border-border-low/60 bg-background px-1.5 py-0.5 font-mono text-[10px] font-semibold text-muted-foreground">⌘ ⇧ R</span>
+									</div>
+									<div class="mt-3 space-y-1.5">
+										{#each [{ icon: MonitorPlay, label: "Record full screen" }, { icon: Layout, label: "Record region" }, { icon: Play, label: "Continue last project" }] as opt, i}
+											{@const Icon = opt.icon}
+											<div class="flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors {i === 0 ? 'bg-primary/10 text-foreground' : 'text-muted-foreground'}">
+												<Icon class="size-3.5" />
+												<span class="font-medium">{opt.label}</span>
+											</div>
+										{/each}
+									</div>
 								</div>
 							</div>
-						</article>
+						</MacWindow>
 					</Reveal>
 				</div>
 			</div>
@@ -844,20 +858,9 @@
 				{/each}
 			</div>
 
-			<Reveal variant="scale" class="mt-12">
+			<Reveal variant="up" class="mt-12">
 				<figure class="mx-auto max-w-5xl">
-					<div
-						class="glass-card relative overflow-hidden rounded-2xl shadow-craft-xl"
-						style="transform: perspective(1600px) rotateX(2deg);"
-					>
-						<div class="flex h-10 items-center gap-2 border-b border-border-low/40 bg-white/5 px-4">
-							<div class="flex gap-1.5">
-								<span class="size-2.5 rounded-full bg-foreground/15"></span>
-								<span class="size-2.5 rounded-full bg-foreground/15"></span>
-								<span class="size-2.5 rounded-full bg-foreground/15"></span>
-							</div>
-							<span class="ml-3 text-[11px] font-medium text-muted-foreground">Recast · Editor</span>
-						</div>
+					<MacWindow title="Recast · Editor" class="shadow-craft-xl">
 						<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
 							<!-- `width`/`height` (the asset's true 1920×1080) reserve the
 							     16:9 box so this lazy screenshot can't shift layout in. -->
@@ -871,7 +874,7 @@
 								class="block aspect-video w-full rounded-xl object-cover ring-1 ring-border-low"
 							/>
 						</div>
-					</div>
+					</MacWindow>
 					<figcaption class="mt-5 text-center text-[12.5px] leading-relaxed text-muted-foreground">
 						The full editor: timeline, zoom regions, annotations, and export presets in one window.
 					</figcaption>
@@ -1073,7 +1076,7 @@
 				{#each extensionBeat as item, i}
 					{@const Icon = item.icon}
 					<Reveal variant="up" delay={i * 80} class="h-full">
-						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-colors hover:border-primary/30">
+						<div class="flex h-full flex-col gap-4 rounded-2xl border border-border-low/50 bg-card/40 p-6 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-1 hover:border-primary/30 hover:shadow-craft-lg">
 							<span class="glass-chip grid size-10 place-items-center rounded-xl text-primary">
 								<Icon class="size-5" />
 							</span>
@@ -1340,8 +1343,8 @@
 	<Section id="founders" class="border-t border-border-low/60">
 		<Container>
 			<SectionHeader
-				eyebrow="Built for founders"
-				title="Shaped for the people shipping solo."
+				eyebrow="Built for builders"
+				title="Shaped for the people who ship."
 				description="Opinionated where it matters, out of your way everywhere else. Auto-polish for the 80 % case, a minimal timeline for the moments you actually want to control."
 				align="center"
 			/>
@@ -1372,7 +1375,7 @@
 		<Container>
 			<div class="grid gap-4 md:grid-cols-2">
 				<Reveal variant="left">
-					<article class="glass-card flex h-full flex-col rounded-2xl p-8">
+					<article class="glass-card flex h-full flex-col rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
 						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 							The app
 						</span>
@@ -1393,7 +1396,7 @@
 				</Reveal>
 
 				<Reveal variant="right" delay={80}>
-					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20">
+					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-lg">
 						<div
 							aria-hidden="true"
 							class="pointer-events-none absolute -right-10 -top-10 size-48 rounded-full bg-primary/10 blur-2xl"

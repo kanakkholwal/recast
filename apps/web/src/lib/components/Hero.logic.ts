@@ -1,22 +1,21 @@
 import { MousePointer2, Share2, Video } from "@lucide/svelte";
 import { cubicOut } from "svelte/easing";
 
-// Concrete artifacts the target audience actually makes, ordered so the
-// loop opens with the broadest noun (demo) and rotates through the
-// segment-specific outputs (investor walkthrough = founders, launch video
-// = indie hackers, changelog clip = devrels, onboarding tour = product
-// engineers / solopreneurs). Naming outputs instead of style adjectives
-// (the old "cinematic / hand-edited" loop) plants category + audience in
-// the same beat and makes the TextLoop animation land on real value.
-export const words = [
-	"demo.",
-	"launch video.",
-	"changelog clip.",
-	"investor walkthrough.",
-	"onboarding tour.",
-];
+// Concrete artifacts the committed audience (solo founders + dev teams /
+// DevRel) actually ships. Narrowed from five to three: opens on the broadest
+// noun (demo), then the two on-message outputs both segments make (launch
+// video, changelog clip). Dropped "investor walkthrough" (pure founder) and
+// "onboarding tour" (support) so the loop stops chasing every market at once.
+export const words = ["demo.", "launch video.", "changelog clip."];
 
 export const platforms = ["macOS", "Windows", "Linux"];
+
+// Editorial hero backdrop. Swap for a local `/hero-backdrop.jpg` or any
+// Unsplash/Pexels landscape. If it fails to load, the base gradient behind it
+// shows through, so the hero never renders broken. Kept here (not inline) so
+// the one place to change the art is obvious.
+export const backdropUrl =
+	"/hero-background.png";
 
 export const steps = [
 	{ icon: Video, label: "Record" },
@@ -24,10 +23,11 @@ export const steps = [
 	{ icon: Share2, label: "Share" },
 ];
 
-/** Svelte native transition params — snappy in, lands gently. */
+/** Svelte native transition params: snappy in, lands gently. Duration kept in
+ *  the 400-600ms band so the staggered ladder reads brisk, not sluggish. */
 export const rise = (delay: number) => ({
 	y: 16,
-	duration: 720,
+	duration: 560,
 	delay,
 	easing: cubicOut,
 });
