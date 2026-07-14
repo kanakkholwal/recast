@@ -86,6 +86,7 @@ export default defineConfig({
 			'@recast/design',
 			'@recast/player',
 			'@recast/analytics',
+			'@recast/captions',
 		],
 	},
 	// Env variables starting with the item of `envPrefix` will be exposed in tauri's source code through `import.meta.env`.

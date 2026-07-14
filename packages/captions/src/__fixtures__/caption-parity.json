@@ -1,0 +1,74 @@
+{
+  "_comment": "Shared parity ground truth for the caption model. Consumed by packages/captions parity.test.ts AND by a Rust test in transcription/subtitles.rs (via include_str!). Both sides must produce these exact values, which is what keeps preview and export from drifting. Times are seconds; word indices are into each case's `words`.",
+  "cases": [
+    {
+      "name": "line-chunk-three-words",
+      "words": [
+        { "start": 0.0, "end": 0.5, "text": "Hello" },
+        { "start": 0.5, "end": 1.0, "text": "there" },
+        { "start": 1.0, "end": 1.6, "text": "friend" }
+      ],
+      "animation": { "chunk": "line", "chunkSize": 3 },
+      "maxCharsPerLine": 42,
+      "maxLines": 2,
+      "expected": {
+        "chunks": [[0, 1, 2]],
+        "lines": [[0, 1, 2]],
+        "karaokeCs": [[50, 50, 60]],
+        "spokenAt": [
+          { "t": -0.1, "count": 0 },
+          { "t": 0.0, "count": 1 },
+          { "t": 0.5, "count": 2 },
+          { "t": 1.0, "count": 3 },
+          { "t": 1.6, "count": 3 }
+        ]
+      }
+    },
+    {
+      "name": "phrase-chunk-size-two",
+      "words": [
+        { "start": 0.0, "end": 0.4, "text": "one" },
+        { "start": 0.4, "end": 0.8, "text": "two" },
+        { "start": 0.8, "end": 1.2, "text": "three" },
+        { "start": 1.2, "end": 1.6, "text": "four" },
+        { "start": 1.6, "end": 2.0, "text": "five" }
+      ],
+      "animation": { "chunk": "phrase", "chunkSize": 2 },
+      "maxCharsPerLine": 42,
+      "maxLines": 2,
+      "expected": {
+        "chunks": [[0, 1], [2, 3], [4]],
+        "lines": [[0, 1, 2, 3, 4]],
+        "karaokeCs": [[40, 40], [40, 40], [40]],
+        "spokenAt": [
+          { "t": 0.2, "count": 1 },
+          { "t": 1.3, "count": 4 },
+          { "t": 2.0, "count": 5 }
+        ]
+      }
+    },
+    {
+      "name": "greedy-line-break-with-maxlines-clamp",
+      "words": [
+        { "start": 0.0, "end": 0.3, "text": "but" },
+        { "start": 0.3, "end": 0.6, "text": "it's" },
+        { "start": 0.6, "end": 0.9, "text": "a" },
+        { "start": 0.9, "end": 1.2, "text": "text" },
+        { "start": 1.2, "end": 1.6, "text": "editor" },
+        { "start": 1.6, "end": 2.2, "text": "basically," }
+      ],
+      "animation": { "chunk": "line", "chunkSize": 3 },
+      "maxCharsPerLine": 12,
+      "maxLines": 2,
+      "expected": {
+        "chunks": [[0, 1, 2, 3, 4, 5]],
+        "lines": [[0, 1, 2], [3, 4]],
+        "karaokeCs": [[30, 30, 30, 30, 40, 60]],
+        "spokenAt": [
+          { "t": 0.75, "count": 3 },
+          { "t": 2.2, "count": 6 }
+        ]
+      }
+    }
+  ]
+}

@@ -393,7 +393,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 path,
                 false,
                 Vec::new(),
-                |_| {},
+                |_| {}, // a one-shot CLI call has nowhere to render progress
             ))?;
             serde_json::to_value(timeline).map_err(|e| e.to_string())
         }

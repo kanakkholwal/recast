@@ -49,9 +49,19 @@ const HOVER_QUANTUM = 0.05;
  *  across a couple of zoom levels; eviction revokes the object URL. */
 const MAX_TILES = 240;
 
+/**
+ * Hover frames live in their OWN cache. They used to share the tile cache, and a
+ * 60s clip has ~1200 hover buckets, so a few seconds of scrubbing evicted every
+ * filmstrip tile on screen. The clip bar only re-requests tiles when its plan
+ * changes, so the evicted thumbnails stayed grey until you happened to zoom or
+ * scroll: "sometimes I can see the thumbnails, sometimes I can't".
+ */
+const MAX_HOVER_FRAMES = 64;
+
 class WebCodecsTileProvider implements TileProvider {
 	#worker: Worker;
 	#cache: LruCache<string>;
+	#hoverCache: LruCache<string>;
 	/** cacheKeys currently being decoded by the worker. */
 	#inflight = new Set<string>();
 	/** Worker request id → cacheKey, to file the reply. */
@@ -70,6 +80,9 @@ class WebCodecsTileProvider implements TileProvider {
 		this.#worker = worker;
 		this.#onChange = onChange;
 		this.#cache = new LruCache<string>(MAX_TILES, (url) =>
+			URL.revokeObjectURL(url),
+		);
+		this.#hoverCache = new LruCache<string>(MAX_HOVER_FRAMES, (url) =>
 			URL.revokeObjectURL(url),
 		);
 		this.#worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) =>
@@ -130,7 +143,7 @@ class WebCodecsTileProvider implements TileProvider {
 		if (this.#disposed) return undefined;
 		// Own cache namespace so hover frames don't collide with filmstrip tiles.
 		const cacheKey = `hover:${Math.round(originalSec / HOVER_QUANTUM)}`;
-		const cached = this.#cache.get(cacheKey);
+		const cached = this.#hoverCache.get(cacheKey);
 		if (cached) return cached;
 		if (!this.#inflight.has(cacheKey) && !this.#pending.has(cacheKey)) {
 			this.#pending.set(cacheKey, Math.max(0, originalSec));
@@ -197,7 +210,8 @@ class WebCodecsTileProvider implements TileProvider {
 		if (cacheKey === undefined) return;
 		this.#inflight.delete(cacheKey);
 		if (this.#disposed) return;
-		this.#cache.set(cacheKey, URL.createObjectURL(msg.blob));
+		const target = cacheKey.startsWith("hover:") ? this.#hoverCache : this.#cache;
+		target.set(cacheKey, URL.createObjectURL(msg.blob));
 		this.#onChange();
 	}
 
@@ -212,6 +226,7 @@ class WebCodecsTileProvider implements TileProvider {
 		}
 		this.#worker.terminate();
 		this.#cache.clear(); // revokes every object URL
+		this.#hoverCache.clear();
 		if (this.#storyboard) URL.revokeObjectURL(this.#storyboard.url);
 		this.#storyboard = undefined;
 		this.#inflight.clear();
@@ -239,11 +254,22 @@ export interface TileProviderInput {
 export async function createTileProvider(
 	input: TileProviderInput,
 ): Promise<TileProvider | null> {
-	const canDecode =
-		chooseIngestion(input.sizeBytes) === "whole" &&
-		typeof Worker !== "undefined" &&
-		typeof VideoFrame !== "undefined";
-	if (!canDecode) return null;
+	// Each condition logged on failure so a missing filmstrip is never a silent
+	// mystery: whole-file only (huge/progressive route to the Rust strip), and a
+	// WebView with Worker + WebCodecs.
+	const ingestion = chooseIngestion(input.sizeBytes);
+	if (ingestion !== "whole") {
+		console.info(
+			`Filmstrip: source too large for whole-file decode (${input.sizeBytes} bytes); using strip fallback.`,
+		);
+		return null;
+	}
+	if (typeof Worker === "undefined" || typeof VideoFrame === "undefined") {
+		console.info(
+			"Filmstrip: WebView lacks Worker/WebCodecs; using strip fallback.",
+		);
+		return null;
+	}
 	try {
 		return await WebCodecsTileProvider.create(
 			input.url,

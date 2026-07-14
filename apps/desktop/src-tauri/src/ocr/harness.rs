@@ -16,7 +16,7 @@ use std::process::Command;
 use crate::ffmpeg::{configure_silent_command, ffmpeg_path};
 
 use super::engine::{OcrEngine, OcrsEngine};
-use super::frames::{probe_dims, sample_frames, SampleOpts};
+use super::frames::{probe_dims, sample_frames, SampleOpts, SampleTick};
 use super::timeline::{build_timeline, TimelineOpts};
 
 /// Build a video with `scenes` hard cuts between flat colours, each `secs` long.
@@ -78,7 +78,23 @@ fn sampler_keeps_one_frame_per_scene() {
     assert!((duration - 9.0).abs() < 0.5, "duration was {duration}");
 
     let opts = SampleOpts::default();
-    let frames = sample_frames(&video, &opts).expect("sample");
+    let mut ticks: Vec<SampleTick> = Vec::new();
+    let frames = sample_frames(&video, &opts, &mut |t| ticks.push(t)).expect("sample");
+
+    // The bar must count every frame the decoder walked, not just the kept ones.
+    // ~27 at the 3fps coarse rate over 9s; the exact count depends on how ffmpeg's
+    // fps filter rounds the tail, so this asserts the magnitude, not a hard number.
+    let last = ticks.last().expect("at least one tick");
+    assert!(
+        (26..=28).contains(&last.scanned),
+        "expected ~27 frames walked, got {}",
+        last.scanned
+    );
+    assert!(ticks.iter().all(|t| t.total > 0), "duration was probed");
+    // A tick reports the keeps made BEFORE its own frame was judged, so the running
+    // count only ever climbs and never overshoots the result.
+    assert!(ticks.windows(2).all(|w| w[0].kept <= w[1].kept));
+    assert!(ticks.iter().all(|t| (t.kept as usize) <= frames.len()));
 
     // 9s at the 3fps coarse rate is ~27 candidate frames; only the 3 scene starts
     // carry new information.
@@ -138,12 +154,14 @@ fn ocr_reads_text_off_a_real_video() {
     assert_eq!(engine.source(), "ocrs");
 
     let (_, _, duration) = probe_dims(&video).expect("probe");
-    let frames = sample_frames(&video, &SampleOpts::default()).expect("sample");
+    let frames = sample_frames(&video, &SampleOpts::default(), &mut |_| {}).expect("sample");
     assert!(!frames.is_empty());
 
     let opts = TimelineOpts { previews: true };
-    let timeline = build_timeline(&frames, duration, &engine, &opts).expect("timeline");
+    let timeline =
+        build_timeline(&frames, duration, &engine, &opts, &mut |_| {}).expect("timeline");
     assert!(!timeline.spans.is_empty(), "no spans produced");
+    assert_eq!(timeline.stats.frames_read as usize, frames.len());
     // Previews were requested, so the review UI has something to show.
     assert!(timeline.spans.iter().all(|s| s
         .preview
@@ -243,7 +261,7 @@ fn benchmark_where_the_time_goes() {
     let (_, _, duration) = probe_dims(&video).expect("probe");
 
     let t = Instant::now();
-    let frames = sample_frames(&video, &SampleOpts::default()).expect("sample");
+    let frames = sample_frames(&video, &SampleOpts::default(), &mut |_| {}).expect("sample");
     let sample_ms = t.elapsed().as_millis();
 
     let models = download_models(&dir).expect("models");
@@ -252,8 +270,14 @@ fn benchmark_where_the_time_goes() {
     let load_ms = t.elapsed().as_millis();
 
     let t = Instant::now();
-    let timeline =
-        build_timeline(&frames, duration, &engine, &TimelineOpts::default()).expect("timeline");
+    let timeline = build_timeline(
+        &frames,
+        duration,
+        &engine,
+        &TimelineOpts::default(),
+        &mut |_| {},
+    )
+    .expect("timeline");
     let ocr_ms = t.elapsed().as_millis();
 
     let per_frame = if frames.is_empty() {

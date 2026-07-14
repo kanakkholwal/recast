@@ -14,7 +14,6 @@
   } from "./focus-panel.logic";
   import {
     DEFAULT_ZOOM_CENTER,
-    DEFAULT_ZOOM_MOTION_BLUR,
     DEFAULT_ZOOM_RAMP,
     type EditorStore,
     type ZoomRegion,
@@ -30,13 +29,14 @@
     MoveVertical,
     Plus,
     Sparkles,
-    Target,
     TrendingDown,
     TrendingUp,
     Trash2,
     Wand2,
+    Wind,
     ZoomIn,
   } from "@lucide/svelte";
+  import { motionDuration } from "$lib/motion.svelte";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";
@@ -62,6 +62,16 @@
 
   const selected = $derived<ZoomRegion | null>(
     store.zoomRegions.find((r) => r.id === store.selectedZoomRegionId) ?? null,
+  );
+
+  // Listed in timeline order (by start time) so the panel scans the same way the
+  // timeline reads, left to right, and numbered so a row correlates with the
+  // "Region N" detail header.
+  const orderedRegions = $derived(
+    [...store.zoomRegions].sort((a, b) => a.start - b.start),
+  );
+  const selectedIndex = $derived(
+    selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
   );
 
   // Which ramp the Custom-curves editor targets (one graph at a time).
@@ -118,13 +128,14 @@
     });
   }
 
+  // Recenters the focus point only. Motion blur is a separate control in the Zoom
+  // section, so this button (in Focus point) must not silently reset it too.
   function recenterFocus() {
     if (!selected) return;
     store.pushUndoState();
     store.updateZoomRegion(selected.id, {
       centerX: DEFAULT_ZOOM_CENTER,
       centerY: DEFAULT_ZOOM_CENTER,
-      motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
     });
   }
 
@@ -222,7 +233,7 @@
         <div
           class="flex size-9 items-center justify-center rounded-lg border border-border/60 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset)"
         >
-          <Target size={16} />
+          <ZoomIn size={16} />
         </div>
         <p class="text-[11px] font-medium text-foreground">No zoom regions yet</p>
         <p class="text-[10px] leading-snug text-muted-foreground">
@@ -231,14 +242,19 @@
       </div>
     {:else}
       <div class="flex flex-col gap-1">
-        {#each store.zoomRegions as region, i (region.id)}
+        {#each orderedRegions as region, i (region.id)}
           {@const isActive = region.id === store.selectedZoomRegionId}
           {@const isHidden = region.hidden === true}
           <!-- Absolute-inset select button so the whole row picks the region,
                with action buttons on their own z-layer, since nesting <button>s
                would be invalid markup. -->
           <div
-            in:fly={{ y: 4, duration: 200, delay: i * 25, easing: cubicOut }}
+            in:fly={{
+              y: 4,
+              duration: motionDuration(200),
+              delay: motionDuration(i * 25),
+              easing: cubicOut,
+            }}
             class={cn(
               "group relative flex w-full items-center gap-2.5 rounded-lg border px-2.5 py-2 text-left transition-all duration-150",
               isActive
@@ -251,9 +267,14 @@
               type="button"
               onclick={() => (store.selectedZoomRegionId = region.id)}
               aria-pressed={isActive}
-              aria-label={`Select zoom region ${i + 1}`}
+              aria-label={`Zoom region ${i + 1}: ${region.scale.toFixed(1)}× at ${fmtTime(region.start)}`}
               class="absolute inset-0 z-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/40"
             ></button>
+            <span
+              class={cn(
+                "pointer-events-none w-3.5 shrink-0 text-center text-[10px] font-semibold tabular-nums",
+                isActive ? "text-primary" : "text-muted-foreground/70",
+              )}>{i + 1}</span>
             <span
               class={cn(
                 "pointer-events-none flex h-8 w-12 shrink-0 items-center justify-center rounded-md border transition-colors",
@@ -303,15 +324,12 @@
                 {(region.end - region.start).toFixed(2)}s duration
               </div>
             </div>
-            <!-- Row actions: revealed on hover/focus, always for the active
-                 row. Above the select button via z-10. -->
+            <!-- Row actions on hover/focus only. For the SELECTED row these
+                 would just duplicate the detail header's Hide/Duplicate/Delete
+                 (right below), so master-detail hands the selected item's
+                 actions to the header and the row stays quiet unless hovered. -->
             <div
-              class={cn(
-                "relative z-10 flex shrink-0 items-center gap-0.5 transition-opacity",
-                isActive
-                  ? "opacity-100"
-                  : "opacity-0 group-hover:opacity-100 group-focus-within:opacity-100",
-              )}
+              class="relative z-10 flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <button
                 type="button"
@@ -356,11 +374,14 @@
   {#if selected}
     {@const region = selected}
     {@const maxRamp = regionMaxRamp(region)}
-    <div class="flex flex-col gap-3 border-t border-border/50 pt-3">
+    <div
+      in:fly={{ y: 6, duration: motionDuration(200), easing: cubicOut }}
+      class="flex flex-col gap-3 border-t border-border/50 pt-3"
+    >
       <div class="flex items-center justify-between gap-2">
         <div class="min-w-0">
           <p class="text-[11px] font-semibold tracking-tight text-foreground">
-            Selected region
+            Region {selectedIndex + 1}
           </p>
           <p class="truncate text-[10px] tabular-nums text-muted-foreground">
             {region.scale.toFixed(2)}× · {fmtTime(region.start)}–{fmtTime(
@@ -432,7 +453,7 @@
           onchange={(v) => updateSelected({ motionBlur: v / 100 })}
         >
           {#snippet icon()}
-            <Sparkles size={11} />
+            <Wind size={11} />
           {/snippet}
         </SliderControl>
       </PanelSection>
@@ -447,9 +468,7 @@
             size="xs"
             class="gap-1.5"
             onclick={recenterFocus}
-            disabled={region.centerX === 0.5 &&
-              region.centerY === 0.5 &&
-              region.motionBlur === DEFAULT_ZOOM_MOTION_BLUR}
+            disabled={region.centerX === 0.5 && region.centerY === 0.5}
           >
             <Crosshair size={11} />
             Recenter

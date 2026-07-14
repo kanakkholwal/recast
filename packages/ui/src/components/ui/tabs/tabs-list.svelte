@@ -42,6 +42,18 @@
 	let isVertical = $state(false);
 	let firstMeasure = true;
 
+	// The indicator slides via Tween (rAF), which the CSS prefers-reduced-motion
+	// override can't reach; honor the setting in JS so it snaps instead.
+	let reduced = $state(false);
+	$effect(() => {
+		if (typeof window === "undefined") return;
+		const mq = window.matchMedia("(prefers-reduced-motion: reduce)");
+		reduced = mq.matches;
+		const on = (e: MediaQueryListEvent) => (reduced = e.matches);
+		mq.addEventListener("change", on);
+		return () => mq.removeEventListener("change", on);
+	});
+
 	const x = new Tween(0, { duration: 260, easing: cubicOut });
 	const y = new Tween(0, { duration: 260, easing: cubicOut });
 	const w = new Tween(0, { duration: 260, easing: cubicOut });
@@ -70,18 +82,14 @@
 
 		// Snap on first measure so the indicator doesn't grow from (0,0) —
 		// fighting the dialog/page enter motion. Subsequent updates Tween.
-		if (firstMeasure) {
-			x.set(nx, { duration: 0 });
-			y.set(ny, { duration: 0 });
-			w.set(nw, { duration: 0 });
-			h.set(nh, { duration: 0 });
-			firstMeasure = false;
-		} else {
-			x.target = nx;
-			y.target = ny;
-			w.target = nw;
-			h.target = nh;
-		}
+		// Snap on the first measure (so it doesn't grow from 0,0 against page-enter
+		// motion) and whenever the user asked for reduced motion; otherwise Tween.
+		const duration = firstMeasure || reduced ? 0 : 260;
+		x.set(nx, { duration });
+		y.set(ny, { duration });
+		w.set(nw, { duration });
+		h.set(nh, { duration });
+		firstMeasure = false;
 		indicatorVisible = true;
 	}
 

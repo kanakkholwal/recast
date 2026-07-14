@@ -29,6 +29,19 @@ pub struct SampledFrame {
     pub height: u32,
 }
 
+/// Progress of the coarse decode pass, reported once per walked frame.
+#[derive(Debug, Clone, Copy)]
+pub struct SampleTick {
+    /// Coarse frames walked so far.
+    pub scanned: u64,
+    /// Coarse frames the pass expects to walk, from duration x `base_fps`. An
+    /// estimate: a container with a wrong duration can over- or undershoot, so a
+    /// consumer must clamp rather than trust `scanned <= total`.
+    pub total: u64,
+    /// Frames kept for OCR so far.
+    pub kept: u64,
+}
+
 /// Tuning for the sampler. Defaults are chosen for screen recordings.
 #[derive(Debug, Clone)]
 pub struct SampleOpts {
@@ -140,9 +153,18 @@ fn even(n: u32) -> u32 {
 
 /// Sample the frames where the screen changed. One coarse decode pass, gated by
 /// dedup + adaptive change score + cadence bounds.
-pub fn sample_frames(media: &Path, opts: &SampleOpts) -> Result<Vec<SampledFrame>, String> {
-    let (sw, sh, _duration) = probe_dims(media)?;
+///
+/// `on_tick` fires once per walked frame, including the ones skipped as outside
+/// the kept ranges, because the decode still pays for them and a progress bar that
+/// stalled through a cut would read as a hang.
+pub fn sample_frames(
+    media: &Path,
+    opts: &SampleOpts,
+    on_tick: &mut dyn FnMut(SampleTick),
+) -> Result<Vec<SampledFrame>, String> {
+    let (sw, sh, duration) = probe_dims(media)?;
     let (tw, th) = target_dims(sw, sh, opts.max_dim);
+    let expected = expected_frames(duration, opts.base_fps);
     let frame_bytes = (tw as usize) * (th as usize) * 4;
     if frame_bytes == 0 {
         return Err("video has zero-sized frames".into());
@@ -197,13 +219,18 @@ pub fn sample_frames(media: &Path, opts: &SampleOpts) -> Result<Vec<SampledFrame
     // Reads one frame per iteration; ends at a clean EOF on a frame boundary.
     while read_full(&mut stdout, &mut frame).map_err(|e| format!("read frame: {e}"))? {
         let t = index as f64 / opts.base_fps as f64;
+        index += 1;
+        on_tick(SampleTick {
+            scanned: index,
+            total: expected,
+            kept: kept.len() as u64,
+        });
 
         // Skip footage the edit removed (outside the trim, or inside a cut) before
         // doing any work on it. Decoding is one cheap streaming pass, but OCR is
         // ~390ms a frame, so this is both a correctness fix (no spans for deleted
         // content) and the cheapest speed win available.
         if !in_ranges(t, &opts.include_ranges) {
-            index += 1;
             continue;
         }
 
@@ -248,7 +275,6 @@ pub fn sample_frames(media: &Path, opts: &SampleOpts) -> Result<Vec<SampledFrame
             }
         }
         prev_small = Some(small);
-        index += 1;
     }
 
     let status = child.wait().map_err(|e| format!("ffmpeg wait: {e}"))?;
@@ -260,6 +286,16 @@ pub fn sample_frames(media: &Path, opts: &SampleOpts) -> Result<Vec<SampledFrame
     }
 
     Ok(kept)
+}
+
+/// How many coarse frames a decode at `base_fps` will walk over a `duration`
+/// second video. Feeds the progress bar's denominator, so it must never be zero
+/// (a progress bar dividing by it would show NaN) and never negative.
+fn expected_frames(duration: f64, base_fps: f32) -> u64 {
+    if !duration.is_finite() || duration <= 0.0 || base_fps <= 0.0 {
+        return 0; // unknown: the caller shows an indeterminate bar
+    }
+    (duration * base_fps as f64).ceil().max(1.0) as u64
 }
 
 /// Absolute floor on the change score (0..255) below which a difference is
@@ -425,6 +461,19 @@ mod tests {
         assert_eq!(target_dims(1920, 1080, 0), (1920, 1080));
         // Odd source dimensions round up to even.
         assert_eq!(target_dims(1919, 1079, 0), (1920, 1080));
+    }
+
+    #[test]
+    fn expected_frames_is_the_progress_denominator() {
+        // 9s at the 3fps coarse rate.
+        assert_eq!(expected_frames(9.0, 3.0), 27);
+        // Partial trailing frame still gets walked, so round up.
+        assert_eq!(expected_frames(9.1, 3.0), 28);
+        // An unknown duration reports 0, which the UI reads as "indeterminate"
+        // rather than dividing by it.
+        assert_eq!(expected_frames(0.0, 3.0), 0);
+        assert_eq!(expected_frames(f64::NAN, 3.0), 0);
+        assert_eq!(expected_frames(-1.0, 3.0), 0);
     }
 
     #[test]

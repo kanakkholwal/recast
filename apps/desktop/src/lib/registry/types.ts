@@ -10,7 +10,7 @@
  */
 
 import type { Easing } from "$lib/easing/cubic-bezier";
-import type { CaptionAnimation } from "$lib/captions/animation";
+import type { CaptionAnimation } from "@recast/captions";
 
 export type AssetKind =
 	| "cursor"
@@ -88,12 +88,22 @@ export interface CaptionPresetValue {
 	color: string;
 	uppercase: boolean;
 	letterSpacing: number;
+	/** Unspoken-word colour for progressive highlight. */
+	mutedColor: string;
 	background: "none" | "soft" | "box";
 	backgroundColor: string;
 	backgroundOpacity: number;
+	/** Pill padding / radius / line height, in em of the caption font size
+	 *  (radius clamps to a stadium at render). */
+	boxPaddingXEm: number;
+	boxPaddingYEm: number;
+	boxRadiusEm: number;
+	lineHeight: number;
 	outlineWidth: number;
 	outlineColor: string;
 	maxLines: number;
+	/** Greedy line-break width, in characters. */
+	maxCharsPerLine: number;
 	/** Word-by-word animation. Absent = static. */
 	animation?: CaptionAnimation;
 }

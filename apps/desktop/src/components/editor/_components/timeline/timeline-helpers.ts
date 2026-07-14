@@ -1,4 +1,20 @@
 // Pure helpers extracted from Timeline.svelte so subviews share them and they stay unit-testable.
+//
+// Timecode formatting is NOT defined here. It lives in `$lib/editor/time`, which
+// the transport also reads, so the timeline and the player can't drift onto
+// different clocks (they did: one showed output time, the other original time).
+// Re-exported so the timeline subviews keep a single local import.
+
+import { formatRulerTick, type TimeMode } from "$lib/editor/time";
+
+export {
+	formatClock,
+	formatFrames,
+	formatRulerTick,
+	formatSmpte,
+	formatTimeByMode,
+	type TimeMode,
+} from "$lib/editor/time";
 
 export function effectiveFps(metadataFps: number | undefined): number {
 	const f = metadataFps ?? 0;
@@ -18,55 +34,6 @@ export function minClipDuration(fps: number): number {
 	return 2 * frameStep(fps);
 }
 
-// SMPTE-style HH:MM:SS:FF (MM:SS:FF for clips < 1 hour).
-export function formatTimecode(time: number, fps: number): string {
-	const t = Math.max(0, time);
-	const totalFrames = Math.round(t * fps);
-	const frames = totalFrames % Math.round(fps);
-	const totalSecs = Math.floor(totalFrames / Math.round(fps));
-	const secs = totalSecs % 60;
-	const mins = Math.floor(totalSecs / 60) % 60;
-	const hours = Math.floor(totalSecs / 3600);
-	const ff = String(frames).padStart(2, "0");
-	const ss = String(secs).padStart(2, "0");
-	const mm = String(mins).padStart(2, "0");
-	return hours > 0
-		? `${String(hours).padStart(2, "0")}:${mm}:${ss}:${ff}`
-		: `${mm}:${ss}:${ff}`;
-}
-
-// smpte: HH:MM:SS:FF · seconds: M:SS.cs · frames: Nf
-export type TimeMode = "smpte" | "seconds" | "frames";
-
-export function formatFrames(time: number, fps: number): string {
-	const frames = Math.max(0, Math.round(time * fps));
-	return `${frames}f`;
-}
-
-export function formatTimeByMode(
-	time: number,
-	mode: TimeMode,
-	fps: number,
-): string {
-	switch (mode) {
-		case "smpte":
-			return formatTimecode(time, fps);
-		case "seconds":
-			return formatTime(time);
-		case "frames":
-			return formatFrames(time, fps);
-	}
-}
-
-export function formatTime(seconds: number): string {
-	const mins = Math.floor(seconds / 60);
-	const secs = Math.floor(seconds % 60);
-	const centiseconds = Math.floor((seconds % 1) * 100);
-	return `${mins}:${secs.toString().padStart(2, "0")}.${centiseconds
-		.toString()
-		.padStart(2, "0")}`;
-}
-
 export function greatestCommonDivisor(a: number, b: number): number {
 	let left = Math.abs(a);
 	let right = Math.abs(b);
@@ -84,25 +51,81 @@ export interface TimeMarker {
 	emphasis: boolean;
 }
 
-// Major ruler labels: interval picked to keep ~50px between labels.
+// ---- Zoom ------------------------------------------------------------------
+//
+// Zoom is expressed as a multiple of "the whole clip fits the viewport", so the
+// ceiling has to be derived from the clip's length, not fixed. It used to be a
+// flat 5x, which made maximum magnification a function of how long you recorded:
+// a 30-minute screencast bottomed out at 2.5 px/sec, i.e. 0.04px per frame, and
+// could not be trimmed precisely at all.
+
+/** Ceiling in pixels per second: ~6px per frame at 60fps, enough to aim at one. */
+export const MAX_PIXELS_PER_SECOND = 400;
+
+/** Zoom that fits the whole clip. Below this the viewport just grows dead space. */
+export const MIN_TIMELINE_ZOOM = 1;
+
+export function maxTimelineZoom(
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	if (outputDuration <= 0 || viewportWidth <= 0) return MIN_TIMELINE_ZOOM;
+	const zoomAtCeiling =
+		(MAX_PIXELS_PER_SECOND * outputDuration) / viewportWidth;
+	return Math.max(MIN_TIMELINE_ZOOM, zoomAtCeiling);
+}
+
+export function clampTimelineZoom(
+	zoom: number,
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	const max = maxTimelineZoom(outputDuration, viewportWidth);
+	return Math.min(Math.max(zoom, MIN_TIMELINE_ZOOM), max);
+}
+
+/**
+ * One zoom step. Multiplicative, not additive: the old +/-0.25 steps would need
+ * thousands of clicks to cross the range a long recording now spans.
+ */
+export const ZOOM_STEP_FACTOR = 1.5;
+
+export function steppedZoom(
+	zoom: number,
+	direction: number,
+	outputDuration: number,
+	viewportWidth: number,
+): number {
+	const next =
+		direction > 0 ? zoom * ZOOM_STEP_FACTOR : zoom / ZOOM_STEP_FACTOR;
+	return clampTimelineZoom(next, outputDuration, viewportWidth);
+}
+
+/** Spacing between ruler labels, chosen to keep them roughly 50px apart. */
+export function rulerInterval(pixelsPerSecond: number): number {
+	if (pixelsPerSecond < 26) return 10;
+	if (pixelsPerSecond < 52) return 5;
+	if (pixelsPerSecond < 120) return 2;
+	if (pixelsPerSecond > 260) return 0.5;
+	return 1;
+}
+
+// Major ruler labels. Formatted through the shared clock so the ruler agrees
+// with the playhead standing on it, including in Frames mode.
 export function buildTimeMarkers(
 	duration: number,
 	pixelsPerSecond: number,
+	mode: TimeMode,
+	fps: number,
 ): TimeMarker[] {
 	if (duration <= 0) return [];
 	const markers: TimeMarker[] = [];
-	let interval = 1;
-	if (pixelsPerSecond < 26) interval = 10;
-	else if (pixelsPerSecond < 52) interval = 5;
-	else if (pixelsPerSecond < 120) interval = 2;
-	else if (pixelsPerSecond > 260) interval = 0.5;
+	const interval = rulerInterval(pixelsPerSecond);
 
 	for (let t = 0; t <= duration + interval * 0.5; t += interval) {
-		const mins = Math.floor(t / 60);
-		const secs = Math.floor(t % 60);
 		markers.push({
 			time: t,
-			label: `${mins}:${secs.toString().padStart(2, "0")}`,
+			label: formatRulerTick(t, mode, fps, interval),
 			emphasis: Math.round(t) % (interval >= 2 ? interval * 2 : 2) === 0,
 		});
 	}

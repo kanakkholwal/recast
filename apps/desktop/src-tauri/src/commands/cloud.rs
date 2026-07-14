@@ -297,11 +297,17 @@ pub async fn recast_cloud_upload(
         init_body.insert("workspaceId".into(), ws.clone().into());
     }
     // Serialize the caption track up front so we can both tell init to sign a
-    // captions PUT URL and reuse the body for the upload below.
+    // captions PUT URL and reuse the body for the upload below. A share from the
+    // editor carries a transcript; a share from the exports library has none, so
+    // fall back to a caption sidecar the export wrote next to the file (foo.vtt /
+    // foo.srt) — that's how library shares get captions at all.
     let captions_vtt = captions_transcript
         .as_ref()
         .filter(|t| !t.segments.is_empty())
-        .map(crate::transcription::subtitles::to_vtt);
+        .map(crate::transcription::subtitles::to_vtt)
+        .or_else(|| {
+            crate::transcription::subtitles::read_caption_sidecar(std::path::Path::new(&path))
+        });
     if captions_vtt.is_some() {
         init_body.insert("hasCaptions".into(), true.into());
     }

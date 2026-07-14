@@ -119,6 +119,14 @@ serde_yaml = "0.9"
 # (.recast bundles, media); this holds structured operational state: first the
 # export queue, later the recordings/exports index. See src/db/mod.rs.
 rusqlite = { version = "0.32", features = ["bundled"] }
+# Caption font resolution + text measurement for the export burn-in: read a
+# face's metrics (the libass size correction), its libass match name, and shape a
+# caption line to predict its rendered width (for the exact rounded pill). All
+# PURE RUST (no C toolchain), so they build on every target incl. Intel Mac.
+# `rustybuzz` is a HarfBuzz port, so shaping matches libass's HarfBuzz closely.
+fontdb = "0.23"
+ttf-parser = "0.25"
+rustybuzz = "0.20"
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.58.0", features = [

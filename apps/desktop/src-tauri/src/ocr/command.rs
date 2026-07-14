@@ -9,6 +9,9 @@
 //! reports that the engine is not in this build, exactly as the transcription seam
 //! does for `ggml`, so the command surface stays present and degrades gracefully.
 
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
 use serde::Serialize;
 use tauri::ipc::Channel;
 use tauri::AppHandle;
@@ -17,17 +20,70 @@ use crate::commands::error::AppResult;
 
 use super::frames::{probe_dims, sample_frames, SampleOpts};
 use super::models;
-use super::timeline::{build_timeline, TimelineOpts, VideoTextTimeline};
+use super::timeline::{build_timeline, OcrStats, TimelineOpts, VideoTextTimeline};
 
-/// Coarse progress phases for a read.
+/// Progress of a read, as counted work rather than a spinner.
+///
+/// The units of `done`/`total` are whatever the phase counts: bytes while
+/// downloading, coarse frames while sampling, OCR'd frames while reading. A
+/// `total` of 0 means the phase cannot be counted yet and the UI should stay
+/// indeterminate instead of dividing by it.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OcrProgress {
-    /// `"downloading"` | `"reading"` | `"done"`.
+    /// `"downloading"` | `"sampling"` | `"reading"` | `"done"`.
     pub phase: String,
+    /// Units of this phase completed.
+    pub done: u64,
+    /// Units this phase expects, or 0 when not yet known.
+    pub total: u64,
+    /// The result so far: frames kept while sampling, screen states found while
+    /// reading. Carried so a long read shows what it is producing, not just how
+    /// far along it is.
+    pub found: u64,
 }
 
-/// Read `video_path` into a timeline. `on_phase` receives coarse phase labels.
+impl OcrProgress {
+    fn new(phase: &str, done: u64, total: u64, found: u64) -> Self {
+        Self {
+            phase: phase.to_string(),
+            done,
+            total,
+            found,
+        }
+    }
+}
+
+/// Smallest gap between two progress messages. The sampler ticks per decoded
+/// frame (thousands on a long clip), which would flood the IPC channel and give
+/// the UI nothing a human can read anyway. The final tick of each phase is always
+/// sent regardless, so a bar never freezes short of its total.
+const TICK_INTERVAL: Duration = Duration::from_millis(80);
+
+/// Rate-limits progress messages to `TICK_INTERVAL`, except for ones marked final.
+struct Throttle<F: Fn(OcrProgress)> {
+    sink: F,
+    last: Option<Instant>,
+}
+
+impl<F: Fn(OcrProgress)> Throttle<F> {
+    fn new(sink: F) -> Self {
+        Self { sink, last: None }
+    }
+
+    fn send(&mut self, p: OcrProgress, force: bool) {
+        let now = Instant::now();
+        let due = self
+            .last
+            .is_none_or(|t| now.duration_since(t) >= TICK_INTERVAL);
+        if force || due {
+            self.last = Some(now);
+            (self.sink)(p);
+        }
+    }
+}
+
+/// Read `video_path` into a timeline. `on_progress` receives counted progress.
 /// `previews` attaches a small JPEG per span for review UIs.
 ///
 /// `include_ranges` are the source-time ranges the edit actually keeps (the
@@ -39,17 +95,33 @@ pub async fn run(
     video_path: &str,
     previews: bool,
     include_ranges: Vec<(f64, f64)>,
-    on_phase: impl Fn(&str),
+    on_progress: impl Fn(OcrProgress) + Send + Sync + 'static,
 ) -> Result<VideoTextTimeline, String> {
     let media = std::path::PathBuf::from(video_path);
     if !media.exists() {
         return Err(format!("video not found: {video_path}"));
     }
 
-    on_phase("downloading");
-    let paths = models::ensure_models(app, |_, _| {}).await?;
+    // Only announce a download when there is one to do. Flashing a "downloading"
+    // phase on every run (the models are fetched exactly once, ever) would train
+    // the reader to ignore the phase label.
+    let progress = Arc::new(on_progress);
+    let paths = if models::models_present(app) {
+        models::model_paths(app)?
+    } else {
+        let sink = Arc::clone(&progress);
+        let mut throttle = Throttle::new(move |p| sink(p));
+        throttle.send(OcrProgress::new("downloading", 0, 0, 0), true);
+        models::ensure_models(app, |done, total| {
+            throttle.send(
+                OcrProgress::new("downloading", done, total, 0),
+                total > 0 && done >= total,
+            );
+        })
+        .await?
+    };
 
-    on_phase("reading");
+    let finished = Arc::clone(&progress);
     let det = paths.detection;
     let rec = paths.recognition;
     let timeline = tokio::task::spawn_blocking(move || -> Result<VideoTextTimeline, String> {
@@ -57,36 +129,71 @@ pub async fn run(
 
         // Per-stage timings. OCR dominates by a wide margin, and in a debug build
         // the rten inference is orders of magnitude slower than release, so these
-        // numbers are the first thing to look at when a read feels slow.
-        let t0 = std::time::Instant::now();
+        // numbers are the first thing to look at when a read feels slow. They ride
+        // out on the result, so the review UI can show them too.
+        let sink = Arc::clone(&progress);
+        let mut throttle = Throttle::new(move |p| sink(p));
+
+        let t0 = Instant::now();
         let opts = SampleOpts {
             include_ranges,
             ..Default::default()
         };
-        let frames = sample_frames(&media, &opts)?;
-        let sampled_ms = t0.elapsed().as_millis();
+        let mut scanned = 0u64;
+        let frames = sample_frames(&media, &opts, &mut |tick| {
+            scanned = tick.scanned;
+            throttle.send(
+                OcrProgress::new("sampling", tick.scanned, tick.total, tick.kept),
+                tick.total > 0 && tick.scanned >= tick.total,
+            );
+        })?;
+        let sample_ms = t0.elapsed().as_millis() as u64;
 
-        let t1 = std::time::Instant::now();
+        // Close the sampling bar at whatever it actually walked. The estimate from
+        // the container's duration can undershoot the real frame count, which would
+        // otherwise leave the bar parked at 97%.
+        throttle.send(
+            OcrProgress::new("sampling", scanned, scanned, frames.len() as u64),
+            true,
+        );
+
+        let t1 = Instant::now();
         let engine = build_engine(&det, &rec)?;
-        let load_ms = t1.elapsed().as_millis();
+        let model_load_ms = t1.elapsed().as_millis() as u64;
 
-        let t2 = std::time::Instant::now();
-        let timeline = build_timeline(
+        let t2 = Instant::now();
+        throttle.send(OcrProgress::new("reading", 0, frames.len() as u64, 0), true);
+        let mut timeline = build_timeline(
             &frames,
             duration,
             engine.as_ref(),
             &TimelineOpts { previews },
+            &mut |tick| {
+                throttle.send(
+                    OcrProgress::new("reading", tick.done, tick.total, tick.spans),
+                    tick.done >= tick.total,
+                );
+            },
         )?;
-        let ocr_ms = t2.elapsed().as_millis();
+        let ocr_ms = t2.elapsed().as_millis() as u64;
+
+        timeline.stats = OcrStats {
+            duration_secs: duration,
+            frames_scanned: scanned as u32,
+            sample_ms,
+            model_load_ms,
+            ocr_ms,
+            ..timeline.stats
+        };
 
         let per_frame = if frames.is_empty() {
             0
         } else {
-            ocr_ms / frames.len() as u128
+            ocr_ms / frames.len() as u64
         };
         log::info!(
-            "ocr: {:.1}s video -> {} frames kept in {sampled_ms}ms, models loaded in {load_ms}ms, \
-             OCR {ocr_ms}ms ({per_frame}ms/frame) -> {} spans",
+            "ocr: {:.1}s video -> {scanned} frames scanned, {} kept in {sample_ms}ms, models \
+             loaded in {model_load_ms}ms, OCR {ocr_ms}ms ({per_frame}ms/frame) -> {} spans",
             duration,
             frames.len(),
             timeline.spans.len()
@@ -96,7 +203,14 @@ pub async fn run(
     .await
     .map_err(|e| format!("ocr task join: {e}"))??;
 
-    on_phase("done");
+    // Terminal phase, sent only once the result is in hand, so a consumer's bar and
+    // its summary can never disagree about whether the read finished.
+    finished(OcrProgress::new(
+        "done",
+        timeline.stats.frames_read as u64,
+        timeline.stats.frames_read as u64,
+        timeline.spans.len() as u64,
+    ));
     Ok(timeline)
 }
 
@@ -134,11 +248,21 @@ pub async fn read_video_text(
     on_phase: Channel<OcrProgress>,
 ) -> AppResult<VideoTextTimeline> {
     let ranges = include_ranges.into_iter().map(|r| (r[0], r[1])).collect();
-    let timeline = run(&app, &video_path, previews, ranges, move |phase| {
-        let _ = on_phase.send(OcrProgress {
-            phase: phase.to_string(),
-        });
+    let timeline = run(&app, &video_path, previews, ranges, move |p| {
+        let _ = on_phase.send(p);
     })
     .await?;
     Ok(timeline)
+}
+
+/// Write an already-serialized read to `dest_path` (chosen by the caller via the
+/// save dialog). The caller owns the format: the timeline lives in the frontend as
+/// a plain object, so it serializes there (JSON, or the readable Markdown the review
+/// panel builds) rather than shipping the whole thing back here just to stringify
+/// it. This command only owns the disk write, so it needs no `ocr` feature.
+#[tauri::command]
+pub async fn export_screen_text(body: String, dest_path: String) -> AppResult<()> {
+    tokio::fs::write(&dest_path, body)
+        .await
+        .map_err(|e| crate::commands::error::AppError::msg(format!("write screen text: {e}")))
 }

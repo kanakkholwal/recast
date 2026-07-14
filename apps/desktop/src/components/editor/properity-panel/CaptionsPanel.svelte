@@ -26,10 +26,7 @@
     pickDefaultModelId,
   } from "./captions-panel.logic";
   import { ensureFontLoaded } from "$lib/fonts/font-options";
-  import {
-    resolveCaptionAnimation,
-    type CaptionAnimation,
-  } from "$lib/captions/animation";
+  import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
   import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
   import { toOutputTimeTranscript } from "$lib/services/export";
   import {
@@ -59,8 +56,6 @@
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
   import FontPicker from "./FontPicker.svelte";
   import PanelSection from "./PanelSection.svelte";
 
@@ -248,6 +243,11 @@
     { value: "color", label: "Color" },
     { value: "scale", label: "Size" },
   ];
+  const highlightOptions = [
+    { value: "none", label: "Off" },
+    { value: "active", label: "Active" },
+    { value: "progressive", label: "Progressive" },
+  ];
   const entranceOptions = [
     { value: "none", label: "None" },
     { value: "fade", label: "Fade" },
@@ -292,12 +292,23 @@
     return captionPresets.find((p) => captionStyleMatchesPreset(cs, p.value)) ?? null;
   });
   const activeThemeLabel = $derived(activeTheme?.label ?? "Custom");
+
+  // The transcript line under the playhead, highlighted so you can follow along
+  // as it plays. Deliberately no auto-scroll: yanking the scroll position while
+  // someone is reading is worse than a still list.
+  const activeSegmentId = $derived.by(() => {
+    const t = store.currentTime;
+    const segs = store.transcript?.segments ?? [];
+    let id: string | null = null;
+    for (const s of segs) {
+      if (s.start <= t) id = s.id;
+      else break;
+    }
+    return id;
+  });
 </script>
 
-<div
-  class="flex flex-col gap-4"
-  in:fly={{ y: 8, duration: 260, delay: 40, easing: cubicOut }}
->
+<div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Generate captions"
     hint="Transcription runs on your device. No upload, no account."
@@ -834,6 +845,32 @@
         {/if}
 
         <div class="flex items-center justify-between gap-2">
+          <span class="text-[10px] text-muted-foreground">Highlight</span>
+          <Segmented
+            size="xs"
+            fill={false}
+            aria-label="Spoken-word highlight"
+            value={ca.highlight ?? "none"}
+            options={highlightOptions}
+            onValueChange={(v) =>
+              updateAnimation({ highlight: v as CaptionAnimation["highlight"] })}
+          />
+        </div>
+
+        {#if (ca.highlight ?? "none") === "progressive"}
+          <ColorField
+            label="Unspoken color"
+            value={cs.mutedColor}
+            swatches={CAPTION_SWATCHES}
+            {recents}
+            oncommit={(c) => {
+              store.updateCaptionStyle({ mutedColor: c });
+              rememberColor(c);
+            }}
+          />
+        {/if}
+
+        <div class="flex items-center justify-between gap-2">
           <span class="text-[10px] text-muted-foreground">Active word</span>
           <Segmented
             size="xs"
@@ -942,6 +979,28 @@
             onchange={(next) => store.updateCaptionStyle({ backgroundOpacity: next })}
             formatValue={(v) => `${v}%`}
           />
+
+          <SliderControl
+            label="Corner radius"
+            value={cs.boxRadiusEm}
+            min={0}
+            max={2}
+            step={0.05}
+            unit="em"
+            onchange={(next) => store.updateCaptionStyle({ boxRadiusEm: next })}
+            formatValue={(v) => (v >= 1.2 ? "Pill" : v === 0 ? "Square" : v.toFixed(2))}
+          />
+
+          <SliderControl
+            label="Padding"
+            value={cs.boxPaddingXEm}
+            min={0}
+            max={2}
+            step={0.05}
+            unit="em"
+            onchange={(next) => store.updateCaptionStyle({ boxPaddingXEm: next })}
+            formatValue={(v) => `${v.toFixed(2)}em`}
+          />
         {/if}
 
         <SliderControl
@@ -978,6 +1037,28 @@
           onchange={(next) => store.updateCaptionStyle({ letterSpacing: next })}
           formatValue={(v) => `${v.toFixed(2)}em`}
         />
+
+        <SliderControl
+          label="Line height"
+          value={cs.lineHeight}
+          min={1}
+          max={2}
+          step={0.05}
+          unit=""
+          onchange={(next) => store.updateCaptionStyle({ lineHeight: next })}
+          formatValue={(v) => v.toFixed(2)}
+        />
+
+        <SliderControl
+          label="Wrap width"
+          value={cs.maxCharsPerLine}
+          min={16}
+          max={80}
+          step={1}
+          unit=""
+          onchange={(next) => store.updateCaptionStyle({ maxCharsPerLine: next })}
+          formatValue={(v) => `${v} chars`}
+        />
       </div>
     </PanelSection>
 
@@ -995,17 +1076,31 @@
 
       <div class="flex flex-col gap-0.5">
         {#each store.transcript.segments as seg (seg.id)}
+          {@const isActive = seg.id === activeSegmentId}
           <button
             type="button"
-            class="group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
+            aria-current={isActive ? "true" : undefined}
+            class={cn(
+              "group flex items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors",
+              isActive ? "bg-primary/10" : "hover:bg-muted/60",
+            )}
             onclick={() => store.seek(seg.start)}
           >
             <span
-              class="shrink-0 pt-px font-mono text-[9.5px] tabular-nums text-muted-foreground/70 group-hover:text-foreground"
+              class={cn(
+                "shrink-0 pt-px font-mono text-[9.5px] tabular-nums",
+                isActive
+                  ? "text-primary"
+                  : "text-muted-foreground/70 group-hover:text-foreground",
+              )}
             >
               {clock(seg.start)}
             </span>
-            <span class="min-w-0 text-[11.5px] leading-snug text-foreground">{seg.text}</span>
+            <span
+              class={cn(
+                "min-w-0 text-[11.5px] leading-snug text-foreground",
+                isActive && "font-medium",
+              )}>{seg.text}</span>
           </button>
         {/each}
       </div>

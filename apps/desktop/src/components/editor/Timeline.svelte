@@ -3,10 +3,16 @@
     EditorStore,
     ZoomRegion,
   } from "$lib/stores/editor-store.svelte";
-  import { experimentalStore } from "$lib/stores/experimental.svelte";
-  import { Film, Pencil, Scissors, Target } from "@lucide/svelte";
+  import {
+    AudioLines,
+    Pencil,
+    Scissors,
+    Video,
+    ZoomIn,
+  } from "@lucide/svelte";
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
+  import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
   import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
   import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
@@ -14,13 +20,15 @@
   import TimelineToolbar from "./_components/timeline/TimelineToolbar.svelte";
   import TimelineZoomLane from "./_components/timeline/TimelineZoomLane.svelte";
   import {
+    clampTimelineZoom,
     effectiveFps as effFps,
     formatTimeByMode,
     frameStep as frameStepOf,
     greatestCommonDivisor,
+    MIN_TIMELINE_ZOOM,
     minClipDuration as minClipDurOf,
     quantizeToFrame as quantizeToFrameOf,
-    type TimeMode,
+    steppedZoom,
   } from "./_components/timeline/timeline-helpers";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
   import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
@@ -56,20 +64,21 @@
   const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
   let playbackSpeed = $state(1.0);
 
-  // Lives in the orchestrator so one click flips every timeline label at once.
-  let timeMode = $state<TimeMode>("smpte");
+  // Lives in the store, not here: the transport readout under the video reads it
+  // too, so one setting flips every timecode in the editor at once.
+  const timeMode = $derived(store.timeMode);
 
   // Layer visibility (the toolbar's Layers menu). The clip track is always shown
-  // (the editing spine); its content is thumbnails OR the waveform, never both,
-  // so they can't overlap. Zoom/Markup lanes show/hide independently. Persisted
-  // to localStorage so the choice survives reopening the editor.
-  type ClipContent = "thumbnails" | "waveform";
+  // (the editing spine); the waveform now rides ALONG its bottom edge rather than
+  // replacing the thumbnails, so it's an independent toggle, not a radio. Zoom/
+  // Markup/Cuts lanes show/hide independently. Persisted to localStorage so the
+  // choice survives reopening the editor.
   const VIEW_KEY = "recast.timeline.view";
   function loadView(): {
-    clipContent: ClipContent;
+    waveform: boolean;
     zoom: boolean;
     markup: boolean;
-    silence: boolean;
+    cuts: boolean;
   } {
     if (typeof localStorage !== "undefined") {
       try {
@@ -77,38 +86,38 @@
         if (raw) {
           const v = JSON.parse(raw);
           return {
-            clipContent: v.clipContent === "waveform" ? "waveform" : "thumbnails",
+            // Migrate the old `clipContent: "waveform" | "thumbnails"` radio: anyone
+            // who had chosen the waveform still wants to see it, now as an overlay.
+            waveform:
+              typeof v.waveform === "boolean"
+                ? v.waveform
+                : v.clipContent === "waveform",
             zoom: v.zoom !== false,
             markup: v.markup !== false,
-            silence: v.silence !== false,
+            cuts: v.cuts ?? v.silence ?? true,
           };
         }
       } catch {
         /* fall through to defaults */
       }
     }
-    return { clipContent: "thumbnails", zoom: true, markup: true, silence: true };
+    return { waveform: true, zoom: true, markup: true, cuts: true };
   }
   const _view = loadView();
-  let clipContent = $state<ClipContent>(_view.clipContent);
+  let showAudioLane = $state(_view.waveform);
   let showZoomLane = $state(_view.zoom);
   let showMarkupLane = $state(_view.markup);
-  let showSilenceLane = $state(_view.silence);
-  // The Silence lane only exists when the experimental flag is on; this gates
-  // both the rail header and the lane so the two never disagree.
-  const silenceLaneVisible = $derived(
-    experimentalStore.silenceDetection && showSilenceLane,
-  );
+  let showCutLane = $state(_view.cuts);
   $effect(() => {
     if (typeof localStorage === "undefined") return;
     try {
       localStorage.setItem(
         VIEW_KEY,
         JSON.stringify({
-          clipContent,
+          waveform: showAudioLane,
           zoom: showZoomLane,
           markup: showMarkupLane,
-          silence: showSilenceLane,
+          cuts: showCutLane,
         }),
       );
     } catch {
@@ -196,36 +205,59 @@
   }
 
   function zoomTimeline(dir: number) {
-    store.timelineZoom = Math.max(
-      0.5,
-      Math.min(5, store.timelineZoom + dir * 0.25),
+    store.timelineZoom = steppedZoom(
+      store.timelineZoom,
+      dir,
+      outputDuration,
+      timelineWidth,
     );
   }
 
   // timelineZoom=1 means "duration spans timelineWidth", so fit is just 1.0.
   function zoomToFit() {
-    store.timelineZoom = 1;
+    store.timelineZoom = MIN_TIMELINE_ZOOM;
     requestAnimationFrame(() => {
       if (timelineEl) timelineEl.scrollLeft = 0;
     });
   }
 
-  // Selected region fills ~70% of the viewport (0.7 leaves context on both sides).
+  // The [start, end] of whatever is selected, in original time, or null. Drives
+  // Zoom-to-selection for any timed selection (zoom region, annotation, cut), not
+  // just a focus region. A clip selection has no meaningful frame-to (it is the
+  // spine), so it returns null.
+  function selectionSpan(): { start: number; end: number } | null {
+    const sel = store.selection;
+    if (!sel) return null;
+    if (sel.kind === "zoom") {
+      const r = store.zoomRegions.find((r) => r.id === sel.id);
+      return r ? { start: r.start, end: r.end } : null;
+    }
+    if (sel.kind === "annotation") {
+      const a = store.annotations.find((a) => a.id === sel.id);
+      return a ? { start: a.start, end: a.end } : null;
+    }
+    if (sel.kind === "cut") {
+      const c = store.cuts.find((c) => c.id === sel.id);
+      return c ? { start: c.start, end: c.end } : null;
+    }
+    return null;
+  }
+  const hasFramableSelection = $derived(selectionSpan() !== null);
+
+  // Selection fills ~70% of the viewport (0.7 leaves context on both sides).
   function zoomToSelection() {
     if (!timelineEl || duration <= 0) return;
-    const id = store.selectedZoomRegionId;
-    if (!id) return;
-    const region = store.zoomRegions.find((r) => r.id === id);
-    if (!region) return;
-    const span = Math.max(0.001, region.end - region.start);
-    const target = (duration / span) * 0.7;
-    const nextZoom = Math.max(0.5, Math.min(5, target));
+    const span = selectionSpan();
+    if (!span) return;
+    const width = Math.max(0.001, span.end - span.start);
+    const target = (duration / width) * 0.7;
+    const nextZoom = clampTimelineZoom(target, outputDuration, timelineWidth);
     store.timelineZoom = nextZoom;
     requestAnimationFrame(() => {
       if (!timelineEl || outputDuration <= 0) return;
       const nextPps = (timelineEl.clientWidth * nextZoom) / outputDuration;
-      // Center on the region's midpoint in OUTPUT pixels.
-      const center = (region.start + region.end) * 0.5;
+      // Center on the selection's midpoint in OUTPUT pixels.
+      const center = (span.start + span.end) * 0.5;
       timelineEl.scrollLeft = Math.max(
         0,
         originalToOutput(store.timeMap, center) * nextPps - timelineEl.clientWidth * 0.5,
@@ -281,6 +313,12 @@
   // Canonical axis transforms: every lane positions with `xOf` and resolves pointers with `tOf`.
   const xOf = (t: number) => originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (x: number) => outputToOriginal(store.timeMap, x / pixelsPerSecond);
+  // The playhead reads on the OUTPUT axis, same as the ruler beneath it and the
+  // transport readout above it. Showing `store.currentTime` (original time) here
+  // made the chip disagree with the ruler it sits on the moment a cut existed.
+  const playheadOutput = $derived(
+    originalToOutput(store.timeMap, store.currentTime),
+  );
   const clipLeft = $derived(xOf(store.inPoint));
   const clipRight = $derived(xOf(store.outPoint));
   const clipWidth = $derived(Math.max(clipRight - clipLeft, 0));
@@ -318,13 +356,19 @@
   }
 
   function handleTimelinePointerDown(event: PointerEvent) {
-    // Right/middle button is for the context menu, never seek/razor on it.
+    // Right/middle button is for the context menu, never seek on it.
     if (event.button !== 0) return;
     // Razor mode owns the click: place an anchor / carve a cut, never seek/drag.
     if (razorActive) {
       event.preventDefault();
       razorClickAt(event.clientX);
       return;
+    }
+    // Clicking bare timeline deselects. Cards stop propagation, but clip blocks
+    // deliberately don't (the click has to seek too), so they mark themselves
+    // `data-selectable` and we leave their selection alone.
+    if (!(event.target as HTMLElement).closest("[data-selectable]")) {
+      store.clearSelection();
     }
     isDraggingPlayhead = true;
     (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
@@ -346,19 +390,42 @@
   // second commits `addCut(lo, hi)`. Stays armed for repeated cuts until toggled
   // off or Esc. While armed the cursor is a scissor and a destructive preview
   // band shows the span that will be removed.
-  let razorActive = $state(false);
+  // The tool lives in the store, not here: a tool is a mode of the whole
+  // timeline, and every lane needs to read it to decline the gesture the tool
+  // owns (else a razor click over the Cuts/Zoom lane starts a create-drag
+  // instead of carving). Local state couldn't reach them.
+  const razorActive = $derived(store.timelineTool === "razor");
   let razorAnchor = $state<number | null>(null);
 
   function toggleRazor() {
-    razorActive = !razorActive;
+    store.timelineTool = razorActive ? "select" : "razor";
     razorAnchor = null;
   }
 
   // Any other edit action exits the Cut tool, so the armed state always reflects
   // the last action (clicking Split while Cut is armed switches to Split).
   function disarmRazor() {
-    razorActive = false;
+    store.timelineTool = "select";
     razorAnchor = null;
+  }
+
+  // Esc: cancel a pending anchor first, then disarm. Registered so the route can
+  // exit the tool even when the scroller never held focus.
+  function exitTool() {
+    if (razorAnchor !== null) razorAnchor = null;
+    else disarmRazor();
+  }
+
+  // Jump the playhead to the in/out point (Home/End). Extracted so the route can
+  // drive it without the scroller holding focus.
+  function seekToEdge(which: "in" | "out") {
+    if (duration <= 0) return;
+    const t =
+      which === "in"
+        ? store.inPoint
+        : Math.max(store.inPoint, store.outPoint - frameStep());
+    store.currentTime = t;
+    if (videoEl) videoEl.currentTime = t;
   }
 
   function splitAtPlayhead() {
@@ -432,6 +499,20 @@
     return tileProvider.previewAt(hover.originalSec);
   });
 
+  // Last-resort hover frame: the nearest frame of the coarse Rust strip. The
+  // WebCodecs sprite/tiles are better, but when the decoder yields nothing the
+  // preview used to sit there as an empty grey box. A coarse frame beats none.
+  const hoverStripUrl = $derived.by(() => {
+    if (!hover || hoverCell || hoverUrl) return undefined;
+    const strip = store.thumbnailStrip;
+    if (strip.length === 0 || duration <= 0) return undefined;
+    const i = Math.min(
+      strip.length - 1,
+      Math.max(0, Math.floor((hover.originalSec / duration) * strip.length)),
+    );
+    return strip[i];
+  });
+
   // Snapped end of the live razor span (for the preview band) while armed.
   const razorHoverTime = $derived.by(() => {
     if (!razorActive || !hover) return null;
@@ -470,8 +551,7 @@
     // Razor (Cut) tool: C arms/disarms; Esc cancels a pending anchor, else disarms.
     if (event.key === "Escape" && razorActive) {
       event.preventDefault();
-      if (razorAnchor !== null) razorAnchor = null;
-      else razorActive = false;
+      exitTool();
       return;
     }
     if ((event.key === "c" || event.key === "C") && !mod) {
@@ -544,34 +624,24 @@
     // Home/End jump the playhead to the in/out points (NLE convention).
     if (event.key === "Home") {
       event.preventDefault();
-      const t = store.inPoint;
-      store.currentTime = t;
-      if (videoEl) videoEl.currentTime = t;
+      seekToEdge("in");
     }
     if (event.key === "End") {
       event.preventDefault();
-      const t = Math.max(store.inPoint, store.outPoint - frameStep());
-      store.currentTime = t;
-      if (videoEl) videoEl.currentTime = t;
+      seekToEdge("out");
     }
 
-    // Split the clip at the playhead (NLE razor, "S").
+    // Split the clip at the playhead ("S").
     if (event.key === "s" || event.key === "S") {
       event.preventDefault();
       splitAtPlayhead();
     }
 
-    // Ripple-delete the selected clip (or the one under the playhead); store returns the join to land on a kept frame.
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      disarmRazor();
-      const target = store.selectedClipStart ?? store.currentTime;
-      const joinAt = store.deleteSegmentAt(target);
-      if (joinAt !== null) {
-        store.currentTime = joinAt;
-        if (videoEl) videoEl.currentTime = joinAt;
-      }
-    }
+    // Delete is NOT handled here. It's a document-level command over the current
+    // selection, owned by the editor page: three handlers used to claim it (this
+    // one, the zoom card, the annotation overlay) and resolve against DOM focus
+    // instead of the selection, so it could destroy the object you weren't
+    // looking at, or two objects at once.
 
     // J/K/L transport (see shuttle state above).
     if (event.key === "k" || event.key === "K") {
@@ -615,6 +685,18 @@
     }
   }
 
+  // The zoom ceiling depends on clip length and viewport width, so a persisted
+  // zoom (or a window resize) can land outside the legal range. Pull it back.
+  $effect(() => {
+    if (outputDuration <= 0 || timelineWidth <= 0) return;
+    const legal = clampTimelineZoom(
+      store.timelineZoom,
+      outputDuration,
+      timelineWidth,
+    );
+    if (legal !== store.timelineZoom) store.timelineZoom = legal;
+  });
+
   function handleResize() {
     if (!timelineEl) return;
     timelineWidth = timelineEl.clientWidth;
@@ -634,8 +716,13 @@
       // Anchor in OUTPUT seconds so the point under the cursor stays put across the zoom.
       const anchorOut =
         duration > 0 ? (timelineEl.scrollLeft + anchorX) / pixelsPerSecond : 0;
-      const delta = event.deltaY < 0 ? 0.2 : -0.2;
-      const nextZoom = Math.max(0.5, Math.min(5, store.timelineZoom + delta));
+      // Multiplicative, so one wheel notch covers the same proportion of the
+      // range whether the clip is 10 seconds or 30 minutes long.
+      const nextZoom = clampTimelineZoom(
+        store.timelineZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
+        outputDuration,
+        timelineWidth,
+      );
       if (nextZoom === store.timelineZoom) return;
       store.timelineZoom = nextZoom;
       requestAnimationFrame(() => {
@@ -777,17 +864,30 @@
     handleResize();
     const observer = new ResizeObserver(handleResize);
     if (timelineEl) observer.observe(timelineEl);
-    return () => observer.disconnect();
+    // The route-level keyboard handler drives these so the toolbar's S/C/I/O
+    // keycaps are honest whether or not the scroller holds focus. Unregistered
+    // on unmount, so they no-op while the timeline is collapsed.
+    const offCommands = store.registerTimelineCommands({
+      splitAtPlayhead,
+      toggleRazor,
+      exitTool,
+      trimToPlayhead: setTrimPoint,
+      seekToEdge,
+    });
+    return () => {
+      observer.disconnect();
+      offCommands();
+    };
   });
 </script>
 
 <!-- Track-header chip for the fixed left rail: a square, icon stacked over the
      label, so the rail stays narrow and every row header reads the same. -->
-{#snippet railLabel(Icon: typeof Film, label: string, chipClass: string)}
+{#snippet railLabel(Icon: typeof Video, label: string, iconClass: string)}
   <span
-    class="inline-flex min-h-9 min-w-9 flex-col items-center justify-center gap-0.5 rounded-md px-1 py-1 font-mono text-[7px] font-bold uppercase leading-none tracking-wide {chipClass}"
+    class="inline-flex min-h-9 min-w-9 flex-col items-center justify-center gap-0.5 rounded-md bg-muted/60 px-1 py-1 font-mono text-[7px] font-bold uppercase leading-none tracking-wide text-muted-foreground ring-1 ring-inset ring-border/40"
   >
-    <Icon class="size-3.5" />
+    <Icon class="size-3.5 {iconClass}" />
     {label}
   </span>
 {/snippet}
@@ -804,12 +904,12 @@
     {playbackSpeed}
     speeds={SPEEDS}
     {timeMode}
-    hasSelectedRegion={!!store.selectedZoomRegionId}
+    hasSelectedRegion={hasFramableSelection}
     {razorActive}
-    clipContent={clipContent}
+    {showAudioLane}
     {showZoomLane}
     {showMarkupLane}
-    {showSilenceLane}
+    {showCutLane}
     onSetTrim={setTrimPoint}
     onSplit={splitAtPlayhead}
     onToggleRazor={toggleRazor}
@@ -817,13 +917,13 @@
     onResetTrim={resetTrim}
     onZoomTimeline={zoomTimeline}
     onSelectSpeed={(speed) => (playbackSpeed = speed)}
-    onSetTimeMode={(mode) => (timeMode = mode)}
+    onSetTimeMode={(mode) => (store.timeMode = mode)}
     onZoomToFit={zoomToFit}
     onZoomToSelection={zoomToSelection}
-    onSetClipContent={(c) => (clipContent = c)}
+    onToggleAudioLane={() => (showAudioLane = !showAudioLane)}
     onToggleZoomLane={() => (showZoomLane = !showZoomLane)}
     onToggleMarkupLane={() => (showMarkupLane = !showMarkupLane)}
-    onToggleSilenceLane={() => (showSilenceLane = !showSilenceLane)}
+    onToggleCutLane={() => (showCutLane = !showCutLane)}
   />
 
   <!-- Rail lives OUTSIDE the scroller so lane names never overlap a card at t≈0.
@@ -839,21 +939,26 @@
       <div class="px-1 pb-2 pt-1.5">
         <!-- Headers are centered squares; enable/disable lives in the Layers menu. -->
         <div class="flex h-12 items-center justify-center">
-          {@render railLabel(Film, "Clip", "bg-foreground/10 text-foreground/80")}
+          {@render railLabel(Video, "Clip", "text-foreground/70")}
         </div>
+        {#if showAudioLane}
+          <div class="mt-1.5 flex h-9 items-center justify-center">
+            {@render railLabel(AudioLines, "Audio", "text-lane-audio")}
+          </div>
+        {/if}
+        {#if showCutLane}
+          <div class="mt-1.5 flex min-h-9 items-center justify-center">
+            {@render railLabel(Scissors, "Cuts", "text-lane-cut")}
+          </div>
+        {/if}
         {#if showZoomLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Target, "Zoom", "bg-primary/15 text-primary")}
+            {@render railLabel(ZoomIn, "Zoom", "text-lane-zoom")}
           </div>
         {/if}
         {#if showMarkupLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Pencil, "Markup", "bg-warning/15 text-warning")}
-          </div>
-        {/if}
-        {#if silenceLaneVisible}
-          <div class="mt-1.5 flex min-h-9 items-center justify-center">
-            {@render railLabel(Scissors, "Silence", "bg-destructive/15 text-destructive")}
+            {@render railLabel(Pencil, "Markup", "text-lane-markup")}
           </div>
         {/if}
       </div>
@@ -867,7 +972,7 @@
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={store.currentTime}
-      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden"
+      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
       style={razorActive ? "cursor: none" : ""}
       onpointerdown={handleTimelinePointerDown}
       onpointermove={handleTimelinePointerMove}
@@ -879,7 +984,12 @@
       onkeydown={handleTimelineKeydown}
     >
       <div class="relative min-w-full" style="width: {totalWidth}px;">
-        <TimelineRuler duration={outputDuration} {pixelsPerSecond} />
+        <TimelineRuler
+          duration={outputDuration}
+          {pixelsPerSecond}
+          {timeMode}
+          fps={effectiveFps()}
+        />
 
       <!-- No horizontal padding: lanes must share the x-origin of the ruler and
            playhead (both direct children at x=0), or every tile sits offset from
@@ -895,13 +1005,28 @@
           {clipWidth}
           {thumbnailWidth}
           {timeMode}
-          content={clipContent}
           {clientXToOutput}
           {tileProvider}
           {filmstripVersion}
           viewportLeftPx={Math.max(0, scrollLeft - LANE_PAD)}
           viewportWidthPx={timelineWidth}
         />
+
+        {#if showAudioLane}
+          <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
+        {/if}
+
+        <!-- Cuts sit next to Audio: cutting against the waveform is the common
+             task. The cut lane draws its own faint waveform only when the Audio
+             lane is hidden, so the two are never stacked as a duplicate. -->
+        {#if showCutLane}
+          <TimelineCutLane
+            {store}
+            {pixelsPerSecond}
+            {duration}
+            showWaveform={!showAudioLane}
+          />
+        {/if}
 
         {#if showZoomLane}
           <TimelineZoomLane
@@ -925,17 +1050,14 @@
             onDuplicate={duplicateAnnotation}
           />
         {/if}
-
-        {#if silenceLaneVisible}
-          <TimelineCutLane {store} {pixelsPerSecond} {duration} />
-        {/if}
       </div>
 
       <TimelinePlayhead
-        currentTime={store.currentTime}
-        leftPx={xOf(store.currentTime)}
+        outputTime={playheadOutput}
+        leftPx={playheadOutput * pixelsPerSecond}
         fps={effectiveFps()}
         isDragging={isDraggingPlayhead}
+        isPlaying={store.isPlaying}
         {timeMode}
       />
 
@@ -949,20 +1071,20 @@
           {@const left = Math.min(anchorX, hoverX)}
           {@const w = Math.abs(hoverX - anchorX)}
           <div
-            class="pointer-events-none absolute inset-y-0 z-20 border-x border-destructive/70 bg-destructive/15"
-            style="left: {left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--destructive) 20%, transparent) 5px, color-mix(in srgb, var(--destructive) 20%, transparent) 10px);"
+            class="pointer-events-none absolute inset-y-0 z-20 border-x border-lane-cut/70 bg-lane-cut/15"
+            style="left: {left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 20%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 20%, transparent) 10px);"
           >
             {#if w > 36}
               <span
-                class="absolute left-1/2 top-1 -translate-x-1/2 whitespace-nowrap rounded bg-destructive px-1 py-0.5 font-mono text-[9px] font-bold text-destructive-foreground shadow-sm"
+                class="absolute left-1/2 top-1 -translate-x-1/2 whitespace-nowrap rounded bg-lane-cut px-1 py-0.5 font-mono text-[9px] font-bold text-background shadow-sm"
               >
-                −{Math.abs(endT - razorAnchor).toFixed(2)}s
+                âˆ’{Math.abs(endT - razorAnchor).toFixed(2)}s
               </span>
             {/if}
           </div>
         {/if}
         <div
-          class="pointer-events-none absolute inset-y-0 z-20 w-px bg-destructive"
+          class="pointer-events-none absolute inset-y-0 z-20 w-px bg-lane-cut"
           style="left: {anchorX}px;"
         ></div>
       {/if}
@@ -976,7 +1098,7 @@
      literally reads as a scissor while armed. -->
 {#if razorActive && hover}
   <div
-    class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 text-destructive drop-shadow-md"
+    class="pointer-events-none fixed z-50 -translate-x-1/2 -translate-y-1/2 text-lane-cut drop-shadow-md"
     style="left: {hover.clientX}px; top: {hover.clientY}px;"
   >
     <Scissors class="size-5" />
@@ -985,7 +1107,7 @@
 
 <!-- Hover-scrub preview: fixed so it floats above the timeline without being
      clipped by the scroller's overflow. Only with the WebCodecs filmstrip. -->
-{#if hover && tileProvider && !isDraggingPlayhead && !razorActive}
+{#if hover && !isDraggingPlayhead && !razorActive && (tileProvider || hoverStripUrl)}
   <div
     class="pointer-events-none fixed z-50 flex -translate-x-1/2 -translate-y-full flex-col items-center gap-1"
     style="left: {hover.clientX}px; top: {hover.top - 8}px;"
@@ -1002,6 +1124,13 @@
       {:else if hoverUrl}
         <img
           src={hoverUrl}
+          alt=""
+          class="block h-16 w-auto object-cover"
+          draggable="false"
+        />
+      {:else if hoverStripUrl}
+        <img
+          src={hoverStripUrl}
           alt=""
           class="block h-16 w-auto object-cover"
           draggable="false"

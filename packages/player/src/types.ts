@@ -1,3 +1,5 @@
+import type { CaptionStyle } from "@recast/captions";
+
 export type RecastPlayerTrack = {
 	src: string;
 	kind: "subtitles" | "captions" | "chapters" | "descriptions" | "metadata";
@@ -123,6 +125,13 @@ export type RecastPlayerProps = {
 	poster?: string | null;
 	thumbnails?: string | null;
 	tracks?: RecastPlayerTrack[];
+	/**
+	 * Caption look for the styled overlay. Merged over the Loom default from
+	 * @recast/captions. When a caption/subtitles `track` carries WebVTT word
+	 * timestamps, the overlay highlights word-by-word; otherwise it shows the
+	 * whole cue. Overrides the browser's default cue boxes.
+	 */
+	captionStyle?: Partial<CaptionStyle>;
 	title?: string;
 	autoplay?: boolean;
 	preload?: "none" | "metadata" | "auto";

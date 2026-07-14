@@ -1,22 +1,26 @@
 <script lang="ts">
-  // Live caption overlay over the preview. Reads the generated transcript +
-  // style from the store and renders the segment active at the playhead. When
-  // the style carries an animation it renders word-by-word (chunking + active-
-  // word emphasis + entrance); otherwise it renders the whole line, unchanged.
-  // Sits inside `previewRectEl`, so `cqh` font sizing tracks the preview size.
+  // Live caption overlay over the preview. This is the ADAPTER: it reads the
+  // transcript + style from the store, maps the playhead back to source time,
+  // places the caption relative to the video rect, and picks the chunk active at
+  // the playhead. The LOOK (pill, per-word colour, entrance) is rendered by the
+  // shared <CaptionBox> from @recast/captions, so the editor and the web player
+  // render captions identically. Sits inside `previewRectEl`, so `cqh` font
+  // sizing tracks the preview size.
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { ensureFontLoaded } from "$lib/fonts/font-options";
   import { outputToOriginal } from "$lib/timeline/time-map";
   import { computeCanvasGeometry } from "$lib/canvas-geometry";
-  import { captionHeightFrac, captionTopFrac } from "$lib/captions/layout";
   import {
+    captionHeightFrac,
+    captionTopFrac,
     activeChunkIndex,
     activeWordIndex,
     chunkWords,
     isStaticAnimation,
     resolveCaptionAnimation,
-  } from "$lib/captions/animation";
-  import { withAlpha } from "./annotation-draw.logic";
+    spokenWordCount,
+  } from "@recast/captions";
+  import CaptionBox from "@recast/captions/box";
 
   let { store }: { store: EditorStore } = $props();
 
@@ -40,16 +44,29 @@
   const anim = $derived(resolveCaptionAnimation(store.captionStyle.animation));
   const animated = $derived(!!active && active.words.length > 0 && !isStaticAnimation(anim));
 
-  // The chunk + active word to show, or null when rendering the static line.
+  // The chunk to show plus its progress. For a static line the whole segment is
+  // one chunk with every word "spoken" (so nothing renders muted). `key`
+  // re-mounts <CaptionBox> when the chunk changes, replaying the entrance.
   const view = $derived.by(() => {
-    if (!active || !animated) return null;
+    if (!active) return null;
+    if (active.words.length === 0) {
+      // Defensive: a segment with text but no per-word timing renders as one word.
+      const w = [{ start: active.start, end: active.end, text: active.text }];
+      return { key: active.id, words: w, spoken: 1, wi: -1 };
+    }
+    if (!animated) {
+      return { key: active.id, words: active.words, spoken: active.words.length, wi: -1 };
+    }
     const runs = chunkWords(active.words, anim);
     const ci = activeChunkIndex(runs, nowOrig);
     const chunk = runs[ci];
     if (!chunk) return null;
-    const wi = activeWordIndex(chunk.words, nowOrig, anim.holdGaps);
-    // `key` re-mounts the line when the chunk changes, re-running the entrance.
-    return { key: `${active.id}:${ci}`, words: chunk.words, wi };
+    return {
+      key: `${active.id}:${ci}`,
+      words: chunk.words,
+      spoken: spokenWordCount(chunk.words, nowOrig),
+      wi: activeWordIndex(chunk.words, nowOrig, anim.holdGaps),
+    };
   });
 
   // The video rect inside the output canvas (with padding + aspect bars around
@@ -68,36 +85,16 @@
     const vBottom = g ? (g.videoY + g.videoH) / g.canvasH : 1;
     const cap = captionHeightFrac(s.fontSizePct, s.maxLines);
     const topFrac = captionTopFrac(s.position, s.offsetPct, cap, { top: vTop, bottom: vBottom });
-    // `topFrac === null` → centre vertically on the video.
+    // `topFrac === null` -> centre vertically on the video.
     const vertical =
       topFrac === null
         ? `top: ${((vTop + vBottom) / 2) * 100}%; transform: translateY(-50%);`
         : `top: ${topFrac * 100}%;`;
     return { leftPct: vLeft * 100, widthPct: (vRight - vLeft) * 100, vertical };
   });
-
-  // Shared text styles for the line element (static and animated alike).
-  const textStyle = $derived.by(() => {
-    const s = store.captionStyle;
-    return [
-      `color: ${s.color}`,
-      `font-size: ${s.fontSizePct}cqh`,
-      `font-family: ${s.fontFamily}`,
-      `font-weight: ${s.fontWeight}`,
-      `letter-spacing: ${s.letterSpacing}em`,
-      `text-transform: ${s.uppercase ? "uppercase" : "none"}`,
-      s.outlineWidth > 0
-        ? `-webkit-text-stroke: ${s.outlineWidth / 100}em ${s.outlineColor}; paint-order: stroke fill`
-        : "",
-      s.background === "box" ? `background: ${withAlpha(s.backgroundColor, s.backgroundOpacity / 100)}` : "",
-      `--lines: ${s.maxLines}`,
-    ]
-      .filter(Boolean)
-      .join("; ");
-  });
 </script>
 
-{#if active}
+{#if active && view}
   {@const s = store.captionStyle}
   <div class="caption-layer pointer-events-none absolute inset-0">
     <div
@@ -107,127 +104,24 @@
       class:justify-end={s.align === "right"}
       style="left: {box.leftPct}%; width: {box.widthPct}%; {box.vertical}"
     >
-    {#if animated && view}
       {#key view.key}
-        <span
-          class="caption-text leading-tight entrance-{anim.entrance}"
-          class:text-left={s.align === "left"}
-          class:text-center={s.align === "center"}
-          class:text-right={s.align === "right"}
-          class:cap-soft={s.background === "soft"}
-          class:cap-box={s.background === "box"}
-          style="{textStyle}; --entrance-ms: {anim.entranceMs}ms;"
-        >
-          {#each view.words as word, i (i)}
-            {#if i > 0}{" "}{/if}<span
-              class="word"
-              class:em-scale={anim.emphasis === "scale" && i === view.wi && view.words.length > 1}
-              style={anim.emphasis === "color" && i === view.wi
-                ? `color: ${anim.emphasisColor}`
-                : ""}>{word.text}</span
-            >
-          {/each}
-        </span>
+        <CaptionBox
+          words={view.words}
+          style={s}
+          {anim}
+          spokenCount={view.spoken}
+          activeIndex={view.wi}
+          fontSize="{s.fontSizePct}cqh"
+        />
       {/key}
-    {:else}
-      <span
-        class="caption-text leading-tight"
-        class:text-left={s.align === "left"}
-        class:text-center={s.align === "center"}
-        class:text-right={s.align === "right"}
-        class:cap-soft={s.background === "soft"}
-        class:cap-box={s.background === "box"}
-        style={textStyle}
-      >
-        {active.text}
-      </span>
-    {/if}
     </div>
   </div>
 {/if}
 
 <style>
-  /* Establish a size container so the text's `cqh` font scales with the
+  /* Establish a size container so the caption's `cqh` font scales with the
      preview rectangle (which this layer fills). */
   .caption-layer {
     container-type: size;
-  }
-  .caption-text {
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: var(--lines, 2);
-    line-clamp: var(--lines, 2);
-    overflow: hidden;
-    max-width: 92%;
-    text-wrap: balance;
-  }
-  .cap-soft {
-    text-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.9),
-      0 0 6px rgba(0, 0, 0, 0.7);
-  }
-  .cap-box {
-    padding: 0.15em 0.55em;
-    border-radius: 0.28em;
-  }
-  /* Active-word emphasis: a quick, eased transition so the highlight tracks
-     speech without snapping. Colour emphasis is applied inline (dynamic hex). */
-  .word {
-    transition:
-      color 120ms ease,
-      transform 120ms ease;
-  }
-  .em-scale {
-    display: inline-block;
-    transform: scale(1.14);
-  }
-  /* Per-chunk entrance: the keyed line re-mounts on chunk change, re-running
-     these. `none` has no rule (renders instantly). */
-  .entrance-fade {
-    animation: cap-fade var(--entrance-ms, 220ms) ease-out both;
-  }
-  .entrance-pop {
-    animation: cap-pop var(--entrance-ms, 220ms) cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
-  }
-  .entrance-slide {
-    animation: cap-slide var(--entrance-ms, 220ms) ease-out both;
-  }
-  @keyframes cap-fade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-  @keyframes cap-pop {
-    from {
-      opacity: 0;
-      transform: scale(0.6);
-    }
-    to {
-      opacity: 1;
-      transform: scale(1);
-    }
-  }
-  @keyframes cap-slide {
-    from {
-      opacity: 0;
-      transform: translateY(0.35em);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .entrance-fade,
-    .entrance-pop,
-    .entrance-slide {
-      animation: none;
-    }
-    .word {
-      transition: none;
-    }
   }
 </style>

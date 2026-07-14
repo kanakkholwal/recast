@@ -15,7 +15,6 @@
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
 	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-	import { experimentalStore } from "$lib/stores/experimental.svelte";
 	import { analytics } from "$lib/analytics/client";
 	import {
 		buildPressEvents,
@@ -114,7 +113,8 @@
 	let bgTexReady = false;
 	let lastBgKey = "";
 
-	// WebCodecs preview engine (behind the `webcodecsPreview` experimental flag).
+	// WebCodecs preview engine (always on; auto-falls back to the <video> element
+	// when the WebView can't decode the source).
 	// When active, the composite samples a frame WE decode, not the <video>
 	// element's pixels, so jumping over a cut never waits on the native seek.
 	// The <video> element still drives the clock and audio sync (hybrid). Not
@@ -143,8 +143,6 @@
 	// Uniform locations
 	const uniforms: Record<string, WebGLUniformLocation | null> = {};
 
-	// rVFC handle for playback redraw
-	let rvfcHandle: number | null = null;
 	// RAF handle for coalescing reactive redraws
 	let rafHandle: number | null = null;
 
@@ -635,7 +633,7 @@
 		// (output→original feeds frame/cursor/zoom); the <video>/audio transport
 		// follows but is never read for the picture, so its seek stalls can't
 		// freeze playback. Legacy path: the <video> currentTime is the clock.
-		const usingPicClock = experimentalStore.webcodecsPreview && wcReady;
+		const usingPicClock = wcReady;
 		let playbackTime: number;
 		if (usingPicClock && store.isPlaying) {
 			// External scrub while playing: the timeline/controls set
@@ -707,7 +705,7 @@
 		// selector holds (never steps back) until that GOP decodes. Critically we
 		// must NOT decode through the removed region, which would flood the decoder.
 		if (
-			!(experimentalStore.webcodecsPreview && wcReady) &&
+			!wcReady &&
 			videoEl &&
 			store.isPlaying &&
 			activeCuts.length > 0
@@ -782,7 +780,7 @@
 		// to the <video> element while the source is still demuxing or if a frame
 		// isn't ready yet, so the preview is never blank.
 		let haveFrame = false;
-		if (experimentalStore.webcodecsPreview && wcSource && wcReady) {
+		if (wcSource && wcReady) {
 			// Floor = start of the current kept segment = the end of the most recent
 			// cut at or before the playhead (0 if none). Frames before it belong to
 			// a prior segment (inside the removed range) and must not be shown, or
@@ -1067,43 +1065,23 @@
 		});
 	}
 
-	//  Playback frame loop (rVFC) 
-	type RVFCMetadata = { mediaTime: number; presentedFrames: number };
-	type VideoElWithRVFC = HTMLVideoElement & {
-		requestVideoFrameCallback?: (cb: (now: number, metadata: RVFCMetadata) => void) => number;
-		cancelVideoFrameCallback?: (handle: number) => void;
-	};
-
-	// rAF handle for the WebCodecs playback loop (see startVideoFrameLoop).
+	//  Playback frame loop (rAF)
+	// rAF handle for the preview playback loop (see startVideoFrameLoop).
 	let wcRafHandle: number | null = null;
 
 	function startVideoFrameLoop() {
-		if (experimentalStore.webcodecsPreview) {
-			// WebCodecs path: drive the loop with rAF, NOT the <video> element's
-			// requestVideoFrameCallback. rVFC fires only when the element presents
-			// a new frame, which STALLS during the seek we issue at a cut, the
-			// very moment we need to keep painting. The clock is still
-			// videoEl.currentTime, which updates continuously during play and
-			// jumps instantly when we set it at the boundary, so an rAF loop
-			// reading it stays smooth across the cut.
-			if (wcRafHandle !== null) return;
-			const loop = () => {
-				draw();
-				wcRafHandle = requestAnimationFrame(loop);
-			};
-			wcRafHandle = requestAnimationFrame(loop);
-			return;
-		}
-		const v = videoEl as VideoElWithRVFC | null;
-		if (!v || typeof v.requestVideoFrameCallback !== "function") {
-			// Fallback: drive via RAF whenever the video advances
-			return;
-		}
-		const tick = (_now: number, _meta: RVFCMetadata) => {
+		// Drive the loop with rAF, not the <video> element's requestVideoFrameCallback:
+		// rVFC fires only when the element presents a new frame, which STALLS during
+		// the seek we issue at a cut, the very moment we must keep painting. draw()
+		// reads the master clock (the WebCodecs picture clock when active, else
+		// videoEl.currentTime), so an rAF loop stays smooth across cuts on both the
+		// WebCodecs path and the <video> fallback.
+		if (wcRafHandle !== null) return;
+		const loop = () => {
 			draw();
-			rvfcHandle = v.requestVideoFrameCallback!(tick);
+			wcRafHandle = requestAnimationFrame(loop);
 		};
-		rvfcHandle = v.requestVideoFrameCallback(tick);
+		wcRafHandle = requestAnimationFrame(loop);
 	}
 
 	function stopVideoFrameLoop() {
@@ -1111,12 +1089,6 @@
 			cancelAnimationFrame(wcRafHandle);
 			wcRafHandle = null;
 		}
-		if (rvfcHandle === null) return;
-		const v = videoEl as VideoElWithRVFC | null;
-		if (v && typeof v.cancelVideoFrameCallback === "function") {
-			v.cancelVideoFrameCallback(rvfcHandle);
-		}
-		rvfcHandle = null;
 	}
 
 	/**
@@ -1177,16 +1149,14 @@
 		}
 	});
 
-	// WebCodecs frame source (re)create when the media src changes, or when the
-	// `webcodecsPreview` experiment is toggled. Owns its own worker + decoder;
-	// disposed and rebuilt per source. A demux/codec failure leaves wcSource null
-	// so draw() falls back to the <video> element.
+	// WebCodecs frame source (re)created when the media src changes. Owns its own
+	// worker + decoder; disposed and rebuilt per source. A demux/codec failure (or
+	// a WebView without WebCodecs) leaves wcSource null so draw() falls back to the
+	// <video> element automatically.
 	$effect(() => {
 		const src = videoSrc;
-		// Experiment off (or no src): tear down any live engine and fall back to
-		// the <video> path. Reading the flag here makes this effect re-run when the
-		// user flips it in Settings, so the engine swaps without a reload.
-		if (!experimentalStore.webcodecsPreview || !src) {
+		// No src: tear down any live engine and fall back to the <video> path.
+		if (!src) {
 			if (wcSource) {
 				wcSource.dispose();
 				wcSource = null;
@@ -1311,7 +1281,7 @@
 			// `!picClock.playing` guard stops those re-runs from re-seeding the clock
 			// to the (lagging) <video> time mid-playback, which jumped it BACKWARD
 			// and forced the decoder into a reset-thrash (the ~8 fps bug).
-			if (experimentalStore.webcodecsPreview && !picClock.playing) {
+			if (!picClock.playing) {
 				// Capture the end state before setDuration re-clamps the time.
 				const wasAtEnd = picClock.atEnd;
 				// Duration = output (post-cut) length of the kept region, so the
@@ -1343,7 +1313,7 @@
 		// While PAUSED, a scrub/frame-step moved the transport, so realign the
 		// picture clock to it. During play the clock is the master, so ignore the
 		// `seeked` events our own drift-correction triggers.
-		if (experimentalStore.webcodecsPreview && !store.isPlaying && videoEl) {
+		if (!store.isPlaying && videoEl) {
 			picClock.seek(originalToOutput(store.timeMap, videoEl.currentTime));
 		}
 		requestRedraw();

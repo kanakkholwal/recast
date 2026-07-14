@@ -8,7 +8,6 @@ import { PersistedState } from "@recast/ui/persisted-state";
 
 export type ExperimentalFlag =
 	| "silenceDetection"
-	| "webcodecsPreview"
 	| "selfHosting"
 	| "remoteTranscription";
 
@@ -26,12 +25,6 @@ export const FLAG_META: FlagMeta[] = [
 			"Find quiet stretches with no cursor movement and skip them on playback and export.",
 	},
 	{
-		key: "webcodecsPreview",
-		label: "WebCodecs preview engine",
-		description:
-			"Smoother editor playback across cuts and splits. Falls back to the standard player where it isn't supported.",
-	},
-	{
 		key: "selfHosting",
 		label: "Self-hosting server endpoint",
 		description:
@@ -47,7 +40,6 @@ export const FLAG_META: FlagMeta[] = [
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
-	webcodecsPreview: true,
 	selfHosting: false,
 	remoteTranscription: false,
 };
@@ -63,9 +55,6 @@ function createExperimentalStore() {
 	return {
 		get silenceDetection() {
 			return flags.current.silenceDetection;
-		},
-		get webcodecsPreview() {
-			return flags.current.webcodecsPreview;
 		},
 		isEnabled(key: ExperimentalFlag): boolean {
 			return flags.current[key];

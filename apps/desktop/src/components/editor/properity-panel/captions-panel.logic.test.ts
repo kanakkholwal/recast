@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { CaptionModelInfo } from "$lib/ipc";
+import { CAPTION_PRESETS, type CaptionStyle } from "@recast/captions";
+import type { CaptionPresetValue } from "$lib/registry/types";
 import {
+	captionStyleMatchesPreset,
 	downloadProgressPct,
 	groupModelsByFamily,
 	langLabel,
@@ -101,5 +104,36 @@ describe("downloadProgressPct", () => {
 		expect(downloadProgressPct(50, 100)).toBe(50);
 		expect(downloadProgressPct(200, 100)).toBe(100);
 		expect(downloadProgressPct(10, 0)).toBe(0);
+	});
+});
+
+describe("captionStyleMatchesPreset", () => {
+	const loom = CAPTION_PRESETS[0];
+	const cs = (): CaptionStyle => ({ enabled: true, ...loom.style });
+	const val = loom.style as CaptionPresetValue;
+
+	it("matches a style built straight from the preset", () => {
+		expect(captionStyleMatchesPreset(cs(), val)).toBe(true);
+	});
+
+	it("does NOT match when only the highlight mode differs", () => {
+		const tweaked: CaptionStyle = {
+			...cs(),
+			animation: { ...loom.style.animation!, highlight: "active" },
+		};
+		expect(captionStyleMatchesPreset(tweaked, val)).toBe(false);
+	});
+
+	it("does NOT match when only a pill field differs", () => {
+		expect(captionStyleMatchesPreset({ ...cs(), boxRadiusEm: 0.1 }, val)).toBe(false);
+		expect(captionStyleMatchesPreset({ ...cs(), mutedColor: "#123456" }, val)).toBe(false);
+	});
+
+	it("treats an absent animation as its resolved default on both sides", () => {
+		// A preset with no animation vs a style with no animation still matches
+		// (both resolve identically), so the readout does not falsely say Custom.
+		const plainVal = { ...val, animation: undefined } as CaptionPresetValue;
+		const plainCs: CaptionStyle = { ...cs(), animation: undefined };
+		expect(captionStyleMatchesPreset(plainCs, plainVal)).toBe(true);
 	});
 });

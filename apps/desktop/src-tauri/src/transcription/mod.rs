@@ -22,6 +22,7 @@ mod models;
 mod packs;
 pub(crate) mod remote;
 pub(crate) mod subtitles;
+pub(crate) mod text_measure;
 mod words;
 
 use serde::{Deserialize, Serialize};
@@ -75,18 +76,25 @@ pub struct CaptionAnimation {
     pub chunk_size: u32,
     pub emphasis: String, // "none" | "color" | "scale"
     pub emphasis_color: String,
+    /// "none" | "active" | "progressive". Absent in a project saved before this
+    /// field existed -> resolves to "active" (the legacy per-word behaviour),
+    /// matching `resolveCaptionAnimation` in @recast/captions. See `highlight()`.
+    #[serde(default)]
+    pub highlight: Option<String>,
     pub entrance: String, // "none" | "fade" | "pop" | "slide"
     pub entrance_ms: f64,
     pub hold_gaps: bool,
 }
 
 impl Default for CaptionAnimation {
+    /// Mirrors `DEFAULT_CAPTION_ANIMATION` in @recast/captions (a static line).
     fn default() -> Self {
         Self {
             chunk: "line".into(),
             chunk_size: 3,
             emphasis: "none".into(),
             emphasis_color: "#facc15".into(),
+            highlight: Some("none".into()),
             entrance: "none".into(),
             entrance_ms: 220.0,
             hold_gaps: true,
@@ -96,9 +104,17 @@ impl Default for CaptionAnimation {
 
 impl CaptionAnimation {
     /// True when the spec has no visible effect — the generator can take the
-    /// static (one Dialogue per line) path.
+    /// static (one Dialogue per line) path. Mirrors `isStaticAnimation`.
     pub fn is_static(&self) -> bool {
-        self.chunk == "line" && self.emphasis == "none" && self.entrance == "none"
+        self.chunk == "line"
+            && self.emphasis == "none"
+            && self.highlight() == "none"
+            && self.entrance == "none"
+    }
+
+    /// Resolved highlight mode. Absent (old projects) -> "active".
+    pub fn highlight(&self) -> &str {
+        self.highlight.as_deref().unwrap_or("active")
     }
 }
 
@@ -116,39 +132,91 @@ pub struct CaptionStyle {
     pub align: String,
     pub offset_pct: f64,
     pub color: String,
+    /// Unspoken-word colour for progressive highlight. Defaulted so a project
+    /// saved before it existed still deserializes.
+    #[serde(default = "default_muted_color")]
+    pub muted_color: String,
     pub uppercase: bool,
     pub letter_spacing: f64,
     pub background: String,
     pub background_color: String,
     pub background_opacity: f64,
+    /// Pill padding / radius (em of font size) + line height. Defaulted for
+    /// back-compat with pre-pill projects.
+    #[serde(default = "default_box_padding_x")]
+    pub box_padding_x_em: f64,
+    #[serde(default = "default_box_padding_y")]
+    pub box_padding_y_em: f64,
+    #[serde(default = "default_box_radius")]
+    pub box_radius_em: f64,
+    #[serde(default = "default_line_height")]
+    pub line_height: f64,
     pub outline_width: f64,
     pub outline_color: String,
     pub max_lines: u32,
+    #[serde(default = "default_max_chars_per_line")]
+    pub max_chars_per_line: u32,
     /// Word-by-word animation; `None` (or absent in JSON) = static.
     #[serde(default)]
     pub animation: Option<CaptionAnimation>,
 }
 
+fn default_muted_color() -> String {
+    "#a1a1aa".into()
+}
+fn default_box_padding_x() -> f64 {
+    0.7
+}
+fn default_box_padding_y() -> f64 {
+    0.32
+}
+fn default_box_radius() -> f64 {
+    0.6
+}
+fn default_line_height() -> f64 {
+    1.35
+}
+fn default_max_chars_per_line() -> u32 {
+    42
+}
+
 impl Default for CaptionStyle {
+    /// Mirrors `DEFAULT_CAPTION_STYLE` in @recast/captions (the Loom preset).
+    /// Keep in sync: there is no shared source across the TS/Rust boundary.
     fn default() -> Self {
         Self {
             enabled: true,
-            font_family: "system-ui, sans-serif".into(),
-            font_weight: 700,
-            font_size_pct: 5.0,
+            font_family: "'Inter', sans-serif".into(),
+            font_weight: 600,
+            font_size_pct: 3.8,
             position: "bottom".into(),
             align: "center".into(),
-            offset_pct: 6.0,
+            offset_pct: 8.0,
             color: "#ffffff".into(),
+            muted_color: default_muted_color(),
             uppercase: false,
             letter_spacing: 0.0,
-            background: "soft".into(),
-            background_color: "#000000".into(),
-            background_opacity: 65.0,
+            background: "box".into(),
+            background_color: "#0b0b12".into(),
+            background_opacity: 78.0,
+            box_padding_x_em: default_box_padding_x(),
+            box_padding_y_em: default_box_padding_y(),
+            box_radius_em: default_box_radius(),
+            line_height: default_line_height(),
             outline_width: 0.0,
-            outline_color: "#000000".into(),
+            outline_color: "#0a0a0a".into(),
             max_lines: 2,
-            animation: None,
+            max_chars_per_line: default_max_chars_per_line(),
+            animation: Some(CaptionAnimation {
+                chunk: "phrase".into(),
+                chunk_size: 6,
+                emphasis: "none".into(),
+                emphasis_color: "#ffffff".into(),
+                highlight: Some("progressive".into()),
+                entrance: "slide".into(),
+                entrance_ms: 125.0,
+                hold_gaps: true,
+            }),
         }
     }
 }
@@ -558,7 +626,7 @@ pub async fn export_captions(
 
 #[cfg(test)]
 mod tests {
-    use super::CaptionAnimation;
+    use super::{CaptionAnimation, CaptionStyle};
 
     #[test]
     fn default_animation_is_static() {
@@ -586,5 +654,30 @@ mod tests {
             ..Default::default()
         };
         assert!(!with_entrance.is_static());
+    }
+
+    #[test]
+    fn highlight_resolves_absent_to_active() {
+        // A pre-highlight project (field absent) must keep the legacy per-word
+        // behaviour, so `highlight()` returns "active"; a fresh default is static.
+        let legacy = CaptionAnimation {
+            highlight: None,
+            ..Default::default()
+        };
+        assert_eq!(legacy.highlight(), "active");
+        assert_eq!(CaptionAnimation::default().highlight(), "none");
+    }
+
+    #[test]
+    fn caption_style_default_mirrors_loom_preset() {
+        // Guards B1 (Rust/TS default drift). These must equal DEFAULT_CAPTION_STYLE
+        // in @recast/captions (the Loom preset). Update both together.
+        let d = CaptionStyle::default();
+        assert_eq!(d.font_weight, 600);
+        assert_eq!(d.font_size_pct, 3.8);
+        assert_eq!(d.background, "box");
+        assert_eq!(d.muted_color, "#a1a1aa");
+        assert_eq!(d.max_chars_per_line, 42);
+        assert_eq!(d.animation.as_ref().unwrap().highlight(), "progressive");
     }
 }

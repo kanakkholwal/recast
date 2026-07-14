@@ -13,6 +13,3 @@
  * `apps/desktop/docs/camera-recording-todo.md`.
  */
 export const CAMERA_OVERLAY_UI_ENABLED = false;
-
-// The WebCodecs preview toggle now lives in the experimental-features store
-// (`experimentalStore.webcodecsPreview`); see `$lib/stores/experimental.svelte`.

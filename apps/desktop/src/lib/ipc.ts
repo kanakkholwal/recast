@@ -4,7 +4,7 @@
  */
 
 import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
-import type { CaptionAnimation } from "$lib/captions/animation";
+import type { CaptionAnimation } from "@recast/captions";
 // Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
 // imports value bindings from here).
 import type { RecordingProfile } from "$lib/profiles";
@@ -451,6 +451,13 @@ export function listRecasts(): Promise<RecordingEntry[]> {
 
 export function listExports(): Promise<RecordingEntry[]> {
 	return invoke<RecordingEntry[]>("list_exports");
+}
+
+/** WebVTT for the caption sidecar next to `mediaPath` (`foo.mp4` → `foo.vtt`/
+ *  `foo.srt`), or null when neither exists. Lets the player show a file's
+ *  captions with no loaded project. */
+export function captionSidecarVtt(mediaPath: string): Promise<string | null> {
+	return invoke<string | null>("caption_sidecar_vtt", { mediaPath });
 }
 
 // Recast Cloud commands
@@ -1039,20 +1046,52 @@ export interface ScreenStateSpan {
 	preview?: string | null;
 }
 
+/** Counters and per-stage timings for one read, so a human reviewing the output can
+ *  see the work behind it rather than being handed spans with no provenance. */
+export interface OcrStats {
+	/** Video length in seconds, per ffprobe. */
+	durationSecs: number;
+	/** Coarse frames the decode pass walked. */
+	framesScanned: number;
+	/** Frames that survived the change gate and were actually OCR'd. */
+	framesRead: number;
+	/** Total recognized elements across every span. */
+	elements: number;
+	/** Decode + change-gate pass. */
+	sampleMs: number;
+	/** One-time model load. */
+	modelLoadMs: number;
+	/** The OCR pass itself, which dominates the rest by a wide margin. */
+	ocrMs: number;
+}
+
 export interface VideoTextTimeline {
 	engine: string;
 	spans: ScreenStateSpan[];
+	stats: OcrStats;
 }
 
-/** Coarse phase of an OCR run: "downloading" | "reading" | "done". */
+/** Phase of an OCR run: "downloading" | "sampling" | "reading" | "done". */
+export type OcrPhase = "downloading" | "sampling" | "reading" | "done";
+
+/**
+ * Counted progress of a read. The units of `done`/`total` are whatever the phase
+ * counts: bytes while downloading, coarse frames while sampling, OCR'd frames while
+ * reading. A `total` of 0 means the phase cannot be counted yet, so show an
+ * indeterminate bar rather than dividing by it.
+ */
 export interface OcrProgress {
-	phase: string;
+	phase: OcrPhase;
+	done: number;
+	total: number;
+	/** The result so far: frames kept while sampling, screen states found while reading. */
+	found: number;
 }
 
 /**
  * Read a recording into a screen-state timeline. `previews` attaches a small JPEG
  * per span for review UIs; leave it off for machine consumers. The models are
- * fetched on first use, which is what the "downloading" phase reports.
+ * fetched on first use, which is the only run that reports a "downloading" phase.
  *
  * `includeRanges` are `[start, end]` pairs in ORIGINAL-recording seconds naming
  * the footage the edit actually keeps (the segments left after trim and cuts).
@@ -1074,6 +1113,13 @@ export function readVideoText(args: {
 		includeRanges: args.includeRanges ?? [],
 		onPhase,
 	});
+}
+
+/** Write an already-serialized read (JSON, or the review panel's readable Markdown)
+ *  to `destPath`. The timeline lives here as an object, so it serializes on this
+ *  side; the backend only owns the disk write. */
+export function exportScreenText(body: string, destPath: string): Promise<void> {
+	return invoke<void>("export_screen_text", { body, destPath });
 }
 
 /** True when at least one given media file actually carries an audio stream
@@ -1268,6 +1314,14 @@ export interface ExtCaptionPresetContribution {
 	outlineWidth: number;
 	outlineColor: string;
 	maxLines: number;
+	// New pill/highlight fields, optional so packs authored before them still
+	// load (the registry mapping fills defaults from DEFAULT_CAPTION_STYLE).
+	mutedColor?: string;
+	boxPaddingXEm?: number;
+	boxPaddingYEm?: number;
+	boxRadiusEm?: number;
+	lineHeight?: number;
+	maxCharsPerLine?: number;
 	/** Optional word-by-word animation. */
 	animation?: CaptionAnimation;
 }

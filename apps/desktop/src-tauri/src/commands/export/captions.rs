@@ -72,7 +72,8 @@ pub(crate) async fn append_caption_burn_in(
     // fallback. System/generic faces are skipped (libass resolves them); a fetch
     // failure degrades to the fallback, never blocks export.
     let family = crate::transcription::subtitles::first_family(&style.font_family);
-    let fontsdir: Option<String> = if crate::transcription::subtitles::is_system_family(&family) {
+    let is_system = crate::transcription::subtitles::is_system_family(&family);
+    let fontsdir: Option<String> = if is_system {
         None
     } else {
         match crate::fonts::ensure_caption_font_dir(app, &family, style.font_weight).await {
@@ -81,6 +82,37 @@ pub(crate) async fn append_caption_burn_in(
                 log::warn!("caption font embed ({family}): {e}");
                 None
             }
+        }
+    };
+    // Resolve the exact face libass will use, off the font file: its match name
+    // (legacy family, so a non-RIBBI weight like Inter-600 = "Inter SemiBold"
+    // resolves instead of falling back to Arial) and the size correction (libass
+    // scales Fontsize by winAscent+winDescent, not the em box). The name we search
+    // is the mapped generic for system faces, else the family itself.
+    let search_name = if is_system {
+        crate::transcription::subtitles::ass_font_name(&style.font_family)
+    } else {
+        family.clone()
+    };
+    let dir_path = fontsdir.as_deref().map(std::path::Path::new);
+    let font = match crate::transcription::text_measure::resolve_font(
+        &search_name,
+        style.font_weight,
+        dir_path,
+    ) {
+        Some(m) => crate::transcription::subtitles::RenderFont {
+            ass_name: m.ass_name,
+            embedded: fontsdir.is_some(),
+            ass_scale: m.ass_scale,
+            measure: Some(m.measure),
+        },
+        // Unresolved (offline / no match): best-effort name, no size correction.
+        // `fallback` maps the CSS stack to the same name we searched; keep the
+        // embed flag so libass still tries the fontsdir.
+        None => {
+            let mut f = crate::transcription::subtitles::RenderFont::fallback(&style);
+            f.embedded = fontsdir.is_some();
+            f
         }
     };
     let ass = crate::transcription::subtitles::to_ass(
@@ -96,7 +128,7 @@ pub(crate) async fn append_caption_burn_in(
         },
         trim_start,
         duration,
-        fontsdir.is_some(),
+        &font,
     );
     let ass_path = std::env::temp_dir().join(format!("recast-captions-{}.ass", request.export_id));
     match std::fs::write(&ass_path, ass) {

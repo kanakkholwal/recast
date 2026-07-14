@@ -39,6 +39,12 @@ pub fn model_paths(app: &AppHandle) -> Result<OcrModelPaths, String> {
     })
 }
 
+/// Whether both models are already on disk. Lets a caller skip announcing a
+/// download phase on the overwhelmingly common run where there is nothing to fetch.
+pub fn models_present(app: &AppHandle) -> bool {
+    model_paths(app).is_ok_and(|p| p.detection.exists() && p.recognition.exists())
+}
+
 /// Ensure both model files exist locally, downloading any that are missing.
 /// `on_progress(downloaded, total)` reports per-chunk download bytes.
 pub async fn ensure_models(

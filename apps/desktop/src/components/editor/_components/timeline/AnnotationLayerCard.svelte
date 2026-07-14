@@ -5,6 +5,7 @@
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+  import { motionDuration } from "$lib/motion.svelte";
   import { X } from "@lucide/svelte";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
@@ -64,6 +65,8 @@
     originalToOutput(store.timeMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>
     outputToOriginal(store.timeMap, xPx / pixelsPerSecond);
+  // Labels read on the output axis, like the ruler and the playhead.
+  const outSec = (t: number) => originalToOutput(store.timeMap, t);
   const left = $derived(xOf(annotation.start));
   // 28px keeps a one-frame annotation grabbable.
   const width = $derived(
@@ -74,6 +77,8 @@
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
     if (duration <= 0) return;
+    // Let a razor click bubble through to carve, rather than dragging the card.
+    if (store.timelineTool === "razor") return;
     event.preventDefault();
     event.stopPropagation();
     store.selectedAnnotationId = annotation.id;
@@ -171,6 +176,7 @@
   }
 
   function onCardClick(event: MouseEvent) {
+    if (store.timelineTool === "razor") return; // razor click is not a select
     event.stopPropagation();
     store.selectedAnnotationId = annotation.id;
   }
@@ -186,8 +192,8 @@
 </script>
 
 <div
-  in:fly={{ y: 10, duration: 180, easing: cubicOut }}
-  out:fade={{ duration: 140 }}
+  in:fly={{ y: 10, duration: motionDuration(180), easing: cubicOut }}
+  out:fade={{ duration: motionDuration(140) }}
   class="group/card absolute z-20 overflow-visible select-none"
   style="
     left: {left}px;
@@ -206,9 +212,9 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-warning/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-warning/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-warning/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-warning)] hover:shadow-[inset_3px_0_0_0_var(--color-warning)]'
-      : 'border-warning/40 hover:border-warning/70 cursor-grab'} {drag?.mode ===
+    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-markup/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-markup/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
+      ? 'border-lane-markup/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-markup)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-markup)]'
+      : 'border-lane-markup/40 hover:border-lane-markup/70 cursor-grab'} {drag?.mode ===
     'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
@@ -216,10 +222,10 @@
     <div
       class="relative flex h-full items-center gap-1.5 px-1.5"
       id={`annotation-region-${annotation.id}`}
-      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(annotation.start, timeMode, fps)} to ${formatTimeByMode(annotation.end, timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
+      aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
       <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-warning/20 text-warning"
+        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-markup/20 text-lane-markup"
       >
         <Icon class="size-3" />
       </span>
@@ -229,7 +235,7 @@
         </p>
         {#if showSubtitle}
           <p class="truncate text-[9px] leading-tight text-muted-foreground">
-            {formatTimeByMode(annotation.start, timeMode, fps)}
+            {formatTimeByMode(outSec(annotation.start), timeMode, fps)}
           </p>
         {/if}
       </div>
@@ -264,7 +270,7 @@
     class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-warning/70 opacity-0 transition-opacity {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -285,7 +291,7 @@
     class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-warning/70 opacity-0 transition-opacity {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

@@ -4,10 +4,21 @@
  */
 
 import type { Transcript } from '../ipc';
-import { type CaptionAnimation, DEFAULT_CAPTION_ANIMATION } from '../captions/animation';
-import { googleFontStack } from '../fonts/google-fonts';
+// Caption model (style, presets, animation) lives in @recast/captions so the
+// editor preview, the Rust export burn-in, and the web player share ONE source
+// of truth. Imported for internal use and re-exported below so existing
+// importers keep their `editor-store` specifier.
+import {
+	CAPTION_PRESETS,
+	DEFAULT_CAPTION_STYLE,
+	DEFAULT_CAPTION_ANIMATION,
+	type CaptionStyle,
+	type CaptionPreset,
+	type CaptionAnimation,
+} from '@recast/captions';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
+import type { TimeMode } from '../editor/time';
 import { log } from '../logger';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
@@ -607,9 +618,40 @@ export function aspectRatio(a: OutputAspect): number | null {
 
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
+/** What the editor currently has selected. Exactly one, or nothing. */
+export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut';
+export interface EditorSelection {
+	kind: SelectionKind;
+	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
+	id: string | number;
+}
+export interface DeleteSelectionResult {
+	kind: SelectionKind;
+	/** Where to park the playhead after a clip delete; null for the others. */
+	joinAt: number | null;
+}
+
 // 'dev' is a dev-build-only tab (experimental OCR review); it is UI state only and
 // is never serialized into a project.
 export type PanelTab = 'clip' | 'background' | 'focus' | 'annotations' | 'cursor' | 'camera' | 'audio' | 'captions' | 'extensions' | 'info' | 'dev';
+
+/** Active timeline pointer tool. `select` is the default (scrub/drag/select);
+ *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,
+ *  not of the focused element, so it lives here where every lane can read it and
+ *  decline the gesture the tool owns. */
+export type TimelineTool = 'select' | 'razor';
+
+/** Timeline editing commands the route-level keyboard handler invokes so the
+ *  S/C/I/O/Home/End keys work without the timeline scroller holding DOM focus.
+ *  The timeline registers these on mount (it owns the frame-quantize math); the
+ *  set is null while the timeline is collapsed/unmounted, so the keys no-op. */
+export interface TimelineCommands {
+	splitAtPlayhead: () => void;
+	toggleRazor: () => void;
+	exitTool: () => void;
+	trimToPlayhead: (kind: 'in' | 'out') => void;
+	seekToEdge: (which: 'in' | 'out') => void;
+}
 
 // Wallpapers 19–23 were moved into the installable "Waves" extension pack
 // (extensions/packs/waves-wallpapers); keep the built-in default set at 18 so
@@ -732,296 +774,10 @@ function generateId(): string {
  * Creates an editor store instance.
  * Call once per editor page mount, or use a singleton.
  */
-/** How generated captions render over the preview / export. */
-export interface CaptionStyle {
-	enabled: boolean;
-	/** CSS font-family stack. */
-	fontFamily: string;
-	/** Font weight (400–800). */
-	fontWeight: number;
-	/** Font size as a percent of the preview/video height. */
-	fontSizePct: number;
-	position: 'bottom' | 'center' | 'top';
-	/** Horizontal alignment of the caption block. */
-	align: 'left' | 'center' | 'right';
-	/** Top/bottom nudge, percent of frame height: + pushes the caption outward
-	 *  into the padding, − pulls it back onto the video. Ignored for `center`. */
-	offsetPct: number;
-	/** Text colour (hex). */
-	color: string;
-	/** Render text in uppercase. */
-	uppercase: boolean;
-	/** Letter spacing, in em (can be negative). */
-	letterSpacing: number;
-	/** Backing behind the text: none, soft shadow, or a solid box. */
-	background: 'none' | 'soft' | 'box';
-	/** Box backing colour (hex), used when `background` is `box`. */
-	backgroundColor: string;
-	/** Box backing opacity (0–100), used when `background` is `box`. */
-	backgroundOpacity: number;
-	/** Outline / stroke thickness as a percent of font size (0 = none). */
-	outlineWidth: number;
-	/** Outline / stroke colour (hex). */
-	outlineColor: string;
-	/** Max lines shown at once before clamping. */
-	maxLines: number;
-	/** Word-by-word animation. Absent = static (today's behaviour). */
-	animation?: CaptionAnimation;
-}
-
-export const DEFAULT_CAPTION_STYLE: CaptionStyle = {
-	enabled: true,
-	fontFamily: 'system-ui, sans-serif',
-	fontWeight: 600,
-	fontSizePct: 5,
-	position: 'bottom',
-	align: 'center',
-	offsetPct: 6,
-	color: '#ffffff',
-	uppercase: false,
-	letterSpacing: 0,
-	background: 'soft',
-	backgroundColor: '#000000',
-	backgroundOpacity: 65,
-	outlineWidth: 0,
-	outlineColor: '#000000',
-	maxLines: 2,
-	animation: DEFAULT_CAPTION_ANIMATION,
-};
-
-/** A named caption look: the visual half of {@link CaptionStyle}. Applied
- *  wholesale; users then tweak. Built-ins ship a few; extension packs add more
- *  via the asset registry (`captionPreset` kind). */
-export interface CaptionPreset {
-	id: string;
-	label: string;
-	description?: string;
-	style: Omit<CaptionStyle, 'enabled'>;
-}
-
-/** Shipped caption themes: a modern, cohesive set spanning minimal → impact.
- *  Each preset is a complete look (typography + colour + animation). Presets
- *  aren't stored by id (applying one copies its style), so this list can evolve
- *  freely. Ordered clean → bold so the picker reads as a spectrum. */
-export const CAPTION_PRESETS: CaptionPreset[] = [
-	{
-		id: 'clean',
-		label: 'Clean',
-		description: 'Minimal',
-		style: {
-			fontFamily: googleFontStack('Inter'),
-			fontWeight: 600,
-			fontSizePct: 5,
-			position: 'bottom',
-			align: 'center',
-			offsetPct: 8,
-			color: '#ffffff',
-			uppercase: false,
-			letterSpacing: 0,
-			background: 'soft',
-			backgroundColor: '#000000',
-			backgroundOpacity: 65,
-			outlineWidth: 0,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'line',
-				chunkSize: 3,
-				emphasis: 'none',
-				emphasisColor: '#4ade80',
-				entrance: 'fade',
-				entranceMs: 160,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'pill',
-		label: 'Pill',
-		description: 'Rounded bar',
-		style: {
-			fontFamily: googleFontStack('Plus Jakarta Sans'),
-			fontWeight: 700,
-			fontSizePct: 4.6,
-			position: 'bottom',
-			align: 'center',
-			offsetPct: 8,
-			color: '#ffffff',
-			uppercase: false,
-			letterSpacing: 0,
-			background: 'box',
-			backgroundColor: '#0b0b12',
-			backgroundOpacity: 80,
-			outlineWidth: 0,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'phrase',
-				chunkSize: 3,
-				emphasis: 'none',
-				emphasisColor: '#4ade80',
-				entrance: 'fade',
-				entranceMs: 200,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'bold',
-		label: 'Bold',
-		description: 'Strong outline',
-		style: {
-			fontFamily: googleFontStack('Montserrat'),
-			fontWeight: 800,
-			fontSizePct: 5.6,
-			position: 'bottom',
-			align: 'center',
-			offsetPct: 10,
-			color: '#ffffff',
-			uppercase: false,
-			letterSpacing: 0,
-			background: 'none',
-			backgroundColor: '#000000',
-			backgroundOpacity: 0,
-			outlineWidth: 6,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'line',
-				chunkSize: 3,
-				emphasis: 'none',
-				emphasisColor: '#4ade80',
-				entrance: 'fade',
-				entranceMs: 150,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'spotlight',
-		label: 'Spotlight',
-		description: 'Active word',
-		style: {
-			fontFamily: googleFontStack('Inter'),
-			fontWeight: 800,
-			fontSizePct: 5.4,
-			position: 'bottom',
-			align: 'center',
-			offsetPct: 10,
-			color: '#ffffff',
-			uppercase: false,
-			letterSpacing: 0,
-			background: 'soft',
-			backgroundColor: '#000000',
-			backgroundOpacity: 0,
-			outlineWidth: 4,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'line',
-				chunkSize: 4,
-				emphasis: 'color',
-				emphasisColor: '#4ade80',
-				entrance: 'none',
-				entranceMs: 0,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'wave',
-		label: 'Wave',
-		description: 'Cyan reveal',
-		style: {
-			fontFamily: googleFontStack('Outfit'),
-			fontWeight: 700,
-			fontSizePct: 5,
-			position: 'bottom',
-			align: 'center',
-			offsetPct: 8,
-			color: '#ffffff',
-			uppercase: false,
-			letterSpacing: 0,
-			background: 'soft',
-			backgroundColor: '#000000',
-			backgroundOpacity: 0,
-			outlineWidth: 0,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'phrase',
-				chunkSize: 3,
-				emphasis: 'color',
-				emphasisColor: '#38bdf8',
-				entrance: 'fade',
-				entranceMs: 200,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'punch',
-		label: 'Punch',
-		description: 'Word pop',
-		style: {
-			fontFamily: googleFontStack('Anton'),
-			fontWeight: 700,
-			fontSizePct: 7.5,
-			position: 'center',
-			align: 'center',
-			offsetPct: 0,
-			color: '#ffffff',
-			uppercase: true,
-			letterSpacing: 0.01,
-			background: 'none',
-			backgroundColor: '#000000',
-			backgroundOpacity: 0,
-			outlineWidth: 8,
-			outlineColor: '#0a0a0a',
-			maxLines: 1,
-			animation: {
-				chunk: 'word',
-				chunkSize: 1,
-				emphasis: 'scale',
-				emphasisColor: '#4ade80',
-				entrance: 'pop',
-				entranceMs: 170,
-				holdGaps: true,
-			},
-		},
-	},
-	{
-		id: 'hype',
-		label: 'Hype',
-		description: 'Big impact',
-		style: {
-			fontFamily: googleFontStack('Anton'),
-			fontWeight: 700,
-			fontSizePct: 8,
-			position: 'center',
-			align: 'center',
-			offsetPct: 0,
-			color: '#ffffff',
-			uppercase: true,
-			letterSpacing: 0.01,
-			background: 'none',
-			backgroundColor: '#000000',
-			backgroundOpacity: 0,
-			outlineWidth: 9,
-			outlineColor: '#0a0a0a',
-			maxLines: 2,
-			animation: {
-				chunk: 'phrase',
-				chunkSize: 3,
-				emphasis: 'color',
-				emphasisColor: '#fde047',
-				entrance: 'pop',
-				entranceMs: 150,
-				holdGaps: true,
-			},
-		},
-	},
-];
+// Re-export the caption model (imported at the top) so modules that import it
+// from `editor-store` keep working.
+export { CAPTION_PRESETS, DEFAULT_CAPTION_STYLE, DEFAULT_CAPTION_ANIMATION };
+export type { CaptionStyle, CaptionPreset, CaptionAnimation };
 
 /** What to do with generated captions on export. Independent choices: you can
  *  burn captions into the pixels AND keep a sidecar file. The sidecar is also
@@ -1067,6 +823,12 @@ export function createEditorStore() {
 	// seek from a panel (e.g. a transcript line) lands even mid-playback; setting
 	// `currentTime` alone is overwritten by the next playback time publish.
 	let seekHandler: ((time: number) => void) | null = null;
+	// Registered by Timeline.svelte on mount (see TimelineCommands).
+	let timelineCommands: TimelineCommands | null = null;
+
+	// Active pointer tool. Reset to 'select' on every document load: a mode should
+	// never survive into a different recording.
+	let timelineTool = $state<TimelineTool>('select');
 
 	// Trim
 	let trimStart = $state(0);
@@ -1092,6 +854,8 @@ export function createEditorStore() {
 	// Transient UI selection: the start time of the highlighted clip block, or
 	// null. Not serialized (mirrors selectedZoomRegionId).
 	let selectedClipStart = $state<number | null>(null);
+	// Transient UI selection: the highlighted cut band's id, or null.
+	let selectedCutId = $state<string | null>(null);
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
@@ -1166,6 +930,12 @@ export function createEditorStore() {
 	// AnnotationOverlay) gate their editing UI on this so users don't interact
 	// with handles for a feature whose panel isn't visible.
 	let activePanel = $state<PanelTab>('background');
+
+	// How every timecode in the editor renders. Lives here, not in Timeline.svelte,
+	// so the transport readout and the timeline agree: when this was timeline-local
+	// the player controls had their own hardcoded format and ignored the setting.
+	// UI-only, never serialized into a project.
+	let timeMode = $state<TimeMode>('smpte');
 
 	// Global cursor motion easing. `null` means linear (today's behaviour);
 	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
@@ -1458,7 +1228,7 @@ export function createEditorStore() {
 			source: "manual",
 		};
 		zoomRegions = [...zoomRegions, region];
-		selectedZoomRegionId = region.id;
+		selectZoomRegion(region.id);
 		log.info('focus', 'zoom_added', { id: region.id, start, end, scale });
 		return region.id;
 	}
@@ -1560,6 +1330,98 @@ export function createEditorStore() {
 		cameraOverlay = { ...cameraOverlay, ...updates };
 	}
 
+	// ---- Selection ---------------------------------------------------------
+	//
+	// Exactly one thing is selected at a time. The three backing fields used to be
+	// independent, so a clip, a zoom region and an annotation could all be lit at
+	// once; Delete then resolved against whichever DOM node held focus rather than
+	// against what was highlighted, and because one Delete handler was window-level
+	// and another was element-level, a single keypress could destroy two objects.
+	// Selecting anything now clears the others, and Delete is a document-level
+	// command over `selection` (see `deleteSelection`).
+
+	function selectClip(start: number | null) {
+		selectedClipStart = start;
+		if (start === null) return;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+		selectedCutId = null;
+	}
+
+	function selectZoomRegion(id: string | null) {
+		selectedZoomRegionId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedAnnotationId = null;
+		selectedCutId = null;
+	}
+
+	function selectAnnotation(id: string | null) {
+		selectedAnnotationId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedCutId = null;
+	}
+
+	function selectCut(id: string | null) {
+		selectedCutId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+	}
+
+	function clearSelection() {
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+		selectedCutId = null;
+	}
+
+	const selection = $derived.by<EditorSelection | null>(() => {
+		if (selectedAnnotationId !== null) {
+			return { kind: 'annotation', id: selectedAnnotationId };
+		}
+		if (selectedZoomRegionId !== null) {
+			return { kind: 'zoom', id: selectedZoomRegionId };
+		}
+		if (selectedCutId !== null) {
+			return { kind: 'cut', id: selectedCutId };
+		}
+		if (selectedClipStart !== null) {
+			return { kind: 'clip', id: selectedClipStart };
+		}
+		return null;
+	});
+
+	/**
+	 * Delete whatever is selected. Returns the playhead's new home for a clip
+	 * delete (the join between the surviving segments), or null when nothing was
+	 * deleted -- including a clip delete refused because it is the only segment.
+	 */
+	function deleteSelection(): DeleteSelectionResult | null {
+		if (selectedAnnotationId !== null) {
+			removeAnnotation(selectedAnnotationId);
+			return { kind: 'annotation', joinAt: null };
+		}
+		if (selectedZoomRegionId !== null) {
+			removeZoomRegion(selectedZoomRegionId);
+			return { kind: 'zoom', joinAt: null };
+		}
+		if (selectedCutId !== null) {
+			// Removing a cut restores the section; park on its (original) start.
+			const cut = cuts.find((c) => c.id === selectedCutId);
+			removeCut(selectedCutId);
+			return { kind: 'cut', joinAt: cut ? cut.start : null };
+		}
+		if (selectedClipStart !== null) {
+			const joinAt = deleteSegmentAt(selectedClipStart);
+			return joinAt === null ? null : { kind: 'clip', joinAt };
+		}
+		return null;
+	}
+
 	function removeZoomRegion(id: string) {
 		pushUndoState();
 		zoomRegions = zoomRegions.filter((z) => z.id !== id);
@@ -1616,7 +1478,7 @@ export function createEditorStore() {
 			copy,
 			...zoomRegions.slice(idx + 1),
 		];
-		selectedZoomRegionId = copy.id;
+		selectZoomRegion(copy.id);
 		log.info('focus', 'zoom_duplicated', { from: id, id: copy.id });
 		return copy.id;
 	}
@@ -1644,10 +1506,6 @@ export function createEditorStore() {
 			}
 			return next;
 		});
-	}
-
-	function selectZoomRegion(id: string | null) {
-		selectedZoomRegionId = id;
 	}
 
 	function addAnnotation(kind: AnnotationKind, start?: number, end?: number): Annotation {
@@ -1681,7 +1539,7 @@ export function createEditorStore() {
 			opacity: 1,
 		};
 		annotations = [...annotations, annotation];
-		selectedAnnotationId = annotation.id;
+		selectAnnotation(annotation.id);
 		log.info('annotation', 'added', { id: annotation.id, kind: kind.kind });
 		return annotation;
 	}
@@ -1755,7 +1613,7 @@ export function createEditorStore() {
 			};
 		}
 		annotations = [...annotations, dup];
-		selectedAnnotationId = dup.id;
+		selectAnnotation(dup.id);
 		return dup;
 	}
 
@@ -1826,6 +1684,7 @@ export function createEditorStore() {
 		annotations = [];
 		selectedAnnotationId = null;
 		annotationTool = null;
+		timelineTool = 'select';
 		hoveredAnnotationId = null;
 		annotationsGloballyHidden = false;
 		annotationSnapEnabled = true;
@@ -1902,6 +1761,7 @@ export function createEditorStore() {
 		if (!cuts.some((c) => c.id === id)) return;
 		pushUndoState();
 		cuts = cuts.filter((c) => c.id !== id);
+		if (selectedCutId === id) selectedCutId = null;
 	}
 
 	function clearCuts() {
@@ -2351,6 +2211,7 @@ export function createEditorStore() {
 		annotationZSeq = annotations.length + 1;
 		selectedAnnotationId = null;
 		annotationTool = null;
+		timelineTool = 'select';
 		hoveredAnnotationId = null;
 		// Restore the "hide all annotations" toggle. Hidden only when explicitly
 		// disabled; absent (older projects) or true → visible.
@@ -2414,6 +2275,19 @@ export function createEditorStore() {
 			currentTime = time;
 			seekHandler?.(time);
 		},
+
+		get timelineTool() { return timelineTool; },
+		set timelineTool(v: TimelineTool) { timelineTool = v; },
+
+		/** Register the timeline's keyboard-command handlers. Returns an
+		 *  unsubscribe for teardown, mirroring registerSeekHandler. */
+		registerTimelineCommands(cmds: TimelineCommands) {
+			timelineCommands = cmds;
+			return () => {
+				if (timelineCommands === cmds) timelineCommands = null;
+			};
+		},
+		get timelineCommands() { return timelineCommands; },
 
 		get isPlaying() { return isPlaying; },
 		set isPlaying(v: boolean) { isPlaying = v; },
@@ -2504,8 +2378,14 @@ export function createEditorStore() {
 		setMotionTone,
 		setSeamTransition,
 		seamTransitionAt,
+		// Setters route through the exclusive selectors, so every existing call site
+		// (and every future one) gets one-selection-at-a-time for free.
 		get selectedClipStart() { return selectedClipStart; },
-		set selectedClipStart(v: number | null) { selectedClipStart = v; },
+		set selectedClipStart(v: number | null) { selectClip(v); },
+
+		get selection() { return selection; },
+		clearSelection,
+		deleteSelection,
 		get focusEnabled() { return focusEnabled; },
 		set focusEnabled(v: boolean) { focusEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'focus', enabled: v }); },
 
@@ -2519,10 +2399,16 @@ export function createEditorStore() {
 		set cursorSamplesRaw(v: CursorSampleLike[]) { cursorSamplesRaw = v; },
 
 		get selectedZoomRegionId() { return selectedZoomRegionId; },
-		set selectedZoomRegionId(v: string | null) { selectedZoomRegionId = v; },
+		set selectedZoomRegionId(v: string | null) { selectZoomRegion(v); },
+
+		get selectedCutId() { return selectedCutId; },
+		set selectedCutId(v: string | null) { selectCut(v); },
 
 		get activePanel() { return activePanel; },
 		set activePanel(v: PanelTab) { activePanel = v; },
+
+		get timeMode() { return timeMode; },
+		set timeMode(v: TimeMode) { timeMode = v; },
 
 		get cursorMotionEasing() { return cursorMotionEasing; },
 		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
@@ -2530,7 +2416,7 @@ export function createEditorStore() {
 		get annotations() { return annotations; },
 		get annotationsByZ() { return annotationsByZ(); },
 		get selectedAnnotationId() { return selectedAnnotationId; },
-		set selectedAnnotationId(v: string | null) { selectedAnnotationId = v; },
+		set selectedAnnotationId(v: string | null) { selectAnnotation(v); },
 		get annotationTool() { return annotationTool; },
 		set annotationTool(v: AnnotationKindName | null) { annotationTool = v; },
 		get hoveredAnnotationId() { return hoveredAnnotationId; },
