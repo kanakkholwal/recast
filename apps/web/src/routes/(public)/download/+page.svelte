@@ -1,45 +1,47 @@
 <script lang="ts">
-import {
-  Container,
-  Footer,
-  HeroBackdrop,
-  Reveal,
-  Section,
-  SectionHeader,
-  SeoMeta
-} from "$lib/components";
-import {
-  Apple,
-  ArrowDownToLine,
-  CheckCircle2,
-  ChevronDown,
-  Cpu,
-  Download,
-  FileBox,
-  HardDrive,
-  Info,
-  LifeBuoy,
-  MemoryStick,
-  Monitor,
-  MonitorSmartphone,
-  ShieldCheck,
-  Terminal,
-  TriangleAlert,
-  WifiOff,
-  Zap,
-} from "@lucide/svelte";
-import { Button } from "@recast/ui/button";
-import * as Collapsible from "@recast/ui/collapsible";
-import * as DropdownMenu from "@recast/ui/dropdown-menu";
-import * as Tabs from "@recast/ui/tabs";
-import { cn } from "@recast/ui/utils";
-import type { PageData } from "./$types";
+  import {
+    Container,
+    Footer,
+    HeroBackdrop,
+    Reveal,
+    Section,
+    SectionHeader,
+    SeoMeta,
+  } from "$lib/components";
+  import { prefersReducedMotion } from "$lib/motion-core";
+  import {
+    ArrowDownToLine,
+    CheckCircle2,
+    ChevronDown,
+    Download,
+    Info,
+    LifeBuoy,
+    ShieldCheck,
+    TriangleAlert
+  } from "@lucide/svelte";
+  import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
+  import { Button } from "@recast/ui/button";
+  import * as Collapsible from "@recast/ui/collapsible";
+  import * as DropdownMenu from "@recast/ui/dropdown-menu";
+  import * as Tabs from "@recast/ui/tabs";
+  import { cn } from "@recast/ui/utils";
+  import { cubicOut } from "svelte/easing";
+  import { fly } from "svelte/transition";
+  import type { PageData } from "./$types";
+  import type { OS } from "./data";
+  import { installSteps, ISSUES_URL, platforms, ships, stabilityCopy, systemRequirements } from "./data";
 
   let { data }: { data: PageData } = $props();
 
-  type OS = "macOS" | "Windows" | "Linux" | "Unknown";
 
   let detectedOS = $state<OS>("Unknown");
+
+  // Hero entrance: same 80ms stagger as the rest of the public pages.
+  // 460ms per element lands the whole ladder in well under a second.
+  const reduced = $derived(prefersReducedMotion());
+  const heroStagger = 80;
+  const riseM = (delay: number) =>
+    reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
   $effect(() => {
     const ua = window.navigator.userAgent;
@@ -73,246 +75,24 @@ import type { PageData } from "./$types";
     detectedOS !== "Unknown" ? platformAssets[detectedOS].slice(1) : [],
   );
 
-  // Per-platform shipping confidence. Surfaces the honest state of the
-  // builds: Windows is the daily-driver, macOS/Linux are early ports. The
-  // global heads-up card below the hero plus the per-tab chip both read
-  // from this so the messaging stays in sync.
-  type Stability = "stable" | "beta";
-  const platforms: Array<{
-    id: Exclude<OS, "Unknown">;
-    icon: typeof Apple;
-    title: string;
-    subtitle: string;
-    stability: Stability;
-  }> = [
-    {
-      id: "macOS",
-      icon: Apple,
-      title: "macOS",
-      subtitle: "Requires macOS 12.0 or later",
-      stability: "beta",
-    },
-    {
-      id: "Windows",
-      icon: Monitor,
-      title: "Windows",
-      subtitle: "Requires Windows 10 or later",
-      stability: "stable",
-    },
-    {
-      id: "Linux",
-      icon: Terminal,
-      title: "Linux",
-      subtitle: "Debian, Ubuntu, Fedora, Arch",
-      stability: "beta",
-    },
-  ];
 
-  const stabilityCopy: Record<
-    Stability,
-    { label: string; dot: string; chip: string }
-  > = {
-    stable: {
-      label: "Stable",
-      dot: "bg-emerald-500",
-      chip: "bg-emerald-500/10 text-emerald-600 ring-emerald-500/20 dark:text-emerald-400",
-    },
-    beta: {
-      label: "Beta · expect rough edges",
-      dot: "bg-amber-500",
-      chip: "bg-amber-500/10 text-amber-600 ring-amber-500/20 dark:text-amber-400",
-    },
-  };
 
-  const ISSUES_URL = "https://github.com/kanakkholwal/recast/issues/new";
+ 
+
 
   let activeTab = $derived(detectedOS !== "Unknown" ? detectedOS : "macOS");
 
   const detectedIcon = $derived(
     detectedOS === "macOS"
-      ? Apple
+      ? AppleBrand
       : detectedOS === "Windows"
-        ? Monitor
+        ? WindowsBrand
         : detectedOS === "Linux"
-          ? Terminal
+          ? LinuxBrand
           : Download,
   );
 
-  const ships = [
-    { icon: WifiOff, label: "Offline-first", value: "Stays on disk" },
-    { icon: Zap, label: "GPU export", value: "Hardware-encoded" },
-    { icon: FileBox, label: "Open format", value: ".recast project" },
-    { icon: ShieldCheck, label: "Open source", value: "GPLv3 licensed" },
-  ];
 
-  // System requirements. Recast probes NVENC (NVIDIA) → AMF (AMD) → QSV
-  // (Intel) at startup and falls back to libx264 (CPU) if none initialize.
-  // The "recommended" tier is what makes recording feel realtime at 1080p60;
-  // the "minimum" tier covers the integrated-GPU and no-GPU CPU path so
-  // users on older laptops know they're supported before they download.
-  const systemRequirements = [
-    {
-      icon: Cpu,
-      label: "CPU",
-      minimum: "Dual-core x86_64 or arm64 @ 2.0 GHz",
-      recommended: "Quad-core (8+ threads) @ 3.0 GHz or faster",
-    },
-    {
-      icon: MemoryStick,
-      label: "RAM",
-      minimum: "4 GB",
-      recommended: "8 GB or more",
-    },
-    {
-      icon: Zap,
-      label: "GPU",
-      minimum: "Integrated GPU or none; falls back to CPU (libx264)",
-      recommended:
-        "NVIDIA (NVENC, GTX 10-series+), AMD (AMF, RX 400+), or Intel iGPU (QSV, 6th-gen+)",
-    },
-    {
-      icon: HardDrive,
-      label: "Disk",
-      minimum:
-        "500 MB free for the app + room for recordings (~1 GB / 10 min at 1080p60)",
-      recommended: "SSD with 10+ GB free",
-    },
-    {
-      icon: MonitorSmartphone,
-      label: "Display",
-      minimum: "1280 × 720",
-      recommended: "1920 × 1080 or higher",
-    },
-  ];
-
-  // Per-platform install instructions. Step `code` is a copy-paste-ready
-  // shell command; `hint` is small print rendered under the body.
-  type InstallStep = {
-    title: string;
-    body: string;
-    code?: string;
-    hint?: string;
-  };
-  type Faq = { title: string; body: string; code?: string };
-  type PlatformGuide = { intro: string; steps: InstallStep[]; faqs: Faq[] };
-
-  const installSteps: Record<Exclude<OS, "Unknown">, PlatformGuide> = {
-    macOS: {
-      intro:
-        "macOS is in beta. The smoothest path is Homebrew (step 1): one line that grabs the right build for your chip and clears Gatekeeper for you. Prefer the .dmg? Steps 2–5 cover the manual install, with one Terminal command on first launch until we're Apple-notarized.",
-      steps: [
-        {
-          title: "Fastest: install with Homebrew",
-          body: 'One line installs the right build for your Mac and clears the Gatekeeper quarantine, so there\'s no "is damaged" error, and brew keeps it updated. Prefer the short name? Run brew tap kanakkholwal/recast, then brew install --cask recast.',
-          code: "brew install --cask kanakkholwal/recast/recast",
-          hint: "Installed this way? You're done. Skip the manual .dmg steps below.",
-        },
-        {
-          title: "Or download the .dmg and pick the right build",
-          body: "Apple Silicon for M1/M2/M3/M4 Macs. Intel for older models. Check via   → About This Mac if you're unsure.",
-        },
-        {
-          title: "Drag Recast into Applications",
-          body: "Open the downloaded .dmg, then drag Recast.app into your Applications folder. Eject the disk image when you're done.",
-        },
-        {
-          title: "Clear the quarantine attribute",
-          body: "Open Terminal and run this once. macOS will trust Recast afterwards.",
-          code: "xattr -dr com.apple.quarantine /Applications/Recast.app",
-          hint: "Disappears as soon as we ship a notarized build.",
-        },
-        {
-          title: "Grant capture permissions",
-          body: "On first launch, System Settings → Privacy & Security will prompt for Screen Recording, Microphone, and Camera. Enable the ones you intend to record from.",
-        },
-      ],
-      faqs: [
-        {
-          title: "“Recast is damaged and can't be opened”",
-          body: "It's not actually damaged. That's the un-notarized Gatekeeper error, and step 3 above fixes it.",
-        },
-        {
-          title: "Permissions don't stick after enabling",
-          body: "Fully quit Recast (⌘Q), toggle the permission off and on under Privacy & Security, then relaunch.",
-        },
-      ],
-    },
-    Windows: {
-      intro:
-        "Windows SmartScreen flags new publishers as 'Unknown'. One click past the warning and you're in. This goes away once we sign with an EV certificate.",
-      steps: [
-        {
-          title: "Pick the right installer",
-          body: ".exe is the typical install. Use the .msi if your IT department's group policy requires MSI packages.",
-        },
-        {
-          title: "Run the installer",
-          body: "Double-click the downloaded file. If UAC asks, allow it to run.",
-        },
-        {
-          title: "Bypass SmartScreen",
-          body: "If you see 'Windows protected your PC', click More info, then Run anyway. The publisher will read as 'Unknown' until we add code signing.",
-        },
-        {
-          title: "Finish setup",
-          body: "Pick an install location and let the wizard finish. Recast launches from the Start menu, so pin it to the taskbar while you're at it.",
-        },
-      ],
-      faqs: [
-        {
-          title: "Antivirus flags Recast as suspicious",
-          body: "It's a false positive. Fresh unsigned binaries trip heuristic scanners until they age. Add Recast.exe to your antivirus's allowlist.",
-        },
-        {
-          title: "Capture is empty or black",
-          body: "Update your GPU drivers (NVIDIA/AMD/Intel) and make sure Recast isn't running in compatibility mode. Right-click the shortcut → Properties → Compatibility → uncheck everything.",
-        },
-      ],
-    },
-    Linux: {
-      intro:
-        "Three packages cover most distros. Pick by your package manager; the AppImage works on anything.",
-      steps: [
-        {
-          title: "Pick your package",
-          body: "AppImage = portable (any distro, no install). .deb = Debian, Ubuntu, Mint. .rpm = Fedora, RHEL, openSUSE.",
-        },
-        {
-          title: "AppImage: mark executable & run",
-          body: "Give it execute permission, then double-click or run from the terminal.",
-          code: "chmod +x Recast-*.AppImage\n./Recast-*.AppImage",
-          hint: "Some distros need libfuse2: sudo apt install libfuse2.",
-        },
-        {
-          title: ".deb: install with apt",
-          body: "apt resolves any missing dependencies for you.",
-          code: "sudo apt install ./recast_*.deb",
-        },
-        {
-          title: ".rpm: install with dnf",
-          body: "Use zypper on openSUSE: sudo zypper install ./recast-*.rpm.",
-          code: "sudo dnf install ./recast-*.rpm",
-        },
-        {
-          title: "Wayland: enable the portal",
-          body: "Recast uses xdg-desktop-portal for screen capture under Wayland. Most distros bundle it; if capture is empty, install the portal and the matching backend (GNOME or KDE).",
-          code: "sudo apt install xdg-desktop-portal xdg-desktop-portal-gnome",
-        },
-      ],
-      faqs: [
-        {
-          title: "AppImage won't launch",
-          body: "Missing FUSE library on newer Ubuntu / Debian.",
-          code: "sudo apt install libfuse2",
-        },
-        {
-          title: "No audio device shows up",
-          body: "Recast captures via PipeWire. Make sure pipewire-pulse is installed so your default sink is exposed.",
-          code: "sudo apt install pipewire-pulse",
-        },
-      ],
-    },
-  };
 </script>
 
 <SeoMeta
@@ -329,13 +109,19 @@ import type { PageData } from "./$types";
   >
     <HeroBackdrop src="/background-download.webp" tone="strong" />
     <Container class="relative">
-			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center">
-				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
-					<Download class="size-3 text-foreground/60" />
-					Latest release · {data.version}
-				</span>
+      <div
+        class="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center"
+      >
+        <span
+          in:fly={riseM(heroStagger * 0)}
+          class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+        >
+          <Download class="size-3 text-foreground/60" />
+          Latest release · {data.version}
+        </span>
 
         <h1
+          in:fly={riseM(heroStagger * 1)}
           class="text-balance mt-7 text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
         >
           Get Recast for
@@ -345,28 +131,24 @@ import type { PageData } from "./$types";
         </h1>
 
         <p
+          in:fly={riseM(heroStagger * 2)}
           class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
         >
-          Free during beta, no sign-up. The native recorder for makers who'd rather ship than open a timeline.
+          Free during beta, no sign-up. The native recorder for makers who'd
+          rather ship than open a timeline.
         </p>
 
-        <div
-          class="mt-10 flex flex-col items-center gap-3"
-        >
+        <div class="mt-10 flex flex-col items-center gap-3">
           {#if primary?.link}
             {@const OSIcon = detectedIcon}
             <div
-              class="dl-cta group/dl flex items-stretch overflow-hidden rounded-2xl bg-foreground text-background shadow-craft-xl ring-1 ring-foreground/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-floating active:translate-y-0"
+              class="group/dl flex items-stretch overflow-hidden rounded-2xl bg-foreground text-background shadow-craft-sm ring-1 ring-foreground/10 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-craft-floating hover:bg-foreground/90 active:translate-y-0 motion-reduce:transition-none"
             >
               <a
                 href={primary.link}
                 class="flex items-center gap-3.5 px-5 py-3 transition-colors hover:bg-background/8 sm:gap-4 sm:px-6 sm:py-3.5"
               >
-                <span
-                  class="grid size-10 place-items-center rounded-xl bg-background/10 ring-1 ring-background/15 sm:size-11"
-                >
-                  <OSIcon class="size-5" />
-                </span>
+                <OSIcon class="size-6 mx-2" />
                 <span class="flex flex-col items-start leading-tight">
                   <span class="text-sm font-semibold sm:text-base">
                     Download for {detectedOS}
@@ -477,52 +259,50 @@ import type { PageData } from "./$types";
 			     there when they hit something. -->
       <Reveal>
         <div
-          class="mx-auto mt-16 max-w-3xl rounded-2xl border border-amber-500/25 bg-amber-500/[0.04] p-5 backdrop-blur-md sm:p-6"
+          class="mx-auto mt-16 flex max-w-3xl items-start gap-4 rounded-2xl border border-border-low/40 bg-card/40 p-5 shadow-craft-sm sm:p-6"
         >
-          <div class="flex items-start gap-4">
-            <span
-              class="grid size-10 shrink-0 place-items-center rounded-xl bg-amber-500/15 text-amber-600 ring-1 ring-amber-500/20 dark:text-amber-400"
-            >
-              <TriangleAlert class="size-4" />
-            </span>
-            <div class="min-w-0 flex-1">
-              <h3 class="text-sm font-semibold tracking-tight text-foreground">
-                Heads up: platform stability
-              </h3>
-              <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                Windows is the daily-driver build.
-                <span class="font-semibold text-foreground/85">
-                  macOS and Linux are early ports
-                </span>
-                — don't expect feature parity yet. Reach for Windows if you have the choice.
-              </p>
-              <div class="mt-3 flex flex-wrap items-center gap-1.5">
-                {#each platforms as p}
-                  {@const s = stabilityCopy[p.stability]}
-                  <span
-                    class={cn(
-                      "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] ring-1 ring-inset",
-                      s.chip,
-                    )}
-                  >
-                    <span class={cn("size-1.5 rounded-full", s.dot)}></span>
-                    {p.title} · {p.stability === "stable" ? "Stable" : "Beta"}
-                  </span>
-                {/each}
-              </div>
-              <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
-                Hit a bug or papercut? Please file it on
-                <a
-                  href={ISSUES_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="font-semibold text-foreground underline decoration-foreground/30 decoration-1 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary/60"
+          <span
+            class="grid size-10 shrink-0 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/70 ring-1 ring-foreground/10"
+          >
+            <TriangleAlert class="size-4" />
+          </span>
+          <div class="min-w-0 flex-1">
+            <h3 class="text-sm font-semibold tracking-tight text-foreground">
+              Heads up: platform stability
+            </h3>
+            <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
+              Windows is the daily-driver build.
+              <span class="font-semibold text-foreground/85">
+                macOS and Linux are early ports
+              </span>
+              . Don't expect feature parity yet, reach for Windows if you have the
+              choice.
+            </p>
+            <div class="mt-3 flex flex-wrap items-center gap-1.5">
+              {#each platforms as p}
+                {@const s = stabilityCopy[p.stability]}
+                <span
+                  class={cn(
+                    "inline-flex items-center gap-1.5 rounded-full bg-foreground/4 px-2.5 py-1 font-mono text-[10.5px] font-semibold uppercase tracking-[0.12em] text-foreground/75 ring-1 ring-inset ring-foreground/10",
+                  )}
                 >
-                  GitHub Issues
-                </a>
-                . I read every one and reply personally.
-              </p>
+                  <span class={cn("size-1.5 rounded-full", s.dot)}></span>
+                  {p.title} · {p.stability === "stable" ? "Stable" : "Beta"}
+                </span>
+              {/each}
             </div>
+            <p class="mt-3 text-xs leading-relaxed text-muted-foreground">
+              Hit a bug or papercut? Please file it on
+              <a
+                href={ISSUES_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-semibold text-foreground underline decoration-foreground/30 decoration-1 underline-offset-2 transition-colors hover:text-primary hover:decoration-primary/60"
+              >
+                GitHub Issues
+              </a>
+              . I read every one and reply personally.
+            </p>
           </div>
         </div>
       </Reveal>
@@ -717,7 +497,7 @@ import type { PageData } from "./$types";
                         <Button
                           href={asset.link ?? undefined}
                           disabled={!asset.link}
-                          variant={i === 0 ? "default" : "secondary"}
+                          variant="dark"
                           class={cn(
                             "w-full justify-between gap-3",
                             !asset.link && "opacity-60",
@@ -925,78 +705,3 @@ import type { PageData } from "./$types";
 
   <Footer />
 </main>
-
-<style>
-  .dl-aurora {
-    background: radial-gradient(
-        ellipse 80% 50% at 50% -10%,
-        color-mix(in srgb, var(--color-primary) 12%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 18% 8%,
-        color-mix(in srgb, var(--color-primary) 7%, transparent),
-        transparent 70%
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 82% 8%,
-        color-mix(in srgb, var(--color-primary) 8%, transparent),
-        transparent 70%
-      );
-  }
-
-  :global(.dark) .dl-aurora {
-    background: radial-gradient(
-        ellipse 80% 50% at 50% -10%,
-        color-mix(in srgb, var(--color-primary) 7%, transparent),
-        transparent 75%
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 18% 8%,
-        color-mix(in srgb, var(--color-primary) 4%, transparent),
-        transparent 75%
-      ),
-      radial-gradient(
-        ellipse 60% 40% at 82% 8%,
-        color-mix(in srgb, var(--color-primary) 5%, transparent),
-        transparent 75%
-      );
-  }
-
-  .dl-grid {
-    background-image: linear-gradient(
-        to right,
-        color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px,
-        transparent 1px
-      ),
-      linear-gradient(
-        to bottom,
-        color-mix(in srgb, var(--color-foreground) 5%, transparent) 1px,
-        transparent 1px
-      );
-    background-size: 64px 64px;
-    mask-image: radial-gradient(
-      ellipse 70% 60% at 50% 30%,
-      black 30%,
-      transparent 75%
-    );
-  }
-
-  .dl-cta {
-    box-shadow:
-      inset 0 1px 0 0 color-mix(in srgb, white 14%, transparent),
-      inset 0 -1px 0 0 color-mix(in srgb, black 18%, transparent),
-      0 1px 2px rgba(0, 0, 0, 0.06),
-      0 8px 24px -8px rgba(0, 0, 0, 0.18),
-      0 18px 40px -12px rgba(0, 0, 0, 0.22);
-  }
-
-  .dl-cta:hover {
-    box-shadow:
-      inset 0 1px 0 0 color-mix(in srgb, white 18%, transparent),
-      inset 0 -1px 0 0 color-mix(in srgb, black 18%, transparent),
-      0 2px 4px rgba(0, 0, 0, 0.08),
-      0 14px 32px -8px rgba(0, 0, 0, 0.22),
-      0 24px 56px -12px rgba(0, 0, 0, 0.28);
-  }
-</style>

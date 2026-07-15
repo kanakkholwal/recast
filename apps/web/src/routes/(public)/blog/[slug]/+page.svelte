@@ -1,10 +1,20 @@
 <script lang="ts">
 	import { Container, Footer, HeroBackdrop, Section, SeoMeta } from "$lib/components";
 	import { formatDate } from "$lib/blog/format";
+	import { prefersReducedMotion } from "$lib/motion-core";
 	import { Badge } from "@recast/ui/badge";
 	import DocviaContent from "$lib/blog/DocviaContent.svelte";
 	import { ArrowLeft, Clock } from "@lucide/svelte";
+	import { fly } from "svelte/transition";
+	import { cubicOut } from "svelte/easing";
 	import type { PageData } from "./$types";
+
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
 	let { data }: { data: PageData } = $props();
 
@@ -30,19 +40,20 @@
 				All articles
 			</a>
 
-			<header class="mt-8 flex flex-col gap-6">
-				<h1
-					class="text-balance animate-fade-up text-4xl font-semibold leading-[1.1] tracking-tight text-foreground sm:text-5xl md:text-6xl"
-				>
-					{meta.title}
-				</h1>
+		<header class="mt-8 flex flex-col gap-6">
+			<h1
+				in:fly={riseM(heroStagger * 0)}
+				class="text-balance text-3xl font-bold leading-[1.04] tracking-tight text-foreground sm:text-5xl md:text-6xl"
+			>
+				{meta.title}
+			</h1>
 
-				<p
-					class="text-pretty animate-fade-up text-lg leading-relaxed text-muted-foreground"
-					style="animation-delay: 100ms"
-				>
-					{meta.description}
-				</p>
+			<p
+				in:fly={riseM(heroStagger * 1)}
+				class="text-pretty text-lg leading-relaxed text-muted-foreground"
+			>
+				{meta.description}
+			</p>
 
 				<div class="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
 					{#if meta.author}

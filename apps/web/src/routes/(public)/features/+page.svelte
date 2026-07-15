@@ -1,303 +1,41 @@
 <script lang="ts">
 	import {
 	  Container,
-	  Eyebrow,
 	  Footer,
 	  HeroBackdrop,
 	  Reveal,
 	  Section,
 	  SectionHeader,
-	  SeoMeta,
+	  SeoMeta
 	} from "$lib/components";
-	import { TextLoop } from "$lib/motion-core";
+	import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
+	import { cubicOut } from "svelte/easing";
+	import { fly } from "svelte/transition";
 	import {
-	  Apple,
+	  gapRows,
+	  pillars,
+	  platforms,
+	  stabilityChip,
+	  supports,
+	  verbs
+	} from "./data";
+
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+
+	import {
 	  ArrowRight,
-	  Camera,
-	  Check,
-	  Cpu,
-	  Crop,
-	  FileBox,
-	  HardDrive,
-	  HardDriveUpload,
-	  Highlighter,
-	  Keyboard,
-	  Layers,
-	  Layout,
-	  Monitor,
-	  MousePointer2,
-	  Pause,
-	  Scissors,
-	  Target,
-	  Terminal,
-	  VolumeX,
-	  Wand2,
-	  WifiOff,
-	  Zap
+	  Check
 	} from "@lucide/svelte";
-	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
 	import { cn } from "@recast/ui/utils";
 
-	// Three pillars chosen to lead with what makes Recast different, not
-	// generic "we have an editor too" copy. Each one is a feature that other
-	// recorders either don't have at all or paywall.
-	const pillars = [
-		{
-			icon: Wand2,
-			title: "Auto-polish on the way in",
-			description:
-				"Smart zoom, cursor smoothing, and silence cuts happen while you record. By the time you stop, the demo is mostly done. No keyframes. No AI gate.",
-			tags: ["Smart zoom", "Cursor smoothing", "Silence cuts"],
-		},
-		{
-			icon: Layers,
-			title: "Recording profiles + pause / resume",
-			description:
-				"Save capture presets (region, window, camera, mic) and switch with one shortcut. Pause mid-take when the door knocks. Paused spans are trimmed cleanly out.",
-			tags: ["Profiles", "Pause and resume", "Multi-source"],
-		},
-		{
-			icon: HardDriveUpload,
-			title: "Local-first, Drive-shareable",
-			description:
-				"Recordings live on your machine until you choose to share. Upload exports straight to your own Google Drive from the export dialog. You own the file, Recast servers never see it.",
-			tags: ["Local files", "Drive upload", "Own your data"],
-		},
-	];
 
-	// Per-platform shipping confidence. Mirrors the /download page so the
-	// marketing voice never over-promises macOS or Linux.
-	const platforms = [
-		{ icon: Monitor, label: "Windows", stability: "stable" as const, note: "Daily-driver stable" },
-		{ icon: Apple, label: "macOS", stability: "beta" as const, note: "Active beta (12.0+)" },
-		{ icon: Terminal, label: "Linux", stability: "beta" as const, note: "Active beta (Wayland + X11)" },
-	];
 
-	const stabilityChip: Record<"stable" | "beta", { label: string; cls: string }> = {
-		stable: {
-			label: "Stable",
-			cls: "bg-emerald-500/12 text-emerald-600 ring-emerald-500/25 dark:text-emerald-400",
-		},
-		beta: {
-			label: "Beta",
-			cls: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
-		},
-	};
-
-	// "Free here, paid elsewhere." Real, named feature gaps against the two
-	// products we get compared to most. Conservative claims: only items that
-	// are publicly paywalled on the competitor or that the competitor doesn't
-	// ship at all. Tone is direct, not snide.
-	const gapRows = [
-		{
-			feature: "Recording profiles (capture presets)",
-			recast: "Built in",
-			loom: "Not available",
-			cap: "Limited",
-		},
-		{
-			feature: "Hardware-accelerated export",
-			recast: "Built in",
-			loom: "Cloud render only",
-			cap: "Partial",
-		},
-		{
-			feature: "Files stay on your machine",
-			recast: "Default",
-			loom: "Cloud only",
-			cap: "Local first",
-		},
-		{
-			feature: "Share to your own storage (Drive today)",
-			recast: "Built in, free",
-			loom: "Not supported",
-			cap: "Pro only",
-		},
-		{
-			feature: "No account required to record",
-			recast: "Never asks",
-			loom: "Required",
-			cap: "Required",
-		},
-		{
-			feature: "Open source",
-			recast: "GPLv3",
-			loom: "Closed",
-			cap: "AGPL",
-		},
-		{
-			feature: "Per-seat pricing",
-			recast: "None",
-			loom: "Per seat",
-			cap: "Per seat",
-		},
-	];
-
-	// Built-in supports. Grid of small affordances and standards-level
-	// features. License row is GPLv3 + dual licensing (not MIT, which was
-	// the previous version's bug).
-	//
-	// `tag` is the small module-name badge that sits in the screenshot
-	// corner of each vendor card (e.g. "Capture", "Edit", "Export").
-	// `image` is a real screenshot when one exists; until then the card
-	// renders a tinted icon-as-hero placeholder the same width/height,
-	// so the layout is stable once real images drop in.
-	const supports: Array<{
-		icon: typeof Target;
-		tag: string;
-		title: string;
-		description: string;
-		image: string | null;
-		href: string;
-	}> = [
-		{
-			icon: Target,
-			tag: "Auto",
-			title: "Smart auto-zoom",
-			description: "Reads clicks and dwell, zooms toward the action. Zero keyframes.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: MousePointer2,
-			tag: "Cursor",
-			title: "Cursor smoothing",
-			description: "Velocity-aware easing, optional snap-to-target, motion damping.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: VolumeX,
-			tag: "Audio",
-			title: "Silence detection",
-			description: "Finds dead-air spans (quiet audio plus still cursor), offers one-click cuts.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Pause,
-			tag: "Capture",
-			title: "Pause and resume",
-			description: "Pause mid-take and pick up where you left off. Paused spans trim out cleanly.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Layers,
-			tag: "Capture",
-			title: "Recording profiles",
-			description: "Save capture presets for each context. One shortcut to switch between them.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Highlighter,
-			tag: "Edit",
-			title: "Annotations and blur",
-			description: "Arrows, rectangles, text, privacy blur on the frame. Layers on the timeline.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Camera,
-			tag: "Capture",
-			title: "Camera bubble",
-			description: "Draggable webcam with shape, border, and follow-the-cursor motion.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Layout,
-			tag: "Layout",
-			title: "Smart layouts",
-			description: "Auto padding, gradient backgrounds, aspect framing applied as you record.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Scissors,
-			tag: "Edit",
-			title: "Trim, split, replace",
-			description: "Lightweight editor that respects your time. No hidden timeline tax.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: HardDriveUpload,
-			tag: "Store",
-			title: "Drive uploads",
-			description: "OAuth scoped to files Recast creates. Your account, your storage bill.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Zap,
-			tag: "Export",
-			title: "Hardware-encoded export",
-			description: "NVENC, AMD, and Intel where available. Seconds, not minutes.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Cpu,
-			tag: "Capture",
-			title: "Native capture",
-			description: "Platform APIs end to end. ScreenCaptureKit on macOS, Wayland-native on Linux.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Crop,
-			tag: "Capture",
-			title: "Region and window",
-			description: "Capture a window, region, or full screen. Hot-swap mid-take.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: FileBox,
-			tag: "Files",
-			title: ".recast project files",
-			description: "Re-editable artifacts that travel with your repo.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: WifiOff,
-			tag: "Offline",
-			title: "Offline first",
-			description: "Recordings and exports stay on your machine. No account required to record.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: HardDrive,
-			tag: "Privacy",
-			title: "No telemetry",
-			description: "The app doesn't phone home. It only contacts servers when you explicitly opt in.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: Keyboard,
-			tag: "UX",
-			title: "Shortcut-first",
-			description: "Every essential action lives one keystroke away. Mouse optional.",
-			image: null,
-			href: "#",
-		},
-		{
-			icon: GithubBrand,
-			tag: "OSS",
-			title: "GPLv3 open source",
-			description: "Source on GitHub. Dual licensing available for closed-source redistribution.",
-			image: null,
-			href: "#",
-		},
-	];
-
-	const verbs = ["records.", "polishes.", "shares.", "ships."];
 </script>
 
 <SeoMeta
@@ -311,11 +49,17 @@
 		<HeroBackdrop src="/background-features.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+				<span
+					in:fly={riseM(heroStagger * 0)}
+					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Features
 				</span>
-				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
+				<h1
+					in:fly={riseM(heroStagger * 1)}
+					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+				>
 					Everything Recast
 					<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
 						<span class="inline-grid overflow-hidden">
@@ -323,7 +67,10 @@
 						</span>
 					</span>
 				</h1>
-				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+				<p
+					in:fly={riseM(heroStagger * 2)}
+					class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+				>
 					A focused recorder for solo founders, indie hackers, and product engineers who'd rather ship than fiddle. Auto-polish for the 80% case, a minimal timeline for the moments you want to control.
 				</p>
 
@@ -352,8 +99,7 @@
 				{#each pillars as pillar, i}
 					{@const Icon = pillar.icon}
 					<Reveal delay={i * 80}>
-						<article class="glass-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-md">
-							<div class="pointer-events-none absolute -right-12 -top-12 size-40 rounded-full bg-primary/8 blur-3xl transition-opacity duration-500 group-hover:bg-primary/14"></div>
+						<article class="bg-card group relative flex h-full flex-col overflow-hidden rounded-2xl p-8 transition-all duration-300 hover:-translate-y-1 hover:shadow-craft-md">
 							<span class="glass-chip grid size-12 place-items-center rounded-xl text-foreground/70 transition-all group-hover:scale-105 group-hover:text-primary">
 								<Icon class="size-5" />
 							</span>
@@ -391,7 +137,7 @@
 
 			<Reveal variant="blur" class="mt-14">
 				<div class="overflow-x-auto rounded-2xl border border-border-low/50">
-					<div class="min-w-[640px]">
+					<div class="min-w-160">
 						<div class="grid grid-cols-[1.6fr_1fr_1fr_1fr] border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
 							<div class="px-5 py-3.5 text-muted-foreground">Feature</div>
 							<div class="border-l border-border-low/50 px-5 py-3.5 text-center text-primary">Recast</div>
@@ -470,8 +216,8 @@
 								class={cn(
 									"relative overflow-hidden",
 									isFeatured
-										? "aspect-[4/3] shrink-0 border-b border-border-low/40 lg:aspect-auto lg:w-1/2 lg:border-b-0 lg:border-r"
-										: "aspect-[16/10] w-full",
+										? "aspect-4/3 shrink-0 border-b border-border-low/40 lg:aspect-auto lg:w-1/2 lg:border-b-0 lg:border-r"
+										: "aspect-16/10 w-full",
 								)}
 							>
 								{#if item.image}
@@ -585,7 +331,7 @@
 								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
 								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
 							</span>
-							v0.2 ready when you are
+							ready when you are
 						</div>
 
 						<h2 class="text-balance mt-8 text-4xl font-semibold leading-[1.02] tracking-tight text-foreground sm:text-5xl md:text-6xl lg:text-[4.25rem]">
@@ -621,7 +367,7 @@
 							href="/changelog"
 							class="group/cta mt-5 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
 						>
-							See what's in v0.2
+							See what's
 							<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
 						</a>
 					</div>

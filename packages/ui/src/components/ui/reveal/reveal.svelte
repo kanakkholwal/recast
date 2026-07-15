@@ -1,6 +1,6 @@
 <script lang="ts">
-	import type { Snippet } from "svelte";
 	import { cn } from "@recast/ui/utils";
+	import type { Snippet } from "svelte";
 
 	type Tag = "div" | "section" | "article" | "li" | "header" | "ol" | "ul";
 
@@ -32,6 +32,7 @@
 		as?: Tag;
 		variant?: Variant;
 		duration?: number;
+		id?: string;
 	};
 
 	let {
@@ -44,6 +45,7 @@
 		as: Tag = "div",
 		variant = "up",
 		duration = 500,
+		id,
 	}: Props = $props();
 
 	let visible = $state(false);
@@ -86,6 +88,7 @@
 	this={Tag}
 	use:reveal
 	style={`transition-delay: ${delay}ms; transition-duration: ${duration}ms;`}
+	id={id}
 	class={cn(
 		"transition-[opacity,transform,filter] ease-[cubic-bezier(0.625,0.05,0,1)] will-change-[opacity,transform,filter] motion-reduce:transition-none motion-reduce:will-change-auto",
 		visible

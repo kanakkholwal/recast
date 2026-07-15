@@ -44,9 +44,8 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 	{
 		title: "Resources",
 		links: [
-			TOOLS,
+			// TOOLS,
 			BLOG,
-			{ label: "Documentation", href: "#" },
 			{ label: "GitHub", href: GITHUB_URL, external: true },
 			{ label: "Releases", href: GITHUB_RELEASES_URL, external: true },
 			CHANGELOG,

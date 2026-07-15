@@ -1,11 +1,21 @@
 <script lang="ts">
 	import { formatDate } from "$lib/blog/format";
 	import { Container, Footer, HeroBackdrop, Reveal, Section, SeoMeta } from "$lib/components";
-	import { ArrowRight, Clock } from "@lucide/svelte";
+	import { prefersReducedMotion } from "$lib/motion-core";
+	import { ArrowRight, Clock, PenLine } from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
+	import { fly } from "svelte/transition";
+	import { cubicOut } from "svelte/easing";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
+
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 </script>
 
 <SeoMeta
@@ -19,15 +29,23 @@
 		<HeroBackdrop src="/background-blog.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
+				<span
+					in:fly={riseM(heroStagger * 0)}
+					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+				>
+					<PenLine class="size-3 text-foreground/60" />
+					Blog
+				</span>
 				<h1
-					class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl"
+					in:fly={riseM(heroStagger * 1)}
+					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
 				>
 					How Recast
 					<span class="mt-2 block font-medium italic text-foreground/40">gets built.</span>
 				</h1>
 				<p
-					class="text-pretty max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg"
-					style="animation-delay: 120ms"
+					in:fly={riseM(heroStagger * 2)}
+					class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
 				>
 					Long-form write-ups from inside the work. The problems we hit, the decisions we made, and
 					the ones we got wrong before we got them right.

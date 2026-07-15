@@ -11,7 +11,17 @@
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import { Markdown } from "@recast/ui/markdown";
+	import { prefersReducedMotion } from "$lib/motion-core";
+	import { fly } from "svelte/transition";
+	import { cubicOut } from "svelte/easing";
 	import type { PageData } from "./$types";
+
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
 	let { data }: { data: PageData } = $props();
 
@@ -41,17 +51,26 @@
 		<HeroBackdrop src="/background-changelog.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+				<span
+					in:fly={riseM(heroStagger * 0)}
+					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+				>
 					<GitCommit class="size-3 text-foreground/60" />
 					Changelog
 				</span>
-				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
+				<h1
+					in:fly={riseM(heroStagger * 1)}
+					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+				>
 					Every release,
 					<span class="mt-2 block font-medium italic text-foreground/40">
 						in order.
 					</span>
 				</h1>
-				<p class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+				<p
+					in:fly={riseM(heroStagger * 2)}
+					class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+				>
 					Pulled live from GitHub releases. Newest at the top. Every fix, feature, and refinement we've shipped.
 				</p>
 				<div class="flex gap-3">

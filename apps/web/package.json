@@ -60,6 +60,7 @@
 		"@polar-sh/sdk": "^0.48.1",
 		"@sveltejs/adapter-auto": "^6.0.4",
 		"@takumi-rs/wasm": "^1.6.0",
+		"@unpic/svelte": "^1.0.1",
 		"aws4fetch": "^1.0.20",
 		"better-auth": "^1.6.11",
 		"bits-ui": "^2.16.3",

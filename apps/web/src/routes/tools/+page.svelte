@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Container, Footer, SeoMeta } from "$lib/components";
+  import { Container, Footer, HeroBackdrop, Section, SeoMeta } from "$lib/components";
   import { TOOLS } from "$lib/tools/registry";
   import { toolIcon } from "$lib/tools/tool-icons";
   import {
@@ -14,6 +14,18 @@
   } from "@lucide/svelte";
   import { Cutout } from "@recast/ui/cutout";
   import { LocalIcon } from "@recast/ui/local-icon";
+  import { prefersReducedMotion } from "$lib/motion-core";
+  import { fly } from "svelte/transition";
+  import { cubicOut } from "svelte/easing";
+
+  // Same hero entrance pattern as the rest of the public pages: 80ms
+  // stagger across the eyebrow, headline, body, and CTA. 460ms per
+  // element lands each in well under a second; the total ladder ends
+  // around 400ms after first paint.
+  const reduced = $derived(prefersReducedMotion());
+  const heroStagger = 80;
+  const riseM = (delay: number) =>
+    reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
   const steps = [
     {
@@ -47,23 +59,45 @@
 />
 
 <main class="flex flex-col pb-8">
-  <!-- Hero -->
-  <Container size="wide" class="pt-28 pb-10 sm:pt-32">
-    <header class="mx-auto max-w-2xl text-center">
-      <span
-        class="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-card px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground shadow-(--shadow-craft-inset)"
-      >
-        <ShieldCheck class="size-3.5 text-primary" /> No upload · No account
-      </span>
-      <h1 class="mt-5 text-balance text-3xl font-semibold tracking-tight sm:text-4xl">
-        Free video tools
-      </h1>
-      <p class="mt-3 text-pretty text-base leading-relaxed text-muted-foreground">
-        Quick conversions that run entirely in your browser. Your files never
-        leave your device.
-      </p>
-    </header>
-  </Container>
+  <!-- Hero. Same stagger as the rest of the public pages so the entrance
+       reads as one design language across the site. -->
+  <Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
+    <HeroBackdrop src="/background-footer.webp" tone="subtle" />
+    <Container size="wide" class="relative">
+      <div class="relative z-10 mx-auto flex max-w-2xl flex-col items-center gap-6 text-center">
+        <span
+          in:fly={riseM(heroStagger * 0)}
+          class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+        >
+          <span class="size-1.5 rounded-full bg-primary"></span>
+          Tools
+        </span>
+        <h1
+          in:fly={riseM(heroStagger * 1)}
+          class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+        >
+          Free video tools.
+          <span class="block font-medium italic text-foreground/40">Your files stay on your device.</span>
+        </h1>
+        <p
+          in:fly={riseM(heroStagger * 2)}
+          class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+        >
+          Quick conversions that run entirely in your browser. Nothing is uploaded, no watermark, no account.
+        </p>
+        <div in:fly={riseM(heroStagger * 3)} class="mt-1 flex flex-wrap items-center justify-center gap-2">
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+            <ShieldCheck class="size-3 text-foreground/60" />
+            No upload
+          </span>
+          <span class="inline-flex items-center gap-1.5 rounded-full bg-foreground/5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/75">
+            <UserX class="size-3 text-foreground/60" />
+            No account
+          </span>
+        </div>
+      </div>
+    </Container>
+  </Section>
 
   <!-- Featured: the screenshot editor is not a worker op, so it sits outside the
        TOOLS registry and gets its own card. -->

@@ -1,57 +1,35 @@
 <script lang="ts">
 	import {
-		Container,
-		Footer,
-		HeroBackdrop,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SectionHeader,
+	  SeoMeta,
 	} from "$lib/components";
-	import { Button } from "@recast/ui/button";
+	import { prefersReducedMotion } from "$lib/motion-core";
 	import {
-		ArrowRight,
-		Blend,
-		Blocks,
-		Captions,
-		Check,
-		Download,
-		Hash,
-		Image as ImageIcon,
-		Layers,
-		Lock,
-		MousePointer2,
-		Palette,
-		ShieldCheck,
-		Spline,
-		Waves,
+	  ArrowRight,
+	  Blocks,
+	  Check,
+	  Download,
+	  Image as ImageIcon
 	} from "@lucide/svelte";
 	import { GithubBrand } from "@recast/ui/brand-icons";
+	import { Button } from "@recast/ui/button";
+	import { cubicOut } from "svelte/easing";
+	import { fly } from "svelte/transition";
+	import { kinds, steps, trust } from "./data";
+	
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-	// The contribution kinds a pack can add. These map 1:1 to the editor's
-	// pickers, so the page reads as "this shows up where you already work".
-	const kinds = [
-		{ icon: MousePointer2, title: "Cursors", description: "New pointer styles with rest and click states, plus precise hotspots, right in the cursor picker." },
-		{ icon: ImageIcon, title: "Backgrounds", description: "Wallpapers that drop straight into the canvas background picker." },
-		{ icon: Blend, title: "Gradients", description: "Curated gradient sets, rendered live in both the preview and the export." },
-		{ icon: Palette, title: "Colors", description: "Solid color swatches for the canvas, ready to click." },
-		{ icon: Captions, title: "Caption themes", description: "Ready-made caption looks (font, color, outline, backing), applied in one click to overlay and burned-in captions." },
-		{ icon: Spline, title: "Easing presets", description: "Named motion curves for zoom and cursor animation." },
-		{ icon: Waves, title: "Smoothing presets", description: "Cursor smoothing recipes, strength plus click snap, that you can share as packs." },
-	];
 
-	const steps = [
-		{ icon: Blocks, title: "Browse or paste", description: "Open Extensions, browse the registry, or paste a pack URL to install directly." },
-		{ icon: Download, title: "Install in a click", description: "Downloads, every asset gets hash-checked, installs locally. No account, nothing phones home." },
-		{ icon: Layers, title: "Use it everywhere", description: "Cursors, backgrounds, gradients, presets show up in the pickers you already use." },
-	];
-
-	const trust = [
-		{ icon: Lock, title: "No code runs", description: "A pack is a manifest plus static files. Nothing executes." },
-		{ icon: Hash, title: "Hash-pinned over HTTPS", description: "Every asset is checked against its SHA-256 on download. Tampered files fail the install." },
-		{ icon: ShieldCheck, title: "Zero permissions", description: "Asset packs can't request capabilities. A pack never reaches further than the app already can." },
-		{ icon: Check, title: "Open and checked", description: "The registry is public on GitHub, CI checks every submission for schema, hashes, and safe filenames." },
-	];
 </script>
 
 <SeoMeta
@@ -66,15 +44,24 @@
 		<HeroBackdrop src="/background-extensions.webp" tone="strong" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+				<span
+					in:fly={riseM(heroStagger * 0)}
+					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Extensions
 				</span>
-				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
+				<h1
+					in:fly={riseM(heroStagger * 1)}
+					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+				>
 					Make Recast yours.
 					<span class="block font-medium italic text-foreground/40">Open packs, no lock-in.</span>
 				</h1>
-				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+				<p
+					in:fly={riseM(heroStagger * 2)}
+					class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+				>
 					Community packs install straight into the editor's pickers. Each one is a manifest and a few static files, hash-checked. Nothing runs, nothing asks for permission.
 				</p>
 				<Reveal variant="up" delay={120} class="mt-2 flex flex-wrap items-center justify-center gap-3">

@@ -8,7 +8,7 @@
     Box,
     Clapperboard,
     Download,
-    Image,
+    ImageIcon,
     Layers,
     MousePointerClick,
     Palette,
@@ -17,6 +17,7 @@
     UserX,
     WifiOff,
   } from "@lucide/svelte";
+  import {Image} from "@unpic/svelte"
   import {
     buildEditorJsonLd,
     EDITOR_DESCRIPTION,
@@ -72,7 +73,7 @@
 
   const steps = [
     {
-      icon: Image,
+      icon: ImageIcon,
       title: "Drop your screenshot",
       body: "Upload it, paste it, or drag it onto the page. It loads straight into your browser.",
     },
@@ -160,21 +161,8 @@
       </div>
 
       <figure class="flex flex-col gap-3">
-        <div class="stage border-border/50 grid place-items-center rounded-2xl border p-6">
-          <div class="tilt" aria-hidden="true">
-            <div class="chrome">
-              <div class="chrome-bar">
-                <i class="dot r"></i><i class="dot y"></i><i class="dot g"></i>
-              </div>
-              <div class="shot shot-framed">
-                <span class="bar w-3/5"></span>
-                <span class="bar w-4/5"></span>
-                <span class="bar w-2/5"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-        <figcaption
+         <Image src="/screenshots/reshot_preview.webp" alt="reshot_preview" height="400" width="600" />
+         <figcaption
           class="text-primary text-center text-[11px] font-bold tracking-[0.16em] uppercase"
         >
           Thirty seconds later

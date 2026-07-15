@@ -8,6 +8,7 @@
 	  SectionHeader,
 	  SeoMeta
 	} from "$lib/components";
+	import { prefersReducedMotion } from "$lib/motion-core";
 	import {
 	  ArrowRight,
 	  Building2,
@@ -26,6 +27,13 @@
 	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
+
+	// Hero entrance: same 80ms stagger as the rest of the public pages.
+	// 460ms per element lands the whole ladder in well under a second.
+	const reduced = $derived(prefersReducedMotion());
+	const heroStagger = 80;
+	const riseM = (delay: number) =>
+		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
 	let email = $state("");
 	let joined = $state(false);
@@ -134,26 +142,35 @@
 		<HeroBackdrop src="/background-pricing.webp" tone="subtle" />
 		<Container class="relative">
 			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+				<span
+					in:fly={riseM(heroStagger * 0)}
+					class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70"
+				>
 					<span class="size-1.5 rounded-full bg-primary"></span>
 					Pricing
 				</span>
-				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
+				<h1
+					in:fly={riseM(heroStagger * 1)}
+					class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"
+				>
 					Free, local,
 					<span class="block font-medium italic text-foreground/40">yours.</span>
 				</h1>
-				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
+				<p
+					in:fly={riseM(heroStagger * 2)}
+					class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg"
+				>
 					Desktop is free forever, runs offline. Cloud adds hosted sharing: bring your own storage on the free tier, or let Recast manage it on Pro.
 				</p>
 				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-medium text-foreground/75">
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<ShieldCheck class="size-3.5 text-primary" /> No telemetry
+						<ShieldCheck class="size-3.5 text-foreground" /> No telemetry
 					</span>
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<HardDriveUpload class="size-3.5 text-primary" /> Bring your own storage
+						<HardDriveUpload class="size-3.5 text-foreground" /> Bring your own storage
 					</span>
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<Tag class="size-3.5 text-primary" /> No per-seat tax
+						<Tag class="size-3.5 text-foreground" /> No per-seat tax
 					</span>
 				</div>
 			</div>
@@ -165,8 +182,8 @@
 		<Container>
 			<div class="grid gap-4 lg:grid-cols-3">
 				<!-- Desktop (free, today) -->
-				<Reveal variant="left">
-					<article class="glass-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
+				<Reveal variant="left" id="plan-desktop">
+					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
 						<div class="flex items-center justify-between">
 							<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 								Desktop
@@ -199,7 +216,7 @@
 							{/each}
 						</ul>
 						<div class="mt-8 pt-2">
-							<Button href="/download" size="lg" class="w-full gap-2">
+							<Button href="/download" size="lg" variant="dark" class="w-full">
 								<Download class="size-4" />
 								Download free
 							</Button>
@@ -208,7 +225,7 @@
 				</Reveal>
 
 				<!-- Cloud Free (waitlist) -->
-				<Reveal variant="up" delay={80}>
+				<Reveal variant="up" delay={80} id="plan-cloud-pro">
 					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-7 ring-1 ring-primary/25 sm:p-8">
 						<div
 							aria-hidden="true"
@@ -288,7 +305,7 @@
 
 				<!-- Cloud Free tier (also waitlist; storage-agnostic flavour) -->
 				<Reveal variant="right" delay={160}>
-					<article class="glass-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
+					<article class="bg-card flex h-full flex-col rounded-2xl p-7 sm:p-8">
 						<div class="flex items-center justify-between">
 							<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 								Cloud Free
@@ -299,7 +316,7 @@
 							</span>
 						</div>
 						<div class="mt-3 flex items-baseline gap-2">
-							<span class="text-5xl font-semibold tracking-tight text-foreground">$0</span>
+							<span class="text-5xl font-semibold tracking-tight text-foreground">Soon</span>
 							<span class="text-sm text-muted-foreground">BYO storage</span>
 						</div>
 						<p class="mt-4 text-sm leading-relaxed text-muted-foreground">
@@ -325,7 +342,7 @@
 							{/each}
 						</ul>
 						<div class="mt-8 pt-2">
-							<Button href="/waitlist" variant="secondary" size="lg" class="w-full gap-2">
+							<Button href="/waitlist" variant="dark" size="lg" class="w-full gap-2">
 								<Cloud class="size-4" />
 								Join Cloud waitlist
 							</Button>
@@ -355,7 +372,9 @@
 							For larger orgs that need single sign-on, audit trails, data-residency guarantees, and a dedicated success manager. Provisioned per agreement, not self-serve.
 						</p>
 					</div>
-					<ul class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:max-w-md md:flex-1">
+
+					<div class="md:shrink-0">
+						<ul class="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:max-w-md md:flex-1">
 						{#each [
 							"Everything in Cloud Pro",
 							"SSO / SAML and SCIM provisioning",
@@ -365,17 +384,15 @@
 							"Volume pricing",
 						] as point}
 							<li class="flex items-start gap-2 text-sm text-foreground/85">
-								<Check class="mt-0.5 size-4 shrink-0 text-primary" />
+								<Check class="mt-0.5 size-4 shrink-0 text-foreground" />
 								{point}
 							</li>
 						{/each}
 					</ul>
-					<div class="md:shrink-0">
 						<Button
 							href="mailto:hello@recast.li?subject=Recast%20Enterprise"
-							variant="secondary"
-							size="lg"
-							class="w-full gap-2 md:w-auto"
+							variant="dark"
+							class="w-full gap-2 md:w-auto mt-4"
 						>
 							<Mail class="size-4" />
 							Contact sales
