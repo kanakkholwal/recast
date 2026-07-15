@@ -9,9 +9,7 @@
     Zap
 } from "@lucide/svelte";
 import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
-import type { PageData } from "./$types";
 
-  let { data }: { data: PageData } = $props();
 
   export type OS = "macOS" | "Windows" | "Linux" | "Unknown";
 

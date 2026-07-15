@@ -16,7 +16,7 @@ export const load: PageLoad = async ({ fetch, setHeaders }) => {
 
 	try {
 		const res = await fetch(
-			"https://api.github.com/repos/kanakkholwal/recast/releases?per_page=20",
+			"https://api.github.com/repos/kanakkholwal/recast/releases?per_page=10",
 		);
 		if (!res.ok) throw new Error("Failed to fetch releases");
 
