@@ -87,14 +87,16 @@ Set-StrictMode -Version Latest
 
 # ── platform detection ──────────────────────────────────────────────────────
 #
-# PowerShell 7 exposes $IsWindows / $IsLinux / $IsMacOS out of the box; for
-# Windows PowerShell 5 (legacy) we fall back on $env:OS.
+# PowerShell 7 exposes $IsWindows / $IsLinux / $IsMacOS as READ-ONLY
+# automatic variables — assigning to them throws `Cannot overwrite variable
+# IsWindows because it is read-only or constant`. Read them, but never
+# reassign. `$OnWindows` is our own local flag.
 
-$IsWindows = ($IsWindows -eq $true) -or ($env:OS -eq 'Windows_NT')
-$IsLinux   = ($IsLinux  -eq $true)
-$IsMacOS   = ($IsMacOS  -eq $true)
-$ExeExt    = if ($IsWindows) { '.exe' } else { '' }
-Write-Host "Platform: $(if ($IsWindows) {'Windows'} elseif ($IsLinux) {'Linux'} elseif ($IsMacOS) {'macOS'} else {'unknown'})"
+$OnWindows = ($IsWindows -eq $true) -or ($env:OS -eq 'Windows_NT')
+$OnLinux   = ($IsLinux  -eq $true)
+$OnMacOS   = ($IsMacOS  -eq $true)
+$ExeExt    = if ($OnWindows) { '.exe' } else { '' }
+Write-Host "Platform: $(if     ($OnWindows) {'Windows'} elseif ($OnLinux) {'Linux'} elseif ($OnMacOS) {'macOS'} else {'unknown'})"
 
 # ── resolve defaults ────────────────────────────────────────────────────────
 
@@ -110,9 +112,9 @@ Write-Host "RepoRoot: $RepoRoot"
 if (-not $RustTarget) {
     $RustTarget = $env:RUST_TARGET
     if (-not $RustTarget) {
-        if     ($IsWindows) { $RustTarget = 'x86_64-pc-windows-msvc' }
-        elseif ($IsLinux)   { $RustTarget = 'x86_64-unknown-linux-gnu' }
-        elseif ($IsMacOS)   { $RustTarget = 'aarch64-apple-darwin' }
+        if     ($OnWindows) { $RustTarget = 'x86_64-pc-windows-msvc' }
+        elseif ($OnLinux)   { $RustTarget = 'x86_64-unknown-linux-gnu' }
+        elseif ($OnMacOS)   { $RustTarget = 'aarch64-apple-darwin' }
         else                { $RustTarget = 'x86_64-unknown-linux-gnu' }
     }
 }
@@ -149,7 +151,7 @@ Write-Host "TranscribeVerb: $TranscribeVerb"
 # just installs that sidecar next to the recast binary so the
 # `Command::new("ffmpeg")` inside audio::extract_pcm_f32 resolves.
 
-$sidecarExt = if ($IsWindows) { '.exe' } else { '' }
+$sidecarExt = if ($OnWindows) { '.exe' } else { '' }
 $sidecarSrc = Join-Path $RepoRoot "apps/desktop/src-tauri/binaries/ffmpeg-$RustTarget$sidecarExt"
 $binDir     = Split-Path -Parent $ExePath
 $sidecarDst = Join-Path $binDir "ffmpeg$sidecarExt"
@@ -281,7 +283,7 @@ if (Test-Path $stderrLog) { Write-Host "stderr:"; Get-Content $stderrLog | Selec
 # Linux / macOS: process exit code is the only universally portable
 # signal; the verdict step covers it.
 
-if (-not $SkipWerScan -and $IsWindows) {
+if (-not $SkipWerScan -and $OnWindows) {
     $since   = (Get-Date).AddSeconds(-180)
     $werHits = Get-WinEvent -FilterHashtable @{
                      LogName   = 'Application'
