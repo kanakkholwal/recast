@@ -26,7 +26,21 @@ pub fn transcribe(
         .first()
         .ok_or_else(|| format!("model '{}' has no GGUF file defined", model.id))?;
     let path = model_dir.join(&file.rel_path);
-    super::ggml::transcribe_gguf(&path, &model.id, samples, language)
+    transcribe_at_path(&path, &model.id, samples, language)
+}
+
+/// Path-keyed sibling of [`transcribe`]. Skips the registry lookup + dir join —
+/// the caller already has the GGUF file in hand. Used by `transcribe_for_paths`
+/// in `mod.rs` and reaches `ggml::transcribe_gguf` directly. `language` is an
+/// optional ISO source-language hint (`None` = autodetect).
+#[cfg(feature = "ggml")]
+pub fn transcribe_at_path(
+    model_path: &Path,
+    model_id: &str,
+    samples: &[f32],
+    language: Option<&str>,
+) -> Result<Transcript, String> {
+    super::ggml::transcribe_gguf(model_path, model_id, samples, language)
 }
 
 /// Fallback for a build without the on-device engine (`--no-default-features`):
@@ -35,6 +49,16 @@ pub fn transcribe(
 pub fn transcribe(
     _model: &CaptionModel,
     _model_dir: &Path,
+    _samples: &[f32],
+    _language: Option<&str>,
+) -> Result<Transcript, String> {
+    Err("On-device transcription isn't available in this build.".into())
+}
+
+#[cfg(not(feature = "ggml"))]
+pub fn transcribe_at_path(
+    _model_path: &Path,
+    _model_id: &str,
     _samples: &[f32],
     _language: Option<&str>,
 ) -> Result<Transcript, String> {

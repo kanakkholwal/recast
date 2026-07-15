@@ -264,18 +264,34 @@ pub fn models_dir(app: &AppHandle) -> Result<PathBuf, String> {
 }
 
 pub fn model_dir(app: &AppHandle, id: &str) -> Result<PathBuf, String> {
-    Ok(models_dir(app)?.join(id))
+    Ok(model_dir_at(&models_dir(app)?, id))
+}
+
+/// Path-keyed sibling of [`model_dir`]. Lets non-Tauri callers (CLI, smoke
+/// tests, automation) reach a model's on-disk directory without an
+/// `AppHandle`. The Tauri-cmd path delegates through here so there's one
+/// source of truth for the join math.
+pub fn model_dir_at(models_root: &Path, id: &str) -> PathBuf {
+    models_root.join(id)
 }
 
 /// A model is installed when every declared file is present (and matches its
 /// sha256 if one is known). A model with no files defined is never "installed".
 pub fn is_installed(app: &AppHandle, model: &CaptionModel) -> Result<bool, String> {
+    let dir = model_dir(app, &model.id)?;
+    is_installed_at(&dir, model)
+}
+
+/// Path-keyed sibling of [`is_installed`]. Same checks (file exists + sha256
+/// match when one is pinned) against a caller-supplied model dir. Used by the
+/// CLI `transcribe` verb and the smoke test; `is_installed(app, ...)` delegates
+/// here so the criteria live in one place.
+pub fn is_installed_at(model_dir: &Path, model: &CaptionModel) -> Result<bool, String> {
     if model.files.is_empty() {
         return Ok(false);
     }
-    let dir = model_dir(app, &model.id)?;
     for f in &model.files {
-        let path = dir.join(&f.rel_path);
+        let path = model_dir.join(&f.rel_path);
         if !path.exists() {
             return Ok(false);
         }

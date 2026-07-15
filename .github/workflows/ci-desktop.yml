@@ -248,11 +248,42 @@ jobs:
       # updater artifacts. That is exactly the cross-platform compile gate we
       # want: it proves the code builds on each OS without the slow, secret-
       # dependent packaging steps.
+      #
+      # Force portable x64 ggml. CI runners are Intel Xeon with AVX-512;
+      # without this flag the staticlib compiles in an AVX-512 jump-table
+      # which raises STATUS_ILLEGAL_INSTRUCTION (0xC000001D) on Zen 3 /
+      # pre-Skylake / VM CPUs (real users). Scalar fallback is ~14x slower
+      # but works on every x86_64 CPU. Same flag is lifted into
+      # release-desktop.yml. The `CMAKE_ARGS` mirror is belt-and-braces
+      # because the sys build.rs reads both.
       - name: Compile desktop app (no bundle)
         env:
           GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
+          CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
         run: pnpm --filter recast-desktop tauri build --no-bundle ${{ matrix.platform.tauri_args }}
+
+      # Smoke test: drive the built binary through real ggml inference and
+      # assert no STATUS_ILLEGAL_INSTRUCTION / native abort fires. Reused
+      # from release-desktop.yml; kept here in CI so we catch regressions
+      # on every PR rather than only on tag pushes.
+      #
+      # `cross: true` legs (macos-x64 cross-compiled on arm64) skip — the
+      # x86_64 binary can't execute on the arm64 host.
+      - name: Cache smoke-test model (Whisper-base, ~60 MB)
+        if: ${{ !matrix.platform.cross }}
+        uses: actions/cache@v4
+        with:
+          path: models-cache/smoke-test
+          key: smoke-gguf-${{ matrix.platform.rust_target }}-whisper-base-Q5_K_M
+          restore-keys: |
+            smoke-gguf-${{ matrix.platform.rust_target }}-
+
+      - name: Smoke test — ggml inference (${{ matrix.platform.name }})
+        if: ${{ !matrix.platform.cross }}
+        shell: pwsh
+        run: ./scripts/release/smoke-test-transcription.ps1
 
       # Rust unit tests. Most of the suite is OS-agnostic (pure functions:
       # filter-graph construction, zoom-expression budgeting, blur-radius

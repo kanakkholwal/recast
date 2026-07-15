@@ -7,6 +7,7 @@
 //! with `--format`. See docs/cli-automation-plan.md.
 
 use std::io::IsTerminal;
+use std::path::PathBuf;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use serde::Serialize;
@@ -35,6 +36,7 @@ const CLI_VERBS: &[&str] = &[
     "profile",
     "screenshot",
     "screen-read",
+    "transcribe",
     "watch",
     "install",
     "uninstall",
@@ -169,6 +171,16 @@ enum Command {
         /// Path to the video file (e.g. an .mp4) to read.
         input: String,
     },
+    /// Transcribe an audio file against a downloaded `.gguf` model. Offline —
+    /// does not need the app or the GUI to be running. The CLI path into the
+    /// on-device engine; also used by the CI / release smoke test.
+    ///
+    /// SMOKE_TEST_VERB: the script `scripts/release/smoke-test-transcription.ps1`
+    /// calls this verb with these exact flag names. Rename the verb or change
+    /// any flag (`--input`, `--model`, `--out`, `--language`) and update the
+    /// script's `$TranscribeVerb` in the same commit. CI smoke tests will
+    /// start failing otherwise — that is by design, not noise.
+    Transcribe(TranscribeArgs),
     /// Stream backend events (recording + selection + profiles) until interrupted.
     Watch {
         /// Comma-separated event groups: `rec`, `selection`, `profiles` (default: all).
@@ -299,6 +311,27 @@ struct ShotArgs {
     /// Also print a base64 data URI of the image alongside the file path.
     #[arg(long)]
     base64: bool,
+}
+
+/// CLI args for the `transcribe` verb. Mirrors the flag shape the smoke test
+/// script (`scripts/release/smoke-test-transcription.ps1`) expects — keep
+/// both in lockstep.
+#[derive(clap::Args)]
+struct TranscribeArgs {
+    /// Audio file to transcribe (any format FFmpeg can read).
+    #[arg(long, value_name = "PATH")]
+    input: PathBuf,
+    /// Path to a downloaded `.gguf` model file. A single GGUF — the format
+    /// the on-device engine loads directly. The smoke test uses
+    /// `whisper-base-Q5_K_M.gguf` from `models-cache/smoke-test/`.
+    #[arg(long, value_name = "PATH")]
+    model: PathBuf,
+    /// ISO source-language hint (e.g. `en`). Omit to let the model autodetect.
+    #[arg(long)]
+    language: Option<String>,
+    /// Where to write the transcript as JSON. Defaults to stdout when omitted.
+    #[arg(long, value_name = "PATH")]
+    out: Option<PathBuf>,
 }
 
 impl ShotArgs {
@@ -477,6 +510,30 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
         Command::ScreenRead { input } => {
             let abs = crate::commands::screenshot::absolutize(std::path::PathBuf::from(input));
             control(cli, "screen.read", json!({ "path": abs.to_string_lossy() }))
+        }
+        Command::Transcribe(args) => {
+            // The model_id we hand to the Transcript is informational only —
+            // the engine doesn't read it. Default to the file stem so the
+            // smoke test output identifies which GGUF was used.
+            let model_id = args
+                .model
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("transcribe-cli")
+                .to_string();
+            let transcript = block_on(crate::transcription::transcribe_for_paths(
+                &args.input,
+                &args.model,
+                &model_id,
+                args.language.as_deref(),
+            ))?;
+            let json = serde_json::to_string_pretty(&transcript).map_err(|e| e.to_string())?;
+            match &args.out {
+                Some(path) => std::fs::write(path, format!("{json}\n"))
+                    .map_err(|e| format!("write transcript: {e}"))?,
+                None => println!("{json}"),
+            }
+            Ok(())
         }
         Command::Watch { events } => {
             let params = match events {

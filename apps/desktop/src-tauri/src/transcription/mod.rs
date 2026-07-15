@@ -25,6 +25,8 @@ pub(crate) mod subtitles;
 pub(crate) mod text_measure;
 mod words;
 
+use std::path::Path;
+
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Channel, AppHandle};
 use tokio::fs;
@@ -527,6 +529,67 @@ pub async fn transcribe_project(
     let _ = on_phase.send(TranscribeProgress {
         phase: "done".into(),
     });
+    Ok(transcript)
+}
+
+/// Path-aware counterpart to [`transcribe_project`]. Identical pipeline
+/// (`audio::extract_pcm_f32` → `engine::transcribe_at_path` →
+/// `words::build_segments`) but no `AppHandle`, no `Channel<TranscribeProgress>`,
+/// no model-registry lookup — the caller supplies the audio path, the GGUF
+/// path, and the model id directly. Used by the CLI `transcribe` verb
+/// (`apps/desktop/src-tauri/src/cli.rs`) and the CI / release smoke test
+/// (`scripts/release/smoke-test-transcription.ps1`).
+///
+/// Streams the three phases to stderr (one line each) so a CLI observer sees
+/// progress. The frontend's IPC `Channel` is a no-op equivalent for scripts.
+pub async fn transcribe_for_paths(
+    audio_path: &Path,
+    model_path: &Path,
+    model_id: &str,
+    language: Option<&str>,
+) -> AppResult<Transcript> {
+    if !audio_path.exists() {
+        return Err(AppError::msg(format!(
+            "audio file not found: {}",
+            audio_path.display()
+        )));
+    }
+    if !model_path.exists() {
+        return Err(AppError::msg(format!(
+            "model file not found: {}",
+            model_path.display()
+        )));
+    }
+
+    eprintln!("phase: extracting");
+    let audio_owned = audio_path.to_string_lossy().into_owned();
+    let samples: Vec<f32> = tokio::task::spawn_blocking(move || {
+        let sources = [audio_owned.as_str()];
+        let samples = audio::extract_pcm_f32(&sources)?;
+        if samples.is_empty() {
+            return Err("no audio to transcribe".to_string());
+        }
+        Ok::<Vec<f32>, String>(samples)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("audio extract task panicked: {e}")))??;
+
+    eprintln!("phase: transcribing");
+    let model_path_owned = model_path.to_path_buf();
+    let model_id_owned = model_id.to_string();
+    let language_owned = language.map(|s| s.to_string());
+    let transcript = tokio::task::spawn_blocking(move || {
+        engine::transcribe_at_path(
+            &model_path_owned,
+            &model_id_owned,
+            &samples,
+            language_owned.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("transcription task panicked: {e}")))??;
+
+    eprintln!("phase: done");
     Ok(transcript)
 }
 
