@@ -63,10 +63,13 @@
 <main class="text-foreground">
 	<!-- Hero -->
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<HeroBackdrop src="/background-extensions.webp" />
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<Eyebrow variant="primary">Extensions</Eyebrow>
+		<HeroBackdrop src="/background-extensions.webp" tone="strong" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<span class="size-1.5 rounded-full bg-primary"></span>
+					Extensions
+				</span>
 				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Make Recast yours.
 					<span class="block font-medium italic text-foreground/40">Open packs, no lock-in.</span>

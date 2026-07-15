@@ -727,7 +727,7 @@
 	<!-- Step 1 — Record -->
 	<Section id="record" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
-			<ShowcasePanel tone="blue">
+			<ShowcasePanel tone="neutral">
 				<div class="grid items-center gap-16 lg:grid-cols-12 lg:gap-24">
 					<!-- Text column: 6/12 so the body copy and feature titles
 					     have real horizontal room instead of hugging a narrow
@@ -789,7 +789,7 @@
 	<!-- Step 2 — Auto-polish -->
 	<Section id="polish" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
-			<ShowcasePanel tone="green">
+			<ShowcasePanel tone="neutral">
 				<!-- Header: spans the full panel width so the headline and body
 				     can breathe. PolishGrid below gets the full panel width too,
 				     so each 4-up tile has room to actually fit its title and
@@ -1059,7 +1059,7 @@
 	<!-- Step 3 — Share (Google Drive, user-owned) -->
 	<Section id="share" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
-			<ShowcasePanel tone="yellow">
+			<ShowcasePanel tone="neutral">
 				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
 					<div class="lg:col-span-5">
 						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
@@ -1132,7 +1132,7 @@
 	     paid future for users who outgrow a raw Drive link. -->
 	<Section id="cloud" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
-			<ShowcasePanel tone="violet">
+			<ShowcasePanel tone="neutral">
 				<div class="grid items-start gap-14 lg:grid-cols-12 lg:gap-20">
 					<div class="lg:col-span-5">
 						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
@@ -1169,14 +1169,11 @@
 						<Reveal variant="morph">
 							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
 								<div class="relative">
-									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
+									<span class="inline-flex items-center gap-2 rounded-full bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
 										<Cloud class="size-3.5 text-foreground/70" />
 										Recast Cloud
 										<span class="text-muted-foreground/40">·</span>
-										<span class="relative flex size-1.5">
-											<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
-											<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
-										</span>
+										<span class="size-1.5 rounded-full bg-foreground/40"></span>
 										waitlist open
 									</span>
 
@@ -1195,7 +1192,7 @@
 												class={cn(
 													"flex flex-col gap-2 rounded-xl border p-4",
 													t.tone === "primary"
-														? "border-primary/30 bg-background/60"
+														? "border-foreground/20 bg-background/70"
 														: "border-border-low/60 bg-background/60",
 												)}
 											>
@@ -1205,7 +1202,7 @@
 												<span
 													class={cn(
 														"text-sm font-semibold tracking-tight",
-														t.tone === "primary" ? "text-primary" : "text-foreground",
+														t.tone === "primary" ? "text-foreground" : "text-foreground/80",
 													)}
 												>
 													{t.label}
@@ -1234,7 +1231,7 @@
 											class="mt-7 flex items-center gap-3 rounded-xl border border-border-low/60 bg-foreground/3 px-4 py-3.5"
 											in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
 										>
-											<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
+											<span class="grid size-7 place-items-center rounded-full bg-foreground/8 text-foreground">
 												<Check class="size-4" />
 											</span>
 											<span class="text-sm font-medium text-foreground">
@@ -1335,8 +1332,8 @@
 				</Reveal>
 
 				<Reveal variant="right" delay={80}>
-					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-primary/20 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
-						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-primary">
+					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-foreground/15 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
+						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/70">
 							Recast Cloud
 						</span>
 						<div class="relative mt-2 flex items-baseline gap-2">
@@ -1449,10 +1446,7 @@
 				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 					<Reveal variant="scale" duration={420}>
 						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
-							<span class="relative flex size-1.5">
-								<span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/60 opacity-70"></span>
-								<span class="relative inline-flex size-1.5 rounded-full bg-primary"></span>
-							</span>
+							<span class="size-1.5 rounded-full bg-foreground/40"></span>
 							v0.4 beta · ready when you are
 						</div>
 					</Reveal>
@@ -1485,7 +1479,7 @@
 						<Reveal variant="up" delay={210 + i * 70} duration={460} class="h-full">
 							<div class="flex h-full flex-col items-stretch gap-2">
 								{#if p.stability === "stable"}
-									<span class="self-center inline-flex items-center gap-1 rounded-full bg-primary/12 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-primary ring-1 ring-inset ring-primary/25">
+									<span class="self-center inline-flex items-center gap-1 rounded-full bg-foreground/8 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-foreground/80 ring-1 ring-inset ring-foreground/15">
 										Recommended
 									</span>
 								{:else}
@@ -1548,3 +1542,5 @@
 		cursor: grabbing;
 	}
 </style>
+
+

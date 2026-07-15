@@ -20,11 +20,6 @@
 />
 
 <section class="relative grid min-h-[70vh] place-items-center px-6 py-16 text-foreground">
-	<div
-		aria-hidden="true"
-		class="pointer-events-none absolute inset-0 -z-10"
-		style="background: radial-gradient(ellipse 70% 50% at 50% 0%, color-mix(in srgb, var(--color-primary) 9%, transparent), transparent 72%);"
-	></div>
 
 	<div class="w-full max-w-md" in:fly={{ y: 16, duration: 600, easing: cubicOut }}>
 		<div class="flex flex-col items-center text-center">

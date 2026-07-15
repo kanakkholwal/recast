@@ -20,7 +20,7 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-32 pb-10 md:pt-40 md:pb-14">
-		<HeroBackdrop src="/background-blog.webp" />
+		<HeroBackdrop src="/background-blog.webp" tone="strong" />
 		<Container size="narrow">
 			<a
 				href="/blog"

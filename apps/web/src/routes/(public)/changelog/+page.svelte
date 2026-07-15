@@ -1,18 +1,16 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		HeroBackdrop,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SeoMeta
 	} from "$lib/components";
-	import { Button } from "@recast/ui/button";
-	import { Badge } from "@recast/ui/badge";
-	import { Markdown } from "@recast/ui/markdown";
 	import { ArrowUpRight, ExternalLink, GitCommit } from "@lucide/svelte";
+	import { Badge } from "@recast/ui/badge";
+	import { Button } from "@recast/ui/button";
+	import { Markdown } from "@recast/ui/markdown";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -40,10 +38,13 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<HeroBackdrop src="/background-changelog.webp" />
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<Eyebrow icon={GitCommit} variant="primary">Changelog</Eyebrow>
+		<HeroBackdrop src="/background-changelog.webp" tone="strong" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<GitCommit class="size-3 text-foreground/60" />
+					Changelog
+				</span>
 				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Every release,
 					<span class="mt-2 block font-medium italic text-foreground/40">

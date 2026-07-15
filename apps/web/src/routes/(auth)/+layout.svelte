@@ -12,7 +12,7 @@
   without going back to the saturated pastels on the landing page.
 -->
 <div class="relative min-h-screen overflow-hidden text-foreground">
-	<HeroBackdrop src="/background-footer.webp" tone="subtle" />
+	<HeroBackdrop src="/background-auth.webp" tone="subtle" />
 	<!--
 	  Soft primary glow under the auth card — anchors the form on the page
 	  without competing with the photo.

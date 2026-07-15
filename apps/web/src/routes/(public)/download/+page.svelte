@@ -1,40 +1,39 @@
 <script lang="ts">
 import {
-		Container,
-		Eyebrow,
-		Footer,
-		HeroBackdrop,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
-	} from "$lib/components";
-	import {
-	  Apple,
-	  ArrowDownToLine,
-	  CheckCircle2,
-	  ChevronDown,
-	  Cpu,
-	  Download,
-	  FileBox,
-	  HardDrive,
-	  Info,
-	  LifeBuoy,
-	  MemoryStick,
-	  Monitor,
-	  MonitorSmartphone,
-	  ShieldCheck,
-	  Terminal,
-	  TriangleAlert,
-	  WifiOff,
-	  Zap,
-	} from "@lucide/svelte";
-	import { Button } from "@recast/ui/button";
-	import * as Collapsible from "@recast/ui/collapsible";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import * as Tabs from "@recast/ui/tabs";
-	import { cn } from "@recast/ui/utils";
-	import type { PageData } from "./$types";
+  Container,
+  Footer,
+  HeroBackdrop,
+  Reveal,
+  Section,
+  SectionHeader,
+  SeoMeta
+} from "$lib/components";
+import {
+  Apple,
+  ArrowDownToLine,
+  CheckCircle2,
+  ChevronDown,
+  Cpu,
+  Download,
+  FileBox,
+  HardDrive,
+  Info,
+  LifeBuoy,
+  MemoryStick,
+  Monitor,
+  MonitorSmartphone,
+  ShieldCheck,
+  Terminal,
+  TriangleAlert,
+  WifiOff,
+  Zap,
+} from "@lucide/svelte";
+import { Button } from "@recast/ui/button";
+import * as Collapsible from "@recast/ui/collapsible";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import * as Tabs from "@recast/ui/tabs";
+import { cn } from "@recast/ui/utils";
+import type { PageData } from "./$types";
 
   let { data }: { data: PageData } = $props();
 
@@ -328,12 +327,13 @@ import {
     spacing="none"
     class="dl-atmosphere relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24"
   >
-    <HeroBackdrop src="/background-section-3.webp" />
+    <HeroBackdrop src="/background-download.webp" tone="strong" />
     <Container class="relative">
-      <div class="mx-auto flex max-w-3xl flex-col items-center text-center">
-        <Eyebrow icon={Download} variant="primary">
-          Latest release · {data.version}
-        </Eyebrow>
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<Download class="size-3 text-foreground/60" />
+					Latest release · {data.version}
+				</span>
 
         <h1
           class="text-balance mt-7 text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]"

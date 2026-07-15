@@ -1,30 +1,29 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		HeroBackdrop,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SectionHeader,
+	  SeoMeta
 	} from "$lib/components";
+	import {
+	  ArrowRight,
+	  Building2,
+	  Check,
+	  Cloud,
+	  Download,
+	  HardDriveUpload,
+	  LoaderCircle,
+	  Mail,
+	  Minus,
+	  ShieldCheck,
+	  Tag,
+	  Users,
+	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowRight,
-		Building2,
-		Check,
-		Cloud,
-		Download,
-		HardDriveUpload,
-		LoaderCircle,
-		Mail,
-		Minus,
-		ShieldCheck,
-		Tag,
-		Users,
-	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -132,10 +131,13 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<HeroBackdrop src="/background-footer.webp" />
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<Eyebrow variant="primary">Pricing</Eyebrow>
+		<HeroBackdrop src="/background-pricing.webp" tone="subtle" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<span class="size-1.5 rounded-full bg-primary"></span>
+					Pricing
+				</span>
 				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Free, local,
 					<span class="block font-medium italic text-foreground/40">yours.</span>

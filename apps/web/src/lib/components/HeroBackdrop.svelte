@@ -44,6 +44,18 @@
   });
 </script>
 
+<!--
+  Three-stop wash that gives the headline a clean reading surface without
+  dimming the photo at the top/bottom edges:
+    0–18%   — page color, hides the photo under the navbar
+    18–34%  — soft fade, photo bleeds in at the top
+    34–66%  — 88% page color behind the headline, so dark text reads
+               cleanly even on the brightest photo (cloud + green hills)
+    66–82%  — soft fade, photo bleeds back at the bottom
+    82–100% — page color, hides the photo where the next section starts
+  The page is near-black in dark mode, so 88% page color in the middle
+  band gives light text a clearly readable surface there too.
+-->
 <div aria-hidden="true" class={`pointer-events-none absolute inset-0 ${className}`}>
   <div
     bind:this={imageEl}
@@ -52,6 +64,12 @@
   ></div>
   <div
     class="absolute inset-0"
-    style="background: linear-gradient(to bottom, var(--color-background) 0%, transparent 45%, transparent 78%, var(--color-background) 100%);"
+    style="background: linear-gradient(to bottom,
+      var(--color-background) 0%,
+      transparent 18%,
+      color-mix(in srgb, var(--color-background) 88%, transparent) 34%,
+      color-mix(in srgb, var(--color-background) 88%, transparent) 66%,
+      transparent 82%,
+      var(--color-background) 100%);"
   ></div>
 </div>
