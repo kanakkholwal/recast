@@ -221,9 +221,10 @@ jobs:
       # compiled fine but 0-byte files make Windows return error 193
       # (`%1 is not a valid Win32 application`) when recast spawns them.
       #
-      # mirrors the cache + download pattern already used by
-      # release-desktop.yml:215-240 — same cache key formula so CI and
-      # release share the artifact (and the same `FFMPEG_VERSION` env).
+      # One cache step + one dispatch step replaces three per-OS branches.
+      # The dispatch (`scripts/release/ensure-ffmpeg.sh`) reads `$RUNNER_OS`
+      # and routes to the matching downloader — Windows uses `pwsh` for the
+      # gyan.dev essentials zip extraction.
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
         continue-on-error: true
@@ -233,18 +234,10 @@ jobs:
           key: ci-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
           restore-keys: |
             ci-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}-
-      - name: Download FFmpeg sidecars (Windows)
-        if: matrix.platform.os == 'windows-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: ./scripts/release/download-ffmpeg-windows.ps1 -RustTarget '${{ matrix.platform.rust_target }}' -Dest 'apps/desktop/src-tauri/binaries'
-      - name: Download FFmpeg sidecars (macOS)
-        if: matrix.platform.os == 'macos-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+      - name: Download FFmpeg sidecars
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: bash scripts/release/download-ffmpeg-macos.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
-      - name: Download FFmpeg sidecars (Linux)
-        if: matrix.platform.os == 'ubuntu-24.04' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash scripts/release/download-ffmpeg-linux.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
+        run: ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
       # Google Drive OAuth credentials (optional). Only injected when the
       # secret is present on the runner — fork PRs don't get it. Without
@@ -277,19 +270,24 @@ jobs:
 
       # Smoke test — drives the built binary through real ggml inference
       # and asserts no STATUS_ILLEGAL_INSTRUCTION / native abort fires.
-      # One step: the script is self-contained (ffmpeg sidecar install,
-      # Whisper-base download, WAV synth, OS-conditional `recast transcribe`
-      # invocation, WER post-mortem scan), so a single `pwsh` invocation
-      # replaces the prior (cache-gguf + setup-pwsh + smoke-test) triplet.
+      #
+      # Cache + script instead of three separate prep steps. The cache
+      # key is shared with release-desktop.yml so a clean cache hit on
+      # CI is also a clean cache hit on release. The script itself is
+      # self-contained (handles platform detection, GGUF download with
+      # sanity-size floor, WAV synth, OS-conditional invocation, WER
+      # post-mortem scan); no other step prepares inputs for it.
       #
       # `cross: true` legs (macos-x64 cross-compiled on arm64) skip — the
       # x86_64 binary can't execute on the arm64 host.
-      #
-      # Trade-off: GGUF is downloaded once per CI run (~30 s, ~60 MB) instead
-      # of being cached across runs via `actions/cache@v4`. Acceptable here
-      # because the smoke test is the only consumer; for the production
-      # release pipeline (release-desktop.yml) the same script is invoked
-      # under different cache economics.
+      - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
+        if: ${{ !matrix.platform.cross }}
+        uses: actions/cache@v4
+        with:
+          path: models-cache/smoke-test
+          key: smoke-gguf-${{ matrix.platform.rust_target }}-whisper-base-Q5_K_M
+          restore-keys: |
+            smoke-gguf-${{ matrix.platform.rust_target }}-
       - name: Smoke test — ggml inference (${{ matrix.platform.name }})
         if: ${{ !matrix.platform.cross }}
         shell: pwsh

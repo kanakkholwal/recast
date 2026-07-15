@@ -288,6 +288,7 @@ pub fn run() {
                 auth_poller: Mutex::new(None),
                 pending_open_file: Mutex::new(pending_open_file),
                 power: crate::power::PowerManager::new(),
+                registered_shortcuts: Mutex::new(Vec::new()),
                 pending_new_recording: std::sync::atomic::AtomicBool::new(
                     launched_for_new_recording,
                 ),
@@ -335,31 +336,35 @@ pub fn run() {
             }
 
             // Register the OS-wide hotkeys. Non-fatal: a conflict (another app
-            // owns the combo) just makes that hotkey unavailable.
-            {
-                use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+            // owns the combo) just makes that hotkey unavailable. Successful
+            // registrations are stashed in `AppState.registered_shortcuts` so
+            // the `run` block can explicitly unregister each on exit — the
+            // plugin doesn't auto-release on Tauri shutdown, and a stale
+            // registration survives a force-kill, blocking the next launch
+            // from picking that combo up.
+            use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut};
+            let registered: Vec<Shortcut> = {
                 let mods = Modifiers::ALT | Modifiers::SHIFT;
+                let mut registered = Vec::with_capacity(2);
                 for sc in [
                     Shortcut::new(Some(mods), Code::KeyR),
                     Shortcut::new(Some(mods), Code::KeyP),
                 ] {
-                    if let Err(e) = app.global_shortcut().register(sc) {
-                        log::warn!("global shortcut register failed: {e}");
+                    match app.global_shortcut().register(sc) {
+                        Ok(()) => registered.push(sc),
+                        Err(e) => log::warn!("global shortcut register failed: {e}"),
                     }
                 }
+                registered
+            };
+            if let Some(state) = app.try_state::<AppState>() {
+                *state.registered_shortcuts.lock() = registered;
             }
 
             // Native crash reporting. Installed after AppState is managed so the
             // panic hook can read the consent flag + install id. Gated on the
             // user's `telemetry_errors` consent (default on) and PII-scrubbed.
             telemetry::install_panic_hook(handle.clone());
-
-            // System tray. Init failure is non-fatal — the app still works
-            // without a tray (the user just can't quick-access actions while
-            // the window is hidden, which is fine). Log + continue.
-            if let Err(e) = tray::init(handle) {
-                log::warn!("tray init failed: {e}");
-            }
 
             #[cfg(windows)]
             jumplist::update(handle);
@@ -547,6 +552,29 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app_handle, event| {
+            // RAII for global-shortcut registrations. The plugin doesn't
+            // auto-release on Tauri shutdown, so an unclean close (crash,
+            // force-kill from Task Manager, dev/prod coexistence where one
+            // instance is killed while another holds the slot) leaves the
+            // OS-level hotkey bound to a dead process and the next launch
+            // logs `HotKey already registered` for the lifetime of the OS.
+            // We hand the lock from setup() to the run closure via the
+            // registered Shortcut objects in `AppState`.
+            if matches!(
+                event,
+                tauri::RunEvent::Exit | tauri::RunEvent::ExitRequested { .. }
+            ) {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    let mut shortcuts = state.registered_shortcuts.lock();
+                    for sc in shortcuts.drain(..) {
+                        if let Err(e) = app_handle.global_shortcut().unregister(sc) {
+                            log::warn!("global shortcut unregister failed: {e}");
+                        }
+                    }
+                }
+            }
+
             // macOS/iOS deliver file-association opens (a double-clicked
             // `.recast` in Finder) and URL opens via RunEvent::Opened, NOT argv
             // — so the argv/single-instance path that works on Windows/Linux

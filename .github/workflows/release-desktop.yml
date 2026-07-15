@@ -222,22 +222,14 @@ jobs:
         uses: actions/cache@v4
         with:
           path: apps/desktop/src-tauri/binaries
-          key: ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
+          key: release-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
+          restore-keys: |
+            release-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}-
 
-      - name: Download FFmpeg sidecars (Windows)
-        if: matrix.platform.os == 'windows-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        shell: pwsh
-        run: ./scripts/release/download-ffmpeg-windows.ps1 -RustTarget '${{ matrix.platform.rust_target }}' -Dest 'apps/desktop/src-tauri/binaries'
-
-      - name: Download FFmpeg sidecars (macOS)
-        if: matrix.platform.os == 'macos-latest' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
+      - name: Download FFmpeg sidecars
+        if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: bash scripts/release/download-ffmpeg-macos.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
-
-      - name: Download FFmpeg sidecars (Linux)
-        if: matrix.platform.os == 'ubuntu-24.04' && steps.ffmpeg-cache.outputs.cache-hit != 'true'
-        shell: bash
-        run: bash scripts/release/download-ffmpeg-linux.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
+        run: ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
       - name: Verify FFmpeg sidecars (encoders required for export)
         shell: bash
@@ -293,7 +285,36 @@ jobs:
           GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           PUBLIC_POSTHOG_KEY: ${{ secrets.PUBLIC_POSTHOG_KEY }}
           PUBLIC_POSTHOG_HOST: ${{ secrets.PUBLIC_POSTHOG_HOST }}
+          # Force portable x64 ggml. CI runners are Intel Xeon with AVX-512;
+          # without this flag the staticlib compiles in an AVX-512 jump-table
+          # which raises STATUS_ILLEGAL_INSTRUCTION (0xC000001D) on Zen 3 /
+          # pre-Skylake / VM CPUs (real users). Scalar fallback is ~14x slower
+          # but works on every x86-64 CPU. The `CMAKE_ARGS` mirror is
+          # belt-and-braces because the sys build.rs reads both. CI uses
+          # the same flag at ci-desktop.yml. Hotfix v0.4.1.
+          TRANSCRIBE_CMAKE_ARGS: "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
+          CMAKE_ARGS:           "-DGGML_NATIVE=OFF -DGGML_CPU_ALL_VARIANTS=OFF -DGGML_OPENMP=OFF"
         run: pnpm --filter recast-desktop tauri build ${{ matrix.platform.tauri_args }}
+
+      # Smoke test — runs after the build, before MSIX packaging / updater
+      # tagging, so a release that crashes on infer falls through to the
+      # verifier as a release-leg failure rather than silently shipping a
+      # broken artifact. Caches the GGUF + dispatches ffmpeg via the same
+      # scripts as ci-desktop, so a passing CI run is a passing release
+      # build with no per-OS-if-spaghetti.
+      - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
+        if: matrix.platform.os == 'windows-latest'
+        uses: actions/cache@v4
+        with:
+          path: models-cache/smoke-test
+          key: release-smoke-gguf-${{ matrix.platform.rust_target }}-whisper-base-Q5_K_M
+          restore-keys: |
+            release-smoke-gguf-${{ matrix.platform.rust_target }}-
+
+      - name: Smoke test — ggml inference (windows-x64)
+        if: matrix.platform.os == 'windows-latest'
+        shell: pwsh
+        run: ./scripts/release/smoke-test-transcription.ps1
 
       - name: Tag macOS updater bundle with arch
         if: matrix.platform.os == 'macos-latest'

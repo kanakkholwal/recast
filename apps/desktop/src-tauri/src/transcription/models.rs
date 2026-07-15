@@ -147,7 +147,12 @@ fn source_builtin() -> ModelSource {
 
 /// A built-in ggml model: one GGUF file from a `handy-computer` HuggingFace repo.
 /// `family` is the display group for the picker; the GGUF itself tells
-/// transcribe.cpp which architecture to run.
+/// transcribe.cpp which architecture to run. `sha256` is the exact-byte
+/// SHA-256 of the file at the URL above — pinned releases need this to
+/// reject a corrupted / truncated / upstream-replaced download at the
+/// `is_installed` gate (downloaded mismatches auto-redownload; see
+/// `download_file` at `models.rs:357-367`). Compute via
+/// `tools/dev/pin-model-sha256.ps1` once per release.
 #[allow(clippy::too_many_arguments)]
 fn ggml_model(
     id: &str,
@@ -158,6 +163,7 @@ fn ggml_model(
     languages: Vec<String>,
     size: u64,
     is_default: bool,
+    sha256: Option<&str>,
 ) -> CaptionModel {
     let url = format!("https://huggingface.co/{hf_repo}/resolve/main/{file}");
     CaptionModel {
@@ -171,7 +177,7 @@ fn ggml_model(
         files: vec![ModelFile {
             rel_path: file.into(),
             url,
-            sha256: None, // TODO: pin before release once revisions are locked
+            sha256: sha256.map(str::to_string),
         }],
         // ggml runs on CPU (tinyBLAS); GPU is opt-in and only speeds it up.
         requires_gpu: false,
@@ -198,6 +204,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             660_000_000,
             true,
+            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
         ),
         ggml_model(
             "parakeet-v2",
@@ -208,6 +215,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["en".into()],
             660_000_000,
             false,
+            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
         ),
         ggml_model(
             "whisper-base",
@@ -218,6 +226,11 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             60_000_000,
             false,
+            // SHA-256 of the GGUF at the URL above — pinned 2026-07-15
+            // against `handy-computer/whisper-base-gguf` HEAD. Mismatches
+            // at download time are auto-detected (`download_file` at
+            // `models.rs:357-367`); re-pin when upgrading the URL.
+            Some("8E0FEB7BC35780353CF31821018E601BB7B7CFF6C9A0E17ADA5A5DB23F4DB867"),
         ),
         ggml_model(
             "whisper-small",
@@ -228,6 +241,7 @@ pub fn registry() -> Vec<CaptionModel> {
             vec!["multi".into()],
             190_000_000,
             false,
+            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
         ),
     ]
 }
