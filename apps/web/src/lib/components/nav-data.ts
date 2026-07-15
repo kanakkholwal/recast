@@ -28,7 +28,7 @@ const BLOG: NavLink = { label: "Blog", href: "/blog" };
 
 // Inline top-nav links, always visible on desktop. Kept short for a minimal
 // bar; everything else lives in the footer.
-export const navLinks: NavLink[] = [FEATURES, EXTENSIONS, PRICING, CHANGELOG, BLOG];
+export const navLinks: NavLink[] = [FEATURES, EXTENSIONS, PRICING, CHANGELOG];
 
 export const footerCols: { title: string; links: NavLink[] }[] = [
 	{
