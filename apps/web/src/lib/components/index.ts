@@ -14,6 +14,7 @@ export { default as ScreenshotSlideshow } from "./ScreenshotSlideshow.svelte";
 export { default as Section } from "./Section.svelte";
 export { default as SelectionWord } from "./SelectionWord.svelte";
 export { default as SeoMeta } from "./SeoMeta.svelte";
+export { default as FeatureStepper } from "./FeatureStepper.svelte";
 export { default as ShowcasePanel } from "./ShowcasePanel.svelte";
 export { default as ThemeShortcut } from "./ThemeShortcut.svelte";
 

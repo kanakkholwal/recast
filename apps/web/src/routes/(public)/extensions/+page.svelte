@@ -41,16 +41,16 @@
 	];
 
 	const steps = [
-		{ icon: Blocks, title: "Browse or paste", description: "Open the Extensions tab in the editor and browse the registry, or paste a pack URL to install one directly." },
-		{ icon: Download, title: "Install in a click", description: "The pack downloads, every asset gets checked against its hash, and it installs to your machine. No account, and nothing phones home to us." },
-		{ icon: Layers, title: "Use it everywhere", description: "Its cursors, backgrounds, gradients and presets show up in the pickers you already use. Toggle it off or remove it whenever you like." },
+		{ icon: Blocks, title: "Browse or paste", description: "Open Extensions, browse the registry, or paste a pack URL to install directly." },
+		{ icon: Download, title: "Install in a click", description: "Downloads, every asset gets hash-checked, installs locally. No account, nothing phones home." },
+		{ icon: Layers, title: "Use it everywhere", description: "Cursors, backgrounds, gradients, presets show up in the pickers you already use." },
 	];
 
 	const trust = [
-		{ icon: Lock, title: "No code runs", description: "A pack is a manifest plus static files. Nothing executes, so there's no sandbox to escape because there's nothing to sandbox." },
-		{ icon: Hash, title: "Hash-pinned over HTTPS", description: "Every asset is checked against its SHA-256 on download. A tampered or swapped file fails the install outright." },
+		{ icon: Lock, title: "No code runs", description: "A pack is a manifest plus static files. Nothing executes." },
+		{ icon: Hash, title: "Hash-pinned over HTTPS", description: "Every asset is checked against its SHA-256 on download. Tampered files fail the install." },
 		{ icon: ShieldCheck, title: "Zero permissions", description: "Asset packs can't request capabilities. A pack never reaches further than the app already can." },
-		{ icon: Check, title: "Open and checked", description: "The registry is public on GitHub, and CI checks every submission for schema, hashes and safe filenames before it can ship." },
+		{ icon: Check, title: "Open and checked", description: "The registry is public on GitHub, CI checks every submission for schema, hashes, and safe filenames." },
 	];
 </script>
 
@@ -75,7 +75,7 @@
 					<span class="block font-medium italic text-foreground/40">Open packs, no lock-in.</span>
 				</h1>
 				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-					Cursors, backgrounds, gradients and motion presets, installed right in the editor from an open community registry. Every pack is just a manifest and a few static files. Nothing runs, every asset is hash-checked, the app stays free, offline and yours.
+					Community packs install straight into the editor's pickers. Each one is a manifest and a few static files, hash-checked. Nothing runs, nothing asks for permission.
 				</p>
 				<Reveal variant="up" delay={120} class="mt-2 flex flex-wrap items-center justify-center gap-3">
 					<Button href="/download" variant="dark" class="gap-2">
@@ -101,8 +101,7 @@
 			<SectionHeader
 				eyebrow="What a pack adds"
 				title="It shows up where you already work."
-				description="A pack feeds the same pickers you use every day, so there's nothing new to learn. One pack can mix any of these."
-				align="center"
+				description="A pack feeds the pickers you already use. Nothing new to learn."
 			/>
 			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-3">
 				{#each kinds as kind, i}
@@ -159,8 +158,7 @@
 			<SectionHeader
 				eyebrow="Safe by design"
 				title="Installable, without the install-anything risk."
-				description="Plugins usually mean running someone else's code. Recast packs don't run code at all. They only carry assets, so plugin supply-chain attacks don't apply."
-				align="center"
+				description="No code runs. A pack is just assets, so plugin supply-chain attacks don't apply."
 			/>
 			<div class="mt-16 grid grid-cols-1 gap-px overflow-hidden rounded-2xl border border-border-low/40 bg-border-low/30 sm:grid-cols-2 lg:grid-cols-4">
 				{#each trust as t, i}
@@ -187,7 +185,7 @@
 					<SectionHeader
 						eyebrow="Build & share"
 						title="Make a pack in an afternoon."
-						description="Drop your SVGs or images in a folder, write a small manifest, and open a pull request. CI checks the schema, hashes and filenames for you. Once it's merged, it's in the gallery for everyone, with your name on it."
+						description="Drop your SVGs or images in a folder, write a manifest, open a PR. CI checks the rest."
 					/>
 					<ul class="mt-10 space-y-3.5">
 						{#each [
@@ -211,6 +209,7 @@
 						<Button
 							href="https://github.com/kanakkholwal/recast/tree/main/extensions"
 							class="gap-2"
+							variant="dark"
 						>
 							<GithubBrand class="size-4" />
 							Read the contributor guide

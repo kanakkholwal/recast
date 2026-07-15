@@ -142,7 +142,7 @@ import type { PageData } from "./$types";
     { icon: WifiOff, label: "Offline-first", value: "Stays on disk" },
     { icon: Zap, label: "GPU export", value: "Hardware-encoded" },
     { icon: FileBox, label: "Open format", value: ".recast project" },
-    { icon: ShieldCheck, label: "Open source", value: "MIT licensed" },
+    { icon: ShieldCheck, label: "Open source", value: "GPLv3 licensed" },
   ];
 
   // System requirements. Recast probes NVENC (NVIDIA) → AMF (AMD) → QSV
@@ -347,9 +347,7 @@ import type { PageData } from "./$types";
         <p
           class="text-pretty mt-6 max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg"
         >
-          Free during beta. No sign-up. The native screen recorder for founders,
-          indie hackers, and product engineers who'd rather ship than open a
-          timeline.
+          Free during beta, no sign-up. The native recorder for makers who'd rather ship than open a timeline.
         </p>
 
         <div
@@ -492,12 +490,11 @@ import type { PageData } from "./$types";
                 Heads up: platform stability
               </h3>
               <p class="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                Windows is the build I use daily and the most polished today.
+                Windows is the daily-driver build.
                 <span class="font-semibold text-foreground/85">
                   macOS and Linux are early ports
                 </span>
-                , so please don't expect feature parity yet, and reach for the Windows
-                build if you have the choice.
+                — don't expect feature parity yet. Reach for Windows if you have the choice.
               </p>
               <div class="mt-3 flex flex-wrap items-center gap-1.5">
                 {#each platforms as p}
@@ -564,7 +561,7 @@ import type { PageData } from "./$types";
       <SectionHeader
         eyebrow="System requirements"
         title="Recording on every machine."
-        description="Hardware-accelerated where it counts, with a solid CPU fallback so a budget laptop without a discrete GPU still records cleanly."
+        description="Hardware-accelerated where it counts, with a solid CPU fallback for budget laptops."
       />
 
       <Reveal>
@@ -579,14 +576,12 @@ import type { PageData } from "./$types";
               How encoding picks itself
             </h3>
             <p class="text-sm leading-relaxed text-muted-foreground">
-              Recast tests NVIDIA (NVENC), AMD (AMF), and Intel iGPU (QSV) at
-              startup. If none initialise (old GPUs with under ~128 MB VRAM,
-              integrated graphics without QSV, no GPU at all), it falls back to
-              the CPU encoder (libx264) tuned for low-latency capture.
+              Recast tests NVIDIA, AMD, and Intel at startup. If none
+              initialise, it falls back to libx264 (CPU) tuned for low-latency
+              capture.
             </p>
             <p class="text-xs leading-relaxed text-muted-foreground/80">
-              You'll always be able to record. Hardware encoders just let your
-              CPU breathe while you do it.
+              Hardware encoders just let your CPU breathe while you record.
             </p>
           </div>
 

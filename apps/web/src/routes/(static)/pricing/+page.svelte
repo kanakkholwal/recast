@@ -143,7 +143,7 @@
 					<span class="block font-medium italic text-foreground/40">yours.</span>
 				</h1>
 				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-					The desktop app is free forever and runs offline. Recast Cloud, when it lands, is a sharing layer on top. Bring your own storage on the free tier, or let Recast manage it (or plug in your own bucket) on Pro.
+					Desktop is free forever, runs offline. Cloud adds hosted sharing: bring your own storage on the free tier, or let Recast manage it on Pro.
 				</p>
 				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-medium text-foreground/75">
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
@@ -392,8 +392,7 @@
 			<SectionHeader
 				eyebrow="Side by side"
 				title="What you get, where."
-				description="The desktop app does the work today. Cloud adds the sharing surface on top, with storage you can swap out."
-				align="center"
+				description="Desktop does the work today. Cloud adds the sharing surface on top, with swappable storage."
 			/>
 
 			<Reveal variant="blur" class="mt-14">
@@ -440,7 +439,7 @@
 
 			<Reveal variant="up" class="mt-8">
 				<p class="mx-auto max-w-2xl text-balance text-center text-xs leading-relaxed text-muted-foreground">
-					Cloud pricing isn't final. The desktop app stays free forever, no card required. Cloud Free will stay free for small teams that bring their own storage.
+					Cloud pricing isn't final. Desktop stays free forever, no card required. Cloud Free will stay free for small teams that bring their own storage.
 					<a href="mailto:hello@recast.li?subject=Recast%20Enterprise" class="text-foreground underline-offset-2 hover:underline">Talk to us</a> for Enterprise.
 				</p>
 			</Reveal>

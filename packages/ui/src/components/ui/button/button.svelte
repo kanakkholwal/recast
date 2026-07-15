@@ -51,6 +51,7 @@
 					"bg-info/10 text-info border-info/10 hover:bg-info/15",
 				raw: "border-0 p-0 h-auto w-auto hover:scale-100 active:scale-100",
 				dark: "bg-foreground text-background shadow-craft-sm hover:bg-foreground/90",
+				light: "bg-white text-black shadow-craft-sm dark:bg-black dark:text-white",
 			},
 			size: {
 				default: "h-9 rounded-lg px-5 py-2.5 text-sm font-medium gap-2 [&_svg:not([class*='size-'])]:size-4",

@@ -182,19 +182,19 @@
 			icon: Rocket,
 			title: "For solo founders",
 			description:
-				"Investor walkthroughs and product demos that look funded. Record one between two meetings, ship it before the third.",
+				"Investor walkthroughs and demos that look funded. Record one, ship it the same morning.",
 		},
 		{
 			icon: Code2,
 			title: "For indie hackers",
 			description:
-				"Launch videos, changelog clips, and Twitter cuts on your own schedule. Save a profile for each one and hit record. Fully offline, ship at midnight, fix typos at 2 AM.",
+				"Launch videos, changelog clips, Twitter cuts. Ship at midnight, fix typos at 2 AM.",
 		},
 		{
 			icon: Terminal,
 			title: "For dev teams & DevRel",
 			description:
-				"Changelog clips, release notes, and tutorials your users actually watch. Record the feature, ship the walkthrough with the PR.",
+				"Changelog clips, release notes, tutorials users actually watch. Record the feature, ship the walkthrough.",
 		},
 	];
 
@@ -257,10 +257,10 @@
 	];
 
 	const polishFeatures = [
-		{ icon: MousePointer2, title: "Cursor refinement", description: "Velocity smoothing kills twitchy paths and snaps to interactive targets." },
-		{ icon: Layout, title: "Auto layouts", description: "Padding, backgrounds, and framing applied live as you record." },
+		{ icon: MousePointer2, title: "Cursor refinement", description: "Velocity smoothing kills twitchy paths, snaps to targets." },
+		{ icon: Layout, title: "Auto layouts", description: "Padding, backgrounds, framing applied live as you record." },
 		{ icon: Zap, title: "Smart zoom", description: "Recast zooms toward the action so viewers never miss the point." },
-		{ icon: Scissors, title: "Trim & ship", description: "Cut dead frames and export hardware-encoded MP4 in seconds." },
+		{ icon: Scissors, title: "Trim & ship", description: "Cut dead frames, export hardware-encoded MP4 in seconds." },
 	];
 
 	// Recording-side superpowers. Two beats — kept short so the section
@@ -377,31 +377,31 @@
 	const faqs: Array<{ q: string; a: string }> = [
 		{
 			q: "Is Recast a browser extension or a desktop app?",
-			a: "A desktop app for macOS, Windows, and Linux. Capture is native, so it runs fully offline with no extension to install.",
+			a: "A desktop app for macOS, Windows, and Linux. Native capture, fully offline, no extension to install.",
 		},
 		{
 			q: "What can I make with Recast?",
-			a: "Product demos, launch and changelog clips, onboarding and tutorial videos, support replies, and investor walkthroughs. Anything that starts as a screen recording.",
+			a: "Product demos, launch and changelog clips, onboarding and tutorial videos, support replies, investor walkthroughs.",
 		},
 		{
 			q: "Do I need an account or an internet connection?",
-			a: "Neither. Record, edit, and export entirely offline. Your files stay on your machine until you choose to share them.",
+			a: "Neither. Record, edit, and export entirely offline. Your files stay on your machine until you share them.",
 		},
 		{
 			q: "How is Recast different from Loom or Screen Studio?",
-			a: "It polishes while you record. Smart zoom, cursor smoothing, and silence trimming apply as you go, and the app is free and offline instead of a hosted subscription.",
+			a: "It polishes while you record. Smart zoom, cursor smoothing, silence trimming apply as you go. Free and offline, not a hosted subscription.",
 		},
 		{
 			q: "Is it really free? What costs money?",
-			a: "The app is free forever, no account needed. Recast Cloud, a hosted sharing layer with analytics and access controls, is the paid add-on and is coming soon. Today you can share straight to your own Google Drive.",
+			a: "The app is free forever, no account needed. Recast Cloud (hosted sharing with analytics and access controls) is the paid add-on, coming soon. Today you can share straight to your own Google Drive.",
 		},
 		{
 			q: "Can I record my camera and mic too?",
-			a: "Yes. Capture your camera, microphone, and system audio on one timeline, with a draggable webcam bubble you can shape and place.",
+			a: "Yes. Camera, microphone, and system audio on one timeline, with a draggable webcam bubble you can shape and place.",
 		},
 		{
 			q: "Do I need video editing skills?",
-			a: "No. Auto-polish handles most of it. When you want to adjust something, the timeline is small and friendly, not a pro editor.",
+			a: "No. Auto-polish handles most of it. The timeline is small and friendly, not a pro editor.",
 		},
 		{
 			q: "Which platforms are supported?",
@@ -992,7 +992,7 @@
 		<Container>
 			<Reveal variant="up" delay={150}>
 				<p class="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground">
-					Plus trim &amp; cut, background &amp; padding, drop shadow, watermark, custom export presets, and a focus mode that hides everything but the frame. Nothing locked behind a "Pro" tier.
+					Plus trim &amp; cut, background &amp; padding, drop shadow, watermark, custom export presets. Nothing locked behind a "Pro" tier.
 				</p>
 			</Reveal>
 		</Container>
@@ -1045,8 +1045,9 @@
 					</Button>
 					<Button
 						href="https://github.com/kanakkholwal/recast/tree/main/extensions"
-						variant="dark"
+						variant="light"
 						class="gap-2"
+						target="_blank"
 					>
 						<GithubBrand class="size-4" />
 						Build a pack
@@ -1094,8 +1095,8 @@
 						<Reveal variant="morph">
 							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
 								<div class="relative">
-									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
-										<HardDriveUpload class="size-3.5 text-foreground/70" />
+									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
+										<HardDriveUpload class="size-3 text-foreground/70" />
 										Google Drive · built in
 									</span>
 
@@ -1281,7 +1282,7 @@
 			<SectionHeader
 				eyebrow="Built for builders"
 				title="Shaped for the people who ship."
-				description="Opinionated where it matters, out of your way everywhere else. Auto-polish for the 80 % case, a minimal timeline for the moments you actually want to control."
+				description="Opinionated where it matters, out of your way everywhere else."
 				align="center"
 			/>
 
@@ -1542,5 +1543,3 @@
 		cursor: grabbing;
 	}
 </style>
-
-
