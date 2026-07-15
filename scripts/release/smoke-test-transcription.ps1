@@ -129,10 +129,28 @@ $null = New-Item -ItemType Directory -Force -Path $WorkDir
 Write-Host "WorkDir: $WorkDir"
 
 if (-not $ExePath) {
-    $ExePath = Join-Path $RepoRoot "apps/desktop/src-tauri/target/release/recast$ExeExt"
-}
-if (-not (Test-Path $ExePath)) {
-    throw "recast binary not found at $ExePath — the upstream `tauri build` (or `--no-bundle`) step did not produce one. To smoke-test a development build, set -ExePath to target/release/recast$ExeExt directly."
+    # Search candidates in priority order: `tauri build --target X` lands
+    # the binary at `target/X/release/recast$ExeExt`; a plain `tauri
+    # build` (or local `cargo build`) lands it at `target/release/`. The
+    # RustTarget-specific path is checked first because CI uses --target
+    # for cross-compiled legs (macos-arm64, macos-x64); the plain
+    # `target/release/` path matches the windows-x64 / linux-x64 legs
+    # and any local `cargo build`.
+    $candidates = @()
+    if ($RustTarget) {
+        $candidates += Join-Path $RepoRoot "apps/desktop/src-tauri/target/$RustTarget/release/recast$ExeExt"
+    }
+    $candidates += Join-Path $RepoRoot "apps/desktop/src-tauri/target/release/recast$ExeExt"
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            $ExePath = (Resolve-Path $candidate).Path
+            break
+        }
+    }
+    if (-not $ExePath) {
+        throw "recast binary not found at any of: $($candidates -join ', '). Confirm the upstream `tauri build` (or `--no-bundle`) step produced one; pass -ExePath to override."
+    }
 }
 Write-Host "ExePath: $ExePath"
 
