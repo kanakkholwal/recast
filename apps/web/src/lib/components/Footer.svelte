@@ -1,12 +1,31 @@
 <script lang="ts">
   import { Container } from "$lib/components";
-  import { footerCols as cols, footerSocials as socials } from "$lib/components/nav-data";
+  import {
+    footerCols as cols,
+    footerSocials as socials,
+  } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";
 </script>
 
-<footer class="relative border-t border-border-low/70">
-  <div class="bg-aurora absolute inset-x-0 top-0 h-px"></div>
-  <Container class="py-20 md:py-28" as="div">
+<footer class="relative overflow-hidden border-t border-border-low/70">
+  <div class="bg-aurora absolute inset-x-0 top-0 z-10 h-px"></div>
+
+  <!-- Editorial backdrop, mirroring the hero: the photo sits in the lower half
+       and fades into the page background so the columns stay readable up top.
+       Different fade from HeroBackdrop — top-only dissolve, no bottom fade, so
+       the giant Recast wordmark below the columns stays on full-bleed photo. -->
+  <div aria-hidden="true" class="pointer-events-none absolute inset-0">
+    <div
+      class="absolute inset-0 bg-cover bg-center opacity-90 dark:opacity-60"
+      style="background-image: url('/background-section.webp');"
+    ></div>
+    <div
+      class="absolute inset-0"
+      style="background: linear-gradient(to bottom, var(--color-background) 0%, var(--color-background) 18%, transparent 52%);"
+    ></div>
+  </div>
+
+  <Container class="relative z-10 pt-20 pb-10 md:pt-28 md:pb-14" as="div">
     <div class="grid gap-14 md:grid-cols-12">
       <div class="md:col-span-5">
         <a href="/" class="inline-flex items-center gap-2.5">
@@ -39,6 +58,9 @@
             </a>
           {/each}
         </div>
+        <p class="text-xs text-muted-foreground mt-7">
+          © {new Date().getFullYear()} Recast. All rights reserved.
+        </p>
       </div>
 
       <div class="grid gap-10 sm:grid-cols-3 md:col-span-7">
@@ -67,37 +89,16 @@
         {/each}
       </div>
     </div>
-
-    <div
-      class="mt-20 flex flex-col items-start justify-between gap-4 border-t border-border-low/70 pt-8 md:flex-row md:items-center"
-    >
-      <p
-        class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground"
-      >
-        Record once · Ship the demo
-      </p>
-      <div
-        class="flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:gap-5"
-      >
-        <nav class="flex items-center gap-5">
-          <a
-            href="/privacy-policy"
-            class="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Privacy Policy
-          </a>
-          <a
-            href="/terms-of-service"
-            class="text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-          >
-            Terms of Service
-          </a>
-        </nav>
-        <span class="hidden text-muted-foreground/40 sm:inline">·</span>
-        <p class="text-xs text-muted-foreground">
-          © {new Date().getFullYear()} Recast. All rights reserved.
-        </p>
-      </div>
-    </div>
   </Container>
+
+  <!-- Dedicated wordmark: a real in-flow band at the foot of the page (not an
+       absolutely positioned overlay), sitting over the full-bleed photo like the
+       reference. leading is tightened so the band hugs the type. -->
+  <div class="relative z-10 overflow-hidden px-4 pb-8 md:pb-12">
+    <span
+      class="block text-center text-[22vw] font-bold leading-[0.82] tracking-tighter text-background/40 dark:text-foreground/30 select-none"
+    >
+      Recast
+    </span>
+  </div>
 </footer>

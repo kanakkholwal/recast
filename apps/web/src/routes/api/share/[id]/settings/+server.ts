@@ -41,6 +41,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		ctaLabel?: unknown;
 		ctaUrl?: unknown;
 		commentsEnabled?: unknown;
+		searchable?: unknown;
 		password?: unknown;
 		expiresAt?: unknown;
 		title?: unknown;
@@ -63,6 +64,7 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 		ctaLabel?: string | null;
 		ctaUrl?: string | null;
 		commentsEnabled?: boolean;
+		searchable?: boolean;
 		passwordHash?: string | null;
 		expiresAt?: Date | null;
 	} = {};
@@ -94,6 +96,13 @@ export const PATCH: RequestHandler = async ({ params, request }) => {
 
 	if (typeof body.commentsEnabled === "boolean") {
 		patch.commentsEnabled = body.commentsEnabled;
+	}
+
+	// Search indexing opt-in. Only meaningful for public shares; the page gates
+	// the emitted robots/schema on visibility === "public" regardless, so a
+	// stale flag on a since-privated share can never make it crawlable.
+	if (typeof body.searchable === "boolean") {
+		patch.searchable = body.searchable;
 	}
 
 	// Password: a non-empty string sets (and hashes) it; "" or null clears.

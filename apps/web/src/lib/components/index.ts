@@ -1,12 +1,21 @@
 export { default as AppLoading } from "./AppLoading.svelte";
+export { default as BeforeAfterSlider } from "./BeforeAfterSlider.svelte";
 export { default as Container } from "./Container.svelte";
 export { default as DevThemeToggle } from "./DevThemeToggle.svelte";
+export { default as ExportMock } from "./ExportMock.svelte";
 export { default as Footer } from "./Footer.svelte";
 export { default as Hero } from "./Hero.svelte";
+export { default as HeroBackdrop } from "./HeroBackdrop.svelte";
+export { default as MacWindow } from "./MacWindow.svelte";
 export { default as Navbar } from "./Navbar.svelte";
+export { default as PolishGrid } from "./PolishGrid.svelte";
+export { default as RecordMock } from "./RecordMock.svelte";
 export { default as ScreenshotSlideshow } from "./ScreenshotSlideshow.svelte";
 export { default as Section } from "./Section.svelte";
+export { default as SelectionWord } from "./SelectionWord.svelte";
 export { default as SeoMeta } from "./SeoMeta.svelte";
+export { default as FeatureStepper } from "./FeatureStepper.svelte";
+export { default as ShowcasePanel } from "./ShowcasePanel.svelte";
 export { default as ThemeShortcut } from "./ThemeShortcut.svelte";
 
 export { Eyebrow } from "@recast/ui/eyebrow";

@@ -1,51 +1,50 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Eyebrow,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SectionHeader,
+	  SeoMeta,
 	} from "$lib/components";
+	import { TextLoop } from "$lib/motion-core";
+	import {
+	  Apple,
+	  ArrowRight,
+	  Camera,
+	  Check,
+	  Cpu,
+	  Crop,
+	  FileBox,
+	  HardDrive,
+	  HardDriveUpload,
+	  Highlighter,
+	  Keyboard,
+	  Layers,
+	  Layout,
+	  Monitor,
+	  MousePointer2,
+	  Pause,
+	  Scissors,
+	  Target,
+	  Terminal,
+	  VolumeX,
+	  Wand2,
+	  WifiOff,
+	  Zap
+	} from "@lucide/svelte";
+	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
 	import { cn } from "@recast/ui/utils";
-	import { TextLoop } from "$lib/motion-core";
-	import { GithubBrand } from "@recast/ui/brand-icons";
-	import {
-		Apple,
-		ArrowRight,
-		Camera,
-		Check,
-		Cpu,
-		Crop,
-		Download,
-		FileBox,
-		HardDrive,
-		HardDriveUpload,
-		Highlighter,
-		Keyboard,
-		Layers,
-		Layout,
-		Monitor,
-		MousePointer2,
-		Pause,
-		Scissors,
-		ShieldCheck,
-		Sparkles,
-		Target,
-		Terminal,
-		VolumeX,
-		WifiOff,
-		Zap,
-	} from "@lucide/svelte";
 
 	// Three pillars chosen to lead with what makes Recast different, not
 	// generic "we have an editor too" copy. Each one is a feature that other
 	// recorders either don't have at all or paywall.
 	const pillars = [
 		{
-			icon: Sparkles,
+			icon: Wand2,
 			title: "Auto-polish on the way in",
 			description:
 				"Smart zoom, cursor smoothing, and silence cuts happen while you record. By the time you stop, the demo is mostly done. No keyframes. No AI gate.",
@@ -138,96 +137,163 @@
 	// Built-in supports. Grid of small affordances and standards-level
 	// features. License row is GPLv3 + dual licensing (not MIT, which was
 	// the previous version's bug).
-	const supports = [
+	//
+	// `tag` is the small module-name badge that sits in the screenshot
+	// corner of each vendor card (e.g. "Capture", "Edit", "Export").
+	// `image` is a real screenshot when one exists; until then the card
+	// renders a tinted icon-as-hero placeholder the same width/height,
+	// so the layout is stable once real images drop in.
+	const supports: Array<{
+		icon: typeof Target;
+		tag: string;
+		title: string;
+		description: string;
+		image: string | null;
+		href: string;
+	}> = [
 		{
 			icon: Target,
+			tag: "Auto",
 			title: "Smart auto-zoom",
 			description: "Reads clicks and dwell, zooms toward the action. Zero keyframes.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: MousePointer2,
+			tag: "Cursor",
 			title: "Cursor smoothing",
 			description: "Velocity-aware easing, optional snap-to-target, motion damping.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: VolumeX,
+			tag: "Audio",
 			title: "Silence detection",
 			description: "Finds dead-air spans (quiet audio plus still cursor), offers one-click cuts.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Pause,
+			tag: "Capture",
 			title: "Pause and resume",
 			description: "Pause mid-take and pick up where you left off. Paused spans trim out cleanly.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Layers,
+			tag: "Capture",
 			title: "Recording profiles",
 			description: "Save capture presets for each context. One shortcut to switch between them.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Highlighter,
+			tag: "Edit",
 			title: "Annotations and blur",
 			description: "Arrows, rectangles, text, privacy blur on the frame. Layers on the timeline.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Camera,
+			tag: "Capture",
 			title: "Camera bubble",
 			description: "Draggable webcam with shape, border, and follow-the-cursor motion.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Layout,
+			tag: "Layout",
 			title: "Smart layouts",
 			description: "Auto padding, gradient backgrounds, aspect framing applied as you record.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Scissors,
+			tag: "Edit",
 			title: "Trim, split, replace",
 			description: "Lightweight editor that respects your time. No hidden timeline tax.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: HardDriveUpload,
+			tag: "Store",
 			title: "Drive uploads",
 			description: "OAuth scoped to files Recast creates. Your account, your storage bill.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Zap,
+			tag: "Export",
 			title: "Hardware-encoded export",
 			description: "NVENC, AMD, and Intel where available. Seconds, not minutes.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Cpu,
+			tag: "Capture",
 			title: "Native capture",
 			description: "Platform APIs end to end. ScreenCaptureKit on macOS, Wayland-native on Linux.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Crop,
+			tag: "Capture",
 			title: "Region and window",
 			description: "Capture a window, region, or full screen. Hot-swap mid-take.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: FileBox,
+			tag: "Files",
 			title: ".recast project files",
 			description: "Re-editable artifacts that travel with your repo.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: WifiOff,
+			tag: "Offline",
 			title: "Offline first",
 			description: "Recordings and exports stay on your machine. No account required to record.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: HardDrive,
+			tag: "Privacy",
 			title: "No telemetry",
 			description: "The app doesn't phone home. It only contacts servers when you explicitly opt in.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: Keyboard,
+			tag: "UX",
 			title: "Shortcut-first",
 			description: "Every essential action lives one keystroke away. Mouse optional.",
+			image: null,
+			href: "#",
 		},
 		{
 			icon: GithubBrand,
+			tag: "OSS",
 			title: "GPLv3 open source",
 			description: "Source on GitHub. Dual licensing available for closed-source redistribution.",
+			image: null,
+			href: "#",
 		},
 	];
 
@@ -242,23 +308,27 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-20 md:pt-48 md:pb-24">
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 text-left md:items-center md:text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Features</Eyebrow>
-				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
+		<HeroBackdrop src="/background-features.webp" tone="strong" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<span class="size-1.5 rounded-full bg-primary"></span>
+					Features
+				</span>
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Everything Recast
-					<span class="mt-2 flex justify-start font-medium italic text-foreground/40 md:justify-center">
+					<span class="mt-2 flex justify-center font-medium italic text-foreground/40">
 						<span class="inline-grid overflow-hidden">
 							<TextLoop class="text-primary" texts={verbs} interval={2800} />
 						</span>
 					</span>
 				</h1>
-				<p class="text-pretty max-w-2xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
+				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 					A focused recorder for solo founders, indie hackers, and product engineers who'd rather ship than fiddle. Auto-polish for the 80% case, a minimal timeline for the moments you want to control.
 				</p>
 
 				<!-- Platform chips: honest about per-platform maturity. -->
-				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-semibold" style="animation-delay: 200ms">
+				<ul class="mt-2 flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-semibold">
 					{#each platforms as p (p.label)}
 						{@const Icon = p.icon}
 						{@const chip = stabilityChip[p.stability]}
@@ -358,7 +428,17 @@
 		</Container>
 	</Section>
 
-	<!-- Built-in supports grid. All shipping in the free app today. -->
+	<!--
+	  Full catalog, vendor layout. Every third card (1, 4, 7, 10, 13, 16)
+	  spans 2 cols for visual rhythm and to highlight the marquee features
+	  (auto-zoom, pause-and-resume, hardware export, native capture,
+	  offline-first, open-source). Each card renders its `image` when one
+	  exists, with the feature icon as a tinted placeholder until then. The
+	  small "tag" badge sits in the screenshot's bottom-right corner (the
+	  module name: Capture, Edit, Export, Privacy…). On lg the big card
+	  lays out horizontally (image left, text right); normal cards stack
+	  vertically. On mobile every card drops to 1 col.
+	-->
 	<Section class="border-t border-border-low/60">
 		<Container>
 			<SectionHeader
@@ -367,20 +447,121 @@
 				description="Every affordance worth naming, in one grid. All shipping in the free desktop app today."
 			/>
 
-			<div class="mt-14 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<div class="mt-14 grid auto-rows-fr grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
 				{#each supports as item, i}
 					{@const Icon = item.icon}
-					<Reveal delay={i * 35}>
-						<article class="glass-card group h-full rounded-xl p-5 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-craft-sm">
-							<span class="glass-chip grid size-9 place-items-center rounded-lg text-foreground/70 transition-colors group-hover:text-primary">
-								<Icon class="size-4" />
-							</span>
-							<h4 class="mt-5 text-sm font-semibold tracking-tight text-foreground">
-								{item.title}
-							</h4>
-							<p class="mt-1.5 text-pretty text-xs leading-relaxed text-muted-foreground">
-								{item.description}
-							</p>
+					{@const isFeatured = i % 3 === 0}
+					<Reveal delay={i * 35} class={isFeatured ? "lg:col-span-2" : ""}>
+						<article
+							class={cn(
+								"glass-card group relative flex h-full overflow-hidden rounded-2xl border border-border-low/40 bg-card/40 transition-[transform,box-shadow,border-color] duration-300 hover:-translate-y-0.5 hover:border-border-low hover:shadow-craft-sm motion-reduce:transition-none",
+								isFeatured
+									? "flex-col p-0 lg:flex-row lg:items-stretch"
+									: "flex-col p-5",
+							)}
+						>
+							<!--
+							  Visual panel. Real screenshot when one exists, otherwise a
+							  tinted icon-as-hero placeholder the same dimensions so the
+							  card stays stable once a real image drops in. The "tag" badge
+							  anchors to the bottom-right of the visual.
+							-->
+							<div
+								class={cn(
+									"relative overflow-hidden",
+									isFeatured
+										? "aspect-[4/3] shrink-0 border-b border-border-low/40 lg:aspect-auto lg:w-1/2 lg:border-b-0 lg:border-r"
+										: "aspect-[16/10] w-full",
+								)}
+							>
+								{#if item.image}
+									<img
+										src={item.image}
+										alt={item.title}
+										loading="lazy"
+										decoding="async"
+										class="absolute inset-0 size-full object-cover"
+									/>
+								{:else}
+									<!-- Tinted placeholder. Soft radial wash from the top so the
+									     placeholder reads as a "screenshot slot" rather than a
+									     missing image. -->
+									<div
+										class="absolute inset-0"
+										style="background: linear-gradient(160deg, color-mix(in srgb, var(--color-foreground) 7%, transparent) 0%, color-mix(in srgb, var(--color-foreground) 3%, transparent) 60%, transparent 100%);"
+									></div>
+									<div
+										class="absolute inset-0 grid place-items-center"
+									>
+										<div
+											class={cn(
+												"grid place-items-center rounded-2xl border border-border-low/40 bg-card/60 shadow-craft-sm",
+												isFeatured ? "size-20" : "size-14",
+											)}
+										>
+											<Icon
+												class={cn(
+													"text-foreground/75",
+													isFeatured ? "size-9" : "size-6",
+												)}
+											/>
+										</div>
+									</div>
+								{/if}
+
+								<!--
+								  Module tag (Capture, Edit, Export, …). Pinned to the
+								  bottom-right of the visual. Mirrors the "Notion / Google /
+								  OpenAI" brand badges on the reference vendor layout.
+								-->
+								<span
+									class="absolute bottom-2.5 right-2.5 inline-flex items-center gap-1 rounded-full bg-foreground/85 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-background shadow-craft-sm"
+								>
+									{item.tag}
+								</span>
+							</div>
+
+							<!--
+							  Text panel. Title + description + "Learn more" link. Padded
+							  inside the visual border so the card stays one piece.
+							-->
+							<div
+								class={cn(
+									"flex min-w-0 flex-1 flex-col",
+									isFeatured ? "gap-3 p-5 sm:p-6 lg:gap-4 lg:p-8" : "mt-5 gap-2",
+								)}
+							>
+								<h3
+									class={cn(
+										"font-semibold tracking-tight text-foreground",
+										isFeatured
+											? "text-lg sm:text-xl lg:text-2xl"
+											: "text-sm",
+									)}
+								>
+									{item.title}
+								</h3>
+								<p
+									class={cn(
+										"text-pretty leading-relaxed text-muted-foreground",
+										isFeatured
+											? "text-sm sm:text-base"
+											: "text-xs",
+									)}
+								>
+									{item.description}
+								</p>
+								<a
+									href={item.href}
+									class={cn(
+										"mt-auto inline-flex items-center gap-1 self-start text-[11px] font-semibold uppercase tracking-[0.14em] text-foreground/70 transition-colors hover:text-foreground",
+										isFeatured ? "pt-2 text-xs" : "pt-1",
+									)}
+								>
+									Learn more
+									<ArrowRight class="size-3 transition-transform group-hover:translate-x-0.5" />
+								</a>
+							</div>
 						</article>
 					</Reveal>
 				{/each}
@@ -396,16 +577,7 @@
 					class="glass-card relative overflow-hidden rounded-[2rem] px-6 py-16 sm:px-14 sm:py-20 md:py-24"
 					style="box-shadow: inset 0 1px 0 0 color-mix(in srgb, white 12%, transparent), inset 0 -1px 0 0 color-mix(in srgb, var(--color-foreground) 4%, transparent);"
 				>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute -top-40 left-1/2 size-160 -translate-x-1/2 rounded-full opacity-60"
-						style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 70%);"
-					></div>
-					<div
-						aria-hidden="true"
-						class="pointer-events-none absolute inset-x-0 top-0 h-px"
-						style="background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-foreground) 18%, transparent), transparent);"
-					></div>
+			
 
 					<div class="relative mx-auto flex max-w-3xl flex-col items-center text-center">
 						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">

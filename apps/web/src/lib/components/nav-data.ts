@@ -26,6 +26,10 @@ const PRICING: NavLink = { label: "Pricing", href: "/pricing" };
 const CHANGELOG: NavLink = { label: "Changelog", href: "/changelog" };
 const BLOG: NavLink = { label: "Blog", href: "/blog" };
 
+// Inline top-nav links, always visible on desktop. Kept short for a minimal
+// bar; everything else lives in the footer.
+export const navLinks: NavLink[] = [FEATURES, EXTENSIONS, PRICING, CHANGELOG, BLOG];
+
 export const footerCols: { title: string; links: NavLink[] }[] = [
 	{
 		title: "Product",
@@ -54,6 +58,8 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 			{ label: "Contact", href: CONTACT_EMAIL },
 			{ label: "X / Twitter", href: TWITTER_URL, external: true },
 			{ label: "Discord", href: DISCORD_URL, external: true },
+			{ label: "Privacy Policy", href: "/privacy-policy" },
+			{ label: "Terms of Service", href: "/terms-of-service" },
 		],
 	},
 ];
@@ -62,35 +68,4 @@ export const footerSocials: { icon: IconComponent; href: string; label: string }
 	{ icon: GithubBrand, href: GITHUB_URL, label: "GitHub" },
 	{ icon: XBrand, href: TWITTER_URL, label: "X / Twitter" },
 	{ icon: Mail, href: CONTACT_EMAIL, label: "Email" },
-];
-
-export const navMenuGroups: {
-	title: string;
-	variant: "default" | "muted";
-	links: NavLink[];
-}[] = [
-	{
-		title: "Product",
-		variant: "default",
-		links: [
-			FEATURES,
-			EXTENSIONS,
-			PRICING,
-			{ label: "Cloud Waitlist", href: "/waitlist" },
-		],
-	},
-	{
-		title: "Resources",
-		variant: "muted",
-		links: [
-			TOOLS,
-			BLOG,
-			CHANGELOG,
-			// GitHub stays in the menu too — the icon button is desktop-only
-			// (md:flex), and mobile users discover external links through
-			// the open menu.
-			{ label: "GitHub", href: GITHUB_URL },
-			{ label: "Contact", href: CONTACT_EMAIL },
-		],
-	},
 ];

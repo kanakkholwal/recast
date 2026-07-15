@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { Container, Eyebrow, Footer, Reveal, Section, SeoMeta } from "$lib/components";
 	import { formatDate } from "$lib/blog/format";
+	import { Container, Footer, HeroBackdrop, Reveal, Section, SeoMeta } from "$lib/components";
+	import { ArrowRight, Clock } from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
-	import { ArrowRight, Clock, PenLine } from "@lucide/svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -16,9 +16,9 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
-				<Eyebrow icon={PenLine} variant="primary">Blog</Eyebrow>
+		<HeroBackdrop src="/background-blog.webp" tone="strong" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
 				<h1
 					class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl"
 				>

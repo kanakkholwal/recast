@@ -364,6 +364,7 @@
 			ended = false;
 			hasStarted = true;
 			recordView("start");
+			trackPlayOnce();
 		}
 		if (e.type === "progress") {
 			currentTime = e.currentTime ?? currentTime;
@@ -374,12 +375,15 @@
 			// Some players jump straight to progress without a view-start; the
 			// guard makes this idempotent so we still record the view once.
 			recordView("start");
+			trackPlayOnce();
+			trackDepth(watchedPct);
 		}
 		if (e.type === "ended") {
 			watchedPct = 100;
 			isPlaying = false;
 			ended = true;
 			recordView("ended");
+			trackDepth(100);
 		}
 	}
 
@@ -402,6 +406,11 @@
 	// ── Comments + reactions (engagement layer) ──────────────────────
 	let commentsEnabled = $state(
 		untrack(() => (data.access.ok ? data.access.share.commentsEnabled : true)),
+	);
+	// Owner opt-in to search indexing (public shares only). Optimistic, like the
+	// comments toggle; the <svelte:head> robots/canonical below key off it.
+	let searchable = $state(
+		untrack(() => (data.access.ok ? data.access.share.searchable : false)),
 	);
 	const watermark = $derived(shareMeta?.watermark ?? true);
 	const viewsCount = $derived(shareMeta?.viewsCount ?? 0);
@@ -705,6 +714,7 @@
 			ctaLabel?: string | null;
 			ctaUrl?: string | null;
 			commentsEnabled?: boolean;
+			searchable?: boolean;
 			title?: string;
 			description?: string | null;
 		};
@@ -720,6 +730,21 @@
 		} catch (e) {
 			commentsEnabled = !next;
 			toast.error((e as Error)?.message ?? "Couldn't update comments.");
+		}
+	}
+
+	async function toggleSearchable() {
+		const next = !searchable;
+		searchable = next;
+		if (isDemo) return;
+		try {
+			await patchSettings({ searchable: next });
+			toast.success(
+				next ? "Listed in search engines." : "Hidden from search engines.",
+			);
+		} catch (e) {
+			searchable = !next;
+			toast.error((e as Error)?.message ?? "Couldn't update search visibility.");
 		}
 	}
 
@@ -890,20 +915,138 @@
 	// Share→signup is the page's growth loop: a stranger watching a polished
 	// recast is the highest-intent moment to convert. Track each acquisition
 	// surface so the funnel is measurable by placement (header / end-card / mark).
-	function trackSignupCta(placement: "header" | "end-card" | "watermark") {
+	function trackSignupCta(
+		placement:
+			| "header"
+			| "end-card"
+			| "watermark"
+			| "mid-watch"
+			| "positioning-chip",
+	) {
 		if (!browser) return;
 		analytics.capture("share_signup_cta_click", {
 			placement,
 			visibility: shareMeta?.visibility,
 		});
 	}
+
+	// ── Funnel instrumentation ────────────────────────────────────────
+	// share_viewed (mount) → share_play_started (real play) → share_watch_depth
+	// (25/50/75/100) → share_cta_impression / share_signup_cta_click. Together
+	// these give play-rate, drop-off, and per-placement CTA click-through, which
+	// clicks-only tracking couldn't. Skipped for the demo (no real share row).
+	let analyticsPlaySent = false;
+	function trackPlayOnce() {
+		if (analyticsPlaySent || !browser || isDemo) return;
+		analyticsPlaySent = true;
+		analytics.capture("share_play_started", {
+			visibility: shareMeta?.visibility,
+			share_session_id: shareSessionId(),
+		});
+	}
+	const depthSeen = new Set<number>();
+	function trackDepth(pct: number) {
+		if (!browser || isDemo) return;
+		for (const m of [25, 50, 75, 100]) {
+			if (pct >= m && !depthSeen.has(m)) {
+				depthSeen.add(m);
+				analytics.capture("share_watch_depth", {
+					pct: m,
+					visibility: shareMeta?.visibility,
+				});
+			}
+		}
+	}
+	function trackCtaImpression(
+		placement: "end-card" | "mid-watch" | "positioning-chip",
+	) {
+		if (!browser || isDemo) return;
+		analytics.capture("share_cta_impression", {
+			placement,
+			visibility: shareMeta?.visibility,
+		});
+	}
+
+	// ── Growth loop for the majority who never finish ─────────────────
+	// The end-card only converts finishers. This reaches the same audience — an
+	// anonymous stranger on a public share with no owner CTA of its own — while
+	// they watch (a one-time nudge at 50%) and persistently (a positioning chip
+	// under the title). Signed-in viewers and owners are excluded (nothing to
+	// convert), and an owner's own CTA always takes precedence over ours.
+	const strangerLoop = $derived(
+		currentScope === "public" && !canManage && !viewer && !cta,
+	);
+
+	const nudgeKey = $derived(slug ? `recast:share-nudge:${slug}` : null);
+	let nudgeDismissed = $state(false);
+	let nudgeArmed = $state(false);
+	onMount(() => {
+		if (browser && nudgeKey) nudgeDismissed = localStorage.getItem(nudgeKey) === "1";
+	});
+	// Never float over an immersive/fullscreen watch. (A fullscreen video also
+	// hides page-level fixed elements, but tracking it keeps the state honest and
+	// prevents any flash on exit.)
+	let isFullscreen = $state(false);
+	onMount(() => {
+		if (!browser) return;
+		const sync = () => (isFullscreen = !!document.fullscreenElement);
+		document.addEventListener("fullscreenchange", sync);
+		sync();
+		return () => document.removeEventListener("fullscreenchange", sync);
+	});
+	const showMidWatchNudge = $derived(
+		strangerLoop && nudgeArmed && !nudgeDismissed && !ended && !isFullscreen,
+	);
+	$effect(() => {
+		if (strangerLoop && !nudgeArmed && !nudgeDismissed && !ended && watchedPct >= 50) {
+			nudgeArmed = true;
+			trackCtaImpression("mid-watch");
+		}
+	});
+	function dismissNudge() {
+		nudgeDismissed = true;
+		if (browser && nudgeKey) {
+			try {
+				localStorage.setItem(nudgeKey, "1");
+			} catch {
+				// Private mode: a session-only dismissal is an acceptable fallback.
+			}
+		}
+	}
+
+	// End-card click-through needs its impression counted once per session.
+	let endCardImpressionSent = false;
+	$effect(() => {
+		if (showStrangerEndCard && !endCardImpressionSent) {
+			endCardImpressionSent = true;
+			trackCtaImpression("end-card");
+		}
+	});
+
+	// The persistent positioning chip is always-on for the stranger loop; count
+	// its impression once so its click-through is comparable to the others.
+	let chipImpressionSent = false;
+	$effect(() => {
+		if (strangerLoop && !chipImpressionSent) {
+			chipImpressionSent = true;
+			trackCtaImpression("positioning-chip");
+		}
+	});
 </script>
 
 <SeoMeta title={ogTitle} description={ogDescription} eyebrow={ogEyebrow} />
 
 <svelte:head>
-	<!-- Rich previews are fine, but a shared link shouldn't be crawlable. -->
-	<meta name="robots" content="noindex" />
+	<!-- Crawlable only when the share is public AND the owner opted in; everything
+	     else stays noindex. `currentScope` and `searchable` are both reactive, so
+	     flipping visibility or the toggle updates this live. Rich link previews
+	     (og:) come from <SeoMeta> regardless. -->
+	{#if currentScope === "public" && searchable}
+		<meta name="robots" content="index,follow" />
+		<link rel="canonical" href={page.url.origin + page.url.pathname} />
+	{:else}
+		<meta name="robots" content="noindex" />
+	{/if}
 </svelte:head>
 
 {#if deniedAccess}
@@ -1236,6 +1379,27 @@
 										{commentsEnabled ? "On" : "Off"}
 									</span>
 								</DropdownMenu.Item>
+								{#if currentScope === "public"}
+									<!-- Search indexing only matters for a public link, so the
+									     toggle only appears there. Default off; opting in emits
+									     index,follow + a canonical (see <svelte:head>). -->
+									<DropdownMenu.Item
+										onSelect={(e) => {
+											e.preventDefault();
+											toggleSearchable();
+										}}
+										class="gap-2.5"
+									>
+										<Search class="size-3.5 text-muted-foreground" />
+										<div class="flex-1 min-w-0">
+											<div class="text-xs">Search engines</div>
+											<div class="text-[10px] text-muted-foreground">Let this show up in search results</div>
+										</div>
+										<span class={cn("font-mono text-[10px] uppercase", searchable ? "text-primary" : "text-muted-foreground")}>
+											{searchable ? "On" : "Off"}
+										</span>
+									</DropdownMenu.Item>
+								{/if}
 								<DropdownMenu.Item onclick={() => goto("/dashboard/analytics")} class="gap-2.5">
 									<Eye class="size-3.5 text-muted-foreground" />
 									View analytics
@@ -1446,7 +1610,7 @@
 								<span class="grid size-11 place-items-center rounded-2xl bg-white/10 p-1.5 text-white ring-1 ring-white/15">
 									<Logo size="24" color="transparent" fill="currentColor" />
 								</span>
-								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this — free with Recast.</p>
+								<p class="max-w-xs text-sm font-medium text-white/80">Record, polish, and share videos like this. Free with Recast.</p>
 								<Button href="/signup" onclick={() => trackSignupCta("end-card")} size="lg" class="gap-2">
 									Record your own
 									<ArrowRight class="size-4" />
@@ -1617,6 +1781,21 @@
 						<Megaphone class="size-3.5" />
 						Add a call-to-action
 					</button>
+				{:else if strangerLoop}
+					<!-- Always-visible positioning for a cold visitor: says what Recast
+					     is (most have never heard of it) and offers the path, without
+					     waiting for the end-card they may never reach. -->
+					<div class="mt-4 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+						<span class="text-muted-foreground">Recast is a free screen recorder.</span>
+						<a
+							href="/signup"
+							onclick={() => trackSignupCta("positioning-chip")}
+							class="inline-flex items-center gap-1 font-medium text-primary hover:underline"
+						>
+							Record your own
+							<ArrowRight class="size-3.5" />
+						</a>
+					</div>
 				{/if}
 			</div>
 
@@ -1943,6 +2122,47 @@
 						<span class="font-medium text-foreground/80 transition-colors group-hover/made:text-foreground">Record yours free</span>
 					</a>
 				</footer>
+			{/if}
+
+			<!-- Mid-watch nudge: a subtle floating pill, fixed at bottom-center,
+			     shown once at ~50% watched for a cold visitor. Dismissible, out of
+			     flow so it never shoves the video, and suppressed in fullscreen so it
+			     never intrudes on an immersive watch. -->
+			{#if showMidWatchNudge}
+				<div
+					class="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100%-2rem)] items-center gap-3 rounded-2xl border border-primary/30 bg-card/95 px-3.5 py-2.5 shadow-craft-xl backdrop-blur-xl"
+					in:fly={{ y: 16, duration: 260, easing: cubicOut }}
+					out:fade={{ duration: 160 }}
+					role="complementary"
+					aria-label="Try Recast"
+				>
+					<span
+						class="grid size-8 shrink-0 place-items-center rounded-xl bg-foreground/5 text-foreground ring-1 ring-border/40"
+						aria-hidden="true"
+					>
+						<Logo size="18" color="transparent" fill="currentColor" />
+					</span>
+					<p class="text-[13px] text-foreground">
+						Like this? <span class="text-muted-foreground">Make your own, free.</span>
+					</p>
+					<Button
+						href="/signup"
+						onclick={() => trackSignupCta("mid-watch")}
+						size="sm"
+						class="shrink-0 gap-1.5"
+					>
+						Try Recast free
+						<ArrowRight class="size-3.5" />
+					</Button>
+					<button
+						type="button"
+						onclick={dismissNudge}
+						aria-label="Dismiss"
+						class="grid size-6 shrink-0 place-items-center rounded-md text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground"
+					>
+						<X class="size-3.5" />
+					</button>
+				</div>
 			{/if}
 		</main>
 	</div>

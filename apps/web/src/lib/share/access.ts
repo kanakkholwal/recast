@@ -57,6 +57,8 @@ export type ResolvedShare =
 				commentsEnabled: boolean;
 				viewsCount: number;
 				watermark: boolean;
+				/** Owner opt-in to search indexing (public shares only). */
+				searchable: boolean;
 			};
 			canManage: boolean;
 	  }
@@ -120,6 +122,7 @@ export async function resolveShareAccess(
 			commentsEnabled: share.commentsEnabled,
 			viewsCount: share.viewsCount,
 			watermark: share.watermark,
+			searchable: share.searchable,
 			ownerId: share.ownerId,
 			ownerEmail: user.email,
 			ownerName: user.name,
@@ -226,6 +229,7 @@ export async function resolveShareAccess(
 			commentsEnabled: row.commentsEnabled,
 			viewsCount: row.viewsCount,
 			watermark: row.watermark,
+			searchable: row.searchable,
 		},
 		canManage,
 	};

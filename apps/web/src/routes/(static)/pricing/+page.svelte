@@ -1,29 +1,29 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SectionHeader,
+	  SeoMeta
 	} from "$lib/components";
+	import {
+	  ArrowRight,
+	  Building2,
+	  Check,
+	  Cloud,
+	  Download,
+	  HardDriveUpload,
+	  LoaderCircle,
+	  Mail,
+	  Minus,
+	  ShieldCheck,
+	  Tag,
+	  Users,
+	} from "@lucide/svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowRight,
-		Building2,
-		Check,
-		Cloud,
-		Download,
-		HardDriveUpload,
-		LoaderCircle,
-		Mail,
-		Minus,
-		ShieldCheck,
-		Sparkles,
-		Users,
-	} from "@lucide/svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -131,15 +131,19 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-20">
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Pricing</Eyebrow>
-				<h1 class="text-balance text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
+		<HeroBackdrop src="/background-pricing.webp" tone="subtle" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<span class="size-1.5 rounded-full bg-primary"></span>
+					Pricing
+				</span>
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Free, local,
 					<span class="block font-medium italic text-foreground/40">yours.</span>
 				</h1>
 				<p class="text-pretty max-w-2xl text-base leading-relaxed text-muted-foreground sm:text-lg">
-					The desktop app is free forever and runs offline. Recast Cloud, when it lands, is a sharing layer on top. Bring your own storage on the free tier, or let Recast manage it (or plug in your own bucket) on Pro.
+					Desktop is free forever, runs offline. Cloud adds hosted sharing: bring your own storage on the free tier, or let Recast manage it on Pro.
 				</p>
 				<div class="mt-2 inline-flex flex-wrap items-center justify-center gap-2 text-[11.5px] font-medium text-foreground/75">
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
@@ -149,7 +153,7 @@
 						<HardDriveUpload class="size-3.5 text-primary" /> Bring your own storage
 					</span>
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<Sparkles class="size-3.5 text-primary" /> No per-seat tax
+						<Tag class="size-3.5 text-primary" /> No per-seat tax
 					</span>
 				</div>
 			</div>
@@ -388,8 +392,7 @@
 			<SectionHeader
 				eyebrow="Side by side"
 				title="What you get, where."
-				description="The desktop app does the work today. Cloud adds the sharing surface on top, with storage you can swap out."
-				align="center"
+				description="Desktop does the work today. Cloud adds the sharing surface on top, with swappable storage."
 			/>
 
 			<Reveal variant="blur" class="mt-14">
@@ -436,7 +439,7 @@
 
 			<Reveal variant="up" class="mt-8">
 				<p class="mx-auto max-w-2xl text-balance text-center text-xs leading-relaxed text-muted-foreground">
-					Cloud pricing isn't final. The desktop app stays free forever, no card required. Cloud Free will stay free for small teams that bring their own storage.
+					Cloud pricing isn't final. Desktop stays free forever, no card required. Cloud Free will stay free for small teams that bring their own storage.
 					<a href="mailto:hello@recast.li?subject=Recast%20Enterprise" class="text-foreground underline-offset-2 hover:underline">Talk to us</a> for Enterprise.
 				</p>
 			</Reveal>

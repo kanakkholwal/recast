@@ -1,17 +1,16 @@
 <script lang="ts">
 	import {
-		Container,
-		Eyebrow,
-		Footer,
-		Reveal,
-		Section,
-		SectionHeader,
-		SeoMeta,
+	  Container,
+	  Footer,
+	  HeroBackdrop,
+	  Reveal,
+	  Section,
+	  SeoMeta
 	} from "$lib/components";
-	import { Button } from "@recast/ui/button";
+	import { ArrowUpRight, ExternalLink, GitCommit } from "@lucide/svelte";
 	import { Badge } from "@recast/ui/badge";
+	import { Button } from "@recast/ui/button";
 	import { Markdown } from "@recast/ui/markdown";
-	import { ArrowUpRight, ExternalLink, GitCommit, Sparkles } from "@lucide/svelte";
 	import type { PageData } from "./$types";
 
 	let { data }: { data: PageData } = $props();
@@ -39,22 +38,26 @@
 
 <main class="text-foreground">
 	<Section spacing="none" class="relative overflow-hidden pt-36 pb-16 md:pt-48 md:pb-24">
-		<Container>
-			<div class="mx-auto flex max-w-3xl flex-col items-start gap-7 md:items-center md:text-center">
-				<Eyebrow icon={Sparkles} variant="primary">Changelog</Eyebrow>
-				<h1 class="text-balance animate-fade-up text-5xl font-semibold leading-[1.05] tracking-tight text-foreground sm:text-6xl md:text-7xl">
+		<HeroBackdrop src="/background-changelog.webp" tone="strong" />
+		<Container class="relative">
+			<div class="relative z-10 mx-auto flex max-w-3xl flex-col items-center gap-7 text-center">
+				<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
+					<GitCommit class="size-3 text-foreground/60" />
+					Changelog
+				</span>
+				<h1 class="text-balance text-3xl font-bold leading-[1.02] tracking-tight text-foreground sm:text-6xl md:text-7xl lg:text-[5rem]">
 					Every release,
 					<span class="mt-2 block font-medium italic text-foreground/40">
 						in order.
 					</span>
 				</h1>
-				<p class="text-pretty max-w-xl animate-fade-up text-base leading-relaxed text-muted-foreground sm:text-lg" style="animation-delay: 120ms">
+				<p class="text-pretty max-w-xl text-base leading-relaxed text-muted-foreground sm:text-lg">
 					Pulled live from GitHub releases. Newest at the top. Every fix, feature, and refinement we've shipped.
 				</p>
-				<div class="flex animate-fade-up gap-3" style="animation-delay: 240ms">
+				<div class="flex gap-3">
 					<Button
 						href="https://github.com/kanakkholwal/recast/releases"
-						variant="secondary"
+						variant="dark"
 						class="gap-2"
 					>
 						View on GitHub

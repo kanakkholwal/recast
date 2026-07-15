@@ -74,6 +74,13 @@ export const share = pgTable(
 		commentsEnabled: boolean("comments_enabled").notNull().default(true),
 		/** Cached counter — incremented from share_view writes for cheap reads. */
 		viewsCount: integer("views_count").notNull().default(0),
+		/**
+		 * Owner opt-in to let search engines index this share. Only meaningful for
+		 * `public` visibility. Default false: a public link stays shareable but not
+		 * crawlable unless the owner explicitly lists it, so ad-hoc recordings never
+		 * surface in search by surprise.
+		 */
+		searchable: boolean("searchable").notNull().default(false),
 		createdAt: timestamp("created_at").notNull().defaultNow(),
 	},
 	(t) => [
