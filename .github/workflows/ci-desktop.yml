@@ -237,7 +237,11 @@ jobs:
       - name: Download FFmpeg sidecars
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         shell: bash
-        run: ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
+        # Explicit `bash <file>` instead of `./<file>` — the dispatch shell
+        # script isn't necessarily +x on a Windows-checkout working tree,
+        # and the per-OS dispatchees (`download-ffmpeg-{windows,macos,linux}.*`)
+        # are always invoked via `bash`/`pwsh` explicitly for the same reason.
+        run: bash ./scripts/release/ensure-ffmpeg.sh '${{ matrix.platform.rust_target }}' 'apps/desktop/src-tauri/binaries'
 
       # Google Drive OAuth credentials (optional). Only injected when the
       # secret is present on the runner — fork PRs don't get it. Without
