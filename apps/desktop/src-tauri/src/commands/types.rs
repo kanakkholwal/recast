@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use tauri_plugin_global_shortcut::Shortcut;
 
 use crate::render::graph::RenderState;
 
@@ -394,4 +395,12 @@ pub struct AppState {
     /// of a queued item, retry). The worker `await`s this, then drains all queued
     /// jobs one at a time. See `commands::export_queue`.
     pub export_wake: Arc<tokio::sync::Notify>,
+    /// OS-wide hotkeys registered by the global-shortcut plugin in `setup()`.
+    /// Stored so the `run` block can unregister each on `RunEvent::Exit` /
+    /// `ExitRequested` — otherwise an unclean close (crash, force-kill via
+    /// Task Manager, dev/prod coexistence where one instance is killed while
+    /// another holds the slot) leaves the OS-level hotkey bound to a dead
+    /// process and the next launch logs `HotKey already registered` for the
+    /// lifetime of the OS. See `lib.rs::run`.
+    pub registered_shortcuts: Mutex<Vec<Shortcut>>,
 }
