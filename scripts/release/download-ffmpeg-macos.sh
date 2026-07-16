@@ -37,4 +37,5 @@ cp ffmpeg-extract/ffprobe "$dest/ffprobe-aarch64-apple-darwin" || true
 cp ffmpeg-extract/ffmpeg "$dest/ffmpeg-x86_64-apple-darwin" || true
 cp ffmpeg-extract/ffprobe "$dest/ffprobe-x86_64-apple-darwin" || true
 chmod +x "$dest"/ffmpeg-* "$dest"/ffprobe-* || true
+xattr -rc "$dest"/ffmpeg-* "$dest"/ffprobe-* || true
 rm -rf ffmpeg.zip ffprobe.zip ffmpeg-extract
