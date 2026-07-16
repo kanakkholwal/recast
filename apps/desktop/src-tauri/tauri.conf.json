@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "recast",
+  "productName": "Recast",
   "version": "0.0.0-0",
   "identifier": "com.kanakkholwal.recast",
   "build": {

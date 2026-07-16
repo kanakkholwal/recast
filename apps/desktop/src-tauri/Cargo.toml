@@ -1,9 +1,9 @@
 [package]
-name = "recast"
+name = "Recast"
 version = "0.0.0-0"
-description = "A light weight app to record your screen."
-authors = ["kanak kholwal"]
-license = ""
+description = "Screen recording & Editor Agent"
+authors = ["Kanak Kholwal"]
+license = "GPL-3.0-or-later"
 repository = "https://github.com/kanakkholwal/recast"
 edition = "2021"
 # Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82

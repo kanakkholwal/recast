@@ -127,6 +127,57 @@ fn enable_webview_media(webview: &tauri::Webview) {
     }
 }
 
+/// Registers `tauri-plugin-single-instance` on the builder — in release
+/// builds only. In dev (`cargo tauri dev`) the plugin is skipped entirely
+/// so a developer's running iteration of the app doesn't immediately forward
+/// its argv to the installed production binary and exit. The plugin's OS
+/// mutex is keyed on `app.identifier()` from `tauri.conf.json`, which is the
+/// same string in dev and release — without this split the two binaries
+/// are guaranteed to collide.
+///
+/// `release-desktop.yml` and `ci-desktop.yml` build with the release
+/// profile, so this branch fires there. Hot-reload + multi-window dev work
+/// work as expected; the trade-off is that dev *does not* enforce single-
+/// instance, which is acceptable (it's never the right time to die with
+/// "another instance is already running" during local iteration).
+#[cfg(not(debug_assertions))]
+fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    // Single-instance MUST be the first plugin registered. The handler
+    // fires inside the second-launched process — by the time it runs,
+    // any later plugin would have already initialized in that ghost
+    // process. The plugin shuts the ghost down after the handler returns,
+    // so we just refocus the existing window and exit.
+    builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        // Warm-start file-association path: the ghost process's argv is
+        // forwarded here. Emit to the main window which always-new-windows
+        // it via openProjectFromExternalPath. Close-to-tray keeps main's
+        // JS alive even when hidden, so the listener catches this.
+        if let Some(path) = parse_open_arg(&argv) {
+            let payload = path.to_string_lossy().to_string();
+            if let Err(e) = app.emit("app://open-recast", payload) {
+                log::warn!("emit app://open-recast failed: {e}");
+            }
+        }
+        // Jump list "New Recording" task on a running app.
+        if argv.iter().any(|a| a == "--new-recording") {
+            let _ = app.emit("global-shortcut:launch-panel", ());
+        }
+    }))
+}
+
+#[cfg(debug_assertions)]
+fn install_singleton_plugin<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::Builder<R> {
+    // Dev builds: no single-instance enforcement. Lets `cargo tauri dev`
+    // run its own windowed instance alongside any installed production
+    // build. See the release-build variant above for the full rationale.
+    builder
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // Load the desktop app's single `.env` at `apps/desktop/.env` (the same
@@ -141,33 +192,12 @@ pub fn run() {
     #[cfg(debug_assertions)]
     let _ = dotenvy::from_path(concat!(env!("CARGO_MANIFEST_DIR"), "/../.env"));
 
-    let mut builder = tauri::Builder::default()
-        // Single-instance MUST be the first plugin registered. The handler
-        // fires inside the second-launched process — by the time it runs,
-        // any later plugin would have already initialized in that ghost
-        // process. The plugin shuts the ghost down after the handler returns,
-        // so we just refocus the existing window and exit.
-        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-            // Warm-start file-association path: the ghost process's argv is
-            // forwarded here. Emit to the main window which always-new-windows
-            // it via openProjectFromExternalPath. Close-to-tray keeps main's
-            // JS alive even when hidden, so the listener catches this.
-            if let Some(path) = parse_open_arg(&argv) {
-                let payload = path.to_string_lossy().to_string();
-                if let Err(e) = app.emit("app://open-recast", payload) {
-                    log::warn!("emit app://open-recast failed: {e}");
-                }
-            }
-            // Jump list "New Recording" task on a running app.
-            if argv.iter().any(|a| a == "--new-recording") {
-                let _ = app.emit("global-shortcut:launch-panel", ());
-            }
-        }))
+    let mut builder = tauri::Builder::default();
+    // Single-instance plugin registration is gated on cfg(debug_assertions);
+    // see `install_singleton_plugin` for the full rationale. The plugin
+    // MUST be the first `.plugin(...)` call in release builds.
+    builder = install_singleton_plugin(builder);
+    let mut builder = builder
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_opener::init())
@@ -365,6 +395,13 @@ pub fn run() {
             // panic hook can read the consent flag + install id. Gated on the
             // user's `telemetry_errors` consent (default on) and PII-scrubbed.
             telemetry::install_panic_hook(handle.clone());
+
+            // System tray. Init failure is non-fatal — the app still works
+            // without a tray (the user just can't quick-access actions while
+            // the window is hidden, which is fine). Log + continue.
+            if let Err(e) = tray::init(handle) {
+                log::warn!("tray init failed: {e}");
+            }
 
             #[cfg(windows)]
             jumplist::update(handle);
