@@ -11,7 +11,7 @@
     prefersReducedMotion,
     TextLoop,
   } from "$lib/motion-core";
-  import { ArrowRight, CloudDownloadIcon, Megaphone } from "@lucide/svelte";
+  import { ArrowRight, CloudDownloadIcon, Megaphone } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { fly } from "svelte/transition";
   import {

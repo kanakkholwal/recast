@@ -7,7 +7,7 @@
     Star,
     Volume2,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { emit } from "@tauri-apps/api/event";
@@ -106,7 +106,7 @@
       class="opacity-0 group-hover/root:opacity-100 transition-opacity"
       title="Close (Esc)"
     >
-      <X size={11} strokeWidth={2.5} />
+      <X size={11} stroke={2.5} />
     </Button>
   </header>
 
@@ -191,7 +191,7 @@
               >
             {/if}
             {#if profile.id === initialSelected}
-              <Check size={12} strokeWidth={3} class="shrink-0 text-primary" />
+              <Check size={12} stroke={3} class="shrink-0 text-primary" />
             {/if}
           </button>
         {/each}

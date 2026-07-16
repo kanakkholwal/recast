@@ -7,7 +7,7 @@
 	  Section,
 	  SeoMeta
 	} from "$lib/components";
-	import { ArrowUpRight, ExternalLink, GitCommit } from "@lucide/svelte";
+	import { ArrowUpRight, ExternalLink, GitCommit } from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import { Markdown } from "@recast/ui/markdown";

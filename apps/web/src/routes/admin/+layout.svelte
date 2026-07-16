@@ -9,7 +9,7 @@
 		Hourglass,
 		LayoutDashboard,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { NavProgress } from "@recast/ui/nav-progress";
 	import * as Sidebar from "@recast/ui/sidebar";
 	import { onMount } from "svelte";

@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Component, Snippet } from "svelte";
+	import type { Snippet } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -13,7 +14,7 @@
 		bordered = true,
 		children,
 	}: {
-		icon: Component<{ class?: string }>;
+		icon: IconComponent;
 		title: string;
 		description?: string;
 		/** Dashed border + larger padding (library/archived). Off for inline rails. */

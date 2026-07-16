@@ -15,7 +15,7 @@
 <script lang="ts">
   import { Button } from "@recast/ui/button";
   import { Input } from "@recast/ui/input";
-  import { Camera, Globe, ImageUp, Clipboard, Loader2 } from "@lucide/svelte";
+  import { Camera, Globe, ImageUp, Clipboard, Loader2 } from "@recast/icons";
 
   let { hasCapture, dragging, urlBusy, onupload, oncapture, onwebsite }: DropZoneProps = $props();
 

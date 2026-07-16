@@ -9,7 +9,7 @@
     SYSTEM_FONTS,
     type FontOption,
   } from "$lib/fonts/font-options";
-  import { Check, ChevronsUpDown, Search } from "@lucide/svelte";
+  import { Check, ChevronsUpDown, Search } from "@recast/icons";
   import * as Popover from "@recast/ui/popover";
 
   let {

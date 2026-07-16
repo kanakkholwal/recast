@@ -20,7 +20,7 @@
     Loader2,
     Package,
     RefreshCw,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { Spinner } from "@recast/ui/spinner";

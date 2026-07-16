@@ -2,7 +2,7 @@
 	import { commandPalette } from "$lib/dashboard/command-palette.svelte";
 	import { Kbd } from "@recast/ui/kbd";
 	import { cn } from "@recast/ui/utils";
-	import { Search } from "@lucide/svelte";
+	import { Search } from "@recast/icons";
 
 	// Search-bar button that opens the shared command palette. `hero` is the
 	// prominent desktop-style bar (dashboard hero); `compact` fits the header.

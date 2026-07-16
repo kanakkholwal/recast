@@ -9,7 +9,7 @@
     Image as ImageIcon,
     Video,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { RecastPlayer } from "@recast/player";
   import { convertFileSrc } from "@tauri-apps/api/core";

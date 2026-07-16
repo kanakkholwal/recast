@@ -6,7 +6,7 @@
     type ChangeKind,
   } from "$constants/changelog";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import { ArrowRight, Sparkles } from "@lucide/svelte";
+  import { ArrowRight, AiWand } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
   import { Markdown } from "@recast/ui/markdown";
@@ -46,7 +46,7 @@
       <div
         class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
       >
-        <Sparkles class="size-4" />
+        <AiWand class="size-4" />
       </div>
       <div class="min-w-0 flex-1">
         <div
@@ -77,7 +77,7 @@
             <li
               class="flex items-start gap-2 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed text-foreground"
             >
-              <Sparkles class="mt-0.5 size-3.5 shrink-0 text-primary" />
+              <AiWand class="mt-0.5 size-3.5 shrink-0 text-primary" />
               <span><Markdown inline source={h} /></span>
             </li>
           {/each}

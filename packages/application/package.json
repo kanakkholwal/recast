@@ -23,7 +23,7 @@
     "svelte": "^5.56.1"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.21.0",
+    "@recast/icons": "workspace:*",
     "@recast/ui": "workspace:*",
     "modern-screenshot": "^4.6.6",
     "mp4-muxer": "^5.2.2"

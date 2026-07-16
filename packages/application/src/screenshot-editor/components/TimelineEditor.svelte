@@ -15,7 +15,7 @@
 <script lang="ts">
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { Film, Pause, Play, Repeat, Trash2, X } from "@lucide/svelte";
+  import { Film, Pause, Play, Repeat, Trash2, X } from "@recast/icons";
 
   let { editor, onclose }: TimelineEditorProps = $props();
 

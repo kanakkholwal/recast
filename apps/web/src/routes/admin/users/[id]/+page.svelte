@@ -24,7 +24,7 @@
 		ShieldOff,
 		Trash2,
 		UserCog,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	import InlineError from "$lib/components/InlineError.svelte";
 

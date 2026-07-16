@@ -61,7 +61,8 @@
     Timer,
     Video,
     Wrench,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
@@ -354,7 +355,7 @@
     }
   }
 
-  const themes: { value: Theme; label: string; icon: typeof Sun }[] = [
+  const themes: { value: Theme; label: string; icon: IconComponent }[] = [
     { value: "light", label: "Light", icon: Sun },
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },

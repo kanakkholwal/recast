@@ -25,7 +25,7 @@
 	  Trash2,
 	  UserCheck,
 	  Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 

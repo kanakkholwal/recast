@@ -7,7 +7,7 @@
     Square,
     Squircle,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { emit, listen } from "@tauri-apps/api/event";
   import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
@@ -452,13 +452,13 @@
         class="h-6 gap-1 rounded-full px-1.5 font-mono text-[10px] tabular-nums"
         title="Cycle aspect ratio"
       >
-        <Maximize2 size={10} strokeWidth={2} />
+        <Maximize2 size={10} stroke={2} />
         <span>{aspect}</span>
       </Button>
 
       {#snippet shapeIcon()}
         {@const SIcon = shapeMeta.icon}
-        <SIcon size={11} strokeWidth={2} />
+        <SIcon size={11} stroke={2} />
       {/snippet}
       <Button
         onclick={cycleShape}
@@ -481,7 +481,7 @@
         class="size-6 rounded-full"
         title={isMirrored ? "Mirror: on (flip horizontally)" : "Mirror: off"}
       >
-        <FlipHorizontal2 size={12} strokeWidth={2} />
+        <FlipHorizontal2 size={12} stroke={2} />
       </Button>
 
       <div class="mx-0.5 h-3 w-px bg-border"></div>
@@ -494,7 +494,7 @@
         class="size-6 rounded-full"
         title="Close camera (Esc)"
       >
-        <X size={11} strokeWidth={2.5} />
+        <X size={11} stroke={2.5} />
       </Button>
     </div>
   </div>

@@ -16,7 +16,7 @@
     Type,
     UserX,
     WifiOff,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import {Image} from "@unpic/svelte"
   import {
     buildEditorJsonLd,

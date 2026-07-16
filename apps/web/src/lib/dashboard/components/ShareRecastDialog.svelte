@@ -25,7 +25,7 @@
 		LoaderCircle,
 		Lock,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	const isPro = $derived(
 		quotaStore.value?.plan === "pro" || quotaStore.value?.plan === "enterprise",

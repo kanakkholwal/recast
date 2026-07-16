@@ -1,7 +1,7 @@
 <script lang="ts">
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
-	import { ArrowRight, LoaderCircle, MailCheck } from "@lucide/svelte";
+	import { ArrowRight, LoaderCircle, MailCheck } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";

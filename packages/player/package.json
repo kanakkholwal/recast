@@ -14,8 +14,8 @@
     "svelte": "^5.56.1"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.21.0",
     "@recast/captions": "workspace:*",
+    "@recast/icons": "workspace:*",
     "@recast/ui": "workspace:*",
     "hls-video-element": "^1.5.11",
     "media-chrome": "^4.19.0"

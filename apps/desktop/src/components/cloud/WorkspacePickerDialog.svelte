@@ -13,7 +13,7 @@
 	import * as Dialog from "@recast/ui/dialog";
 	import { Label } from "@recast/ui/label";
 	import { cn } from "@recast/ui/utils";
-	import { Check, Crown, Send, Users } from "@lucide/svelte";
+	import { Check, Crown, Send, Users } from "@recast/icons";
 
 	let {
 		open = false,

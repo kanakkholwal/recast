@@ -38,24 +38,28 @@
   import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
   import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
   import {
-    AppWindow,
-    Camera,
-    CameraOff,
-    ChevronDown,
-    Circle,
-    Crop,
-    GripVertical,
-    Mic,
-    MicOff,
-    Monitor,
-    Pause,
-    Play,
-    SlidersHorizontal as SlidersIcon,
-    Square,
-    Volume2,
-    VolumeOff,
-    X,
-  } from "@lucide/svelte";
+  AppWindow,
+  Camera,
+  CameraOff,
+  ChevronDown,
+  Circle,
+  Crop,
+  GripVertical,
+  Mic,
+  MicOff,
+  Monitor,
+  Pause,
+  Play,
+  SlidersHorizontal as SlidersIcon,
+  Square,
+  Volume2,
+  VolumeOff,
+  X,
+  PlayFilled,
+  SquareFilled,
+  PauseFilled,
+  CircleFilled,
+} from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
   import { emit, listen } from "@tauri-apps/api/event";
@@ -1274,12 +1278,7 @@
             {countdownValue}
           </span>
         {/key}
-        <Play
-          size={11}
-          strokeWidth={0}
-          fill="currentColor"
-          class="absolute text-primary opacity-0 transition-opacity group-hover/cd:opacity-100"
-        />
+        <PlayFilled size={11} class="absolute text-primary opacity-0 transition-opacity group-hover/cd:opacity-100" />
       </button>
 
       <span class="flex shrink-0 flex-col leading-tight">
@@ -1303,7 +1302,7 @@
         title="Cancel (Esc)"
         aria-label="Cancel countdown"
       >
-        <X size={12} strokeWidth={2.5} class="text-destructive" />
+        <X size={12} stroke={2.5} class="text-destructive" />
       </Button>
     </div>
   {:else if phase === "recording"}
@@ -1322,12 +1321,7 @@
           variant="destructive_soft"
           title="Stop Recording"
         >
-          <Square
-            size={11}
-            strokeWidth={0}
-            fill="currentColor"
-            class="animate-pulse text-destructive"
-          />
+          <SquareFilled size={11} class="animate-pulse text-destructive" />
           <span
             class="shrink-0 font-mono text-[13px] font-semibold tabular-nums tracking-tight"
             class:text-foreground={!isPaused}
@@ -1345,9 +1339,9 @@
           title={isPaused ? "Resume Recording" : "Pause Recording"}
         >
           {#if isPaused}
-            <Play size={13} strokeWidth={0} fill="currentColor" />
+            <PlayFilled size={13} />
           {:else}
-            <Pause size={13} strokeWidth={0} fill="currentColor" />
+            <PauseFilled size={13} />
           {/if}
         </Button>
       </ButtonGroup>
@@ -1358,7 +1352,7 @@
         size="icon-sm"
         variant="ghost"
       >
-        <X size={10} strokeWidth={2} class="shrink-0 text-destructive" />
+        <X size={10} stroke={2} class="shrink-0 text-destructive" />
       </Button>
     </div>
   {:else}
@@ -1375,7 +1369,7 @@
         title="Drag to move"
         aria-label="Drag panel"
       >
-        <GripVertical size={12} strokeWidth={2} class="pointer-events-none" />
+        <GripVertical size={12} stroke={2} class="pointer-events-none" />
       </div>
       <!-- Begins the countdown, or captures immediately when countdown is off. -->
       <Button
@@ -1385,7 +1379,7 @@
         variant="default"
         title="Start Recording"
       >
-        <Circle size={14} strokeWidth={0} fill="currentColor" />
+        <CircleFilled size={14} />
       </Button>
 
   <!-- Hidden once recording starts (source is locked in). Fade is on a wrapping
@@ -1403,19 +1397,19 @@
     {#if selectedSource?.type === "window"}
       <AppWindow
         size={12}
-        strokeWidth={2}
+        stroke={2}
         class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
       />
     {:else if selectedSource?.type === "region"}
       <Crop
         size={12}
-        strokeWidth={2}
+        stroke={2}
         class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
       />
     {:else}
       <Monitor
         size={12}
-        strokeWidth={2}
+        stroke={2}
         class="shrink-0 text-foreground/30 group-hover/source:text-foreground/50 transition-colors"
       />
     {/if}
@@ -1427,7 +1421,7 @@
     {#if !isRecording}
       <ChevronDown
         size={10}
-        strokeWidth={3}
+        stroke={3}
         class="shrink-0 text-foreground/20 transition-transform group-hover/source:translate-y-0.5"
       />
     {/if}
@@ -1456,7 +1450,7 @@
           : "Switch profile"}
         aria-label="Switch profile"
       >
-        <SlidersIcon size={13} strokeWidth={2} />
+        <SlidersIcon size={13} stroke={2} />
       </Button>
     {/if}
 
@@ -1472,9 +1466,9 @@
         title={systemAudioOn ? "System audio: on" : "System audio: off"}
       >
         {#if systemAudioOn}
-          <Volume2 size={14} strokeWidth={2} />
+          <Volume2 size={14} stroke={2} />
         {:else}
-          <VolumeOff size={14} strokeWidth={2} />
+          <VolumeOff size={14} stroke={2} />
         {/if}
       </Button>
 
@@ -1498,9 +1492,9 @@
             : "Microphone: off"}
       >
         {#if micOn}
-          <Mic size={14} strokeWidth={2} />
+          <Mic size={14} stroke={2} />
         {:else}
-          <MicOff size={14} strokeWidth={2} />
+          <MicOff size={14} stroke={2} />
         {/if}
       </Button>
 
@@ -1525,9 +1519,9 @@
             : "Camera: off"}
       >
         {#if cameraOn}
-          <Camera size={14} strokeWidth={2} />
+          <Camera size={14} stroke={2} />
         {:else}
-          <CameraOff size={14} strokeWidth={2} />
+          <CameraOff size={14} stroke={2} />
         {/if}
       </Button>
     </ButtonGroup>
@@ -1541,7 +1535,7 @@
       size="icon-sm"
       variant="ghost"
     >
-      <X size={10} strokeWidth={2} class="shrink-0 text-destructive" />
+      <X size={10} stroke={2} class="shrink-0 text-destructive" />
     </Button>
   </div>
     </div>

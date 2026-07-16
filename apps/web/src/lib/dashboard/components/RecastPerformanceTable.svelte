@@ -7,7 +7,7 @@
 		type Row,
 		type SortKey,
 	} from "./RecastPerformanceTable.logic";
-	import { ArrowDown, ArrowUp, BarChart3, Crown, Film } from "@lucide/svelte";
+	import { ArrowDown, ArrowUp, BarChart3, Crown, Film } from "@recast/icons";
 
 	// Sortable per-recast comparison table. Replaces the text-only "Top recasts"
 	// on the analytics page; each row drills into /dashboard/recasts/[id].

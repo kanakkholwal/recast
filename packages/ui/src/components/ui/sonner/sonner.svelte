@@ -7,7 +7,7 @@
 		Info,
 		Loader2,
 		X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import {
 		Toaster as Sonner,
 		type ToasterProps as SonnerProps,

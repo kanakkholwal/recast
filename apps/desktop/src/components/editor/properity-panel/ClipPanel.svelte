@@ -14,7 +14,7 @@
     RotateCcw,
     SquareSplitHorizontal,
     Trash2,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import type { SeamTransition } from "$lib/scenes/seam";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";

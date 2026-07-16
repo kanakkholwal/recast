@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { prefersReducedMotion } from "$lib/motion-core";
-	import { Check, HardDriveUpload, Link2, LoaderCircle } from "@lucide/svelte";
+	import { Check, HardDriveUpload, Link2, LoaderCircle } from "@recast/icons";
 
 	// Step 3's export-success mock. Loops the real flow: the encode finishes, the
 	// upload progress fills, then it lands as "Uploaded to Drive" with Copy link,

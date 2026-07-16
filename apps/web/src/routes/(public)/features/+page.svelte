@@ -30,7 +30,7 @@
 	import {
 	  ArrowRight,
 	  Check
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { cn } from "@recast/ui/utils";
 

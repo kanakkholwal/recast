@@ -25,8 +25,8 @@
     Volume2,
     X,
     Zap,
-  } from "@lucide/svelte";
-  import type { Component } from "svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Collapsible from "@recast/ui/collapsible";
   import { cn } from "@recast/ui/utils";
@@ -137,7 +137,7 @@
   let showCapture = $state(false);
 
   // Keyed by the Rust `key`; falls back to the screen glyph for unknown keys.
-  const CAP_ICON: Record<string, Component> = {
+  const CAP_ICON: Record<string, IconComponent> = {
     screen: MonitorPlay,
     window: AppWindow,
     region: SquareDashed,

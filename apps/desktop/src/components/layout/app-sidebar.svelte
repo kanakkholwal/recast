@@ -11,7 +11,7 @@
     Radio,
     Settings,
     SlidersHorizontal,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";
   import { useSidebar } from "@recast/ui/sidebar";

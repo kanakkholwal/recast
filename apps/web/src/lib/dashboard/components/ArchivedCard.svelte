@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { formatBytes, formatDate, formatDuration } from "$lib/dashboard/format";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { Archive, Clock, Film, MoreHorizontal, Trash2, TriangleAlert } from "@lucide/svelte";
+	import { Archive, Clock, Film, MoreHorizontal, Trash2, TriangleAlert } from "@recast/icons";
 
 	export type ArchivedRecast = {
 		id: string;

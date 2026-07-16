@@ -3,7 +3,7 @@
 	import { desktopConsent } from "$lib/stores/consent.svelte";
 	import { Button } from "@recast/ui/button";
 	import { cn } from "@recast/ui/utils";
-	import { ShieldCheck } from "@lucide/svelte";
+	import { ShieldCheck } from "@recast/icons";
 
 	let { onclose }: { onclose: () => void } = $props();
 

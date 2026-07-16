@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ChevronRight, Ellipsis } from "@lucide/svelte";
+	import { ChevronRight, Ellipsis } from "@recast/icons";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { cn } from "@recast/ui/utils";
 	import { accessoryClass } from "./accessory.logic";

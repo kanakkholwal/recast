@@ -45,7 +45,7 @@
     Undo2,
     Wand2,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { ScreenshotEditorState } from "./editor.svelte";
   import { canCopyImage, copyToClipboard } from "./export";
   import { imageFromDataTransfer, imageFromFile, imageFromSrc } from "./image-input";

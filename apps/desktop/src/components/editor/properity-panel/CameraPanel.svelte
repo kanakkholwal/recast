@@ -5,7 +5,7 @@
     type CameraPositionPreset,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
-  import { VideoOff } from "@lucide/svelte";
+  import { VideoOff } from "@recast/icons";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { cn } from "@recast/ui/utils";
   import { SliderControl } from "@recast/ui/slider-control";

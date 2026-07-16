@@ -65,7 +65,7 @@ export default defineConfig({
 	// the share page (player + bits-ui) and dashboard (drizzle/auth client).
 	optimizeDeps: {
 		include: [
-			'@lucide/svelte',
+			'@recast/icons',
 			'better-auth/client/plugins',
 			'better-auth/svelte',
 			'bits-ui',
@@ -84,6 +84,7 @@ export default defineConfig({
 			// re-optimized as if they were external deps.
 			'@recast/ui',
 			'@recast/design',
+			'@recast/icons',
 			'@recast/player',
 			'@recast/analytics',
 			'@recast/captions',

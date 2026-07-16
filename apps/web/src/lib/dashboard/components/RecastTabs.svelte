@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { page } from "$app/state";
-	import { BarChart3, Clapperboard } from "@lucide/svelte";
+	import { BarChart3, Clapperboard } from "@recast/icons";
 	import { cn } from "@recast/ui/utils";
 	import { cubicOut } from "svelte/easing";
 	import { crossfade, fade } from "svelte/transition";

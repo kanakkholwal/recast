@@ -18,7 +18,7 @@
     LifeBuoy,
     ShieldCheck,
     TriangleAlert
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import * as Collapsible from "@recast/ui/collapsible";

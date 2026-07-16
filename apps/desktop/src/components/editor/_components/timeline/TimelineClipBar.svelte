@@ -12,7 +12,7 @@
   } from "$lib/timeline/storyboard";
   import { deriveSeams } from "$lib/timeline/segments";
   import { motionDuration } from "$lib/motion.svelte";
-  import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@lucide/svelte";
+  import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
   import * as ContextMenu from "@recast/ui/context-menu";
   import { fade } from "svelte/transition";
   import {

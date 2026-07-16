@@ -10,7 +10,7 @@
     RefreshCw,
     Search,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Tabs from "@recast/ui/tabs";
   import { cn } from "@recast/ui/utils";
@@ -188,7 +188,7 @@
       class="opacity-0 transition-opacity group-hover/root:opacity-100 focus-visible:opacity-100"
       title="Close (Esc)"
     >
-      <X size={11} strokeWidth={2.5} />
+      <X size={11} stroke={2.5} />
     </Button>
   </header>
 
@@ -322,7 +322,7 @@
               >
                 <Check
                   size={11}
-                  strokeWidth={3}
+                  stroke={3}
                   class="text-primary-foreground"
                 />
               </span>
@@ -421,7 +421,7 @@
                 >
                   <Check
                     size={11}
-                    strokeWidth={3}
+                    stroke={3}
                     class="text-primary-foreground"
                   />
                 </div>

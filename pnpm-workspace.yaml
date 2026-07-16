@@ -10,4 +10,3 @@ allowBuilds:
 # pins were silently NOT being applied). Settings now live in this file.
 overrides:
   svelte: 5.56.3
-  '@lucide/svelte': 1.21.0

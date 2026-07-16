@@ -12,7 +12,7 @@
   import { layoutMode } from "$lib/stores/layout-mode.svelte";
   import { updater } from "$lib/stores/updater.svelte";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import { Keyboard } from "@lucide/svelte";
+  import { Keyboard } from "@recast/icons";
   import * as Sidebar from "@recast/ui/sidebar";
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";

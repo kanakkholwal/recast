@@ -11,7 +11,7 @@
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { toast } from "@recast/ui/sonner";
-	import { Check, Link2, Trash2 } from "@lucide/svelte";
+	import { Check, Link2, Trash2 } from "@recast/icons";
 
 	let {
 		open = false,

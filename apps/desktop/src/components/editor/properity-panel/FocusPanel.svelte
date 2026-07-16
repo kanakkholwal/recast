@@ -20,6 +20,8 @@
   } from "$lib/stores/editor-store.svelte";
   import { resolveZoomCenter } from "$lib/zoom/auto-apply";
   import {
+    AiBrain,
+    AiWand,
     Clock,
     Copy,
     Crosshair,
@@ -32,10 +34,9 @@
     TrendingDown,
     TrendingUp,
     Trash2,
-    Wand2,
     Wind,
     ZoomIn,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { motionDuration } from "$lib/motion.svelte";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
@@ -189,7 +190,7 @@
       class="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 px-2.5 py-2 shadow-(--shadow-craft-inset) backdrop-blur"
     >
       <div class="flex items-center gap-1.5">
-        <Sparkles size={12} class="shrink-0 text-primary" />
+        <AiBrain size={12} class="shrink-0 text-primary" />
         <span class="text-[11px] font-medium text-foreground">Smart Auto-Zoom</span>
         <InspectorHint
           content="Adds a focus moment at every click and settle point when a recording first opens."
@@ -219,7 +220,7 @@
             onclick={rerunAutoZoom}
             disabled={!store.cursorPath}
           >
-            <Wand2 size={11} />
+            <AiWand size={11} />
             Re-run
           </Button>
         </div>

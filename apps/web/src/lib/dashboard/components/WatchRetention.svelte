@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Chart from "$components/ui/chart/index.js";
-	import { TrendingDown } from "@lucide/svelte";
+	import { TrendingDown } from "@recast/icons";
 	import { AreaChart } from "layerchart";
 
 	// Watch-retention survival curve: share of plays that reached each decile of

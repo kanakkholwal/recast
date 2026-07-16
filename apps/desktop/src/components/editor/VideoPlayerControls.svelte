@@ -12,7 +12,7 @@
 	  Repeat,
 	  SkipBack,
 	  SkipForward,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Kbd } from "@recast/ui/kbd";
 	import { toast } from "@recast/ui/sonner";
 	import * as Tooltip from "@recast/ui/tooltip";

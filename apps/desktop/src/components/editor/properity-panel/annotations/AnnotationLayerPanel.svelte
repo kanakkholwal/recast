@@ -13,7 +13,7 @@
     Lock,
     Trash2,
     Unlock,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { reorderZ } from "./annotation-layer.logic";

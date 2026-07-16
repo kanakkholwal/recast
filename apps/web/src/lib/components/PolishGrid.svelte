@@ -2,7 +2,7 @@
 	import { prefersReducedMotion } from "$lib/motion-core";
 	import { Reveal } from "@recast/ui/reveal";
 	import { cn } from "@recast/ui/utils";
-	import { Check } from "@lucide/svelte";
+	import { Check } from "@recast/icons";
 
 	// Step 2's auto-polish grid. A soft "Applied" highlight ticks through the
 	// cards one at a time, reading as edits being applied automatically while

@@ -18,7 +18,7 @@
     RefreshCw,
     ShieldAlert,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
   import { emit } from "@tauri-apps/api/event";
@@ -164,7 +164,7 @@
       class="opacity-0 transition-opacity group-hover/root:opacity-100 focus-visible:opacity-100"
       title="Close (Esc)"
     >
-      <X size={11} strokeWidth={2.5} />
+      <X size={11} stroke={2.5} />
     </Button>
   </header>
 
@@ -181,7 +181,7 @@
           <RefreshCw
             size={12}
             class="motion-safe:animate-spin text-muted-foreground"
-            strokeWidth={2}
+            stroke={2}
           />
           <span class="text-[11px] font-medium text-muted-foreground">
             Scanning {title.toLowerCase()}s…
@@ -264,9 +264,9 @@
               )}
             >
               {#if isMic}
-                <Mic size={12} strokeWidth={2} />
+                <Mic size={12} stroke={2} />
               {:else}
-                <Camera size={12} strokeWidth={2} />
+                <Camera size={12} stroke={2} />
               {/if}
             </div>
 
@@ -286,7 +286,7 @@
             </div>
 
             {#if active}
-              <Check size={12} strokeWidth={3} class="text-primary shrink-0" />
+              <Check size={12} stroke={3} class="text-primary shrink-0" />
             {/if}
           </button>
         {/each}

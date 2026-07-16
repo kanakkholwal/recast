@@ -42,7 +42,7 @@ export default defineConfig({
 	// and emit a spurious "failed to resolve" warning.
 	optimizeDeps: {
 		include: [
-			'@lucide/svelte',
+			'@recast/icons',
 			'bits-ui',
 			'clsx',
 			'mode-watcher',
@@ -53,6 +53,7 @@ export default defineConfig({
 		exclude: [
 			'@recast/ui',
 			'@recast/design',
+			'@recast/icons',
 			'@recast/player',
 			'@recast/analytics',
 			'@recast/captions',

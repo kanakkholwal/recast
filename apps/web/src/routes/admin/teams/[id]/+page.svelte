@@ -6,7 +6,7 @@
 	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
 	import { Skeleton } from "@recast/ui/skeleton";
-	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@lucide/svelte";
+	import { ArrowLeft, Crown, LoaderCircle, ShieldCheck } from "@recast/icons";
 	import { untrack } from "svelte";
 	import { enhanceAction } from "$lib/forms/enhance";
 

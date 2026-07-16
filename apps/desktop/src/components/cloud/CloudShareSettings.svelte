@@ -26,7 +26,8 @@
 		Link2,
 		Lock,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
+	import type { IconComponent } from "@recast/icons";
 
 	let {
 		recastId,
@@ -56,7 +57,7 @@
 	let initialExpiry = $state(""); // yyyy-mm-dd, "" = no expiry
 	let expiryChoice = $state<ExpiryChoice>("never");
 
-	const VIS: { id: Visibility; label: string; icon: typeof Globe }[] = [
+	const VIS: { id: Visibility; label: string; icon: IconComponent }[] = [
 		{ id: "public", label: "Anyone with the link", icon: Globe },
 		{ id: "workspace", label: "Only my team", icon: Users },
 		{ id: "private", label: "Only me", icon: Lock },

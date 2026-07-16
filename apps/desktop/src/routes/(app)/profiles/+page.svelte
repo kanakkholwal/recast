@@ -19,7 +19,7 @@
     Volume2,
     VolumeX,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Cutout } from "@recast/ui/cutout";
   import * as Dialog from "@recast/ui/dialog";

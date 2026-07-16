@@ -10,7 +10,7 @@
   import { PanelSection } from "@recast/ui/panel-section";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { Pause, Play, X } from "@lucide/svelte";
+  import { Pause, Play, X } from "@recast/icons";
   import { presetsByCategory } from "../animation";
 
   let { editor }: AnimationControlProps = $props();

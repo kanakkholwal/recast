@@ -9,7 +9,7 @@
     Scissors,
     Video,
     ZoomIn,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
   import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";

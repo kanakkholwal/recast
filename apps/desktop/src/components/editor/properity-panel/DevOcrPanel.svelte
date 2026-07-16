@@ -18,7 +18,7 @@
   import { Button } from "@recast/ui/button";
   import { Progress } from "@recast/ui/progress";
   import { toast } from "@recast/ui/sonner";
-  import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@lucide/svelte";
+  import { Download, FlaskConical, ImageOff, RotateCw, ScanText } from "@recast/icons";
   import OcrFrameDialog from "./OcrFrameDialog.svelte";
   import PanelSection from "./PanelSection.svelte";
   import {

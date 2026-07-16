@@ -27,7 +27,8 @@
     Settings2,
     Upload,
     Video,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
@@ -46,7 +47,7 @@
     value: ExportFormat;
     label: string;
     desc: string;
-    icon: typeof Video;
+    icon: IconComponent;
   }[] = [
     { value: "mp4", label: "MP4", desc: "Universal", icon: Video },
     { value: "webm", label: "WebM", desc: "Web · VP9", icon: Film },

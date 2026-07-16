@@ -2,7 +2,7 @@
 	import { formatDate } from "$lib/blog/format";
 	import { Container, Footer, HeroBackdrop, Reveal, Section, SeoMeta } from "$lib/components";
 	import { prefersReducedMotion } from "$lib/motion-core";
-	import { ArrowRight, Clock, PenLine } from "@lucide/svelte";
+	import { ArrowRight, Clock, PenLine } from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { fly } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";

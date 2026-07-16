@@ -10,7 +10,8 @@
     type SceneAnimSpec,
   } from "$lib/scenes/segment-anim";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@lucide/svelte";
+  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
@@ -35,7 +36,7 @@
     { id: "pop", label: "Pop" },
     { id: "rotate", label: "Rotate" },
   ];
-  const DIRS: { id: SceneAnimDir; icon: typeof ArrowLeft }[] = [
+  const DIRS: { id: SceneAnimDir; icon: IconComponent }[] = [
     { id: "left", icon: ArrowLeft },
     { id: "right", icon: ArrowRight },
     { id: "up", icon: ArrowUp },

@@ -35,7 +35,7 @@
 	  RotateCcw,
 	  UploadCloud,
 	  Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";

@@ -10,7 +10,7 @@
   import { PanelSection } from "@recast/ui/panel-section";
   import { ColorPicker } from "@recast/ui/color-picker";
   import { cn } from "@recast/ui/utils";
-  import { ImageUp, X } from "@lucide/svelte";
+  import { ImageUp, X } from "@recast/icons";
   import { GRADIENT_PRESETS, MESH_PRESETS, PATTERN_PRESETS, SOLID_PRESETS } from "../presets";
   import { imageFromFile } from "../image-input";
   import type { BackgroundPreset } from "../types";

@@ -17,7 +17,7 @@
     RotateCcw,
     Speaker,
     Waves,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";

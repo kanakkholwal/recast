@@ -13,7 +13,8 @@
     Video,
     Volume2,
     ZoomIn,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import * as Tabs from "@recast/ui/tabs";
   import * as Tooltip from "@recast/ui/tooltip";
   import AnnotationsPanel from "./AnnotationsPanel.svelte";
@@ -43,7 +44,7 @@
   type TabType = {
     id: PanelTab;
     label: string;
-    icon: typeof ImageIcon;
+    icon: IconComponent;
     group: TabGroup;
     // One line under the header, so an unlabeled icon rail still says where you are.
     hint: string;

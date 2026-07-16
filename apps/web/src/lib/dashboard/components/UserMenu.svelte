@@ -17,7 +17,7 @@
 	  Settings,
 	  Shield,
 	  Sun,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { Kbd } from "@recast/ui/kbd";
 	import { mode, toggleMode } from "@recast/ui/theme";

@@ -2,29 +2,7 @@
   import InspectorHint from "$components/editor/InspectorHint.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import {
-    AudioLines,
-    Clapperboard,
-    Clock,
-    Expand,
-    Eye,
-    FastForward,
-    Keyboard,
-    Layers,
-    Maximize2,
-    Minus,
-    Pencil,
-    Plus,
-    Redo2,
-    Scissors,
-    SlidersHorizontal,
-    SquareSplitHorizontal,
-    Target,
-    Undo2,
-    VolumeX,
-    Wand2,
-    ZoomIn,
-  } from "@lucide/svelte";
+  import { AudioLines, Clapperboard, Clock, Expand, Eye, FastForward, Keyboard, Layers, Maximize2, Minus, Pencil, Plus, Redo2, Scissors, SlidersHorizontal, SquareSplitHorizontal, Target, Undo2, VolumeX, ZoomIn, AiWand } from "@recast/icons";
   import * as DropdownMenu from "@recast/ui/dropdown-menu";
   import { Kbd } from "@recast/ui/kbd";
   import * as Popover from "@recast/ui/popover";
@@ -243,7 +221,7 @@
                 : "No cursor data in this clip"}
               class={cn(SEG, suggestOpen && SEG_ACTIVE)}
             >
-              <Wand2 class="size-3" />
+              <AiWand class="size-3" />
               Suggest
             </button>
           {/snippet}

@@ -26,7 +26,7 @@
 		Smartphone,
 		Users,
 		Zap,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	import type { PageData } from "./$types";
 

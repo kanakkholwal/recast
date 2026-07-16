@@ -1,4 +1,4 @@
-import { Mail } from '@lucide/svelte';
+import { Mail } from "@recast/icons";
 import { FacebookBrand, LinkedinBrand, XBrand } from '@recast/ui/brand-icons';
 
 type ShareData = {

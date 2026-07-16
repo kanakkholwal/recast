@@ -22,7 +22,7 @@
 		Play,
 		Trash2,
 		Upload,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { goto } from "$app/navigation";
 	import { flip } from "svelte/animate";
 	import { cubicOut } from "svelte/easing";

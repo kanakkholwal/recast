@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { MousePointer2 } from "@lucide/svelte";
+	import { MousePointer2 } from "@recast/icons";
 	import { cn } from "@recast/ui/utils";
 	import type { Snippet } from "svelte";
 

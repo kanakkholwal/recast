@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { AlertTriangle } from "@lucide/svelte";
+	import { AlertTriangle } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { toErrorMessage } from "./dialog.logic";

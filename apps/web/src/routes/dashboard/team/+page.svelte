@@ -26,7 +26,7 @@
 		Trash2,
 		UserPlus,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { tick, untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";

@@ -22,7 +22,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { ColorField } from "@recast/ui/color-field";
   import { Button } from "@recast/ui/button";
-  import { AlignCenter, AlignLeft, AlignRight, Plus, Trash2, Type } from "@lucide/svelte";
+  import { AlignCenter, AlignLeft, AlignRight, Plus, Trash2, Type } from "@recast/icons";
   import type { TextAlign, TextOverlay } from "../types";
 
   let { editor }: TextControlProps = $props();

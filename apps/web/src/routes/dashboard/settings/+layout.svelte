@@ -2,7 +2,7 @@
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
 	import SettingsTabs from "$lib/dashboard/components/SettingsTabs.svelte";
 	import { Badge } from "@recast/ui/badge";
-	import { Settings } from "@lucide/svelte";
+	import { Settings } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

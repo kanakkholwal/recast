@@ -1,6 +1,6 @@
 <script lang="ts">
   import { commandPalette } from "$lib/stores/command-palette.svelte";
-  import { Search } from "@lucide/svelte";
+  import { Search } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";

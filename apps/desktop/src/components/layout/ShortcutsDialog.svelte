@@ -1,7 +1,7 @@
 <script lang="ts">
   import * as Dialog from "@recast/ui/dialog";
   import { Kbd } from "@recast/ui/kbd";
-  import { Keyboard } from "@lucide/svelte";
+  import { Keyboard } from "@recast/icons";
   import {
     formatChordTokens,
     shortcutDefs,

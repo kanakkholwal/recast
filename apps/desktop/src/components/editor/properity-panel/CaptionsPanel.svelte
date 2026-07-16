@@ -29,24 +29,7 @@
   import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
   import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
   import { toOutputTimeTranscript } from "$lib/services/export";
-  import {
-    AlertTriangle,
-    AlignCenter,
-    AlignLeft,
-    AlignRight,
-    Check,
-    ChevronsUpDown,
-    Cpu,
-    Download,
-    FileDown,
-    Loader2,
-    Lock,
-    MicOff,
-    Package,
-    Sparkles,
-    Trash2,
-    Zap
-  } from "@lucide/svelte";
+  import { AlertTriangle, AlignCenter, AlignLeft, AlignRight, Check, ChevronsUpDown, Cpu, Download, FileDown, Loader2, Lock, MicOff, Package, Trash2, Zap, AiWand } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import * as Command from "@recast/ui/command";
@@ -586,7 +569,7 @@
           <Loader2 size={14} class="animate-spin" />
           {phase === "extracting" ? "Reading audio…" : "Transcribing…"}
         {:else}
-          <Sparkles size={14} />
+          <AiWand size={14} />
           {store.transcript ? "Regenerate captions" : "Generate captions"}
         {/if}
       </Button>

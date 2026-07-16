@@ -7,7 +7,7 @@
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowRight, LoaderCircle, Plus } from "@lucide/svelte";
+	import { ArrowRight, LoaderCircle, Plus } from "@recast/icons";
 
 	/**
 	 * Inline "create another team" flow for users who already have at least

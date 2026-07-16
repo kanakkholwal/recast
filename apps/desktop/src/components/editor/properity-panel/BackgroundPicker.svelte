@@ -23,7 +23,8 @@
     Palette,
     SquareRoundCorner,
     Wallpaper,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { SegmentedToggle } from "@recast/ui/segmented";
@@ -47,7 +48,7 @@
   type BackgroundMode = {
     type: BackgroundType;
     label: string;
-    icon: typeof ImageIcon;
+    icon: IconComponent;
   };
 
   const backgroundModes: BackgroundMode[] = [

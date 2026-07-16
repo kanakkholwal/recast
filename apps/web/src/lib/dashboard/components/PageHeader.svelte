@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { Component, Snippet } from "svelte";
+	import type { Snippet } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 
@@ -12,7 +13,7 @@
 		subtitle,
 		children,
 	}: {
-		icon?: Component<{ class?: string }>;
+		icon?: IconComponent;
 		title: string;
 		subtitle?: string;
 		/** Right-aligned actions (buttons, badges). */

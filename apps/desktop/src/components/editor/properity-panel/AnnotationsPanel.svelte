@@ -29,7 +29,8 @@
     SquareDashedMousePointer,
     Trash2,
     Type as TypeIcon,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { toast } from "@recast/ui/sonner";
   import { pickImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
   import { Button } from "@recast/ui/button";
@@ -71,7 +72,7 @@
   type ToolDef = {
     id: AnnotationKindName | "select";
     label: string;
-    icon: typeof Square;
+    icon: IconComponent;
     hotkey: string;
   };
 

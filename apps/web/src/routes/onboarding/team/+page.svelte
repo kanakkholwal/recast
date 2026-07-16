@@ -13,7 +13,7 @@
 		MailCheck,
 		Plus,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";

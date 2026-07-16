@@ -2,7 +2,7 @@
 	import { formatBytes } from "$lib/dashboard/format";
 	import { quotaStore } from "$lib/dashboard/store.svelte";
 	import { usageView } from "./UsageMeter.logic";
-	import { HardDrive, Link2 } from "@lucide/svelte";
+	import { HardDrive, Link2 } from "@recast/icons";
 
 	// Reactive snapshot pulled from the layout-injected quota. When the
 	// workspace plan is Enterprise (no cap) the bars render at 0% and the

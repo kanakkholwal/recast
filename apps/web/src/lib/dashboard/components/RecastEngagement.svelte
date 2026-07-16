@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { RecastEngagement } from "$lib/dashboard/activity";
 	import { formatDuration, formatRelative } from "$lib/dashboard/format";
-	import { MessageSquare, Smile } from "@lucide/svelte";
+	import { MessageSquare, Smile } from "@recast/icons";
 
 	// Surfaces the comments + reactions the player collects but never showed the
 	// owner — read-only here (moderation still lives on the share page).

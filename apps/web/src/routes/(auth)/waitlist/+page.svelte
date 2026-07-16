@@ -2,7 +2,7 @@
 	import { page } from "$app/state";
 	import { SeoMeta } from "$lib/components";
 	import WaitlistForm from "$lib/components/WaitlistForm.svelte";
-	import { Lock } from "@lucide/svelte";
+	import { Lock } from "@recast/icons";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";

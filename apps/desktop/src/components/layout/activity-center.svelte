@@ -25,7 +25,7 @@
 	  RefreshCw,
 	  TriangleAlert,
 	  X
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import * as Popover from "@recast/ui/popover";
 	import { toast } from "@recast/ui/sonner";

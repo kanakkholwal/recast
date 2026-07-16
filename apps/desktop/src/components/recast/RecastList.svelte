@@ -1,6 +1,6 @@
 <script lang="ts">
 	import PageShell from "$components/layout/PageShell.svelte";
-	import { Search } from "@lucide/svelte";
+	import { Search } from "@recast/icons";
 	import { cn } from "@recast/ui/utils";
 	import { type Snippet } from "svelte";
 	import RecastCard from "./RecastCard.svelte";
@@ -200,7 +200,7 @@
 				<div
 					class="flex size-14 items-center justify-center rounded-2xl bg-card/40 ring-1 ring-inset ring-border/40 text-muted-foreground"
 				>
-					<Search size={22} strokeWidth={1.6} />
+					<Search size={22} stroke={1.6} />
 				</div>
 				<div class="space-y-1">
 					<p class="text-[14px] font-semibold text-foreground/85">

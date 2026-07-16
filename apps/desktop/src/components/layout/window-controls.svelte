@@ -6,7 +6,7 @@
 
 <script lang="ts">
   import { isTauriApp } from "$lib/runtime/tauri";
-  import { Minus, Plus, Square, X } from "@lucide/svelte";
+  import { Minus, Plus, Square, X } from "@recast/icons";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
 
@@ -73,7 +73,7 @@
       >
         <X
           size={8}
-          strokeWidth={2.5}
+          stroke={2.5}
           class="text-black/55 opacity-0 transition-opacity group-hover/lights:opacity-100"
         />
       </button>
@@ -86,7 +86,7 @@
       >
         <Minus
           size={8}
-          strokeWidth={2.5}
+          stroke={2.5}
           class="text-black/55 opacity-0 transition-opacity group-hover/lights:opacity-100"
         />
       </button>
@@ -99,7 +99,7 @@
       >
         <Plus
           size={8}
-          strokeWidth={2.5}
+          stroke={2.5}
           class="text-black/55 opacity-0 transition-opacity group-hover/lights:opacity-100"
         />
       </button>

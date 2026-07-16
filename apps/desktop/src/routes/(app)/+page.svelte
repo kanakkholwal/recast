@@ -29,7 +29,8 @@
     Monitor,
     Radio,
     Search,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";
@@ -163,7 +164,7 @@
   type QuickAction = {
     id: string;
     label: string;
-    icon: typeof Mic;
+    icon: IconComponent;
     onClick: () => void;
   };
   const quickActions: QuickAction[] = [

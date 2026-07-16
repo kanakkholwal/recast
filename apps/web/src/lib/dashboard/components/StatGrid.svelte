@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { Component } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 	import StatCard from "./StatCard.svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
@@ -10,7 +10,7 @@
 		stats,
 		class: className = "grid grid-cols-2 gap-3 lg:grid-cols-4",
 	}: {
-		stats: { icon: Component<{ class?: string }>; label: string; value: string }[];
+		stats: { icon: IconComponent; label: string; value: string }[];
 		class?: string;
 	} = $props();
 </script>

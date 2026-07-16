@@ -3,7 +3,7 @@
   import WindowControls from "$components/layout/window-controls.svelte";
   import { shortcutsDialog } from "$lib/shortcuts/registry.svelte";
   import { layoutMode } from "$lib/stores/layout-mode.svelte";
-  import { Keyboard } from "@lucide/svelte";
+  import { Keyboard } from "@recast/icons";
   import { cn } from "@recast/ui/utils";
   import { platform } from "@tauri-apps/plugin-os";
   import type { Snippet } from "svelte";

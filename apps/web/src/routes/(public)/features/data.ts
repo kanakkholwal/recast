@@ -2,12 +2,12 @@
 // the page file stays focused on layout. Each export is its own const so
 // the bundler can tree-shake whatever the page doesn't actually use.
 
-import { Camera, Crop, Cpu, FileBox, HardDrive, HardDriveUpload, Highlighter, Layers, Layout, MemoryStick, Monitor, MousePointer2, Pause, Scissors, ShieldCheck, Sparkles, Target, VolumeX, WifiOff, Zap, Apple,  Wand2, Keyboard, UserX } from "@lucide/svelte";
+import { Camera, Crop, Cpu, FileBox, HardDrive, HardDriveUpload, Highlighter, Layers, Layout, MemoryStick, Monitor, MousePointer2, Pause, Scissors, ShieldCheck, Sparkles, Target, VolumeX, WifiOff, Zap, Apple,  AiWand, Keyboard, UserX } from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 
 export const pillars = [
 	{
-		icon: Wand2,
+		icon: AiWand,
 		title: "Auto-polish on the way in",
 		description:
 			"Smart zoom, cursor smoothing, silence cuts happen while you record. The demo is mostly done by the time you stop.",

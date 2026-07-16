@@ -29,7 +29,8 @@
     Type as TypeIcon,
     Volume2,
     VolumeX,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
   import { openFileLocation } from "$lib/ipc";
@@ -80,7 +81,7 @@
   const KIND_META: Array<{
     id: AnnotationKindName;
     label: string;
-    icon: typeof Square;
+    icon: IconComponent;
   }> = [
     { id: "rect", label: "Rect", icon: Square },
     { id: "ellipse", label: "Ellipse", icon: Circle },
@@ -147,7 +148,7 @@
 </script>
 
 <!-- Read-only stat row: icon + label on the left, mono value on the right. -->
-{#snippet stat(Icon: typeof Square, label: string, value: string)}
+{#snippet stat(Icon: IconComponent, label: string, value: string)}
   <div class="flex items-center justify-between gap-2 px-1.5 py-1">
     <span class="flex items-center gap-1.5 text-muted-foreground">
       <Icon size={11} />
@@ -158,7 +159,7 @@
 {/snippet}
 
 <!-- Actionable stat row: jumps to the related panel on click. -->
-{#snippet navStat(Icon: typeof Square, label: string, value: string, tab: PanelTab)}
+{#snippet navStat(Icon: IconComponent, label: string, value: string, tab: PanelTab)}
   <button
     type="button"
     onclick={() => goTo(tab)}

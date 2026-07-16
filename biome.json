@@ -45,9 +45,36 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"style": {
+				"noRestrictedImports": {
+					"level": "error",
+					"options": {
+						"paths": {
+							"@lucide/svelte": "Import from @recast/icons instead. The Lucide → Tabler barrel is curated in packages/icons/src/tabler/.",
+							"@tabler/icons-svelte": "Import from @recast/icons instead. The Tabler → Lucide-shaped barrel is curated in packages/icons/src/tabler/.",
+							"@phosphor-icons/svelte": "Reserved for future; use @recast/icons/ai for Phosphor duotone accents instead.",
+							"@phosphor-icons/svelte-duotone": "Use @recast/icons/ai for Phosphor duotone accents instead.",
+							"@phosphor-icons/core": "Vendored — do not import directly. AI accents live under @recast/icons/ai.",
+							"@phosphor-icons/web": "Use @recast/icons/ai for Phosphor duotone accents instead."
+						}
+					}
+				}
+			}
 		}
 	},
+	"overrides": [
+		{
+			"includes": ["packages/icons/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": "off"
+					}
+				}
+			}
+		}
+	],
 	"assist": {
 		"actions": {
 			"source": {

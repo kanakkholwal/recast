@@ -10,7 +10,7 @@
 	  Crown,
 	  LoaderCircle,
 	  Plus,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { useSidebar } from "@recast/ui/sidebar";

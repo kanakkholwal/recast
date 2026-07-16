@@ -1,12 +1,12 @@
 <script lang="ts">
-	import type { Component } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 
 	let {
 		icon: Icon,
 		label,
 		value,
 	}: {
-		icon: Component<{ class?: string }>;
+		icon: IconComponent;
 		label: string;
 		value: string;
 	} = $props();

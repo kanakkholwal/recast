@@ -1,12 +1,12 @@
-import Mail from "@lucide/svelte/icons/mail";
+import { Mail as Mail } from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
 import { GithubBrand, XBrand } from "@recast/ui/brand-icons";
-import type { Component } from "svelte";
 
 // Single source of truth for the site chrome (Navbar + Footer). Both surfaces
 // repeat the same product links and external URLs; keep the URLs here so a
 // changed handle/repo only edits in one place.
 
-type IconComponent = Component<{ class?: string; size?: number | string }>;
+type IconComponentLocal = import("@recast/icons").IconComponent;
 
 export type NavLink = { label: string; href: string; external?: boolean };
 

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { joinWaitlist } from "$lib/waitlist";
-	import { ArrowRight, LoaderCircle, MailCheck } from "@lucide/svelte";
+	import { ArrowRight, LoaderCircle, MailCheck } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";

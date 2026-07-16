@@ -25,7 +25,7 @@
     UserX,
     VolumeX,
     Zap
-} from "@lucide/svelte";
+} from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 
 	export type BeforeAfterTone = "raw" | "polished";

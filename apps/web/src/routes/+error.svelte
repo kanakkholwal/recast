@@ -3,7 +3,7 @@
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
 	import { Button } from "@recast/ui/button";
-	import { ArrowLeft, Home, RefreshCw, ScrollText } from "@lucide/svelte";
+	import { ArrowLeft, Home, RefreshCw, ScrollText } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fade, fly } from "svelte/transition";
 	import {
