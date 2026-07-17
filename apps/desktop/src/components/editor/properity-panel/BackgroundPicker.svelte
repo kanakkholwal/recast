@@ -14,6 +14,7 @@
     type BackgroundType,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import type { IconComponent } from "@recast/icons";
   import {
     Blend,
     FolderOpen,
@@ -24,7 +25,6 @@
     SquareRoundCorner,
     Wallpaper,
   } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { SegmentedToggle } from "@recast/ui/segmented";
@@ -77,7 +77,7 @@
   // Mode tabs only choose which preset list is shown; they don't mutate the
   // background (only an explicit preset pick does), so browsing other modes
   // keeps the applied background intact.
-  let displayedMode = $state<BackgroundType>(store.backgroundType);
+  let displayedMode = $derived<BackgroundType>(store.backgroundType);
   $effect(() => {
     displayedMode = store.backgroundType;
   });

@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use base64::{engine::general_purpose, Engine as _};
+use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, State};
 
 use super::error::{AppError, AppResult};
@@ -14,7 +15,7 @@ use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
-    output_duration_cap,
+    output_duration_cap, warped_output_duration,
 };
 use super::export::gif::{run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -292,6 +293,183 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
         },
         needs_migration: false,
     })
+}
+
+/// Read-only summary of a project's timeline. Mirrors the data shape the
+/// frontend's `deriveSegments` + `timeMapFromSegments` produce in
+/// `apps/desktop/src/lib/timeline/{segments,time-map}.ts`. The shared parity
+/// fixtures already enforce that the Rust side (these helpers) and the JS side
+/// agree to the same precision, so an agent that reads this view and then
+/// issues a follow-up `editor.*` patch can trust the structure it sees.
+///
+/// Costs of deriving this are negligible (a single pass over the cuts +
+/// split_points on the in-memory render state); safe to call from a control-
+/// socket dispatch arm without a `spawn_blocking`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTimeline {
+    /// Source-recording duration in seconds (full clip, before trim/cuts).
+    pub source_duration: f64,
+    /// Trimmed window in original-recording coords (inclusive).
+    pub trim_start: f64,
+    pub trim_end: f64,
+    /// `trim_end - trim_start`, clamped to `>= 0`.
+    pub trimmed_duration: f64,
+    /// Output-time duration after cuts and per-segment speed warp are applied.
+    pub output_duration: f64,
+    /// Cuts in original-recording coords, kept verbatim from the render state.
+    pub cuts: Vec<TimelineCut>,
+    /// Kept segments on the post-trim stream (t=0 at trim_start) with their speed.
+    pub kept_segments: Vec<KeptSegment>,
+    /// Split points (original-recording coords) the user dropped on the clip.
+    pub split_points: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineCut {
+    pub start: f64,
+    pub end: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptSegment {
+    pub start: f64,
+    pub end: f64,
+    pub speed: f64,
+}
+
+pub fn derive_project_timeline(
+    render_state: &RenderState,
+    source_duration: f64,
+) -> ProjectTimeline {
+    let trim_start = render_state.trim_start.max(0.0);
+    let trim_end = render_state.trim_end.max(trim_start);
+    let trimmed = (trim_end - trim_start).max(0.0);
+    let export_cuts = collect_export_cuts(render_state, trim_start, trim_end);
+    let speeds = build_speed_segments(
+        trimmed,
+        &export_cuts,
+        &render_state.split_points,
+        &render_state.segment_speeds,
+        trim_start,
+    );
+    let output_duration = warped_output_duration(&speeds);
+
+    ProjectTimeline {
+        source_duration,
+        trim_start,
+        trim_end,
+        trimmed_duration: trimmed,
+        output_duration,
+        cuts: render_state
+            .cuts
+            .iter()
+            .map(|c| TimelineCut {
+                start: c.start,
+                end: c.end,
+            })
+            .collect(),
+        kept_segments: speeds
+            .iter()
+            .map(|s| KeptSegment {
+                start: s.start,
+                end: s.end,
+                speed: s.speed,
+            })
+            .collect(),
+        split_points: render_state.split_points.clone(),
+    }
+}
+
+#[cfg(test)]
+mod project_timeline_tests {
+    use super::*;
+    use crate::render::graph::{CutRange, RenderState, SegmentSpeed};
+
+    fn s(start: f64, end: f64) -> CutRange {
+        CutRange {
+            start,
+            end,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn sp(start: f64, speed: f64) -> SegmentSpeed {
+        SegmentSpeed { start, speed }
+    }
+
+    #[test]
+    fn empty_state_matches_source_duration() {
+        let st = RenderState::default();
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.source_duration, 30.0);
+        assert_eq!(tl.trimmed_duration, 0.0);
+        assert_eq!(tl.output_duration, 0.0);
+        assert!(tl.cuts.is_empty());
+        assert!(tl.kept_segments.is_empty());
+    }
+
+    #[test]
+    fn cuts_shorten_output_duration() {
+        let st = RenderState {
+            trim_end: 20.0,
+            cuts: vec![s(5.0, 7.0)],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.trimmed_duration, 20.0);
+        assert!((tl.output_duration - 18.0).abs() < 1e-6);
+        assert_eq!(tl.cuts.len(), 1);
+        assert_eq!(tl.cuts[0].start, 5.0);
+        assert_eq!(tl.cuts[0].end, 7.0);
+    }
+
+    #[test]
+    fn split_points_slice_kept_segments_at_1x() {
+        let st = RenderState {
+            trim_end: 20.0,
+            split_points: vec![8.0],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.kept_segments.len(), 2);
+        assert_eq!(
+            tl.kept_segments[0],
+            KeptSegment {
+                start: 0.0,
+                end: 8.0,
+                speed: 1.0
+            }
+        );
+        assert_eq!(
+            tl.kept_segments[1],
+            KeptSegment {
+                start: 8.0,
+                end: 20.0,
+                speed: 1.0
+            }
+        );
+    }
+
+    #[test]
+    fn speed_warp_shortens_output_at_2x() {
+        // Anchors are ORIGINAL seconds; first kept segment starts at trim_start=0,
+        // so a 2× override anchored at original t=0 covers the whole clip.
+        let st = RenderState {
+            trim_end: 10.0,
+            segment_speeds: vec![sp(0.0, 2.0)],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert!(
+            (tl.output_duration - 5.0).abs() < 1e-6,
+            "got {}",
+            tl.output_duration
+        );
+        assert!((tl.kept_segments[0].speed - 2.0).abs() < 1e-6);
+    }
 }
 
 #[tauri::command]

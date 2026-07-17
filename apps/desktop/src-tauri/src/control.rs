@@ -397,6 +397,89 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
             ))?;
             serde_json::to_value(timeline).map_err(|e| e.to_string())
         }
+        // Phase A (read-only): editor + export introspection for CLI agents.
+        // Each path loads the project on demand through the same
+        // `load_editor_document`/`list_export_jobs` paths the GUI uses; nothing
+        // here mutates state, so the future `EditorSession` write-lock doesn't
+        // need to be touched for v1.
+        "editor.open" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.open requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc).map_err(|e| e.to_string())
+        }
+        "editor.show" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.show requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc.render_state).map_err(|e| e.to_string())
+        }
+        "editor.timeline" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.timeline requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let tl =
+                crate::commands::derive_project_timeline(&doc.render_state, doc.metadata.duration);
+            serde_json::to_value(tl).map_err(|e| e.to_string())
+        }
+        "editor.zoom-regions" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom-regions requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc.render_state.zoom_regions).map_err(|e| e.to_string())
+        }
+        "editor.annotations" => {
+            let path = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc.render_state.annotations).map_err(|e| e.to_string())
+        }
+        // Read-only queue inspection. `export.show` filters the same list by
+        // id; the surface stays small because the queue is a single SQLite
+        // table and a second method would just be SELECT * WHERE id=?.
+        "export.list" => {
+            let jobs = tauri::async_runtime::block_on(crate::commands::list_export_jobs(state))
+                .map_err(|e| e.to_string())?;
+            serde_json::to_value(jobs).map_err(|e| e.to_string())
+        }
+        "export.show" => {
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("export.show requires an id")?;
+            let jobs = tauri::async_runtime::block_on(crate::commands::list_export_jobs(state))
+                .map_err(|e| e.to_string())?;
+            let job = jobs
+                .into_iter()
+                .find(|j| j.id == id)
+                .ok_or_else(|| format!("no export job with id '{id}'"))?;
+            serde_json::to_value(job).map_err(|e| e.to_string())
+        }
         other => Err(format!("unknown method: {other}")),
     }
 }

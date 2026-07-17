@@ -40,6 +40,8 @@ const CLI_VERBS: &[&str] = &[
     "watch",
     "install",
     "uninstall",
+    "project",
+    "export",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -191,6 +193,46 @@ enum Command {
     Install,
     /// Remove `recast` from your PATH.
     Uninstall,
+    /// Read a project's editor state (`edits.json`) and derived timeline.
+    /// Phase A — read-only; no mutations, no lock acquisition.
+    Project {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
+    /// Read the export job queue (queued, running, and undismissed terminal).
+    /// Phase A — read-only; cancel/wait arrive with Phase B.
+    Export {
+        #[command(subcommand)]
+        action: ExportAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectAction {
+    /// Open a `.recast` (or bare video) and print the full editor document.
+    Open {
+        /// Path to the `.recast` archive or source video.
+        path: String,
+    },
+    /// Print the project's current `edits.json` (the same `RenderState` the editor ships).
+    Show { path: String },
+    /// Derive the project's kept-segment timeline (trim, cuts, output duration).
+    Timeline { path: String },
+    /// List the project's zoom regions.
+    ZoomRegions { path: String },
+    /// List the project's annotations.
+    Annotations { path: String },
+}
+
+#[derive(Subcommand)]
+enum ExportAction {
+    /// List every export job (status, phase, progress, output path).
+    List,
+    /// Show one export job by id.
+    Show {
+        /// The export job id (`recast export list` to find one).
+        id: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -551,7 +593,53 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                 let _ = emit(frame, cli.format);
             })
         }
+        // Phase A (read-only): every verb hits `load_editor_document` /
+        // `list_export_jobs` through the existing control channel. Each takes
+        // a single `path`/`id` arg, so no JSON-patch surface here yet.
+        Command::Project { action } => project_dispatch(cli, action),
+        Command::Export { action } => export_dispatch(cli, action),
     }
+}
+
+/// Dispatch one `recast project ...` verb. The path is required for every
+/// subcommand; v1 has no "active project" tracking, so the agent must pass it
+/// explicitly. Phase B will add a "lock" + default-project behaviour alongside
+/// the mutate verbs.
+fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
+    let path = match action {
+        ProjectAction::Open { path }
+        | ProjectAction::Show { path }
+        | ProjectAction::Timeline { path }
+        | ProjectAction::ZoomRegions { path }
+        | ProjectAction::Annotations { path } => {
+            crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned()
+        }
+    };
+    let method = match action {
+        ProjectAction::Open { .. } => "editor.open",
+        ProjectAction::Show { .. } => "editor.show",
+        ProjectAction::Timeline { .. } => "editor.timeline",
+        ProjectAction::ZoomRegions { .. } => "editor.zoom-regions",
+        ProjectAction::Annotations { .. } => "editor.annotations",
+    };
+    let value = crate::control::send(
+        method,
+        json!({ "path": path }),
+        !cli.no_launch,
+        cli.timeout_ms,
+    )?;
+    emit(&value, cli.format)
+}
+
+fn export_dispatch(cli: &Cli, action: &ExportAction) -> Result<(), String> {
+    let (method, params) = match action {
+        ExportAction::List => ("export.list", Value::Null),
+        ExportAction::Show { id } => ("export.show", json!({ "id": id })),
+    };
+    let value = crate::control::send(method, params, !cli.no_launch, cli.timeout_ms)?;
+    emit(&value, cli.format)
 }
 
 /// Build an intent patch from a `select` verb.

@@ -1,13 +1,13 @@
 <script lang="ts">
+  import { formatBytes as formatBytesBase } from "$lib/format/bytes";
+  import { clock } from "$lib/format/time";
+  import { openFileLocation } from "$lib/ipc";
   import type {
-    Annotation,
     AnnotationKindName,
     EditorStore,
-    PanelTab,
+    PanelTab
   } from "$lib/stores/editor-store.svelte";
-  import { clock } from "$lib/format/time";
-  import { formatBytes as formatBytesBase } from "$lib/format/bytes";
-  import { basename, countByKind, formatRelative } from "./info-panel.logic";
+  import type { IconComponent } from "@recast/icons";
   import {
     ArrowUpRight,
     ChevronRight,
@@ -30,11 +30,10 @@
     Volume2,
     VolumeX,
   } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
-  import { openFileLocation } from "$lib/ipc";
   import { onDestroy, onMount } from "svelte";
+  import { countByKind, formatRelative } from "./info-panel.logic";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -181,52 +180,6 @@
 {/snippet}
 
 <div class="flex flex-col gap-4 text-xs animate-in fade-in duration-200">
-  <!-- Hero: filename + key specs + live save status -->
-  <div
-    class="rounded-xl border border-border/60 bg-card/40 p-3 shadow-(--shadow-craft-inset)"
-  >
-    <div class="flex items-center gap-2">
-      <span
-        class="grid size-8 shrink-0 place-items-center rounded-lg bg-primary/10 text-primary"
-        aria-hidden="true"
-      >
-        <Film size={15} />
-      </span>
-      <div class="min-w-0 flex-1">
-        <p
-          class="truncate font-mono text-[11px] font-medium text-foreground"
-          title={store.videoPath}
-        >
-          {basename(store.videoPath)}
-        </p>
-        <p class="truncate text-[10px] tabular-nums text-muted-foreground">
-          {specLine}
-        </p>
-      </div>
-    </div>
-    <div
-      class="mt-2.5 flex items-center justify-center rounded-lg border border-border/50 bg-background/40 px-2 py-1"
-    >
-      <span
-        class="inline-flex items-center gap-1.5 font-mono text-[10px] {saveStatus.tone ===
-        'warning'
-          ? 'text-warning'
-          : saveStatus.tone === 'ok'
-            ? 'text-success'
-            : 'text-muted-foreground'}"
-      >
-        <span
-          class="inline-flex size-1.5 rounded-full {saveStatus.tone === 'warning'
-            ? 'bg-warning'
-            : saveStatus.tone === 'ok'
-              ? 'bg-success'
-              : 'bg-muted-foreground'}"
-          aria-hidden="true"
-        ></span>
-        {saveStatus.label}
-      </span>
-    </div>
-  </div>
 
   <PanelSection title="Source" flush>
     <div class="flex flex-col gap-0.5">

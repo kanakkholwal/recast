@@ -38,28 +38,24 @@
   import { recordingCountdown } from "$lib/stores/recording-countdown.svelte";
   import { spawnOverlayWindow } from "$lib/windows/spawn-overlay";
   import {
-  AppWindow,
-  Camera,
-  CameraOff,
-  ChevronDown,
-  Circle,
-  Crop,
-  GripVertical,
-  Mic,
-  MicOff,
-  Monitor,
-  Pause,
-  Play,
-  SlidersHorizontal as SlidersIcon,
-  Square,
-  Volume2,
-  VolumeOff,
-  X,
-  PlayFilled,
-  SquareFilled,
-  PauseFilled,
-  CircleFilled,
-} from "@recast/icons";
+    AppWindow,
+    Camera,
+    CameraOff,
+    ChevronDown,
+    CircleFilled,
+    Crop,
+    GripVertical,
+    Mic,
+    MicOff,
+    Monitor,
+    PauseFilled,
+    PlayFilled,
+    SlidersHorizontal as SlidersIcon,
+    SquareFilled,
+    Volume,
+    VolumeOff,
+    X
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
   import { emit, listen } from "@tauri-apps/api/event";
@@ -1466,7 +1462,7 @@
         title={systemAudioOn ? "System audio: on" : "System audio: off"}
       >
         {#if systemAudioOn}
-          <Volume2 size={14} stroke={2} />
+          <Volume size={14} stroke={2} />
         {:else}
           <VolumeOff size={14} stroke={2} />
         {/if}

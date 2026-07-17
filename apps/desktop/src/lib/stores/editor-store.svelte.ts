@@ -10,44 +10,44 @@ import type { Transcript } from '../ipc';
 // importers keep their `editor-store` specifier.
 import {
 	CAPTION_PRESETS,
-	DEFAULT_CAPTION_STYLE,
 	DEFAULT_CAPTION_ANIMATION,
-	type CaptionStyle,
-	type CaptionPreset,
+	DEFAULT_CAPTION_STYLE,
 	type CaptionAnimation,
+	type CaptionPreset,
+	type CaptionStyle,
 } from '@recast/captions';
+import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
 import { log } from '../logger';
-import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // (which pulls this store's catalogs) can't form an import cycle.
 import { resolveBackgroundWireValue } from '../registry/resolve';
+import {
+	setSeamTransition as applySeamTransition,
+	seamTransitionAt as readSeamTransition,
+	type SeamTransition,
+} from '../scenes/seam';
+import {
+	segmentAnimAt as animAtAnchor,
+	pruneSegmentAnims,
+	retuneAnimsForTone,
+	setSegmentAnim as upsertSegmentAnim,
+	type MotionTone,
+	type SceneAnimSpec,
+	type SegmentAnim,
+} from '../scenes/segment-anim';
 import { totalCutDuration, type CutSource, type TimelineCut } from '../timeline/cuts';
-import { deriveSegments, planDeleteSegment, planSplit, segmentAt, type Segment } from '../timeline/segments';
 import {
 	buildSpeedOf,
 	pruneSegmentSpeeds,
-	type SegmentSpeed,
 	segmentSpeedAt as speedAtAnchor,
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
+	type SegmentSpeed,
 } from '../timeline/segment-speed';
-import {
-	type MotionTone,
-	pruneSegmentAnims,
-	retuneAnimsForTone,
-	type SceneAnimSpec,
-	type SegmentAnim,
-	segmentAnimAt as animAtAnchor,
-	setSegmentAnim as upsertSegmentAnim,
-} from '../scenes/segment-anim';
-import {
-	seamTransitionAt as readSeamTransition,
-	type SeamTransition,
-	setSeamTransition as applySeamTransition,
-} from '../scenes/seam';
+import { deriveSegments, planDeleteSegment, planSplit, segmentAt, type Segment } from '../timeline/segments';
 import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
@@ -444,7 +444,7 @@ export {
 	MAX_FRAME_PADDING_PERCENT,
 	clampFramePaddingPercent,
 	framePaddingPixels,
-	normalizeFramePaddingPercent,
+	normalizeFramePaddingPercent
 };
 
 export interface EditorRenderState {
@@ -776,8 +776,8 @@ function generateId(): string {
  */
 // Re-export the caption model (imported at the top) so modules that import it
 // from `editor-store` keep working.
-export { CAPTION_PRESETS, DEFAULT_CAPTION_STYLE, DEFAULT_CAPTION_ANIMATION };
-export type { CaptionStyle, CaptionPreset, CaptionAnimation };
+export { CAPTION_PRESETS, DEFAULT_CAPTION_ANIMATION, DEFAULT_CAPTION_STYLE };
+export type { CaptionAnimation, CaptionPreset, CaptionStyle };
 
 /** What to do with generated captions on export. Independent choices: you can
  *  burn captions into the pixels AND keep a sidecar file. The sidecar is also
