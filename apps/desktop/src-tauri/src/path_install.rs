@@ -2,19 +2,30 @@
 //! invocable as a bare `recast` command.
 //!
 //! OS-agnostic surface, per-OS mechanics:
-//! - **Windows**: append the exe's folder to the user PATH env var
-//!   (`HKCU\Environment\Path`), written as `REG_EXPAND_SZ` so existing
-//!   `%VAR%` entries keep expanding, then broadcast `WM_SETTINGCHANGE` so
-//!   live shells pick it up. No admin, no NSIS string-length footgun.
-//! - **macOS / Linux**: symlink the binary into `~/.local/bin/recast` (user-
-//!   writable, no `sudo`), and **ensure `~/.local/bin` is on `PATH`** by
-//!   appending a single guarded line — idempotent, bounded by markers — to
-//!   whichever shell-rc files are present (`~/.zprofile` and `~/.zshrc` on
-//!   macOS; `~/.bashrc`, `~/.zshrc`, `~/.profile` on Linux). Undo replays
-//!   the same markers.
+//! - **Windows**: copy the binary to `%LOCALAPPDATA%\com.kanakkholwal.recast\bin\recast.exe`
+//!   (stable per-user install — survives dev rebuilds), then add that
+//!   folder to the user PATH env var (`HKCU\Environment\Path`) and broadcast
+//!   `WM_SETTINGCHANGE`. `uninstall` deletes the copy AND removes the
+//!   registry entry, so the CLI is fully gone.
+//! - **macOS / Linux**: copy the binary to
+//!   `~/.local/share/com.kanakkholwal.recast/bin/recast` (per-user, no
+//!   sudo) and symlink `~/.local/bin/recast` to it. Shell PATH is updated
+//!   via a guarded block on `~/.zprofile`/`~/.zshrc` (macOS) or
+//!   `~/.bashrc`/`~/.zshrc`/`~/.profile`/`~/.bash_profile` (Linux).
+//!   `uninstall` deletes both the copy and the symlink, and reverts the
+//!   rc blocks.
 //!
-//! Shared by the `recast install`/`uninstall` CLI verbs, the in-app settings
-//! panel, and the first-launch auto-install hook in `lib.rs::run`.
+//! **Why not symlink the dev binary directly?** In dev mode the binary
+//! lives at `<repo>/apps/desktop/src-tauri/target/debug/recast` and
+//! gets replaced on every `cargo tauri dev` rebuild. Symlinking to that
+//! path leaves `recast` resolvable even after `uninstall`, because the
+//! dev binary (and any unrelated PATH entry to its parent dir) persists
+//! independently of our installer. Copying to a stable, recast-owned
+//! directory makes uninstall fully effective.
+//!
+//! Shared by the `recast install`/`uninstall` CLI verbs, the in-app
+//! settings panel, and the first-launch auto-install hook in
+//! `lib.rs::run`.
 
 use serde::Serialize;
 #[cfg(unix)]
@@ -85,11 +96,81 @@ pub fn uninstall() -> Result<String, String> {
     platform::uninstall()
 }
 
-fn exe_dir() -> Result<PathBuf, String> {
-    let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-    exe.parent()
-        .map(|p| p.to_path_buf())
-        .ok_or_else(|| "could not resolve executable directory".to_string())
+/// Stable per-user install directory — independent of the dev tree so
+/// uninstall is fully effective. The copy inside this directory is what
+/// `recast` resolves to in any shell; the symlink / registry entry in
+/// `install()` points at it. `uninstall()` deletes the file itself, so
+/// `recast` truly goes away.
+fn stable_install_dir() -> PathBuf {
+    #[cfg(unix)]
+    {
+        // XDG-style per-user data dir: $HOME/.local/share/<bundle-id>/bin
+        let home = std::env::var_os("HOME")
+            .map(PathBuf::from)
+            .unwrap_or_default();
+        home.join(".local")
+            .join("share")
+            .join("com.kanakkholwal.recast")
+            .join("bin")
+    }
+    #[cfg(windows)]
+    {
+        // %LOCALAPPDATA%\<bundle-id>\bin
+        let local: PathBuf = std::env::var_os("LOCALAPPDATA")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                // Fallback: USERPROFILE%\AppData\Local — matches the
+                // Windows default of %LOCALAPPDATA% when not explicitly
+                // set (rare; only seen under some service contexts).
+                std::env::var_os("USERPROFILE")
+                    .map(PathBuf::from)
+                    .unwrap_or_default()
+                    .join("AppData")
+                    .join("Local")
+            });
+        local.join("com.kanakkholwal.recast").join("bin")
+    }
+}
+
+fn stable_install_file() -> PathBuf {
+    #[cfg(windows)]
+    {
+        stable_install_dir().join("recast.exe")
+    }
+    #[cfg(not(windows))]
+    {
+        stable_install_dir().join("recast")
+    }
+}
+
+/// Bytes copied into the stable install dir. We write with `read +
+/// write` (not `copy`) so we can clamp the file mode on Unix to
+/// owner-rwx without depending on `fs::copy`'s mode preservation.
+fn copy_to_stable() -> Result<String, String> {
+    use std::io::{Read, Write};
+    let src = std::env::current_exe().map_err(|e| e.to_string())?;
+    let mut in_f = std::fs::File::open(&src)
+        .map_err(|e| format!("open source binary {}: {e}", src.display()))?;
+    let dst = stable_install_file();
+    if let Some(parent) = dst.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("create install dir {}: {e}", parent.display()))?;
+    }
+    let mut buf = Vec::with_capacity(64 * 1024);
+    in_f.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+    {
+        let mut out_f = std::fs::File::create(&dst)
+            .map_err(|e| format!("create install file {}: {e}", dst.display()))?;
+        out_f.write_all(&buf).map_err(|e| e.to_string())?;
+        out_f.flush().map_err(|e| e.to_string())?;
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o755);
+        std::fs::set_permissions(&dst, perms).map_err(|e| e.to_string())?;
+    }
+    Ok(dst.to_string_lossy().to_string())
 }
 
 /// Read which rc files already carry our block. Used by `status()` so the
@@ -279,10 +360,6 @@ mod platform {
     use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_WRITE, REG_EXPAND_SZ};
     use winreg::{RegKey, RegValue};
 
-    fn dir_string() -> Result<String, String> {
-        Ok(exe_dir()?.to_string_lossy().to_string())
-    }
-
     fn open_env() -> Result<RegKey, String> {
         RegKey::predef(HKEY_CURRENT_USER)
             .open_subkey_with_flags("Environment", KEY_READ | KEY_WRITE)
@@ -319,15 +396,14 @@ mod platform {
     }
 
     pub fn status() -> InstallStatus {
-        let dir = dir_string().unwrap_or_default();
-        // Trust only the registry: the running process's PATH is whatever
-        // was inherited at app launch — dev launchers can include
-        // `target/debug/` (or a user manually added the binary's folder via
-        // sysdm.cpl), which would otherwise claim the CLI is "still
-        // installed" after we just uninstalled. The registry write is
-        // authoritative — install() writes it, uninstall() removes it.
+        // Trust only what's in the registry — and only against the stable
+        // install dir, not the dev binary's parent. Dev shells sometimes
+        // have `target/debug/` on PATH for unrelated reasons, which
+        // would otherwise claim the CLI is "still installed" after we
+        // uninstalled.
+        let dir = super::stable_install_dir();
         let in_registry = open_env()
-            .map(|e| contains(&read_path(&e), &dir))
+            .map(|e| contains(&read_path(&e), &dir.to_string_lossy()))
             .unwrap_or(false);
         let on_path = in_registry;
         InstallStatus {
@@ -337,44 +413,65 @@ mod platform {
                 "recast is not on your PATH".into()
             },
             on_path,
-            bin_dir: dir,
+            bin_dir: dir.to_string_lossy().to_string(),
             modified_rc_files: Vec::new(),
         }
     }
 
     pub fn install() -> Result<String, String> {
-        let dir = dir_string()?;
+        // Always copy to the stable install dir first. Even when dev
+        // mode, the registered PATH points at the copy (not at the dev
+        // binary's parent dir), so uninstall is fully effective.
+        super::copy_to_stable()?;
+        let dir = super::stable_install_dir();
+        let dir_str = dir.to_string_lossy();
         let env = open_env()?;
         let current = read_path(&env);
-        if contains(&current, &dir) {
-            return Ok(format!("`recast` is already on your PATH ({dir})."));
+        if contains(&current, &dir_str) {
+            return Ok(format!("`recast` is already on your PATH ({dir_str})."));
         }
         let next = if current.trim().is_empty() {
-            dir.clone()
+            dir_str.to_string()
         } else {
-            format!("{};{}", current.trim_end_matches(';'), dir)
+            format!("{};{dir_str}", current.trim_end_matches(';'),)
         };
         write_path(&env, &next)?;
         broadcast();
         Ok(format!(
-            "Added `recast` to your PATH ({dir}). Open a new terminal to use it."
+            "Installed `recast` to {dir_str}. Open a new terminal to use it."
         ))
     }
 
     pub fn uninstall() -> Result<String, String> {
-        let dir = dir_string()?;
-        let env = open_env()?;
-        let current = read_path(&env);
-        if !contains(&current, &dir) {
-            return Ok("`recast` was not on your PATH.".into());
+        let mut actions = Vec::new();
+        let dir = super::stable_install_dir();
+        let dir_str = dir.to_string_lossy();
+        if let Ok(env) = open_env() {
+            let current = read_path(&env);
+            if contains(&current, &dir_str) {
+                let next: Vec<&str> = current
+                    .split(';')
+                    .filter(|p| !p.trim().is_empty() && !p.trim().eq_ignore_ascii_case(&dir_str))
+                    .collect();
+                write_path(&env, &next.join(";"))?;
+                broadcast();
+                actions.push(format!("Removed `recast` from your PATH ({dir_str})."));
+            }
         }
-        let next: Vec<&str> = current
-            .split(';')
-            .filter(|p| !p.trim().is_empty() && !p.trim().eq_ignore_ascii_case(&dir))
-            .collect();
-        write_path(&env, &next.join(";"))?;
-        broadcast();
-        Ok(format!("Removed `recast` from your PATH ({dir})."))
+        // Always attempt to delete the stable copy too — uninstall is
+        // fully effective only when the underlying executable is gone.
+        let binary = super::stable_install_file();
+        if binary.exists() {
+            match std::fs::remove_file(&binary) {
+                Ok(()) => actions.push(format!("Deleted {}.", binary.display())),
+                Err(e) => actions.push(format!("Failed to delete {}: {e}", binary.display())),
+            }
+        }
+        if actions.is_empty() {
+            Ok("`recast` was not installed.".into())
+        } else {
+            Ok(actions.join(" "))
+        }
     }
 
     /// Tell running shells/Explorer that the environment changed so new
@@ -439,17 +536,15 @@ mod platform {
     }
 
     pub fn status() -> InstallStatus {
-        let dir = bin_dir();
-        let modified = rc_files_with_block().into_iter().collect::<Vec<_>>();
-        // `on_path` answers "can a NEW shell reach `recast`?" — not just
-        // "is the current process PATH inherited from the dev launcher?".
-        // On macOS dev mode the running app's PATH never picks up
-        // `~/.local/bin` (we don't re-source the shell), so reading the
-        // process env alone reports "not on PATH" even right after a
-        // successful install. OR'ing in the rc-file-modified marker
-        // reflects what the next shell session will see.
+        // After install, `recast` is reachable via the symlink at
+        // `~/.local/bin/recast`, which points at the stable copy at
+        // `~/.local/share/com.kanakkholwal.recast/bin/recast`. The
+        // symlink check is what matters here — checking the dev binary's
+        // PATH entry would falsely report "installed" because dev shells
+        // typically inherit a PATH that contains the dev tree.
         let symlink_ok = link_path().exists();
-        let new_shell_will_have_dir = dir_on_path(&dir) || !modified.is_empty();
+        let modified = rc_files_with_block().into_iter().collect::<Vec<_>>();
+        let new_shell_will_have_dir = dir_on_path(&bin_dir()) || !modified.is_empty();
         let on_path = symlink_ok && new_shell_will_have_dir;
         InstallStatus {
             detail: if on_path {
@@ -458,24 +553,27 @@ mod platform {
                 "recast is not on your PATH".into()
             },
             on_path,
-            bin_dir: dir.to_string_lossy().to_string(),
+            bin_dir: bin_dir().to_string_lossy().to_string(),
             modified_rc_files: modified,
         }
     }
 
     pub fn install() -> Result<String, String> {
-        let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-        let dir = bin_dir();
-        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        // Copy first — the symlink target must point at a stable file
+        // outside the dev tree, otherwise `recast --help` keeps
+        // resolving even after uninstall (the dev binary never gets
+        // removed).
+        let copied = super::copy_to_stable()?;
+        std::fs::create_dir_all(&bin_dir()).map_err(|e| e.to_string())?;
         let link = link_path();
         if link.symlink_metadata().is_ok() {
             let _ = std::fs::remove_file(&link);
         }
-        symlink(&exe, &link).map_err(|e| e.to_string())?;
+        symlink(Path::new(&copied), &link).map_err(|e| e.to_string())?;
         let rc_changes = apply_rc_files(RcAction::Install);
 
-        let mut msg = format!("Linked `recast` to {}.", link.display());
-        if dir_on_path(&dir) {
+        let mut msg = format!("Installed `recast` to {copied}.");
+        if dir_on_path(&bin_dir()) {
             msg.push_str(" Now resolvable as `recast` in any new terminal.");
         } else {
             msg.push_str(" Added `~/.local/bin` to your shell PATH via the recast block in: ");
@@ -495,18 +593,36 @@ mod platform {
     }
 
     pub fn uninstall() -> Result<String, String> {
-        let link = link_path();
         let mut actions = Vec::new();
+
+        // Drop the symlink in `~/.local/bin/`.
+        let link = link_path();
         if link.symlink_metadata().is_ok() {
             std::fs::remove_file(&link).map_err(|e| e.to_string())?;
             actions.push(format!("Removed {}.", link.display()));
         }
+
+        // Drop the stable copy at `~/.local/share/...`. Critical: this
+        // is what makes uninstall fully effective in dev mode — without
+        // deleting the copy, the next shell that re-sources a non-recast
+        // PATH entry pointing at the same dir (e.g. a Tauri dev hook)
+        // would still resolve `recast`.
+        let stable = super::stable_install_file();
+        if stable.exists() {
+            match std::fs::remove_file(&stable) {
+                Ok(()) => actions.push(format!("Deleted {}.", stable.display())),
+                Err(e) => actions.push(format!("Failed to delete {}: {e}", stable.display())),
+            }
+        }
+
+        // Revert the rc-file edits.
         let rc_changes = apply_rc_files(RcAction::Uninstall);
         for change in &rc_changes {
             if change.change == "removed" {
                 actions.push(format!("Removed recast block from {}.", change.path));
             }
         }
+
         if actions.is_empty() {
             Ok("`recast` was not installed.".into())
         } else {
@@ -590,5 +706,50 @@ fi
         ));
         std::fs::create_dir_all(&base).unwrap();
         base
+    }
+}
+
+#[cfg(test)]
+mod stable_install_tests {
+    //! Cross-platform invariants on `stable_install_dir` /
+    //! `stable_install_file`. Run on every host so a future platform
+    //! branch change (e.g. moving to AppData/Local again) keeps the
+    //! "outside the dev tree" guarantee.
+    use super::*;
+
+    #[test]
+    fn stable_install_dir_is_outside_dev_tree() {
+        // The install dir must NOT live inside the dev tree
+        // (`target/debug/...`) or `~/.cargo`. Otherwise an uninstall
+        // that only deletes from PATH leaves the binary still
+        // resolvable through a stale dev-PATH entry — the user's
+        // reported bug.
+        let dir = stable_install_dir();
+        let dir_str = dir.to_string_lossy();
+        assert!(
+            !dir_str.contains("target"),
+            "stable install dir must not be under `target/` (got {dir_str})"
+        );
+        assert!(
+            !dir_str.contains(".cargo"),
+            "stable install dir must not be under `~/.cargo/` (got {dir_str})"
+        );
+        assert!(
+            dir_str.contains("recast"),
+            "stable install dir should be Recast-owned (got {dir_str})"
+        );
+    }
+
+    #[test]
+    fn stable_install_file_has_sensible_name() {
+        // Lowercase `recast` everywhere — Windows is case-insensitive on
+        // PATH lookups, but the documented CLI contract and the smoke
+        // test script both call `recast` (not `Recast`).
+        let f = stable_install_file();
+        let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        assert!(
+            name == "recast" || name == "recast.exe",
+            "stable install filename must be the canonical `recast` (got `{name}`)"
+        );
     }
 }

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { FONT_WEIGHTS } from "$lib/annotations/palette";
   import { getRecentColors, pushRecentColor } from "$lib/annotations/recent-colors";
+  import { ensureFontLoaded } from "$lib/fonts/font-options";
   import { formatSize } from "$lib/format/files";
   import { clock } from "$lib/format/time";
   import {
@@ -14,22 +15,13 @@
     type CaptionModelInfo,
     type DeviceCapabilities,
   } from "$lib/ipc";
-  import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { registry } from "$lib/registry";
   import type { CaptionPresetValue } from "$lib/registry/types";
-  import {
-    captionStyleMatchesPreset,
-    downloadProgressPct,
-    groupModelsByFamily,
-    gpuLabel as gpuLabelOf,
-    langLabel,
-    pickDefaultModelId,
-  } from "./captions-panel.logic";
-  import { ensureFontLoaded } from "$lib/fonts/font-options";
-  import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
-  import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
   import { toOutputTimeTranscript } from "$lib/services/export";
-  import { AlertTriangle, AlignCenter, AlignLeft, AlignRight, Check, ChevronsUpDown, Cpu, Download, FileDown, Loader2, Lock, MicOff, Package, Trash2, Zap, AiWand } from "@recast/icons";
+  import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
+  import { experimentalStore } from "$lib/stores/experimental.svelte";
+  import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
+  import { AiWand, AlertTriangle, AlignCenter, AlignLeft, AlignRight, Check, ChevronsUpDown, Cpu, Download, FileDown, Loader2, Lock, MicOff, Package, Trash2, Zap } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import * as Command from "@recast/ui/command";
@@ -39,6 +31,14 @@
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
+  import {
+    captionStyleMatchesPreset,
+    downloadProgressPct,
+    gpuLabel as gpuLabelOf,
+    groupModelsByFamily,
+    langLabel,
+    pickDefaultModelId,
+  } from "./captions-panel.logic";
   import FontPicker from "./FontPicker.svelte";
   import PanelSection from "./PanelSection.svelte";
 
@@ -556,7 +556,7 @@
     <!-- Generate lives in the same section as the model picker. -->
     <div class="mt-3 border-t border-border/50 pt-3">
       <Button
-        variant="default"
+        variant="dark"
         size="sm"
         class="w-full gap-1.5"
         disabled={!selected?.installed ||
