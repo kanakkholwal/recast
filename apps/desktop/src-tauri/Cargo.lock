@@ -22,6 +22,7 @@ dependencies = [
  "interprocess",
  "keepawake",
  "keyring",
+ "libc",
  "log",
  "ocrs",
  "parking_lot",
