@@ -1,0 +1,29 @@
+{
+	"name": "@recast/media",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "Shared media-processing layer for Recast: wraps MediaBunny and the modern web platform (WebCodecs, Web Workers, AudioWorklet, IndexedDB, Streams) behind one opinionated, high-level API.",
+	"exports": {
+		".": {
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		}
+	},
+	"dependencies": {
+		"mediabunny": "^1.49.0"
+	},
+	"peerDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"devDependencies": {
+		"svelte": "^5.56.1",
+		"vitest": "^3.2.4"
+	},
+	"scripts": {
+		"build": "exit 0",
+		"check": "exit 0",
+		"test:unit": "vitest run",
+		"test:unit:watch": "vitest"
+	}
+}

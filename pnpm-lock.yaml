@@ -410,6 +410,19 @@ importers:
         specifier: 5.56.3
         version: 5.56.3
 
+  packages/media:
+    dependencies:
+      mediabunny:
+        specifier: ^1.49.0
+        version: 1.49.0
+    devDependencies:
+      svelte:
+        specifier: 5.56.3
+        version: 5.56.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@25.6.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0)
+
   packages/player:
     dependencies:
       '@recast/captions':
