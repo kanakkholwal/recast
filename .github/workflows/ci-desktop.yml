@@ -67,7 +67,7 @@ jobs:
     name: desktop UI unit tests
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
       # pnpm version comes from the root package.json `packageManager` field.
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10
       # while the repo had moved to 11.
@@ -129,7 +129,7 @@ jobs:
             tauri_args: ""
     runs-on: ${{ matrix.platform.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
       # The `macos-latest` image ships several Xcode versions; the default
       # selection (16.4) has a clang resource dir that doesn't match the LLVM
@@ -228,7 +228,7 @@ jobs:
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
         continue-on-error: true
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: apps/desktop/src-tauri/binaries
           key: ci-ffmpeg-${{ env.FFMPEG_VERSION }}-${{ matrix.platform.rust_target }}
@@ -286,7 +286,7 @@ jobs:
       # x86_64 binary can't execute on the arm64 host.
       - name: Cache smoke-test GGUF (Whisper-base, ~60 MB)
         if: ${{ !matrix.platform.cross }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: models-cache/smoke-test
           key: smoke-gguf-${{ matrix.platform.rust_target }}-whisper-base-Q5_K_M

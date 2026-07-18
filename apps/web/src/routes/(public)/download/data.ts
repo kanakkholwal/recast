@@ -7,7 +7,7 @@
     ShieldCheck,
     WifiOff,
     Zap
-} from "@lucide/svelte";
+} from "@recast/icons";
 import { AppleBrand, LinuxBrand, WindowsBrand } from "@recast/ui/brand-icons";
 
 

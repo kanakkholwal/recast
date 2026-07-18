@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Button } from "@recast/ui/button";
-	import { ArrowLeft, RotateCcw } from "@lucide/svelte";
+	import { ArrowLeft, RotateCcw } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 	import {

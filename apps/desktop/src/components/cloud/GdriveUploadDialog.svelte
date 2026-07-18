@@ -17,7 +17,7 @@
 	  HardDriveUpload,
 	  Link2,
 	  Minus,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Input } from "@recast/ui/input";

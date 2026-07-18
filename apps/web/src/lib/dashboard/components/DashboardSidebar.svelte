@@ -11,7 +11,7 @@
     LayoutDashboard,
     Plus,
     Users,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";

@@ -2,7 +2,7 @@
 	import type { Folder, Tag } from "$lib/dashboard/library.svelte";
 	import { Button } from "@recast/ui/button";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { FolderInput, Inbox, Tag as TagIcon, Trash2, X } from "@lucide/svelte";
+	import { FolderInput, Inbox, Tag as TagIcon, Trash2, X } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

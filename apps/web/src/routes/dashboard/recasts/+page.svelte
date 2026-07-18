@@ -27,7 +27,7 @@
 	  Trash2,
 	  Upload,
 	  UploadCloud,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import * as DropdownMenu from "@recast/ui/dropdown-menu";
 	import { toast } from "@recast/ui/sonner";

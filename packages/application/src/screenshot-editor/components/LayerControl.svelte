@@ -17,7 +17,7 @@
   import { SliderControl } from "@recast/ui/slider-control";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
-  import { ArrowDown, ArrowUp, Circle, Square, Trash2, Type } from "@lucide/svelte";
+  import { ArrowDown, ArrowUp, Circle, Square, Trash2, Type } from "@recast/icons";
   import type { ShapeOverlay, TextOverlay } from "../types";
 
   let { editor }: LayerControlProps = $props();

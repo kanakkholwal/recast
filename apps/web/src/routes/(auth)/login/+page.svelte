@@ -15,7 +15,7 @@
 	  LoaderCircle,
 	  MailCheck,
 	  Wand2,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";

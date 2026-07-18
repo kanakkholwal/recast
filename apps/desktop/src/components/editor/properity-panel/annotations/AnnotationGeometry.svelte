@@ -12,7 +12,7 @@
     AlignStartHorizontal,
     AlignStartVertical,
     AlignVerticalSpaceAround,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Input } from "@recast/ui/input";
   import { cn } from "@recast/ui/utils";
   import PanelSection from "../PanelSection.svelte";

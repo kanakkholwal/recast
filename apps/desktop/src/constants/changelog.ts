@@ -1,5 +1,5 @@
-import { Bug, RefreshCw, Sparkles, Wrench } from "@lucide/svelte";
-import type { Component } from "svelte";
+import { Bug, RefreshCw, Sparkles, Wrench } from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
 
 export type ChangeKind = "added" | "changed" | "fixed" | "deprecated";
 
@@ -18,7 +18,7 @@ export interface ChangelogRelease {
 
 export const KIND_META: Record<
 	ChangeKind,
-	{ label: string; icon: Component<any>; tone: string }
+	{ label: string; icon: IconComponent; tone: string }
 > = {
 	added: { label: "New", icon: Sparkles, tone: "text-primary" },
 	changed: { label: "Changed", icon: RefreshCw, tone: "text-foreground" },

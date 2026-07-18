@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { HeroBackdrop } from "$lib/components";
-	import { ArrowLeft } from "@lucide/svelte";
+	import { ArrowLeft } from "@recast/icons";
 
 	let { children } = $props();
 </script>

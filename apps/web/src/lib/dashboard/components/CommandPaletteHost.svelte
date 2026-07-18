@@ -14,7 +14,7 @@
 		SlidersHorizontal,
 		User,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Kbd, KbdGroup } from "@recast/ui/kbd";
 	import { Command as CommandPrimitive } from "bits-ui";

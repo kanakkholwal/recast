@@ -1,7 +1,7 @@
 <script lang="ts">
 	import type { Recast } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
-	import { Check } from "@lucide/svelte";
+	import { Check } from "@recast/icons";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fade, scale } from "svelte/transition";

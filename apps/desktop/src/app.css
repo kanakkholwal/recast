@@ -215,7 +215,9 @@ input[type="number"]:has(class) {
 	appearance: textfield;
 	-moz-appearance: textfield;
 }
-
+[type="button"] {
+	cursor: pointer;
+}
 /*
  * Page transitions — View Transitions API
  *
@@ -284,6 +286,7 @@ input[type="number"]:has(class) {
 ::view-transition-group(recast-titlebar) {
 	animation-duration: 0.01ms;
 }
+
 
 /*
  * OS-native layout: a real, full-width window titlebar sits at the very top,

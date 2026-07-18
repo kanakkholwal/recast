@@ -4,7 +4,7 @@
   import { Button } from "@recast/ui/button";
   import { toast } from "@recast/ui/sonner";
   import { cn } from "@recast/ui/utils";
-  import { FolderOpen, ScrollText } from "@lucide/svelte";
+  import { FolderOpen, ScrollText } from "@recast/icons";
 
   let opening = $state(false);
 

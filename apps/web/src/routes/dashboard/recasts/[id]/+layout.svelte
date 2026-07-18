@@ -9,7 +9,7 @@
 	import { shareDialog } from "$lib/dashboard/share-dialog.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { ArrowLeft, ImagePlus, Loader2, Pencil, Share2 } from "@lucide/svelte";
+	import { ArrowLeft, ImagePlus, Loader2, Pencil, Share2 } from "@recast/icons";
 	import type { Snippet } from "svelte";
 	import type { LayoutData } from "./$types";
 

@@ -4,15 +4,7 @@
   import { LATEST_RELEASE } from "$constants/changelog";
   import { updater } from "$lib/stores/updater.svelte";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import {
-    ArrowRight,
-    CircleCheck,
-    Download,
-    RefreshCw,
-    Sparkles,
-    TriangleAlert,
-    X,
-  } from "@lucide/svelte";
+  import { ArrowRight, CircleCheck, Download, RefreshCw, TriangleAlert, X, AiWand } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { cubicOut } from "svelte/easing";
   import { fly } from "svelte/transition";
@@ -142,7 +134,7 @@
         <div
           class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-inset ring-primary/20"
         >
-          <Sparkles class="size-4" />
+          <AiWand class="size-4" />
         </div>
         <div class="min-w-0 flex-1">
           <p class="text-[12.5px] font-semibold leading-tight text-foreground">

@@ -29,7 +29,7 @@
 </script>
 
 <script lang="ts">
-	import { ChevronDown } from "@lucide/svelte";
+	import { ChevronDown } from "@recast/icons";
 	import { Spring } from "svelte/motion";
 	import { slide } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";

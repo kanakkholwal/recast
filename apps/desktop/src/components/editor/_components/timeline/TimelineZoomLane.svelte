@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { Plus, ZoomIn } from "@lucide/svelte";
+  import { Plus, ZoomIn } from "@recast/icons";
   import type { TimeMode } from "./timeline-helpers";
   import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
   import ZoomLayerCard from "./ZoomLayerCard.svelte";

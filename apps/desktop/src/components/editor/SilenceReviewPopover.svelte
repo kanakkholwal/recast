@@ -26,7 +26,7 @@
     Sparkles,
     VolumeX,
     XCircle,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";

@@ -145,7 +145,7 @@
 
 <script lang="ts">
 	import { cn } from "@recast/ui/utils";
-	import { Pipette } from "@lucide/svelte";
+	import { Pipette } from "@recast/icons";
 
 	let {
 		value = "#3b82f6",

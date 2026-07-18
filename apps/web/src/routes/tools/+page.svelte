@@ -11,7 +11,7 @@
     Upload,
     UserX,
     WifiOff,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Cutout } from "@recast/ui/cutout";
   import { LocalIcon } from "@recast/ui/local-icon";
   import { prefersReducedMotion } from "$lib/motion-core";

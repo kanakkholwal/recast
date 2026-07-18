@@ -4,7 +4,7 @@
 	import AuthCard from "$lib/auth/components/AuthCard.svelte";
 	import { authClient } from "$lib/auth/client";
 	import { canResetPassword, passwordsMatch } from "$lib/auth/password.logic";
-	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
+	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";
 	import { Label } from "@recast/ui/label";

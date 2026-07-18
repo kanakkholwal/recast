@@ -3,7 +3,7 @@
   import { toast } from "@recast/ui/sonner";
   import { Button } from "@recast/ui/button";
   import { GithubBrand } from "@recast/ui/brand-icons";
-  import { ArrowLeft, Download } from "@lucide/svelte";
+  import { ArrowLeft, Download } from "@recast/icons";
   import { SeoMeta } from "$lib/components";
   import { GITHUB_URL } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";

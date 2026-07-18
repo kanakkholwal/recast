@@ -1,6 +1,6 @@
-import type { Component } from "svelte";
+import type { IconComponent } from "@recast/icons";
 
-export type RecastIcon = Component<{ size?: number | string; class?: string }>;
+export type RecastIcon = IconComponent;
 
 export interface RecastAccessory {
 	text?: string;

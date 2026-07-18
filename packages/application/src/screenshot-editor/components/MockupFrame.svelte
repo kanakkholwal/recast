@@ -17,7 +17,7 @@
 </script>
 
 <script lang="ts">
-  import { ArrowLeft, ArrowRight, Lock, Plus, RotateCw } from "@lucide/svelte";
+  import { ArrowLeft, ArrowRight, Lock, Plus, RotateCw } from "@recast/icons";
 
   let { mockup, radius, shadow, border, filter = "none", src, alt }: MockupFrameProps = $props();
 

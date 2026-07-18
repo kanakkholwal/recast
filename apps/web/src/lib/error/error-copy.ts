@@ -6,7 +6,7 @@
  * wraps it in a thin `$derived`.
  */
 
-import { BookOpen, Compass, Home, LifeBuoy, MonitorPlay, Search } from "@lucide/svelte";
+import { BookOpen, Compass, Home, LifeBuoy, MonitorPlay, Search } from "@recast/icons";
 
 export type ErrorAccent = "primary" | "amber" | "destructive";
 

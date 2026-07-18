@@ -7,7 +7,7 @@
 	import { Label } from "@recast/ui/label";
 	import { toast } from "@recast/ui/sonner";
 	import { Textarea } from "@recast/ui/textarea";
-	import { Check, LoaderCircle } from "@lucide/svelte";
+	import { Check, LoaderCircle } from "@recast/icons";
 
 	let {
 		open = $bindable(false),

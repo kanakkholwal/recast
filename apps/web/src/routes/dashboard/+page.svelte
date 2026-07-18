@@ -9,7 +9,7 @@
 	import { mapRecastsForStore } from "$lib/dashboard/hydrate";
 	import { quickUpload } from "$lib/dashboard/quick-upload.svelte";
 	import { quotaStore, recastsStore, settingsStore } from "$lib/dashboard/store.svelte";
-	import { Cloud, HardDrive, Users, Video } from "@lucide/svelte";
+	import { Cloud, HardDrive, Users, Video } from "@recast/icons";
 	import { untrack } from "svelte";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";

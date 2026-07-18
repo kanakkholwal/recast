@@ -51,7 +51,7 @@
     Trash2,
     Video,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ButtonGroup } from "@recast/ui/button-group";
   import { Cutout } from "@recast/ui/cutout";

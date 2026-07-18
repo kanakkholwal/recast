@@ -9,7 +9,7 @@
     FileQuestion,
     Home,
     RefreshCcw,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
 
   const status = $derived(page.status);
@@ -45,11 +45,11 @@
       class="flex size-12 items-center justify-center rounded-lg border border-border bg-muted/40"
     >
       {#if isNotFound}
-        <FileQuestion class="size-5 text-info" strokeWidth={1.75} />
+        <FileQuestion class="size-5 text-info" stroke={1.75} />
       {:else if isServerError}
-        <Construction class="size-5 text-warning" strokeWidth={1.75} />
+        <Construction class="size-5 text-warning" stroke={1.75} />
       {:else}
-        <AlertTriangle class="size-5 text-destructive" strokeWidth={1.75} />
+        <AlertTriangle class="size-5 text-destructive" stroke={1.75} />
       {/if}
     </div>
 

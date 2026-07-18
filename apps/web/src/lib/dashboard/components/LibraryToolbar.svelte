@@ -4,7 +4,7 @@
 	import { tagsStore } from "$lib/dashboard/library.svelte";
 	import { Chip } from "@recast/ui/chip";
 	import * as Select from "@recast/ui/select";
-	import { Plus, Search, Settings2, X } from "@lucide/svelte";
+	import { Plus, Search, Settings2, X } from "@recast/icons";
 
 	// Library filter/search/sort toolbar. Bindable filter state lives here so the
 	// page stays orchestration-only; folder selection is the FolderRail's job, so

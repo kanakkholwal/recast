@@ -7,7 +7,7 @@
     type EditorStore,
     type GradientSpec,
   } from "$lib/stores/editor-store.svelte";
-  import { Move, Plus, RotateCw, Trash2 } from "@lucide/svelte";
+  import { Move, Plus, RotateCw, Trash2 } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { SliderControl } from "@recast/ui/slider-control";

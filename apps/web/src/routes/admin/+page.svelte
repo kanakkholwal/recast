@@ -12,7 +12,7 @@
 		TrendingUp,
 		UserCheck,
 		Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	import InlineError from "$lib/components/InlineError.svelte";
 

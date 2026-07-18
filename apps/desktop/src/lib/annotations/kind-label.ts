@@ -9,7 +9,8 @@ import {
 	ImageIcon,
 	Square,
 	Type as TypeIcon,
-} from "@lucide/svelte";
+} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
 
 export function kindLabel(a: Annotation): string {
 	if (a.name && a.name.trim()) return a.name.trim();
@@ -46,7 +47,7 @@ export function defaultKindLabel(kind: AnnotationKindName): string {
 	}
 }
 
-export function kindIcon(a: Annotation): typeof Square {
+export function kindIcon(a: Annotation): IconComponent {
 	switch (a.kind.kind) {
 		case "rect":
 			return Square;

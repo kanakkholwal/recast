@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { Search, X } from "@lucide/svelte";
+	import { Search, X } from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";

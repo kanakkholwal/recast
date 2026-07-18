@@ -11,6 +11,7 @@
   import { config } from "$constants/app";
   import {
     cliInstallStatus,
+    getCliAutoInstall,
     getCloseToTray,
     getDisplays,
     getHidePanelFromCapture,
@@ -18,6 +19,7 @@
     getOutputDir,
     getWindowTransparency,
     installCli,
+    setCliAutoInstall,
     setCloseToTray,
     setHidePanelFromCapture,
     setOutputDir,
@@ -61,7 +63,8 @@
     Timer,
     Video,
     Wrench,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
@@ -121,6 +124,7 @@
   // `recast` command-line tool PATH state. null until the first probe.
   let cliStatus = $state<CliInstallStatus | null>(null);
   let cliBusy = $state(false);
+  let cliAutoInstall = $state(true);
 
   onMount(() => {
     fetchSettings();
@@ -252,6 +256,12 @@
     } catch {
       // Older builds or non-Tauri preview, so keep the optimistic default.
     }
+    try {
+      cliAutoInstall = await getCliAutoInstall();
+    } catch {
+      // Optimistic default (true) is fine; settings just don't reflect
+      // an explicit off toggle if the command isn't available.
+    }
   }
 
   async function toggleCloseToTray() {
@@ -314,6 +324,17 @@
     }
   }
 
+  async function toggleCliAutoInstall() {
+    const next = !cliAutoInstall;
+    cliAutoInstall = next;
+    try {
+      await setCliAutoInstall(next);
+    } catch (e) {
+      cliAutoInstall = !next;
+      toast.error(`Could not update auto-install setting: ${e}`);
+    }
+  }
+
   function updateTheme(theme: Theme) {
     setMode(theme);
     currentTheme = theme;
@@ -354,7 +375,7 @@
     }
   }
 
-  const themes: { value: Theme; label: string; icon: typeof Sun }[] = [
+  const themes: { value: Theme; label: string; icon: IconComponent }[] = [
     { value: "light", label: "Light", icon: Sun },
     { value: "dark", label: "Dark", icon: Moon },
     { value: "system", label: "System", icon: Monitor },
@@ -887,6 +908,29 @@
                     </span>
                   </Button>
                 </SettingsRow>
+
+                <SettingsRow
+                  label="Auto-install on first launch"
+                  description="When enabled, Recast puts itself on your PATH the first time the app starts. Disables future auto-attempts."
+                >
+                  <Switch
+                    checked={cliAutoInstall}
+                    onCheckedChange={() => toggleCliAutoInstall()}
+                  />
+                </SettingsRow>
+
+                {#if cliStatus?.modifiedRcFiles && cliStatus.modifiedRcFiles.length > 0}
+                  <div class="text-[11px] text-muted-foreground/80 px-1">
+                    <span class="font-medium">Modified shell config:</span>
+                    <span class="ml-1 inline-flex flex-wrap gap-1">
+                      {#each cliStatus.modifiedRcFiles as f (f)}
+                        <span class="rounded bg-muted/60 px-1.5 py-0.5 font-mono text-[10.5px]">
+                          {f.split(/[\\/]/).pop()}
+                        </span>
+                      {/each}
+                    </span>
+                  </div>
+                {/if}
               </SectionCard>
 
               <!-- Encoder availability is probed live against this GPU (not just

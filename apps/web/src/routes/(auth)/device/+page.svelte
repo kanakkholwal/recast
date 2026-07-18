@@ -11,7 +11,7 @@
 		LoaderCircle,
 		Monitor,
 		X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";
@@ -231,7 +231,7 @@
 							aria-hidden="true"
 							class="absolute inset-0 rounded-2xl bg-emerald-500/20 animate-ping opacity-60"
 						></span>
-						<Check class="relative size-7" strokeWidth={2.5} />
+						<Check class="relative size-7" stroke={2.5} />
 					</div>
 					<div class="flex flex-col gap-1.5">
 						<p class="text-[15px] font-semibold text-foreground">
@@ -259,7 +259,7 @@
 					<div
 						class="grid size-16 place-items-center rounded-2xl bg-destructive/10 text-destructive ring-1 ring-inset ring-destructive/30"
 					>
-						<X class="size-7" strokeWidth={2.5} />
+						<X class="size-7" stroke={2.5} />
 					</div>
 					<div class="flex flex-col gap-1.5">
 						<p class="text-[15px] font-semibold text-foreground">

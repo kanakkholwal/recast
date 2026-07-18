@@ -17,7 +17,7 @@
 		Pencil,
 		Plus,
 		Trash2,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	export type FolderSelection = "all" | "root" | string;
 

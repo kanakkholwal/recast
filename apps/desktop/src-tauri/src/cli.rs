@@ -40,6 +40,9 @@ const CLI_VERBS: &[&str] = &[
     "watch",
     "install",
     "uninstall",
+    "project",
+    "editor",
+    "export",
 ];
 
 /// True when argv[1] is a CLI verb or a help request. `main` uses this to pick
@@ -191,6 +194,396 @@ enum Command {
     Install,
     /// Remove `recast` from your PATH.
     Uninstall,
+    /// Read a project's editor state (`edits.json`) and derived timeline.
+    /// Phase A — read-only; no mutations, no lock acquisition.
+    Project {
+        #[command(subcommand)]
+        action: ProjectAction,
+    },
+    /// Targeted edits to a project (trim, cuts, ...). All subcommands acquire
+    /// the project write-lock, validate, and persist via `save_project_edits`.
+    Editor {
+        #[command(subcommand)]
+        action: EditorAction,
+    },
+    /// Read or queue the export job queue. `start` enqueues; `wait` blocks
+    /// until a job reaches a terminal state; `cancel` aborts.
+    Export {
+        #[command(subcommand)]
+        action: ExportAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum ProjectAction {
+    /// Open a `.recast` (or bare video) and print the full editor document.
+    Open {
+        /// Path to the `.recast` archive or source video.
+        path: String,
+    },
+    /// Print the project's current `edits.json` (the same `RenderState` the editor ships).
+    Show { path: String },
+    /// Derive the project's kept-segment timeline (trim, cuts, output duration).
+    Timeline { path: String },
+    /// List the project's zoom regions.
+    ZoomRegions { path: String },
+    /// List the project's annotations.
+    Annotations { path: String },
+    /// Acquire the project write-lock. Subsequent mutate/exports by either
+    /// side block until release. Idempotent for the same caller.
+    Lock {
+        path: String,
+        /// Holder kind (default: `agent`).
+        #[arg(long, value_name = "ui|agent", default_value = "agent")]
+        r#as: String,
+        /// Stable id (`agent:<id>` for the CLI; the GUI uses `ui:<user>`).
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Release the write-lock. By default only the holder can release; pass
+    /// `--force` to evict a stale or wrong-owner lock (use with care — it
+    /// erases the GUI's silent write window).
+    Unlock {
+        /// Release even if the lock is held by another id.
+        #[arg(long)]
+        force: bool,
+        /// The agent's writer id (matches the `lock --writer-id`).
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Replace the project's `edits.json` with a full RenderState JSON
+    /// from a file or stdin. Validates then writes via `save_project_edits`.
+    Patch {
+        path: String,
+        #[arg(long, value_name = "PATH")]
+        from_file: Option<String>,
+        /// Read the JSON from stdin instead of `--from-file`.
+        #[arg(long)]
+        from_stdin: bool,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum EditorAction {
+    /// Set the trim window (trim-start, trim-end). Validates then saves.
+    Trim {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "SECONDS")]
+        end: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Universal mutator. Set any scalar/struct field in RenderState by
+    /// dotted-path JSON pointer; e.g. `borderRadius`, `cursorSize`,
+    /// `audioSettings.volume`, `watermarkSettings.opacity`. Pair with
+    /// `--value <JSON>` (string for strings, number, true/false,
+    /// array, object). For array fields where you want to add or
+    /// remove entries use the targeted verbs (cut/zoom/split-point/
+    /// speed/animations/annotations) instead.
+    Set {
+        path: String,
+        /// Dotted JSON pointer inside `RenderState`, e.g.
+        /// `borderRadius`, `cursorSize`, `audioSettings.volume`,
+        /// `watermarkSettings.opacity`, `annotations.0.fill`.
+        #[arg(long, value_name = "DOTTED.PATH")]
+        field: String,
+        /// JSON value to set. Strings need quoting inside `--value`;
+        /// numbers, true/false, arrays, and objects are also JSON.
+        #[arg(long, value_name = "JSON")]
+        value: String,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Cut ranges on the timeline.
+    Cut {
+        #[command(subcommand)]
+        action: CutAction,
+    },
+    /// Zoom regions on the timeline.
+    Zoom {
+        #[command(subcommand)]
+        action: ZoomAction,
+    },
+    /// Split markers — original-time seconds that divide the kept clip
+    /// into addressable segments.
+    SplitPoint {
+        #[command(subcommand)]
+        action: SplitPointAction,
+    },
+    /// Per-segment speed overrides (empty = every segment plays at 1×).
+    Speed {
+        #[command(subcommand)]
+        action: SpeedAction,
+    },
+    /// Per-segment scene animations — entrance/exit transforms on the
+    /// video layer, anchored to a segment's original start time.
+    Animations {
+        #[command(subcommand)]
+        action: AnimationsAction,
+    },
+    /// Annotations on the timeline — rect/ellipse/arrow/image/blur/text.
+    Annotations {
+        #[command(subcommand)]
+        action: AnnotationsAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum CutAction {
+    Add {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "SECONDS")]
+        end: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Remove a cut by --index or by matching `(start, end)`.
+    Remove {
+        path: String,
+        #[arg(long, value_name = "INDEX")]
+        index: Option<usize>,
+        #[arg(long, value_name = "SECONDS", conflicts_with = "index")]
+        start: Option<f64>,
+        #[arg(long, value_name = "SECONDS")]
+        end: Option<f64>,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// List every cut with its positional index.
+    List { path: String },
+}
+
+#[derive(Subcommand)]
+enum ZoomAction {
+    Add {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "SECONDS")]
+        end: f64,
+        #[arg(long)]
+        scale: f64,
+        #[arg(long, default_value_t = 0.5, value_name = "UV")]
+        center_x: f64,
+        #[arg(long, default_value_t = 0.5, value_name = "UV")]
+        center_y: f64,
+        #[arg(long, default_value_t = 0.35, value_name = "SECONDS")]
+        ramp_in: f64,
+        #[arg(long, default_value_t = 0.35, value_name = "SECONDS")]
+        ramp_out: f64,
+        #[arg(long)]
+        hidden: bool,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Remove a zoom region by positional --index.
+    Remove {
+        path: String,
+        #[arg(long, value_name = "INDEX")]
+        index: usize,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// List every zoom region with its positional index.
+    List { path: String },
+}
+
+#[derive(Subcommand)]
+enum SplitPointAction {
+    Add {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        at: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    Remove {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        at: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    List {
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum SpeedAction {
+    /// Set or upsert a speed override at a segment's original start.
+    Set {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        segment_start: f64,
+        #[arg(long, value_name = "RATE")]
+        rate: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    Remove {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        segment_start: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    List {
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AnimationsAction {
+    /// Add or upsert a scene animation at a segment's original start.
+    /// Pass `--in "<spec JSON>"` and/or `--out "<spec JSON>"` (each a
+    /// `SceneAnimSpec`: `{"kind":"fade|slide|scale|pop","durationMs":N,
+    /// "easing":{...},"dir":"left|right|up|down","intensity":N}`).
+    Add {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "JSON")]
+        r#in: Option<String>,
+        #[arg(long, value_name = "JSON")]
+        out: Option<String>,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    Remove {
+        path: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    List {
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum AnnotationsAction {
+    /// Add an annotation. `--kind` selects the geometry type
+    /// (`rect`|`ellipse`|`arrow`|`blur`|`image`|`text`). `--geometry` is
+    /// a JSON object with the per-kind fields (e.g. for `rect`:
+    /// `{"x":0.1,"y":0.1,"w":0.3,"h":0.2,"radius":0.02}`).
+    Add {
+        path: String,
+        #[arg(long, value_name = "rect|ellipse|arrow|blur|image|text")]
+        kind: String,
+        #[arg(long, value_name = "JSON")]
+        geometry: String,
+        #[arg(long, value_name = "SECONDS")]
+        start: f64,
+        #[arg(long, value_name = "SECONDS")]
+        end: f64,
+        #[arg(long, default_value_t = 1.0, value_name = "0..1")]
+        opacity: f64,
+        #[arg(long, value_name = "LABEL")]
+        name: Option<String>,
+        /// Optional explicit id; a unique default is generated if omitted.
+        #[arg(long, value_name = "ID")]
+        id: Option<String>,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Update an annotation by id. `--patch` is a partial JSON object
+    /// merged over the existing row (top-level fields only: `start`,
+    /// `end`, `opacity`, `hidden`, `name`, `z`, the entire `kind`, …).
+    Update {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        id: String,
+        #[arg(long, value_name = "JSON")]
+        patch: String,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    Remove {
+        path: String,
+        #[arg(long, value_name = "ID")]
+        id: String,
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    List {
+        path: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ExportAction {
+    /// List every export job (status, phase, progress, output path).
+    List,
+    /// Show one export job by id.
+    Show {
+        /// The export job id (`recast export list` to find one).
+        id: String,
+    },
+    /// Queue a new export of the given `.recast`. Validates the render state,
+    /// then enqueues; the running job id is printed for `wait`/`cancel`.
+    Start {
+        path: String,
+        #[arg(long, value_name = "mp4|webm|gif", default_value = "mp4")]
+        format: String,
+        #[arg(
+            long,
+            value_name = "auto|balanced|high|pristine",
+            default_value = "balanced"
+        )]
+        quality: String,
+        /// Encoder effort axis (orthogonal to `quality`): `fast` (quick),
+        /// `balanced` (default), `quality` (slow, smaller file).
+        #[arg(long, value_name = "fast|balanced|quality")]
+        speed: Option<String>,
+        /// Output frame rate; clamped to `<= source fps`. Ignored for GIF
+        /// (use `--gif-fps` instead).
+        #[arg(long, value_name = "FPS")]
+        fps: Option<f64>,
+        /// Burn the recorded captions into the video itself. Has no
+        /// effect when no transcript exists in the render state.
+        #[arg(long)]
+        burn_captions: bool,
+        /// Emit a sidecar subtitles file next to the export:
+        /// `vtt` or `srt`. Implies a transcript must exist; empty
+        /// transcripts yield an empty sidecar.
+        #[arg(long, value_name = "vtt|srt")]
+        caption_sidecar: Option<String>,
+        /// Override the GIF frame rate (default = quality-profile gif_fps).
+        #[arg(long, value_name = "FPS")]
+        gif_fps: Option<u32>,
+        /// GIF palette quality: `low` (64), `medium` (128), `high` (256).
+        #[arg(long, value_name = "low|medium|high")]
+        gif_quality: Option<String>,
+        /// GIF loop count: `infinite`, `once`, or a non-negative integer.
+        #[arg(long, value_name = "infinite|once|<n>")]
+        gif_loop: Option<String>,
+        /// GIF dither: `bayer` (default), `sierra2`, or `none`.
+        #[arg(long, value_name = "bayer|sierra2|none")]
+        gif_dither: Option<String>,
+        /// Override the project write-lock's TTL for the duration of this
+        /// export. Default 60s.
+        #[arg(long, value_name = "ID")]
+        writer_id: String,
+    },
+    /// Cancel a queued or running export by id.
+    Cancel { id: String },
+    /// Block until a job finishes (terminal status). Polls `export.show` so
+    /// no streaming protocol is needed; default timeout is 10m.
+    Wait {
+        id: String,
+        #[arg(long, value_name = "DURATION", default_value = "10m")]
+        timeout: String,
+        #[arg(long, value_name = "DURATION", default_value = "1s")]
+        interval: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -551,6 +944,576 @@ fn dispatch(cli: &Cli) -> Result<(), String> {
                 let _ = emit(frame, cli.format);
             })
         }
+        // Phase A (read-only): every verb hits `load_editor_document` /
+        // `list_export_jobs` through the existing control channel. Each takes
+        // a single `path`/`id` arg, so no JSON-patch surface here yet.
+        Command::Project { action } => project_dispatch(cli, action),
+        Command::Editor { action } => editor_dispatch(cli, action),
+        Command::Export { action } => export_dispatch(cli, action),
+    }
+}
+
+/// Dispatch one `recast project ...` verb. The path is required for every
+/// subcommand; v1 has no "active project" tracking, so the agent must pass it
+/// explicitly. Phase B adds `lock`/`unlock`/`patch` on top of the read surface.
+fn project_dispatch(cli: &Cli, action: &ProjectAction) -> Result<(), String> {
+    match action {
+        ProjectAction::Open { path }
+        | ProjectAction::Show { path }
+        | ProjectAction::Timeline { path }
+        | ProjectAction::ZoomRegions { path }
+        | ProjectAction::Annotations { path } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let method = match action {
+                ProjectAction::Open { .. } => "editor.open",
+                ProjectAction::Show { .. } => "editor.show",
+                ProjectAction::Timeline { .. } => "editor.timeline",
+                ProjectAction::ZoomRegions { .. } => "editor.zoom-regions",
+                ProjectAction::Annotations { .. } => "editor.annotations",
+                _ => unreachable!(),
+            };
+            let value = crate::control::send(
+                method,
+                json!({ "path": path }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+        ProjectAction::Lock {
+            path,
+            r#as,
+            writer_id,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let value = crate::control::send(
+                "editor.lock",
+                json!({ "path": path, "kind": r#as, "writerId": writer_id }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+        ProjectAction::Unlock { force, writer_id } => {
+            let value = crate::control::send(
+                "editor.unlock",
+                json!({ "force": force, "writerId": writer_id }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+        ProjectAction::Patch {
+            path,
+            from_file,
+            from_stdin,
+            writer_id,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let render_state = read_render_state_json(from_file.as_deref(), *from_stdin)?;
+            let value = crate::control::send(
+                "editor.patch",
+                json!({
+                    "path": path,
+                    "writerId": writer_id,
+                    "renderState": render_state,
+                }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+    }
+}
+
+/// Load a `RenderState` JSON from a file or stdin. Used by `project patch`.
+fn read_render_state_json(from_file: Option<&str>, from_stdin: bool) -> Result<Value, String> {
+    match (from_file, from_stdin) {
+        (Some(_), true) => Err("--from-file and --from-stdin are mutually exclusive".into()),
+        (Some(p), false) => {
+            let bytes = std::fs::read(p).map_err(|e| format!("read {p}: {e}"))?;
+            serde_json::from_slice(&bytes).map_err(|e| format!("parse {p}: {e}"))
+        }
+        (None, true) => {
+            let mut s = String::new();
+            std::io::Read::read_to_string(&mut std::io::stdin(), &mut s)
+                .map_err(|e| format!("read stdin: {e}"))?;
+            serde_json::from_str(&s).map_err(|e| format!("parse stdin: {e}"))
+        }
+        (None, false) => Err("project patch requires --from-file <path> or --from-stdin".into()),
+    }
+}
+
+fn editor_dispatch(cli: &Cli, action: &EditorAction) -> Result<(), String> {
+    match action {
+        EditorAction::Trim {
+            path,
+            start,
+            end,
+            writer_id,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            send_and_emit(
+                cli,
+                "editor.trim",
+                json!({
+                    "path": path,
+                    "trimStart": start,
+                    "trimEnd": end,
+                    "writerId": writer_id,
+                }),
+            )
+        }
+        EditorAction::Set {
+            path,
+            field,
+            value,
+            writer_id,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let parsed: Value = serde_json::from_str(value)
+                .map_err(|e| format!("--value is not valid JSON: {e}"))?;
+            send_and_emit(
+                cli,
+                "editor.set",
+                json!({
+                    "path": path,
+                    "field": field,
+                    "value": parsed,
+                    "writerId": writer_id,
+                }),
+            )
+        }
+        EditorAction::Cut { action } => cut_dispatch(cli, action),
+        EditorAction::Zoom { action } => zoom_dispatch(cli, action),
+        EditorAction::SplitPoint { action } => split_point_dispatch(cli, action),
+        EditorAction::Speed { action } => speed_dispatch(cli, action),
+        EditorAction::Animations { action } => animations_dispatch(cli, action),
+        EditorAction::Annotations { action } => annotations_dispatch(cli, action),
+    }
+}
+
+fn cut_dispatch(cli: &Cli, action: &CutAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        CutAction::Add {
+            path,
+            start,
+            end,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.cut.add",
+            json!({"path": path_for(path), "start": start, "end": end, "writerId": writer_id}),
+        ),
+        CutAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.cut.list", json!({"path": path}))
+        }
+        CutAction::Remove {
+            path,
+            index,
+            start,
+            end,
+            writer_id,
+        } => {
+            let path = path_for(path);
+            let mut params = json!({"path": path, "writerId": writer_id});
+            if let Some(i) = index {
+                params["index"] = json!(i);
+            }
+            if let Some(s) = start {
+                params["start"] = json!(s);
+            }
+            if let Some(e) = end {
+                params["end"] = json!(e);
+            }
+            send_and_emit(cli, "editor.cut.remove", params)
+        }
+    }
+}
+
+fn zoom_dispatch(cli: &Cli, action: &ZoomAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        ZoomAction::Add {
+            path,
+            start,
+            end,
+            scale,
+            center_x,
+            center_y,
+            ramp_in,
+            ramp_out,
+            hidden,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.zoom.add",
+            json!({
+                "path": path_for(path),
+                "start": start,
+                "end": end,
+                "scale": scale,
+                "centerX": center_x,
+                "centerY": center_y,
+                "rampIn": ramp_in,
+                "rampOut": ramp_out,
+                "hidden": hidden,
+                "writerId": writer_id,
+            }),
+        ),
+        ZoomAction::Remove {
+            path,
+            index,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.zoom.remove",
+            json!({"path": path_for(path), "index": index, "writerId": writer_id}),
+        ),
+        ZoomAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.zoom.list", json!({"path": path}))
+        }
+    }
+}
+
+fn split_point_dispatch(cli: &Cli, action: &SplitPointAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        SplitPointAction::Add {
+            path,
+            at,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.split-point.add",
+            json!({"path": path_for(path), "at": at, "writerId": writer_id}),
+        ),
+        SplitPointAction::Remove {
+            path,
+            at,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.split-point.remove",
+            json!({"path": path_for(path), "at": at, "writerId": writer_id}),
+        ),
+        SplitPointAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.split-point.list", json!({"path": path}))
+        }
+    }
+}
+
+fn speed_dispatch(cli: &Cli, action: &SpeedAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        SpeedAction::Set {
+            path,
+            segment_start,
+            rate,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.speed.set",
+            json!({
+                "path": path_for(path),
+                "segmentStart": segment_start,
+                "rate": rate,
+                "writerId": writer_id,
+            }),
+        ),
+        SpeedAction::Remove {
+            path,
+            segment_start,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.speed.remove",
+            json!({"path": path_for(path), "segmentStart": segment_start, "writerId": writer_id}),
+        ),
+        SpeedAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.speed.list", json!({"path": path}))
+        }
+    }
+}
+
+fn animations_dispatch(cli: &Cli, action: &AnimationsAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        AnimationsAction::Add {
+            path,
+            start,
+            r#in,
+            out,
+            writer_id,
+        } => {
+            let path = path_for(path);
+            let mut params = json!({
+                "path": path,
+                "start": start,
+                "writerId": writer_id,
+            });
+            if let Some(s) = r#in {
+                params["in"] =
+                    serde_json::from_str(s).map_err(|e| format!("--in is not valid JSON: {e}"))?;
+            }
+            if let Some(s) = out {
+                params["out"] =
+                    serde_json::from_str(s).map_err(|e| format!("--out is not valid JSON: {e}"))?;
+            }
+            send_and_emit(cli, "editor.animations.add", params)
+        }
+        AnimationsAction::Remove {
+            path,
+            start,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.animations.remove",
+            json!({"path": path_for(path), "start": start, "writerId": writer_id}),
+        ),
+        AnimationsAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.animations.list", json!({"path": path}))
+        }
+    }
+}
+
+fn annotations_dispatch(cli: &Cli, action: &AnnotationsAction) -> Result<(), String> {
+    let path_for = |p: &str| {
+        crate::commands::screenshot::absolutize(std::path::PathBuf::from(p))
+            .to_string_lossy()
+            .into_owned()
+    };
+    match action {
+        AnnotationsAction::Add {
+            path,
+            kind,
+            geometry,
+            start,
+            end,
+            opacity,
+            name,
+            id,
+            writer_id,
+        } => {
+            let path = path_for(path);
+            let geometry_json: Value = serde_json::from_str(geometry)
+                .map_err(|e| format!("--geometry is not valid JSON: {e}"))?;
+            let mut params = json!({
+                "path": path,
+                "kind": kind,
+                "geometry": geometry_json,
+                "start": start,
+                "end": end,
+                "opacity": opacity,
+                "writerId": writer_id,
+            });
+            if let Some(n) = name {
+                params["name"] = json!(n);
+            }
+            if let Some(i) = id {
+                params["id"] = json!(i);
+            }
+            send_and_emit(cli, "editor.annotations.add", params)
+        }
+        AnnotationsAction::Update {
+            path,
+            id,
+            patch,
+            writer_id,
+        } => {
+            let path = path_for(path);
+            let patch_json: Value = serde_json::from_str(patch)
+                .map_err(|e| format!("--patch is not valid JSON: {e}"))?;
+            let params = json!({
+                "path": path,
+                "id": id,
+                "patch": patch_json,
+                "writerId": writer_id,
+            });
+            send_and_emit(cli, "editor.annotations.update", params)
+        }
+        AnnotationsAction::Remove {
+            path,
+            id,
+            writer_id,
+        } => send_and_emit(
+            cli,
+            "editor.annotations.remove",
+            json!({"path": path_for(path), "id": id, "writerId": writer_id}),
+        ),
+        AnnotationsAction::List { path } => {
+            let path = path_for(path);
+            send_and_emit(cli, "editor.annotations.list", json!({"path": path}))
+        }
+    }
+}
+
+fn send_and_emit(cli: &Cli, method: &str, params: Value) -> Result<(), String> {
+    let value = crate::control::send(method, params, !cli.no_launch, cli.timeout_ms)?;
+    emit(&value, cli.format)
+}
+
+fn export_dispatch(cli: &Cli, action: &ExportAction) -> Result<(), String> {
+    match action {
+        ExportAction::List => {
+            let value =
+                crate::control::send("export.list", Value::Null, !cli.no_launch, cli.timeout_ms)?;
+            emit(&value, cli.format)
+        }
+        ExportAction::Show { id } => {
+            let value = crate::control::send(
+                "export.show",
+                json!({ "id": id }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+        ExportAction::Start {
+            path,
+            format,
+            quality,
+            speed,
+            fps,
+            burn_captions,
+            caption_sidecar,
+            gif_fps,
+            gif_quality,
+            gif_loop,
+            gif_dither,
+            writer_id,
+        } => {
+            let path = crate::commands::screenshot::absolutize(std::path::PathBuf::from(path))
+                .to_string_lossy()
+                .into_owned();
+            let mut params = json!({
+                "path": path,
+                "format": format,
+                "quality": quality,
+                "burnCaptions": burn_captions,
+                "writerId": writer_id,
+            });
+            if let Some(s) = speed {
+                params["speed"] = json!(s);
+            }
+            if let Some(f) = fps {
+                params["fps"] = json!(f);
+            }
+            if let Some(s) = caption_sidecar {
+                params["captionSidecar"] = json!(s);
+            }
+            if format == "gif" {
+                if let Some(f) = gif_fps {
+                    params["gifFps"] = json!(f);
+                }
+                if let Some(q) = gif_quality {
+                    params["gifQuality"] = json!(q);
+                }
+                if let Some(l) = gif_loop {
+                    // Accept "infinite" / "once" / "5" / numeric.
+                    let parsed: Value = if l == "infinite" || l == "once" {
+                        json!(l)
+                    } else {
+                        serde_json::from_str(l).map_err(|e| {
+                            format!(
+                                "--gif-loop must be 'infinite' | 'once' | <number>; got '{l}': {e}"
+                            )
+                        })?
+                    };
+                    params["gifLoop"] = parsed;
+                }
+                if let Some(d) = gif_dither {
+                    params["gifDither"] = json!(d);
+                }
+            }
+            send_and_emit(cli, "export.start", params)
+        }
+        ExportAction::Cancel { id } => {
+            let value = crate::control::send(
+                "export.cancel",
+                json!({ "id": id }),
+                !cli.no_launch,
+                cli.timeout_ms,
+            )?;
+            emit(&value, cli.format)
+        }
+        ExportAction::Wait {
+            id,
+            timeout,
+            interval,
+        } => export_wait(cli, id, timeout, interval),
+    }
+}
+
+/// Block until a job reaches a terminal status. Polls `export.show` rather
+/// than streaming the `export-state` event (no protocol change required; 1s
+/// default interval is well below human-perceptible export progress).
+fn export_wait(cli: &Cli, id: &str, timeout: &str, interval: &str) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+
+    let timeout_ms = parse_duration_ms(timeout).map_err(|e| format!("--timeout: {e}"))?;
+    let interval_ms = parse_duration_ms(interval).map_err(|e| format!("--interval: {e}"))?;
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms);
+    loop {
+        let value = crate::control::send(
+            "export.show",
+            json!({ "id": id }),
+            !cli.no_launch,
+            cli.timeout_ms,
+        )?;
+        let status = value
+            .get("status")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_string();
+        if matches!(
+            status.as_str(),
+            "success" | "error" | "cancelled" | "interrupted"
+        ) {
+            return emit(&value, cli.format);
+        }
+        if Instant::now() >= deadline {
+            return Err(format!(
+                "export.wait: timed out after {timeout_ms}ms waiting for '{id}' (status={status})"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(interval_ms));
     }
 }
 

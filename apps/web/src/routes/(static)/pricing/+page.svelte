@@ -22,7 +22,7 @@
 	  ShieldCheck,
 	  Tag,
 	  Users,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cubicOut } from "svelte/easing";

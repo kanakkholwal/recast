@@ -2,17 +2,7 @@
   import { EASE, easingEquals } from "$lib/easing/cubic-bezier";
   import { registry } from "$lib/registry";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import {
-    Activity,
-    EyeOff,
-    GitGraph,
-    MousePointer,
-    Sparkles,
-    Spline,
-    Target,
-    Waves,
-    Wind,
-  } from "@lucide/svelte";
+  import { Activity, EyeOff, GitGraph, MousePointer, Spline, Target, Waves, Wind, AiAtom } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";
@@ -233,7 +223,7 @@
           onchange={(next) => store.updateCursorSettings({ smoothing: next })}
         >
           {#snippet icon()}
-            <Sparkles size={11} />
+            <AiAtom size={11} />
           {/snippet}
         </SliderControl>
 
@@ -438,7 +428,7 @@
         onchange={(next) => store.updateCursorSettings({ motionBlur: next })}
       >
         {#snippet icon()}
-          <Sparkles size={11} />
+          <AiAtom size={11} />
         {/snippet}
       </SliderControl>
     </PanelSection>

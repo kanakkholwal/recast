@@ -4,7 +4,7 @@
 	import { recastsStore } from "$lib/dashboard/store.svelte";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { Check, Tag as TagIcon, Trash2, X } from "@lucide/svelte";
+	import { Check, Tag as TagIcon, Trash2, X } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fade, scale, slide } from "svelte/transition";
 

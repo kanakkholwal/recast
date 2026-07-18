@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { prefersReducedMotion } from "$lib/motion-core";
-	import { Layout, MonitorPlay, Play, Search } from "@lucide/svelte";
+	import { Layout, MonitorPlay, Play, Search } from "@recast/icons";
 	import { cn } from "@recast/ui/utils";
 
 	// Command-palette mock for Step 1. The highlighted row cycles like keyboard

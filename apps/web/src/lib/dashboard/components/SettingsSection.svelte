@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { cn } from "@recast/ui/utils";
-	import type { Component, Snippet } from "svelte";
+	import type { Snippet } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 
 	let {
 		icon: Icon,
@@ -11,7 +12,7 @@
 		badge,
 		children,
 	}: {
-		icon: Component<{ class?: string }>;
+		icon: IconComponent;
 		title: string;
 		description?: string;
 		tone?: "primary" | "muted";

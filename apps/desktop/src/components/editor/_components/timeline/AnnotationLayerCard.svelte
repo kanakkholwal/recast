@@ -6,7 +6,7 @@
   } from "$lib/stores/editor-store.svelte";
   import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
   import { motionDuration } from "$lib/motion.svelte";
-  import { X } from "@lucide/svelte";
+  import { X } from "@recast/icons";
   import { cubicOut } from "svelte/easing";
   import { fade, fly } from "svelte/transition";
   import {
@@ -250,7 +250,7 @@
           : ''}"
         aria-label="Remove annotation"
       >
-        <X size={9} strokeWidth={2.5} />
+        <X size={9} stroke={2.5} />
       </span>
     </div>
   </button>

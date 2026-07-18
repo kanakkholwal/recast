@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { EditorStore, WatermarkPosition } from "$lib/stores/editor-store.svelte";
-	import { ImagePlus, Stamp, Trash2 } from "@lucide/svelte";
+	import { ImagePlus, Stamp, Trash2 } from "@recast/icons";
 	import { toast } from "@recast/ui/sonner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import InspectorHint from "./InspectorHint.svelte";

@@ -3,7 +3,7 @@
 	import { formatCount } from "$lib/dashboard/format";
 	import { Button } from "@recast/ui/button";
 	import { Kbd } from "@recast/ui/kbd";
-	import { ArrowDownRight, ArrowUpRight, BarChart3, Upload } from "@lucide/svelte";
+	import { ArrowDownRight, ArrowUpRight, BarChart3, Upload } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

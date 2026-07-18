@@ -9,7 +9,7 @@
     highlight,
     rankCommands,
   } from "./command-palette-host.logic";
-  import { CornerDownLeft, Search } from "@lucide/svelte";
+  import { CornerDownLeft, Search } from "@recast/icons";
   import { Kbd, KbdGroup } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
   import { onMount, tick } from "svelte";

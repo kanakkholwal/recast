@@ -5,14 +5,9 @@
     toggleExtension,
     type RegistryIndexEntry,
   } from "$lib/extensions";
-  import {
-    contribCount,
-    countUpdates,
-    updateAvailableFor,
-  } from "./extensions-panel.logic";
+  import type { InstalledExtension } from "$lib/ipc";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { extensionsStore } from "$lib/stores/extensions-store.svelte";
-  import type { InstalledExtension } from "$lib/ipc";
   import {
     Blocks,
     ChevronRight,
@@ -20,14 +15,19 @@
     Loader2,
     Package,
     RefreshCw,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
-  import { Spinner } from "@recast/ui/spinner";
   import { toast } from "@recast/ui/sonner";
+  import { Spinner } from "@recast/ui/spinner";
   import { cn } from "@recast/ui/utils";
   import { onMount } from "svelte";
   import ExtensionDetailsDialog from "./ExtensionDetailsDialog.svelte";
+  import {
+    contribCount,
+    countUpdates,
+    updateAvailableFor,
+  } from "./extensions-panel.logic";
   import PanelSection from "./PanelSection.svelte";
 
   interface Props {
@@ -130,7 +130,7 @@
 
   <PanelSection
     title="Install from URL"
-    hint="Paste a pack manifest URL (https, or http://localhost for testing). Assets are SHA-256 verified before install."
+    hint="Assets are SHA-256 verified before install."
     flush
   >
     <div class="flex items-center gap-1.5">
@@ -269,7 +269,7 @@
         No packs available right now.
       </p>
     {:else}
-      <div class="flex flex-col gap-1">
+      <div class="flex flex-col gap-1 scroll-smooth overflow-y-auto scroll-transparent no-scrollbar">
         {#each index as entry (entry.id)}
           {@const installedExt = installedById.get(entry.id)}
           {@const canUpdate = installedExt ? updateAvailableFor(installedExt, entryById) : false}

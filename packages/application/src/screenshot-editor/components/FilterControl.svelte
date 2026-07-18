@@ -10,7 +10,7 @@
   import { PanelSection } from "@recast/ui/panel-section";
   import { SliderControl } from "@recast/ui/slider-control";
   import { Button } from "@recast/ui/button";
-  import { RotateCcw } from "@lucide/svelte";
+  import { RotateCcw } from "@recast/icons";
 
   let { editor }: FilterControlProps = $props();
 

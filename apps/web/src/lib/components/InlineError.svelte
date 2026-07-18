@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { invalidateAll } from "$app/navigation";
 	import { Button } from "@recast/ui/button";
-	import { AlertTriangle, RotateCcw } from "@lucide/svelte";
+	import { AlertTriangle, RotateCcw } from "@recast/icons";
 
 	// Inline fallback for a single streamed `{#await}` section that rejected.
 	// Keeps the rest of the page usable (filters, forms, sibling sections) while

@@ -70,7 +70,7 @@
 	  UserCheck,
 	  Users,
 	  X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import {
 	  RecastPlayer,
 	  type RecastPlayerActionEvent,

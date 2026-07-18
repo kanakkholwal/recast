@@ -1,6 +1,7 @@
 <script lang="ts">
   import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
   import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
+  import type { IconComponent } from "@recast/icons";
   import {
     Blocks,
     Captions,
@@ -11,9 +12,9 @@
     ScanText,
     SquareSplitHorizontal,
     Video,
-    Volume2,
+    Volume,
     ZoomIn,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import * as Tabs from "@recast/ui/tabs";
   import * as Tooltip from "@recast/ui/tooltip";
   import AnnotationsPanel from "./AnnotationsPanel.svelte";
@@ -43,7 +44,7 @@
   type TabType = {
     id: PanelTab;
     label: string;
-    icon: typeof ImageIcon;
+    icon: IconComponent;
     group: TabGroup;
     // One line under the header, so an unlabeled icon rail still says where you are.
     hint: string;
@@ -53,21 +54,91 @@
   // them when you select on the timeline), so a clip with no button would strand
   // the panel; every id here has a rail button.
   const TABS: TabType[] = [
-    { id: "background", label: "Background", icon: ImageIcon, group: "composition", hint: "Wallpaper, padding, and shadow." },
-    { id: "cursor", label: "Cursor", icon: MousePointer, group: "composition", hint: "Size, smoothing, and click effects." },
+    {
+      id: "background",
+      label: "Background",
+      icon: ImageIcon,
+      group: "composition",
+      hint: "Wallpaper, padding, and shadow.",
+    },
+    {
+      id: "cursor",
+      label: "Cursor",
+      icon: MousePointer,
+      group: "composition",
+      hint: "Size, smoothing, and click effects.",
+    },
     ...(CAMERA_OVERLAY_UI_ENABLED
-      ? [{ id: "camera" as PanelTab, label: "Camera", icon: Video, group: "composition" as TabGroup, hint: "Webcam overlay position and shape." }]
+      ? [
+          {
+            id: "camera" as PanelTab,
+            label: "Camera",
+            icon: Video,
+            group: "composition" as TabGroup,
+            hint: "Webcam overlay position and shape.",
+          },
+        ]
       : []),
-    { id: "audio", label: "Audio", icon: Volume2, group: "composition", hint: "Volume and mute." },
-    { id: "captions", label: "Captions", icon: Captions, group: "composition", hint: "Transcribe and style subtitles." },
-    { id: "clip", label: "Clip", icon: SquareSplitHorizontal, group: "selection", hint: "Speed of the selected clip." },
-    { id: "focus", label: "Zoom", icon: ZoomIn, group: "selection", hint: "Punch-in regions that highlight the action." },
-    { id: "annotations", label: "Markup", icon: Pencil, group: "selection", hint: "Arrows, boxes, text, and blur." },
-    { id: "extensions", label: "Extensions", icon: Blocks, group: "meta", hint: "Installed asset packs." },
-    { id: "info", label: "Info", icon: Info, group: "meta", hint: "Recording details." },
+    {
+      id: "audio",
+      label: "Audio",
+      icon: Volume,
+      group: "composition",
+      hint: "Volume and mute.",
+    },
+    {
+      id: "captions",
+      label: "Captions",
+      icon: Captions,
+      group: "composition",
+      hint: "Transcribe and style subtitles.",
+    },
+    {
+      id: "clip",
+      label: "Clip",
+      icon: SquareSplitHorizontal,
+      group: "selection",
+      hint: "Speed of the selected clip.",
+    },
+    {
+      id: "focus",
+      label: "Zoom",
+      icon: ZoomIn,
+      group: "selection",
+      hint: "Punch-in regions that highlight the action.",
+    },
+    {
+      id: "annotations",
+      label: "Markup",
+      icon: Pencil,
+      group: "selection",
+      hint: "Arrows, boxes, text, and blur.",
+    },
+    {
+      id: "extensions",
+      label: "Extensions",
+      icon: Blocks,
+      group: "meta",
+      hint: "Installed asset packs.",
+    },
+    {
+      id: "info",
+      label: "Info",
+      icon: Info,
+      group: "meta",
+      hint: "Recording details.",
+    },
     // Dev builds only; tree-shaken out of production by import.meta.env.DEV.
     ...(import.meta.env.DEV
-      ? [{ id: "dev" as PanelTab, label: "Screen text", icon: ScanText, group: "meta" as TabGroup, hint: "On-device screen text (dev)." }]
+      ? [
+          {
+            id: "dev" as PanelTab,
+            label: "Screen text",
+            icon: ScanText,
+            group: "meta" as TabGroup,
+            hint: "On-device screen text (dev).",
+          },
+        ]
       : []),
   ];
 
@@ -120,7 +191,7 @@
           {...props}
           value={tab.id}
           aria-label={tab.label}
-                    class="relative size-7 flex-none rounded-md px-0 group-data-[orientation=vertical]/tabs:justify-center data-[state=active]:text-primary data-[state=active]:bg-primary/10"
+          class="relative size-7 flex-none rounded-md px-0 group-data-[orientation=vertical]/tabs:justify-center data-[state=active]:text-foreground data-[state=active]:bg-foreground/10"
         >
           <Icon class="size-4" />
         </Tabs.Trigger>
@@ -160,45 +231,39 @@
   </Tabs.Root>
 
   <div class="flex min-w-0 flex-1 flex-col">
-      <header
-        class="shrink-0 border-b border-border/60 px-3 py-2.5"
-      >
-        <h2 class="text-[13px] font-semibold leading-none text-foreground">
-          {activeTab.label}
-        </h2>
-        <p class="mt-1 truncate text-[11px] leading-none text-muted-foreground">
-          {activeTab.hint}
-        </p>
-      </header>
+    <header class="shrink-0 border-b border-border/60 px-3 py-2.5">
+      <h2 class="text-[13px] font-semibold leading-none text-foreground">
+        {activeTab.label}
+      </h2>
+      <p class="mt-1 truncate text-[11px] leading-none text-muted-foreground">
+        {activeTab.hint}
+      </p>
+    </header>
 
-      <div
-        class={tabContentClass}
-        role="tabpanel"
-        aria-label={activeTab.label}
-      >
-        {#if store.activePanel === "clip"}
-          <ClipPanel {store} />
-        {:else if store.activePanel === "background"}
-          <BackgroundPicker {store} />
-        {:else if store.activePanel === "focus"}
-          <FocusPanel {store} />
-        {:else if store.activePanel === "annotations"}
-          <AnnotationsPanel {store} />
-        {:else if store.activePanel === "cursor"}
-          <CursorPanel {store} />
-        {:else if CAMERA_OVERLAY_UI_ENABLED && store.activePanel === "camera"}
-          <CameraPanel {store} {cameraPath} />
-        {:else if store.activePanel === "audio"}
-          <AudioPanel {store} />
-        {:else if store.activePanel === "captions"}
-          <CaptionsPanel {store} />
-        {:else if store.activePanel === "extensions"}
-          <ExtensionsPanel {store} />
-        {:else if store.activePanel === "info"}
-          <InfoPanel {store} />
-        {:else if store.activePanel === "dev"}
-          <DevOcrPanel {store} />
-        {/if}
-      </div>
+    <div class={tabContentClass} role="tabpanel" aria-label={activeTab.label}>
+      {#if store.activePanel === "clip"}
+        <ClipPanel {store} />
+      {:else if store.activePanel === "background"}
+        <BackgroundPicker {store} />
+      {:else if store.activePanel === "focus"}
+        <FocusPanel {store} />
+      {:else if store.activePanel === "annotations"}
+        <AnnotationsPanel {store} />
+      {:else if store.activePanel === "cursor"}
+        <CursorPanel {store} />
+      {:else if CAMERA_OVERLAY_UI_ENABLED && store.activePanel === "camera"}
+        <CameraPanel {store} {cameraPath} />
+      {:else if store.activePanel === "audio"}
+        <AudioPanel {store} />
+      {:else if store.activePanel === "captions"}
+        <CaptionsPanel {store} />
+      {:else if store.activePanel === "extensions"}
+        <ExtensionsPanel {store} />
+      {:else if store.activePanel === "info"}
+        <InfoPanel {store} />
+      {:else if store.activePanel === "dev"}
+        <DevOcrPanel {store} />
+      {/if}
     </div>
+  </div>
 </aside>

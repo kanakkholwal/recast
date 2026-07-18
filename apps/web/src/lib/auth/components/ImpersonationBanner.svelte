@@ -3,7 +3,7 @@
 	import { readImpersonation } from "./ImpersonationBanner.logic";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
-	import { LoaderCircle, ShieldOff, UserCog } from "@lucide/svelte";
+	import { LoaderCircle, ShieldOff, UserCog } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

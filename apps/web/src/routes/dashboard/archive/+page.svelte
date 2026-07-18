@@ -5,7 +5,7 @@
 	} from "$lib/dashboard/components/ArchivedCard.svelte";
 	import EmptyState from "$lib/dashboard/components/EmptyState.svelte";
 	import PageHeader from "$lib/dashboard/components/PageHeader.svelte";
-	import { Archive } from "@lucide/svelte";
+	import { Archive } from "@recast/icons";
 	import { toast } from "@recast/ui/sonner";
 	import { flip } from "svelte/animate";
 	import { cubicOut } from "svelte/easing";

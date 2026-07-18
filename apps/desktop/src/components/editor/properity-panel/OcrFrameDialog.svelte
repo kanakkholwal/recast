@@ -10,7 +10,7 @@
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
   import { SegmentedToggle } from "@recast/ui/segmented";
-  import { Check, Copy, SquareDashedMousePointer } from "@lucide/svelte";
+  import { Check, Copy, SquareDashedMousePointer } from "@recast/icons";
   import { boxLabel, boxStyle, regionLabel, spanAsText } from "./dev-ocr-panel.logic";
 
   interface Props {

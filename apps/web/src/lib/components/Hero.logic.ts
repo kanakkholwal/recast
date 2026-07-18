@@ -1,4 +1,4 @@
-import { MousePointer2, Share2, Video } from "@lucide/svelte";
+import { MousePointer2, Share2, Video } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 
 // Concrete artifacts the committed audience (solo founders + dev teams /

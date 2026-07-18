@@ -1,9 +1,9 @@
 [package]
-name = "recast"
+name = "Recast"
 version = "0.0.0-0"
-description = "A light weight app to record your screen."
-authors = ["kanak kholwal"]
-license = ""
+description = "Screen recording & Editor Agent"
+authors = ["Kanak Kholwal"]
+license = "GPL-3.0-or-later"
 repository = "https://github.com/kanakkholwal/recast"
 edition = "2021"
 # Reflects the real minimum: the code uses APIs stabilized in 1.81/1.82
@@ -17,6 +17,15 @@ rust-version = "1.82.0"
 name = "recast_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Default binary name is the package name ("Recast") on case-sensitive
+# filesystems (Linux, macOS). Pin to lowercase so `recast`, the smoke-test
+# script, `path_install::symlink`, and the documented CLI verb contract all
+# agree. Windows is case-insensitive (Recast.exe / recast.exe both resolve),
+# so no platform-specific fallout.
+[[bin]]
+name = "recast"
+path = "src/main.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
 
@@ -28,6 +37,7 @@ serde_json = "1.0"
 serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 parking_lot = "0.12"
+libc = "0.2"
 tauri = { version = "2.10.3", features = ["macos-private-api", "protocol-asset", "tray-icon", "image-png"] }
 tauri-plugin-log = "2"
 xcap = "0.8.3"
@@ -89,7 +99,7 @@ tract-onnx = "0.21"
 # remote-only. GPU backends (metal/vulkan/cuda) are opt-in features, kept OFF for
 # now: CPU (tinyBLAS) is portable; add Metal as a later perf pass. Real per-word
 # timing comes back in the run `Transcript` — no synthesis needed.
-transcribe-cpp = { version = "0.1.2", optional = true }
+transcribe-cpp = { version = "0.1.3", optional = true }
 # On-device OCR (screen understanding for agent automation), behind the off-by-
 # default `ocr` feature. `ocrs` runs on its own `rten` runtime, which is PURE
 # RUST with no C / ONNX-Runtime dependency, so it builds on every target incl.
@@ -139,6 +149,7 @@ windows = { version = "0.58.0", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Media_Audio",
     "Win32_System_SystemInformation",
+    "Win32_System_Threading",
     # AttachConsole + CONOUT$/CONIN$ rebind so the headless CLI branch can
     # print to the launching terminal from the GUI-subsystem release exe.
     "Win32_System_Console",

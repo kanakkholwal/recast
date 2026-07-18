@@ -16,7 +16,7 @@ import {
 	Settings,
 	SlidersHorizontal,
 	Sun,
-} from "@lucide/svelte";
+} from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 import { toast } from "@recast/ui/sonner";
 import { setMode } from "@recast/ui/theme";

@@ -69,7 +69,7 @@
     Upload,
     VolumeX,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
   import { toast } from "@recast/ui/sonner";

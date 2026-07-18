@@ -12,7 +12,7 @@
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { ColorField } from "@recast/ui/color-field";
   import { Button } from "@recast/ui/button";
-  import { ArrowUpRight, Circle, Square, Trash2 } from "@lucide/svelte";
+  import { ArrowUpRight, Circle, Square, Trash2 } from "@recast/icons";
   import type { ShapeKind, ShapeOverlay } from "../types";
 
   let { editor }: ShapeControlProps = $props();

@@ -13,7 +13,7 @@
 	  Volume1,
 	  Volume2,
 	  VolumeX
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { onMount } from "svelte";
 	import { fade } from "svelte/transition";
 	import type {

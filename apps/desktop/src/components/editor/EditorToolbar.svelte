@@ -12,7 +12,7 @@
     Sparkles,
     Upload,
     X,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
   import { Separator } from "@recast/ui/separator";
@@ -251,7 +251,7 @@
                 aria-label="Reset to source aspect"
                 class="ml-0.5 flex size-5 cursor-pointer items-center justify-center rounded text-primary/60 transition-colors hover:bg-primary/10 hover:text-primary"
               >
-                <X size={10} strokeWidth={2.5} />
+                <X size={10} stroke={2.5} />
               </button>
             {/snippet}
           </Tooltip.Trigger>

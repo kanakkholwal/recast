@@ -7,7 +7,7 @@
 		Section,
 		SeoMeta,
 	} from "$lib/components";
-	import { ShieldCheck } from "@lucide/svelte";
+	import { ShieldCheck } from "@recast/icons";
 
 	const lastUpdated = "May 30, 2026";
 

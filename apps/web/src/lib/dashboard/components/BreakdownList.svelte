@@ -7,7 +7,7 @@
 <script lang="ts">
 	import type { BreakdownRow } from "$lib/dashboard/activity";
 	import { formatCount } from "$lib/dashboard/format";
-	import type { Component } from "svelte";
+	import type { IconComponent } from "@recast/icons";
 
 	// Generic ranked breakdown (audience by country / device): a labelled list
 	// with proportional bars. Shared so geography and device read identically.
@@ -19,7 +19,7 @@
 		glyph,
 	}: {
 		title: string;
-		icon: Component<{ class?: string }>;
+		icon: IconComponent;
 		rows: BreakdownRow[];
 		empty?: string;
 		/** Optional leading glyph per row (e.g. a flag emoji for geography). */

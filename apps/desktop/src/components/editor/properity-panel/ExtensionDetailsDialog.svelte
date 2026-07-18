@@ -27,7 +27,8 @@
     Spline,
     Trash2,
     Waves,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";
   import { Kbd } from "@recast/ui/kbd";
@@ -101,7 +102,7 @@
   const contributionDefs: Array<{
     key: keyof ExtensionContributions;
     label: string;
-    icon: Component;
+    icon: IconComponent;
   }> = [
     { key: "cursors", label: "Cursors", icon: MousePointer },
     { key: "backgrounds", label: "Backgrounds", icon: Image },

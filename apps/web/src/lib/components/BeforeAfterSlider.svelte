@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { autoplayInView } from "$lib/motion-core";
-	import { Check, ChevronsLeftRight, Film } from "@lucide/svelte";
+	import { Check, ChevronsLeftRight, Film } from "@recast/icons";
 
 	// Draggable wipe comparison. Raw fills the base; the polished clip is layered
 	// on top and clipped to the RIGHT of the handle, so dragging left/right wipes

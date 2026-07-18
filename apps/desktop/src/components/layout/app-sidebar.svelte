@@ -5,13 +5,13 @@
   import { launchRecordingPanel } from "$lib/ipc";
   import {
     Download,
-    Film,
     Image,
     LayoutDashboard,
-    Radio,
+    Broadcast,
     Settings,
     SlidersHorizontal,
-  } from "@lucide/svelte";
+    Video
+  } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Sidebar from "@recast/ui/sidebar";
   import { useSidebar } from "@recast/ui/sidebar";
@@ -43,7 +43,7 @@
       label: "Workspace",
       links: [
         { title: "Home", href: "/", icon: LayoutDashboard },
-        { title: "Recasts", href: "/recasts", icon: Film },
+        { title: "Recasts", href: "/recasts", icon: Video },
         ...(import.meta.env.DEV
           ? [{ title: "Screenshot", href: "/screenshot", icon: Image }]
           : []),
@@ -186,7 +186,7 @@
       )}
       title="Launch Recording Panel (⌘⇧R)"
     >
-      <Radio
+      <Broadcast
         size={13}
         class="shrink-0 transition-transform duration-200 group-hover/launch:rotate-12"
       />

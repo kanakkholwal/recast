@@ -9,7 +9,7 @@
     planPlacement,
     type Interval,
   } from "$lib/zoom/auto-apply";
-  import { AlertTriangle, Check, MousePointerClick, Sparkles, Wand2, XCircle } from "@lucide/svelte";
+  import { AlertTriangle, Check, MousePointerClick, XCircle, AiBrain, AiWand } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import * as Tooltip from "@recast/ui/tooltip";
   import { cn } from "@recast/ui/utils";
@@ -53,7 +53,7 @@
   }
 
   function reasonIcon(r: ZoomSuggestion["reason"]) {
-    return r === "click" ? MousePointerClick : Sparkles;
+    return r === "click" ? MousePointerClick : AiBrain;
   }
 
   function previewAt(sug: ZoomSuggestion) {
@@ -141,7 +141,7 @@
 >
   <header class="flex items-center justify-between gap-2 border-b border-border px-3 py-2">
     <div class="flex items-center gap-1.5">
-      <Wand2 size={13} class="text-primary" />
+      <AiWand size={13} class="text-primary" />
       <h3 class="text-[11px] font-semibold tracking-tight">Auto-focus</h3>
     </div>
     <Button variant="ghost" size="xs" onclick={onclose} class="gap-1.5">
@@ -162,7 +162,7 @@
     </div>
   {:else if status === "empty"}
     <div class="flex flex-col items-center gap-1 px-3 py-6 text-center text-[11px] text-muted-foreground">
-      <Sparkles size={14} class="text-muted-foreground/70" />
+      <AiBrain size={14} class="text-muted-foreground/70" />
       <p class="font-medium text-foreground">No candidates left</p>
       <p>Add a focus manually or re-run analysis.</p>
       <Button variant="ghost" size="xs" onclick={loadSuggestions} class="mt-1">Re-scan</Button>

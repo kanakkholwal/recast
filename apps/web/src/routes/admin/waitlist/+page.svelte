@@ -4,7 +4,7 @@
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Skeleton } from "@recast/ui/skeleton";
 	import { toast } from "@recast/ui/sonner";
-	import { LoaderCircle } from "@lucide/svelte";
+	import { LoaderCircle } from "@recast/icons";
 
 	import InlineError from "$lib/components/InlineError.svelte";
 

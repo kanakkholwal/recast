@@ -10,7 +10,7 @@
 	import { formatSize } from "$lib/format/files";
 	import { etaLabel } from "$lib/format/time";
 	import { cloudShare } from "$lib/stores/cloudShare.svelte";
-	import { AlertTriangle, Check, Cloud, Minus } from "@lucide/svelte";
+	import { AlertTriangle, Check, Cloud, Minus } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import * as Dialog from "@recast/ui/dialog";
 	import { Spinner } from "@recast/ui/spinner";

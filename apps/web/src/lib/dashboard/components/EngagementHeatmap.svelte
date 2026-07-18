@@ -2,7 +2,7 @@
 	import * as Chart from "$components/ui/chart/index.js";
 	import { engagementHeatmap, type EngagementMoment } from "$lib/dashboard/activity";
 	import { formatDuration } from "$lib/dashboard/format";
-	import { Flame } from "@lucide/svelte";
+	import { Flame } from "@recast/icons";
 	import { BarChart } from "layerchart";
 
 	// "Which moments did viewers actually react to" — reactions + comments

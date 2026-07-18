@@ -12,7 +12,7 @@
     EditorStore,
   } from "$lib/stores/editor-store.svelte";
   import { defaultGlow } from "./annotation-appearance.logic";
-  import { Sparkles } from "@lucide/svelte";
+  import { AiAtom } from "@recast/icons";
   import { ColorPicker } from "@recast/ui/color-picker";
   import * as Popover from "@recast/ui/popover";
   import { Segmented } from "@recast/ui/segmented";
@@ -232,7 +232,7 @@
     >
       <div class="flex items-center justify-between gap-2">
         <span class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground">
-          <Sparkles size={11} class="text-primary" />
+          <AiAtom size={11} class="text-primary" />
           Glow
         </span>
         <SegmentedToggle

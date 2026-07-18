@@ -2,7 +2,7 @@
   import { GITHUB_URL, navLinks } from "$lib/components/nav-data";
   import Logo from "$lib/logo.svelte";
   import { prefersReducedMotion } from "$lib/motion-core";
-  import { Menu, X } from "@lucide/svelte";
+  import { Menu, X } from "@recast/icons";
   import { GithubBrand } from "@recast/ui/brand-icons";
   import { Button } from "@recast/ui/button";
   import { slide } from "svelte/transition";

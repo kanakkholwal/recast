@@ -14,7 +14,7 @@
   import { PanelSection } from "@recast/ui/panel-section";
   import { Segmented } from "@recast/ui/segmented";
   import { Button } from "@recast/ui/button";
-  import { Copy, Download as DownloadIcon, Film, Loader2 } from "@lucide/svelte";
+  import { Copy, Download as DownloadIcon, Film, Loader2 } from "@recast/icons";
   import {
     canCopyImage,
     copyToClipboard,

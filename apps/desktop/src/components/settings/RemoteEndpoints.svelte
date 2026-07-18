@@ -8,7 +8,7 @@
 		Server,
 		Trash2,
 		X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { toast } from "@recast/ui/sonner";
 	import { cn } from "@recast/ui/utils";

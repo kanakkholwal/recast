@@ -276,7 +276,8 @@
     Search,
     Sparkles,
     Star,
-  } from "@lucide/svelte";
+  } from "@recast/icons";
+  import type { IconComponent } from "@recast/icons";
   import { Kbd, KbdGroup } from "@recast/ui/kbd";
   import { cn } from "@recast/ui/utils";
   import { tick } from "svelte";
@@ -400,7 +401,7 @@
     });
   }
 
-  function categoryIcon(category: string): typeof Sparkles {
+  function categoryIcon(category: string): IconComponent {
     switch (category) {
       case "Current":
         return Star;

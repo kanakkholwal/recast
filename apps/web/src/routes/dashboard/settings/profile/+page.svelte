@@ -11,7 +11,7 @@
 		MailWarning,
 		RefreshCw,
 		User,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

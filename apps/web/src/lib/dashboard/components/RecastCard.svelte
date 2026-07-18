@@ -32,7 +32,7 @@
 		Share2,
 		Tag as TagIcon,
 		Trash2,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 
 	let {
 		recast,

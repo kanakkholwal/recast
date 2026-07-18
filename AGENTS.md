@@ -27,8 +27,9 @@ packages/
   analytics/      PostHog swap-abstraction.
 ```
 
-Shared frontend: **Svelte 5.56**, **Vite 7**, **Tailwind 4**, **Lucide icons**,
-**shadcn-svelte**, **bits-ui**. Desktop tests: **Vitest 3** (pure logic) + `cargo test`.
+Shared frontend: **Svelte 5.56**, **Vite 7**, **Tailwind 4**, **Tabler icons** (primary) +
+**Phosphor duotone** accents (AI-surface only — see §4), **shadcn-svelte**, **bits-ui**.
+Desktop tests: **Vitest 3** (pure logic) + `cargo test`.
 
 ### Commands (run from repo root unless noted)
 
@@ -207,7 +208,10 @@ Current as of **Svelte 5.36+ / SvelteKit 2.12+**. Runes era — no Svelte 4 idio
 
 ### Project conventions
 - **Design system:** shadcn-svelte components + design-token CSS variables. **No hardcoded
-  colors.** **Lucide icons only.**
+  colors.** **Icons must come from `@recast/icons`** (Tabler re-exports under Lucide-style names)
+  or `@recast/icons/ai` (Phosphor duotone accents for AI-touchpoint surfaces only).
+  Direct imports from `@tabler/icons-svelte`, `@lucide/svelte`, or `@phosphor-icons/*` are
+  blocked by Biome's `noRestrictedImports`. See `packages/icons/README` for the curated list.
 - **bits-ui wrappers** (Dialog/Sheet/Dropdown/Select/Popover/HoverCard) must default
   `preventScroll={false}` — the upstream default leaks `pointer-events:none` on `<body>` in the
   Tauri build.
@@ -327,8 +331,9 @@ A change is done when, for every area it touched:
 - [ ] Gates green: `fmt`/`clippy` (Rust), `svelte-check`, `vitest`/`cargo test`, `pnpm check`/`build`.
 - [ ] (Rust) all target_os trees compile; new threads/processes have RAII teardown; ffmpeg spawns
       are silent; heavy commands stay off the UI thread.
-- [ ] (Frontend) no banned Svelte 4 idioms; design tokens + Lucide only; `tauri build` tested if
-      desktop runtime behaviour changed.
+- [ ] (Frontend) no banned Svelte 4 idioms; design tokens only; icons via `@recast/icons`
+      (Tabler) or `@recast/icons/ai` (Phosphor duotone — AI touchpoints only);
+      `tauri build` tested if desktop runtime behaviour changed.
 - [ ] (Server) Node+Fluid assumptions held; no module-scope request state; DB through the repo
       layer with `prepare:false`; authz checked per object.
 - [ ] Small commits, Conventional Commit messages, on a branch; maintainer owns the merge.

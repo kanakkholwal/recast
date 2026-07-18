@@ -31,7 +31,7 @@
 		TriangleAlert,
 		Upload,
 		X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { onMount } from "svelte";
 
 	let { tool }: { tool: ToolDef } = $props();

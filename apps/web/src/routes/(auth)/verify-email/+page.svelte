@@ -10,7 +10,7 @@
 		LogOut,
 		MailCheck,
 		RefreshCw,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

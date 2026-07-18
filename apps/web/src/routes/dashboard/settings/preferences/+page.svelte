@@ -4,7 +4,7 @@
 	import { quotaStore } from "$lib/dashboard/store.svelte";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
-	import { Building2, HardDrive, ShieldCheck, Settings2, Users } from "@lucide/svelte";
+	import { Building2, HardDrive, ShieldCheck, Settings2, Users } from "@recast/icons";
 	import { cubicOut } from "svelte/easing";
 	import { fly } from "svelte/transition";
 

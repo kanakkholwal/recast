@@ -15,7 +15,7 @@
 	  Check,
 	  Download,
 	  Image as ImageIcon
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { GithubBrand } from "@recast/ui/brand-icons";
 	import { Button } from "@recast/ui/button";
 	import { cubicOut } from "svelte/easing";

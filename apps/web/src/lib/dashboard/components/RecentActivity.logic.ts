@@ -5,7 +5,7 @@
  */
 
 import type { Activity } from "$lib/dashboard/activity";
-import { Activity as ActivityIcon, CheckCircle2, Eye, Share2 } from "@lucide/svelte";
+import { Activity as ActivityIcon, CheckCircle2, Eye, Share2 } from "@recast/icons";
 
 export const kindMeta: Record<
 	Activity["kind"],

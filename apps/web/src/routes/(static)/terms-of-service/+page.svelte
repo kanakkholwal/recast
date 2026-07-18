@@ -7,7 +7,7 @@
 		Section,
 		SeoMeta,
 	} from "$lib/components";
-	import { ScrollText } from "@lucide/svelte";
+	import { ScrollText } from "@recast/icons";
 
 	const lastUpdated = "May 30, 2026";
 

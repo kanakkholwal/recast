@@ -201,7 +201,7 @@
     "svelte": "^5.56.1"
   },
   "dependencies": {
-    "@lucide/svelte": "^1.21.0",
+    "@recast/icons": "workspace:*",
     "@tabler/icons-svelte": "^3.44.0",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",

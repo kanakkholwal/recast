@@ -1,6 +1,6 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Eye, EyeOff, Layers, Pencil } from "@lucide/svelte";
+  import { Eye, EyeOff, Layers, Pencil } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { cn } from "@recast/ui/utils";
 

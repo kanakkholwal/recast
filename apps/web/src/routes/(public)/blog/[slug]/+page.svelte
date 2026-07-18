@@ -4,7 +4,7 @@
 	import { prefersReducedMotion } from "$lib/motion-core";
 	import { Badge } from "@recast/ui/badge";
 	import DocviaContent from "$lib/blog/DocviaContent.svelte";
-	import { ArrowLeft, Clock } from "@lucide/svelte";
+	import { ArrowLeft, Clock } from "@recast/icons";
 	import { fly } from "svelte/transition";
 	import { cubicOut } from "svelte/easing";
 	import type { PageData } from "./$types";

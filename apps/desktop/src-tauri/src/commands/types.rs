@@ -170,6 +170,22 @@ pub struct AppConfig {
     /// default; solid on Win10 and unsupported GPUs regardless.
     #[serde(default)]
     pub window_transparency: bool,
+    /// Whether `setup()` should attempt to install the `recast` CLI on the
+    /// user's PATH on first launch. Default `true` — most users want the CLI
+    /// ready to drive Recast from a terminal or an AI agent. The settings
+    /// panel exposes an explicit toggle so a user who *removed* it can also
+    /// disable the auto-attempt.
+    #[serde(default = "default_cli_auto_install")]
+    pub cli_auto_install: bool,
+    /// Whether we've already attempted the first-launch auto-install. We
+    /// only attempt once per app install (per user), so a successful install
+    /// is sticky, and an install that errored once doesn't loop forever.
+    #[serde(default)]
+    pub cli_install_attempted: bool,
+}
+
+fn default_cli_auto_install() -> bool {
+    true
 }
 
 fn default_close_to_tray() -> bool {
@@ -197,6 +213,8 @@ impl Default for AppConfig {
             cloud_api_url: None,
             diagnostic_logging: false,
             window_transparency: false,
+            cli_auto_install: true,
+            cli_install_attempted: false,
         }
     }
 }
@@ -275,7 +293,7 @@ pub struct CaptionSidecar {
 // Serialize as well as Deserialize: the export queue persists the whole request
 // (render state included) to a payload file on disk so a queued job can run after
 // its editor is closed and survive an app restart. Heavy but self-contained.
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct ExportRequest {
     pub export_id: String,
@@ -397,10 +415,61 @@ pub struct AppState {
     pub export_wake: Arc<tokio::sync::Notify>,
     /// OS-wide hotkeys registered by the global-shortcut plugin in `setup()`.
     /// Stored so the `run` block can unregister each on `RunEvent::Exit` /
-    /// `ExitRequested` — otherwise an unclean close (crash, force-kill via
+    /// `ExitRequested` — otherwise an unclean close (crash, force-kill from
     /// Task Manager, dev/prod coexistence where one instance is killed while
     /// another holds the slot) leaves the OS-level hotkey bound to a dead
     /// process and the next launch logs `HotKey already registered` for the
     /// lifetime of the OS. See `lib.rs::run`.
     pub registered_shortcuts: Mutex<Vec<Shortcut>>,
+    /// Per-project editor write-lock. The CLI agent and the GUI user both go
+    /// through here so one of them holds the project at a time; the other sees
+    /// a structured `editor_locked` error (CLI) or a banner+disabled mutators
+    /// (GUI). See `commands::editor_session` for the helpers. Initialised empty
+    /// in `setup()`; `commands::editor_session::load_on_startup` may revive a
+    /// session from `recast_session.json` if the previous holder's PID is
+    /// still alive.
+    pub editor_session: parking_lot::RwLock<EditorSession>,
+}
+
+/// Who currently holds the editor write-lock, if anyone. Either side (UI,
+/// agent) goes through the same `EditorSession::try_acquire_write` API; the
+/// discriminator exists so the GUI can render "Agent `claude-…` is editing"
+/// specifically vs "you are editing" (the GUI is implicitly its own holder
+/// once it opens a project).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditorWriterKind {
+    Ui,
+    Agent,
+}
+
+/// Editor write-lock state. Lives in `AppState.editor_session`. The mutating
+/// helpers in `commands::editor_session` are the only legitimate writers;
+/// readers (the GUI's derived `isWriteLockedByAgent`) just take a shared read.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorSession {
+    /// `None` when idle. Set to the locked project's absolute path while held.
+    pub project_path: Option<PathBuf>,
+    /// `None` when idle.
+    pub writer: Option<EditorWriterKind>,
+    /// Free-form identifier: `"ui:<user>"` for the GUI, `"agent:<id>"` (the
+    /// agent's session ID) for the CLI. Surfaced verbatim in the
+    /// `editor_locked` error so the other side can name the holder.
+    pub writer_id: String,
+    /// Unix-epoch ms when the lock was acquired.
+    pub acquired_at_ms: i64,
+    /// Unix-epoch ms of the last mutation under this lock. Bumped by every
+    /// `try_acquire_write` / `record_activity`. If `now - last_activity_at_ms
+    /// &gt; TTL_MS`, the next acquire reclaims the lock (covers a crashed
+    /// holder without leaving the project stranded forever).
+    pub last_activity_at_ms: i64,
+}
+
+impl EditorSession {
+    /// Inactivity window after which the lock is reclaimable. A long
+    /// `recast editor patch` over a multi-MB `RenderState` should keep the
+    /// activity stamp fresh (`commands::editor_session::record_activity`);
+    /// the TTL is the safety net for a crashed CLI/GUI that never released.
+    pub const TTL_MS: i64 = 60_000;
 }

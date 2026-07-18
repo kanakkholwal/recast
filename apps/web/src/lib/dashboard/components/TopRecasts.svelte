@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { formatCount, formatDuration } from "$lib/dashboard/format";
 	import type { Recast } from "$lib/dashboard/store.svelte";
-	import { Cloud, Crown, Film } from "@lucide/svelte";
+	import { Cloud, Crown, Film } from "@recast/icons";
 
 	let {
 		recasts,

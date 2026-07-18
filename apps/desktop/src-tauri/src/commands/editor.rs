@@ -6,7 +6,8 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use base64::{engine::general_purpose, Engine as _};
-use tauri::{AppHandle, Manager, State};
+use serde::{Deserialize, Serialize};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
 use super::export::camera::camera_bubble_rect;
@@ -14,7 +15,7 @@ use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
-    output_duration_cap,
+    output_duration_cap, warped_output_duration,
 };
 use super::export::gif::{run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
@@ -292,6 +293,750 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
         },
         needs_migration: false,
     })
+}
+
+/// Read-only summary of a project's timeline. Mirrors the data shape the
+/// frontend's `deriveSegments` + `timeMapFromSegments` produce in
+/// `apps/desktop/src/lib/timeline/{segments,time-map}.ts`. The shared parity
+/// fixtures already enforce that the Rust side (these helpers) and the JS side
+/// agree to the same precision, so an agent that reads this view and then
+/// issues a follow-up `editor.*` patch can trust the structure it sees.
+///
+/// Costs of deriving this are negligible (a single pass over the cuts +
+/// split_points on the in-memory render state); safe to call from a control-
+/// socket dispatch arm without a `spawn_blocking`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProjectTimeline {
+    /// Source-recording duration in seconds (full clip, before trim/cuts).
+    pub source_duration: f64,
+    /// Trimmed window in original-recording coords (inclusive).
+    pub trim_start: f64,
+    pub trim_end: f64,
+    /// `trim_end - trim_start`, clamped to `>= 0`.
+    pub trimmed_duration: f64,
+    /// Output-time duration after cuts and per-segment speed warp are applied.
+    pub output_duration: f64,
+    /// Cuts in original-recording coords, kept verbatim from the render state.
+    pub cuts: Vec<TimelineCut>,
+    /// Kept segments on the post-trim stream (t=0 at trim_start) with their speed.
+    pub kept_segments: Vec<KeptSegment>,
+    /// Split points (original-recording coords) the user dropped on the clip.
+    pub split_points: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TimelineCut {
+    pub start: f64,
+    pub end: f64,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeptSegment {
+    pub start: f64,
+    pub end: f64,
+    pub speed: f64,
+}
+
+pub fn derive_project_timeline(
+    render_state: &RenderState,
+    source_duration: f64,
+) -> ProjectTimeline {
+    let trim_start = render_state.trim_start.max(0.0);
+    let trim_end = render_state.trim_end.max(trim_start);
+    let trimmed = (trim_end - trim_start).max(0.0);
+    let export_cuts = collect_export_cuts(render_state, trim_start, trim_end);
+    let speeds = build_speed_segments(
+        trimmed,
+        &export_cuts,
+        &render_state.split_points,
+        &render_state.segment_speeds,
+        trim_start,
+    );
+    let output_duration = warped_output_duration(&speeds);
+
+    ProjectTimeline {
+        source_duration,
+        trim_start,
+        trim_end,
+        trimmed_duration: trimmed,
+        output_duration,
+        cuts: render_state
+            .cuts
+            .iter()
+            .map(|c| TimelineCut {
+                start: c.start,
+                end: c.end,
+            })
+            .collect(),
+        kept_segments: speeds
+            .iter()
+            .map(|s| KeptSegment {
+                start: s.start,
+                end: s.end,
+                speed: s.speed,
+            })
+            .collect(),
+        split_points: render_state.split_points.clone(),
+    }
+}
+
+/// Common load → mutate → validate → save cycle for every targeted editor
+/// verb in `control::dispatch`. The mutate closure returns its own result
+/// (used by `editor.zoom.add` etc. to return the new entry it just
+/// pushed).
+///
+/// Spawn-blocking the load + save calls is fine here: both already run on
+/// Tauri's blocking pool (`commands::load_editor_document` and
+/// `commands::save_project_edits` internally `spawn_blocking`).
+pub(crate) fn patch_render_state<F, M>(
+    state: &crate::commands::types::AppState,
+    app: &tauri::AppHandle,
+    path: &str,
+    writer_id: &str,
+    mutate: F,
+) -> Result<M, String>
+where
+    F: FnOnce(&mut RenderState) -> Result<M, String>,
+{
+    use crate::commands::types::EditorWriterKind;
+
+    let path_buf = std::path::PathBuf::from(path);
+    crate::commands::try_acquire_write(
+        state,
+        path_buf,
+        EditorWriterKind::Agent,
+        writer_id.to_string(),
+    )?;
+
+    let doc =
+        tauri::async_runtime::block_on(crate::commands::load_editor_document(path.to_string()))
+            .map_err(|e| e.to_string())?;
+
+    let mut new_state = doc.render_state;
+    let result = mutate(&mut new_state)?;
+
+    if let Err(issues) = validate_render_state(&new_state, doc.metadata.duration) {
+        return Err(format!(
+            "validation failed: {}",
+            serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
+        ));
+    }
+
+    let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
+    tauri::async_runtime::block_on(crate::commands::save_project_edits(
+        path.to_string(),
+        edits_json,
+    ))
+    .map_err(|e| e.to_string())?;
+
+    crate::commands::record_activity(state);
+    crate::commands::persist(state, app);
+    let _ = app.emit("editor-state:changed", serde_json::json!({ "path": path }));
+    Ok(result)
+}
+
+/// Apply the agent-supplied `value` at a dotted JSON pointer inside the
+/// JSON shape of `RenderState`. Walks the path, replaces the leaf, and
+/// reports a structured error if the path doesn't exist.
+pub(crate) fn apply_dotted_path_set(
+    state: &mut serde_json::Value,
+    field: &str,
+    value: serde_json::Value,
+) -> Result<(), String> {
+    let pointer = format!("/{}", field.replace('.', "/"));
+    let target = state
+        .pointer_mut(&pointer)
+        .ok_or_else(|| format!("no field at path '{field}'"))?;
+    *target = value;
+    Ok(())
+}
+
+/// Single invariant violation. The agent/CI/UI inspect `reason` to map to a
+/// user-facing message; `field` is a dotted path so an editor UI can navigate
+/// to the offending control. `reason` is stable: renaming a code is a breaking
+/// change for any agent that branches on it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ValidationIssue {
+    pub field: String,
+    pub reason: String,
+}
+
+/// Tolerance for "equal" comparisons in render-state math. Mirrors the
+/// `CUT_MERGE_EPS` used by `commands/export/cuts_speed.rs` so a validator and
+/// the export agree on what "the same boundary" means.
+const VALIDATION_EPS: f64 = 1e-4;
+
+/// Validate a `RenderState` against the project's source-recording metadata.
+///
+/// **Runs at every entry point** that crosses a trust boundary: `enqueue_export`,
+/// `save_project_edits`, every CLI `editor.*` patch verb, every MCP tool
+/// handler. The function returns *all* violations, not the first; an agent
+/// iterating on a JSON document needs the complete list to fix in one pass.
+///
+/// Pure (no I/O, no AppHandle, no State). Costs ~O(n) over the render state's
+/// collections; safe to call on a control-socket connection's thread without
+/// `spawn_blocking`.
+pub fn validate_render_state(
+    s: &RenderState,
+    source_duration: f64,
+) -> Result<(), Vec<ValidationIssue>> {
+    let mut issues = Vec::new();
+
+    // Trim window
+    if !s.trim_start.is_finite() || s.trim_start < 0.0 {
+        issues.push(ValidationIssue {
+            field: "trimStart".into(),
+            reason: "non_negative".into(),
+        });
+    }
+    if !s.trim_end.is_finite() {
+        issues.push(ValidationIssue {
+            field: "trimEnd".into(),
+            reason: "finite".into(),
+        });
+    }
+    // Only a strict `trim_end < trim_start` is an error: the fresh-project
+    // default is `trim_end == trim_start == 0.0` and that's a valid
+    // (zero-duration) state the editor holds until first content is loaded.
+    if s.trim_end < s.trim_start - VALIDATION_EPS {
+        issues.push(ValidationIssue {
+            field: "trimEnd".into(),
+            reason: "trim_end_before_start".into(),
+        });
+    }
+    if s.trim_end > source_duration + VALIDATION_EPS && source_duration > 0.0 {
+        issues.push(ValidationIssue {
+            field: "trimEnd".into(),
+            reason: "trim_end_exceeds_source".into(),
+        });
+    }
+
+    // Cuts
+    for (i, c) in s.cuts.iter().enumerate() {
+        if !c.start.is_finite() || !c.end.is_finite() {
+            issues.push(ValidationIssue {
+                field: format!("cuts/{i}"),
+                reason: "finite".into(),
+            });
+            continue;
+        }
+        if c.start < 0.0 {
+            issues.push(ValidationIssue {
+                field: format!("cuts/{i}/start"),
+                reason: "non_negative".into(),
+            });
+        }
+        if c.end <= c.start + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("cuts/{i}/end"),
+                reason: "cut_end_before_start".into(),
+            });
+        }
+        // Allow a small slop so an end-user dragging a cut edge against the
+        // trim handle doesn't bounce on the validator; deeper math already
+        // clamps at the export anyway.
+        if c.start < s.trim_start - VALIDATION_EPS || c.end > s.trim_end + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("cuts/{i}"),
+                reason: "cut_out_of_trim".into(),
+            });
+        }
+    }
+    let mut sorted: Vec<(usize, f64, f64)> = s
+        .cuts
+        .iter()
+        .enumerate()
+        .map(|(i, c)| (i, c.start, c.end))
+        .collect();
+    sorted.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    for w in sorted.windows(2) {
+        let (_, _, a_e) = w[0];
+        let (b_i, b_s, _) = w[1];
+        if b_s < a_e - VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("cuts/{b_i}"),
+                reason: "cut_overlap".into(),
+            });
+        }
+    }
+
+    // Zoom regions
+    for (i, z) in s.zoom_regions.iter().enumerate() {
+        if z.start < s.trim_start - VALIDATION_EPS || z.end > s.trim_end + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("zoomRegions/{i}"),
+                reason: "zoom_out_of_trim".into(),
+            });
+        }
+        if z.end <= z.start + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("zoomRegions/{i}"),
+                reason: "zoom_end_before_start".into(),
+            });
+        }
+        if !(1.0..=3.0).contains(&z.scale) {
+            issues.push(ValidationIssue {
+                field: format!("zoomRegions/{i}/scale"),
+                reason: "scale_out_of_range".into(),
+            });
+        }
+        if !(0.0..=1.0).contains(&z.center_x) || !(0.0..=1.0).contains(&z.center_y) {
+            issues.push(ValidationIssue {
+                field: format!("zoomRegions/{i}/center"),
+                reason: "center_out_of_range".into(),
+            });
+        }
+        if z.ramp_in < 0.0 || z.ramp_out < 0.0 {
+            issues.push(ValidationIssue {
+                field: format!("zoomRegions/{i}/ramp"),
+                reason: "ramp_negative".into(),
+            });
+        }
+    }
+
+    // Annotations — envelope first, then per-kind geometry.
+    for (i, a) in s.annotations.iter().enumerate() {
+        if a.start < s.trim_start - VALIDATION_EPS || a.end > s.trim_end + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("annotations/{i}"),
+                reason: "annotation_out_of_trim".into(),
+            });
+        }
+        if a.end <= a.start + VALIDATION_EPS {
+            issues.push(ValidationIssue {
+                field: format!("annotations/{i}"),
+                reason: "annotation_end_before_start".into(),
+            });
+        }
+        if !(0.0..=1.0).contains(&a.opacity) {
+            issues.push(ValidationIssue {
+                field: format!("annotations/{i}/opacity"),
+                reason: "opacity_out_of_range".into(),
+            });
+        }
+        match &a.kind {
+            AnnotationKind::Rect {
+                x,
+                y,
+                w: _,
+                h: _,
+                radius,
+            } => {
+                if !(0.0..=1.0).contains(x) || !(0.0..=1.0).contains(y) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/position"),
+                        reason: "position_out_of_range".into(),
+                    });
+                }
+                if *radius < 0.0 || *radius > 0.5 {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/radius"),
+                        reason: "radius_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Ellipse { x, y, w: _, h: _ } => {
+                if !(0.0..=1.0).contains(x) || !(0.0..=1.0).contains(y) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/position"),
+                        reason: "position_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Blur {
+                x,
+                y,
+                w: _,
+                h: _,
+                strength,
+                radius,
+                ..
+            } => {
+                if !(0.0..=1.0).contains(x) || !(0.0..=1.0).contains(y) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/position"),
+                        reason: "position_out_of_range".into(),
+                    });
+                }
+                if !(0.0..=1.0).contains(strength) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/strength"),
+                        reason: "strength_out_of_range".into(),
+                    });
+                }
+                if *radius < 0.0 || *radius > 0.5 {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/radius"),
+                        reason: "radius_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Image {
+                x,
+                y,
+                w: _,
+                h: _,
+                opacity,
+                radius,
+                ..
+            } => {
+                if !(0.0..=1.0).contains(x) || !(0.0..=1.0).contains(y) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/position"),
+                        reason: "position_out_of_range".into(),
+                    });
+                }
+                if !(0.0..=1.0).contains(opacity) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/opacity"),
+                        reason: "opacity_out_of_range".into(),
+                    });
+                }
+                if *radius < 0.0 || *radius > 0.5 {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/radius"),
+                        reason: "radius_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Arrow { x1, y1, x2, y2, .. } => {
+                if !(0.0..=1.0).contains(x1)
+                    || !(0.0..=1.0).contains(y1)
+                    || !(0.0..=1.0).contains(x2)
+                    || !(0.0..=1.0).contains(y2)
+                {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/points"),
+                        reason: "points_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Text { x, y, .. } => {
+                if !(0.0..=1.0).contains(x) || !(0.0..=1.0).contains(y) {
+                    issues.push(ValidationIssue {
+                        field: format!("annotations/{i}/position"),
+                        reason: "position_out_of_range".into(),
+                    });
+                }
+            }
+            AnnotationKind::Unsupported => {
+                // Older projects can carry an Unsupported variant after a
+                // forward-compat change; carrying it through is fine, but its
+                // position never had any value to validate against. No-op.
+            }
+        }
+    }
+
+    // Frame-level controls
+    if !(0.0..=50.0).contains(&s.border_radius) {
+        issues.push(ValidationIssue {
+            field: "borderRadius".into(),
+            reason: "border_radius_out_of_range".into(),
+        });
+    }
+    if !(0.0..=20.0).contains(&s.padding) {
+        issues.push(ValidationIssue {
+            field: "padding".into(),
+            reason: "padding_out_of_range".into(),
+        });
+    }
+    if !s.cursor_size.is_finite() || s.cursor_size < 0.0 {
+        issues.push(ValidationIssue {
+            field: "cursorSize".into(),
+            reason: "cursor_size_negative".into(),
+        });
+    }
+    // `cursor_smoothing` is exposed as a 0..100 slider on the UI; the
+    // historical default is 50.0 and the export treats it as a percent.
+    if !s.cursor_smoothing.is_finite() || !(0.0..=100.0).contains(&s.cursor_smoothing) {
+        issues.push(ValidationIssue {
+            field: "cursorSmoothing".into(),
+            reason: "cursor_smoothing_out_of_range".into(),
+        });
+    }
+    if !s.cursor_highlight_opacity.is_finite()
+        || !(0.0..=100.0).contains(&s.cursor_highlight_opacity)
+    {
+        issues.push(ValidationIssue {
+            field: "cursorHighlightOpacity".into(),
+            reason: "cursor_highlight_opacity_out_of_range".into(),
+        });
+    }
+
+    // Per-segment speed overrides
+    for (i, sp) in s.segment_speeds.iter().enumerate() {
+        if !sp.speed.is_finite() || sp.speed <= 0.0 {
+            issues.push(ValidationIssue {
+                field: format!("segmentSpeeds/{i}/speed"),
+                reason: "speed_non_positive".into(),
+            });
+        }
+    }
+
+    if issues.is_empty() {
+        Ok(())
+    } else {
+        Err(issues)
+    }
+}
+
+#[cfg(test)]
+mod project_timeline_tests {
+    use super::*;
+    use crate::render::graph::{CutRange, RenderState, SegmentSpeed};
+
+    fn s(start: f64, end: f64) -> CutRange {
+        CutRange {
+            start,
+            end,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn sp(start: f64, speed: f64) -> SegmentSpeed {
+        SegmentSpeed { start, speed }
+    }
+
+    #[test]
+    fn empty_state_matches_source_duration() {
+        let st = RenderState::default();
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.source_duration, 30.0);
+        assert_eq!(tl.trimmed_duration, 0.0);
+        assert_eq!(tl.output_duration, 0.0);
+        assert!(tl.cuts.is_empty());
+        assert!(tl.kept_segments.is_empty());
+    }
+
+    #[test]
+    fn cuts_shorten_output_duration() {
+        let st = RenderState {
+            trim_end: 20.0,
+            cuts: vec![s(5.0, 7.0)],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.trimmed_duration, 20.0);
+        assert!((tl.output_duration - 18.0).abs() < 1e-6);
+        assert_eq!(tl.cuts.len(), 1);
+        assert_eq!(tl.cuts[0].start, 5.0);
+        assert_eq!(tl.cuts[0].end, 7.0);
+    }
+
+    #[test]
+    fn split_points_slice_kept_segments_at_1x() {
+        let st = RenderState {
+            trim_end: 20.0,
+            split_points: vec![8.0],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert_eq!(tl.kept_segments.len(), 2);
+        assert_eq!(
+            tl.kept_segments[0],
+            KeptSegment {
+                start: 0.0,
+                end: 8.0,
+                speed: 1.0
+            }
+        );
+        assert_eq!(
+            tl.kept_segments[1],
+            KeptSegment {
+                start: 8.0,
+                end: 20.0,
+                speed: 1.0
+            }
+        );
+    }
+
+    #[test]
+    fn speed_warp_shortens_output_at_2x() {
+        // Anchors are ORIGINAL seconds; first kept segment starts at trim_start=0,
+        // so a 2× override anchored at original t=0 covers the whole clip.
+        let st = RenderState {
+            trim_end: 10.0,
+            segment_speeds: vec![sp(0.0, 2.0)],
+            ..RenderState::default()
+        };
+        let tl = derive_project_timeline(&st, 30.0);
+        assert!(
+            (tl.output_duration - 5.0).abs() < 1e-6,
+            "got {}",
+            tl.output_duration
+        );
+        assert!((tl.kept_segments[0].speed - 2.0).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod validate_tests {
+    use super::*;
+    use crate::render::graph::{CutRange, SegmentSpeed};
+    use crate::render::node_types::ZoomRegion;
+
+    fn cut(start: f64, end: f64) -> CutRange {
+        CutRange {
+            start,
+            end,
+            extra: serde_json::Map::new(),
+        }
+    }
+
+    fn sp(start: f64, speed: f64) -> SegmentSpeed {
+        SegmentSpeed { start, speed }
+    }
+
+    #[test]
+    fn default_state_is_valid() {
+        let st = RenderState::default();
+        eprintln!(
+            "default: trim_start={} trim_end={} cursor_smoothing={} cursor_size={} padding={} border_radius={}",
+            st.trim_start, st.trim_end, st.cursor_smoothing, st.cursor_size, st.padding, st.border_radius,
+        );
+        let err = validate_render_state(&st, 30.0);
+        if let Err(issues) = &err {
+            eprintln!("default state issues: {issues:?}");
+        }
+        assert!(err.is_ok(), "default state should be valid: {err:?}");
+    }
+
+    fn reason<'a>(issues: &'a [ValidationIssue], field: &str) -> Option<&'a str> {
+        issues
+            .iter()
+            .find(|i| i.field == field)
+            .map(|i| i.reason.as_str())
+    }
+
+    #[test]
+    fn trim_invariants() {
+        // trim_end < trim_start
+        let st = RenderState {
+            trim_start: 10.0,
+            trim_end: 5.0,
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "trimEnd"), Some("trim_end_before_start"));
+
+        // trim_end > source_duration
+        let st = RenderState {
+            trim_start: 0.0,
+            trim_end: 100.0,
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "trimEnd"), Some("trim_end_exceeds_source"));
+
+        // negative trim_start
+        let st = RenderState {
+            trim_start: -1.0,
+            trim_end: 10.0,
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "trimStart"), Some("non_negative"));
+    }
+
+    #[test]
+    fn cut_invalid_when_end_before_start_or_outside_trim() {
+        let mut st = RenderState {
+            trim_start: 0.0,
+            trim_end: 20.0,
+            ..RenderState::default()
+        };
+        st.cuts.push(cut(8.0, 5.0));
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "cuts/0/end"), Some("cut_end_before_start"));
+
+        st.cuts.clear();
+        st.cuts.push(cut(25.0, 28.0));
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "cuts/0"), Some("cut_out_of_trim"));
+    }
+
+    #[test]
+    fn overlapping_cuts_are_rejected() {
+        let st = RenderState {
+            trim_start: 0.0,
+            trim_end: 20.0,
+            cuts: vec![cut(5.0, 10.0), cut(8.0, 12.0)],
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(reason(&err, "cuts/1"), Some("cut_overlap"));
+    }
+
+    #[test]
+    fn zoom_scale_must_be_in_range() {
+        let st = RenderState {
+            trim_end: 10.0,
+            zoom_regions: vec![ZoomRegion {
+                start: 0.0,
+                end: 5.0,
+                scale: 5.0,
+                ease_in: Default::default(),
+                ease_out: Default::default(),
+                ramp_in: 0.0,
+                ramp_out: 0.0,
+                center_x: 0.5,
+                center_y: 0.5,
+                hidden: false,
+                motion_blur: 0.0,
+                extra: serde_json::Map::new(),
+            }],
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(
+            reason(&err, "zoomRegions/0/scale"),
+            Some("scale_out_of_range")
+        );
+    }
+
+    #[test]
+    fn border_radius_out_of_range() {
+        let st = RenderState {
+            trim_end: 10.0,
+            border_radius: 60.0,
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(
+            reason(&err, "borderRadius"),
+            Some("border_radius_out_of_range")
+        );
+    }
+
+    #[test]
+    fn segment_speed_must_be_positive() {
+        let st = RenderState {
+            trim_end: 10.0,
+            segment_speeds: vec![sp(0.0, -1.0)],
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert_eq!(
+            reason(&err, "segmentSpeeds/0/speed"),
+            Some("speed_non_positive")
+        );
+    }
+
+    #[test]
+    fn validator_collects_all_issues() {
+        let st = RenderState {
+            trim_start: -1.0,
+            trim_end: 100.0,
+            border_radius: 100.0,
+            ..RenderState::default()
+        };
+        let err = validate_render_state(&st, 30.0).unwrap_err();
+        assert!(err.len() >= 3, "got only {} issues: {err:?}", err.len());
+    }
 }
 
 #[tauri::command]

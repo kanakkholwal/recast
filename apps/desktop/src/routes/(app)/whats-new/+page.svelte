@@ -3,7 +3,7 @@
   import { KIND_META, RELEASES, groupChanges } from "$constants/changelog";
   import { whatsNew } from "$lib/stores/whats-new.svelte";
   import { GithubBrand } from "@recast/ui/brand-icons";
-  import { Sparkles } from "@lucide/svelte";
+  import { AiWand } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Markdown } from "@recast/ui/markdown";
   import { onMount } from "svelte";
@@ -25,7 +25,7 @@
       <span
         class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
       >
-        <Sparkles class="size-3 text-primary" />
+        <AiWand class="size-3 text-primary" />
         Changelog
       </span>
       <h1
@@ -104,7 +104,7 @@
                 <li
                   class="flex items-start gap-2 rounded-lg border border-border/50 bg-card/40 px-3 py-2 text-[12.5px] leading-relaxed text-foreground"
                 >
-                  <Sparkles class="mt-0.5 size-3.5 shrink-0 text-primary" />
+                  <AiWand class="mt-0.5 size-3.5 shrink-0 text-primary" />
                   <span><Markdown inline source={h} /></span>
                 </li>
               {/each}

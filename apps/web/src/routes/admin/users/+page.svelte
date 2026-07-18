@@ -8,7 +8,7 @@
 	  Search,
 	  ShieldOff,
 	  X,
-	} from "@lucide/svelte";
+	} from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
 	import { Input } from "@recast/ui/input";

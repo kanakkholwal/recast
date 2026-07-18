@@ -11,7 +11,7 @@
 		passwordsMatch,
 		scorePasswordStrength,
 	} from "$lib/auth/password.logic";
-	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@lucide/svelte";
+	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
 	import { Button } from "@recast/ui/button";
 	import { Checkbox } from "@recast/ui/checkbox";
 	import { Input } from "@recast/ui/input";
