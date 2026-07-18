@@ -196,6 +196,30 @@ pub fn set_close_to_tray(
     Ok(())
 }
 
+/// Whether `setup()` should attempt to install the `recast` CLI on the
+/// user's PATH on first launch. The settings toggle mirrors this — flipping
+/// it off stops future auto-installs; the user can still install manually
+/// via the Install button beside it.
+#[tauri::command]
+pub fn get_cli_auto_install(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(state.config.read().cli_auto_install)
+}
+
+#[tauri::command]
+pub fn set_cli_auto_install(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    enabled: bool,
+) -> AppResult<()> {
+    let snapshot = {
+        let mut config = state.config.write();
+        config.cli_auto_install = enabled;
+        config.clone()
+    };
+    save_config(&app, &snapshot);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn get_window_transparency(state: State<'_, AppState>) -> AppResult<bool> {
     Ok(state.config.read().window_transparency)

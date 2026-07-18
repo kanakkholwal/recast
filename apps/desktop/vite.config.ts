@@ -42,7 +42,6 @@ export default defineConfig({
 	// and emit a spurious "failed to resolve" warning.
 	optimizeDeps: {
 		include: [
-			'@recast/icons',
 			'bits-ui',
 			'clsx',
 			'mode-watcher',

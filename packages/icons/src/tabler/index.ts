@@ -270,8 +270,11 @@ export { IconX as X } from "@tabler/icons-svelte";
 export { IconCircleX as XCircle } from "@tabler/icons-svelte";
 export { IconBolt as Zap } from "@tabler/icons-svelte";
 export { IconZoomIn as ZoomIn } from "@tabler/icons-svelte";
-
+export { IconZoomOut as ZoomOut } from "@tabler/icons-svelte";
+export { IconPlayerRecord as Record } from "@tabler/icons-svelte";
+export { IconBroadcast as Broadcast } from "@tabler/icons-svelte";
 // Filled-via-name variants.
+export { IconPlayerRecordFilled as RecordFilled } from '@tabler/icons-svelte';
 export { IconCheckFilled as CheckFilled } from "@tabler/icons-svelte";
 export { IconChevronDownFilled as ChevronDownFilled } from "@tabler/icons-svelte";
 export { IconChevronRightFilled as ChevronRightFilled } from "@tabler/icons-svelte";

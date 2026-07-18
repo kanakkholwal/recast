@@ -139,6 +139,7 @@ windows = { version = "0.58.0", features = [
     "Win32_Devices_FunctionDiscovery",
     "Win32_Media_Audio",
     "Win32_System_SystemInformation",
+    "Win32_System_Threading",
     # AttachConsole + CONOUT$/CONIN$ rebind so the headless CLI branch can
     # print to the launching terminal from the GUI-subsystem release exe.
     "Win32_System_Console",

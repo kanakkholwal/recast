@@ -214,6 +214,7 @@ export interface CliInstallStatus {
 	onPath: boolean;
 	binDir: string;
 	detail: string;
+	modifiedRcFiles?: string[];
 }
 
 /** Current PATH state of the `recast` command line tool. */
@@ -229,6 +230,15 @@ export function installCli(): Promise<string> {
 /** Remove `recast` from the user's PATH. Returns a human-readable result message. */
 export function uninstallCli(): Promise<string> {
 	return invoke<string>("uninstall_cli");
+}
+
+/** Whether `setup()` auto-installs the CLI on first launch. Backed by
+ *  `AppConfig.cli_auto_install` (default true). */
+export function getCliAutoInstall(): Promise<boolean> {
+	return invoke<boolean>("get_cli_auto_install");
+}
+export function setCliAutoInstall(enabled: boolean): Promise<void> {
+	return invoke<void>("set_cli_auto_install", { enabled });
 }
 
 /**

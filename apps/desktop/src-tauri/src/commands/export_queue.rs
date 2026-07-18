@@ -320,8 +320,9 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
 
 // --- Commands ---
 
-/// Queue an export. Persists the (heavy, self-contained) render payload to disk,
-/// inserts a `queued` row, and wakes the worker. Returns once the job is durably
+/// Queue an export. Validates the render state against the source's metadata,
+/// then persists the (heavy, self-contained) render payload to disk, inserts
+/// a `queued` row, and wakes the worker. Returns once the job is durably
 /// queued; the export itself runs in the background.
 #[tauri::command]
 pub async fn enqueue_export(
@@ -329,6 +330,44 @@ pub async fn enqueue_export(
     request: ExportRequest,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // Fail-fast validation: probe the source's metadata on a blocking worker,
+    // run `validate_render_state` against it, and reject bad payloads BEFORE
+    // we serialize / persist. The cost is one extra ffprobe spawn per
+    // enqueue; the win is that an agent's bad JSON never reaches the
+    // eventual FFmpeg filter graph (where it manifests as a confusing crash
+    // mid-encode instead of a structured error at the IPC door).
+    let input_path = PathBuf::from(&request.input_path);
+    let source_video: PathBuf =
+        if input_path.extension().and_then(|value| value.to_str()) == Some("recast") {
+            match crate::project::reader::open_project(&input_path) {
+                Ok(p) => p.recording_path,
+                Err(e) => {
+                    return Err(AppError::msg(format!(
+                        "enqueue_export: open project failed: {e}"
+                    )));
+                }
+            }
+        } else {
+            input_path.clone()
+        };
+    let source_meta = tauri::async_runtime::spawn_blocking({
+        let source = source_video.clone();
+        move || crate::commands::ffmpeg::probe_video_metadata(&source)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("probe source join error: {e}")))?
+    .map_err(AppError::msg)?;
+    if let Err(issues) =
+        crate::commands::validate_render_state(&request.render_state, source_meta.duration)
+    {
+        return Err(AppError::msg(format!(
+            "enqueue_export: render state invalid ({} issue{}): {}",
+            issues.len(),
+            if issues.len() == 1 { "" } else { "s" },
+            serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}")),
+        )));
+    }
+
     let id = request.export_id.clone();
     let source_path = request.input_path.clone();
     let filename = base_name(&source_path);

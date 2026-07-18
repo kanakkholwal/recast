@@ -327,7 +327,40 @@ pub fn run() {
                 profiles_initialized: std::sync::atomic::AtomicBool::new(profiles_initialized),
                 db: crate::db::Db::open(handle),
                 export_wake: std::sync::Arc::new(tokio::sync::Notify::new()),
+                editor_session: parking_lot::RwLock::new(commands::types::EditorSession::default()),
             });
+
+            // Restore a previously-held editor lock if its holder is still
+            // alive. Best-effort — failure leaves the lock idle.
+            let _ =
+                commands::load_on_startup(app.state::<commands::types::AppState>().inner(), handle);
+
+            // First-launch auto-install of the `recast` CLI: a fresh user
+            // shipping the app out of the box should be able to open a
+            // terminal and run `recast --help` without first clicking the
+            // settings toggle. Runs once (gated by `cli_install_attempted`)
+            // and never blocks the UI thread — the install itself is fast
+            // (a symlink + a single rc-file write on Unix; one registry
+            // key + a broadcast on Windows). The user can opt out via
+            // `cli_auto_install: false` from the settings panel; the verb
+            // `recast uninstall` (or the GUI button) also stamps the setting
+            // so an explicit removal is sticky.
+            let app_state = app.state::<commands::types::AppState>();
+            {
+                let mut cfg = app_state.config.write();
+                if !cfg.cli_install_attempted {
+                    cfg.cli_install_attempted = true;
+                    commands::system::save_config(handle, &cfg);
+                    let cli_auto = cfg.cli_auto_install;
+                    drop(cfg);
+                    if cli_auto && !crate::path_install::status().on_path {
+                        match crate::path_install::install() {
+                            Ok(msg) => log::info!("cli auto-install: {msg}"),
+                            Err(e) => log::warn!("cli auto-install failed: {e}"),
+                        }
+                    }
+                }
+            }
 
             // Export queue: recover any job left mid-run by an unclean shutdown
             // (mark it interrupted), then start the single serial worker that
@@ -562,6 +595,8 @@ pub fn run() {
             commands::open_log_dir,
             commands::get_close_to_tray,
             commands::set_close_to_tray,
+            commands::get_cli_auto_install,
+            commands::set_cli_auto_install,
             commands::get_hide_panel_from_capture,
             commands::set_hide_panel_from_capture,
             commands::get_window_transparency,
@@ -591,7 +626,7 @@ pub fn run() {
         .run(|app_handle, event| {
             // RAII for global-shortcut registrations. The plugin doesn't
             // auto-release on Tauri shutdown, so an unclean close (crash,
-            // force-kill from Task Manager, dev/prod coexistence where one
+            // force-kill via Task Manager, dev/prod coexistence where one
             // instance is killed while another holds the slot) leaves the
             // OS-level hotkey bound to a dead process and the next launch
             // logs `HotKey already registered` for the lifetime of the OS.
@@ -610,6 +645,12 @@ pub fn run() {
                         }
                     }
                 }
+                // Final flush of the editor lock snapshot to disk so a
+                // managed shutdown doesn't strand a held lock in memory
+                // only. The next boot's PID-alive check recovers it
+                // correctly; a force-kill leaves the snapshot stale, which
+                // the PID check rejects and clears.
+                commands::persist(app_handle.state::<AppState>().inner(), app_handle);
             }
 
             // macOS/iOS deliver file-association opens (a double-clicked

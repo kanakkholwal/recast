@@ -18,6 +18,9 @@ use interprocess::local_socket::prelude::*;
 use interprocess::local_socket::{GenericNamespaced, ListenerOptions, Stream};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::Emitter;
+
+use crate::render::graph::RenderState;
 
 /// Namespaced socket name. Maps to `\\.\pipe\<name>` on Windows and an abstract
 /// or temp-dir socket on Unix. One app per user, so a fixed name is fine.
@@ -151,6 +154,8 @@ fn watch_event_names(params: &Value) -> Vec<String> {
     const REC: &[&str] = &["recording:started", "recording:stopped"];
     const SELECTION: &[&str] = &["capture-intent:changed"];
     const PROFILES: &[&str] = &["recording-profiles:changed"];
+    const EXPORT: &[&str] = &["export-state", "export-jobs-changed"];
+    const EDITOR: &[&str] = &["editor-session:changed", "editor-state:changed"];
     let mut out: Vec<String> = Vec::new();
     match params.get("events").and_then(Value::as_array) {
         Some(groups) if !groups.is_empty() => {
@@ -159,6 +164,8 @@ fn watch_event_names(params: &Value) -> Vec<String> {
                     Some("rec") => out.extend(REC.iter().map(|s| s.to_string())),
                     Some("selection") => out.extend(SELECTION.iter().map(|s| s.to_string())),
                     Some("profiles") => out.extend(PROFILES.iter().map(|s| s.to_string())),
+                    Some("export") => out.extend(EXPORT.iter().map(|s| s.to_string())),
+                    Some("editor") => out.extend(EDITOR.iter().map(|s| s.to_string())),
                     _ => {}
                 }
             }
@@ -167,6 +174,8 @@ fn watch_event_names(params: &Value) -> Vec<String> {
             out.extend(REC.iter().map(|s| s.to_string()));
             out.extend(SELECTION.iter().map(|s| s.to_string()));
             out.extend(PROFILES.iter().map(|s| s.to_string()));
+            out.extend(EXPORT.iter().map(|s| s.to_string()));
+            out.extend(EDITOR.iter().map(|s| s.to_string()));
         }
     }
     out.sort();
@@ -480,8 +489,1262 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 .ok_or_else(|| format!("no export job with id '{id}'"))?;
             serde_json::to_value(job).map_err(|e| e.to_string())
         }
+        // Phase B write-lifecycle. `editor-session:changed` is emitted by each
+        // verb that takes/releases the lock so a `recast watch editor` stream
+        // sees the transition in real time.
+        "editor.lock" => {
+            use crate::commands::types::EditorWriterKind;
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.lock requires a path")?;
+            let path = std::path::PathBuf::from(path_str);
+            let kind_str = params
+                .get("kind")
+                .and_then(Value::as_str)
+                .unwrap_or("agent");
+            let kind = match kind_str {
+                "ui" => EditorWriterKind::Ui,
+                "agent" => EditorWriterKind::Agent,
+                other => return Err(format!("editor.lock: unknown kind '{other}'")),
+            };
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.lock requires a writerId")?
+                .to_string();
+            crate::commands::try_acquire_write(state.inner(), path, kind, writer_id)?;
+            let app_clone = app.clone();
+            crate::commands::persist(state.inner(), &app_clone);
+            let _ = app.emit("editor-session:changed", serde_json::json!({}));
+            serde_json::to_value(crate::commands::snapshot(state.inner()))
+                .map_err(|e| e.to_string())
+        }
+        "editor.unlock" => {
+            let force = params
+                .get("force")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let writer_id = params.get("writerId").and_then(Value::as_str).unwrap_or("");
+            let released = if force {
+                let prior = crate::commands::force_release(state.inner());
+                if let Some(kind) = prior {
+                    log::info!("editor: force-released lock held by {kind:?}");
+                }
+                prior.is_some()
+            } else {
+                crate::commands::release_if_owner(state.inner(), writer_id)
+            };
+            if released {
+                let app_clone = app.clone();
+                crate::commands::persist(state.inner(), &app_clone);
+                let _ = app.emit("editor-session:changed", serde_json::json!({}));
+            }
+            Ok(serde_json::json!({ "released": released }))
+        }
+        "editor.session" => serde_json::to_value(crate::commands::snapshot(state.inner()))
+            .map_err(|e| e.to_string()),
+        "editor.patch" => {
+            // Replace the project's render state with the supplied JSON.
+            // Validates against the source's metadata before any disk write.
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.patch requires a path")?;
+            let path = std::path::PathBuf::from(path_str);
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.patch requires a writerId")?
+                .to_string();
+            // Acquire (no-op if already held by the same caller).
+            crate::commands::try_acquire_write(
+                state.inner(),
+                path.clone(),
+                crate::commands::types::EditorWriterKind::Agent,
+                writer_id.clone(),
+            )?;
+            // Load + parse the new state.
+            let new_state: crate::render::graph::RenderState =
+                serde_json::from_value(params.get("renderState").cloned().unwrap_or(Value::Null))
+                    .map_err(|e| format!("editor.patch: invalid render state JSON: {e}"))?;
+            // Probe source metadata for validation.
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            if let Err(issues) =
+                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
+            {
+                return Err(format!(
+                    "validation failed: {}",
+                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
+                ));
+            }
+            // Persist edits.json via the same path the GUI uses.
+            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
+            tauri::async_runtime::block_on(crate::commands::save_project_edits(
+                path_str.to_string(),
+                edits_json,
+            ))
+            .map_err(|e| e.to_string())?;
+            let app_clone = app.clone();
+            let _ = app.emit(
+                "editor-state:changed",
+                serde_json::json!({ "path": path_str }),
+            );
+            crate::commands::record_activity(state.inner());
+            crate::commands::persist(state.inner(), &app_clone);
+            Ok(serde_json::json!({ "applied": true }))
+        }
+        "editor.trim" => {
+            // Small targeted edit: load current state, apply trim change,
+            // validate, save.
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.trim requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.trim requires a writerId")?
+                .to_string();
+            let start = params
+                .get("trimStart")
+                .and_then(Value::as_f64)
+                .ok_or("editor.trim requires trimStart")?;
+            let end = params
+                .get("trimEnd")
+                .and_then(Value::as_f64)
+                .ok_or("editor.trim requires trimEnd")?;
+            let path = std::path::PathBuf::from(path_str);
+            crate::commands::try_acquire_write(
+                state.inner(),
+                path.clone(),
+                crate::commands::types::EditorWriterKind::Agent,
+                writer_id.clone(),
+            )?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let mut new_state = doc.render_state;
+            new_state.trim_start = start;
+            new_state.trim_end = end;
+            if let Err(issues) =
+                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
+            {
+                return Err(format!(
+                    "validation failed: {}",
+                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
+                ));
+            }
+            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
+            tauri::async_runtime::block_on(crate::commands::save_project_edits(
+                path_str.to_string(),
+                edits_json,
+            ))
+            .map_err(|e| e.to_string())?;
+            crate::commands::record_activity(state.inner());
+            let app_clone = app.clone();
+            crate::commands::persist(state.inner(), &app_clone);
+            let _ = app.emit(
+                "editor-state:changed",
+                serde_json::json!({ "path": path_str }),
+            );
+            Ok(serde_json::json!({ "trimStart": start, "trimEnd": end }))
+        }
+        "editor.cut.add" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.cut.add requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.cut.add requires a writerId")?
+                .to_string();
+            let start = params
+                .get("start")
+                .and_then(Value::as_f64)
+                .ok_or("editor.cut.add requires start")?;
+            let end = params
+                .get("end")
+                .and_then(Value::as_f64)
+                .ok_or("editor.cut.add requires end")?;
+            let path = std::path::PathBuf::from(path_str);
+            crate::commands::try_acquire_write(
+                state.inner(),
+                path,
+                crate::commands::types::EditorWriterKind::Agent,
+                writer_id.clone(),
+            )?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let mut new_state = doc.render_state;
+            new_state.cuts.push(crate::render::graph::CutRange {
+                start,
+                end,
+                extra: serde_json::Map::new(),
+            });
+            if let Err(issues) =
+                crate::commands::validate_render_state(&new_state, doc.metadata.duration)
+            {
+                return Err(format!(
+                    "validation failed: {}",
+                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
+                ));
+            }
+            let edits_json = serde_json::to_string(&new_state).map_err(|e| e.to_string())?;
+            tauri::async_runtime::block_on(crate::commands::save_project_edits(
+                path_str.to_string(),
+                edits_json,
+            ))
+            .map_err(|e| e.to_string())?;
+            crate::commands::record_activity(state.inner());
+            let app_clone = app.clone();
+            crate::commands::persist(state.inner(), &app_clone);
+            let _ = app.emit(
+                "editor-state:changed",
+                serde_json::json!({ "path": path_str }),
+            );
+            Ok(serde_json::json!({ "added": { "start": start, "end": end } }))
+        }
+        // ---- Timeline: cuts, zoom regions, split points, segment speeds, scene animations, annotations.
+        // The targeted verbs that follow each share the same shape:
+        //   • look up a row by either an id (annotations) or a value match (cuts,
+        //     split points, scene animations) or a positional index (zoom regions,
+        //     segment speeds).
+        //   • mutate, validate, persist — all routed through `patch_render_state`
+        //     so the lock/validator/event semantics stay identical across verbs.
+        // The result is whatever the closure returned; dispatch arms rebuild
+        // the wire payload outside the closure for clarity.
+        "editor.cut.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.cut.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(
+                doc.render_state
+                    .cuts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, c)| serde_json::json!({ "index": i, "start": c.start, "end": c.end }))
+                    .collect::<Vec<_>>(),
+            )
+            .map_err(|e| e.to_string())
+        }
+        "editor.cut.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.cut.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.cut.remove requires a writerId")?
+                .to_string();
+            // Identify by index. Falls back to `(start, end)` match when an
+            // `--index` wasn't provided; the validator guarantees no
+            // overlap, so `start==start && end==end` is unambiguous.
+            let target_index: Option<usize> = match params.get("index").cloned() {
+                Some(serde_json::Value::Number(n)) => Some(
+                    n.as_u64()
+                        .ok_or_else(|| "--index must be an integer".to_string())?
+                        as usize,
+                ),
+                Some(_) => return Err("--index must be an integer".into()),
+                None => None,
+            };
+            let start_match = params.get("start").and_then(Value::as_f64);
+            let end_match = params.get("end").and_then(Value::as_f64);
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let pos = match target_index {
+                        Some(i) if i < new_state.cuts.len() => i,
+                        Some(_) => return Err("cut index out of range".to_string()),
+                        None => {
+                            let s = start_match.ok_or(
+                                "editor.cut.remove requires --index or (--start AND --end)",
+                            )?;
+                            let e = end_match.ok_or(
+                                "editor.cut.remove requires --index or (--start AND --end)",
+                            )?;
+                            new_state
+                                .cuts
+                                .iter()
+                                .position(|c| {
+                                    (c.start - s).abs() < 1e-4 && (c.end - e).abs() < 1e-4
+                                })
+                                .ok_or_else(|| format!("no cut matching start={s}, end={e}"))?
+                        }
+                    };
+                    let removed = new_state.cuts.remove(pos);
+                    Ok(serde_json::json!({
+                        "removed": { "start": removed.start, "end": removed.end }
+                    }))
+                },
+            )
+        }
+        "editor.zoom.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let payload: Vec<serde_json::Value> = doc
+                .render_state
+                .zoom_regions
+                .iter()
+                .enumerate()
+                .map(|(i, z)| {
+                    serde_json::json!({
+                        "index": i,
+                        "start": z.start,
+                        "end": z.end,
+                        "scale": z.scale,
+                        "centerX": z.center_x,
+                        "centerY": z.center_y,
+                        "rampIn": z.ramp_in,
+                        "rampOut": z.ramp_out,
+                        "hidden": z.hidden,
+                    })
+                })
+                .collect();
+            serde_json::to_value(payload).map_err(|e| e.to_string())
+        }
+        "editor.zoom.add" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom.add requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom.add requires a writerId")?
+                .to_string();
+            let start = params.get("start").and_then(Value::as_f64).ok_or("start")?;
+            let end = params.get("end").and_then(Value::as_f64).ok_or("end")?;
+            let scale = params.get("scale").and_then(Value::as_f64).ok_or("scale")?;
+            let center_x = params.get("centerX").and_then(Value::as_f64).unwrap_or(0.5);
+            let center_y = params.get("centerY").and_then(Value::as_f64).unwrap_or(0.5);
+            let ramp_in = params.get("rampIn").and_then(Value::as_f64).unwrap_or(0.35);
+            let ramp_out = params
+                .get("rampOut")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.35);
+            let hidden = params
+                .get("hidden")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    use crate::render::easing::Easing;
+                    let region = crate::render::node_types::ZoomRegion {
+                        start,
+                        end,
+                        scale,
+                        ease_in: Easing::default(),
+                        ease_out: Easing::default(),
+                        ramp_in,
+                        ramp_out,
+                        center_x,
+                        center_y,
+                        hidden,
+                        motion_blur: 0.0,
+                        extra: serde_json::Map::new(),
+                    };
+                    let index = new_state.zoom_regions.len();
+                    new_state.zoom_regions.push(region);
+                    Ok(serde_json::json!({ "index": index, "start": start, "end": end }))
+                },
+            )
+        }
+        "editor.zoom.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.zoom.remove requires a writerId")?
+                .to_string();
+            let index = params
+                .get("index")
+                .and_then(Value::as_u64)
+                .ok_or("editor.zoom.remove requires --index")? as usize;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    if index >= new_state.zoom_regions.len() {
+                        return Err("zoom index out of range".to_string());
+                    }
+                    let removed = new_state.zoom_regions.remove(index);
+                    Ok(serde_json::json!({
+                        "removed": { "start": removed.start, "end": removed.end }
+                    }))
+                },
+            )
+        }
+        "editor.split-point.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.split-point.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc.render_state.split_points).map_err(|e| e.to_string())
+        }
+        "editor.split-point.add" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.split-point.add requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.split-point.add requires a writerId")?
+                .to_string();
+            let at = params
+                .get("at")
+                .and_then(Value::as_f64)
+                .ok_or("editor.split-point.add requires --at")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    if !new_state.split_points.contains(&at) {
+                        new_state.split_points.push(at);
+                        new_state
+                            .split_points
+                            .sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+                    }
+                    Ok(serde_json::json!({ "added": at }))
+                },
+            )
+        }
+        "editor.split-point.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.split-point.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.split-point.remove requires a writerId")?
+                .to_string();
+            let at = params
+                .get("at")
+                .and_then(Value::as_f64)
+                .ok_or("editor.split-point.remove requires --at")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let before = new_state.split_points.len();
+                    new_state.split_points.retain(|x| (*x - at).abs() > 1e-4);
+                    if new_state.split_points.len() == before {
+                        return Err(format!("no split point at {at}"));
+                    }
+                    Ok(serde_json::json!({ "removed": at }))
+                },
+            )
+        }
+        "editor.speed.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.speed.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            serde_json::to_value(doc.render_state.segment_speeds).map_err(|e| e.to_string())
+        }
+        "editor.speed.set" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.speed.set requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.speed.set requires a writerId")?
+                .to_string();
+            let segment_start = params
+                .get("segmentStart")
+                .and_then(Value::as_f64)
+                .ok_or("editor.speed.set requires --segment-start")?;
+            let rate = params
+                .get("rate")
+                .and_then(Value::as_f64)
+                .ok_or("editor.speed.set requires --rate")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let pos = new_state
+                        .segment_speeds
+                        .iter()
+                        .position(|s| (s.start - segment_start).abs() < 1e-4);
+                    match pos {
+                        Some(i) => new_state.segment_speeds[i].speed = rate,
+                        None => new_state
+                            .segment_speeds
+                            .push(crate::render::graph::SegmentSpeed {
+                                start: segment_start,
+                                speed: rate,
+                            }),
+                    }
+                    Ok(serde_json::json!({ "segmentStart": segment_start, "rate": rate }))
+                },
+            )
+        }
+        "editor.speed.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.speed.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.speed.remove requires a writerId")?
+                .to_string();
+            let segment_start = params
+                .get("segmentStart")
+                .and_then(Value::as_f64)
+                .ok_or("editor.speed.remove requires --segment-start")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let before = new_state.segment_speeds.len();
+                    new_state
+                        .segment_speeds
+                        .retain(|s| (s.start - segment_start).abs() > 1e-4);
+                    if new_state.segment_speeds.len() == before {
+                        return Err(format!(
+                            "no speed override at segment start {segment_start}"
+                        ));
+                    }
+                    Ok(serde_json::json!({ "removed": segment_start }))
+                },
+            )
+        }
+        "editor.annotations.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let payload: Vec<serde_json::Value> = doc
+                .render_state
+                .annotations
+                .iter()
+                .map(|a| serde_json::json!({ "id": a.id, "kind": annotation_kind_name(&a.kind) }))
+                .collect();
+            serde_json::to_value(payload).map_err(|e| e.to_string())
+        }
+        "editor.annotations.add" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.add requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.add requires a writerId")?
+                .to_string();
+            let kind_name = params
+                .get("kind")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.add requires --kind")?
+                .to_string();
+            let geometry = params
+                .get("geometry")
+                .cloned()
+                .ok_or("editor.annotations.add requires --geometry <JSON>")?;
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string())
+                .unwrap_or_else(|| {
+                    format!(
+                        "{}-{}",
+                        kind_name,
+                        std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_millis())
+                            .unwrap_or(0)
+                    )
+                });
+            let start = params
+                .get("start")
+                .and_then(Value::as_f64)
+                .ok_or("editor.annotations.add requires --start")?;
+            let end = params
+                .get("end")
+                .and_then(Value::as_f64)
+                .ok_or("editor.annotations.add requires --end")?;
+            let opacity = params.get("opacity").and_then(Value::as_f64).unwrap_or(1.0);
+            let name = params
+                .get("name")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+            let z_index = params
+                .get("z")
+                .and_then(Value::as_i64)
+                .map(|n| n as i32)
+                .unwrap_or(0);
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let kind = build_annotation_kind(&kind_name, &geometry)?;
+                    let annotation = crate::render::node_types::Annotation {
+                        id: id.clone(),
+                        start,
+                        end,
+                        ramp_in: 0.2,
+                        ramp_out: 0.2,
+                        ease_in: Default::default(),
+                        ease_out: Default::default(),
+                        stroke: Default::default(),
+                        fill: "rgba(59,130,246,0.20)".into(),
+                        kind,
+                        name: name.clone(),
+                        z_index,
+                        locked: false,
+                        hidden: false,
+                        opacity,
+                        glow: None,
+                        anchor: crate::render::node_types::AnnotationAnchor::default(),
+                    };
+                    new_state.annotations.push(annotation);
+                    Ok(serde_json::json!({ "id": id }))
+                },
+            )
+        }
+        "editor.annotations.update" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.update requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.update requires a writerId")?
+                .to_string();
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.update requires --id")?
+                .to_string();
+            let patch_obj = params
+                .get("patch")
+                .and_then(Value::as_object)
+                .ok_or("editor.annotations.update requires --patch <JSON object>")?
+                .clone();
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let pos = new_state
+                        .annotations
+                        .iter()
+                        .position(|a| a.id == id)
+                        .ok_or_else(|| format!("no annotation with id '{id}'"))?;
+                    let annotation_json = serde_json::to_value(&new_state.annotations[pos])
+                        .map_err(|e| format!("serialize: {e}"))?;
+                    let mut merged = annotation_json;
+                    if let Some(obj) = merged.as_object_mut() {
+                        for (k, v) in patch_obj.iter() {
+                            obj.insert(k.clone(), v.clone());
+                        }
+                    }
+                    let updated: crate::render::node_types::Annotation =
+                        serde_json::from_value(merged)
+                            .map_err(|e| format!("patch produced invalid annotation: {e}"))?;
+                    new_state.annotations[pos] = updated;
+                    Ok(serde_json::json!({ "id": id }))
+                },
+            )
+        }
+        "editor.annotations.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.remove requires a writerId")?
+                .to_string();
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("editor.annotations.remove requires --id")?
+                .to_string();
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let before = new_state.annotations.len();
+                    new_state.annotations.retain(|a| a.id != id);
+                    if new_state.annotations.len() == before {
+                        return Err(format!("no annotation with id '{id}'"));
+                    }
+                    Ok(serde_json::json!({ "removed": id }))
+                },
+            )
+        }
+        "editor.animations.list" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.animations.list requires a path")?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let payload: Vec<serde_json::Value> = doc
+                .render_state
+                .scene_animations
+                .iter()
+                .map(|a| {
+                    serde_json::json!({
+                        "start": a.start,
+                        "in": a.anim_in.as_ref().map(spec_to_json),
+                        "out": a.anim_out.as_ref().map(spec_to_json),
+                    })
+                })
+                .collect();
+            serde_json::to_value(payload).map_err(|e| e.to_string())
+        }
+        "editor.animations.remove" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.animations.remove requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.animations.remove requires a writerId")?
+                .to_string();
+            let start = params
+                .get("start")
+                .and_then(Value::as_f64)
+                .ok_or("editor.animations.remove requires --start")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let before = new_state.scene_animations.len();
+                    new_state
+                        .scene_animations
+                        .retain(|a| (a.start - start).abs() > 1e-4);
+                    if new_state.scene_animations.len() == before {
+                        return Err(format!("no scene animation at segment start {start}"));
+                    }
+                    Ok(serde_json::json!({ "removed": start }))
+                },
+            )
+        }
+        "editor.animations.add" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.animations.add requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.animations.add requires a writerId")?
+                .to_string();
+            let start = params
+                .get("start")
+                .and_then(Value::as_f64)
+                .ok_or("editor.animations.add requires --start")?;
+            let in_spec = params.get("in").cloned();
+            let out_spec = params.get("out").cloned();
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    // Replace any existing animation at this start; otherwise push.
+                    let anim_in: Option<crate::render::scene_anim::SceneAnimSpec> = match in_spec {
+                        Some(v) => Some(
+                            serde_json::from_value(v)
+                                .map_err(|e| format!("invalid --in spec: {e}"))?,
+                        ),
+                        None => None,
+                    };
+                    let anim_out: Option<crate::render::scene_anim::SceneAnimSpec> = match out_spec
+                    {
+                        Some(v) => Some(
+                            serde_json::from_value(v)
+                                .map_err(|e| format!("invalid --out spec: {e}"))?,
+                        ),
+                        None => None,
+                    };
+                    let anim = crate::render::scene_anim::SegmentAnim {
+                        start,
+                        anim_in,
+                        anim_out,
+                    };
+                    if let Some(pos) = new_state
+                        .scene_animations
+                        .iter()
+                        .position(|a| (a.start - start).abs() < 1e-4)
+                    {
+                        new_state.scene_animations[pos] = anim;
+                    } else {
+                        new_state.scene_animations.push(anim);
+                    }
+                    Ok(serde_json::json!({ "start": start }))
+                },
+            )
+        }
+        // Universal mutator: any scalar/struct field via dotted JSON pointer.
+        // Used as the escape hatch for every field that doesn't get its own
+        // targeted verb. `--value` accepts a JSON value (string for strings,
+        // number, true/false, array, object).
+        "editor.set" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("editor.set requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("editor.set requires a writerId")?
+                .to_string();
+            let field = params
+                .get("field")
+                .and_then(Value::as_str)
+                .ok_or("editor.set requires --field")?
+                .to_string();
+            let value = params
+                .get("value")
+                .cloned()
+                .ok_or("editor.set requires --value")?;
+            crate::commands::patch_render_state(
+                state.inner(),
+                app,
+                path_str,
+                &writer_id,
+                |new_state| {
+                    let mut state_json =
+                        serde_json::to_value(&*new_state).map_err(|e| e.to_string())?;
+                    crate::commands::apply_dotted_path_set(&mut state_json, &field, value)?;
+                    let updated: RenderState = serde_json::from_value(state_json)
+                        .map_err(|e| format!("set: invalid value at '{field}': {e}"))?;
+                    *new_state = updated;
+                    Ok(serde_json::json!({ "applied": true, "field": field }))
+                },
+            )
+        }
+        "export.start" => {
+            let path_str = params
+                .get("path")
+                .and_then(Value::as_str)
+                .ok_or("export.start requires a path")?;
+            let writer_id = params
+                .get("writerId")
+                .and_then(Value::as_str)
+                .ok_or("export.start requires a writerId")?
+                .to_string();
+            let format = params
+                .get("format")
+                .and_then(Value::as_str)
+                .unwrap_or("mp4")
+                .to_string();
+            let quality = params
+                .get("quality")
+                .and_then(Value::as_str)
+                .unwrap_or("balanced")
+                .to_string();
+            let speed = params
+                .get("speed")
+                .and_then(Value::as_str)
+                .map(|s| s.to_string());
+            let fps = params.get("fps").and_then(Value::as_f64);
+            let burn_captions = params
+                .get("burnCaptions")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let caption_sidecar = match params.get("captionSidecar") {
+                Some(Value::String(fmt)) if fmt == "vtt" || fmt == "srt" => {
+                    Some(crate::commands::types::CaptionSidecar {
+                        format: fmt.to_string(),
+                        transcript: doc_transcript(state.inner(), path_str, fmt)?,
+                    })
+                }
+                Some(Value::String(other)) => {
+                    return Err(format!(
+                        "captionSidecar must be 'vtt', 'srt', or absent; got '{other}'"
+                    ));
+                }
+                Some(Value::Null) | None => None,
+                _ => return Err("captionSidecar must be a string".into()),
+            };
+            let gif_settings = if format == "gif" {
+                let mut s = crate::commands::types::GifSettings::default();
+                if let Some(n) = params.get("gifFps").and_then(Value::as_u64) {
+                    s.fps = Some(n as u32);
+                }
+                if let Some(q) = params.get("gifQuality").and_then(Value::as_str) {
+                    if !matches!(q, "low" | "medium" | "high") {
+                        return Err(format!("gifQuality must be low|medium|high; got '{q}'"));
+                    }
+                    s.quality = q.to_string();
+                }
+                if let Some(loop_v) = params.get("gifLoop") {
+                    s.r#loop = loop_v.clone();
+                }
+                if let Some(d) = params.get("gifDither").and_then(Value::as_str) {
+                    if !matches!(d, "bayer" | "sierra2" | "none") {
+                        return Err(format!("gifDither must be bayer|sierra2|none; got '{d}'"));
+                    }
+                    s.dither = d.to_string();
+                }
+                Some(s)
+            } else {
+                None
+            };
+            // Validate `--speed` against the same enum the encode uses
+            // (`fast` | `balanced` | `quality`), if supplied.
+            if let Some(ref s) = speed {
+                if !matches!(s.as_str(), "fast" | "balanced" | "quality") {
+                    return Err(format!(
+                        "export.start: --speed must be fast|balanced|quality; got '{s}'"
+                    ));
+                }
+            }
+            let writer_id_for_lock = writer_id.clone();
+            let path_buf = std::path::PathBuf::from(path_str);
+            crate::commands::try_acquire_write(
+                state.inner(),
+                path_buf,
+                crate::commands::types::EditorWriterKind::Agent,
+                writer_id_for_lock,
+            )?;
+            let doc = tauri::async_runtime::block_on(crate::commands::load_editor_document(
+                path_str.to_string(),
+            ))
+            .map_err(|e| e.to_string())?;
+            let render_state = match params.get("renderState") {
+                Some(v) => serde_json::from_value(v.clone())
+                    .map_err(|e| format!("export.start: invalid renderState: {e}"))?,
+                None => doc.render_state,
+            };
+            if let Err(issues) =
+                crate::commands::validate_render_state(&render_state, doc.metadata.duration)
+            {
+                return Err(format!(
+                    "validation failed: {}",
+                    serde_json::to_string(&issues).unwrap_or_else(|_| format!("{issues:?}"))
+                ));
+            }
+            let request = crate::commands::types::ExportRequest {
+                export_id: format!("cli-{}-{}", std::process::id(), now_unix_ms()),
+                input_path: path_str.to_string(),
+                format,
+                quality,
+                speed,
+                render_state,
+                gif_settings,
+                fps,
+                burn_captions,
+                caption_sidecar,
+            };
+            tauri::async_runtime::block_on(crate::commands::enqueue_export(
+                app.clone(),
+                request.clone(),
+                state.clone(),
+            ))
+            .map_err(|e| e.to_string())?;
+            crate::commands::record_activity(state.inner());
+            Ok(serde_json::json!({
+                "exportId": request.export_id,
+                "format": request.format,
+                "quality": request.quality,
+                "speed": request.speed,
+                "fps": request.fps,
+                "burnCaptions": request.burn_captions,
+                "gifSettings": request.gif_settings,
+            }))
+        }
+        "export.cancel" => {
+            let id = params
+                .get("id")
+                .and_then(Value::as_str)
+                .ok_or("export.cancel requires an id")?;
+            tauri::async_runtime::block_on(crate::commands::cancel_export_job(
+                app.clone(),
+                id.to_string(),
+                state.clone(),
+            ))
+            .map_err(|e| e.to_string())?;
+            Ok(serde_json::json!({ "cancelled": id }))
+        }
         other => Err(format!("unknown method: {other}")),
     }
+}
+
+fn now_unix_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// Resolve the project's recorded transcript for a `CaptionSidecar`.
+///
+/// This is intentionally a no-op stub for now — the GUI export path is
+/// the canonical reader, and the CLI sidecar surfaces mirror only when
+/// a transcript exists. Callers should pass `--burn-captions` or
+/// `--caption-sidecar` only after verifying via `recast project show`
+/// that the project has a `transcript` populated in its render state.
+fn doc_transcript(
+    _state: &crate::commands::types::AppState,
+    _path: &str,
+    _format: &str,
+) -> Result<crate::transcription::Transcript, String> {
+    Ok(crate::transcription::Transcript {
+        engine: String::new(),
+        model_id: String::new(),
+        segments: Vec::new(),
+        language: None,
+    })
+}
+
+/// Map an `AnnotationKind` to its discriminant string ("rect", "ellipse",
+/// "arrow", "image", "blur", "text", "unsupported"). Used by the agent
+/// surface so a script can match by name without re-deriving the JSON
+/// shape.
+fn annotation_kind_name(kind: &crate::render::node_types::AnnotationKind) -> &'static str {
+    use crate::render::node_types::AnnotationKind::*;
+    match kind {
+        Rect { .. } => "rect",
+        Ellipse { .. } => "ellipse",
+        Arrow { .. } => "arrow",
+        Image { .. } => "image",
+        Blur { .. } => "blur",
+        Text { .. } => "text",
+        Unsupported => "unsupported",
+    }
+}
+
+/// Construct an `AnnotationKind` from a `--kind` discriminant + a `--geometry`
+/// JSON object. Keeps the per-kind geometry surface flat at the CLI edge so
+/// new kinds don't require new dispatch arms.
+fn build_annotation_kind(
+    kind_name: &str,
+    geometry: &serde_json::Value,
+) -> Result<crate::render::node_types::AnnotationKind, String> {
+    use crate::render::node_types::AnnotationKind;
+    let require_geom =
+        |missing: &str| -> Result<serde_json::Map<String, serde_json::Value>, String> {
+            geometry
+                .as_object()
+                .cloned()
+                .ok_or_else(|| format!("annotation --geometry must be a JSON object ({missing})"))
+        };
+    match kind_name {
+        "rect" => {
+            let obj = require_geom("need x, y, w, h")?;
+            Ok(AnnotationKind::Rect {
+                x: obj.get("x").and_then(Value::as_f64).ok_or("rect needs x")?,
+                y: obj.get("y").and_then(Value::as_f64).ok_or("rect needs y")?,
+                w: obj.get("w").and_then(Value::as_f64).ok_or("rect needs w")?,
+                h: obj.get("h").and_then(Value::as_f64).ok_or("rect needs h")?,
+                radius: obj.get("radius").and_then(Value::as_f64).unwrap_or(0.0),
+            })
+        }
+        "ellipse" => {
+            let obj = require_geom("need x, y, w, h")?;
+            Ok(AnnotationKind::Ellipse {
+                x: obj
+                    .get("x")
+                    .and_then(Value::as_f64)
+                    .ok_or("ellipse needs x")?,
+                y: obj
+                    .get("y")
+                    .and_then(Value::as_f64)
+                    .ok_or("ellipse needs y")?,
+                w: obj
+                    .get("w")
+                    .and_then(Value::as_f64)
+                    .ok_or("ellipse needs w")?,
+                h: obj
+                    .get("h")
+                    .and_then(Value::as_f64)
+                    .ok_or("ellipse needs h")?,
+            })
+        }
+        "arrow" => {
+            let obj = require_geom("need x1, y1, x2, y2")?;
+            Ok(AnnotationKind::Arrow {
+                x1: obj
+                    .get("x1")
+                    .and_then(Value::as_f64)
+                    .ok_or("arrow needs x1")?,
+                y1: obj
+                    .get("y1")
+                    .and_then(Value::as_f64)
+                    .ok_or("arrow needs y1")?,
+                x2: obj
+                    .get("x2")
+                    .and_then(Value::as_f64)
+                    .ok_or("arrow needs x2")?,
+                y2: obj
+                    .get("y2")
+                    .and_then(Value::as_f64)
+                    .ok_or("arrow needs y2")?,
+                head_size: obj.get("headSize").and_then(Value::as_f64).unwrap_or(0.2),
+            })
+        }
+        "blur" => {
+            let obj = require_geom("need x, y, w, h")?;
+            Ok(AnnotationKind::Blur {
+                x: obj.get("x").and_then(Value::as_f64).ok_or("blur needs x")?,
+                y: obj.get("y").and_then(Value::as_f64).ok_or("blur needs y")?,
+                w: obj.get("w").and_then(Value::as_f64).ok_or("blur needs w")?,
+                h: obj.get("h").and_then(Value::as_f64).ok_or("blur needs h")?,
+                strength: obj.get("strength").and_then(Value::as_f64).unwrap_or(0.5),
+                variant: obj
+                    .get("variant")
+                    .and_then(Value::as_str)
+                    .unwrap_or("solid")
+                    .to_string(),
+                tint_color: obj
+                    .get("tintColor")
+                    .and_then(Value::as_str)
+                    .unwrap_or("#000000")
+                    .to_string(),
+                radius: obj.get("radius").and_then(Value::as_f64).unwrap_or(0.0),
+            })
+        }
+        "image" => {
+            let obj = require_geom("need x, y, w, h, path")?;
+            Ok(AnnotationKind::Image {
+                x: obj
+                    .get("x")
+                    .and_then(Value::as_f64)
+                    .ok_or("image needs x")?,
+                y: obj
+                    .get("y")
+                    .and_then(Value::as_f64)
+                    .ok_or("image needs y")?,
+                w: obj
+                    .get("w")
+                    .and_then(Value::as_f64)
+                    .ok_or("image needs w")?,
+                h: obj
+                    .get("h")
+                    .and_then(Value::as_f64)
+                    .ok_or("image needs h")?,
+                path: obj
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                opacity: obj.get("opacity").and_then(Value::as_f64).unwrap_or(1.0),
+                radius: obj.get("radius").and_then(Value::as_f64).unwrap_or(0.0),
+            })
+        }
+        "text" => {
+            let obj = require_geom("need x, y, w, h")?;
+            Ok(AnnotationKind::Text {
+                x: obj.get("x").and_then(Value::as_f64).ok_or("text needs x")?,
+                y: obj.get("y").and_then(Value::as_f64).ok_or("text needs y")?,
+                w: obj.get("w").and_then(Value::as_f64).ok_or("text needs w")?,
+                h: obj.get("h").and_then(Value::as_f64).ok_or("text needs h")?,
+                content: obj
+                    .get("content")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                font_family: obj
+                    .get("fontFamily")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                font_size: obj.get("fontSize").and_then(Value::as_f64).unwrap_or(16.0),
+                font_weight: obj
+                    .get("fontWeight")
+                    .and_then(Value::as_f64)
+                    .unwrap_or(400.0),
+                color: obj
+                    .get("color")
+                    .and_then(Value::as_str)
+                    .unwrap_or("#ffffff")
+                    .to_string(),
+                align: obj
+                    .get("align")
+                    .and_then(Value::as_str)
+                    .unwrap_or("left")
+                    .to_string(),
+                line_height: obj.get("lineHeight").and_then(Value::as_f64).unwrap_or(1.2),
+            })
+        }
+        other => Err(format!("unknown annotation kind '{other}'")),
+    }
+}
+
+/// Render a `SceneAnimSpec` as the JSON object the GUI/agent see on disk.
+fn spec_to_json(spec: &crate::render::scene_anim::SceneAnimSpec) -> serde_json::Value {
+    serde_json::json!({
+        "kind": spec.kind,
+        "durationMs": spec.duration_ms,
+        "easing": spec.easing,
+        "dir": spec.dir,
+        "intensity": spec.intensity,
+    })
 }
 
 /// Stop the recording after `ms` on Tauri's runtime. Runs independently of the
