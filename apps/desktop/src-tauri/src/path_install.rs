@@ -320,14 +320,16 @@ mod platform {
 
     pub fn status() -> InstallStatus {
         let dir = dir_string().unwrap_or_default();
-        let in_process = std::env::var("PATH")
-            .unwrap_or_default()
-            .split(';')
-            .any(|p| p.trim().eq_ignore_ascii_case(&dir));
+        // Trust only the registry: the running process's PATH is whatever
+        // was inherited at app launch — dev launchers can include
+        // `target/debug/` (or a user manually added the binary's folder via
+        // sysdm.cpl), which would otherwise claim the CLI is "still
+        // installed" after we just uninstalled. The registry write is
+        // authoritative — install() writes it, uninstall() removes it.
         let in_registry = open_env()
             .map(|e| contains(&read_path(&e), &dir))
             .unwrap_or(false);
-        let on_path = in_process || in_registry;
+        let on_path = in_registry;
         InstallStatus {
             detail: if on_path {
                 "recast is on your PATH".into()
@@ -438,8 +440,17 @@ mod platform {
 
     pub fn status() -> InstallStatus {
         let dir = bin_dir();
-        let on_path = link_path().exists() && dir_on_path(&dir);
         let modified = rc_files_with_block().into_iter().collect::<Vec<_>>();
+        // `on_path` answers "can a NEW shell reach `recast`?" — not just
+        // "is the current process PATH inherited from the dev launcher?".
+        // On macOS dev mode the running app's PATH never picks up
+        // `~/.local/bin` (we don't re-source the shell), so reading the
+        // process env alone reports "not on PATH" even right after a
+        // successful install. OR'ing in the rc-file-modified marker
+        // reflects what the next shell session will see.
+        let symlink_ok = link_path().exists();
+        let new_shell_will_have_dir = dir_on_path(&dir) || !modified.is_empty();
+        let on_path = symlink_ok && new_shell_will_have_dir;
         InstallStatus {
             detail: if on_path {
                 "recast is on your PATH".into()

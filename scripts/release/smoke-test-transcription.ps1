@@ -136,7 +136,7 @@ if (-not $ExePath) {
     # for cross-compiled legs (macos-arm64, macos-x64); the plain
     # `target/release/` path matches the windows-x64 / linux-x64 legs
     # and any local `cargo build`.
-    $candidates = @()
+    $candidates =    @()
     if ($RustTarget) {
         $candidates += Join-Path $RepoRoot "apps/desktop/src-tauri/target/$RustTarget/release/recast$ExeExt"
     }
