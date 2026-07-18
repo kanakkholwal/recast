@@ -2,21 +2,27 @@
  * Conversion helpers shared by the web app's conversion tools (trim / mute /
  * compress / resize / transcode / extract-audio). Wraps MediaBunny's
  * `Conversion` API and adds progress + cancellation plumbing + consistent
- * error mapping. (PR-B will move the apps/web implementation here unchanged.)
+ * error mapping.
  *
  * Contract (REQUIREMENTS.md §5):
- * - Errors are always `MediaError` (never `Error`). Cancellation is a
- *   `MediaError` with `code: 'cancelled'`, not a string match.
+ * - Errors are always `ConvertError` (never `Error`). Cancellation is a
+ *   `ConvertError` with `code: 'cancelled'`, not a string match.
  * - Progress is reported in [0, 1] on the supplied `JobContext.onProgress`.
+ * - The caller owns the `Input`; this module never disposes it.
  */
 
-import type {
-	ConversionAudioOptions,
-	ConversionVideoOptions,
-	Input,
-	OutputFormat,
+import {
+	BufferTarget,
+	Conversion,
+	type ConversionAudioOptions,
+	type ConversionVideoOptions,
+	type Input,
+	Mp4OutputFormat,
+	Output,
+	type OutputFormat,
+	WebMOutputFormat,
 } from 'mediabunny';
-import type { JobContext } from './protocol';
+import { ConvertError, type JobContext } from './protocol';
 
 /** Container family the input file belongs to. */
 export type ContainerKind = 'mp4' | 'webm';
@@ -37,31 +43,65 @@ export interface ConversionParams {
 /**
  * Run a MediaBunny `Conversion` end-to-end against `input`. Returns the
  * final bytes. The caller owns `input`; we never dispose it.
- *
- * Note: real implementation lands in PR-B. The stub preserves the signature.
  */
 export async function runConversion(
-	_input: Input,
-	_params: ConversionParams,
-	_ctx: JobContext,
+	input: Input,
+	params: ConversionParams,
+	ctx: JobContext,
 ): Promise<ArrayBuffer> {
-	throw new Error('runConversion is not yet implemented — lands in PR-B');
+	const target = new BufferTarget();
+	const output = new Output({ format: params.outputFormat, target });
+
+	const conversion = await Conversion.init({
+		input,
+		output,
+		video: params.video,
+		audio: params.audio,
+		trim: params.trim,
+		showWarnings: false,
+	});
+	if (!conversion.isValid) {
+		throw new ConvertError(
+			'bad-input',
+			"This file can't be converted with these settings (no usable track).",
+		);
+	}
+	conversion.onProgress = (p) => ctx.onProgress(p);
+
+	const onAbort = () => void conversion.cancel();
+	ctx.signal.addEventListener('abort', onAbort, { once: true });
+	try {
+		await conversion.execute();
+	} catch (err) {
+		if (ctx.signal.aborted) throw new ConvertError('cancelled', 'Cancelled.');
+		throw new ConvertError('bad-input', err instanceof Error ? err.message : 'Conversion failed.');
+	} finally {
+		ctx.signal.removeEventListener('abort', onAbort);
+	}
+
+	if (!target.buffer) throw new ConvertError('internal', 'No output was produced.');
+	return target.buffer;
 }
 
 /**
  * Map a high-level `ContainerKind` to a concrete MediaBunny output format.
  * The caller picks the format; this helper just translates.
  */
-export function outputFormatFor(_kind: ContainerKind): OutputFormat {
-	throw new Error('outputFormatFor is not yet implemented — lands in PR-B');
+export function outputFormatFor(kind: ContainerKind): OutputFormat {
+	return kind === 'webm' ? new WebMOutputFormat() : new Mp4OutputFormat();
 }
 
 /**
  * Best-effort guess at the input's container family. Used by "keep the same
  * format" ops (trim, mute) so they don't force a needless transcode.
  */
-export async function inputContainerKind(_input: Input): Promise<ContainerKind> {
-	throw new Error('inputContainerKind is not yet implemented — lands in PR-B');
+export async function inputContainerKind(input: Input): Promise<ContainerKind> {
+	try {
+		const mime = await input.getMimeType();
+		return /webm|matroska|x-matroska/i.test(mime) ? 'webm' : 'mp4';
+	} catch {
+		return 'mp4';
+	}
 }
 
 /** Replace `name`'s extension with `ext`. */

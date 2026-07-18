@@ -56,7 +56,11 @@
 							"@phosphor-icons/svelte": "Reserved for future; use @recast/icons/ai for Phosphor duotone accents instead.",
 							"@phosphor-icons/svelte-duotone": "Use @recast/icons/ai for Phosphor duotone accents instead.",
 							"@phosphor-icons/core": "Vendored — do not import directly. AI accents live under @recast/icons/ai.",
-							"@phosphor-icons/web": "Use @recast/icons/ai for Phosphor duotone accents instead."
+							"@phosphor-icons/web": "Use @recast/icons/ai for Phosphor duotone accents instead.",
+							"mediabunny": "Import from @recast/media instead. Direct mediabunny imports are forbidden outside packages/media (see packages/media/REQUIREMENTS.md §5).",
+							"gifenc": "Import from @recast/media instead. The gifenc encoder is owned by @recast/media's encoders module.",
+							"@breezystack/lamejs": "Import from @recast/media instead. The MP3 encoder is owned by @recast/media's encoders module.",
+							"fflate": "Import from @recast/media instead. The zip helper is owned by @recast/media's encoders module."
 						}
 					}
 				}
@@ -66,6 +70,16 @@
 	"overrides": [
 		{
 			"includes": ["packages/icons/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": "off"
+					}
+				}
+			}
+		},
+		{
+			"includes": ["packages/media/**"],
 			"linter": {
 				"rules": {
 					"style": {

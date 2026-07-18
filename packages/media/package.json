@@ -11,6 +11,9 @@
 		}
 	},
 	"dependencies": {
+		"@breezystack/lamejs": "^1.2.7",
+		"fflate": "^0.8.3",
+		"gifenc": "^1.0.3",
 		"mediabunny": "^1.49.0"
 	},
 	"peerDependencies": {

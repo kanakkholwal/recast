@@ -27,6 +27,7 @@ export {
 } from './encoders';
 export type { MediaErrorCode } from './errors';
 export { MediaError } from './errors';
+export { handlers } from './handlers';
 export type { MediaSource } from './input';
 // input + conversion
 export { openInput } from './input';
@@ -43,11 +44,14 @@ export type {
 	ConvertErrorCode,
 	ConvertHandler,
 	ConvertJob,
-	ConvertJobOptions,
+	FromConvertWorker,
 	HandlerResult,
 	JobContext,
+	ToConvertWorker,
+	ToolOp,
+	ToolOptions,
 } from './protocol';
-// conversion protocol (apps/web handlers)
+// conversion protocol + handlers (apps/web conversion tools)
 export { ConvertError } from './protocol';
 // seek helpers (PR-D)
 export { nextCutWithin, snapToSeekTarget } from './seek';

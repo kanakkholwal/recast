@@ -103,9 +103,6 @@ importers:
       '@recast/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
-      '@recast/application':
-        specifier: workspace:*
-        version: link:../../packages/application
       '@recast/captions':
         specifier: workspace:*
         version: link:../../packages/captions
@@ -184,9 +181,6 @@ importers:
       '@azure/storage-blob':
         specifier: ^12.31.0
         version: 12.31.0
-      '@breezystack/lamejs':
-        specifier: ^1.2.7
-        version: 1.2.7
       '@docvia/source':
         specifier: ^0.3.1
         version: 0.3.1
@@ -229,21 +223,12 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(postgres@3.4.9)
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
       files-sdk:
         specifier: ^1.6.0
         version: 1.6.0(@aws-sdk/client-s3@3.1057.0)(@aws-sdk/s3-presigned-post@3.1057.0)(@aws-sdk/s3-request-presigner@3.1075.0)(@azure/core-auth@1.10.1)(@azure/storage-blob@12.31.0)(zod@4.4.3)
-      gifenc:
-        specifier: ^1.0.3
-        version: 1.0.3
       gsap:
         specifier: ^3.15.0
         version: 3.15.0
-      mediabunny:
-        specifier: ^1.49.0
-        version: 1.49.0
       mode-watcher:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.56.3)
@@ -299,6 +284,9 @@ importers:
       '@recast/icons':
         specifier: workspace:*
         version: link:../../packages/icons
+      '@recast/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@recast/player':
         specifier: workspace:*
         version: link:../../packages/player
@@ -412,6 +400,15 @@ importers:
 
   packages/media:
     dependencies:
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      gifenc:
+        specifier: ^1.0.3
+        version: 1.0.3
       mediabunny:
         specifier: ^1.49.0
         version: 1.49.0
