@@ -268,7 +268,7 @@
         <span
           class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur"
         >
-          <Film class="size-3 text-primary" />
+          <Video class="size-3 text-primary" />
           Library
         </span>
         <h1

@@ -369,7 +369,7 @@
               class={cn(
                 "grid size-7 shrink-0 place-items-center rounded-md",
                 selected?.installed && selected?.runnable
-                  ? "bg-primary/15 text-primary"
+                  ? "bg-ink/5 text-ink"
                   : "bg-muted/60 text-muted-foreground",
               )}
             >

@@ -51,7 +51,14 @@ pub struct RecordingEntry {
     pub filename: String,
     pub path: String,
     pub size_bytes: u64,
+    /// Birth time (fs creation time) in epoch seconds. Falls back to `modified`
+    /// on filesystems/platforms where birth time isn't reported (e.g. ext4).
+    /// Used to label the recording date in the library.
     pub created: u64,
+    /// Last-modified time in epoch seconds. Drives "what was I last editing"
+    /// surfaces like the library's Continue card — birth time can be stale if
+    /// the file was only touched (e.g. a thumbnail regen) after recording.
+    pub modified: u64,
     /// `.recast` only: a legacy v1 bundle the editor must migrate first.
     /// Detected from the ZIP central directory, no extraction.
     pub needs_migration: bool,
