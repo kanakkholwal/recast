@@ -109,6 +109,9 @@ importers:
       '@recast/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@recast/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui

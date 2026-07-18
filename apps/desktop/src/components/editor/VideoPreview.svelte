@@ -37,6 +37,8 @@
 		type IdlePeriodJS,
 	} from "./video-preview.logic";
 	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
+	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
+	import { isMediabunnyPreviewEnabled } from "$lib/playback/feature-flag";
 	import { PlaybackClock } from "$lib/playback/clock";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 	import { evalSceneAt } from "$lib/scenes/eval";
@@ -113,13 +115,16 @@
 	let bgTexReady = false;
 	let lastBgKey = "";
 
-	// WebCodecs preview engine (always on; auto-falls back to the <video> element
-	// when the WebView can't decode the source).
-	// When active, the composite samples a frame WE decode, not the <video>
-	// element's pixels, so jumping over a cut never waits on the native seek.
-	// The <video> element still drives the clock and audio sync (hybrid). Not
-	// $state: read only from the imperative draw loop.
-	let wcSource: WebCodecsVideoSource | null = null;
+	// Preview engine: either `WebCodecsVideoSource` (legacy, hand-rolled
+	// WebCodecs + mp4box pipeline — the default) or `MediabunnyVideoSource`
+	// (MediaBunny-backed, gated by the `?mbPreview=1` URL flag — opt-in for
+	// PR-D's landing strip). Both expose the same public surface so the rest
+	// of the draw loop is engine-agnostic. When active, the composite samples
+	// a frame WE decode, not the <video> element's pixels, so jumping over a
+	// cut never waits on the native seek. The <video> element still drives
+	// the clock and audio sync (hybrid). Not $state: read only from the
+	// imperative draw loop.
+	let wcSource: WebCodecsVideoSource | MediabunnyVideoSource | null = null;
 	let wcReady = false;
 	let loadedWcSrc = "";
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
@@ -1177,7 +1182,16 @@
 		wcSource?.dispose();
 		wcSource = null;
 		let cancelled = false;
-		WebCodecsVideoSource.create(src, store.metadata?.sizeBytes)
+		// Engine selection: opt into the MediaBunny pipeline via the
+		// `?mbPreview=1` URL flag. The legacy WebCodecs engine is the default;
+		// see `feature-flag.ts` for the toggle surface.
+		const factory: (
+			url: string,
+			size?: number,
+		) => Promise<WebCodecsVideoSource | MediabunnyVideoSource> = isMediabunnyPreviewEnabled()
+			? (url, size) => MediabunnyVideoSource.create(url, size) as Promise<MediabunnyVideoSource>
+			: (url, size) => WebCodecsVideoSource.create(url, size);
+		factory(src, store.metadata?.sizeBytes)
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();

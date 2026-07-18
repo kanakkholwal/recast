@@ -87,6 +87,18 @@
 					}
 				}
 			}
+		},
+		{
+			"includes": [
+				"apps/desktop/src/lib/playback/mediabunny-worker.ts"
+			],
+			"linter": {
+				"rules": {
+					"style": {
+						"noRestrictedImports": "off"
+					}
+				}
+			}
 		}
 	],
 	"assist": {

@@ -57,3 +57,10 @@ export { ConvertError } from './protocol';
 export { nextCutWithin, snapToSeekTarget } from './seek';
 // sources (PR-A: stub; PR-D lands encodeCanvasToMp4 if needed)
 export { encodeCanvasToMp4 } from './sources';
+// MediaBunny primitives re-exported so worker code living outside
+// `packages/media` (e.g. `apps/desktop/src/lib/playback/mediabunny-worker.ts`)
+// can compose them through this package without a direct mediabunny import.
+// Worker code is the only allowed outside consumer; biome's
+// `noRestrictedImports` allows it via a scoped override.
+export { ALL_FORMATS, CanvasSink, Input, UrlSource } from 'mediabunny';
+export type { InputVideoTrack, WrappedCanvas } from 'mediabunny';
