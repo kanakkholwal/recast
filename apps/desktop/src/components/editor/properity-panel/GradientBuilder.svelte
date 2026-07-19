@@ -33,7 +33,7 @@
   // Local editing draft so dragging a stop doesn't round-trip through the store
   // every pointer-move; streamed back via setBackgroundLive (coalesced undo). It
   // serialises to the same CSS string both renderers (preview + Rust export) parse.
-  let gradientDraft = $state<GradientSpec>(
+  let gradientDraft = $derived<GradientSpec>(
     parseGradient(
       store.backgroundType === "gradient" ? store.backgroundValue : DEFAULT_GRADIENT,
     ),

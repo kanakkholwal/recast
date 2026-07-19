@@ -2,17 +2,21 @@
  * Filmstrip tile providers: the main-thread side of the clip-bar thumbnails.
  *
  * The clip bar plans virtualized tiles (./filmstrip.ts) and asks the provider
- * for each tile's image URL. WebCodecsTileProvider decodes per-tile frames in
- * filmstrip-worker.ts, downscaled, cached as object URLs (sharp, density-aware);
- * whole-file inputs only. `createTileProvider` returns null for huge/progressive
- * files or a WebView without WebCodecs; the clip bar then keeps its existing
- * stretched Rust-strip rendering. Only on-screen tiles are ever requested, so
- * decode work tracks what virtualization shows.
+ * for each tile's image URL. The provider decodes per-tile frames in
+ * `filmstrip-worker.ts` (MediaBunny-backed) and caches them as object URLs
+ * so the bar can repaint cheaply when the playhead sweeps. Only on-screen
+ * tiles are ever requested, so decode work tracks what virtualization shows.
+ *
+ * Migration note: this file used to depend on `mp4-sample-table` and the
+ * `WebCodecsTileProvider` class driven by a hand-rolled mp4box + WebCodecs
+ * pipeline. PR-F removed that path entirely; the provider now talks to a
+ * MediaBunny-backed worker. The `TileProviderInput.sizeBytes` field is kept
+ * (optional) so the caller can opt to skip the filmstrip on huge inputs and
+ * let the Rust-strip fallback render; the worker no longer needs it.
  */
 
-import { chooseIngestion } from "../playback/mp4-sample-table";
-import { type FilmstripTile, LruCache } from "./filmstrip";
-import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
+import { type FilmstripTile, LruCache } from './filmstrip';
+import type { FromFilmstripWorker, ToFilmstripWorker } from './filmstrip-protocol';
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
@@ -58,7 +62,7 @@ const MAX_TILES = 240;
  */
 const MAX_HOVER_FRAMES = 64;
 
-class WebCodecsTileProvider implements TileProvider {
+class MediabunnyTileProvider implements TileProvider {
 	#worker: Worker;
 	#cache: LruCache<string>;
 	#hoverCache: LruCache<string>;
@@ -93,31 +97,31 @@ class WebCodecsTileProvider implements TileProvider {
 		url: string,
 		tileHeightPx: number,
 		onChange: () => void,
-	): Promise<WebCodecsTileProvider> {
+	): Promise<MediabunnyTileProvider> {
 		const res = await fetch(url);
 		if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
 		const buffer = await res.arrayBuffer();
 		const worker = new Worker(
-			new URL("./filmstrip-worker.ts", import.meta.url),
-			{ type: "module" },
+			new URL('./filmstrip-worker.ts', import.meta.url),
+			{ type: 'module' },
 		);
 		try {
 			await new Promise<void>((resolve, reject) => {
 				worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => {
 					const m = e.data;
-					if (m.type === "ready") resolve();
-					else if (m.type === "error") reject(new Error(m.message));
+					if (m.type === 'ready') resolve();
+					else if (m.type === 'error') reject(new Error(m.message));
 				};
 				worker.onerror = (e) =>
-					reject(new Error(e.message || "filmstrip worker error"));
-				const init: ToFilmstripWorker = { type: "init", buffer, tileHeightPx };
+					reject(new Error(e.message || 'filmstrip worker error'));
+				const init: ToFilmstripWorker = { type: 'init', buffer, tileHeightPx };
 				worker.postMessage(init, [buffer]);
 			});
 		} catch (err) {
 			worker.terminate();
 			throw err;
 		}
-		return new WebCodecsTileProvider(worker, onChange);
+		return new MediabunnyTileProvider(worker, onChange);
 	}
 
 	get(tile: FilmstripTile): string | undefined {
@@ -157,7 +161,7 @@ class WebCodecsTileProvider implements TileProvider {
 		// First request kicks off the one-time build; the reply lands in #onMessage.
 		if (!this.#storyboard && !this.#storyboardRequested) {
 			this.#storyboardRequested = true;
-			const msg: ToFilmstripWorker = { type: "storyboard" };
+			const msg: ToFilmstripWorker = { type: 'storyboard' };
 			this.#worker.postMessage(msg);
 		}
 		return this.#storyboard;
@@ -181,16 +185,16 @@ class WebCodecsTileProvider implements TileProvider {
 			requests.push({ id, originalSec });
 		}
 		this.#pending.clear();
-		const msg: ToFilmstripWorker = { type: "decode", requests };
+		const msg: ToFilmstripWorker = { type: 'decode', requests };
 		this.#worker.postMessage(msg);
 	}
 
 	#onMessage(msg: FromFilmstripWorker): void {
-		if (msg.type === "error") {
-			console.error("filmstrip worker:", msg.message);
+		if (msg.type === 'error') {
+			console.error('filmstrip worker:', msg.message);
 			return;
 		}
-		if (msg.type === "storyboard") {
+		if (msg.type === 'storyboard') {
 			if (this.#disposed) return;
 			this.#storyboard = {
 				url: URL.createObjectURL(msg.blob),
@@ -204,13 +208,13 @@ class WebCodecsTileProvider implements TileProvider {
 			this.#onChange();
 			return;
 		}
-		if (msg.type !== "tile") return;
+		if (msg.type !== 'tile') return;
 		const cacheKey = this.#idToKey.get(msg.id);
 		this.#idToKey.delete(msg.id);
 		if (cacheKey === undefined) return;
 		this.#inflight.delete(cacheKey);
 		if (this.#disposed) return;
-		const target = cacheKey.startsWith("hover:") ? this.#hoverCache : this.#cache;
+		const target = cacheKey.startsWith('hover:') ? this.#hoverCache : this.#cache;
 		target.set(cacheKey, URL.createObjectURL(msg.blob));
 		this.#onChange();
 	}
@@ -219,7 +223,7 @@ class WebCodecsTileProvider implements TileProvider {
 		if (this.#disposed) return;
 		this.#disposed = true;
 		try {
-			const msg: ToFilmstripWorker = { type: "dispose" };
+			const msg: ToFilmstripWorker = { type: 'dispose' };
 			this.#worker.postMessage(msg);
 		} catch {
 			/* worker already gone */
@@ -238,8 +242,14 @@ class WebCodecsTileProvider implements TileProvider {
 export interface TileProviderInput {
 	/** Tauri asset URL of the source video. */
 	url: string;
-	/** Source size (bytes) from the probe; selects whole-file vs progressive. */
-	sizeBytes: number | undefined;
+	/**
+	 * Source size (bytes) from the probe. Optional in PR-F: MediaBunny
+	 * streams range-requests natively so the filmstrip is not bound to
+	 * whole-file ingestion. Kept as a hint so the caller can opt to
+	 * skip the filmstrip on huge inputs and let the Rust-strip fallback
+	 * render instead.
+	 */
+	sizeBytes?: number;
 	/** Device-pixel tile height to decode thumbnails at. */
 	tileHeightPx: number;
 	/** Called when a new tile lands, so the clip bar can repaint. */
@@ -247,37 +257,28 @@ export interface TileProviderInput {
 }
 
 /**
- * Build the WebCodecs tile provider for whole-file inputs in a capable WebView.
- * Returns null for huge/progressive files or on decoder failure; the caller
- * falls back to the stretched Rust strip. Never throws.
+ * Build the MediaBunny-backed tile provider. Returns null on environments
+ * that lack Worker/OffscreenCanvas, when the fetch fails, or when the
+ * MediaBunny worker reports a decode error; the caller falls back to the
+ * Rust-strip renderer in those cases. Never throws.
  */
 export async function createTileProvider(
 	input: TileProviderInput,
 ): Promise<TileProvider | null> {
-	// Each condition logged on failure so a missing filmstrip is never a silent
-	// mystery: whole-file only (huge/progressive route to the Rust strip), and a
-	// WebView with Worker + WebCodecs.
-	const ingestion = chooseIngestion(input.sizeBytes);
-	if (ingestion !== "whole") {
+	if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') {
 		console.info(
-			`Filmstrip: source too large for whole-file decode (${input.sizeBytes} bytes); using strip fallback.`,
-		);
-		return null;
-	}
-	if (typeof Worker === "undefined" || typeof VideoFrame === "undefined") {
-		console.info(
-			"Filmstrip: WebView lacks Worker/WebCodecs; using strip fallback.",
+			'Filmstrip: WebView lacks Worker/OffscreenCanvas; using strip fallback.',
 		);
 		return null;
 	}
 	try {
-		return await WebCodecsTileProvider.create(
+		return await MediabunnyTileProvider.create(
 			input.url,
 			input.tileHeightPx,
 			input.onChange,
 		);
 	} catch (err) {
-		console.warn("Filmstrip decoder unavailable, using strip fallback", err);
+		console.warn('Filmstrip decoder unavailable, using strip fallback', err);
 		return null;
 	}
 }

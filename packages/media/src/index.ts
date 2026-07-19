@@ -84,5 +84,5 @@ export type { CacheableFrame, FrameStorage } from './cache/storage';
 // `packages/media` can compose them through this package without a direct
 // mediabunny import. Worker code is the only allowed outside consumer;
 // biome's `noRestrictedImports` allows it via a scoped override.
-export { ALL_FORMATS, CanvasSink, Input, UrlSource } from 'mediabunny';
+export { ALL_FORMATS, BlobSource, CanvasSink, Input, UrlSource } from 'mediabunny';
 export type { InputVideoTrack, WrappedCanvas } from 'mediabunny';
