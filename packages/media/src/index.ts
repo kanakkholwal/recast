@@ -10,57 +10,79 @@
  * - Future: an in-browser editor for 100 GB+ source files.
  */
 
-export type { ContainerKind, ConversionParams } from './conversion';
-export {
-	inputContainerKind,
-	outputFormatFor,
-	runConversion,
-	withExtension,
-} from './conversion';
-export type { GifWriter } from './encoders';
-// small encoders (PR-B)
-export {
-	createGifWriter,
-	encodeMp3,
-	encodeWav,
-	zipFiles,
-} from './encoders';
-export type { MediaErrorCode } from './errors';
 export { MediaError } from './errors';
-export { handlers } from './handlers';
-export type { MediaSource } from './input';
+export type { MediaErrorCode } from './errors';
+
 // input + conversion
 export { openInput } from './input';
-export type { PlaybackEvent, PlaybackFrame, PlaybackSource } from './playback';
-// playback (worker-bridged; PR-D lands the implementation)
+export type { MediaSource } from './input';
+export {
+	runConversion,
+	outputFormatFor,
+	inputContainerKind,
+	withExtension,
+} from './conversion';
+export type { ContainerKind, ConversionParams } from './conversion';
+
+// conversion protocol + handlers (apps/web conversion tools)
+export { ConvertError } from './protocol';
+export { handlers } from './handlers';
+export type {
+	ToolOp,
+	ToolOptions,
+	ConvertJob,
+	JobContext,
+	ConvertErrorCode,
+	HandlerResult,
+	ConvertHandler,
+	ToConvertWorker,
+	FromConvertWorker,
+} from './protocol';
+
+// playback (worker-bridged)
 export {
 	cacheStats,
 	evictCache,
 	openMediaSource,
 	prefetchAround,
 	seekTo,
+	createAudioScheduler,
 } from './playback';
-export type {
-	ConvertErrorCode,
-	ConvertHandler,
-	ConvertJob,
-	FromConvertWorker,
-	HandlerResult,
-	JobContext,
-	ToConvertWorker,
-	ToolOp,
-	ToolOptions,
-} from './protocol';
-// conversion protocol + handlers (apps/web conversion tools)
-export { ConvertError } from './protocol';
-// seek helpers (PR-D)
-export { nextCutWithin, snapToSeekTarget } from './seek';
-// sources (PR-A: stub; PR-D lands encodeCanvasToMp4 if needed)
+export type { PlaybackSource, PlaybackFrame, PlaybackEvent } from './playback';
+export type { AudioScheduler, AudioSchedulerConfig } from './playback';
+export type { Region, ScheduledChunk } from './audio/schedule';
+
+// seek helpers
+export { snapToSeekTarget, nextCutWithin } from './seek';
+
+// sources
 export { encodeCanvasToMp4 } from './sources';
+
+// small encoders
+export {
+	createGifWriter,
+	encodeWav,
+	encodeMp3,
+	zipFiles,
+} from './encoders';
+export type { GifWriter } from './encoders';
+
+// decoded-frame cache
+export {
+	FrameCache,
+	getFrameCache,
+	setFrameCache,
+	setFrameStorage,
+	resetFrameCache,
+} from './cache';
+export type { CacheStats, FrameCacheConfig } from './cache';
+export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
+export { estimateFrameBytes } from './cache/storage';
+export type { CacheableFrame, FrameStorage } from './cache/storage';
+
 // MediaBunny primitives re-exported so worker code living outside
-// `packages/media` (e.g. `apps/desktop/src/lib/playback/mediabunny-worker.ts`)
-// can compose them through this package without a direct mediabunny import.
-// Worker code is the only allowed outside consumer; biome's
-// `noRestrictedImports` allows it via a scoped override.
+// `packages/media` can compose them through this package without a direct
+// mediabunny import. Worker code is the only allowed outside consumer;
+// biome's `noRestrictedImports` allows it via a scoped override.
 export { ALL_FORMATS, CanvasSink, Input, UrlSource } from 'mediabunny';
 export type { InputVideoTrack, WrappedCanvas } from 'mediabunny';

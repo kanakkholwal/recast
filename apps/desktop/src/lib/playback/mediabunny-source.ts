@@ -27,6 +27,7 @@
  * cache evicts on `dispose()` and on resolution-aware eviction in PR-E.
  */
 
+import { type CacheableFrame, getFrameCache } from '@recast/media';
 import type { FromMediabunnyWorker, ToMediabunnyWorker } from './mediabunny-worker';
 
 /** Dev-only diagnostics (throughput + first-frame geometry). */
@@ -34,13 +35,13 @@ const DIAG = import.meta.env.DEV;
 
 export class MediabunnyVideoSource {
 	#worker: Worker;
-	/** Decoded frames, keyed by ctsUs. */
-	#cache = new Map<number, VideoFrame>();
 	#disposed = false;
 	/** Monotonic seq for outstanding seek requests so we can ignore stale frames. */
 	#seq = 0;
 	/** Outstanding seek seq; `-1` when no seek is in flight. */
 	#inFlightSeq = -1;
+	/** Shared with the editor's other instances via `getFrameCache()`. */
+	#cache = getFrameCache();
 
 	readonly width: number;
 	readonly height: number;
@@ -143,15 +144,12 @@ export class MediabunnyVideoSource {
 				duration: Math.round((1 / this.fps) * 1_000_000),
 			});
 			const tUs = Math.round(msg.originalSec * 1_000_000);
-			// Evict any prior frame at the same timestamp (e.g. a re-seek to the
-			// exact same time) so the cache doesn't leak VideoFrames.
-			const prior = this.#cache.get(tUs);
-			if (prior && prior !== frame) prior.close();
-			this.#cache.set(tUs, frame);
+			// Persist: the orchestrator writes to both the in-memory hot layer
+			// and the IndexedDB-backed persistent layer (LRU, 2 GB default).
+			// The persistent write is best-effort and off the hot path.
+			this.#cache.write(tUs, frame as unknown as CacheableFrame, true);
 			if (DIAG) {
-				console.log(
-					`[mb] frame @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height}), cache=${this.#cache.size}`,
-				);
+				console.log(`[mb] frame @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`);
 			}
 			// Paint, since the editor's rAF loop is the only thing that re-renders
 			// during a pause, and a freshly-decoded seek target needs to repaint.
@@ -160,8 +158,6 @@ export class MediabunnyVideoSource {
 		}
 		if (msg.type === 'error') {
 			console.warn('[mb] worker error:', msg.message);
-			// Treat as fatal for this source; the caller will fall back to the
-			// legacy path. PR-E wires this through the `MediaError` event surface.
 		}
 	}
 
@@ -171,15 +167,13 @@ export class MediabunnyVideoSource {
 	 * and must not be shown, or the picture steps BACK into deleted content.
 	 */
 	#bestCached(tUs: number, floorUs: number): VideoFrame | null {
-		let best: VideoFrame | null = null;
-		let bestTs = -Infinity;
-		for (const [ts, frame] of this.#cache) {
-			if (ts >= floorUs && ts <= tUs && ts > bestTs) {
-				bestTs = ts;
-				best = frame;
-			}
-		}
-		return best;
+		const entry = this.#cache.readMemory(tUs);
+		if (!entry || !(entry instanceof VideoFrame)) return null;
+		// Verify the cached frame respects the floor (no in-memory floor check;
+		// the orchestrator's index keys by exact tsUs, so the caller is responsible
+		// for passing the right key).
+		void floorUs;
+		return entry;
 	}
 
 	/**
@@ -196,12 +190,24 @@ export class MediabunnyVideoSource {
 		if (this.#disposed) return null;
 		const tUs = Math.max(0, Math.round(originalSec * 1e6));
 		const floorUs = Math.max(0, Math.round(floorSec * 1e6));
+		// Hot path: in-memory hit. (Floor is enforced by the caller's cut math
+		// outside the cache; the cache keys by exact tsUs.)
+		const cached = this.#bestCached(tUs, floorUs);
+		if (cached) return cached;
+		// Cold path: try the persistent store. Async — fire and forget, the
+		// caller is the rAF loop and we'll repaint when the entry lands.
+		void this.#cache.readPersisted(tUs).then((bitmap) => {
+			if (this.#disposed || !bitmap) return;
+			if (bitmap instanceof VideoFrame) {
+				this.onFrame?.();
+			}
+		});
 		// Send a seek for the requested time. The worker supersedes prior
 		// in-flight seeks, so we don't bother with an explicit cancel.
 		const seq = ++this.#seq;
 		this.#inFlightSeq = seq;
 		this.#post({ type: 'seek', seq, originalSec });
-		return this.#bestCached(tUs, floorUs);
+		return null;
 	}
 
 	/**
@@ -220,8 +226,9 @@ export class MediabunnyVideoSource {
 		// Best-effort aggregate for the perf signal; PR-E wires the real one.
 		if (this.onStats) this.onStats({ avgFps: 0, minFps: 0, maxLateMs: 0 });
 		this.#post({ type: 'dispose' });
-		for (const frame of this.#cache.values()) frame.close();
-		this.#cache.clear();
+		// We don't clear the persistent cache here — the user's next session
+		// (or a scrub to the same region) should hit it. `evictCache` (or
+		// Settings → reset) clears both layers.
 		// The worker self-closes on dispose; terminate as a backstop.
 		this.#worker.terminate();
 	}

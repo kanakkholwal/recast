@@ -1,53 +1,53 @@
 <script lang="ts">
+	import { analytics } from "$lib/analytics/client";
 	import { resolveAsset } from "$lib/assets";
 	import { computeCanvasGeometry } from "$lib/canvas-geometry";
-	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CursorSmoother } from "$lib/cursor/smoother";
+	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
+	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
+	import { PlaybackClock } from "$lib/playback/clock";
+	import { isMediabunnyPreviewEnabled } from "$lib/playback/feature-flag";
+	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
+	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
 	import {
-		cursorSpriteHotspot,
-		resolveBackgroundWireValue,
-		resolveCursorDataUrl,
-		resolveCursorSprite,
+	  cursorSpriteHotspot,
+	  resolveBackgroundWireValue,
+	  resolveCursorDataUrl,
+	  resolveCursorSprite,
 	} from "$lib/registry";
+	import { evalSceneAt } from "$lib/scenes/eval";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
+	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
-	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-	import { analytics } from "$lib/analytics/client";
-	import {
-		buildPressEvents,
-		clickAnchorAt,
-		clickHighlightAt,
-		pressStateAt,
-		type PressEvent,
-	} from "./cursor-animation.logic";
-	import { hexToRgba } from "./color.logic";
-	import { buildGradientUniforms } from "./gradient.logic";
-	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
-	import { compile, link } from "./webgl.logic";
-	import {
-		classifyWcError,
-		evaluateZoomAt,
-		idleAlphaAt,
-		interpolateCursor,
-		resolutionTier,
-		type CursorSampleJS,
-		type IdlePeriodJS,
-	} from "./video-preview.logic";
-	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
-	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
-	import { isMediabunnyPreviewEnabled } from "$lib/playback/feature-flag";
-	import { PlaybackClock } from "$lib/playback/clock";
-	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-	import { evalSceneAt } from "$lib/scenes/eval";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import CameraOverlay from "./_components/CameraOverlay.svelte";
 	import CaptionOverlay from "./_components/CaptionOverlay.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
+	import { hexToRgba } from "./color.logic";
+	import {
+	  buildPressEvents,
+	  clickAnchorAt,
+	  clickHighlightAt,
+	  pressStateAt,
+	  type PressEvent,
+	} from "./cursor-animation.logic";
+	import { buildGradientUniforms } from "./gradient.logic";
+	import {
+	  classifyWcError,
+	  evaluateZoomAt,
+	  idleAlphaAt,
+	  interpolateCursor,
+	  resolutionTier,
+	  type CursorSampleJS,
+	  type IdlePeriodJS,
+	} from "./video-preview.logic";
+	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
+	import { compile, link } from "./webgl.logic";
 
 	interface Props {
 		store: EditorStore;
@@ -193,25 +193,7 @@
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
 
-	// Press-event model that drives click feedback. One event per click
-	// ({downUs, upUs}) read from RAW samples, never the smoothed array:
-	// smoothing must NEVER nudge click timing, since the visual press has to
-	// land on the exact frame the audio click plays. Each event also carries the
-	// captured click position so the impact frame pins there (see clickAnchorAt).
-	//
-	// Per event we run a deterministic, time-based animation:
-	//
-	//   downUs - PREROLL ───── downUs ───── max(upUs, downUs+MIN_HOLD)
-	//        │ pointer sprite appears
-	//        │ cursor fades in (overrides idle-hide)
-	//        │ scale eases 1.00 → 1+LIFT (anticipation)
-	//                            │ click frame: scale snaps to 1-PUNCH
-	//                            │ recovery: 1-PUNCH → 1+BOUNCE → 1
-	//                                                            │ sprite returns to rest
-	//                                                            │ cursor fades back to idleAlpha
-	//
-	// The snap at downUs is the visual analogue of the audible click; a smooth
-	// crossfade there would feel mushy and desync from the audio.
+
 	let pressEvents: PressEvent[] = [];
 
 	function initGL() {
@@ -1349,7 +1331,7 @@
 
 <div
 	bind:this={containerEl}
-	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden"
+	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden transition-all duration-200 ease-out motion-reduce:transition-none"
 >
 	<AnnotationStatusRail {store} />
 	<div

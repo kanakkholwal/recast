@@ -121,17 +121,25 @@ export async function prefetchAround(
 	throw new MediaError('unsupported', 'prefetchAround is not yet implemented — lands in PR-D');
 }
 
-/** Clear the shared decoded-frame cache. Stub for PR-D; real in PR-E. */
+/** Clear every entry in the shared decoded-frame cache. */
 export async function evictCache(): Promise<number> {
-	throw new MediaError('unsupported', 'evictCache is not yet implemented — lands in PR-E');
+	const { getFrameCache } = await import('./cache');
+	return getFrameCache().evictCache();
 }
 
-/** Snapshot of the cache's current usage. Stub for PR-D; real in PR-E. */
-export function cacheStats(): {
+/** Snapshot of the shared decoded-frame cache's current usage. */
+export async function cacheStats(): Promise<{
 	entryCount: number;
 	bytes: number;
 	capBytes: number;
 	oldestEntryAgeMs: number;
-} {
-	throw new MediaError('unsupported', 'cacheStats is not yet implemented — lands in PR-E');
+}> {
+	const { getFrameCache } = await import('./cache');
+	return getFrameCache().cacheStats();
 }
+
+// Re-export the audio scheduler types so consumers can `import { createAudioScheduler, type AudioScheduler } from '@recast/media'`.
+// AudioWorklet processor module is supplied by the host (Vite-friendly URL).
+export { createAudioScheduler } from './audio/scheduler';
+export type { AudioScheduler, AudioSchedulerConfig } from './audio/scheduler';
+export type { Region, ScheduledChunk } from './audio/schedule';

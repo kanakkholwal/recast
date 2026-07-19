@@ -3,23 +3,23 @@
  * Uses Svelte 5 runes ($state) for granular reactivity.
  */
 
-import type { Transcript } from '../ipc';
 // Caption model (style, presets, animation) lives in @recast/captions so the
 // editor preview, the Rust export burn-in, and the web player share ONE source
 // of truth. Imported for internal use and re-exported below so existing
 // importers keep their `editor-store` specifier.
 import {
 	CAPTION_PRESETS,
-	DEFAULT_CAPTION_ANIMATION,
-	DEFAULT_CAPTION_STYLE,
 	type CaptionAnimation,
 	type CaptionPreset,
 	type CaptionStyle,
+	DEFAULT_CAPTION_ANIMATION,
+	DEFAULT_CAPTION_STYLE,
 } from '@recast/captions';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
+import type { Transcript } from '../ipc';
 import { log } from '../logger';
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // (which pulls this store's catalogs) can't form an import cycle.
@@ -31,28 +31,33 @@ import {
 } from '../scenes/seam';
 import {
 	segmentAnimAt as animAtAnchor,
+	type MotionTone,
 	pruneSegmentAnims,
 	retuneAnimsForTone,
-	setSegmentAnim as upsertSegmentAnim,
-	type MotionTone,
 	type SceneAnimSpec,
 	type SegmentAnim,
+	setSegmentAnim as upsertSegmentAnim,
 } from '../scenes/segment-anim';
-import { totalCutDuration, type CutSource, type TimelineCut } from '../timeline/cuts';
+import { type CutSource, type TimelineCut, totalCutDuration } from '../timeline/cuts';
 import {
 	buildSpeedOf,
 	pruneSegmentSpeeds,
+	type SegmentSpeed,
 	segmentSpeedAt as speedAtAnchor,
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
-	type SegmentSpeed,
 } from '../timeline/segment-speed';
-import { deriveSegments, planDeleteSegment, planSplit, segmentAt, type Segment } from '../timeline/segments';
+import {
+	deriveSegments,
+	planDeleteSegment,
+	planSplit,
+	type Segment,
+	segmentAt,
+} from '../timeline/segments';
 import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
-
 
 export interface WallpaperOption {
 	/** Matches the `id` in `assets/manifest.json`. Stored in `backgroundValue`
@@ -83,7 +88,7 @@ export interface ZoomRegion {
 	 * load; flipped to "manual" the moment the user edits any field so
 	 * "Clear auto zooms" leaves their tweaks alone.
 	 */
-	source: "manual" | "auto";
+	source: 'manual' | 'auto';
 	/**
 	 * Muted in preview AND export but kept in the project: a non-destructive
 	 * toggle so you can A/B a zoom without losing its settings. Absent = visible.
@@ -107,7 +112,7 @@ export interface ShadowSettings {
 // Annotations. Position/size live in video UV space (0..1) so they follow zoom
 // and crop transforms without re-projection. `kind` is a discriminated union.
 
-export type AnnotationStrokeStyle = "solid" | "dashed" | "dotted";
+export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';
 
 export interface AnnotationStroke {
 	width: number; // UV
@@ -129,82 +134,82 @@ export interface AnnotationGlow {
 
 export type AnnotationKind =
 	| {
-		kind: "rect";
-		x: number;
-		y: number;
-		w: number;
-		h: number;
-		radius: number; // UV corner radius; 0 = sharp
-	}
+			kind: 'rect';
+			x: number;
+			y: number;
+			w: number;
+			h: number;
+			radius: number; // UV corner radius; 0 = sharp
+	  }
 	| {
-		kind: "ellipse";
-		x: number; // UV bounding-box top-left
-		y: number;
-		w: number;
-		h: number;
-	}
+			kind: 'ellipse';
+			x: number; // UV bounding-box top-left
+			y: number;
+			w: number;
+			h: number;
+	  }
 	| {
-		kind: "arrow";
-		// Endpoints in UV; the arrow head is drawn at (x2, y2).
-		x1: number;
-		y1: number;
-		x2: number;
-		y2: number;
-		/** Head length as a fraction of line length (0.05–0.4). */
-		headSize: number;
-	}
+			kind: 'arrow';
+			// Endpoints in UV; the arrow head is drawn at (x2, y2).
+			x1: number;
+			y1: number;
+			x2: number;
+			y2: number;
+			/** Head length as a fraction of line length (0.05–0.4). */
+			headSize: number;
+	  }
 	| {
-		// Text overlays render in the WebView only and are rasterized to a
-		// PNG (kind=image) at export time. They never reach the Rust enum.
-		kind: "text";
-		x: number; // UV top-left of bounding box
-		y: number;
-		w: number;
-		h: number;
-		content: string;
-		fontFamily: string; // CSS family name; whitelisted in TextProps
-		/** Font size as a fraction of canvas height (0.02–0.20). */
-		fontSize: number;
-		fontWeight: 400 | 500 | 600 | 700;
-		color: string; // CSS colour
-		align: "left" | "center" | "right";
-		/** Multiplier on font size; default 1.2. */
-		lineHeight: number;
-	}
+			// Text overlays render in the WebView only and are rasterized to a
+			// PNG (kind=image) at export time. They never reach the Rust enum.
+			kind: 'text';
+			x: number; // UV top-left of bounding box
+			y: number;
+			w: number;
+			h: number;
+			content: string;
+			fontFamily: string; // CSS family name; whitelisted in TextProps
+			/** Font size as a fraction of canvas height (0.02–0.20). */
+			fontSize: number;
+			fontWeight: 400 | 500 | 600 | 700;
+			color: string; // CSS colour
+			align: 'left' | 'center' | 'right';
+			/** Multiplier on font size; default 1.2. */
+			lineHeight: number;
+	  }
 	| {
-		// Generic image overlay: a PNG/JPG composited at the UV rect.
-		// Used both for the (deferred) Image tool and as the export
-		// substitute for text annotations after hybrid rasterization.
-		kind: "image";
-		x: number;
-		y: number;
-		w: number;
-		h: number;
-		path: string; // absolute file path or asset URL
-		opacity: number; // 0..1
-		radius: number; // corner radius, fraction of the shorter side (0..0.5)
-	}
+			// Generic image overlay: a PNG/JPG composited at the UV rect.
+			// Used both for the (deferred) Image tool and as the export
+			// substitute for text annotations after hybrid rasterization.
+			kind: 'image';
+			x: number;
+			y: number;
+			w: number;
+			h: number;
+			path: string; // absolute file path or asset URL
+			opacity: number; // 0..1
+			radius: number; // corner radius, fraction of the shorter side (0..0.5)
+	  }
 	| {
-		// Privacy / focus blur. Applies a box blur (separable, kernel
-		// proportional to `strength`) over the bounding rect, optionally
-		// tinted by `variant`. `glass` = clear blur, white/black tint at
-		// 30% over the blurred pixels, `color` = `tintColor` at 30%.
-		kind: "blur";
-		x: number;
-		y: number;
-		w: number;
-		h: number;
-		/** Blur strength 0..1, mapping to a box-blur radius up to ~5% of the canvas. */
-		strength: number;
-		/** Tint mode applied over the blurred pixels. */
-		variant: "glass" | "white" | "black" | "color";
-		/** Tint colour used when `variant === "color"`. CSS `#rrggbb`. */
-		tintColor: string;
-		/** Corner rounding in UV space. 0 = sharp. */
-		radius: number;
-	};
+			// Privacy / focus blur. Applies a box blur (separable, kernel
+			// proportional to `strength`) over the bounding rect, optionally
+			// tinted by `variant`. `glass` = clear blur, white/black tint at
+			// 30% over the blurred pixels, `color` = `tintColor` at 30%.
+			kind: 'blur';
+			x: number;
+			y: number;
+			w: number;
+			h: number;
+			/** Blur strength 0..1, mapping to a box-blur radius up to ~5% of the canvas. */
+			strength: number;
+			/** Tint mode applied over the blurred pixels. */
+			variant: 'glass' | 'white' | 'black' | 'color';
+			/** Tint colour used when `variant === "color"`. CSS `#rrggbb`. */
+			tintColor: string;
+			/** Corner rounding in UV space. 0 = sharp. */
+			radius: number;
+	  };
 
-export type AnnotationKindName = AnnotationKind["kind"];
+export type AnnotationKindName = AnnotationKind['kind'];
 
 export interface Annotation {
 	id: string;
@@ -240,14 +245,14 @@ export interface Annotation {
 }
 
 /** Coordinate space an annotation is anchored to. */
-export type AnnotationAnchor = "video" | "frame";
+export type AnnotationAnchor = 'video' | 'frame';
 
 export const DEFAULT_ANNOTATION_RAMP = 0.2;
 export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
 	width: 0.004,
-	color: "#3b82f6",
+	color: '#3b82f6',
 };
-export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
+export const DEFAULT_ANNOTATION_FILL = 'rgba(59,130,246,0.20)';
 
 // Bundled built-in cursor styles. `dot` is the default soft circle (drawn by
 // the WebGL2 shader and the Rust export overlay); the system sets are SVG
@@ -292,17 +297,28 @@ export interface BackgroundSelection {
 }
 
 export interface AudioSettings {
-	volume: number; // 0-100
+	/** Master output volume (0-100). Multiplied with the per-track gains. */
+	volume: number;
 	muted: boolean;
+	/** System audio gain (0-100). 0 = silenced, 100 = unity. */
+	systemVolume: number;
+	systemMuted: boolean;
+	/** Microphone gain (0-100). 0 = silenced, 100 = unity. */
+	micVolume: number;
+	micMuted: boolean;
 	fadeIn: number; // seconds
 	fadeOut: number; // seconds
 }
 
-export type WatermarkPosition =
-	| 'top-left'
-	| 'top-right'
-	| 'bottom-left'
-	| 'bottom-right';
+/** Convenience: read a track's effective volume (0-1) with mute applied. */
+export function effectiveTrackVolume(settings: AudioSettings, kind: 'system' | 'mic'): number {
+	const muted = kind === 'system' ? settings.systemMuted : settings.micMuted;
+	if (settings.muted || muted) return 0;
+	const v = kind === 'system' ? settings.systemVolume : settings.micVolume;
+	return Math.max(0, Math.min(1, v / 100));
+}
+
+export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 
 export interface WatermarkSettings {
 	enabled: boolean;
@@ -358,9 +374,14 @@ export interface CameraOverlaySettings {
  * after a drag-snap.
  */
 export type CameraPositionPreset =
-	| 'top-left' | 'top-center' | 'top-right'
-	| 'left-center' | 'right-center'
-	| 'bottom-left' | 'bottom-center' | 'bottom-right'
+	| 'top-left'
+	| 'top-center'
+	| 'top-right'
+	| 'left-center'
+	| 'right-center'
+	| 'bottom-left'
+	| 'bottom-center'
+	| 'bottom-right'
 	| 'custom';
 
 /** Default size (16% of frame) and inset (2% margin) for preset placements. */
@@ -405,17 +426,19 @@ export function cameraPlacementFromPreset(
  */
 export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
-		'top-left', 'top-center', 'top-right',
-		'left-center', 'right-center',
-		'bottom-left', 'bottom-center', 'bottom-right',
+		'top-left',
+		'top-center',
+		'top-right',
+		'left-center',
+		'right-center',
+		'bottom-left',
+		'bottom-center',
+		'bottom-right',
 	];
 	const tolerance = 0.005;
 	for (const preset of presets) {
 		const ref = cameraPlacementFromPreset(preset, p.width);
-		if (
-			Math.abs(p.x - ref.x) < tolerance &&
-			Math.abs(p.y - ref.y) < tolerance
-		) {
+		if (Math.abs(p.x - ref.x) < tolerance && Math.abs(p.y - ref.y) < tolerance) {
 			return preset;
 		}
 	}
@@ -435,16 +458,17 @@ export interface VideoMetadata {
 // and unit tests can import it without loading this runes store. Imported for
 // internal use and re-exported to keep existing import sites working.
 import {
-	MAX_FRAME_PADDING_PERCENT,
 	clampFramePaddingPercent,
 	framePaddingPixels,
+	MAX_FRAME_PADDING_PERCENT,
 	normalizeFramePaddingPercent,
-} from "$lib/editor/frame-padding";
+} from '$lib/editor/frame-padding';
+
 export {
-	MAX_FRAME_PADDING_PERCENT,
 	clampFramePaddingPercent,
 	framePaddingPixels,
-	normalizeFramePaddingPercent
+	MAX_FRAME_PADDING_PERCENT,
+	normalizeFramePaddingPercent,
 };
 
 export interface EditorRenderState {
@@ -505,7 +529,7 @@ export interface EditorRenderState {
 		centerX: number;
 		centerY: number;
 		motionBlur: number;
-		source?: "manual" | "auto";
+		source?: 'manual' | 'auto';
 		hidden?: boolean;
 	}>;
 	autoZoomApplied?: boolean;
@@ -535,7 +559,7 @@ export interface EditorRenderState {
 	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
-	annotations: Array<Omit<Annotation, "id">>;
+	annotations: Array<Omit<Annotation, 'id'>>;
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
 	watermarkSettings: WatermarkSettings;
@@ -548,15 +572,15 @@ export interface EditorRenderState {
 	// Hybrid-raster cursor sprite, populated only on the export path
 	// (the editor route runs `rasterizeCursorSprites` right before invoking
 	// `export_video`). Not persisted to disk; never set by `loadRenderState`.
-	cursorSpriteRest?: string;          // data:image/png;base64,…
-	cursorSpritePress?: string;         // optional; falls back to rest in Rust
-	cursorSpriteRightPress?: string;    // optional; falls back to press → rest in Rust
-	cursorSpriteDrag?: string;          // optional; falls back to press → rest in Rust
-	cursorSpriteHotspotRest?: [number, number];   // 0..1 sprite UV
+	cursorSpriteRest?: string; // data:image/png;base64,…
+	cursorSpritePress?: string; // optional; falls back to rest in Rust
+	cursorSpriteRightPress?: string; // optional; falls back to press → rest in Rust
+	cursorSpriteDrag?: string; // optional; falls back to press → rest in Rust
+	cursorSpriteHotspotRest?: [number, number]; // 0..1 sprite UV
 	cursorSpriteHotspotPress?: [number, number];
 	cursorSpriteHotspotRightPress?: [number, number];
 	cursorSpriteHotspotDrag?: [number, number];
-	cursorSpriteSizePx?: number;        // sprite render size in source pixels
+	cursorSpriteSizePx?: number; // sprite render size in source pixels
 }
 
 export type ExportFormat = 'mp4' | 'gif' | 'webm';
@@ -633,7 +657,18 @@ export interface DeleteSelectionResult {
 
 // 'dev' is a dev-build-only tab (experimental OCR review); it is UI state only and
 // is never serialized into a project.
-export type PanelTab = 'clip' | 'background' | 'focus' | 'annotations' | 'cursor' | 'camera' | 'audio' | 'captions' | 'extensions' | 'info' | 'dev';
+export type PanelTab =
+	| 'clip'
+	| 'background'
+	| 'focus'
+	| 'annotations'
+	| 'cursor'
+	| 'camera'
+	| 'audio'
+	| 'captions'
+	| 'extensions'
+	| 'info'
+	| 'dev';
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,
@@ -709,7 +744,10 @@ function clampNum(v: number, lo: number, hi: number): number {
 function normalizeHex(hex: string): string {
 	let h = hex.trim().replace(/^#/, '');
 	if (h.length === 3 || h.length === 4) {
-		h = h.split('').map((c) => c + c).join('');
+		h = h
+			.split('')
+			.map((c) => c + c)
+			.join('');
 	}
 	return `#${h.toLowerCase()}`;
 }
@@ -722,9 +760,7 @@ function normalizeHex(hex: string): string {
  */
 export function parseGradient(value: string): GradientSpec {
 	const angleMatch = value.match(/(-?\d+(?:\.\d+)?)deg/);
-	const angle = angleMatch
-		? (((parseFloat(angleMatch[1]) % 360) + 360) % 360)
-		: 135;
+	const angle = angleMatch ? ((parseFloat(angleMatch[1]) % 360) + 360) % 360 : 135;
 
 	const stopRe = /(#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4}))(?:\s+(-?\d+(?:\.\d+)?)%)?/g;
 	const raw: { color: string; pos: number | null }[] = [];
@@ -737,10 +773,22 @@ export function parseGradient(value: string): GradientSpec {
 	}
 
 	if (raw.length === 0) {
-		return { angle, stops: [{ color: '#6366f1', pos: 0 }, { color: '#d946ef', pos: 100 }] };
+		return {
+			angle,
+			stops: [
+				{ color: '#6366f1', pos: 0 },
+				{ color: '#d946ef', pos: 100 },
+			],
+		};
 	}
 	if (raw.length === 1) {
-		return { angle, stops: [{ color: raw[0].color, pos: 0 }, { color: raw[0].color, pos: 100 }] };
+		return {
+			angle,
+			stops: [
+				{ color: raw[0].color, pos: 0 },
+				{ color: raw[0].color, pos: 100 },
+			],
+		};
 	}
 	const n = raw.length;
 	const stops = raw.map((s, i) => ({
@@ -752,7 +800,7 @@ export function parseGradient(value: string): GradientSpec {
 
 /** Serialize a {@link GradientSpec} back to a canonical CSS gradient string. */
 export function serializeGradient(spec: GradientSpec): string {
-	const angle = (((Math.round(spec.angle) % 360) + 360) % 360);
+	const angle = ((Math.round(spec.angle) % 360) + 360) % 360;
 	const body = [...spec.stops]
 		.sort((a, b) => a.pos - b.pos)
 		.map((s) => `${normalizeHex(s.color)} ${Math.round(clampNum(s.pos, 0, 100))}%`)
@@ -761,15 +809,25 @@ export function serializeGradient(spec: GradientSpec): string {
 }
 
 export const COLOR_PRESETS = [
-	'#eaffd0', '#95e1d3', '#ffffff', '#f5f5f5',
-	'#533483', '#e94560', '#f38181', '#fce38a',
-	'#0f3460', '#16213e', '#1a1a2e', '#000000',
+	'#eaffd0',
+	'#95e1d3',
+	'#ffffff',
+	'#f5f5f5',
+	'#533483',
+	'#e94560',
+	'#f38181',
+	'#fce38a',
+	'#0f3460',
+	'#16213e',
+	'#1a1a2e',
+	'#000000',
 ];
 
 function generateId(): string {
 	return Math.random().toString(36).substring(2, 9);
 }
 
+export type { CaptionAnimation, CaptionPreset, CaptionStyle };
 /**
  * Creates an editor store instance.
  * Call once per editor page mount, or use a singleton.
@@ -777,7 +835,6 @@ function generateId(): string {
 // Re-export the caption model (imported at the top) so modules that import it
 // from `editor-store` keep working.
 export { CAPTION_PRESETS, DEFAULT_CAPTION_ANIMATION, DEFAULT_CAPTION_STYLE };
-export type { CaptionAnimation, CaptionPreset, CaptionStyle };
 
 /** What to do with generated captions on export. Independent choices: you can
  *  burn captions into the pixels AND keep a sidecar file. The sidecar is also
@@ -964,6 +1021,10 @@ export function createEditorStore() {
 	let audioSettings = $state<AudioSettings>({
 		volume: 100,
 		muted: false,
+		systemVolume: 100,
+		systemMuted: false,
+		micVolume: 100,
+		micMuted: false,
 		fadeIn: 0,
 		fadeOut: 0,
 	});
@@ -1100,8 +1161,7 @@ export function createEditorStore() {
 	let lastCoalesceKey: string | null = null;
 	let lastCoalesceAt = 0;
 	function pushUndoStateCoalesced(key: string, ttlMs = 500) {
-		const now =
-			typeof performance !== "undefined" ? performance.now() : Date.now();
+		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
 		if (lastCoalesceKey === key && now - lastCoalesceAt < ttlMs) {
 			lastCoalesceAt = now;
 			isDirty = true;
@@ -1161,7 +1221,7 @@ export function createEditorStore() {
 			centerX: r.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: r.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: r.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
-			source: r.source ?? "manual",
+			source: r.source ?? 'manual',
 		}));
 		autoZoomEnabled = s.autoZoomEnabled ?? autoZoomEnabled;
 		autoZoomApplied = s.autoZoomApplied ?? autoZoomApplied;
@@ -1184,10 +1244,25 @@ export function createEditorStore() {
 			}
 		}
 		cursorSettings = { ...s.cursorSettings };
-		audioSettings = s.audioSettings ? { ...s.audioSettings } : audioSettings;
-		watermarkSettings = s.watermarkSettings
-			? { ...s.watermarkSettings }
-			: watermarkSettings;
+		// Backward-compat: old project files don't have per-track volumes.
+		// Fall back to the master volume for any missing per-track field so
+		// pre-Fix-1 projects keep their mix at 100% system/mic.
+		if (s.audioSettings) {
+			const loaded = s.audioSettings;
+			audioSettings = {
+				volume: loaded.volume,
+				muted: loaded.muted,
+				systemVolume: loaded.systemVolume ?? loaded.volume,
+				systemMuted: loaded.systemMuted ?? loaded.muted,
+				micVolume: loaded.micVolume ?? loaded.volume,
+				micMuted: loaded.micMuted ?? loaded.muted,
+				fadeIn: loaded.fadeIn,
+				fadeOut: loaded.fadeOut,
+			};
+		} else {
+			audioSettings = audioSettings;
+		}
+		watermarkSettings = s.watermarkSettings ? { ...s.watermarkSettings } : watermarkSettings;
 		// Camera overlay was previously captured in the snapshot but not
 		// restored here, which silently destroyed camera-overlay edits on
 		// undo. Deep-copy so subsequent mutations don't alias the snapshot.
@@ -1196,7 +1271,7 @@ export function createEditorStore() {
 				...s.cameraOverlay,
 				defaultPlacement: { ...s.cameraOverlay.defaultPlacement },
 				motionSegments: (s.cameraOverlay.motionSegments ?? []).map(
-					(seg: CameraOverlaySettings["motionSegments"][number]) => ({ ...seg }),
+					(seg: CameraOverlaySettings['motionSegments'][number]) => ({ ...seg }),
 				),
 			};
 		}
@@ -1225,7 +1300,7 @@ export function createEditorStore() {
 			centerX: center?.x ?? DEFAULT_ZOOM_CENTER,
 			centerY: center?.y ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
-			source: "manual",
+			source: 'manual',
 		};
 		zoomRegions = [...zoomRegions, region];
 		selectZoomRegion(region.id);
@@ -1257,28 +1332,24 @@ export function createEditorStore() {
 			centerX,
 			centerY,
 			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
-			source: "auto",
+			source: 'auto',
 		};
 		zoomRegions = [...zoomRegions, region];
 		return region.id;
 	}
 
 	function clearAutoZooms() {
-		const hasAuto = zoomRegions.some((z) => z.source === "auto");
+		const hasAuto = zoomRegions.some((z) => z.source === 'auto');
 		if (!hasAuto) return;
 		pushUndoState();
-		zoomRegions = zoomRegions.filter((z) => z.source !== "auto");
-		if (
-			selectedZoomRegionId &&
-			!zoomRegions.find((z) => z.id === selectedZoomRegionId)
-		) {
+		zoomRegions = zoomRegions.filter((z) => z.source !== 'auto');
+		if (selectedZoomRegionId && !zoomRegions.find((z) => z.id === selectedZoomRegionId)) {
 			selectedZoomRegionId = null;
 		}
 	}
 
 	function setBackground(selection: BackgroundSelection) {
-		const hasChanged =
-			backgroundType !== selection.type || backgroundValue !== selection.value;
+		const hasChanged = backgroundType !== selection.type || backgroundValue !== selection.value;
 		if (!hasChanged) return;
 		pushUndoState();
 		backgroundType = selection.type;
@@ -1468,16 +1539,12 @@ export function createEditorStore() {
 			easeOut: { ...src.easeOut },
 			start,
 			end,
-			source: "manual",
+			source: 'manual',
 			hidden: src.hidden ?? false,
 		};
 		// Insert right after the source so list order matches the timeline.
 		const idx = zoomRegions.findIndex((z) => z.id === id);
-		zoomRegions = [
-			...zoomRegions.slice(0, idx + 1),
-			copy,
-			...zoomRegions.slice(idx + 1),
-		];
+		zoomRegions = [...zoomRegions.slice(0, idx + 1), copy, ...zoomRegions.slice(idx + 1)];
 		selectZoomRegion(copy.id);
 		log.info('focus', 'zoom_duplicated', { from: id, id: copy.id });
 		return copy.id;
@@ -1501,8 +1568,8 @@ export function createEditorStore() {
 			// First user edit on an auto region detaches it, so "Clear auto
 			// zooms" should leave anything they've tweaked alone.
 			const next = { ...z, ...updates };
-			if (z.source === "auto" && updates.source === undefined) {
-				next.source = "manual";
+			if (z.source === 'auto' && updates.source === undefined) {
+				next.source = 'manual';
 			}
 			return next;
 		});
@@ -1565,7 +1632,7 @@ export function createEditorStore() {
 	function annotationsByZ(): Annotation[] {
 		return [...annotations]
 			.map((a, idx) => ({ a, idx, z: a.zIndex ?? idx }))
-			.sort((a, b) => (a.z - b.z) || (a.idx - b.idx))
+			.sort((a, b) => a.z - b.z || a.idx - b.idx)
 			.map((e) => e.a);
 	}
 
@@ -1586,9 +1653,7 @@ export function createEditorStore() {
 	function renameAnnotation(id: string, name: string) {
 		const trimmed = name.trim();
 		pushUndoState();
-		annotations = annotations.map((a) =>
-			a.id === id ? { ...a, name: trimmed || undefined } : a,
-		);
+		annotations = annotations.map((a) => (a.id === id ? { ...a, name: trimmed || undefined } : a));
 	}
 
 	function duplicateAnnotation(id: string): Annotation | null {
@@ -1601,9 +1666,15 @@ export function createEditorStore() {
 		dup.zIndex = annotationZSeq++;
 		dup.name = source.name ? `${source.name} copy` : undefined;
 		// Nudge the geometry diagonally so the duplicate is visible.
-		if (dup.kind.kind === "rect" || dup.kind.kind === "ellipse" || dup.kind.kind === "image" || dup.kind.kind === "text" || dup.kind.kind === "blur") {
+		if (
+			dup.kind.kind === 'rect' ||
+			dup.kind.kind === 'ellipse' ||
+			dup.kind.kind === 'image' ||
+			dup.kind.kind === 'text' ||
+			dup.kind.kind === 'blur'
+		) {
 			dup.kind = { ...dup.kind, x: dup.kind.x + offset, y: dup.kind.y + offset };
-		} else if (dup.kind.kind === "arrow") {
+		} else if (dup.kind.kind === 'arrow') {
 			dup.kind = {
 				...dup.kind,
 				x1: dup.kind.x1 + offset,
@@ -1642,9 +1713,7 @@ export function createEditorStore() {
 	function setAnnotationZOrder(orderedIds: string[]) {
 		pushUndoState();
 		const zMap = new Map(orderedIds.map((id, i) => [id, i + 1]));
-		annotations = annotations.map((a) =>
-			zMap.has(a.id) ? { ...a, zIndex: zMap.get(a.id)! } : a,
-		);
+		annotations = annotations.map((a) => (zMap.has(a.id) ? { ...a, zIndex: zMap.get(a.id)! } : a));
 		annotationZSeq = orderedIds.length + 1;
 	}
 
@@ -1710,6 +1779,10 @@ export function createEditorStore() {
 		audioSettings = {
 			volume: 100,
 			muted: false,
+			systemVolume: 100,
+			systemMuted: false,
+			micVolume: 100,
+			micMuted: false,
 			fadeIn: 0,
 			fadeOut: 0,
 		};
@@ -1745,11 +1818,7 @@ export function createEditorStore() {
 	 * accepting several silence suggestions at once should batch with their
 	 * own `pushUndoState` and use the lower-level array if needed.
 	 */
-	function addCut(
-		start: number,
-		end: number,
-		source: CutSource = 'silence',
-	): string | null {
+	function addCut(start: number, end: number, source: CutSource = 'silence'): string | null {
 		if (end - start <= 0.01) return null;
 		pushUndoState();
 		const cut: TimelineCut = { id: generateId(), start, end, source };
@@ -2092,20 +2161,14 @@ export function createEditorStore() {
 			smoothing: state.cursorSmoothing ?? cursorSettings.smoothing,
 			snapToClicks: state.cursorSnapToClicks ?? cursorSettings.snapToClicks,
 			snapWindowMs: state.cursorSnapWindowMs ?? cursorSettings.snapWindowMs,
-			highlightClicks:
-				state.cursorHighlightClicks ?? cursorSettings.highlightClicks,
-			highlightColor:
-				state.cursorHighlightColor ?? cursorSettings.highlightColor,
-			highlightOpacity:
-				state.cursorHighlightOpacity ?? cursorSettings.highlightOpacity,
-			hideWhenIdle:
-				state.cursorHideWhenIdle ?? cursorSettings.hideWhenIdle,
-			idleTimeout:
-				state.cursorIdleTimeout ?? cursorSettings.idleTimeout,
+			highlightClicks: state.cursorHighlightClicks ?? cursorSettings.highlightClicks,
+			highlightColor: state.cursorHighlightColor ?? cursorSettings.highlightColor,
+			highlightOpacity: state.cursorHighlightOpacity ?? cursorSettings.highlightOpacity,
+			hideWhenIdle: state.cursorHideWhenIdle ?? cursorSettings.hideWhenIdle,
+			idleTimeout: state.cursorIdleTimeout ?? cursorSettings.idleTimeout,
 			motionBlur: state.cursorMotionBlur ?? cursorSettings.motionBlur,
 			clickBounce: state.cursorClickBounce ?? cursorSettings.clickBounce,
-			bounceSpeedMs:
-				state.cursorBounceSpeedMs ?? cursorSettings.bounceSpeedMs,
+			bounceSpeedMs: state.cursorBounceSpeedMs ?? cursorSettings.bounceSpeedMs,
 			sway: state.cursorSway ?? cursorSettings.sway,
 		};
 		zoomRegions = (state.zoomRegions ?? []).map((region) => ({
@@ -2120,16 +2183,14 @@ export function createEditorStore() {
 			centerX: region.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: region.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
-			source: region.source ?? "manual",
+			source: region.source ?? 'manual',
 			hidden: region.hidden ?? false,
 		}));
 		// Legacy projects predate the auto-zoom flags. Treat them as already
 		// processed so we don't retroactively scatter zooms across footage
 		// the user already finished editing.
 		autoZoomEnabled = state.autoZoomEnabled ?? true;
-		autoZoomApplied =
-			state.autoZoomApplied ??
-			(state.zoomRegions !== undefined ? true : false);
+		autoZoomApplied = state.autoZoomApplied ?? state.zoomRegions !== undefined;
 		cuts = (state.cuts ?? []).map((c) => ({
 			id: c.id ?? generateId(),
 			start: c.start,
@@ -2147,7 +2208,22 @@ export function createEditorStore() {
 		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
 		shadow = state.shadow ?? shadow;
-		audioSettings = state.audioSettings ?? audioSettings;
+		// Backward-compat (see comment in loadRenderState).
+		if (state.audioSettings) {
+			const loaded = state.audioSettings;
+			audioSettings = {
+				volume: loaded.volume,
+				muted: loaded.muted,
+				systemVolume: loaded.systemVolume ?? loaded.volume,
+				systemMuted: loaded.systemMuted ?? loaded.muted,
+				micVolume: loaded.micVolume ?? loaded.volume,
+				micMuted: loaded.micMuted ?? loaded.muted,
+				fadeIn: loaded.fadeIn,
+				fadeOut: loaded.fadeOut,
+			};
+		} else {
+			audioSettings = audioSettings;
+		}
 		transcript = state.transcript ?? null;
 		captionStyle = state.captionStyle
 			? { ...DEFAULT_CAPTION_STYLE, ...state.captionStyle }
@@ -2224,22 +2300,44 @@ export function createEditorStore() {
 
 	return {
 		// Getters (reactive reads)
-		get videoPath() { return videoPath; },
-		set videoPath(v: string) { videoPath = v; },
+		get videoPath() {
+			return videoPath;
+		},
+		set videoPath(v: string) {
+			videoPath = v;
+		},
 
-		get cursorPath() { return cursorPath; },
-		set cursorPath(v: string | null) { cursorPath = v; },
+		get cursorPath() {
+			return cursorPath;
+		},
+		set cursorPath(v: string | null) {
+			cursorPath = v;
+		},
 
-		get recordingPath() { return recordingPath; },
-		set recordingPath(v: string | null) { recordingPath = v; },
+		get recordingPath() {
+			return recordingPath;
+		},
+		set recordingPath(v: string | null) {
+			recordingPath = v;
+		},
 
-		get audioPath() { return audioPath; },
-		set audioPath(v: string | null) { audioPath = v; },
+		get audioPath() {
+			return audioPath;
+		},
+		set audioPath(v: string | null) {
+			audioPath = v;
+		},
 
-		get microphonePath() { return microphonePath; },
-		set microphonePath(v: string | null) { microphonePath = v; },
+		get microphonePath() {
+			return microphonePath;
+		},
+		set microphonePath(v: string | null) {
+			microphonePath = v;
+		},
 
-		get metadata() { return metadata; },
+		get metadata() {
+			return metadata;
+		},
 		set metadata(v: VideoMetadata | null) {
 			metadata = v;
 			// Default export to 60fps for >60fps recordings: imperceptible for a
@@ -2251,14 +2349,26 @@ export function createEditorStore() {
 			}
 		},
 
-		get thumbnailStrip() { return thumbnailStrip; },
-		set thumbnailStrip(v: string[]) { thumbnailStrip = v; },
+		get thumbnailStrip() {
+			return thumbnailStrip;
+		},
+		set thumbnailStrip(v: string[]) {
+			thumbnailStrip = v;
+		},
 
-		get waveform() { return waveform; },
-		set waveform(v: number[]) { waveform = v; },
+		get waveform() {
+			return waveform;
+		},
+		set waveform(v: number[]) {
+			waveform = v;
+		},
 
-		get currentTime() { return currentTime; },
-		set currentTime(v: number) { currentTime = v; },
+		get currentTime() {
+			return currentTime;
+		},
+		set currentTime(v: number) {
+			currentTime = v;
+		},
 
 		/** Register the transport seek (the <video>/clock owner). Returns an
 		 *  unsubscribe to call on teardown. */
@@ -2276,8 +2386,12 @@ export function createEditorStore() {
 			seekHandler?.(time);
 		},
 
-		get timelineTool() { return timelineTool; },
-		set timelineTool(v: TimelineTool) { timelineTool = v; },
+		get timelineTool() {
+			return timelineTool;
+		},
+		set timelineTool(v: TimelineTool) {
+			timelineTool = v;
+		},
 
 		/** Register the timeline's keyboard-command handlers. Returns an
 		 *  unsubscribe for teardown, mirroring registerSeekHandler. */
@@ -2287,25 +2401,43 @@ export function createEditorStore() {
 				if (timelineCommands === cmds) timelineCommands = null;
 			};
 		},
-		get timelineCommands() { return timelineCommands; },
+		get timelineCommands() {
+			return timelineCommands;
+		},
 
-		get isPlaying() { return isPlaying; },
-		set isPlaying(v: boolean) { isPlaying = v; },
+		get isPlaying() {
+			return isPlaying;
+		},
+		set isPlaying(v: boolean) {
+			isPlaying = v;
+		},
 
 		// Raw mark fields. Setters intentionally do NOT push undo; callers
 		// (Timeline drag/keyboard handlers) own undo coalescing via
 		// `pushUndoStateCoalesced` so a single drag or held arrow key is one
 		// undo entry, not one-per-pointer-frame.
-		get trimStart() { return trimStart; },
-		set trimStart(v: number) { trimStart = v; isDirty = true; },
+		get trimStart() {
+			return trimStart;
+		},
+		set trimStart(v: number) {
+			trimStart = v;
+			isDirty = true;
+		},
 
-		get trimEnd() { return trimEnd; },
-		set trimEnd(v: number) { trimEnd = v; isDirty = true; },
+		get trimEnd() {
+			return trimEnd;
+		},
+		set trimEnd(v: number) {
+			trimEnd = v;
+			isDirty = true;
+		},
 
 		// Convenience accessors using NLE terminology. `outPoint` resolves
 		// the legacy `0 = unset` sentinel against the source duration so
 		// callers never need the `trimEnd || duration` dance.
-		get inPoint() { return Math.max(0, trimStart); },
+		get inPoint() {
+			return Math.max(0, trimStart);
+		},
 		get outPoint() {
 			const d = metadata?.duration ?? 0;
 			return trimEnd > 0 ? Math.min(trimEnd, d) : d;
@@ -2316,179 +2448,396 @@ export function createEditorStore() {
 			return Math.max(0, out - Math.max(0, trimStart));
 		},
 
-		get backgroundType() { return backgroundType; },
-		set backgroundType(v: BackgroundType) { pushUndoState(); backgroundType = v; },
+		get backgroundType() {
+			return backgroundType;
+		},
+		set backgroundType(v: BackgroundType) {
+			pushUndoState();
+			backgroundType = v;
+		},
 
-		get backgroundValue() { return backgroundValue; },
-		set backgroundValue(v: string) { pushUndoState(); backgroundValue = v; },
+		get backgroundValue() {
+			return backgroundValue;
+		},
+		set backgroundValue(v: string) {
+			pushUndoState();
+			backgroundValue = v;
+		},
 
-		get backgroundBlur() { return backgroundBlur; },
-		set backgroundBlur(v: number) { backgroundBlur = v; },
+		get backgroundBlur() {
+			return backgroundBlur;
+		},
+		set backgroundBlur(v: number) {
+			backgroundBlur = v;
+		},
 
-		get padding() { return padding; },
-		set padding(v: number) { padding = clampFramePaddingPercent(v); },
+		get padding() {
+			return padding;
+		},
+		set padding(v: number) {
+			padding = clampFramePaddingPercent(v);
+		},
 
-		get borderRadius() { return borderRadius; },
-		set borderRadius(v: number) { borderRadius = v; },
+		get borderRadius() {
+			return borderRadius;
+		},
+		set borderRadius(v: number) {
+			borderRadius = v;
+		},
 
-		get shadow() { return shadow; },
-		set shadow(v: ShadowSettings) { shadow = v; },
+		get shadow() {
+			return shadow;
+		},
+		set shadow(v: ShadowSettings) {
+			shadow = v;
+		},
 
-		get layoutMode() { return layoutMode; },
-		set layoutMode(v: LayoutMode) { pushUndoState(); layoutMode = v; },
-		get outputAspect() { return outputAspect; },
-		set outputAspect(v: OutputAspect) { pushUndoState(); outputAspect = v; },
-		get lastAppliedPresetId() { return lastAppliedPresetId; },
-		set lastAppliedPresetId(v: string | null) { lastAppliedPresetId = v; },
+		get layoutMode() {
+			return layoutMode;
+		},
+		set layoutMode(v: LayoutMode) {
+			pushUndoState();
+			layoutMode = v;
+		},
+		get outputAspect() {
+			return outputAspect;
+		},
+		set outputAspect(v: OutputAspect) {
+			pushUndoState();
+			outputAspect = v;
+		},
+		get lastAppliedPresetId() {
+			return lastAppliedPresetId;
+		},
+		set lastAppliedPresetId(v: string | null) {
+			lastAppliedPresetId = v;
+		},
 
-		get zoomRegions() { return zoomRegions; },
+		get zoomRegions() {
+			return zoomRegions;
+		},
 
 		// Silence / manual cuts. `cuts` is the raw stored list (used by feature
 		// banners and the silence review); `effectiveCuts` is the flag-gated +
 		// lane-enabled subset that actually applies in playback/export/display.
-		get cuts() { return cuts; },
-		get effectiveCuts() { return effectiveCutList(); },
-		get cutDuration() { return totalCutDuration(cuts); },
-		get dismissedSilences() { return dismissedSilences; },
+		get cuts() {
+			return cuts;
+		},
+		get effectiveCuts() {
+			return effectiveCutList();
+		},
+		get cutDuration() {
+			return totalCutDuration(cuts);
+		},
+		get dismissedSilences() {
+			return dismissedSilences;
+		},
 
 		// Lane "enable" toggles: bypass the lane's effect in preview/export
 		// while keeping the underlying data intact.
-		get cutsEnabled() { return cutsEnabled; },
-		set cutsEnabled(v: boolean) { cutsEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'cuts', enabled: v }); },
+		get cutsEnabled() {
+			return cutsEnabled;
+		},
+		set cutsEnabled(v: boolean) {
+			cutsEnabled = v;
+			isDirty = true;
+			log.info('feature', 'toggled', { feature: 'cuts', enabled: v });
+		},
 
 		// Split/segment editing. `segments` is derived (trim − active cuts, sliced
 		// by active splits); `splitPoints` is the marker list the timeline renders
 		// Both empty out when timeline editing is opted off.
-		get segments() { return currentSegments(); },
-		get splitPoints() { return activeSplitPoints(); },
-		get segmentSpeeds() { return segmentSpeeds; },
+		get segments() {
+			return currentSegments();
+		},
+		get splitPoints() {
+			return activeSplitPoints();
+		},
+		get segmentSpeeds() {
+			return segmentSpeeds;
+		},
 		// Warped output axis (kept segments × per-segment speed). Reduces to the
 		// cut translation map when every segment is 1×. Un-collapses to the full
 		// recording while `isTrimming` so a trim drag can reveal the trimmed parts.
-		get timeMap() { return currentTimeMap(); },
-		get isTrimming() { return isTrimming; },
-		set isTrimming(v: boolean) { isTrimming = v; },
+		get timeMap() {
+			return currentTimeMap();
+		},
+		get isTrimming() {
+			return isTrimming;
+		},
+		set isTrimming(v: boolean) {
+			isTrimming = v;
+		},
 		segmentSpeedAt: segmentSpeedAtStart,
 		segmentSpeedAtTime,
 		setSegmentSpeed,
-		get segmentAnims() { return segmentAnims; },
+		get segmentAnims() {
+			return segmentAnims;
+		},
 		segmentAnimAt: segmentAnimAtStart,
 		setSegmentAnim,
-		get motionTone() { return motionTone; },
+		get motionTone() {
+			return motionTone;
+		},
 		setMotionTone,
 		setSeamTransition,
 		seamTransitionAt,
 		// Setters route through the exclusive selectors, so every existing call site
 		// (and every future one) gets one-selection-at-a-time for free.
-		get selectedClipStart() { return selectedClipStart; },
-		set selectedClipStart(v: number | null) { selectClip(v); },
+		get selectedClipStart() {
+			return selectedClipStart;
+		},
+		set selectedClipStart(v: number | null) {
+			selectClip(v);
+		},
 
-		get selection() { return selection; },
+		get selection() {
+			return selection;
+		},
 		clearSelection,
 		deleteSelection,
-		get focusEnabled() { return focusEnabled; },
-		set focusEnabled(v: boolean) { focusEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'focus', enabled: v }); },
+		get focusEnabled() {
+			return focusEnabled;
+		},
+		set focusEnabled(v: boolean) {
+			focusEnabled = v;
+			isDirty = true;
+			log.info('feature', 'toggled', { feature: 'focus', enabled: v });
+		},
 
-		get autoZoomEnabled() { return autoZoomEnabled; },
-		set autoZoomEnabled(v: boolean) { autoZoomEnabled = v; isDirty = true; log.info('feature', 'toggled', { feature: 'autoZoom', enabled: v }); },
+		get autoZoomEnabled() {
+			return autoZoomEnabled;
+		},
+		set autoZoomEnabled(v: boolean) {
+			autoZoomEnabled = v;
+			isDirty = true;
+			log.info('feature', 'toggled', { feature: 'autoZoom', enabled: v });
+		},
 
-		get autoZoomApplied() { return autoZoomApplied; },
-		set autoZoomApplied(v: boolean) { autoZoomApplied = v; isDirty = true; },
+		get autoZoomApplied() {
+			return autoZoomApplied;
+		},
+		set autoZoomApplied(v: boolean) {
+			autoZoomApplied = v;
+			isDirty = true;
+		},
 
-		get cursorSamplesRaw() { return cursorSamplesRaw; },
-		set cursorSamplesRaw(v: CursorSampleLike[]) { cursorSamplesRaw = v; },
+		get cursorSamplesRaw() {
+			return cursorSamplesRaw;
+		},
+		set cursorSamplesRaw(v: CursorSampleLike[]) {
+			cursorSamplesRaw = v;
+		},
 
-		get selectedZoomRegionId() { return selectedZoomRegionId; },
-		set selectedZoomRegionId(v: string | null) { selectZoomRegion(v); },
+		get selectedZoomRegionId() {
+			return selectedZoomRegionId;
+		},
+		set selectedZoomRegionId(v: string | null) {
+			selectZoomRegion(v);
+		},
 
-		get selectedCutId() { return selectedCutId; },
-		set selectedCutId(v: string | null) { selectCut(v); },
+		get selectedCutId() {
+			return selectedCutId;
+		},
+		set selectedCutId(v: string | null) {
+			selectCut(v);
+		},
 
-		get activePanel() { return activePanel; },
-		set activePanel(v: PanelTab) { activePanel = v; },
+		get activePanel() {
+			return activePanel;
+		},
+		set activePanel(v: PanelTab) {
+			activePanel = v;
+		},
 
-		get timeMode() { return timeMode; },
-		set timeMode(v: TimeMode) { timeMode = v; },
+		get timeMode() {
+			return timeMode;
+		},
+		set timeMode(v: TimeMode) {
+			timeMode = v;
+		},
 
-		get cursorMotionEasing() { return cursorMotionEasing; },
-		set cursorMotionEasing(v: Easing | null) { pushUndoState(); cursorMotionEasing = v; },
+		get cursorMotionEasing() {
+			return cursorMotionEasing;
+		},
+		set cursorMotionEasing(v: Easing | null) {
+			pushUndoState();
+			cursorMotionEasing = v;
+		},
 
-		get annotations() { return annotations; },
-		get annotationsByZ() { return annotationsByZ(); },
-		get selectedAnnotationId() { return selectedAnnotationId; },
-		set selectedAnnotationId(v: string | null) { selectAnnotation(v); },
-		get annotationTool() { return annotationTool; },
-		set annotationTool(v: AnnotationKindName | null) { annotationTool = v; },
-		get hoveredAnnotationId() { return hoveredAnnotationId; },
-		set hoveredAnnotationId(v: string | null) { hoveredAnnotationId = v; },
-		get annotationsGloballyHidden() { return annotationsGloballyHidden; },
-		set annotationsGloballyHidden(v: boolean) { annotationsGloballyHidden = v; log.info('feature', 'toggled', { feature: 'annotations', enabled: !v }); },
-		get annotationSnapEnabled() { return annotationSnapEnabled; },
-		set annotationSnapEnabled(v: boolean) { annotationSnapEnabled = v; },
+		get annotations() {
+			return annotations;
+		},
+		get annotationsByZ() {
+			return annotationsByZ();
+		},
+		get selectedAnnotationId() {
+			return selectedAnnotationId;
+		},
+		set selectedAnnotationId(v: string | null) {
+			selectAnnotation(v);
+		},
+		get annotationTool() {
+			return annotationTool;
+		},
+		set annotationTool(v: AnnotationKindName | null) {
+			annotationTool = v;
+		},
+		get hoveredAnnotationId() {
+			return hoveredAnnotationId;
+		},
+		set hoveredAnnotationId(v: string | null) {
+			hoveredAnnotationId = v;
+		},
+		get annotationsGloballyHidden() {
+			return annotationsGloballyHidden;
+		},
+		set annotationsGloballyHidden(v: boolean) {
+			annotationsGloballyHidden = v;
+			log.info('feature', 'toggled', { feature: 'annotations', enabled: !v });
+		},
+		get annotationSnapEnabled() {
+			return annotationSnapEnabled;
+		},
+		set annotationSnapEnabled(v: boolean) {
+			annotationSnapEnabled = v;
+		},
 
-		get cursorSettings() { return cursorSettings; },
-		set cursorSettings(v: CursorSettings) { cursorSettings = v; },
+		get cursorSettings() {
+			return cursorSettings;
+		},
+		set cursorSettings(v: CursorSettings) {
+			cursorSettings = v;
+		},
 
-		get audioSettings() { return audioSettings; },
-		set audioSettings(v: AudioSettings) { audioSettings = v; },
+		get audioSettings() {
+			return audioSettings;
+		},
+		set audioSettings(v: AudioSettings) {
+			audioSettings = v;
+		},
 
-		get transcript() { return transcript; },
-		set transcript(v: Transcript | null) { transcript = v; isDirty = true; },
-		get captionStyle() { return captionStyle; },
-		set captionStyle(v: CaptionStyle) { captionStyle = v; isDirty = true; },
+		get transcript() {
+			return transcript;
+		},
+		set transcript(v: Transcript | null) {
+			transcript = v;
+			isDirty = true;
+		},
+		get captionStyle() {
+			return captionStyle;
+		},
+		set captionStyle(v: CaptionStyle) {
+			captionStyle = v;
+			isDirty = true;
+		},
 		updateCaptionStyle(updates: Partial<CaptionStyle>) {
 			captionStyle = { ...captionStyle, ...updates };
 			isDirty = true;
 		},
 
-		get watermarkSettings() { return watermarkSettings; },
-		set watermarkSettings(v: WatermarkSettings) { watermarkSettings = v; },
+		get watermarkSettings() {
+			return watermarkSettings;
+		},
+		set watermarkSettings(v: WatermarkSettings) {
+			watermarkSettings = v;
+		},
 
-		get cameraOverlay() { return cameraOverlay; },
-		set cameraOverlay(v: CameraOverlaySettings) { cameraOverlay = v; },
+		get cameraOverlay() {
+			return cameraOverlay;
+		},
+		set cameraOverlay(v: CameraOverlaySettings) {
+			cameraOverlay = v;
+		},
 
-		get exportFormat() { return exportFormat; },
-		set exportFormat(v: ExportFormat) { exportFormat = v; },
+		get exportFormat() {
+			return exportFormat;
+		},
+		set exportFormat(v: ExportFormat) {
+			exportFormat = v;
+		},
 
-		get exportQuality() { return exportQuality; },
-		set exportQuality(v: ExportQuality) { exportQuality = v; },
+		get exportQuality() {
+			return exportQuality;
+		},
+		set exportQuality(v: ExportQuality) {
+			exportQuality = v;
+		},
 
-		get exportSpeed() { return exportSpeed; },
-		set exportSpeed(v: ExportSpeed) { exportSpeed = v; },
+		get exportSpeed() {
+			return exportSpeed;
+		},
+		set exportSpeed(v: ExportSpeed) {
+			exportSpeed = v;
+		},
 
-		get exportFps() { return exportFps; },
-		set exportFps(v: number | null) { exportFps = v; },
+		get exportFps() {
+			return exportFps;
+		},
+		set exportFps(v: number | null) {
+			exportFps = v;
+		},
 
-		get captionExport() { return captionExport; },
-		set captionExport(v: CaptionExportOptions) { captionExport = v; },
+		get captionExport() {
+			return captionExport;
+		},
+		set captionExport(v: CaptionExportOptions) {
+			captionExport = v;
+		},
 		updateCaptionExport(updates: Partial<CaptionExportOptions>) {
 			captionExport = { ...captionExport, ...updates };
 		},
 
-		get gifSettings() { return gifSettings; },
-		set gifSettings(v: GifSettings) { gifSettings = v; },
+		get gifSettings() {
+			return gifSettings;
+		},
+		set gifSettings(v: GifSettings) {
+			gifSettings = v;
+		},
 		updateGifSettings(updates: Partial<GifSettings>) {
 			gifSettings = { ...gifSettings, ...updates };
 		},
 
-		get exportProgress() { return exportProgress; },
-		set exportProgress(v: number | null) { exportProgress = v; },
+		get exportProgress() {
+			return exportProgress;
+		},
+		set exportProgress(v: number | null) {
+			exportProgress = v;
+		},
 
-		get isExporting() { return isExporting; },
-		set isExporting(v: boolean) { isExporting = v; },
+		get isExporting() {
+			return isExporting;
+		},
+		set isExporting(v: boolean) {
+			isExporting = v;
+		},
 
-		get timelineZoom() { return timelineZoom; },
-		set timelineZoom(v: number) { timelineZoom = v; },
+		get timelineZoom() {
+			return timelineZoom;
+		},
+		set timelineZoom(v: number) {
+			timelineZoom = v;
+		},
 
-		get canUndo() { return undoStack.length > 0; },
-		get canRedo() { return redoStack.length > 0; },
+		get canUndo() {
+			return undoStack.length > 0;
+		},
+		get canRedo() {
+			return redoStack.length > 0;
+		},
 		// Revert is only meaningful once we have a saved baseline AND the
 		// user has diverged from it. Without `isDirty` the button would be
 		// a no-op that still consumed an undo slot.
-		get canRevert() { return isDirty && savedSnapshot !== null; },
+		get canRevert() {
+			return isDirty && savedSnapshot !== null;
+		},
 
-		get isDirty() { return isDirty; },
-		get lastSavedAt() { return lastSavedAt; },
+		get isDirty() {
+			return isDirty;
+		},
+		get lastSavedAt() {
+			return lastSavedAt;
+		},
 
 		// Methods
 		undo,

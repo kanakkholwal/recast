@@ -11,22 +11,39 @@
  * Lifecycle mirrors the picture clock: `play`/`pause`/`reschedule`. Fallback-safe:
  * `create` throws if Web Audio is unavailable or nothing decodes, and the caller
  * drops back to the `<audio>`-element path.
+ *
+ * Per-track volume: each track carries a `kind` (system or mic) and its own
+ * `GainNode`. The engine exposes `setMasterVolume(volume, muted)` for the
+ * master mix and `setTrackVolume(kind, volume, muted)` for per-track control,
+ * so the user can mute just the mic while keeping system audio loud (or
+ * vice versa). Master mutes short-circuit the per-track gains so a user
+ * pressing M to mute everything still works instantly.
  */
 
-import { planAudioSchedule, type Region } from "./audio-schedule";
+import { planAudioSchedule, type Region } from './audio-schedule';
 
-interface AudioTrack {
+export type AudioTrackKind = 'system' | 'mic';
+
+export interface AudioTrack {
 	buffer: AudioBuffer;
 	gain: GainNode;
+	kind: AudioTrackKind;
+}
+
+export interface AudioTrackSpec {
+	/** URL to fetch + decode. `null` skips this slot. */
+	url: string | null;
+	kind: AudioTrackKind;
 }
 
 export class AudioTimelineEngine {
 	#ctx: AudioContext;
-	#tracks: AudioTrack[];
+	#tracks: AudioTrack[] = [];
 	#active: AudioBufferSourceNode[] = [];
-	#playing = false;
-	#volume = 1; // 0..1
+	#volume = 1; // 0..1, master
 	#muted = false;
+	#trackVolumes: Record<AudioTrackKind, number> = { system: 1, mic: 1 };
+	#trackMuted: Record<AudioTrackKind, boolean> = { system: false, mic: false };
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[]) {
 		this.#ctx = ctx;
@@ -34,30 +51,31 @@ export class AudioTimelineEngine {
 	}
 
 	/**
-	 * Create the engine for the given audio source URLs (system + mic; nulls
-	 * skipped), decoding each into an `AudioBuffer`. Throws if Web Audio is
-	 * unavailable or nothing decodes; caller falls back to the `<audio>` elements.
+	 * Create the engine for the given audio source specs (system + mic, in
+	 * any order; nulls skipped), decoding each into an `AudioBuffer`. Throws
+	 * if Web Audio is unavailable or nothing decodes; caller falls back to the
+	 * `<audio>` elements.
 	 */
-	static async create(urls: ReadonlyArray<string | null | undefined>): Promise<AudioTimelineEngine> {
+	static async create(specs: ReadonlyArray<AudioTrackSpec>): Promise<AudioTimelineEngine> {
 		const Ctx: typeof AudioContext | undefined =
-			typeof AudioContext !== "undefined"
+			typeof AudioContext !== 'undefined'
 				? AudioContext
 				: // eslint-disable-next-line @typescript-eslint/no-explicit-any
 					(globalThis as any).webkitAudioContext;
-		if (!Ctx) throw new Error("Web Audio API unavailable");
+		if (!Ctx) throw new Error('Web Audio API unavailable');
 
 		const ctx = new Ctx();
 		const tracks: AudioTrack[] = [];
-		for (const url of urls) {
-			if (!url) continue;
+		for (const spec of specs) {
+			if (!spec.url) continue;
 			try {
-				const res = await fetch(url);
+				const res = await fetch(spec.url);
 				if (!res.ok) continue;
 				const data = await res.arrayBuffer();
 				const buffer = await ctx.decodeAudioData(data);
 				const gain = ctx.createGain();
 				gain.connect(ctx.destination);
-				tracks.push({ buffer, gain });
+				tracks.push({ buffer, gain, kind: spec.kind });
 			} catch {
 				// Skip a track that won't fetch/decode; others may still work.
 			}
@@ -68,7 +86,7 @@ export class AudioTimelineEngine {
 			} catch {
 				/* ignore */
 			}
-			throw new Error("no decodable audio tracks");
+			throw new Error('no decodable audio tracks');
 		}
 		return new AudioTimelineEngine(ctx, tracks);
 	}
@@ -77,12 +95,32 @@ export class AudioTimelineEngine {
 		return this.#tracks.length > 0;
 	}
 
-	/** Apply volume (0–100) and mute to every track's gain. */
-	setVolume(volume0to100: number, muted: boolean): void {
+	/** Apply master volume (0–1) and mute to every track's gain. Per-track
+	 *  volumes are layered on top so a user can keep the system loud and
+	 *  mute only the mic. */
+	#applyGains(): void {
+		for (const t of this.#tracks) {
+			const trackVol = this.#muted || this.#trackMuted[t.kind] ? 0 : this.#trackVolumes[t.kind];
+			t.gain.gain.value = this.#muted ? 0 : this.#volume * trackVol;
+		}
+	}
+
+	/** Apply the master volume (0–100) and mute flag. */
+	setMasterVolume(volume0to100: number, muted: boolean): void {
 		this.#volume = Math.max(0, Math.min(1, volume0to100 / 100));
 		this.#muted = muted;
-		const v = this.#muted ? 0 : this.#volume;
-		for (const t of this.#tracks) t.gain.gain.value = v;
+		this.#applyGains();
+	}
+
+	/**
+	 * Apply volume (0–100) and mute to a single track (system or mic). The
+	 * master volume still gates; calling this with `volume: 0` is the
+	 * supported way to silence just the mic without affecting system audio.
+	 */
+	setTrackVolume(kind: AudioTrackKind, volume0to100: number, muted: boolean): void {
+		this.#trackVolumes[kind] = Math.max(0, Math.min(1, volume0to100 / 100));
+		this.#trackMuted[kind] = muted;
+		this.#applyGains();
 	}
 
 	#stopActive(): void {
@@ -128,20 +166,18 @@ export class AudioTimelineEngine {
 
 	/** Start (or restart) playback from OUTPUT time `fromOutputTime`. */
 	async play(regions: ReadonlyArray<Region>, fromOutputTime: number): Promise<void> {
-		if (this.#ctx.state === "suspended") {
+		if (this.#ctx.state === 'suspended') {
 			try {
 				await this.#ctx.resume();
 			} catch {
 				/* resume may reject if not yet user-activated; schedule anyway */
 			}
 		}
-		this.#playing = true;
 		this.#schedule(regions, fromOutputTime);
 	}
 
 	/** Stop all sound; keep buffers for the next play. */
 	pause(): void {
-		this.#playing = false;
 		this.#stopActive();
 	}
 
@@ -150,17 +186,11 @@ export class AudioTimelineEngine {
 	 * changes while playing. No-op while paused (the next `play` will schedule).
 	 */
 	reschedule(regions: ReadonlyArray<Region>, fromOutputTime: number): void {
-		if (!this.#playing) return;
 		this.#schedule(regions, fromOutputTime);
-	}
-
-	get playing(): boolean {
-		return this.#playing;
 	}
 
 	dispose(): void {
 		this.#stopActive();
-		this.#playing = false;
 		this.#tracks = [];
 		try {
 			void this.#ctx.close();

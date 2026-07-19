@@ -461,11 +461,13 @@
     }
     try {
       const eng = await AudioTimelineEngine.create([
-        systemAudioSrc || null,
-        micAudioSrc || null,
+        { url: systemAudioSrc, kind: "system" },
+        { url: micAudioSrc, kind: "mic" },
       ]);
       const s = store.audioSettings;
-      eng.setVolume(s.volume, s.muted);
+      eng.setMasterVolume(s.volume, s.muted);
+      eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
+      eng.setTrackVolume("mic", s.micVolume, s.micMuted);
       audioEngine = eng;
     } catch (err) {
       console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
@@ -562,14 +564,24 @@
   });
 
   // Apply volume/mute from the store's audio settings to both audio elements.
+  // The master is the product of the per-track gains so the user can keep
+  // system audio loud and mute just the mic, or vice versa. Master mute
+  // still zeros both.
   $effect(() => {
     const settings = store.audioSettings;
-    const vol = settings.muted
-      ? 0
-      : Math.max(0, Math.min(1, settings.volume / 100));
-    if (systemAudioEl) systemAudioEl.volume = vol;
-    if (micAudioEl) micAudioEl.volume = vol;
-    audioEngine?.setVolume(settings.volume, settings.muted);
+    const systemVol =
+      settings.muted || settings.systemMuted
+        ? 0
+        : Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
+    const micVol =
+      settings.muted || settings.micMuted
+        ? 0
+        : Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
+    if (systemAudioEl) systemAudioEl.volume = systemVol;
+    if (micAudioEl) micAudioEl.volume = micVol;
+    audioEngine?.setMasterVolume(settings.volume, settings.muted);
+    audioEngine?.setTrackVolume("system", settings.systemVolume, settings.systemMuted);
+    audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
   });
 
   // Transport seek for `store.seek()`: seeks from outside the player (a
