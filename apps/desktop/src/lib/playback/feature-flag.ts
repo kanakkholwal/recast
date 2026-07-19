@@ -1,27 +1,49 @@
 /**
  * Feature flag for the MediaBunny-backed video preview path.
  *
- * Default OFF: the existing `WebCodecsVideoSource` continues to serve the
- * editor's preview. The flag is an explicit opt-in so reviewers and
- * developers can A/B test the new pipeline without disturbing the rest of
- * the editor.
+ * Default ON (PR-F): the editor's preview now uses `MediabunnyVideoSource`,
+ * which gives frame-accurate decode, sample-accurate cuts, and removes the
+ * legacy `mp4box` + hand-rolled WebCodecs dependency. The legacy
+ * `WebCodecsVideoSource` is still available for environments that can't
+ * run MediaBunny (e.g. node tests, very old webviews); it's opt-in via
+ * `?useLegacyPreview=1`.
  *
- * Activated by appending `?mbPreview=1` to the editor route URL, e.g.
- * `recast://editor/foo.recast?mbPreview=1` (Tauri) or
- * `http://localhost:1420/editor/foo.recast?mbPreview=1` (vite dev).
+ * URLs:
+ *   recast://editor/foo.recast                      → MediaBunny (default)
+ *   recast://editor/foo.recast?useLegacyPreview=1   → WebCodecs + mp4box
+ *   recast://editor/foo.recast?mbPreview=0          → legacy (alias of the above)
  *
- * Anything else (no param, `0`, `false`, `no`, absent) → OFF. The string
- * check is loose on purpose; this is a developer-facing toggle.
+ * The flag is loose on purpose; the only normalized value is the toggle
+ * value, anything else defaults ON.
  */
 export function isMediabunnyPreviewEnabled(): boolean {
-	if (typeof window === 'undefined') return false;
+	// Default: MediaBunny. The legacy pipeline stays as an opt-in fallback
+	// (until PR-F deletes it entirely).
+	if (typeof window === 'undefined') return true;
 	const search = window.location?.search ?? '';
-	if (!search) return false;
+	if (!search) return true;
 	const params = new URLSearchParams(search);
-	const raw = params.get('mbPreview');
-	if (raw === null) return false;
-	const normalized = raw.trim().toLowerCase();
-	return normalized === '1' || normalized === 'true' || normalized === 'yes' || normalized === 'on';
+	// `useLegacyPreview=1` opts the editor back into the WebCodecs engine.
+	const legacy = params.get('useLegacyPreview');
+	if (legacy !== null) {
+		return !isTruthy(legacy);
+	}
+	// `mbPreview=0` is the legacy alias; any other value is the new default.
+	const mb = params.get('mbPreview');
+	if (mb !== null) {
+		return !isFalsy(mb);
+	}
+	return true;
+}
+
+function isTruthy(value: string): boolean {
+	const v = value.trim().toLowerCase();
+	return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+}
+
+function isFalsy(value: string): boolean {
+	const v = value.trim().toLowerCase();
+	return v === '0' || v === 'false' || v === 'no' || v === 'off' || v === '';
 }
 
 /**
@@ -29,3 +51,4 @@ export function isMediabunnyPreviewEnabled(): boolean {
  * the analytics event name doesn't drift.
  */
 export const MEDIABUNNY_PREVIEW_FLAG = 'mbPreview';
+export const LEGACY_PREVIEW_FLAG = 'useLegacyPreview';
