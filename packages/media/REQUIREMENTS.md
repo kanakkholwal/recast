@@ -21,7 +21,7 @@ fixes the code, not the rule.
   extract-frames).
 - **Future:** an in-browser video editor for 100 GB+ source files. The
   design headroom is built in now (range-fetched `StreamSource`, byte-
-  budgeted IndexedDB cache, AudioWorklet scheduling).
+  budgeted IndexedDB cache, streaming decode-ahead).
 
 **Out of scope:**
 
@@ -45,11 +45,12 @@ export type { ConversionParams, ContainerKind };
 
 // worker-bridged playback (the new surface)
 export { openMediaSource, seekTo, prefetchAround, evictCache, cacheStats };
+export { frameBudget, frameCacheCapBytes };
 export type { PlaybackSource, PlaybackEvent };
 
-// audio (sample-accurate scheduling)
-export { createAudioScheduler };
-export type { AudioScheduler };
+// audio scheduling math (shared with the desktop engine)
+export { keptRegions, planAudioSchedule };
+export type { Region, ScheduledChunk };
 
 // conversion tools' shared protocol (apps/web)
 export { ConvertError };
@@ -90,14 +91,14 @@ Regression on any row fails the build via
 | Frame-to-glass during playback | ≤ 16.7 ms p95 (60 fps) | Whole pipeline: decode → composite → upload → display |
 | Cut-cross latency | ≤ 250 ms p95 | Existing baseline; non-regression budget |
 | INP during playback | ≤ 100 ms | Scrub / cut / split must not block input |
-| Decoded-frame memory | ≤ 512 MB hard cap, LRU by GOP | Even at 100 GB source size |
+| Decoded-frame memory | resolution-adaptive via `frameCacheCapBytes`, ≤ 512 MB | A flat cap safe at 1080p starves the decoder's surface pool at 4K |
 | IndexedDB cache | ≤ 2 GB hard cap (user-configurable in Settings; default 2 GB), LRU by recency × bytes | Re-scrub reuse |
 | `@recast/media` bundle — desktop | ≤ 80 KB gz | Editor preview surface: cache + errors + playback subpath |
 | `@recast/media` bundle — web page | ≤ 5 KB gz | `tools/client.ts` is types-only and spawns the worker lazily; nothing here blocks first paint |
 | `@recast/media` bundle — conversion worker | ≤ 220 KB gz | On-demand chunk, fetched only after the user starts a conversion. Pulls MediaBunny + gifenc + lamejs + fflate |
 | Package is side-effect-free | `sideEffects: false` | Without it a lone `MediaError` import cost 61 KB gz instead of 0.2 |
 | Worker isolation | decode + demux in Worker | Main thread never touches `VideoDecoder` |
-| Audio/video sync drift | ≤ 1 audio frame (~10 ms @ 48 kHz) over 10 min | AudioWorklet scheduling |
+| Audio/video sync drift | ≤ 1 audio frame (~10 ms @ 48 kHz) over 10 min | Web Audio scheduling in the desktop `AudioTimelineEngine`; open-loop, no continuous correction |
 
 ---
 
@@ -192,8 +193,8 @@ article.
 ### Audio
 
 - https://developer.mozilla.org/en-US/docs/Web/API/AudioWorklet — Sample-
-  accurate scheduling that survives jank. **Anchor doc** for
-  `createAudioScheduler`.
+  accurate scheduling that survives jank. Relevant if the desktop
+  `AudioTimelineEngine` is ever promoted into this package.
 
 ---
 

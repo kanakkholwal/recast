@@ -120,10 +120,11 @@
 	// the clock and audio sync (hybrid). When `create` fails (MediaBunny
 	// can't decode the file — see `unsupported-formats.ts` for the list),
 	// `mbSource` stays null and the draw loop falls back to the `<video>`
-	// element automatically. Not $state: read only from the imperative
-	// draw loop.
+	// element automatically. `mbSource` is not $state (read only from the
+	// imperative draw loop); `mbReady` is, because the markup and the
+	// pause-the-transport effect both branch on it.
 	let mbSource: MediabunnyVideoSource | null = null;
-	let mbReady = false;
+	let mbReady = $state(false);
 	let loadedMbSrc = "";
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
@@ -656,8 +657,9 @@
 				store.currentTime = playbackTime;
 				lastPublishedTime = playbackTime;
 			}
-			// Keep the <video>/audio transport aligned: a rare correction that
-			// fires once at each cut boundary, where original time jumps.
+			// Keep the <video> transport roughly aligned so the legacy fallback can
+			// take over mid-playback. It stays paused here (see the effect below),
+			// so this is a cheap single-frame seek, not continuous decode.
 			if (
 				videoEl &&
 				!videoEl.seeking &&
@@ -665,10 +667,16 @@
 			) {
 				videoEl.currentTime = playbackTime;
 			}
+		} else if (usingPicClock) {
+			// Paused on the MediaBunny path: the store owns the time. Reading the
+			// <video> here would tie us to an element we keep paused (it must not
+			// decode in parallel with the worker), whose currentTime only tracks
+			// within the 0.25s alignment tolerance below.
+			playbackTime = store.currentTime;
 		} else {
-			// Paused (or legacy path): the <video> transport owns the time, so a
-			// scrub or frame-step sets it directly. handleSeeked realigns the
-			// picture clock so resuming continues from here.
+			// Legacy path: the <video> transport owns the time, so a scrub or
+			// frame-step sets it directly. handleSeeked realigns the picture
+			// clock so resuming continues from here.
 			playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
 		}
 
@@ -1226,6 +1234,14 @@
 		void loadCursorTrackIfNeeded();
 	});
 
+	// The worker decodes the picture, so a playing <video> would decode the same
+	// file a second time and compete for the decoder's output surfaces. Keep it
+	// paused as a seek-only transport; it stays mounted for the fallback path.
+	$effect(() => {
+		void store.isPlaying;
+		if (mbReady && videoEl && !videoEl.paused) videoEl.pause();
+	});
+
 	// Background (re)load when type/value changes, or when an asset:<id>
 	// download lands and the cached path becomes available.
 	$effect(() => {
@@ -1437,10 +1453,9 @@
 			preload="auto"
 			muted
 		></video>
-		<!-- Scout decoder: never played, only seeked to pre-decode the first
-		     post-cut frame (see draw()). Mounted only when the clip has cuts to
-		     skip, so a no-cut session pays for no second decode pipeline. -->
-		{#if store.effectiveCuts.length > 0}
+		<!-- Legacy scout decoder: only read on the `!mbReady` path, so mounting it
+		     while the worker is live would be a third decode pipeline for nothing. -->
+		{#if !mbReady && store.effectiveCuts.length > 0}
 			<!-- svelte-ignore a11y_media_has_caption -->
 			<video
 				bind:this={scoutEl}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { frameBudget } from "./frame-budget";
+import { frameBudget } from "../src/cache/frame-budget";
 
 describe("frameBudget", () => {
 	it("keeps the historical 7/4/6 budget at common resolutions (≤1440p)", () => {

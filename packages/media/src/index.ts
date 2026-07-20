@@ -46,10 +46,9 @@ export {
 	openMediaSource,
 	prefetchAround,
 	seekTo,
-	createAudioScheduler,
 } from './playback';
 export type { PlaybackSource, PlaybackFrame, PlaybackEvent } from './playback';
-export type { AudioScheduler, AudioSchedulerConfig } from './playback';
+export { keptRegions, planAudioSchedule } from './audio/schedule';
 export type { Region, ScheduledChunk } from './audio/schedule';
 
 // seek helpers
@@ -76,6 +75,8 @@ export {
 } from './cache';
 export type { CacheStats, FrameCacheConfig } from './cache';
 export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
+export { frameBudget, frameCacheCapBytes } from './cache/frame-budget';
+export type { FrameBudget } from './cache/frame-budget';
 export { estimateFrameBytes } from './cache/storage';
 export type { CacheableFrame, FrameStorage } from './cache/storage';
 

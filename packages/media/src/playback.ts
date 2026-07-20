@@ -3,15 +3,11 @@
  * app's main thread talks to this surface; this module talks to a Web Worker
  * that owns the MediaBunny `Input` + `CanvasSink` lifecycle.
  *
- * PR-D: the landing strip. The worker, the high-level API, and the cache
- * skeleton land here. The IndexedDB-backed decoded-frame cache lands in PR-E.
- *
  * Contract (packages/media/REQUIREMENTS.md §5):
- * - All async exports take an `AbortSignal` so consumers can cancel mid-flight.
- * - `VideoFrame`s returned from `seek` are owned by the consumer; the source
- *   MUST NOT close them. The consumer returns them via `PlaybackFrame.release`.
- * - The worker, the decode pipeline, and the byte-level decoder all live
- *   outside the main thread (REQUIREMENTS.md §4.x).
+ * - Async exports that do I/O take an `AbortSignal`.
+ * - Frames are owned by the shared cache, which closes them on eviction; the
+ *   consumer uploads and does not close.
+ * - Demux and decode run in the worker, never on the main thread.
  */
 
 import { MediaError } from './errors';
@@ -235,8 +231,5 @@ export async function cacheStats(): Promise<{
 	return getFrameCache().cacheStats();
 }
 
-// Re-export the audio scheduler types so consumers can `import { createAudioScheduler, type AudioScheduler } from '@recast/media'`.
-// AudioWorklet processor module is supplied by the host (Vite-friendly URL).
-export { createAudioScheduler } from './audio/scheduler';
-export type { AudioScheduler, AudioSchedulerConfig } from './audio/scheduler';
+// Audio scheduling math, shared with the desktop engine.
 export type { Region, ScheduledChunk } from './audio/schedule';

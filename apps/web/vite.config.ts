@@ -19,21 +19,39 @@ export default defineConfig({
 			// build output lands in .svelte-kit/cloudflare; wrangler.jsonc points
 			// the deploy at it. See .github/workflows/deploy-web.yml.
 			adapter: adapter(),
+			prerender: {
+				// Without this, prerendered pages bake in SvelteKit's placeholder
+				// origin (http://sveltekit-prerender) as their <link rel=canonical>
+				// and og:url, pointing crawlers at a domain that does not exist.
+				origin: process.env.PUBLIC_APP_URL ?? "https://recast.li",
+
+				// Still fails the build, deliberately: a 500 here means /blog and
+				// /tools would ship broken, so 'warn'/'ignore' would only hide it.
+				// This exists to add the crawl context `handleError` cannot see —
+				// which page linked to the failing one, and how it was referenced.
+				handleHttpError: ({ status, path, referrer, referenceType, message }) => {
+					console.error(
+						`[prerender] ${status} ${path} (${referenceType} from ${referrer ?? "entry point"}) :: ${message}`,
+					);
+					throw new Error(`Prerender failed: ${status} ${path}`);
+				},
+			},
+
 			// cloudflare
-				// adapter: adapter({
-				// 	// See below for an explanation of these options
-				// 	config: undefined,
-				// 	platformProxy: {
-				// 		configPath: undefined,
-				// 		environment: undefined,
-				// 		persist: undefined
-				// 	},
-				// 	fallback: 'plaintext',
-				// 	routes: {
-				// 		include: ['/*'],
-				// 		exclude: ['<all>']
-				// 	}
-		// }),
+			// adapter: adapter({
+			// 	// See below for an explanation of these options
+			// 	config: undefined,
+			// 	platformProxy: {
+			// 		configPath: undefined,
+			// 		environment: undefined,
+			// 		persist: undefined
+			// 	},
+			// 	fallback: 'plaintext',
+			// 	routes: {
+			// 		include: ['/*'],
+			// 		exclude: ['<all>']
+			// 	}
+			// }),
 			alias: {
 				$components: 'src/components',
 				$utils: 'src/utils',

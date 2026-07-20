@@ -1,10 +1,9 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
 	keptRegions,
 	planAudioSchedule,
 	type Region,
 } from '../src/audio/schedule';
-import { createAudioScheduler } from '../src/audio/scheduler';
 
 /**
  * Pure-function tests for the audio scheduling math. The actual
@@ -114,69 +113,5 @@ describe('planAudioSchedule', () => {
 	it('skips non-positive speed (treated as 1×)', () => {
 		const chunks = planAudioSchedule([{ start: 0, end: 4, speed: 0 }], 0);
 		expect(chunks[0]?.rate).toBe(1);
-	});
-});
-/**
- * `load()` used to run an unbounded fetch/decode loop with no cancellation,
- * so an editor close mid-load kept fetching and leaked the AudioContext.
- */
-describe('AudioScheduler.load cancellation', () => {
-	function stubAudio(onClose: () => void) {
-		class FakeCtx {
-			destination = {};
-			createGain() {
-				return { connect() {}, gain: { value: 1 } };
-			}
-			async decodeAudioData() {
-				return { numberOfChannels: 1, sampleRate: 48000, length: 1, getChannelData: () => new Float32Array(1) };
-			}
-			async close() {
-				onClose();
-			}
-		}
-		vi.stubGlobal('AudioContext', FakeCtx);
-	}
-
-	afterEach(() => vi.unstubAllGlobals());
-
-	it('rejects with MediaError(cancelled) when the signal aborts first', async () => {
-		let closed = false;
-		stubAudio(() => {
-			closed = true;
-		});
-		vi.stubGlobal('fetch', async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
-		const scheduler = await createAudioScheduler();
-		const ac = new AbortController();
-		ac.abort();
-		await expect(scheduler.load(['a.wav'], ac.signal)).rejects.toMatchObject({
-			name: 'MediaError',
-			code: 'cancelled',
-		});
-		expect(closed).toBe(true);
-	});
-
-	it('converts a mid-flight fetch abort into MediaError(cancelled)', async () => {
-		let closed = false;
-		stubAudio(() => {
-			closed = true;
-		});
-		const ac = new AbortController();
-		vi.stubGlobal('fetch', async (_url: string, init?: { signal?: AbortSignal }) => {
-			ac.abort();
-			throw Object.assign(new Error('aborted'), { name: 'AbortError', signal: init?.signal });
-		});
-		const scheduler = await createAudioScheduler();
-		await expect(scheduler.load(['a.wav'], ac.signal)).rejects.toMatchObject({
-			name: 'MediaError',
-			code: 'cancelled',
-		});
-		expect(closed).toBe(true);
-	});
-
-	it('still throws bad-input (not cancelled) when nothing decodes', async () => {
-		stubAudio(() => {});
-		vi.stubGlobal('fetch', async () => ({ ok: false }));
-		const scheduler = await createAudioScheduler();
-		await expect(scheduler.load(['a.wav'])).rejects.toMatchObject({ code: 'bad-input' });
 	});
 });
