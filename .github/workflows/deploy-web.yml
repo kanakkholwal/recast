@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     environment: 
       name: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'production' || 'preview' }}
-      url: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.nexonauts.com' || 'https://recast-preview.nexonauts.com' }}
+      url: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://recast-preview.nexonauts.com' }}
     # Set default working directory for all steps
     defaults:
       run:

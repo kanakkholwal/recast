@@ -1,13 +1,48 @@
+import { docvia } from "@docvia/plugin-vite";
+import adapter from '@sveltejs/adapter-auto';
 import { sveltekit } from '@sveltejs/kit/vite';
 import tailwindcss from '@tailwindcss/vite';
 import { defineConfig } from 'vite';
-import { docvia } from "@docvia/plugin-vite";
 import docviaConfig from "./docvia.config";
 
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
-		sveltekit(),
+		sveltekit({
+			compilerOptions: {
+				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
+				runes: ({ filename }) =>
+					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
+			},
+
+			// Deployed to Cloudflare Workers (static assets + SSR worker). The
+			// build output lands in .svelte-kit/cloudflare; wrangler.jsonc points
+			// the deploy at it. See .github/workflows/deploy-web.yml.
+			adapter: adapter(),
+			// cloudflare
+				// adapter: adapter({
+				// 	// See below for an explanation of these options
+				// 	config: undefined,
+				// 	platformProxy: {
+				// 		configPath: undefined,
+				// 		environment: undefined,
+				// 		persist: undefined
+				// 	},
+				// 	fallback: 'plaintext',
+				// 	routes: {
+				// 		include: ['/*'],
+				// 		exclude: ['<all>']
+				// 	}
+		// }),
+			alias: {
+				$components: 'src/components',
+				$utils: 'src/utils',
+				$hooks: 'src/lib/hooks',
+				$constants: 'src/constants',
+				$tools: 'src/tools',
+				$stores: 'src/stores',
+			},
+		}),
 		docvia(docviaConfig)
 	],
 	clearScreen: false,
