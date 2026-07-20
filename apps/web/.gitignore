@@ -4,3 +4,5 @@
 # dev server, so they are outputs, not sources — same treatment as `.svelte-kit`.
 .docvia/
 docvia-env.d.ts
+.vercel
+.env*.local
