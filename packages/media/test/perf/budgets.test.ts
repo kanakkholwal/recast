@@ -4,39 +4,9 @@ import { IndexedDBFrameStorage } from '../../src/cache/indexeddb-storage';
 import type { CacheableFrame, FrameStorage } from '../../src/cache/storage';
 
 /**
- * Performance budgets every `@recast/media` consumer can rely on. Mirrored
- * verbatim from packages/media/REQUIREMENTS.md §3.
- *
- * The first block DECLARES the budget table (guards against someone quietly
- * relaxing a number). The second block ENFORCES the rows that are checkable
- * without real media. The closing comment lists the rows that are neither,
- * so the file never again implies more coverage than it has.
+ * Budgets from REQUIREMENTS.md §3. Block 1 declares the table, block 2
+ * enforces the rows checkable without real media; the rest are listed below.
  */
-
-/** Minimal storage stub — these tests exercise the cache, not a backend. */
-function makeNoopStorage(): FrameStorage {
-	let cap = 2 * 1024 * 1024 * 1024;
-	return {
-		name: 'noop',
-		async open() {},
-		async get() {
-			return null;
-		},
-		async put() {},
-		async deleteRange() {},
-		async clear() {},
-		async size() {
-			return 0;
-		},
-		async close() {},
-		get capBytes() {
-			return cap;
-		},
-		set capBytes(v: number) {
-			cap = v;
-		},
-	};
-}
 const BUDGETS = {
 	// TTFF
 	ttff4kMs: 800,
@@ -109,14 +79,34 @@ describe('perf budgets (REQUIREMENTS.md §3 — non-negotiable)', () => {
 });
 
 /**
- * Rows this file genuinely enforces: the two memory caps. They are the only
- * budgets expressible without decoding real media, and they are the ones that
- * actually regressed — the cache shipped with NO in-memory cap at all while
- * this file asserted `512 * 1024 * 1024 === 512 * 1024 * 1024` and passed.
- *
- * An assertion here must reference real package code. If it only compares
- * `BUDGETS.x` to a literal, it belongs in the "declared" block above.
+ * Enforced rows. Every assertion here MUST exercise real package code — if it
+ * only compares `BUDGETS.x` to a literal it belongs in the block above.
  */
+/** Minimal storage stub — these tests exercise the cache, not a backend. */
+function makeNoopStorage(): FrameStorage {
+	let cap = 2 * 1024 * 1024 * 1024;
+	return {
+		name: 'noop',
+		async open() {},
+		async get() {
+			return null;
+		},
+		async put() {},
+		async deleteRange() {},
+		async clear() {},
+		async size() {
+			return 0;
+		},
+		async close() {},
+		get capBytes() {
+			return cap;
+		},
+		set capBytes(v: number) {
+			cap = v;
+		},
+	};
+}
+
 describe('perf budgets — enforced against real code', () => {
 	function frame(w: number, h: number) {
 		return { width: w, height: h, close: () => {} } as unknown as CacheableFrame;
@@ -157,19 +147,5 @@ describe('perf budgets — enforced against real code', () => {
 	});
 });
 
-/**
- * Rows NOT enforced here, and why. Listed explicitly so nobody reads
- * "perf budgets" and assumes all twelve rows of §3 are gated by CI.
- *
- *   ttff4kMs / ttff1080pMs        — needs a real 4K/1080p decode; browser-only
- *   scrubCachedP95Ms / scrubCold  — needs a real seek against real media
- *   frameToGlassP95Ms             — needs a compositor + display
- *   cutCrossP95Ms                 — covered in apps/desktop cut-jump-parity.test.ts
- *   inpPlaybackP95Ms              — needs real input events
- *   desktopBundleGzKb / web       — needs a production build; belongs in CI, not vitest
- *   audioSyncDriftMsPer10Min      — needs a 10-minute realtime AudioContext run
- *
- * These require a browser harness (Playwright + a fixture recording). Until
- * that exists they are documented targets, not gates — REQUIREMENTS.md §3's
- * "regression fails the build" holds only for the enforced rows above.
- */
+// NOT enforced here (needs a browser harness that doesn't exist yet): TTFF,
+// scrub p95, frame-to-glass, INP, bundle size, audio drift. See REQUIREMENTS.md §3.

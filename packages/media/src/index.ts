@@ -56,7 +56,6 @@ export type { Region, ScheduledChunk } from './audio/schedule';
 export { snapToSeekTarget, nextCutWithin } from './seek';
 
 // sources
-export { encodeCanvasToMp4 } from './sources';
 
 // small encoders
 export {
@@ -80,10 +79,7 @@ export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
 export { estimateFrameBytes } from './cache/storage';
 export type { CacheableFrame, FrameStorage } from './cache/storage';
 
-// Formats MediaBunny (and the legacy webcodecs+mp4box pipeline) cannot
-// decode. The desktop preview falls back to the <video> element when the
-// input matches an entry. The list lives in `cache/unsupported-formats.ts`
-// and is pinned by `test/unsupported-formats.test.ts`.
+// Formats MediaBunny cannot decode; the preview falls back to <video>.
 export {
 	UNSUPPORTED_FORMATS,
 	isUnsupportedContainer,
@@ -91,8 +87,5 @@ export {
 } from './cache/unsupported-formats';
 export type { UnsupportedFormat } from './cache/unsupported-formats';
 
-// MediaBunny primitives are NOT re-exported here. A static re-export on the
-// main barrel pulls all of MediaBunny into every consumer's bundle, which
-// breaks the tree-shaking rule (REQUIREMENTS.md §5) and the 80 KB desktop
-// budget (§3). Worker modules that need the raw classes import them from
-// `@recast/media/mediabunny` instead.
+// MediaBunny primitives live on `@recast/media/mediabunny`. Re-exporting them
+// here would pull the whole library into every consumer (REQUIREMENTS.md §3).

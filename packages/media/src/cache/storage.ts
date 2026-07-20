@@ -1,9 +1,8 @@
 /**
  * Storage adapter for the decoded-frame cache. The cache persists
  * `ImageBitmap` values keyed by the original-recording timestamp (µs).
- * Implementations are pluggable so we can swap IndexedDB (default,
- * works everywhere including Tauri's webview) for SQLite (Tauri-only,
- * for cases where the webview quota or platform behavior is undesirable).
+ * Implementations are pluggable so the backend can be swapped; IndexedDB
+ * works everywhere including Tauri's webview.
  *
  * Contract (packages/media/REQUIREMENTS.md §5):
  * - The cache key is a microsecond timestamp (`ctsUs`).
@@ -24,38 +23,27 @@
 /** A decoded video frame, GPU-ready, structured-cloneable for IndexedDB. */
 export type CacheableFrame = ImageBitmap;
 
-/**
- * What the in-memory hot layer may hold. `VideoFrame` is transferable but
- * NOT structured-cloneable, so it can live in memory but can never reach
- * IndexedDB — `isPersistable` is the guard that keeps the two apart.
- */
+/** In-memory hot-layer value. `VideoFrame` can never reach IndexedDB. */
 export type CachedFrame = ImageBitmap | VideoFrame;
 
-/**
- * True when the frame can be written to IndexedDB. `VideoFrame` fails
- * structured-clone with `DataCloneError`; `ImageBitmap` succeeds.
- */
+/** True when the frame survives structured-clone into IndexedDB. */
 export function isPersistable(frame: CachedFrame): frame is CacheableFrame {
 	return typeof VideoFrame === 'undefined' || !(frame instanceof VideoFrame);
 }
 
 /** Per-entry byte estimate for budget accounting. */
 export function estimateFrameBytes(frame: CachedFrame): number {
-	// `ImageBitmap` exposes width/height; `VideoFrame` exposes codedWidth/
-	// codedHeight and has NO width/height — reading those yields undefined and
-	// poisons every downstream byte total with NaN. Branch on what's present.
+	// `VideoFrame` has codedWidth/codedHeight and no width/height; reading the
+	// wrong pair yields NaN and silently disables every cap.
 	const w = 'codedWidth' in frame ? frame.codedWidth : frame.width;
 	const h = 'codedHeight' in frame ? frame.codedHeight : frame.height;
 	if (!Number.isFinite(w) || !Number.isFinite(h)) return 0;
-	// No public `byteLength`; use nominal pixel size × 4 channels (RGBA).
-	// Sub-byte encodings underestimate, but for eviction an over-estimate is
-	// the safe side.
+	// No public byteLength; nominal RGBA size, over-estimating on purpose.
 	return w * h * 4;
 }
 
 /**
- * Storage backend contract. Implementations: `IndexedDBFrameStorage`
- * (default) and `SqliteFrameStorage` (Tauri-only, stub for now).
+ * Storage backend contract. Sole implementation: `IndexedDBFrameStorage`.
  */
 export interface FrameStorage {
 	/** Display name for diagnostics + telemetry. */

@@ -9,10 +9,14 @@
 	  Play,
 	  RotateCcw,
 	  RotateCw,
-	  Volume,
-	  Volume1,
-	  Volume2,
-	  VolumeX
+	  // @recast/icons maps Lucide-style names onto Tabler glyphs, and Tabler's
+	  // volume scale runs the other way: `Volume` is the two-arc loud one and
+	  // `Volume2` (IconVolume3) draws no arcs at all. Aliased to what they
+	  // actually render so the level mapping below can't be read backwards.
+	  Volume as VolumeHigh,
+	  Volume1 as VolumeMedium,
+	  Volume2 as VolumeLow,
+	  VolumeX as VolumeMuted
 	} from "@recast/icons";
 	import { onMount } from "svelte";
 	import { fade } from "svelte/transition";
@@ -31,17 +35,17 @@
 	import "hls-video-element";
 	import "media-chrome";
 
-	import CaptionBox from "@recast/captions/box";
 	import {
-		DEFAULT_CAPTION_STYLE,
-		resolveCaptionAnimation,
-		chunkWords,
-		activeChunkIndex,
-		activeWordIndex,
-		spokenWordCount,
-		parseKaraokeCue,
-		type TranscriptWord,
+	  activeChunkIndex,
+	  activeWordIndex,
+	  chunkWords,
+	  DEFAULT_CAPTION_STYLE,
+	  parseKaraokeCue,
+	  resolveCaptionAnimation,
+	  spokenWordCount,
+	  type TranscriptWord,
 	} from "@recast/captions";
+	import CaptionBox from "@recast/captions/box";
 
 	// Minimal by default: play, time, then speed / volume / fullscreen. The +-10s
 	// jog buttons and PiP are opt-in — the scrubber covers the same intent and a
@@ -134,19 +138,18 @@
 	const mergedFeatures = $derived({ ...DEFAULT_FEATURES, ...features });
 	const playerLabel = $derived(ariaLabel || title || "Video player");
 
-	// Mute is a plain button, not `media-mute-button`, for the same reason the
-	// captions toggle is: media-chrome swaps its off/low/medium/high icons via
-	// shadow-DOM rules keyed on a `mediavolumelevel` attribute the controller
-	// does not propagate reliably here, which left the icon stuck on the muted
-	// glyph at full volume. Deriving from our own state is deterministic.
+	// Mute is a plain button, not `media-mute-button`: media-chrome swaps its
+	// off/low/medium/high icons via shadow-DOM rules keyed on a
+	// `mediavolumelevel` attribute the controller does not propagate reliably
+	// here. Deriving from our own state is deterministic.
 	const VolumeIcon = $derived(
 		muted || volume === 0
-			? VolumeX
+			? VolumeMuted
 			: volume < 0.34
-				? Volume
+				? VolumeLow
 				: volume < 0.67
-					? Volume1
-					: Volume2,
+					? VolumeMedium
+					: VolumeHigh,
 	);
 
 	function toggleMute() {
@@ -903,7 +906,9 @@
 							aria-pressed={muted}
 							onclick={toggleMute}
 						>
-							<span class="recast-icon"><VolumeIcon class="size-4" /></span>
+							<span class="recast-icon">
+								<VolumeIcon class="size-4" />
+							</span>
 						</button>
 						<media-volume-range class="recast-volume" aria-label="Volume"></media-volume-range>
 					{/if}

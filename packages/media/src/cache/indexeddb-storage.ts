@@ -45,11 +45,7 @@ function getIndexedDB(): MinimalIDB | null {
 }
 
 const DB_NAME = 'recast-media-cache';
-/**
- * v2 adds the `lastUsedUs` index on `frames`. v1 created the store without
- * it while `#evictUntilFits` opened it unconditionally, so LRU eviction threw
- * `NotFoundError` on every over-cap write — i.e. the byte cap never held.
- */
+// v2 adds the `lastUsedUs` index; v1 lacked it, so every LRU eviction threw.
 const DB_VERSION = 2;
 const IDX_LAST_USED = 'lastUsedUs';
 const STORE_FRAMES = 'frames';
@@ -115,9 +111,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 				reject(new MediaError('internal', 'IndexedDB is not available in this environment'));
 				return;
 			}
-			// One DB per recording. `#recordingId` used to be assigned and never
-			// read, so every recording shared one keyspace of bare timestamps and
-			// could serve another recording's frame at the same timestamp.
+			// One DB per recording: bare-timestamp keys collide across recordings.
 			const req = idb.open(this.#dbName, DB_VERSION);
 			req.onupgradeneeded = () => {
 				const db = req.result;
@@ -125,8 +119,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 				const frames = db.objectStoreNames.contains(STORE_FRAMES)
 					? tx?.objectStore(STORE_FRAMES)
 					: db.createObjectStore(STORE_FRAMES, { keyPath: 'ts' });
-				// v1 → v2: the index the LRU cursor needs. Explicit migration
-				// (REQUIREMENTS.md §5), not best-effort.
+				// v1 → v2: the index the LRU cursor needs.
 				if (frames && !frames.indexNames.contains(IDX_LAST_USED)) {
 					frames.createIndex(IDX_LAST_USED, 'lastUsedUs', { unique: false });
 				}
@@ -147,9 +140,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 						/* persistence is best-effort */
 					});
 				}
-				// `#size` is per-instance but the DB outlives the process. Without
-				// this the cache believes it is empty on every reload while holding
-				// up to `cap` on disk, so the cap never triggers.
+				// `#size` is per-instance but the DB outlives the process.
 				this.#restoreSize()
 					.then(resolve)
 					.catch(() => resolve());
@@ -309,9 +300,8 @@ export class IndexedDBFrameStorage implements FrameStorage {
 	}
 
 	/**
-	 * Recompute `#size` from the stored entries at open time. Sums the
-	 * per-row `size` field rather than trusting the `meta` singleton, which
-	 * can drift if a session died mid-write.
+	 * Recompute `#size` from stored rows at open time. Sums per-row `size`
+	 * rather than the `meta` singleton, which drifts if a session died mid-write.
 	 */
 	#restoreSize(): Promise<void> {
 		return new Promise((resolve, reject) => {
@@ -351,10 +341,8 @@ export class IndexedDBFrameStorage implements FrameStorage {
 			}
 			const tx = db.transaction(STORE_FRAMES, 'readwrite');
 			const store = tx.objectStore(STORE_FRAMES);
-			// `store.index` is a method, so the old `store.index ? …` guard was
-			// always true and masked the fact that v1 never created this index.
-			// Check the real thing; fall back to key order if a stale schema
-			// somehow lacks it (worse LRU, but it still bounds the store).
+			// Check `indexNames`, not `store.index` — the latter is a method and
+			// always truthy. Key order is a worse but still-bounding fallback.
 			const cursorReq = store.indexNames.contains(IDX_LAST_USED)
 				? store.index(IDX_LAST_USED).openCursor()
 				: store.openCursor();

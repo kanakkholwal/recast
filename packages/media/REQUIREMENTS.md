@@ -199,8 +199,13 @@ article.
 
 - **No `mediabunny` import outside `packages/media`.** Direct imports are
   forbidden in consumer code.
-- **All exported async functions take an `AbortSignal`** so consumers can
-  cancel mid-flight.
+- **Every exported async function that does I/O or unbounded work takes an
+  `AbortSignal`.** Fetch/decode loops, worker round-trips and storage reads
+  MUST be cancellable and MUST release partial work (close the `AudioContext`,
+  dispose the worker) before rejecting with `MediaError('cancelled')`. Fast
+  local reads (`cacheStats`, `evictCache`) are exempt — a signal there is
+  ceremony, not safety. Amended 2026-07-20 from a blanket "all async exports"
+  rule that the code had never satisfied.
 - **All cancellable operations resolve only after resources are released.**
   No leaked `VideoFrame`s, `AudioBuffer`s, or `OffscreenCanvas`s.
 - **`VideoFrame` ownership** crosses the worker boundary to the consumer;

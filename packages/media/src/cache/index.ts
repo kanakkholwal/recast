@@ -12,12 +12,8 @@ import {
  */
 const DEFAULT_PERSISTENT_CAP_BYTES = 2 * 1024 * 1024 * 1024;
 
-/**
- * Hard cap on the in-memory hot layer (REQUIREMENTS.md §3, "Decoded-frame
- * memory ≤ 512 MB"). Every decoded frame holds a GPU-backed surface, so an
- * uncapped Map starves the decoder and grows without bound across a long
- * editing session. Insertion evicts LRU until the incoming frame fits.
- */
+// REQUIREMENTS.md §3. Each frame holds a GPU surface, so an uncapped Map is
+// a leak, not a cache.
 const DEFAULT_MEMORY_CAP_BYTES = 512 * 1024 * 1024;
 
 export interface FrameCacheConfig {
@@ -160,14 +156,8 @@ export class FrameCache {
 	}
 
 	/**
-	 * Bind the cache to one media source.
-	 *
-	 * Entries are keyed by bare presentation timestamp, and `getFrameCache()`
-	 * is a process-wide singleton — so without a scope, opening recording B
-	 * after A makes A's frame at t=5s answer B's read at t=5s, painting the
-	 * wrong video. Changing scope closes and drops the previous source's
-	 * frames. Re-setting the same scope is a no-op, so repeated calls from
-	 * multiple sources over one recording stay cheap.
+	 * Bind the cache to one media source, closing the previous source's frames.
+	 * Without this, recording B reads recording A's frame at the same timestamp.
 	 */
 	setScope(scope: string): void {
 		if (this.#scope === scope) return;
@@ -243,11 +233,8 @@ export class FrameCache {
 	write(tsUs: number, frame: CachedFrame, persist = true): void {
 		this.#memoryInsert(tsUs, frame);
 		if (!persist) return;
-		// A `VideoFrame` is transferable but not structured-cloneable, so an
-		// IndexedDB put rejects with DataCloneError. That rejection used to be
-		// swallowed by the catch below, which meant the persistent layer
-		// silently stored nothing on the desktop path. Skip it honestly
-		// instead: the hot layer still serves the frame this session.
+		// `VideoFrame` isn't structured-cloneable; persisting it throws
+		// DataCloneError. Hot layer still serves it this session.
 		if (!isPersistable(frame)) return;
 		// Fire and forget — the orchestrator awaits this when callers need
 		// durability (e.g. before opening another recording).
@@ -309,8 +296,7 @@ export class FrameCache {
 
 	#memoryInsert(tsUs: number, frame: CachedFrame): void {
 		const size = estimateFrameBytes(frame);
-		// Replacing an existing key: close the outgoing frame first, or its
-		// surface leaks silently.
+		// Close the outgoing frame or its surface leaks silently.
 		const existing = this.#memory.get(tsUs);
 		if (existing) {
 			if (existing.frame !== frame) existing.frame.close();
@@ -333,15 +319,12 @@ export class FrameCache {
 	}
 
 	/**
-	 * Evict least-recently-used entries until `incomingSize` fits under the
-	 * memory cap. Every evicted frame is closed — per Chrome's WebCodecs
-	 * guidance, a decoded frame holds a GPU surface that the GC will not
-	 * reclaim promptly on its own.
+	 * Evict LRU entries until `incomingSize` fits under the cap, closing each.
+	 * The GC will not reclaim a decoded frame's GPU surface promptly.
 	 */
 	#evictMemoryUntilFits(incomingSize: number): void {
 		if (this.#stats.bytes + incomingSize <= this.#memoryCap) return;
-		// Oldest-first by last read. Map iteration order is insertion order,
-		// which is not read order, so sort explicitly.
+		// Map order is insertion order, not read order — sort explicitly.
 		const byAge = [...this.#memory.entries()].sort(
 			(a, b) => a[1].lastUsedUs - b[1].lastUsedUs,
 		);

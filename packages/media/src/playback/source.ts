@@ -25,12 +25,8 @@ import type { CachedFrame } from '../cache/storage';
 import { MediaError } from '../errors';
 import type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';
 
-/**
- * Dev-only diagnostics (throughput + first-frame geometry).
- *
- * Read defensively: this package is bundler-agnostic, and `import.meta.env`
- * is a Vite extension that doesn't exist under plain ESM or a non-Vite host.
- */
+// Read defensively: `import.meta.env` is a Vite extension and this package
+// must stay bundler-agnostic.
 const DIAG = ((): boolean => {
 	try {
 		return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
@@ -120,9 +116,8 @@ export class MediabunnyVideoSource {
 				worker.postMessage(init);
 			});
 			const source = new MediabunnyVideoSource(worker, meta);
-			// The frame cache is a process-wide singleton keyed by bare
-			// timestamp. Bind it to this URL so a previously-open recording's
-			// frames can't answer reads for this one.
+			// Singleton cache keyed by bare timestamp: scope it or another
+			// recording's frame answers reads for this one.
 			source.#cache.setScope(url);
 			return source;
 		} catch (err) {
@@ -146,18 +141,14 @@ export class MediabunnyVideoSource {
 				return;
 			}
 			this.#inFlightSeq = -1;
-			// Wrap the OffscreenCanvas in a VideoFrame so callers can use the
-			// exact same upload path as the WebCodecs engine. `new VideoFrame(canvas)`
-			// snapshots the canvas at construction time; the canvas itself can be
-			// reused by the worker after this point.
+			// `new VideoFrame(canvas)` snapshots at construction, so the worker
+			// is free to reuse the canvas after this.
 			const frame = new VideoFrame(msg.canvas, {
 				timestamp: Math.round(msg.originalSec * 1_000_000),
 				duration: Math.round((1 / this.fps) * 1_000_000),
 			});
 			const tUs = Math.round(msg.originalSec * 1_000_000);
-			// Persist: the orchestrator writes to both the in-memory hot layer
-			// and the IndexedDB-backed persistent layer (LRU, 2 GB default).
-			// The persistent write is best-effort and off the hot path.
+			// Persistent write is best-effort and off the hot path.
 			this.#cache.write(tUs, frame as unknown as CachedFrame, true);
 			if (DIAG) {
 				console.log(`[mb] frame @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`);
@@ -180,9 +171,7 @@ export class MediabunnyVideoSource {
 	#bestCached(tUs: number, floorUs: number): VideoFrame | null {
 		const entry = this.#cache.readMemory(tUs);
 		if (!entry || !(entry instanceof VideoFrame)) return null;
-		// Verify the cached frame respects the floor (no in-memory floor check;
-		// the orchestrator's index keys by exact tsUs, so the caller is responsible
-		// for passing the right key).
+		// The cache keys by exact tsUs, so the caller owns the floor check.
 		void floorUs;
 		return entry;
 	}
@@ -237,10 +226,8 @@ export class MediabunnyVideoSource {
 		// Best-effort aggregate for the perf signal; PR-E wires the real one.
 		if (this.onStats) this.onStats({ avgFps: 0, minFps: 0, maxLateMs: 0 });
 		this.#post({ type: 'dispose' });
-		// We don't clear the persistent cache here — the user's next session
-		// (or a scrub to the same region) should hit it. `evictCache` (or
-		// Settings → reset) clears both layers.
-		// The worker self-closes on dispose; terminate as a backstop.
+		// Persistent cache survives on purpose: the next session should hit it.
+		// Worker self-closes; terminate is the backstop.
 		this.#worker.terminate();
 	}
 }

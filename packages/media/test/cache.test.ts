@@ -161,12 +161,8 @@ describe('FrameCache', () => {
 });
 
 /**
- * Regression tests for the frame-lifetime bugs the original PR-E cache
- * shipped with. Each one fails against the pre-fix implementation.
- *
- * The originals were invisible because every fixture was `ImageBitmap`-
- * shaped (`width`/`height`), while the desktop preview actually writes
- * `VideoFrame`s (`codedWidth`/`codedHeight`, not structured-cloneable).
+ * Frame-lifetime regressions; each fails against the pre-fix cache. They were
+ * invisible because every fixture was ImageBitmap-shaped, unlike production.
  */
 describe('frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)', () => {
 	/** `VideoFrame`-shaped stub: coded* dimensions, no width/height. */
@@ -181,9 +177,7 @@ describe('frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)', () =>
 	}
 
 	it('estimateFrameBytes handles VideoFrame dimensions (was NaN)', () => {
-		// `VideoFrame` has no `width`/`height`; reading them yields undefined,
-		// and undefined * undefined * 4 is NaN — which then poisoned every
-		// byte total and made `NaN > cap` false, disabling both caps.
+		// `NaN > cap` is false, so one NaN silently disabled both caps.
 		const bytes = estimateFrameBytes(fakeVideoFrame(1920, 1080) as never);
 		expect(Number.isNaN(bytes)).toBe(false);
 		expect(bytes).toBe(1920 * 1080 * 4);
@@ -236,9 +230,7 @@ describe('frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)', () =>
 	});
 
 	it('does not persist a VideoFrame (it is not structured-cloneable)', async () => {
-		// A `VideoFrame` put rejects with DataCloneError, which the cache's
-		// fire-and-forget catch swallowed — so the persistent layer silently
-		// stored nothing on the desktop path.
+		// The DataCloneError was swallowed, so nothing ever persisted.
 		class FakeVideoFrame {
 			codedWidth = 320;
 			codedHeight = 240;

@@ -92,15 +92,8 @@ export interface PlaybackSource {
 }
 
 /**
- * Open `source` as a worker-bridged playback source.
- *
- * Delegates to `MediabunnyVideoSource` (`@recast/media/playback`), which owns
- * the decode worker and the shared frame cache. Loaded lazily so consumers
- * that never open a media source don't pull the worker into their bundle.
- *
- * Only URL sources are supported today — the desktop passes a Tauri `asset:`
- * URL and the web passes a range-capable HTTP URL. `Blob`/`File` inputs
- * should be wrapped with `URL.createObjectURL` by the caller.
+ * Open `source` as a worker-bridged playback source. URL only for now; wrap
+ * `Blob`/`File` with `URL.createObjectURL`. The worker loads lazily.
  */
 export async function openMediaSource(
 	source: MediaSource,
@@ -142,13 +135,8 @@ export async function prefetchAround(
 }
 
 /**
- * Adapt `MediabunnyVideoSource` (sync `frameAt`, driven by the editor's rAF
- * loop) to the promise-based `PlaybackSource` surface.
- *
- * `frameAt` is a poll: it returns the best cached frame and kicks off a decode
- * on a miss, signalling completion through `onFrame`. `seek` therefore waits
- * for the next `onFrame` before re-polling, and resolves `null` if the source
- * is disposed or the caller aborts first.
+ * Adapt `MediabunnyVideoSource`'s sync poll-based `frameAt` to the async
+ * `PlaybackSource` surface, awaiting `onFrame` on a cache miss.
  */
 function adaptToPlaybackSource(
 	impl: import('./playback/source').MediabunnyVideoSource,
@@ -178,15 +166,12 @@ function adaptToPlaybackSource(
 			const wrap = (frame: VideoFrame): PlaybackFrame => ({
 				frame,
 				seconds,
-				// The shared frame cache owns this surface and closes it on LRU
-				// eviction, so releasing here would close a frame the cache may
-				// still hand to another reader. Kept for interface parity.
+				// The cache owns this surface and closes it on eviction.
 				release: () => {},
 			});
 			if (immediate) return wrap(immediate);
 
-			// Miss: `frameAt` started a decode. Wait for the worker to report a
-			// frame, then re-poll.
+			// Miss: `frameAt` started a decode — wait for it, then re-poll.
 			return new Promise<PlaybackFrame | null>((resolve, reject) => {
 				const prev = impl.onFrame;
 				let settled = false;
