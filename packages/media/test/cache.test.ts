@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { FrameCache, resetFrameCache, setFrameCache } from '../src/cache';
 import { estimateFrameBytes } from '../src/cache/storage';
 import type { CacheableFrame, FrameStorage } from '../src/cache/storage';
@@ -85,13 +85,11 @@ class MemoryFrameStorage implements FrameStorage {
  * Minimal `CacheableFrame` stub. Real frames carry GPU resources; tests
  * just need an object with `width`/`height` and an idempotent `.close()`.
  */
-function fakeFrame(w: number, h: number): CacheableFrame {
+function fakeFrame(w: number, h: number, onClose?: () => void): CacheableFrame {
 	return {
 		width: w,
 		height: h,
-		close: () => {
-			/* no-op */
-		},
+		close: () => onClose?.(),
 	} as unknown as CacheableFrame;
 }
 
@@ -159,6 +157,118 @@ describe('FrameCache', () => {
 		cache.replaceStorage(newStorage);
 		expect(cache.readMemory(1)).toBeNull(); // old memory cleared
 		expect(newStorage).toBe(cache.storage);
+	});
+});
+
+/**
+ * Regression tests for the frame-lifetime bugs the original PR-E cache
+ * shipped with. Each one fails against the pre-fix implementation.
+ *
+ * The originals were invisible because every fixture was `ImageBitmap`-
+ * shaped (`width`/`height`), while the desktop preview actually writes
+ * `VideoFrame`s (`codedWidth`/`codedHeight`, not structured-cloneable).
+ */
+describe('frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)', () => {
+	/** `VideoFrame`-shaped stub: coded* dimensions, no width/height. */
+	function fakeVideoFrame(w: number, h: number, onClose?: () => void) {
+		return {
+			codedWidth: w,
+			codedHeight: h,
+			displayWidth: w,
+			displayHeight: h,
+			close: () => onClose?.(),
+		};
+	}
+
+	it('estimateFrameBytes handles VideoFrame dimensions (was NaN)', () => {
+		// `VideoFrame` has no `width`/`height`; reading them yields undefined,
+		// and undefined * undefined * 4 is NaN — which then poisoned every
+		// byte total and made `NaN > cap` false, disabling both caps.
+		const bytes = estimateFrameBytes(fakeVideoFrame(1920, 1080) as never);
+		expect(Number.isNaN(bytes)).toBe(false);
+		expect(bytes).toBe(1920 * 1080 * 4);
+	});
+
+	it('caps the in-memory layer and closes the frames it evicts', () => {
+		const frameBytes = 640 * 360 * 4; // 921,600
+		const cache = new FrameCache({
+			storage: new MemoryFrameStorage(64 * 1024 * 1024),
+			// Room for exactly 2 frames.
+			memoryCapBytes: frameBytes * 2,
+		});
+		const closed: number[] = [];
+		for (let i = 0; i < 5; i++) {
+			cache.write(i, fakeFrame(640, 360, () => closed.push(i)), false);
+		}
+		// Without a cap the Map grew forever and nothing was ever closed.
+		expect(cache.readMemory(0)).toBeNull();
+		expect(cache.readMemory(4)).not.toBeNull();
+		expect(closed).toContain(0);
+		expect(closed.length).toBe(3);
+	});
+
+	it('lowering memoryCapBytes evicts immediately', () => {
+		const cache = new FrameCache({
+			storage: new MemoryFrameStorage(64 * 1024 * 1024),
+			memoryCapBytes: 64 * 1024 * 1024,
+		});
+		for (let i = 0; i < 4; i++) cache.write(i, fakeFrame(640, 360), false);
+		expect(cache.readMemory(3)).not.toBeNull();
+		cache.memoryCapBytes = 640 * 360 * 4; // room for one
+		expect(cache.readMemory(0)).toBeNull();
+		expect(cache.readMemory(3)).not.toBeNull();
+	});
+
+	it('closes the outgoing frame when a key is overwritten', () => {
+		const cache = new FrameCache({ storage: new MemoryFrameStorage() });
+		let closed = false;
+		cache.write(1, fakeFrame(64, 64, () => (closed = true)), false);
+		cache.write(1, fakeFrame(64, 64), false);
+		expect(closed).toBe(true);
+	});
+
+	it('replaceStorage closes held frames instead of dropping the Map', () => {
+		const cache = new FrameCache({ storage: new MemoryFrameStorage() });
+		let closed = false;
+		cache.write(1, fakeFrame(64, 64, () => (closed = true)), false);
+		cache.replaceStorage(new MemoryFrameStorage());
+		expect(closed).toBe(true);
+	});
+
+	it('does not persist a VideoFrame (it is not structured-cloneable)', async () => {
+		// A `VideoFrame` put rejects with DataCloneError, which the cache's
+		// fire-and-forget catch swallowed — so the persistent layer silently
+		// stored nothing on the desktop path.
+		class FakeVideoFrame {
+			codedWidth = 320;
+			codedHeight = 240;
+			close() {}
+		}
+		vi.stubGlobal('VideoFrame', FakeVideoFrame);
+		try {
+			const storage = new MemoryFrameStorage();
+			const cache = new FrameCache({ storage });
+			cache.write(1, new FakeVideoFrame() as never, true);
+			await new Promise((r) => setTimeout(r, 5));
+			expect(await storage.get(1)).toBeNull();
+			// but the hot layer still serves it this session
+			expect(cache.readMemory(1)).not.toBeNull();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	it('reports memory bytes and eviction count in cacheStats', async () => {
+		const frameBytes = 640 * 360 * 4;
+		const cache = new FrameCache({
+			storage: new MemoryFrameStorage(),
+			memoryCapBytes: frameBytes * 2,
+		});
+		for (let i = 0; i < 4; i++) cache.write(i, fakeFrame(640, 360), false);
+		const stats = await cache.cacheStats();
+		expect(Number.isNaN(stats.bytes)).toBe(false);
+		expect(stats.memoryBytes).toBeLessThanOrEqual(stats.memoryCapBytes);
+		expect(stats.evictions).toBeGreaterThan(0);
 	});
 });
 

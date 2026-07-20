@@ -20,11 +20,24 @@
  * resolution-aware budgets via the shared `@recast/media` cache.
  */
 
-import { type CacheableFrame, getFrameCache } from '@recast/media';
-import type { FromMediabunnyWorker, ToMediabunnyWorker } from './mediabunny-worker';
+import { getFrameCache } from '../cache';
+import type { CachedFrame } from '../cache/storage';
+import { MediaError } from '../errors';
+import type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';
 
-/** Dev-only diagnostics (throughput + first-frame geometry). */
-const DIAG = import.meta.env.DEV;
+/**
+ * Dev-only diagnostics (throughput + first-frame geometry).
+ *
+ * Read defensively: this package is bundler-agnostic, and `import.meta.env`
+ * is a Vite extension that doesn't exist under plain ESM or a non-Vite host.
+ */
+const DIAG = ((): boolean => {
+	try {
+		return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+	} catch {
+		return false;
+	}
+})();
 
 export class MediabunnyVideoSource {
 	#worker: Worker;
@@ -82,9 +95,9 @@ export class MediabunnyVideoSource {
 	 */
 	static async create(url: string, _sizeBytes?: number): Promise<MediabunnyVideoSource> {
 		if (typeof Worker === 'undefined' || typeof VideoFrame === 'undefined') {
-			throw new Error('Worker/VideoFrame unavailable in this WebView');
+			throw new MediaError('unsupported', 'Worker/VideoFrame unavailable in this WebView');
 		}
-		const worker = new Worker(new URL('./mediabunny-worker.ts', import.meta.url), {
+		const worker = new Worker(new URL('./worker.ts', import.meta.url), {
 			type: 'module',
 		});
 		try {
@@ -99,14 +112,19 @@ export class MediabunnyVideoSource {
 					if (msg.type === 'ready') {
 						resolve(msg);
 					} else if (msg.type === 'error') {
-						reject(new Error(msg.message));
+						reject(new MediaError('bad-input', msg.message));
 					}
 				};
-				worker.onerror = (e) => reject(new Error(e.message || 'worker error'));
+				worker.onerror = (e) => reject(new MediaError('worker-died', e.message || 'worker error'));
 				const init: ToMediabunnyWorker = { type: 'init', url };
 				worker.postMessage(init);
 			});
-			return new MediabunnyVideoSource(worker, meta);
+			const source = new MediabunnyVideoSource(worker, meta);
+			// The frame cache is a process-wide singleton keyed by bare
+			// timestamp. Bind it to this URL so a previously-open recording's
+			// frames can't answer reads for this one.
+			source.#cache.setScope(url);
+			return source;
 		} catch (err) {
 			worker.terminate();
 			throw err;
@@ -140,7 +158,7 @@ export class MediabunnyVideoSource {
 			// Persist: the orchestrator writes to both the in-memory hot layer
 			// and the IndexedDB-backed persistent layer (LRU, 2 GB default).
 			// The persistent write is best-effort and off the hot path.
-			this.#cache.write(tUs, frame as unknown as CacheableFrame, true);
+			this.#cache.write(tUs, frame as unknown as CachedFrame, true);
 			if (DIAG) {
 				console.log(`[mb] frame @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`);
 			}

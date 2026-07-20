@@ -16,6 +16,7 @@
 
 import type { Region } from './schedule';
 import { planAudioSchedule } from './schedule';
+import { MediaError } from '../errors';
 
 export interface AudioSchedulerConfig {
 	/** URL of the AudioWorklet processor module. Vite-friendly string or URL. */
@@ -78,9 +79,9 @@ class WorkletAudioScheduler implements AudioScheduler {
 				? AudioContext
 				: ((globalThis as { webkitAudioContext?: typeof AudioContext })
 						.webkitAudioContext as typeof AudioContext | undefined);
-		if (!Ctx) throw new Error('Web Audio API unavailable');
+		if (!Ctx) throw new MediaError('unsupported', 'Web Audio API unavailable');
 		if (typeof Ctx.prototype.audioWorklet === 'undefined') {
-			throw new Error('AudioWorklet not supported in this WebView');
+			throw new MediaError('unsupported', 'AudioWorklet not supported in this WebView');
 		}
 
 		const ctx = new Ctx({ latencyHint: 'interactive' });
@@ -109,7 +110,7 @@ class WorkletAudioScheduler implements AudioScheduler {
 			} catch {
 				/* ignore */
 			}
-			throw new Error('no decodable audio tracks');
+			throw new MediaError('bad-input', 'no decodable audio tracks');
 		}
 
 		// Merge all decoded tracks into a single buffer (sum their channels).
@@ -237,7 +238,7 @@ class FallbackAudioScheduler implements AudioScheduler {
 				? AudioContext
 				: ((globalThis as { webkitAudioContext?: typeof AudioContext })
 						.webkitAudioContext as typeof AudioContext | undefined);
-		if (!Ctx) throw new Error('Web Audio API unavailable');
+		if (!Ctx) throw new MediaError('unsupported', 'Web Audio API unavailable');
 		const ctx = new Ctx();
 		const tracks: Array<{ buffer: AudioBuffer; gain: GainNode }> = [];
 		for (const url of urls) {
@@ -260,7 +261,7 @@ class FallbackAudioScheduler implements AudioScheduler {
 			} catch {
 				/* ignore */
 			}
-			throw new Error('no decodable audio tracks');
+			throw new MediaError('bad-input', 'no decodable audio tracks');
 		}
 		this.#ctx = ctx;
 		this.#tracks = tracks;

@@ -16,8 +16,11 @@
 
 import { MediaError } from './errors';
 
-/** A file-like thing a user hands us: a `File` (browser/web) or a `Blob`. */
-export type MediaSource = File | Blob;
+/**
+ * A media input: a URL (Tauri `asset:` on desktop, range-capable HTTP on web)
+ * or a `File`/`Blob` the user picked.
+ */
+export type MediaSource = string | File | Blob;
 
 /** Opaque token a consumer can pass back to `releaseFrame` / `prefetch`. */
 export type FrameHandle = number;
@@ -89,36 +92,145 @@ export interface PlaybackSource {
 }
 
 /**
- * Open `source` as a worker-bridged playback source. The returned source is
- * ready to `seek` once the `'ready'` event fires (or once `isReady` flips).
+ * Open `source` as a worker-bridged playback source.
  *
- * Implementation note: PR-D ships a basic, non-streaming worker that hands
- * the URL/bytes to MediaBunny's `Input` directly. The IDB-backed decoded-
- * frame cache lands in PR-E; the audio scheduler lands in PR-E.
+ * Delegates to `MediabunnyVideoSource` (`@recast/media/playback`), which owns
+ * the decode worker and the shared frame cache. Loaded lazily so consumers
+ * that never open a media source don't pull the worker into their bundle.
+ *
+ * Only URL sources are supported today — the desktop passes a Tauri `asset:`
+ * URL and the web passes a range-capable HTTP URL. `Blob`/`File` inputs
+ * should be wrapped with `URL.createObjectURL` by the caller.
  */
-export async function openMediaSource(_source: MediaSource): Promise<PlaybackSource> {
-	throw new MediaError(
-		'unsupported',
-		'openMediaSource is not yet implemented — lands in PR-D via MediaWorkerClient',
-	);
+export async function openMediaSource(
+	source: MediaSource,
+	signal?: AbortSignal,
+): Promise<PlaybackSource> {
+	if (signal?.aborted) throw new MediaError('cancelled', 'openMediaSource aborted');
+	const url = typeof source === 'string' ? source : null;
+	if (!url) {
+		throw new MediaError(
+			'unsupported',
+			'openMediaSource currently accepts a URL; wrap Blob/File with URL.createObjectURL',
+		);
+	}
+	const { MediabunnyVideoSource } = await import('./playback/index');
+	const impl = await MediabunnyVideoSource.create(url);
+	if (signal?.aborted) {
+		impl.dispose();
+		throw new MediaError('cancelled', 'openMediaSource aborted');
+	}
+	return adaptToPlaybackSource(impl);
 }
 
 /** Seek to `seconds` on an already-open playback source. Convenience wrapper. */
 export async function seekTo(
-	_source: PlaybackSource,
-	_seconds: number,
-	_signal?: AbortSignal,
+	source: PlaybackSource,
+	seconds: number,
+	signal?: AbortSignal,
 ): Promise<PlaybackFrame | null> {
-	throw new MediaError('unsupported', 'seekTo is not yet implemented — lands in PR-D');
+	return source.seek(seconds, signal);
 }
 
 /** Prefetch frames around `seconds` on an already-open playback source. */
 export async function prefetchAround(
-	_source: PlaybackSource,
-	_seconds: number,
-	_lookaheadSeconds?: number,
+	source: PlaybackSource,
+	seconds: number,
+	lookaheadSeconds?: number,
 ): Promise<void> {
-	throw new MediaError('unsupported', 'prefetchAround is not yet implemented — lands in PR-D');
+	return source.prefetchAround(seconds, lookaheadSeconds);
+}
+
+/**
+ * Adapt `MediabunnyVideoSource` (sync `frameAt`, driven by the editor's rAF
+ * loop) to the promise-based `PlaybackSource` surface.
+ *
+ * `frameAt` is a poll: it returns the best cached frame and kicks off a decode
+ * on a miss, signalling completion through `onFrame`. `seek` therefore waits
+ * for the next `onFrame` before re-polling, and resolves `null` if the source
+ * is disposed or the caller aborts first.
+ */
+function adaptToPlaybackSource(
+	impl: import('./playback/source').MediabunnyVideoSource,
+): PlaybackSource {
+	let currentTime = 0;
+	let disposed = false;
+	const listeners = new Map<string, Set<(payload: PlaybackEvent) => void>>();
+	const emit = (event: string, payload: PlaybackEvent) => {
+		for (const fn of listeners.get(event) ?? []) fn(payload);
+	};
+
+	return {
+		get currentTime() {
+			return currentTime;
+		},
+		get duration() {
+			return impl.durationSec;
+		},
+		get isReady() {
+			return !disposed;
+		},
+
+		async seek(seconds: number, signal?: AbortSignal): Promise<PlaybackFrame | null> {
+			if (signal?.aborted) throw new MediaError('cancelled', 'seek aborted');
+			currentTime = seconds;
+			const immediate = impl.frameAt(seconds);
+			const wrap = (frame: VideoFrame): PlaybackFrame => ({
+				frame,
+				seconds,
+				// The shared frame cache owns this surface and closes it on LRU
+				// eviction, so releasing here would close a frame the cache may
+				// still hand to another reader. Kept for interface parity.
+				release: () => {},
+			});
+			if (immediate) return wrap(immediate);
+
+			// Miss: `frameAt` started a decode. Wait for the worker to report a
+			// frame, then re-poll.
+			return new Promise<PlaybackFrame | null>((resolve, reject) => {
+				const prev = impl.onFrame;
+				let settled = false;
+				const cleanup = () => {
+					impl.onFrame = prev;
+					signal?.removeEventListener('abort', onAbort);
+				};
+				const onAbort = () => {
+					if (settled) return;
+					settled = true;
+					cleanup();
+					reject(new MediaError('cancelled', 'seek aborted'));
+				};
+				impl.onFrame = () => {
+					prev?.();
+					if (settled) return;
+					settled = true;
+					cleanup();
+					const frame = impl.frameAt(seconds);
+					resolve(frame ? wrap(frame) : null);
+				};
+				signal?.addEventListener('abort', onAbort, { once: true });
+			});
+		},
+
+		async prefetchAround(seconds: number, _lookaheadSeconds?: number): Promise<void> {
+			impl.prefetch(seconds);
+		},
+
+		on(event, handler) {
+			const set = listeners.get(event) ?? new Set();
+			set.add(handler);
+			listeners.set(event, set);
+			return () => set.delete(handler);
+		},
+
+		async dispose(): Promise<void> {
+			if (disposed) return;
+			disposed = true;
+			impl.dispose();
+			emit('ended', { kind: 'ended' });
+			listeners.clear();
+		},
+	};
 }
 
 /** Clear every entry in the shared decoded-frame cache. */

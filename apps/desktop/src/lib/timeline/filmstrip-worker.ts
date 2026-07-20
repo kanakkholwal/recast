@@ -29,7 +29,7 @@
 // MediaBunny primitives through `@recast/media` (the allowed channel —
 // see the override in biome.json). Same scope rule as the other worker
 // files in this package.
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '@recast/media';
+import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '@recast/media/mediabunny';
 
 type InitMessage = { type: 'init'; buffer: ArrayBuffer; tileHeightPx: number };
 type DecodeMessage = {

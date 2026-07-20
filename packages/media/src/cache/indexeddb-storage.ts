@@ -26,6 +26,7 @@
  * the orchestrator handle backpressure.
  */
 
+import { MediaError } from '../errors';
 import { type CacheableFrame, estimateFrameBytes, type FrameStorage } from './storage';
 
 /**
@@ -44,7 +45,13 @@ function getIndexedDB(): MinimalIDB | null {
 }
 
 const DB_NAME = 'recast-media-cache';
-const DB_VERSION = 1;
+/**
+ * v2 adds the `lastUsedUs` index on `frames`. v1 created the store without
+ * it while `#evictUntilFits` opened it unconditionally, so LRU eviction threw
+ * `NotFoundError` on every over-cap write — i.e. the byte cap never held.
+ */
+const DB_VERSION = 2;
+const IDX_LAST_USED = 'lastUsedUs';
 const STORE_FRAMES = 'frames';
 const STORE_META = 'meta';
 const _META_KEY = 'singleton';
@@ -81,6 +88,11 @@ export class IndexedDBFrameStorage implements FrameStorage {
 		this.#cap = options.capBytes ?? 2 * 1024 * 1024 * 1024;
 	}
 
+	/** Per-recording database name — the isolation boundary. */
+	get #dbName(): string {
+		return this.#recordingId === 'default' ? DB_NAME : `${DB_NAME}:${this.#recordingId}`;
+	}
+
 	get capBytes(): number {
 		return this.#cap;
 	}
@@ -100,14 +112,23 @@ export class IndexedDBFrameStorage implements FrameStorage {
 		return new Promise((resolve, reject) => {
 			const idb = getIndexedDB();
 			if (!idb) {
-				reject(new Error('IndexedDB is not available in this environment'));
+				reject(new MediaError('internal', 'IndexedDB is not available in this environment'));
 				return;
 			}
-			const req = idb.open(DB_NAME, DB_VERSION);
+			// One DB per recording. `#recordingId` used to be assigned and never
+			// read, so every recording shared one keyspace of bare timestamps and
+			// could serve another recording's frame at the same timestamp.
+			const req = idb.open(this.#dbName, DB_VERSION);
 			req.onupgradeneeded = () => {
 				const db = req.result;
-				if (!db.objectStoreNames.contains(STORE_FRAMES)) {
-					db.createObjectStore(STORE_FRAMES, { keyPath: 'ts' });
+				const tx = req.transaction;
+				const frames = db.objectStoreNames.contains(STORE_FRAMES)
+					? tx?.objectStore(STORE_FRAMES)
+					: db.createObjectStore(STORE_FRAMES, { keyPath: 'ts' });
+				// v1 → v2: the index the LRU cursor needs. Explicit migration
+				// (REQUIREMENTS.md §5), not best-effort.
+				if (frames && !frames.indexNames.contains(IDX_LAST_USED)) {
+					frames.createIndex(IDX_LAST_USED, 'lastUsedUs', { unique: false });
 				}
 				if (!db.objectStoreNames.contains(STORE_META)) {
 					db.createObjectStore(STORE_META, { keyPath: 'id' });
@@ -126,26 +147,31 @@ export class IndexedDBFrameStorage implements FrameStorage {
 						/* persistence is best-effort */
 					});
 				}
-				resolve();
+				// `#size` is per-instance but the DB outlives the process. Without
+				// this the cache believes it is empty on every reload while holding
+				// up to `cap` on disk, so the cap never triggers.
+				this.#restoreSize()
+					.then(resolve)
+					.catch(() => resolve());
 			};
-			req.onerror = () => reject(req.error ?? new Error('IndexedDB.open failed'));
-			req.onblocked = () => reject(new Error('IndexedDB.open blocked by another tab'));
+			req.onerror = () => reject(req.error ?? new MediaError('internal', 'IndexedDB.open failed'));
+			req.onblocked = () => reject(new MediaError('internal', 'IndexedDB.open blocked by another tab'));
 		});
 	}
 
 	async get(key: number, signal?: AbortSignal): Promise<CacheableFrame | null> {
 		await this.open();
-		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (signal?.aborted) throw new MediaError('cancelled', 'Storage operation aborted');
 		return new Promise((resolve, reject) => {
 			const db = this.#db;
 			if (!db) {
-				reject(new Error('IndexedDB not open'));
+				reject(new MediaError('internal', 'IndexedDB not open'));
 				return;
 			}
 			const tx = db.transaction(STORE_FRAMES, 'readonly');
 			const req = tx.objectStore(STORE_FRAMES).get(key);
 			const onAbort = () => {
-				reject(new DOMException('Aborted', 'AbortError'));
+				reject(new MediaError('cancelled', 'Storage operation aborted'));
 			};
 			signal?.addEventListener('abort', onAbort, { once: true });
 			req.onsuccess = () => {
@@ -155,7 +181,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 			};
 			req.onerror = () => {
 				signal?.removeEventListener('abort', onAbort);
-				reject(req.error ?? new Error('IndexedDB.get failed'));
+				reject(req.error ?? new MediaError('internal', 'IndexedDB.get failed'));
 			};
 		});
 	}
@@ -167,7 +193,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 		signal?: AbortSignal,
 	): Promise<void> {
 		const _db = await this.open();
-		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (signal?.aborted) throw new MediaError('cancelled', 'Storage operation aborted');
 		const size = estimateFrameBytes(frame);
 		// Compute the post-write size, evict LRU entries until it fits.
 		const targetSize = this.#size + size;
@@ -183,18 +209,18 @@ export class IndexedDBFrameStorage implements FrameStorage {
 
 	async deleteRange(startKey: number, endKey: number, signal?: AbortSignal): Promise<void> {
 		await this.open();
-		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (signal?.aborted) throw new MediaError('cancelled', 'Storage operation aborted');
 		await new Promise<void>((resolve, reject) => {
 			const db = this.#db;
 			if (!db) {
-				reject(new Error('IndexedDB not open'));
+				reject(new MediaError('internal', 'IndexedDB not open'));
 				return;
 			}
 			const tx = db.transaction(STORE_FRAMES, 'readwrite');
 			const store = tx.objectStore(STORE_FRAMES);
 			const range = IDBKeyRange.bound(startKey, endKey, false, true);
 			const req = store.openCursor(range);
-			const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			const onAbort = () => reject(new MediaError('cancelled', 'Storage operation aborted'));
 			signal?.addEventListener('abort', onAbort, { once: true });
 			const removed: number[] = [];
 			req.onsuccess = () => {
@@ -211,30 +237,30 @@ export class IndexedDBFrameStorage implements FrameStorage {
 					};
 					tx.onerror = () => {
 						signal?.removeEventListener('abort', onAbort);
-						reject(tx.error ?? new Error('IndexedDB.deleteRange failed'));
+						reject(tx.error ?? new MediaError('internal', 'IndexedDB.deleteRange failed'));
 					};
 				}
 			};
 			req.onerror = () => {
 				signal?.removeEventListener('abort', onAbort);
-				reject(req.error ?? new Error('IndexedDB.openCursor failed'));
+				reject(req.error ?? new MediaError('internal', 'IndexedDB.openCursor failed'));
 			};
 		});
 	}
 
 	async clear(signal?: AbortSignal): Promise<void> {
 		await this.open();
-		if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+		if (signal?.aborted) throw new MediaError('cancelled', 'Storage operation aborted');
 		await new Promise<void>((resolve, reject) => {
 			const db = this.#db;
 			if (!db) {
-				reject(new Error('IndexedDB not open'));
+				reject(new MediaError('internal', 'IndexedDB not open'));
 				return;
 			}
 			const tx = db.transaction([STORE_FRAMES, STORE_META], 'readwrite');
 			tx.objectStore(STORE_FRAMES).clear();
 			tx.objectStore(STORE_META).clear();
-			const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			const onAbort = () => reject(new MediaError('cancelled', 'Storage operation aborted'));
 			signal?.addEventListener('abort', onAbort, { once: true });
 			tx.oncomplete = () => {
 				signal?.removeEventListener('abort', onAbort);
@@ -243,7 +269,7 @@ export class IndexedDBFrameStorage implements FrameStorage {
 			};
 			tx.onerror = () => {
 				signal?.removeEventListener('abort', onAbort);
-				reject(tx.error ?? new Error('IndexedDB.clear failed'));
+				reject(tx.error ?? new MediaError('internal', 'IndexedDB.clear failed'));
 			};
 		});
 	}
@@ -264,12 +290,12 @@ export class IndexedDBFrameStorage implements FrameStorage {
 		return new Promise((resolve, reject) => {
 			const db = this.#db;
 			if (!db) {
-				reject(new Error('IndexedDB not open'));
+				reject(new MediaError('internal', 'IndexedDB not open'));
 				return;
 			}
 			const tx = db.transaction(STORE_FRAMES, 'readwrite');
 			const _req = tx.objectStore(STORE_FRAMES).put(row);
-			const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			const onAbort = () => reject(new MediaError('cancelled', 'Storage operation aborted'));
 			signal?.addEventListener('abort', onAbort, { once: true });
 			tx.oncomplete = () => {
 				signal?.removeEventListener('abort', onAbort);
@@ -277,8 +303,37 @@ export class IndexedDBFrameStorage implements FrameStorage {
 			};
 			tx.onerror = () => {
 				signal?.removeEventListener('abort', onAbort);
-				reject(tx.error ?? new Error('IndexedDB.put failed'));
+				reject(tx.error ?? new MediaError('internal', 'IndexedDB.put failed'));
 			};
+		});
+	}
+
+	/**
+	 * Recompute `#size` from the stored entries at open time. Sums the
+	 * per-row `size` field rather than trusting the `meta` singleton, which
+	 * can drift if a session died mid-write.
+	 */
+	#restoreSize(): Promise<void> {
+		return new Promise((resolve, reject) => {
+			const db = this.#db;
+			if (!db) {
+				resolve();
+				return;
+			}
+			const tx = db.transaction(STORE_FRAMES, 'readonly');
+			const req = tx.objectStore(STORE_FRAMES).openCursor();
+			let total = 0;
+			req.onsuccess = () => {
+				const cursor = req.result;
+				if (cursor) {
+					total += (cursor.value as StoredFrame).size ?? 0;
+					cursor.continue();
+					return;
+				}
+				this.#size = total;
+				resolve();
+			};
+			req.onerror = () => reject(req.error ?? new MediaError('internal', 'restoreSize failed'));
 		});
 	}
 
@@ -291,13 +346,19 @@ export class IndexedDBFrameStorage implements FrameStorage {
 		return new Promise((resolve, reject) => {
 			const db = this.#db;
 			if (!db) {
-				reject(new Error('IndexedDB not open'));
+				reject(new MediaError('internal', 'IndexedDB not open'));
 				return;
 			}
 			const tx = db.transaction(STORE_FRAMES, 'readwrite');
 			const store = tx.objectStore(STORE_FRAMES);
-			const cursorReq = store.index ? store.index('lastUsedUs').openCursor() : store.openCursor();
-			const onAbort = () => reject(new DOMException('Aborted', 'AbortError'));
+			// `store.index` is a method, so the old `store.index ? …` guard was
+			// always true and masked the fact that v1 never created this index.
+			// Check the real thing; fall back to key order if a stale schema
+			// somehow lacks it (worse LRU, but it still bounds the store).
+			const cursorReq = store.indexNames.contains(IDX_LAST_USED)
+				? store.index(IDX_LAST_USED).openCursor()
+				: store.openCursor();
+			const onAbort = () => reject(new MediaError('cancelled', 'Storage operation aborted'));
 			signal?.addEventListener('abort', onAbort, { once: true });
 			let evicted = 0;
 			cursorReq.onsuccess = () => {
@@ -314,13 +375,13 @@ export class IndexedDBFrameStorage implements FrameStorage {
 					};
 					tx.onerror = () => {
 						signal?.removeEventListener('abort', onAbort);
-						reject(tx.error ?? new Error('IndexedDB.evict failed'));
+						reject(tx.error ?? new MediaError('internal', 'IndexedDB.evict failed'));
 					};
 				}
 			};
 			cursorReq.onerror = () => {
 				signal?.removeEventListener('abort', onAbort);
-				reject(cursorReq.error ?? new Error('IndexedDB.openCursor failed'));
+				reject(cursorReq.error ?? new MediaError('internal', 'IndexedDB.openCursor failed'));
 			};
 		});
 	}

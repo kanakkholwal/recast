@@ -11,13 +11,9 @@
  * caching, and AudioWorklet scheduling land in later PRs.
  */
 
-// biome-ignore-all lint/style/noRestrictedImports: this worker composes
-// MediaBunny primitives through `@recast/media` (the allowed channel —
-// see the override in biome.json). Direct `mediabunny` imports outside
-// `packages/media` are blocked; this file is the one scoped exception
-// because a worker module cannot resolve a re-exported class through Vite's
-// URL worker bundling.
-import { ALL_FORMATS, CanvasSink, Input, UrlSource } from '@recast/media';
+// This worker now lives INSIDE `packages/media`, so it imports MediaBunny
+// directly rather than bouncing through the package barrel.
+import { ALL_FORMATS, CanvasSink, Input, UrlSource } from 'mediabunny';
 
 /** Mirror of `MediaErrorCode` (REQUIREMENTS.md §2). Kept in-worker because
  *  the worker doesn't import from `@recast/media` to avoid a worker-side

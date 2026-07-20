@@ -6,7 +6,7 @@
 	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 	import { PlaybackClock } from "$lib/playback/clock";
-	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
+	import { MediabunnyVideoSource } from "@recast/media/playback";
 	import {
 	  cursorSpriteHotspot,
 	  resolveBackgroundWireValue,

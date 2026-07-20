@@ -12,7 +12,7 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { MediabunnyVideoSource } from './mediabunny-source';
+import { MediabunnyVideoSource } from '../src/playback/source';
 
 type WorkerMsg = { type: string; [k: string]: unknown };
 

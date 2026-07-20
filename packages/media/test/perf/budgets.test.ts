@@ -1,15 +1,42 @@
 import { describe, expect, it } from 'vitest';
+import { FrameCache } from '../../src/cache';
+import { IndexedDBFrameStorage } from '../../src/cache/indexeddb-storage';
+import type { CacheableFrame, FrameStorage } from '../../src/cache/storage';
 
 /**
  * Performance budgets every `@recast/media` consumer can rely on. Mirrored
- * verbatim from packages/media/REQUIREMENTS.md §3 — a regression on any row
- * is merge-blocking (AGENTS.md §2 rule 12 + §4.x).
+ * verbatim from packages/media/REQUIREMENTS.md §3.
  *
- * PR-A ships this skeleton only. Each assertion is marked `[vacuous]` so the
- * build stays green before the real perf fixtures land in PR-D/E/F. When
- * the real fixtures arrive, each vacuous assertion is replaced with a real
- * measurement against a known-good baseline.
+ * The first block DECLARES the budget table (guards against someone quietly
+ * relaxing a number). The second block ENFORCES the rows that are checkable
+ * without real media. The closing comment lists the rows that are neither,
+ * so the file never again implies more coverage than it has.
  */
+
+/** Minimal storage stub — these tests exercise the cache, not a backend. */
+function makeNoopStorage(): FrameStorage {
+	let cap = 2 * 1024 * 1024 * 1024;
+	return {
+		name: 'noop',
+		async open() {},
+		async get() {
+			return null;
+		},
+		async put() {},
+		async deleteRange() {},
+		async clear() {},
+		async size() {
+			return 0;
+		},
+		async close() {},
+		get capBytes() {
+			return cap;
+		},
+		set capBytes(v: number) {
+			cap = v;
+		},
+	};
+}
 const BUDGETS = {
 	// TTFF
 	ttff4kMs: 800,
@@ -81,58 +108,68 @@ describe('perf budgets (REQUIREMENTS.md §3 — non-negotiable)', () => {
 	});
 });
 
-describe('perf budgets — vacuous placeholders (real fixtures land in PR-D/E/F)', () => {
-	// Each test here is a placeholder. When the real perf fixtures arrive in
-	// PR-D (PlaybackSource), PR-E (cache + AudioWorklet), and PR-F
-	// (cut-jump parity), each `it` is replaced with a measurement against a
-	// committed baseline. Until then, these are no-ops so the build stays
-	// green and the budget table is exercised end-to-end.
+/**
+ * Rows this file genuinely enforces: the two memory caps. They are the only
+ * budgets expressible without decoding real media, and they are the ones that
+ * actually regressed — the cache shipped with NO in-memory cap at all while
+ * this file asserted `512 * 1024 * 1024 === 512 * 1024 * 1024` and passed.
+ *
+ * An assertion here must reference real package code. If it only compares
+ * `BUDGETS.x` to a literal, it belongs in the "declared" block above.
+ */
+describe('perf budgets — enforced against real code', () => {
+	function frame(w: number, h: number) {
+		return { width: w, height: h, close: () => {} } as unknown as CacheableFrame;
+	}
 
-	it('[vacuous] TTFF for 4K recording is within budget', () => {
-		expect(BUDGETS.ttff4kMs).toBeGreaterThan(0);
+	it('FrameCache defaults to the §3 decoded-frame memory cap', () => {
+		const cache = new FrameCache({ storage: makeNoopStorage() });
+		expect(cache.memoryCapBytes).toBe(BUDGETS.decodedFrameCapBytes);
 	});
 
-	it('[vacuous] TTFF for 1080p recording is within budget', () => {
-		expect(BUDGETS.ttff1080pMs).toBeGreaterThan(0);
+	it('IndexedDBFrameStorage defaults to the §3 persistent cap', () => {
+		expect(new IndexedDBFrameStorage().capBytes).toBe(BUDGETS.indexedDbCacheCapBytes);
 	});
 
-	it('[vacuous] scrub (cached) p95 is within budget', () => {
-		expect(BUDGETS.scrubCachedP95Ms).toBeGreaterThan(0);
+	it('the decoded-frame cap is actually enforced on write', () => {
+		// 1 MB frames, 8 MB cap → at most 8 resident.
+		const oneMb = 512 * 512 * 4;
+		const cache = new FrameCache({
+			storage: makeNoopStorage(),
+			memoryCapBytes: oneMb * 8,
+		});
+		for (let i = 0; i < 64; i++) cache.write(i, frame(512, 512), false);
+		return cache.cacheStats().then((stats) => {
+			expect(stats.memoryBytes).toBeLessThanOrEqual(oneMb * 8);
+			expect(stats.entryCount).toBeLessThanOrEqual(8);
+			expect(stats.evictions).toBeGreaterThanOrEqual(56);
+		});
 	});
 
-	it('[vacuous] scrub (cold) p95 is within budget', () => {
-		expect(BUDGETS.scrubColdP95Ms).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] frame-to-glass p95 during playback is within budget', () => {
-		expect(BUDGETS.frameToGlassP95Ms).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] cut-cross latency p95 is within budget', () => {
-		expect(BUDGETS.cutCrossP95Ms).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] playback INP p95 is within budget', () => {
-		expect(BUDGETS.inpPlaybackP95Ms).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] decoded-frame buffer stays within memory cap', () => {
-		expect(BUDGETS.decodedFrameCapBytes).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] IndexedDB cache stays within cap', () => {
-		expect(BUDGETS.indexedDbCacheCapBytes).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] desktop bundle stays within budget', () => {
-		expect(BUDGETS.desktopBundleGzKb).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] web bundle stays within budget', () => {
-		expect(BUDGETS.webBundleGzKb).toBeGreaterThan(0);
-	});
-
-	it('[vacuous] audio sync drift over 10 min stays within budget', () => {
-		expect(BUDGETS.audioSyncDriftMsPer10Min).toBeGreaterThan(0);
+	it('byte accounting never goes NaN (poisons every cap comparison)', () => {
+		// `NaN > cap` is false, so a single NaN silently disables the cap.
+		const cache = new FrameCache({ storage: makeNoopStorage() });
+		cache.write(1, frame(1920, 1080), false);
+		return cache.cacheStats().then((stats) => {
+			expect(Number.isNaN(stats.bytes)).toBe(false);
+			expect(Number.isNaN(stats.memoryBytes)).toBe(false);
+		});
 	});
 });
+
+/**
+ * Rows NOT enforced here, and why. Listed explicitly so nobody reads
+ * "perf budgets" and assumes all twelve rows of §3 are gated by CI.
+ *
+ *   ttff4kMs / ttff1080pMs        — needs a real 4K/1080p decode; browser-only
+ *   scrubCachedP95Ms / scrubCold  — needs a real seek against real media
+ *   frameToGlassP95Ms             — needs a compositor + display
+ *   cutCrossP95Ms                 — covered in apps/desktop cut-jump-parity.test.ts
+ *   inpPlaybackP95Ms              — needs real input events
+ *   desktopBundleGzKb / web       — needs a production build; belongs in CI, not vitest
+ *   audioSyncDriftMsPer10Min      — needs a 10-minute realtime AudioContext run
+ *
+ * These require a browser harness (Playwright + a fixture recording). Until
+ * that exists they are documented targets, not gates — REQUIREMENTS.md §3's
+ * "regression fails the build" holds only for the enforced rows above.
+ */

@@ -24,12 +24,33 @@
 /** A decoded video frame, GPU-ready, structured-cloneable for IndexedDB. */
 export type CacheableFrame = ImageBitmap;
 
+/**
+ * What the in-memory hot layer may hold. `VideoFrame` is transferable but
+ * NOT structured-cloneable, so it can live in memory but can never reach
+ * IndexedDB — `isPersistable` is the guard that keeps the two apart.
+ */
+export type CachedFrame = ImageBitmap | VideoFrame;
+
+/**
+ * True when the frame can be written to IndexedDB. `VideoFrame` fails
+ * structured-clone with `DataCloneError`; `ImageBitmap` succeeds.
+ */
+export function isPersistable(frame: CachedFrame): frame is CacheableFrame {
+	return typeof VideoFrame === 'undefined' || !(frame instanceof VideoFrame);
+}
+
 /** Per-entry byte estimate for budget accounting. */
-export function estimateFrameBytes(frame: CacheableFrame): number {
-	// ImageBitmap has no public `byteLength`; use the nominal pixel size × 4
-	// channels (RGBA). JPEG-style sub-byte encodings would underestimate, but
-	// for cache eviction an over-estimate is the safe side.
-	return frame.width * frame.height * 4;
+export function estimateFrameBytes(frame: CachedFrame): number {
+	// `ImageBitmap` exposes width/height; `VideoFrame` exposes codedWidth/
+	// codedHeight and has NO width/height — reading those yields undefined and
+	// poisons every downstream byte total with NaN. Branch on what's present.
+	const w = 'codedWidth' in frame ? frame.codedWidth : frame.width;
+	const h = 'codedHeight' in frame ? frame.codedHeight : frame.height;
+	if (!Number.isFinite(w) || !Number.isFinite(h)) return 0;
+	// No public `byteLength`; use nominal pixel size × 4 channels (RGBA).
+	// Sub-byte encodings underestimate, but for eviction an over-estimate is
+	// the safe side.
+	return w * h * 4;
 }
 
 /**

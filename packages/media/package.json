@@ -8,6 +8,14 @@
 		".": {
 			"types": "./src/index.ts",
 			"default": "./src/index.ts"
+		},
+		"./mediabunny": {
+			"types": "./src/mediabunny.ts",
+			"default": "./src/mediabunny.ts"
+		},
+		"./playback": {
+			"types": "./src/playback/index.ts",
+			"default": "./src/playback/index.ts"
 		}
 	},
 	"dependencies": {
@@ -21,11 +29,12 @@
 	},
 	"devDependencies": {
 		"svelte": "^5.56.1",
+		"typescript": "^5.9.3",
 		"vitest": "^3.2.4"
 	},
 	"scripts": {
 		"build": "exit 0",
-		"check": "exit 0",
+		"check": "tsc --noEmit -p tsconfig.json",
 		"test:unit": "vitest run",
 		"test:unit:watch": "vitest"
 	}

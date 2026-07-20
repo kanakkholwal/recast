@@ -91,9 +91,8 @@ export {
 } from './cache/unsupported-formats';
 export type { UnsupportedFormat } from './cache/unsupported-formats';
 
-// MediaBunny primitives re-exported so worker code living outside
-// `packages/media` can compose them through this package without a direct
-// mediabunny import. Worker code is the only allowed outside consumer;
-// biome's `noRestrictedImports` allows it via a scoped override.
-export { ALL_FORMATS, BlobSource, CanvasSink, Input, UrlSource } from 'mediabunny';
-export type { InputVideoTrack, WrappedCanvas } from 'mediabunny';
+// MediaBunny primitives are NOT re-exported here. A static re-export on the
+// main barrel pulls all of MediaBunny into every consumer's bundle, which
+// breaks the tree-shaking rule (REQUIREMENTS.md §5) and the 80 KB desktop
+// budget (§3). Worker modules that need the raw classes import them from
+// `@recast/media/mediabunny` instead.

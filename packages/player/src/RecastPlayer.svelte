@@ -43,14 +43,17 @@
 		type TranscriptWord,
 	} from "@recast/captions";
 
+	// Minimal by default: play, time, then speed / volume / fullscreen. The +-10s
+	// jog buttons and PiP are opt-in — the scrubber covers the same intent and a
+	// six-button row was reading as a toolbar bolted onto the video.
 	const DEFAULT_CONTROLS: RecastPlayerControls = {
 		bigPlay: true,
-		seek: true,
+		seek: false,
 		time: true,
 		volume: true,
 		playbackRate: true,
 		captions: false,
-		pip: true,
+		pip: false,
 		fullscreen: true,
 	};
 
@@ -130,6 +133,26 @@
 	const mergedControls = $derived({ ...DEFAULT_CONTROLS, ...controls });
 	const mergedFeatures = $derived({ ...DEFAULT_FEATURES, ...features });
 	const playerLabel = $derived(ariaLabel || title || "Video player");
+
+	// Mute is a plain button, not `media-mute-button`, for the same reason the
+	// captions toggle is: media-chrome swaps its off/low/medium/high icons via
+	// shadow-DOM rules keyed on a `mediavolumelevel` attribute the controller
+	// does not propagate reliably here, which left the icon stuck on the muted
+	// glyph at full volume. Deriving from our own state is deterministic.
+	const VolumeIcon = $derived(
+		muted || volume === 0
+			? VolumeX
+			: volume < 0.34
+				? Volume
+				: volume < 0.67
+					? Volume1
+					: Volume2,
+	);
+
+	function toggleMute() {
+		if (!videoEl) return;
+		videoEl.muted = !videoEl.muted;
+	}
 
 	// ── Styled caption overlay ──────────────────────────────────────────────
 	// Renders captions through the shared @recast/captions CaptionBox (the same
@@ -582,7 +605,7 @@
 			case "m":
 			case "M":
 				event.preventDefault();
-				videoEl.muted = !videoEl.muted;
+				toggleMute();
 				break;
 			case "f":
 			case "F":
@@ -808,9 +831,8 @@
 	{/if}
 
 	<media-control-bar class="recast-control-bar" noautohide={pinControls ? "" : undefined}>
-		<!-- Floating glass pill: detached from the video edges, frosted, with the
-		     scrubber running full-width along the top and the transport / utility
-		     controls split into left + right groups on the row below. -->
+		<!-- Two flush rows on a scrim: scrubber full-width along the top, transport
+		     and utility controls split left / right on the row below. -->
 		<div class="recast-pill">
 			<div class="recast-scrubber-wrap">
 				<media-time-range class="recast-scrubber" aria-label="Seek">
@@ -874,12 +896,15 @@
 
 				<div class="recast-group recast-group-end">
 					{#if mergedControls.volume}
-						<media-mute-button class="recast-btn" aria-label="Mute or unmute">
-							<span slot="off" class="recast-icon"><VolumeX class="size-4" /></span>
-							<span slot="low" class="recast-icon"><Volume class="size-4" /></span>
-							<span slot="medium" class="recast-icon"><Volume1 class="size-4" /></span>
-							<span slot="high" class="recast-icon"><Volume2 class="size-4" /></span>
-						</media-mute-button>
+						<button
+							type="button"
+							class="recast-btn"
+							aria-label={muted || volume === 0 ? "Unmute" : "Mute"}
+							aria-pressed={muted}
+							onclick={toggleMute}
+						>
+							<span class="recast-icon"><VolumeIcon class="size-4" /></span>
+						</button>
 						<media-volume-range class="recast-volume" aria-label="Volume"></media-volume-range>
 					{/if}
 

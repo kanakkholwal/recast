@@ -1,8 +1,8 @@
 /**
- * Pure, decoder-free frame-index logic for the WebCodecs video source.
+ * Pure, decoder-free frame-index logic for the video source.
  *
  * The index is the demuxed sample table in two orders:
- *   - `chunks`     : encoded samples in DECODE order (the order mp4box emits).
+ *   - `chunks`     : encoded samples in DECODE order (the order the demuxer emits).
  *   - `presOrder`  : indices into `chunks` sorted by presentation time (cts),
  *                    to answer "which frame is on screen at time T".
  * Keyframes are decode-order indices of sync samples. All times are microseconds.
