@@ -14,7 +14,7 @@
  *   - encode:    needs VideoEncoder -> Chromium-first today.
  */
 
-export type CapabilityTier = "container" | "decode" | "encode";
+export type CapabilityTier = 'container' | 'decode' | 'encode';
 
 /** A codec + (for video) a representative size to probe. */
 export interface VideoCodecCheck {
@@ -39,24 +39,22 @@ export interface ToolRequirements {
 	audioEncode?: AudioCodecCheck;
 }
 
-export type CapabilityStatus =
-	| { supported: true }
-	| { supported: false; reason: string };
+export type CapabilityStatus = { supported: true } | { supported: false; reason: string };
 
-//  API presence (cheap, synchronous) 
+//  API presence (cheap, synchronous)
 
 const present = (name: string): boolean =>
-	typeof (globalThis as Record<string, unknown>)[name] !== "undefined";
+	typeof (globalThis as Record<string, unknown>)[name] !== 'undefined';
 
-export const hasVideoDecoder = (): boolean => present("VideoDecoder");
-export const hasVideoEncoder = (): boolean => present("VideoEncoder");
-export const hasAudioDecoder = (): boolean => present("AudioDecoder");
-export const hasAudioEncoder = (): boolean => present("AudioEncoder");
-export const hasImageDecoder = (): boolean => present("ImageDecoder");
+export const hasVideoDecoder = (): boolean => present('VideoDecoder');
+export const hasVideoEncoder = (): boolean => present('VideoEncoder');
+export const hasAudioDecoder = (): boolean => present('AudioDecoder');
+export const hasAudioEncoder = (): boolean => present('AudioEncoder');
+export const hasImageDecoder = (): boolean => present('ImageDecoder');
 /** Workers + transferable VideoFrames — the floor for any decode/encode tool. */
-export const hasWorkers = (): boolean => present("Worker");
+export const hasWorkers = (): boolean => present('Worker');
 
-//  Per-codec probes (async, authoritative) 
+//  Per-codec probes (async, authoritative)
 
 export async function probeVideoDecode(c: VideoCodecCheck): Promise<boolean> {
 	if (!hasVideoDecoder()) return false;
@@ -124,10 +122,13 @@ export async function probeAudioEncode(c: AudioCodecCheck): Promise<boolean> {
  * first unmet requirement produces the reason string shown in the banner.
  */
 export async function evaluateTool(req: ToolRequirements): Promise<CapabilityStatus> {
-	if (req.tier === "container") return { supported: true };
+	if (req.tier === 'container') return { supported: true };
 
 	if (!hasWorkers()) {
-		return { supported: false, reason: "This browser can't run the background worker the tools need." };
+		return {
+			supported: false,
+			reason: "This browser can't run the background worker the tools need.",
+		};
 	}
 
 	if (req.videoDecode && !(await probeVideoDecode(req.videoDecode))) {
@@ -152,7 +153,8 @@ export async function evaluateTool(req: ToolRequirements): Promise<CapabilitySta
 	if (req.audioEncode && !(await probeAudioEncode(req.audioEncode))) {
 		return {
 			supported: false,
-			reason: "This tool needs audio encoding, which isn't supported in your browser. Try Chrome or Edge.",
+			reason:
+				"This tool needs audio encoding, which isn't supported in your browser. Try Chrome or Edge.",
 		};
 	}
 	return { supported: true };

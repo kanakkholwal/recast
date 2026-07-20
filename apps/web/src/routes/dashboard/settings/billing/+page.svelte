@@ -10,6 +10,7 @@
 		CreditCard,
 		Crown,
 		LoaderCircle,
+		Minus,
 		Rocket,
 		ShieldCheck,
 	} from "@recast/icons";
@@ -44,6 +45,24 @@
 	function activeSharesLabel(value: number | null) {
 		return value == null ? "Unlimited active shares" : `${value} active shares`;
 	}
+
+	// The off-variants used to render behind the same tick as real entitlements,
+	// which read as if the plan included them.
+	const planFeatures = $derived([
+		{ label: activeSharesLabel(currentPlan?.limits.activeShares ?? 10), on: true },
+		currentPlan?.limits.analytics
+			? { label: "Share analytics", on: true }
+			: { label: "Basic share stats only", on: false },
+		currentPlan?.limits.passwordProtection
+			? { label: "Password protection", on: true }
+			: { label: "Public links only", on: false },
+		currentPlan?.limits.linkExpiry
+			? { label: "Link expiry controls", on: true }
+			: { label: "No link expiry controls", on: false },
+		currentPlan?.limits.customBranding
+			? { label: "Custom branding", on: true }
+			: { label: "Recast watermark", on: false },
+	]);
 
 	async function startCheckout() {
 		if (checkingOut || !data.billingConfigured) return;
@@ -149,19 +168,20 @@
 			icon={ShieldCheck}
 			title="Current plan features"
 			description="Features enforced by the current account subscription."
-			tone="muted"
 		>
 			<div class="grid gap-2 sm:grid-cols-2">
-				{#each [
-					activeSharesLabel(currentPlan?.limits.activeShares ?? 10),
-					currentPlan?.limits.analytics ? "Share analytics" : "Basic share stats",
-					currentPlan?.limits.passwordProtection ? "Password protection" : "Public links only",
-					currentPlan?.limits.linkExpiry ? "Link expiry controls" : "No link expiry controls",
-					currentPlan?.limits.customBranding ? "Custom branding" : "Recast watermark",
-				] as feature (feature)}
-					<div class="flex items-center gap-2 rounded-lg border border-border-low/60 bg-background/45 px-3 py-2 text-sm text-foreground">
-						<Check class="size-3.5 text-primary" />
-						<span>{feature}</span>
+				{#each planFeatures as feature (feature.label)}
+					<div
+						class="flex items-center gap-2 rounded-lg border border-border-low/60 bg-background/45 px-3 py-2 text-sm {feature.on
+							? 'text-foreground'
+							: 'text-muted-foreground'}"
+					>
+						{#if feature.on}
+							<Check class="size-3.5 shrink-0 text-foreground/60" aria-label="Included" />
+						{:else}
+							<Minus class="size-3.5 shrink-0 text-muted-foreground/60" aria-label="Not included" />
+						{/if}
+						<span>{feature.label}</span>
 					</div>
 				{/each}
 			</div>

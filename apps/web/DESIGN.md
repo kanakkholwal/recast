@@ -58,6 +58,39 @@ CSS variables — never hardcode colors.
 | `--border` / `--border-low` / `--border-strong` | All separators, subtle dividers. |
 | `--destructive` / `--success` / `--warning` | Status only — never decorative. |
 
+### Color ratio (60/30/10)
+
+Every surface budgets colour the same way. This is a hard rule, not a vibe:
+
+| Share | Role | Tokens |
+| --- | --- | --- |
+| **60%** | Canvas. The page ground. | `--background`, `--canvas` |
+| **30%** | Structure. Surfaces, borders, secondary text, chart neutrals — everything that builds hierarchy. | `glass-card`, `bg-foreground/5-10`, `--border*`, `--muted-foreground`, `--foreground` |
+| **10%** | Brand. `--primary` only. | see the reserved list below |
+
+**`--primary` is reserved for these, and nothing else:**
+
+1. The single main CTA on a view (default `<Button>`).
+2. The sidebar active-route indicator.
+3. The primary data series in a chart.
+4. Selection and drag-drop targets (checkboxes, drop zones, the upload dropzone).
+5. Toggle "on" states.
+6. Plan / upgrade affordances (the `Crown` surfaces) — the monetization signal.
+7. Focus rings and active-input borders (`--ring` is `--primary`).
+
+**Never** use `--primary` as a decorative tint. Specifically: section-header icons,
+`glass-chip` contents, avatars, play buttons, progress fills, tab underlines, and
+hover text colours are all **neutral**. If an icon just labels a heading, it takes
+`text-muted-foreground` — or no colour class at all, inheriting from its row.
+
+Progress and meter fills are neutral (`bg-foreground/30-60`) and escalate to
+`--warning` / `--destructive` only on real thresholds, so a bar's colour always
+means something. See [UsageMeter.logic.ts](src/lib/dashboard/components/UsageMeter.logic.ts).
+
+> The failure mode this rule exists to prevent: a lime tick on *every* card, chip,
+> and heading. Each one looks fine alone; together the brand colour stops being an
+> accent and the eye has nowhere to land.
+
 ### Dark mode
 
 The dark-mode `--primary` is a **highly saturated lime** (`oklch(92% 0.234 …)`).

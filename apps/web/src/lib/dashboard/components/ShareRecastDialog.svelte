@@ -189,7 +189,7 @@
 				<button
 					type="button"
 					onclick={createAnother}
-					class="text-xs font-semibold text-primary outline-none hover:underline focus-visible:underline"
+					class="text-xs font-semibold text-foreground outline-none hover:underline focus-visible:underline"
 				>
 					Create another link
 				</button>

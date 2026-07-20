@@ -4,20 +4,26 @@ import { z } from "zod";
 import { getDb } from "$lib/db";
 import { user, waitlist } from "$lib/db/schema";
 import { enforceRateLimit } from "$lib/server/rate-limit";
+import { emailField } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 // Schema is the single source of truth for the request body. `source`/`name`
 // stay lenient (coerce non-strings to a safe default rather than rejecting) to
 // preserve the prior hand-rolled behaviour; only `email` gates the request.
 const BodySchema = z.object({
-	email: z
+	email: emailField("Invalid email"),
+	// `.catch()` substitutes the fallback instead of failing, which covers both
+	// a missing key and a wrong-typed one. These are funnel metadata: junk in
+	// either should never cost someone their signup, so they degrade to a
+	// default rather than rejecting the request the way `email` does.
+	source: z
 		.string()
-		.transform((v) => v.trim().toLowerCase())
-		.refine((v) => EMAIL_RE.test(v), "Invalid email"),
-	source: z.unknown().transform((v) => (typeof v === "string" ? v.slice(0, 64) : null)),
-	name: z.unknown().transform((v) => (typeof v === "string" ? v.trim().slice(0, 80) : "")),
+		.catch("")
+		.transform((v) => v.trim().slice(0, 64) || null),
+	name: z
+		.string()
+		.catch("")
+		.transform((v) => v.trim().slice(0, 80)),
 });
 
 /**
@@ -54,7 +60,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const parsed = BodySchema.safeParse(raw);
 	if (!parsed.success) {
-		return json({ ok: false, error: "Invalid email" }, { status: 422 });
+		// Don't blame the email for a failure somewhere else in the body.
+		const onEmail = parsed.error.issues.some((i) => i.path[0] === "email");
+		return json(
+			{ ok: false, error: onEmail ? "Invalid email" : "Invalid request." },
+			{ status: 422 },
+		);
 	}
 	const { email, source } = parsed.data;
 	const requestedName = parsed.data.name;

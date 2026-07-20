@@ -12,7 +12,7 @@ import type {
 	ToConvertWorker,
 	ToolOp,
 	ToolOptions,
-} from "./worker-protocol";
+} from './worker-protocol';
 
 export interface ConvertResult {
 	blob: Blob;
@@ -34,7 +34,7 @@ export class ConvertClientError extends Error {
 		message: string,
 	) {
 		super(message);
-		this.name = "ConvertClientError";
+		this.name = 'ConvertClientError';
 	}
 }
 
@@ -42,8 +42,8 @@ export class ConvertClientError extends Error {
 let worker: Worker | null = null;
 function getWorker(): Worker {
 	if (!worker) {
-		worker = new Worker(new URL("./convert-worker.ts", import.meta.url), {
-			type: "module",
+		worker = new Worker(new URL('./convert-worker.ts', import.meta.url), {
+			type: 'module',
 		});
 	}
 	return worker;
@@ -66,31 +66,31 @@ export function runConversion(
 		const onMessage = (e: MessageEvent<FromConvertWorker>) => {
 			const msg = e.data;
 			if (msg.id !== id) return; // not our job
-			if (msg.type === "progress") {
+			if (msg.type === 'progress') {
 				run.onProgress?.(msg.ratio, msg.stage);
-			} else if (msg.type === "result") {
+			} else if (msg.type === 'result') {
 				cleanup();
 				resolve({ blob: msg.blob, filename: msg.filename, mime: msg.mime });
-			} else if (msg.type === "error") {
+			} else if (msg.type === 'error') {
 				cleanup();
 				reject(new ConvertClientError(msg.code, msg.message));
 			}
 		};
 		const onAbort = () => {
-			w.postMessage({ type: "cancel", id } satisfies ToConvertWorker);
+			w.postMessage({ type: 'cancel', id } satisfies ToConvertWorker);
 		};
 		const cleanup = () => {
-			w.removeEventListener("message", onMessage);
-			run.signal?.removeEventListener("abort", onAbort);
+			w.removeEventListener('message', onMessage);
+			run.signal?.removeEventListener('abort', onAbort);
 		};
 
 		if (run.signal?.aborted) {
-			reject(new ConvertClientError("cancelled", "Cancelled."));
+			reject(new ConvertClientError('cancelled', 'Cancelled.'));
 			return;
 		}
-		w.addEventListener("message", onMessage);
-		run.signal?.addEventListener("abort", onAbort, { once: true });
-		w.postMessage({ type: "run", job: { id, op, file, options } } satisfies ToConvertWorker);
+		w.addEventListener('message', onMessage);
+		run.signal?.addEventListener('abort', onAbort, { once: true });
+		w.postMessage({ type: 'run', job: { id, op, file, options } } satisfies ToConvertWorker);
 	});
 }
 

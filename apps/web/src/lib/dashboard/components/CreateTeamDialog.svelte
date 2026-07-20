@@ -66,7 +66,7 @@
 	<Dialog.Content>
 		<Dialog.Header>
 			<Dialog.Title class="flex items-center gap-2">
-				<span class="glass-chip grid size-7 place-items-center rounded-lg text-primary">
+				<span class="glass-chip grid size-7 place-items-center rounded-lg text-muted-foreground">
 					<Plus class="size-3.5" />
 				</span>
 				Create a team

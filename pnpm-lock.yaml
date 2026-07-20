@@ -87,9 +87,6 @@ importers:
       mode-watcher:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.56.3)
-      mp4box:
-        specifier: ^2.4.1
-        version: 2.4.1
       svelte-sonner:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.56.3)
@@ -103,15 +100,15 @@ importers:
       '@recast/analytics':
         specifier: workspace:*
         version: link:../../packages/analytics
-      '@recast/application':
-        specifier: workspace:*
-        version: link:../../packages/application
       '@recast/captions':
         specifier: workspace:*
         version: link:../../packages/captions
       '@recast/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@recast/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@recast/ui':
         specifier: workspace:*
         version: link:../../packages/ui
@@ -184,9 +181,6 @@ importers:
       '@azure/storage-blob':
         specifier: ^12.31.0
         version: 12.31.0
-      '@breezystack/lamejs':
-        specifier: ^1.2.7
-        version: 1.2.7
       '@docvia/source':
         specifier: ^0.3.1
         version: 0.3.1
@@ -229,21 +223,12 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(postgres@3.4.9)
-      fflate:
-        specifier: ^0.8.3
-        version: 0.8.3
       files-sdk:
         specifier: ^1.6.0
         version: 1.6.0(@aws-sdk/client-s3@3.1057.0)(@aws-sdk/s3-presigned-post@3.1057.0)(@aws-sdk/s3-request-presigner@3.1075.0)(@azure/core-auth@1.10.1)(@azure/storage-blob@12.31.0)(zod@4.4.3)
-      gifenc:
-        specifier: ^1.0.3
-        version: 1.0.3
       gsap:
         specifier: ^3.15.0
         version: 3.15.0
-      mediabunny:
-        specifier: ^1.49.0
-        version: 1.49.0
       mode-watcher:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.56.3)
@@ -299,6 +284,9 @@ importers:
       '@recast/icons':
         specifier: workspace:*
         version: link:../../packages/icons
+      '@recast/media':
+        specifier: workspace:*
+        version: link:../../packages/media
       '@recast/player':
         specifier: workspace:*
         version: link:../../packages/player
@@ -409,6 +397,28 @@ importers:
       svelte:
         specifier: 5.56.3
         version: 5.56.3
+
+  packages/media:
+    dependencies:
+      '@breezystack/lamejs':
+        specifier: ^1.2.7
+        version: 1.2.7
+      fflate:
+        specifier: ^0.8.3
+        version: 0.8.3
+      gifenc:
+        specifier: ^1.0.3
+        version: 1.0.3
+      mediabunny:
+        specifier: ^1.49.0
+        version: 1.49.0
+    devDependencies:
+      svelte:
+        specifier: 5.56.3
+        version: 5.56.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.6(@types/debug@4.1.13)(@types/node@25.6.0)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.22.3)(yaml@2.9.0)
 
   packages/player:
     dependencies:
@@ -4056,10 +4066,6 @@ packages:
   mp4-muxer@5.2.2:
     resolution: {integrity: sha512-dhozjTywI0h2qFzeShagt8YYw811fh1XlwiDCE2f6Aeqf6xG2CyuShoSa5E0AZDO8pPF0JOZ3wOmWBNWIGdSpQ==}
     deprecated: This library is superseded by Mediabunny. Please migrate to it.
-
-  mp4box@2.4.1:
-    resolution: {integrity: sha512-0HGX7nXoDIX6FKLVl4a3wtYjBlwqsN3xuQC3GXzNtKp98FXUOhDSq623azsz8DG5ptd9ZXcXodDkgbdMZOjWvw==}
-    engines: {node: '>=20.8.1'}
 
   mri@1.2.0:
     resolution: {integrity: sha512-tzzskb3bG8LvYGFF/mDTpq3jpI6Q9wc3LEmBaghu+DdCssd1FakN7Bc0hVNmEyGq1bq3RgfkCb3cmQLpNPOroA==}
@@ -8558,8 +8564,6 @@ snapshots:
     dependencies:
       '@types/dom-webcodecs': 0.1.13
       '@types/wicg-file-system-access': 2020.9.8
-
-  mp4box@2.4.1: {}
 
   mri@1.2.0: {}
 

@@ -17,7 +17,9 @@
 			onclick={() => (value = o.value)}
 			aria-pressed={value === o.value}
 			class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors duration-200
-				{value === o.value ? 'bg-primary/12 text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+				{value === o.value
+					? 'bg-background text-foreground shadow-craft-sm'
+					: 'text-muted-foreground hover:text-foreground'}"
 		>
 			{o.label}
 		</button>

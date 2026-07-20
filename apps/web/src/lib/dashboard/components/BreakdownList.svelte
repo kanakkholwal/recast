@@ -29,7 +29,7 @@
 
 <section class="glass-card flex flex-col rounded-xl p-5">
 	<header class="flex items-center gap-2">
-		<Icon class="size-4 text-primary" />
+		<Icon class="size-4 text-muted-foreground" />
 		<h2 class="text-sm font-semibold text-foreground">{title}</h2>
 	</header>
 
@@ -52,7 +52,7 @@
 					</div>
 					<div class="mt-1.5 h-1.5 overflow-hidden rounded-full bg-foreground/8">
 						<div
-							class="h-full rounded-full bg-linear-to-r from-primary/60 to-primary transition-all duration-500 ease-[cubic-bezier(0.625,0.05,0,1)]"
+							class="h-full rounded-full bg-foreground/30 transition-all duration-500 ease-[cubic-bezier(0.625,0.05,0,1)]"
 							style="width: {Math.max(2, r.pct)}%"
 						></div>
 					</div>

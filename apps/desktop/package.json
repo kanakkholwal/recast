@@ -31,10 +31,10 @@
 		"@fontsource-variable/geist": "^5.2.8",
 		"@internationalized/date": "^3.12.2",
 		"@recast/analytics": "workspace:*",
-		"@recast/application": "workspace:*",
 		"@recast/captions": "workspace:*",
 		"@recast/design": "workspace:*",
 		"@recast/icons": "workspace:*",
+		"@recast/media": "workspace:*",
 		"@recast/ui": "workspace:*",
 		"@sveltejs/adapter-auto": "^7.0.0",
 		"@sveltejs/adapter-static": "^3.0.10",
@@ -76,7 +76,6 @@
 		"bits-ui": "^2.16.3",
 		"clsx": "^2.1.1",
 		"mode-watcher": "^1.1.0",
-		"mp4box": "^2.4.1",
 		"svelte-sonner": "^1.1.0"
 	}
 }

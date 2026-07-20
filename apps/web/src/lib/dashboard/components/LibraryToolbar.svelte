@@ -141,7 +141,7 @@
 				<button
 					type="button"
 					onclick={() => (creatingTag = true)}
-					class="inline-flex items-center gap-1 rounded-full border border-dashed border-border-low/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-primary/50 hover:text-foreground"
+					class="inline-flex items-center gap-1 rounded-full border border-dashed border-border-low/70 px-2.5 py-1 text-xs font-medium text-muted-foreground transition-colors hover:border-foreground/30 hover:text-foreground"
 				>
 					<Plus class="size-3" /> New tag
 				</button>

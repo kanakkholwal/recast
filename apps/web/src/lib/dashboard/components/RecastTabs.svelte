@@ -41,7 +41,7 @@
 		>
 			<Icon
 				class="size-4 transition-colors {active
-					? 'text-primary'
+					? 'text-foreground'
 					: 'text-muted-foreground group-hover:text-foreground'}"
 			/>
 			{tab.label}
@@ -49,7 +49,7 @@
 				<span
 					in:receive={{ key: "recast-tab" }}
 					out:send={{ key: "recast-tab" }}
-					class="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-primary"
+					class="absolute inset-x-2.5 -bottom-px h-0.5 rounded-full bg-foreground"
 					aria-hidden="true"
 				></span>
 			{/if}

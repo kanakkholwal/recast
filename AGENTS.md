@@ -86,6 +86,12 @@ pnpm db:generate | db:migrate # drizzle-kit (NEVER db:push to prod)
     service module, not inside the command/handler (see §3, §4). One source of truth for any rule —
     extract a shared helper instead of copy-pasting, and keep state flow one-directional and
     explicit (derive, don't sync).
+12. **NLE performance budget violations are merge-blocking.** The `@recast/media` package's
+    performance budgets (see `packages/media/REQUIREMENTS.md §3`) are tested by
+    `packages/media/test/perf/budgets.test.ts`. Any PR that causes a regression on a budget fails
+    the build. Per-milestone testing gates (see `packages/media/PLAN.md`) must be green before the
+    next PR opens. The cut-jump parity fixture (see `PLAN.md` PR-F) MUST be green before legacy
+    `webcodecs-*` and `mp4box` files are deleted.
 
 ---
 
@@ -221,6 +227,37 @@ Current as of **Svelte 5.36+ / SvelteKit 2.12+**. Runes era — no Svelte 4 idio
 `$effect` to sync state · mutating non-`$bindable` props · server-side module-global request state
 · deep reactive `$state` for large blobs (use `$state.raw`) · `$:` / `export let` /
 `createEventDispatcher` / `<slot>` / `on:event` / `$app/stores` in new code · raw scattered `invoke`.
+
+### Media pipeline & non-linear-editor performance contract
+The desktop video editor's preview and the apps/web conversion tools read media through
+`@recast/media`. The full contract — performance budgets, curated web.dev guides,
+implementation rules, browser API surface — lives in `packages/media/REQUIREMENTS.md`. The
+migration sequence and per-milestone testing gates live in `packages/media/PLAN.md`. These
+rules are non-negotiable:
+
+- Decode, demux, and codec configuration MUST run inside a Web Worker. Never on the main thread.
+- `AudioWorklet` is the only acceptable audio path for sample-aligned scheduling. The legacy
+  `apps/desktop/src/lib/playback/audio-engine.ts` exists as a fallback during the migration
+  window; remove the fallback only after a milestone's testing confirms the new path is stable.
+- Compositing MUST target the main thread unless an OffscreenCanvas profile proves otherwise; use
+  `transferControlToOffscreen` to migrate, never a parallel canvas.
+- Frame-to-glass p95 ≤ 16.7 ms during playback. Cut-cross latency p95 ≤ 250 ms. Both are tracked
+  by `packages/media/test/perf/budgets.test.ts` and `packages/media/test/perf/cut-jump.test.ts`.
+- All `VideoFrame`s crossing the worker boundary are owned by the consumer side; the producer side
+  MUST NOT close them until a release message returns. This is the same invariant as the current
+  `apps/desktop/src/lib/playback/webcodecs-source.ts:22`.
+- Bundle: `@recast/media` ≤ 80 KB gz desktop, ≤ 150 KB gz web. Direct imports only; tree-shake
+  relies on this.
+- IndexedDB-backed decoded-frame cache: ≤ 2 GB cap (user-configurable in Settings; default 2 GB),
+  LRU by recency × bytes, evicted during the `idle` callback where possible (web.dev INP guidance).
+- No `mediabunny` import outside `packages/media`. Consumers go through `@recast/media`'s high-
+  level API. Enforced by Biome lint + a CI grep check.
+- The Rust export pipeline stays untouched. `EnqueueExportRequest` IPC payload is byte-stable.
+- Every PR in this surface area must read `packages/media/REQUIREMENTS.md §4` (curated web.dev
+  guides) before opening.
+- Legacy `apps/desktop/src/lib/playback/{webcodecs-source,webcodecs-worker,mp4-demux}.ts` and the
+  `mp4box` dep stay in the tree until PR-F of PLAN.md; delete only after the cut-jump parity
+  fixture is green.
 
 ---
 

@@ -3,9 +3,8 @@ import { eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
 import { user } from "$lib/db/schema";
 import { enforceRateLimit } from "$lib/server/rate-limit";
+import { isValidEmail, normalizeEmail } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Pre-flight email lookup for the login form. Production-only signup means
@@ -41,8 +40,8 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	} catch {
 		return json({ status: "invalid" as const });
 	}
-	const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
-	if (!EMAIL_RE.test(email)) return json({ status: "invalid" as const });
+	const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+	if (!isValidEmail(email)) return json({ status: "invalid" as const });
 
 	const db = getDb();
 	const [row] = await db

@@ -505,8 +505,8 @@
 					class={cn(
 						"flex min-h-16 items-center gap-3 rounded-lg border px-3 text-left transition-colors",
 						selectedFolder === "all"
-							? "border-primary/35 bg-primary/8"
-							: "border-border-low/70 bg-background/45 hover:border-primary/30 hover:bg-background/70",
+							? "border-foreground/25 bg-foreground/8"
+							: "border-border-low/70 bg-background/45 hover:border-foreground/20 hover:bg-background/70",
 					)}
 				>
 					<span class="grid size-9 place-items-center rounded-md bg-foreground/5 text-muted-foreground">
@@ -524,8 +524,8 @@
 						class={cn(
 							"group/folder flex min-h-16 items-center gap-3 rounded-lg border px-3 text-left transition-colors",
 							selectedFolder === folder.id
-								? "border-primary/35 bg-primary/8"
-								: "border-border-low/70 bg-background/45 hover:border-primary/30 hover:bg-background/70",
+								? "border-foreground/25 bg-foreground/8"
+								: "border-border-low/70 bg-background/45 hover:border-foreground/20 hover:bg-background/70",
 						)}
 						ondragover={(e) => e.preventDefault()}
 						ondrop={(e) => {
@@ -594,13 +594,13 @@
 				{/each}
 				{#if creatingFolder}
 					<form
-						class="flex min-h-16 items-center gap-3 rounded-lg border border-primary/35 bg-primary/8 px-3"
+						class="flex min-h-16 items-center gap-3 rounded-lg border border-foreground/25 bg-foreground/8 px-3"
 						onsubmit={(e) => {
 							e.preventDefault();
 							createFolder();
 						}}
 					>
-						<span class="grid size-9 shrink-0 place-items-center rounded-md bg-background/70 text-primary">
+						<span class="grid size-9 shrink-0 place-items-center rounded-md bg-background/70 text-muted-foreground">
 							<Folder class="size-4" />
 						</span>
 						<input
@@ -646,7 +646,7 @@
 			<!-- Folder context line -->
 			{#if folderCrumb.length > 0}
 				<div class="mt-4 flex items-center gap-1.5 text-sm text-muted-foreground" in:slide={{ duration: 200, easing: cubicOut }}>
-					<FolderOpen class="size-4 text-primary" />
+					<FolderOpen class="size-4" />
 					{#each folderCrumb as f, i (f.id)}
 						<button type="button" onclick={() => (selectedFolder = f.id)} class="transition-colors hover:text-foreground {i === folderCrumb.length - 1 ? 'font-medium text-foreground' : ''}">
 							{f.name}

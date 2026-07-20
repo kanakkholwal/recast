@@ -20,23 +20,23 @@
 	const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
 	const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
 
-	// Comments stack on top of reactions within each time slice; same hue, split
-	// by weight so reactions read as the dominant signal.
+	// Two hues, not two opacities of one: opacity alone is not a reliable way to
+	// tell stacked bands apart.
 	const series = [
 		{ key: "reactions", label: "Reactions", value: "reactions", color: "var(--color-primary)", props: { fillOpacity: 0.85 } },
-		{ key: "comments", label: "Comments", value: "comments", color: "var(--color-primary)", props: { fillOpacity: 0.35 } },
+		{ key: "comments", label: "Comments", value: "comments", color: "var(--color-foreground)", props: { fillOpacity: 0.35 } },
 	];
 
 	const chartConfig = {
 		reactions: { label: "Reactions", color: "var(--color-primary)" },
-		comments: { label: "Comments", color: "var(--color-primary)" },
+		comments: { label: "Comments", color: "var(--color-foreground)" },
 	} satisfies Chart.ChartConfig;
 </script>
 
 <section class="glass-card rounded-xl p-5">
 	<header class="flex items-center justify-between">
 		<div class="flex items-center gap-2">
-			<Flame class="size-4 text-primary" />
+			<Flame class="size-4 text-muted-foreground" />
 			<h2 class="text-sm font-semibold text-foreground">Engagement by moment</h2>
 		</div>
 		{#if heat.peakSec !== null && heat.max > 0}
@@ -77,7 +77,7 @@
 					<span class="size-2 rounded-[2px] bg-primary/80"></span>{totalReactions} reactions
 				</span>
 				<span class="flex items-center gap-1">
-					<span class="size-2 rounded-[2px] bg-primary/35"></span>{totalComments} comments
+					<span class="size-2 rounded-[2px] bg-foreground/35"></span>{totalComments} comments
 				</span>
 			</div>
 			<span>{formatDuration(durationSec)}</span>

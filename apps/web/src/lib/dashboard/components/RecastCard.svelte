@@ -144,11 +144,11 @@
 			<div
 				aria-hidden="true"
 				class="pointer-events-none absolute -bottom-10 left-1/2 size-44 -translate-x-1/2 rounded-full opacity-70"
-				style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-primary) 22%, transparent), transparent 75%);"
+				style="background: radial-gradient(closest-side, color-mix(in srgb, var(--color-foreground) 8%, transparent), transparent 75%);"
 			></div>
 			<div class="absolute inset-0 grid place-items-center">
 				<span class="grid size-16 place-items-center rounded-xl border border-border-low/60 bg-background/55 shadow-craft-sm backdrop-blur-sm">
-					<Film class="size-7 text-foreground/70 drop-shadow-[0_4px_12px_color-mix(in_srgb,var(--color-primary)_35%,transparent)]" />
+					<Film class="size-7 text-foreground/70" />
 				</span>
 			</div>
 		{/if}
@@ -159,13 +159,13 @@
 		<span aria-hidden="true" class="pointer-events-none absolute bottom-2 right-2 z-10 size-2.5 border-b border-r border-foreground/35"></span>
 
 		<span class="absolute inset-0 grid place-items-center bg-background/35 opacity-0 backdrop-blur-[1px] transition-opacity duration-300 group-hover/card:opacity-100">
-			<span class="grid size-12 place-items-center rounded-full bg-primary text-background shadow-craft-floating transition-transform duration-200 group-active/card:scale-95">
+			<span class="grid size-12 place-items-center rounded-full bg-foreground text-background shadow-craft-floating transition-transform duration-200 group-active/card:scale-95">
 				<Play class="size-5 translate-x-0.5 fill-current" />
 			</span>
 		</span>
 
 		{#if isShared}
-			<span class="absolute right-2.5 top-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
+			<span class="absolute right-2.5 top-2.5 z-20 flex items-center gap-1 rounded-md bg-background/85 px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground ring-1 ring-inset ring-border-low/50 backdrop-blur-sm">
 				<Share2 class="size-2.5" />
 				Shared
 			</span>

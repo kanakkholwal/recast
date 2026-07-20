@@ -1,5 +1,5 @@
 // gifenc ships no type declarations; declare the small surface we use.
-declare module "gifenc" {
+declare module 'gifenc' {
 	export interface GifEncoderInstance {
 		writeFrame(
 			index: Uint8Array | number[],

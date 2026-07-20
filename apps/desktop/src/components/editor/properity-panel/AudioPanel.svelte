@@ -48,6 +48,12 @@
   function resetVolume() {
     updateAudioSettings({ volume: 100 }, true);
   }
+  function resetSystemVolume() {
+    updateAudioSettings({ systemVolume: 100 }, true);
+  }
+  function resetMicVolume() {
+    updateAudioSettings({ micVolume: 100 }, true);
+  }
 
   // Suppress the M shortcut while typing in an input/contenteditable.
   function handleKey(e: KeyboardEvent) {
@@ -81,13 +87,13 @@
   const formatClipDuration = (): string => clock(store.clipDuration || 0);
 </script>
 
-<!-- `M` toggles mute. `<svelte:window>` so Svelte rebinds it on each HMR patch. -->
+<!-- `M` toggles master mute. `<svelte:window>` so Svelte rebinds it on each HMR patch. -->
 <svelte:window onkeydown={handleKey} />
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Output"
-    hint="Volume affects editor playback and export. Press M to toggle mute."
+    hint="Master volume affects editor playback and export. Press M to toggle mute."
     flush
   >
     {#snippet action()}
@@ -97,7 +103,7 @@
           size="xs"
           class="gap-1 text-muted-foreground hover:text-foreground"
           onclick={resetVolume}
-          title="Reset volume to 100%"
+          title="Reset master volume to 100%"
         >
           <RotateCcw size={11} />
           100%
@@ -124,7 +130,7 @@
         <div class="flex items-end justify-between gap-2">
           <div>
             <p class="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Output gain
+              Master gain
             </p>
             <p
               class="font-mono text-2xl font-medium tabular-nums leading-none {volumeZone ===
@@ -292,30 +298,136 @@
     </div>
   </PanelSection>
 
-  <!-- Honest summary of what's in the mix. Per-track gain is not built yet. -->
+  <!-- Per-track gain: system audio and microphone each get their own level +
+       mute, layered on top of the master. The user can keep the system audio
+       loud and mute just the mic, or vice versa. Master mute still overrides
+       both. -->
   <PanelSection
     title="Sources"
-    hint="System audio and mic share one master gain. Per-track levels come in a later audio pass."
+    hint="Per-track gain is layered on the master. Mute one source without touching the other."
     flush
   >
-    <div
-      class="flex items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-2.5 py-2 shadow-(--shadow-craft-inset)"
-    >
-      <span class="flex items-center gap-1 text-muted-foreground" aria-hidden="true">
-        <span class="grid size-6 place-items-center rounded-md bg-muted/60">
-          <Speaker size={12} />
-        </span>
-        <span class="grid size-6 place-items-center rounded-md bg-muted/60">
-          <Mic size={12} />
-        </span>
-      </span>
-      <div class="min-w-0 flex-1">
-        <p class="text-[11px] font-medium text-foreground">
-          System audio + microphone
-        </p>
-        <p class="truncate text-[10px] text-muted-foreground">
-          Mixed at master gain · per-track levels coming soon
-        </p>
+    <div class="flex flex-col gap-3">
+      <!-- System audio row -->
+      <div
+        class="rounded-lg border border-border/60 bg-card/40 p-2.5 shadow-(--shadow-craft-inset)"
+      >
+        <div class="flex items-center gap-2">
+          <span
+            class="grid size-7 place-items-center rounded-md bg-muted/60 text-muted-foreground"
+            aria-hidden="true"
+          >
+            <Speaker size={13} />
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] font-medium text-foreground">System audio</p>
+            <p class="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+              {store.audioSettings.systemMuted
+                ? "Muted"
+                : `${store.audioSettings.systemVolume}%`}
+            </p>
+          </div>
+          <SegmentedToggle
+            checked={!store.audioSettings.systemMuted}
+            offLabel="Muted"
+            onLabel="Live"
+            size="xs"
+            aria-label="Mute system audio"
+            onCheckedChange={(next) => {
+              store.pushUndoState();
+              store.updateAudioSettings({ systemMuted: !next });
+            }}
+          />
+        </div>
+        <div class="mt-2 flex items-center gap-1">
+          <SliderControl
+            label="Volume"
+            value={store.audioSettings.systemVolume}
+            min={0}
+            max={200}
+            step={5}
+            unit="%"
+            disabled={store.audioSettings.systemMuted || store.audioSettings.muted}
+            onstart={() => store.pushUndoState()}
+            onchange={(next) => store.updateAudioSettings({ systemVolume: next })}
+            formatValue={(v) => `${v}%`}
+          >
+            {#snippet icon()}
+              <Speaker size={11} />
+            {/snippet}
+          </SliderControl>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            onclick={resetSystemVolume}
+            title="Reset system volume to 100%"
+            aria-label="Reset system volume"
+          >
+            <RotateCcw size={11} />
+          </Button>
+        </div>
+      </div>
+
+      <!-- Microphone row -->
+      <div
+        class="rounded-lg border border-border/60 bg-card/40 p-2.5 shadow-(--shadow-craft-inset)"
+      >
+        <div class="flex items-center gap-2">
+          <span
+            class="grid size-7 place-items-center rounded-md bg-muted/60 text-muted-foreground"
+            aria-hidden="true"
+          >
+            <Mic size={13} />
+          </span>
+          <div class="min-w-0 flex-1">
+            <p class="text-[11px] font-medium text-foreground">Microphone</p>
+            <p class="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
+              {store.audioSettings.micMuted
+                ? "Muted"
+                : `${store.audioSettings.micVolume}%`}
+            </p>
+          </div>
+          <SegmentedToggle
+            checked={!store.audioSettings.micMuted}
+            offLabel="Muted"
+            onLabel="Live"
+            size="xs"
+            aria-label="Mute microphone"
+            onCheckedChange={(next) => {
+              store.pushUndoState();
+              store.updateAudioSettings({ micMuted: !next });
+            }}
+          />
+        </div>
+        <div class="mt-2 flex items-center gap-1">
+          <SliderControl
+            label="Volume"
+            value={store.audioSettings.micVolume}
+            min={0}
+            max={200}
+            step={5}
+            unit="%"
+            disabled={store.audioSettings.micMuted || store.audioSettings.muted}
+            onstart={() => store.pushUndoState()}
+            onchange={(next) => store.updateAudioSettings({ micVolume: next })}
+            formatValue={(v) => `${v}%`}
+          >
+            {#snippet icon()}
+              <Mic size={11} />
+            {/snippet}
+          </SliderControl>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            onclick={resetMicVolume}
+            title="Reset microphone volume to 100%"
+            aria-label="Reset microphone volume"
+          >
+            <RotateCcw size={11} />
+          </Button>
+        </div>
       </div>
     </div>
   </PanelSection>

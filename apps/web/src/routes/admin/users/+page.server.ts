@@ -1,6 +1,15 @@
-import { getAuth } from "$lib/auth/server";
+import { fail } from "@sveltejs/kit";
+import { eq } from "drizzle-orm";
+import { logAudit } from "$lib/admin/audit";
 import { requireAdmin } from "$lib/admin/guard";
-import type { PageServerLoad } from "./$types";
+import { createSetPasswordLink } from "$lib/auth/invite";
+import { firstNameOf, inviteDisplayName } from "$lib/auth/invite.logic";
+import { ensureDefaultTeamForUser, getAuth } from "$lib/auth/server";
+import { getDb } from "$lib/db";
+import { user } from "$lib/db/schema";
+import { sendTemplatedEmail } from "$lib/email";
+import { isValidEmail, normalizeEmail } from "$lib/validation/email";
+import type { Actions, PageServerLoad } from "./$types";
 
 /**
  * Server-side load that proxies straight to the admin plugin's listUsers
@@ -86,4 +95,86 @@ export const load: PageServerLoad = async (event) => {
 			dir: sortDirection,
 		},
 	};
+};
+
+export const actions: Actions = {
+	/**
+	 * Invite a user directly, skipping the waitlist entirely. Creates them
+	 * `active` (a `pending` row would silently suppress every outbound auth
+	 * email via the isOnWaitlist gate in auth/server.ts) and mails them a
+	 * set-password link.
+	 *
+	 * The user row is written straight through Drizzle rather than
+	 * `auth.api.createUser`, because that endpoint requires a password and we
+	 * want the invitee to choose their own. Better Auth's reset endpoint
+	 * creates the `credential` account when they do.
+	 */
+	invite: async (event) => {
+		const admin = await requireAdmin(event);
+		const fd = await event.request.formData();
+		const rawEmail = String(fd.get("email") ?? "");
+		const rawName = String(fd.get("name") ?? "");
+
+		if (!isValidEmail(rawEmail)) return fail(400, { error: "Enter a valid email address." });
+		const email = normalizeEmail(rawEmail);
+		const name = inviteDisplayName(rawName, email);
+
+		const db = getDb();
+		const [existing] = await db
+			.select({ id: user.id, status: user.status })
+			.from(user)
+			.where(eq(user.email, email))
+			.limit(1);
+
+		// An existing pending row means they signed up for the waitlist. Inviting
+		// them is the same as approving them, so activate rather than reject.
+		if (existing && existing.status !== "pending") {
+			return fail(400, { error: "That email already has an account." });
+		}
+
+		let userId: string;
+		if (existing) {
+			userId = existing.id;
+			await db
+				.update(user)
+				.set({ status: "active", updatedAt: new Date() })
+				.where(eq(user.id, userId));
+		} else {
+			userId = crypto.randomUUID();
+			await db.insert(user).values({ id: userId, email, name, status: "active" });
+		}
+
+		// New rows get a team from the user.create hook, but a promoted pending
+		// row was skipped while it was on the waitlist.
+		await ensureDefaultTeamForUser({ id: userId, name, email });
+
+		await logAudit({
+			actorId: admin.user.id,
+			action: "user.invite",
+			targetUserId: userId,
+			metadata: { email, promotedFromWaitlist: Boolean(existing) },
+		});
+
+		// The account exists either way. Surface a send failure so the admin can
+		// resend instead of assuming the invite landed.
+		try {
+			const url = await createSetPasswordLink(userId);
+			await sendTemplatedEmail({
+				to: email,
+				template: "admin-invite",
+				data: {
+					url,
+					firstName: firstNameOf(name),
+					inviterName: admin.user.name || admin.user.email,
+				},
+			});
+		} catch (err) {
+			console.error("[admin] invite email failed", { email, err });
+			return fail(502, {
+				error: `${email} was created, but the invite email failed to send.`,
+			});
+		}
+
+		return { ok: true, invited: email };
+	},
 };

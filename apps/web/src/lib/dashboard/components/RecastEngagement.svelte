@@ -10,7 +10,7 @@
 
 <section class="glass-card flex flex-col rounded-xl p-5">
 	<header class="flex items-center gap-2">
-		<MessageSquare class="size-4 text-primary" />
+		<MessageSquare class="size-4 text-muted-foreground" />
 		<h2 class="text-sm font-semibold text-foreground">Engagement</h2>
 	</header>
 

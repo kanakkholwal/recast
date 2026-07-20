@@ -322,12 +322,22 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
             continue;
         }
         if let Ok(meta) = entry.metadata() {
-            let created = meta
+            let modified = meta
                 .modified()
                 .unwrap_or(std::time::SystemTime::UNIX_EPOCH)
                 .duration_since(std::time::SystemTime::UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
+            // Prefer birth time so the "Recorded Jul 18" label matches when the
+            // user took the recording, not when a background job last touched
+            // the file. Fall back to mtime on filesystems (most Linux) where
+            // birth time isn't exposed; behavior is unchanged there.
+            let created = meta
+                .created()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::SystemTime::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs())
+                .unwrap_or(modified);
             // Only `.recast` carries a format; the probe reads just the zip
             // central directory, and this whole scan is already off the main
             // thread (spawn_blocking).
@@ -337,11 +347,12 @@ fn list_files_by_ext(dir: &PathBuf, exts: &[&str]) -> AppResult<Vec<RecordingEnt
                 path: path.to_string_lossy().to_string(),
                 size_bytes: meta.len(),
                 created,
+                modified,
                 needs_migration,
             });
         }
     }
-    entries.sort_by(|a, b| b.created.cmp(&a.created));
+    entries.sort_by(|a, b| b.modified.cmp(&a.modified));
     Ok(entries)
 }
 

@@ -53,7 +53,12 @@ export interface RecordingEntry {
 	filename: string;
 	path: string;
 	sizeBytes: number;
+	/** Birth time (file creation), epoch seconds. Falls back to `modified` on
+	 * filesystems where birth time isn't reported. Labels the recording date. */
 	created: number;
+	/** Last-modified time, epoch seconds. Drives "what was I last editing"
+	 * surfaces like the library Continue card. */
+	modified: number;
 	/** `.recast` only: a legacy bundle that must be migrated before editing. */
 	needsMigration: boolean;
 }
@@ -285,28 +290,6 @@ export function getDisplays(): Promise<DisplayInfo[]> {
 
 export function getWindows(): Promise<WindowInfo[]> {
 	return invoke<WindowInfo[]>("get_windows");
-}
-
-/** A captured screenshot returned as a base64 data URL plus its pixel size. */
-export interface CapturedScreenshot {
-	path: string;
-	width: number;
-	height: number;
-	kind: string;
-	base64?: string;
-}
-
-/** Source for {@link captureScreenshot}. Omit to capture the primary display. */
-export type CaptureScreenshotSource =
-	| { kind: "display"; id: number }
-	| { kind: "window"; id: number }
-	| { kind: "app"; window?: string };
-
-/** Capture a screenshot natively (xcap) for the in-app screenshot editor. */
-export function captureScreenshot(
-	source?: CaptureScreenshotSource,
-): Promise<CapturedScreenshot> {
-	return invoke<CapturedScreenshot>("capture_screenshot", { source });
 }
 
 export function openFileLocation(path: string): Promise<void> {

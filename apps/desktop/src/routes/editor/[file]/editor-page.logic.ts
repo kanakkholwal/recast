@@ -20,8 +20,8 @@ export function parseLayout(raw: string | null): EditorLayout {
 	try {
 		const parsed = JSON.parse(raw) as Partial<EditorLayout>;
 		return {
-			sidebar: typeof parsed?.sidebar === "boolean" ? parsed.sidebar : true,
-			timeline: typeof parsed?.timeline === "boolean" ? parsed.timeline : true,
+			sidebar: typeof parsed?.sidebar === 'boolean' ? parsed.sidebar : true,
+			timeline: typeof parsed?.timeline === 'boolean' ? parsed.timeline : true,
 		};
 	} catch {
 		return fallback;
@@ -30,12 +30,12 @@ export function parseLayout(raw: string | null): EditorLayout {
 
 /** Rotating status messages shown below the progress ring during encode. */
 export const ENCODE_MESSAGES = [
-	"Crunching frames",
-	"Encoding pixels",
-	"Weaving the timeline",
-	"Tuning the colours",
-	"Squeezing the bitrate",
-	"Polishing every frame",
+	'Crunching frames',
+	'Encoding pixels',
+	'Weaving the timeline',
+	'Tuning the colours',
+	'Squeezing the bitrate',
+	'Polishing every frame',
 ];
 
 /** Compact elapsed time: `45s`, or `1m 05s` past a minute. */

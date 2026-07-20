@@ -1,51 +1,51 @@
 <script lang="ts">
+	import { analytics } from "$lib/analytics/client";
 	import { resolveAsset } from "$lib/assets";
 	import { computeCanvasGeometry } from "$lib/canvas-geometry";
-	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CursorSmoother } from "$lib/cursor/smoother";
+	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
+	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
+	import { PlaybackClock } from "$lib/playback/clock";
+	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
 	import {
-		cursorSpriteHotspot,
-		resolveBackgroundWireValue,
-		resolveCursorDataUrl,
-		resolveCursorSprite,
+	  cursorSpriteHotspot,
+	  resolveBackgroundWireValue,
+	  resolveCursorDataUrl,
+	  resolveCursorSprite,
 	} from "$lib/registry";
+	import { evalSceneAt } from "$lib/scenes/eval";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
+	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 	import { Spinner } from "@recast/ui/spinner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
-	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-	import { analytics } from "$lib/analytics/client";
-	import {
-		buildPressEvents,
-		clickAnchorAt,
-		clickHighlightAt,
-		pressStateAt,
-		type PressEvent,
-	} from "./cursor-animation.logic";
-	import { hexToRgba } from "./color.logic";
-	import { buildGradientUniforms } from "./gradient.logic";
-	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
-	import { compile, link } from "./webgl.logic";
-	import {
-		classifyWcError,
-		evaluateZoomAt,
-		idleAlphaAt,
-		interpolateCursor,
-		resolutionTier,
-		type CursorSampleJS,
-		type IdlePeriodJS,
-	} from "./video-preview.logic";
-	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
-	import { PlaybackClock } from "$lib/playback/clock";
-	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-	import { evalSceneAt } from "$lib/scenes/eval";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 	import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 	import CameraOverlay from "./_components/CameraOverlay.svelte";
 	import CaptionOverlay from "./_components/CaptionOverlay.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
+	import { hexToRgba } from "./color.logic";
+	import {
+	  buildPressEvents,
+	  clickAnchorAt,
+	  clickHighlightAt,
+	  pressStateAt,
+	  type PressEvent,
+	} from "./cursor-animation.logic";
+	import { buildGradientUniforms } from "./gradient.logic";
+	import {
+	  classifyMbError,
+	  evaluateZoomAt,
+	  idleAlphaAt,
+	  interpolateCursor,
+	  resolutionTier,
+	  type CursorSampleJS,
+	  type IdlePeriodJS,
+	} from "./video-preview.logic";
+	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
+	import { compile, link } from "./webgl.logic";
 
 	interface Props {
 		store: EditorStore;
@@ -113,15 +113,18 @@
 	let bgTexReady = false;
 	let lastBgKey = "";
 
-	// WebCodecs preview engine (always on; auto-falls back to the <video> element
-	// when the WebView can't decode the source).
-	// When active, the composite samples a frame WE decode, not the <video>
-	// element's pixels, so jumping over a cut never waits on the native seek.
-	// The <video> element still drives the clock and audio sync (hybrid). Not
-	// $state: read only from the imperative draw loop.
-	let wcSource: WebCodecsVideoSource | null = null;
-	let wcReady = false;
-	let loadedWcSrc = "";
+	// Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
+	// owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
+	// a frame WE decode, not the <video> element's pixels, so jumping over a
+	// cut never waits on the native seek. The <video> element still drives
+	// the clock and audio sync (hybrid). When `create` fails (MediaBunny
+	// can't decode the file — see `unsupported-formats.ts` for the list),
+	// `mbSource` stays null and the draw loop falls back to the `<video>`
+	// element automatically. Not $state: read only from the imperative
+	// draw loop.
+	let mbSource: MediabunnyVideoSource | null = null;
+	let mbReady = false;
+	let loadedMbSrc = "";
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
@@ -188,25 +191,7 @@
 	// changes keeps playback cheap even on long recordings.
 	let smoothingSignature = "";
 
-	// Press-event model that drives click feedback. One event per click
-	// ({downUs, upUs}) read from RAW samples, never the smoothed array:
-	// smoothing must NEVER nudge click timing, since the visual press has to
-	// land on the exact frame the audio click plays. Each event also carries the
-	// captured click position so the impact frame pins there (see clickAnchorAt).
-	//
-	// Per event we run a deterministic, time-based animation:
-	//
-	//   downUs - PREROLL ───── downUs ───── max(upUs, downUs+MIN_HOLD)
-	//        │ pointer sprite appears
-	//        │ cursor fades in (overrides idle-hide)
-	//        │ scale eases 1.00 → 1+LIFT (anticipation)
-	//                            │ click frame: scale snaps to 1-PUNCH
-	//                            │ recovery: 1-PUNCH → 1+BOUNCE → 1
-	//                                                            │ sprite returns to rest
-	//                                                            │ cursor fades back to idleAlpha
-	//
-	// The snap at downUs is the visual analogue of the audible click; a smooth
-	// crossfade there would feel mushy and desync from the audio.
+
 	let pressEvents: PressEvent[] = [];
 
 	function initGL() {
@@ -633,7 +618,7 @@
 		// (output→original feeds frame/cursor/zoom); the <video>/audio transport
 		// follows but is never read for the picture, so its seek stalls can't
 		// freeze playback. Legacy path: the <video> currentTime is the clock.
-		const usingPicClock = wcReady;
+		const usingPicClock = mbReady;
 		let playbackTime: number;
 		if (usingPicClock && store.isPlaying) {
 			// External scrub while playing: the timeline/controls set
@@ -705,7 +690,7 @@
 		// selector holds (never steps back) until that GOP decodes. Critically we
 		// must NOT decode through the removed region, which would flood the decoder.
 		if (
-			!wcReady &&
+			!mbReady &&
 			videoEl &&
 			store.isPlaying &&
 			activeCuts.length > 0
@@ -761,8 +746,8 @@
 		if (
 			usingPicClock &&
 			store.isPlaying &&
-			wcSource &&
-			wcReady &&
+			mbSource &&
+			mbReady &&
 			activeCuts.length > 0
 		) {
 			const lookaheadOrig = outputToOriginal(
@@ -772,7 +757,7 @@
 			const upcoming = activeCuts.find(
 				(c) => c.start > playbackTime && c.start <= lookaheadOrig,
 			);
-			if (upcoming) wcSource.prefetch(upcoming.end);
+			if (upcoming) mbSource.prefetch(upcoming.end);
 		}
 
 		// Get the frame into the texture. With the WebCodecs engine we sample a
@@ -780,7 +765,7 @@
 		// to the <video> element while the source is still demuxing or if a frame
 		// isn't ready yet, so the preview is never blank.
 		let haveFrame = false;
-		if (wcSource && wcReady) {
+		if (mbSource && mbReady) {
 			// Floor = start of the current kept segment = the end of the most recent
 			// cut at or before the playhead (0 if none). Frames before it belong to
 			// a prior segment (inside the removed range) and must not be shown, or
@@ -789,7 +774,7 @@
 			for (const c of activeCuts) {
 				if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
 			}
-			const f = wcSource.frameAt(Math.max(0, playbackTime), floorSec);
+			const f = mbSource.frameAt(Math.max(0, playbackTime), floorSec);
 			if (f) haveFrame = uploadFrameObject(f);
 			// No fresh in-segment frame yet (briefly, right after a cut while the
 			// post-cut GOP decodes): hold by re-rendering whatever is in videoTex.
@@ -1140,8 +1125,8 @@
 		if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 		smoother?.dispose();
 		smoother = null;
-		wcSource?.dispose();
-		wcSource = null;
+		mbSource?.dispose();
+		mbSource = null;
 		if (gl) {
 			if (videoTex) gl.deleteTexture(videoTex);
 			if (bgTex) gl.deleteTexture(bgTex);
@@ -1149,45 +1134,44 @@
 		}
 	});
 
-	// WebCodecs frame source (re)created when the media src changes. Owns its own
-	// worker + decoder; disposed and rebuilt per source. A demux/codec failure (or
-	// a WebView without WebCodecs) leaves wcSource null so draw() falls back to the
-	// <video> element automatically.
+	// MediaBunny frame source (re)created when the media src changes. Owns its own
+	// worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
+	// an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
+	// mbSource null so draw() falls back to the <video> element automatically.
 	$effect(() => {
 		const src = videoSrc;
 		// No src: tear down any live engine and fall back to the <video> path.
 		if (!src) {
-			if (wcSource) {
-				wcSource.dispose();
-				wcSource = null;
+			if (mbSource) {
+				mbSource.dispose();
+				mbSource = null;
 			}
-			wcReady = false;
+			mbReady = false;
 			webcodecsActive = false;
-			loadedWcSrc = "";
+			loadedMbSrc = "";
 			picClock.pause();
 			requestRedraw();
 			return;
 		}
-		if (src === loadedWcSrc) return;
-		loadedWcSrc = src;
-		wcReady = false;
+		if (src === loadedMbSrc) return;
+		loadedMbSrc = src;
+		mbReady = false;
 		webcodecsActive = false;
 		hasRenderedFrame = false;
 		lastPublishedTime = -1;
-		wcSource?.dispose();
-		wcSource = null;
+		mbSource?.dispose();
+		mbSource = null;
 		let cancelled = false;
-		WebCodecsVideoSource.create(src, store.metadata?.sizeBytes)
+		MediabunnyVideoSource.create(src, store.metadata?.sizeBytes)
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();
 					return;
 				}
 				source.onFrame = () => requestRedraw();
-				// Telemetry: the engine initialised successfully (gates default-on).
-				// Consent-gated + no-op in dev inside the analytics client.
+				// Telemetry: the engine initialised successfully.
 				const tier = resolutionTier(source.width, source.height);
-				analytics.capture("webcodecs_preview_init", {
+				analytics.capture("mediabunny_preview_init", {
 					width: source.width,
 					height: source.height,
 					fps: Math.round(source.fps),
@@ -1196,7 +1180,7 @@
 				});
 				// One aggregate throughput sample, emitted when this source is disposed.
 				source.onStats = (s) => {
-					analytics.capture("webcodecs_preview_perf", {
+					analytics.capture("mediabunny_preview_perf", {
 						avg_fps: Math.round(s.avgFps),
 						min_fps: Math.round(s.minFps),
 						max_late_ms: Math.round(s.maxLateMs),
@@ -1206,11 +1190,11 @@
 						resolution: tier,
 					});
 				};
-				wcSource = source;
-				wcReady = true;
+				mbSource = source;
+				mbReady = true;
 				webcodecsActive = true;
 				// Seed the picture clock to the current transport so flipping onto
-				// the WebCodecs path (which may happen mid-playback, once demux
+				// the MediaBunny path (which may happen mid-playback, once demux
 				// finishes) doesn't jump.
 				picClock.setDuration(
 					originalToOutput(store.timeMap, store.outPoint),
@@ -1223,13 +1207,12 @@
 			})
 			.catch((err) => {
 				console.warn(
-					"WebCodecs source unavailable; using <video> fallback:",
+					"MediaBunny source unavailable; using <video> fallback:",
 					err,
 				);
-				// Telemetry: how often real users silently drop to <video>, and why.
-				// This is the fallback-rate half of the default-on decision.
-				analytics.capture("webcodecs_preview_fallback", {
-					reason: classifyWcError(err),
+				// Telemetry: how often real users silently drop to <video>.
+				analytics.capture("mediabunny_preview_fallback", {
+					reason: classifyMbError(err),
 				});
 			});
 		return () => {
@@ -1335,7 +1318,7 @@
 
 <div
 	bind:this={containerEl}
-	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden"
+	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden transition-all duration-200 ease-out motion-reduce:transition-none"
 >
 	<AnnotationStatusRail {store} />
 	<div

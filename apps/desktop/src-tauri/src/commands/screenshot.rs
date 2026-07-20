@@ -9,10 +9,9 @@ use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use image::RgbaImage;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use xcap::{Monitor, Window};
 
-use super::error::{AppError, AppResult};
 use super::ffmpeg::{encode_png_bytes, encode_thumbnail_base64};
 
 /// Longest-edge cap for agent-facing shots. Vision models downsample anyway and
@@ -237,66 +236,6 @@ pub fn absolutize(path: PathBuf) -> PathBuf {
     std::env::current_dir()
         .map(|cwd| cwd.join(&path))
         .unwrap_or(path)
-}
-
-/// Source for the `capture_screenshot` command. Absent captures the primary
-/// display, so the editor's "Capture" button works with no picker.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind")]
-pub enum CaptureScreenshotSource {
-    Display {
-        id: u32,
-    },
-    Window {
-        id: u32,
-    },
-    App {
-        #[serde(default)]
-        window: Option<String>,
-    },
-}
-
-/// Capture a screenshot for the in-app editor and return it as a base64 data
-/// URL (plus dimensions) so the frontend can load it straight into an `<img>`.
-///
-/// Async + `spawn_blocking`: xcap capture can stall for hundreds of ms, and a
-/// sync command would run on the WebView/GTK main thread and freeze the window.
-#[tauri::command]
-pub async fn capture_screenshot(
-    app: tauri::AppHandle,
-    source: Option<CaptureScreenshotSource>,
-) -> AppResult<Screenshot> {
-    // Native resolution: the editor downsizes for display but exports from the
-    // source, so sharpness is capped here — keep it full.
-    tauri::async_runtime::spawn_blocking(move || -> Result<Screenshot, String> {
-        let opts = ShotOptions {
-            out: None,
-            max_edge: 0,
-            base64: true,
-        };
-        match source {
-            Some(CaptureScreenshotSource::Display { id }) => capture_display(id, &opts),
-            Some(CaptureScreenshotSource::Window { id }) => capture_window(id, &opts),
-            Some(CaptureScreenshotSource::App { window }) => {
-                capture_app_window(&app, window.as_deref(), &opts)
-            }
-            None => capture_display(primary_display_id()?, &opts),
-        }
-    })
-    .await
-    .map_err(|e| AppError::msg(format!("capture_screenshot join error: {e}")))?
-    .map_err(AppError::msg)
-}
-
-/// Id of the primary display, else the first available.
-fn primary_display_id() -> Result<u32, String> {
-    let monitors = Monitor::all().map_err(|e| e.to_string())?;
-    monitors
-        .iter()
-        .find(|m| m.is_primary().unwrap_or(false))
-        .or_else(|| monitors.first())
-        .and_then(|m| m.id().ok())
-        .ok_or_else(|| "no display found to capture".into())
 }
 
 #[cfg(test)]

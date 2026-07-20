@@ -13,6 +13,7 @@ import {
 } from "$lib/db/schema";
 import { publicEnv } from "$lib/env/public";
 import { hashSharePassword, verifySharePassword } from "$lib/share/password";
+import { emailField } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = { user: { id: string } };
@@ -38,17 +39,13 @@ const BodySchema = z
 			})
 			.optional(),
 		// ISO date string; null = no expiry.
-		expiresAt: z
-			.string()
-			.datetime()
-			.optional()
-			.nullable(),
+		expiresAt: z.iso.datetime().nullish(),
 		// For `selected` visibility — list of invitee emails. Owner is
 		// implicit; don't include them here.
 		invitees: z
 			.array(
 				z.object({
-					email: z.string().email(),
+					email: emailField(),
 					role: z.enum(["viewer", "commenter"]).default("viewer"),
 				}),
 			)

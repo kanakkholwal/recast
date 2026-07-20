@@ -1,8 +1,7 @@
 <script lang="ts">
   import { browser } from "$app/environment";
   import { goto } from "$app/navigation";
-  import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
-  import PlayerDialog from "$components/recast/PlayerDialog.svelte";
+  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import EditorToolbar from "$components/editor/EditorToolbar.svelte";
   import ExportDialog from "$components/editor/ExportDialog.svelte";
   import ExportPanel, {
@@ -12,9 +11,11 @@
   import Timeline from "$components/editor/Timeline.svelte";
   import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
   import VideoPreview from "$components/editor/VideoPreview.svelte";
-  import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
   import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+  import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+  import PlayerDialog from "$components/recast/PlayerDialog.svelte";
   import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+  import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
   import type { RecordingEntry } from "$lib/ipc";
   import {
     autosaveProject,
@@ -29,6 +30,8 @@
     openFileLocation,
     saveProjectEdits,
   } from "$lib/ipc";
+  import { AudioTimelineEngine } from "$lib/playback/audio-engine";
+  import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { generateAutoZoom } from "$lib/services/analysis";
   import {
     buildCaptionExport,
@@ -40,21 +43,18 @@
   import { isShareSupported, shareRecording } from "$lib/share";
   import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
   import { cloudShare } from "$lib/stores/cloudShare.svelte";
-  import { exportActivity } from "$lib/stores/exportActivity.svelte";
   import {
     createEditorStore,
     type VideoMetadata,
   } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
-  import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
-  import { AudioTimelineEngine } from "$lib/playback/audio-engine";
-  import { reconcileAvDrift } from "$lib/playback/av-drift";
-  import { originalToOutput } from "$lib/timeline/time-map";
+  import { exportActivity } from "$lib/stores/exportActivity.svelte";
+  import { gdrive } from "$lib/stores/gdrive.svelte";
   import {
     createTileProvider,
     type TileProvider,
   } from "$lib/timeline/filmstrip-source";
-  import { gdrive } from "$lib/stores/gdrive.svelte";
+  import { originalToOutput } from "$lib/timeline/time-map";
   import {
     ArrowLeft,
     CheckCircle2,
@@ -76,17 +76,17 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import { onDestroy, onMount, tick, untrack } from "svelte";
 
+  import { formatClock, frameStepOutput } from "$lib/editor/time";
   import { log } from "$lib/logger";
+  import { cubicOut } from "svelte/easing";
+  import { fade, slide } from "svelte/transition";
   import {
     basename,
-    ENCODE_MESSAGES,
     exportEtaMs as computeExportEtaMs,
+    ENCODE_MESSAGES,
     formatElapsed,
     parseLayout,
   } from "./editor-page.logic";
-  import { formatClock, frameStepOutput } from "$lib/editor/time";
-  import { cubicOut } from "svelte/easing";
-  import { fade, slide } from "svelte/transition";
 
   interface Props {
     data: {
@@ -461,11 +461,13 @@
     }
     try {
       const eng = await AudioTimelineEngine.create([
-        systemAudioSrc || null,
-        micAudioSrc || null,
+        { url: systemAudioSrc, kind: "system" },
+        { url: micAudioSrc, kind: "mic" },
       ]);
       const s = store.audioSettings;
-      eng.setVolume(s.volume, s.muted);
+      eng.setMasterVolume(s.volume, s.muted);
+      eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
+      eng.setTrackVolume("mic", s.micVolume, s.micMuted);
       audioEngine = eng;
     } catch (err) {
       console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
@@ -562,14 +564,24 @@
   });
 
   // Apply volume/mute from the store's audio settings to both audio elements.
+  // The master is the product of the per-track gains so the user can keep
+  // system audio loud and mute just the mic, or vice versa. Master mute
+  // still zeros both.
   $effect(() => {
     const settings = store.audioSettings;
-    const vol = settings.muted
-      ? 0
-      : Math.max(0, Math.min(1, settings.volume / 100));
-    if (systemAudioEl) systemAudioEl.volume = vol;
-    if (micAudioEl) micAudioEl.volume = vol;
-    audioEngine?.setVolume(settings.volume, settings.muted);
+    const systemVol =
+      settings.muted || settings.systemMuted
+        ? 0
+        : Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
+    const micVol =
+      settings.muted || settings.micMuted
+        ? 0
+        : Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
+    if (systemAudioEl) systemAudioEl.volume = systemVol;
+    if (micAudioEl) micAudioEl.volume = micVol;
+    audioEngine?.setMasterVolume(settings.volume, settings.muted);
+    audioEngine?.setTrackVolume("system", settings.systemVolume, settings.systemMuted);
+    audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
   });
 
   // Transport seek for `store.seek()`: seeks from outside the player (a
@@ -1125,6 +1137,7 @@
       path,
       sizeBytes: 0,
       created: Math.floor(Date.now() / 1000),
+      modified: Math.floor(Date.now() / 1000),
       needsMigration: false,
     };
     try {

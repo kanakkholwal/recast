@@ -4,7 +4,7 @@ import { LINEAR } from "../../lib/easing/cubic-bezier";
 import type { Easing } from "$lib/easing/cubic-bezier";
 import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
 import {
-	classifyWcError,
+	classifyMbError,
 	evaluateZoomAt,
 	idleAlphaAt,
 	interpolateCursor,
@@ -157,14 +157,14 @@ describe("resolutionTier", () => {
 	});
 });
 
-describe("classifyWcError", () => {
+describe("classifyMbError", () => {
 	it("maps messages to PII-safe reason codes", () => {
-		expect(classifyWcError(new Error("worker unavailable"))).toBe("unsupported");
-		expect(classifyWcError(new Error("no video track found"))).toBe("no_video_track");
-		expect(classifyWcError(new Error("decoder config unsupported"))).toBe(
+		expect(classifyMbError(new Error("worker unavailable"))).toBe("unsupported");
+		expect(classifyMbError(new Error("no video track found"))).toBe("no_video_track");
+		expect(classifyMbError(new Error("decoder config unsupported"))).toBe(
 			"codec_unsupported",
 		);
-		expect(classifyWcError(new Error("fetch failed"))).toBe("fetch_failed");
-		expect(classifyWcError("something else")).toBe("decode_error");
+		expect(classifyMbError(new Error("fetch failed"))).toBe("fetch_failed");
+		expect(classifyMbError("something else")).toBe("decode_error");
 	});
 });

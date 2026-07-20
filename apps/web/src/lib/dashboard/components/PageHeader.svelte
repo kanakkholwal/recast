@@ -27,7 +27,7 @@
 >
 	<div class="flex min-w-0 items-center gap-3">
 		{#if Icon}
-			<span class="glass-chip grid size-11 shrink-0 place-items-center rounded-xl text-primary">
+			<span class="glass-chip grid size-11 shrink-0 place-items-center rounded-xl text-muted-foreground">
 				<Icon class="size-5" />
 			</span>
 		{/if}

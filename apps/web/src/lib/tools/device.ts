@@ -32,17 +32,16 @@ export function computeMaxInputBytes(memGB: number | null, mobile: boolean): num
 
 /** `navigator.deviceMemory` in GB (Chromium only; null elsewhere). */
 export function deviceMemoryGB(): number | null {
-	if (typeof navigator === "undefined") return null;
+	if (typeof navigator === 'undefined') return null;
 	const dm = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
-	return typeof dm === "number" ? dm : null;
+	return typeof dm === 'number' ? dm : null;
 }
 
 /** Best-effort mobile detection: the UA-Client-Hints flag, else a UA regex. */
 export function isMobile(): boolean {
-	if (typeof navigator === "undefined") return false;
-	const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } })
-		.userAgentData;
-	if (uaData && typeof uaData.mobile === "boolean") return uaData.mobile;
+	if (typeof navigator === 'undefined') return false;
+	const uaData = (navigator as Navigator & { userAgentData?: { mobile?: boolean } }).userAgentData;
+	if (uaData && typeof uaData.mobile === 'boolean') return uaData.mobile;
 	return /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 }
 
