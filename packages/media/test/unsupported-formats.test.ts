@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { MediabunnyVideoSource } from '../src/playback/source';
 import {
 	isUnsupportedCodec,
 	isUnsupportedContainer,
@@ -77,5 +78,23 @@ describe('isUnsupportedContainer / isUnsupportedCodec helpers', () => {
 		expect(isUnsupportedCodec('aac')).toBe(false);
 		expect(isUnsupportedCodec('opus')).toBe(false);
 		expect(isUnsupportedCodec('alac')).toBe(false);
+	});
+});
+describe('MediabunnyVideoSource rejects known-bad containers up front', () => {
+	it('throws unsupported for an .avi URL without spawning a worker', async () => {
+		let spawned = 0;
+		vi.stubGlobal('Worker', function () {
+			spawned++;
+			return {} as unknown as Worker;
+		} as unknown as typeof Worker);
+		vi.stubGlobal('VideoFrame', class {} as unknown as typeof VideoFrame);
+		try {
+			await expect(MediabunnyVideoSource.create('asset://x/clip.avi')).rejects.toMatchObject({
+				code: 'unsupported',
+			});
+			expect(spawned).toBe(0);
+		} finally {
+			vi.unstubAllGlobals();
+		}
 	});
 });

@@ -1,5 +1,5 @@
 /**
- * Resolution-adaptive decoded-frame budget for the WebCodecs source.
+ * Resolution-adaptive decoded-frame budget for the preview decoder.
  *
  * Each decoded `VideoFrame` checks out one of the hardware decoder's limited
  * output surfaces; holding too many starves the pool and the decoder stalls
@@ -59,4 +59,14 @@ export function frameBudget(width: number, height: number): FrameBudget {
 	const decodeAhead = Math.max(3, Math.min(6, cacheMax - 1));
 
 	return { cacheMax, holdoutMax, decodeAhead };
+}
+
+/**
+ * Byte cap for the in-memory frame cache at this resolution. Scaling by pixel
+ * count is the point: a flat cap that is safe at 1080p holds several times the
+ * decoder's surface pool at 4K and stalls it.
+ */
+export function frameCacheCapBytes(width: number, height: number): number {
+	const px = Math.max(1, width * height);
+	return frameBudget(width, height).cacheMax * px * BYTES_PER_PX;
 }

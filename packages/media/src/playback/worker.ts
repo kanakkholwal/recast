@@ -4,11 +4,9 @@
  * for the MediaBunny `Input` + `CanvasSink`. The main-thread side talks to
  * it via the `ToMediabunnyWorker` / `FromMediabunnyWorker` postMessage RPC.
  *
- * Mirror of `webcodecs-worker.ts` for PR-D's feature-flag landing strip. The
- * behavior is intentionally minimal: it answers seek + prefetch on a single
- * in-flight request at a time, transfers the decoded frame back as an
- * OffscreenCanvas, and disposes cleanly. Concurrent requests, decoded-frame
- * caching, and AudioWorklet scheduling land in later PRs.
+ * A `seek` starts a decode run that streams frames forward in presentation
+ * order; `playhead` only releases backpressure, so steady playback never
+ * restarts decode. Frames transfer back as OffscreenCanvas.
  */
 
 // This worker now lives INSIDE `packages/media`, so it imports MediaBunny
@@ -28,13 +26,16 @@ type MediabunnyErrorCode =
 
 type InitMessage = { type: 'init'; url: string };
 type SeekMessage = { type: 'seek'; seq: number; originalSec: number };
-type PrefetchMessage = { type: 'prefetch'; originalSec: number; lookaheadSec?: number };
+/** Playhead advanced normally; feeds decode-ahead backpressure, never seeks. */
+type PlayheadMessage = { type: 'playhead'; originalSec: number };
+type PrefetchMessage = { type: 'prefetch'; seq: number; originalSec: number; lookaheadSec?: number };
 type CancelMessage = { type: 'cancel'; seq?: number };
 type DisposeMessage = { type: 'dispose' };
 
 export type ToMediabunnyWorker =
 	| InitMessage
 	| SeekMessage
+	| PlayheadMessage
 	| PrefetchMessage
 	| CancelMessage
 	| DisposeMessage;
@@ -50,6 +51,7 @@ type ReadyMessage = {
 type FrameMessage = {
 	type: 'frame';
 	seq: number;
+	/** Real presentation timestamp of this frame, seconds. The cache keys on it. */
 	originalSec: number;
 	/** Transferable canvas — the consumer uploads it to WebGL or converts
 	 *  to a `VideoFrame` (e.g. `new VideoFrame(canvas)`). */
@@ -70,9 +72,30 @@ function post(msg: FromMediabunnyWorker, transfer: Transferable[] = []): void {
 
 let input: Input | null = null;
 let sink: CanvasSink | null = null;
-/** The single in-flight seek. New seeks cancel and supersede it. */
-let inFlightAbort: AbortController | null = null;
 let disposed = false;
+
+/**
+ * How far ahead of the playhead to decode before pausing. One seek per frame
+ * (the old model) made every request abort the previous one, so nothing ever
+ * finished once decode cost more than a frame interval.
+ */
+const LOOKAHEAD_SEC = 0.75;
+
+/** Monotonic id; a new run supersedes the old one without an abort race. */
+let runId = 0;
+let playheadSec = 0;
+/** Resolves when the playhead advances, waking a run parked on backpressure. */
+let playheadWaiters: Array<() => void> = [];
+
+function notifyPlayhead(): void {
+	const waiters = playheadWaiters;
+	playheadWaiters = [];
+	for (const w of waiters) w();
+}
+
+function awaitPlayhead(): Promise<void> {
+	return new Promise((resolve) => playheadWaiters.push(resolve));
+}
 
 async function init(url: string): Promise<void> {
 	disposed = false;
@@ -95,22 +118,21 @@ async function init(url: string): Promise<void> {
 		// metadata loads); prefer the async variant for the ready payload.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
-		// CanvasSink renders each timestamp to an OffscreenCanvas (in workers).
-		// The match-nearest strategy tolerates any frame rate; the editor
-		// quantizes to a `floorSec` for cut-crossing, so exact frame alignment
-		// isn't needed here. PR-E layers a real cache on top.
-		sink = new CanvasSink(track, { fit: 'contain', poolSize: 4 });
-		post({
-			type: 'ready',
-			width,
-			height,
-			durationSec,
-			// fps isn't strictly needed for the editor preview (the cut math
-			// already quantizes to the timeline). Report a stable 30 so the
-			// editor's existing telemetry stays well-defined. PR-E replaces
-			// this with `track.computePacketStats().averagePacketRate`.
-			fps: 30,
-		});
+		// Pool sized for the streaming run: too small and the generator stalls
+		// waiting for a canvas to be recycled.
+		sink = new CanvasSink(track, { fit: 'contain', poolSize: 8 });
+		// Real rate, not a hardcoded 30: the source derives each frame's
+		// duration from it, and telemetry cohorts on it.
+		let fps = 30;
+		try {
+			const stats = await track.computePacketStats(120);
+			if (stats?.averagePacketRate && Number.isFinite(stats.averagePacketRate)) {
+				fps = stats.averagePacketRate;
+			}
+		} catch {
+			/* keep the default */
+		}
+		post({ type: 'ready', width, height, durationSec, fps });
 	} catch (err) {
 		post({
 			type: 'error',
@@ -121,61 +143,99 @@ async function init(url: string): Promise<void> {
 	}
 }
 
-async function seek(seq: number, originalSec: number): Promise<void> {
+/**
+ * Decode forward from `startSec`, posting frames in presentation order until
+ * superseded, disposed, or the source ends. Parks while more than
+ * `LOOKAHEAD_SEC` ahead of the playhead so a long clip can't decode itself
+ * into memory.
+ */
+async function runFrom(seq: number, startSec: number): Promise<void> {
 	if (!sink) {
 		post({ type: 'error', code: 'worker-died', message: 'Sink not initialized.' });
 		return;
 	}
-	inFlightAbort?.abort();
-	const ctrl = new AbortController();
-	inFlightAbort = ctrl;
+	const myRun = ++runId;
+	playheadSec = startSec;
+	const frames = sink.canvases(startSec);
+	try {
+		for await (const wrapped of frames) {
+			if (myRun !== runId || disposed) break;
+			if (!wrapped) continue;
+			const canvas = wrapped.canvas as OffscreenCanvas;
+			// Post the REAL presentation timestamp, not the requested one: the
+			// cache keys on it, and the reader looks up by nearest-at-or-before.
+			post(
+				{
+					type: 'frame',
+					seq,
+					originalSec: wrapped.timestamp,
+					canvas,
+					width: canvas.width,
+					height: canvas.height,
+				},
+				[canvas],
+			);
+			while (
+				myRun === runId &&
+				!disposed &&
+				wrapped.timestamp > playheadSec + LOOKAHEAD_SEC
+			) {
+				await awaitPlayhead();
+			}
+		}
+	} catch (err) {
+		if (myRun === runId && !disposed) {
+			post({
+				type: 'error',
+				code: 'internal',
+				message: err instanceof Error ? err.message : String(err),
+			});
+		}
+	} finally {
+		// Release the generator's decoder resources when superseded mid-stream.
+		await frames.return(undefined).catch(() => {});
+	}
+}
 
+/**
+ * Decode one frame at `originalSec` without disturbing the active run, so the
+ * post-cut frame is warm before the playhead crosses. Skipped when a prefetch
+ * for the same target is already in flight or already delivered.
+ */
+let prefetchedSec = Number.NaN;
+let prefetchInFlight = false;
+
+async function prefetch(seq: number, originalSec: number): Promise<void> {
+	if (!sink || disposed) return;
+	if (prefetchInFlight || prefetchedSec === originalSec) return;
+	prefetchInFlight = true;
 	try {
 		const wrapped = await sink.getCanvas(originalSec);
-		if (ctrl.signal.aborted || disposed) return;
-		if (!wrapped) {
-			post({ type: 'error', code: 'internal', message: 'No frame returned for seek.' });
-			return;
-		}
+		if (!wrapped || disposed) return;
+		prefetchedSec = originalSec;
 		const canvas = wrapped.canvas as OffscreenCanvas;
 		post(
 			{
 				type: 'frame',
 				seq,
-				originalSec,
+				originalSec: wrapped.timestamp,
 				canvas,
 				width: canvas.width,
 				height: canvas.height,
 			},
 			[canvas],
 		);
-	} catch (err) {
-		if (ctrl.signal.aborted) return;
-		post({
-			type: 'error',
-			code: 'internal',
-			message: err instanceof Error ? err.message : String(err),
-		});
-	}
-}
-
-async function prefetch(originalSec: number, _lookaheadSec?: number): Promise<void> {
-	if (!sink) return;
-	// CanvasSink pre-allocates its pool internally, so the request above
-	// already pays the decode cost. For PR-D we treat prefetch as a hint
-	// that we ask for an additional nearby timestamp so the GPU surface
-	// is warm in cache. PR-E replaces this with an LRU-backed cache.
-	try {
-		await sink.getCanvas(originalSec);
 	} catch {
 		/* prefetch is best-effort */
+	} finally {
+		prefetchInFlight = false;
 	}
 }
 
 function dispose(): void {
 	disposed = true;
-	inFlightAbort?.abort();
-	inFlightAbort = null;
+	runId++;
+	notifyPlayhead();
 	sink = null;
 	if (input) {
 		input.dispose();
@@ -194,16 +254,21 @@ ctx.onmessage = (e: MessageEvent<ToMediabunnyWorker>) => {
 			});
 			return;
 		case 'seek':
-			void seek(msg.seq, msg.originalSec);
+			// A jump: supersede the current run and decode from the new point.
+			prefetchedSec = Number.NaN;
+			void runFrom(msg.seq, msg.originalSec);
+			return;
+		case 'playhead':
+			// Steady playback: only releases backpressure, never restarts decode.
+			playheadSec = msg.originalSec;
+			notifyPlayhead();
 			return;
 		case 'prefetch':
-			void prefetch(msg.originalSec, msg.lookaheadSec);
+			void prefetch(msg.seq, msg.originalSec);
 			return;
 		case 'cancel':
-			// Cancel a specific seek or, with no seq, all in-flight seeks.
-			if (msg.seq === undefined) {
-				inFlightAbort?.abort();
-			}
+			runId++;
+			notifyPlayhead();
 			return;
 		case 'dispose':
 			dispose();

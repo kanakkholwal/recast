@@ -144,6 +144,8 @@ export function resetFrameCache(): void {
 
 export class FrameCache {
 	#memory = new Map<number, InMemoryEntry>();
+	/** Keys of `#memory`, ascending. Backs `readNearest`'s binary search. */
+	#sorted: number[] = [];
 	#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: 0 };
 	#storage: FrameStorage;
 	#memoryCap: number;
@@ -164,6 +166,7 @@ export class FrameCache {
 		this.#scope = scope;
 		for (const entry of this.#memory.values()) entry.frame.close();
 		this.#memory.clear();
+		this.#sorted = [];
 		this.#stats = {
 			entryCount: 0,
 			bytes: 0,
@@ -194,6 +197,7 @@ export class FrameCache {
 		// Close before dropping the Map, or every held surface leaks.
 		for (const entry of this.#memory.values()) entry.frame.close();
 		this.#memory.clear();
+		this.#sorted = [];
 		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: 0 };
 		this.#storage = storage;
 	}
@@ -212,6 +216,67 @@ export class FrameCache {
 		if (!entry) return null;
 		entry.lastUsedUs = performance.now() * 1000;
 		return entry.frame;
+	}
+
+	/**
+	 * Newest frame at or before `tsUs`, no older than `floorUs`. This is the
+	 * lookup playback needs: frame timestamps land on presentation times, not
+	 * on whatever microsecond the render loop happens to ask for, so an exact
+	 * match essentially never hits.
+	 *
+	 * `floorUs` is the start of the current kept segment. Returning anything
+	 * before it would step the picture back into content the user cut.
+	 */
+	readNearest(tsUs: number, floorUs = 0): CachedFrame | null {
+		const idx = this.#floorIndex(tsUs);
+		if (idx < 0) return null;
+		const key = this.#sorted[idx];
+		if (key === undefined || key < floorUs) return null;
+		const entry = this.#memory.get(key);
+		if (!entry) return null;
+		entry.lastUsedUs = performance.now() * 1000;
+		return entry.frame;
+	}
+
+	/** Index in `#sorted` of the greatest key ≤ `tsUs`, or -1. */
+	#floorIndex(tsUs: number): number {
+		let lo = 0;
+		let hi = this.#sorted.length - 1;
+		let best = -1;
+		while (lo <= hi) {
+			const mid = (lo + hi) >> 1;
+			const k = this.#sorted[mid] as number;
+			if (k <= tsUs) {
+				best = mid;
+				lo = mid + 1;
+			} else {
+				hi = mid - 1;
+			}
+		}
+		return best;
+	}
+
+	/** Insertion point for `key` in the sorted index. */
+	#insertIndex(key: number): number {
+		let lo = 0;
+		let hi = this.#sorted.length;
+		while (lo < hi) {
+			const mid = (lo + hi) >> 1;
+			if ((this.#sorted[mid] as number) < key) lo = mid + 1;
+			else hi = mid;
+		}
+		return lo;
+	}
+
+	#indexInsert(key: number): void {
+		const at = this.#insertIndex(key);
+		if (this.#sorted[at] === key) return;
+		this.#sorted.splice(at, 0, key);
+	}
+
+	#indexRemove(key: number): void {
+		const at = this.#insertIndex(key);
+		if (this.#sorted[at] === key) this.#sorted.splice(at, 1);
 	}
 
 	/**
@@ -249,6 +314,7 @@ export class FrameCache {
 		if (entry) {
 			entry.frame.close();
 			this.#memory.delete(tsUs);
+			this.#indexRemove(tsUs);
 			this.#recomputeStats();
 		}
 		try {
@@ -262,6 +328,7 @@ export class FrameCache {
 	async clear(): Promise<void> {
 		for (const entry of this.#memory.values()) entry.frame.close();
 		this.#memory.clear();
+		this.#sorted = [];
 		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: this.#stats.evictions };
 		await this.#storage.clear();
 	}
@@ -274,6 +341,7 @@ export class FrameCache {
 		const before = this.#memory.size;
 		for (const entry of this.#memory.values()) entry.frame.close();
 		this.#memory.clear();
+		this.#sorted = [];
 		await this.#storage.clear();
 		this.#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: this.#stats.evictions };
 		return before;
@@ -301,6 +369,7 @@ export class FrameCache {
 		if (existing) {
 			if (existing.frame !== frame) existing.frame.close();
 			this.#memory.delete(tsUs);
+			this.#indexRemove(tsUs);
 			this.#stats.bytes = Math.max(0, this.#stats.bytes - existing.size);
 		}
 		this.#evictMemoryUntilFits(size);
@@ -310,6 +379,7 @@ export class FrameCache {
 			size,
 		};
 		this.#memory.set(tsUs, entry);
+		this.#indexInsert(tsUs);
 		this.#stats.entryCount = this.#memory.size;
 		this.#stats.bytes += size;
 		const us = entry.lastUsedUs;
@@ -332,6 +402,7 @@ export class FrameCache {
 			if (this.#stats.bytes + incomingSize <= this.#memoryCap) break;
 			entry.frame.close();
 			this.#memory.delete(key);
+			this.#indexRemove(key);
 			this.#stats.bytes = Math.max(0, this.#stats.bytes - entry.size);
 			this.#stats.evictions++;
 		}

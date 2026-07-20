@@ -299,6 +299,80 @@ backward compatibility. **26 files** — logic modules, panels, route logic and
 tests — now import types without touching `invoke`, including `$lib/profiles`,
 which resolves the ESM cycle its comment in `ipc.ts` was working around.
 
+## PR-I — the engine the landing strip was standing in for (2026-07-20)
+
+An audit found the preview painted **0 of 120 frames** during simulated
+playback. PR-D shipped as production and the "later PRs" its header deferred to
+never landed. This is those PRs.
+
+### Playback (the P0)
+
+- **Cache lookup was exact-match.** `readMemory` is `Map.get(tsUs)`, but frame
+  timestamps land on presentation times while the render loop asks for whatever
+  microsecond the rAF fell on — so it missed every time. Added
+  `FrameCache.readNearest(tsUs, floorUs)`: newest frame at or before `tsUs`,
+  never older than the segment floor, over a binary-searched sorted key index.
+  The `floorUs` check is the part that stops the picture stepping back into cut
+  content — the old code accepted the argument and did `void floorUs`.
+- **Every rAF issued a seek that aborted the previous one.** Once decode cost
+  more than a frame interval nothing ever completed. The worker now runs a
+  `sink.canvases(startSec)` stream: `seek` starts a run, `playhead` only
+  releases backpressure (parked past `LOOKAHEAD_SEC = 0.75`). One seek per
+  jump instead of 60/second.
+- **Frames carry their real PTS**, not the requested time, so the cache keys
+  match what the reader looks up.
+- **Late frames are kept.** They used to be dropped on a `seq` mismatch; a
+  frame that arrives a tick late is still a valid picture for its own timestamp.
+
+Measured on the streaming harness (`test/playback-realtime.test.ts`):
+
+| decode latency | before | after |
+|---|---|---|
+| 5 ms | 0/120 painted, 120 seeks | **119/120 painted, 1 seek** |
+| 25 ms | 0/120 painted, 119 aborted | **118/120 painted, 1 seek** |
+
+### Resources
+
+- **`frameBudget` is wired back in.** It had zero importers, so the cache ran a
+  flat 512 MB at every resolution — 2.7× the surface budget empirically known to
+  stall a 4K decoder. Moved into `packages/media/src/cache/frame-budget.ts` and
+  applied via new `frameCacheCapBytes(w, h)` on source creation.
+- **The parallel `<video>` decode is gone.** It was mounted with `preload="auto"`
+  and played by the transport, decoding the whole file alongside the worker, and
+  was only ever paused on file unload. It now stays paused while `mbReady` and
+  serves as a seek-only transport plus the fallback element. `scoutEl` no longer
+  mounts on the MediaBunny path — all its readers sit behind `!mbReady`.
+- **Paused time no longer reads the `<video>`**, since we keep it paused; the
+  store owns time on this path.
+- **`prefetch` posts its frame back** and dedupes by target. It used to
+  `await sink.getCanvas()` and discard the result, ~120 times per cut.
+- **`fps` is measured** via `computePacketStats` instead of hardcoded to 30.
+
+### Telemetry & dead code
+
+- `mediabunny_preview_perf` shipped `{0,0,0}` to PostHog under real resolution
+  cohorts. `stats()` now reports decoded-frames/sec, the served/asked hit rate
+  scaled to source fps, and worst lateness.
+- Deleted, all verified to have zero non-test importers: `frame-index.ts`,
+  `gop-byte-budget.ts`, `audio-worklet-processor.ts` (also non-functional — no
+  `port.onmessage`, built an `AudioContext` inside `AudioWorkletGlobalScope`),
+  and `packages/media/src/audio/scheduler.ts`.
+- **The packaged audio scheduler was removed rather than adopted.** No app code
+  imported it, and adopting it would have *regressed* audio: it merges all
+  tracks into one buffer, which would break the per-track system/mic mute the
+  shipped `AudioTimelineEngine` supports. The proven engine stays; promoting it
+  into the package is the future path.
+- `apps/desktop/src/lib/playback/audio-schedule.ts` is now a re-export shim over
+  `@recast/media`; it held a byte-identical copy of the scheduling math.
+- `isUnsupportedContainer` is finally called — known-bad containers reject
+  before a worker spawns instead of being discovered by try/catch.
+
+### Verified
+
+86 media / 570 desktop / 63 web / 59 captions green; both type-checks 0 errors;
+`ui:build` green with the streaming protocol present in the emitted worker
+chunk. **Still owed: runtime confirmation in the real WebView** — see below.
+
 ## What's genuinely left
 
 1. **No browser-based perf harness.** 5 rows (TTFF, scrub p95,
@@ -307,10 +381,11 @@ which resolves the ESM cycle its comment in `ipc.ts` was working around.
    bundle gates + real-user telemetry over a Playwright harness, on the
    grounds that one CI runner's timings don't represent user hardware.
    The `mediabunny_preview_*` PostHog events are the intended source.
-2. **Runtime verification is owed by the owner.** Every check is static
-   or unit-level. Nobody has opened two recordings back-to-back to
-   confirm the cross-recording fix visually, or watched memory plateau
-   at 512 MB during a long scrub. See "How to verify" below.
+2. **Runtime verification is owed by the owner.** Every check is static or
+   unit-level. Specifically unconfirmed in a real WebView: that playback now
+   advances smoothly (PR-I's P0), that only one decode session runs, that
+   crossing a cut is seamless, that opening two recordings back-to-back never
+   shows the first one's frame, and that memory plateaus on a long 4K scrub.
 3. **`filmstrip-*` remains out of scope** (REQUIREMENTS.md §1) and
    still composes MediaBunny directly, now via the `/mediabunny`
    subpath.
