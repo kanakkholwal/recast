@@ -1,6 +1,6 @@
 /** Pure mappers + fps/timer math for the recording panel window. */
 
-import type { CaptureIntentState, LastSource } from "$lib/ipc";
+import type { CaptureIntentState, LastSource } from "$lib/ipc-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";

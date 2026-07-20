@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CaptureIntentState } from "$lib/ipc";
+import type { CaptureIntentState } from "$lib/ipc-types";
 import {
   canonicalIntent,
   clampFpsToDisplay,

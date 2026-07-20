@@ -1,6 +1,6 @@
 /** Drag-rect + toolbar geometry for the region-picker overlay. */
 
-import type { RegionRect } from "$lib/ipc";
+import type { RegionRect } from "$lib/ipc-types";
 
 export type Rect = { x: number; y: number; w: number; h: number };
 

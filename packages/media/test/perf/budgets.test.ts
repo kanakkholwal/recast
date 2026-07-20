@@ -21,9 +21,10 @@ const BUDGETS = {
 	// Memory
 	decodedFrameCapBytes: 512 * 1024 * 1024,
 	indexedDbCacheCapBytes: 2 * 1024 * 1024 * 1024,
-	// Bundle
+	// Bundle (gated in ./bundle.test.ts)
 	desktopBundleGzKb: 80,
-	webBundleGzKb: 150,
+	webPageGzKb: 5,
+	conversionWorkerGzKb: 220,
 	// Sync
 	audioSyncDriftMsPer10Min: 10,
 } as const;
@@ -69,8 +70,12 @@ describe('perf budgets (REQUIREMENTS.md §3 — non-negotiable)', () => {
 		expect(BUDGETS.desktopBundleGzKb).toBe(80);
 	});
 
-	it('declares the web bundle budget (gz, incl. tools)', () => {
-		expect(BUDGETS.webBundleGzKb).toBe(150);
+	it('declares the web page budget (gz)', () => {
+		expect(BUDGETS.webPageGzKb).toBe(5);
+	});
+
+	it('declares the conversion worker budget (gz, on-demand chunk)', () => {
+		expect(BUDGETS.conversionWorkerGzKb).toBe(220);
 	});
 
 	it('declares the audio sync drift budget over 10 min', () => {
@@ -78,10 +83,6 @@ describe('perf budgets (REQUIREMENTS.md §3 — non-negotiable)', () => {
 	});
 });
 
-/**
- * Enforced rows. Every assertion here MUST exercise real package code — if it
- * only compares `BUDGETS.x` to a literal it belongs in the block above.
- */
 /** Minimal storage stub — these tests exercise the cache, not a backend. */
 function makeNoopStorage(): FrameStorage {
 	let cap = 2 * 1024 * 1024 * 1024;
@@ -107,6 +108,10 @@ function makeNoopStorage(): FrameStorage {
 	};
 }
 
+/**
+ * Enforced rows. Every assertion here MUST exercise real package code — if it
+ * only compares `BUDGETS.x` to a literal it belongs in the block above.
+ */
 describe('perf budgets — enforced against real code', () => {
 	function frame(w: number, h: number) {
 		return { width: w, height: h, close: () => {} } as unknown as CacheableFrame;
@@ -147,5 +152,5 @@ describe('perf budgets — enforced against real code', () => {
 	});
 });
 
-// NOT enforced here (needs a browser harness that doesn't exist yet): TTFF,
-// scrub p95, frame-to-glass, INP, bundle size, audio drift. See REQUIREMENTS.md §3.
+// Bundle rows are gated in ./bundle.test.ts. Still unenforced (needs a browser
+// harness): TTFF, scrub p95, frame-to-glass, INP, audio drift.

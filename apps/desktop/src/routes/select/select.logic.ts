@@ -1,6 +1,6 @@
 /** Source-list mappers + filters for the source-selector window. */
 
-import type { DisplayInfo, LastSource, WindowInfo } from "$lib/ipc";
+import type { DisplayInfo, LastSource, WindowInfo } from "$lib/ipc-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";

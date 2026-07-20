@@ -239,8 +239,8 @@ the NaN bug below was invisible to the fixtures.
 
 ### Verified
 
-- `@recast/media` 71, `apps/desktop` 595, `apps/web` 63,
-  `@recast/captions` 59 — **788 green.**
+- `@recast/media` 79, `apps/desktop` 595, `apps/web` 63,
+  `@recast/captions` 59 — **796 green.**
 - `pnpm --filter recast-desktop check` — 7857 files, 0 errors.
 - `pnpm --filter recast-desktop ui:build` — green; the decode worker
   emits as its own chunk from inside the package
@@ -249,28 +249,75 @@ the NaN bug below was invisible to the fixtures.
 - The 7 new cache regression tests were each confirmed to **fail**
   against the pre-fix implementation before being kept.
 
+## PR-H — gates, cancellation, dead code (2026-07-20)
+
+Follow-up pass. Owner decisions: enforce bundle size in CI rather than build
+a Playwright harness, relax the blanket AbortSignal rule to I/O-only, delete
+the dead stubs.
+
+### `sideEffects: false` was missing — the barrel was never tree-shakable
+
+The new `test/perf/bundle.test.ts` (esbuild + gzip) caught this immediately.
+Importing a single `MediaError` from the barrel cost **61.7 KB gz**; the same
+import direct from `errors.ts` cost **0.1 KB**. Removing the MediaBunny
+re-export in PR-G was necessary but not sufficient — without
+`"sideEffects": false` a bundler must assume every module has side effects and
+cannot drop any of them. Adding it took the barrel to **0.2 KB**.
+
+| entry | before | after |
+|---|---|---|
+| barrel → `MediaError` | 61.7 KB | **0.2 KB** |
+| barrel → `getFrameCache` | 64.1 KB | **2.7 KB** |
+| `/playback` subpath | — | 3.3 KB |
+
+### The web bundle row was measuring the wrong thing
+
+§3 said "web (incl. tools) ≤ 150 KB"; the conversion surface measures 202 KB
+and always would — `handlers` is an eager registry pulling MediaBunny, gifenc,
+lamejs and fflate. But `apps/web/src/lib/tools/client.ts` imports **types
+only** and spawns the worker lazily, so none of it blocks first paint. The row
+conflated the page bundle with an on-demand worker chunk. Split into three
+rows (page ≤ 5 KB, desktop ≤ 80 KB, conversion worker ≤ 220 KB), all gated.
+
+### Other
+
+- `AudioScheduler.load()` ran an unbounded fetch/decode loop with no
+  cancellation; it now takes an `AbortSignal`, closes the `AudioContext` on
+  abort, and rejects with `MediaError('cancelled')`. 3 tests added.
+- §5's blanket "all exported async functions take an AbortSignal" is amended
+  to I/O-or-unbounded-work only; `cacheStats`/`evictCache` are exempt.
+- Deleted `sources.ts` (`encodeCanvasToMp4`, a throw-stub on the public API
+  with zero callers). `sqlite-storage.ts` turned out to never have existed —
+  the PR-E file map above listed a file that was never written.
+
+### apps/desktop — `ipc.ts` split (first editor-extraction step)
+
+`ipc.ts` was 1,739 lines mixing 83 type declarations with 116 `invoke()`
+wrappers, so importing a shape dragged in the Tauri runtime. Types moved to
+`ipc-types.ts` (806 lines), `ipc.ts` is now 1,030 and re-exports them for
+backward compatibility. **26 files** — logic modules, panels, route logic and
+tests — now import types without touching `invoke`, including `$lib/profiles`,
+which resolves the ESM cycle its comment in `ipc.ts` was working around.
+
 ## What's genuinely left
 
-1. **No browser-based perf harness.** 8 of the 12 §3 budget rows
-   (TTFF, scrub p95, frame-to-glass, INP, bundle size, audio drift)
-   cannot be measured in Node. They are documented targets, not gates,
-   until a Playwright + fixture-recording harness exists. This is the
-   single biggest remaining gap and it is now stated in the test file
-   rather than implied away.
-2. **`AbortSignal` coverage is partial.** §5 says every exported async
-   function takes one; `openInput`, `inputContainerKind`,
-   `createAudioScheduler`, `evictCache`, `cacheStats` and the
-   `AudioScheduler` methods still don't. `openMediaSource` and
-   `seekTo` now do.
-3. **Runtime verification is owed by the owner.** Every check above is
-   static or unit-level. Nobody has opened two recordings back-to-back
-   and confirmed fix #5 visually, or watched memory plateau at 512 MB
-   during a long scrub session. See "How to verify" below.
-4. **`sqlite-storage.ts` is still a stub** and `encodeCanvasToMp4`
-   still throws — both are unreferenced. Delete or implement.
-5. **`filmstrip-*` remains out of scope** (REQUIREMENTS.md §1) and
+1. **No browser-based perf harness.** 5 rows (TTFF, scrub p95,
+   frame-to-glass, INP, audio drift) cannot be measured in Node and
+   remain documented targets, not gates. Deliberate: owner chose CI
+   bundle gates + real-user telemetry over a Playwright harness, on the
+   grounds that one CI runner's timings don't represent user hardware.
+   The `mediabunny_preview_*` PostHog events are the intended source.
+2. **Runtime verification is owed by the owner.** Every check is static
+   or unit-level. Nobody has opened two recordings back-to-back to
+   confirm the cross-recording fix visually, or watched memory plateau
+   at 512 MB during a long scrub. See "How to verify" below.
+3. **`filmstrip-*` remains out of scope** (REQUIREMENTS.md §1) and
    still composes MediaBunny directly, now via the `/mediabunny`
    subpath.
+4. **The editor package itself.** `ipc.ts` is split; the remaining work
+   is the 2,484-line `routes/editor/[file]/+page.svelte` shell and the
+   `<Editor />` prop boundary. ~89% of the editor's 32.7k lines are
+   already Tauri-free.
 
 ---
 

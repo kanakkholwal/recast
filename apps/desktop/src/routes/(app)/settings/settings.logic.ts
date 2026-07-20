@@ -4,7 +4,7 @@
  * from probed displays, and the 60→null persistence sentinel.
  */
 
-import type { DisplayInfo, LastSource } from "$lib/ipc";
+import type { DisplayInfo, LastSource } from "$lib/ipc-types";
 
 /**
  * 60 is always offered; 120/144/240 appear only when a display can present them

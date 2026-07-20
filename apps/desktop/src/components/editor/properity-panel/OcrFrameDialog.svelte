@@ -5,7 +5,7 @@
   // the structured output have to be visibly the same thing: a box on the frame and
   // its row in the list are one element, and highlighting either highlights both.
   import { clock } from "$lib/format/time";
-  import type { ScreenStateSpan } from "$lib/ipc";
+  import type { ScreenStateSpan } from "$lib/ipc-types";
   import { Badge } from "@recast/ui/badge";
   import { Button } from "@recast/ui/button";
   import * as Dialog from "@recast/ui/dialog";

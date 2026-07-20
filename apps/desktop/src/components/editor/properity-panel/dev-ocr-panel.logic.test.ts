@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { OcrProgress, OcrStats, ScreenStateSpan, VideoTextTimeline } from "$lib/ipc";
+import type { OcrProgress, OcrStats, ScreenStateSpan, VideoTextTimeline } from "$lib/ipc-types";
 import {
 	boxLabel,
 	boxRect,

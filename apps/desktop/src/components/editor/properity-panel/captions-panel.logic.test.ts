@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { CaptionModelInfo } from "$lib/ipc";
+import type { CaptionModelInfo } from "$lib/ipc-types";
 import { CAPTION_PRESETS, type CaptionStyle } from "@recast/captions";
 import type { CaptionPresetValue } from "$lib/registry/types";
 import {

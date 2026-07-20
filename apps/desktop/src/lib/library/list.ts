@@ -1,7 +1,7 @@
 /** Search, sort, and size maths for the recordings/exports/activity listings. */
 
 import { getExtension } from "$lib/format/files";
-import type { RecordingEntry } from "$lib/ipc";
+import type { RecordingEntry } from "$lib/ipc-types";
 
 export type LibrarySort = "recent" | "name" | "size";
 

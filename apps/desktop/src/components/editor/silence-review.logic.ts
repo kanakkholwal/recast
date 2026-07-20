@@ -6,7 +6,7 @@
  * component.
  */
 
-import type { SilenceDetectOptions } from "$lib/ipc";
+import type { SilenceDetectOptions } from "$lib/ipc-types";
 
 export type Sensitivity = "relaxed" | "balanced" | "aggressive";
 

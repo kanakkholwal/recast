@@ -9,7 +9,7 @@ import type {
 	ExtensionContributions,
 	ExtensionManifest,
 	InstalledExtension,
-} from "$lib/ipc";
+} from "$lib/ipc-types";
 
 /** Contribution kinds a pack can declare, in display order. */
 const CONTRIBUTION_KEYS: (keyof ExtensionContributions)[] = [
