@@ -1,16 +1,16 @@
 name: Deploy Web to Cloudflare Workers
 
 on:
-  push:
-    branches: 
-      - main
-    paths:
-      - 'apps/web/**'  
-  pull_request:
-    branches:
-      - main
-    paths:
-      - 'apps/web/**'  
+  # push:
+  #   branches: 
+  #     - main
+  #   paths:
+  #     - 'apps/web/**'  
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'apps/web/**'  
   workflow_dispatch: 
 
   
@@ -61,6 +61,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           workingDirectory: apps/web
+          wranglerVersion: "4"
           command: >-
             deploy
             ${{ inputs.environment != '' && format('--env {0}', inputs.environment) || '' }}
