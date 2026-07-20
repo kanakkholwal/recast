@@ -7,7 +7,6 @@
 		icon: Icon,
 		title,
 		description,
-		tone = "primary",
 		accent = false,
 		badge,
 		children,
@@ -15,22 +14,16 @@
 		icon: IconComponent;
 		title: string;
 		description?: string;
-		tone?: "primary" | "muted";
-		/** Adds a primary ring — used to mark the priority integration. */
+		/** Adds a ring — used to mark the priority integration. */
 		accent?: boolean;
 		badge?: Snippet;
 		children: Snippet;
 	} = $props();
 </script>
 
-<section class={cn("glass-card rounded-xl p-6", accent && "ring-1 ring-primary/15")}>
+<section class={cn("glass-card rounded-xl p-6", accent && "ring-1 ring-foreground/12")}>
 	<div class="flex items-center gap-3">
-		<span
-			class={cn(
-				"glass-chip grid size-9 place-items-center rounded-lg",
-				tone === "primary" ? "text-primary" : "text-muted-foreground",
-			)}
-		>
+		<span class="glass-chip grid size-9 place-items-center rounded-lg text-muted-foreground">
 			<Icon class="size-4" />
 		</span>
 		<div class="flex-1">

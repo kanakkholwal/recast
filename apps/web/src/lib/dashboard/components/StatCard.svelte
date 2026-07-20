@@ -13,7 +13,7 @@
 </script>
 
 <div class="glass-card flex items-center gap-3.5 rounded-xl p-4">
-	<span class="glass-chip grid size-10 place-items-center rounded-lg text-primary">
+	<span class="glass-chip grid size-10 place-items-center rounded-lg text-muted-foreground">
 		<Icon class="size-4" />
 	</span>
 	<div>

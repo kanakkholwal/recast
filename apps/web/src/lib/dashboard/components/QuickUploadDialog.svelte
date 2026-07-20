@@ -479,7 +479,7 @@
 						<div
 							class={cn(
 								"h-1 rounded-full transition-colors duration-300",
-								done ? "bg-primary" : active ? "bg-primary/60" : "bg-foreground/10",
+								done ? "bg-foreground/70" : active ? "bg-foreground/40" : "bg-foreground/10",
 							)}
 						></div>
 						<span
@@ -488,7 +488,7 @@
 								done || active ? "text-foreground/70" : "text-muted-foreground/50",
 							)}
 						>
-							{#if done}<Check class="size-2.5 shrink-0 text-primary" />{/if}
+							{#if done}<Check class="size-2.5 shrink-0" />{/if}
 							{label}
 						</span>
 					</div>
@@ -536,9 +536,16 @@
 						<span class="min-w-0 truncate font-medium text-foreground">{fileName}</span>
 					</div>
 
-					<div class="mt-4 h-2 overflow-hidden rounded-full bg-foreground/10">
+					<div
+						class="mt-4 h-2 overflow-hidden rounded-full bg-foreground/10"
+						role="progressbar"
+						aria-label="Upload progress"
+						aria-valuenow={overallPct}
+						aria-valuemin={0}
+						aria-valuemax={100}
+					>
 						<div
-							class="h-full rounded-full bg-linear-to-r from-primary/70 to-primary transition-[width] duration-300 ease-out"
+							class="h-full rounded-full bg-foreground/60 transition-[width] duration-300 ease-out"
 							style="width: {overallPct}%"
 						></div>
 					</div>
@@ -553,11 +560,9 @@
 								<span
 									class={cn(
 										"grid size-6 shrink-0 place-items-center rounded-full transition-colors",
-										st === "done"
-											? "bg-primary/12 text-primary"
-											: st === "active"
-												? "bg-primary/12 text-primary"
-												: "bg-foreground/6 text-muted-foreground/50",
+										st === "done" || st === "active"
+											? "bg-foreground/10 text-foreground"
+											: "bg-foreground/6 text-muted-foreground/50",
 									)}
 								>
 									{#if st === "done"}
@@ -608,7 +613,7 @@
 								<button
 									type="button"
 									onclick={() => (showScrubber ? closeScrubber() : openScrubber())}
-									class="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-primary outline-none hover:underline focus-visible:underline"
+									class="mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-foreground outline-none hover:underline focus-visible:underline"
 								>
 									<ImageIcon class="size-3.5" />
 									{showScrubber ? "Close" : "Change cover"}
@@ -630,7 +635,7 @@
 								step="0.1"
 								bind:value={scrubTime}
 								aria-label="Scrub to a cover frame"
-								class="mt-3 w-full accent-primary"
+								class="mt-3 w-full accent-foreground"
 							/>
 							<div class="mt-2 flex items-center justify-between gap-3">
 								<span class="font-mono text-[11px] tabular-nums text-muted-foreground">
@@ -791,7 +796,7 @@
 							href={result.shareUrl}
 							target="_blank"
 							rel="noreferrer"
-							class="min-w-0 flex-1 truncate text-xs font-medium text-foreground hover:text-primary"
+							class="min-w-0 flex-1 truncate text-xs font-medium text-foreground hover:underline"
 						>
 							{result.shareUrl}
 						</a>

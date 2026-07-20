@@ -63,7 +63,7 @@
 <section class="glass-card rounded-xl p-5">
 	<header class="flex items-center justify-between">
 		<div class="flex items-center gap-2">
-			<Share2 class="size-4 text-primary" />
+			<Share2 class="size-4 text-muted-foreground" />
 			<h2 class="text-sm font-semibold text-foreground">Share links</h2>
 		</div>
 		{#if ordered.length > 0}

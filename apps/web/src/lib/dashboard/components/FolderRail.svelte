@@ -142,7 +142,7 @@
 			ondrop={(e) => onDrop(e, null)}
 			class={cn(
 				"flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
-				selected === "all" ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+				selected === "all" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
 				dropTarget === "all" && "ring-1 ring-primary/50",
 			)}
 		>
@@ -163,7 +163,7 @@
 			ondrop={(e) => onDrop(e, null)}
 			class={cn(
 				"flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-left transition-colors",
-				selected === "root" ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
+				selected === "root" ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:bg-foreground/5 hover:text-foreground",
 				dropTarget === "root" && "ring-1 ring-primary/50",
 			)}
 		>
@@ -205,7 +205,7 @@
 					ondrop={(e) => onDrop(e, folder.id)}
 					class={cn(
 						"group/row flex items-center gap-1 rounded-lg pr-1 transition-colors",
-						active ? "bg-primary/12 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
+						active ? "bg-foreground/8 text-foreground" : "text-muted-foreground hover:bg-foreground/5",
 						dropTarget === folder.id && "ring-1 ring-primary/50",
 					)}
 					style="padding-left: {depth * 12 + 6}px"

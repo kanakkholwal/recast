@@ -28,7 +28,7 @@
 <div class="glass-card rounded-xl p-5">
 	<header class="flex items-center justify-between">
 		<div class="flex items-center gap-2">
-			<TrendingDown class="size-4 text-primary" />
+			<TrendingDown class="size-4 text-muted-foreground" />
 			<h2 class="text-sm font-semibold text-foreground">Watch retention</h2>
 		</div>
 		<span class="text-[10px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">

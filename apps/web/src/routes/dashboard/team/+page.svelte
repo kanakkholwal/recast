@@ -401,7 +401,7 @@
 		</div>
 
 		<aside class="space-y-4 xl:sticky xl:top-24 xl:self-start">
-			<SettingsSection icon={Clock} tone="muted" title="Pending invitations" description="Invites awaiting acceptance.">
+			<SettingsSection icon={Clock} title="Pending invitations" description="Invites awaiting acceptance.">
 				{#await data.invites}
 					<ul class="divide-y divide-border-low/40">
 						{#each Array(2) as _, i (i)}
@@ -476,7 +476,6 @@
 			{#if isOwner}
 				<SettingsSection
 					icon={Building2}
-					tone="muted"
 					title="Workspace details"
 					description="Name and URL slug shown across Recast."
 				>
@@ -525,22 +524,22 @@
 				</SettingsSection>
 			{/if}
 
-			<SettingsSection icon={ShieldCheck} tone="muted" title="Role permissions" description="What each access level can do.">
+			<SettingsSection icon={ShieldCheck} title="Role permissions" description="What each access level can do.">
 				<ul class="space-y-3 text-xs">
 					<li class="flex items-start gap-2">
-						<Crown class="mt-0.5 size-3.5 text-primary" />
+						<Crown class="mt-0.5 size-3.5 text-muted-foreground" />
 						<span class="text-muted-foreground">
 							Owners manage workspace details and destructive actions.
 						</span>
 					</li>
 					<li class="flex items-start gap-2">
-						<UserPlus class="mt-0.5 size-3.5 text-primary" />
+						<UserPlus class="mt-0.5 size-3.5 text-muted-foreground" />
 						<span class="text-muted-foreground">
 							Admins can invite teammates and manage member roles.
 						</span>
 					</li>
 					<li class="flex items-start gap-2">
-						<Users class="mt-0.5 size-3.5 text-primary" />
+						<Users class="mt-0.5 size-3.5 text-muted-foreground" />
 						<span class="text-muted-foreground">
 							Members can access workspace recasts and shared assets.
 						</span>

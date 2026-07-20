@@ -53,7 +53,7 @@
 		class="flex items-center gap-2.5 rounded-lg py-1 pl-1 pr-1.5 text-left outline-none transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-ring/50"
 		aria-label="Account menu"
 	>
-		<span class="grid size-8 shrink-0 place-items-center rounded-lg bg-linear-to-br from-primary/80 to-primary text-xs font-bold text-background">
+		<span class="grid size-8 shrink-0 place-items-center rounded-lg bg-foreground/10 text-xs font-bold text-foreground">
 			{settingsStore.initials}
 		</span>
 		<span class="hidden min-w-0 flex-col leading-tight sm:flex">
@@ -122,7 +122,7 @@
 				</DropdownMenu.Item>
 			{:else}
 				<DropdownMenu.Item onclick={() => goto("/admin")}>
-					<Shield class="size-4 text-primary" />
+					<Shield class="size-4 text-muted-foreground" />
 					Admin dashboard
 				</DropdownMenu.Item>
 			{/if}

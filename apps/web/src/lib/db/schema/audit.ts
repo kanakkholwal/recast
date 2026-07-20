@@ -34,6 +34,7 @@ export type AuditLog = typeof auditLog.$inferSelect;
  */
 export const AUDIT_ACTIONS = [
 	"user.create",
+	"user.invite",
 	"user.update",
 	"user.delete",
 	"user.set_role",

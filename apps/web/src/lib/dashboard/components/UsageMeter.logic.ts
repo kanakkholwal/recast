@@ -10,13 +10,22 @@ export interface UsageView {
 	usedBytes: number;
 	storageLimit: number | null;
 	storagePct: number;
+	storageTone: UsageTone;
 	activeRecasts: number;
 	linksLimit: number | null;
 	linksPct: number;
+	linksTone: UsageTone;
 	planLabel: string;
 	storageStatus: string;
 	linksStatus: string;
 }
+
+/** Severity of a usage bar. Neutral until the cap is actually worth worrying
+ *  about, so the colour carries meaning instead of decorating the card. */
+export type UsageTone = "neutral" | "warning" | "critical";
+
+export const usageTone = (pct: number, capped: boolean): UsageTone =>
+	!capped ? "neutral" : pct >= 90 ? "critical" : pct >= 75 ? "warning" : "neutral";
 
 const planLabelOf = (plan: QuotaSnapshot["plan"] | undefined): string =>
 	plan === "pro" ? "Pro" : plan === "enterprise" ? "Enterprise" : "Free";
@@ -51,9 +60,11 @@ export function usageView(quota: QuotaSnapshot | null): UsageView {
 		usedBytes,
 		storageLimit,
 		storagePct,
+		storageTone: usageTone(storagePct, storageLimit != null),
 		activeRecasts,
 		linksLimit,
 		linksPct,
+		linksTone: usageTone(linksPct, linksLimit != null),
 		planLabel: planLabelOf(quota?.plan),
 		storageStatus,
 		linksStatus,

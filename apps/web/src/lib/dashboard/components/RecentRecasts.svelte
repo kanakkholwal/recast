@@ -22,7 +22,7 @@
 <section class="glass-card flex h-full flex-col rounded-xl">
 	<header class="flex items-center justify-between border-b border-border-low/50 px-5 py-3.5">
 		<div class="flex items-center gap-2">
-			<Film class="size-4 text-primary" />
+			<Film class="size-4 text-muted-foreground" />
 			<h2 class="text-sm font-semibold text-foreground">Recent recasts</h2>
 		</div>
 		<a
@@ -54,7 +54,7 @@
 							</div>
 						{/if}
 						<span class="absolute inset-0 grid place-items-center bg-background/30 opacity-0 backdrop-blur-[1px] transition-opacity duration-300 group-hover/tile:opacity-100">
-							<span class="grid size-9 place-items-center rounded-full bg-primary text-background shadow-craft-floating">
+							<span class="grid size-9 place-items-center rounded-full bg-foreground text-background shadow-craft-floating">
 								<Play class="size-4 translate-x-0.5 fill-current" />
 							</span>
 						</span>

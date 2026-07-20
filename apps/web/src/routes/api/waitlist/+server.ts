@@ -16,8 +16,17 @@ const BodySchema = z.object({
 		.string()
 		.transform((v) => v.trim().toLowerCase())
 		.refine((v) => EMAIL_RE.test(v), "Invalid email"),
-	source: z.unknown().transform((v) => (typeof v === "string" ? v.slice(0, 64) : null)),
-	name: z.unknown().transform((v) => (typeof v === "string" ? v.trim().slice(0, 80) : "")),
+	// `.optional()` is load-bearing: a bare `z.unknown()` accepts undefined, but
+	// wrapping it in `.transform()` makes the key required, so a body without
+	// `name` (what the client actually sends) fails the whole parse.
+	source: z
+		.unknown()
+		.optional()
+		.transform((v) => (typeof v === "string" ? v.slice(0, 64) : null)),
+	name: z
+		.unknown()
+		.optional()
+		.transform((v) => (typeof v === "string" ? v.trim().slice(0, 80) : "")),
 });
 
 /**
@@ -54,7 +63,12 @@ export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 
 	const parsed = BodySchema.safeParse(raw);
 	if (!parsed.success) {
-		return json({ ok: false, error: "Invalid email" }, { status: 422 });
+		// Don't blame the email for a failure somewhere else in the body.
+		const onEmail = parsed.error.issues.some((i) => i.path[0] === "email");
+		return json(
+			{ ok: false, error: onEmail ? "Invalid email" : "Invalid request." },
+			{ status: 422 },
+		);
 	}
 	const { email, source } = parsed.data;
 	const requestedName = parsed.data.name;

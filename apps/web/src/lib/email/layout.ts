@@ -1,24 +1,45 @@
 /**
  * Inline-styled HTML layout — the only "design system" the email side has.
  * Hex values (not OKLCH) because Gmail/Outlook still cough on modern color
- * functions in 2026. Keep the visual language close to recast.nexonauts.com
- * so the email reads as a continuation of the app, not a separate brand.
+ * functions in 2026. Values are the hex equivalents of the app tokens in
+ * packages/design/src/index.css + apps/web/src/app.css, so the email reads
+ * as a continuation of the product rather than a separate brand.
+ *
+ * Color budget follows 60-30-10:
+ *   60% — `canvas`, the page behind the card
+ *   30% — `cardBg` + `ink` + `border`, the card and its type
+ *   10% — `primary`, the brand lime. Ceiling, not a target: on the site the
+ *         lime is a rotating word and a pulse dot, and both DESIGN.md files
+ *         warn against large lime fills. Here it earns the top stripe of the
+ *         card and nothing else, so CTAs stay ink-on-white like the site's
+ *         own `variant="dark"` hero button.
  */
 
 export const EMAIL_COLORS = {
-	canvas: "#f3f3f0",      // page bg — warm off-white, matches --background
-	cardBg: "#ffffff",
-	border: "#e6e6e3",
-	ink: "#1a1a19",         // headings + primary text
-	muted: "#6b6b66",       // secondary text
-	primary: "#cdec3a",     // brand lime accent
-	primaryInk: "#1a1a19",  // text on primary surfaces
-	buttonBg: "#1a1a19",    // CTA bg matches site (foreground-as-button)
-	buttonInk: "#ffffff",
+	canvas: "#fafafa", // --background (light) oklch(0.985 0 0)
+	cardBg: "#ffffff", // --card
+	border: "#e0e0e0", // --border (light) oklch(0.91 0 0)
+	ink: "#1c1c1c", // --foreground, headings + primary text
+	muted: "#71757e", // --muted-foreground
+	primary: "#cdec3a", // --primary (dark-mode lime, the recognisable brand hex)
+	primaryInk: "#1c1c1c", // text on primary surfaces — never white, lime fails contrast
+	buttonBg: "#1c1c1c", // CTA matches the site's foreground-as-button hero CTA
+	buttonInk: "#fafafa",
 } as const;
 
+/**
+ * Absolute, hardcoded on purpose. Deriving this from PUBLIC_APP_URL would ship
+ * a localhost `src` to every recipient any time the env var is unset or points
+ * at a dev host — a silent, unrecoverable break once the mail is delivered.
+ */
+export const EMAIL_LOGO_URL = "https://recast.li/email/logo.png";
+
+/**
+ * Geist is the product typeface but no mail client will have it, so the stack
+ * degrades to the platform UI font rather than a generic serif.
+ */
 const FONT_STACK =
-	"-apple-system, BlinkMacSystemFont, 'Segoe UI', Geist, 'Helvetica Neue', Arial, sans-serif";
+	"Geist, 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif";
 
 export type LayoutOptions = {
 	subject: string;
@@ -30,8 +51,11 @@ export type LayoutOptions = {
 
 /**
  * Wraps content in the shared brand chrome (logo header, card, footer).
- * No external assets — the wordmark renders as styled HTML so dark-mode
- * inverters and image-blocking clients can't break it.
+ *
+ * The mark is a hosted PNG rather than inline SVG or table-drawn pills:
+ * Outlook strips inline SVG entirely, and the table-pill workaround drifted
+ * from the real logo. `alt` carries the brand name so image-blocking clients
+ * still show "Recast" next to the wordmark.
  */
 export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 	const year = new Date().getFullYear();
@@ -54,19 +78,19 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 					<td style="padding:0 4px 20px;">
 						<table role="presentation" cellspacing="0" cellpadding="0" border="0">
 							<tr>
-								<td style="vertical-align:middle;">
-									${logoMark()}
+								<td style="vertical-align:middle; line-height:0;">
+									<img src="${EMAIL_LOGO_URL}" width="36" height="36" alt="Recast" style="display:block; width:36px; height:36px; border:0; outline:none; text-decoration:none;">
 								</td>
 								<td style="vertical-align:middle; padding-left:10px;">
-									<span style="font-size:16px; font-weight:600; color:${EMAIL_COLORS.ink}; letter-spacing:-0.01em;">Recast</span>
+									<span style="font-size:17px; font-weight:600; color:${EMAIL_COLORS.ink}; letter-spacing:-0.02em;">Recast</span>
 								</td>
 							</tr>
 						</table>
 					</td>
 				</tr>
 				<tr>
-					<!-- Thin primary-accent stripe across the top of the card — the
-					     first hit of the lime brand color the reader sees. -->
+					<!-- The card's entire lime budget: a 3px stripe. Matches how the
+					     site uses the accent as a signal, never as a surface. -->
 					<td style="background:${EMAIL_COLORS.primary}; border-radius:16px 16px 0 0; height:3px; line-height:3px; font-size:1px;">&nbsp;</td>
 				</tr>
 				<tr>
@@ -78,7 +102,7 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 					<td style="padding:20px 8px 0; font-size:12px; line-height:1.6; color:${EMAIL_COLORS.muted};">
 						<p style="margin:0;">Recast · the founder-friendly screen recorder.</p>
 						<p style="margin:6px 0 0;">Didn't expect this email? It's safe to ignore. We won't email you again.</p>
-						<p style="margin:6px 0 0; color:#999996;">© ${year} Recast</p>
+						<p style="margin:6px 0 0; color:#9a9da3;">© ${year} Recast</p>
 					</td>
 				</tr>
 			</table>
@@ -90,37 +114,16 @@ export function wrap({ subject, preheader = "", body }: LayoutOptions): string {
 }
 
 /**
- * Mini brand mark — three white pill bars on a dark rounded square, the
- * same silhouette as the in-app SVG logo. Done as nested tables so clients
- * that strip inline SVG (Outlook desktop, parts of Gmail web) still render
- * a recognisable mark, not a black hole.
- */
-function logoMark(): string {
-	const pill = `<div style="width:3px; height:14px; background:#ffffff; border-radius:2px; font-size:1px; line-height:1px;">&nbsp;</div>`;
-	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="background:${EMAIL_COLORS.ink}; border-radius:8px;">
-	<tr>
-		<td style="padding:7px 6px;">
-			<table role="presentation" cellspacing="0" cellpadding="0" border="0">
-				<tr>
-					<td style="width:3px; padding:0;">${pill}</td>
-					<td style="width:3px;">&nbsp;</td>
-					<td style="width:3px; padding:0;">${pill}</td>
-					<td style="width:3px;">&nbsp;</td>
-					<td style="width:3px; padding:0;">${pill}</td>
-				</tr>
-			</table>
-		</td>
-	</tr>
-</table>`;
-}
-
-/**
  * Bulletproof CTA button (table-based for Outlook). Pass the full URL —
  * we do no relative-URL resolution here, every caller supplies an absolute.
  *
- * `tone` defaults to `ink` (dark button, white text) — the brand-primary
- * recipe. Pass `accent` for the lime variant, used sparingly for moments
- * where the brand color should be the focal point (verify-email confirm).
+ * Geometry mirrors the site's hero CTA (`variant="dark" size="xl"`): 16px
+ * radius, 14px/28px padding, weight 500. Font size is 16px rather than the
+ * site's 18px, which overpowers a 560px-wide card.
+ *
+ * `tone` defaults to `ink` (dark button, white text) — the same recipe the
+ * landing page uses. Pass `accent` for the lime variant, reserved for the
+ * one moment where the brand color should be the focal point (verify-email).
  */
 export function ctaButton(
 	label: string,
@@ -129,10 +132,10 @@ export function ctaButton(
 ): string {
 	const bg = tone === "accent" ? EMAIL_COLORS.primary : EMAIL_COLORS.buttonBg;
 	const ink = tone === "accent" ? EMAIL_COLORS.primaryInk : EMAIL_COLORS.buttonInk;
-	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:8px 0;">
+	return `<table role="presentation" cellspacing="0" cellpadding="0" border="0" style="margin:20px 0 4px;">
 	<tr>
-		<td style="background:${bg}; border-radius:10px;">
-			<a href="${escapeAttr(url)}" target="_blank" style="display:inline-block; padding:12px 22px; color:${ink}; text-decoration:none; font-size:14px; font-weight:600; letter-spacing:-0.01em;">${escapeHtml(label)}</a>
+		<td style="background:${bg}; border-radius:16px;">
+			<a href="${escapeAttr(url)}" target="_blank" style="display:inline-block; padding:14px 28px; color:${ink}; text-decoration:none; font-size:16px; font-weight:500; letter-spacing:-0.02em;">${escapeHtml(label)}</a>
 		</td>
 	</tr>
 </table>`;
@@ -145,12 +148,20 @@ export function fallbackLink(url: string): string {
 </p>`;
 }
 
+/**
+ * Site heading recipe: semibold, tight tracking, near-1.0 leading.
+ * Mirrors the `h1..h6` base layer in app.css.
+ */
 export function heading(text: string): string {
-	return `<h1 style="margin:0 0 12px; font-size:20px; font-weight:600; letter-spacing:-0.015em; color:${EMAIL_COLORS.ink};">${escapeHtml(text)}</h1>`;
+	return `<h1 style="margin:0 0 12px; font-size:24px; font-weight:600; line-height:1.15; letter-spacing:-0.02em; color:${EMAIL_COLORS.ink};">${escapeHtml(text)}</h1>`;
 }
 
+/**
+ * Body copy is muted, not full-black — on the site only headings get the full
+ * `--foreground`, paragraphs are always `text-muted-foreground`.
+ */
 export function paragraph(html: string): string {
-	return `<p style="margin:0 0 14px; font-size:15px; line-height:1.55; color:${EMAIL_COLORS.ink};">${html}</p>`;
+	return `<p style="margin:0 0 14px; font-size:15px; line-height:1.6; color:${EMAIL_COLORS.muted};">${html}</p>`;
 }
 
 export function muted(html: string): string {

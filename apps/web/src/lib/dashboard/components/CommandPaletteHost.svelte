@@ -127,7 +127,7 @@
 										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
 									>
 										<span
-											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-foreground/10 group-data-selected/item:text-foreground"
 										>
 											<Icon class="size-4" />
 										</span>
@@ -140,7 +140,7 @@
 										class="group/item flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 text-sm text-foreground/90 outline-none transition-colors data-selected:bg-muted data-selected:text-foreground"
 									>
 										<span
-											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-primary/10 group-data-selected/item:text-primary"
+											class="flex size-8 shrink-0 items-center justify-center rounded-md bg-foreground/5 text-muted-foreground transition-colors group-data-selected/item:bg-foreground/10 group-data-selected/item:text-foreground"
 										>
 											<Icon class="size-4" />
 										</span>

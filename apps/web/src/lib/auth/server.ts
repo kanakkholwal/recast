@@ -367,9 +367,11 @@ function buildPlugins() {
  * Idempotent — safe to call twice (the membership check short-circuits).
  *
  * Skipped silently for waitlist (`status === "pending"`) users so we don't
- * spawn orphan teams for emails the user hasn't activated yet.
+ * spawn orphan teams for emails the user hasn't activated yet. That means
+ * activation has to call this again, otherwise an approved waitlist user
+ * signs in with no team at all — see the admin waitlist/invite actions.
  */
-async function ensureDefaultTeamForUser(u: {
+export async function ensureDefaultTeamForUser(u: {
 	id: string;
 	name: string;
 	email: string;

@@ -27,7 +27,7 @@
 
 <section class="glass-card flex h-full flex-col rounded-xl">
 	<header class="flex items-center gap-2 border-b border-border-low/50 px-5 py-3.5">
-		<Crown class="size-4 text-primary" />
+		<Crown class="size-4 text-muted-foreground" />
 		<h2 class="text-sm font-semibold text-foreground">Recast performance</h2>
 	</header>
 
@@ -79,7 +79,7 @@
 											</span>
 										{/if}
 									</span>
-									<span class="min-w-0 truncate font-medium text-foreground transition-colors group-hover/row:text-primary">
+									<span class="min-w-0 truncate font-medium text-foreground transition-colors group-hover/row:underline">
 										{r.title}
 									</span>
 								</a>

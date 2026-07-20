@@ -22,7 +22,7 @@
 <section class="glass-card flex h-full flex-col rounded-xl">
 	<header class="flex items-center justify-between border-b border-border-low/50 px-5 py-3.5">
 		<div class="flex items-center gap-2">
-			<Crown class="size-4 text-primary" />
+			<Crown class="size-4 text-muted-foreground" />
 			<h2 class="text-sm font-semibold text-foreground">Top recasts</h2>
 		</div>
 		<a

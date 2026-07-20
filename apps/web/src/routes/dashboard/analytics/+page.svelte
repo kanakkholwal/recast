@@ -111,7 +111,7 @@
 >
 	<div class="glass-card rounded-xl p-4">
 		<div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-			<Target class="size-3.5 text-primary" />
+			<Target class="size-3.5" />
 			Completion
 		</div>
 		<p class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight text-foreground">
@@ -123,7 +123,7 @@
 	</div>
 	<div class="glass-card rounded-xl p-4">
 		<div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-			<BarChart3 class="size-3.5 text-primary" />
+			<BarChart3 class="size-3.5" />
 			Active recasts
 		</div>
 		<p class="mt-2 font-mono text-2xl font-semibold tabular-nums tracking-tight text-foreground">
@@ -135,7 +135,7 @@
 	</div>
 	<div class="glass-card rounded-xl p-4">
 		<div class="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-			<Eye class="size-3.5 text-primary" />
+			<Eye class="size-3.5" />
 			Top recast
 		</div>
 		<p class="mt-2 truncate text-sm font-semibold text-foreground" title={bestPerformer?.title ?? "No views yet"}>

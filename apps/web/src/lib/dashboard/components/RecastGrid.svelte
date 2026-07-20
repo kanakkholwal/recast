@@ -121,7 +121,7 @@
 						onclick={() => onToggleSelect(rec)}
 						aria-label={selected ? "Deselect recast" : "Select recast"}
 						aria-pressed={selected}
-						class="grid size-5 place-items-center rounded border transition-colors {selected ? 'border-primary bg-primary text-background' : 'border-border-low bg-background text-transparent hover:border-primary/60'}"
+						class="grid size-5 place-items-center rounded border transition-colors {selected ? 'border-primary bg-primary text-background' : 'border-border-low bg-background text-transparent hover:border-foreground/40'}"
 					>
 						<Check class="size-3" />
 					</button>

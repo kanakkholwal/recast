@@ -84,17 +84,23 @@
 		<SettingsSection
 			icon={HardDrive}
 			title="Workspace limits"
-			description="{planLabel} plan limits for this workspace."
-			tone="muted"
+			description="{planLabel} plan limits for this workspace."
 		>
 			<div class="space-y-3 text-sm">
 				<div class="flex items-center justify-between gap-4">
 					<span class="text-muted-foreground">Storage used</span>
 					<span class="font-medium text-foreground">{quota?.storagePctUsed ?? 0}%</span>
 				</div>
-				<div class="h-2 overflow-hidden rounded-full bg-foreground/8">
+				<div
+					class="h-2 overflow-hidden rounded-full bg-foreground/8"
+					role="progressbar"
+					aria-label="Storage used"
+					aria-valuenow={quota?.storagePctUsed ?? 0}
+					aria-valuemin={0}
+					aria-valuemax={100}
+				>
 					<div
-						class="h-full rounded-full bg-primary transition-[width] duration-300"
+						class="h-full rounded-full bg-foreground/35 transition-[width] duration-300"
 						style:width={`${quota?.storagePctUsed ?? 0}%`}
 					></div>
 				</div>

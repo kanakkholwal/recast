@@ -1,21 +1,28 @@
 <script lang="ts">
 	import { goto } from "$app/navigation";
 	import { page } from "$app/state";
+	import { enhance } from "$app/forms";
 	import {
 	  ChevronLeft,
 	  ChevronRight,
 	  Crown,
+	  LoaderCircle,
 	  Search,
 	  ShieldOff,
+	  UserPlus,
 	  X,
 	} from "@recast/icons";
 	import { Badge } from "@recast/ui/badge";
 	import { Button } from "@recast/ui/button";
+	import * as Dialog from "@recast/ui/dialog";
 	import { Input } from "@recast/ui/input";
+	import { Label } from "@recast/ui/label";
 	import * as Select from "@recast/ui/select";
 	import { Skeleton } from "@recast/ui/skeleton";
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
+	import { enhanceAction } from "$lib/forms/enhance";
+	import { isValidEmail } from "$lib/auth/invite.logic";
 	import {
 		ariaSort,
 		buildPageQuery,
@@ -43,6 +50,18 @@
 	const hasActiveFilters = $derived(
 		q.trim() !== "" || roleFilter !== "all" || statusFilter !== "all",
 	);
+
+	let inviteOpen = $state(false);
+	let inviting = $state(false);
+	let inviteEmail = $state("");
+	let inviteName = $state("");
+	const canInvite = $derived(isValidEmail(inviteEmail));
+
+	function resetInvite() {
+		inviteOpen = false;
+		inviteEmail = "";
+		inviteName = "";
+	}
 
 	function applyFilters(reset = true) {
 		goto(
@@ -134,7 +153,70 @@
 			{/await}
 		</p>
 	</div>
+	<Button variant="default" class="gap-2" onclick={() => (inviteOpen = true)}>
+		<UserPlus class="size-4" />
+		Invite user
+	</Button>
 </header>
+
+<Dialog.Root bind:open={inviteOpen}>
+	<Dialog.Content>
+		<Dialog.Header>
+			<Dialog.Title>Invite a user</Dialog.Title>
+			<Dialog.Description>
+				Creates an active account and emails them a link to set their password. Skips the
+				waitlist. If they're already on the waitlist, this approves them.
+			</Dialog.Description>
+		</Dialog.Header>
+		<form
+			method="POST"
+			action="?/invite"
+			class="space-y-3"
+			use:enhance={enhanceAction({
+				setBusy: (b) => (inviting = b),
+				onSuccess: "Invite sent.",
+				invalidate: true,
+				reset: resetInvite,
+			})}
+		>
+			<Label class="block">
+				<span class="mb-1 block text-xs font-semibold text-foreground/85">Email</span>
+				<Input
+					type="email"
+					name="email"
+					bind:value={inviteEmail}
+					placeholder="name@company.com"
+					autocomplete="off"
+					required
+					class="h-9"
+				/>
+			</Label>
+			<Label class="block">
+				<span class="mb-1 block text-xs font-semibold text-foreground/85">
+					Name <span class="font-normal text-muted-foreground">(optional)</span>
+				</span>
+				<Input
+					name="name"
+					bind:value={inviteName}
+					placeholder="Defaults to the part before the @"
+					autocomplete="off"
+					class="h-9"
+				/>
+			</Label>
+			<Dialog.Footer>
+				<Button type="button" variant="ghost" disabled={inviting} onclick={resetInvite}>
+					Cancel
+				</Button>
+				<Button type="submit" disabled={inviting || !canInvite} class="gap-2">
+					{#if inviting}
+						<LoaderCircle class="size-3.5 animate-spin" />
+					{/if}
+					{inviting ? "Sending…" : "Send invite"}
+				</Button>
+			</Dialog.Footer>
+		</form>
+	</Dialog.Content>
+</Dialog.Root>
 
 <form
 	class="mb-4 flex flex-wrap items-center gap-2 rounded-lg border border-border/40 bg-card/30 p-2"
