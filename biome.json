@@ -90,7 +90,7 @@
 		},
 		{
 			"includes": [
-				"apps/desktop/src/lib/playback/mediabunny-worker.ts"
+				"apps/desktop/src/lib/timeline/filmstrip-worker.ts"
 			],
 			"linter": {
 				"rules": {

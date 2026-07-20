@@ -1,9 +1,8 @@
 /**
  * Storage adapter for the decoded-frame cache. The cache persists
  * `ImageBitmap` values keyed by the original-recording timestamp (µs).
- * Implementations are pluggable so we can swap IndexedDB (default,
- * works everywhere including Tauri's webview) for SQLite (Tauri-only,
- * for cases where the webview quota or platform behavior is undesirable).
+ * Implementations are pluggable so the backend can be swapped; IndexedDB
+ * works everywhere including Tauri's webview.
  *
  * Contract (packages/media/REQUIREMENTS.md §5):
  * - The cache key is a microsecond timestamp (`ctsUs`).
@@ -24,17 +23,27 @@
 /** A decoded video frame, GPU-ready, structured-cloneable for IndexedDB. */
 export type CacheableFrame = ImageBitmap;
 
+/** In-memory hot-layer value. `VideoFrame` can never reach IndexedDB. */
+export type CachedFrame = ImageBitmap | VideoFrame;
+
+/** True when the frame survives structured-clone into IndexedDB. */
+export function isPersistable(frame: CachedFrame): frame is CacheableFrame {
+	return typeof VideoFrame === 'undefined' || !(frame instanceof VideoFrame);
+}
+
 /** Per-entry byte estimate for budget accounting. */
-export function estimateFrameBytes(frame: CacheableFrame): number {
-	// ImageBitmap has no public `byteLength`; use the nominal pixel size × 4
-	// channels (RGBA). JPEG-style sub-byte encodings would underestimate, but
-	// for cache eviction an over-estimate is the safe side.
-	return frame.width * frame.height * 4;
+export function estimateFrameBytes(frame: CachedFrame): number {
+	// `VideoFrame` has codedWidth/codedHeight and no width/height; reading the
+	// wrong pair yields NaN and silently disables every cap.
+	const w = 'codedWidth' in frame ? frame.codedWidth : frame.width;
+	const h = 'codedHeight' in frame ? frame.codedHeight : frame.height;
+	if (!Number.isFinite(w) || !Number.isFinite(h)) return 0;
+	// No public byteLength; nominal RGBA size, over-estimating on purpose.
+	return w * h * 4;
 }
 
 /**
- * Storage backend contract. Implementations: `IndexedDBFrameStorage`
- * (default) and `SqliteFrameStorage` (Tauri-only, stub for now).
+ * Storage backend contract. Sole implementation: `IndexedDBFrameStorage`.
  */
 export interface FrameStorage {
 	/** Display name for diagnostics + telemetry. */

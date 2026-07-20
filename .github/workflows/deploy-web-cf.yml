@@ -1,0 +1,67 @@
+name: Deploy Web to Cloudflare Workers
+
+on:
+  # push:
+  #   branches: 
+  #     - main
+  #   paths:
+  #     - 'apps/web/**'  
+  # pull_request:
+  #   branches:
+  #     - main
+  #   paths:
+  #     - 'apps/web/**'  
+  workflow_dispatch: 
+
+  
+concurrency:
+  group: deploy-web 
+  cancel-in-progress: false
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  
+jobs:
+  deploy:
+    name: Build & deploy to CF Workers
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      deployments: write
+    environment: 
+      name: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'production' || 'preview' }}
+      url: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://preview.recast.li' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          # Wrangler 4.x requires Node >= 22.
+          node-version: 24
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build apps/web
+        run: pnpm -F @docvia/web build
+        env:
+            NODE_ENV: production
+            FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+            PUBLIC_APP_URL: ${{ github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && 'https://recast.li' || 'https://preview.recast.li' }}
+
+      - name: Deploy via Wrangler
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/web
+          wranglerVersion: "4"
+          command: >-
+            deploy
+            ${{ inputs.environment != '' && format('--env {0}', inputs.environment) || '' }}

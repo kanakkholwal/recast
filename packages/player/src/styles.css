@@ -42,7 +42,9 @@
    ────────────────────────────────────────────────────────────────── */
 
 .recast-player {
-	--media-primary-color: var(--primary, #cdec3a);
+	/* Neutral, not brand. The player sits over arbitrary video, so the chrome
+	   stays white-on-scrim and lets the frame be the only colourful thing. */
+	--media-primary-color: rgba(255, 255, 255, 0.92);
 	--media-secondary-color: rgba(255, 255, 255, 0.92);
 	--media-icon-color: rgba(255, 255, 255, 0.92);
 
@@ -55,31 +57,31 @@
 	--media-menu-color: var(--popover-foreground, #f5f5f5);
 
 	--media-control-padding: 0;
-	--media-control-height: 40px;
-	--media-button-icon-height: 18px;
-	--media-button-icon-width: 18px;
+	--media-control-height: 30px;
+	--media-button-icon-height: 16px;
+	--media-button-icon-width: 16px;
 	--media-button-padding: 0;
 	--media-focus-ring-color: var(--primary, #cdec3a);
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   3. Scrubber + volume range — primary thumb, soft rail
+   3. Scrubber + volume range — white thumb, soft rail
    ────────────────────────────────────────────────────────────────── */
 
 .recast-player {
 	--media-range-track-background: rgba(255, 255, 255, 0.18);
 	--media-range-track-pointer-background: rgba(255, 255, 255, 0.32);
 	--media-range-track-translucent-background: rgba(255, 255, 255, 0.28);
-	--media-range-bar-color: var(--primary, #cdec3a);
-	--media-range-track-height: 4px;
+	--media-range-bar-color: rgba(255, 255, 255, 0.95);
+	--media-range-track-height: 3px;
 	--media-range-track-border-radius: 9999px;
-	--media-range-thumb-background: var(--primary, #cdec3a);
-	--media-range-thumb-width: 14px;
-	--media-range-thumb-height: 14px;
+	--media-range-thumb-background: rgba(255, 255, 255, 1);
+	--media-range-thumb-width: 11px;
+	--media-range-thumb-height: 11px;
 	--media-range-thumb-border-radius: 9999px;
 	--media-range-thumb-border: 0;
 	--media-range-thumb-box-shadow:
-		0 0 0 4px rgba(205, 236, 58, 0.18),
+		0 0 0 3px rgba(0, 0, 0, 0.28),
 		0 1px 3px rgba(0, 0, 0, 0.4);
 	--media-range-thumb-opacity: 1;
 }
@@ -119,26 +121,28 @@
 	--media-text-color: rgba(255, 255, 255, 0.78);
 	--media-font-size: 12px;
 
-	/* Loading indicator uses the brand accent. */
-	--media-loading-indicator-icon-color: var(--primary, #cdec3a);
+	--media-loading-indicator-icon-color: rgba(255, 255, 255, 0.92);
 }
 
 /* ──────────────────────────────────────────────────────────────────
-   6. Floating glass pill — the control bar is detached from the video
-   edges (inset margin via the transparent host bar) and rendered as a
-   single frosted, rounded surface. A faint bottom scrim keeps the pill
-   legible when it floats over a bright frame.
+   6. Control strip — two flush rows (scrubber, then transport) sitting
+   directly on a bottom scrim. No floating surface: a frosted pill read
+   as a second panel stacked on the video rather than chrome belonging
+   to it, and it cost ~40px of frame.
    ────────────────────────────────────────────────────────────────── */
 
 .recast-control-bar {
+	/* The scrim is the only thing making the controls legible now that the
+	   pill surface is gone, so it carries more weight than it used to. */
 	background: linear-gradient(
 		to top,
-		rgba(0, 0, 0, 0.35),
+		rgba(0, 0, 0, 0.68),
+		rgba(0, 0, 0, 0.34) 45%,
 		rgba(0, 0, 0, 0)
 	);
 	display: flex;
 	align-items: stretch;
-	padding: 0 16px 16px;
+	padding: 20px 12px 10px;
 	gap: 0;
 	/* Fade with the media-chrome autohide state rather than blinking. */
 	transition:
@@ -167,24 +171,18 @@ media-controller.recast-player[userinactive]:not([mediapaused])
 }
 media-controller.recast-player:not([userinactive]) .recast-caption-bottom,
 media-controller.recast-player[mediapaused] .recast-caption-bottom {
-	transform: translateY(-4rem);
+	transform: translateY(-3.75rem);
 }
 
+/* Two rows, flush to the frame: scrubber on top, transport below. Deliberately
+   NOT a floating card — the frosted pill read as a second UI panel sitting on
+   the video instead of chrome belonging to it. */
 .recast-pill {
 	display: flex;
 	flex-direction: column;
 	gap: 2px;
 	width: 100%;
-	padding: 5px 8px;
-	border-radius: 16px;
-	background: rgba(18, 18, 17, 0.5);
-	border: 1px solid rgba(255, 255, 255, 0.1);
-	box-shadow:
-		0 12px 34px -8px rgba(0, 0, 0, 0.5),
-		0 2px 8px -2px rgba(0, 0, 0, 0.3),
-		inset 0 1px 0 rgba(255, 255, 255, 0.06);
-	backdrop-filter: blur(22px) saturate(150%);
-	-webkit-backdrop-filter: blur(22px) saturate(150%);
+	padding: 0;
 }
 
 .recast-pill-row {
@@ -214,8 +212,8 @@ media-controller.recast-player.recast-player-theater {
    ────────────────────────────────────────────────────────────────── */
 
 .recast-btn {
-	height: 34px;
-	min-width: 34px;
+	height: 30px;
+	min-width: 30px;
 	border-radius: 999px;
 	transition: background-color 150ms ease, color 150ms ease;
 	color: rgba(255, 255, 255, 0.92);
@@ -256,10 +254,11 @@ media-controller.recast-player.recast-player-theater {
 
 /* Captions toggle: the button only renders when a caption track exists, and
    shows a clear on/off state. Lucide icons stroke with currentColor, so the
-   `color` here tints the icon. On = accent + a persistent tint; off = dimmed. */
+   `color` here tints the icon. On = full-strength white on a held background;
+   off = dimmed. */
 .recast-caption-btn[aria-pressed="true"] {
-	color: var(--media-primary-color, var(--primary, #cdec3a));
-	background: rgba(255, 255, 255, 0.12);
+	color: rgba(255, 255, 255, 0.98);
+	background: rgba(255, 255, 255, 0.16);
 }
 .recast-caption-btn[aria-pressed="false"] {
 	color: rgba(255, 255, 255, 0.55);
@@ -269,7 +268,6 @@ media-controller.recast-player.recast-player-theater {
 	media-play-button,
 	media-seek-backward-button,
 	media-seek-forward-button,
-	media-mute-button,
 	media-playback-rate-button,
 	media-captions-button,
 	media-pip-button,
@@ -292,7 +290,6 @@ media-controller.recast-player.recast-player-theater {
 	media-play-button,
 	media-seek-backward-button,
 	media-seek-forward-button,
-	media-mute-button,
 	media-playback-rate-button,
 	media-captions-button,
 	media-pip-button,
@@ -321,14 +318,14 @@ media-controller.recast-player.recast-player-theater {
 /* The mute button sits next to volume; volume range expands a bit on
    hover for easier scrubbing without snapping shut. */
 .recast-volume {
-	width: 72px;
-	height: 34px;
+	width: 64px;
+	height: 30px;
 	transition: width 180ms ease;
 }
 
 .recast-volume:hover,
 .recast-volume:focus-within {
-	width: 88px;
+	width: 76px;
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -343,10 +340,10 @@ media-controller.recast-player.recast-player-theater {
 	top: 50%;
 	left: 50%;
 	transform: translate(-50%, -50%);
-	width: 68px;
-	height: 68px;
+	width: 60px;
+	height: 60px;
 	border-radius: 9999px;
-	background: rgba(15, 15, 14, 0.74);
+	background: rgba(15, 15, 14, 0.62);
 	backdrop-filter: blur(10px);
 	-webkit-backdrop-filter: blur(10px);
 	transition:
@@ -358,11 +355,8 @@ media-controller.recast-player.recast-player-theater {
 }
 
 .recast-big-play:hover {
-	background: rgba(205, 236, 58, 0.92);
-}
-
-.recast-big-play:hover .recast-icon-big {
-	color: rgba(15, 15, 14, 0.95);
+	background: rgba(15, 15, 14, 0.82);
+	transform: translate(-50%, -50%) scale(1.04);
 }
 
 .recast-icon-big {
@@ -396,11 +390,14 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
    10. Scrubber sizing + time display alignment
    ────────────────────────────────────────────────────────────────── */
 
+/* Thin line, but the element keeps a taller invisible hit area so seeking
+   stays grabbable. Height here is the target, --media-range-track-height is
+   what you actually see. */
 .recast-scrubber {
 	flex: 1;
 	min-width: 60px;
-	margin: 0 6px;
-	height: 26px;
+	margin: 0 2px;
+	height: 16px;
 }
 
 /* Full-width top row of the pill; the button row sits below it. */
@@ -413,7 +410,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 
 .recast-marker-rail {
 	position: absolute;
-	inset: 50% 6px auto 6px;
+	inset: 50% 2px auto 2px;
 	height: 14px;
 	transform: translateY(-50%);
 	pointer-events: none;
@@ -427,7 +424,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	padding: 0;
 	border: 0;
 	border-radius: 999px;
-	background: var(--recast-marker-color, #cdec3a);
+	background: var(--recast-marker-color, rgba(255, 255, 255, 0.95));
 	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
 	transform: translate(-50%, -50%);
 	pointer-events: auto;
@@ -442,7 +439,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	color: rgba(255, 255, 255, 0.78);
 	font-variant-numeric: tabular-nums;
 	padding: 0 6px 0 4px;
-	height: 34px;
+	height: 30px;
 	display: inline-flex;
 	align-items: center;
 }
@@ -470,12 +467,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 
 @media (max-width: 640px) {
 	.recast-control-bar {
-		padding: 0 10px 10px;
-	}
-
-	.recast-pill {
-		border-radius: 14px;
-		padding: 4px 6px;
+		padding: 16px 8px 8px;
 	}
 
 	.recast-volume {
@@ -483,8 +475,8 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	}
 
 	.recast-big-play {
-		width: 56px;
-		height: 56px;
+		width: 52px;
+		height: 52px;
 	}
 }
 

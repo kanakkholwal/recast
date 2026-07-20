@@ -15,6 +15,14 @@ if (!building) {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
+	// `svelteKitHandler` already no-ops while building, but `auth: getAuth()` is
+	// an argument, so it is evaluated *before* that guard runs — and building the
+	// instance validates the server env and opens the Drizzle/pg adapter. The
+	// prerenderer runs hooks for every prerendered page, so on a build box with
+	// no DATABASE_URL / BETTER_AUTH_SECRET that throw turned into a 500 on every
+	// page under /blog and /tools. Nothing prerendered ever hits /api/auth, so
+	// return before touching auth at all.
+	if (building) return resolve(event);
 	return svelteKitHandler({ event, resolve, auth: getAuth(), building });
 };
 
@@ -32,9 +40,12 @@ export const handleError: HandleServerError = ({ error, event, status, message }
 	}
 
 	const errorId = crypto.randomUUID();
+	// One string, not two console.error args: build/deploy log pipelines line-wrap
+	// and drop trailing args, which is how a prerender failure reached CI as a
+	// bare "GET /blog → 500" with the cause missing.
+	const detail = error instanceof Error ? (error.stack ?? error.message) : String(error);
 	console.error(
-		`[error ${errorId}] ${event.request.method} ${event.url.pathname} → ${status}`,
-		error instanceof Error ? (error.stack ?? error.message) : error,
+		`[error ${errorId}] ${event.request.method} ${event.url.pathname} → ${status}\n${detail}`,
 	);
 
 	return { message: "Internal error", errorId };

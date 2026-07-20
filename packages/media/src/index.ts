@@ -56,7 +56,6 @@ export type { Region, ScheduledChunk } from './audio/schedule';
 export { snapToSeekTarget, nextCutWithin } from './seek';
 
 // sources
-export { encodeCanvasToMp4 } from './sources';
 
 // small encoders
 export {
@@ -80,10 +79,7 @@ export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
 export { estimateFrameBytes } from './cache/storage';
 export type { CacheableFrame, FrameStorage } from './cache/storage';
 
-// Formats MediaBunny (and the legacy webcodecs+mp4box pipeline) cannot
-// decode. The desktop preview falls back to the <video> element when the
-// input matches an entry. The list lives in `cache/unsupported-formats.ts`
-// and is pinned by `test/unsupported-formats.test.ts`.
+// Formats MediaBunny cannot decode; the preview falls back to <video>.
 export {
 	UNSUPPORTED_FORMATS,
 	isUnsupportedContainer,
@@ -91,9 +87,5 @@ export {
 } from './cache/unsupported-formats';
 export type { UnsupportedFormat } from './cache/unsupported-formats';
 
-// MediaBunny primitives re-exported so worker code living outside
-// `packages/media` can compose them through this package without a direct
-// mediabunny import. Worker code is the only allowed outside consumer;
-// biome's `noRestrictedImports` allows it via a scoped override.
-export { ALL_FORMATS, BlobSource, CanvasSink, Input, UrlSource } from 'mediabunny';
-export type { InputVideoTrack, WrappedCanvas } from 'mediabunny';
+// MediaBunny primitives live on `@recast/media/mediabunny`. Re-exporting them
+// here would pull the whole library into every consumer (REQUIREMENTS.md §3).

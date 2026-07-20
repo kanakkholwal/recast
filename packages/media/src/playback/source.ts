@@ -20,11 +20,20 @@
  * resolution-aware budgets via the shared `@recast/media` cache.
  */
 
-import { type CacheableFrame, getFrameCache } from '@recast/media';
-import type { FromMediabunnyWorker, ToMediabunnyWorker } from './mediabunny-worker';
+import { getFrameCache } from '../cache';
+import type { CachedFrame } from '../cache/storage';
+import { MediaError } from '../errors';
+import type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';
 
-/** Dev-only diagnostics (throughput + first-frame geometry). */
-const DIAG = import.meta.env.DEV;
+// Read defensively: `import.meta.env` is a Vite extension and this package
+// must stay bundler-agnostic.
+const DIAG = ((): boolean => {
+	try {
+		return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+	} catch {
+		return false;
+	}
+})();
 
 export class MediabunnyVideoSource {
 	#worker: Worker;
@@ -82,9 +91,9 @@ export class MediabunnyVideoSource {
 	 */
 	static async create(url: string, _sizeBytes?: number): Promise<MediabunnyVideoSource> {
 		if (typeof Worker === 'undefined' || typeof VideoFrame === 'undefined') {
-			throw new Error('Worker/VideoFrame unavailable in this WebView');
+			throw new MediaError('unsupported', 'Worker/VideoFrame unavailable in this WebView');
 		}
-		const worker = new Worker(new URL('./mediabunny-worker.ts', import.meta.url), {
+		const worker = new Worker(new URL('./worker.ts', import.meta.url), {
 			type: 'module',
 		});
 		try {
@@ -99,14 +108,18 @@ export class MediabunnyVideoSource {
 					if (msg.type === 'ready') {
 						resolve(msg);
 					} else if (msg.type === 'error') {
-						reject(new Error(msg.message));
+						reject(new MediaError('bad-input', msg.message));
 					}
 				};
-				worker.onerror = (e) => reject(new Error(e.message || 'worker error'));
+				worker.onerror = (e) => reject(new MediaError('worker-died', e.message || 'worker error'));
 				const init: ToMediabunnyWorker = { type: 'init', url };
 				worker.postMessage(init);
 			});
-			return new MediabunnyVideoSource(worker, meta);
+			const source = new MediabunnyVideoSource(worker, meta);
+			// Singleton cache keyed by bare timestamp: scope it or another
+			// recording's frame answers reads for this one.
+			source.#cache.setScope(url);
+			return source;
 		} catch (err) {
 			worker.terminate();
 			throw err;
@@ -128,19 +141,15 @@ export class MediabunnyVideoSource {
 				return;
 			}
 			this.#inFlightSeq = -1;
-			// Wrap the OffscreenCanvas in a VideoFrame so callers can use the
-			// exact same upload path as the WebCodecs engine. `new VideoFrame(canvas)`
-			// snapshots the canvas at construction time; the canvas itself can be
-			// reused by the worker after this point.
+			// `new VideoFrame(canvas)` snapshots at construction, so the worker
+			// is free to reuse the canvas after this.
 			const frame = new VideoFrame(msg.canvas, {
 				timestamp: Math.round(msg.originalSec * 1_000_000),
 				duration: Math.round((1 / this.fps) * 1_000_000),
 			});
 			const tUs = Math.round(msg.originalSec * 1_000_000);
-			// Persist: the orchestrator writes to both the in-memory hot layer
-			// and the IndexedDB-backed persistent layer (LRU, 2 GB default).
-			// The persistent write is best-effort and off the hot path.
-			this.#cache.write(tUs, frame as unknown as CacheableFrame, true);
+			// Persistent write is best-effort and off the hot path.
+			this.#cache.write(tUs, frame as unknown as CachedFrame, true);
 			if (DIAG) {
 				console.log(`[mb] frame @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`);
 			}
@@ -162,9 +171,7 @@ export class MediabunnyVideoSource {
 	#bestCached(tUs: number, floorUs: number): VideoFrame | null {
 		const entry = this.#cache.readMemory(tUs);
 		if (!entry || !(entry instanceof VideoFrame)) return null;
-		// Verify the cached frame respects the floor (no in-memory floor check;
-		// the orchestrator's index keys by exact tsUs, so the caller is responsible
-		// for passing the right key).
+		// The cache keys by exact tsUs, so the caller owns the floor check.
 		void floorUs;
 		return entry;
 	}
@@ -219,10 +226,8 @@ export class MediabunnyVideoSource {
 		// Best-effort aggregate for the perf signal; PR-E wires the real one.
 		if (this.onStats) this.onStats({ avgFps: 0, minFps: 0, maxLateMs: 0 });
 		this.#post({ type: 'dispose' });
-		// We don't clear the persistent cache here — the user's next session
-		// (or a scrub to the same region) should hit it. `evictCache` (or
-		// Settings → reset) clears both layers.
-		// The worker self-closes on dispose; terminate as a backstop.
+		// Persistent cache survives on purpose: the next session should hit it.
+		// Worker self-closes; terminate is the backstop.
 		this.#worker.terminate();
 	}
 }

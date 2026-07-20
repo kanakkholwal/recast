@@ -88,10 +88,12 @@ pnpm db:generate | db:migrate # drizzle-kit (NEVER db:push to prod)
     explicit (derive, don't sync).
 12. **NLE performance budget violations are merge-blocking.** The `@recast/media` package's
     performance budgets (see `packages/media/REQUIREMENTS.md §3`) are tested by
-    `packages/media/test/perf/budgets.test.ts`. Any PR that causes a regression on a budget fails
-    the build. Per-milestone testing gates (see `packages/media/PLAN.md`) must be green before the
-    next PR opens. The cut-jump parity fixture (see `PLAN.md` PR-F) MUST be green before legacy
-    `webcodecs-*` and `mp4box` files are deleted.
+    `packages/media/test/perf/budgets.test.ts`. Any PR that causes a regression on an *enforced*
+    row fails the build. Note that only the two memory-cap rows are enforced in Node today; the
+    latency, bundle-size and audio-drift rows need a browser harness that does not exist yet and
+    are listed as unenforced in that file. Do not add a placeholder assertion that passes
+    vacuously to make a row look covered — that is exactly how five runtime bugs survived three
+    PRs (see `packages/media/MIGRATION-LOG.md` PR-G).
 
 ---
 
@@ -251,13 +253,16 @@ rules are non-negotiable:
 - IndexedDB-backed decoded-frame cache: ≤ 2 GB cap (user-configurable in Settings; default 2 GB),
   LRU by recency × bytes, evicted during the `idle` callback where possible (web.dev INP guidance).
 - No `mediabunny` import outside `packages/media`. Consumers go through `@recast/media`'s high-
-  level API. Enforced by Biome lint + a CI grep check.
+  level API. Worker modules that need the raw classes import `@recast/media/mediabunny` — never
+  the main barrel, which must stay tree-shakable.
 - The Rust export pipeline stays untouched. `EnqueueExportRequest` IPC payload is byte-stable.
 - Every PR in this surface area must read `packages/media/REQUIREMENTS.md §4` (curated web.dev
   guides) before opening.
-- Legacy `apps/desktop/src/lib/playback/{webcodecs-source,webcodecs-worker,mp4-demux}.ts` and the
-  `mp4box` dep stay in the tree until PR-F of PLAN.md; delete only after the cut-jump parity
-  fixture is green.
+- The preview decode engine lives in `packages/media/src/playback/`, not in `apps/desktop`. It is
+  pure Web-platform code (Worker + WebCodecs + OffscreenCanvas) and must stay Tauri-free so
+  `apps/web` can use it.
+- Any decoded frame the cache stops referencing MUST be `close()`d. A `VideoFrame` holds a GPU
+  surface the GC will not reclaim promptly; an uncapped frame Map is a memory leak, not a cache.
 
 ---
 

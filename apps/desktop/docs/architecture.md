@@ -36,7 +36,7 @@ recast/
 │   │   ├── src/                       Svelte 5 frontend (the editor UI)
 │   │   │   ├── lib/
 │   │   │   │   ├── timeline/          Cuts, segments, time map, storyboard
-│   │   │   │   ├── playback/          WebCodecs source, frame index, clock
+│   │   │   │   ├── playback/          Frame index, clock, audio engine
 │   │   │   │   ├── render/            Pure preview maths (matches Rust export)
 │   │   │   │   ├── editor/            Time formatting, frame padding
 │   │   │   │   ├── stores/            Svelte 5 runes-based state containers
@@ -55,6 +55,8 @@ recast/
 │   │   └── docs/                       Design docs (this file lands here)
 │   └── web/                            SvelteKit marketing / docs site
 ├── packages/                           Shared workspace libraries
+│   ├── media/                          MediaBunny wrapper: decode worker,
+│   │                                    frame cache, conversion, audio
 │   ├── application/                    Store + service layer (TS)
 │   ├── player/                         Standalone video player (TS)
 │   ├── captions/                       SRT/VTT writer + caption model
@@ -228,7 +230,7 @@ source tears down, re-decodes from the previous keyframe, and the render loop
 keeps asking `source.frameAt(originalSec)` every frame. With WebCodecs
 this is sub-frame; with the legacy `<video>` element seek it would freeze
 for ~50 ms per cut (the *original* "playback freezes at a cut" bug — see
-`webcodecs-source.ts:6-8` for the comment).
+the header comment in `packages/media/src/playback/source.ts`).
 
 > **Read these files to internalize the timeline model:**
 > 1. `apps/desktop/src/lib/timeline/cuts.ts` (the arithmetic)
@@ -267,51 +269,61 @@ output surfaces — typically 8 to 16 — and leaking them starves the decoder
 into "8 fps and stalling" hell. Always close them (`frame.close()`) when
 done with one.
 
-**The work split (look at `webcodecs-source.ts` and `webcodecs-worker.ts`):**
+**We don't call WebCodecs directly.** MediaBunny (`@recast/media`) wraps it.
+We hand it a URL; it demuxes (mp4/mov/webm), configures the `VideoDecoder`,
+and answers "give me the frame at time T" via a `CanvasSink`. The
+hand-rolled demuxer + sample table this section used to describe was
+deleted when the preview moved to MediaBunny.
+
+**The work split (look at `mediabunny-source.ts` and `mediabunny-worker.ts`):**
 
 ```
-┌─ Main thread (WebCodecsVideoSource) ─────────────────────────┐
+┌─ Main thread (MediabunnyVideoSource) ────────────────────────┐
 │                                                              │
-│  • owns the bounded decoded-frame cache (#cache, #prefetchCache)│
+│  • owns the bounded decoded-frame cache (Map<tsUs, VideoFrame>)│
 │  • answers `frameAt(originalSec)` synchronously for the        │
 │    render loop's `requestAnimationFrame` callback              │
+│  • supersedes stale in-flight seeks (#inFlightSeq guard)       │
 │  • talks to the worker over postMessage                        │
 │                                                              │
 └──────────────────────────┬───────────────────────────────────┘
                            │  postMessage
-┌─ Worker thread (webcodecs-worker.ts) ─────────────────────────┐
+┌─ Worker thread (mediabunny-worker.ts) ────────────────────────┐
 │                                                              │
-│  • mp4box.js demuxes the MP4 once: sample table + decoder config
-│  • runs a `VideoDecoder` (the actual WebCodecs instance)       │
-│  • keeps a feed cursor and refills the decoder after seeks     │
-│  • posts decoded `VideoFrame`s back to main, tagged `fromScout: true`
-│    for the "decode-ahead of an upcoming cut" path              │
+│  • MediaBunny `Input` demuxes the file (mp4/mov/webm)          │
+│  • MediaBunny `CanvasSink` answers any timestamp deterministically
+│  • MediaBunny owns the `VideoDecoder` + keyframe seek internally
+│  • posts decoded frames back to main, tagged with the seek seq  │
 │                                                              │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 **Why a worker?** The `VideoDecoder` itself runs on a worker thread
-internally (it's specified that way), but the demux step (`mp4box.js`) and
-the seek-orchestration logic are CPU-bound JS that's worth moving off the
+internally (it's specified that way), but the demux step and the
+seek-orchestration logic are CPU-bound JS that's worth moving off the
 main thread. The main thread is left with only the GPU upload + the cache,
 which is the only thing that has to be on the main thread to render.
 
-**Ingestion strategy.** Whole-file vs progressive is decided by file size
-in `mp4-sample-table.ts → chooseIngestion`. Small files load whole into
-memory (zero network on play). Large files (4K/5K, where the bytes would
-blow the WebView's heap) use HTTP-range progressive fetch — the worker
-range-fetches the moov atom and the GOPs as the playhead moves. Either way
-the `WebCodecsVideoSource` interface is identical; the rest of the editor
-doesn't care.
+**Ingestion strategy.** MediaBunny's `Input` decides this itself from the
+source adapter it's handed — desktop passes a Tauri `asset:` URL, web
+passes a range-capable HTTP URL. The old whole-file-vs-progressive
+`chooseIngestion` heuristic is gone; MediaBunny range-reads as the
+playhead moves. Either way the `MediabunnyVideoSource` interface is
+identical; the rest of the editor doesn't care.
+
+**The gap.** MediaBunny cannot decode AVI, FLV, WMV, RealVideo, or 3GP
+(neither could the old pipeline). Those fall back to the `<video>`
+element. The list is curated and tested in
+`packages/media/src/cache/unsupported-formats.ts`.
 
 > **Read these files in order:**
-> 1. `apps/desktop/src/lib/playback/mp4-demux.ts` (the demux)
-> 2. `apps/desktop/src/lib/playback/mp4-sample-table.ts` (whole vs progressive)
-> 3. `apps/desktop/src/lib/playback/frame-index.ts` (the pure logic)
-> 4. `apps/desktop/src/lib/playback/webcodecs-protocol.ts` (the message contract)
-> 5. `apps/desktop/src/lib/playback/webcodecs-worker.ts` (the worker)
-> 6. `apps/desktop/src/lib/playback/webcodecs-source.ts` (the main-thread proxy)
-> 7. `apps/desktop/src/lib/playback/frame-budget.ts` (resolution-adaptive cache sizes)
+>
+> 1. `packages/media/src/playback.ts` (the `PlaybackSource` interface)
+> 2. `apps/desktop/src/lib/playback/frame-index.ts` (the pure logic)
+> 3. `apps/desktop/src/lib/playback/mediabunny-worker.ts` (the worker)
+> 4. `apps/desktop/src/lib/playback/mediabunny-source.ts` (the main-thread proxy)
+> 5. `apps/desktop/src/lib/playback/frame-budget.ts` (resolution-adaptive cache sizes)
+> 6. `packages/media/src/cache/index.ts` (the IndexedDB-backed cold cache)
 
 ---
 
@@ -469,11 +481,11 @@ preview.
 
 2. LOAD IN EDITOR
    JS:   fetch(recastUrl) via asset://
-   JS:   WebCodecsVideoSource.create(url, sizeBytes)
-           ├─ mp4box demux the file
-           ├─ VideoDecoder config (codec + description)
-           ├─ worker fetches GOPs as needed
-           └─ main thread: cache decoded frames
+   JS:   MediabunnyVideoSource.create(url, sizeBytes)
+           ├─ MediaBunny Input demuxes the file
+           ├─ CanvasSink answers any timestamp
+           ├─ worker range-reads as needed
+           └─ main thread: bounded LRU frame cache (512 MB, frames closed on evict)
    Svelte: build initial RenderState
             { trim, cuts, zoom_regions, cursor_samples, ... }
             from the auto-detected silence cuts (silence detection
@@ -607,17 +619,18 @@ These are all the "this is a real app" bits that aren't about editing.
 2. Store sets `clock.anchorTime = t; clock.playing = false`
 3. `VideoPreview`'s rAF callback reads `clock.time = t`
 4. Calls `outputToOriginal(map, t)` to find the original-time frame
-5. Calls `webcodecsSource.frameAt(originalSec)`:
-   - main thread: emits `{ type: 'request', originalSec }` to worker
-   - worker: binary-searches the sample table, finds the right keyframe,
-     feeds the decoder from there, posts frames back as they decode
+5. Calls `mbSource.frameAt(originalSec)`:
+   - main thread: emits `{ type: 'seek', seq, originalSec }` to worker
+   - worker: MediaBunny's CanvasSink seeks to the nearest keyframe and
+     decodes forward, posting the frame back as an OffscreenCanvas
    - main thread: returns the closest in-cache frame
 6. `gl.texImage2D(..., videoFrame)` uploads
 7. Shader renders
 8. If `t` is in a removed cut, the source returns null and the preview
    holds the previous frame. The playhead is in a cut; nothing to show.
 
-**Why no `<video>`-element seek latency.** With WebCodecs, the
+**Why no `<video>`-element seek latency.** With WebCodecs (via
+MediaBunny), the
 worst-case scrub latency is "the time to decode one GOP from the
 nearest keyframe", which on a 60 fps clip is ~17 ms × GOP size. With
 `<video>`, the seek latency is whatever Chromium / WebKit / WebView2
@@ -671,7 +684,7 @@ together before merging any change that touches either side.
 | Editor timeline data model                    | `timeline/cuts.ts` → `timeline/segments.ts` → `timeline/time-map.ts`                       |
 | Per-segment speed                            | `timeline/segment-speed.ts`                                                              |
 | Hover storyboard (timeline thumbnail)         | `timeline/storyboard.ts` → `timeline/filmstrip.ts` → `timeline/filmstrip-worker.ts`        |
-| Playback (the hard one)                      | `playback/clock.ts` → `playback/mp4-demux.ts` → `playback/frame-index.ts` → `playback/webcodecs-source.ts` |
+| Playback (the hard one)                      | `playback/clock.ts` → `playback/frame-index.ts` → `packages/media/src/playback/source.ts` → `packages/media/src/cache/index.ts` |
 | Preview render loop                           | `components/editor/VideoPreview.svelte` → `components/editor/video-preview.logic.ts`     |
 | WebGL shader code                            | `components/editor/video-preview.shaders.ts`                                              |
 | Export (FFmpeg filter graph)                  | `render/mod.rs` → `render/graph.rs` → `render/cursor_export.rs` → `render/scene_anim.rs` |
@@ -701,11 +714,18 @@ together before merging any change that touches either side.
   the main thread for >5 seconds.** Sync commands, sync FS in a Tauri
   command, or a sync `std::thread::sleep` in `setup()` will trip it.
 - **WebCodecs/VideoFrame leaks are silent killers.** A leaked frame
-  holds a decoder output surface. After ~8 leaks the decoder stalls
-  silently. Every `VideoFrame` must have exactly one close path. The
-  cache eviction in `webcodecs-source.ts` is the close path; the
-  pre-dispose loop in `dispose()` is the cleanup. Read the comment at
-  `webcodecs-source.ts:21-25`.
+  holds a GPU surface the GC will not reclaim promptly. Every
+  `VideoFrame` must have exactly one close path. That path is LRU
+  eviction in `packages/media/src/cache/index.ts`
+  (`#evictMemoryUntilFits`), plus `clear()` / `evictCache()` /
+  `replaceStorage()` for the bulk cases.
+
+  This is not hypothetical: the MediaBunny cache shipped with **no**
+  in-memory cap at all — `#memoryInsert` was a bare `Map.set`, nothing
+  was ever closed, and `dispose()` deliberately kept the frames. It
+  survived three PRs because the perf test asserting the 512 MB cap
+  never imported any package code. If you touch the cache, add a test
+  that inserts past the cap and asserts frames were closed.
 - **The GGML on-device transcription engine (whisper-cpp) SIGILLs on
   CPUs without the SIMD instructions the build machine had.** Always
   build with `TRANSCRIBE_CMAKE_ARGS="-DGGML_NATIVE=OFF"` for portable

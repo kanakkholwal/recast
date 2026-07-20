@@ -16,6 +16,7 @@
 
 import type { Region } from './schedule';
 import { planAudioSchedule } from './schedule';
+import { MediaError } from '../errors';
 
 export interface AudioSchedulerConfig {
 	/** URL of the AudioWorklet processor module. Vite-friendly string or URL. */
@@ -29,8 +30,11 @@ export interface AudioScheduler {
 	/** True once the audio buffers + AudioContext are ready. */
 	readonly ready: boolean;
 
-	/** Load and decode the audio sources. Throws on no decodable tracks. */
-	load(urls: ReadonlyArray<string | null | undefined>): Promise<void>;
+	/**
+	 * Load and decode the audio sources. Throws on no decodable tracks.
+	 * `signal` aborts the fetch/decode loop; partial work is torn down.
+	 */
+	load(urls: ReadonlyArray<string | null | undefined>, signal?: AbortSignal): Promise<void>;
 
 	/** Start (or restart) playback from OUTPUT time `fromOutputTime`. */
 	play(regions: ReadonlyArray<Region>, fromOutputTime: number): Promise<void>;
@@ -49,6 +53,15 @@ export interface AudioScheduler {
 
 	/** True when this scheduler is using AudioWorklet (vs. the JS-thread fallback). */
 	readonly backend: 'worklet' | 'fallback';
+}
+
+/** Close an AudioContext without caring whether it was already closed. */
+async function closeQuietly(ctx: AudioContext): Promise<void> {
+	try {
+		await ctx.close();
+	} catch {
+		/* already closed */
+	}
 }
 
 class WorkletAudioScheduler implements AudioScheduler {
@@ -72,15 +85,15 @@ class WorkletAudioScheduler implements AudioScheduler {
 		return 'worklet';
 	}
 
-	async load(urls: ReadonlyArray<string | null | undefined>): Promise<void> {
+	async load(urls: ReadonlyArray<string | null | undefined>, signal?: AbortSignal): Promise<void> {
 		const Ctx: typeof AudioContext | undefined =
 			typeof AudioContext !== 'undefined'
 				? AudioContext
 				: ((globalThis as { webkitAudioContext?: typeof AudioContext })
 						.webkitAudioContext as typeof AudioContext | undefined);
-		if (!Ctx) throw new Error('Web Audio API unavailable');
+		if (!Ctx) throw new MediaError('unsupported', 'Web Audio API unavailable');
 		if (typeof Ctx.prototype.audioWorklet === 'undefined') {
-			throw new Error('AudioWorklet not supported in this WebView');
+			throw new MediaError('unsupported', 'AudioWorklet not supported in this WebView');
 		}
 
 		const ctx = new Ctx({ latencyHint: 'interactive' });
@@ -93,23 +106,27 @@ class WorkletAudioScheduler implements AudioScheduler {
 		const buffers: AudioBuffer[] = [];
 		for (const url of urls) {
 			if (!url) continue;
+			if (signal?.aborted) {
+				await closeQuietly(ctx);
+				throw new MediaError('cancelled', 'audio load aborted');
+			}
 			try {
-				const res = await fetch(url);
+				const res = await fetch(url, { signal });
 				if (!res.ok) continue;
 				const data = await res.arrayBuffer();
 				const buf = await ctx.decodeAudioData(data);
 				buffers.push(buf);
-			} catch {
-				/* skip */
+			} catch (err) {
+				if (signal?.aborted) {
+					await closeQuietly(ctx);
+					throw new MediaError('cancelled', 'audio load aborted', { cause: err });
+				}
+				/* skip undecodable track */
 			}
 		}
 		if (buffers.length === 0) {
-			try {
-				await ctx.close();
-			} catch {
-				/* ignore */
-			}
-			throw new Error('no decodable audio tracks');
+			await closeQuietly(ctx);
+			throw new MediaError('bad-input', 'no decodable audio tracks');
 		}
 
 		// Merge all decoded tracks into a single buffer (sum their channels).
@@ -231,36 +248,40 @@ class FallbackAudioScheduler implements AudioScheduler {
 		return 'fallback';
 	}
 
-	async load(urls: ReadonlyArray<string | null | undefined>): Promise<void> {
+	async load(urls: ReadonlyArray<string | null | undefined>, signal?: AbortSignal): Promise<void> {
 		const Ctx: typeof AudioContext | undefined =
 			typeof AudioContext !== 'undefined'
 				? AudioContext
 				: ((globalThis as { webkitAudioContext?: typeof AudioContext })
 						.webkitAudioContext as typeof AudioContext | undefined);
-		if (!Ctx) throw new Error('Web Audio API unavailable');
+		if (!Ctx) throw new MediaError('unsupported', 'Web Audio API unavailable');
 		const ctx = new Ctx();
 		const tracks: Array<{ buffer: AudioBuffer; gain: GainNode }> = [];
 		for (const url of urls) {
 			if (!url) continue;
+			if (signal?.aborted) {
+				await closeQuietly(ctx);
+				throw new MediaError('cancelled', 'audio load aborted');
+			}
 			try {
-				const res = await fetch(url);
+				const res = await fetch(url, { signal });
 				if (!res.ok) continue;
 				const data = await res.arrayBuffer();
 				const buffer = await ctx.decodeAudioData(data);
 				const gain = ctx.createGain();
 				gain.connect(ctx.destination);
 				tracks.push({ buffer, gain });
-			} catch {
-				/* skip */
+			} catch (err) {
+				if (signal?.aborted) {
+					await closeQuietly(ctx);
+					throw new MediaError('cancelled', 'audio load aborted', { cause: err });
+				}
+				/* skip undecodable track */
 			}
 		}
 		if (tracks.length === 0) {
-			try {
-				await ctx.close();
-			} catch {
-				/* ignore */
-			}
-			throw new Error('no decodable audio tracks');
+			await closeQuietly(ctx);
+			throw new MediaError('bad-input', 'no decodable audio tracks');
 		}
 		this.#ctx = ctx;
 		this.#tracks = tracks;

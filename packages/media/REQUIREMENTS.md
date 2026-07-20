@@ -63,6 +63,18 @@ export type { MediaErrorCode };
 `MediaErrorCode` is the closed union
 `{ unsupported, bad-input, decode-failed, worker-died, cancelled, internal, too-large }`.
 
+Two additional subpaths exist, both deliberately off the main barrel:
+
+```ts
+// @recast/media/playback — the decode worker + its main-thread proxy.
+// Lazily imported by `openMediaSource`; import directly only when you need
+// the lower-level sync `frameAt` surface (the editor's rAF loop does).
+export { MediabunnyVideoSource };
+
+// @recast/media/mediabunny — raw MediaBunny primitives, worker modules only.
+export { ALL_FORMATS, BlobSource, CanvasSink, Input, UrlSource };
+```
+
 ---
 
 ## 3. Performance budget (non-negotiable, merge-blocking)
@@ -187,8 +199,13 @@ article.
 
 - **No `mediabunny` import outside `packages/media`.** Direct imports are
   forbidden in consumer code.
-- **All exported async functions take an `AbortSignal`** so consumers can
-  cancel mid-flight.
+- **Every exported async function that does I/O or unbounded work takes an
+  `AbortSignal`.** Fetch/decode loops, worker round-trips and storage reads
+  MUST be cancellable and MUST release partial work (close the `AudioContext`,
+  dispose the worker) before rejecting with `MediaError('cancelled')`. Fast
+  local reads (`cacheStats`, `evictCache`) are exempt — a signal there is
+  ceremony, not safety. Amended 2026-07-20 from a blanket "all async exports"
+  rule that the code had never satisfied.
 - **All cancellable operations resolve only after resources are released.**
   No leaked `VideoFrame`s, `AudioBuffer`s, or `OffscreenCanvas`s.
 - **`VideoFrame` ownership** crosses the worker boundary to the consumer;
@@ -208,9 +225,17 @@ article.
   import only what they touch.
 - **The Rust export pipeline stays untouched.** `EnqueueExportRequest` IPC
   payload is byte-stable.
-- **Legacy code lives until PR-F.** `apps/desktop/src/lib/playback/
-  {webcodecs-source,webcodecs-worker,mp4-demux}.ts` and the `mp4box` dep are
-  deleted only after the cut-jump parity fixture is green (see PLAN.md).
+- **Raw MediaBunny primitives are exported ONLY from the
+  `@recast/media/mediabunny` subpath**, never the main barrel — a static
+  re-export on the barrel pulls the whole library into every consumer and
+  breaks both the tree-shaking rule above and the §3 bundle budgets. Worker
+  modules are the only sanctioned consumers of that subpath.
+- **A test that asserts a constant against itself is not a test.** Every
+  assertion in `test/perf/budgets.test.ts` must import and exercise package
+  code. If a budget row cannot be measured in Node, list it in the
+  "not enforced here" comment with the reason — do not write a placeholder
+  that passes vacuously. (The original file did exactly that for all twelve
+  rows and hid five runtime bugs for three PRs; see MIGRATION-LOG.md PR-G.)
 
 ---
 
