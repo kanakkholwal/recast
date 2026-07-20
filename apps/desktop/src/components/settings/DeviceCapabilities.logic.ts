@@ -1,5 +1,5 @@
 /** Pure OS/encoder derivation + copy for DeviceCapabilities. */
-import type { EncoderAvailability } from "$lib/ipc";
+import type { EncoderAvailability } from "$lib/ipc-types";
 
 export const PLATFORM_LABEL: Record<string, string> = {
 	windows: "Windows",

@@ -10,7 +10,7 @@
  */
 
 import type { CursorSampleLike } from "$lib/cursor/smoothing";
-import type { ZoomSuggestion } from "$lib/ipc";
+import type { ZoomSuggestion } from "$lib/ipc-types";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 
 // Asymmetric window: short lead-in, long hold. With the default 0.35 s ramps

@@ -1,6 +1,6 @@
 /** Geometry + preview-state kernels for the camera-preview window. */
 
-import type { CameraPreviewState } from "$lib/ipc";
+import type { CameraPreviewState } from "$lib/ipc-types";
 
 export type AspectKey = "1:1" | "4:3" | "16:9";
 export type ShapeKey = "square" | "rounded" | "circle";

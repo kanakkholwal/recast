@@ -3,6 +3,7 @@
 	"version": "0.0.1",
 	"private": true,
 	"type": "module",
+	"sideEffects": false,
 	"description": "Shared media-processing layer for Recast: wraps MediaBunny and the modern web platform (WebCodecs, Web Workers, AudioWorklet, IndexedDB, Streams) behind one opinionated, high-level API.",
 	"exports": {
 		".": {

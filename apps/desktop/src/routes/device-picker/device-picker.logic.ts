@@ -1,7 +1,7 @@
 /** URL params + device mapping/defaulting for the device-picker window. */
 
 import type { BrowserCamera } from "$lib/camera/browser-devices";
-import type { AudioDeviceInfo, CameraDeviceInfo } from "$lib/ipc";
+import type { AudioDeviceInfo, CameraDeviceInfo } from "$lib/ipc-types";
 
 export type DeviceType = "mic" | "camera";
 

@@ -7,7 +7,7 @@
  */
 
 import { safeStorage } from "@recast/ui/persisted-state";
-import type { AudioDeviceInfo } from "$lib/ipc";
+import type { AudioDeviceInfo } from "$lib/ipc-types";
 import type { BrowserCamera } from "$lib/camera/browser-devices";
 import { findCamera } from "$lib/camera/browser-devices";
 

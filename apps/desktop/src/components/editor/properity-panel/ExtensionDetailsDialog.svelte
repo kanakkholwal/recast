@@ -11,7 +11,7 @@
     ExtensionContributions,
     ExtensionManifest,
     InstalledExtension,
-  } from "$lib/ipc";
+  } from "$lib/ipc-types";
   import { extensionsStore } from "$lib/stores/extensions-store.svelte";
   import { buildContributionGroups } from "./extensions-panel.logic";
   import {

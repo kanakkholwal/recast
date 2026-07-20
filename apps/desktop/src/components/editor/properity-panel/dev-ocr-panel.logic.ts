@@ -11,7 +11,7 @@ import type {
 	ScreenElement,
 	ScreenStateSpan,
 	VideoTextTimeline,
-} from "$lib/ipc";
+} from "$lib/ipc-types";
 
 /** What the panel is doing. `idle` and `error` are panel states; the rest mirror the backend's phases. */
 export type RunStatus = "idle" | "running" | "ready" | "error";

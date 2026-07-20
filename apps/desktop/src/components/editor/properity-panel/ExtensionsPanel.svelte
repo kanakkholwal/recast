@@ -5,7 +5,7 @@
     toggleExtension,
     type RegistryIndexEntry,
   } from "$lib/extensions";
-  import type { InstalledExtension } from "$lib/ipc";
+  import type { InstalledExtension } from "$lib/ipc-types";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
   import { extensionsStore } from "$lib/stores/extensions-store.svelte";
   import {

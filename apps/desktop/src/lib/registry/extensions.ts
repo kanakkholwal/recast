@@ -14,7 +14,7 @@
  */
 
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { InstalledExtension } from "$lib/ipc";
+import type { InstalledExtension } from "$lib/ipc-types";
 import { log } from "$lib/logger";
 import { registry } from "./registry.svelte";
 import { extEntryId, type RegistryEntry } from "./types";

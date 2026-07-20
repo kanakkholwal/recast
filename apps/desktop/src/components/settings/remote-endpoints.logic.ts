@@ -4,7 +4,7 @@
  * building. Kept side-effect-free so it's unit-tested without a webview.
  */
 
-import type { RemoteAsrEndpoint } from "$lib/ipc";
+import type { RemoteAsrEndpoint } from "$lib/ipc-types";
 
 export interface EndpointForm {
 	id: string;

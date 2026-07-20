@@ -92,8 +92,10 @@ Regression on any row fails the build via
 | INP during playback | ≤ 100 ms | Scrub / cut / split must not block input |
 | Decoded-frame memory | ≤ 512 MB hard cap, LRU by GOP | Even at 100 GB source size |
 | IndexedDB cache | ≤ 2 GB hard cap (user-configurable in Settings; default 2 GB), LRU by recency × bytes | Re-scrub reuse |
-| `@recast/media` bundle — desktop | ≤ 80 KB gz | Direct imports only; tree-shake relies on this |
-| `@recast/media` bundle — web (incl. tools) | ≤ 150 KB gz | Tools need the conversion path |
+| `@recast/media` bundle — desktop | ≤ 80 KB gz | Editor preview surface: cache + errors + playback subpath |
+| `@recast/media` bundle — web page | ≤ 5 KB gz | `tools/client.ts` is types-only and spawns the worker lazily; nothing here blocks first paint |
+| `@recast/media` bundle — conversion worker | ≤ 220 KB gz | On-demand chunk, fetched only after the user starts a conversion. Pulls MediaBunny + gifenc + lamejs + fflate |
+| Package is side-effect-free | `sideEffects: false` | Without it a lone `MediaError` import cost 61 KB gz instead of 0.2 |
 | Worker isolation | decode + demux in Worker | Main thread never touches `VideoDecoder` |
 | Audio/video sync drift | ≤ 1 audio frame (~10 ms @ 48 kHz) over 10 min | AudioWorklet scheduling |
 
