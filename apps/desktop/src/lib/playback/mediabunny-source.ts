@@ -2,11 +2,7 @@
  * MediabunnyVideoSource: frame-accurate video decode for the editor preview,
  * backed by MediaBunny's `Input` + `CanvasSink` running in a Web Worker.
  *
- * Mirrors the public surface of `WebCodecsVideoSource` (see
- * `webcodecs-source.ts`) so `VideoPreview.svelte` can swap sources by
- * switching the import + a feature flag without touching call sites. The
- * shape:
- *
+ * Public surface (used by `VideoPreview.svelte`):
  *   - `static create(url, sizeBytes?): Promise<MediabunnyVideoSource>`
  *   - `frameAt(originalSec, floorSec?): VideoFrame | null`
  *   - `prefetch(originalSec): void`
@@ -14,17 +10,14 @@
  *   - readonly `width`, `height`, `durationSec`, `fps`, `ingestion`
  *   - `onFrame`, `onStats` callbacks
  *
- * PR-D landing strip: minimal working impl behind the `mbPreview` URL flag.
- *   - The worker holds MediaBunny `Input` + `CanvasSink` (off main thread).
- *   - The main thread caches `VideoFrame`s keyed by ctsUs (microseconds),
- *     mirroring the existing cache strategy. Cut-crossing math is
- *     identical.
- *   - Concurrency model: single in-flight seek at a time; new seeks
- *     supersede the previous one. PR-E layers an LRU cache.
+ * Worker ownership: the worker holds MediaBunny `Input` + `CanvasSink`
+ * (off main thread). The main thread caches `VideoFrame`s keyed by ctsUs
+ * (microseconds). New seeks supersede the previous in-flight one
+ * (drop stale frames).
  *
- * Frame ownership: `frameAt` returns a frame owned by the cache (same as
- * `WebCodecsVideoSource.frameAt`). Upload to WebGL, don't close it. The
- * cache evicts on `dispose()` and on resolution-aware eviction in PR-E.
+ * Frame ownership: `frameAt` returns a frame owned by the cache (upload
+ * to WebGL, do NOT close it). Eviction runs on `dispose()` and on
+ * resolution-aware budgets via the shared `@recast/media` cache.
  */
 
 import { type CacheableFrame, getFrameCache } from '@recast/media';

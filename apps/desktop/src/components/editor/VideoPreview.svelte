@@ -6,9 +6,7 @@
 	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 	import { PlaybackClock } from "$lib/playback/clock";
-	import { isMediabunnyPreviewEnabled } from "$lib/playback/feature-flag";
 	import { MediabunnyVideoSource } from "$lib/playback/mediabunny-source";
-	import { WebCodecsVideoSource } from "$lib/playback/webcodecs-source";
 	import {
 	  cursorSpriteHotspot,
 	  resolveBackgroundWireValue,
@@ -38,7 +36,7 @@
 	} from "./cursor-animation.logic";
 	import { buildGradientUniforms } from "./gradient.logic";
 	import {
-	  classifyWcError,
+	  classifyMbError,
 	  evaluateZoomAt,
 	  idleAlphaAt,
 	  interpolateCursor,
@@ -115,18 +113,18 @@
 	let bgTexReady = false;
 	let lastBgKey = "";
 
-	// Preview engine: either `WebCodecsVideoSource` (legacy, hand-rolled
-	// WebCodecs + mp4box pipeline — the default) or `MediabunnyVideoSource`
-	// (MediaBunny-backed, gated by the `?mbPreview=1` URL flag — opt-in for
-	// PR-D's landing strip). Both expose the same public surface so the rest
-	// of the draw loop is engine-agnostic. When active, the composite samples
+	// Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
+	// owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
 	// a frame WE decode, not the <video> element's pixels, so jumping over a
 	// cut never waits on the native seek. The <video> element still drives
-	// the clock and audio sync (hybrid). Not $state: read only from the
-	// imperative draw loop.
-	let wcSource: WebCodecsVideoSource | MediabunnyVideoSource | null = null;
-	let wcReady = false;
-	let loadedWcSrc = "";
+	// the clock and audio sync (hybrid). When `create` fails (MediaBunny
+	// can't decode the file — see `unsupported-formats.ts` for the list),
+	// `mbSource` stays null and the draw loop falls back to the `<video>`
+	// element automatically. Not $state: read only from the imperative
+	// draw loop.
+	let mbSource: MediabunnyVideoSource | null = null;
+	let mbReady = false;
+	let loadedMbSrc = "";
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
@@ -620,7 +618,7 @@
 		// (output→original feeds frame/cursor/zoom); the <video>/audio transport
 		// follows but is never read for the picture, so its seek stalls can't
 		// freeze playback. Legacy path: the <video> currentTime is the clock.
-		const usingPicClock = wcReady;
+		const usingPicClock = mbReady;
 		let playbackTime: number;
 		if (usingPicClock && store.isPlaying) {
 			// External scrub while playing: the timeline/controls set
@@ -692,7 +690,7 @@
 		// selector holds (never steps back) until that GOP decodes. Critically we
 		// must NOT decode through the removed region, which would flood the decoder.
 		if (
-			!wcReady &&
+			!mbReady &&
 			videoEl &&
 			store.isPlaying &&
 			activeCuts.length > 0
@@ -748,8 +746,8 @@
 		if (
 			usingPicClock &&
 			store.isPlaying &&
-			wcSource &&
-			wcReady &&
+			mbSource &&
+			mbReady &&
 			activeCuts.length > 0
 		) {
 			const lookaheadOrig = outputToOriginal(
@@ -759,7 +757,7 @@
 			const upcoming = activeCuts.find(
 				(c) => c.start > playbackTime && c.start <= lookaheadOrig,
 			);
-			if (upcoming) wcSource.prefetch(upcoming.end);
+			if (upcoming) mbSource.prefetch(upcoming.end);
 		}
 
 		// Get the frame into the texture. With the WebCodecs engine we sample a
@@ -767,7 +765,7 @@
 		// to the <video> element while the source is still demuxing or if a frame
 		// isn't ready yet, so the preview is never blank.
 		let haveFrame = false;
-		if (wcSource && wcReady) {
+		if (mbSource && mbReady) {
 			// Floor = start of the current kept segment = the end of the most recent
 			// cut at or before the playhead (0 if none). Frames before it belong to
 			// a prior segment (inside the removed range) and must not be shown, or
@@ -776,7 +774,7 @@
 			for (const c of activeCuts) {
 				if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
 			}
-			const f = wcSource.frameAt(Math.max(0, playbackTime), floorSec);
+			const f = mbSource.frameAt(Math.max(0, playbackTime), floorSec);
 			if (f) haveFrame = uploadFrameObject(f);
 			// No fresh in-segment frame yet (briefly, right after a cut while the
 			// post-cut GOP decodes): hold by re-rendering whatever is in videoTex.
@@ -1127,8 +1125,8 @@
 		if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 		smoother?.dispose();
 		smoother = null;
-		wcSource?.dispose();
-		wcSource = null;
+		mbSource?.dispose();
+		mbSource = null;
 		if (gl) {
 			if (videoTex) gl.deleteTexture(videoTex);
 			if (bgTex) gl.deleteTexture(bgTex);
@@ -1136,54 +1134,44 @@
 		}
 	});
 
-	// WebCodecs frame source (re)created when the media src changes. Owns its own
-	// worker + decoder; disposed and rebuilt per source. A demux/codec failure (or
-	// a WebView without WebCodecs) leaves wcSource null so draw() falls back to the
-	// <video> element automatically.
+	// MediaBunny frame source (re)created when the media src changes. Owns its own
+	// worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
+	// an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
+	// mbSource null so draw() falls back to the <video> element automatically.
 	$effect(() => {
 		const src = videoSrc;
 		// No src: tear down any live engine and fall back to the <video> path.
 		if (!src) {
-			if (wcSource) {
-				wcSource.dispose();
-				wcSource = null;
+			if (mbSource) {
+				mbSource.dispose();
+				mbSource = null;
 			}
-			wcReady = false;
+			mbReady = false;
 			webcodecsActive = false;
-			loadedWcSrc = "";
+			loadedMbSrc = "";
 			picClock.pause();
 			requestRedraw();
 			return;
 		}
-		if (src === loadedWcSrc) return;
-		loadedWcSrc = src;
-		wcReady = false;
+		if (src === loadedMbSrc) return;
+		loadedMbSrc = src;
+		mbReady = false;
 		webcodecsActive = false;
 		hasRenderedFrame = false;
 		lastPublishedTime = -1;
-		wcSource?.dispose();
-		wcSource = null;
+		mbSource?.dispose();
+		mbSource = null;
 		let cancelled = false;
-		// Engine selection: opt into the MediaBunny pipeline via the
-		// `?mbPreview=1` URL flag. The legacy WebCodecs engine is the default;
-		// see `feature-flag.ts` for the toggle surface.
-		const factory: (
-			url: string,
-			size?: number,
-		) => Promise<WebCodecsVideoSource | MediabunnyVideoSource> = isMediabunnyPreviewEnabled()
-			? (url, size) => MediabunnyVideoSource.create(url, size) as Promise<MediabunnyVideoSource>
-			: (url, size) => WebCodecsVideoSource.create(url, size);
-		factory(src, store.metadata?.sizeBytes)
+		MediabunnyVideoSource.create(src, store.metadata?.sizeBytes)
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();
 					return;
 				}
 				source.onFrame = () => requestRedraw();
-				// Telemetry: the engine initialised successfully (gates default-on).
-				// Consent-gated + no-op in dev inside the analytics client.
+				// Telemetry: the engine initialised successfully.
 				const tier = resolutionTier(source.width, source.height);
-				analytics.capture("webcodecs_preview_init", {
+				analytics.capture("mediabunny_preview_init", {
 					width: source.width,
 					height: source.height,
 					fps: Math.round(source.fps),
@@ -1192,7 +1180,7 @@
 				});
 				// One aggregate throughput sample, emitted when this source is disposed.
 				source.onStats = (s) => {
-					analytics.capture("webcodecs_preview_perf", {
+					analytics.capture("mediabunny_preview_perf", {
 						avg_fps: Math.round(s.avgFps),
 						min_fps: Math.round(s.minFps),
 						max_late_ms: Math.round(s.maxLateMs),
@@ -1202,11 +1190,11 @@
 						resolution: tier,
 					});
 				};
-				wcSource = source;
-				wcReady = true;
+				mbSource = source;
+				mbReady = true;
 				webcodecsActive = true;
 				// Seed the picture clock to the current transport so flipping onto
-				// the WebCodecs path (which may happen mid-playback, once demux
+				// the MediaBunny path (which may happen mid-playback, once demux
 				// finishes) doesn't jump.
 				picClock.setDuration(
 					originalToOutput(store.timeMap, store.outPoint),
@@ -1219,13 +1207,12 @@
 			})
 			.catch((err) => {
 				console.warn(
-					"WebCodecs source unavailable; using <video> fallback:",
+					"MediaBunny source unavailable; using <video> fallback:",
 					err,
 				);
-				// Telemetry: how often real users silently drop to <video>, and why.
-				// This is the fallback-rate half of the default-on decision.
-				analytics.capture("webcodecs_preview_fallback", {
-					reason: classifyWcError(err),
+				// Telemetry: how often real users silently drop to <video>.
+				analytics.capture("mediabunny_preview_fallback", {
+					reason: classifyMbError(err),
 				});
 			});
 		return () => {

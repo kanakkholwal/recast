@@ -64,8 +64,8 @@ class FakeWorker {
 				canvas: new OffscreenCanvas(1920, 1080),
 				width: 1920,
 				height: 1080,
-			} as unknown as MessageEvent,
-		});
+			},
+		} as unknown as MessageEvent);
 	}
 
 	/** All messages posted via `postMessage`. */
@@ -116,8 +116,8 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4');
 		// Static `create` resolves once the worker posts `ready`. The fake
 		// does this via `queueMicrotask`; let microtasks drain.
-		await new Promise((r) => queueMicrotask(r));
-		await new Promise((r) => queueMicrotask(r));
+		await new Promise<void>((r) => queueMicrotask(() => r()));
+		await new Promise<void>((r) => queueMicrotask(() => r()));
 		return src;
 	}
 
@@ -161,14 +161,14 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 
 		// Worker replies to the stale (first) seek.
 		worker.receiveFrame(seq1, 5.0);
-		await new Promise((r) => queueMicrotask(r));
+		await new Promise<void>((r) => queueMicrotask(() => r()));
 		// Stale frame dropped: inFlightSeq is still 2 (seq1 didn't match),
 		// so the cache is empty. We verify by checking the next receiveFrame
 		// is processed (seq2 matches inFlightSeq=2).
 
 		// Reply to the FRESH (still-in-flight) seek.
 		worker.receiveFrame(seq2, 12.0);
-		await new Promise((r) => queueMicrotask(r));
+		await new Promise<void>((r) => queueMicrotask(() => r()));
 		// Now the post-cut frame is cached at t=12.0.
 		expect(src.frameAt(12.0, 0)).not.toBeNull();
 		src.dispose();
@@ -180,7 +180,7 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 		const seek = worker.lastOfType('seek') as { seq: number } | undefined;
 		const seq = seek?.seq ?? -1;
 		worker.receiveFrame(seq, 8.5);
-		await new Promise((r) => queueMicrotask(r));
+		await new Promise<void>((r) => queueMicrotask(() => r()));
 		// Cached on the next call.
 		const cached = src.frameAt(8.5, 0);
 		expect(cached).not.toBeNull();

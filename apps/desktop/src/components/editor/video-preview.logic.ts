@@ -160,7 +160,7 @@ export function resolutionTier(w: number, h: number): string {
 
 // Map a source-init failure to a coarse, PII-safe reason. The raw message can
 // in principle carry a URL/path, so we NEVER send it; only this enum.
-export function classifyWcError(err: unknown): string {
+export function classifyMbError(err: unknown): string {
 	const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
 	if (m.includes("unavailable") || m.includes("worker") || m.includes("videoframe"))
 		return "unsupported";

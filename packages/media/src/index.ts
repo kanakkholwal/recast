@@ -80,6 +80,17 @@ export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
 export { estimateFrameBytes } from './cache/storage';
 export type { CacheableFrame, FrameStorage } from './cache/storage';
 
+// Formats MediaBunny (and the legacy webcodecs+mp4box pipeline) cannot
+// decode. The desktop preview falls back to the <video> element when the
+// input matches an entry. The list lives in `cache/unsupported-formats.ts`
+// and is pinned by `test/unsupported-formats.test.ts`.
+export {
+	UNSUPPORTED_FORMATS,
+	isUnsupportedContainer,
+	isUnsupportedCodec,
+} from './cache/unsupported-formats';
+export type { UnsupportedFormat } from './cache/unsupported-formats';
+
 // MediaBunny primitives re-exported so worker code living outside
 // `packages/media` can compose them through this package without a direct
 // mediabunny import. Worker code is the only allowed outside consumer;

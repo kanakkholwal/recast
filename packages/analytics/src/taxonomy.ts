@@ -40,12 +40,13 @@ export const ANALYTICS_EVENTS = [
 	"sign_out",
 	"consent_granted",
 	"consent_revoked",
-	// Experimental WebCodecs preview engine — the signal that gates default-on:
-	// init-success / fallback-rate / decode-fps, dimensioned by OS (PostHog's
-	// auto `$os`) + resolution. Drop these once the engine graduates.
-	"webcodecs_preview_init",
-	"webcodecs_preview_fallback",
-	"webcodecs_preview_perf",
+	// Preview engine telemetry — the signal that gates default-on and measures
+	// decode throughput / fallback-rate, dimensioned by OS (PostHog's auto
+	// `$os`) + resolution. The legacy webcodecs+mp4box pipeline was removed
+	// in PR-F; the events now describe the MediaBunny-backed pipeline.
+	"mediabunny_preview_init",
+	"mediabunny_preview_fallback",
+	"mediabunny_preview_perf",
 ] as const;
 
 export type AnalyticsEvent = (typeof ANALYTICS_EVENTS)[number];
@@ -122,7 +123,7 @@ export interface EventPropMap {
 		height?: number;
 		fps?: number;
 	};
-	webcodecs_preview_init: {
+	mediabunny_preview_init: {
 		width?: number;
 		height?: number;
 		fps?: number;
@@ -131,11 +132,11 @@ export interface EventPropMap {
 		/** Ingestion strategy chosen for this source. */
 		ingestion?: "whole" | "progressive";
 	};
-	webcodecs_preview_fallback: {
+	mediabunny_preview_fallback: {
 		/** Classified reason — never the raw error (no paths/PII). */
 		reason?: string;
 	};
-	webcodecs_preview_perf: {
+	mediabunny_preview_perf: {
 		/** Decoded frames/sec, averaged over the playback windows of this source. */
 		avg_fps?: number;
 		min_fps?: number;
