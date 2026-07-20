@@ -44,6 +44,11 @@ export class AudioTimelineEngine {
 	#muted = false;
 	#trackVolumes: Record<AudioTrackKind, number> = { system: 1, mic: 1 };
 	#trackMuted: Record<AudioTrackKind, boolean> = { system: false, mic: false };
+	// Anchor mapping output time onto the audio hardware clock, so the picture
+	// can follow audio instead of free-running on a second, drifting clock.
+	#anchorCtxTime = 0;
+	#anchorOutputTime = 0;
+	#scheduled = false;
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[]) {
 		this.#ctx = ctx;
@@ -100,8 +105,9 @@ export class AudioTimelineEngine {
 	 *  mute only the mic. */
 	#applyGains(): void {
 		for (const t of this.#tracks) {
-			const trackVol = this.#muted || this.#trackMuted[t.kind] ? 0 : this.#trackVolumes[t.kind];
-			t.gain.gain.value = this.#muted ? 0 : this.#volume * trackVol;
+			// Master mute short-circuits; otherwise master × per-track gain.
+			const muted = this.#muted || this.#trackMuted[t.kind];
+			t.gain.gain.value = muted ? 0 : this.#volume * this.#trackVolumes[t.kind];
 		}
 	}
 
@@ -139,6 +145,9 @@ export class AudioTimelineEngine {
 	#schedule(regions: ReadonlyArray<Region>, from: number): void {
 		this.#stopActive();
 		const now = this.#ctx.currentTime;
+		this.#anchorCtxTime = now;
+		this.#anchorOutputTime = from;
+		this.#scheduled = true;
 		const chunks = planAudioSchedule(regions, from);
 		for (const t of this.#tracks) {
 			const bufDur = t.buffer.duration;
@@ -179,6 +188,17 @@ export class AudioTimelineEngine {
 	/** Stop all sound; keep buffers for the next play. */
 	pause(): void {
 		this.#stopActive();
+		this.#scheduled = false;
+	}
+
+	/**
+	 * Output-time position according to the audio hardware clock, or null when
+	 * nothing is scheduled. Output time advances 1:1 with the audio clock —
+	 * per-segment speed is folded into each chunk's offset, not its start time.
+	 */
+	get positionOutputSec(): number | null {
+		if (!this.#scheduled) return null;
+		return this.#anchorOutputTime + (this.#ctx.currentTime - this.#anchorCtxTime);
 	}
 
 	/**
@@ -191,6 +211,7 @@ export class AudioTimelineEngine {
 
 	dispose(): void {
 		this.#stopActive();
+		this.#scheduled = false;
 		this.#tracks = [];
 		try {
 			void this.#ctx.close();

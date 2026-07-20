@@ -273,3 +273,57 @@ describe('cache factory', () => {
 		expect(() => resetFrameCache()).not.toThrow();
 	});
 });
+/**
+ * `readNearest` is what playback actually calls. Frame timestamps land on
+ * presentation times while the render loop asks for arbitrary microseconds, so
+ * an exact-match lookup misses every time — the bug that painted 0/120 frames.
+ */
+describe("FrameCache.readNearest", () => {
+	function seeded() {
+		const cache = new FrameCache({ storage: new MemoryFrameStorage() });
+		// Frames at 0ms, 33ms, 66ms, 99ms (µs keys).
+		for (const ms of [0, 33, 66, 99]) cache.write(ms * 1000, fakeFrame(64, 64), false);
+		return cache;
+	}
+
+	it("returns the newest frame at or before the asked time", () => {
+		const cache = seeded();
+		expect(cache.readNearest(50_000)).toBe(cache.readMemory(33_000));
+		expect(cache.readNearest(99_999)).toBe(cache.readMemory(99_000));
+	});
+
+	it("returns an exact hit when the key matches", () => {
+		const cache = seeded();
+		expect(cache.readNearest(66_000)).toBe(cache.readMemory(66_000));
+	});
+
+	it("returns null before the first frame", () => {
+		expect(seeded().readNearest(-1)).toBeNull();
+	});
+
+	it("never returns a frame older than the segment floor", () => {
+		// Playhead just past a cut ending at 66ms: 33ms is inside the removed
+		// range, so returning it would step the picture back into cut content.
+		const cache = seeded();
+		expect(cache.readNearest(70_000, 66_000)).toBe(cache.readMemory(66_000));
+		expect(cache.readNearest(50_000, 66_000)).toBeNull();
+	});
+
+	it("keeps the index correct after eviction", () => {
+		const frameBytes = 64 * 64 * 4;
+		const cache = new FrameCache({
+			storage: new MemoryFrameStorage(),
+			memoryCapBytes: frameBytes * 2,
+		});
+		for (const ms of [0, 33, 66, 99]) cache.write(ms * 1000, fakeFrame(64, 64), false);
+		// Oldest two evicted; a lookup below the survivors must not resurrect them.
+		expect(cache.readNearest(10_000)).toBeNull();
+		expect(cache.readNearest(99_000)).not.toBeNull();
+	});
+
+	it("drops the index when the scope changes", () => {
+		const cache = seeded();
+		cache.setScope("recording-b");
+		expect(cache.readNearest(99_000)).toBeNull();
+	});
+});

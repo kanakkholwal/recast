@@ -7,6 +7,8 @@
 import type { IconComponent } from "../types";
 
 // Outline icons (the 90% case).
+export {IconLayout2Filled  as Layout2Filled} from "@tabler/icons-svelte";
+export {IconLayout2   as Layout2} from "@tabler/icons-svelte";
 export { IconActivity as Activity } from "@tabler/icons-svelte";
 export { IconActivity as ActivityIcon } from "@tabler/icons-svelte";
 export { IconAlertCircle as AlertCircle } from "@tabler/icons-svelte";

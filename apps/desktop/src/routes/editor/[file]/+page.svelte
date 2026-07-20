@@ -1738,6 +1738,7 @@
               onReady={handleVideoReady}
               onError={handleVideoError}
               onSeeked={handleVideoSeeked}
+              audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
             />
           </div>
           <VideoPlayerControls

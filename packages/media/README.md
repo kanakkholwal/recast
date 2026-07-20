@@ -13,9 +13,9 @@ preview pipeline and the web app's conversion tools.
 1. **[`REQUIREMENTS.md`](./REQUIREMENTS.md)** — the non-negotiable contract:
    public API surface, performance budgets, curated web.dev guides,
    implementation rules, browser API surface, testing contract.
-2. **[`PLAN.md`](./PLAN.md)** — the migration plan from the current desktop
-   preview stack (hand-rolled WebCodecs + `mp4box`) to MediaBunny on a Worker,
-   including per-milestone testing gates.
+2. **[`MIGRATION-LOG.md`](./MIGRATION-LOG.md)** — what shipped, PR by PR, and
+   the defects found auditing it. Read PR-G onward before trusting any claim
+   that a part of this package is "done".
 3. **AGENTS.md** (root) §2 rule 12 and §4.x — the project-wide rules this
    package enforces.
 

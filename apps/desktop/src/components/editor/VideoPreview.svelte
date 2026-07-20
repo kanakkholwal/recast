@@ -6,7 +6,8 @@
 	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 	import { PlaybackClock } from "$lib/playback/clock";
-	import { MediabunnyVideoSource } from "@recast/media/playback";
+	import type { MediabunnyVideoSource } from "@recast/media/playback";
+	import { createMediabunnySource } from "$lib/playback/mediabunny";
 	import {
 	  cursorSpriteHotspot,
 	  resolveBackgroundWireValue,
@@ -44,6 +45,7 @@
 	  type CursorSampleJS,
 	  type IdlePeriodJS,
 	} from "./video-preview.logic";
+	import { resolveAvSync } from "$lib/playback/av-sync";
 	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
 	import { compile, link } from "./webgl.logic";
 
@@ -75,6 +77,10 @@
 		 *  encode fails. Bind in the parent so other UI (player controls
 		 *  copy-to-clipboard button) can trigger it. */
 		captureFrame?: () => Promise<Blob | null>;
+		/** Output-time position of the audio clock, or null when audio isn't
+		 *  scheduled. The picture clock re-anchors onto it past the perceptual
+		 *  drift threshold — two independent clocks otherwise separate. */
+		audioPositionSec?: () => number | null;
 	}
 
 	let {
@@ -91,6 +97,7 @@
 		onSeeked,
 		webcodecsActive = $bindable(false),
 		captureFrame = $bindable(),
+		audioPositionSec,
 	}: Props = $props();
 
 	let canvasEl: HTMLCanvasElement | null = $state(null);
@@ -130,6 +137,8 @@
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
 	let hasRenderedFrame = false;
+	/** Worst |video − audio| seen this session; reported with the perf sample. */
+	let maxAvDriftSec = 0;
 	// Last original time published to store.currentTime. Throttled because the write
 	// fans out to overlays/timeline/waveform; every-rAF writes starve frame delivery.
 	let lastPublishedTime = -1;
@@ -634,6 +643,15 @@
 				lastPublishedTime = store.currentTime;
 				endHandled = false;
 			}
+			// Audio runs on the sound card's clock, the picture on wall time. Pull
+			// the picture back onto audio once the gap is perceptible.
+			const sync = resolveAvSync({
+				videoTime: picClock.time,
+				audioTime: audioPositionSec?.() ?? null,
+				playing: true,
+			});
+			maxAvDriftSec = Math.max(maxAvDriftSec, Math.abs(sync.driftSec));
+			if (sync.resync) picClock.seek(sync.target);
 			// Playing: the gapless output clock is the master.
 			playbackTime = outputToOriginal(store.timeMap, picClock.time);
 			// Reached the end of the edited timeline → stop cleanly. The clock
@@ -1170,13 +1188,25 @@
 		mbSource?.dispose();
 		mbSource = null;
 		let cancelled = false;
-		MediabunnyVideoSource.create(src, store.metadata?.sizeBytes)
+		createMediabunnySource(src)
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();
 					return;
 				}
 				source.onFrame = () => requestRedraw();
+				// A dead decode run freezes the picture. Hand back to <video>,
+				// which is worse quality but still moves.
+				source.onError = (err) => {
+					if (mbSource !== source) return;
+					console.error("MediaBunny decode failed mid-playback; falling back", err);
+					analytics.capture("mediabunny_preview_fallback", { reason: err.code });
+					mbReady = false;
+					webcodecsActive = false;
+					mbSource = null;
+					source.dispose();
+					requestRedraw();
+				};
 				// Telemetry: the engine initialised successfully.
 				const tier = resolutionTier(source.width, source.height);
 				analytics.capture("mediabunny_preview_init", {
@@ -1192,6 +1222,7 @@
 						avg_fps: Math.round(s.avgFps),
 						min_fps: Math.round(s.minFps),
 						max_late_ms: Math.round(s.maxLateMs),
+						max_av_drift_ms: Math.round(maxAvDriftSec * 1000),
 						width: source.width,
 						height: source.height,
 						fps: Math.round(source.fps),

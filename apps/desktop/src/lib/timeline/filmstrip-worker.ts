@@ -103,9 +103,9 @@ async function decodeRequests(requests: Array<{ id: number; originalSec: number 
 			const src = wrapped.canvas as OffscreenCanvas;
 			const blob = await canvasToJpeg(src);
 			if (disposed) return;
-			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height }, [
-				blob,
-			]);
+			// A Blob is structured-cloneable but NOT transferable; listing it
+			// throws and loses the whole tile.
+			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height });
 		} catch (err) {
 			post({
 				type: 'error',
@@ -155,19 +155,16 @@ async function buildStoryboard(): Promise<void> {
 			ctx2d.drawImage(src, col * cellW, row * cellH, cellW, cellH);
 		}
 		const blob = await sprite.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
-		post(
-			{
-				type: 'storyboard',
-				blob,
-				cols,
-				rows,
-				cellW,
-				cellH,
-				count,
-				durationSec: videoDurationSec,
-			},
-			[blob],
-		);
+		post({
+			type: 'storyboard',
+			blob,
+			cols,
+			rows,
+			cellW,
+			cellH,
+			count,
+			durationSec: videoDurationSec,
+		});
 	} catch (err) {
 		post({
 			type: 'error',

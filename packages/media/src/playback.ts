@@ -89,12 +89,15 @@ export interface PlaybackSource {
 
 /**
  * Open `source` as a worker-bridged playback source. URL only for now; wrap
- * `Blob`/`File` with `URL.createObjectURL`. The worker loads lazily.
+ * `Blob`/`File` with `URL.createObjectURL`. `createWorker` is supplied by the
+ * host app so the worker URL resolves against its root — see
+ * `MediabunnySourceOptions`.
  */
 export async function openMediaSource(
 	source: MediaSource,
-	signal?: AbortSignal,
+	options: { createWorker: () => Worker; signal?: AbortSignal },
 ): Promise<PlaybackSource> {
+	const { signal } = options;
 	if (signal?.aborted) throw new MediaError('cancelled', 'openMediaSource aborted');
 	const url = typeof source === 'string' ? source : null;
 	if (!url) {
@@ -104,7 +107,7 @@ export async function openMediaSource(
 		);
 	}
 	const { MediabunnyVideoSource } = await import('./playback/index');
-	const impl = await MediabunnyVideoSource.create(url);
+	const impl = await MediabunnyVideoSource.create(url, { createWorker: options.createWorker });
 	if (signal?.aborted) {
 		impl.dispose();
 		throw new MediaError('cancelled', 'openMediaSource aborted');

@@ -113,7 +113,9 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 	});
 
 	async function buildSource(): Promise<MediabunnyVideoSource> {
-		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4');
+		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4', {
+			createWorker: () => worker as unknown as Worker,
+		});
 		// Static `create` resolves once the worker posts `ready`. The fake
 		// does this via `queueMicrotask`; let microtasks drain.
 		await new Promise<void>((r) => queueMicrotask(() => r()));

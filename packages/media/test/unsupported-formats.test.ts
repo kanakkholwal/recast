@@ -83,13 +83,16 @@ describe('isUnsupportedContainer / isUnsupportedCodec helpers', () => {
 describe('MediabunnyVideoSource rejects known-bad containers up front', () => {
 	it('throws unsupported for an .avi URL without spawning a worker', async () => {
 		let spawned = 0;
-		vi.stubGlobal('Worker', function () {
+		vi.stubGlobal('Worker', class {} as unknown as typeof Worker);
+		vi.stubGlobal('VideoFrame', class {} as unknown as typeof VideoFrame);
+		const createWorker = () => {
 			spawned++;
 			return {} as unknown as Worker;
-		} as unknown as typeof Worker);
-		vi.stubGlobal('VideoFrame', class {} as unknown as typeof VideoFrame);
+		};
 		try {
-			await expect(MediabunnyVideoSource.create('asset://x/clip.avi')).rejects.toMatchObject({
+			await expect(
+				MediabunnyVideoSource.create('asset://x/clip.avi', { createWorker }),
+			).rejects.toMatchObject({
 				code: 'unsupported',
 			});
 			expect(spawned).toBe(0);

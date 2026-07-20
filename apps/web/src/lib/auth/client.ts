@@ -6,6 +6,8 @@ import {
 	organizationClient,
 } from "better-auth/client/plugins";
 import { createAuthClient } from "better-auth/svelte";
+import { browser } from "$app/environment";
+import { publicEnv } from "$lib/env/public";
 
 /**
  * Better Auth client. Backed by /api/auth/* (mounted by
@@ -27,7 +29,27 @@ import { createAuthClient } from "better-auth/svelte";
  * Reactive session: `authClient.useSession()` returns a Svelte store with
  * `data` / `isPending` / `error`.
  */
+/**
+ * Always resolved here, never left for Better Auth to guess.
+ *
+ * Given no `baseURL`, `getBaseURL()` falls back to scanning env — BETTER_AUTH_URL,
+ * NEXT_PUBLIC_BETTER_AUTH_URL, PUBLIC_BETTER_AUTH_URL, NUXT_*, BASE_URL — and
+ * runs the first hit through `new URL()`, throwing if it has no scheme. This
+ * module is imported by the root layout, so that throw happens at module scope
+ * on *every* page, which during prerendering meant a 500 on every page under
+ * /blog and /tools. Note it bypasses `serverEnv()` entirely, so the env schema
+ * never gets a chance to reject the bad value first.
+ *
+ * The client only ever calls its own origin's /api/auth, so:
+ *  - browser: the live origin, which keeps preview deployments talking to
+ *    themselves instead of to production.
+ *  - server (SSR/prerender): PUBLIC_APP_URL, which the schema has already
+ *    validated as a URL and defaults to a valid one when unset.
+ */
+const baseURL = browser ? window.location.origin : publicEnv().PUBLIC_APP_URL;
+
 export const authClient = createAuthClient({
+	baseURL,
 	plugins: [
 		magicLinkClient(),
 		adminClient(),

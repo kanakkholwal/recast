@@ -29,7 +29,6 @@ type SeekMessage = { type: 'seek'; seq: number; originalSec: number };
 /** Playhead advanced normally; feeds decode-ahead backpressure, never seeks. */
 type PlayheadMessage = { type: 'playhead'; originalSec: number };
 type PrefetchMessage = { type: 'prefetch'; seq: number; originalSec: number; lookaheadSec?: number };
-type CancelMessage = { type: 'cancel'; seq?: number };
 type DisposeMessage = { type: 'dispose' };
 
 export type ToMediabunnyWorker =
@@ -37,7 +36,6 @@ export type ToMediabunnyWorker =
 	| SeekMessage
 	| PlayheadMessage
 	| PrefetchMessage
-	| CancelMessage
 	| DisposeMessage;
 
 type ReadyMessage = {
@@ -64,10 +62,12 @@ type ErrorMessage = { type: 'error'; code: MediabunnyErrorCode; message: string 
 
 export type FromMediabunnyWorker = ReadyMessage | FrameMessage | ErrorMessage;
 
-const ctx = self as unknown as DedicatedWorkerGlobalScope;
+/** Bound by `startMediabunnyWorker`, so importing this module outside a
+ *  worker (tooling, tests) doesn't touch `self` at evaluation time. */
+let ctx: DedicatedWorkerGlobalScope | null = null;
 
 function post(msg: FromMediabunnyWorker, transfer: Transferable[] = []): void {
-	ctx.postMessage(msg, transfer);
+	ctx?.postMessage(msg, transfer);
 }
 
 let input: Input | null = null;
@@ -118,9 +118,10 @@ async function init(url: string): Promise<void> {
 		// metadata loads); prefer the async variant for the ready payload.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
-		// Pool sized for the streaming run: too small and the generator stalls
-		// waiting for a canvas to be recycled.
-		sink = new CanvasSink(track, { fit: 'contain', poolSize: 8 });
+		// NO pool. Pooled canvases are recycled round-robin, but we TRANSFER
+		// each one to the main thread, which detaches it — the sink then draws
+		// into a detached canvas and the run dies ~poolSize frames in.
+		sink = new CanvasSink(track, { fit: 'contain' });
 		// Real rate, not a hardcoded 30: the source derives each frame's
 		// duration from it, and telemetry cohorts on it.
 		let fps = 30;
@@ -243,7 +244,17 @@ function dispose(): void {
 	}
 }
 
-ctx.onmessage = (e: MessageEvent<ToMediabunnyWorker>) => {
+/**
+ * Install the decode RPC on this worker's global scope. Called by the host
+ * app's worker entry module — the package never spawns the worker itself, so
+ * the `new Worker(new URL(...))` URL always resolves against the app's root.
+ */
+export function startMediabunnyWorker(): void {
+	ctx = self as unknown as DedicatedWorkerGlobalScope;
+	ctx.onmessage = handleMessage;
+}
+
+function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 	const msg = e.data;
 	switch (msg.type) {
 		case 'init':
@@ -256,6 +267,11 @@ ctx.onmessage = (e: MessageEvent<ToMediabunnyWorker>) => {
 		case 'seek':
 			// A jump: supersede the current run and decode from the new point.
 			prefetchedSec = Number.NaN;
+			// Supersede BEFORE waking. A run parked on backpressure only
+			// re-checks runId once woken, so waking it first just re-parks it,
+			// and it holds its VideoDecoder until some unrelated later message.
+			runId++;
+			notifyPlayhead();
 			void runFrom(msg.seq, msg.originalSec);
 			return;
 		case 'playhead':
@@ -266,12 +282,8 @@ ctx.onmessage = (e: MessageEvent<ToMediabunnyWorker>) => {
 		case 'prefetch':
 			void prefetch(msg.seq, msg.originalSec);
 			return;
-		case 'cancel':
-			runId++;
-			notifyPlayhead();
-			return;
 		case 'dispose':
 			dispose();
 			return;
 	}
-};
+}
