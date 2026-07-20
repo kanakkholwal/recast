@@ -2,62 +2,96 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Drives the REAL decode worker against a mocked MediaBunny. The source-side
- * harness could never catch this class of bug: it stubs the worker, so
- * anything about how the worker uses the sink was invisible to it.
+ * harness could never catch this class of bug: it stubs the worker, so anything
+ * about how the worker uses the sink was invisible to it.
  *
- * The mock enforces MediaBunny's actual canvas contract — a pooled canvas is
- * recycled round-robin, and drawing into one we transferred away (which
- * detaches it) throws.
+ * The mock enforces MediaBunny's actual ownership contract — `toVideoFrame()`
+ * hands out a frame that must be closed separately from the sample it came
+ * from, and both are limited decoder surfaces.
  */
 
-/** Stand-in for an OffscreenCanvas that a `postMessage` transfer detaches. */
-class FakeCanvas {
-	detached = false;
+class FakeVideoFrame {
+	closed = false;
 	constructor(
-		readonly id: number,
-		readonly width = 1920,
-		readonly height = 1080,
+		readonly codedWidth: number,
+		readonly codedHeight: number,
 	) {}
-	draw(): void {
-		if (this.detached) throw new Error(`canvas ${this.id} is detached`);
+	close() {
+		this.closed = true;
 	}
 }
 
-let pool: FakeCanvas[] = [];
-let poolSize = 0;
-let nextCanvasId = 0;
+class FakeSample {
+	closed = false;
+	readonly frames: FakeVideoFrame[] = [];
+	constructor(
+		readonly timestamp: number,
+		private readonly w: number,
+		private readonly h: number,
+	) {}
+	toVideoFrame(): FakeVideoFrame {
+		const f = new FakeVideoFrame(this.w, this.h);
+		this.frames.push(f);
+		openFrames.add(f);
+		return f;
+	}
+	close() {
+		this.closed = true;
+		openSamples.delete(this);
+	}
+}
+
+let openSamples = new Set<FakeSample>();
+let openFrames = new Set<FakeVideoFrame>();
 let framesAvailable = 0;
-
-/** Generators still running; a superseded run must not stay in here. */
+let canDecode = true;
+let videoWidth = 1920;
+let videoHeight = 1080;
 let liveRuns = 0;
+/** Highest number of decode runs alive at once — each holds its own decoder. */
+let peakRuns = 0;
 
-/** Yields `framesAvailable` frames at 60fps, honouring `poolSize` like the real sink. */
-async function* fakeCanvases(startTimestamp = 0) {
+/** Decoder startup before the first sample appears. That real cost is why a
+ *  superseded run cannot notice it has been replaced. */
+const DECODER_STARTUP_MS = 25;
+
+/**
+ * Mirrors MediaBunny's hand-rolled iterator rather than a native async
+ * generator. The distinction is the whole point: its `return()` marks the run
+ * terminated IMMEDIATELY, even while `next()` is still awaiting decoder
+ * startup. A native generator defers that until the pending await resolves,
+ * which hides the bug this models.
+ */
+function fakeSamples(startTimestamp = 0) {
 	liveRuns++;
-	try {
-		yield* emitFrames(startTimestamp);
-	} finally {
-		// MediaBunny closes the run's VideoDecoder in the generator's return
-		// path, so "generator finished" is the proxy for "decoder released".
+	if (liveRuns > peakRuns) peakRuns = liveRuns;
+	let i = 0;
+	let terminated = false;
+	const release = () => {
+		if (terminated) return;
+		terminated = true;
 		liveRuns--;
-	}
-}
-
-async function* emitFrames(startTimestamp: number) {
-	for (let i = 0; i < framesAvailable; i++) {
-		let canvas: FakeCanvas;
-		if (poolSize > 0) {
-			const slot = i % poolSize;
-			canvas = pool[slot] ?? new FakeCanvas(nextCanvasId++);
-			pool[slot] = canvas;
-		} else {
-			canvas = new FakeCanvas(nextCanvasId++);
-		}
-		// The sink always writes the decoded frame into the canvas it hands
-		// out. This is the step that throws once we've transferred it away.
-		canvas.draw();
-		yield { canvas, timestamp: startTimestamp + i / 60, duration: 1 / 60 };
-	}
+	};
+	return {
+		async next() {
+			if (i === 0) await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS));
+			if (terminated || i >= framesAvailable) {
+				release();
+				return { value: undefined as unknown as FakeSample, done: true };
+			}
+			const s = new FakeSample(startTimestamp + i / 60, videoWidth, videoHeight);
+			openSamples.add(s);
+			i++;
+			return { value: s, done: false };
+		},
+		async return() {
+			release();
+			return { value: undefined as unknown as FakeSample, done: true };
+		},
+		[Symbol.asyncIterator]() {
+			return this;
+		},
+	};
 }
 
 vi.mock('mediabunny', () => ({
@@ -65,20 +99,14 @@ vi.mock('mediabunny', () => ({
 	UrlSource: class {
 		constructor(readonly url: string) {}
 	},
-	CanvasSink: class {
-		constructor(
-			_track: unknown,
-			readonly options: { poolSize?: number },
-		) {
-			poolSize = options?.poolSize ?? 0;
-			pool = [];
+	VideoSampleSink: class {
+		samples(startTimestamp?: number) {
+			return fakeSamples(startTimestamp ?? 0);
 		}
-		canvases(startTimestamp?: number) {
-			return fakeCanvases(startTimestamp ?? 0);
-		}
-		async getCanvas(timestamp: number) {
-			const canvas = new FakeCanvas(nextCanvasId++);
-			return { canvas, timestamp, duration: 1 / 60 };
+		async getSample(timestamp: number) {
+			const s = new FakeSample(timestamp, videoWidth, videoHeight);
+			openSamples.add(s);
+			return s;
 		}
 	},
 	Input: class {
@@ -87,9 +115,11 @@ vi.mock('mediabunny', () => ({
 		}
 		async getPrimaryVideoTrack() {
 			return {
-				getCodedWidth: async () => 1920,
-				getCodedHeight: async () => 1080,
+				getCodedWidth: async () => videoWidth,
+				getCodedHeight: async () => videoHeight,
 				computePacketStats: async () => ({ averagePacketRate: 60 }),
+				canDecode: async () => canDecode,
+				getCodec: async () => 'hevc',
 			};
 		}
 		async computeDuration() {
@@ -101,22 +131,24 @@ vi.mock('mediabunny', () => ({
 
 type Posted = { msg: { type: string; [k: string]: unknown }; transfer: unknown[] };
 
-describe('decode run against MediaBunny canvas semantics', () => {
+describe('decode run against MediaBunny sample semantics', () => {
 	let posted: Posted[];
 	let onmessage: ((e: { data: unknown }) => void) | null;
 
 	beforeEach(() => {
 		posted = [];
 		onmessage = null;
-		nextCanvasId = 0;
 		framesAvailable = 30;
+		canDecode = true;
+		videoWidth = 1920;
+		videoHeight = 1080;
 		liveRuns = 0;
+		peakRuns = 0;
+		openSamples = new Set();
+		openFrames = new Set();
 		const fakeSelf = {
 			postMessage(msg: unknown, transfer: unknown[] = []) {
 				posted.push({ msg: msg as Posted['msg'], transfer });
-				// A transferred canvas is detached in the sender, exactly as
-				// the structured-clone algorithm does it.
-				for (const t of transfer) if (t instanceof FakeCanvas) t.detached = true;
 			},
 			set onmessage(h: (e: { data: unknown }) => void) {
 				onmessage = h;
@@ -128,7 +160,11 @@ describe('decode run against MediaBunny canvas semantics', () => {
 		vi.stubGlobal('self', fakeSelf);
 	});
 
-	afterEach(() => {
+	afterEach(async () => {
+		// Stop any run still in flight, or it posts frames into the next test's
+		// buffer — the worker module outlives the per-test globals.
+		onmessage?.({ data: { type: 'dispose' } });
+		await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS * 2));
 		vi.unstubAllGlobals();
 		vi.resetModules();
 	});
@@ -140,54 +176,90 @@ describe('decode run against MediaBunny canvas semantics', () => {
 		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === 'ready')).toBe(true));
 	}
 
-	it('streams every frame without the sink drawing into a transferred canvas', async () => {
+	const frames = () => posted.filter((p) => p.msg.type === 'frame');
+
+	it('streams frames and transfers each one', async () => {
 		await boot();
 		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
-		await vi.waitFor(() =>
-			expect(posted.filter((p) => p.msg.type === 'frame').length).toBe(framesAvailable),
-		);
-		const errors = posted.filter((p) => p.msg.type === 'error');
-		expect(errors, `decode run died: ${JSON.stringify(errors[0]?.msg)}`).toEqual([]);
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
+		expect(posted.filter((p) => p.msg.type === 'error')).toEqual([]);
+		// Every frame must be in its message's transfer list, or it is structured-
+		// cloned (a full copy) instead of moved.
+		for (const p of frames()) expect(p.transfer).toContain(p.msg.frame);
 	});
 
-	it('does not ask the sink to pool canvases it transfers away', async () => {
+	it('closes every sample it takes a frame from', async () => {
 		await boot();
 		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
-		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === 'frame')).toBe(true));
-		// Pooling + transfer is the incompatibility itself; the fix is to not
-		// pool, so assert the sink was constructed without one.
-		expect(poolSize).toBe(0);
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(2));
+		await new Promise((r) => setTimeout(r, 100));
+		// A sample holds its own decode surface; leaking them exhausts the pool.
+		// (It parks on backpressure well before `framesAvailable`, by design.)
+		expect([...openSamples].filter((s) => !s.closed)).toEqual([]);
+	});
+
+	it('bounds decode-ahead by the frame budget, not a fixed duration', async () => {
+		// 4K: frameBudget allows a handful of frames. A fixed 0.75s lookahead
+		// decoded ~45 frames per window against a 4-frame cache, and the churn
+		// (two full-frame allocations each) took the renderer down.
+		videoWidth = 3840;
+		videoHeight = 2160;
+		framesAvailable = 600;
+		await boot();
+		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
+		// Let it run well past any short-lived burst, then confirm it parked.
+		await new Promise((r) => setTimeout(r, 150));
+		expect(frames().length).toBeLessThan(12);
+	});
+
+	it('rejects an undecodable codec at init instead of on the first decode', async () => {
+		canDecode = false;
+		const { startMediabunnyWorker } = await import('../src/playback/worker');
+		startMediabunnyWorker();
+		onmessage?.({ data: { type: 'init', url: 'asset://x.mp4' } });
+		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === 'error')).toBe(true));
+		const err = posted.find((p) => p.msg.type === 'error')?.msg;
+		expect(err?.code).toBe('unsupported');
+		expect(String(err?.message)).toContain('hevc');
+		expect(posted.some((p) => p.msg.type === 'ready')).toBe(false);
 	});
 
 	it('releases a run parked on backpressure when a seek supersedes it', async () => {
-		// Enough frames that the run parks on the 0.75s lookahead instead of
-		// ending on its own — that park is where the old decoder got stranded.
 		framesAvailable = 600;
 		await boot();
 		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(liveRuns).toBe(1));
-		await vi.waitFor(() =>
-			expect(posted.filter((p) => p.msg.type === 'frame').length).toBeGreaterThan(45),
-		);
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
 
 		// Scrub elsewhere without ever sending a `playhead` — exactly what a
 		// paused click-to-click scrub does.
 		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: 30 } });
-		await vi.waitFor(
-			() => expect(liveRuns).toBe(1),
-			{ timeout: 2000 },
-		);
+		await vi.waitFor(() => expect(liveRuns).toBe(1), { timeout: 2000 });
+	});
+
+	it('tears down the previous run before starting the next', async () => {
+		// A superseded run is blocked in `for await` until its first sample
+		// arrives, so it cannot notice it has been replaced. Waiting for that
+		// left one live decoder per scrub tick until the pool was exhausted.
+		framesAvailable = 600;
+		await boot();
+		for (let i = 0; i < 20; i++) {
+			onmessage?.({ data: { type: 'seek', seq: i + 1, originalSec: i * 5 } });
+		}
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0), { timeout: 2000 });
+		// Peak, not eventual: every run alive at the same instant is holding its
+		// own decoder, and a drag issues one seek per pointer move.
+		expect(peakRuns).toBeLessThanOrEqual(2);
 	});
 
 	it('posts each frame under its real presentation timestamp', async () => {
 		await boot();
 		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
-		await vi.waitFor(() =>
-			expect(posted.filter((p) => p.msg.type === 'frame').length).toBe(framesAvailable),
-		);
-		const stamps = posted.filter((p) => p.msg.type === 'frame').map((p) => p.msg.originalSec);
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(2));
+		const stamps = frames().map((p) => p.msg.originalSec as number);
 		expect(stamps[0]).toBeCloseTo(0, 6);
 		expect(stamps[1]).toBeCloseTo(1 / 60, 6);
-		expect(stamps.every((s, i) => i === 0 || (s as number) > (stamps[i - 1] as number))).toBe(true);
+		expect(stamps.every((s, i) => i === 0 || s > (stamps[i - 1] as number))).toBe(true);
 	});
 });

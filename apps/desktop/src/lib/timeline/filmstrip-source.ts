@@ -10,9 +10,9 @@
  * Migration note: this file used to depend on `mp4-sample-table` and the
  * `WebCodecsTileProvider` class driven by a hand-rolled mp4box + WebCodecs
  * pipeline. PR-F removed that path entirely; the provider now talks to a
- * MediaBunny-backed worker. The `TileProviderInput.sizeBytes` field is kept
- * (optional) so the caller can opt to skip the filmstrip on huge inputs and
- * let the Rust-strip fallback render; the worker no longer needs it.
+ * MediaBunny-backed worker. `TileProviderInput.sizeBytes` gates that worker:
+ * tile decode needs the whole file resident, so huge inputs fall back to the
+ * Rust-rendered strip instead.
  */
 
 import { type FilmstripTile, LruCache } from './filmstrip';
@@ -61,6 +61,13 @@ const MAX_TILES = 240;
  * scroll: "sometimes I can see the thumbnails, sometimes I can't".
  */
 const MAX_HOVER_FRAMES = 64;
+
+/**
+ * Ceiling on the source file we'll hold in memory for tile decode. 1.5 GB is
+ * roughly a 10-minute 4K recording at our bitrates — past that the strip
+ * fallback is the better trade.
+ */
+const MAX_IN_MEMORY_BYTES = 1_500_000_000;
 
 class MediabunnyTileProvider implements TileProvider {
 	#worker: Worker;
@@ -268,6 +275,14 @@ export async function createTileProvider(
 	if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') {
 		console.info(
 			'Filmstrip: WebView lacks Worker/OffscreenCanvas; using strip fallback.',
+		);
+		return null;
+	}
+	// Random-access tile decode needs the whole file resident, so a long 4K
+	// recording would pin GBs for the session. The strip fallback costs nothing.
+	if (input.sizeBytes !== undefined && input.sizeBytes > MAX_IN_MEMORY_BYTES) {
+		console.info(
+			`Filmstrip: ${Math.round(input.sizeBytes / 1e6)}MB exceeds the in-memory budget; using strip fallback.`,
 		);
 		return null;
 	}

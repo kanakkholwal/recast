@@ -22,6 +22,25 @@
 
 import { planAudioSchedule, type Region } from './audio-schedule';
 
+/**
+ * Output-time position the listener is actually HEARING right now.
+ *
+ * `AudioContext.currentTime` is when a sample is handed to the hardware, not
+ * when it reaches the ears — Bluetooth and USB interfaces add 100-300ms. Using
+ * it raw as the master clock drags the picture that far ahead of the sound.
+ * Clamped at the anchor: before playback is audible there is nothing to follow.
+ */
+export function heardOutputSec(
+	anchorOutputTime: number,
+	anchorCtxTime: number,
+	ctxCurrentTime: number,
+	outputLatencySec: number,
+): number {
+	const latency = Number.isFinite(outputLatencySec) ? Math.max(0, outputLatencySec) : 0;
+	const elapsed = ctxCurrentTime - latency - anchorCtxTime;
+	return anchorOutputTime + Math.max(0, elapsed);
+}
+
 export type AudioTrackKind = 'system' | 'mic';
 
 export interface AudioTrack {
@@ -198,7 +217,25 @@ export class AudioTimelineEngine {
 	 */
 	get positionOutputSec(): number | null {
 		if (!this.#scheduled) return null;
-		return this.#anchorOutputTime + (this.#ctx.currentTime - this.#anchorCtxTime);
+		return heardOutputSec(
+			this.#anchorOutputTime,
+			this.#anchorCtxTime,
+			this.#ctx.currentTime,
+			this.outputLatencySec,
+		);
+	}
+
+	/**
+	 * Hardware output latency in seconds. `outputLatency` is the accurate one
+	 * but is newer; `baseLatency` (the graph's own buffering) is the fallback
+	 * and undercounts, which is still better than assuming zero.
+	 */
+	get outputLatencySec(): number {
+		const ctx = this.#ctx as AudioContext & { outputLatency?: number };
+		if (typeof ctx.outputLatency === 'number' && Number.isFinite(ctx.outputLatency)) {
+			return ctx.outputLatency;
+		}
+		return Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0;
 	}
 
 	/**

@@ -115,6 +115,26 @@ pub(crate) async fn append_caption_burn_in(
             f
         }
     };
+    // Split the transcript at the cut boundaries before styling it. The cut
+    // stage downstream drops the burned pixels with their frames, but chunking
+    // has to happen per kept span or a chunk straddling a cut burns words the
+    // export removed — and breaks at different points than the preview, which
+    // clips to the same spans (`clip-with-cuts.ts`).
+    let trim_end = request.render_state.trim_end.max(trim_start);
+    let cuts: Vec<(f64, f64)> = crate::commands::export::cuts_speed::collect_export_cuts(
+        &request.render_state,
+        trim_start,
+        trim_end,
+    )
+    .into_iter()
+    // `collect_export_cuts` returns trim-relative ranges; the transcript and
+    // the ASS axis are both source-time until `to_ass` subtracts the offset.
+    .map(|(lo, hi)| (lo + trim_start, hi + trim_start))
+    .collect();
+    let spans = crate::transcription::subtitles::kept_spans(trim_start, trim_end, &cuts);
+    let transcript =
+        crate::transcription::subtitles::split_transcript_by_spans(&transcript, &spans);
+
     let ass = crate::transcription::subtitles::to_ass(
         &transcript,
         &style,

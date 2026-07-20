@@ -146,6 +146,8 @@ export class FrameCache {
 	#memory = new Map<number, InMemoryEntry>();
 	/** Keys of `#memory`, ascending. Backs `readNearest`'s binary search. */
 	#sorted: number[] = [];
+	/** Last timestamp asked for; eviction keeps frames near it. */
+	#lastReadUs = -1;
 	#stats = { entryCount: 0, bytes: 0, oldestEntryUs: -1, evictions: 0 };
 	#storage: FrameStorage;
 	#memoryCap: number;
@@ -228,6 +230,9 @@ export class FrameCache {
 	 * before it would step the picture back into content the user cut.
 	 */
 	readNearest(tsUs: number, floorUs = 0): CachedFrame | null {
+		// Record it even on a miss: eviction needs to know where the playhead is
+		// before the first successful read.
+		this.#lastReadUs = tsUs;
 		const idx = this.#floorIndex(tsUs);
 		if (idx < 0) return null;
 		const key = this.#sorted[idx];
@@ -392,11 +397,25 @@ export class FrameCache {
 	 * Evict LRU entries until `incomingSize` fits under the cap, closing each.
 	 * The GC will not reclaim a decoded frame's GPU surface promptly.
 	 */
+	/**
+	 * Eviction cost, highest goes first. Distance from the playhead, with frames
+	 * BEHIND it penalised — forward playback never needs those again.
+	 *
+	 * Plain LRU is actively wrong here: decode-ahead frames have never been read,
+	 * so they were always the oldest-used and got evicted just before the
+	 * playhead reached them. The decoder then re-decoded them, and the picture
+	 * updated a fraction as often as it should.
+	 */
+	#evictionCost(tsUs: number): number {
+		if (this.#lastReadUs < 0) return -tsUs;
+		const delta = tsUs - this.#lastReadUs;
+		return delta >= 0 ? delta : -delta * 4;
+	}
+
 	#evictMemoryUntilFits(incomingSize: number): void {
 		if (this.#stats.bytes + incomingSize <= this.#memoryCap) return;
-		// Map order is insertion order, not read order — sort explicitly.
 		const byAge = [...this.#memory.entries()].sort(
-			(a, b) => a[1].lastUsedUs - b[1].lastUsedUs,
+			(a, b) => this.#evictionCost(b[0]) - this.#evictionCost(a[0]),
 		);
 		for (const [key, entry] of byAge) {
 			if (this.#stats.bytes + incomingSize <= this.#memoryCap) break;

@@ -1,6 +1,6 @@
 /**
  * MediabunnyVideoSource: frame-accurate video decode for the editor preview,
- * backed by MediaBunny's `Input` + `CanvasSink` running in a Web Worker.
+ * backed by MediaBunny's `Input` + `VideoSampleSink` running in a Web Worker.
  *
  * Public surface (used by `VideoPreview.svelte`):
  *   - `static create(url, { createWorker }): Promise<MediabunnyVideoSource>`
@@ -19,9 +19,10 @@
  * frames forward from the last jump. Steady playback sends `playhead`
  * (backpressure only); only a real jump sends `seek`.
  *
- * Frame ownership: `frameAt` returns a frame owned by the cache (upload to
- * WebGL, do NOT close it). The cache evicts LRU against a resolution-adaptive
- * byte budget.
+ * Frame ownership: set `onFrameDecoded` and each frame is handed to you and
+ * closed immediately, so the decoder gets its output surface straight back.
+ * Holding decoded frames is what starves the decoder into silence at 4K.
+ * `frameAt` is the older cache-backed path, kept for consumers that want it.
  */
 
 import { getFrameCache } from '../cache';
@@ -36,6 +37,10 @@ import type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';
 const FRAME_SLACK_SEC = 0.05;
 /** Forward gap beyond which waiting for the run to arrive would stall. */
 const JUMP_SEC = 0.5;
+/** Generous: demuxing a large file over the asset protocol is legitimately slow. */
+const INIT_TIMEOUT_MS = 30_000;
+/** ~20 seeks/sec: responsive to drag, without rebuilding a decoder per frame. */
+const SEEK_MIN_INTERVAL_MS = 50;
 
 // Read defensively: `import.meta.env` is a Vite extension and this package
 // must stay bundler-agnostic.
@@ -73,6 +78,10 @@ export class MediabunnyVideoSource {
 	#loggedSeq = -1;
 	/** Start of the outstanding jump seek, for the seek-latency measure. */
 	#seekStartedMs = 0;
+	/** Latest seek target awaiting the rate limiter; the newest always wins. */
+	#pendingSeekSec: number | null = null;
+	#lastSeekPostedMs = -Infinity;
+	#seekTimer: ReturnType<typeof setTimeout> | undefined;
 	#sawFirstFrame = false;
 
 	readonly width: number;
@@ -97,6 +106,15 @@ export class MediabunnyVideoSource {
 	 * on a still image.
 	 */
 	onError: ((err: MediaError) => void) | null = null;
+	/**
+	 * Take ownership of each decoded frame as it arrives. Consume it
+	 * SYNCHRONOUSLY (upload to a texture); it is closed the moment this returns.
+	 *
+	 * Setting this switches off the frame cache, and that is the point: a cached
+	 * `VideoFrame` holds a decoder output surface, and holding several at 4K
+	 * starves the decoder until it stops emitting entirely.
+	 */
+	onFrameDecoded: ((frame: VideoFrame, tsUs: number) => void) | null = null;
 
 	private constructor(
 		worker: Worker,
@@ -130,6 +148,7 @@ export class MediabunnyVideoSource {
 			throw new MediaError('unsupported', `MediaBunny cannot decode .${ext} files`);
 		}
 		const worker = options.createWorker();
+		let timer: ReturnType<typeof setTimeout> | undefined;
 		try {
 			const meta = await new Promise<{
 				width: number;
@@ -154,9 +173,16 @@ export class MediabunnyVideoSource {
 							e.message || `worker script failed to load: ${e.filename || 'unknown'}`,
 						),
 					);
+				// Without this a stalled read (an asset-protocol fetch that never
+				// settles) leaves the caller waiting forever with no error.
+				timer = setTimeout(
+					() => reject(new MediaError('worker-died', 'Timed out opening the media source')),
+					INIT_TIMEOUT_MS,
+				);
 				const init: ToMediabunnyWorker = { type: 'init', url };
 				worker.postMessage(init);
 			});
+			clearTimeout(timer);
 			const source = new MediabunnyVideoSource(worker, meta);
 			// Singleton cache keyed by bare timestamp: scope it or another
 			// recording's frame answers reads for this one.
@@ -166,6 +192,7 @@ export class MediabunnyVideoSource {
 			source.#cache.memoryCapBytes = frameCacheCapBytes(meta.width, meta.height);
 			return source;
 		} catch (err) {
+			clearTimeout(timer);
 			worker.terminate();
 			throw err;
 		}
@@ -195,26 +222,30 @@ export class MediabunnyVideoSource {
 
 	#onMessage(msg: FromMediabunnyWorker): void {
 		if (this.#disposed) {
-			if (msg.type === 'frame') msg.canvas.width = 0; // hint GC; nothing else we can do.
+			// Transferred frames are ours now; dropping one without closing leaks
+			// a decode surface.
+			if (msg.type === 'frame') msg.frame.close();
 			return;
 		}
 		if (msg.type === 'frame') {
 			// Frames from a superseded run are still valid pictures for their own
 			// timestamp, so cache them. Dropping late frames (the old behavior)
 			// threw away work and starved the display.
-			const frame = new VideoFrame(msg.canvas, {
-				timestamp: Math.round(msg.originalSec * 1_000_000),
-				duration: Math.round((1 / this.fps) * 1_000_000),
-			});
-			// `new VideoFrame(canvas)` copies the pixels out synchronously, so the
-			// canvas backing store is dead weight from here — release it rather
-			// than waiting on GC (~1.9 GB/s of garbage at 4K60).
-			msg.canvas.width = 0;
+			const frame = msg.frame;
 			const tUs = Math.round(msg.originalSec * 1_000_000);
-			// Memory only: a `VideoFrame` can't be structured-cloned into IndexedDB,
-			// and the streaming decoder would attempt a write per frame. Re-decoding
-			// is cheap now that the pipeline streams.
-			this.#cache.write(tUs, frame as unknown as CachedFrame, false);
+			if (this.onFrameDecoded) {
+				// Hand off and release in the same tick, so the surface goes
+				// straight back to the decoder's pool.
+				try {
+					this.onFrameDecoded(frame, tUs);
+				} finally {
+					frame.close();
+				}
+			} else {
+				// Memory only: a `VideoFrame` can't be structured-cloned into
+				// IndexedDB, and the streaming decoder would write per frame.
+				this.#cache.write(tUs, frame as unknown as CachedFrame, false);
+			}
 			this.#decodedFrames++;
 			// §3 time-to-first-frame and scrub-seek rows, visible on the DevTools
 			// timeline. Only the first frame of a run closes the seek measure.
@@ -266,27 +297,57 @@ export class MediabunnyVideoSource {
 	 * the newest in-segment frame is always available. The returned frame is
 	 * owned by the cache — upload it, do NOT close it.
 	 */
+	/**
+	 * Tell the worker where the playhead is. A jump starts a new decode run;
+	 * steady playback only releases backpressure — posting a seek per frame is
+	 * what made every request abort the one before it.
+	 *
+	 * Call this once per rendered frame, whether or not you read from the cache.
+	 */
+	advanceTo(originalSec: number): void {
+		if (this.#disposed) return;
+		const delta = originalSec - this.#lastRequestSec;
+		const isJump = this.#lastRequestSec < 0 || delta < -FRAME_SLACK_SEC || delta > JUMP_SEC;
+		this.#lastRequestSec = originalSec;
+		if (isJump) this.#requestSeek(originalSec);
+		else this.#post({ type: 'playhead', originalSec });
+	}
+
+	/**
+	 * Rate-limit seeks. Every seek starts a fresh decode run with its own
+	 * decoder, and a drag produces one per pointer move — so an unthrottled
+	 * scrub builds and destroys ~60 decoders a second. The latest target always
+	 * wins, so the picture still lands where the user let go.
+	 */
+	#requestSeek(originalSec: number): void {
+		this.#pendingSeekSec = originalSec;
+		if (this.#seekTimer !== undefined) return;
+		const sinceMs = markNow() - this.#lastSeekPostedMs;
+		if (sinceMs >= SEEK_MIN_INTERVAL_MS) {
+			this.#flushSeek();
+			return;
+		}
+		this.#seekTimer = setTimeout(() => {
+			this.#seekTimer = undefined;
+			this.#flushSeek();
+		}, SEEK_MIN_INTERVAL_MS - sinceMs);
+	}
+
+	#flushSeek(): void {
+		const target = this.#pendingSeekSec;
+		if (target === null || this.#disposed) return;
+		this.#pendingSeekSec = null;
+		this.#lastSeekPostedMs = markNow();
+		this.#seekStartedMs = markNow();
+		this.#post({ type: 'seek', seq: ++this.#seq, originalSec: target });
+	}
+
 	frameAt(originalSec: number, floorSec = 0): VideoFrame | null {
 		if (this.#disposed) return null;
 		const tUs = Math.max(0, Math.round(originalSec * 1e6));
 		const floorUs = Math.max(0, Math.round(floorSec * 1e6));
 		const cached = this.#bestCached(tUs, floorUs);
-
-		// A jump is anything the running decode won't reach on its own: backwards,
-		// or so far forward that waiting would stall the picture.
-		const delta = originalSec - this.#lastRequestSec;
-		const isJump =
-			this.#lastRequestSec < 0 || delta < -FRAME_SLACK_SEC || delta > JUMP_SEC;
-		this.#lastRequestSec = originalSec;
-
-		if (isJump) {
-			this.#seekStartedMs = markNow();
-			this.#post({ type: 'seek', seq: ++this.#seq, originalSec });
-		} else {
-			// Steady playback: just release the worker's backpressure. Posting a
-			// seek here is what made every request abort the one before it.
-			this.#post({ type: 'playhead', originalSec });
-		}
+		this.advanceTo(originalSec);
 
 		if (cached) {
 			this.#servedFrames++;
@@ -311,6 +372,8 @@ export class MediabunnyVideoSource {
 	dispose(): void {
 		if (this.#disposed) return;
 		this.#disposed = true;
+		clearTimeout(this.#seekTimer);
+		this.#seekTimer = undefined;
 		if (this.onStats) this.onStats(this.stats());
 		this.#post({ type: 'dispose' });
 		// Persistent cache survives on purpose: the next session should hit it.

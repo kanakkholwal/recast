@@ -1,5 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { frameBudget } from "../src/cache/frame-budget";
+import { frameBudget, textureRingFrames } from "../src/cache/frame-budget";
+
+describe("textureRingFrames", () => {
+	it("buffers more than the decoder-surface budget allows at 4K", () => {
+		// The point of owning textures: decoder surfaces cap at 4 frames at 4K,
+		// which is ~66ms of buffer and stalls on any hiccup.
+		expect(textureRingFrames(3840, 2160)).toBeGreaterThan(frameBudget(3840, 2160).cacheMax);
+	});
+
+	it("scales down with pixel count", () => {
+		expect(textureRingFrames(1920, 1080)).toBeGreaterThan(textureRingFrames(3840, 2160));
+	});
+
+	it("stays bounded at both extremes", () => {
+		expect(textureRingFrames(320, 240)).toBeLessThanOrEqual(16);
+		expect(textureRingFrames(7680, 4320)).toBeGreaterThanOrEqual(4);
+	});
+
+	it("falls back to the max when dimensions are unknown", () => {
+		expect(textureRingFrames(0, 0)).toBe(16);
+	});
+});
 
 describe("frameBudget", () => {
 	it("keeps the historical 7/4/6 budget at common resolutions (≤1440p)", () => {

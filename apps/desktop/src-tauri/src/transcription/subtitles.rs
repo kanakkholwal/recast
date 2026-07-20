@@ -1,7 +1,7 @@
 //! Subtitle serialization from a transcript: SRT / WebVTT sidecars, plus ASS
 //! for the FFmpeg burn-in path (libass renders the styled overlay into pixels).
 
-use super::{CaptionAnimation, CaptionStyle, Transcript, TranscriptWord};
+use super::{CaptionAnimation, CaptionStyle, Transcript, TranscriptSegment, TranscriptWord};
 
 pub fn to_srt(t: &Transcript) -> String {
     let mut out = String::new();
@@ -284,6 +284,101 @@ Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n",
         }
     }
     out
+}
+
+/// Kept source-time spans of `[trim_start, trim_end]` with `cuts` removed.
+/// `cuts` must be source-time, sorted and non-overlapping (what
+/// `collect_export_cuts` produces, shifted back by `trim_start`).
+pub fn kept_spans(trim_start: f64, trim_end: f64, cuts: &[(f64, f64)]) -> Vec<(f64, f64)> {
+    let mut spans = Vec::new();
+    let mut cursor = trim_start;
+    for &(cut_start, cut_end) in cuts {
+        if cut_end <= trim_start || cut_start >= trim_end {
+            continue;
+        }
+        let lo = cut_start.max(trim_start);
+        if lo - cursor > SPAN_EPS {
+            spans.push((cursor, lo));
+        }
+        cursor = cursor.max(cut_end.min(trim_end));
+    }
+    if trim_end - cursor > SPAN_EPS {
+        spans.push((cursor, trim_end));
+    }
+    spans
+}
+
+/// Matches the frontend's cut EPS so both sides agree on a boundary.
+const SPAN_EPS: f64 = 1e-4;
+
+/// Split every caption segment across the kept spans, dropping the parts inside
+/// a cut. Mirrors `splitSegmentAcrossSpans` in
+/// `apps/desktop/src/lib/captions/clip-with-cuts.ts` — keep the two in sync.
+///
+/// The burn is composited on the trimmed-but-uncut axis, so the cut stage
+/// downstream removes the burned pixels along with their frames. That is enough
+/// to keep a caption from *outlasting* a cut, but NOT enough to keep its
+/// content right: chunking over a segment's full word list groups words from
+/// both sides of the cut into one chunk, so the burn shows text for audio the
+/// export removed and breaks chunks at different points than the preview.
+/// Splitting first makes every emitted chunk lie wholly inside one kept span.
+pub fn split_transcript_by_spans(t: &Transcript, spans: &[(f64, f64)]) -> Transcript {
+    let mut segments = Vec::with_capacity(t.segments.len());
+    for seg in &t.segments {
+        let pieces: Vec<(f64, f64)> = spans
+            .iter()
+            .filter_map(|&(span_start, span_end)| {
+                let start = seg.start.max(span_start);
+                let end = seg.end.min(span_end);
+                (end > start).then_some((start, end))
+            })
+            .collect();
+        let split = pieces.len() > 1;
+        for (i, (start, end)) in pieces.into_iter().enumerate() {
+            let words: Vec<TranscriptWord> = seg
+                .words
+                .iter()
+                .filter_map(|w| {
+                    let ws = w.start.clamp(start, end);
+                    let we = w.end.clamp(start, end);
+                    (we > ws).then(|| TranscriptWord {
+                        start: ws,
+                        end: we,
+                        text: w.text.clone(),
+                    })
+                })
+                .collect();
+            // A split piece is its own cue: its own id, and the half of the line
+            // actually spoken here rather than the whole line repeated on both
+            // sides. An unsplit segment keeps its identity untouched.
+            let text = if split && !words.is_empty() {
+                words
+                    .iter()
+                    .map(|w| w.text.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+                    .trim()
+                    .to_string()
+            } else {
+                seg.text.clone()
+            };
+            segments.push(TranscriptSegment {
+                id: if split {
+                    format!("{}:{i}", seg.id)
+                } else {
+                    seg.id.clone()
+                },
+                start,
+                end,
+                text,
+                words,
+            });
+        }
+    }
+    Transcript {
+        segments,
+        ..t.clone()
+    }
 }
 
 /// Append one Dialogue line on ASS layer 0, mapping source times onto the
@@ -859,6 +954,73 @@ mod tests {
                 text: t.to_string(),
             })
             .collect()
+    }
+
+    /// A cut landing inside a caption must split it, not stretch one cue across
+    /// the seam carrying words the export removed. Mirrors the TS regression in
+    /// `apps/desktop/src/lib/captions/output-time.test.ts`.
+    #[test]
+    fn split_transcript_by_spans_splits_a_straddling_segment() {
+        let t = transcript(words(&[
+            (10.0, 11.0, "before"),
+            (11.0, 12.0, "seam"),
+            (16.0, 17.0, "after"),
+            (17.0, 18.0, "seam"),
+        ]));
+        // Cut removes [12, 16) out of a [0, 24] clip.
+        let spans = kept_spans(0.0, 24.0, &[(12.0, 16.0)]);
+        assert_eq!(spans, vec![(0.0, 12.0), (16.0, 24.0)]);
+
+        let out = split_transcript_by_spans(&t, &spans);
+
+        assert_eq!(out.segments.len(), 2);
+        assert_eq!((out.segments[0].start, out.segments[0].end), (10.0, 12.0));
+        assert_eq!((out.segments[1].start, out.segments[1].end), (16.0, 18.0));
+        assert_eq!(out.segments[0].text, "before seam");
+        assert_eq!(out.segments[1].text, "after seam");
+        assert_ne!(out.segments[0].id, out.segments[1].id);
+    }
+
+    #[test]
+    fn split_transcript_by_spans_drops_words_inside_the_cut() {
+        let t = transcript(words(&[
+            (10.0, 11.0, "kept"),
+            (13.0, 15.0, "removed"),
+            (16.0, 17.0, "kept2"),
+        ]));
+        let out = split_transcript_by_spans(&t, &kept_spans(0.0, 24.0, &[(12.0, 16.0)]));
+        let texts: Vec<&str> = out
+            .segments
+            .iter()
+            .flat_map(|s| s.words.iter().map(|w| w.text.as_str()))
+            .collect();
+        assert_eq!(texts, vec!["kept", "kept2"]);
+    }
+
+    #[test]
+    fn split_transcript_by_spans_drops_a_segment_wholly_inside_a_cut() {
+        let t = transcript(words(&[(13.0, 15.0, "gone")]));
+        let out = split_transcript_by_spans(&t, &kept_spans(0.0, 24.0, &[(12.0, 16.0)]));
+        assert!(out.segments.is_empty());
+    }
+
+    #[test]
+    fn split_transcript_by_spans_leaves_an_uncut_segment_untouched() {
+        let t = transcript(words(&[(2.0, 3.0, "hello"), (3.0, 5.0, "there")]));
+        let out = split_transcript_by_spans(&t, &kept_spans(0.0, 24.0, &[(12.0, 16.0)]));
+        assert_eq!(out.segments.len(), 1);
+        assert_eq!(out.segments[0].id, "seg-0");
+        assert_eq!(out.segments[0].text, "hello there");
+    }
+
+    #[test]
+    fn kept_spans_honours_trim_and_merges_edge_cuts() {
+        // A cut overlapping the trim head just moves the first span's start.
+        assert_eq!(kept_spans(5.0, 20.0, &[(3.0, 8.0)]), vec![(8.0, 20.0)]);
+        // A cut running past the trim tail truncates the last span.
+        assert_eq!(kept_spans(0.0, 20.0, &[(18.0, 25.0)]), vec![(0.0, 18.0)]);
+        // Cuts entirely outside the clip are ignored.
+        assert_eq!(kept_spans(5.0, 10.0, &[(0.0, 2.0)]), vec![(5.0, 10.0)]);
     }
 
     fn transcript(ws: Vec<TranscriptWord>) -> Transcript {

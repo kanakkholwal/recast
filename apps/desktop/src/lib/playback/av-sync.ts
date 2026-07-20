@@ -15,6 +15,14 @@
  */
 export const AV_RESYNC_THRESHOLD_SEC = 0.06;
 
+/**
+ * How long the audio clock may sit still before we stop trusting it. A
+ * suspended `AudioContext` freezes `currentTime`, and a master clock that never
+ * advances drags the picture back onto the same instant every frame — an
+ * audio fault that presents as a totally frozen video.
+ */
+export const AUDIO_STALL_LIMIT_SEC = 0.5;
+
 export interface AvSyncInput {
 	/** Picture clock position, output-time seconds. */
 	videoTime: number;
@@ -23,6 +31,8 @@ export interface AvSyncInput {
 	/** Whether playback is running; paused clocks can't drift. */
 	playing: boolean;
 	thresholdSec?: number;
+	/** Seconds the audio clock has been observed frozen — see {@link AudioStallMonitor}. */
+	audioStalledSec?: number;
 }
 
 export interface AvSyncDecision {
@@ -32,6 +42,36 @@ export interface AvSyncDecision {
 	target: number;
 	/** Signed drift (video − audio) in seconds; 0 when unmeasurable. */
 	driftSec: number;
+	/** Audio stopped advancing, so the picture is running unmastered. */
+	audioStalled: boolean;
+}
+
+/**
+ * Tracks whether the audio clock is actually moving. Deterministic given its
+ * inputs — the caller supplies the timestamp — so it stays unit-testable.
+ */
+export class AudioStallMonitor {
+	#lastAudioTime: number | null = null;
+	#lastChangeMs = 0;
+
+	/** Returns how long audio has been frozen, in seconds. */
+	observe(audioTime: number | null, playing: boolean, nowMs: number): number {
+		if (!playing || audioTime === null || !Number.isFinite(audioTime)) {
+			this.reset();
+			return 0;
+		}
+		if (this.#lastAudioTime === null || audioTime !== this.#lastAudioTime) {
+			this.#lastAudioTime = audioTime;
+			this.#lastChangeMs = nowMs;
+			return 0;
+		}
+		return Math.max(0, (nowMs - this.#lastChangeMs) / 1000);
+	}
+
+	reset(): void {
+		this.#lastAudioTime = null;
+		this.#lastChangeMs = 0;
+	}
 }
 
 /** Decide whether the picture clock should be pulled back onto the audio clock. */
@@ -39,11 +79,16 @@ export function resolveAvSync(input: AvSyncInput): AvSyncDecision {
 	const { videoTime, audioTime, playing } = input;
 	const threshold = input.thresholdSec ?? AV_RESYNC_THRESHOLD_SEC;
 	if (!playing || audioTime === null || !Number.isFinite(audioTime)) {
-		return { resync: false, target: videoTime, driftSec: 0 };
+		return { resync: false, target: videoTime, driftSec: 0, audioStalled: false };
 	}
 	const driftSec = videoTime - audioTime;
-	if (Math.abs(driftSec) <= threshold) {
-		return { resync: false, target: videoTime, driftSec };
+	// A dead clock is not a master. Let the picture run free rather than
+	// pinning it to a timestamp that will never move again.
+	if ((input.audioStalledSec ?? 0) > AUDIO_STALL_LIMIT_SEC) {
+		return { resync: false, target: videoTime, driftSec, audioStalled: true };
 	}
-	return { resync: true, target: audioTime, driftSec };
+	if (Math.abs(driftSec) <= threshold) {
+		return { resync: false, target: videoTime, driftSec, audioStalled: false };
+	}
+	return { resync: true, target: audioTime, driftSec, audioStalled: false };
 }

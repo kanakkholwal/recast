@@ -11,7 +11,8 @@
 
 // This worker now lives INSIDE `packages/media`, so it imports MediaBunny
 // directly rather than bouncing through the package barrel.
-import { ALL_FORMATS, CanvasSink, Input, UrlSource } from 'mediabunny';
+import { ALL_FORMATS, Input, UrlSource, type VideoSample, VideoSampleSink } from 'mediabunny';
+import { textureRingFrames } from '../cache/frame-budget';
 
 /** Mirror of `MediaErrorCode` (REQUIREMENTS.md §2). Kept in-worker because
  *  the worker doesn't import from `@recast/media` to avoid a worker-side
@@ -23,6 +24,17 @@ type MediabunnyErrorCode =
 	| 'cancelled'
 	| 'internal'
 	| 'too-large';
+
+/** Carries a classified code out of `init` so the caller can tell an
+ *  undecodable codec from a corrupt file. */
+class WorkerError extends Error {
+	constructor(
+		readonly code: MediabunnyErrorCode,
+		message: string,
+	) {
+		super(message);
+	}
+}
 
 type InitMessage = { type: 'init'; url: string };
 type SeekMessage = { type: 'seek'; seq: number; originalSec: number };
@@ -51,9 +63,10 @@ type FrameMessage = {
 	seq: number;
 	/** Real presentation timestamp of this frame, seconds. The cache keys on it. */
 	originalSec: number;
-	/** Transferable canvas — the consumer uploads it to WebGL or converts
-	 *  to a `VideoFrame` (e.g. `new VideoFrame(canvas)`). */
-	canvas: OffscreenCanvas;
+	/** Transferred decode surface — the consumer OWNS it and must close it.
+	 *  Sent straight through rather than via a canvas: routing 4K frames through
+	 *  an OffscreenCanvas cost two full-frame allocations each. */
+	frame: VideoFrame;
 	width: number;
 	height: number;
 };
@@ -71,18 +84,31 @@ function post(msg: FromMediabunnyWorker, transfer: Transferable[] = []): void {
 }
 
 let input: Input | null = null;
-let sink: CanvasSink | null = null;
+let sink: VideoSampleSink | null = null;
 let disposed = false;
 
 /**
- * How far ahead of the playhead to decode before pausing. One seek per frame
- * (the old model) made every request abort the previous one, so nothing ever
- * finished once decode cost more than a frame interval.
+ * How far ahead of the playhead to decode before parking. Derived from
+ * `frameBudget().decodeAhead` at init: decoding further ahead than the cache can
+ * hold just evicts those frames on arrival, and at 4K that churn (two full-frame
+ * allocations each) was enough to take the renderer down. A fixed 0.75s meant 45
+ * frames in flight against a 4-frame cache.
  */
-const LOOKAHEAD_SEC = 0.75;
+let lookaheadSec = 0.1;
+
+// Dev-only run tracing. Bounded to run start/park/end — never per frame.
+const DIAG = ((): boolean => {
+	try {
+		return Boolean((import.meta as { env?: { DEV?: boolean } }).env?.DEV);
+	} catch {
+		return false;
+	}
+})();
 
 /** Monotonic id; a new run supersedes the old one without an abort race. */
 let runId = 0;
+/** The live decode generator, so a supersede can tear its decoder down at once. */
+let activeSamples: AsyncGenerator<VideoSample, void, unknown> | null = null;
 let playheadSec = 0;
 /** Resolves when the playhead advances, waking a run parked on backpressure. */
 let playheadWaiters: Array<() => void> = [];
@@ -113,15 +139,21 @@ async function init(url: string): Promise<void> {
 		}
 		const track = await input.getPrimaryVideoTrack();
 		if (!track) throw new Error('No video track in the input.');
+		// Parsing the container proves nothing about decodability — HEVC on a
+		// Windows box without the codec extension parses fine and then throws on
+		// the first decode, seconds later, with the picture already "ready".
+		if (!(await track.canDecode())) {
+			const codec = await track.getCodec();
+			throw new WorkerError('unsupported', `This system can't decode ${codec ?? 'this'} video.`);
+		}
 		const durationSec = await input.computeDuration();
 		// `codedWidth` is the sync deprecated getter (returns 0 until
 		// metadata loads); prefer the async variant for the ready payload.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
-		// NO pool. Pooled canvases are recycled round-robin, but we TRANSFER
-		// each one to the main thread, which detaches it — the sink then draws
-		// into a detached canvas and the run dies ~poolSize frames in.
-		sink = new CanvasSink(track, { fit: 'contain' });
+		// Samples, not canvases: the frames go straight to the consumer, so no
+		// per-frame canvas allocation and no canvas→VideoFrame copy.
+		sink = new VideoSampleSink(track);
 		// Real rate, not a hardcoded 30: the source derives each frame's
 		// duration from it, and telemetry cohorts on it.
 		let fps = 30;
@@ -133,11 +165,17 @@ async function init(url: string): Promise<void> {
 		} catch {
 			/* keep the default */
 		}
+		// Decode-ahead is a frame count, not a duration. The consumer uploads
+		// each frame to its own texture and releases it immediately, so the
+		// bound is its texture ring — leave two slots of headroom so a frame
+		// isn't overwritten before the playhead reaches it.
+		const ahead = Math.max(2, textureRingFrames(width, height) - 2);
+		lookaheadSec = ahead / Math.max(1, fps);
 		post({ type: 'ready', width, height, durationSec, fps });
 	} catch (err) {
 		post({
 			type: 'error',
-			code: 'bad-input',
+			code: err instanceof WorkerError ? err.code : 'bad-input',
 			message: err instanceof Error ? err.message : String(err),
 		});
 		throw err;
@@ -147,7 +185,7 @@ async function init(url: string): Promise<void> {
 /**
  * Decode forward from `startSec`, posting frames in presentation order until
  * superseded, disposed, or the source ends. Parks while more than
- * `LOOKAHEAD_SEC` ahead of the playhead so a long clip can't decode itself
+ * `lookaheadSec` ahead of the playhead so a long clip can't decode itself
  * into memory.
  */
 async function runFrom(seq: number, startSec: number): Promise<void> {
@@ -157,31 +195,49 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 	}
 	const myRun = ++runId;
 	playheadSec = startSec;
-	const frames = sink.canvases(startSec);
+	let sent = 0;
+	let parked = false;
+	if (DIAG) console.log(`[mb-worker] run ${seq} from ${startSec.toFixed(3)}s`);
+	// Kill the previous run's decoder NOW. A superseded run is blocked in
+	// `for await` until its first sample arrives, so it cannot notice it has
+	// been replaced — during a scrub that stacks up one live decoder per
+	// pointer move and exhausts the pool.
+	const previous = activeSamples;
+	activeSamples = null;
+	if (previous) await previous.return(undefined).catch(() => {});
+	if (myRun !== runId || disposed) return;
+	const samples = sink.samples(startSec);
+	activeSamples = samples;
 	try {
-		for await (const wrapped of frames) {
-			if (myRun !== runId || disposed) break;
-			if (!wrapped) continue;
-			const canvas = wrapped.canvas as OffscreenCanvas;
+		for await (const sample of samples) {
+			if (myRun !== runId || disposed) {
+				sample.close();
+				break;
+			}
+			// The sample keeps its own frame, so ours must be closed separately —
+			// transferring it hands that responsibility to the consumer.
+			const frame = sample.toVideoFrame();
+			const timestamp = sample.timestamp;
+			const width = frame.codedWidth;
+			const height = frame.codedHeight;
+			sample.close();
 			// Post the REAL presentation timestamp, not the requested one: the
 			// cache keys on it, and the reader looks up by nearest-at-or-before.
-			post(
-				{
-					type: 'frame',
-					seq,
-					originalSec: wrapped.timestamp,
-					canvas,
-					width: canvas.width,
-					height: canvas.height,
-				},
-				[canvas],
-			);
-			while (
-				myRun === runId &&
-				!disposed &&
-				wrapped.timestamp > playheadSec + LOOKAHEAD_SEC
-			) {
+			post({ type: 'frame', seq, originalSec: timestamp, frame, width, height }, [frame]);
+			sent++;
+			while (myRun === runId && !disposed && timestamp > playheadSec + lookaheadSec) {
+				if (DIAG && !parked) {
+					parked = true;
+					console.log(
+						`[mb-worker] run ${seq} parked at ${timestamp.toFixed(3)}s ` +
+							`(playhead ${playheadSec.toFixed(3)}s, lookahead ${lookaheadSec.toFixed(3)}s)`,
+					);
+				}
 				await awaitPlayhead();
+			}
+			if (DIAG && parked) {
+				parked = false;
+				console.log(`[mb-worker] run ${seq} resumed (playhead ${playheadSec.toFixed(3)}s)`);
 			}
 		}
 	} catch (err) {
@@ -193,8 +249,13 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 			});
 		}
 	} finally {
+		if (DIAG) {
+			const why = disposed ? 'disposed' : myRun !== runId ? 'superseded' : 'end-of-stream';
+			console.log(`[mb-worker] run ${seq} ended after ${sent} frames (${why})`);
+		}
+		if (activeSamples === samples) activeSamples = null;
 		// Release the generator's decoder resources when superseded mid-stream.
-		await frames.return(undefined).catch(() => {});
+		await samples.return(undefined).catch(() => {});
 	}
 }
 
@@ -205,31 +266,38 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
  */
 let prefetchedSec = Number.NaN;
 let prefetchInFlight = false;
+/** Latest target asked for while busy; dropping it loses the warm GOP. */
+let prefetchPending: { seq: number; originalSec: number } | null = null;
 
 async function prefetch(seq: number, originalSec: number): Promise<void> {
 	if (!sink || disposed) return;
-	if (prefetchInFlight || prefetchedSec === originalSec) return;
+	if (prefetchedSec === originalSec) return;
+	if (prefetchInFlight) {
+		prefetchPending = { seq, originalSec };
+		return;
+	}
 	prefetchInFlight = true;
 	try {
-		const wrapped = await sink.getCanvas(originalSec);
-		if (!wrapped || disposed) return;
+		const sample = await sink.getSample(originalSec);
+		if (!sample) return;
+		if (disposed) {
+			sample.close();
+			return;
+		}
 		prefetchedSec = originalSec;
-		const canvas = wrapped.canvas as OffscreenCanvas;
-		post(
-			{
-				type: 'frame',
-				seq,
-				originalSec: wrapped.timestamp,
-				canvas,
-				width: canvas.width,
-				height: canvas.height,
-			},
-			[canvas],
-		);
+		const frame = sample.toVideoFrame();
+		const timestamp = sample.timestamp;
+		const width = frame.codedWidth;
+		const height = frame.codedHeight;
+		sample.close();
+		post({ type: 'frame', seq, originalSec: timestamp, frame, width, height }, [frame]);
 	} catch {
 		/* prefetch is best-effort */
 	} finally {
 		prefetchInFlight = false;
+		const next = prefetchPending;
+		prefetchPending = null;
+		if (next && !disposed) void prefetch(next.seq, next.originalSec);
 	}
 }
 

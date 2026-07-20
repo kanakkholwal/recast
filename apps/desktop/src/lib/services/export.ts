@@ -20,7 +20,7 @@ import {
 	type VideoMetadata,
 	framePaddingPixels,
 } from "$lib/stores/editor-store.svelte";
-import { originalToOutput } from "$lib/timeline/time-map";
+import { toOutputTimeTranscript } from "$lib/captions/output-time";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
  *  as its lane starts/finishes so the UI can show sub-stage progress. Omit for
@@ -169,24 +169,9 @@ export interface CaptionExportPayload {
 	sidecar: { format: "vtt" | "srt"; transcript: Transcript } | null;
 }
 
-/** Map a transcript onto the OUTPUT timeline (trim + cuts + per-segment speed)
- *  so sidecar timings line up with the exported video, not the raw recording.
- *  Exported so ad-hoc sidecar exports (e.g. the Captions panel's SRT/VTT
- *  buttons) apply the same warp the export dialog and Cloud track do. */
-export function toOutputTimeTranscript(store: EditorStore, src: Transcript): Transcript {
-	const map = store.timeMap;
-	const at = (t: number) => originalToOutput(map, t);
-	const segments = src.segments
-		.map((seg) => ({
-			...seg,
-			start: at(seg.start),
-			end: at(seg.end),
-			words: seg.words.map((w) => ({ ...w, start: at(w.start), end: at(w.end) })),
-		}))
-		// Drop segments that collapse to nothing (fully inside a removed range).
-		.filter((seg) => seg.end - seg.start > 0.01);
-	return { ...src, segments };
-}
+/** Re-exported so existing callers (export dialog, Cloud track, Captions
+ *  panel) keep one import site; the math lives with the other caption logic. */
+export { toOutputTimeTranscript };
 
 /**
  * Resolve the caption export plan from the store's transcript + export options.
@@ -204,7 +189,7 @@ export function buildCaptionExport(store: EditorStore): CaptionExportPayload {
 		sidecar:
 			opts.sidecar === "none"
 				? null
-				: { format: opts.sidecar, transcript: toOutputTimeTranscript(store, transcript) },
+				: { format: opts.sidecar, transcript: toOutputTimeTranscript(store.timeMap, transcript) },
 	};
 }
 
@@ -216,7 +201,7 @@ export function buildCaptionExport(store: EditorStore): CaptionExportPayload {
 export function buildCloudCaptionTranscript(store: EditorStore): Transcript | null {
 	const t = store.transcript;
 	if (!t || t.segments.length === 0) return null;
-	return toOutputTimeTranscript(store, t);
+	return toOutputTimeTranscript(store.timeMap, t);
 }
 
 export interface RunExportOptions {

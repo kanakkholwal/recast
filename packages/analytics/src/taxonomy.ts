@@ -146,6 +146,11 @@ export interface EventPropMap {
 		max_late_ms?: number;
 		/** Worst |video − audio| clock gap seen, ms (REQUIREMENTS.md §3 drift row). */
 		max_av_drift_ms?: number;
+		/** Worst CPU time to submit a frame→texture upload, ms. A large value
+		 *  means decoded frames are CPU-backed and each costs a real copy. */
+		max_upload_ms?: number;
+		/** Mean upload submit time, ms — the steady-state cost. */
+		avg_upload_ms?: number;
 		width?: number;
 		height?: number;
 		/** Source media fps, for context against avg_fps. */

@@ -146,19 +146,48 @@ fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
         .join(format!("{stem}-{}", metadata.len())))
 }
 
+/// Temp name to write into before publishing, so a reader never observes a
+/// half-written asset.
+fn partial_path(path: &Path) -> PathBuf {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or("asset");
+    path.with_file_name(format!("{name}.partial"))
+}
+
+/// True when `path` already holds this entry in full.
+fn already_extracted(path: &Path, expected_len: u64) -> bool {
+    fs::metadata(path).is_ok_and(|meta| meta.len() == expected_len)
+}
+
 fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Result<PathBuf> {
     let mut entry = archive
         .by_name(name)
         .with_context(|| format!("missing {name} in project"))?;
-    let mut output = File::create(path)?;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = entry.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        output.write_all(&buffer[..read])?;
+    // The cache dir is keyed by project size, so a full-size file here is this
+    // project's asset. Re-extracting would TRUNCATE it — and `File::create`
+    // does that instantly while the rewrite takes seconds on a large recording,
+    // so any reader mid-window sees a headerless file ("no video track").
+    if already_extracted(path, entry.size()) {
+        return Ok(path.to_path_buf());
     }
+    let partial = partial_path(path);
+    {
+        let mut output = File::create(&partial)?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let read = entry.read(&mut buffer)?;
+            if read == 0 {
+                break;
+            }
+            output.write_all(&buffer[..read])?;
+        }
+        output.sync_all()?;
+    }
+    // Rename is atomic within a directory: readers see the old file or the new
+    // one, never a partial.
+    fs::rename(&partial, path)?;
     Ok(path.to_path_buf())
 }
 
@@ -207,16 +236,96 @@ mod backcompat_tests {
 /// Try to extract an optional entry from the archive. Returns None if the entry doesn't exist.
 fn try_extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Option<PathBuf> {
     let mut entry = archive.by_name(name).ok()?;
-    let mut output = File::create(path).ok()?;
-    let mut buffer = [0u8; 64 * 1024];
-    loop {
-        let read = entry.read(&mut buffer).ok()?;
-        if read == 0 {
-            break;
-        }
-        output.write_all(&buffer[..read]).ok()?;
+    // Same reuse + atomic-publish rules as `extract_entry`; audio.wav is large
+    // enough to hit the same truncation window.
+    if already_extracted(path, entry.size()) {
+        return Some(path.to_path_buf());
     }
+    let partial = partial_path(path);
+    {
+        let mut output = File::create(&partial).ok()?;
+        let mut buffer = [0u8; 64 * 1024];
+        loop {
+            let read = entry.read(&mut buffer).ok()?;
+            if read == 0 {
+                break;
+            }
+            output.write_all(&buffer[..read]).ok()?;
+        }
+        output.sync_all().ok()?;
+    }
+    fs::rename(&partial, path).ok()?;
     Some(path.to_path_buf())
+}
+
+#[cfg(test)]
+mod extract_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use zip::write::SimpleFileOptions;
+    use zip::{CompressionMethod, ZipWriter};
+
+    static N: AtomicU32 = AtomicU32::new(0);
+
+    fn scratch() -> PathBuf {
+        let n = N.fetch_add(1, Ordering::Relaxed);
+        let dir = env::temp_dir().join(format!("recast-extract-{}-{}", std::process::id(), n));
+        fs::create_dir_all(&dir).expect("create scratch");
+        dir
+    }
+
+    fn archive_with(dir: &Path, body: &[u8]) -> ZipArchive<File> {
+        let zip_path = dir.join("p.zip");
+        let mut writer = ZipWriter::new(File::create(&zip_path).expect("create zip"));
+        let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
+        writer
+            .start_file("assets/recording.mp4", options)
+            .expect("start");
+        writer.write_all(body).expect("write");
+        writer.finish().expect("finish");
+        ZipArchive::new(File::open(&zip_path).expect("open zip")).expect("read zip")
+    }
+
+    #[test]
+    fn extracts_then_reuses_without_rewriting() {
+        let dir = scratch();
+        let mut archive = archive_with(&dir, b"video-bytes");
+        let target = dir.join("recording.mp4");
+
+        extract_entry(&mut archive, "assets/recording.mp4", &target).expect("first extract");
+        assert_eq!(fs::read(&target).expect("read"), b"video-bytes");
+
+        // Same length => treated as already extracted. Sentinel content proves
+        // the second call didn't truncate and rewrite: re-extracting a 637MB
+        // recording blanks it for seconds, and readers see a headerless file.
+        fs::write(&target, b"SENTINEL-XX").expect("sentinel");
+        extract_entry(&mut archive, "assets/recording.mp4", &target).expect("second extract");
+        assert_eq!(fs::read(&target).expect("read"), b"SENTINEL-XX");
+    }
+
+    #[test]
+    fn re_extracts_when_the_cached_file_is_the_wrong_size() {
+        let dir = scratch();
+        let mut archive = archive_with(&dir, b"video-bytes");
+        let target = dir.join("recording.mp4");
+        fs::write(&target, b"truncated").expect("short file");
+
+        extract_entry(&mut archive, "assets/recording.mp4", &target).expect("extract");
+        assert_eq!(fs::read(&target).expect("read"), b"video-bytes");
+    }
+
+    #[test]
+    fn leaves_no_partial_file_behind() {
+        let dir = scratch();
+        let mut archive = archive_with(&dir, b"video-bytes");
+        let target = dir.join("recording.mp4");
+
+        extract_entry(&mut archive, "assets/recording.mp4", &target).expect("extract");
+        assert!(
+            !partial_path(&target).exists(),
+            "partial file was not published"
+        );
+    }
 }
 
 #[cfg(test)]

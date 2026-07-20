@@ -169,6 +169,14 @@ pub async fn stop_recording(
             // (crop dimensions from `CaptureTarget`, FPS pinned by the pacer at 60).
             // Spawning ffprobe here just to confirm what we already know was
             // adding 100–300ms to every stop, right when the UI wants to transition.
+            let media_duration_ms =
+                if artifacts.stats.encoded_frames > 0 && artifacts.stats.nominal_fps > 0 {
+                    (artifacts.stats.encoded_frames as f64 / artifacts.stats.nominal_fps as f64
+                        * 1000.0)
+                        .round() as u64
+                } else {
+                    artifacts.stats.duration_ms
+                };
             let metadata = ProjectMetadata {
                 schema_version: 1,
                 created_at_unix_ms: artifacts.started_at_unix_ms,
@@ -182,7 +190,13 @@ pub async fn stop_recording(
                     // editor and export source-fps detection are correct for
                     // high-refresh recordings.
                     fps: artifacts.stats.nominal_fps,
-                    duration_ms: artifacts.stats.duration_ms,
+                    // The MEDIA's length, which is the encoded frame count at
+                    // the CFR the encoder wrote — not `stats.duration_ms`, the
+                    // wall clock of the session. They diverge exactly by the
+                    // dropped frames, and the wall clock is always the longer
+                    // of the two. `stats` keeps the wall clock; this is the
+                    // number the editor and the export validator agree on.
+                    duration_ms: media_duration_ms,
                 },
                 media: Some(ProjectMediaMetadata {
                     has_system_audio: artifacts.has_system_audio,
@@ -191,7 +205,7 @@ pub async fn stop_recording(
                 }),
             };
             let default_render_state = RenderState {
-                trim_end: artifacts.stats.duration_ms as f64 / 1000.0,
+                trim_end: media_duration_ms as f64 / 1000.0,
                 camera_overlay: artifacts.camera_overlay.clone(),
                 ..RenderState::default()
             };

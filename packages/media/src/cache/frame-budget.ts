@@ -61,6 +61,28 @@ export function frameBudget(width: number, height: number): FrameBudget {
 	return { cacheMax, holdoutMax, decodeAhead };
 }
 
+/** GPU memory we'll spend on our OWN frame textures (~256 MB). */
+const TEXTURE_BUDGET_BYTES = 256 * 1024 * 1024;
+const MIN_RING_FRAMES = 4;
+const MAX_RING_FRAMES = 16;
+
+/**
+ * How many frames to keep as GPU textures we own.
+ *
+ * Distinct from {@link frameBudget}, and the distinction is the whole point: a
+ * decoded `VideoFrame` occupies one of the decoder's few output surfaces, so
+ * holding them starves the decoder and it stops emitting. A texture is ordinary
+ * GPU memory. Upload, close the frame, and buffer depth becomes a memory
+ * decision instead of a decoder-pool one.
+ */
+export function textureRingFrames(width: number, height: number): number {
+	const pixels = width > 0 && height > 0 ? width * height : 0;
+	if (pixels === 0) return MAX_RING_FRAMES;
+	const perFrame = pixels * BYTES_PER_PX;
+	const fits = Math.floor(TEXTURE_BUDGET_BYTES / perFrame);
+	return Math.min(MAX_RING_FRAMES, Math.max(MIN_RING_FRAMES, fits));
+}
+
 /**
  * Byte cap for the in-memory frame cache at this resolution. Scaling by pixel
  * count is the point: a flat cap that is safe at 1080p holds several times the

@@ -101,7 +101,7 @@ fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
     if path.extension().and_then(|value| value.to_str()) == Some("recast") {
         let project = crate::project::reader::open_project(path).map_err(|e| e.to_string())?;
         return Ok(VideoMetadata {
-            duration: project.metadata.video.duration_ms as f64 / 1000.0,
+            duration: project.metadata.media_duration_secs(),
             width: project.metadata.video.width,
             height: project.metadata.video.height,
             fps: project.metadata.video.fps as f64,
@@ -237,13 +237,14 @@ pub async fn load_editor_document(path: String) -> AppResult<EditorDocument> {
 fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     if let Some(project) = open_project_if_needed(&input)? {
+        let media_duration = project.metadata.media_duration_secs();
         let default_state = || RenderState {
-            trim_end: project.metadata.video.duration_ms as f64 / 1000.0,
+            trim_end: media_duration,
             ..RenderState::default()
         };
         // A missing edits.json is a fresh project (expected → defaults). A parse
         // FAILURE, though, would silently discard every edit, so surface it.
-        let render_state = match fs::read_to_string(&project.edits_path) {
+        let mut render_state: RenderState = match fs::read_to_string(&project.edits_path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
                 log::error!(
                     "failed to parse edits.json ({}): {e}; loading defaults (edits not applied)",
@@ -253,6 +254,13 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             }),
             Err(_) => default_state(),
         };
+        // Heal projects saved before `media_duration_secs` existed: their
+        // `trim_end` came from the wall clock and overshoots the encoded file,
+        // which makes `enqueue_export` reject the state the app itself wrote.
+        // Clamping costs nothing — there are no frames out there to keep.
+        if media_duration > 0.0 && render_state.trim_end > media_duration {
+            render_state.trim_end = media_duration;
+        }
 
         return Ok(EditorDocument {
             project_path: path,
@@ -265,7 +273,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 .map(|p| p.to_string_lossy().to_string()),
             camera_path: project.camera_path.map(|p| p.to_string_lossy().to_string()),
             metadata: VideoMetadata {
-                duration: project.metadata.video.duration_ms as f64 / 1000.0,
+                duration: media_duration,
                 width: project.metadata.video.width,
                 height: project.metadata.video.height,
                 fps: project.metadata.video.fps as f64,
