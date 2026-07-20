@@ -421,6 +421,13 @@
                       {#if m.id === selectedModelId}<Check size={13} class="text-primary" />{/if}
                     </span>
                     <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
+                    {#if m.recommended}
+                      <span
+                        class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[8.5px] font-semibold uppercase tracking-wider text-primary"
+                      >
+                        Rec
+                      </span>
+                    {/if}
                     {#if !m.runnable}
                       <Lock size={11} class="shrink-0 text-muted-foreground/70" />
                     {:else if m.installed}
@@ -490,7 +497,47 @@
               ≥ {formatSize(selected.minRamBytes)} RAM
             </span>
           {/if}
+          {#if selected.capabilities.streaming}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Streaming
+            </span>
+          {/if}
+          {#if selected.capabilities.translate}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Translate
+            </span>
+          {/if}
+          {#if selected.capabilities.langDetect}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Detects language
+            </span>
+          {/if}
         </div>
+
+        <!-- Relative comparison bars. Editorial scores for ranking models
+             against each other, so they're labelled as such rather than shown
+             as a percentage or a benchmark figure. -->
+        {#if selected.accuracyScore !== null || selected.speedScore !== null}
+          <div class="mt-2 flex flex-col gap-1">
+            {#each [{ label: "accuracy", score: selected.accuracyScore }, { label: "speed", score: selected.speedScore }] as bar (bar.label)}
+              {#if bar.score !== null}
+                <div class="flex items-center gap-2">
+                  <span class="w-12 shrink-0 text-[9px] text-muted-foreground">{bar.label}</span>
+                  <div
+                    class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                    role="meter"
+                    aria-label="{bar.label}, relative to other models"
+                    aria-valuenow={bar.score}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div class="h-full rounded-full bg-primary" style="width: {bar.score}%"></div>
+                  </div>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
 
         {#if selected.warning}
           <p

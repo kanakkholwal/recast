@@ -139,10 +139,119 @@ pub struct CaptionModel {
     /// `None` for every local (ggml) model.
     #[serde(default)]
     pub remote: Option<super::remote::RemoteEndpoint>,
+    // - catalog metadata (picker presentation only; never gates execution) -
+    /// What the model can do beyond plain transcription.
+    #[serde(default)]
+    pub capabilities: ModelCapabilities,
+    /// How many languages the model covers. `languages` carries `["multi"]` for
+    /// multilingual models rather than 99 entries, so the count is stored
+    /// separately instead of derived from it.
+    #[serde(default)]
+    pub language_count: Option<u32>,
+    /// Relative speed / accuracy, 0-100, for the picker's comparison bars.
+    /// Editorial values from the upstream catalog — useful for ranking models
+    /// against each other, not as absolute benchmarks.
+    #[serde(default)]
+    pub speed_score: Option<u8>,
+    #[serde(default)]
+    pub accuracy_score: Option<u8>,
+    /// Surfaced with a "Recommended" tag in the picker.
+    #[serde(default)]
+    pub recommended: bool,
+}
+
+/// Model abilities beyond plain same-language transcription. `streaming` /
+/// `translate` / `lang_detect` are presentation only. `timestamps` is NOT:
+/// see `TimestampGranularity`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelCapabilities {
+    /// Emits partial results as audio arrives (vs. one result at the end).
+    #[serde(default)]
+    pub streaming: bool,
+    /// Can transcribe speech into a different language.
+    #[serde(default)]
+    pub translate: bool,
+    /// Detects the spoken language rather than needing it declared.
+    #[serde(default)]
+    pub lang_detect: bool,
+    /// How precisely the model locates its text in time.
+    #[serde(default)]
+    pub timestamps: TimestampGranularity,
+}
+
+/// How precisely a model reports WHEN each piece of text was said.
+///
+/// This is a hard requirement for captions, not a nicety: a caption without
+/// timing can't be placed on the timeline, clipped at a cut, or highlighted
+/// per word. A `None` model returns bare text, which `words.rs` then has to
+/// spread evenly across the whole clip — captions that drift further out of
+/// sync the longer you talk. 34 of the 65 models in the upstream catalog are
+/// `None`, so this must be checked before adding any model, not assumed.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TimestampGranularity {
+    /// No timing at all — unusable for captions.
+    #[default]
+    None,
+    /// Per phrase/sentence. Enough for captions; per-word highlight is
+    /// synthesized within each segment.
+    Segment,
+    /// Per token (sub-word). Word timings are derived by grouping.
+    Token,
+    /// Per word, directly.
+    Word,
+}
+
+impl TimestampGranularity {
+    /// Whether this model can drive captions at all. The registry guard test
+    /// enforces it across every built-in.
+    pub fn usable_for_captions(self) -> bool {
+        !matches!(self, TimestampGranularity::None)
+    }
 }
 
 fn source_builtin() -> ModelSource {
     ModelSource::Builtin
+}
+
+/// Catalog-metadata setters, chained onto `ggml_model` at the registry entry so
+/// the presentation data reads next to the model it describes instead of
+/// stretching the constructor to a dozen positional arguments.
+impl CaptionModel {
+    /// Relative speed / accuracy (0-100) for the picker's comparison bars.
+    fn scored(mut self, speed: u8, accuracy: u8) -> Self {
+        self.speed_score = Some(speed);
+        self.accuracy_score = Some(accuracy);
+        self
+    }
+
+    /// Number of languages covered (see `language_count`).
+    fn langs(mut self, count: u32) -> Self {
+        self.language_count = Some(count);
+        self
+    }
+
+    fn caps(
+        mut self,
+        streaming: bool,
+        translate: bool,
+        lang_detect: bool,
+        timestamps: TimestampGranularity,
+    ) -> Self {
+        self.capabilities = ModelCapabilities {
+            streaming,
+            translate,
+            lang_detect,
+            timestamps,
+        };
+        self
+    }
+
+    fn recommend(mut self) -> Self {
+        self.recommended = true;
+        self
+    }
 }
 
 /// A built-in ggml model: one GGUF file from a `handy-computer` HuggingFace repo.
@@ -185,6 +294,11 @@ fn ggml_model(
         min_ram_bytes: Some(2_000_000_000),
         source: ModelSource::Builtin,
         remote: None,
+        capabilities: ModelCapabilities::default(),
+        language_count: None,
+        speed_score: None,
+        accuracy_score: None,
+        recommended: false,
     }
 }
 
@@ -205,7 +319,10 @@ pub fn registry() -> Vec<CaptionModel> {
             660_000_000,
             true,
             None, // TODO: pin via tools/dev/pin-model-sha256.ps1
-        ),
+        )
+        .scored(79, 88)
+        .langs(25)
+        .caps(false, false, true, TimestampGranularity::Token),
         ggml_model(
             "parakeet-v2",
             "Parakeet V2 (0.6B, English)",
@@ -216,7 +333,28 @@ pub fn registry() -> Vec<CaptionModel> {
             660_000_000,
             false,
             None, // TODO: pin via tools/dev/pin-model-sha256.ps1
-        ),
+        )
+        .scored(85, 89)
+        .langs(1)
+        .caps(false, false, false, TimestampGranularity::Token),
+        // NVIDIA Nemotron streaming ASR. transcribe.cpp runs it under its
+        // `parakeet` architecture (same encoder family), so no engine work.
+        ggml_model(
+            "nemotron-streaming-3.5",
+            "Nemotron Streaming 3.5",
+            "Nemotron",
+            "handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf",
+            "nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf",
+            vec!["multi".into()],
+            751_094_240,
+            false,
+            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+        )
+        .scored(84, 82)
+        .langs(28)
+        .caps(true, false, true, TimestampGranularity::Token)
+        .recommend(),
+        // Highest accuracy in the catalog, and the heaviest. Q5_K_M (not Q8_0)
         ggml_model(
             "whisper-base",
             "Whisper Base",
@@ -231,7 +369,10 @@ pub fn registry() -> Vec<CaptionModel> {
             // at download time are auto-detected (`download_file` at
             // `models.rs:357-367`); re-pin when upgrading the URL.
             Some("8E0FEB7BC35780353CF31821018E601BB7B7CFF6C9A0E17ADA5A5DB23F4DB867"),
-        ),
+        )
+        .scored(99, 71)
+        .langs(99)
+        .caps(false, true, true, TimestampGranularity::Segment),
         ggml_model(
             "whisper-small",
             "Whisper Small",
@@ -242,7 +383,26 @@ pub fn registry() -> Vec<CaptionModel> {
             190_000_000,
             false,
             None, // TODO: pin via tools/dev/pin-model-sha256.ps1
-        ),
+        )
+        .scored(78, 80)
+        .langs(99)
+        .caps(false, true, true, TimestampGranularity::Segment),
+        // Broadest language coverage (99), at the cost of speed.
+        ggml_model(
+            "whisper-medium",
+            "Whisper Medium",
+            "Whisper",
+            "handy-computer/whisper-medium-gguf",
+            "whisper-medium-Q8_0.gguf",
+            vec!["multi".into()],
+            831_538_144,
+            false,
+            None, // TODO: pin via tools/dev/pin-model-sha256.ps1
+        )
+        .scored(42, 84)
+        .langs(99)
+        .caps(false, true, true, TimestampGranularity::Segment)
+        .recommend(),
     ]
 }
 
@@ -441,6 +601,72 @@ mod tests {
             assert!(
                 m.files[0].rel_path.ends_with(".gguf"),
                 "{} file is not a .gguf",
+                m.id
+            );
+        }
+    }
+
+    /// The URL is built from the repo + filename, so a typo in either yields a
+    /// 404 only at download time — on the user's machine, after they clicked.
+    /// Assert the shape here instead.
+    #[test]
+    fn every_builtin_url_points_at_its_own_gguf_in_the_handy_org() {
+        for m in registry() {
+            let f = &m.files[0];
+            assert!(
+                f.url.starts_with("https://huggingface.co/handy-computer/"),
+                "{}: unexpected host/org in {}",
+                m.id,
+                f.url
+            );
+            assert!(
+                f.url.ends_with(&format!("/resolve/main/{}", f.rel_path)),
+                "{}: url {} does not resolve its own file {}",
+                m.id,
+                f.url,
+                f.rel_path
+            );
+        }
+    }
+
+    /// Presentation metadata is what the picker ranks and badges models by, so a
+    /// missing score silently renders an empty bar rather than failing loudly.
+    #[test]
+    fn every_builtin_carries_complete_picker_metadata() {
+        for m in registry() {
+            assert!(m.speed_score.is_some(), "{} has no speed score", m.id);
+            assert!(m.accuracy_score.is_some(), "{} has no accuracy score", m.id);
+            assert!(m.language_count.is_some(), "{} has no language count", m.id);
+            assert!(
+                m.approx_size_bytes.is_some_and(|b| b > 0),
+                "{} has no size",
+                m.id
+            );
+            for (label, score) in [("speed", m.speed_score), ("accuracy", m.accuracy_score)] {
+                let score = score.unwrap();
+                assert!(
+                    score <= 100,
+                    "{}: {label} score {score} is out of 0-100",
+                    m.id
+                );
+            }
+        }
+    }
+
+    /// Captions are a timeline feature: without timing there is nothing to
+    /// place, clip at a cut, or highlight. Canary 180M Flash and Cohere
+    /// Transcribe were both shipped and pulled for exactly this — they
+    /// transcribe fine but emit `timestamps: none`, so their captions were
+    /// spread evenly across the clip and drifted. 34 of the 65 models in the
+    /// upstream catalog are `none`; check before adding, don't assume.
+    #[test]
+    fn every_builtin_can_actually_time_its_captions() {
+        for m in registry() {
+            assert!(
+                m.capabilities.timestamps.usable_for_captions(),
+                "{} reports no timestamps — it cannot drive captions, however good its \
+                 transcription is. Verify `timestamps` in the upstream catalog before adding \
+                 a model.",
                 m.id
             );
         }

@@ -34,7 +34,9 @@ $Entries = @(
     @{ id = 'parakeet-v3';     url = 'https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v3-gguf/resolve/main/parakeet-tdt-0.6b-v3-Q8_0.gguf' },
     @{ id = 'parakeet-v2';     url = 'https://huggingface.co/handy-computer/parakeet-tdt-0.6b-v2-gguf/resolve/main/parakeet-tdt-0.6b-v2-Q8_0.gguf' },
     @{ id = 'whisper-base';    url = 'https://huggingface.co/handy-computer/whisper-base-gguf/resolve/main/whisper-base-Q5_K_M.gguf' },
-    @{ id = 'whisper-small';   url = 'https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q5_K_M.gguf' }
+    @{ id = 'whisper-small';   url = 'https://huggingface.co/handy-computer/whisper-small-gguf/resolve/main/whisper-small-Q5_K_M.gguf' },
+    @{ id = 'whisper-medium';  url = 'https://huggingface.co/handy-computer/whisper-medium-gguf/resolve/main/whisper-medium-Q8_0.gguf' },
+    @{ id = 'nemotron-streaming-3.5'; url = 'https://huggingface.co/handy-computer/nemotron-3.5-asr-streaming-0.6b-gguf/resolve/main/nemotron-3.5-asr-streaming-0.6b-Q8_0.gguf' }
 )
 
 $WorkDir = Join-Path $env:TEMP 'recast-pin-hashes'

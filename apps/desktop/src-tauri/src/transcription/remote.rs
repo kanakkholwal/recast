@@ -204,6 +204,13 @@ pub fn remote_models(app: &AppHandle) -> Vec<CaptionModel> {
             min_ram_bytes: None,
             source: ModelSource::Remote,
             remote: Some(ep),
+            // The server owns the real model, so we can't honestly score it or
+            // claim capabilities on its behalf.
+            capabilities: Default::default(),
+            language_count: None,
+            speed_score: None,
+            accuracy_score: None,
+            recommended: false,
         })
         .collect()
 }

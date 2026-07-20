@@ -393,7 +393,39 @@ export interface CaptionModelInfo {
 	/** Non-blocking device caveat (slow on CPU, low RAM, …), or the reason the
 	 *  runtime is unavailable when that's the blocker. */
 	warning: string | null;
+	/** What the model can do beyond plain transcription. Presentation only —
+	 *  nothing here changes how the engine is invoked. */
+	capabilities: CaptionModelCapabilities;
+	/** How many languages the model covers. `languages` carries `["multi"]`
+	 *  rather than 99 entries, so the count is separate. Null when unknown
+	 *  (extension packs, remote endpoints). */
+	languageCount: number | null;
+	/** Relative speed / accuracy, 0-100, for the picker's comparison bars.
+	 *  Editorial values for ranking models against each other, not benchmarks.
+	 *  Null when unknown. */
+	speedScore: number | null;
+	accuracyScore: number | null;
+	/** Surfaced with a "Recommended" tag in the picker. */
+	recommended: boolean;
 }
+
+/** Model abilities beyond plain same-language transcription. Mirrors
+ *  `ModelCapabilities` in `transcription/models.rs`. */
+export interface CaptionModelCapabilities {
+	/** Emits partial results as audio arrives (vs. one result at the end). */
+	streaming: boolean;
+	/** Can transcribe speech into a different language. */
+	translate: boolean;
+	/** Detects the spoken language rather than needing it declared. */
+	langDetect: boolean;
+	/** How precisely the model locates its text in time. `"none"` cannot drive
+	 *  captions at all — every built-in is checked against this in Rust. */
+	timestamps: CaptionTimestampGranularity;
+}
+
+/** How precisely a model reports WHEN each piece of text was said. Mirrors
+ *  `TimestampGranularity` in `transcription/models.rs`. */
+export type CaptionTimestampGranularity = "none" | "segment" | "token" | "word";
 
 /** One weight file of a pack-contributed caption model. Third-party weights
  *  MUST pin a sha256 (built-ins may leave it null until a revision is locked). */
