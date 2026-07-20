@@ -20,10 +20,8 @@
 	const totalReactions = $derived(moments.filter((m) => m.kind === "reaction").length);
 	const totalComments = $derived(moments.filter((m) => m.kind === "comment").length);
 
-	// Comments stack on top of reactions within each time slice. Two hues, not two
-	// opacities of one: opacity alone is not a reliable way to tell stacked bands
-	// apart. Reactions keep the brand accent as the dominant signal, comments sit
-	// on neutral ink.
+	// Two hues, not two opacities of one: opacity alone is not a reliable way to
+	// tell stacked bands apart.
 	const series = [
 		{ key: "reactions", label: "Reactions", value: "reactions", color: "var(--color-primary)", props: { fillOpacity: 0.85 } },
 		{ key: "comments", label: "Comments", value: "comments", color: "var(--color-foreground)", props: { fillOpacity: 0.35 } },

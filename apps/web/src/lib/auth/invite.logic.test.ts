@@ -3,8 +3,6 @@ import {
 	INVITE_TOKEN_TTL_MS,
 	firstNameOf,
 	inviteDisplayName,
-	isValidEmail,
-	normalizeEmail,
 	resetTokenIdentifier,
 	setPasswordUrl,
 	stripTrailingSlash,
@@ -42,21 +40,6 @@ describe("stripTrailingSlash", () => {
 	it("collapses repeated trailing slashes but leaves the path alone", () => {
 		expect(stripTrailingSlash("http://localhost:5173///")).toBe("http://localhost:5173");
 		expect(stripTrailingSlash("https://recast.li/app")).toBe("https://recast.li/app");
-	});
-});
-
-describe("email validation", () => {
-	it("accepts ordinary addresses and rejects the near-misses", () => {
-		expect(isValidEmail("kanak@example.com")).toBe(true);
-		expect(isValidEmail("  Kanak@Example.COM  ")).toBe(true);
-		expect(isValidEmail("not-an-email")).toBe(false);
-		// No TLD — the same case the public waitlist endpoint rejects.
-		expect(isValidEmail("a@b")).toBe(false);
-		expect(isValidEmail("")).toBe(false);
-	});
-
-	it("normalizes so a re-invite can't create a duplicate row", () => {
-		expect(normalizeEmail("  Kanak@Example.COM ")).toBe("kanak@example.com");
 	});
 });
 

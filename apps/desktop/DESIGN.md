@@ -79,13 +79,66 @@ in [app.css](src/app.css) but does not override the token palette.
 | `--background` / `--foreground` | App background, primary text. |
 | `--card` / `--card-foreground` | Glass surfaces (settings rows, profile cards, panel body). |
 | `--popover` / `--popover-foreground` | Dropdowns, tooltips, popovers, **toasts**. |
-| `--primary` (lime) | Active state, default-profile star, accent icons. **Never** as a full surface fill. |
+| `--primary` (lime) | Reserved. See the colour ratio below. **Never** a full surface fill, never a decorative icon tint. |
 | `--muted-foreground` | Secondary copy, microlabels, inactive icons. |
 | `--border` / `--border-subtle` | Hairlines, ring-insets. Always at 40–60% alpha. |
 | `--destructive` | Stop-recording button, delete actions, error toasts, validation errors. |
 | `--success` | Successful save toasts, "ready" device validation. |
 | `--warning` | Default-profile badge, missing-device fallback toast. |
 | `--info` | Informational toasts (e.g. "no slots free"). |
+| `--lane-*` | Timeline lane identity. See "Timeline lanes" below. |
+
+### Colour ratio (60/30/10)
+
+Same budget as the web app ([apps/web/DESIGN.md](../web/DESIGN.md)), tuned for a
+dense app surface:
+
+| Share | Role | Tokens |
+| --- | --- | --- |
+| **60%** | Canvas. The app ground and the noise gradient. | `--background`, `--canvas` |
+| **30%** | Structure. Glass surfaces, hairlines, secondary text — all hierarchy. | `bg-card/70`, `--border*`, `--muted-foreground`, `--foreground` |
+| **10%** | Brand. `--primary` only. | see the reserved list |
+
+**`--primary` is reserved for these, and nothing else:**
+
+1. The page-level primary action (default `<Button>`).
+2. Active / selected state: sidebar route, selected profile, selected timeline
+   block, drag-drop targets.
+3. The default-profile star and equivalent "this one is the current one" marks.
+4. Focus rings and active-input borders (`--ring` is `--primary`).
+5. Toggle "on" states.
+
+**Never** a decorative tint. Eyebrow-chip icons, card icons, section-header
+icons, panel glyphs, and empty-state art are all **neutral** — an icon that only
+labels a heading takes `text-muted-foreground`, or no colour class at all so it
+inherits from its row. The status tokens keep their own reserved meanings (see
+the mapping below) and are never decorative either.
+
+Density makes this stricter than web, not looser. A settings page shows 40 rows
+where a landing page shows four; a lime glyph on each one turns the accent into
+wallpaper.
+
+### Timeline lanes
+
+The editor timeline is the one surface with a fourth colour channel. Each lane
+owns a hue so a block's colour tells you which lane it belongs to without
+reading the rail:
+
+| Token | Hue | Lane |
+| --- | --- | --- |
+| `--lane-cut` | 22 | Cuts. Soft red, pulled off pure red. |
+| `--lane-zoom` | 128 | Zoom. The brand hue. |
+| `--lane-audio` | 215 | Audio. The conventional audio-track blue. |
+| `--lane-markup` | 285 | Markup. Violet, furthest from both brand and cut-red. |
+
+This is **encoding, not decoration** — the same licence chart series get on web.
+Two rules keep it from competing with the brand: hues stay spaced around the
+wheel (semantic tokens were reused here once and failed, `warning` at h43 and
+`destructive` at h25 read as the same orange-red), and lane chroma stays well
+under the brand's `0.21`. Do not reach for `--lane-*` outside the timeline, and
+do not add a fifth lane hue without re-checking the spacing.
+
+See the rationale block in [index.css](../../packages/design/src/index.css).
 
 ### Status mapping
 
@@ -194,12 +247,13 @@ on the desktop directly, so their surface alpha is bumped to `/95`.
 
 ```svelte
 <span class="inline-flex w-fit items-center gap-1.5 rounded-full border border-border/50 bg-card/60 px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.15em] text-muted-foreground/80 backdrop-blur">
-  <Icon class="size-3 text-primary" />
+  <Icon class="size-3" />
   Profiles
 </span>
 ```
 
-Always lead a top-level page with an eyebrow chip, paired icon tinted `--primary`.
+Always lead a top-level page with an eyebrow chip. The icon inherits the chip's
+`text-muted-foreground/80` — it labels the section, it is not an accent.
 
 ### Buttons
 
@@ -325,7 +379,7 @@ Sizing:
 | Page action button (`size="sm"`) | `size={13}` |
 | Card primary | `class="size-4"` |
 | Card secondary / chip | `class="size-3"` or `class="size-3.5"` |
-| Eyebrow chip | `class="size-3 text-primary"` |
+| Eyebrow chip | `class="size-3"` (inherits the chip's muted tone) |
 | Toaster variant | `class="size-4"` |
 | Recording panel | `size={12–14}` |
 
@@ -389,13 +443,27 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 - Add disabled `<button>`s without wrapping them in a tooltip span — hover gets eaten otherwise.
 - Echo marketing voice ("Empower your workflow") inside the app.
 - Use full primary fills on large surfaces in dark mode — the saturated lime overpowers everything.
+- Tint an icon `--primary` just to make it look branded. Decorative primary is the single most common drift in this app; see the colour ratio.
+- Use `--lane-*` outside the editor timeline, or add a fifth lane hue without re-checking hue spacing.
 - Register Tauri JS-injecting plugins inside `setup()` — boot splash hangs.
 - Stack absolutely-positioned cards inside fixed-height containers; use a grid.
+
+---
+
+## Known drift
+
+The colour ratio above is the **target**, not a description of the current app.
+As of 2026-07-20 the desktop source has ~244 `--primary` sites, ~41 of them
+decorative icon tints, concentrated in `components/editor/properity-panel`,
+`components/editor`, and `components/recast`. The web dashboard was migrated
+first; desktop has not been. Treat the ratio as binding for new and touched
+code, and expect to find non-compliant neighbours.
 
 ---
 
 ## Cross-references
 
 - Marketing voice and section rhythm: [apps/web/DESIGN.md](../web/DESIGN.md).
+- Colour ratio, shared with this doc: [apps/web/DESIGN.md](../web/DESIGN.md) "Color ratio (60/30/10)".
 - Token source: [packages/design/src/index.css](../../packages/design/src/index.css).
 - Shared components: [packages/ui/src/components/ui/](../../packages/ui/src/components/ui/).

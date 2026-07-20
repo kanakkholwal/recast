@@ -46,9 +46,8 @@
 		return value == null ? "Unlimited active shares" : `${value} active shares`;
 	}
 
-	// Each row states whether the capability is actually on. Rendering the
-	// "off" variants ("Recast watermark", "Public links only") behind the same
-	// tick as the real entitlements read as if the plan included them.
+	// The off-variants used to render behind the same tick as real entitlements,
+	// which read as if the plan included them.
 	const planFeatures = $derived([
 		{ label: activeSharesLabel(currentPlan?.limits.activeShares ?? 10), on: true },
 		currentPlan?.limits.analytics
@@ -168,7 +167,7 @@
 		<SettingsSection
 			icon={ShieldCheck}
 			title="Current plan features"
-			description="Features enforced by the current account subscription."
+			description="Features enforced by the current account subscription."
 		>
 			<div class="grid gap-2 sm:grid-cols-2">
 				{#each planFeatures as feature (feature.label)}

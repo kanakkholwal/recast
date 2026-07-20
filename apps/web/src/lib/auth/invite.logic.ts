@@ -1,7 +1,11 @@
+import { normalizeEmail } from "$lib/validation/email";
+
 /**
  * Pure helpers for admin invites and waitlist approvals. Kept free of `$app/*`
  * and the DB so the vitest suite (node env, no SvelteKit plugins) can cover the
  * URL and validation rules that are easy to get subtly wrong.
+ *
+ * Email validation lives in $lib/validation/email, not here.
  */
 
 /**
@@ -35,17 +39,6 @@ export function setPasswordUrl(origin: string, token: string): string {
 
 export function stripTrailingSlash(url: string): string {
 	return url.replace(/\/+$/, "");
-}
-
-/** Mirrors the validation on the public waitlist endpoint. */
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-export function normalizeEmail(raw: string): string {
-	return raw.trim().toLowerCase();
-}
-
-export function isValidEmail(raw: string): boolean {
-	return EMAIL_RE.test(normalizeEmail(raw));
 }
 
 /**

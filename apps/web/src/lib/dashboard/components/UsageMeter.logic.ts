@@ -20,8 +20,7 @@ export interface UsageView {
 	linksStatus: string;
 }
 
-/** Severity of a usage bar. Neutral until the cap is actually worth worrying
- *  about, so the colour carries meaning instead of decorating the card. */
+/** Severity of a usage bar. Uncapped plans never warn, however high the usage. */
 export type UsageTone = "neutral" | "warning" | "critical";
 
 export const usageTone = (pct: number, capped: boolean): UsageTone =>

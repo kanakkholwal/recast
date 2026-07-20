@@ -17,9 +17,7 @@ describe("usageTone", () => {
 		expect(usageTone(100, true)).toBe("critical");
 	});
 
-	// Enterprise / unlimited plans have no cap to approach, so a high absolute
-	// usage must never render as a warning.
-	it("stays neutral at any percentage when uncapped", () => {
+	it("stays neutral at any percentage when uncapped (Enterprise)", () => {
 		expect(usageTone(0, false)).toBe("neutral");
 		expect(usageTone(95, false)).toBe("neutral");
 		expect(usageTone(100, false)).toBe("neutral");

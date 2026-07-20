@@ -14,7 +14,7 @@
 		icon: IconComponent;
 		title: string;
 		description?: string;
-		/** Adds a ring — used to mark the priority integration. */
+		/** Rings the card. Marks the plan the workspace is on, or is being sold. */
 		accent?: boolean;
 		badge?: Snippet;
 		children: Snippet;

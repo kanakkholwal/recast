@@ -1,4 +1,5 @@
 import { serverEnv } from "$lib/env/server";
+import { normalizeEmail } from "$lib/validation/email";
 
 /**
  * Account-less access grants for `selected` (invite-only) shares.
@@ -30,10 +31,12 @@ export function grantCookieName(slug: string): string {
 	return GRANT_COOKIE_PREFIX + slug;
 }
 
-/** Lowercase + trim — the canonical form stored in `share_member.email`. */
-export function normalizeEmail(email: string): string {
-	return email.trim().toLowerCase();
-}
+/**
+ * Re-exported so the many existing `from "$lib/share/grant"` call sites keep
+ * working. The canonical form stored in `share_member.email` is now defined
+ * once in $lib/validation/email, alongside the validator that produces it.
+ */
+export { normalizeEmail };
 
 function hex(bytes: Uint8Array): string {
 	let out = "";

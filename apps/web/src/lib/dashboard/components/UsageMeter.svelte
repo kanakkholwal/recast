@@ -9,8 +9,6 @@
 	// limit row reads "Unlimited" — same component, no special path.
 	const view = $derived(usageView(quotaStore.value));
 
-	// Neutral until the cap matters, then escalating. Keeps the brand lime out of
-	// a purely informational bar and makes the colour a real signal.
 	const barFill: Record<UsageTone, string> = {
 		neutral: "bg-foreground/35",
 		warning: "bg-warning",

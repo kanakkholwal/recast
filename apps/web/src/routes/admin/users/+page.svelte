@@ -22,7 +22,7 @@
 	import { cn } from "@recast/ui/utils";
 	import { untrack } from "svelte";
 	import { enhanceAction } from "$lib/forms/enhance";
-	import { isValidEmail } from "$lib/auth/invite.logic";
+	import { isValidEmail } from "$lib/validation/email";
 	import {
 		ariaSort,
 		buildPageQuery,

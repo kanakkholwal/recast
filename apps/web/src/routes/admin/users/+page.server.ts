@@ -3,11 +3,12 @@ import { eq } from "drizzle-orm";
 import { logAudit } from "$lib/admin/audit";
 import { requireAdmin } from "$lib/admin/guard";
 import { createSetPasswordLink } from "$lib/auth/invite";
-import { firstNameOf, inviteDisplayName, isValidEmail, normalizeEmail } from "$lib/auth/invite.logic";
+import { firstNameOf, inviteDisplayName } from "$lib/auth/invite.logic";
 import { ensureDefaultTeamForUser, getAuth } from "$lib/auth/server";
 import { getDb } from "$lib/db";
 import { user } from "$lib/db/schema";
 import { sendTemplatedEmail } from "$lib/email";
+import { isValidEmail, normalizeEmail } from "$lib/validation/email";
 import type { Actions, PageServerLoad } from "./$types";
 
 /**

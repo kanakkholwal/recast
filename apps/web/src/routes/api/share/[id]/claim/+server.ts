@@ -14,16 +14,12 @@ import {
 	wrap,
 } from "$lib/email/layout";
 import { enforceRateLimit } from "$lib/server/rate-limit";
-import { grantToken, normalizeEmail } from "$lib/share/grant";
+import { grantToken } from "$lib/share/grant";
+import { emailField } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const BodySchema = z.object({
-	email: z
-		.string()
-		.transform((v) => normalizeEmail(v))
-		.refine((v) => EMAIL_RE.test(v), "Enter a valid email address"),
+	email: emailField(),
 });
 
 /**
