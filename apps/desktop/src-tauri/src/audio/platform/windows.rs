@@ -10,7 +10,8 @@ use crate::audio::{AudioCaptureConfig, MicrophoneCaptureConfig};
 
 pub struct PlatformAudioSession {
     stop_flag: Arc<AtomicBool>,
-    thread_handle: JoinHandle<Result<PathBuf>>,
+    /// `Option` so `Drop` can take it; see the `Drop` impl below.
+    thread_handle: Option<JoinHandle<Result<PathBuf>>>,
 }
 
 impl PlatformAudioSession {
@@ -28,7 +29,7 @@ impl PlatformAudioSession {
 
         Ok(Self {
             stop_flag,
-            thread_handle,
+            thread_handle: Some(thread_handle),
         })
     }
 
@@ -40,17 +41,35 @@ impl PlatformAudioSession {
         true
     }
 
-    pub fn stop(self) -> Result<PathBuf> {
+    pub fn stop(mut self) -> Result<PathBuf> {
         self.stop_flag.store(true, Ordering::Release);
-        self.thread_handle
+        let Some(handle) = self.thread_handle.take() else {
+            return Err(anyhow!("audio session already stopped"));
+        };
+        handle
             .join()
             .map_err(|_| anyhow!("audio capture thread panicked"))?
     }
 }
 
+impl Drop for PlatformAudioSession {
+    fn drop(&mut self) {
+        // Only fires when the session is dropped WITHOUT a clean `stop()` — a
+        // panic or early return between start and the caller's `stop()`. The
+        // camera session already guarded this; audio did not, so the WASAPI loopback
+        // thread kept looping forever, holding IAudioClient and appending to a
+        // WAV nobody would read.
+        if let Some(handle) = self.thread_handle.take() {
+            self.stop_flag.store(true, Ordering::Release);
+            let _ = handle.join();
+        }
+    }
+}
+
 pub struct PlatformMicrophoneSession {
     stop_flag: Arc<AtomicBool>,
-    thread_handle: JoinHandle<Result<PathBuf>>,
+    /// `Option` so `Drop` can take it; see the `Drop` impl below.
+    thread_handle: Option<JoinHandle<Result<PathBuf>>>,
 }
 
 impl PlatformMicrophoneSession {
@@ -71,15 +90,32 @@ impl PlatformMicrophoneSession {
 
         Ok(Self {
             stop_flag,
-            thread_handle,
+            thread_handle: Some(thread_handle),
         })
     }
 
-    pub fn stop(self) -> Result<PathBuf> {
+    pub fn stop(mut self) -> Result<PathBuf> {
         self.stop_flag.store(true, Ordering::Release);
-        self.thread_handle
+        let Some(handle) = self.thread_handle.take() else {
+            return Err(anyhow!("microphone session already stopped"));
+        };
+        handle
             .join()
             .map_err(|_| anyhow!("microphone capture thread panicked"))?
+    }
+}
+
+impl Drop for PlatformMicrophoneSession {
+    fn drop(&mut self) {
+        // Only fires when the session is dropped WITHOUT a clean `stop()` — a
+        // panic or early return between start and the caller's `stop()`. The
+        // camera session already guarded this; audio did not, so the WASAPI capture
+        // thread kept looping forever, holding IAudioClient and appending to a
+        // WAV nobody would read.
+        if let Some(handle) = self.thread_handle.take() {
+            self.stop_flag.store(true, Ordering::Release);
+            let _ = handle.join();
+        }
     }
 }
 

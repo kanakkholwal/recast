@@ -1,13 +1,26 @@
+use std::collections::hash_map::DefaultHasher;
 use std::env;
 use std::fs::{self, File};
+use std::hash::{Hash, Hasher};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
 
 use anyhow::{Context, Result};
 use zip::ZipArchive;
 
 use crate::project::format;
 use crate::project::ProjectMetadata;
+
+/// Shared with `crate::cache`, which stores its own small artifacts here.
+const CACHE_ROOT: &str = "recast-cache";
+/// Marker file whose mtime records when a project was last opened.
+const LAST_USED_MARKER: &str = ".lastused";
+/// Age after which an untouched cache entry is dropped.
+const CACHE_TTL: Duration = Duration::from_secs(7 * 24 * 60 * 60);
+/// Ceiling on the whole cache. Beyond this the least-recently-used entries go,
+/// so one week of large recordings can't fill the system drive.
+const CACHE_MAX_BYTES: u64 = 8 * 1024 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ProjectOpenResult {
@@ -42,6 +55,7 @@ pub fn open_project(path: &Path) -> Result<ProjectOpenResult> {
 
     let cache_dir = cache_dir_for(path)?;
     fs::create_dir_all(&cache_dir)?;
+    touch_last_used(&cache_dir);
 
     if is_v2 {
         open_v2(&mut archive, metadata, &cache_dir)
@@ -135,15 +149,124 @@ fn merge_section_files(archive: &mut ZipArchive<File>) -> Result<serde_json::Val
     Ok(format::merge_sections(sections))
 }
 
+/// Stable extraction directory for a project.
+///
+/// Keyed on the project's PATH alone — never its length or mtime. Keying on
+/// length meant every save minted a fresh directory and re-extracted the whole
+/// recording on the next open: three revisions of one 700 MB project left 2.1 GB
+/// of identical copies, and the re-extraction itself is a multi-hundred-MB
+/// synchronous flush that stalls the machine mid-edit. Per-asset freshness is
+/// `already_extracted`'s job, so a save that only rewrites `edits.json` reuses
+/// the media untouched.
 fn cache_dir_for(project_path: &Path) -> Result<PathBuf> {
-    let metadata = fs::metadata(project_path)?;
     let stem = project_path
         .file_stem()
         .and_then(|value| value.to_str())
         .unwrap_or("project");
+    // Disambiguates same-named projects in different folders. `DefaultHasher` is
+    // deterministic within a toolchain; a bump costs one re-extraction, which the
+    // sweeper reclaims.
+    let mut hasher = DefaultHasher::new();
+    project_path.to_string_lossy().hash(&mut hasher);
     Ok(env::temp_dir()
-        .join("recast-cache")
-        .join(format!("{stem}-{}", metadata.len())))
+        .join(CACHE_ROOT)
+        .join(format!("{stem}-{:016x}", hasher.finish())))
+}
+
+/// Record this project as recently used. Reuse skips extraction entirely, so
+/// without the marker an actively-edited project looks stale to the sweeper and
+/// gets evicted first. Best-effort: failing only costs eviction accuracy.
+fn touch_last_used(cache_dir: &Path) {
+    let _ = File::create(cache_dir.join(LAST_USED_MARKER));
+}
+
+/// When this entry was last opened: the marker's mtime, falling back to the
+/// entry's own. `SystemTime::UNIX_EPOCH` for an unstattable entry makes it
+/// maximally stale, so junk is evicted first rather than pinned forever.
+fn last_used_at(path: &Path) -> SystemTime {
+    let marker = fs::metadata(path.join(LAST_USED_MARKER)).and_then(|meta| meta.modified());
+    marker
+        .or_else(|_| fs::metadata(path).and_then(|meta| meta.modified()))
+        .unwrap_or(SystemTime::UNIX_EPOCH)
+}
+
+/// Recursive size of a cache entry. Unreadable subtrees count as 0 — the sweep
+/// is advisory, and refusing to evict because one stat failed is worse.
+fn entry_size(path: &Path) -> u64 {
+    let Ok(meta) = fs::symlink_metadata(path) else {
+        return 0;
+    };
+    if !meta.is_dir() {
+        return meta.len();
+    }
+    let Ok(entries) = fs::read_dir(path) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| entry_size(&entry.path()))
+        .sum()
+}
+
+fn remove_entry(path: &Path) {
+    let removed = if path.is_dir() {
+        fs::remove_dir_all(path)
+    } else {
+        fs::remove_file(path)
+    };
+    if let Err(err) = removed {
+        log::debug!("cache sweep could not remove {}: {err}", path.display());
+    }
+}
+
+/// Evict stale and excess extraction caches.
+///
+/// Call at STARTUP only. A time-based sweep during a session would delete assets
+/// out from under an open editor; at startup nothing is open, so every entry is
+/// safely evictable. Returns nothing because this is best-effort maintenance —
+/// a failure means the cache stays larger than intended, never that opening
+/// fails.
+pub fn sweep_cache() {
+    sweep_cache_in(
+        &env::temp_dir().join(CACHE_ROOT),
+        CACHE_TTL,
+        CACHE_MAX_BYTES,
+    );
+}
+
+/// `sweep_cache` with the root and limits injected, so the policy is testable
+/// without touching the real temp dir or waiting out a 7-day TTL.
+fn sweep_cache_in(root: &Path, ttl: Duration, max_bytes: u64) {
+    let Ok(entries) = fs::read_dir(root) else {
+        return;
+    };
+
+    let now = SystemTime::now();
+    let mut surviving: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let last_used = last_used_at(&path);
+        let expired = now.duration_since(last_used).is_ok_and(|age| age > ttl);
+        if expired {
+            remove_entry(&path);
+            continue;
+        }
+        surviving.push((last_used, entry_size(&path), path));
+    }
+
+    let mut total: u64 = surviving.iter().map(|(_, size, _)| size).sum();
+    if total <= max_bytes {
+        return;
+    }
+    // Least-recently-used first, so the projects still in rotation survive.
+    surviving.sort_by_key(|(last_used, _, _)| *last_used);
+    for (_, size, path) in surviving {
+        if total <= max_bytes {
+            break;
+        }
+        remove_entry(&path);
+        total = total.saturating_sub(size);
+    }
 }
 
 /// Temp name to write into before publishing, so a reader never observes a
@@ -165,10 +288,12 @@ fn extract_entry(archive: &mut ZipArchive<File>, name: &str, path: &Path) -> Res
     let mut entry = archive
         .by_name(name)
         .with_context(|| format!("missing {name} in project"))?;
-    // The cache dir is keyed by project size, so a full-size file here is this
-    // project's asset. Re-extracting would TRUNCATE it — and `File::create`
-    // does that instantly while the rewrite takes seconds on a large recording,
-    // so any reader mid-window sees a headerless file ("no video track").
+    // Size equality against the zip entry is what makes a save cheap: the media
+    // is byte-identical across saves, so this short-circuits and only the small
+    // `edits.json` is rewritten. Re-extracting would also TRUNCATE — and
+    // `File::create` does that instantly while the rewrite takes seconds on a
+    // large recording, so any reader mid-window sees a headerless file
+    // ("no video track").
     if already_extracted(path, entry.size()) {
         return Ok(path.to_path_buf());
     }
@@ -284,6 +409,74 @@ mod extract_tests {
         writer.write_all(body).expect("write");
         writer.finish().expect("finish");
         ZipArchive::new(File::open(&zip_path).expect("open zip")).expect("read zip")
+    }
+
+    #[test]
+    fn cache_dir_survives_a_save_that_changes_the_project_size() {
+        let dir = scratch();
+        let project = dir.join("Recast_2026-07-20.recast");
+        fs::write(&project, b"original bundle").expect("write project");
+        let before = cache_dir_for(&project).expect("cache dir");
+
+        // A save rewrites the bundle; `edits.json` grows, so the file length
+        // changes. Keying on length minted a whole new directory here and
+        // re-extracted the entire recording on the next open.
+        fs::write(&project, b"bundle after a save, now longer").expect("rewrite project");
+        let after = cache_dir_for(&project).expect("cache dir");
+
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn cache_dir_differs_for_same_name_in_different_folders() {
+        let one = scratch().join("Recast.recast");
+        let two = scratch().join("Recast.recast");
+        fs::write(&one, b"a").expect("write one");
+        fs::write(&two, b"b").expect("write two");
+
+        assert_ne!(
+            cache_dir_for(&one).expect("one"),
+            cache_dir_for(&two).expect("two")
+        );
+    }
+
+    #[test]
+    fn sweep_evicts_expired_entries_and_keeps_fresh_ones() {
+        let root = scratch();
+        let stale = root.join("stale");
+        let fresh = root.join("fresh");
+        fs::create_dir_all(&stale).expect("stale");
+        fs::create_dir_all(&fresh).expect("fresh");
+        touch_last_used(&fresh);
+
+        // Zero TTL expires everything whose marker predates `now`; `fresh` was
+        // just touched, so only entries with no recent use should go.
+        sweep_cache_in(&root, Duration::from_secs(3600), u64::MAX);
+        assert!(fresh.exists(), "recently used entry must survive");
+
+        sweep_cache_in(&root, Duration::ZERO, u64::MAX);
+        assert!(!stale.exists(), "expired entry must be removed");
+    }
+
+    #[test]
+    fn sweep_evicts_least_recently_used_until_under_the_size_cap() {
+        let root = scratch();
+        let old = root.join("old");
+        let recent = root.join("recent");
+        fs::create_dir_all(&old).expect("old");
+        fs::create_dir_all(&recent).expect("recent");
+        fs::write(old.join("asset.bin"), vec![0u8; 4096]).expect("old asset");
+        fs::write(recent.join("asset.bin"), vec![0u8; 4096]).expect("recent asset");
+        touch_last_used(&old);
+        // Ensure a strictly later marker; some filesystems have coarse mtimes.
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        touch_last_used(&recent);
+
+        // Cap fits one entry, so the older one is evicted and the newer kept.
+        sweep_cache_in(&root, Duration::from_secs(3600), 6000);
+
+        assert!(!old.exists(), "LRU entry must be evicted under the cap");
+        assert!(recent.exists(), "most recent entry must survive");
     }
 
     #[test]

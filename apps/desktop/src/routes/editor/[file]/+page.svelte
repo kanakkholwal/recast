@@ -220,6 +220,9 @@
   // drift). Falls back to the <audio> elements if it can't init/decode.
   let audioEngine: AudioTimelineEngine | null = $state(null);
   let audioEngineTried = false;
+  // Bumped whenever the document changes or the editor is destroyed, so an
+  // engine that finishes decoding afterwards knows it is stale.
+  let audioEngineGen = 0;
   let audioEngineFailed = $state(false);
   let cursorPath = $state<string | null>(null);
   let cameraPath = $state<string | null>(null);
@@ -312,6 +315,15 @@
     for (const el of [systemAudioEl, micAudioEl]) {
       if (el) el.currentTime = start;
     }
+    // WebCodecs path: the picture clock is the transport and the <video> stays
+    // paused by design, so play()ing it just races that effect and rejects with
+    // AbortError. Publishing the position is the whole handoff — VideoPreview
+    // re-seats the clock onto it when we return true, and the audio engine
+    // reschedules off the same backward jump.
+    if (webcodecsActive) {
+      store.currentTime = start;
+      return true;
+    }
     // play() can reject (user-gesture), so log instead of stalling silently.
     void videoEl.play().catch((err) => {
       console.warn("loop replay failed:", err);
@@ -357,16 +369,17 @@
     }
   }
 
-  function handleVideoEnded() {
-    // Loop wins over stop-at-end. The short-circuit avoids the pause calls below
-    // racing loopBackToStart and the audio effect batching out the false→true flip.
+  // Returns true when we looped, so the WebCodecs caller keeps its clock running
+  // instead of stopping. Loop wins over stop-at-end: the short-circuit avoids the
+  // pause calls below racing loopBackToStart.
+  function handleVideoEnded(): boolean {
     if (loopEnabled && videoEl) {
-      loopBackToStart();
-      return;
+      return loopBackToStart();
     }
     store.isPlaying = false;
     systemAudioEl?.pause();
     micAudioEl?.pause();
+    return false;
   }
 
   // Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
@@ -433,7 +446,12 @@
     }
   }
   onDestroy(stopAudioClockSync);
-  onDestroy(() => audioEngine?.dispose());
+  onDestroy(() => {
+    // Bump first: an engine still decoding here would otherwise resolve into a
+    // destroyed component and never be disposed.
+    audioEngineGen++;
+    audioEngine?.dispose();
+  });
   onDestroy(disposeTileProvider);
 
   // Kept audio regions and current OUTPUT time: what the Web Audio engine
@@ -459,11 +477,20 @@
       audioEngineFailed = true;
       return;
     }
+    const gen = audioEngineGen;
     try {
       const eng = await AudioTimelineEngine.create([
         { url: systemAudioSrc, kind: "system" },
         { url: micAudioSrc, kind: "mic" },
       ]);
+      // Decoding both tracks takes seconds on a long recording, and the file can
+      // change or the editor close in that window. Adopting a stale engine
+      // stranded its AudioContext — an OS audio thread — plus both fully decoded
+      // PCM buffers, and left the new file early-returning on a truthy engine.
+      if (gen !== audioEngineGen) {
+        eng.dispose();
+        return;
+      }
       const s = store.audioSettings;
       eng.setMasterVolume(s.volume, s.muted);
       eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
@@ -767,7 +794,9 @@
     videoEl?.pause();
     systemAudioEl?.pause();
     micAudioEl?.pause();
-    // Tear down the previous file's engine; it rebuilds on first play.
+    // Tear down the previous file's engine; it rebuilds on first play. The bump
+    // also disowns one still decoding, which `dispose()` alone cannot reach.
+    audioEngineGen++;
     audioEngine?.dispose();
     audioEngine = null;
     audioEngineTried = false;

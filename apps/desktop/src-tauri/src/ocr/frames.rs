@@ -207,7 +207,19 @@ pub fn sample_frames(
     });
 
     let mut stdout = child.stdout.take().ok_or("ffmpeg produced no stdout")?;
+    let sampler = SamplerChild {
+        child: Some(child),
+        stderr: stderr_handle,
+    };
     let mut frame = vec![0u8; frame_bytes];
+
+    // Retained frames are full-resolution RGBA (~5.8 MB at 1600x900) and nothing
+    // bounded them: a high-motion source kept thousands and ran the process out
+    // of memory. At the ceiling we halve what we hold and double the required
+    // spacing, so coverage stays whole-video at lower temporal resolution rather
+    // than truncating the tail.
+    let max_frames = (SAMPLE_BUDGET_BYTES / frame_bytes.max(1)).max(1);
+    let mut gap_scale = 1.0f64;
 
     let mut kept: Vec<SampledFrame> = Vec::new();
     let mut prev_small: Option<RgbImage> = None;
@@ -257,7 +269,10 @@ pub fn sample_frames(
         let dup = last_kept_t.is_some() && hamming(last_kept_hash, hash) <= opts.dedup_hamming;
         let keep = should_keep(t, last_kept_t, dup, forced, changed, opts);
 
-        if keep {
+        // Once thinned, honour the widened spacing. Forced frames (a cursor
+        // click) are the whole reason the hook exists, so they still win.
+        let spaced = last_kept_t.is_none_or(|last| t - last >= opts.min_gap_secs * gap_scale);
+        if keep && (forced || spaced) {
             kept.push(SampledFrame {
                 t_secs: t,
                 rgba: frame.clone(),
@@ -266,6 +281,20 @@ pub fn sample_frames(
             });
             last_kept_t = Some(t);
             last_kept_hash = hash;
+
+            if kept.len() >= max_frames {
+                let mut seen = 0usize;
+                kept.retain(|_| {
+                    seen += 1;
+                    seen % 2 == 0
+                });
+                gap_scale *= 2.0;
+                log::warn!(
+                    "ocr sampling hit its {max_frames}-frame memory budget; \
+                     thinning to every {gap_scale}x min-gap ({} retained)",
+                    kept.len()
+                );
+            }
         }
 
         if score.is_finite() {
@@ -277,10 +306,7 @@ pub fn sample_frames(
         prev_small = Some(small);
     }
 
-    let status = child.wait().map_err(|e| format!("ffmpeg wait: {e}"))?;
-    let stderr_tail = stderr_handle
-        .and_then(|h| h.join().ok())
-        .unwrap_or_default();
+    let (status, stderr_tail) = sampler.finish()?;
     if !status.success() {
         return Err(format!("ffmpeg sampling failed: {stderr_tail}"));
     }
@@ -344,6 +370,53 @@ fn in_ranges(t: f64, ranges: &[(f64, f64)]) -> bool {
 /// colours hash the same. So a detected change has to beat the duplicate veto,
 /// or a theme swap on a low-texture screen would be dropped as a "duplicate"
 /// before the colour-aware score ever got a say.
+/// Memory ceiling for retained sample frames. Expressed as bytes rather than a
+/// frame count because frame size scales with the sampling resolution.
+const SAMPLE_BUDGET_BYTES: usize = 512 * 1024 * 1024;
+
+/// Owns the sampler's ffmpeg child and its stderr drain thread so both are
+/// reaped on EVERY exit path.
+///
+/// The frame loop below propagates with `?`. Without this, such an exit left
+/// ffmpeg decoding the rest of the video with nobody reading stdout — it never
+/// terminates — and the drain thread blocked forever on a pipe that never
+/// closed. There is no cancel signal into that loop, so a dropped guard is the
+/// only thing that can stop it.
+struct SamplerChild {
+    child: Option<std::process::Child>,
+    stderr: Option<std::thread::JoinHandle<String>>,
+}
+
+impl SamplerChild {
+    /// Success path: wait normally and collect the stderr tail.
+    fn finish(mut self) -> Result<(std::process::ExitStatus, String), String> {
+        let mut child = self
+            .child
+            .take()
+            .ok_or_else(|| "ffmpeg child already reaped".to_string())?;
+        let status = child.wait().map_err(|e| format!("ffmpeg wait: {e}"))?;
+        let tail = self
+            .stderr
+            .take()
+            .and_then(|h| h.join().ok())
+            .unwrap_or_default();
+        Ok((status, tail))
+    }
+}
+
+impl Drop for SamplerChild {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = child.kill();
+            let _ = child.wait();
+        }
+        // Killing the child closes the pipe, so the drain thread now returns.
+        if let Some(handle) = self.stderr.take() {
+            let _ = handle.join();
+        }
+    }
+}
+
 fn should_keep(
     t: f64,
     last_kept_t: Option<f64>,

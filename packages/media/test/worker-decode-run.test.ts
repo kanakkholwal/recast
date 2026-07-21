@@ -50,6 +50,8 @@ let videoHeight = 1080;
 let liveRuns = 0;
 /** Highest number of decode runs alive at once — each holds its own decoder. */
 let peakRuns = 0;
+/** Total runs started; a restart means a cold decoder, so these are not free. */
+let runsStarted = 0;
 
 /** Decoder startup before the first sample appears. That real cost is why a
  *  superseded run cannot notice it has been replaced. */
@@ -64,6 +66,7 @@ const DECODER_STARTUP_MS = 25;
  */
 function fakeSamples(startTimestamp = 0) {
 	liveRuns++;
+	runsStarted++;
 	if (liveRuns > peakRuns) peakRuns = liveRuns;
 	let i = 0;
 	let terminated = false;
@@ -144,6 +147,7 @@ describe('decode run against MediaBunny sample semantics', () => {
 		videoHeight = 1080;
 		liveRuns = 0;
 		peakRuns = 0;
+		runsStarted = 0;
 		openSamples = new Set();
 		openFrames = new Set();
 		const fakeSelf = {
@@ -251,6 +255,34 @@ describe('decode run against MediaBunny sample semantics', () => {
 		// Peak, not eventual: every run alive at the same instant is holding its
 		// own decoder, and a drag issues one seek per pointer move.
 		expect(peakRuns).toBeLessThanOrEqual(2);
+	});
+
+	it('absorbs a seek the live run is already streaming through', async () => {
+		// A drag issues one seek per pointer move, all within a few frames of
+		// each other. Restarting for a target the run has already decoded pays
+		// full decoder startup and holds the picture on the last frame — which
+		// is the freeze that only clears when you drag again.
+		framesAvailable = 600;
+		await boot();
+		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(3));
+		const runsBefore = runsStarted;
+		const covered = frames()[2]?.msg.originalSec as number;
+		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: covered } });
+		await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS * 3));
+		expect(runsStarted).toBe(runsBefore);
+	});
+
+	it('restarts once the run that covered a target has ended', async () => {
+		// Coverage must die with the run, or a seek inside its old window is
+		// absorbed into nothing and no frame is ever decoded.
+		framesAvailable = 4;
+		await boot();
+		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		await vi.waitFor(() => expect(liveRuns).toBe(0), { timeout: 2000 });
+		const runsBefore = runsStarted;
+		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: 1 / 60 } });
+		await vi.waitFor(() => expect(runsStarted).toBe(runsBefore + 1), { timeout: 2000 });
 	});
 
 	it('posts each frame under its real presentation timestamp', async () => {

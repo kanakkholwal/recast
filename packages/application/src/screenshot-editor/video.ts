@@ -47,6 +47,11 @@ export async function exportVideo(
   };
   tilt.style.transition = "none";
 
+  // Declared out here so `finally` can close it: a VideoEncoder holds a scarce
+  // hardware encoder session, and every throw path below (domToCanvas, encode,
+  // flush) used to leak one for the life of the process.
+  let encoder: VideoEncoder | null = null;
+
   try {
     // Probe frame 0 to size the output; force even dims, cap the long edge.
     applyFrame(persp, tilt, preset, 0);
@@ -68,7 +73,7 @@ export async function exportVideo(
       video: { codec: "avc", width, height },
       fastStart: "in-memory",
     });
-    const encoder = new VideoEncoder({
+    encoder = new VideoEncoder({
       output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
       error: (e) => {
         throw e;
@@ -100,6 +105,9 @@ export async function exportVideo(
     muxer.finalize();
     return new Blob([muxer.target.buffer], { type: "video/mp4" });
   } finally {
+    // `close()` on an already-closed encoder throws, and flush() succeeding
+    // still leaves it open.
+    if (encoder && encoder.state !== "closed") encoder.close();
     persp.style.perspective = saved.perspective;
     tilt.style.transform = saved.transform;
     tilt.style.opacity = saved.opacity;

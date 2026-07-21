@@ -574,19 +574,32 @@ impl Default for RecordingManager {
     }
 }
 
+impl RecordingManager {
+    /// Reap a still-live session.
+    ///
+    /// Must be called explicitly from the app's exit handler: quitting from the
+    /// tray goes through `app.exit(0)`, which ends in `std::process::exit` and
+    /// therefore never runs destructors — so `Drop` alone could not save us. The
+    /// encoder survived by luck (its stdin closes, so it sees EOF), but the
+    /// audio, mic and camera children read from devices and kept running with
+    /// the mic and webcam held after Recast was gone.
+    pub fn abort_for_shutdown(&self) {
+        if let Some(session) = self.session.lock().take() {
+            log::warn!("aborting live recording session on shutdown");
+            session.abort();
+        }
+    }
+}
+
 impl Drop for RecordingManager {
     fn drop(&mut self) {
         // A session still present at manager-drop time means the recording never
-        // went through `stop()` (the app quit mid-recording, or a panic unwound
-        // the owner). Reap it so we don't orphan the capture/audio/mic FFmpeg
-        // children, which on macOS/Linux are subprocesses that keep recording
-        // and hold the device (a stuck mic / screen grab), and so no capture
-        // thread spins forever. The normal path already took the session out, so
-        // this usually finds `None` and does nothing.
-        if let Some(session) = self.session.lock().take() {
-            log::warn!("recording manager dropped with a live session; aborting it");
-            session.abort();
-        }
+        // went through `stop()` (a panic unwound the owner). Reap it so we don't
+        // orphan the capture/audio/mic FFmpeg children, which on macOS/Linux are
+        // subprocesses that keep recording and hold the device (a stuck mic /
+        // screen grab), and so no capture thread spins forever. The normal path
+        // already took the session out, so this usually finds `None`.
+        self.abort_for_shutdown();
     }
 }
 

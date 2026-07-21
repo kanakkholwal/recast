@@ -110,8 +110,23 @@ let runId = 0;
 /** The live decode generator, so a supersede can tear its decoder down at once. */
 let activeSamples: AsyncGenerator<VideoSample, void, unknown> | null = null;
 let playheadSec = 0;
+/** Newest timestamp the live run has posted; NaN when no run is streaming. */
+let deliveredSec = Number.NaN;
 /** Resolves when the playhead advances, waking a run parked on backpressure. */
 let playheadWaiters: Array<() => void> = [];
+
+/**
+ * Whether the live run already covers `targetSec` — it has decoded past it, or
+ * will within its lookahead. Restarting for such a target throws away a warm
+ * decoder to re-decode frames the consumer was about to receive anyway.
+ *
+ * Only forward targets qualify: anything behind the playhead may already have
+ * been evicted from the consumer's cache, so that needs a real seek.
+ */
+function runCovers(targetSec: number): boolean {
+	if (Number.isNaN(deliveredSec) || disposed) return false;
+	return targetSec >= playheadSec && targetSec <= deliveredSec + lookaheadSec;
+}
 
 function notifyPlayhead(): void {
 	const waiters = playheadWaiters;
@@ -195,6 +210,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 	}
 	const myRun = ++runId;
 	playheadSec = startSec;
+	deliveredSec = Number.NaN;
 	let sent = 0;
 	let parked = false;
 	if (DIAG) console.log(`[mb-worker] run ${seq} from ${startSec.toFixed(3)}s`);
@@ -225,6 +241,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 			// cache keys on it, and the reader looks up by nearest-at-or-before.
 			post({ type: 'frame', seq, originalSec: timestamp, frame, width, height }, [frame]);
 			sent++;
+			deliveredSec = timestamp;
 			while (myRun === runId && !disposed && timestamp > playheadSec + lookaheadSec) {
 				if (DIAG && !parked) {
 					parked = true;
@@ -253,6 +270,9 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 			const why = disposed ? 'disposed' : myRun !== runId ? 'superseded' : 'end-of-stream';
 			console.log(`[mb-worker] run ${seq} ended after ${sent} frames (${why})`);
 		}
+		// Stop absorbing seeks into a run that is no longer streaming, or a
+		// target inside its old window would be silently dropped.
+		if (myRun === runId) deliveredSec = Number.NaN;
 		if (activeSamples === samples) activeSamples = null;
 		// Release the generator's decoder resources when superseded mid-stream.
 		await samples.return(undefined).catch(() => {});
@@ -333,6 +353,15 @@ function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 			});
 			return;
 		case 'seek':
+			// A drag issues near-identical targets back to back. If the live run
+			// is already streaming through this point, moving its playhead is
+			// enough — superseding would kill a warm decoder and hold the
+			// picture on the last frame for the whole restart.
+			if (runCovers(msg.originalSec)) {
+				playheadSec = msg.originalSec;
+				notifyPlayhead();
+				return;
+			}
 			// A jump: supersede the current run and decode from the new point.
 			prefetchedSec = Number.NaN;
 			// Supersede BEFORE waking. A run parked on backpressure only

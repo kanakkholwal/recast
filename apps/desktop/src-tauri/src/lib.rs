@@ -479,6 +479,10 @@ pub fn run() {
                 project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
             }
 
+            // Evict stale/excess project extractions. Startup-only: nothing is
+            // open yet, so no live editor can lose the assets under it.
+            tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
+
             // Sweep abandoned `recast-thumbnails/*` subdirs left behind by
             // crashed/killed editor sessions. The thumbnail extractor
             // best-effort-removes its own per-invocation dir, but a process
@@ -650,6 +654,19 @@ pub fn run() {
                 // correctly; a force-kill leaves the snapshot stale, which
                 // the PID check rejects and clears.
                 commands::persist(app_handle.state::<AppState>().inner(), app_handle);
+            }
+
+            // Reap a live recording before the process ends. Only on `Exit`:
+            // `ExitRequested` can still be cancelled, and killing the user's
+            // in-progress recording on a quit they backed out of would be worse
+            // than the leak. Quitting via the tray calls `app.exit(0)`, which
+            // ends in `process::exit` and skips every destructor, so
+            // `Drop for RecordingManager` never fires and the mic/camera
+            // children outlive the app holding their devices.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.recording_manager.abort_for_shutdown();
+                }
             }
 
             // macOS/iOS deliver file-association opens (a double-clicked

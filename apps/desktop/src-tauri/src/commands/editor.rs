@@ -1298,6 +1298,20 @@ pub(crate) fn poster_webp_for_export(path: &str) -> Option<Vec<u8>> {
 /// export verb would call it too). It still owns its own cancel token in
 /// `state.export_cancel` (so `cancel_export` finds it by id) and takes a power
 /// lease for the run.
+/// Drops an export's cancellation token when the run ends, however it ends.
+struct CancelTokenGuard {
+    app: AppHandle,
+    export_id: String,
+}
+
+impl Drop for CancelTokenGuard {
+    fn drop(&mut self) {
+        if let Some(state) = self.app.try_state::<AppState>() {
+            state.export_cancel.lock().remove(&self.export_id);
+        }
+    }
+}
+
 pub(crate) async fn run_export_job(
     app: AppHandle,
     mut request: ExportRequest,
@@ -1316,6 +1330,14 @@ pub(crate) async fn run_export_job(
         .export_cancel
         .lock()
         .insert(export_id.clone(), cancel_flag.clone());
+    // RAII, like the power lease above: the token is removed on EVERY exit,
+    // including the `?`s during prep. Hand removal left an entry stranded for
+    // the process lifetime whenever prep failed, and a stale token poisons the
+    // next export that reuses the id.
+    let _cancel_token = CancelTokenGuard {
+        app: app.clone(),
+        export_id: export_id.clone(),
+    };
     emit_export_state(&app, ExportStateEvent::started(&export_id));
     emit_export_state(
         &app,
@@ -2005,12 +2027,10 @@ pub(crate) async fn run_export_job(
                 }
             }
             Err(GifPassError::Cancelled) => {
-                state.export_cancel.lock().remove(&export_id);
                 emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
                 return Err(AppError::from("export cancelled"));
             }
             Err(GifPassError::Failed(msg)) => {
-                state.export_cancel.lock().remove(&export_id);
                 emit_export_state(&app, ExportStateEvent::error(&export_id, &msg));
                 return Err(AppError::from(msg));
             }
@@ -2201,11 +2221,9 @@ pub(crate) async fn run_export_job(
     })
     .await;
 
-    // Cleanup must run regardless of whether the task returned Ok/Err or even
-    // panicked — otherwise a panic would leak the cursor overlay's temp dir and
-    // leave a stale cancel token installed that would poison the next export.
+    // The cancel token is now owned by `_cancel_token` (RAII), so it survives
+    // `?` and panics. This drop is just the cursor overlay's temp dir.
     drop(cursor_overlay);
-    state.export_cancel.lock().remove(&export_id);
     if let Some(p) = palette_temp_path.as_ref() {
         let _ = std::fs::remove_file(p);
     }

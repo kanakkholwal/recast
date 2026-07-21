@@ -61,7 +61,8 @@
 		 *  renders nothing when this is empty. */
 		cameraSrc?: string;
 		onTimeUpdate: () => void;
-		onEnded: () => void;
+		/** Return `true` if the host looped (moved the transport) instead of stopping. */
+		onEnded: () => boolean | void;
 		onLoadedMetadata: () => void;
 		onReady: () => void;
 		onError: () => void;
@@ -119,6 +120,7 @@
 
 	let gl: WebGL2RenderingContext | null = null;
 	let program: WebGLProgram | null = null;
+	let vertexBuf: WebGLBuffer | null = null;
 	let videoTex: WebGLTexture | null = null;
 	let bgTex: WebGLTexture | null = null;
 	let bgTexReady = false;
@@ -213,6 +215,16 @@
 
 	let pressEvents: PressEvent[] = [];
 
+	/**
+	 * (Re)build the texture ring for the live source. Sized from the source, so
+	 * it must be rebuilt after a context restore too — the old handles belong to
+	 * the dead context and binding them fails silently.
+	 */
+	function rebuildFrameRing(width: number, height: number) {
+		frameRing?.dispose();
+		frameRing = gl ? new FrameTextureRing(gl, textureRingFrames(width, height)) : null;
+	}
+
 	function initGL() {
 		if (!canvasEl) return;
 		const g = canvasEl.getContext("webgl2", {
@@ -234,9 +246,10 @@
 		g.deleteShader(vs);
 		g.deleteShader(fs);
 
-		// Full-screen quad
-		const buf = g.createBuffer();
-		g.bindBuffer(g.ARRAY_BUFFER, buf);
+		// Full-screen quad. Kept on a field so teardown can delete it; initGL also
+		// runs on every context restore, so a local would leak one per restore.
+		vertexBuf = g.createBuffer();
+		g.bindBuffer(g.ARRAY_BUFFER, vertexBuf);
 		g.bufferData(
 			g.ARRAY_BUFFER,
 			new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
@@ -650,15 +663,24 @@
 			}
 			// Playing: the gapless output clock is the master.
 			playbackTime = outputToOriginal(store.timeMap, picClock.time);
-			// Reached the end of the edited timeline → stop cleanly. The clock
-			// clamps at its duration, so without this the picture would freeze on
-			// the last frame while still "playing" (and the decoder would sit idle).
-			// Setting isPlaying=false pauses the clock (via the play/pause effect);
-			// hitting play again restarts from the top (see the seed below).
+			// Reached the end of the edited timeline. Ask the host BEFORE stopping:
+			// it may want to loop, and stopping first would flip isPlaying
+			// false→true within one tick, which Svelte batches into no change at
+			// all — the play/pause effect never re-seeds, so the clock stays
+			// clamped at the end and the picture sticks on the last frame.
 			if (picClock.atEnd && !endHandled) {
-				endHandled = true;
-				store.isPlaying = false;
-				onEnded?.();
+				if (onEnded?.() === true) {
+					// The host moved the transport; follow it and keep playing.
+					picClock.seek(originalToOutput(store.timeMap, store.currentTime));
+					lastPublishedTime = store.currentTime;
+				} else {
+					// The clock clamps at its duration, so without this the picture
+					// would freeze on the last frame while still "playing" (and the
+					// decoder would sit idle). Hitting play again restarts from the
+					// top (see the seed below).
+					endHandled = true;
+					store.isPlaying = false;
+				}
 			}
 			// Publish to the store (drives overlays/timeline/audio) at ~25 Hz, not
 			// every rAF frame, because that fan-out is expensive and was starving decoded-
@@ -1151,7 +1173,13 @@
 			cancelAnimationFrame(rafHandle);
 			rafHandle = null;
 		}
+		// The ring's textures died with the context. Drop it, or decoded frames
+		// keep uploading into stale handles — silent INVALID_OPERATION, and the
+		// preview stays frozen for the rest of the session.
+		frameRing?.dispose();
+		frameRing = null;
 		gl = null;
+		vertexBuf = null;
 		program = null;
 		videoTex = null;
 		bgTex = null;
@@ -1165,6 +1193,11 @@
 	function onContextRestored() {
 		glLost = false;
 		initGL();
+		// initGL rebuilds the shader/textures it owns; the ring is sized from the
+		// source, so it needs its own rebuild. Until the next decode lands, draw()
+		// finds an empty ring and falls back to the <video> frame rather than
+		// showing black.
+		if (mbSource) rebuildFrameRing(mbSource.width, mbSource.height);
 		requestRedraw();
 		if (store.isPlaying) startVideoFrameLoop();
 	}
@@ -1230,7 +1263,14 @@
 		if (gl) {
 			if (videoTex) gl.deleteTexture(videoTex);
 			if (bgTex) gl.deleteTexture(bgTex);
+			if (vertexBuf) gl.deleteBuffer(vertexBuf);
 			if (program) gl.deleteProgram(program);
+			// This component remounts on every editor open, and reclaiming a
+			// context is GC-timed. Chromium allows ~16 live contexts and
+			// force-loses the OLDEST when it hits the cap — which would kill a
+			// live editor's preview. Release ours deterministically instead.
+			gl.getExtension("WEBGL_lose_context")?.loseContext();
+			gl = null;
 		}
 	});
 
@@ -1270,8 +1310,7 @@
 					source.dispose();
 					return;
 				}
-				frameRing?.dispose();
-				frameRing = gl ? new FrameTextureRing(gl, textureRingFrames(source.width, source.height)) : null;
+				rebuildFrameRing(source.width, source.height);
 				// Upload and hand back in the same tick. Holding decoded frames is
 				// what starved the decoder at 4K until it stopped emitting.
 				source.onFrameDecoded = (frame, tsUs) => {
@@ -1336,6 +1375,12 @@
 					"MediaBunny source unavailable; using <video> fallback:",
 					err,
 				);
+				// We fall back to <video>, so the previous source's ring is dead
+				// weight — 16 textures, ~133MB of VRAM at 1080p, never sampled
+				// again. The mid-playback onError path already did this; only
+				// creation-time failure missed it.
+				frameRing?.dispose();
+				frameRing = null;
 				// Telemetry: how often real users silently drop to <video>.
 				analytics.capture("mediabunny_preview_fallback", {
 					reason: classifyMbError(err),
