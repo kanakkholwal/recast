@@ -23,6 +23,52 @@ function span(origStart: number, origEnd: number, speed = 1) {
 	return { origStart, origEnd, speed };
 }
 
+describe("originalToOutput binary search parity", () => {
+	// Reference linear scan: exactly the pre-optimization implementation. The
+	// binary-search version must agree with it for every input, including gaps,
+	// span interiors, seam-exact times, and out-of-range.
+	function linearOriginalToOutput(
+		map: ReturnType<typeof buildTimeMap>,
+		t: number,
+	): number {
+		for (const s of map.spans) {
+			if (t < s.origStart) return s.outStart;
+			if (t <= s.origEnd) return s.outStart + (t - s.origStart) / s.speed;
+		}
+		return map.outputDuration;
+	}
+
+	it("matches the linear scan across randomized maps and probe times", () => {
+		// Deterministic LCG so failures reproduce; no Math.random.
+		let seed = 0x2545f491;
+		const rand = () => {
+			seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+			return seed / 0x7fffffff;
+		};
+		for (let trial = 0; trial < 2000; trial++) {
+			const n = 1 + Math.floor(rand() * 12);
+			const spans: ReturnType<typeof span>[] = [];
+			let cursor = rand() * 3;
+			for (let i = 0; i < n; i++) {
+				const gap = rand() * 2; // removed region before this span
+				const len = 0.2 + rand() * 3;
+				const start = cursor + gap;
+				spans.push(span(start, start + len, 0.5 + rand() * 2));
+				cursor = start + len;
+			}
+			const map = buildTimeMap(spans);
+			// Probe interiors, gaps, seam-exact endpoints, and out-of-range.
+			const probes = [-1, cursor + 1];
+			for (const s of map.spans) {
+				probes.push(s.origStart, s.origEnd, (s.origStart + s.origEnd) / 2, s.origStart - 0.01);
+			}
+			for (const t of probes) {
+				expect(originalToOutput(map, t)).toBeCloseTo(linearOriginalToOutput(map, t), 9);
+			}
+		}
+	});
+});
+
 describe("buildTimeMap", () => {
 	it("lays kept spans end-to-end on the output axis", () => {
 		const map = buildTimeMap([span(0, 2), span(5, 6)]);

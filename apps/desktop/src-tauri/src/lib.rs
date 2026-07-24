@@ -476,7 +476,13 @@ pub fn run() {
             let state = app.state::<AppState>();
             let output_dir = state.config.read().output_dir.clone();
             if let Some(dir) = output_dir {
-                project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
+                // Off the main thread: this readdir was the one disk walk left in
+                // setup(), which runs before the event loop and so delays first
+                // paint on macOS (in-process WKWebView). It only cleans abandoned
+                // autosave sessions, so it never races the just-opened UI.
+                tauri::async_runtime::spawn_blocking(move || {
+                    project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
+                });
             }
 
             // Evict stale/excess project extractions. Startup-only: nothing is

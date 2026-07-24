@@ -138,11 +138,23 @@ export function displayTimeMap(args: {
  * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.
  */
 export function originalToOutput(map: TimeMap, t: number): number {
-	for (const s of map.spans) {
-		if (t < s.origStart) return s.outStart;
-		if (t <= s.origEnd) return s.outStart + (t - s.origStart) / s.speed;
+	// Binary search for the first span with `origEnd >= t` — identical to the
+	// linear "first span where t <= origEnd" (a time before that span's start
+	// collapses onto its seam). Spans are ordered and non-overlapping, so origEnd
+	// is non-decreasing. The waveform lane evaluates this per bucket over ~2000
+	// buckets, so at high cut counts the old O(spans) scan dominated a zoom.
+	const spans = map.spans;
+	let lo = 0;
+	let hi = spans.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (spans[mid].origEnd >= t) hi = mid;
+		else lo = mid + 1;
 	}
-	return map.outputDuration;
+	if (lo >= spans.length) return map.outputDuration;
+	const s = spans[lo];
+	if (t < s.origStart) return s.outStart;
+	return s.outStart + (t - s.origStart) / s.speed;
 }
 
 /**

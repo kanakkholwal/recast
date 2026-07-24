@@ -1598,9 +1598,12 @@ pub(crate) async fn run_export_job(
     // overlay pre-render separately — it's the plan's prime perf suspect.
     let prep_ms = export_start.elapsed().as_millis();
     let cursor_render_start = Instant::now();
-    let needs_overlay = request.render_state.cursor_enabled
-        || !request.render_state.annotations.is_empty()
-        || (request.render_state.shadow.enabled && request.render_state.shadow.opacity > 0.0);
+    // NOT gated on the drop shadow: that's composited separately as a static PNG
+    // in the graph (`drop_shadow_mask` → `compose_shadow_stage`), so including it
+    // here ran the whole per-frame overlay pre-render just to emit empty frames.
+    // Annotation glows still qualify via the `annotations` clause.
+    let needs_overlay =
+        request.render_state.cursor_enabled || !request.render_state.annotations.is_empty();
     // Surface the cursor/annotation pre-render — it's the longest prep sub-step
     // (it renders every output frame before the encode starts), so a plain
     // "Preparing…" here reads as a hang.

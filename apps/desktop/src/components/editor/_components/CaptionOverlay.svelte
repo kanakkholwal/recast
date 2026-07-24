@@ -71,6 +71,11 @@ const animated = $derived(!!active && active.words.length > 0 && !isStaticAnimat
 // The chunk to show plus its progress. For a static line the whole segment is
 // one chunk with every word "spoken" (so nothing renders muted). `key`
 // re-mounts <CaptionBox> when the chunk changes, replaying the entrance.
+// Chunk boundaries depend only on the segment + animation, NOT on the playhead,
+// so keep them out of the per-tick derived below — this used to re-chunk the
+// active segment 25×/s for nothing.
+const _runs = $derived(active && animated ? chunkWords(active.words, anim) : null);
+
 const _view = $derived.by(() => {
 	if (!active) return null;
 	if (active.words.length === 0) {
@@ -78,10 +83,10 @@ const _view = $derived.by(() => {
 		const w = [{ start: active.start, end: active.end, text: active.text }];
 		return { key: active.id, words: w, spoken: 1, wi: -1 };
 	}
-	if (!animated) {
+	if (!animated || !_runs) {
 		return { key: active.id, words: active.words, spoken: active.words.length, wi: -1 };
 	}
-	const runs = chunkWords(active.words, anim);
+	const runs = _runs;
 	const ci = activeChunkIndex(runs, nowOrig);
 	const chunk = runs[ci];
 	if (!chunk) return null;

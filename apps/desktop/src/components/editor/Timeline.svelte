@@ -375,13 +375,34 @@
     seekToPosition(event.clientX);
   }
 
+  // Coalesce pointer moves to one rAF: hover + drag-seek each did a
+  // getBoundingClientRect (a forced layout), and a drag also fanned out the full
+  // `store.currentTime` write — synchronously, per event. High-Hz mice fire well
+  // above 60/s, so this bounds that work to once per frame with no perceptible
+  // scrub lag.
+  let pendingPointer: { x: number; y: number } | null = null;
+  let pointerRaf: number | null = null;
+  function processPointer() {
+    pointerRaf = null;
+    const p = pendingPointer;
+    if (!p) return;
+    updateHover(p.x, p.y);
+    if (isDraggingPlayhead) seekToPosition(p.x);
+  }
   function handleTimelinePointerMove(event: PointerEvent) {
-    updateHover(event.clientX, event.clientY);
-    if (!isDraggingPlayhead) return;
-    seekToPosition(event.clientX);
+    pendingPointer = { x: event.clientX, y: event.clientY };
+    if (pointerRaf === null) pointerRaf = requestAnimationFrame(processPointer);
   }
 
   function handleTimelinePointerUp() {
+    // Land the final position immediately — the last queued rAF may be up to a
+    // frame stale, and a scrub must end exactly where the pointer was released.
+    if (pointerRaf !== null) {
+      cancelAnimationFrame(pointerRaf);
+      pointerRaf = null;
+    }
+    if (pendingPointer && isDraggingPlayhead) seekToPosition(pendingPointer.x);
+    pendingPointer = null;
     isDraggingPlayhead = false;
   }
 
@@ -877,6 +898,7 @@
     return () => {
       observer.disconnect();
       offCommands();
+      if (pointerRaf !== null) cancelAnimationFrame(pointerRaf);
     };
   });
 </script>

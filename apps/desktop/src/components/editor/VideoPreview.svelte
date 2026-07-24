@@ -473,27 +473,61 @@
 		});
 	}
 
+	//  Per-frame memoization
+	// The draw loop runs at 60fps during playback; these recompute-on-change
+	// caches stop it re-parsing/re-allocating identical values every frame.
+	let geomCache: ReturnType<typeof computeCanvasGeometry> | null = null;
+	let geomSig = "";
+	function currentGeometry() {
+		const meta = store.metadata;
+		if (!meta?.width || !meta?.height) return null;
+		const sig = `${meta.width}x${meta.height}|${store.padding}|${store.outputAspect}`;
+		if (sig !== geomSig) {
+			geomCache = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
+			geomSig = sig;
+		}
+		return geomCache;
+	}
+
+	// Container CSS size, cached by the ResizeObserver so the draw loop never
+	// reads clientWidth/clientHeight — a forced synchronous reflow every frame,
+	// made worse by the overlays that dirty layout on the same tick.
+	let containerW = 0;
+	let containerH = 0;
+
+	let gradCache: ReturnType<typeof buildGradientUniforms> | null = null;
+	let gradSig = "\0";
+	function currentGradient(value: string) {
+		if (value !== gradSig) {
+			gradCache = buildGradientUniforms(value);
+			gradSig = value;
+		}
+		return gradCache!;
+	}
+
+	// Colours change rarely but hexToRgba (trim/replace/parseInt×3 + alloc) ran
+	// per frame; memoize and reuse the array (never mutated by callers).
+	const rgbaCache = new Map<string, number[]>();
+	function rgba(hex: string): number[] {
+		let v = rgbaCache.get(hex);
+		if (!v) {
+			if (rgbaCache.size > 32) rgbaCache.clear();
+			v = hexToRgba(hex);
+			rgbaCache.set(hex, v);
+		}
+		return v;
+	}
+
 	//  Sizing
 	function resizeCanvas() {
-		if (!canvasEl || !containerEl || !store.metadata) return false;
-		const meta = store.metadata;
-		if (!meta.width || !meta.height) return false;
-
-		// Final canvas geometry (source + padding + optional letterbox bars
-		// to satisfy the chosen output aspect). The shader receives the
-		// source-video rectangle directly, so anything outside that rect
-		// renders with the background.
-		const geom = computeCanvasGeometry(
-			meta.width,
-			meta.height,
-			store.padding,
-			store.outputAspect,
-		);
+		if (!canvasEl || !containerEl) return false;
+		const geom = currentGeometry();
+		if (!geom) return false;
 		const compW = geom.canvasW;
 		const compH = geom.canvasH;
 
-		const cw = containerEl.clientWidth;
-		const ch = containerEl.clientHeight;
+		const cw = containerW || containerEl.clientWidth;
+		const ch = containerH || containerEl.clientHeight;
 		if (cw <= 0 || ch <= 0) return false;
 
 		// Fit composition into container preserving aspect
@@ -835,8 +869,9 @@
 		// `preload="auto"` (buffering the whole file) just to clear the spinner.
 		if (!isReady) isReady = true;
 
-		// Make sure background texture is current (fire-and-forget if it changed)
-		void loadBackgroundIfNeeded();
+		// Background (re)load is driven by a $effect on its reactive inputs and by
+		// onContextRestored — no per-frame call needed here (it allocated a Promise
+		// + key string every frame only to early-return).
 
 		gl.viewport(0, 0, canvasEl.width, canvasEl.height);
 		gl.clearColor(0, 0, 0, 1);
@@ -850,12 +885,8 @@
 		// current render-buffer scale. The canvas can be smaller than
 		// `geom.canvasW` (DPR cap, max-dim cap), so we scale uniformly.
 		const meta = store.metadata!;
-		const geom = computeCanvasGeometry(
-			meta.width,
-			meta.height,
-			store.padding,
-			store.outputAspect,
-		);
+		const geom = currentGeometry();
+		if (!geom) return;
 		const sx = canvasEl.width / Math.max(1, geom.canvasW);
 		const sy = canvasEl.height / Math.max(1, geom.canvasH);
 		// Scene entrance/exit animation: a per-segment transform on the video
@@ -888,10 +919,10 @@
 		let bgBlurPx = 0;
 		if (bgType === "color") {
 			gl.uniform1i(uniforms.u_bgType, 0);
-			gl.uniform4fv(uniforms.u_bgColor, hexToRgba(store.backgroundValue || "#111111"));
+			gl.uniform4fv(uniforms.u_bgColor, rgba(store.backgroundValue || "#111111"));
 		} else if (bgType === "gradient") {
 			gl.uniform1i(uniforms.u_bgType, 1);
-			const grad = buildGradientUniforms(store.backgroundValue || "");
+			const grad = currentGradient(store.backgroundValue || "");
 			gl.uniform4fv(uniforms["u_gradColors[0]"], grad.colors);
 			gl.uniform1fv(uniforms["u_gradStops[0]"], grad.positions);
 			gl.uniform1i(uniforms.u_gradCount, grad.count);
@@ -1044,20 +1075,27 @@
 		// sizes). We project the source-pixel cursor position into the
 		// canvas via the geometry helper, then divide by canvas dims.
 		const spriteSourcePx = cs.size * 16;
-		svgCursor = {
-			visible: overlayVisible,
-			alpha: cursorAlpha,
-			styleId: cs.style,
-			pressed: cursorPressed,
-			right: cursorRight,
-			dragging: cursorDragging,
-			scale: cursorScale,
-			canvasX: geom.videoX + svgUvX * geom.videoW,
-			canvasY: geom.videoY + svgUvY * geom.videoH,
-			compW: geom.canvasW,
-			compH: geom.canvasH,
-			spritePx: spriteSourcePx,
-		};
+		// Only write this reactive object when an SVG cursor is actually shown.
+		// The default dot cursor renders in the shader, so writing a fresh 13-field
+		// $state object every frame just fanned out reactivity 60×/s for nothing.
+		if (usingSvgCursor) {
+			svgCursor = {
+				visible: overlayVisible,
+				alpha: cursorAlpha,
+				styleId: cs.style,
+				pressed: cursorPressed,
+				right: cursorRight,
+				dragging: cursorDragging,
+				scale: cursorScale,
+				canvasX: geom.videoX + svgUvX * geom.videoW,
+				canvasY: geom.videoY + svgUvY * geom.videoH,
+				compW: geom.canvasW,
+				compH: geom.canvasH,
+				spritePx: spriteSourcePx,
+			};
+		} else if (svgCursor.visible) {
+			svgCursor = { ...svgCursor, visible: false };
+		}
 		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
 		// Multiplied by the press scale curve so the soft-dot pulses on
 		// click in lockstep with the SVG sprite, matching `bounce_scale`
@@ -1066,7 +1104,7 @@
 		const cursorRadiusCanvas = cs.size * 2 * sx * cursorScale;
 		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
 		gl.uniform4fv(uniforms.u_cursorColor, [1, 1, 1, 0.9]);
-		const [hr, hg, hb] = hexToRgba(cs.highlightColor || "#3b82f6");
+		const [hr, hg, hb] = rgba(cs.highlightColor || "#3b82f6");
 		gl.uniform4fv(uniforms.u_highlightColor, [hr, hg, hb, 1]);
 		gl.uniform1f(uniforms.u_highlightAlpha, highlightAlpha);
 		gl.uniform2f(uniforms.u_highlightPos, highlightPosX, highlightPosY);
@@ -1081,7 +1119,7 @@
 			gl.uniform1f(uniforms.u_shadowBlurPx, Math.max(0.5, shadow.blur * vpToCanvas));
 			gl.uniform1f(uniforms.u_shadowSpreadPx, Math.max(0, shadow.spread * vpToCanvas));
 			gl.uniform2f(uniforms.u_shadowOffsetPx, 0, shadow.offsetY * vpToCanvas);
-			const [sr, sg, sb] = hexToRgba(shadow.color || "#000000");
+			const [sr, sg, sb] = rgba(shadow.color || "#000000");
 			gl.uniform4fv(uniforms.u_shadowColor, [sr, sg, sb, shadow.opacity / 100]);
 		} else {
 			gl.uniform1i(uniforms.u_shadowEnabled, 0);
@@ -1202,6 +1240,9 @@
 		// finds an empty ring and falls back to the <video> frame rather than
 		// showing black.
 		if (mbSource) rebuildFrameRing(mbSource.width, mbSource.height);
+		// onContextLost cleared lastBgKey, so the background texture is gone;
+		// reload it here since the draw loop no longer does it per frame.
+		void loadBackgroundIfNeeded();
 		requestRedraw();
 		if (store.isPlaying) startVideoFrameLoop();
 	}
@@ -1246,7 +1287,14 @@
 		canvasEl?.addEventListener("webglcontextrestored", onContextRestored);
 		document.addEventListener("visibilitychange", onVisibilityChange);
 		watchDpr();
-		const ro = new ResizeObserver(() => requestRedraw());
+		const ro = new ResizeObserver(() => {
+			// Read layout here (rarely) instead of in the 60fps draw loop.
+			if (containerEl) {
+				containerW = containerEl.clientWidth;
+				containerH = containerEl.clientHeight;
+			}
+			requestRedraw();
+		});
 		if (containerEl) ro.observe(containerEl);
 		return () => ro.disconnect();
 	});
