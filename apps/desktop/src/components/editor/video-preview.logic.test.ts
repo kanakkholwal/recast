@@ -9,6 +9,7 @@ import {
 	idleAlphaAt,
 	interpolateCursor,
 	resolutionTier,
+	shouldRecoverMbSource,
 	type CursorSampleJS,
 	type IdlePeriodJS,
 } from "./video-preview.logic";
@@ -154,6 +155,26 @@ describe("resolutionTier", () => {
 		expect(resolutionTier(5120, 2880)).toBe("5k");
 		expect(resolutionTier(2560, 1440)).toBe("1440p");
 		expect(resolutionTier(1280, 720)).toBe("720p");
+	});
+});
+
+describe("shouldRecoverMbSource", () => {
+	it("rebuilds on a transient GPU-reset class failure", () => {
+		expect(shouldRecoverMbSource("internal", 0)).toBe(true);
+		expect(shouldRecoverMbSource("worker-died", 0)).toBe(true);
+		expect(shouldRecoverMbSource("decode-failed", 0)).toBe(true);
+	});
+
+	it("degrades permanently on an unrecoverable file/codec failure", () => {
+		expect(shouldRecoverMbSource("unsupported", 0)).toBe(false);
+		expect(shouldRecoverMbSource("bad-input", 0)).toBe(false);
+		expect(shouldRecoverMbSource("too-large", 0)).toBe(false);
+	});
+
+	it("stops retrying once the attempt budget is spent", () => {
+		expect(shouldRecoverMbSource("internal", 2)).toBe(true); // 3rd attempt
+		expect(shouldRecoverMbSource("internal", 3)).toBe(false); // exhausted
+		expect(shouldRecoverMbSource("internal", 1, 1)).toBe(false); // custom cap
 	});
 });
 

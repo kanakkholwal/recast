@@ -42,6 +42,7 @@
 	  idleAlphaAt,
 	  interpolateCursor,
 	  resolutionTier,
+	  shouldRecoverMbSource,
 	  type CursorSampleJS,
 	  type IdlePeriodJS,
 	} from "./video-preview.logic";
@@ -142,6 +143,15 @@
 	let frameRing: FrameTextureRing | null = null;
 	let mbReady = $state(false);
 	let loadedMbSrc = "";
+	// Automatic recovery from a transient decode failure — a GPU-process reset
+	// (TDR) under scrub-thrash kills the decoder + GL context but is recoverable;
+	// without this the preview degraded to <video> for the rest of the session.
+	const MB_RECOVER_DELAY_MS = 400;
+	let mbRecoverAttempts = 0;
+	let mbHealthyFrames = 0;
+	let mbRecoverPending = false;
+	let mbRecoverTimer: ReturnType<typeof setTimeout> | undefined;
+	let mbRecoverNonce = $state(0);
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
@@ -1244,6 +1254,8 @@
 		// reload it here since the draw loop no longer does it per frame.
 		void loadBackgroundIfNeeded();
 		requestRedraw();
+		// A recovery deferred while the context was lost can run now the GL is back.
+		if (mbRecoverPending) runMbRecover();
 		if (store.isPlaying) startVideoFrameLoop();
 	}
 
@@ -1306,6 +1318,7 @@
 		dprQuery?.removeEventListener("change", onDprChange);
 		stopVideoFrameLoop();
 		if (rafHandle !== null) cancelAnimationFrame(rafHandle);
+		clearTimeout(mbRecoverTimer);
 		smoother?.dispose();
 		smoother = null;
 		mbSource?.dispose();
@@ -1326,14 +1339,42 @@
 		}
 	});
 
+	function scheduleMbRecover() {
+		clearTimeout(mbRecoverTimer);
+		mbHealthyFrames = 0;
+		mbRecoverTimer = setTimeout(runMbRecover, MB_RECOVER_DELAY_MS);
+	}
+
+	// Re-create the MediaBunny source after a transient failure. Deferred until
+	// the GL context is back (onContextRestored re-fires this), or the ring would
+	// be allocated on a dead context.
+	function runMbRecover() {
+		mbRecoverTimer = undefined;
+		if (!videoSrc) return;
+		if (glLost || !gl) {
+			mbRecoverPending = true;
+			return;
+		}
+		mbRecoverPending = false;
+		loadedMbSrc = "";
+		mbRecoverNonce++;
+	}
+
 	// MediaBunny frame source (re)created when the media src changes. Owns its own
 	// worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
 	// an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
 	// mbSource null so draw() falls back to the <video> element automatically.
 	$effect(() => {
 		const src = videoSrc;
+		// Read so a recovery bump re-runs this effect; the rebuild also resets
+		// loadedMbSrc, so the same-src guard below doesn't short-circuit it.
+		void mbRecoverNonce;
 		// No src: tear down any live engine and fall back to the <video> path.
 		if (!src) {
+			clearTimeout(mbRecoverTimer);
+			mbRecoverTimer = undefined;
+			mbRecoverPending = false;
+			mbRecoverAttempts = 0;
 			if (mbSource) {
 				mbSource.dispose();
 				mbSource = null;
@@ -1370,13 +1411,24 @@
 				// what starved the decoder at 4K until it stopped emitting.
 				source.onFrameDecoded = (frame, tsUs) => {
 					frameRing?.put(frame, tsUs);
+					// Frames flowing again after a recovery: clear the streak so a
+					// later, unrelated failure gets its full retry budget.
+					if (mbRecoverAttempts > 0 && ++mbHealthyFrames > 30) {
+						mbRecoverAttempts = 0;
+						mbHealthyFrames = 0;
+					}
 				};
 				source.onFrame = () => requestRedraw();
-				// A dead decode run freezes the picture. Hand back to <video>,
-				// which is worse quality but still moves.
+				// A dead decode run freezes the picture. A transient GPU reset gets a
+				// bounded auto-rebuild; a permanent failure (unsupported codec) hands
+				// back to <video>, which is worse quality but still moves.
 				source.onError = (err) => {
 					if (mbSource !== source) return;
-					console.error("MediaBunny decode failed mid-playback; falling back", err);
+					const recover = shouldRecoverMbSource(err.code, mbRecoverAttempts);
+					console.error(
+						`MediaBunny decode failed mid-playback; ${recover ? "rebuilding" : "falling back"}`,
+						err,
+					);
 					analytics.capture("mediabunny_preview_fallback", { reason: err.code });
 					mbReady = false;
 					webcodecsActive = false;
@@ -1385,6 +1437,10 @@
 					frameRing?.dispose();
 					frameRing = null;
 					requestRedraw();
+					if (recover) {
+						mbRecoverAttempts++;
+						scheduleMbRecover();
+					}
 				};
 				// Telemetry: the engine initialised successfully.
 				const tier = resolutionTier(source.width, source.height);

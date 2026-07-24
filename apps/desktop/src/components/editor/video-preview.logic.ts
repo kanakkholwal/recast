@@ -158,6 +158,29 @@ export function resolutionTier(w: number, h: number): string {
 	return "sd";
 }
 
+/** MediaBunny error codes that are transient (a GPU-process reset / TDR under
+ *  scrub-thrash), not a property of the file — worth an automatic rebuild. */
+const MB_TRANSIENT_CODES: ReadonlySet<string> = new Set([
+	"internal",
+	"worker-died",
+	"decode-failed",
+]);
+
+/**
+ * Whether a mid-stream MediaBunny decode failure should trigger an automatic
+ * source rebuild rather than a permanent drop to the `<video>` element. A GPU
+ * reset kills the decoder transiently, so rebuilding recovers full quality; an
+ * `unsupported`/`bad-input` codec would just fail again, so we degrade instead.
+ * `attempts` is the number already made in the current failure streak.
+ */
+export function shouldRecoverMbSource(
+	code: string,
+	attempts: number,
+	maxAttempts = 3,
+): boolean {
+	return MB_TRANSIENT_CODES.has(code) && attempts < maxAttempts;
+}
+
 // Map a source-init failure to a coarse, PII-safe reason. The raw message can
 // in principle carry a URL/path, so we NEVER send it; only this enum.
 export function classifyMbError(err: unknown): string {
