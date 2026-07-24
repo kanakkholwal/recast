@@ -36,7 +36,12 @@ class WorkerError extends Error {
 	}
 }
 
-type InitMessage = { type: 'init'; url: string };
+/**
+ * `durationSec`/`fps` are hints from the host, which already has authoritative
+ * ffprobe metadata. Supplying them skips two container walks that are O(file) on
+ * a fragmented MP4 — see `init`.
+ */
+type InitMessage = { type: 'init'; url: string; durationSec?: number; fps?: number };
 type SeekMessage = { type: 'seek'; seq: number; originalSec: number };
 /** Playhead advanced normally; feeds decode-ahead backpressure, never seeks. */
 type PlayheadMessage = { type: 'playhead'; originalSec: number };
@@ -138,8 +143,17 @@ function awaitPlayhead(): Promise<void> {
 	return new Promise((resolve) => playheadWaiters.push(resolve));
 }
 
-async function init(url: string): Promise<void> {
+async function init(url: string, hints: { durationSec?: number; fps?: number } = {}): Promise<void> {
 	disposed = false;
+	// Per-step timing: a slow open used to surface only as a 30s timeout with no
+	// indication of which container call was walking the file.
+	let stepAt = performance.now();
+	const step = (label: string) => {
+		if (!DIAG) return;
+		const now = performance.now();
+		console.log(`[mb-worker] init ${label} ${(now - stepAt).toFixed(0)}ms`);
+		stepAt = now;
+	};
 	// `UrlSource` makes fetch() calls internally; for Tauri desktop the
 	// asset-protocol URLs (`asset://localhost/...` and `tauri://...`) flow
 	// through Tauri webview's network layer, same as the legacy
@@ -152,8 +166,10 @@ async function init(url: string): Promise<void> {
 		if (!(await input.canRead())) {
 			throw new Error("MediaBunny couldn't read this file.");
 		}
+		step('canRead');
 		const track = await input.getPrimaryVideoTrack();
 		if (!track) throw new Error('No video track in the input.');
+		step('getPrimaryVideoTrack');
 		// Parsing the container proves nothing about decodability — HEVC on a
 		// Windows box without the codec extension parses fine and then throws on
 		// the first decode, seconds later, with the picture already "ready".
@@ -161,11 +177,18 @@ async function init(url: string): Promise<void> {
 			const codec = await track.getCodec();
 			throw new WorkerError('unsupported', `This system can't decode ${codec ?? 'this'} video.`);
 		}
-		const durationSec = await input.computeDuration();
+		step('canDecode');
+		// Nothing reads this duration — it exists only to fill the `ready`
+		// payload — yet `computeDuration()` walks every fragment of a fragmented
+		// MP4. On a 600MB 4K recording that alone blew the 30s init timeout.
+		// Trust the host's ffprobe value when it has one.
+		const durationSec = hints.durationSec ?? (await input.computeDuration());
+		step('computeDuration');
 		// `codedWidth` is the sync deprecated getter (returns 0 until
 		// metadata loads); prefer the async variant for the ready payload.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
+		step('codedDimensions');
 		// Samples, not canvases: the frames go straight to the consumer, so no
 		// per-frame canvas allocation and no canvas→VideoFrame copy.
 		sink = new VideoSampleSink(track);
@@ -173,8 +196,13 @@ async function init(url: string): Promise<void> {
 		// duration from it, and telemetry cohorts on it.
 		let fps = 30;
 		try {
-			const stats = await track.computePacketStats(120);
-			if (stats?.averagePacketRate && Number.isFinite(stats.averagePacketRate)) {
+			// Same story as duration: sampling packets means reading them, and the
+			// host already knows the real rate from ffprobe.
+			const hinted = hints.fps && Number.isFinite(hints.fps) && hints.fps > 0;
+			const stats = hinted ? null : await track.computePacketStats(120);
+			if (hinted) {
+				fps = hints.fps as number;
+			} else if (stats?.averagePacketRate && Number.isFinite(stats.averagePacketRate)) {
 				fps = stats.averagePacketRate;
 			}
 		} catch {
@@ -186,6 +214,7 @@ async function init(url: string): Promise<void> {
 		// isn't overwritten before the playhead reaches it.
 		const ahead = Math.max(2, textureRingFrames(width, height) - 2);
 		lookaheadSec = ahead / Math.max(1, fps);
+		step('packetStats');
 		post({ type: 'ready', width, height, durationSec, fps });
 	} catch (err) {
 		post({
@@ -346,7 +375,7 @@ function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 	const msg = e.data;
 	switch (msg.type) {
 		case 'init':
-			void init(msg.url).catch((err) => {
+			void init(msg.url, { durationSec: msg.durationSec, fps: msg.fps }).catch((err) => {
 				// init() already posts an error message; just log here for the
 				// developer console and bail.
 				console.error('[mb-worker] init failed:', err);

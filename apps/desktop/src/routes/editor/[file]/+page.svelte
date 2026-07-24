@@ -686,6 +686,7 @@
     const provider = await createTileProvider({
       url,
       sizeBytes: store.metadata?.sizeBytes,
+      durationSec: store.metadata?.duration,
       tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),
       onChange: () => {
         filmstripVersion++;

@@ -7,12 +7,9 @@
  * so the bar can repaint cheaply when the playhead sweeps. Only on-screen
  * tiles are ever requested, so decode work tracks what virtualization shows.
  *
- * Migration note: this file used to depend on `mp4-sample-table` and the
- * `WebCodecsTileProvider` class driven by a hand-rolled mp4box + WebCodecs
- * pipeline. PR-F removed that path entirely; the provider now talks to a
- * MediaBunny-backed worker. `TileProviderInput.sizeBytes` gates that worker:
- * tile decode needs the whole file resident, so huge inputs fall back to the
- * Rust-rendered strip instead.
+ * The worker range-streams the source via MediaBunny's `UrlSource`, so the
+ * main thread never holds the whole file. Only multi-GB inputs fall back to the
+ * Rust-rendered strip (`MAX_STREAM_BYTES`).
  */
 
 import { type FilmstripTile, LruCache } from './filmstrip';
@@ -63,11 +60,12 @@ const MAX_TILES = 240;
 const MAX_HOVER_FRAMES = 64;
 
 /**
- * Ceiling on the source file we'll hold in memory for tile decode. 1.5 GB is
- * roughly a 10-minute 4K recording at our bitrates — past that the strip
- * fallback is the better trade.
+ * Above this source size, prefer the Rust-rendered strip over the streaming
+ * filmstrip. The worker no longer buffers the whole file (it range-streams), so
+ * this is not a memory ceiling anymore — just a point past which random-access
+ * range decode over a multi-GB file isn't worth it versus the fixed strip.
  */
-const MAX_IN_MEMORY_BYTES = 1_500_000_000;
+const MAX_STREAM_BYTES = 4_000_000_000;
 
 class MediabunnyTileProvider implements TileProvider {
 	#worker: Worker;
@@ -104,10 +102,12 @@ class MediabunnyTileProvider implements TileProvider {
 		url: string,
 		tileHeightPx: number,
 		onChange: () => void,
+		durationSec?: number,
 	): Promise<MediabunnyTileProvider> {
-		const res = await fetch(url);
-		if (!res.ok) throw new Error(`fetch failed: HTTP ${res.status}`);
-		const buffer = await res.arrayBuffer();
+		// No `fetch().arrayBuffer()` here anymore: the worker range-streams the
+		// file via UrlSource, so the main thread never holds the whole recording.
+		// That whole-file buffer (~600MB, doubled by the worker's Blob copy) was
+		// the single largest allocation when opening a 4K clip.
 		const worker = new Worker(
 			new URL('./filmstrip-worker.ts', import.meta.url),
 			{ type: 'module' },
@@ -121,8 +121,8 @@ class MediabunnyTileProvider implements TileProvider {
 				};
 				worker.onerror = (e) =>
 					reject(new Error(e.message || 'filmstrip worker error'));
-				const init: ToFilmstripWorker = { type: 'init', buffer, tileHeightPx };
-				worker.postMessage(init, [buffer]);
+				const init: ToFilmstripWorker = { type: 'init', url, tileHeightPx, durationSec };
+				worker.postMessage(init);
 			});
 		} catch (err) {
 			worker.terminate();
@@ -250,13 +250,13 @@ export interface TileProviderInput {
 	/** Tauri asset URL of the source video. */
 	url: string;
 	/**
-	 * Source size (bytes) from the probe. Optional in PR-F: MediaBunny
-	 * streams range-requests natively so the filmstrip is not bound to
-	 * whole-file ingestion. Kept as a hint so the caller can opt to
-	 * skip the filmstrip on huge inputs and let the Rust-strip fallback
-	 * render instead.
+	 * Source size (bytes) from the probe. The worker now range-streams via
+	 * UrlSource, so this no longer gates whole-file residency; it stays as a
+	 * hint for very-large-file policy (see `MAX_STREAM_BYTES`).
 	 */
 	sizeBytes?: number;
+	/** Known duration (ffprobe) so the worker skips a full container walk. */
+	durationSec?: number;
 	/** Device-pixel tile height to decode thumbnails at. */
 	tileHeightPx: number;
 	/** Called when a new tile lands, so the clip bar can repaint. */
@@ -278,11 +278,10 @@ export async function createTileProvider(
 		);
 		return null;
 	}
-	// Random-access tile decode needs the whole file resident, so a long 4K
-	// recording would pin GBs for the session. The strip fallback costs nothing.
-	if (input.sizeBytes !== undefined && input.sizeBytes > MAX_IN_MEMORY_BYTES) {
+	// Only multi-GB sources fall back now; the worker streams the rest.
+	if (input.sizeBytes !== undefined && input.sizeBytes > MAX_STREAM_BYTES) {
 		console.info(
-			`Filmstrip: ${Math.round(input.sizeBytes / 1e6)}MB exceeds the in-memory budget; using strip fallback.`,
+			`Filmstrip: ${Math.round(input.sizeBytes / 1e6)}MB is past the streaming budget; using strip fallback.`,
 		);
 		return null;
 	}
@@ -291,6 +290,7 @@ export async function createTileProvider(
 			input.url,
 			input.tileHeightPx,
 			input.onChange,
+			input.durationSec,
 		);
 	} catch (err) {
 		console.warn('Filmstrip decoder unavailable, using strip fallback', err);

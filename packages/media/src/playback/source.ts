@@ -59,6 +59,13 @@ export interface MediabunnySourceOptions {
 	 * once `create` has decided the input is decodable.
 	 */
 	createWorker: () => Worker;
+	/**
+	 * Known-good duration and frame rate, if the host already has them (ours come
+	 * from ffprobe). Supplying these skips two container walks that are O(file)
+	 * on a fragmented MP4 and were enough to time out opening a 4K recording.
+	 */
+	durationSec?: number;
+	fps?: number;
 }
 
 export class MediabunnyVideoSource {
@@ -179,7 +186,12 @@ export class MediabunnyVideoSource {
 					() => reject(new MediaError('worker-died', 'Timed out opening the media source')),
 					INIT_TIMEOUT_MS,
 				);
-				const init: ToMediabunnyWorker = { type: 'init', url };
+				const init: ToMediabunnyWorker = {
+					type: 'init',
+					url,
+					durationSec: options.durationSec,
+					fps: options.fps,
+				};
 				worker.postMessage(init);
 			});
 			clearTimeout(timer);

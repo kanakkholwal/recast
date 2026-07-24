@@ -1304,7 +1304,10 @@
 		mbSource?.dispose();
 		mbSource = null;
 		let cancelled = false;
-		createMediabunnySource(src)
+		createMediabunnySource(src, {
+			durationSec: store.metadata?.duration,
+			fps: store.metadata?.fps,
+		})
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();

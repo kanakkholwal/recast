@@ -6,9 +6,11 @@
 
 /** Provider → worker. */
 export type ToFilmstripWorker =
-	/** The whole MP4, fetched on the main thread and transferred in, plus the
-	 *  device-pixel tile height to downscale each thumbnail to. */
-	| { type: "init"; buffer: ArrayBuffer; tileHeightPx: number }
+	/** The source video URL (range-streamed via MediaBunny's UrlSource — never
+	 *  the whole file in memory), the device-pixel tile height to downscale each
+	 *  thumbnail to, and the known duration so the worker skips a full container
+	 *  walk to compute it. */
+	| { type: "init"; url: string; tileHeightPx: number; durationSec?: number }
 	/** A batch of thumbnails to decode. Each `id` correlates the reply. The worker
 	 *  groups them by GOP so one keyframe decode serves every tile in it. */
 	| { type: "decode"; requests: Array<{ id: number; originalSec: number }> }
