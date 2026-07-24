@@ -830,6 +830,10 @@
 		}
 		if (!haveFrame && !uploadVideoFrame(frameEl)) return;
 		hasRenderedFrame = true;
+		// The preview has painted, so hide the spinner — whichever engine drew it.
+		// Previously `isReady` came only from the <video>'s `canplay`, which forced
+		// `preload="auto"` (buffering the whole file) just to clear the spinner.
+		if (!isReady) isReady = true;
 
 		// Make sure background texture is current (fire-and-forget if it changed)
 		void loadBackgroundIfNeeded();
@@ -1640,7 +1644,7 @@
 			class="pointer-events-none absolute h-px w-px opacity-0"
 			style="visibility: hidden;"
 			playsinline
-			preload="auto"
+			preload="metadata"
 			muted
 		></video>
 		<!-- Legacy scout decoder: only read on the `!mbReady` path, so mounting it
@@ -1654,7 +1658,7 @@
 				class="pointer-events-none absolute h-px w-px opacity-0"
 				style="visibility: hidden;"
 				playsinline
-				preload="auto"
+				preload="metadata"
 				muted
 			></video>
 		{/if}

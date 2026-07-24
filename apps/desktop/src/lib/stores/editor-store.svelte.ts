@@ -1886,9 +1886,19 @@ export function createEditorStore() {
 		return c.source === 'silence' ? experimentalStore.silenceDetection : true;
 	}
 	/** Cuts that actually apply right now (flag-gated + lane-enabled). */
+	// The cut → segment → time-map chain is memoized with $derived, then exposed
+	// through the same accessor functions so no caller changes. It used to rebuild
+	// on EVERY read: the waveform lane's `xOf → timeMap` runs twice per bucket over
+	// ~2000 buckets, so a single zoom frame rebuilt it thousands of times. $derived
+	// auto-tracks every input ($state cuts/splits/trim/speeds/isTrimming/metadata +
+	// the reactive `silenceDetection` flag), so it caches yet cannot go stale — the
+	// pure math (deriveSegments/timeMapFromSegments) is unchanged, only re-run when
+	// an input actually changes.
+	const cutsMemo = $derived.by<TimelineCut[]>(() =>
+		cutsEnabled ? cuts.filter(cutFlagAllows) : [],
+	);
 	function effectiveCutList(): TimelineCut[] {
-		if (!cutsEnabled) return [];
-		return cuts.filter(cutFlagAllows);
+		return cutsMemo;
 	}
 	function activeSplitPoints(): number[] {
 		return splitPoints;
@@ -1897,14 +1907,17 @@ export function createEditorStore() {
 	/** The current clip's kept segments: trim − active cuts, subdivided by
 	 * active splits. Drives both the timeline display and the edit math, so the
 	 * two never disagree. */
-	function currentSegments(): Segment[] {
+	const segmentsMemo = $derived.by<Segment[]>(() => {
 		const { start, end } = clipBounds();
 		return deriveSegments({
 			trimStart: start,
 			trimEnd: end,
-			cuts: effectiveCutList(),
-			splitPoints: activeSplitPoints(),
+			cuts: cutsMemo,
+			splitPoints,
 		});
+	});
+	function currentSegments(): Segment[] {
+		return segmentsMemo;
 	}
 
 	/** The timeline axis: the KEPT clip only (trimmed head/tail collapse away,
@@ -1912,8 +1925,8 @@ export function createEditorStore() {
 	 * closed to seams. `output 0 == inPoint`; the clip fills the track from the
 	 * left. Every lane, the playhead, and the preview clock position against this.
 	 * At all-1× speeds it's the cut translation map restricted to [inPoint,outPoint]. */
-	function currentTimeMap() {
-		const segs = currentSegments();
+	const timeMapMemo = $derived.by(() => {
+		const segs = segmentsMemo;
 		const speedOf = buildSpeedOf(segs, segmentSpeeds);
 		// While trimming, un-collapse onto the full recording so the handle can
 		// move across the whole source (and reveal/restore the trimmed head/tail).
@@ -1924,11 +1937,14 @@ export function createEditorStore() {
 				trimEnd: end,
 				durationSec: metadata?.duration ?? end,
 				segments: segs,
-				cuts: effectiveCutList(),
+				cuts: cutsMemo,
 				speedOf,
 			});
 		}
 		return timeMapFromSegments(segs, speedOf);
+	});
+	function currentTimeMap() {
+		return timeMapMemo;
 	}
 
 	/** Speed of the segment anchored at original `start` (1 when unset). */

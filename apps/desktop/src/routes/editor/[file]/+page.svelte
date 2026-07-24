@@ -783,6 +783,17 @@
     isLoading = false;
   }
 
+  // Run after the editor is interactive, so heavy secondary work never competes
+  // with the preview's cold start. Same idle mechanism the waveform uses; fires
+  // at browser-idle or the timeout, whichever comes first.
+  function runWhenIdle(fn: () => void, timeout = 2000) {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(fn, { timeout });
+    } else {
+      setTimeout(fn, 300);
+    }
+  }
+
   async function loadDocument() {
     error = "";
     isLoading = true;
@@ -827,9 +838,7 @@
         fps: document.metadata.fps,
         codec: document.metadata.codec,
       });
-      void loadThumbnailStrip(document.projectPath);
       videoSrc = convertFileSrc(document.mediaPath);
-      void setupTileProvider(videoSrc);
       cursorPath = document.cursorPath ?? null;
       store.cursorPath = cursorPath;
       // Raw on-disk media paths for Rust-side analysis (silence detection).
@@ -855,7 +864,20 @@
       videoEl?.load();
       systemAudioEl?.load();
       micAudioEl?.load();
-      void maybeRunAutoZoom();
+      // The preview now owns the main thread through its cold start. Defer the
+      // three heavy secondary decoders — the Rust thumbnail strip, the filmstrip
+      // tile decoder, and the cursor auto-zoom pass — to browser-idle. On a 4K
+      // clip these each decode the same file; firing them alongside the preview
+      // is what spiked open. The path guard drops them if a newer document opened
+      // in the meantime.
+      const loadedPath = document.projectPath;
+      const filmstripSrc = videoSrc;
+      runWhenIdle(() => {
+        if (documentPath !== loadedPath) return;
+        void loadThumbnailStrip(loadedPath);
+        void setupTileProvider(filmstripSrc);
+        void maybeRunAutoZoom();
+      });
     } catch (err) {
       console.error("Failed to load editor document", err);
       log.error("session", "recast_load_failed", { error: String(err) });
@@ -1854,12 +1876,14 @@
 
   <!-- .recast stores system + mic audio as separate WAVs (the mp4 has no audio);
        kept in lockstep with the video via the $effects above. -->
+  <!-- preload="metadata": the Web Audio engine decodes the WAVs itself, so these
+       fallback elements needn't buffer full PCM at open (~tens of MB each). -->
   {#if systemAudioSrc}
     <!-- svelte-ignore a11y_media_has_caption -->
     <audio
       bind:this={systemAudioEl}
       src={systemAudioSrc}
-      preload="auto"
+      preload="metadata"
       class="hidden"
     ></audio>
   {/if}
@@ -1868,7 +1892,7 @@
     <audio
       bind:this={micAudioEl}
       src={micAudioSrc}
-      preload="auto"
+      preload="metadata"
       class="hidden"
     ></audio>
   {/if}
