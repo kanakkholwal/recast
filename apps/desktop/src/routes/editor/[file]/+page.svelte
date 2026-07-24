@@ -495,6 +495,7 @@
       eng.setMasterVolume(s.volume, s.muted);
       eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
       eng.setTrackVolume("mic", s.micVolume, s.micMuted);
+      eng.setFades(s.fadeIn, s.fadeOut, store.timeMap.outputDuration);
       audioEngine = eng;
     } catch (err) {
       console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
@@ -609,6 +610,8 @@
     audioEngine?.setMasterVolume(settings.volume, settings.muted);
     audioEngine?.setTrackVolume("system", settings.systemVolume, settings.systemMuted);
     audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
+    // Re-arm fades on setting change and when cuts/speed reshape output length.
+    audioEngine?.setFades(settings.fadeIn, settings.fadeOut, store.timeMap.outputDuration);
   });
 
   // Transport seek for `store.seek()`: seeks from outside the player (a

@@ -51,6 +51,16 @@ pub struct AudioSettings {
     pub volume: f64,
     #[serde(default)]
     pub muted: bool,
+    // Per-source gains/mutes, layered under the master. Defaulted so projects
+    // saved before these existed deserialize to unity (no silent gain change).
+    #[serde(default = "default_audio_volume")]
+    pub system_volume: f64,
+    #[serde(default)]
+    pub system_muted: bool,
+    #[serde(default = "default_audio_volume")]
+    pub mic_volume: f64,
+    #[serde(default)]
+    pub mic_muted: bool,
     #[serde(default)]
     pub fade_in: f64,
     #[serde(default)]
@@ -62,6 +72,10 @@ impl Default for AudioSettings {
         Self {
             volume: default_audio_volume(),
             muted: false,
+            system_volume: default_audio_volume(),
+            system_muted: false,
+            mic_volume: default_audio_volume(),
+            mic_muted: false,
             fade_in: 0.0,
             fade_out: 0.0,
         }

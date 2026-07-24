@@ -112,9 +112,36 @@ fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
     probe_video_metadata(path)
 }
 
+/// Which capture an export audio input came from, so per-source gain/mute maps
+/// to the right FFmpeg input. `Source` = a single file's embedded track (master
+/// gain only); `System`/`Mic` = the project's separate WAV captures.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AudioKind {
+    Source,
+    System,
+    Mic,
+}
+
+/// Effective linear gain for one input: master × its per-source gain, 0 when
+/// muted. Mirrors the preview's `effectiveTrackVolume` so preview and export
+/// apply the same mix.
+fn effective_audio_gain(settings: &AudioSettings, kind: AudioKind) -> f64 {
+    let master = (settings.volume / 100.0).clamp(0.0, 4.0);
+    let (vol, muted) = match kind {
+        AudioKind::Source => return master,
+        AudioKind::System => (settings.system_volume, settings.system_muted),
+        AudioKind::Mic => (settings.mic_volume, settings.mic_muted),
+    };
+    if muted {
+        0.0
+    } else {
+        master * (vol / 100.0).clamp(0.0, 4.0)
+    }
+}
+
 fn append_audio_to_complex(
     existing: Option<&str>,
-    audio_inputs: &[usize],
+    audio_inputs: &[(usize, AudioKind)],
     settings: &AudioSettings,
     trim_start: f64,
     duration: f64,
@@ -123,7 +150,18 @@ fn append_audio_to_complex(
         return None;
     }
 
-    let volume = (settings.volume / 100.0).clamp(0.0, 4.0);
+    // Drop fully-silenced sources: leaving a muted input in the amix would let
+    // it average the others back down. This is the fix for per-source mute/gain
+    // being ignored at export.
+    let live: Vec<(usize, f64)> = audio_inputs
+        .iter()
+        .map(|&(idx, kind)| (idx, effective_audio_gain(settings, kind)))
+        .filter(|&(_, gain)| gain > 0.0)
+        .collect();
+    if live.is_empty() {
+        return None;
+    }
+
     let mut segments: Vec<String> = existing
         .map(|value| value.to_string())
         .filter(|value| !value.trim().is_empty())
@@ -131,8 +169,8 @@ fn append_audio_to_complex(
         .collect();
     let mut labels = Vec::new();
 
-    for (i, input_index) in audio_inputs.iter().enumerate() {
-        let label = if audio_inputs.len() == 1 {
+    for (i, (input_index, gain)) in live.iter().enumerate() {
+        let label = if live.len() == 1 {
             "aout".to_string()
         } else {
             format!("aud{i}")
@@ -148,7 +186,7 @@ fn append_audio_to_complex(
             filters.push(format!("atrim=start={:.3}", trim_start));
         }
         filters.push("asetpts=PTS-STARTPTS".to_string());
-        filters.push(format!("volume={volume:.4}"));
+        filters.push(format!("volume={gain:.4}"));
         if settings.fade_in > 0.0 {
             let fade = if duration > 0.0 {
                 settings.fade_in.min(duration * 0.5)
@@ -170,11 +208,11 @@ fn append_audio_to_complex(
         labels.push(format!("[{label}]"));
     }
 
-    if audio_inputs.len() > 1 {
+    if live.len() > 1 {
         segments.push(format!(
             "{}amix=inputs={}:duration=longest:dropout_transition=0:normalize=0[aout]",
             labels.join(""),
-            audio_inputs.len()
+            live.len()
         ));
     }
 
@@ -878,6 +916,76 @@ mod project_timeline_tests {
             tl.output_duration
         );
         assert!((tl.kept_segments[0].speed - 2.0).abs() < 1e-6);
+    }
+}
+
+#[cfg(test)]
+mod audio_mix_tests {
+    use super::*;
+    use crate::render::node_types::AudioSettings;
+
+    #[test]
+    fn per_source_gain_reaches_the_graph() {
+        let mut s = AudioSettings::default();
+        s.system_volume = 100.0;
+        s.mic_volume = 50.0;
+        let (complex, map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("audio graph");
+        assert_eq!(map, "[aout]");
+        // System at unity, mic at half — the pre-fix bug applied master to both.
+        assert!(complex.contains("[1:a]") && complex.contains("[2:a]"));
+        assert!(complex.contains("volume=1.0000"));
+        assert!(complex.contains("volume=0.5000"));
+        assert!(complex.contains("amix=inputs=2"));
+    }
+
+    #[test]
+    fn muted_source_is_dropped_from_the_mix() {
+        let mut s = AudioSettings::default();
+        s.mic_muted = true;
+        let (complex, _map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("system still audible");
+        // Only system survives → single branch, no amix, mic input absent.
+        assert!(complex.contains("[1:a]"));
+        assert!(!complex.contains("[2:a]"));
+        assert!(!complex.contains("amix"));
+    }
+
+    #[test]
+    fn all_sources_muted_yields_no_audio() {
+        let mut s = AudioSettings::default();
+        s.system_muted = true;
+        s.mic_muted = true;
+        assert!(append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn source_kind_uses_master_only() {
+        let mut s = AudioSettings::default();
+        s.volume = 50.0;
+        s.mic_volume = 0.0; // a per-source gain must not touch an embedded source track
+        let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
+            .expect("source audio");
+        assert!(complex.contains("volume=0.5000"));
     }
 }
 
@@ -1797,10 +1905,10 @@ pub(crate) async fn run_export_job(
         ]);
     }
 
-    let mut audio_input_indices = Vec::new();
+    let mut audio_input_indices: Vec<(usize, AudioKind)> = Vec::new();
     let source_has_audio = has_audio(&source_video);
     if request.format != "gif" && source_has_audio {
-        audio_input_indices.push(0);
+        audio_input_indices.push((0, AudioKind::Source));
     }
     if request.format != "gif" {
         if let Some(project) = project.as_ref() {
@@ -1810,12 +1918,14 @@ pub(crate) async fn run_export_job(
                 + watermark_path.is_some() as usize
                 + camera_input_index.is_some() as usize
                 + camera_mask_input_index.is_some() as usize;
-            for path in [&project.audio_path, &project.microphone_path]
-                .into_iter()
-                .flatten()
-                .filter(|path| path.exists())
-            {
-                audio_input_indices.push(next_audio_input_index);
+            for (path, kind) in [
+                (&project.audio_path, AudioKind::System),
+                (&project.microphone_path, AudioKind::Mic),
+            ] {
+                let Some(path) = path.as_ref().filter(|p| p.exists()) else {
+                    continue;
+                };
+                audio_input_indices.push((next_audio_input_index, kind));
                 next_audio_input_index += 1;
                 args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
             }

@@ -41,6 +41,28 @@ export function heardOutputSec(
 	return anchorOutputTime + Math.max(0, elapsed);
 }
 
+/**
+ * Fade envelope gain (0–1) at an OUTPUT-time position. Mirrors the export's
+ * `afade` math (commands/editor.rs): each fade is clamped to half the output
+ * duration, fade-in ramps 0→1 over [0, fadeIn], fade-out ramps 1→0 over
+ * [outDur−fadeOut, outDur]. Kept pure so preview and export stay in lockstep.
+ */
+export function fadeGainAt(
+	outSec: number,
+	fadeIn: number,
+	fadeOut: number,
+	outDur: number,
+): number {
+	if (!(outDur > 0)) return 1;
+	const inD = Math.max(0, Math.min(fadeIn, outDur * 0.5));
+	const outD = Math.max(0, Math.min(fadeOut, outDur * 0.5));
+	let g = 1;
+	if (inD > 0 && outSec < inD) g = outSec / inD;
+	const outStart = outDur - outD;
+	if (outD > 0 && outSec > outStart) g = Math.min(g, (outDur - outSec) / outD);
+	return Math.max(0, Math.min(1, g));
+}
+
 export type AudioTrackKind = 'system' | 'mic';
 
 export interface AudioTrack {
@@ -63,15 +85,22 @@ export class AudioTimelineEngine {
 	#muted = false;
 	#trackVolumes: Record<AudioTrackKind, number> = { system: 1, mic: 1 };
 	#trackMuted: Record<AudioTrackKind, boolean> = { system: false, mic: false };
+	// Master fade-in/out envelope, applied downstream of the per-track gains so
+	// the exported `afade` is audible in the preview too.
+	#fadeGain: GainNode;
+	#fadeIn = 0;
+	#fadeOut = 0;
+	#outputDuration = 0;
 	// Anchor mapping output time onto the audio hardware clock, so the picture
 	// can follow audio instead of free-running on a second, drifting clock.
 	#anchorCtxTime = 0;
 	#anchorOutputTime = 0;
 	#scheduled = false;
 
-	private constructor(ctx: AudioContext, tracks: AudioTrack[]) {
+	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
 		this.#tracks = tracks;
+		this.#fadeGain = fadeGain;
 	}
 
 	/**
@@ -89,6 +118,10 @@ export class AudioTimelineEngine {
 		if (!Ctx) throw new Error('Web Audio API unavailable');
 
 		const ctx = new Ctx();
+		// Per-track gains feed a shared fade node feeding the destination, so the
+		// fade envelope rides the whole mix.
+		const fadeGain = ctx.createGain();
+		fadeGain.connect(ctx.destination);
 		const tracks: AudioTrack[] = [];
 		for (const spec of specs) {
 			if (!spec.url) continue;
@@ -98,7 +131,7 @@ export class AudioTimelineEngine {
 				const data = await res.arrayBuffer();
 				const buffer = await ctx.decodeAudioData(data);
 				const gain = ctx.createGain();
-				gain.connect(ctx.destination);
+				gain.connect(fadeGain);
 				tracks.push({ buffer, gain, kind: spec.kind });
 			} catch {
 				// Skip a track that won't fetch/decode; others may still work.
@@ -112,7 +145,7 @@ export class AudioTimelineEngine {
 			}
 			throw new Error('no decodable audio tracks');
 		}
-		return new AudioTimelineEngine(ctx, tracks);
+		return new AudioTimelineEngine(ctx, tracks, fadeGain);
 	}
 
 	get ready(): boolean {
@@ -148,6 +181,40 @@ export class AudioTimelineEngine {
 		this.#applyGains();
 	}
 
+	/**
+	 * Set the fade-in/out envelope (seconds) and the total OUTPUT duration they
+	 * ride on. Re-arms the envelope immediately if playback is scheduled.
+	 */
+	setFades(fadeIn: number, fadeOut: number, outputDuration: number): void {
+		this.#fadeIn = Math.max(0, fadeIn);
+		this.#fadeOut = Math.max(0, fadeOut);
+		this.#outputDuration = Math.max(0, outputDuration);
+		if (this.#scheduled) this.#scheduleFades(this.positionOutputSec ?? this.#anchorOutputTime);
+	}
+
+	// Schedule the fade envelope on the audio clock. Output time o maps to ctx
+	// time now + (o − from), so ramp breakpoints land where the ear expects.
+	#scheduleFades(from: number): void {
+		const g = this.#fadeGain.gain;
+		const now = this.#ctx.currentTime;
+		g.cancelScheduledValues(now);
+		const outDur = this.#outputDuration;
+		const inD = Math.max(0, Math.min(this.#fadeIn, outDur * 0.5));
+		const outD = Math.max(0, Math.min(this.#fadeOut, outDur * 0.5));
+		if (!(outDur > 0) || (inD <= 0 && outD <= 0)) {
+			g.setValueAtTime(1, now);
+			return;
+		}
+		const ctxAt = (o: number) => now + Math.max(0, o - from);
+		g.setValueAtTime(fadeGainAt(from, this.#fadeIn, this.#fadeOut, outDur), now);
+		if (inD > 0 && from < inD) g.linearRampToValueAtTime(1, ctxAt(inD));
+		if (outD > 0) {
+			const outStart = outDur - outD;
+			if (from < outStart) g.setValueAtTime(1, ctxAt(outStart));
+			g.linearRampToValueAtTime(0, ctxAt(outDur));
+		}
+	}
+
 	#stopActive(): void {
 		for (const node of this.#active) {
 			try {
@@ -167,6 +234,7 @@ export class AudioTimelineEngine {
 		this.#anchorCtxTime = now;
 		this.#anchorOutputTime = from;
 		this.#scheduled = true;
+		this.#scheduleFades(from);
 		const chunks = planAudioSchedule(regions, from);
 		for (const t of this.#tracks) {
 			const bufDur = t.buffer.duration;

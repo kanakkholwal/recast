@@ -210,7 +210,7 @@
 
   <PanelSection
     title="Fades"
-    hint="Fades apply to the exported file, not to editor playback."
+    hint="Fade the audio in at the start and out at the end."
     flush
     collapsible
   >
