@@ -227,6 +227,76 @@ fn append_audio_to_complex(
     Some((segments.join(";"), "[aout]".into()))
 }
 
+/// Mix output-timeline music/extra-audio clips onto the finished source audio.
+/// `clips` pairs each live clip with its ffmpeg input index; `source_audio` is
+/// the edited recording's audio label (None when muted/absent). Each clip is
+/// trimmed into its source, gained, faded, and delayed onto the output timeline,
+/// then amixed with the source. Returns (extra filter segments, final map).
+fn build_music_stage(
+    clips: &[(usize, &crate::render::node_types::AudioClip)],
+    source_audio: Option<&str>,
+    output_duration: f64,
+) -> Option<(String, String)> {
+    if clips.is_empty() {
+        return source_audio.map(|s| (String::new(), s.to_string()));
+    }
+    let mut segments: Vec<String> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    if let Some(src) = source_audio {
+        labels.push(src.to_string());
+    }
+    for (i, (input_index, clip)) in clips.iter().enumerate() {
+        let label = format!("mus{i}");
+        let mut f: Vec<String> = Vec::new();
+        let start = clip.offset_sec.max(0.0);
+        // duration 0 = fill to the end of the output (never past it).
+        let play = if clip.duration_sec > 0.0 {
+            clip.duration_sec
+        } else {
+            (output_duration - clip.start_output_sec).max(0.0)
+        };
+        if play > 0.0 {
+            f.push(format!("atrim=start={start:.3}:duration={play:.3}"));
+        } else if start > 0.0 {
+            f.push(format!("atrim=start={start:.3}"));
+        }
+        f.push("asetpts=PTS-STARTPTS".to_string());
+        let gain = (clip.gain / 100.0).clamp(0.0, 4.0);
+        f.push(format!("volume={gain:.4}"));
+        if clip.fade_in > 0.0 {
+            let fi = if play > 0.0 {
+                clip.fade_in.min(play)
+            } else {
+                clip.fade_in
+            };
+            f.push(format!("afade=t=in:st=0:d={fi:.3}"));
+        }
+        if clip.fade_out > 0.0 && play > 0.0 {
+            let fo = clip.fade_out.min(play);
+            f.push(format!(
+                "afade=t=out:st={:.3}:d={fo:.3}",
+                (play - fo).max(0.0)
+            ));
+        }
+        // Place on the output timeline (adelay adds leading silence per channel).
+        let delay_ms = (clip.start_output_sec.max(0.0) * 1000.0).round() as i64;
+        if delay_ms > 0 {
+            f.push(format!("adelay={delay_ms}|{delay_ms}"));
+        }
+        segments.push(format!("[{input_index}:a]{}[{label}]", f.join(",")));
+        labels.push(format!("[{label}]"));
+    }
+    if labels.len() == 1 {
+        return Some((segments.join(";"), labels[0].clone()));
+    }
+    segments.push(format!(
+        "{}amix=inputs={}:duration=longest:dropout_transition=0:normalize=0[afinal]",
+        labels.join(""),
+        labels.len()
+    ));
+    Some((segments.join(";"), "[afinal]".into()))
+}
+
 fn append_watermark_to_complex(
     existing: Option<&str>,
     current_video_map: &str,
@@ -1006,6 +1076,67 @@ mod audio_mix_tests {
             .expect("graph");
         assert!(!c2.contains("loudnorm"));
         assert_eq!(m2, "[aout]");
+    }
+
+    #[test]
+    fn music_stage_mixes_clips_over_source() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let clip = AudioClip {
+            id: "m1".into(),
+            source: AudioClipSource::Local {
+                path: "x.mp3".into(),
+            },
+            start_output_sec: 2.0,
+            offset_sec: 1.0,
+            duration_sec: 0.0, // fill
+            gain: 50.0,
+            muted: false,
+            fade_in: 0.5,
+            fade_out: 1.0,
+            looping: true,
+            ducking: false,
+        };
+        let (seg, map) = build_music_stage(&[(5, &clip)], Some("[aout]"), 10.0).expect("stage");
+        assert_eq!(map, "[afinal]");
+        assert!(seg.contains("[5:a]"));
+        assert!(seg.contains("volume=0.5000"));
+        assert!(seg.contains("adelay=2000|2000"));
+        assert!(seg.contains("atrim=start=1.000:duration=8.000")); // fill = 10 - 2
+        assert!(seg.contains("amix=inputs=2"));
+    }
+
+    #[test]
+    fn music_only_needs_no_amix() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let clip = AudioClip {
+            id: "m".into(),
+            source: AudioClipSource::Local { path: "x".into() },
+            start_output_sec: 0.0,
+            offset_sec: 0.0,
+            duration_sec: 0.0,
+            gain: 100.0,
+            muted: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            looping: false,
+            ducking: false,
+        };
+        let (_seg, map) = build_music_stage(&[(3, &clip)], None, 5.0).expect("stage");
+        assert_eq!(map, "[mus0]");
+    }
+
+    #[test]
+    fn audio_clip_deserializes_from_ts_shape() {
+        // Guards the TS↔Rust serde names (loop, startOutputSec, providerId, assetPath).
+        let local = r#"{"id":"c","source":{"kind":"local","path":"/a.mp3"},"startOutputSec":1.5,"gain":45,"loop":true}"#;
+        let c: crate::render::node_types::AudioClip = serde_json::from_str(local).unwrap();
+        assert_eq!(c.start_output_sec, 1.5);
+        assert!(c.looping);
+        assert_eq!(c.source.asset_path(), "/a.mp3");
+
+        let provider = r#"{"id":"c","source":{"kind":"provider","providerId":"up","trackId":"t","assetPath":"/cached.mp3"},"gain":45}"#;
+        let p: crate::render::node_types::AudioClip = serde_json::from_str(provider).unwrap();
+        assert_eq!(p.source.asset_path(), "/cached.mp3");
     }
 
     #[test]
@@ -1940,14 +2071,15 @@ pub(crate) async fn run_export_job(
     if request.format != "gif" && source_has_audio {
         audio_input_indices.push((0, AudioKind::Source));
     }
+    let mut music_inputs: Vec<(usize, &crate::render::node_types::AudioClip)> = Vec::new();
     if request.format != "gif" {
+        let mut next_audio_input_index = 1
+            + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+            + camera_input_index.is_some() as usize
+            + camera_mask_input_index.is_some() as usize;
         if let Some(project) = project.as_ref() {
-            let mut next_audio_input_index = 1
-                + export_plan.extra_inputs.len()
-                + cursor_overlay_path.is_some() as usize
-                + watermark_path.is_some() as usize
-                + camera_input_index.is_some() as usize
-                + camera_mask_input_index.is_some() as usize;
             for (path, kind) in [
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
@@ -1959,6 +2091,23 @@ pub(crate) async fn run_export_job(
                 next_audio_input_index += 1;
                 args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
             }
+        }
+        // Music / extra-audio clips. Looping clips get `-stream_loop -1` (an
+        // input-level flag); the filter stage trims them to the output length.
+        for clip in &request.render_state.music_clips {
+            if clip.muted || clip.gain <= 0.0 {
+                continue;
+            }
+            let path = clip.source.asset_path();
+            if path.is_empty() || !Path::new(path).exists() {
+                continue;
+            }
+            if clip.looping {
+                args.extend(["-stream_loop".to_string(), "-1".to_string()]);
+            }
+            args.extend(["-i".to_string(), path.to_string()]);
+            music_inputs.push((next_audio_input_index, clip));
+            next_audio_input_index += 1;
         }
     }
 
@@ -2233,6 +2382,21 @@ pub(crate) async fn run_export_job(
         &speed_segments,
         speed_active,
     );
+
+    // Mix music/extra-audio clips onto the finished (output-time) audio. Runs
+    // after cut/speed so the clips sit on the same output timeline the viewer sees.
+    if !music_inputs.is_empty() {
+        let out_dur = warped_output_duration(&speed_segments);
+        if let Some((seg, map)) = build_music_stage(&music_inputs, audio_map.as_deref(), out_dur) {
+            if !seg.is_empty() {
+                filter_complex_after_cursor = Some(match filter_complex_after_cursor.take() {
+                    Some(fc) => format!("{fc};{seg}"),
+                    None => seg,
+                });
+            }
+            audio_map = Some(map);
+        }
+    }
 
     if let Some(ref filter_complex) = filter_complex_after_cursor {
         args.extend([

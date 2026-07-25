@@ -91,6 +91,65 @@ fn default_audio_volume() -> f64 {
     100.0
 }
 
+/// Where an {@link AudioClip}'s audio comes from. Mirrors `AudioClipSource` in
+/// `src/lib/audio/music.ts`. Internally tagged on `kind` to match the TS union.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AudioClipSource {
+    Local {
+        path: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Provider {
+        #[serde(default)]
+        provider_id: String,
+        #[serde(default)]
+        track_id: String,
+        asset_path: String,
+        #[serde(default)]
+        attribution: Option<String>,
+        #[serde(default)]
+        license: Option<String>,
+    },
+}
+
+impl AudioClipSource {
+    /// The local file to decode/encode, whichever source kind it is.
+    pub fn asset_path(&self) -> &str {
+        match self {
+            AudioClipSource::Local { path } => path,
+            AudioClipSource::Provider { asset_path, .. } => asset_path,
+        }
+    }
+}
+
+/// Music / extra-audio laid on the OUTPUT timeline. Mirrors `AudioClip` in
+/// `src/lib/audio/music.ts`; every field defaulted for forward-compat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioClip {
+    pub id: String,
+    pub source: AudioClipSource,
+    #[serde(default)]
+    pub start_output_sec: f64,
+    #[serde(default)]
+    pub offset_sec: f64,
+    #[serde(default)]
+    pub duration_sec: f64,
+    #[serde(default = "default_audio_volume")]
+    pub gain: f64,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub fade_out: f64,
+    #[serde(default, rename = "loop")]
+    pub looping: bool,
+    #[serde(default)]
+    pub ducking: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WatermarkSettings {

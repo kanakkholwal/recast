@@ -63,6 +63,39 @@ export function fadeGainAt(
 	return Math.max(0, Math.min(1, g));
 }
 
+/**
+ * Clip-fade factor (0–1) at `intoClip` seconds into a music clip's play window.
+ * Mirrors the export's per-clip `afade` (fade clamped to the play length, not
+ * half of it — unlike the master fade). Kept pure for testing + parity.
+ */
+export function musicFadeFactor(
+	intoClip: number,
+	play: number,
+	fadeIn: number,
+	fadeOut: number,
+): number {
+	if (!(play > 0)) return 1;
+	const fi = Math.min(Math.max(0, fadeIn), play);
+	const fo = Math.min(Math.max(0, fadeOut), play);
+	let f = 1;
+	if (fi > 0 && intoClip < fi) f = intoClip / fi;
+	const foStart = play - fo;
+	if (fo > 0 && intoClip > foStart) f = Math.min(f, (play - intoClip) / fo);
+	return Math.max(0, Math.min(1, f));
+}
+
+/** A music/extra-audio clip resolved for playback (url already asset-resolved). */
+export interface MusicClipSpec {
+	url: string;
+	startOutputSec: number;
+	offsetSec: number;
+	durationSec: number; // 0 = fill to output end
+	gain: number; // 0–200
+	fadeIn: number;
+	fadeOut: number;
+	loop: boolean;
+}
+
 export type AudioTrackKind = 'system' | 'mic';
 
 export interface AudioTrack {
@@ -96,6 +129,11 @@ export class AudioTimelineEngine {
 	#anchorCtxTime = 0;
 	#anchorOutputTime = 0;
 	#scheduled = false;
+	// Music/extra-audio clips on the output timeline, each with its own gain
+	// (routed straight to destination — the master fade applies to the recording
+	// only, matching the export where music is amixed AFTER the source's fade).
+	#music: Array<{ spec: MusicClipSpec; buffer: AudioBuffer; gain: GainNode }> = [];
+	#musicActive: AudioBufferSourceNode[] = [];
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
@@ -215,6 +253,113 @@ export class AudioTimelineEngine {
 		}
 	}
 
+	/**
+	 * Replace the music/extra-audio clips. Decodes each `url` (skipping any that
+	 * fail) and re-schedules if playback is live. Silent/zero-gain clips are
+	 * dropped, mirroring the export.
+	 */
+	async setMusicClips(clips: ReadonlyArray<MusicClipSpec>): Promise<void> {
+		this.#disposeMusic();
+		for (const spec of clips) {
+			if (spec.gain <= 0) continue;
+			try {
+				const res = await fetch(spec.url);
+				if (!res.ok) continue;
+				const buffer = await this.#ctx.decodeAudioData(await res.arrayBuffer());
+				const gain = this.#ctx.createGain();
+				gain.connect(this.#ctx.destination);
+				this.#music.push({ spec, buffer, gain });
+			} catch {
+				// Skip a clip that won't fetch/decode.
+			}
+		}
+		if (this.#scheduled) this.#scheduleMusic(this.positionOutputSec ?? this.#anchorOutputTime);
+	}
+
+	#scheduleMusic(from: number): void {
+		this.#stopMusic();
+		const now = this.#ctx.currentTime;
+		const outDur = this.#outputDuration;
+		for (const { spec, buffer, gain } of this.#music) {
+			const play = spec.durationSec > 0 ? spec.durationSec : Math.max(0, outDur - spec.startOutputSec);
+			if (play <= 0) continue;
+			const clipEnd = spec.startOutputSec + play;
+			if (from >= clipEnd) {
+				gain.gain.value = 0;
+				continue;
+			}
+			const heardStart = Math.max(spec.startOutputSec, from);
+			const whenDelay = heardStart - from;
+			const intoClip = heardStart - spec.startOutputSec;
+			const remaining = clipEnd - heardStart;
+			const bufDur = buffer.duration;
+			const region = Math.max(0.001, bufDur - spec.offsetSec);
+			let sourceStart: number;
+			if (spec.loop) {
+				sourceStart = spec.offsetSec + (intoClip % region);
+			} else {
+				sourceStart = spec.offsetSec + intoClip;
+				if (sourceStart >= bufDur) {
+					gain.gain.value = 0;
+					continue;
+				}
+			}
+			const node = this.#ctx.createBufferSource();
+			node.buffer = buffer;
+			if (spec.loop) {
+				node.loop = true;
+				node.loopStart = spec.offsetSec;
+				node.loopEnd = bufDur;
+			}
+			node.connect(gain);
+			const playDur = spec.loop ? remaining : Math.min(remaining, bufDur - sourceStart);
+			node.onended = () => {
+				const i = this.#musicActive.indexOf(node);
+				if (i >= 0) this.#musicActive.splice(i, 1);
+			};
+			node.start(now + whenDelay, sourceStart, playDur);
+			this.#musicActive.push(node);
+			// Base gain + clip fades on the output clock.
+			const base = Math.max(0, Math.min(2, spec.gain / 100));
+			const g = gain.gain;
+			const ctxAt = (o: number) => now + Math.max(0, o - from);
+			g.cancelScheduledValues(now);
+			g.setValueAtTime(base * musicFadeFactor(intoClip, play, spec.fadeIn, spec.fadeOut), now);
+			if (spec.fadeIn > 0 && intoClip < Math.min(spec.fadeIn, play)) {
+				g.linearRampToValueAtTime(base, ctxAt(spec.startOutputSec + Math.min(spec.fadeIn, play)));
+			}
+			if (spec.fadeOut > 0) {
+				const foStart = clipEnd - Math.min(spec.fadeOut, play);
+				if (heardStart < foStart) g.setValueAtTime(base, ctxAt(foStart));
+				g.linearRampToValueAtTime(0, ctxAt(clipEnd));
+			}
+		}
+	}
+
+	#stopMusic(): void {
+		for (const node of this.#musicActive) {
+			try {
+				node.onended = null;
+				node.stop();
+			} catch {
+				/* already stopped */
+			}
+		}
+		this.#musicActive = [];
+	}
+
+	#disposeMusic(): void {
+		this.#stopMusic();
+		for (const m of this.#music) {
+			try {
+				m.gain.disconnect();
+			} catch {
+				/* already gone */
+			}
+		}
+		this.#music = [];
+	}
+
 	#stopActive(): void {
 		for (const node of this.#active) {
 			try {
@@ -235,6 +380,7 @@ export class AudioTimelineEngine {
 		this.#anchorOutputTime = from;
 		this.#scheduled = true;
 		this.#scheduleFades(from);
+		this.#scheduleMusic(from);
 		const chunks = planAudioSchedule(regions, from);
 		for (const t of this.#tracks) {
 			const bufDur = t.buffer.duration;
@@ -275,6 +421,7 @@ export class AudioTimelineEngine {
 	/** Stop all sound; keep buffers for the next play. */
 	pause(): void {
 		this.#stopActive();
+		this.#stopMusic();
 		this.#scheduled = false;
 	}
 
@@ -316,6 +463,7 @@ export class AudioTimelineEngine {
 
 	dispose(): void {
 		this.#stopActive();
+		this.#disposeMusic();
 		this.#scheduled = false;
 		this.#tracks = [];
 		try {

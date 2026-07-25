@@ -5,6 +5,7 @@
   import {
     Blocks,
     Captions,
+    AudioLines,
     ImageIcon,
     Info,
     MousePointer,
@@ -25,6 +26,7 @@
   import ClipPanel from "./ClipPanel.svelte";
   import CursorPanel from "./CursorPanel.svelte";
   import DevOcrPanel from "./DevOcrPanel.svelte";
+  import MusicPanel from "./MusicPanel.svelte";
   import ExtensionsPanel from "./ExtensionsPanel.svelte";
   import FocusPanel from "./FocusPanel.svelte";
   import InfoPanel from "./InfoPanel.svelte";
@@ -85,6 +87,13 @@
       icon: Volume,
       group: "composition",
       hint: "Volume and mute.",
+    },
+    {
+      id: "music",
+      label: "Music",
+      icon: AudioLines,
+      group: "composition",
+      hint: "Background music and voiceover.",
     },
     {
       id: "captions",
@@ -255,6 +264,8 @@
         <CameraPanel {store} {cameraPath} />
       {:else if store.activePanel === "audio"}
         <AudioPanel {store} />
+      {:else if store.activePanel === "music"}
+        <MusicPanel {store} />
       {:else if store.activePanel === "captions"}
         <CaptionsPanel {store} />
       {:else if store.activePanel === "extensions"}

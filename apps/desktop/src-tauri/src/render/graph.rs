@@ -130,6 +130,9 @@ pub struct RenderState {
     pub shadow: ShadowSettings,
     #[serde(default)]
     pub audio_settings: AudioSettings,
+    /// Music / extra-audio clips on the output timeline (mixed in at export).
+    #[serde(default)]
+    pub music_clips: Vec<crate::render::node_types::AudioClip>,
     #[serde(default)]
     pub watermark_settings: WatermarkSettings,
     #[serde(default)]
@@ -203,6 +206,7 @@ impl Default for RenderState {
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
+            music_clips: Vec::new(),
             watermark_settings: WatermarkSettings::default(),
             camera_overlay: CameraOverlaySettings::default(),
             cursor_sprite_rest: None,

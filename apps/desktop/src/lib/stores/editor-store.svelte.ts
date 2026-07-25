@@ -16,6 +16,7 @@ import {
 	DEFAULT_CAPTION_STYLE,
 } from '@recast/captions';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
+import { type AudioClip, type AudioClipSource, defaultAudioClip } from '../audio/music';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
@@ -564,6 +565,8 @@ export interface EditorRenderState {
 	annotations: Array<Omit<Annotation, 'id'>>;
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
+	/** Music / extra-audio clips on the output timeline. Optional for back-compat. */
+	musicClips?: AudioClip[];
 	watermarkSettings: WatermarkSettings;
 	cameraOverlay: CameraOverlaySettings;
 	/**
@@ -667,6 +670,7 @@ export type PanelTab =
 	| 'cursor'
 	| 'camera'
 	| 'audio'
+	| 'music'
 	| 'captions'
 	| 'extensions'
 	| 'info'
@@ -1032,6 +1036,9 @@ export function createEditorStore() {
 		normalizeLoudness: false,
 	});
 
+	// Music / extra-audio clips laid on the output timeline (mixed in at export).
+	let musicClips = $state<AudioClip[]>([]);
+
 	// Watermark settings
 	let watermarkSettings = $state<WatermarkSettings>({
 		enabled: false,
@@ -1132,6 +1139,7 @@ export function createEditorStore() {
 			outputAspect,
 			lastAppliedPresetId,
 			cursorMotionEasing,
+			musicClips,
 		};
 	}
 
@@ -1217,6 +1225,7 @@ export function createEditorStore() {
 		padding = normalizeFramePaddingPercent(s.padding, metadata);
 		borderRadius = s.borderRadius ?? 0;
 		shadow = s.shadow ? { ...s.shadow } : shadow;
+		musicClips = (s.musicClips ?? []).map((c) => ({ ...c }));
 		trimStart = s.trimStart;
 		trimEnd = s.trimEnd;
 		zoomRegions = (s.zoomRegions ?? []).map((r: ZoomRegion) => ({
@@ -1394,6 +1403,20 @@ export function createEditorStore() {
 
 	function updateShadow(updates: Partial<ShadowSettings>) {
 		shadow = { ...shadow, ...updates };
+	}
+
+	function addMusicClip(source: AudioClipSource): AudioClip {
+		pushUndoState();
+		const clip = defaultAudioClip(generateId(), source);
+		musicClips = [...musicClips, clip];
+		return clip;
+	}
+	function updateMusicClip(id: string, updates: Partial<AudioClip>) {
+		musicClips = musicClips.map((c) => (c.id === id ? { ...c, ...updates } : c));
+	}
+	function removeMusicClip(id: string, pushUndo = true) {
+		if (pushUndo) pushUndoState();
+		musicClips = musicClips.filter((c) => c.id !== id);
 	}
 
 	/**
@@ -1745,6 +1768,7 @@ export function createEditorStore() {
 			opacity: 40,
 			color: '#000000',
 		};
+		musicClips = [];
 		layoutMode = 'auto';
 		outputAspect = 'source';
 		lastAppliedPresetId = null;
@@ -2156,6 +2180,7 @@ export function createEditorStore() {
 			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
 			audioSettings: { ...audioSettings },
+			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
 			transcript,
 			captionStyle: { ...captionStyle },
 			watermarkSettings: { ...watermarkSettings },
@@ -2235,6 +2260,7 @@ export function createEditorStore() {
 		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
 		shadow = state.shadow ?? shadow;
+		musicClips = (state.musicClips ?? []).map((c) => ({ ...c, source: { ...c.source } }));
 		// Backward-compat (see comment in loadRenderState).
 		if (state.audioSettings) {
 			const loaded = state.audioSettings;
@@ -2519,6 +2545,13 @@ export function createEditorStore() {
 		set shadow(v: ShadowSettings) {
 			shadow = v;
 		},
+
+		get musicClips() {
+			return musicClips;
+		},
+		addMusicClip,
+		updateMusicClip,
+		removeMusicClip,
 
 		get layoutMode() {
 			return layoutMode;

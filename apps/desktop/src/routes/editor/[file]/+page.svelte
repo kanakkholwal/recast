@@ -30,7 +30,8 @@
     openFileLocation,
     saveProjectEdits,
   } from "$lib/ipc";
-  import { AudioTimelineEngine } from "$lib/playback/audio-engine";
+  import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
+  import { clipAssetPath } from "$lib/audio/music";
   import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { generateAutoZoom } from "$lib/services/analysis";
   import {
@@ -496,6 +497,7 @@
       eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
       eng.setTrackVolume("mic", s.micVolume, s.micMuted);
       eng.setFades(s.fadeIn, s.fadeOut, store.timeMap.outputDuration);
+      void eng.setMusicClips(buildMusicSpecs());
       audioEngine = eng;
     } catch (err) {
       console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
@@ -612,6 +614,28 @@
     audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
     // Re-arm fades on setting change and when cuts/speed reshape output length.
     audioEngine?.setFades(settings.fadeIn, settings.fadeOut, store.timeMap.outputDuration);
+  });
+
+  // Resolve the store's music clips to playable specs (asset URLs).
+  function buildMusicSpecs(): MusicClipSpec[] {
+    return store.musicClips.map((c) => ({
+      url: convertFileSrc(clipAssetPath(c.source)),
+      startOutputSec: c.startOutputSec,
+      offsetSec: c.offsetSec,
+      durationSec: c.durationSec,
+      gain: c.muted ? 0 : c.gain,
+      fadeIn: c.fadeIn,
+      fadeOut: c.fadeOut,
+      loop: c.loop,
+    }));
+  }
+
+  // Re-decode/re-schedule music whenever the clip set changes (add/remove/edit).
+  // Reads the clips reactively; the engine dedupes decode work per call.
+  $effect(() => {
+    const specs = buildMusicSpecs();
+    void store.timeMap.outputDuration; // reschedule fill length on edit
+    audioEngine?.setMusicClips(specs);
   });
 
   // Transport seek for `store.seek()`: seeks from outside the player (a
