@@ -64,6 +64,7 @@
   );
   const SEAM_TRANSITIONS: { id: SeamTransition; label: string; icon?: typeof ArrowLeft }[] = [
     { id: "none", label: "None" },
+    { id: "dip", label: "Dip" },
     { id: "push-left", label: "", icon: ArrowLeft },
     { id: "push-right", label: "", icon: ArrowRight },
     { id: "push-up", label: "", icon: ArrowUp },
@@ -174,7 +175,11 @@
           {#each SEAM_TRANSITIONS as t (t.id)}
             {@const active = seamKind === t.id}
             {@const seamLabel =
-              t.id === "none" ? "No transition" : t.id.replace("push-", "Push ")}
+              t.id === "none"
+                ? "No transition"
+                : t.id === "dip"
+                  ? "Dip to background"
+                  : t.id.replace("push-", "Push ")}
             <button
               type="button"
               onclick={() => setSeam(t.id)}

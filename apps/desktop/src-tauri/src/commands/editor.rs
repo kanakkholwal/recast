@@ -216,6 +216,14 @@ fn append_audio_to_complex(
         ));
     }
 
+    // EBU R128 loudness normalize on the final mix: -14 LUFS is the common social
+    // target (YouTube/Spotify-ish), -1 dBTP ceiling. Single-pass — a measured
+    // two-pass is a later refinement.
+    if settings.normalize_loudness {
+        segments.push("[aout]loudnorm=I=-14:TP=-1:LRA=11[aoutn]".to_string());
+        return Some((segments.join(";"), "[aoutn]".into()));
+    }
+
     Some((segments.join(";"), "[aout]".into()))
 }
 
@@ -976,6 +984,28 @@ mod audio_mix_tests {
             10.0
         )
         .is_none());
+    }
+
+    #[test]
+    fn normalize_appends_loudnorm_to_the_mix() {
+        let mut s = AudioSettings::default();
+        s.normalize_loudness = true;
+        let (complex, map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("audio graph");
+        assert!(complex.contains("loudnorm=I=-14"));
+        assert_eq!(map, "[aoutn]"); // normalize retargets the map to the loudnorm output
+                                    // Off by default: no loudnorm, map stays [aout].
+        let off = AudioSettings::default();
+        let (c2, m2) = append_audio_to_complex(None, &[(1, AudioKind::System)], &off, 0.0, 10.0)
+            .expect("graph");
+        assert!(!c2.contains("loudnorm"));
+        assert_eq!(m2, "[aout]");
     }
 
     #[test]

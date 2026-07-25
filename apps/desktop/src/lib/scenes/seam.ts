@@ -5,8 +5,9 @@
  * before the seam and a complementary entrance on the segment after, so it rides
  * the existing scene pipeline (../scenes/eval.ts + the Rust export graph) with no
  * new export surface. The "push" family slides the old content off while the new
- * content slides in from the opposite edge. (Dip-to-background, a paired fade,
- * lands once fade is expressible in export.)
+ * content slides in from the opposite edge. "dip" fades the outgoing clip to the
+ * background and the incoming clip back up — a paired fade (now that fade exports
+ * via the scene opacity ramp).
  */
 
 import {
@@ -19,10 +20,13 @@ import {
 	setSegmentAnim,
 } from "./segment-anim";
 
-export type SeamTransition = "none" | "push-left" | "push-right" | "push-up" | "push-down";
+export type SeamTransition = "none" | "dip" | "push-left" | "push-right" | "push-up" | "push-down";
 
-/** Non-`none` push kinds, for iterating presets in the UI. */
-export const PUSH_TRANSITIONS: Exclude<SeamTransition, "none">[] = [
+/** The directional push kinds (everything except `none` and the `dip` fade). */
+type PushTransition = Exclude<SeamTransition, "none" | "dip">;
+
+/** Push kinds, for iterating presets in the UI. */
+export const PUSH_TRANSITIONS: PushTransition[] = [
 	"push-left",
 	"push-right",
 	"push-up",
@@ -32,7 +36,7 @@ export const PUSH_TRANSITIONS: Exclude<SeamTransition, "none">[] = [
 // The paired directions a push writes: the left segment's exit travels `out`, the
 // right segment's entrance comes FROM `in` (the opposite edge), together reading
 // as one continuous push in the exit's direction.
-const PUSH_DIRS: Record<Exclude<SeamTransition, "none">, { out: SceneAnimDir; in: SceneAnimDir }> = {
+const PUSH_DIRS: Record<PushTransition, { out: SceneAnimDir; in: SceneAnimDir }> = {
 	"push-left": { out: "left", in: "right" },
 	"push-right": { out: "right", in: "left" },
 	"push-up": { out: "up", in: "down" },
@@ -41,6 +45,10 @@ const PUSH_DIRS: Record<Exclude<SeamTransition, "none">, { out: SceneAnimDir; in
 
 function slideSpec(side: "in" | "out", dir: SceneAnimDir, tone: MotionTone): SceneAnimSpec {
 	return { ...defaultSpec("slide", side, tone), dir };
+}
+
+function fadeSpec(side: "in" | "out", tone: MotionTone): SceneAnimSpec {
+	return defaultSpec("fade", side, tone);
 }
 
 /**
@@ -57,6 +65,14 @@ export function setSeamTransition(
 ): SegmentAnim[] {
 	if (kind === "none") {
 		return setSegmentAnim(setSegmentAnim(anims, leftStart, "out", null), rightStart, "in", null);
+	}
+	if (kind === "dip") {
+		return setSegmentAnim(
+			setSegmentAnim(anims, leftStart, "out", fadeSpec("out", tone)),
+			rightStart,
+			"in",
+			fadeSpec("in", tone),
+		);
 	}
 	const dirs = PUSH_DIRS[kind];
 	return setSegmentAnim(
@@ -80,6 +96,7 @@ export function seamTransitionAt(
 	const left = segmentAnimAt(anims, leftStart)?.out;
 	const right = segmentAnimAt(anims, rightStart)?.in;
 	if (!left && !right) return "none";
+	if (left?.kind === "fade" && right?.kind === "fade") return "dip";
 	if (left?.kind === "slide" && right?.kind === "slide") {
 		for (const kind of PUSH_TRANSITIONS) {
 			const d = PUSH_DIRS[kind];

@@ -298,6 +298,23 @@
     </div>
   </PanelSection>
 
+  <PanelSection
+    title="Loudness"
+    hint="Even out overall loudness to about −14 LUFS (the common social target). Applies to the exported file."
+    flush
+  >
+    <div class="flex items-center justify-between">
+      <span class="text-[11px] text-foreground">Normalize on export</span>
+      <SegmentedToggle
+        checked={store.audioSettings.normalizeLoudness}
+        size="xs"
+        aria-label="Normalize loudness on export"
+        onCheckedChange={(next) =>
+          updateAudioSettings({ normalizeLoudness: next }, true)}
+      />
+    </div>
+  </PanelSection>
+
   <!-- Per-track gain: system audio and microphone each get their own level +
        mute, layered on top of the master. The user can keep the system audio
        loud and mute just the mic, or vice versa. Master mute still overrides

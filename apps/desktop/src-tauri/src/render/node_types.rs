@@ -65,6 +65,10 @@ pub struct AudioSettings {
     pub fade_in: f64,
     #[serde(default)]
     pub fade_out: f64,
+    /// EBU R128 loudness normalize on the final mix (export only). Default off so
+    /// existing projects export byte-identical.
+    #[serde(default)]
+    pub normalize_loudness: bool,
 }
 
 impl Default for AudioSettings {
@@ -78,6 +82,7 @@ impl Default for AudioSettings {
             mic_muted: false,
             fade_in: 0.0,
             fade_out: 0.0,
+            normalize_loudness: false,
         }
     }
 }

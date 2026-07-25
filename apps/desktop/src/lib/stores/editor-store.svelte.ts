@@ -308,6 +308,8 @@ export interface AudioSettings {
 	micMuted: boolean;
 	fadeIn: number; // seconds
 	fadeOut: number; // seconds
+	/** EBU R128 loudness normalize on the exported mix (export only). */
+	normalizeLoudness: boolean;
 }
 
 /** Convenience: read a track's effective volume (0-1) with mute applied. */
@@ -1027,6 +1029,7 @@ export function createEditorStore() {
 		micMuted: false,
 		fadeIn: 0,
 		fadeOut: 0,
+		normalizeLoudness: false,
 	});
 
 	// Watermark settings
@@ -1258,6 +1261,7 @@ export function createEditorStore() {
 				micMuted: loaded.micMuted ?? loaded.muted,
 				fadeIn: loaded.fadeIn,
 				fadeOut: loaded.fadeOut,
+				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
 		} else {
 			audioSettings = audioSettings;
@@ -1575,7 +1579,12 @@ export function createEditorStore() {
 		});
 	}
 
-	function addAnnotation(kind: AnnotationKind, start?: number, end?: number): Annotation {
+	function addAnnotation(
+		kind: AnnotationKind,
+		start?: number,
+		end?: number,
+		overrides?: Partial<Pick<Annotation, 'glow' | 'name' | 'anchor'>>,
+	): Annotation {
 		pushUndoState();
 		const now = currentTime;
 		const clipEnd = trimEnd || metadata?.duration || 0;
@@ -1604,6 +1613,7 @@ export function createEditorStore() {
 			kind,
 			zIndex: annotationZSeq++,
 			opacity: 1,
+			...(overrides ?? {}),
 		};
 		annotations = [...annotations, annotation];
 		selectAnnotation(annotation.id);
@@ -1785,6 +1795,7 @@ export function createEditorStore() {
 			micMuted: false,
 			fadeIn: 0,
 			fadeOut: 0,
+			normalizeLoudness: false,
 		};
 		watermarkSettings = {
 			enabled: false,
@@ -2236,6 +2247,7 @@ export function createEditorStore() {
 				micMuted: loaded.micMuted ?? loaded.muted,
 				fadeIn: loaded.fadeIn,
 				fadeOut: loaded.fadeOut,
+				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
 		} else {
 			audioSettings = audioSettings;

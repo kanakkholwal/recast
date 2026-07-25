@@ -10,9 +10,20 @@ describe("setSeamTransition", () => {
 		expect(left?.out).toMatchObject({ kind: "slide", dir: "left" });
 		expect(right?.in).toMatchObject({ kind: "slide", dir: "right" });
 	});
+	it("writes a complementary fade pair for a dip", () => {
+		const out = setSeamTransition([], 0, 4, "dip", "balanced");
+		expect(out.find((a) => a.start === 0)?.out).toMatchObject({ kind: "fade" });
+		expect(out.find((a) => a.start === 4)?.in).toMatchObject({ kind: "fade" });
+	});
 	it("clears both sides for none", () => {
 		const set = setSeamTransition([], 0, 4, "push-up", "balanced");
 		expect(setSeamTransition(set, 0, 4, "none", "balanced")).toEqual([]);
+	});
+	it("replaces a dip with a push (and back)", () => {
+		const dip = setSeamTransition([], 0, 4, "dip", "balanced");
+		const push = setSeamTransition(dip, 0, 4, "push-left", "balanced");
+		expect(push.find((a) => a.start === 0)?.out?.kind).toBe("slide");
+		expect(seamTransitionAt(push, 0, 4)).toBe("push-left");
 	});
 	it("styles the slides with the motion tone", () => {
 		const out = setSeamTransition([], 0, 4, "push-right", "energetic");
@@ -32,6 +43,10 @@ describe("seamTransitionAt", () => {
 			const set = setSeamTransition([], 0, 4, kind, "balanced");
 			expect(seamTransitionAt(set, 0, 4)).toBe(kind);
 		}
+	});
+	it("round-trips a dip (paired fade)", () => {
+		const set = setSeamTransition([], 0, 4, "dip", "balanced");
+		expect(seamTransitionAt(set, 0, 4)).toBe("dip");
 	});
 	it("is none when neither side animates", () => {
 		expect(seamTransitionAt([], 0, 4)).toBe("none");
