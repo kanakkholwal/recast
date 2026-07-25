@@ -162,7 +162,7 @@
 
     <PanelSection
       title="Size"
-      hint="Bubble width as a percentage of the frame. Height matches width (1:1 only for now)."
+      hint="Bubble width as a percentage of the frame, or drag its corners in the preview. Height matches width (1:1 only for now)."
     >
       <SliderControl
         label="Bubble size"
@@ -221,6 +221,36 @@
           }}
         />
       {/snippet}
+    </PanelSection>
+
+    <PanelSection
+      title="Grow on zoom"
+      hint="When a zoom/focus region ramps in, the camera grows and drifts away from the focus so it never covers the zoomed area."
+      flush
+    >
+      {#snippet action()}
+        <SegmentedToggle
+          checked={store.cameraOverlay.zoomFollow}
+          size="xs"
+          aria-label="Grow camera on zoom"
+          onCheckedChange={(next) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ zoomFollow: next });
+          }}
+        />
+      {/snippet}
+      {#if store.cameraOverlay.zoomFollow}
+        <SliderControl
+          label="Strength"
+          value={Math.round(store.cameraOverlay.zoomFollowStrength * 100)}
+          min={0}
+          max={100}
+          step={5}
+          unit="%"
+          onstart={() => store.pushUndoState()}
+          onchange={(next) => store.updateCameraOverlay({ zoomFollowStrength: next / 100 })}
+        />
+      {/if}
     </PanelSection>
   {/if}
 </div>

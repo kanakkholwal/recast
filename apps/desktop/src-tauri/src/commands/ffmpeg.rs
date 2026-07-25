@@ -239,7 +239,17 @@ pub fn append_subtitles_to_complex(
 /// All pixel values are in **canvas pixels** (= source + padding × 2 with
 /// any letterbox bars), matching the coordinate space of every other overlay
 /// in the export filter graph.
-#[derive(Debug, Clone, Copy)]
+/// Time-varying camera bubble geometry (zoom-follow): FFmpeg `t`-expressions in
+/// output-stream time. `size_expr` drives both scale w and h (square). When set,
+/// the overlay animates; otherwise the fixed `bubble_*` pixels are used.
+#[derive(Debug, Clone)]
+pub struct CameraOverlayAnim {
+    pub size_expr: String,
+    pub x_expr: String,
+    pub y_expr: String,
+}
+
+#[derive(Debug, Clone)]
 pub struct CameraOverlayParams {
     /// FFmpeg input index of the camera.mp4 stream.
     pub camera_input_index: usize,
@@ -257,6 +267,8 @@ pub struct CameraOverlayParams {
     /// Horizontally flip the camera so the rendered bubble matches what the
     /// user saw in the recording-time webcam preview (Phase 1 default: on).
     pub mirror: bool,
+    /// Zoom-follow animation; `None` = fixed placement (the pre-follow path).
+    pub anim: Option<CameraOverlayAnim>,
 }
 
 /// Append a camera-overlay stage to an existing filter_complex string.
@@ -290,23 +302,44 @@ pub fn append_camera_overlay_to_complex(
         bubble_w: bw,
         bubble_h: bh,
         mirror,
-    } = *params;
+        anim,
+    } = params;
+    let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
+
+    // Fixed size / position, OR a per-frame zoom-follow expression. The mask
+    // scales by the SAME size expr so alphamerge stays aligned as the bubble
+    // grows; `eval=frame` re-evaluates the scale per frame (a plain scale
+    // evaluates only at filter init). Overlay x/y accept per-frame expressions.
+    let (cam_scale, mask_scale, ovl_x, ovl_y) = match anim {
+        Some(a) => (
+            format!("scale=w='{s}':h='{s}':eval=frame", s = a.size_expr),
+            format!("scale=w='{s}':h='{s}':eval=frame", s = a.size_expr),
+            format!("'{}'", a.x_expr),
+            format!("'{}'", a.y_expr),
+        ),
+        None => (
+            format!("scale={bw}:{bh}"),
+            format!("scale={bw}:{bh}"),
+            bx.to_string(),
+            by.to_string(),
+        ),
+    };
 
     // Use unique labels (`vcam_pre`, `vcam_mask`, `vcam_shaped`) so this
     // stage can compose with cursor / watermark / blur stages without label
     // collisions.
     let cam_chain = match mask_input_index {
         Some(mask_idx) => format!(
-            "[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_pre];\
-             [{mask_idx}:v]format=gray[vcam_mask];\
+            "[{cam}:v]{hflip}{cam_scale},format=yuva420p[vcam_pre];\
+             [{mask_idx}:v]format=gray,{mask_scale}[vcam_mask];\
              [vcam_pre][vcam_mask]alphamerge[vcam_shaped]"
         ),
-        None => format!("[{cam}:v]{hflip}scale={bw}:{bh}[vcam_shaped]"),
+        None => format!("[{cam}:v]{hflip}{cam_scale}[vcam_shaped]"),
     };
 
     let overlay =
-        format!("{normalized_current}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}");
+        format!("{normalized_current}[vcam_shaped]overlay={ovl_x}:{ovl_y}:format=auto{out_label}");
 
     let new_complex = match filter_complex {
         Some(existing) if !existing.is_empty() => format!("{existing};{cam_chain};{overlay}"),

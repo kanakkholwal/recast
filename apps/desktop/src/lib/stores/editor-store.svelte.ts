@@ -378,6 +378,10 @@ export interface CameraOverlaySettings {
 	shape: CameraOverlayShape;
 	cornerRadius: number;
 	animationPreset: CameraOverlayAnimationPreset;
+	/** Grow + drift the camera away from a zoom's focus as it ramps in (default on). */
+	zoomFollow: boolean;
+	/** 0..1 strength of the zoom-follow grow + drift. */
+	zoomFollowStrength: number;
 	defaultPlacement: CameraPlacement;
 	motionSegments: CameraMotionSegment[];
 }
@@ -1078,6 +1082,8 @@ export function createEditorStore() {
 		shape: 'rounded',
 		cornerRadius: 0.16,
 		animationPreset: 'soft',
+		zoomFollow: true,
+		zoomFollowStrength: 0.6,
 		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 		motionSegments: [],
 	});
@@ -2418,6 +2424,8 @@ export function createEditorStore() {
 			shape: state.cameraOverlay?.shape ?? 'rounded',
 			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
 			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
+			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
+			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
 			defaultPlacement: {
 				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
 				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,

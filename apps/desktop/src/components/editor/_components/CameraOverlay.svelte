@@ -1,9 +1,13 @@
 <script lang="ts">
   import { computeCanvasGeometry } from "$lib/canvas-geometry";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
+  import { evaluateZoomAt } from "../video-preview.logic";
   import {
+    applyZoomFollow,
     bubblePlacementStyle,
+    type CameraResizeCorner,
     clampCameraDrag,
+    resizeCameraSquare,
     shapeBorderRadius,
   } from "./camera-overlay.logic";
 
@@ -21,23 +25,27 @@
 
   let cameraVideoEl: HTMLVideoElement | null = $state(null);
 
-  // Bubble UV is in *video* space (so "bottom-right of the video", not of the padded
-  // canvas); transformed into canvas-pixel offsets here.
   const geom = $derived.by(() => {
     const m = store.metadata;
     if (!m || !m.width || !m.height) return null;
-    return computeCanvasGeometry(
-      m.width,
-      m.height,
-      store.padding,
-      store.outputAspect,
-    );
+    return computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
   });
 
-  const bubbleStyle = $derived(
-    bubblePlacementStyle(geom, store.cameraOverlay.defaultPlacement),
-  );
+  // The rendered placement = the saved base, then the zoom-follow effect (grow +
+  // drift away from the active zoom's focus). Editing writes the BASE; this only
+  // shifts what's drawn. Identity when zoom-follow is off, focus is bypassed, or
+  // no zoom is active at the playhead.
+  const effectivePlacement = $derived.by(() => {
+    const base = store.cameraOverlay.defaultPlacement;
+    if (!store.cameraOverlay.zoomFollow || !store.focusEnabled) return base;
+    const zoom = evaluateZoomAt(store.zoomRegions, store.currentTime);
+    return applyZoomFollow(base, zoom, {
+      enabled: true,
+      strength: store.cameraOverlay.zoomFollowStrength,
+    });
+  });
 
+  const bubbleStyle = $derived(bubblePlacementStyle(geom, effectivePlacement));
   const borderRadius = $derived(
     shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
   );
@@ -53,21 +61,31 @@
     }
   });
 
-  // Play/pause in lockstep; set currentTime to the screen's instant before play so
-  // the first frame is correct even after a long pause.
   $effect(() => {
     const playing = store.isPlaying;
     if (!cameraVideoEl) return;
     if (playing) {
       if (videoEl) cameraVideoEl.currentTime = videoEl.currentTime;
       void cameraVideoEl.play().catch((err) => {
-        // Network/decoder hiccups can still throw; keep the screen video playing.
         console.warn("camera overlay play failed:", err);
       });
     } else {
       cameraVideoEl.pause();
     }
   });
+
+  // Client px → video UV (for absolute resize math), via the canvas rect + geom.
+  function clientToVideoUv(clientX: number, clientY: number): { x: number; y: number } | null {
+    if (!targetEl || !geom) return null;
+    const rect = targetEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return null;
+    const canvasX = ((clientX - rect.left) / rect.width) * geom.canvasW;
+    const canvasY = ((clientY - rect.top) / rect.height) * geom.canvasH;
+    return {
+      x: (canvasX - geom.videoX) / geom.videoW,
+      y: (canvasY - geom.videoY) / geom.videoH,
+    };
+  }
 
   // Drag-to-reposition. UV deltas are relative to the rendered video rect (not the
   // canvas, so padding doesn't bias motion); pushUndoState at pointerdown = one undo entry.
@@ -100,9 +118,7 @@
       p,
     );
     if (!next) return;
-    store.updateCameraOverlay({
-      defaultPlacement: { ...p, x: next.x, y: next.y },
-    });
+    store.updateCameraOverlay({ defaultPlacement: { ...p, x: next.x, y: next.y } });
   }
 
   function onPointerUp(e: PointerEvent) {
@@ -114,40 +130,87 @@
       // Ignore, pointer capture may already have been released.
     }
   }
+
+  // Corner resize. Anchors the opposite corner; square-locked (see resizeCameraSquare).
+  let resizing = $state<CameraResizeCorner | null>(null);
+  // Handles are size-3 (12px); a -6px offset centres each on its corner.
+  const CORNERS: Array<{ id: CameraResizeCorner; offset: string; cursor: string }> = [
+    { id: "tl", offset: "left:-6px;top:-6px", cursor: "nwse-resize" },
+    { id: "tr", offset: "right:-6px;top:-6px", cursor: "nesw-resize" },
+    { id: "bl", offset: "left:-6px;bottom:-6px", cursor: "nesw-resize" },
+    { id: "br", offset: "right:-6px;bottom:-6px", cursor: "nwse-resize" },
+  ];
+
+  function onHandleDown(e: PointerEvent, corner: CameraResizeCorner) {
+    if (!targetEl || !geom) return;
+    e.stopPropagation();
+    e.preventDefault();
+    resizing = corner;
+    store.pushUndoState();
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }
+
+  function onHandleMove(e: PointerEvent, corner: CameraResizeCorner) {
+    if (resizing !== corner) return;
+    const uv = clientToVideoUv(e.clientX, e.clientY);
+    if (!uv) return;
+    store.updateCameraOverlay({
+      defaultPlacement: resizeCameraSquare(store.cameraOverlay.defaultPlacement, corner, uv.x, uv.y),
+    });
+  }
+
+  function onHandleUp(e: PointerEvent) {
+    if (resizing === null) return;
+    resizing = null;
+    try {
+      (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      // Ignore.
+    }
+  }
 </script>
 
 {#if cameraSrc && store.cameraOverlay.enabled && geom}
-  <!-- Bubble wrapper owns position, shape, shadow, and drag pointers; the <video> fills it via object-fit:cover. -->
+  <!-- Outer bounds: owns position + drag + resize handles (NOT clipped, so handles
+       show past the shape). The inner div clips the video to the bubble shape. -->
   <div
     role="presentation"
-    class="absolute select-none"
-    style="
-      {bubbleStyle}
-      aspect-ratio: 1;
-      border-radius: {borderRadius};
-      overflow: hidden;
-      box-shadow: 0 6px 22px rgba(0, 0, 0, 0.32);
-      cursor: {isDragging ? 'grabbing' : 'grab'};
-      touch-action: none;
-    "
+    class="group absolute select-none"
+    style="{bubbleStyle} aspect-ratio: 1; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
     onpointercancel={onPointerUp}
   >
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={cameraVideoEl}
-      src={cameraSrc}
-      muted
-      playsinline
-      preload="auto"
-      class="block h-full w-full"
-      style="
-        object-fit: cover;
-        transform: {store.cameraOverlay.mirror ? 'scaleX(-1)' : 'none'};
-        pointer-events: none;
-      "
-    ></video>
+    <div
+      class="h-full w-full overflow-hidden"
+      style="border-radius: {borderRadius}; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.32);"
+    >
+      <!-- svelte-ignore a11y_media_has_caption -->
+      <video
+        bind:this={cameraVideoEl}
+        src={cameraSrc}
+        muted
+        playsinline
+        preload="auto"
+        class="block h-full w-full"
+        style="object-fit: cover; transform: {store.cameraOverlay.mirror
+          ? 'scaleX(-1)'
+          : 'none'}; pointer-events: none;"
+      ></video>
+    </div>
+
+    {#each CORNERS as c (c.id)}
+      <button
+        type="button"
+        aria-label="Resize camera"
+        class="absolute size-3 rounded-full border border-white/80 bg-primary opacity-0 shadow transition-opacity group-hover:opacity-100"
+        style="{c.offset}; cursor: {c.cursor}; touch-action: none;"
+        onpointerdown={(e) => onHandleDown(e, c.id)}
+        onpointermove={(e) => onHandleMove(e, c.id)}
+        onpointerup={onHandleUp}
+        onpointercancel={onHandleUp}
+      ></button>
+    {/each}
   </div>
 {/if}

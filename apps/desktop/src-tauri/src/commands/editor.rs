@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
-use super::export::camera::camera_bubble_rect;
+use super::export::camera::{build_camera_follow_exprs, camera_bubble_rect};
 use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
@@ -24,8 +24,8 @@ use super::export::state::{emit_export_state, ExportStateEvent};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, build_annotation_blur_complex, build_output_scale_filter,
-    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayParams,
-    ExportSpeed,
+    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
+    CameraOverlayParams, ExportSpeed,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -2223,6 +2223,24 @@ pub(crate) async fn run_export_job(
     // a user might want to apply over their own face).
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
+        // Zoom-follow: grow + drift the bubble over time (mirrors the preview's
+        // applyZoomFollow). None → the fixed placement, byte-identical to before.
+        let camera_anim = if camera_overlay_settings.zoom_follow {
+            build_camera_follow_exprs(
+                &request.render_state.zoom_regions,
+                &camera_overlay_settings.default_placement,
+                camera_overlay_settings.zoom_follow_strength,
+                &canvas_geom,
+                trim_start,
+            )
+            .map(|(size_expr, x_expr, y_expr)| CameraOverlayAnim {
+                size_expr,
+                x_expr,
+                y_expr,
+            })
+        } else {
+            None
+        };
         let (new_complex, new_map) = append_camera_overlay_to_complex(
             filter_complex_after_cursor.as_deref(),
             &video_map_after_cursor,
@@ -2234,6 +2252,7 @@ pub(crate) async fn run_export_job(
                 bubble_w: *bw,
                 bubble_h: *bh,
                 mirror: camera_overlay_settings.mirror,
+                anim: camera_anim,
             },
         );
         filter_complex_after_cursor = Some(new_complex);

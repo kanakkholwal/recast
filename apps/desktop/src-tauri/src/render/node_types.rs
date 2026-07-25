@@ -292,6 +292,10 @@ pub struct CameraOverlaySettings {
     pub corner_radius: f64,
     #[serde(default = "default_camera_animation_preset")]
     pub animation_preset: String,
+    #[serde(default = "default_camera_zoom_follow")]
+    pub zoom_follow: bool,
+    #[serde(default = "default_camera_zoom_follow_strength")]
+    pub zoom_follow_strength: f64,
     #[serde(default)]
     pub default_placement: CameraPlacement,
     #[serde(default)]
@@ -302,6 +306,14 @@ fn default_camera_corner_radius() -> f64 {
     0.16
 }
 
+fn default_camera_zoom_follow() -> bool {
+    true
+}
+
+fn default_camera_zoom_follow_strength() -> f64 {
+    0.6
+}
+
 impl Default for CameraOverlaySettings {
     fn default() -> Self {
         Self {
@@ -310,6 +322,8 @@ impl Default for CameraOverlaySettings {
             shape: default_camera_shape(),
             corner_radius: default_camera_corner_radius(),
             animation_preset: default_camera_animation_preset(),
+            zoom_follow: default_camera_zoom_follow(),
+            zoom_follow_strength: default_camera_zoom_follow_strength(),
             default_placement: CameraPlacement::default(),
             motion_segments: Vec::new(),
         }
