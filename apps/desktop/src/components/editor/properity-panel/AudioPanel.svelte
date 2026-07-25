@@ -209,6 +209,41 @@
   </PanelSection>
 
   <PanelSection
+    title="Timeline audio"
+    hint="Detach the recording's audio to trim, move, split, or silence it on its own lane. Once detached it edits independently and no longer follows video cuts."
+    flush
+  >
+    {#if store.audioDetached}
+      <div
+        class="flex items-center justify-between gap-2 rounded-md border border-lane-audio/40 bg-lane-audio/10 px-2.5 py-2"
+      >
+        <span class="inline-flex items-center gap-1.5 text-[11px] text-foreground">
+          <Mic size={12} class="text-lane-audio" />
+          On the Voice lane — edit it there.
+        </span>
+        <Button variant="outline" size="xs" onclick={() => store.reattachRecordingAudio()}>
+          Reattach
+        </Button>
+      </div>
+    {:else}
+      <Button
+        variant="outline"
+        size="sm"
+        class="w-full gap-1.5"
+        disabled={!store.canDetachAudio}
+        onclick={() => store.detachRecordingAudio()}
+      >
+        <AudioWaveform size={13} /> Detach audio to timeline
+      </Button>
+      {#if !store.canDetachAudio}
+        <p class="mt-1 text-[10px] text-muted-foreground">
+          This recording has no separate audio to detach.
+        </p>
+      {/if}
+    {/if}
+  </PanelSection>
+
+  <PanelSection
     title="Fades"
     hint="Fade the audio in at the start and out at the end."
     flush

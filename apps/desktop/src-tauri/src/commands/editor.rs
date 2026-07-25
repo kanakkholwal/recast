@@ -297,6 +297,24 @@ fn build_music_stage(
     Some((segments.join(";"), "[afinal]".into()))
 }
 
+/// Attribution lines the music clips' licenses require (CC-BY), deduped and
+/// joined for the output file's `comment` metadata so the credit travels with
+/// the exported video. None when nothing needs crediting.
+fn build_credits_comment(clips: &[crate::render::node_types::AudioClip]) -> Option<String> {
+    let mut seen: Vec<&str> = Vec::new();
+    for clip in clips {
+        if let Some(a) = clip.source.attribution() {
+            if !seen.contains(&a) {
+                seen.push(a);
+            }
+        }
+    }
+    if seen.is_empty() {
+        return None;
+    }
+    Some(format!("Music: {}", seen.join("; ")))
+}
+
 fn append_watermark_to_complex(
     existing: Option<&str>,
     current_video_map: &str,
@@ -1086,6 +1104,7 @@ mod audio_mix_tests {
             source: AudioClipSource::Local {
                 path: "x.mp3".into(),
             },
+            role: Default::default(),
             start_output_sec: 2.0,
             offset_sec: 1.0,
             duration_sec: 0.0, // fill
@@ -1111,6 +1130,7 @@ mod audio_mix_tests {
         let clip = AudioClip {
             id: "m".into(),
             source: AudioClipSource::Local { path: "x".into() },
+            role: Default::default(),
             start_output_sec: 0.0,
             offset_sec: 0.0,
             duration_sec: 0.0,
@@ -1137,6 +1157,13 @@ mod audio_mix_tests {
         let provider = r#"{"id":"c","source":{"kind":"provider","providerId":"up","trackId":"t","assetPath":"/cached.mp3"},"gain":45}"#;
         let p: crate::render::node_types::AudioClip = serde_json::from_str(provider).unwrap();
         assert_eq!(p.source.asset_path(), "/cached.mp3");
+
+        // role: absent → Music (legacy), explicit "voice" round-trips.
+        use crate::render::node_types::AudioClipRole;
+        assert_eq!(c.role, AudioClipRole::Music);
+        let voice = r#"{"id":"v","source":{"kind":"local","path":"/rec.wav"},"role":"voice"}"#;
+        let v: crate::render::node_types::AudioClip = serde_json::from_str(voice).unwrap();
+        assert_eq!(v.role, AudioClipRole::Voice);
     }
 
     #[test]
@@ -1147,6 +1174,46 @@ mod audio_mix_tests {
         let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
             .expect("source audio");
         assert!(complex.contains("volume=0.5000"));
+    }
+
+    #[test]
+    fn credits_comment_dedupes_providers_and_skips_local() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let provider = |id: &str, attr: Option<&str>| AudioClip {
+            id: id.into(),
+            source: AudioClipSource::Provider {
+                provider_id: "jamendo".into(),
+                track_id: id.into(),
+                asset_path: format!("/{id}.mp3"),
+                attribution: attr.map(str::to_string),
+                license: None,
+            },
+            role: Default::default(),
+            start_output_sec: 0.0,
+            offset_sec: 0.0,
+            duration_sec: 0.0,
+            gain: 100.0,
+            muted: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            looping: false,
+            ducking: false,
+        };
+        let local = AudioClip {
+            source: AudioClipSource::Local {
+                path: "/x.mp3".into(),
+            },
+            ..provider("l", None)
+        };
+        let line = "\"Sunrise\" by Nova (Jamendo)";
+        let comment = build_credits_comment(&[
+            provider("1", Some(line)),
+            provider("2", Some(line)), // same line → deduped
+            local,                     // local → no credit
+        ])
+        .expect("comment");
+        assert_eq!(comment, format!("Music: {line}"));
+        assert!(build_credits_comment(&[provider("3", None)]).is_none());
     }
 }
 
@@ -2066,9 +2133,17 @@ pub(crate) async fn run_export_job(
         ]);
     }
 
+    // Detached audio: the recording's own audio is now edited as `voice` clips,
+    // so the monolithic source/system/mic tracks are dropped (the clips carry it).
+    let audio_detached = request
+        .render_state
+        .music_clips
+        .iter()
+        .any(|c| c.role == crate::render::node_types::AudioClipRole::Voice);
+
     let mut audio_input_indices: Vec<(usize, AudioKind)> = Vec::new();
     let source_has_audio = has_audio(&source_video);
-    if request.format != "gif" && source_has_audio {
+    if request.format != "gif" && source_has_audio && !audio_detached {
         audio_input_indices.push((0, AudioKind::Source));
     }
     let mut music_inputs: Vec<(usize, &crate::render::node_types::AudioClip)> = Vec::new();
@@ -2079,7 +2154,7 @@ pub(crate) async fn run_export_job(
             + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
             + camera_mask_input_index.is_some() as usize;
-        if let Some(project) = project.as_ref() {
+        if let Some(project) = project.as_ref().filter(|_| !audio_detached) {
             for (path, kind) in [
                 (&project.audio_path, AudioKind::System),
                 (&project.microphone_path, AudioKind::Mic),
@@ -2446,6 +2521,14 @@ pub(crate) async fn run_export_job(
 
     if duration <= 0.0 && (!export_plan.extra_inputs.is_empty() || cursor_overlay_path.is_some()) {
         args.push("-shortest".to_string());
+    }
+
+    // CC-BY music requires credit, so bake the attribution into the output's
+    // `comment` metadata (skipped for GIF — it carries no audio to credit).
+    if request.format != "gif" {
+        if let Some(comment) = build_credits_comment(&request.render_state.music_clips) {
+            args.extend(["-metadata".to_string(), format!("comment={comment}")]);
+        }
     }
 
     append_codec_args(

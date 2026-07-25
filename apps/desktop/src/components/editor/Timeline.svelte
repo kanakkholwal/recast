@@ -5,6 +5,8 @@
   } from "$lib/stores/editor-store.svelte";
   import {
     AudioLines,
+    Mic,
+    Music2,
     Pencil,
     Scissors,
     Video,
@@ -13,6 +15,7 @@
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
   import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
+  import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
   import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
   import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
@@ -968,6 +971,16 @@
             {@render railLabel(AudioLines, "Audio", "text-lane-audio")}
           </div>
         {/if}
+        {#if store.voiceClips.length > 0}
+          <div class="mt-1.5 flex h-7 items-center justify-center">
+            {@render railLabel(Mic, "Voice", "text-lane-audio")}
+          </div>
+        {/if}
+        {#if store.musicOnlyClips.length > 0}
+          <div class="mt-1.5 flex h-7 items-center justify-center">
+            {@render railLabel(Music2, "Music", "text-lane-music")}
+          </div>
+        {/if}
         {#if showCutLane}
           <div class="mt-1.5 flex min-h-9 items-center justify-center">
             {@render railLabel(Scissors, "Cuts", "text-lane-cut")}
@@ -1036,6 +1049,27 @@
 
         {#if showAudioLane}
           <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
+        {/if}
+
+        <!-- Detached recording audio ("voice"), then music: both editable clip
+             lanes, appearing whenever they hold clips (not just in the panel). -->
+        {#if store.voiceClips.length > 0}
+          <TimelineMusicLane
+            {store}
+            clips={store.voiceClips}
+            {pixelsPerSecond}
+            variant="voice"
+            panelTab="audio"
+          />
+        {/if}
+        {#if store.musicOnlyClips.length > 0}
+          <TimelineMusicLane
+            {store}
+            clips={store.musicOnlyClips}
+            {pixelsPerSecond}
+            variant="music"
+            panelTab="music"
+          />
         {/if}
 
         <!-- Cuts sit next to Audio: cutting against the waveform is the common

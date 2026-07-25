@@ -121,6 +121,27 @@ impl AudioClipSource {
             AudioClipSource::Provider { asset_path, .. } => asset_path,
         }
     }
+
+    /// Credit line for licenses that require attribution (CC-BY); None for local.
+    pub fn attribution(&self) -> Option<&str> {
+        match self {
+            AudioClipSource::Provider {
+                attribution: Some(a),
+                ..
+            } if !a.trim().is_empty() => Some(a.trim()),
+            _ => None,
+        }
+    }
+}
+
+/// `voice` = the recording's own detached audio; `music` = anything added on top.
+/// Mirrors `AudioClipRole` in `src/lib/audio/music.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AudioClipRole {
+    #[default]
+    Music,
+    Voice,
 }
 
 /// Music / extra-audio laid on the OUTPUT timeline. Mirrors `AudioClip` in
@@ -130,6 +151,8 @@ impl AudioClipSource {
 pub struct AudioClip {
     pub id: String,
     pub source: AudioClipSource,
+    #[serde(default)]
+    pub role: AudioClipRole,
     #[serde(default)]
     pub start_output_sec: f64,
     #[serde(default)]

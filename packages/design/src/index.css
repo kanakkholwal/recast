@@ -90,6 +90,7 @@
   --lane-zoom: oklch(0.56 0.16 128);
   --lane-audio: oklch(0.56 0.12 215);
   --lane-markup: oklch(0.54 0.15 285);
+  --lane-music: oklch(0.60 0.13 75);
 
   --border: oklch(96.115% 0.00011 271.152);
   --border-subtle: oklch(0% 0 0 / 0.05);
@@ -199,6 +200,7 @@
   --lane-zoom: oklch(0.82 0.17 128);
   --lane-audio: oklch(0.74 0.12 215);
   --lane-markup: oklch(0.74 0.15 285);
+  --lane-music: oklch(0.80 0.13 75);
 
   --border: oklch(23.929% 0.00003 271.152);
   --border-subtle: oklch(100% 0.00011 271.152 / 0.05);
@@ -272,6 +274,7 @@
   --color-lane-zoom: var(--lane-zoom);
   --color-lane-audio: var(--lane-audio);
   --color-lane-markup: var(--lane-markup);
+  --color-lane-music: var(--lane-music);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-input: var(--input);

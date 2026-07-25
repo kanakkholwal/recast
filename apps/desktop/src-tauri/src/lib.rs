@@ -538,6 +538,7 @@ pub fn run() {
             commands::delete_file,
             commands::rename_file,
             commands::get_video_metadata,
+            commands::download_music_asset,
             commands::load_editor_document,
             commands::migrate_project,
             commands::generate_thumbnails,

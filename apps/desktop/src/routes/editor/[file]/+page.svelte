@@ -493,9 +493,12 @@
         return;
       }
       const s = store.audioSettings;
+      // Detached: the recording's audio plays as voice clips, so the monolithic
+      // source tracks are muted here (the clips path carries it).
+      const detached = store.audioDetached;
       eng.setMasterVolume(s.volume, s.muted);
-      eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
-      eng.setTrackVolume("mic", s.micVolume, s.micMuted);
+      eng.setTrackVolume("system", detached ? 0 : s.systemVolume, detached || s.systemMuted);
+      eng.setTrackVolume("mic", detached ? 0 : s.micVolume, detached || s.micMuted);
       eng.setFades(s.fadeIn, s.fadeOut, store.timeMap.outputDuration);
       void eng.setMusicClips(buildMusicSpecs());
       audioEngine = eng;
@@ -599,19 +602,22 @@
   // still zeros both.
   $effect(() => {
     const settings = store.audioSettings;
+    // Detached audio: the monolithic source tracks are silenced (voice clips
+    // carry the recording audio); guards against double-playing the un-cut source.
+    const detached = store.audioDetached;
     const systemVol =
-      settings.muted || settings.systemMuted
+      detached || settings.muted || settings.systemMuted
         ? 0
         : Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
     const micVol =
-      settings.muted || settings.micMuted
+      detached || settings.muted || settings.micMuted
         ? 0
         : Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
     if (systemAudioEl) systemAudioEl.volume = systemVol;
     if (micAudioEl) micAudioEl.volume = micVol;
     audioEngine?.setMasterVolume(settings.volume, settings.muted);
-    audioEngine?.setTrackVolume("system", settings.systemVolume, settings.systemMuted);
-    audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
+    audioEngine?.setTrackVolume("system", detached ? 0 : settings.systemVolume, detached || settings.systemMuted);
+    audioEngine?.setTrackVolume("mic", detached ? 0 : settings.micVolume, detached || settings.micMuted);
     // Re-arm fades on setting change and when cuts/speed reshape output length.
     audioEngine?.setFades(settings.fadeIn, settings.fadeOut, store.timeMap.outputDuration);
   });

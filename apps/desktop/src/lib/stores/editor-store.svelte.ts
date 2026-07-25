@@ -16,7 +16,13 @@ import {
 	DEFAULT_CAPTION_STYLE,
 } from '@recast/captions';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
-import { type AudioClip, type AudioClipSource, defaultAudioClip } from '../audio/music';
+import {
+	type AudioClip,
+	type AudioClipSource,
+	defaultAudioClip,
+	splitClip,
+	voiceClip,
+} from '../audio/music';
 import type { CursorSampleLike } from '../cursor/smoothing';
 import { EASE, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
@@ -648,7 +654,7 @@ export function aspectRatio(a: OutputAspect): number | null {
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
 /** What the editor currently has selected. Exactly one, or nothing. */
-export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut';
+export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut' | 'music';
 export interface EditorSelection {
 	kind: SelectionKind;
 	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
@@ -919,6 +925,8 @@ export function createEditorStore() {
 	let selectedClipStart = $state<number | null>(null);
 	// Transient UI selection: the highlighted cut band's id, or null.
 	let selectedCutId = $state<string | null>(null);
+	// Transient UI selection: the highlighted music/audio clip's id, or null.
+	let selectedMusicClipId = $state<string | null>(null);
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
@@ -1226,6 +1234,9 @@ export function createEditorStore() {
 		borderRadius = s.borderRadius ?? 0;
 		shadow = s.shadow ? { ...s.shadow } : shadow;
 		musicClips = (s.musicClips ?? []).map((c) => ({ ...c }));
+		if (selectedMusicClipId && !musicClips.find((c) => c.id === selectedMusicClipId)) {
+			selectedMusicClipId = null;
+		}
 		trimStart = s.trimStart;
 		trimEnd = s.trimEnd;
 		zoomRegions = (s.zoomRegions ?? []).map((r: ZoomRegion) => ({
@@ -1417,6 +1428,73 @@ export function createEditorStore() {
 	function removeMusicClip(id: string, pushUndo = true) {
 		if (pushUndo) pushUndoState();
 		musicClips = musicClips.filter((c) => c.id !== id);
+		if (selectedMusicClipId === id) selectedMusicClipId = null;
+	}
+
+	/** Split a music clip at an OUTPUT-axis time into two. Returns true if it split
+	 *  (the point must be strictly inside the clip). The left half keeps the id. */
+	function splitMusicClip(id: string, atOutputSec: number): boolean {
+		const clip = musicClips.find((c) => c.id === id);
+		if (!clip) return false;
+		const parts = splitClip(clip, atOutputSec, timeMapMemo.outputDuration, generateId());
+		if (!parts) return false;
+		pushUndoState();
+		musicClips = musicClips.flatMap((c) => (c.id === id ? parts : [c]));
+		return true;
+	}
+
+	// The recording's own audio, detached for independent editing, lives as `voice`
+	// clips in `musicClips` (same model + render paths). "Detached" is simply "a
+	// voice clip exists" — no separate flag to keep in sync across undo/serialize.
+	const audioDetached = $derived(musicClips.some((c) => c.role === 'voice'));
+	const canDetachAudio = $derived(!!(audioPath || microphonePath));
+	const voiceClips = $derived(musicClips.filter((c) => c.role === 'voice'));
+	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== 'voice'));
+
+	/** Split system+mic into independent `voice` clips (their per-source gain/mute
+	 *  and the timeline fades carried over) and suppress the monolithic source path.
+	 *  No-op if already detached or the recording has no separate audio to detach. */
+	function detachRecordingAudio(): boolean {
+		if (audioDetached || !canDetachAudio) return false;
+		const common = {
+			offsetSec: Math.max(0, trimStart),
+			fadeIn: audioSettings.fadeIn,
+			fadeOut: audioSettings.fadeOut,
+		};
+		const made: AudioClip[] = [];
+		if (audioPath) {
+			made.push(
+				voiceClip(generateId(), audioPath, {
+					...common,
+					gain: audioSettings.systemVolume,
+					muted: audioSettings.systemMuted,
+				}),
+			);
+		}
+		if (microphonePath) {
+			made.push(
+				voiceClip(generateId(), microphonePath, {
+					...common,
+					gain: audioSettings.micVolume,
+					muted: audioSettings.micMuted,
+				}),
+			);
+		}
+		if (made.length === 0) return false;
+		pushUndoState();
+		musicClips = [...musicClips, ...made];
+		return true;
+	}
+
+	/** Re-bind the recording audio: drop every voice clip so the source path resumes. */
+	function reattachRecordingAudio(): boolean {
+		if (!audioDetached) return false;
+		pushUndoState();
+		musicClips = musicClips.filter((c) => c.role !== 'voice');
+		if (selectedMusicClipId && !musicClips.find((c) => c.id === selectedMusicClipId)) {
+			selectedMusicClipId = null;
+		}
+		return true;
 	}
 
 	/**
@@ -1444,6 +1522,7 @@ export function createEditorStore() {
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectZoomRegion(id: string | null) {
@@ -1452,6 +1531,7 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectAnnotation(id: string | null) {
@@ -1460,6 +1540,7 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectCut(id: string | null) {
@@ -1468,6 +1549,16 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
+		selectedMusicClipId = null;
+	}
+
+	function selectMusicClip(id: string | null) {
+		selectedMusicClipId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+		selectedCutId = null;
 	}
 
 	function clearSelection() {
@@ -1475,6 +1566,7 @@ export function createEditorStore() {
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	const selection = $derived.by<EditorSelection | null>(() => {
@@ -1486,6 +1578,9 @@ export function createEditorStore() {
 		}
 		if (selectedCutId !== null) {
 			return { kind: 'cut', id: selectedCutId };
+		}
+		if (selectedMusicClipId !== null) {
+			return { kind: 'music', id: selectedMusicClipId };
 		}
 		if (selectedClipStart !== null) {
 			return { kind: 'clip', id: selectedClipStart };
@@ -1512,6 +1607,10 @@ export function createEditorStore() {
 			const cut = cuts.find((c) => c.id === selectedCutId);
 			removeCut(selectedCutId);
 			return { kind: 'cut', joinAt: cut ? cut.start : null };
+		}
+		if (selectedMusicClipId !== null) {
+			removeMusicClip(selectedMusicClipId);
+			return { kind: 'music', joinAt: null };
 		}
 		if (selectedClipStart !== null) {
 			const joinAt = deleteSegmentAt(selectedClipStart);
@@ -1769,6 +1868,7 @@ export function createEditorStore() {
 			color: '#000000',
 		};
 		musicClips = [];
+		selectedMusicClipId = null;
 		layoutMode = 'auto';
 		outputAspect = 'source';
 		lastAppliedPresetId = null;
@@ -2549,9 +2649,31 @@ export function createEditorStore() {
 		get musicClips() {
 			return musicClips;
 		},
+		get musicOnlyClips() {
+			return musicOnlyClips;
+		},
+		get voiceClips() {
+			return voiceClips;
+		},
+		get audioDetached() {
+			return audioDetached;
+		},
+		get canDetachAudio() {
+			return canDetachAudio;
+		},
+		detachRecordingAudio,
+		reattachRecordingAudio,
 		addMusicClip,
 		updateMusicClip,
 		removeMusicClip,
+		splitMusicClip,
+		selectMusicClip,
+		get selectedMusicClipId() {
+			return selectedMusicClipId;
+		},
+		set selectedMusicClipId(v: string | null) {
+			selectMusicClip(v);
+		},
 
 		get layoutMode() {
 			return layoutMode;

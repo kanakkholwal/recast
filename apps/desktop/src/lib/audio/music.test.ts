@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { musicFadeFactor } from "$lib/playback/audio-engine";
-import { clipDisplayName, clipGain, defaultAudioClip } from "./music";
+import {
+	type AudioClip,
+	clipDisplayName,
+	clipEndSec,
+	clipGain,
+	clipPlaySec,
+	collectCredits,
+	defaultAudioClip,
+	isVoiceClip,
+	moveClip,
+	splitClip,
+	trimClipLeft,
+	trimClipRight,
+	voiceClip,
+} from "./music";
 
 describe("music clip model", () => {
 	it("gives background-music defaults (loops, sits under the voice, starts at 0)", () => {
@@ -53,5 +67,129 @@ describe("musicFadeFactor (preview ↔ export parity)", () => {
 			expect(f).toBeGreaterThanOrEqual(0);
 			expect(f).toBeLessThanOrEqual(1);
 		}
+	});
+});
+
+describe("clip timeline editing (move / trim / split)", () => {
+	// A 20s output. A concrete 4s clip starting at 5s (source offset 1s), no loop.
+	function clip(over: Partial<AudioClip> = {}): AudioClip {
+		return {
+			...defaultAudioClip("c", { kind: "local", path: "/x.mp3" }),
+			startOutputSec: 5,
+			offsetSec: 1,
+			durationSec: 4,
+			loop: false,
+			...over,
+		};
+	}
+	const OUT = 20;
+
+	it("clipPlaySec/clipEndSec: explicit duration, else fill to output end", () => {
+		expect(clipPlaySec(clip(), OUT)).toBe(4);
+		expect(clipEndSec(clip(), OUT)).toBe(9);
+		const fill = clip({ durationSec: 0, startOutputSec: 8 });
+		expect(clipPlaySec(fill, OUT)).toBe(12); // 20 - 8
+	});
+
+	it("move materializes a fill clip's length and clamps in-bounds", () => {
+		const moved = moveClip(clip(), 12, OUT);
+		expect(moved.startOutputSec).toBe(12);
+		expect(moved.durationSec).toBe(4); // length preserved
+		// Can't push a 4s clip past the 20s end: start clamps to 16.
+		expect(moveClip(clip(), 100, OUT).startOutputSec).toBe(16);
+		expect(moveClip(clip(), -5, OUT).startOutputSec).toBe(0);
+	});
+
+	it("trim right sets duration and clamps to [min, output end]", () => {
+		expect(trimClipRight(clip(), 11, OUT).durationSec).toBe(6); // end 11 - start 5
+		expect(trimClipRight(clip(), 100, OUT).durationSec).toBe(15); // clamp to output end
+		expect(trimClipRight(clip(), 5, OUT).durationSec).toBeCloseTo(0.1, 6); // min
+	});
+
+	it("trim left keeps the end fixed; non-loop advances offset, loop keeps it", () => {
+		const t = trimClipLeft(clip(), 7, OUT); // end stays 9
+		expect(t.startOutputSec).toBe(7);
+		expect(t.durationSec).toBe(2);
+		expect(t.offsetSec).toBe(3); // 1 + (7 - 5)
+		// Looping clip keeps its source offset (loop restarts, no silent tail).
+		expect(trimClipLeft(clip({ loop: true }), 7, OUT).offsetSec).toBe(1);
+		// Offset never goes negative when trimming the edge earlier.
+		expect(trimClipLeft(clip({ startOutputSec: 5, offsetSec: 1 }), 3, OUT).offsetSec).toBe(0);
+	});
+
+	it("split cuts a clip in two at an output time, moving fades off the seam", () => {
+		const [l, r] = splitClip(clip(), 7, OUT, "new")!;
+		expect(l.id).toBe("c");
+		expect(l.startOutputSec).toBe(5);
+		expect(l.durationSec).toBe(2);
+		expect(l.fadeOut).toBe(0); // seam has no fade
+		expect(r.id).toBe("new");
+		expect(r.startOutputSec).toBe(7);
+		expect(r.durationSec).toBe(2);
+		expect(r.offsetSec).toBe(3); // non-loop → source continues (1 + 2)
+		expect(r.fadeIn).toBe(0);
+	});
+
+	it("split keeps a looping clip's offset and rejects out-of-range points", () => {
+		expect(splitClip(clip({ loop: true }), 7, OUT, "n")![1].offsetSec).toBe(1);
+		expect(splitClip(clip(), 5.05, OUT, "n")).toBeNull(); // too close to start
+		expect(splitClip(clip(), 12, OUT, "n")).toBeNull(); // past the clip end
+	});
+});
+
+describe("voice clips (detached recording audio)", () => {
+	it("voiceClip is a linear, unity-gain, non-looping clip flagged as voice", () => {
+		const v = voiceClip("v", "/rec/system.wav", { offsetSec: 2, gain: 80 });
+		expect(v.role).toBe("voice");
+		expect(isVoiceClip(v)).toBe(true);
+		expect(v.loop).toBe(false);
+		expect(v.gain).toBe(80); // override wins
+		expect(v.offsetSec).toBe(2);
+		expect(v.fadeIn).toBe(0);
+	});
+
+	it("music clips (incl. legacy role-less) are not voice", () => {
+		expect(isVoiceClip(defaultAudioClip("m", { kind: "local", path: "/x.mp3" }))).toBe(false);
+		const legacy = { ...defaultAudioClip("l", { kind: "local", path: "/x.mp3" }) };
+		delete (legacy as { role?: unknown }).role;
+		expect(isVoiceClip(legacy as AudioClip)).toBe(false);
+	});
+});
+
+describe("collectCredits", () => {
+	function provider(id: string, attribution?: string, license?: string): AudioClip {
+		return {
+			...defaultAudioClip(id, {
+				kind: "provider",
+				providerId: "jamendo",
+				trackId: id,
+				assetPath: `/${id}.mp3`,
+				attribution,
+				license,
+			}),
+		};
+	}
+
+	it("credits provider clips and carries the license url", () => {
+		const credits = collectCredits([
+			provider("1", '"Sunrise" by Nova (Jamendo)', "https://cc/by/4.0"),
+		]);
+		expect(credits).toHaveLength(1);
+		expect(credits[0].attribution).toContain("Sunrise");
+		expect(credits[0].license).toBe("https://cc/by/4.0");
+	});
+
+	it("skips local imports (no attribution needed)", () => {
+		expect(collectCredits([defaultAudioClip("l", { kind: "local", path: "/x.mp3" })])).toEqual([]);
+	});
+
+	it("dedupes the same attribution line", () => {
+		const line = '"Sunrise" by Nova (Jamendo)';
+		expect(collectCredits([provider("1", line), provider("2", line)])).toHaveLength(1);
+	});
+
+	it("drops blank/whitespace attribution and normalizes license to null", () => {
+		expect(collectCredits([provider("1", "   ")])).toEqual([]);
+		expect(collectCredits([provider("1", "Track", "   ")])[0].license).toBeNull();
 	});
 });
