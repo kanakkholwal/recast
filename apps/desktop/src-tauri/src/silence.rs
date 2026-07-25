@@ -83,20 +83,20 @@ pub struct SilenceSegment {
 
 type Interval = (f64, f64);
 
-// Silero runs at 16 kHz with a fixed 512-sample window (32 ms/frame).
+// Silero v5 runs at 16 kHz with a fixed 512-sample window (32 ms/frame).
 const RATE: u32 = 16_000;
 const CHUNK: usize = 512;
-/// Silero's LSTM hidden/cell state size — two tensors of shape [2, 1, 64].
-const STATE: [usize; 3] = [2, 1, 64];
+/// Silero v5's combined recurrent state: one [2, 1, 128] tensor. v5 merged v4's
+/// separate `h`/`c` LSTM tensors into a single `state` in/out.
+const STATE: [usize; 3] = [2, 1, 128];
 
 /// Silero VAD on **tract** (pure Rust — no native ONNX Runtime, so the always-on
-/// silence path builds on every target incl. x86_64-apple-darwin). Mirrors the
-/// model I/O the app has always fed it: `input`/`sr`/`h`/`c` → `output`/`hn`/`cn`,
-/// carrying the two LSTM state tensors between windows.
+/// silence path builds on every target incl. x86_64-apple-darwin). v5 model I/O:
+/// `input`/`state`/`sr` → `output`/`stateN`, carrying one recurrent-state tensor
+/// between windows. (Feeding v4's `h`/`c` crashed on the v5 model — "No node named h".)
 struct SileroVad {
     plan: TypedSimplePlan<TypedModel>,
-    h: Tensor,
-    c: Tensor,
+    state: Tensor,
     sr: Tensor,
 }
 
@@ -107,34 +107,31 @@ impl SileroVad {
             .model_for_path(path)
             .map_err(|e| map(e, "load"))?
             // Pin input/output order + shapes so tract can optimize the graph.
-            .with_input_names(["input", "sr", "h", "c"])
+            // v5 input/output order: input, state, sr → output, stateN.
+            .with_input_names(["input", "state", "sr"])
             .map_err(|e| map(e, "input names"))?
-            .with_output_names(["output", "hn", "cn"])
+            .with_output_names(["output", "stateN"])
             .map_err(|e| map(e, "output names"))?
             .with_input_fact(0, f32::fact([1, CHUNK]).into())
             .map_err(|e| map(e, "input fact"))?
-            .with_input_fact(1, i64::fact([1]).into())
+            .with_input_fact(1, f32::fact(STATE).into())
+            .map_err(|e| map(e, "state fact"))?
+            .with_input_fact(2, i64::fact([1]).into())
             .map_err(|e| map(e, "sr fact"))?
-            .with_input_fact(2, f32::fact(STATE).into())
-            .map_err(|e| map(e, "h fact"))?
-            .with_input_fact(3, f32::fact(STATE).into())
-            .map_err(|e| map(e, "c fact"))?
             .into_optimized()
             .map_err(|e| map(e, "optimize"))?
             .into_runnable()
             .map_err(|e| map(e, "runnable"))?;
         Ok(Self {
             plan,
-            h: Tensor::zero::<f32>(&STATE).map_err(|e| map(e, "state"))?,
-            c: Tensor::zero::<f32>(&STATE).map_err(|e| map(e, "state"))?,
+            state: Tensor::zero::<f32>(&STATE).map_err(|e| map(e, "state"))?,
             sr: tensor1(&[RATE as i64]),
         })
     }
 
     /// Clear the LSTM state so the next window starts a fresh sequence.
     fn reset(&mut self) -> Result<(), String> {
-        self.h = Tensor::zero::<f32>(&STATE).map_err(|e| format!("Silero reset: {e}"))?;
-        self.c = Tensor::zero::<f32>(&STATE).map_err(|e| format!("Silero reset: {e}"))?;
+        self.state = Tensor::zero::<f32>(&STATE).map_err(|e| format!("Silero reset: {e}"))?;
         Ok(())
     }
 
@@ -146,9 +143,8 @@ impl SileroVad {
             .plan
             .run(tvec!(
                 input.into(),
+                self.state.clone().into(),
                 self.sr.clone().into(),
-                self.h.clone().into(),
-                self.c.clone().into(),
             ))
             .map_err(|e| format!("Silero run: {e}"))?;
         let prob = out[0]
@@ -158,8 +154,7 @@ impl SileroVad {
             .copied()
             .next()
             .unwrap_or(0.0);
-        self.h = out[1].clone().into_tensor();
-        self.c = out[2].clone().into_tensor();
+        self.state = out[1].clone().into_tensor();
         Ok(prob)
     }
 }
