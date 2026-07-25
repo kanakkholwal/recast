@@ -133,6 +133,30 @@ export function displayTimeMap(args: {
 }
 
 /**
+ * Re-space a collapsed map so removed time between kept spans shows as a GAP,
+ * for the opt-in "show cut gaps" timeline view. Each kept span keeps its
+ * (speed-warped) output width but is pushed right by the original duration
+ * removed before it, so cuts read as empty space instead of a zero-width seam.
+ * Playback/export never use this — only rendering. With no cuts (contiguous
+ * spans) it returns an equivalent map, so the view is a no-op until you cut.
+ */
+export function buildGapMap(map: TimeMap): TimeMap {
+	const spans: MappedSpan[] = [];
+	let out = 0;
+	let prevOrigEnd: number | null = null;
+	for (const s of map.spans) {
+		if (prevOrigEnd !== null && s.origStart - prevOrigEnd > EPS) {
+			out += s.origStart - prevOrigEnd; // gap = removed original duration
+		}
+		const width = s.outEnd - s.outStart; // keep the collapsed (warped) width
+		spans.push({ ...s, outStart: out, outEnd: out + width });
+		out += width;
+		prevOrigEnd = s.origEnd;
+	}
+	return { spans, outputDuration: out };
+}
+
+/**
  * Map an original-timeline time to output time. A time in a removed gap (or
  * before the first span) collapses onto the next kept span's output start (the
  * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.

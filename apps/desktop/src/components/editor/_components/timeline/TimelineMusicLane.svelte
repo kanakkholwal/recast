@@ -55,9 +55,13 @@
         },
   );
 
+  // Clips live on the OUTPUT axis; the lane renders on the render axis. Convert
+  // output seconds → render-axis pixels (identity unless "Show cut gaps" is on).
+  const xPx = (outputSec: number) => store.outputToRenderSec(outputSec) * pps;
+
   function bar(clip: AudioClip) {
-    const play = clipPlaySec(clip, outputDuration);
-    return { left: clip.startOutputSec * pps, width: Math.max(3, play * pps) };
+    const left = xPx(clip.startOutputSec);
+    return { left, width: Math.max(3, xPx(clipEndSec(clip, outputDuration)) - left) };
   }
 
   let laneEl = $state<HTMLDivElement | null>(null);
@@ -75,7 +79,7 @@
   function outputSecAt(clientX: number): number {
     if (!laneEl || pps <= 0) return 0;
     const x = clientX - laneEl.getBoundingClientRect().left;
-    return Math.max(0, x / pps);
+    return Math.max(0, store.renderSecToOutputSec(x / pps));
   }
 
   // Snap the dragged edge/position to the playhead and the timeline ends.

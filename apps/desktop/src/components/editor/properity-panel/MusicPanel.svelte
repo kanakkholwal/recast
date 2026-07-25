@@ -1,28 +1,15 @@
 <script lang="ts">
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import {
-    clipDisplayName,
-    collectCredits,
-    pickAudioFile,
-    type MusicSearchResult,
-  } from "$lib/audio/music";
-  import { createJamendoProvider } from "$lib/audio/providers/jamendo";
-  import { clock } from "$lib/format/time";
+  import { clipDisplayName, collectCredits, pickAudioFile } from "$lib/audio/music";
   import {
     AudioLines,
-    Download,
     ExternalLink,
-    Loader2,
-    Pause,
-    Play,
     Plus,
     Repeat,
-    Search,
     Trash2,
     Volume2,
     VolumeX,
   } from "@recast/icons";
-  import { onDestroy } from "svelte";
   import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";
@@ -46,90 +33,6 @@
     }
   }
 
-  // Jamendo browse. The client ID is a free, non-secret catalog key; persist it
-  // locally so it's entered once. All Jamendo tracks are Creative Commons — the
-  // downloaded clip carries its attribution for crediting.
-  const CLIENT_ID_KEY = "recast:jamendoClientId";
-  function loadClientId(): string {
-    return typeof localStorage !== "undefined" ? (localStorage.getItem(CLIENT_ID_KEY) ?? "") : "";
-  }
-  // `clientId` = the committed key; `clientIdDraft` = the input. Only "Set"
-  // commits, so typing doesn't half-save a partial key.
-  let clientId = $state(loadClientId());
-  let clientIdDraft = $state(loadClientId());
-  function setClientId() {
-    const v = clientIdDraft.trim();
-    if (!v) return;
-    clientId = v;
-    if (typeof localStorage !== "undefined") localStorage.setItem(CLIENT_ID_KEY, v);
-  }
-  function clearClientId() {
-    stopPreview();
-    clientId = "";
-    clientIdDraft = "";
-    results = [];
-    if (typeof localStorage !== "undefined") localStorage.removeItem(CLIENT_ID_KEY);
-  }
-
-  let query = $state("");
-  let searching = $state(false);
-  let results = $state<MusicSearchResult[]>([]);
-  let addingId = $state<string | null>(null);
-
-  // Audition a result by streaming it (no download). One at a time.
-  let previewEl = $state<HTMLAudioElement | null>(null);
-  let playingId = $state<string | null>(null);
-  function togglePreview(r: MusicSearchResult) {
-    const url = r.previewUrl ?? r.downloadUrl;
-    if (!previewEl || !url) return;
-    if (playingId === r.trackId) {
-      previewEl.pause();
-      playingId = null;
-      return;
-    }
-    previewEl.src = url;
-    playingId = r.trackId;
-    void previewEl.play().catch(() => {
-      playingId = null;
-      toast.error("Couldn't play preview.");
-    });
-  }
-  function stopPreview() {
-    if (previewEl) previewEl.pause();
-    playingId = null;
-  }
-  onDestroy(stopPreview);
-
-  async function runSearch() {
-    const q = query.trim();
-    if (!q) return;
-    if (!clientId.trim()) {
-      toast.error("Add your Jamendo client ID first.");
-      return;
-    }
-    searching = true;
-    try {
-      results = await createJamendoProvider(clientId.trim()).search(q);
-      if (results.length === 0) toast.info("No tracks found.");
-    } catch (error) {
-      toast.error(`${(error as Error)?.message ?? error}`);
-    } finally {
-      searching = false;
-    }
-  }
-
-  async function addResult(result: MusicSearchResult) {
-    addingId = result.trackId;
-    try {
-      const source = await createJamendoProvider(clientId.trim()).resolve(result);
-      store.addMusicClip(source);
-      toast.success(`Added "${result.title}".`);
-    } catch (error) {
-      toast.error(`Couldn't add track: ${(error as Error)?.message ?? error}`);
-    } finally {
-      addingId = null;
-    }
-  }
 </script>
 
 <div class="flex flex-col gap-1">
@@ -265,106 +168,4 @@
     </PanelSection>
   {/if}
 
-  <PanelSection
-    title="Browse Jamendo"
-    hint="Free Creative Commons music. Credit is required — each added clip keeps its attribution."
-    flush
-    collapsible
-    defaultOpen={false}
-  >
-    {#if !clientId.trim()}
-      <form
-        class="flex flex-col gap-1.5"
-        onsubmit={(e) => {
-          e.preventDefault();
-          setClientId();
-        }}
-      >
-        <label class="text-[11px] text-muted-foreground" for="jamendo-key">Jamendo client ID</label>
-        <div class="flex items-center gap-1.5">
-          <input
-            id="jamendo-key"
-            bind:value={clientIdDraft}
-            placeholder="Paste your free client ID"
-            class="min-w-0 flex-1 rounded-md border border-border/60 bg-background/60 px-2 py-1.5 text-[11px] outline-none focus:border-border"
-          />
-          <Button type="submit" size="sm" disabled={!clientIdDraft.trim()}>Set</Button>
-        </div>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1 self-start text-[10px] text-primary hover:underline"
-          onclick={() => void openUrl("https://devportal.jamendo.com/")}
-        >
-          <ExternalLink size={10} /> Get a free client ID
-        </button>
-      </form>
-    {:else}
-      <form
-        class="flex items-center gap-1.5"
-        onsubmit={(e) => {
-          e.preventDefault();
-          void runSearch();
-        }}
-      >
-        <div class="relative flex-1">
-          <Search size={12} class="absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-          <input
-            bind:value={query}
-            placeholder="Search music…"
-            class="w-full rounded-md border border-border/60 bg-background/60 py-1.5 pl-7 pr-2 text-[11px] outline-none focus:border-border"
-          />
-        </div>
-        <Button type="submit" size="sm" disabled={searching}>
-          {#if searching}<Loader2 size={13} class="animate-spin" />{:else}Search{/if}
-        </Button>
-      </form>
-
-      {#if results.length > 0}
-        <div class="mt-2 flex flex-col gap-1">
-          {#each results as r (r.trackId)}
-            <div class="flex items-center gap-2 rounded-md border border-border/50 bg-card/40 px-2 py-1.5">
-              <button
-                type="button"
-                aria-label={playingId === r.trackId ? `Pause ${r.title}` : `Play ${r.title}`}
-                title="Preview"
-                class="rounded p-1 text-muted-foreground hover:text-foreground"
-                onclick={() => togglePreview(r)}
-              >
-                {#if playingId === r.trackId}<Pause size={14} />{:else}<Play size={14} />{/if}
-              </button>
-              <div class="min-w-0 flex-1">
-                <div class="truncate text-[11px] font-medium" title={r.title}>{r.title}</div>
-                <div class="truncate text-[10px] text-muted-foreground">
-                  {r.artist}{#if r.durationSec}
-                    · {clock(r.durationSec)}{/if}
-                </div>
-              </div>
-              <button
-                type="button"
-                aria-label={`Add ${r.title}`}
-                title="Add to timeline"
-                disabled={addingId === r.trackId}
-                class="rounded p-1 text-muted-foreground hover:text-foreground disabled:opacity-50"
-                onclick={() => void addResult(r)}
-              >
-                {#if addingId === r.trackId}<Loader2 size={14} class="animate-spin" />{:else}<Download
-                    size={14}
-                  />{/if}
-              </button>
-            </div>
-          {/each}
-        </div>
-      {/if}
-      <button
-        type="button"
-        class="mt-1.5 text-[10px] text-muted-foreground hover:text-foreground"
-        onclick={clearClientId}
-      >
-        Change client ID
-      </button>
-    {/if}
-
-    <!-- Hidden audition player: streams a result without downloading. -->
-    <audio bind:this={previewEl} onended={() => (playingId = null)} class="hidden"></audio>
-  </PanelSection>
 </div>

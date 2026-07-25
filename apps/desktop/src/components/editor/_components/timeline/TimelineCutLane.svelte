@@ -26,10 +26,10 @@
 
   let laneEl = $state<HTMLDivElement | null>(null);
 
-  // Output axis via the shared display map. An applied cut collapses to zero
-  // width (rendered as a seam); an unapplied cut (lane off → not in the map's
-  // cuts) keeps its width as an editable band.
-  const xOf = (t: number) => originalToOutput(store.timeMap, t) * pixelsPerSecond;
+  // Output axis via the shared render map. An applied cut normally collapses to
+  // zero width (a seam); with "Show cut gaps" on the map re-spaces it to real
+  // width, so the same band UI (drag/resize/restore) renders it as a gap.
+  const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
   const axisWidth = $derived(xOf(duration));
 
   type DragMode = "create" | "move" | "resize-l" | "resize-r";
@@ -57,7 +57,7 @@
     if (!laneEl) return 0;
     const x = clientX - laneEl.getBoundingClientRect().left;
     // Pointer is in OUTPUT pixels → output seconds → original time.
-    return Math.min(duration, Math.max(0, outputToOriginal(store.timeMap, x / pixelsPerSecond)));
+    return Math.min(duration, Math.max(0, outputToOriginal(store.renderMap, x / pixelsPerSecond)));
   }
 
   function onLaneDown(e: PointerEvent) {

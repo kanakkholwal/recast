@@ -28,7 +28,7 @@
   let activeSnap = $state<SnapTarget | null>(null);
   const snapX = $derived(
     activeSnap
-      ? originalToOutput(store.timeMap, activeSnap.time) * pixelsPerSecond
+      ? originalToOutput(store.renderMap, activeSnap.time) * pixelsPerSecond
       : 0,
   );
 

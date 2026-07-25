@@ -61,7 +61,13 @@ import {
 	type Segment,
 	segmentAt,
 } from '../timeline/segments';
-import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
+import {
+	buildGapMap,
+	displayTimeMap,
+	originalToOutput,
+	outputToOriginal,
+	timeMapFromSegments,
+} from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
@@ -927,6 +933,9 @@ export function createEditorStore() {
 	let selectedCutId = $state<string | null>(null);
 	// Transient UI selection: the highlighted music/audio clip's id, or null.
 	let selectedMusicClipId = $state<string | null>(null);
+	// Timeline view pref (not serialized): show cuts as restorable GAPS instead of
+	// collapsing them to seams. Rendering only — playback/export stay continuous.
+	let showCutGaps = $state(false);
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
@@ -2082,6 +2091,21 @@ export function createEditorStore() {
 		return timeMapMemo;
 	}
 
+	// The axis lanes RENDER against. Identical to `timeMap` unless "show cut gaps"
+	// is on (then cuts get real width). Playback/export never read this — only the
+	// playhead position, ruler, and lane layouts do — so seeking stays gapless.
+	const renderMap = $derived(showCutGaps ? buildGapMap(timeMapMemo) : timeMapMemo);
+	// Convert an OUTPUT-axis position (music/voice clips live there) to the render
+	// axis, and back for pointer math. Identity when gaps are off.
+	function outputToRenderSec(outputSec: number): number {
+		if (!showCutGaps) return outputSec;
+		return originalToOutput(renderMap, outputToOriginal(timeMapMemo, outputSec));
+	}
+	function renderSecToOutputSec(renderSec: number): number {
+		if (!showCutGaps) return renderSec;
+		return originalToOutput(timeMapMemo, outputToOriginal(renderMap, renderSec));
+	}
+
 	/** Speed of the segment anchored at original `start` (1 when unset). */
 	function segmentSpeedAtStart(start: number): number {
 		return speedAtAnchor(segmentSpeeds, start);
@@ -2744,6 +2768,17 @@ export function createEditorStore() {
 		// recording while `isTrimming` so a trim drag can reveal the trimmed parts.
 		get timeMap() {
 			return currentTimeMap();
+		},
+		get renderMap() {
+			return renderMap;
+		},
+		outputToRenderSec,
+		renderSecToOutputSec,
+		get showCutGaps() {
+			return showCutGaps;
+		},
+		set showCutGaps(v: boolean) {
+			showCutGaps = v;
 		},
 		get isTrimming() {
 			return isTrimming;

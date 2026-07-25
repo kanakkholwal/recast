@@ -64,13 +64,13 @@
   // Output (post-cut) axis so regions sit on the same gapless line as clips;
   // a region overlapping a cut renders narrower (correct NLE behaviour).
   const xOf = (t: number) =>
-    originalToOutput(store.timeMap, t) * pixelsPerSecond;
+    originalToOutput(store.renderMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>
-    outputToOriginal(store.timeMap, xPx / pixelsPerSecond);
+    outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
   // Labels read on the output axis, like the ruler and the playhead. Regions are
   // STORED in original time, so printing that raw would name a timecode the
   // exported file never reaches once anything upstream is cut.
-  const outSec = (t: number) => originalToOutput(store.timeMap, t);
+  const outSec = (t: number) => originalToOutput(store.renderMap, t);
   const left = $derived(xOf(region.start));
   // 32px floor keeps even sub-frame regions clickable.
   const width = $derived(Math.max(xOf(region.end) - xOf(region.start), 32));

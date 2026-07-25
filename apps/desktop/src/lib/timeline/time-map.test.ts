@@ -6,6 +6,7 @@ import {
 } from "./cuts";
 import { deriveSegments } from "./segments";
 import {
+	buildGapMap,
 	buildTimeMap,
 	displayTimeMap,
 	originalToOutput,
@@ -227,6 +228,49 @@ describe("displayTimeMap (trim-drag axis) reduces to the full-duration cut map a
 			}
 		});
 	}
+});
+
+describe("buildGapMap (the show-cut-gaps render axis)", () => {
+	it("re-spaces kept spans by the removed duration so a cut gets real width", () => {
+		// Two kept spans with 3s removed between them (a cut over original [2,5]).
+		const collapsed = buildTimeMap([
+			{ origStart: 0, origEnd: 2, speed: 1 },
+			{ origStart: 5, origEnd: 7, speed: 1 },
+		]);
+		expect(collapsed.outputDuration).toBeCloseTo(4); // ripple
+		const gap = buildGapMap(collapsed);
+		expect(gap.outputDuration).toBeCloseTo(7); // 4 kept + 3 gap
+		// First span unchanged; second pushed right by the 3s gap.
+		expect(originalToOutput(gap, 2)).toBeCloseTo(2); // end of first, left of gap
+		expect(originalToOutput(gap, 5)).toBeCloseTo(5); // start of second, right of gap
+		// Kept widths preserved (2s each).
+		expect(gap.spans[0].outEnd - gap.spans[0].outStart).toBeCloseTo(2);
+		expect(gap.spans[1].outEnd - gap.spans[1].outStart).toBeCloseTo(2);
+	});
+
+	it("is a no-op when there is no removed time (splits touch)", () => {
+		const contiguous = buildTimeMap([
+			{ origStart: 0, origEnd: 4, speed: 1 },
+			{ origStart: 4, origEnd: 10, speed: 1 },
+		]);
+		const gap = buildGapMap(contiguous);
+		expect(gap.outputDuration).toBeCloseTo(contiguous.outputDuration);
+		expect(gap.spans.map((s) => s.outStart)).toEqual(
+			contiguous.spans.map((s) => s.outStart),
+		);
+	});
+
+	it("keeps a sped segment's warped width, only inserting the gap", () => {
+		// [0,2]@1x then removed [2,4] then [4,8]@2x → kept widths 2 and 2, gap 2.
+		const collapsed = buildTimeMap([
+			{ origStart: 0, origEnd: 2, speed: 1 },
+			{ origStart: 4, origEnd: 8, speed: 2 },
+		]);
+		const gap = buildGapMap(collapsed);
+		expect(gap.spans[1].outStart).toBeCloseTo(4); // 2 (first) + 2 (gap)
+		expect(gap.spans[1].outEnd - gap.spans[1].outStart).toBeCloseTo(2); // 4s @2x
+		expect(gap.outputDuration).toBeCloseTo(6);
+	});
 });
 
 describe("timeMapFromSegments warps a sped-up segment (kept axis)", () => {

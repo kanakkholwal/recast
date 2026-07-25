@@ -25,7 +25,7 @@
   // Same output-axis mapping as every other lane: a removed range collapses onto
   // its seam, so the envelope stays aligned with the frames above it.
   const xOf = (t: number) =>
-    originalToOutput(store.timeMap, t) * pixelsPerSecond;
+    originalToOutput(store.renderMap, t) * pixelsPerSecond;
   const axisWidth = $derived(Math.max(0, xOf(duration)));
 
   const waveformPath = $derived(
