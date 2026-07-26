@@ -1,10 +1,10 @@
 <script lang="ts">
   import { computeCanvasGeometry } from "$lib/canvas-geometry";
   import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { evaluateZoomAt } from "../video-preview.logic";
   import {
     applyZoomFollow,
     bubblePlacementStyle,
+    cameraFollowScaleAt,
     cameraPlacementAt,
     cameraShadowStyle,
     type CameraResizeCorner,
@@ -60,13 +60,24 @@
   // the bubble and mirrors the export's render_camera_shadow.
   const shadowStyle = $derived(cameraShadowStyle(store.cameraOverlay.shadow ?? 0));
 
+  // Smooth per-frame clock while playing; store.currentTime (accurate on seek)
+  // when paused, so the grow is buttery in playback yet correct when scrubbing.
+  const clockTime = $derived(store.isPlaying ? previewTime : store.currentTime);
+
+  // BASE placement (no zoom-follow): drives the div's layout box.
+  const basePlacement = $derived(baseAt(clockTime));
+
+  // Effective placement = base + the zoom-follow grow/drift. The grow ramps on
+  // the camera's own duration + easing, gated to the zoom's active window.
   const effectivePlacement = $derived.by(() => {
-    // Smooth per-frame clock while playing; store.currentTime (accurate on seek)
-    // when paused, so the grow is buttery in playback yet correct when scrubbing.
-    const t = store.isPlaying ? previewTime : store.currentTime;
-    const base = baseAt(t);
+    const base = basePlacement;
     if (!store.cameraOverlay.zoomFollow || !store.focusEnabled) return base;
-    const zoom = evaluateZoomAt(store.zoomRegions, t);
+    const zoom = cameraFollowScaleAt(
+      store.zoomRegions,
+      clockTime,
+      store.cameraOverlay.zoomFollowDuration,
+      store.cameraOverlay.zoomFollowEasing,
+    );
     return applyZoomFollow(
       base,
       zoom,
@@ -75,7 +86,21 @@
     );
   });
 
-  const bubbleStyle = $derived(bubblePlacementStyle(geom, effectivePlacement));
+  // Position the div at the BASE and express the grow/drift as a GPU-composited
+  // `transform` (translate% + scale) so per-frame growth never triggers layout —
+  // that's what made it stutter next to the shader. Identity when no zoom is
+  // active, so a static bubble renders exactly as before.
+  const bubbleStyle = $derived(bubblePlacementStyle(geom, basePlacement));
+  const followTransform = $derived.by(() => {
+    const b = basePlacement;
+    const e = effectivePlacement;
+    if (b.width <= 0) return "translate(0,0) scale(1)";
+    const s = e.width / b.width;
+    const baseH = Math.min(1, b.width * videoAspect);
+    const tx = ((e.x - b.x) / b.width) * 100;
+    const ty = baseH > 0 ? ((e.y - b.y) / baseH) * 100 : 0;
+    return `translate(${tx.toFixed(4)}%, ${ty.toFixed(4)}%) scale(${s.toFixed(5)})`;
+  });
   const borderRadius = $derived(
     shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
   );
@@ -207,7 +232,7 @@
   <div
     role="presentation"
     class="group absolute select-none"
-    style="{bubbleStyle} aspect-ratio: 1; container-type: size; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
+    style="{bubbleStyle} aspect-ratio: 1; container-type: size; transform-origin: 0 0; transform: {followTransform}; will-change: transform; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}

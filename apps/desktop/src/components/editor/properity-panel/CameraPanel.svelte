@@ -300,6 +300,46 @@
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateCameraOverlay({ zoomFollowStrength: next / 100 })}
         />
+        <SliderControl
+          label="Transition"
+          value={Math.round(store.cameraOverlay.zoomFollowDuration * 1000)}
+          min={200}
+          max={1200}
+          step={50}
+          unit="ms"
+          onstart={() => store.pushUndoState()}
+          onchange={(next) => store.updateCameraOverlay({ zoomFollowDuration: next / 1000 })}
+        />
+        <div class="flex flex-wrap gap-1">
+          {#each EASING_PRESETS as preset (preset.id)}
+            {@const active = easingEquals(store.cameraOverlay.zoomFollowEasing, preset.value)}
+            <Button
+              type="button"
+              size="xs"
+              aria-pressed={active}
+              variant={active ? "default_soft" : "outline"}
+              onclick={() => {
+                store.pushUndoState();
+                store.updateCameraOverlay({ zoomFollowEasing: { ...preset.value } });
+              }}
+            >
+              {preset.label}
+            </Button>
+          {/each}
+        </div>
+        <PanelSection title="Custom curve" flush collapsible defaultOpen={false}>
+          <div class="pt-1">
+            <BezierEditor
+              value={store.cameraOverlay.zoomFollowEasing}
+              onchange={(v) => {
+                store.pushUndoState();
+                store.updateCameraOverlay({ zoomFollowEasing: v });
+              }}
+              showPresets={false}
+              size={220}
+            />
+          </div>
+        </PanelSection>
       {/if}
     </PanelSection>
 

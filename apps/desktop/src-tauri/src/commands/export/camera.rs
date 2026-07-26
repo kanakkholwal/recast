@@ -155,15 +155,34 @@ pub(crate) fn camera_placement_at(
     last.placement.clone()
 }
 
-/// Eased zoom `(scale, cx, cy)` at original time `t` — the first active region,
-/// mirroring the preview's `evaluateZoomAt`. `(1, 0.5, 0.5)` when none is active.
-fn zoom_state_at(regions: &[ZoomRegion], t: f64) -> (f64, f64, f64) {
+/// Camera-grow activation 0..1 for a region at time `t`: ramps in/out over the
+/// camera's OWN `duration` with `easing` (NOT the zoom's ramp), gated to the
+/// region's active window. Mirror of TS `cameraFollowScaleAt`'s `a`.
+fn region_camera_activation(r: &ZoomRegion, t: f64, duration: f64, easing: Easing) -> f64 {
+    if r.hidden || t <= r.start || t >= r.end {
+        return 0.0;
+    }
+    let d = duration.max(1e-3);
+    let in_a = easing.y((((t - r.start) / d).clamp(0.0, 1.0)) as f32) as f64;
+    let out_a = easing.y((((r.end - t) / d).clamp(0.0, 1.0)) as f32) as f64;
+    in_a.min(out_a)
+}
+
+/// Camera-grow `(scale, cx, cy)` at time `t` — first active region, effective
+/// scale `1 + activation*(peak-1)`. Mirror of TS `cameraFollowScaleAt`.
+fn camera_follow_scale_at(
+    regions: &[ZoomRegion],
+    t: f64,
+    duration: f64,
+    easing: Easing,
+) -> (f64, f64, f64) {
     for r in regions {
         if r.hidden || t <= r.start || t >= r.end {
             continue;
         }
+        let a = region_camera_activation(r, t, duration, easing);
         return (
-            r.scale_at(t).max(1.0),
+            1.0 + a * (r.scale.max(1.0) - 1.0),
             r.center_x.clamp(0.0, 1.0),
             r.center_y.clamp(0.0, 1.0),
         );
@@ -182,6 +201,8 @@ pub(crate) fn build_camera_follow_exprs(
     regions: &[ZoomRegion],
     keyframes: &[CameraKeyframe],
     easing: Easing,
+    follow_easing: Easing,
+    follow_duration: f64,
     base: &CameraPlacement,
     strength: f64,
     zoom_follow: bool,
@@ -227,7 +248,9 @@ pub(crate) fn build_camera_follow_exprs(
             for i in 0..=samples {
                 let timeline_t = effective_start + step * i as f64;
                 let output_t = timeline_t - trim_start;
-                let scale = region.scale_at(timeline_t).max(1.0);
+                let a =
+                    region_camera_activation(region, timeline_t, follow_duration, follow_easing);
+                let scale = 1.0 + a * (region.scale.max(1.0) - 1.0);
                 let eff = camera_follow_placement(base, scale, cx, cy, strength, aspect);
                 let (ex, ey, ew, _) = camera_bubble_rect(&eff, geom);
                 wv.push((output_t, ew as f64));
@@ -264,7 +287,8 @@ pub(crate) fn build_camera_follow_exprs(
         let output_t = original_t - trim_start;
         let base_t = camera_placement_at(base, keyframes, original_t, easing);
         let eff = if zoom_follow {
-            let (scale, cx, cy) = zoom_state_at(regions, original_t);
+            let (scale, cx, cy) =
+                camera_follow_scale_at(regions, original_t, follow_duration, follow_easing);
             camera_follow_placement(&base_t, scale, cx, cy, strength, aspect)
         } else {
             base_t
@@ -401,6 +425,8 @@ mod tests {
             &[region],
             &[],
             Easing::default(),
+            Easing::LINEAR,
+            0.4,
             &base,
             0.6,
             true,
@@ -449,6 +475,37 @@ mod tests {
         assert!(g.padding >= (g.blur_px * 2.0 + g.offset_px).ceil() as u32);
     }
 
+    // Mirrors camera-overlay.logic.test.ts (cameraFollowScaleAt) so preview == export.
+    #[test]
+    fn follow_scale_ramps_on_its_own_duration_and_easing() {
+        use crate::render::node_types::ZoomRegion;
+        let region = ZoomRegion {
+            start: 0.0,
+            end: 10.0,
+            scale: 2.0,
+            ease_in: Default::default(),
+            ease_out: Default::default(),
+            ramp_in: 0.4,
+            ramp_out: 0.4,
+            center_x: 0.3,
+            center_y: 0.7,
+            hidden: false,
+            motion_blur: 0.0,
+            extra: Default::default(),
+        };
+        let lin = Easing::LINEAR;
+        let rs = std::slice::from_ref(&region);
+        // Outside the region → identity.
+        assert_eq!(camera_follow_scale_at(rs, -1.0, 1.0, lin).0, 1.0);
+        // Duration 1s, linear: halfway through ramp-in (t=0.5) → activation 0.5 →
+        // scale = 1 + 0.5*(2-1) = 1.5; focus = region centre.
+        let (s, cx, cy) = camera_follow_scale_at(rs, 0.5, 1.0, lin);
+        assert!((s - 1.5).abs() < 1e-6, "scale {s}");
+        assert!((cx - 0.3).abs() < 1e-9 && (cy - 0.7).abs() < 1e-9);
+        // Mid-hold (both ramps saturated) → full grow to peak.
+        assert!((camera_follow_scale_at(rs, 5.0, 1.0, lin).0 - 2.0).abs() < 1e-6);
+    }
+
     #[test]
     fn keyframed_exprs_are_time_varying_without_any_zoom() {
         let base = placement(0.72, 0.08, 0.2);
@@ -467,6 +524,8 @@ mod tests {
             &[],
             &kfs,
             Easing::LINEAR,
+            Easing::LINEAR,
+            0.4,
             &base,
             0.6,
             false,

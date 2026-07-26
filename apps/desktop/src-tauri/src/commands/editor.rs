@@ -2304,6 +2304,8 @@ pub(crate) async fn run_export_job(
                 &request.render_state.zoom_regions,
                 &camera_overlay_settings.keyframes,
                 camera_overlay_settings.keyframe_easing,
+                camera_overlay_settings.zoom_follow_easing,
+                camera_overlay_settings.zoom_follow_duration,
                 &camera_overlay_settings.default_placement,
                 camera_overlay_settings.zoom_follow_strength,
                 camera_overlay_settings.zoom_follow,

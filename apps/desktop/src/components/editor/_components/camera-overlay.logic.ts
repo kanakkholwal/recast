@@ -8,6 +8,7 @@ import type {
 	CameraKeyframe,
 	CameraOverlayShape,
 	CameraPlacement,
+	ZoomRegion,
 } from "$lib/stores/editor-store.svelte";
 
 export type { CameraKeyframe };
@@ -211,6 +212,31 @@ const DRIFT_MAX = 0.18;
  * right on a wide video. SHARED with the export path (Rust mirror) so
  * preview == export; `aspect` must match Rust's `videoW/videoH`.
  */
+/**
+ * Camera-grow "scale" at time `t`, gated to the zoom's ACTIVE window but ramped
+ * on the camera's OWN `durationS` + `easing` (not the zoom region's ramp), so the
+ * grow/shrink is a smooth, separately-tunable transition. Returns the zoom's
+ * focus centre so the bubble still drifts away from it. `{scale:1}` when no zoom
+ * is active. Mirror of the export's `camera_follow_scale_at` (keep in lockstep).
+ */
+export function cameraFollowScaleAt(
+	regions: ZoomRegion[],
+	t: number,
+	durationS: number,
+	easing: Easing,
+): { scale: number; cx: number; cy: number } {
+	for (const r of regions) {
+		if (r.hidden || t <= r.start || t >= r.end) continue;
+		const d = Math.max(1e-3, durationS);
+		const inA = bezierY(easing, Math.max(0, Math.min(1, (t - r.start) / d)));
+		const outA = bezierY(easing, Math.max(0, Math.min(1, (r.end - t) / d)));
+		const a = Math.min(inA, outA);
+		const peak = Math.max(1, r.scale);
+		return { scale: 1 + a * (peak - 1), cx: r.centerX ?? 0.5, cy: r.centerY ?? 0.5 };
+	}
+	return { scale: 1, cx: 0.5, cy: 0.5 };
+}
+
 export function applyZoomFollow(
 	base: CameraPlacement,
 	zoom: { scale: number; cx: number; cy: number },

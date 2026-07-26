@@ -4,6 +4,7 @@ import {
 	CAMERA_SHADOW_BLUR_FRACTION,
 	CAMERA_SHADOW_MAX_OPACITY,
 	CAMERA_SHADOW_OFFSET_FRACTION,
+	cameraFollowScaleAt,
 	cameraPlacementAt,
 	cameraShadowStyle,
 	MAX_CAMERA_SIZE,
@@ -120,6 +121,41 @@ describe("cameraShadowStyle", () => {
 		const offset = (CAMERA_SHADOW_OFFSET_FRACTION * s * 100).toFixed(2);
 		const opacity = (CAMERA_SHADOW_MAX_OPACITY * s).toFixed(3);
 		expect(style).toBe(`0 ${offset}cqmin ${blur}cqmin rgba(0,0,0,${opacity})`);
+	});
+});
+
+describe("cameraFollowScaleAt", () => {
+	// Region 0..10s, peak 2×, focus (0.3,0.7). Mirrors the Rust parity test.
+	const region = {
+		start: 0,
+		end: 10,
+		scale: 2,
+		rampIn: 0.4,
+		rampOut: 0.4,
+		easeIn: { x1: 0.42, y1: 0, x2: 0.58, y2: 1 },
+		easeOut: { x1: 0.42, y1: 0, x2: 0.58, y2: 1 },
+		centerX: 0.3,
+		centerY: 0.7,
+		hidden: false,
+		motionBlur: 0,
+		// biome-ignore lint/suspicious/noExplicitAny: test fixture is a partial ZoomRegion
+	} as any;
+	const linear = { x1: 0, y1: 0, x2: 1, y2: 1 };
+
+	it("is identity outside any region", () => {
+		expect(cameraFollowScaleAt([region], -1, 1, linear)).toEqual({ scale: 1, cx: 0.5, cy: 0.5 });
+	});
+
+	it("ramps on its own duration/easing (linear midpoint = half grow)", () => {
+		// duration 1s, t=0.5 → activation 0.5 → scale 1 + 0.5*(2-1) = 1.5.
+		const r = cameraFollowScaleAt([region], 0.5, 1, linear);
+		expect(r.scale).toBeCloseTo(1.5, 6);
+		expect(r.cx).toBeCloseTo(0.3, 6);
+		expect(r.cy).toBeCloseTo(0.7, 6);
+	});
+
+	it("reaches full peak during the hold", () => {
+		expect(cameraFollowScaleAt([region], 5, 1, linear).scale).toBeCloseTo(2, 6);
 	});
 });
 

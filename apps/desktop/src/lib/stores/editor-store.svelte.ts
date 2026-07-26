@@ -389,6 +389,10 @@ export interface CameraOverlaySettings {
 	zoomFollow: boolean;
 	/** 0..1 strength of the zoom-follow grow + drift. */
 	zoomFollowStrength: number;
+	/** Seconds the grow/shrink takes to ramp in/out (its own transition timing). */
+	zoomFollowDuration: number;
+	/** Easing for the grow/shrink transition. */
+	zoomFollowEasing: Easing;
 	defaultPlacement: CameraPlacement;
 	motionSegments: CameraMotionSegment[];
 	/** Per-cut position keyframes (original-time). Empty → static defaultPlacement. */
@@ -1104,6 +1108,8 @@ export function createEditorStore() {
 		animationPreset: 'soft',
 		zoomFollow: true,
 		zoomFollowStrength: 0.6,
+		zoomFollowDuration: 0.4,
+		zoomFollowEasing: { ...EASE_IN_OUT },
 		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 		motionSegments: [],
 		keyframes: [],
@@ -2025,6 +2031,8 @@ export function createEditorStore() {
 			shadow: 0.35,
 			zoomFollow: true,
 			zoomFollowStrength: 0.6,
+			zoomFollowDuration: 0.4,
+			zoomFollowEasing: { ...EASE_IN_OUT },
 		};
 		exportQuality = 'source';
 		exportSpeed = 'balanced';
@@ -2503,6 +2511,10 @@ export function createEditorStore() {
 			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
 			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
 			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
+			zoomFollowDuration: state.cameraOverlay?.zoomFollowDuration ?? 0.4,
+			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
+				? { ...state.cameraOverlay.zoomFollowEasing }
+				: { ...EASE_IN_OUT },
 			keyframes: (state.cameraOverlay?.keyframes ?? []).map((k) => ({
 				atSec: k.atSec,
 				placement: { ...k.placement },

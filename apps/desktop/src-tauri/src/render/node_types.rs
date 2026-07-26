@@ -306,6 +306,12 @@ pub struct CameraOverlaySettings {
     pub zoom_follow: bool,
     #[serde(default = "default_camera_zoom_follow_strength")]
     pub zoom_follow_strength: f64,
+    /// Seconds the grow/shrink takes to ramp in/out (its own transition timing).
+    #[serde(default = "default_camera_zoom_follow_duration")]
+    pub zoom_follow_duration: f64,
+    /// Easing for the grow/shrink transition.
+    #[serde(default = "default_camera_keyframe_easing")]
+    pub zoom_follow_easing: Easing,
     #[serde(default)]
     pub default_placement: CameraPlacement,
     #[serde(default)]
@@ -346,6 +352,10 @@ fn default_camera_zoom_follow_strength() -> f64 {
     0.6
 }
 
+fn default_camera_zoom_follow_duration() -> f64 {
+    0.4
+}
+
 impl Default for CameraOverlaySettings {
     fn default() -> Self {
         Self {
@@ -356,6 +366,8 @@ impl Default for CameraOverlaySettings {
             animation_preset: default_camera_animation_preset(),
             zoom_follow: default_camera_zoom_follow(),
             zoom_follow_strength: default_camera_zoom_follow_strength(),
+            zoom_follow_duration: default_camera_zoom_follow_duration(),
+            zoom_follow_easing: default_camera_keyframe_easing(),
             default_placement: CameraPlacement::default(),
             motion_segments: Vec::new(),
             keyframes: Vec::new(),
