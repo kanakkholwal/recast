@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
-use super::export::camera::{build_camera_follow_exprs, camera_bubble_rect};
+use super::export::camera::{build_camera_follow_exprs, camera_bubble_rect, camera_shadow_geom};
 use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
@@ -25,7 +25,7 @@ use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, build_annotation_blur_complex, build_output_scale_filter,
     has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
-    CameraOverlayParams, ExportSpeed,
+    CameraOverlayParams, CameraShadowOverlay, ExportSpeed,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -35,6 +35,11 @@ use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 use crate::render::mask_export::{render_border_radius_mask, MaskResult};
 use crate::render::node_types::{AnnotationAnchor, AnnotationKind, AudioSettings};
+
+/// Filtergraph length past which we pass it via `-filter_complex_script <file>`
+/// rather than inline, to stay under Windows' ~32 KB command-line limit. Well
+/// below the limit so the rest of the command line (inputs, codec args) fits.
+const FILTER_COMPLEX_SCRIPT_THRESHOLD: usize = 8000;
 
 fn static_root() -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -2133,6 +2138,70 @@ pub(crate) async fn run_export_job(
         ]);
     }
 
+    // Camera drop shadow: a padded black silhouette of the bubble shape, scaled
+    // + positioned by FFmpeg to follow the bubble. Mirrors the preview's
+    // box-shadow (cameraShadowStyle). `None` when the shadow strength is 0.
+    let camera_shadow: Option<(MaskResult, u32, u32, u32)> =
+        if let Some(&(_, _, _, bw, bh)) = camera_bubble.as_ref() {
+            match camera_shadow_geom(camera_overlay_settings.shadow, bw) {
+                Some(geom) => {
+                    let radius_px = match camera_overlay_settings.shape.as_str() {
+                        "circle" => bw as f64 / 2.0,
+                        "square" | "rectangle" => 0.0,
+                        _ => camera_overlay_settings.corner_radius * bw as f64,
+                    };
+                    crate::render::mask_export::render_camera_shadow(
+                        crate::render::mask_export::CameraShadowRequest {
+                            bubble_w: bw,
+                            bubble_h: bh,
+                            corner_radius_px: radius_px,
+                            blur_px: geom.blur_px,
+                            offset_y: geom.offset_px,
+                            opacity: geom.opacity,
+                            padding: geom.padding,
+                        },
+                    )
+                    .map_err(|e| AppError::msg(format!("camera shadow render failed: {e}")))?
+                    .map(|res| {
+                        (
+                            res,
+                            geom.padding,
+                            bw + 2 * geom.padding,
+                            bh + 2 * geom.padding,
+                        )
+                    })
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+    let camera_shadow_path = camera_shadow.as_ref().map(|(m, _, _, _)| m.path.clone());
+    let camera_shadow_input_index = camera_shadow_path.as_ref().map(|_| {
+        1 + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+            + camera_input_index.is_some() as usize
+            + camera_mask_input_index.is_some() as usize
+    });
+    if let Some(ref path) = camera_shadow_path {
+        args.extend([
+            "-loop".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            path.to_string_lossy().to_string(),
+        ]);
+    }
+    let camera_shadow_overlay = match (camera_shadow_input_index, camera_shadow.as_ref()) {
+        (Some(idx), Some((_, padding, cw, ch))) => Some(CameraShadowOverlay {
+            input_index: idx,
+            padding: *padding,
+            canvas_w: *cw,
+            canvas_h: *ch,
+        }),
+        _ => None,
+    };
+
     // Detached audio: the recording's own audio is now edited as `voice` clips,
     // so the monolithic source/system/mic tracks are dropped (the clips carry it).
     let audio_detached = request
@@ -2153,7 +2222,8 @@ pub(crate) async fn run_export_job(
             + cursor_overlay_path.is_some() as usize
             + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
-            + camera_mask_input_index.is_some() as usize;
+            + camera_mask_input_index.is_some() as usize
+            + camera_shadow_input_index.is_some() as usize;
         if let Some(project) = project.as_ref().filter(|_| !audio_detached) {
             for (path, kind) in [
                 (&project.audio_path, AudioKind::System),
@@ -2223,15 +2293,23 @@ pub(crate) async fn run_export_job(
     // a user might want to apply over their own face).
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
-        // Zoom-follow: grow + drift the bubble over time (mirrors the preview's
-        // applyZoomFollow). None → the fixed placement, byte-identical to before.
-        let camera_anim = if camera_overlay_settings.zoom_follow {
+        // Per-cut keyframe glide + zoom-follow grow/drift over time (mirrors the
+        // preview's cameraPlacementAt ∘ applyZoomFollow). None → the fixed
+        // placement, byte-identical to before when there are no keyframes and
+        // zoom-follow is off.
+        let camera_anim = if camera_overlay_settings.zoom_follow
+            || !camera_overlay_settings.keyframes.is_empty()
+        {
             build_camera_follow_exprs(
                 &request.render_state.zoom_regions,
+                &camera_overlay_settings.keyframes,
+                camera_overlay_settings.keyframe_easing,
                 &camera_overlay_settings.default_placement,
                 camera_overlay_settings.zoom_follow_strength,
+                camera_overlay_settings.zoom_follow,
                 &canvas_geom,
                 trim_start,
+                request.render_state.trim_end,
             )
             .map(|(size_expr, x_expr, y_expr)| CameraOverlayAnim {
                 size_expr,
@@ -2253,6 +2331,7 @@ pub(crate) async fn run_export_job(
                 bubble_h: *bh,
                 mirror: camera_overlay_settings.mirror,
                 anim: camera_anim,
+                shadow: camera_shadow_overlay,
             },
         );
         filter_complex_after_cursor = Some(new_complex);
@@ -2492,13 +2571,49 @@ pub(crate) async fn run_export_job(
         }
     }
 
+    // Merge any output-side filters (e.g. the final scale) into the complex graph
+    // BEFORE emitting it, so the string handed to FFmpeg is final. (Previously
+    // this happened after the args were built, patching the arg slot in place.)
+    if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
+        let (complex_filter, map_label) = append_output_filters_to_complex(
+            filter_complex_after_cursor.as_deref().unwrap_or_default(),
+            &video_map_after_cursor,
+            &output_filters,
+        );
+        filter_complex_after_cursor = Some(complex_filter);
+        video_map_after_cursor = map_label;
+    }
+
+    // Dense zoom/camera LUT expressions can push the filtergraph past Windows'
+    // ~32 KB command-line limit ("The filename or extension is too long",
+    // os error 206). Above a threshold, pass it via `-filter_complex_script
+    // <file>` (read from disk, no command-line cost) instead of inline. The
+    // file is removed after the encode finishes.
+    let mut filter_script_path: Option<PathBuf> = None;
     if let Some(ref filter_complex) = filter_complex_after_cursor {
-        args.extend([
-            "-filter_complex".to_string(),
-            filter_complex.clone(),
-            "-map".to_string(),
-            video_map_after_cursor.clone(),
-        ]);
+        if filter_complex.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
+            let path = output_dir.join(format!("recast-filtergraph-{export_id}.txt"));
+            std::fs::write(&path, filter_complex).map_err(|e| {
+                AppError::msg(format!(
+                    "failed to write filter script {}: {e}",
+                    path.display()
+                ))
+            })?;
+            args.extend([
+                "-filter_complex_script".to_string(),
+                path.to_string_lossy().to_string(),
+                "-map".to_string(),
+                video_map_after_cursor.clone(),
+            ]);
+            filter_script_path = Some(path);
+        } else {
+            args.extend([
+                "-filter_complex".to_string(),
+                filter_complex.clone(),
+                "-map".to_string(),
+                video_map_after_cursor.clone(),
+            ]);
+        }
     } else {
         args.extend(["-map".to_string(), "0:v:0".to_string()]);
     }
@@ -2560,30 +2675,6 @@ pub(crate) async fn run_export_job(
         &output_path,
     );
 
-    if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
-        let (complex_filter, map_label) = append_output_filters_to_complex(
-            filter_complex_after_cursor.as_deref().unwrap_or_default(),
-            &video_map_after_cursor,
-            &output_filters,
-        );
-
-        let filter_index = args
-            .iter()
-            .position(|arg| arg == "-filter_complex")
-            .and_then(|index| args.get_mut(index + 1));
-        if let Some(slot) = filter_index {
-            *slot = complex_filter;
-        }
-
-        let map_index = args
-            .iter()
-            .position(|arg| arg == "-map")
-            .and_then(|index| args.get_mut(index + 1));
-        if let Some(slot) = map_index {
-            *slot = map_label;
-        }
-    }
-
     let output_path_str = output_path.to_string_lossy().to_string();
     log::info!("export ffmpeg args: {}", args.join(" "));
 
@@ -2634,6 +2725,9 @@ pub(crate) async fn run_export_job(
     // `?` and panics. This drop is just the cursor overlay's temp dir.
     drop(cursor_overlay);
     if let Some(p) = palette_temp_path.as_ref() {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(p) = filter_script_path.as_ref() {
         let _ = std::fs::remove_file(p);
     }
 

@@ -24,7 +24,7 @@ import {
 	voiceClip,
 } from '../audio/music';
 import type { CursorSampleLike } from '../cursor/smoothing';
-import { EASE, type Easing } from '../easing/cubic-bezier';
+import { EASE, EASE_IN_OUT, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
 import type { Transcript } from '../ipc';
 import { log } from '../logger';
@@ -356,6 +356,13 @@ export interface CameraPlacement {
 	height: number;
 }
 
+/** A camera position pinned at an original-recording time. The effective base
+ *  placement glides (eased) between consecutive keyframes — the per-cut motion. */
+export interface CameraKeyframe {
+	atSec: number;
+	placement: CameraPlacement;
+}
+
 export interface CameraMotionSegment {
 	start: number;
 	end: number;
@@ -384,6 +391,12 @@ export interface CameraOverlaySettings {
 	zoomFollowStrength: number;
 	defaultPlacement: CameraPlacement;
 	motionSegments: CameraMotionSegment[];
+	/** Per-cut position keyframes (original-time). Empty → static defaultPlacement. */
+	keyframes: CameraKeyframe[];
+	/** Easing for the glide BETWEEN keyframes (the "animation smoothness"). */
+	keyframeEasing: Easing;
+	/** Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity together. */
+	shadow: number;
 }
 
 /**
@@ -429,18 +442,16 @@ export function cameraPlacementFromPreset(
 	const centerX = (1 - size) / 2;
 	const farY = Math.max(0, 1 - height - inset);
 	const centerY = Math.max(0, (1 - height) / 2);
-	const xByCol: Record<string, number> = { left: inset, center: centerX, right: farX };
-	const yByRow: Record<string, number> = { top: inset, center: centerY, bottom: farY };
 	if (preset === 'custom') {
 		return { x: farX, y: farY, width: size, height };
 	}
-	const [row, col] = preset.split('-') as [string, string];
-	return {
-		x: xByCol[col] ?? farX,
-		y: yByRow[row] ?? farY,
-		width: size,
-		height,
-	};
+	// The preset ids mix conventions ('top-left' is row-col but 'left-center' is
+	// col-row), so detect each axis by token rather than by split position — else
+	// 'left-center'/'right-center' resolve to the wrong cell.
+	const tokens = preset.split('-');
+	const x = tokens.includes('left') ? inset : tokens.includes('right') ? farX : centerX;
+	const y = tokens.includes('top') ? inset : tokens.includes('bottom') ? farY : centerY;
+	return { x, y, width: size, height };
 }
 
 /**
@@ -1095,6 +1106,9 @@ export function createEditorStore() {
 		zoomFollowStrength: 0.6,
 		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 		motionSegments: [],
+		keyframes: [],
+		keyframeEasing: { ...EASE_IN_OUT },
+		shadow: 0.35,
 	});
 
 	// Export
@@ -1321,6 +1335,11 @@ export function createEditorStore() {
 				motionSegments: (s.cameraOverlay.motionSegments ?? []).map(
 					(seg: CameraOverlaySettings['motionSegments'][number]) => ({ ...seg }),
 				),
+				keyframes: (s.cameraOverlay.keyframes ?? []).map((k) => ({
+					atSec: k.atSec,
+					placement: { ...k.placement },
+				})),
+				keyframeEasing: { ...(s.cameraOverlay.keyframeEasing ?? EASE_IN_OUT) },
 			};
 		}
 		layoutMode = s.layoutMode;
@@ -1528,6 +1547,45 @@ export function createEditorStore() {
 	 */
 	function updateCameraOverlay(updates: Partial<CameraOverlaySettings>) {
 		cameraOverlay = { ...cameraOverlay, ...updates };
+	}
+
+	// Route a position edit (preset/drag/resize): in per-cut mode it upserts a
+	// keyframe at the playhead (glide between cuts); otherwise it sets the single
+	// static placement. Callers push undo before a drag/preset gesture.
+	function setCameraPlacement(placement: CameraPlacement) {
+		if (cameraOverlay.keyframes.length > 0) {
+			const atSec = currentTime;
+			const next = cameraOverlay.keyframes.filter((k) => Math.abs(k.atSec - atSec) > 0.05);
+			next.push({ atSec, placement });
+			next.sort((a, b) => a.atSec - b.atSec);
+			cameraOverlay = { ...cameraOverlay, keyframes: next };
+		} else {
+			cameraOverlay = { ...cameraOverlay, defaultPlacement: placement };
+		}
+	}
+
+	// Toggle per-cut (keyframed) camera position. Turning on seeds one keyframe at
+	// the playhead from the current static placement, so nothing jumps; turning
+	// off collapses back to the static placement (dropping the keyframes).
+	function setCameraPerCut(on: boolean) {
+		pushUndoState();
+		if (on && cameraOverlay.keyframes.length === 0) {
+			cameraOverlay = {
+				...cameraOverlay,
+				keyframes: [{ atSec: currentTime, placement: { ...cameraOverlay.defaultPlacement } }],
+			};
+		} else if (!on) {
+			cameraOverlay = { ...cameraOverlay, keyframes: [] };
+		}
+	}
+
+	/** Remove the keyframe nearest the playhead (within 0.15s), for the panel's
+	 *  "clear this cut's position" affordance. */
+	function removeCameraKeyframeNear(atSec: number) {
+		const next = cameraOverlay.keyframes.filter((k) => Math.abs(k.atSec - atSec) > 0.15);
+		if (next.length === cameraOverlay.keyframes.length) return;
+		pushUndoState();
+		cameraOverlay = { ...cameraOverlay, keyframes: next };
 	}
 
 	// ---- Selection ---------------------------------------------------------
@@ -1962,6 +2020,9 @@ export function createEditorStore() {
 			animationPreset: 'soft',
 			defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 			motionSegments: [],
+			keyframes: [],
+			keyframeEasing: { ...EASE_IN_OUT },
+			shadow: 0.35,
 			zoomFollow: true,
 			zoomFollowStrength: 0.6,
 		};
@@ -2331,6 +2392,11 @@ export function createEditorStore() {
 				motionSegments: cameraOverlay.motionSegments.map((segment) => ({
 					...segment,
 				})),
+				keyframes: cameraOverlay.keyframes.map((k) => ({
+					atSec: k.atSec,
+					placement: { ...k.placement },
+				})),
+				keyframeEasing: { ...cameraOverlay.keyframeEasing },
 			},
 			layoutMode,
 		};
@@ -2437,6 +2503,14 @@ export function createEditorStore() {
 			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
 			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
 			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
+			keyframes: (state.cameraOverlay?.keyframes ?? []).map((k) => ({
+				atSec: k.atSec,
+				placement: { ...k.placement },
+			})),
+			keyframeEasing: state.cameraOverlay?.keyframeEasing
+				? { ...state.cameraOverlay.keyframeEasing }
+				: { ...EASE_IN_OUT },
+			shadow: state.cameraOverlay?.shadow ?? 0.35,
 			defaultPlacement: {
 				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
 				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
@@ -3091,6 +3165,9 @@ export function createEditorStore() {
 		updateWatermarkSettings,
 		updateShadow,
 		updateCameraOverlay,
+		setCameraPlacement,
+		setCameraPerCut,
+		removeCameraKeyframeNear,
 		addZoomRegion,
 		addAutoZoomRegion,
 		clearAutoZooms,

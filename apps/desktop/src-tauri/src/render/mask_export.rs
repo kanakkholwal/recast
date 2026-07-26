@@ -200,6 +200,84 @@ pub fn render_drop_shadow_mask(req: DropShadowRequest) -> Result<Option<MaskResu
     }))
 }
 
+/// Inputs for the camera-bubble drop shadow. Unlike `render_drop_shadow_mask`
+/// (video-rect on the full comp canvas), this renders a small padded silhouette
+/// of the bubble shape that FFmpeg scales + positions to follow the bubble.
+pub struct CameraShadowRequest {
+    /// Base bubble dimensions in canvas pixels.
+    pub bubble_w: u32,
+    pub bubble_h: u32,
+    /// Bubble shape corner radius in px (circle = w/2, rounded = frac·w, square = 0).
+    pub corner_radius_px: f64,
+    /// Soft-edge falloff distance, centred on the silhouette edge.
+    pub blur_px: f64,
+    /// Downward shadow offset in px (x offset is 0, mirroring the CSS box-shadow).
+    pub offset_y: f64,
+    /// 0..1 alpha multiplier.
+    pub opacity: f64,
+    /// Transparent margin around the bubble so blur + offset don't clip.
+    pub padding: u32,
+}
+
+/// Pre-render the camera bubble's drop shadow as a transparent RGBA PNG sized
+/// `(bubble + 2·padding)`. Black silhouette, soft edge, offset and opacity baked
+/// in; the FFmpeg side scales it by the bubble's live size and overlays it just
+/// under the bubble. Mirrors the preview's `cameraShadowStyle` box-shadow.
+/// Returns `Ok(None)` when invisible (`opacity ≤ 0`).
+pub fn render_camera_shadow(req: CameraShadowRequest) -> Result<Option<MaskResult>> {
+    if req.opacity <= 0.0 || req.bubble_w == 0 || req.bubble_h == 0 {
+        return Ok(None);
+    }
+    let cw = req.bubble_w + 2 * req.padding;
+    let ch = req.bubble_h + 2 * req.padding;
+
+    let counter = SCRATCH_COUNTER.fetch_add(1, Ordering::Relaxed);
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let scratch_dir = std::env::temp_dir().join(format!("recast-export-cam-shadow-{ts}-{counter}"));
+    fs::create_dir_all(&scratch_dir).with_context(|| {
+        format!(
+            "failed to create camera-shadow scratch dir {}",
+            scratch_dir.display()
+        )
+    })?;
+    let guard = TempDirGuard::new(scratch_dir.clone());
+    let out_path = scratch_dir.join("camera_shadow.png");
+
+    let mut img = RgbaImage::new(cw, ch);
+    let hx = req.bubble_w as f64 / 2.0;
+    let hy = req.bubble_h as f64 / 2.0;
+    let cx = req.padding as f64 + hx;
+    let cy = req.padding as f64 + hy + req.offset_y;
+    let r = req.corner_radius_px.clamp(0.0, hx.min(hy));
+    let blur = req.blur_px.max(0.5);
+    let opacity = req.opacity.clamp(0.0, 1.0);
+
+    for y in 0..ch {
+        for x in 0..cw {
+            let px = (x as f64 + 0.5) - cx;
+            let py = (y as f64 + 0.5) - cy;
+            let qx = px.abs() - hx + r;
+            let qy = py.abs() - hy + r;
+            let sd = qx.max(0.0).hypot(qy.max(0.0)) + qx.max(qy).min(0.0) - r;
+            // Falloff centred on the edge → visually close to a CSS box-shadow.
+            let coverage = (1.0 - smoothstep(-blur * 0.5, blur * 0.5, sd)).clamp(0.0, 1.0);
+            let alpha = (coverage * opacity * 255.0).round().clamp(0.0, 255.0) as u8;
+            img.put_pixel(x, y, Rgba([0, 0, 0, alpha]));
+        }
+    }
+
+    img.save(&out_path)
+        .with_context(|| format!("failed to write camera shadow {}", out_path.display()))?;
+
+    Ok(Some(MaskResult {
+        path: out_path,
+        _guard: guard,
+    }))
+}
+
 /// Parse a `#rgb` / `#rrggbb` / `#rrggbbaa` hex string. Alpha (when present)
 /// is ignored — the export treats the shadow's overall opacity as the
 /// authoritative alpha source (matches the preview shader).
@@ -453,6 +531,47 @@ mod tests {
         };
         let result = render_drop_shadow_mask(req).expect("must not error");
         assert!(result.is_none(), "opacity 0 must short-circuit");
+    }
+
+    #[test]
+    fn camera_shadow_skipped_when_opacity_zero() {
+        let req = CameraShadowRequest {
+            bubble_w: 100,
+            bubble_h: 100,
+            corner_radius_px: 20.0,
+            blur_px: 8.0,
+            offset_y: 4.0,
+            opacity: 0.0,
+            padding: 20,
+        };
+        assert!(render_camera_shadow(req).expect("no error").is_none());
+    }
+
+    #[test]
+    fn camera_shadow_is_padded_and_opaque_at_the_centre() {
+        let padding = 24;
+        let req = CameraShadowRequest {
+            bubble_w: 120,
+            bubble_h: 120,
+            corner_radius_px: 0.0,
+            blur_px: 10.0,
+            offset_y: 6.0,
+            opacity: 0.5,
+            padding,
+        };
+        let result = render_camera_shadow(req)
+            .expect("no error")
+            .expect("visible");
+        let img = image::open(&result.path).expect("readable png").to_rgba8();
+        assert_eq!(img.dimensions(), (120 + 2 * padding, 120 + 2 * padding));
+        // Silhouette centre (offset down by offset_y) is at ~half opacity → ~127.
+        let centre = img.get_pixel(img.width() / 2, img.height() / 2)[3];
+        assert!(
+            centre > 100,
+            "centre alpha should be near 0.5*255, got {centre}"
+        );
+        // The far transparent corner stays clear.
+        assert_eq!(img.get_pixel(0, 0)[3], 0);
     }
 
     #[test]

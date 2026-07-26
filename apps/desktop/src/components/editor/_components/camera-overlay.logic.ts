@@ -2,11 +2,15 @@
 // its shape's border-radius, and the drag clamp. The .svelte owns the video
 // element, sync effects, and pointer wiring.
 
+import { bezierY, type Easing } from "$lib/easing/cubic-bezier";
 import type { CanvasGeometry } from "$lib/canvas-geometry";
 import type {
+	CameraKeyframe,
 	CameraOverlayShape,
 	CameraPlacement,
 } from "$lib/stores/editor-store.svelte";
+
+export type { CameraKeyframe };
 
 /**
  * Inline style placing the bubble as canvas percentages. Bubble UV is in VIDEO
@@ -23,6 +27,27 @@ export function bubblePlacementStyle(
 	const top = ((geom.videoY + placement.y * geom.videoH) / geom.canvasH) * 100;
 	const width = ((placement.width * geom.videoW) / geom.canvasW) * 100;
 	return `left:${left}%;top:${top}%;width:${width}%;`;
+}
+
+// Drop-shadow geometry as FRACTIONS of the bubble's size, so it's resolution-
+// independent and the Rust export can mirror it exactly (see camera.rs
+// CAMERA_SHADOW_* — these MUST stay in lockstep). Strength scales all three.
+export const CAMERA_SHADOW_BLUR_FRACTION = 0.14;
+export const CAMERA_SHADOW_OFFSET_FRACTION = 0.05;
+export const CAMERA_SHADOW_MAX_OPACITY = 0.6;
+
+/**
+ * `box-shadow` value for the bubble, sized in `cqmin` so it tracks the bubble
+ * (the overlay's outer div is a size container). `none` when strength ≤ 0.
+ * Mirrored in export by `render_camera_shadow`.
+ */
+export function cameraShadowStyle(strength: number): string {
+	const s = Math.max(0, Math.min(1, strength ?? 0));
+	if (s <= 0) return "none";
+	const blur = (CAMERA_SHADOW_BLUR_FRACTION * s * 100).toFixed(2);
+	const offset = (CAMERA_SHADOW_OFFSET_FRACTION * s * 100).toFixed(2);
+	const opacity = (CAMERA_SHADOW_MAX_OPACITY * s).toFixed(3);
+	return `0 ${offset}cqmin ${blur}cqmin rgba(0,0,0,${opacity})`;
 }
 
 /** CSS border-radius for a bubble shape. square/rectangle → 0; circle → 50% (true circle with the 1:1 aspect); rounded → saved corner radius. */
@@ -103,6 +128,66 @@ export function resizeCameraSquare(
 	const x = anchorRight ? anchorX - width : anchorX;
 	const y = anchorBottom ? anchorY - height : anchorY;
 	return { x, y, width, height };
+}
+
+// --- Per-cut keyframes ------------------------------------------------------
+
+/** Smoothstep 0..1 — the ease that makes position changes GLIDE rather than move
+ *  at constant speed across a cut. */
+function smoothstep(p: number): number {
+	const c = Math.max(0, Math.min(1, p));
+	return c * c * (3 - 2 * c);
+}
+
+function lerpPlacement(a: CameraPlacement, b: CameraPlacement, e: number): CameraPlacement {
+	return {
+		x: a.x + (b.x - a.x) * e,
+		y: a.y + (b.y - a.y) * e,
+		width: a.width + (b.width - a.width) * e,
+		height: a.height + (b.height - a.height) * e,
+	};
+}
+
+/**
+ * Effective BASE camera placement at original time `t`, gliding between
+ * per-cut keyframes. No keyframes → the static `base`. Holds at the first/last
+ * keyframe outside their range. `keyframes` MUST be sorted by `atSec`. Mirrored
+ * by Rust `camera_placement_at` so preview == export.
+ */
+export function cameraPlacementAt(
+	base: CameraPlacement,
+	keyframes: CameraKeyframe[],
+	t: number,
+	easing?: Easing,
+): CameraPlacement {
+	if (keyframes.length === 0) return base;
+	if (keyframes.length === 1 || t <= keyframes[0].atSec) return keyframes[0].placement;
+	const last = keyframes[keyframes.length - 1];
+	if (t >= last.atSec) return last.placement;
+	const ease = (p: number) => (easing ? bezierY(easing, p) : smoothstep(p));
+	for (let i = 0; i < keyframes.length - 1; i++) {
+		const a = keyframes[i];
+		const b = keyframes[i + 1];
+		if (t >= a.atSec && t < b.atSec) {
+			const span = Math.max(1e-6, b.atSec - a.atSec);
+			return lerpPlacement(a.placement, b.placement, ease((t - a.atSec) / span));
+		}
+	}
+	return last.placement;
+}
+
+/** Insert or replace a keyframe at `atSec` (within `epsilon`), returning a new
+ *  sorted array. Used by the panel/overlay when editing in per-cut mode. */
+export function upsertCameraKeyframe(
+	keyframes: CameraKeyframe[],
+	atSec: number,
+	placement: CameraPlacement,
+	epsilon = 0.05,
+): CameraKeyframe[] {
+	const next = keyframes.filter((k) => Math.abs(k.atSec - atSec) > epsilon);
+	next.push({ atSec, placement });
+	next.sort((a, b) => a.atSec - b.atSec);
+	return next;
 }
 
 // --- Zoom-follow ------------------------------------------------------------

@@ -279,6 +279,16 @@ pub struct CameraMotionSegment {
     pub source: String,
 }
 
+/// A camera position pinned at an original-recording time. The effective base
+/// placement glides (eased) between consecutive keyframes — the per-cut motion.
+/// Mirrors the TS `CameraKeyframe`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraKeyframe {
+    pub at_sec: f64,
+    pub placement: CameraPlacement,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraOverlaySettings {
@@ -300,6 +310,28 @@ pub struct CameraOverlaySettings {
     pub default_placement: CameraPlacement,
     #[serde(default)]
     pub motion_segments: Vec<CameraMotionSegment>,
+    /// Per-cut position keyframes (original-time). Empty → static default_placement.
+    #[serde(default)]
+    pub keyframes: Vec<CameraKeyframe>,
+    /// Easing for the glide between keyframes.
+    #[serde(default = "default_camera_keyframe_easing")]
+    pub keyframe_easing: Easing,
+    /// Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity.
+    #[serde(default = "default_camera_shadow")]
+    pub shadow: f64,
+}
+
+fn default_camera_keyframe_easing() -> Easing {
+    Easing {
+        x1: 0.42,
+        y1: 0.0,
+        x2: 0.58,
+        y2: 1.0,
+    }
+}
+
+fn default_camera_shadow() -> f64 {
+    0.35
 }
 
 fn default_camera_corner_radius() -> f64 {
@@ -326,6 +358,9 @@ impl Default for CameraOverlaySettings {
             zoom_follow_strength: default_camera_zoom_follow_strength(),
             default_placement: CameraPlacement::default(),
             motion_segments: Vec::new(),
+            keyframes: Vec::new(),
+            keyframe_easing: default_camera_keyframe_easing(),
+            shadow: default_camera_shadow(),
         }
     }
 }

@@ -1,9 +1,16 @@
 import { describe, expect, it } from "vitest";
 import {
 	applyZoomFollow,
+	CAMERA_SHADOW_BLUR_FRACTION,
+	CAMERA_SHADOW_MAX_OPACITY,
+	CAMERA_SHADOW_OFFSET_FRACTION,
+	cameraPlacementAt,
+	cameraShadowStyle,
 	MAX_CAMERA_SIZE,
 	MIN_CAMERA_SIZE,
 	resizeCameraSquare,
+	upsertCameraKeyframe,
+	type CameraKeyframe,
 } from "./camera-overlay.logic";
 
 const base = { x: 0.72, y: 0.08, width: 0.22, height: 0.22 };
@@ -46,6 +53,73 @@ describe("resizeCameraSquare", () => {
 		expect(r.x).toBeCloseTo(0.72, 6);
 		expect(r.y).toBeCloseTo(0.08, 6);
 		expect(r.y + r.height).toBeLessThanOrEqual(1 + 1e-9);
+	});
+});
+
+describe("cameraPlacementAt", () => {
+	const p = (x: number) => ({ x, y: 0.1, width: 0.2, height: 0.2 });
+	const kfs: CameraKeyframe[] = [
+		{ atSec: 1, placement: p(0.1) },
+		{ atSec: 3, placement: p(0.7) },
+	];
+
+	it("returns the static base when there are no keyframes", () => {
+		expect(cameraPlacementAt(p(0.5), [], 2)).toEqual(p(0.5));
+	});
+
+	it("holds at the first/last keyframe outside the range", () => {
+		expect(cameraPlacementAt(p(0.5), kfs, 0).x).toBeCloseTo(0.1, 6);
+		expect(cameraPlacementAt(p(0.5), kfs, 5).x).toBeCloseTo(0.7, 6);
+	});
+
+	it("glides (eased) between keyframes — midpoint is the halfway position", () => {
+		// smoothstep(0.5) = 0.5, so the midpoint x = (0.1+0.7)/2 = 0.4.
+		expect(cameraPlacementAt(p(0.5), kfs, 2).x).toBeCloseTo(0.4, 6);
+	});
+
+	it("eases in near the start (slower than linear)", () => {
+		// At 25% through, smoothstep(0.25)=0.15625 → x = 0.1 + 0.6*0.15625 = 0.19375.
+		expect(cameraPlacementAt(p(0.5), kfs, 1.5).x).toBeCloseTo(0.19375, 6);
+	});
+
+	it("uses the supplied easing (LINEAR mirrors the Rust parity test)", () => {
+		const linear = { x1: 0, y1: 0, x2: 1, y2: 1 };
+		expect(cameraPlacementAt(p(0.5), kfs, 2, linear).x).toBeCloseTo(0.4, 6); // mid
+		expect(cameraPlacementAt(p(0.5), kfs, 1.5, linear).x).toBeCloseTo(0.25, 6); // quarter
+	});
+});
+
+describe("upsertCameraKeyframe", () => {
+	const base: CameraKeyframe[] = [
+		{ atSec: 1, placement: { x: 0.1, y: 0, width: 0.2, height: 0.2 } },
+		{ atSec: 3, placement: { x: 0.7, y: 0, width: 0.2, height: 0.2 } },
+	];
+
+	it("inserts a new keyframe in sorted order", () => {
+		const r = upsertCameraKeyframe(base, 2, { x: 0.4, y: 0, width: 0.2, height: 0.2 });
+		expect(r.map((k) => k.atSec)).toEqual([1, 2, 3]);
+	});
+
+	it("replaces a keyframe within epsilon of an existing time", () => {
+		const r = upsertCameraKeyframe(base, 3.01, { x: 0.9, y: 0, width: 0.2, height: 0.2 });
+		expect(r).toHaveLength(2);
+		expect(r[1].placement.x).toBeCloseTo(0.9, 6);
+	});
+});
+
+describe("cameraShadowStyle", () => {
+	it("is 'none' at or below zero strength", () => {
+		expect(cameraShadowStyle(0)).toBe("none");
+		expect(cameraShadowStyle(-1)).toBe("none");
+	});
+
+	it("scales blur, offset, and opacity by strength in cqmin (export-parity fractions)", () => {
+		const s = 0.5;
+		const style = cameraShadowStyle(s);
+		const blur = (CAMERA_SHADOW_BLUR_FRACTION * s * 100).toFixed(2);
+		const offset = (CAMERA_SHADOW_OFFSET_FRACTION * s * 100).toFixed(2);
+		const opacity = (CAMERA_SHADOW_MAX_OPACITY * s).toFixed(3);
+		expect(style).toBe(`0 ${offset}cqmin ${blur}cqmin rgba(0,0,0,${opacity})`);
 	});
 });
 

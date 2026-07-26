@@ -5,10 +5,14 @@
     type CameraPositionPreset,
     type EditorStore,
   } from "$lib/stores/editor-store.svelte";
+  import { cameraPlacementAt } from "../_components/camera-overlay.logic";
+  import { EASING_PRESETS, easingEquals } from "$lib/easing/cubic-bezier";
   import { VideoOff } from "@recast/icons";
+  import { Button } from "@recast/ui/button";
   import { SegmentedToggle } from "@recast/ui/segmented";
   import { cn } from "@recast/ui/utils";
   import { SliderControl } from "@recast/ui/slider-control";
+  import BezierEditor from "../_components/BezierEditor.svelte";
   import { dotStyleFor, labelFor } from "./camera-panel.logic";
   import PanelSection from "./PanelSection.svelte";
 
@@ -35,40 +39,42 @@
       : 1,
   );
 
+  const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
+
+  // The placement being edited: in per-cut mode it's the glide value at the
+  // playhead (the keyframe you're setting); else the static placement.
+  const currentBase = $derived(
+    cameraPlacementAt(
+      store.cameraOverlay.defaultPlacement,
+      store.cameraOverlay.keyframes,
+      store.currentTime,
+      store.cameraOverlay.keyframeEasing,
+    ),
+  );
+
   // Derived from the placement so a preview drag onto a corner re-highlights
   // the matching chip without a re-click.
-  const activePreset = $derived(
-    cameraPresetFromPlacement(store.cameraOverlay.defaultPlacement, videoAspect),
-  );
+  const activePreset = $derived(cameraPresetFromPlacement(currentBase, videoAspect));
 
   function applyPreset(preset: CameraPositionPreset) {
     if (preset === "custom") return; // Custom is the drag fallback.
     store.pushUndoState();
-    const next = cameraPlacementFromPreset(
-      preset,
-      store.cameraOverlay.defaultPlacement.width,
-      undefined,
-      videoAspect,
-    );
-    store.updateCameraOverlay({ defaultPlacement: next });
+    const next = cameraPlacementFromPreset(preset, currentBase.width, undefined, videoAspect);
+    store.setCameraPlacement(next);
   }
 
   function setSize(size: number) {
     // Anchor the resize on the current preset corner so the bubble doesn't
     // drift; custom placements just scale from their top-left.
-    const current = store.cameraOverlay.defaultPlacement;
     if (activePreset === "custom") {
-      store.updateCameraOverlay({
-        defaultPlacement: {
-          ...current,
-          width: size,
-          height: Math.min(1, size * videoAspect),
-        },
+      store.setCameraPlacement({
+        ...currentBase,
+        width: size,
+        height: Math.min(1, size * videoAspect),
       });
       return;
     }
-    const next = cameraPlacementFromPreset(activePreset, size, undefined, videoAspect);
-    store.updateCameraOverlay({ defaultPlacement: next });
+    store.setCameraPlacement(cameraPlacementFromPreset(activePreset, size, undefined, videoAspect));
   }
 
   // 3×3 grid mirroring the spatial position each chip represents, so users
@@ -175,12 +181,42 @@
     </PanelSection>
 
     <PanelSection
+      title="Per-cut position"
+      hint="Give each cut its own camera position; the bubble glides between them. Scrub to a cut, then pick a preset or drag the bubble."
+      flush
+    >
+      {#snippet action()}
+        <SegmentedToggle
+          checked={perCut}
+          size="xs"
+          aria-label="Per-cut camera position"
+          onCheckedChange={(next) => store.setCameraPerCut(next)}
+        />
+      {/snippet}
+      {#if perCut}
+        <div class="flex items-center justify-between gap-2 pt-1">
+          <span class="text-[10px] text-muted-foreground">
+            {store.cameraOverlay.keyframes.length}
+            {store.cameraOverlay.keyframes.length === 1 ? "position" : "positions"} · glides between cuts
+          </span>
+          <button
+            type="button"
+            onclick={() => store.removeCameraKeyframeNear(store.currentTime)}
+            class="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+          >
+            Clear this cut
+          </button>
+        </div>
+      {/if}
+    </PanelSection>
+
+    <PanelSection
       title="Size"
       hint="Bubble width as a percentage of the frame, or drag its corners in the preview. Height matches width (1:1 only for now)."
     >
       <SliderControl
         label="Bubble size"
-        value={Math.round(store.cameraOverlay.defaultPlacement.width * 100)}
+        value={Math.round(currentBase.width * 100)}
         min={8}
         max={32}
         step={1}
@@ -266,5 +302,56 @@
         />
       {/if}
     </PanelSection>
+
+    <PanelSection title="Shadow" hint="Drop shadow cast by the bubble. 0% turns it off.">
+      <SliderControl
+        label="Shadow"
+        value={Math.round(store.cameraOverlay.shadow * 100)}
+        min={0}
+        max={100}
+        step={5}
+        unit="%"
+        onstart={() => store.pushUndoState()}
+        onchange={(next) => store.updateCameraOverlay({ shadow: next / 100 })}
+      />
+    </PanelSection>
+
+    {#if perCut}
+      <PanelSection
+        title="Animation smoothness"
+        hint="How the camera eases as it glides between per-cut positions."
+      >
+        <div class="flex flex-wrap gap-1">
+          {#each EASING_PRESETS as preset (preset.id)}
+            {@const active = easingEquals(store.cameraOverlay.keyframeEasing, preset.value)}
+            <Button
+              type="button"
+              size="xs"
+              aria-pressed={active}
+              variant={active ? "default_soft" : "outline"}
+              onclick={() => {
+                store.pushUndoState();
+                store.updateCameraOverlay({ keyframeEasing: { ...preset.value } });
+              }}
+            >
+              {preset.label}
+            </Button>
+          {/each}
+        </div>
+        <PanelSection title="Custom curve" flush collapsible defaultOpen={false}>
+          <div class="pt-1">
+            <BezierEditor
+              value={store.cameraOverlay.keyframeEasing}
+              onchange={(v) => {
+                store.pushUndoState();
+                store.updateCameraOverlay({ keyframeEasing: v });
+              }}
+              showPresets={false}
+              size={220}
+            />
+          </div>
+        </PanelSection>
+      </PanelSection>
+    {/if}
   {/if}
 </div>

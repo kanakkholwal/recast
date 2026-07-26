@@ -114,6 +114,10 @@
 	/** Shrink-wrap around the WebGL canvas so the annotation overlay can sit
 	 * on top of it at the same rendered rect regardless of letterboxing. */
 	let previewRectEl: HTMLDivElement | null = $state(null);
+	// Per-FRAME picture time for smooth DOM overlays (camera bubble). store.currentTime
+	// is throttled to ~25Hz to spare the timeline/waveform fan-out; the camera grow
+	// tracks the zoom curve, so it reads this instead to stay as smooth as the shader.
+	let smoothPreviewTime = $state(0);
 	let isReady = $state(false);
 	// Internal decoder that pre-decodes the first post-cut frame to mask the
 	// primary element's seek latency. Only seeked once per cut, never played.
@@ -759,6 +763,10 @@
 			// clock so resuming continues from here.
 			playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
 		}
+
+		// Publish the per-frame clock for smooth overlays (unthrottled, unlike the
+		// store fan-out above). One number write; only the camera bubble reads it.
+		smoothPreviewTime = playbackTime;
 
 		// Legacy-path cut skip: two decoders leapfrog the removed gap.
 		//   1. As the playhead nears a cut, the SCOUT pre-decodes the first
@@ -1727,6 +1735,7 @@
 			{videoEl}
 			{cameraSrc}
 			targetEl={previewRectEl}
+			previewTime={smoothPreviewTime}
 		/>
 		{/if}
 		<CaptionOverlay {store} />

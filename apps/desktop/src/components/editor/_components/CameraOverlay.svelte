@@ -5,6 +5,8 @@
   import {
     applyZoomFollow,
     bubblePlacementStyle,
+    cameraPlacementAt,
+    cameraShadowStyle,
     type CameraResizeCorner,
     clampCameraDrag,
     resizeCameraSquare,
@@ -19,9 +21,12 @@
     targetEl: HTMLDivElement | null;
     /** `convertFileSrc(camera.mp4)`, or empty when no camera was recorded (renders nothing). */
     cameraSrc: string;
+    /** Per-frame picture time (unthrottled) so the zoom-follow grow is as smooth
+     *  as the shader; falls back to store.currentTime when paused. */
+    previewTime?: number;
   }
 
-  let { store, videoEl, targetEl, cameraSrc }: Props = $props();
+  let { store, videoEl, targetEl, cameraSrc, previewTime = 0 }: Props = $props();
 
   let cameraVideoEl: HTMLVideoElement | null = $state(null);
 
@@ -40,10 +45,28 @@
   // drift away from the active zoom's focus). Editing writes the BASE; this only
   // shifts what's drawn. Identity when zoom-follow is off, focus is bypassed, or
   // no zoom is active at the playhead.
+  // Base placement at original time `t`: the static defaultPlacement, or the
+  // per-cut keyframes gliding between positions.
+  function baseAt(t: number) {
+    return cameraPlacementAt(
+      store.cameraOverlay.defaultPlacement,
+      store.cameraOverlay.keyframes,
+      t,
+      store.cameraOverlay.keyframeEasing,
+    );
+  }
+
+  // Drop shadow in cqmin (the outer div is a size container), so it scales with
+  // the bubble and mirrors the export's render_camera_shadow.
+  const shadowStyle = $derived(cameraShadowStyle(store.cameraOverlay.shadow ?? 0));
+
   const effectivePlacement = $derived.by(() => {
-    const base = store.cameraOverlay.defaultPlacement;
+    // Smooth per-frame clock while playing; store.currentTime (accurate on seek)
+    // when paused, so the grow is buttery in playback yet correct when scrubbing.
+    const t = store.isPlaying ? previewTime : store.currentTime;
+    const base = baseAt(t);
     if (!store.cameraOverlay.zoomFollow || !store.focusEnabled) return base;
-    const zoom = evaluateZoomAt(store.zoomRegions, store.currentTime);
+    const zoom = evaluateZoomAt(store.zoomRegions, t);
     return applyZoomFollow(
       base,
       zoom,
@@ -104,7 +127,7 @@
     if (!targetEl || !geom) return;
     isDragging = true;
     dragStartClient = { x: e.clientX, y: e.clientY };
-    const p = store.cameraOverlay.defaultPlacement;
+    const p = baseAt(store.currentTime);
     dragStartUv = { x: p.x, y: p.y };
     store.pushUndoState();
     (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -114,7 +137,7 @@
   function onPointerMove(e: PointerEvent) {
     if (!isDragging || !targetEl || !geom) return;
     const rect = targetEl.getBoundingClientRect();
-    const p = store.cameraOverlay.defaultPlacement;
+    const p = baseAt(store.currentTime);
     const next = clampCameraDrag(
       geom,
       rect.width,
@@ -125,7 +148,8 @@
       p,
     );
     if (!next) return;
-    store.updateCameraOverlay({ defaultPlacement: { ...p, x: next.x, y: next.y } });
+    // Routes to a keyframe at the playhead in per-cut mode, else defaultPlacement.
+    store.setCameraPlacement({ ...p, x: next.x, y: next.y });
   }
 
   function onPointerUp(e: PointerEvent) {
@@ -161,15 +185,9 @@
     if (resizing !== corner) return;
     const uv = clientToVideoUv(e.clientX, e.clientY);
     if (!uv) return;
-    store.updateCameraOverlay({
-      defaultPlacement: resizeCameraSquare(
-        store.cameraOverlay.defaultPlacement,
-        corner,
-        uv.x,
-        uv.y,
-        videoAspect,
-      ),
-    });
+    store.setCameraPlacement(
+      resizeCameraSquare(baseAt(store.currentTime), corner, uv.x, uv.y, videoAspect),
+    );
   }
 
   function onHandleUp(e: PointerEvent) {
@@ -189,7 +207,7 @@
   <div
     role="presentation"
     class="group absolute select-none"
-    style="{bubbleStyle} aspect-ratio: 1; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
+    style="{bubbleStyle} aspect-ratio: 1; container-type: size; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}
@@ -197,7 +215,7 @@
   >
     <div
       class="h-full w-full overflow-hidden"
-      style="border-radius: {borderRadius}; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.32);"
+      style="border-radius: {borderRadius}; box-shadow: {shadowStyle};"
     >
       <!-- svelte-ignore a11y_media_has_caption -->
       <video
