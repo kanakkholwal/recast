@@ -11,17 +11,17 @@ const base = { x: 0.72, y: 0.08, width: 0.22, height: 0.22 };
 describe("resizeCameraSquare", () => {
 	it("keeps the diagonally-opposite corner fixed (drag bottom-right)", () => {
 		// br handle → top-left (0.72,0.08) stays put; drag out to grow.
-		const r = resizeCameraSquare(base, "br", 0.95, 0.4);
+		const r = resizeCameraSquare(base, "br", 0.95, 0.4, 1);
 		expect(r.x).toBeCloseTo(0.72, 6);
 		expect(r.y).toBeCloseTo(0.08, 6);
-		expect(r.width).toBe(r.height); // square
+		expect(r.width).toBe(r.height); // square in UV at aspect 1
 		// Wants 0.32 but caps at the room to the right edge (1 - 0.72 = 0.28).
 		expect(r.width).toBeCloseTo(0.28, 6);
 	});
 
 	it("anchors the far corner when dragging top-left", () => {
 		// tl handle → bottom-right corner (0.94, 0.30) fixed.
-		const r = resizeCameraSquare(base, "tl", 0.6, 0.1);
+		const r = resizeCameraSquare(base, "tl", 0.6, 0.1, 1);
 		const brX = base.x + base.width; // 0.94
 		const brY = base.y + base.height; // 0.30
 		expect(r.x + r.width).toBeCloseTo(brX, 6);
@@ -29,11 +29,23 @@ describe("resizeCameraSquare", () => {
 	});
 
 	it("clamps to the min/max size and never leaves the frame", () => {
-		expect(resizeCameraSquare(base, "br", 0.73, 0.081).width).toBeCloseTo(MIN_CAMERA_SIZE, 6);
-		const big = resizeCameraSquare({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 }, "br", 5, 5);
+		expect(resizeCameraSquare(base, "br", 0.73, 0.081, 1).width).toBeCloseTo(MIN_CAMERA_SIZE, 6);
+		const big = resizeCameraSquare({ x: 0.1, y: 0.1, width: 0.2, height: 0.2 }, "br", 5, 5, 1);
 		expect(big.width).toBeLessThanOrEqual(MAX_CAMERA_SIZE + 1e-9);
 		expect(big.x + big.width).toBeLessThanOrEqual(1 + 1e-9);
 		expect(big.y + big.height).toBeLessThanOrEqual(1 + 1e-9);
+	});
+
+	it("keeps the bubble square in PIXELS on a wide video (height = width*aspect)", () => {
+		const aspect = 16 / 9;
+		// tl anchor = bottom-right corner (0.94, 0.08 + 0.22*aspect). Drag the
+		// top-left inward; the result must stay square in pixels.
+		const r = resizeCameraSquare(base, "br", 0.86, 0.5, aspect);
+		expect(r.height).toBeCloseTo(r.width * aspect, 6);
+		// Anchor (top-left) stays fixed.
+		expect(r.x).toBeCloseTo(0.72, 6);
+		expect(r.y).toBeCloseTo(0.08, 6);
+		expect(r.y + r.height).toBeLessThanOrEqual(1 + 1e-9);
 	});
 });
 
@@ -70,5 +82,13 @@ describe("applyZoomFollow", () => {
 			expect(r.x + r.width).toBeLessThanOrEqual(1 + 1e-9);
 			expect(r.y + r.height).toBeLessThanOrEqual(1 + 1e-9);
 		}
+	});
+
+	it("derives the grown height from width*aspect on a wide video", () => {
+		const aspect = 16 / 9;
+		const mid = { x: 0.4, y: 0.4, width: 0.15, height: 0.15 };
+		const r = applyZoomFollow(mid, { scale: 1.5, cx: 0.1, cy: 0.1 }, { enabled: true, strength: 1 }, aspect);
+		expect(r.width).toBeCloseTo(0.225, 6); // 0.15 * 1.5
+		expect(r.height).toBeCloseTo(r.width * aspect, 6); // square in pixels
 	});
 });

@@ -1,5 +1,5 @@
 import { getAuth } from "$lib/auth/server";
-import { PLANS, type PlanId } from "$lib/billing/plans";
+import { limitsFor, planOf } from "$lib/billing/plans";
 import { getDb } from "$lib/db";
 import {
 	member as memberTable,
@@ -48,7 +48,7 @@ export const GET: RequestHandler = async ({ request }) => {
 
 	// Run the aggregate queries in parallel — they don't depend on each
 	// other and each is cheap (single-table indexed scan / counter read).
-	const [userRow, subRow, recastAgg, shareAgg, memberships, workspaceRecastCounts] =
+	const [userRow, subRows, recastAgg, shareAgg, memberships, workspaceRecastCounts] =
 		await Promise.all([
 		db
 			.select({
@@ -62,17 +62,18 @@ export const GET: RequestHandler = async ({ request }) => {
 			.where(eq(userTable.id, userId))
 			.limit(1)
 			.then((rows) => rows[0] ?? null),
+		// One user can bill several workspaces, so fetch all and pick the row
+		// for the default upload target below.
 		db
 			.select({
+				organizationId: subscriptionTable.organizationId,
 				plan: subscriptionTable.plan,
 				status: subscriptionTable.status,
 				currentPeriodEnd: subscriptionTable.currentPeriodEnd,
 				cancelAtPeriodEnd: subscriptionTable.cancelAtPeriodEnd,
 			})
 			.from(subscriptionTable)
-			.where(eq(subscriptionTable.userId, userId))
-			.limit(1)
-			.then((rows) => rows[0] ?? null),
+			.where(eq(subscriptionTable.userId, userId)),
 		db
 			.select({
 				recordings: count(),
@@ -152,13 +153,13 @@ export const GET: RequestHandler = async ({ request }) => {
 				: workspaces[0]?.id) ??
 		null;
 
-	// Default to free if there's no subscription row (the seed for new users
-	// only inserts on Polar webhook). Same fallback the org plugin uses.
-	const planId: PlanId = (subRow?.plan as PlanId | undefined) ?? "free";
-	const plan = PLANS[planId];
-	const sharesLimit = Number.isFinite(plan.limits.activeShares)
-		? plan.limits.activeShares
-		: null;
+	// Entitlements are workspace-scoped, so the reported plan is the default
+	// upload target's — not the user's, who may own workspaces on other plans.
+	const defaultWorkspace = workspaces.find((w) => w.id === defaultWorkspaceId);
+	const plan = planOf(defaultWorkspace?.plan);
+	const sharesLimit = limitsFor(plan.id).activeRecasts;
+	const subRow =
+		subRows.find((s) => s.organizationId === defaultWorkspaceId) ?? null;
 
 	return json({
 		user: {
@@ -178,7 +179,7 @@ export const GET: RequestHandler = async ({ request }) => {
 			recordings: Number(recastAgg.recordings) || 0,
 			storageBytes: Number(recastAgg.storage ?? 0) || 0,
 			activeShares: Number(shareAgg.active) || 0,
-			sharesLimit, // null = unlimited
+			sharesLimit,
 		},
 		workspaces,
 		defaultWorkspaceId,

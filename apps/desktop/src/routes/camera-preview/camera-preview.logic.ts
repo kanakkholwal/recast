@@ -2,6 +2,29 @@
 
 import type { CameraPreviewState } from "$lib/ipc-types";
 
+/** Preferred → fallback MediaRecorder container/codec for the camera track.
+ *  H.264/MP4 first (WebView2/Chromium supports it and the editor stream-copies
+ *  it, no transcode); VP9/VP8 WebM otherwise (Rust transcodes to MP4). */
+const CAMERA_MIME_CANDIDATES = [
+	"video/mp4;codecs=avc1.42E01E",
+	"video/mp4",
+	"video/webm;codecs=vp9",
+	"video/webm;codecs=vp8",
+	"video/webm",
+] as const;
+
+/** First candidate the runtime supports. `mimeType: ""` lets MediaRecorder pick
+ *  its own default. `supported` is injectable for tests. */
+export function pickCameraMimeType(
+	supported: (t: string) => boolean = (t) =>
+		typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(t),
+): string {
+	for (const candidate of CAMERA_MIME_CANDIDATES) {
+		if (supported(candidate)) return candidate;
+	}
+	return "";
+}
+
 export type AspectKey = "1:1" | "4:3" | "16:9";
 export type ShapeKey = "square" | "rounded" | "circle";
 export type CameraStatus = "loading" | "live" | "warning" | "failed";

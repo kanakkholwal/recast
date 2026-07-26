@@ -31,6 +31,11 @@
     return computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
   });
 
+  // Video pixel aspect. The bubble is square in pixels, so its UV height is
+  // `width * aspect` — used by resize + zoom-follow so nothing distorts or
+  // mis-anchors on a non-square (e.g. 16:9) recording.
+  const videoAspect = $derived(geom ? geom.videoW / geom.videoH : 1);
+
   // The rendered placement = the saved base, then the zoom-follow effect (grow +
   // drift away from the active zoom's focus). Editing writes the BASE; this only
   // shifts what's drawn. Identity when zoom-follow is off, focus is bypassed, or
@@ -39,10 +44,12 @@
     const base = store.cameraOverlay.defaultPlacement;
     if (!store.cameraOverlay.zoomFollow || !store.focusEnabled) return base;
     const zoom = evaluateZoomAt(store.zoomRegions, store.currentTime);
-    return applyZoomFollow(base, zoom, {
-      enabled: true,
-      strength: store.cameraOverlay.zoomFollowStrength,
-    });
+    return applyZoomFollow(
+      base,
+      zoom,
+      { enabled: true, strength: store.cameraOverlay.zoomFollowStrength },
+      videoAspect,
+    );
   });
 
   const bubbleStyle = $derived(bubblePlacementStyle(geom, effectivePlacement));
@@ -155,7 +162,13 @@
     const uv = clientToVideoUv(e.clientX, e.clientY);
     if (!uv) return;
     store.updateCameraOverlay({
-      defaultPlacement: resizeCameraSquare(store.cameraOverlay.defaultPlacement, corner, uv.x, uv.y),
+      defaultPlacement: resizeCameraSquare(
+        store.cameraOverlay.defaultPlacement,
+        corner,
+        uv.x,
+        uv.y,
+        videoAspect,
+      ),
     });
   }
 

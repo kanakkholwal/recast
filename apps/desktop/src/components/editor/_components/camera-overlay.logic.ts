@@ -39,7 +39,9 @@ export function shapeBorderRadius(
  * New bubble UV position from a CSS-pixel drag delta, or null when the target
  * rect isn't measurable yet. Deltas are relative to the rendered VIDEO rect
  * (not the whole canvas) so padding doesn't bias motion; the result is clamped
- * so the bubble stays fully inside the video.
+ * so the bubble stays fully inside the video. The bubble is square in *pixels*,
+ * so its UV height is `width * (videoW/videoH)` — derived here rather than read
+ * from `placement.height`, which keeps the bottom clamp right on a wide video.
  */
 export function clampCameraDrag(
 	geom: CanvasGeometry,
@@ -50,15 +52,16 @@ export function clampCameraDrag(
 	dragStartUv: { x: number; y: number },
 	placement: { width: number; height: number },
 ): { x: number; y: number } | null {
-	if (rectW <= 0 || rectH <= 0) return null;
+	if (rectW <= 0 || rectH <= 0 || geom.videoH <= 0) return null;
 	const videoCssW = rectW * (geom.videoW / geom.canvasW);
 	const videoCssH = rectH * (geom.videoH / geom.canvasH);
 	if (videoCssW <= 0 || videoCssH <= 0) return null;
 	const dxUv = dClientX / videoCssW;
 	const dyUv = dClientY / videoCssH;
+	const heightUv = Math.min(1, placement.width * (geom.videoW / geom.videoH));
 	return {
 		x: Math.max(0, Math.min(1 - placement.width, dragStartUv.x + dxUv)),
-		y: Math.max(0, Math.min(1 - placement.height, dragStartUv.y + dyUv)),
+		y: Math.max(0, Math.min(1 - heightUv, dragStartUv.y + dyUv)),
 	};
 }
 
@@ -71,29 +74,35 @@ export const MIN_CAMERA_SIZE = 0.06;
 export const MAX_CAMERA_SIZE = 0.6;
 
 /**
- * New square placement from dragging a corner handle to video-UV point (ux,uy),
- * keeping the diagonally-opposite corner fixed. Size is clamped to
- * [MIN,MAX_CAMERA_SIZE] and to the room available before the frame edge, so the
- * bubble never leaves the video.
+ * New placement from dragging a corner handle to video-UV point (ux,uy),
+ * keeping the diagonally-opposite corner fixed. The bubble is square in
+ * *pixels*, so UV width `w` maps to UV height `w * aspect` (aspect = videoW/
+ * videoH); `width` is clamped to [MIN,MAX_CAMERA_SIZE] and to the room before
+ * the frame edge (both axes, the vertical room converted back to a width), so
+ * the bubble never leaves the video and never distorts.
  */
 export function resizeCameraSquare(
 	base: CameraPlacement,
 	corner: CameraResizeCorner,
 	ux: number,
 	uy: number,
+	aspect: number,
 ): CameraPlacement {
+	const baseH = Math.min(1, base.width * aspect); // true UV height (square px)
 	const anchorRight = corner === "tl" || corner === "bl"; // drag left → right edge fixed
 	const anchorBottom = corner === "tl" || corner === "tr"; // drag up → bottom edge fixed
 	const anchorX = anchorRight ? base.x + base.width : base.x;
-	const anchorY = anchorBottom ? base.y + base.height : base.y;
+	const anchorY = anchorBottom ? base.y + baseH : base.y;
 	const roomX = anchorRight ? anchorX : 1 - anchorX;
-	const roomY = anchorBottom ? anchorY : 1 - anchorY;
-	const cap = Math.max(MIN_CAMERA_SIZE, Math.min(MAX_CAMERA_SIZE, roomX, roomY));
-	let size = Math.max(Math.abs(ux - anchorX), Math.abs(uy - anchorY));
-	size = Math.max(MIN_CAMERA_SIZE, Math.min(cap, size));
-	const x = anchorRight ? anchorX - size : anchorX;
-	const y = anchorBottom ? anchorY - size : anchorY;
-	return { x, y, width: size, height: size };
+	const roomYAsWidth = (anchorBottom ? anchorY : 1 - anchorY) / aspect;
+	const cap = Math.max(MIN_CAMERA_SIZE, Math.min(MAX_CAMERA_SIZE, roomX, roomYAsWidth));
+	// Drive size off the larger drag axis, the vertical one converted to a width.
+	let width = Math.max(Math.abs(ux - anchorX), Math.abs(uy - anchorY) / aspect);
+	width = Math.max(MIN_CAMERA_SIZE, Math.min(cap, width));
+	const height = width * aspect;
+	const x = anchorRight ? anchorX - width : anchorX;
+	const y = anchorBottom ? anchorY - height : anchorY;
+	return { x, y, width, height };
 }
 
 // --- Zoom-follow ------------------------------------------------------------
@@ -111,21 +120,26 @@ const DRIFT_MAX = 0.18;
  * Effective camera placement under the zoom-follow effect: as a zoom of `scale`
  * centred at (cx,cy) ramps in, the bubble GROWS and DRIFTS away from the focus
  * so the enlarged camera never covers the zoomed content. Identity when
- * disabled, at rest (scale≈1), or zero strength. Square-preserving, clamped
- * on-screen. SHARED with the export path (Rust mirror) so preview == export.
+ * disabled, at rest (scale≈1), or zero strength. The bubble is square in
+ * *pixels*, so its UV height is `width * aspect` (aspect = videoW/videoH) —
+ * derived here, NOT read from `base.height`, so the drift centre and clamps are
+ * right on a wide video. SHARED with the export path (Rust mirror) so
+ * preview == export; `aspect` must match Rust's `videoW/videoH`.
  */
 export function applyZoomFollow(
 	base: CameraPlacement,
 	zoom: { scale: number; cx: number; cy: number },
 	opts: ZoomFollowOpts,
+	aspect: number = 1,
 ): CameraPlacement {
 	const k = Math.max(0, Math.min(1, opts.strength));
 	if (!opts.enabled || k <= 0 || zoom.scale <= 1.0001) return base;
+	const baseH = Math.min(1, base.width * aspect);
 	const amount = (zoom.scale - 1) * k; // ramps with the zoom
 	const width = Math.min(1, base.width * (1 + amount));
-	const height = Math.min(1, base.height * (1 + amount));
+	const height = Math.min(1, width * aspect);
 	const bcx = base.x + base.width / 2;
-	const bcy = base.y + base.height / 2;
+	const bcy = base.y + baseH / 2;
 	let dx = bcx - zoom.cx;
 	let dy = bcy - zoom.cy;
 	const len = Math.hypot(dx, dy);

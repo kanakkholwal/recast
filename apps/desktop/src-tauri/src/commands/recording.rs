@@ -1,8 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use chrono::{Local, TimeZone};
-use tauri::{Emitter, State};
+use tauri::{Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
 use super::system::get_active_output_dir;
@@ -130,10 +131,8 @@ pub async fn stop_recording(
     state: State<'_, AppState>,
 ) -> AppResult<String> {
     // `stop()` joins the capture/cursor/encoder threads, finalizes the muxer,
-    // stops the audio/mic/camera sessions, and — when the camera was recorded
-    // through pauses — runs a full FFmpeg re-encode to cut the paused spans out
-    // (its own comment notes this can take 30+ seconds). `write_project` then
-    // zips the media to disk. All of it is blocking CPU/IO.
+    // stops the audio/mic sessions, and `write_project` zips the media to disk.
+    // All of it is blocking CPU/IO.
     //
     // Tauri runs *synchronous* commands directly on the main thread. On macOS
     // the WebView renders on that same thread, so running this inline froze the
@@ -146,8 +145,29 @@ pub async fn stop_recording(
     let manager = state.recording_manager.clone();
     let dest = recasts_dir(&state);
 
+    // The camera track is recorded in the preview WebView, so drive its flush
+    // from here — the one command EVERY stop path (panel, tray, CLI, auto-stop)
+    // funnels through. Signal the preview to finalize its MediaRecorder now, then
+    // the worker waits for the bytes to land before finalizing the project.
+    // Guarded on the preview window existing so a headless/CLI recording (which
+    // has no MediaRecorder and thus no camera track anyway) never waits.
+    let flush_camera =
+        manager.camera_requested() && app.get_webview_window("camera-preview").is_some();
+    if flush_camera {
+        // Only the preview window listens for this, so a broadcast is fine.
+        let _ = app.emit("camera-flush", ());
+    }
+
     let (project_path, warnings) =
         tauri::async_runtime::spawn_blocking(move || -> AppResult<(PathBuf, Vec<String>)> {
+            // Wait for the preview WebView to finish its flush — `finish_camera_flush`
+            // releases this as soon as the track is written (or the preview reports
+            // it couldn't), so this normally returns fast. The cap only bites if the
+            // preview vanished mid-flush; on timeout we finalize without the camera
+            // rather than hang the stop.
+            if flush_camera && !manager.wait_for_camera(Duration::from_secs(30)) {
+                log::warn!("camera flush timed out; finalizing without the camera track");
+            }
             // `{:#}` formats the full anyhow chain (top message + every `.context()`
             // below it), so the JS-side alert sees the real cause instead of just
             // the outermost label. Without this, errors like "encoder thread
@@ -281,6 +301,58 @@ pub fn update_camera_preview_state(
     Ok(app_state
         .recording_manager
         .update_camera_preview_state(state)?)
+}
+
+/// Persist the camera track recorded in the preview WebView (getUserMedia →
+/// MediaRecorder) as the active session's camera file. The MediaRecorder blob
+/// rides the invoke request body as raw bytes (an `ArrayBuffer`), with a JSON
+/// number-array accepted as a fallback in case an invoke path serialises it that
+/// way; container is sniffed in `write_camera_track`. `finish_camera_flush`
+/// (called by the preview afterward, always) is what releases stop_recording's
+/// wait — so a failure here can't hang the stop.
+#[tauri::command]
+pub async fn save_recorded_camera(
+    request: tauri::ipc::Request<'_>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    let bytes: Vec<u8> = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|v| v.as_u64().map(|n| n as u8))
+            .collect::<Option<Vec<u8>>>()
+            .ok_or_else(|| AppError::msg("camera JSON payload was not a byte array"))?,
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err(AppError::msg("camera payload must be raw bytes"));
+        }
+    };
+    log::info!("save_recorded_camera: received {} bytes", bytes.len());
+    let dest = state
+        .recording_manager
+        .active_camera_path()
+        .ok_or_else(|| AppError::msg("no active recording to attach a camera track to"))?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::recording::write_camera_track(&dest, &bytes)
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("save_recorded_camera worker panicked: {e}")))??;
+    log::info!("save_recorded_camera: wrote camera track");
+    Ok(())
+}
+
+/// Signal that the preview WebView finished its flush attempt — always called
+/// after `save_recorded_camera` (or instead of it, when there was nothing to
+/// deliver). Releasing `stop_recording`'s wait here (rather than inside the save)
+/// means a failed/absent delivery never hangs the stop; `stop_recording` then
+/// resolves the camera by file presence. `error` is logged so the real reason a
+/// track went missing reaches the terminal instead of the hidden WebView console.
+#[tauri::command]
+pub fn finish_camera_flush(error: Option<String>, state: State<'_, AppState>) -> AppResult<()> {
+    if let Some(e) = error {
+        log::warn!("camera flush reported no track: {e}");
+    }
+    state.recording_manager.mark_camera_ready();
+    Ok(())
 }
 
 // `list_recasts`/`list_exports` are async + spawn_blocking: the scan does a

@@ -8,7 +8,11 @@ import {
 	organization as organizationTable,
 	user as userTable,
 } from "$lib/db/schema";
-import { getQuotaSnapshot, storagePctUsed } from "$lib/storage/quota";
+import {
+	deliveryState,
+	getQuotaSnapshot,
+	storagePctUsed,
+} from "$lib/storage/quota";
 import type { LayoutServerLoad } from "./$types";
 
 type SessionUser = {
@@ -132,6 +136,7 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 	// so the JSON payload survives `JSON.stringify` (which drops it).
 	const snap = await getQuotaSnapshot(activeMembership.organizationId);
 	const finite = (n: number): number | null => (Number.isFinite(n) ? n : null);
+	const delivery = snap ? deliveryState(snap) : null;
 	const quota = snap
 		? {
 				plan: snap.plan,
@@ -140,6 +145,8 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 					activeRecastsCount: snap.usage.activeRecastsCount,
 					archivedRecastsCount: snap.usage.archivedRecastsCount,
 					membersCount: snap.usage.membersCount,
+					// From deliveryState, so a rolled-over month reads as 0 here too.
+					deliveryBytesThisMonth: delivery!.usedBytes,
 				},
 				limits: {
 					storageBytes: finite(snap.limits.storageBytes),
@@ -147,8 +154,16 @@ export const load: LayoutServerLoad = async ({ request, url }) => {
 					members: finite(snap.limits.members),
 					maxDurationSec: finite(snap.limits.maxDurationSec),
 					playbackMaxHeight: snap.limits.playbackMaxHeight,
+					deliveryBytesPerMonth: finite(snap.limits.deliveryBytesPerMonth),
 				},
 				storagePctUsed: storagePctUsed(snap),
+				delivery: {
+					usedBytes: delivery!.usedBytes,
+					capBytes: finite(delivery!.capBytes),
+					ratio: delivery!.ratio,
+					exceeded: delivery!.exceeded,
+					warn: delivery!.warn,
+				},
 			}
 		: null;
 

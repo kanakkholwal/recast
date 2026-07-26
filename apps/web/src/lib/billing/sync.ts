@@ -1,23 +1,21 @@
 import { eq } from "drizzle-orm";
 import { getDb } from "$lib/db";
-import { subscription } from "$lib/db/schema";
-import type { PlanId } from "./plans";
+import { organization, subscription } from "$lib/db/schema";
+import { planOf, type PlanId } from "./catalog";
 
 /**
- * Webhook → DB sync. Polar is the source of truth for subscription state;
- * this mirror table is just for fast reads ("is user X on Pro?") so we
- * don't hit the Polar API on every request.
- *
- * Callers come from the `webhooks` sub-plugin in `@polar-sh/better-auth`
- * (see src/lib/auth/server.ts). Each handler receives the parsed Polar
- * event payload; map the fields you care about and forward here.
+ * Polar webhook → DB sync. `subscription` is the billing record; the
+ * entitlement every gate actually reads is `organization.plan`, mirrored here
+ * in the same transaction so a paid checkout grants access immediately.
  */
 
 export type SubscriptionSync = {
+	organizationId: string;
 	userId: string;
 	polarCustomerId: string;
 	polarSubscriptionId: string;
 	plan: PlanId;
+	seats: number;
 	status:
 		| "active"
 		| "canceled"
@@ -29,59 +27,99 @@ export type SubscriptionSync = {
 	cancelAtPeriodEnd: boolean;
 };
 
-/** Upsert by user_id — one active subscription per user. */
+/** Statuses that still grant paid entitlements. */
+function grantsAccess(status: SubscriptionSync["status"]): boolean {
+	return status === "active" || status === "trialing";
+}
+
+/** Upsert by organization — one subscription per workspace. */
 export async function upsertSubscription(input: SubscriptionSync): Promise<void> {
 	const db = getDb();
-	await db
-		.insert(subscription)
-		.values({
-			id: input.polarSubscriptionId,
-			userId: input.userId,
-			polarCustomerId: input.polarCustomerId,
-			polarSubscriptionId: input.polarSubscriptionId,
-			plan: input.plan,
-			status: input.status,
-			currentPeriodEnd: input.currentPeriodEnd,
-			cancelAtPeriodEnd: input.cancelAtPeriodEnd,
-		})
-		.onConflictDoUpdate({
-			target: subscription.userId,
-			set: {
+	const entitledPlan = grantsAccess(input.status) ? input.plan : "free";
+
+	await db.transaction(async (tx) => {
+		await tx
+			.insert(subscription)
+			.values({
+				id: input.polarSubscriptionId,
+				organizationId: input.organizationId,
+				userId: input.userId,
 				polarCustomerId: input.polarCustomerId,
 				polarSubscriptionId: input.polarSubscriptionId,
 				plan: input.plan,
+				seats: input.seats,
 				status: input.status,
 				currentPeriodEnd: input.currentPeriodEnd,
 				cancelAtPeriodEnd: input.cancelAtPeriodEnd,
-				updatedAt: new Date(),
-			},
-		});
+			})
+			.onConflictDoUpdate({
+				target: subscription.organizationId,
+				set: {
+					userId: input.userId,
+					polarCustomerId: input.polarCustomerId,
+					polarSubscriptionId: input.polarSubscriptionId,
+					plan: input.plan,
+					seats: input.seats,
+					status: input.status,
+					currentPeriodEnd: input.currentPeriodEnd,
+					cancelAtPeriodEnd: input.cancelAtPeriodEnd,
+					updatedAt: new Date(),
+				},
+			});
+
+		await tx
+			.update(organization)
+			.set({ plan: entitledPlan })
+			.where(eq(organization.id, input.organizationId));
+	});
 }
 
-/** Mark a user back down to free when their subscription ends. */
-export async function downgradeToFree(userId: string): Promise<void> {
+/** Revoke paid entitlements for a workspace when its subscription ends. */
+export async function downgradeToFree(organizationId: string): Promise<void> {
 	const db = getDb();
-	await db
-		.update(subscription)
-		.set({
-			plan: "free",
-			status: "canceled",
-			cancelAtPeriodEnd: false,
-			updatedAt: new Date(),
-		})
-		.where(eq(subscription.userId, userId));
+	await db.transaction(async (tx) => {
+		await tx
+			.update(subscription)
+			.set({
+				plan: "free",
+				status: "canceled",
+				cancelAtPeriodEnd: false,
+				updatedAt: new Date(),
+			})
+			.where(eq(subscription.organizationId, organizationId));
+
+		await tx
+			.update(organization)
+			.set({ plan: "free" })
+			.where(eq(organization.id, organizationId));
+	});
 }
 
-/** Cheap access check used by API handlers gating Pro features. */
-export async function getActivePlan(userId: string): Promise<PlanId> {
+/**
+ * Authoritative workspace for an existing Polar subscription. Survives intent
+ * cleanup, so renewals and cancellations resolve without guessing.
+ */
+export async function findWorkspaceByPolarSubscription(
+	polarSubscriptionId: string,
+): Promise<string | null> {
+	const rows = await getDb()
+		.select({ organizationId: subscription.organizationId })
+		.from(subscription)
+		.where(eq(subscription.polarSubscriptionId, polarSubscriptionId))
+		.limit(1);
+	return rows[0]?.organizationId ?? null;
+}
+
+/**
+ * Entitlement lookup for a workspace. Reads `organization.plan` so
+ * admin-granted plans (Enterprise, comped) resolve without a Polar record.
+ */
+export async function getActivePlan(organizationId: string): Promise<PlanId> {
 	const db = getDb();
 	const rows = await db
-		.select({ plan: subscription.plan, status: subscription.status })
-		.from(subscription)
-		.where(eq(subscription.userId, userId))
+		.select({ plan: organization.plan })
+		.from(organization)
+		.where(eq(organization.id, organizationId))
 		.limit(1);
-	const row = rows[0];
-	if (!row) return "free";
-	if (row.status !== "active" && row.status !== "trialing") return "free";
-	return row.plan;
+	return planOf(rows[0]?.plan).id;
 }

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 mod audio;
 mod cache;
-mod camera;
 mod capture;
 pub mod cli;
 mod commands;
@@ -551,6 +550,8 @@ pub fn run() {
             commands::get_camera_devices,
             commands::validate_camera_source,
             commands::update_camera_preview_state,
+            commands::save_recorded_camera,
+            commands::finish_camera_flush,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
             commands::autosave_project,

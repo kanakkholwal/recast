@@ -9,7 +9,10 @@ import {
 	organization as organizationTable,
 	user as userTable,
 } from "$lib/db/schema";
+import { PLANS } from "$lib/billing/catalog";
 import type { Actions, PageServerLoad } from "./$types";
+
+const GB = 1024 ** 3;
 
 /** Confirm the org id from the URL is still a real row before any mutation
  *  + audit-log writes. A stale tab submitting against a deleted team must not
@@ -55,6 +58,21 @@ export const load: PageServerLoad = async (event) => {
 		team,
 		members,
 		caps: { members: TEAM_PLAN_MEMBER_CAPS },
+		// Shown as placeholders so an admin sees what a blank field falls back to.
+		planDefaults: {
+			seats: PLANS[team.plan as keyof typeof PLANS]?.seats.max ?? PLANS.free.seats.max,
+			activeRecasts:
+				PLANS[team.plan as keyof typeof PLANS]?.limits.activeRecasts ??
+				PLANS.free.limits.activeRecasts,
+			storageGb: Math.round(
+				(PLANS[team.plan as keyof typeof PLANS]?.limits.storageBytes ??
+					PLANS.free.limits.storageBytes) / GB,
+			),
+			deliveryGb: Math.round(
+				(PLANS[team.plan as keyof typeof PLANS]?.limits.deliveryBytesPerMonth ??
+					PLANS.free.limits.deliveryBytesPerMonth) / GB,
+			),
+		},
 	};
 };
 
@@ -77,6 +95,62 @@ export const actions: Actions = {
 			action: "team.update_plan",
 			targetUserId: null,
 			metadata: { teamId: id, plan },
+		});
+		return { ok: true };
+	},
+
+	/** Negotiated Enterprise caps. Blank clears an override back to the plan. */
+	updateLimits: async (event) => {
+		const admin = await requireAdmin(event);
+		const fd = await event.request.formData();
+		const id = event.params.id;
+		if (!(await ensureTeamExists(id))) error(404, "Team not found");
+
+		const parse = (
+			key: string,
+			multiplier = 1,
+		): number | null | undefined => {
+			const raw = String(fd.get(key) ?? "").trim();
+			if (raw === "") return null;
+			const n = Number(raw);
+			if (!Number.isFinite(n) || n <= 0) return undefined;
+			return Math.round(n * multiplier);
+		};
+
+		const seatLimit = parse("seatLimit");
+		const activeRecastsLimit = parse("activeRecastsLimit");
+		const storageLimitBytes = parse("storageLimitGb", GB);
+		const deliveryLimitBytes = parse("deliveryLimitGb", GB);
+
+		if (
+			seatLimit === undefined ||
+			activeRecastsLimit === undefined ||
+			storageLimitBytes === undefined ||
+			deliveryLimitBytes === undefined
+		) {
+			return fail(400, { error: "Limits must be positive numbers, or blank" });
+		}
+
+		await getDb()
+			.update(organizationTable)
+			.set({
+				seatLimit,
+				activeRecastsLimit,
+				storageLimitBytes,
+				deliveryLimitBytes,
+			})
+			.where(eq(organizationTable.id, id));
+		await logAudit({
+			actorId: admin.user.id,
+			action: "team.update_limits",
+			targetUserId: null,
+			metadata: {
+				teamId: id,
+				seatLimit,
+				activeRecastsLimit,
+				storageLimitBytes,
+				deliveryLimitBytes,
+			},
 		});
 		return { ok: true };
 	},

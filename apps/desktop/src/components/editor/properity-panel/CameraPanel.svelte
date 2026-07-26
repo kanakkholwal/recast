@@ -27,10 +27,18 @@
 
   const hasCamera = $derived(!!cameraPath);
 
+  // Video pixel aspect. The bubble is square in pixels, so its UV height is
+  // `width * aspect`; the presets need it to anchor vertically on a wide frame.
+  const videoAspect = $derived(
+    store.metadata && store.metadata.height
+      ? store.metadata.width / store.metadata.height
+      : 1,
+  );
+
   // Derived from the placement so a preview drag onto a corner re-highlights
   // the matching chip without a re-click.
   const activePreset = $derived(
-    cameraPresetFromPlacement(store.cameraOverlay.defaultPlacement),
+    cameraPresetFromPlacement(store.cameraOverlay.defaultPlacement, videoAspect),
   );
 
   function applyPreset(preset: CameraPositionPreset) {
@@ -39,6 +47,8 @@
     const next = cameraPlacementFromPreset(
       preset,
       store.cameraOverlay.defaultPlacement.width,
+      undefined,
+      videoAspect,
     );
     store.updateCameraOverlay({ defaultPlacement: next });
   }
@@ -49,11 +59,15 @@
     const current = store.cameraOverlay.defaultPlacement;
     if (activePreset === "custom") {
       store.updateCameraOverlay({
-        defaultPlacement: { ...current, width: size, height: size },
+        defaultPlacement: {
+          ...current,
+          width: size,
+          height: Math.min(1, size * videoAspect),
+        },
       });
       return;
     }
-    const next = cameraPlacementFromPreset(activePreset, size);
+    const next = cameraPlacementFromPreset(activePreset, size, undefined, videoAspect);
     store.updateCameraOverlay({ defaultPlacement: next });
   }
 

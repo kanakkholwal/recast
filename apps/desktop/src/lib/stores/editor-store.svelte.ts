@@ -408,42 +408,51 @@ export const CAMERA_DEFAULT_SIZE = 0.16;
 export const CAMERA_PRESET_INSET = 0.02;
 
 /**
- * Resolve a preset name to a normalized {x, y, width, height}. The bubble
- * is square by default (Phase 1 ships rounded 1:1 only); width == height.
- * x/y are the top-left corner of the bubble in 0..1 UV.
+ * Resolve a preset name to a normalized {x, y, width, height}. `width` is a
+ * fraction of the video WIDTH; the bubble is square in *pixels* (matching the
+ * export), so its UV height is `width * aspect` where `aspect = videoW/videoH`.
+ * The vertical anchors (top/center/bottom) therefore use that UV height, not
+ * `width`, or a preset on a wide 16:9 screen lands off the bottom. x/y are the
+ * bubble's top-left in 0..1 UV.
  *
- * `custom` returns the current bottom-right placement as a sane fallback;
- * the panel never actually invokes this with `custom`; that branch exists
- * so callers don't have to special-case the union.
+ * `custom` returns the bottom-right placement as a sane fallback; the panel
+ * never invokes this with `custom` — that branch just satisfies the union.
  */
 export function cameraPlacementFromPreset(
 	preset: CameraPositionPreset,
 	size: number = CAMERA_DEFAULT_SIZE,
 	inset: number = CAMERA_PRESET_INSET,
+	aspect: number = 1,
 ): CameraPlacement {
-	const near = inset;
-	const far = 1 - size - inset;
-	const center = (1 - size) / 2;
-	const xByCol: Record<string, number> = { left: near, center, right: far };
-	const yByRow: Record<string, number> = { top: near, center, bottom: far };
+	const height = Math.min(1, size * aspect);
+	const farX = 1 - size - inset;
+	const centerX = (1 - size) / 2;
+	const farY = Math.max(0, 1 - height - inset);
+	const centerY = Math.max(0, (1 - height) / 2);
+	const xByCol: Record<string, number> = { left: inset, center: centerX, right: farX };
+	const yByRow: Record<string, number> = { top: inset, center: centerY, bottom: farY };
 	if (preset === 'custom') {
-		return { x: far, y: far, width: size, height: size };
+		return { x: farX, y: farY, width: size, height };
 	}
 	const [row, col] = preset.split('-') as [string, string];
 	return {
-		x: xByCol[col] ?? far,
-		y: yByRow[row] ?? far,
+		x: xByCol[col] ?? farX,
+		y: yByRow[row] ?? farY,
 		width: size,
-		height: size,
+		height,
 	};
 }
 
 /**
  * Inverse of `cameraPlacementFromPreset`: find which preset (if any) the
- * given placement matches within a 0.5% tolerance. Returns `custom` for
- * free-drag positions. Used by the panel to highlight the active chip.
+ * given placement matches within a 0.5% tolerance. `aspect` must match the one
+ * used to build the placement (video width/height) so the vertical anchors line
+ * up. Returns `custom` for free-drag positions. Highlights the active chip.
  */
-export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPreset {
+export function cameraPresetFromPlacement(
+	p: CameraPlacement,
+	aspect: number = 1,
+): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
 		'top-left',
 		'top-center',
@@ -456,7 +465,7 @@ export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPre
 	];
 	const tolerance = 0.005;
 	for (const preset of presets) {
-		const ref = cameraPlacementFromPreset(preset, p.width);
+		const ref = cameraPlacementFromPreset(preset, p.width, CAMERA_PRESET_INSET, aspect);
 		if (Math.abs(p.x - ref.x) < tolerance && Math.abs(p.y - ref.y) < tolerance) {
 			return preset;
 		}
@@ -1953,6 +1962,8 @@ export function createEditorStore() {
 			animationPreset: 'soft',
 			defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 			motionSegments: [],
+			zoomFollow: true,
+			zoomFollowStrength: 0.6,
 		};
 		exportQuality = 'source';
 		exportSpeed = 'balanced';

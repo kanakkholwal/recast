@@ -15,6 +15,11 @@ export interface UsageView {
 	linksLimit: number | null;
 	linksPct: number;
 	linksTone: UsageTone;
+	deliveryBytes: number;
+	deliveryLimit: number | null;
+	deliveryPct: number;
+	deliveryTone: UsageTone;
+	deliveryStatus: string;
 	planLabel: string;
 	storageStatus: string;
 	linksStatus: string;
@@ -55,6 +60,18 @@ export function usageView(quota: QuotaSnapshot | null): UsageView {
 				? "Limit reached"
 				: `${linksLimit - activeRecasts} remaining`;
 
+	// Optional-chained through `delivery` itself: a quota cached in localStorage
+	// before this field existed would otherwise throw on hydrate.
+	const deliveryBytes = quota?.delivery?.usedBytes ?? 0;
+	const deliveryLimit = quota?.delivery?.capBytes ?? null;
+	const deliveryPct = Math.min(100, Math.round((quota?.delivery?.ratio ?? 0) * 100));
+	const deliveryStatus =
+		deliveryLimit == null
+			? "—"
+			: quota?.delivery?.exceeded
+				? "Cap reached. Shares paused until the 1st"
+				: `${100 - deliveryPct}% left this month`;
+
 	return {
 		usedBytes,
 		storageLimit,
@@ -64,6 +81,11 @@ export function usageView(quota: QuotaSnapshot | null): UsageView {
 		linksLimit,
 		linksPct,
 		linksTone: usageTone(linksPct, linksLimit != null),
+		deliveryBytes,
+		deliveryLimit,
+		deliveryPct,
+		deliveryTone: usageTone(deliveryPct, deliveryLimit != null),
+		deliveryStatus,
 		planLabel: planLabelOf(quota?.plan),
 		storageStatus,
 		linksStatus,

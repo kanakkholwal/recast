@@ -18,6 +18,8 @@
     openCameraStream,
   } from "$lib/camera/browser-devices";
   import {
+    finishCameraFlush,
+    saveRecordedCamera,
     setWindowAspectRatio,
     updateCameraPreviewState,
     validateCameraSource,
@@ -33,6 +35,7 @@
     fitInsideMax,
     MAX_SCREEN_FRACTION,
     MIN_LOGICAL_SIZE,
+    pickCameraMimeType,
     targetWindowSize,
     WINDOW_RADIUS,
     type AspectKey,
@@ -56,6 +59,13 @@
   let liveProbeTimer: number | null = $state(null);
   let videoFrameSeen = $state(false);
   let isSnapping = false;
+
+  // Camera track recorder: the SAME stream feeds the <video> preview and this
+  // recorder, so the device is opened once. Recording it separately here (rather
+  // than a second FFmpeg device-open in Rust) is what stops the "camera in use"
+  // failure. Bytes are handed to Rust on flush, before stop_recording runs.
+  let mediaRecorder: MediaRecorder | null = null;
+  let recordedChunks: Blob[] = [];
 
   const params = new URLSearchParams(window.location.search);
   // Accepts both legacy DirectShow names and browser MediaDevices ids.
@@ -92,10 +102,23 @@
     const unlistenStarted = listen<{ startedAtUnixMs: number }>(
       "camera-recording-started",
       () => {
+        startRecorder();
         void reportPreviewState();
       },
     );
     const unlistenStopped = listen("camera-recording-stopped", () => {});
+    // MediaRecorder pause/resume tracks the recording's own pause so the camera
+    // track drops paused spans and stays aligned with the screen timeline.
+    const unlistenPaused = listen("camera-recording-paused", () => {
+      if (mediaRecorder?.state === "recording") mediaRecorder.pause();
+    });
+    const unlistenResumed = listen("camera-recording-resumed", () => {
+      if (mediaRecorder?.state === "paused") mediaRecorder.resume();
+    });
+    // Stop requested (driven by Rust stop_recording): finalize the recorder and
+    // hand the bytes to Rust, which is waiting on the delivery before it writes
+    // the project.
+    const unlistenFlush = listen("camera-flush", () => flushRecorder());
 
     // Push preview state only on actual window changes, not on a poll
     // (the old 350ms poll hit a Rust mutex thrice a second even when idle).
@@ -113,6 +136,9 @@
       unlistenStop.then((fn) => fn());
       unlistenStarted.then((fn) => fn());
       unlistenStopped.then((fn) => fn());
+      unlistenPaused.then((fn) => fn());
+      unlistenResumed.then((fn) => fn());
+      unlistenFlush.then((fn) => fn());
       unlistenResize.then((fn) => fn());
       unlistenMove.then((fn) => fn());
     };
@@ -192,7 +218,77 @@
     }, 2200);
   }
 
+  function makeRecorder(mimeType: string): MediaRecorder | null {
+    try {
+      return new MediaRecorder(stream!, mimeType ? { mimeType } : undefined);
+    } catch {
+      return null;
+    }
+  }
+
+  function startRecorder() {
+    if (!stream || mediaRecorder) return;
+    // isTypeSupported can lie (true, but the constructor still throws for some
+    // MP4/H.264 strings on Chromium), so fall back to the browser default —
+    // which always constructs (WebM) and Rust transcodes.
+    const rec = makeRecorder(pickCameraMimeType()) ?? makeRecorder("");
+    if (!rec) {
+      console.error("[camera-preview] MediaRecorder unavailable for this stream");
+      return;
+    }
+    recordedChunks = [];
+    rec.ondataavailable = (e) => {
+      if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+    // 1s timeslice so data flushes incrementally instead of buffering the whole
+    // take in one chunk (bounds memory on a long recording).
+    rec.start(1000);
+    mediaRecorder = rec;
+  }
+
+  // Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls
+  // finishCameraFlush at the end (success, failure, or nothing recorded) so
+  // stop_recording's wait is released promptly and the reason a track went
+  // missing reaches the backend log instead of the hidden WebView console.
+  async function flushRecorder() {
+    const rec = mediaRecorder;
+    mediaRecorder = null;
+    if (!rec || rec.state === "inactive") {
+      await finishCameraFlush("camera recorder was not running").catch(() => {});
+      return;
+    }
+    await new Promise<void>((resolve) => {
+      rec.onstop = async () => {
+        let error: string | null = null;
+        try {
+          const blob = new Blob(recordedChunks, { type: rec.mimeType });
+          recordedChunks = [];
+          if (blob.size > 0) {
+            await saveRecordedCamera(await blob.arrayBuffer());
+          } else {
+            error = "camera recorder produced no data";
+          }
+        } catch (e) {
+          error = e instanceof Error ? e.message : String(e);
+          console.error("[camera-preview] camera save failed:", e);
+        }
+        await finishCameraFlush(error).catch(() => {});
+        resolve();
+      };
+      rec.stop();
+    });
+  }
+
   function stopCamera() {
+    // Best-effort recorder teardown; a graceful flush goes through `flushRecorder`.
+    if (mediaRecorder && mediaRecorder.state !== "inactive") {
+      try {
+        mediaRecorder.stop();
+      } catch {
+        // Already stopping/stopped.
+      }
+    }
+    mediaRecorder = null;
     if (stream) {
       stream.getTracks().forEach((t) => t.stop());
       stream = null;

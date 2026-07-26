@@ -19,6 +19,7 @@
 
 	let savingPlan = $state(false);
 	let savingName = $state(false);
+	let savingLimits = $state(false);
 
 	const memberCap = $derived(data.caps.members[data.team.plan] ?? 3);
 </script>
@@ -70,9 +71,11 @@
 				<Select.Root type="single" bind:value={plan} name="plan">
 					<Select.Trigger class="h-9 w-full">{plan}</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="free">free — 3 seats</Select.Item>
-						<Select.Item value="pro">pro — 50 seats</Select.Item>
-						<Select.Item value="enterprise">enterprise — no cap</Select.Item>
+						<Select.Item value="free">free — {data.caps.members.free} seats</Select.Item>
+						<Select.Item value="pro">pro — {data.caps.members.pro} seats</Select.Item>
+						<Select.Item value="enterprise">
+							enterprise — {data.caps.members.enterprise} seats, then negotiated
+						</Select.Item>
 					</Select.Content>
 				</Select.Root>
 			</Label>
@@ -81,6 +84,86 @@
 					<LoaderCircle class="size-3.5 animate-spin" />
 				{/if}
 				{savingPlan ? "Saving…" : "Save plan"}
+			</Button>
+		</form>
+	</section>
+
+	<section class="glass-card rounded-xl p-5">
+		<h2 class="mb-3 text-sm font-semibold tracking-tight">Contract limits</h2>
+		<p class="mb-4 text-xs text-muted-foreground">
+			Caps agreed with this customer. Leave a field blank to fall back to the
+			plan's own number, shown as the placeholder.
+		</p>
+		<form
+			method="POST"
+			action="?/updateLimits"
+			use:enhance={enhanceAction({
+				setBusy: (b) => (savingLimits = b),
+				onSuccess: "Limits updated.",
+			})}
+			class="space-y-3"
+		>
+			<div class="grid gap-3 sm:grid-cols-2">
+				<Label class="block">
+					<span class="mb-1 block text-xs font-semibold text-foreground/85">Seats</span>
+					<Input
+						name="seatLimit"
+						type="number"
+						min="1"
+						value={data.team.seatLimit ?? ""}
+						placeholder={String(data.planDefaults.seats)}
+						class="h-9"
+					/>
+				</Label>
+				<Label class="block">
+					<span class="mb-1 block text-xs font-semibold text-foreground/85">
+						Active links
+					</span>
+					<Input
+						name="activeRecastsLimit"
+						type="number"
+						min="1"
+						value={data.team.activeRecastsLimit ?? ""}
+						placeholder={String(data.planDefaults.activeRecasts)}
+						class="h-9"
+					/>
+				</Label>
+				<Label class="block">
+					<span class="mb-1 block text-xs font-semibold text-foreground/85">
+						Storage (GB)
+					</span>
+					<Input
+						name="storageLimitGb"
+						type="number"
+						min="1"
+						value={data.team.storageLimitBytes
+							? Math.round(data.team.storageLimitBytes / 1024 ** 3)
+							: ""}
+						placeholder={String(data.planDefaults.storageGb)}
+						class="h-9"
+					/>
+				</Label>
+				<Label class="block">
+					<span class="mb-1 block text-xs font-semibold text-foreground/85">
+						Delivery (GB/mo)
+					</span>
+					<Input
+						name="deliveryLimitGb"
+						type="number"
+						min="1"
+						value={data.team.deliveryLimitBytes
+							? Math.round(data.team.deliveryLimitBytes / 1024 ** 3)
+							: ""}
+						placeholder={String(data.planDefaults.deliveryGb)}
+						class="h-9"
+					/>
+				</Label>
+			</div>
+			<Button type="submit" size="sm" disabled={savingLimits} class="gap-2">
+				{#if savingLimits}
+					<LoaderCircle class="size-3.5 animate-spin" />
+				{/if}
+				{savingLimits ? "Saving…" : "Save limits"}
 			</Button>
 		</form>
 	</section>

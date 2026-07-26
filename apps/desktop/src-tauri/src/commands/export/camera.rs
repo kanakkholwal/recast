@@ -33,24 +33,29 @@ pub(crate) fn camera_bubble_rect(
 
 /// Effective camera placement under the zoom-follow effect — the exact mirror of
 /// `applyZoomFollow` in `camera-overlay.logic.ts` (grow + drift away from the
-/// zoom focus, square-preserving, clamped on-screen), so preview and export
-/// agree. Identity at rest (`scale≈1`) or zero strength.
+/// zoom focus, clamped on-screen), so preview and export agree. The bubble is
+/// square in *pixels*, so its UV height is `width * aspect` (aspect =
+/// videoW/videoH) — derived here, NOT read from `base.height`, so the drift
+/// centre and clamps are right on a non-square frame. Identity at rest
+/// (`scale≈1`) or zero strength.
 pub(crate) fn camera_follow_placement(
     base: &CameraPlacement,
     scale: f64,
     cx: f64,
     cy: f64,
     strength: f64,
+    aspect: f64,
 ) -> CameraPlacement {
     let k = strength.clamp(0.0, 1.0);
     if k <= 0.0 || scale <= 1.0001 {
         return base.clone();
     }
+    let base_h = (base.width * aspect).min(1.0);
     let amount = (scale - 1.0) * k;
     let width = (base.width * (1.0 + amount)).min(1.0);
-    let height = (base.height * (1.0 + amount)).min(1.0);
+    let height = (width * aspect).min(1.0);
     let bcx = base.x + base.width / 2.0;
-    let bcy = base.y + base.height / 2.0;
+    let bcy = base.y + base_h / 2.0;
     let mut dx = bcx - cx;
     let mut dy = bcy - cy;
     let len = (dx * dx + dy * dy).sqrt();
@@ -84,6 +89,12 @@ pub(crate) fn build_camera_follow_exprs(
 ) -> Option<(String, String, String)> {
     // Default (outside every zoom region) = the base bubble rect in pixels.
     let (bx0, by0, bw0, _) = camera_bubble_rect(base, geom);
+    // The bubble is square in pixels, so its UV height is width * aspect.
+    let aspect = if geom.video_h > 0 {
+        geom.video_w as f64 / geom.video_h as f64
+    } else {
+        1.0
+    };
     let mut w_s: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut x_s: Vec<Vec<(f64, f64)>> = Vec::new();
     let mut y_s: Vec<Vec<(f64, f64)>> = Vec::new();
@@ -109,7 +120,7 @@ pub(crate) fn build_camera_follow_exprs(
             let timeline_t = effective_start + step * i as f64;
             let output_t = timeline_t - trim_start;
             let scale = region.scale_at(timeline_t).max(1.0);
-            let eff = camera_follow_placement(base, scale, cx, cy, strength);
+            let eff = camera_follow_placement(base, scale, cx, cy, strength, aspect);
             let (ex, ey, ew, _) = camera_bubble_rect(&eff, geom);
             wv.push((output_t, ew as f64));
             xv.push((output_t, ex as f64));
@@ -186,22 +197,42 @@ mod tests {
     #[test]
     fn follow_is_identity_at_rest_or_zero_strength() {
         let base = placement(0.72, 0.08, 0.22);
-        assert_eq!(camera_follow_placement(&base, 1.0, 0.5, 0.5, 0.6), base);
-        assert_eq!(camera_follow_placement(&base, 1.8, 0.5, 0.5, 0.0), base);
+        assert_eq!(
+            camera_follow_placement(&base, 1.0, 0.5, 0.5, 0.6, 1.0),
+            base
+        );
+        assert_eq!(
+            camera_follow_placement(&base, 1.8, 0.5, 0.5, 0.0, 1.0),
+            base
+        );
     }
 
     #[test]
     fn follow_grows_with_the_zoom() {
-        // grow = 1 + (1.5-1)*1 = 1.5 → 0.22 * 1.5 = 0.33
-        let r = camera_follow_placement(&placement(0.72, 0.08, 0.22), 1.5, 0.2, 0.8, 1.0);
+        // grow = 1 + (1.5-1)*1 = 1.5 → 0.22 * 1.5 = 0.33 (aspect 1 → height == width)
+        let r = camera_follow_placement(&placement(0.72, 0.08, 0.22), 1.5, 0.2, 0.8, 1.0, 1.0);
         assert!((r.width - 0.33).abs() < 1e-9, "width {}", r.width);
         assert!((r.width - r.height).abs() < 1e-9);
     }
 
     #[test]
+    fn follow_height_is_width_times_aspect_on_a_wide_video() {
+        // Mirrors camera-overlay.logic.test.ts: square in pixels, so height =
+        // width * aspect for a 16:9 frame.
+        let aspect = 16.0 / 9.0;
+        let r = camera_follow_placement(&placement(0.4, 0.4, 0.15), 1.5, 0.1, 0.1, 1.0, aspect);
+        assert!((r.width - 0.225).abs() < 1e-9, "width {}", r.width); // 0.15 * 1.5
+        assert!(
+            (r.height - r.width * aspect).abs() < 1e-9,
+            "height {}",
+            r.height
+        );
+    }
+
+    #[test]
     fn follow_drifts_away_from_the_focus() {
         let mid = placement(0.4, 0.4, 0.15);
-        let r = camera_follow_placement(&mid, 1.3, 0.1, 0.1, 1.0);
+        let r = camera_follow_placement(&mid, 1.3, 0.1, 0.1, 1.0, 1.0);
         let before = ((mid.x + mid.width / 2.0) - 0.1).hypot((mid.y + mid.height / 2.0) - 0.1);
         let after = ((r.x + r.width / 2.0) - 0.1).hypot((r.y + r.height / 2.0) - 0.1);
         assert!(after > before, "expected drift away: {after} > {before}");

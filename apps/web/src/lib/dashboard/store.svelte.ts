@@ -276,6 +276,7 @@ export type QuotaSnapshot = {
 		activeRecastsCount: number;
 		archivedRecastsCount: number;
 		membersCount: number;
+		deliveryBytesThisMonth: number;
 	};
 	limits: {
 		storageBytes: number | null;
@@ -283,8 +284,17 @@ export type QuotaSnapshot = {
 		members: number | null;
 		maxDurationSec: number | null;
 		playbackMaxHeight: number;
+		deliveryBytesPerMonth: number | null;
 	};
 	storagePctUsed: number;
+	/** Bytes streamed to viewers this month — the metered infra cost. */
+	delivery: {
+		usedBytes: number;
+		capBytes: number | null;
+		ratio: number;
+		exceeded: boolean;
+		warn: boolean;
+	};
 };
 
 class QuotaStore {

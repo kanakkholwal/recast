@@ -1,4 +1,13 @@
-import { index, pgTable, text, timestamp, unique } from "drizzle-orm/pg-core";
+import {
+	bigint,
+	index,
+	integer,
+	pgTable,
+	text,
+	timestamp,
+	unique,
+} from "drizzle-orm/pg-core";
+import { PLAN_IDS, PLANS } from "$lib/billing/catalog";
 import { user } from "./auth";
 
 /**
@@ -22,6 +31,12 @@ export const organization = pgTable("organization", {
 	metadata: text("metadata"),
 	/** Plan — "free" (default), "pro", "enterprise". Admin-managed. */
 	plan: text("plan").notNull().default("free"),
+	// Negotiated Enterprise caps. NULL falls back to the plan's number; there
+	// is no unlimited tier, so a contract always lands a concrete figure here.
+	seatLimit: integer("seat_limit"),
+	storageLimitBytes: bigint("storage_limit_bytes", { mode: "number" }),
+	deliveryLimitBytes: bigint("delivery_limit_bytes", { mode: "number" }),
+	activeRecastsLimit: integer("active_recasts_limit"),
 	createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -76,12 +91,10 @@ export type Organization = typeof organization.$inferSelect;
 export type Member = typeof member.$inferSelect;
 export type Invitation = typeof invitation.$inferSelect;
 
-/** Plan tier → member cap. Single source of truth read everywhere. */
-export const TEAM_PLAN_MEMBER_CAPS: Record<string, number> = {
-	free: 3,
-	pro: 50,
-	enterprise: Number.POSITIVE_INFINITY,
-};
+/** Plan tier → member cap, derived from the catalog. Edit `$lib/billing/catalog.ts`. */
+export const TEAM_PLAN_MEMBER_CAPS: Record<string, number> = Object.fromEntries(
+	PLAN_IDS.map((id) => [id, PLANS[id].seats.max]),
+);
 
 /** Team-count cap per user, by their highest team plan owned. */
 export const USER_TEAM_OWNERSHIP_CAPS = {

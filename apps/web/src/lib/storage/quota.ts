@@ -1,44 +1,23 @@
 import { eq, sql } from "drizzle-orm";
+import { limitsFor, planOf } from "$lib/billing/catalog";
 import { getDb } from "$lib/db";
 import { organization } from "$lib/db/schema/organization";
-import { QUOTA, workspaceUsage } from "$lib/db/schema/usage";
+import { workspaceUsage } from "$lib/db/schema/usage";
+import {
+	currentDeliveryPeriodStart,
+	type PlanKey,
+	type QuotaSnapshot,
+} from "./quota.logic";
 
-// Drizzle's transaction callback yields a tx-bound instance with the same
-// query surface as the top-level db but a different concrete type
-// (PgTransaction, no `$client`). Strip `$client` so both are assignable —
-// the bumpUsage / decrementUsage functions only call insert/update.
+export * from "./quota.logic";
+
+// Drizzle's transaction callback yields a tx-bound instance with the same query
+// surface but a different concrete type — strip `$client` so both are assignable.
 type DbLike = Omit<ReturnType<typeof getDb>, "$client">;
 
 /**
- * Quota math + workspace_usage maintenance.
- *
- * Source of truth is the recast table sums; workspace_usage is a cached
- * mirror updated transactionally on upload/delete/archive and reconciled
- * by a nightly cron (not in this turn). Both reads and writes here are
- * cheap — single-row primary-key lookups on (workspace_id).
- */
-
-type PlanKey = keyof typeof QUOTA;
-
-function planKey(plan: string | null | undefined): PlanKey {
-	if (plan === "pro" || plan === "enterprise") return plan;
-	return "free";
-}
-
-export type QuotaSnapshot = {
-	plan: PlanKey;
-	usage: {
-		storageBytes: number;
-		activeRecastsCount: number;
-		archivedRecastsCount: number;
-		membersCount: number;
-	};
-	limits: (typeof QUOTA)[PlanKey];
-};
-
-/**
- * Single-trip read of plan + usage. Returns `null` if the workspace
- * doesn't exist — caller decides whether that's a 404 or auto-init.
+ * Single-trip read of plan + usage. Returns `null` if the workspace doesn't
+ * exist — caller decides whether that's a 404 or auto-init.
  */
 export async function getQuotaSnapshot(
 	workspaceId: string,
@@ -46,7 +25,13 @@ export async function getQuotaSnapshot(
 	const db = getDb();
 
 	const [org] = await db
-		.select({ plan: organization.plan })
+		.select({
+			plan: organization.plan,
+			seatLimit: organization.seatLimit,
+			storageLimitBytes: organization.storageLimitBytes,
+			deliveryLimitBytes: organization.deliveryLimitBytes,
+			activeRecastsLimit: organization.activeRecastsLimit,
+		})
 		.from(organization)
 		.where(eq(organization.id, workspaceId))
 		.limit(1);
@@ -58,116 +43,28 @@ export async function getQuotaSnapshot(
 		.where(eq(workspaceUsage.workspaceId, workspaceId))
 		.limit(1);
 
-	const plan = planKey(org.plan);
+	const plan: PlanKey = planOf(org.plan).id;
 
 	return {
 		plan,
-		limits: QUOTA[plan],
+		// Contract overrides win over the plan template; both are concrete.
+		limits: limitsFor(plan, org),
 		usage: {
 			storageBytes: usage?.storageBytes ?? 0,
 			activeRecastsCount: usage?.activeRecastsCount ?? 0,
 			archivedRecastsCount: usage?.archivedRecastsCount ?? 0,
 			membersCount: usage?.membersCount ?? 1,
+			deliveryBytesThisMonth: usage?.deliveryBytesThisMonth ?? 0,
+			deliveryPeriodStart:
+				usage?.deliveryPeriodStart ?? currentDeliveryPeriodStart(),
 		},
 	};
 }
 
 /**
- * Failure reason returned by `checkUploadAllowed`. Single discriminated
- * union so the API endpoint can translate each into the right error code
- * and a user-facing copy line on the dashboard.
- */
-export type UploadDenial =
-	| { reason: "workspace_not_found" }
-	| { reason: "duration_over_cap"; capSec: number }
-	| { reason: "resolution_over_cap"; heightPx: number; capHeight: number }
-	| {
-			reason: "active_recasts_over_cap";
-			current: number;
-			cap: number;
-	  }
-	| {
-			reason: "storage_over_cap";
-			currentBytes: number;
-			requestedBytes: number;
-			capBytes: number;
-	  };
-
-// Encoders round to even (and occasionally +2/+4) dimensions, so allow a
-// small slack above the plan cap before rejecting — 720p content that lands
-// at 722–728 shouldn't be treated as "over 720p".
-const RESOLUTION_SLACK_PX = 8;
-
-/**
- * Pre-upload gate. Caller passes the **declared** file size and duration
- * from the desktop's local file metadata. Bytes are advisory at this
- * stage — `/api/uploads/complete` re-checks the actual R2-reported size
- * before committing the workspace_usage bump, so a client lying about
- * size only buys an empty signed URL.
- */
-export function checkUploadAllowed(
-	snapshot: QuotaSnapshot,
-	req: { sizeBytes: number; durationSec: number; heightPx?: number },
-): { ok: true } | { ok: false; denial: UploadDenial } {
-	const { limits, usage } = snapshot;
-
-	if (req.durationSec > limits.maxDurationSec) {
-		return {
-			ok: false,
-			denial: { reason: "duration_over_cap", capSec: limits.maxDurationSec },
-		};
-	}
-
-	// Resolution gate. Free playback caps at 720p; Pro/Enterprise at 2160p.
-	// Enforced at the source (upload) so we never store frames we'd refuse to
-	// play back. `playbackMaxHeight` is Infinity-free (a concrete px per plan).
-	if (
-		req.heightPx != null &&
-		Number.isFinite(limits.playbackMaxHeight) &&
-		req.heightPx > limits.playbackMaxHeight + RESOLUTION_SLACK_PX
-	) {
-		return {
-			ok: false,
-			denial: {
-				reason: "resolution_over_cap",
-				heightPx: req.heightPx,
-				capHeight: limits.playbackMaxHeight,
-			},
-		};
-	}
-
-	if (usage.activeRecastsCount >= limits.activeRecasts) {
-		return {
-			ok: false,
-			denial: {
-				reason: "active_recasts_over_cap",
-				current: usage.activeRecastsCount,
-				cap: limits.activeRecasts,
-			},
-		};
-	}
-
-	const projected = usage.storageBytes + req.sizeBytes;
-	if (projected > limits.storageBytes) {
-		return {
-			ok: false,
-			denial: {
-				reason: "storage_over_cap",
-				currentBytes: usage.storageBytes,
-				requestedBytes: req.sizeBytes,
-				capBytes: limits.storageBytes,
-			},
-		};
-	}
-
-	return { ok: true };
-}
-
-/**
- * Bump usage counters after a successful upload. Idempotent on retry only
- * if the caller wraps it in the same transaction that flipped recast
- * status; otherwise a double-call will double-count. Endpoints SHOULD do
- * the recast UPDATE + this UPSERT in a single `db.transaction`.
+ * Bump usage counters after a successful upload. Endpoints SHOULD run the
+ * recast UPDATE and this UPSERT in a single `db.transaction`, or a retry
+ * double-counts.
  */
 export async function bumpUsageOnUpload(
 	workspaceId: string,
@@ -213,9 +110,32 @@ export async function decrementUsageOnDelete(
 		.where(eq(workspaceUsage.workspaceId, workspaceId));
 }
 
-/** % of the storage cap currently used. 0–100, clamped. */
-export function storagePctUsed(snapshot: QuotaSnapshot): number {
-	if (!Number.isFinite(snapshot.limits.storageBytes)) return 0;
-	const pct = (snapshot.usage.storageBytes / snapshot.limits.storageBytes) * 100;
-	return Math.min(100, Math.max(0, pct));
+/**
+ * Add bytes served to the current month, rolling the window over atomically so
+ * concurrent views can't both reset it and lose each other's counts.
+ */
+export async function recordDelivery(
+	workspaceId: string,
+	bytes: number,
+	tx?: DbLike,
+	now = new Date(),
+): Promise<void> {
+	if (bytes <= 0) return;
+	const db = tx ?? getDb();
+	const periodStart = currentDeliveryPeriodStart(now);
+	await db
+		.insert(workspaceUsage)
+		.values({
+			workspaceId,
+			deliveryBytesThisMonth: bytes,
+			deliveryPeriodStart: periodStart,
+		})
+		.onConflictDoUpdate({
+			target: workspaceUsage.workspaceId,
+			set: {
+				deliveryBytesThisMonth: sql`CASE WHEN ${workspaceUsage.deliveryPeriodStart} < ${periodStart} THEN ${bytes} ELSE ${workspaceUsage.deliveryBytesThisMonth} + ${bytes} END`,
+				deliveryPeriodStart: sql`GREATEST(${workspaceUsage.deliveryPeriodStart}, ${periodStart})`,
+				updatedAt: new Date(),
+			},
+		});
 }

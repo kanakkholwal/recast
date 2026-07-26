@@ -1,13 +1,17 @@
 import { dev } from "$app/environment";
 import { bearer, deviceAuthorization, haveIBeenPwned } from "better-auth/plugins";
 
-import { polarProductIdFor } from "$lib/billing/plans";
+import { limitsFor, planOf, polarProductIdFor } from "$lib/billing/plans";
 import { tryGetPolarClient } from "$lib/billing/polar";
-import { downgradeToFree, upsertSubscription } from "$lib/billing/sync";
+import {
+	downgradeToFree,
+	findWorkspaceByPolarSubscription,
+	upsertSubscription,
+} from "$lib/billing/sync";
+import { clearCheckoutIntent, resolveCheckoutWorkspace } from "$lib/billing/intent";
 import { getDb } from "$lib/db";
 import * as schema from "$lib/db/schema";
 import {
-	TEAM_PLAN_MEMBER_CAPS,
 	USER_TEAM_OWNERSHIP_CAPS,
 	member as memberTable,
 	organization as organizationTable,
@@ -249,14 +253,10 @@ function buildPlugins() {
 								handleSubscriptionEvent(payload),
 							onSubscriptionUpdated: async (payload) =>
 								handleSubscriptionEvent(payload),
-							onSubscriptionCanceled: async (payload) => {
-								const userId = extractUserId(payload);
-								if (userId) await downgradeToFree(userId);
-							},
-							onSubscriptionRevoked: async (payload) => {
-								const userId = extractUserId(payload);
-								if (userId) await downgradeToFree(userId);
-							},
+							onSubscriptionCanceled: async (payload) =>
+								handleSubscriptionEnded(payload),
+							onSubscriptionRevoked: async (payload) =>
+								handleSubscriptionEnded(payload),
 						}),
 					],
 				}),
@@ -266,8 +266,8 @@ function buildPlugins() {
 	// Organization plugin — owns the `organization`, `member`, `invitation`
 	// tables and `session.activeOrganizationId`. Caps:
 	//
-	//   • Per-team member count: read from `organization.plan` via our
-	//     TEAM_PLAN_MEMBER_CAPS map. Free = 3, Pro = 50, Enterprise = ∞.
+	//   • Per-team member count: the plan's seat ceiling, or the workspace's
+	//     negotiated `seatLimit` when a contract sets one.
 	//   • Per-user team-ownership count: 3 if all owned teams are free;
 	//     10 once any owned team is pro/enterprise.
 	//
@@ -295,13 +295,16 @@ function buildPlugins() {
 			return owned.length < cap;
 		},
 		membershipLimit: async (_u, org) => {
-			const plan = (org as { plan?: string }).plan ?? "free";
-			return TEAM_PLAN_MEMBER_CAPS[plan] ?? TEAM_PLAN_MEMBER_CAPS.free!;
+			const o = org as { plan?: string; seatLimit?: number | null };
+			// A negotiated seat count overrides the plan's ceiling.
+			return limitsFor(planOf(o.plan).id, { seatLimit: o.seatLimit }).members;
 		},
 		schema: {
 			organization: {
 				additionalFields: {
 					plan: { type: "string", defaultValue: "free", required: false },
+					// Needed on the org object `membershipLimit` receives.
+					seatLimit: { type: "number", required: false },
 				},
 			},
 		},
@@ -465,15 +468,48 @@ async function handleSubscriptionEvent(payload: unknown): Promise<void> {
 
 	if (!userId || !polarSubscriptionId) return;
 
+	// Renewals arrive after the intent is consumed, so the existing row wins.
+	const known = await findWorkspaceByPolarSubscription(polarSubscriptionId);
+	const target = known
+		? ({ ok: true, organizationId: known, seats: 3 } as const)
+		: await resolveCheckoutWorkspace(userId);
+	if (!target.ok) {
+		console.error(
+			`[billing] dropped subscription ${polarSubscriptionId}: ${target.reason} for user ${userId}`,
+		);
+		return;
+	}
+
+	const quantity = Number(data.quantity ?? data.seats ?? target.seats);
+
 	await upsertSubscription({
+		organizationId: target.organizationId,
 		userId,
 		polarCustomerId,
 		polarSubscriptionId,
 		plan: "pro",
+		seats: Number.isFinite(quantity) && quantity > 0 ? quantity : target.seats,
 		status,
 		currentPeriodEnd,
 		cancelAtPeriodEnd,
 	});
+	await clearCheckoutIntent(userId);
+}
+
+/** Cancel/revoke resolve from the stored subscription — the intent is long gone. */
+async function handleSubscriptionEnded(payload: unknown): Promise<void> {
+	const data = (payload as { data?: Record<string, unknown> })?.data ?? {};
+	const polarSubscriptionId = String(data.id ?? "");
+	const organizationId = polarSubscriptionId
+		? await findWorkspaceByPolarSubscription(polarSubscriptionId)
+		: null;
+	if (!organizationId) {
+		console.error(
+			`[billing] could not resolve workspace to downgrade for ${polarSubscriptionId}`,
+		);
+		return;
+	}
+	await downgradeToFree(organizationId);
 }
 
 function extractUserId(payload: unknown): string | null {
