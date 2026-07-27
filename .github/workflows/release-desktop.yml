@@ -438,6 +438,8 @@ jobs:
           draft: false
           prerelease: false
 
+  # Homebrew (macOS) and winget (Windows) both depend only on publish-release
+  # and NOT on each other, so once the release is public they run in PARALLEL.
   publish-homebrew-cask:
     name: Publish Homebrew Cask
     # Runs after the release is public so the DMGs are downloadable
@@ -459,29 +461,33 @@ jobs:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: bash scripts/release/update-homebrew-cask.sh
 
-  # publish-winget:
-  #   name: Publish to winget
-  #   # Submits a manifest update to microsoft/winget-pkgs for the NSIS installer.
-  #   # Skips when WINGET_TOKEN is unset, so the workflow stays green before the
-  #   # winget package + fork are bootstrapped. The FIRST version must be
-  #   # submitted manually; the action automates subsequent versions. See
-  #   # scripts/release/WINGET_SETUP.md.
-  #   needs: [create-release, publish-release]
-  #   runs-on: ubuntu-24.04
-  #   env:
-  #     WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
-  #   steps:
-  #     - name: Submit manifest to winget-pkgs
-  #       if: ${{ env.WINGET_TOKEN != '' }}
-  #       uses: vedantmgoyal9/winget-releaser@v2
-  #       with:
-  #         identifier: KanakKholwal.Recast
-  #         installers-regex: '_x64-setup\.exe$'
-  #         release-tag: ${{ needs.create-release.outputs.tag_name }}
-  #         token: ${{ env.WINGET_TOKEN }}
+  publish-winget:
+    name: Publish to winget
+    # Submits a manifest update to microsoft/winget-pkgs for the NSIS installer.
+    # Skips when WINGET_TOKEN is unset, so the workflow stays green before the
+    # winget package + fork are bootstrapped. The FIRST version must be
+    # submitted manually; the action automates subsequent versions. See
+    # scripts/release/WINGET_SETUP.md. Runs in parallel with the Homebrew job
+    # (same `needs`, no cross-dependency).
+    needs: [create-release, publish-release]
+    runs-on: ubuntu-24.04
+    env:
+      WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+    steps:
+      - name: Submit manifest to winget-pkgs
+        if: ${{ env.WINGET_TOKEN != '' }}
+        uses: vedantmgoyal9/winget-releaser@v2
+        with:
+          # PackageIdentifier in microsoft/winget-pkgs = "<publisher>.<productName>"
+          # = tauri.conf.json `publisher` (KanakKholwal) + `productName` (Recast).
+          identifier: KanakKholwal.Recast
+          # Tauri names the NSIS installer "Recast_<version>_x64-setup.exe".
+          installers-regex: '_x64-setup\.exe$'
+          release-tag: ${{ needs.create-release.outputs.tag_name }}
+          token: ${{ env.WINGET_TOKEN }}
 
-  #     - name: Note when unconfigured
-  #       if: ${{ env.WINGET_TOKEN == '' }}
-  #       run: |
-  #         echo "::notice::WINGET_TOKEN not set, skipping winget publish."
-  #         echo "::notice::To enable, see scripts/release/WINGET_SETUP.md"
+      - name: Note when unconfigured
+        if: ${{ env.WINGET_TOKEN == '' }}
+        run: |
+          echo "::notice::WINGET_TOKEN not set, skipping winget publish."
+          echo "::notice::To enable, see scripts/release/WINGET_SETUP.md"
