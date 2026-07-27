@@ -43,10 +43,21 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 ## [Unreleased]
 
 ### Highlights
+- Record your webcam alongside your screen and drop it in as a floating bubble you can move, resize, shape, and style. It grows and drifts out of the way when you zoom in.
+- A rebuilt preview engine: playback, scrubbing, and seeking are smoother, large recordings load faster, and it recovers on its own if a frame fails to decode.
+- Balance your audio: set the system and microphone levels independently, even out overall loudness on export, and add background music.
 - Redesigned the editor's properties panel: sections now live in a compact, grouped vertical rail with a clear active state, and you can drag the panel wider.
 - More precise timeline editing: the playhead tracks the video exactly, timecodes match everywhere, and the Cut tool works across every lane.
 
 ### Added
+- Camera overlay. Your webcam records as its own track and appears as a bubble in the editor. Move and resize it, pick a square, rounded, or circle shape, mirror it, and give it a drop shadow. It renders in the preview and the exported video.
+- Grow the camera on zoom. As a zoom ramps in, the bubble grows and drifts away from the focus so it never covers the zoomed area, with its own transition length and easing.
+- Per-cut camera positioning. Set a different camera position for each cut and the bubble glides between them, with easing you control.
+- Independent audio levels for the system and microphone tracks, each with its own volume, a mute toggle, and smooth fades.
+- Loudness normalization on export, evening out overall volume to a broadcast target (EBU R128).
+- Background music and extra audio clips on the timeline, with volume, looping, and fades.
+- Title presets for dropping in a styled title in one click.
+- A "dip" transition that briefly fades through the background on a scene change.
 - A dedicated audio waveform lane in the timeline, shown alongside the thumbnails so you can cut against the sound.
 - Drag across the Zoom or Cuts lane to create a zoom region or remove a section, the same gesture in both.
 - A resizable properties panel: drag its edge to set the width, and it is remembered between sessions.
