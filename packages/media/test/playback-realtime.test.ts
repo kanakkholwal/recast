@@ -9,11 +9,35 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { resetFrameCache } from '../src/cache';
+import { frameBudget } from '../src/cache/frame-budget';
 import { MediabunnyVideoSource } from '../src/playback/source';
+
+/** Stands in for a transferred decode surface. Also installed as the global
+ *  `VideoFrame`, so the source's `instanceof` check passes. */
+class FakeFrame {
+	closed = false;
+	readonly codedWidth = 1920;
+	readonly codedHeight = 1080;
+	constructor(readonly timestamp: number) {}
+	close() {
+		this.closed = true;
+	}
+}
+
+function makeFrame(sec: number): FakeFrame {
+	return new FakeFrame(Math.round(sec * 1_000_000));
+}
+
+
+/** Outlast the source's seek rate limiter. */
+const settleSeekWindow = () => new Promise((r) => setTimeout(r, 60));
 
 const FPS = 30;
 const FRAME_SEC = 1 / FPS;
-const LOOKAHEAD_SEC = 0.75;
+// Mirror the worker: decode-ahead is a FRAME budget, not a duration. A fixed
+// 0.75s outran the cache, so frames were evicted before the playhead reached
+// them — the picture updated ~6 times in 2s.
+const LOOKAHEAD_SEC = frameBudget(1920, 1080).decodeAhead / FPS;
 
 class StreamingWorker {
 	onmessage: ((e: MessageEvent) => void) | null = null;
@@ -65,7 +89,7 @@ class StreamingWorker {
 					type: 'frame',
 					seq: this.#run.seq,
 					originalSec: sec,
-					canvas: new OffscreenCanvas(1920, 1080),
+					frame: makeFrame(sec),
 					width: 1920,
 					height: 1080,
 				},
@@ -81,24 +105,15 @@ class StreamingWorker {
 	dispatchEvent = vi.fn();
 }
 
-describe('continuous playback (60fps rAF)', () => {
-	let worker: StreamingWorker;
+let worker: StreamingWorker;
 
+describe('continuous playback (60fps rAF)', () => {
 	function setup(decodeMs: number) {
 		worker = new StreamingWorker(decodeMs);
 		vi.stubGlobal('Worker', function () {
 			return worker;
 		} as unknown as typeof Worker);
-		vi.stubGlobal(
-			'VideoFrame',
-			class {
-				timestamp: number;
-				constructor(_c: unknown, init: { timestamp: number }) {
-					this.timestamp = init.timestamp;
-				}
-				close() {}
-			} as unknown as typeof VideoFrame,
-		);
+		vi.stubGlobal('VideoFrame', FakeFrame as unknown as typeof VideoFrame);
 		vi.stubGlobal('OffscreenCanvas', class {} as unknown);
 		resetFrameCache();
 	}
@@ -111,7 +126,9 @@ describe('continuous playback (60fps rAF)', () => {
 	/** Run `frames` rAF ticks at 60fps against a playhead advancing in real time. */
 	async function runPlayback(decodeMs: number, frames = 120) {
 		setup(decodeMs);
-		const src = await MediabunnyVideoSource.create('asset://x.mp4');
+		const src = await MediabunnyVideoSource.create('asset://x.mp4', {
+			createWorker: () => worker as unknown as Worker,
+		});
 		await new Promise<void>((r) => queueMicrotask(() => r()));
 		let painted = 0;
 		const distinct = new Set<number>();
@@ -163,5 +180,66 @@ describe('continuous playback (60fps rAF)', () => {
 		const stats = r.src.stats();
 		expect(stats.avgFps).toBeGreaterThan(0);
 		expect(stats.minFps).toBeGreaterThan(0);
+	});
+});
+
+/**
+ * The request policy is what stopped the abort storm: only a genuine jump may
+ * restart decode, everything else is backpressure.
+ */
+describe('seek vs playhead policy', () => {
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		resetFrameCache();
+	});
+
+	async function build(decodeMs = 5) {
+		worker = new StreamingWorker(decodeMs);
+		vi.stubGlobal('Worker', function () {
+			return worker;
+		} as unknown as typeof Worker);
+		vi.stubGlobal('VideoFrame', FakeFrame as unknown as typeof VideoFrame);
+		vi.stubGlobal('OffscreenCanvas', class {} as unknown);
+		resetFrameCache();
+		const src = await MediabunnyVideoSource.create('asset://x.mp4', {
+			createWorker: () => worker as unknown as Worker,
+		});
+		await new Promise<void>((r) => queueMicrotask(() => r()));
+		return src;
+	}
+
+	it('seeks once on the first request, then rides on playhead updates', async () => {
+		const src = await build();
+		src.frameAt(0);
+		for (let i = 1; i < 20; i++) src.frameAt(i / 60);
+		expect(worker.seeks).toBe(1);
+		expect(worker.playheads).toBe(19);
+	});
+
+	it('seeks again when the playhead jumps backwards (scrub)', async () => {
+		const src = await build();
+		src.frameAt(5);
+		src.frameAt(5.016);
+		expect(worker.seeks).toBe(1);
+		// Seeks are rate limited so a drag can't rebuild a decoder per pointer
+		// move; wait past the window to observe the next one as its own seek.
+		await settleSeekWindow();
+		src.frameAt(1); // scrub back
+		expect(worker.seeks).toBe(2);
+	});
+
+	it('seeks again on a large forward jump the run cannot reach', async () => {
+		const src = await build();
+		src.frameAt(0);
+		await settleSeekWindow();
+		src.frameAt(30);
+		expect(worker.seeks).toBe(2);
+	});
+
+	it('tolerates small backward jitter without reseeking', async () => {
+		const src = await build();
+		src.frameAt(5);
+		src.frameAt(4.99); // inside FRAME_SLACK_SEC
+		expect(worker.seeks).toBe(1);
 	});
 });

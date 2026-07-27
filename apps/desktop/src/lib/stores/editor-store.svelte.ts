@@ -16,8 +16,15 @@ import {
 	DEFAULT_CAPTION_STYLE,
 } from '@recast/captions';
 import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
+import {
+	type AudioClip,
+	type AudioClipSource,
+	defaultAudioClip,
+	splitClip,
+	voiceClip,
+} from '../audio/music';
 import type { CursorSampleLike } from '../cursor/smoothing';
-import { EASE, type Easing } from '../easing/cubic-bezier';
+import { EASE, EASE_IN_OUT, type Easing } from '../easing/cubic-bezier';
 import type { TimeMode } from '../editor/time';
 import type { Transcript } from '../ipc';
 import { log } from '../logger';
@@ -54,7 +61,13 @@ import {
 	type Segment,
 	segmentAt,
 } from '../timeline/segments';
-import { displayTimeMap, timeMapFromSegments } from '../timeline/time-map';
+import {
+	buildGapMap,
+	displayTimeMap,
+	originalToOutput,
+	outputToOriginal,
+	timeMapFromSegments,
+} from '../timeline/time-map';
 import { experimentalStore } from './experimental.svelte';
 
 export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
@@ -308,6 +321,8 @@ export interface AudioSettings {
 	micMuted: boolean;
 	fadeIn: number; // seconds
 	fadeOut: number; // seconds
+	/** EBU R128 loudness normalize on the exported mix (export only). */
+	normalizeLoudness: boolean;
 }
 
 /** Convenience: read a track's effective volume (0-1) with mute applied. */
@@ -341,6 +356,13 @@ export interface CameraPlacement {
 	height: number;
 }
 
+/** A camera position pinned at an original-recording time. The effective base
+ *  placement glides (eased) between consecutive keyframes — the per-cut motion. */
+export interface CameraKeyframe {
+	atSec: number;
+	placement: CameraPlacement;
+}
+
 export interface CameraMotionSegment {
 	start: number;
 	end: number;
@@ -363,8 +385,22 @@ export interface CameraOverlaySettings {
 	shape: CameraOverlayShape;
 	cornerRadius: number;
 	animationPreset: CameraOverlayAnimationPreset;
+	/** Grow + drift the camera away from a zoom's focus as it ramps in (default on). */
+	zoomFollow: boolean;
+	/** 0..1 strength of the zoom-follow grow + drift. */
+	zoomFollowStrength: number;
+	/** Seconds the grow/shrink takes to ramp in/out (its own transition timing). */
+	zoomFollowDuration: number;
+	/** Easing for the grow/shrink transition. */
+	zoomFollowEasing: Easing;
 	defaultPlacement: CameraPlacement;
 	motionSegments: CameraMotionSegment[];
+	/** Per-cut position keyframes (original-time). Empty → static defaultPlacement. */
+	keyframes: CameraKeyframe[];
+	/** Easing for the glide BETWEEN keyframes (the "animation smoothness"). */
+	keyframeEasing: Easing;
+	/** Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity together. */
+	shadow: number;
 }
 
 /**
@@ -389,42 +425,49 @@ export const CAMERA_DEFAULT_SIZE = 0.16;
 export const CAMERA_PRESET_INSET = 0.02;
 
 /**
- * Resolve a preset name to a normalized {x, y, width, height}. The bubble
- * is square by default (Phase 1 ships rounded 1:1 only); width == height.
- * x/y are the top-left corner of the bubble in 0..1 UV.
+ * Resolve a preset name to a normalized {x, y, width, height}. `width` is a
+ * fraction of the video WIDTH; the bubble is square in *pixels* (matching the
+ * export), so its UV height is `width * aspect` where `aspect = videoW/videoH`.
+ * The vertical anchors (top/center/bottom) therefore use that UV height, not
+ * `width`, or a preset on a wide 16:9 screen lands off the bottom. x/y are the
+ * bubble's top-left in 0..1 UV.
  *
- * `custom` returns the current bottom-right placement as a sane fallback;
- * the panel never actually invokes this with `custom`; that branch exists
- * so callers don't have to special-case the union.
+ * `custom` returns the bottom-right placement as a sane fallback; the panel
+ * never invokes this with `custom` — that branch just satisfies the union.
  */
 export function cameraPlacementFromPreset(
 	preset: CameraPositionPreset,
 	size: number = CAMERA_DEFAULT_SIZE,
 	inset: number = CAMERA_PRESET_INSET,
+	aspect: number = 1,
 ): CameraPlacement {
-	const near = inset;
-	const far = 1 - size - inset;
-	const center = (1 - size) / 2;
-	const xByCol: Record<string, number> = { left: near, center, right: far };
-	const yByRow: Record<string, number> = { top: near, center, bottom: far };
+	const height = Math.min(1, size * aspect);
+	const farX = 1 - size - inset;
+	const centerX = (1 - size) / 2;
+	const farY = Math.max(0, 1 - height - inset);
+	const centerY = Math.max(0, (1 - height) / 2);
 	if (preset === 'custom') {
-		return { x: far, y: far, width: size, height: size };
+		return { x: farX, y: farY, width: size, height };
 	}
-	const [row, col] = preset.split('-') as [string, string];
-	return {
-		x: xByCol[col] ?? far,
-		y: yByRow[row] ?? far,
-		width: size,
-		height: size,
-	};
+	// The preset ids mix conventions ('top-left' is row-col but 'left-center' is
+	// col-row), so detect each axis by token rather than by split position — else
+	// 'left-center'/'right-center' resolve to the wrong cell.
+	const tokens = preset.split('-');
+	const x = tokens.includes('left') ? inset : tokens.includes('right') ? farX : centerX;
+	const y = tokens.includes('top') ? inset : tokens.includes('bottom') ? farY : centerY;
+	return { x, y, width: size, height };
 }
 
 /**
  * Inverse of `cameraPlacementFromPreset`: find which preset (if any) the
- * given placement matches within a 0.5% tolerance. Returns `custom` for
- * free-drag positions. Used by the panel to highlight the active chip.
+ * given placement matches within a 0.5% tolerance. `aspect` must match the one
+ * used to build the placement (video width/height) so the vertical anchors line
+ * up. Returns `custom` for free-drag positions. Highlights the active chip.
  */
-export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPreset {
+export function cameraPresetFromPlacement(
+	p: CameraPlacement,
+	aspect: number = 1,
+): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
 		'top-left',
 		'top-center',
@@ -437,7 +480,7 @@ export function cameraPresetFromPlacement(p: CameraPlacement): CameraPositionPre
 	];
 	const tolerance = 0.005;
 	for (const preset of presets) {
-		const ref = cameraPlacementFromPreset(preset, p.width);
+		const ref = cameraPlacementFromPreset(preset, p.width, CAMERA_PRESET_INSET, aspect);
 		if (Math.abs(p.x - ref.x) < tolerance && Math.abs(p.y - ref.y) < tolerance) {
 			return preset;
 		}
@@ -562,6 +605,8 @@ export interface EditorRenderState {
 	annotations: Array<Omit<Annotation, 'id'>>;
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
+	/** Music / extra-audio clips on the output timeline. Optional for back-compat. */
+	musicClips?: AudioClip[];
 	watermarkSettings: WatermarkSettings;
 	cameraOverlay: CameraOverlaySettings;
 	/**
@@ -643,7 +688,7 @@ export function aspectRatio(a: OutputAspect): number | null {
 export type EditorWindowBehavior = 'navigate' | 'new-window';
 
 /** What the editor currently has selected. Exactly one, or nothing. */
-export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut';
+export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut' | 'music';
 export interface EditorSelection {
 	kind: SelectionKind;
 	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
@@ -665,6 +710,7 @@ export type PanelTab =
 	| 'cursor'
 	| 'camera'
 	| 'audio'
+	| 'music'
 	| 'captions'
 	| 'extensions'
 	| 'info'
@@ -913,6 +959,11 @@ export function createEditorStore() {
 	let selectedClipStart = $state<number | null>(null);
 	// Transient UI selection: the highlighted cut band's id, or null.
 	let selectedCutId = $state<string | null>(null);
+	// Transient UI selection: the highlighted music/audio clip's id, or null.
+	let selectedMusicClipId = $state<string | null>(null);
+	// Timeline view pref (not serialized): show cuts as restorable GAPS instead of
+	// collapsing them to seams. Rendering only — playback/export stay continuous.
+	let showCutGaps = $state(false);
 	// Silence suggestions the user has dismissed. Persisted so a re-scan or a
 	// project reopen doesn't resurface ranges they already rejected.
 	let dismissedSilences = $state<Array<{ start: number; end: number }>>([]);
@@ -1027,7 +1078,11 @@ export function createEditorStore() {
 		micMuted: false,
 		fadeIn: 0,
 		fadeOut: 0,
+		normalizeLoudness: false,
 	});
+
+	// Music / extra-audio clips laid on the output timeline (mixed in at export).
+	let musicClips = $state<AudioClip[]>([]);
 
 	// Watermark settings
 	let watermarkSettings = $state<WatermarkSettings>({
@@ -1051,8 +1106,15 @@ export function createEditorStore() {
 		shape: 'rounded',
 		cornerRadius: 0.16,
 		animationPreset: 'soft',
+		zoomFollow: true,
+		zoomFollowStrength: 0.6,
+		zoomFollowDuration: 0.4,
+		zoomFollowEasing: { ...EASE_IN_OUT },
 		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 		motionSegments: [],
+		keyframes: [],
+		keyframeEasing: { ...EASE_IN_OUT },
+		shadow: 0.35,
 	});
 
 	// Export
@@ -1129,6 +1191,7 @@ export function createEditorStore() {
 			outputAspect,
 			lastAppliedPresetId,
 			cursorMotionEasing,
+			musicClips,
 		};
 	}
 
@@ -1214,6 +1277,10 @@ export function createEditorStore() {
 		padding = normalizeFramePaddingPercent(s.padding, metadata);
 		borderRadius = s.borderRadius ?? 0;
 		shadow = s.shadow ? { ...s.shadow } : shadow;
+		musicClips = (s.musicClips ?? []).map((c) => ({ ...c }));
+		if (selectedMusicClipId && !musicClips.find((c) => c.id === selectedMusicClipId)) {
+			selectedMusicClipId = null;
+		}
 		trimStart = s.trimStart;
 		trimEnd = s.trimEnd;
 		zoomRegions = (s.zoomRegions ?? []).map((r: ZoomRegion) => ({
@@ -1258,6 +1325,7 @@ export function createEditorStore() {
 				micMuted: loaded.micMuted ?? loaded.muted,
 				fadeIn: loaded.fadeIn,
 				fadeOut: loaded.fadeOut,
+				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
 		} else {
 			audioSettings = audioSettings;
@@ -1273,6 +1341,11 @@ export function createEditorStore() {
 				motionSegments: (s.cameraOverlay.motionSegments ?? []).map(
 					(seg: CameraOverlaySettings['motionSegments'][number]) => ({ ...seg }),
 				),
+				keyframes: (s.cameraOverlay.keyframes ?? []).map((k) => ({
+					atSec: k.atSec,
+					placement: { ...k.placement },
+				})),
+				keyframeEasing: { ...(s.cameraOverlay.keyframeEasing ?? EASE_IN_OUT) },
 			};
 		}
 		layoutMode = s.layoutMode;
@@ -1392,6 +1465,87 @@ export function createEditorStore() {
 		shadow = { ...shadow, ...updates };
 	}
 
+	function addMusicClip(source: AudioClipSource): AudioClip {
+		pushUndoState();
+		const clip = defaultAudioClip(generateId(), source);
+		musicClips = [...musicClips, clip];
+		return clip;
+	}
+	function updateMusicClip(id: string, updates: Partial<AudioClip>) {
+		musicClips = musicClips.map((c) => (c.id === id ? { ...c, ...updates } : c));
+	}
+	function removeMusicClip(id: string, pushUndo = true) {
+		if (pushUndo) pushUndoState();
+		musicClips = musicClips.filter((c) => c.id !== id);
+		if (selectedMusicClipId === id) selectedMusicClipId = null;
+	}
+
+	/** Split a music clip at an OUTPUT-axis time into two. Returns true if it split
+	 *  (the point must be strictly inside the clip). The left half keeps the id. */
+	function splitMusicClip(id: string, atOutputSec: number): boolean {
+		const clip = musicClips.find((c) => c.id === id);
+		if (!clip) return false;
+		const parts = splitClip(clip, atOutputSec, timeMapMemo.outputDuration, generateId());
+		if (!parts) return false;
+		pushUndoState();
+		musicClips = musicClips.flatMap((c) => (c.id === id ? parts : [c]));
+		return true;
+	}
+
+	// The recording's own audio, detached for independent editing, lives as `voice`
+	// clips in `musicClips` (same model + render paths). "Detached" is simply "a
+	// voice clip exists" — no separate flag to keep in sync across undo/serialize.
+	const audioDetached = $derived(musicClips.some((c) => c.role === 'voice'));
+	const canDetachAudio = $derived(!!(audioPath || microphonePath));
+	const voiceClips = $derived(musicClips.filter((c) => c.role === 'voice'));
+	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== 'voice'));
+
+	/** Split system+mic into independent `voice` clips (their per-source gain/mute
+	 *  and the timeline fades carried over) and suppress the monolithic source path.
+	 *  No-op if already detached or the recording has no separate audio to detach. */
+	function detachRecordingAudio(): boolean {
+		if (audioDetached || !canDetachAudio) return false;
+		const common = {
+			offsetSec: Math.max(0, trimStart),
+			fadeIn: audioSettings.fadeIn,
+			fadeOut: audioSettings.fadeOut,
+		};
+		const made: AudioClip[] = [];
+		if (audioPath) {
+			made.push(
+				voiceClip(generateId(), audioPath, {
+					...common,
+					gain: audioSettings.systemVolume,
+					muted: audioSettings.systemMuted,
+				}),
+			);
+		}
+		if (microphonePath) {
+			made.push(
+				voiceClip(generateId(), microphonePath, {
+					...common,
+					gain: audioSettings.micVolume,
+					muted: audioSettings.micMuted,
+				}),
+			);
+		}
+		if (made.length === 0) return false;
+		pushUndoState();
+		musicClips = [...musicClips, ...made];
+		return true;
+	}
+
+	/** Re-bind the recording audio: drop every voice clip so the source path resumes. */
+	function reattachRecordingAudio(): boolean {
+		if (!audioDetached) return false;
+		pushUndoState();
+		musicClips = musicClips.filter((c) => c.role !== 'voice');
+		if (selectedMusicClipId && !musicClips.find((c) => c.id === selectedMusicClipId)) {
+			selectedMusicClipId = null;
+		}
+		return true;
+	}
+
 	/**
 	 * Patch the camera overlay settings. Mirrors `updateCursorSettings`
 	 * shape; callers handle their own `pushUndoState` so coalesced
@@ -1399,6 +1553,45 @@ export function createEditorStore() {
 	 */
 	function updateCameraOverlay(updates: Partial<CameraOverlaySettings>) {
 		cameraOverlay = { ...cameraOverlay, ...updates };
+	}
+
+	// Route a position edit (preset/drag/resize): in per-cut mode it upserts a
+	// keyframe at the playhead (glide between cuts); otherwise it sets the single
+	// static placement. Callers push undo before a drag/preset gesture.
+	function setCameraPlacement(placement: CameraPlacement) {
+		if (cameraOverlay.keyframes.length > 0) {
+			const atSec = currentTime;
+			const next = cameraOverlay.keyframes.filter((k) => Math.abs(k.atSec - atSec) > 0.05);
+			next.push({ atSec, placement });
+			next.sort((a, b) => a.atSec - b.atSec);
+			cameraOverlay = { ...cameraOverlay, keyframes: next };
+		} else {
+			cameraOverlay = { ...cameraOverlay, defaultPlacement: placement };
+		}
+	}
+
+	// Toggle per-cut (keyframed) camera position. Turning on seeds one keyframe at
+	// the playhead from the current static placement, so nothing jumps; turning
+	// off collapses back to the static placement (dropping the keyframes).
+	function setCameraPerCut(on: boolean) {
+		pushUndoState();
+		if (on && cameraOverlay.keyframes.length === 0) {
+			cameraOverlay = {
+				...cameraOverlay,
+				keyframes: [{ atSec: currentTime, placement: { ...cameraOverlay.defaultPlacement } }],
+			};
+		} else if (!on) {
+			cameraOverlay = { ...cameraOverlay, keyframes: [] };
+		}
+	}
+
+	/** Remove the keyframe nearest the playhead (within 0.15s), for the panel's
+	 *  "clear this cut's position" affordance. */
+	function removeCameraKeyframeNear(atSec: number) {
+		const next = cameraOverlay.keyframes.filter((k) => Math.abs(k.atSec - atSec) > 0.15);
+		if (next.length === cameraOverlay.keyframes.length) return;
+		pushUndoState();
+		cameraOverlay = { ...cameraOverlay, keyframes: next };
 	}
 
 	// ---- Selection ---------------------------------------------------------
@@ -1417,6 +1610,7 @@ export function createEditorStore() {
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectZoomRegion(id: string | null) {
@@ -1425,6 +1619,7 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectAnnotation(id: string | null) {
@@ -1433,6 +1628,7 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	function selectCut(id: string | null) {
@@ -1441,6 +1637,16 @@ export function createEditorStore() {
 		selectedClipStart = null;
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
+		selectedMusicClipId = null;
+	}
+
+	function selectMusicClip(id: string | null) {
+		selectedMusicClipId = id;
+		if (id === null) return;
+		selectedClipStart = null;
+		selectedZoomRegionId = null;
+		selectedAnnotationId = null;
+		selectedCutId = null;
 	}
 
 	function clearSelection() {
@@ -1448,6 +1654,7 @@ export function createEditorStore() {
 		selectedZoomRegionId = null;
 		selectedAnnotationId = null;
 		selectedCutId = null;
+		selectedMusicClipId = null;
 	}
 
 	const selection = $derived.by<EditorSelection | null>(() => {
@@ -1459,6 +1666,9 @@ export function createEditorStore() {
 		}
 		if (selectedCutId !== null) {
 			return { kind: 'cut', id: selectedCutId };
+		}
+		if (selectedMusicClipId !== null) {
+			return { kind: 'music', id: selectedMusicClipId };
 		}
 		if (selectedClipStart !== null) {
 			return { kind: 'clip', id: selectedClipStart };
@@ -1485,6 +1695,10 @@ export function createEditorStore() {
 			const cut = cuts.find((c) => c.id === selectedCutId);
 			removeCut(selectedCutId);
 			return { kind: 'cut', joinAt: cut ? cut.start : null };
+		}
+		if (selectedMusicClipId !== null) {
+			removeMusicClip(selectedMusicClipId);
+			return { kind: 'music', joinAt: null };
 		}
 		if (selectedClipStart !== null) {
 			const joinAt = deleteSegmentAt(selectedClipStart);
@@ -1575,7 +1789,12 @@ export function createEditorStore() {
 		});
 	}
 
-	function addAnnotation(kind: AnnotationKind, start?: number, end?: number): Annotation {
+	function addAnnotation(
+		kind: AnnotationKind,
+		start?: number,
+		end?: number,
+		overrides?: Partial<Pick<Annotation, 'glow' | 'name' | 'anchor'>>,
+	): Annotation {
 		pushUndoState();
 		const now = currentTime;
 		const clipEnd = trimEnd || metadata?.duration || 0;
@@ -1604,6 +1823,7 @@ export function createEditorStore() {
 			kind,
 			zIndex: annotationZSeq++,
 			opacity: 1,
+			...(overrides ?? {}),
 		};
 		annotations = [...annotations, annotation];
 		selectAnnotation(annotation.id);
@@ -1735,6 +1955,8 @@ export function createEditorStore() {
 			opacity: 40,
 			color: '#000000',
 		};
+		musicClips = [];
+		selectedMusicClipId = null;
 		layoutMode = 'auto';
 		outputAspect = 'source';
 		lastAppliedPresetId = null;
@@ -1785,6 +2007,7 @@ export function createEditorStore() {
 			micMuted: false,
 			fadeIn: 0,
 			fadeOut: 0,
+			normalizeLoudness: false,
 		};
 		watermarkSettings = {
 			enabled: false,
@@ -1803,6 +2026,13 @@ export function createEditorStore() {
 			animationPreset: 'soft',
 			defaultPlacement: cameraPlacementFromPreset('bottom-right'),
 			motionSegments: [],
+			keyframes: [],
+			keyframeEasing: { ...EASE_IN_OUT },
+			shadow: 0.35,
+			zoomFollow: true,
+			zoomFollowStrength: 0.6,
+			zoomFollowDuration: 0.4,
+			zoomFollowEasing: { ...EASE_IN_OUT },
 		};
 		exportQuality = 'source';
 		exportSpeed = 'balanced';
@@ -1886,9 +2116,19 @@ export function createEditorStore() {
 		return c.source === 'silence' ? experimentalStore.silenceDetection : true;
 	}
 	/** Cuts that actually apply right now (flag-gated + lane-enabled). */
+	// The cut → segment → time-map chain is memoized with $derived, then exposed
+	// through the same accessor functions so no caller changes. It used to rebuild
+	// on EVERY read: the waveform lane's `xOf → timeMap` runs twice per bucket over
+	// ~2000 buckets, so a single zoom frame rebuilt it thousands of times. $derived
+	// auto-tracks every input ($state cuts/splits/trim/speeds/isTrimming/metadata +
+	// the reactive `silenceDetection` flag), so it caches yet cannot go stale — the
+	// pure math (deriveSegments/timeMapFromSegments) is unchanged, only re-run when
+	// an input actually changes.
+	const cutsMemo = $derived.by<TimelineCut[]>(() =>
+		cutsEnabled ? cuts.filter(cutFlagAllows) : [],
+	);
 	function effectiveCutList(): TimelineCut[] {
-		if (!cutsEnabled) return [];
-		return cuts.filter(cutFlagAllows);
+		return cutsMemo;
 	}
 	function activeSplitPoints(): number[] {
 		return splitPoints;
@@ -1897,14 +2137,17 @@ export function createEditorStore() {
 	/** The current clip's kept segments: trim − active cuts, subdivided by
 	 * active splits. Drives both the timeline display and the edit math, so the
 	 * two never disagree. */
-	function currentSegments(): Segment[] {
+	const segmentsMemo = $derived.by<Segment[]>(() => {
 		const { start, end } = clipBounds();
 		return deriveSegments({
 			trimStart: start,
 			trimEnd: end,
-			cuts: effectiveCutList(),
-			splitPoints: activeSplitPoints(),
+			cuts: cutsMemo,
+			splitPoints,
 		});
+	});
+	function currentSegments(): Segment[] {
+		return segmentsMemo;
 	}
 
 	/** The timeline axis: the KEPT clip only (trimmed head/tail collapse away,
@@ -1912,8 +2155,8 @@ export function createEditorStore() {
 	 * closed to seams. `output 0 == inPoint`; the clip fills the track from the
 	 * left. Every lane, the playhead, and the preview clock position against this.
 	 * At all-1× speeds it's the cut translation map restricted to [inPoint,outPoint]. */
-	function currentTimeMap() {
-		const segs = currentSegments();
+	const timeMapMemo = $derived.by(() => {
+		const segs = segmentsMemo;
 		const speedOf = buildSpeedOf(segs, segmentSpeeds);
 		// While trimming, un-collapse onto the full recording so the handle can
 		// move across the whole source (and reveal/restore the trimmed head/tail).
@@ -1924,11 +2167,29 @@ export function createEditorStore() {
 				trimEnd: end,
 				durationSec: metadata?.duration ?? end,
 				segments: segs,
-				cuts: effectiveCutList(),
+				cuts: cutsMemo,
 				speedOf,
 			});
 		}
 		return timeMapFromSegments(segs, speedOf);
+	});
+	function currentTimeMap() {
+		return timeMapMemo;
+	}
+
+	// The axis lanes RENDER against. Identical to `timeMap` unless "show cut gaps"
+	// is on (then cuts get real width). Playback/export never read this — only the
+	// playhead position, ruler, and lane layouts do — so seeking stays gapless.
+	const renderMap = $derived(showCutGaps ? buildGapMap(timeMapMemo) : timeMapMemo);
+	// Convert an OUTPUT-axis position (music/voice clips live there) to the render
+	// axis, and back for pointer math. Identity when gaps are off.
+	function outputToRenderSec(outputSec: number): number {
+		if (!showCutGaps) return outputSec;
+		return originalToOutput(renderMap, outputToOriginal(timeMapMemo, outputSec));
+	}
+	function renderSecToOutputSec(renderSec: number): number {
+		if (!showCutGaps) return renderSec;
+		return originalToOutput(timeMapMemo, outputToOriginal(renderMap, renderSec));
 	}
 
 	/** Speed of the segment anchored at original `start` (1 when unset). */
@@ -2129,6 +2390,7 @@ export function createEditorStore() {
 			annotations: annotations.map((annotation) => ({ ...annotation })),
 			shadow: { ...shadow },
 			audioSettings: { ...audioSettings },
+			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
 			transcript,
 			captionStyle: { ...captionStyle },
 			watermarkSettings: { ...watermarkSettings },
@@ -2138,6 +2400,11 @@ export function createEditorStore() {
 				motionSegments: cameraOverlay.motionSegments.map((segment) => ({
 					...segment,
 				})),
+				keyframes: cameraOverlay.keyframes.map((k) => ({
+					atSec: k.atSec,
+					placement: { ...k.placement },
+				})),
+				keyframeEasing: { ...cameraOverlay.keyframeEasing },
 			},
 			layoutMode,
 		};
@@ -2208,6 +2475,7 @@ export function createEditorStore() {
 		motionTone = state.motionTone ?? 'balanced';
 		focusEnabled = state.focusEnabled ?? true;
 		shadow = state.shadow ?? shadow;
+		musicClips = (state.musicClips ?? []).map((c) => ({ ...c, source: { ...c.source } }));
 		// Backward-compat (see comment in loadRenderState).
 		if (state.audioSettings) {
 			const loaded = state.audioSettings;
@@ -2220,6 +2488,7 @@ export function createEditorStore() {
 				micMuted: loaded.micMuted ?? loaded.muted,
 				fadeIn: loaded.fadeIn,
 				fadeOut: loaded.fadeOut,
+				normalizeLoudness: loaded.normalizeLoudness ?? false,
 			};
 		} else {
 			audioSettings = audioSettings;
@@ -2240,6 +2509,20 @@ export function createEditorStore() {
 			shape: state.cameraOverlay?.shape ?? 'rounded',
 			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
 			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
+			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
+			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
+			zoomFollowDuration: state.cameraOverlay?.zoomFollowDuration ?? 0.4,
+			zoomFollowEasing: state.cameraOverlay?.zoomFollowEasing
+				? { ...state.cameraOverlay.zoomFollowEasing }
+				: { ...EASE_IN_OUT },
+			keyframes: (state.cameraOverlay?.keyframes ?? []).map((k) => ({
+				atSec: k.atSec,
+				placement: { ...k.placement },
+			})),
+			keyframeEasing: state.cameraOverlay?.keyframeEasing
+				? { ...state.cameraOverlay.keyframeEasing }
+				: { ...EASE_IN_OUT },
+			shadow: state.cameraOverlay?.shadow ?? 0.35,
 			defaultPlacement: {
 				x: state.cameraOverlay?.defaultPlacement?.x ?? fallbackPlacement.x,
 				y: state.cameraOverlay?.defaultPlacement?.y ?? fallbackPlacement.y,
@@ -2492,6 +2775,35 @@ export function createEditorStore() {
 			shadow = v;
 		},
 
+		get musicClips() {
+			return musicClips;
+		},
+		get musicOnlyClips() {
+			return musicOnlyClips;
+		},
+		get voiceClips() {
+			return voiceClips;
+		},
+		get audioDetached() {
+			return audioDetached;
+		},
+		get canDetachAudio() {
+			return canDetachAudio;
+		},
+		detachRecordingAudio,
+		reattachRecordingAudio,
+		addMusicClip,
+		updateMusicClip,
+		removeMusicClip,
+		splitMusicClip,
+		selectMusicClip,
+		get selectedMusicClipId() {
+			return selectedMusicClipId;
+		},
+		set selectedMusicClipId(v: string | null) {
+			selectMusicClip(v);
+		},
+
 		get layoutMode() {
 			return layoutMode;
 		},
@@ -2561,6 +2873,17 @@ export function createEditorStore() {
 		// recording while `isTrimming` so a trim drag can reveal the trimmed parts.
 		get timeMap() {
 			return currentTimeMap();
+		},
+		get renderMap() {
+			return renderMap;
+		},
+		outputToRenderSec,
+		renderSecToOutputSec,
+		get showCutGaps() {
+			return showCutGaps;
+		},
+		set showCutGaps(v: boolean) {
+			showCutGaps = v;
 		},
 		get isTrimming() {
 			return isTrimming;
@@ -2854,6 +3177,9 @@ export function createEditorStore() {
 		updateWatermarkSettings,
 		updateShadow,
 		updateCameraOverlay,
+		setCameraPlacement,
+		setCameraPerCut,
+		removeCameraKeyframeNear,
 		addZoomRegion,
 		addAutoZoomRegion,
 		clearAutoZooms,

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::error::{AppError, AppResult};
-use super::export::camera::camera_bubble_rect;
+use super::export::camera::{build_camera_follow_exprs, camera_bubble_rect, camera_shadow_geom};
 use super::export::captions::append_caption_burn_in;
 use super::export::codec::append_codec_args;
 use super::export::cuts_speed::{
@@ -24,8 +24,8 @@ use super::export::state::{emit_export_state, ExportStateEvent};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
     append_output_filters_to_complex, build_annotation_blur_complex, build_output_scale_filter,
-    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayParams,
-    ExportSpeed,
+    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
+    CameraOverlayParams, CameraShadowOverlay, ExportSpeed,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -35,6 +35,11 @@ use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
 use crate::render::graph::{RenderGraph, RenderState, SourceVideoMetadata};
 use crate::render::mask_export::{render_border_radius_mask, MaskResult};
 use crate::render::node_types::{AnnotationAnchor, AnnotationKind, AudioSettings};
+
+/// Filtergraph length past which we pass it via `-filter_complex_script <file>`
+/// rather than inline, to stay under Windows' ~32 KB command-line limit. Well
+/// below the limit so the rest of the command line (inputs, codec args) fits.
+const FILTER_COMPLEX_SCRIPT_THRESHOLD: usize = 8000;
 
 fn static_root() -> PathBuf {
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -101,7 +106,7 @@ fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
     if path.extension().and_then(|value| value.to_str()) == Some("recast") {
         let project = crate::project::reader::open_project(path).map_err(|e| e.to_string())?;
         return Ok(VideoMetadata {
-            duration: project.metadata.video.duration_ms as f64 / 1000.0,
+            duration: project.metadata.media_duration_secs(),
             width: project.metadata.video.width,
             height: project.metadata.video.height,
             fps: project.metadata.video.fps as f64,
@@ -112,9 +117,36 @@ fn project_or_media_metadata(path: &Path) -> Result<VideoMetadata, String> {
     probe_video_metadata(path)
 }
 
+/// Which capture an export audio input came from, so per-source gain/mute maps
+/// to the right FFmpeg input. `Source` = a single file's embedded track (master
+/// gain only); `System`/`Mic` = the project's separate WAV captures.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AudioKind {
+    Source,
+    System,
+    Mic,
+}
+
+/// Effective linear gain for one input: master × its per-source gain, 0 when
+/// muted. Mirrors the preview's `effectiveTrackVolume` so preview and export
+/// apply the same mix.
+fn effective_audio_gain(settings: &AudioSettings, kind: AudioKind) -> f64 {
+    let master = (settings.volume / 100.0).clamp(0.0, 4.0);
+    let (vol, muted) = match kind {
+        AudioKind::Source => return master,
+        AudioKind::System => (settings.system_volume, settings.system_muted),
+        AudioKind::Mic => (settings.mic_volume, settings.mic_muted),
+    };
+    if muted {
+        0.0
+    } else {
+        master * (vol / 100.0).clamp(0.0, 4.0)
+    }
+}
+
 fn append_audio_to_complex(
     existing: Option<&str>,
-    audio_inputs: &[usize],
+    audio_inputs: &[(usize, AudioKind)],
     settings: &AudioSettings,
     trim_start: f64,
     duration: f64,
@@ -123,7 +155,18 @@ fn append_audio_to_complex(
         return None;
     }
 
-    let volume = (settings.volume / 100.0).clamp(0.0, 4.0);
+    // Drop fully-silenced sources: leaving a muted input in the amix would let
+    // it average the others back down. This is the fix for per-source mute/gain
+    // being ignored at export.
+    let live: Vec<(usize, f64)> = audio_inputs
+        .iter()
+        .map(|&(idx, kind)| (idx, effective_audio_gain(settings, kind)))
+        .filter(|&(_, gain)| gain > 0.0)
+        .collect();
+    if live.is_empty() {
+        return None;
+    }
+
     let mut segments: Vec<String> = existing
         .map(|value| value.to_string())
         .filter(|value| !value.trim().is_empty())
@@ -131,8 +174,8 @@ fn append_audio_to_complex(
         .collect();
     let mut labels = Vec::new();
 
-    for (i, input_index) in audio_inputs.iter().enumerate() {
-        let label = if audio_inputs.len() == 1 {
+    for (i, (input_index, gain)) in live.iter().enumerate() {
+        let label = if live.len() == 1 {
             "aout".to_string()
         } else {
             format!("aud{i}")
@@ -148,7 +191,7 @@ fn append_audio_to_complex(
             filters.push(format!("atrim=start={:.3}", trim_start));
         }
         filters.push("asetpts=PTS-STARTPTS".to_string());
-        filters.push(format!("volume={volume:.4}"));
+        filters.push(format!("volume={gain:.4}"));
         if settings.fade_in > 0.0 {
             let fade = if duration > 0.0 {
                 settings.fade_in.min(duration * 0.5)
@@ -170,15 +213,111 @@ fn append_audio_to_complex(
         labels.push(format!("[{label}]"));
     }
 
-    if audio_inputs.len() > 1 {
+    if live.len() > 1 {
         segments.push(format!(
             "{}amix=inputs={}:duration=longest:dropout_transition=0:normalize=0[aout]",
             labels.join(""),
-            audio_inputs.len()
+            live.len()
         ));
     }
 
+    // EBU R128 loudness normalize on the final mix: -14 LUFS is the common social
+    // target (YouTube/Spotify-ish), -1 dBTP ceiling. Single-pass — a measured
+    // two-pass is a later refinement.
+    if settings.normalize_loudness {
+        segments.push("[aout]loudnorm=I=-14:TP=-1:LRA=11[aoutn]".to_string());
+        return Some((segments.join(";"), "[aoutn]".into()));
+    }
+
     Some((segments.join(";"), "[aout]".into()))
+}
+
+/// Mix output-timeline music/extra-audio clips onto the finished source audio.
+/// `clips` pairs each live clip with its ffmpeg input index; `source_audio` is
+/// the edited recording's audio label (None when muted/absent). Each clip is
+/// trimmed into its source, gained, faded, and delayed onto the output timeline,
+/// then amixed with the source. Returns (extra filter segments, final map).
+fn build_music_stage(
+    clips: &[(usize, &crate::render::node_types::AudioClip)],
+    source_audio: Option<&str>,
+    output_duration: f64,
+) -> Option<(String, String)> {
+    if clips.is_empty() {
+        return source_audio.map(|s| (String::new(), s.to_string()));
+    }
+    let mut segments: Vec<String> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    if let Some(src) = source_audio {
+        labels.push(src.to_string());
+    }
+    for (i, (input_index, clip)) in clips.iter().enumerate() {
+        let label = format!("mus{i}");
+        let mut f: Vec<String> = Vec::new();
+        let start = clip.offset_sec.max(0.0);
+        // duration 0 = fill to the end of the output (never past it).
+        let play = if clip.duration_sec > 0.0 {
+            clip.duration_sec
+        } else {
+            (output_duration - clip.start_output_sec).max(0.0)
+        };
+        if play > 0.0 {
+            f.push(format!("atrim=start={start:.3}:duration={play:.3}"));
+        } else if start > 0.0 {
+            f.push(format!("atrim=start={start:.3}"));
+        }
+        f.push("asetpts=PTS-STARTPTS".to_string());
+        let gain = (clip.gain / 100.0).clamp(0.0, 4.0);
+        f.push(format!("volume={gain:.4}"));
+        if clip.fade_in > 0.0 {
+            let fi = if play > 0.0 {
+                clip.fade_in.min(play)
+            } else {
+                clip.fade_in
+            };
+            f.push(format!("afade=t=in:st=0:d={fi:.3}"));
+        }
+        if clip.fade_out > 0.0 && play > 0.0 {
+            let fo = clip.fade_out.min(play);
+            f.push(format!(
+                "afade=t=out:st={:.3}:d={fo:.3}",
+                (play - fo).max(0.0)
+            ));
+        }
+        // Place on the output timeline (adelay adds leading silence per channel).
+        let delay_ms = (clip.start_output_sec.max(0.0) * 1000.0).round() as i64;
+        if delay_ms > 0 {
+            f.push(format!("adelay={delay_ms}|{delay_ms}"));
+        }
+        segments.push(format!("[{input_index}:a]{}[{label}]", f.join(",")));
+        labels.push(format!("[{label}]"));
+    }
+    if labels.len() == 1 {
+        return Some((segments.join(";"), labels[0].clone()));
+    }
+    segments.push(format!(
+        "{}amix=inputs={}:duration=longest:dropout_transition=0:normalize=0[afinal]",
+        labels.join(""),
+        labels.len()
+    ));
+    Some((segments.join(";"), "[afinal]".into()))
+}
+
+/// Attribution lines the music clips' licenses require (CC-BY), deduped and
+/// joined for the output file's `comment` metadata so the credit travels with
+/// the exported video. None when nothing needs crediting.
+fn build_credits_comment(clips: &[crate::render::node_types::AudioClip]) -> Option<String> {
+    let mut seen: Vec<&str> = Vec::new();
+    for clip in clips {
+        if let Some(a) = clip.source.attribution() {
+            if !seen.contains(&a) {
+                seen.push(a);
+            }
+        }
+    }
+    if seen.is_empty() {
+        return None;
+    }
+    Some(format!("Music: {}", seen.join("; ")))
 }
 
 fn append_watermark_to_complex(
@@ -237,13 +376,14 @@ pub async fn load_editor_document(path: String) -> AppResult<EditorDocument> {
 fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String> {
     let input = PathBuf::from(&path);
     if let Some(project) = open_project_if_needed(&input)? {
+        let media_duration = project.metadata.media_duration_secs();
         let default_state = || RenderState {
-            trim_end: project.metadata.video.duration_ms as f64 / 1000.0,
+            trim_end: media_duration,
             ..RenderState::default()
         };
         // A missing edits.json is a fresh project (expected → defaults). A parse
         // FAILURE, though, would silently discard every edit, so surface it.
-        let render_state = match fs::read_to_string(&project.edits_path) {
+        let mut render_state: RenderState = match fs::read_to_string(&project.edits_path) {
             Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
                 log::error!(
                     "failed to parse edits.json ({}): {e}; loading defaults (edits not applied)",
@@ -253,6 +393,13 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             }),
             Err(_) => default_state(),
         };
+        // Heal projects saved before `media_duration_secs` existed: their
+        // `trim_end` came from the wall clock and overshoots the encoded file,
+        // which makes `enqueue_export` reject the state the app itself wrote.
+        // Clamping costs nothing — there are no frames out there to keep.
+        if media_duration > 0.0 && render_state.trim_end > media_duration {
+            render_state.trim_end = media_duration;
+        }
 
         return Ok(EditorDocument {
             project_path: path,
@@ -265,7 +412,7 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 .map(|p| p.to_string_lossy().to_string()),
             camera_path: project.camera_path.map(|p| p.to_string_lossy().to_string()),
             metadata: VideoMetadata {
-                duration: project.metadata.video.duration_ms as f64 / 1000.0,
+                duration: media_duration,
                 width: project.metadata.video.width,
                 height: project.metadata.video.height,
                 fps: project.metadata.video.fps as f64,
@@ -874,6 +1021,208 @@ mod project_timeline_tests {
 }
 
 #[cfg(test)]
+mod audio_mix_tests {
+    use super::*;
+    use crate::render::node_types::AudioSettings;
+
+    #[test]
+    fn per_source_gain_reaches_the_graph() {
+        let mut s = AudioSettings::default();
+        s.system_volume = 100.0;
+        s.mic_volume = 50.0;
+        let (complex, map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("audio graph");
+        assert_eq!(map, "[aout]");
+        // System at unity, mic at half — the pre-fix bug applied master to both.
+        assert!(complex.contains("[1:a]") && complex.contains("[2:a]"));
+        assert!(complex.contains("volume=1.0000"));
+        assert!(complex.contains("volume=0.5000"));
+        assert!(complex.contains("amix=inputs=2"));
+    }
+
+    #[test]
+    fn muted_source_is_dropped_from_the_mix() {
+        let mut s = AudioSettings::default();
+        s.mic_muted = true;
+        let (complex, _map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("system still audible");
+        // Only system survives → single branch, no amix, mic input absent.
+        assert!(complex.contains("[1:a]"));
+        assert!(!complex.contains("[2:a]"));
+        assert!(!complex.contains("amix"));
+    }
+
+    #[test]
+    fn all_sources_muted_yields_no_audio() {
+        let mut s = AudioSettings::default();
+        s.system_muted = true;
+        s.mic_muted = true;
+        assert!(append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn normalize_appends_loudnorm_to_the_mix() {
+        let mut s = AudioSettings::default();
+        s.normalize_loudness = true;
+        let (complex, map) = append_audio_to_complex(
+            None,
+            &[(1, AudioKind::System), (2, AudioKind::Mic)],
+            &s,
+            0.0,
+            10.0,
+        )
+        .expect("audio graph");
+        assert!(complex.contains("loudnorm=I=-14"));
+        assert_eq!(map, "[aoutn]"); // normalize retargets the map to the loudnorm output
+                                    // Off by default: no loudnorm, map stays [aout].
+        let off = AudioSettings::default();
+        let (c2, m2) = append_audio_to_complex(None, &[(1, AudioKind::System)], &off, 0.0, 10.0)
+            .expect("graph");
+        assert!(!c2.contains("loudnorm"));
+        assert_eq!(m2, "[aout]");
+    }
+
+    #[test]
+    fn music_stage_mixes_clips_over_source() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let clip = AudioClip {
+            id: "m1".into(),
+            source: AudioClipSource::Local {
+                path: "x.mp3".into(),
+            },
+            role: Default::default(),
+            start_output_sec: 2.0,
+            offset_sec: 1.0,
+            duration_sec: 0.0, // fill
+            gain: 50.0,
+            muted: false,
+            fade_in: 0.5,
+            fade_out: 1.0,
+            looping: true,
+            ducking: false,
+        };
+        let (seg, map) = build_music_stage(&[(5, &clip)], Some("[aout]"), 10.0).expect("stage");
+        assert_eq!(map, "[afinal]");
+        assert!(seg.contains("[5:a]"));
+        assert!(seg.contains("volume=0.5000"));
+        assert!(seg.contains("adelay=2000|2000"));
+        assert!(seg.contains("atrim=start=1.000:duration=8.000")); // fill = 10 - 2
+        assert!(seg.contains("amix=inputs=2"));
+    }
+
+    #[test]
+    fn music_only_needs_no_amix() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let clip = AudioClip {
+            id: "m".into(),
+            source: AudioClipSource::Local { path: "x".into() },
+            role: Default::default(),
+            start_output_sec: 0.0,
+            offset_sec: 0.0,
+            duration_sec: 0.0,
+            gain: 100.0,
+            muted: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            looping: false,
+            ducking: false,
+        };
+        let (_seg, map) = build_music_stage(&[(3, &clip)], None, 5.0).expect("stage");
+        assert_eq!(map, "[mus0]");
+    }
+
+    #[test]
+    fn audio_clip_deserializes_from_ts_shape() {
+        // Guards the TS↔Rust serde names (loop, startOutputSec, providerId, assetPath).
+        let local = r#"{"id":"c","source":{"kind":"local","path":"/a.mp3"},"startOutputSec":1.5,"gain":45,"loop":true}"#;
+        let c: crate::render::node_types::AudioClip = serde_json::from_str(local).unwrap();
+        assert_eq!(c.start_output_sec, 1.5);
+        assert!(c.looping);
+        assert_eq!(c.source.asset_path(), "/a.mp3");
+
+        let provider = r#"{"id":"c","source":{"kind":"provider","providerId":"up","trackId":"t","assetPath":"/cached.mp3"},"gain":45}"#;
+        let p: crate::render::node_types::AudioClip = serde_json::from_str(provider).unwrap();
+        assert_eq!(p.source.asset_path(), "/cached.mp3");
+
+        // role: absent → Music (legacy), explicit "voice" round-trips.
+        use crate::render::node_types::AudioClipRole;
+        assert_eq!(c.role, AudioClipRole::Music);
+        let voice = r#"{"id":"v","source":{"kind":"local","path":"/rec.wav"},"role":"voice"}"#;
+        let v: crate::render::node_types::AudioClip = serde_json::from_str(voice).unwrap();
+        assert_eq!(v.role, AudioClipRole::Voice);
+    }
+
+    #[test]
+    fn source_kind_uses_master_only() {
+        let mut s = AudioSettings::default();
+        s.volume = 50.0;
+        s.mic_volume = 0.0; // a per-source gain must not touch an embedded source track
+        let (complex, _) = append_audio_to_complex(None, &[(0, AudioKind::Source)], &s, 0.0, 10.0)
+            .expect("source audio");
+        assert!(complex.contains("volume=0.5000"));
+    }
+
+    #[test]
+    fn credits_comment_dedupes_providers_and_skips_local() {
+        use crate::render::node_types::{AudioClip, AudioClipSource};
+        let provider = |id: &str, attr: Option<&str>| AudioClip {
+            id: id.into(),
+            source: AudioClipSource::Provider {
+                provider_id: "jamendo".into(),
+                track_id: id.into(),
+                asset_path: format!("/{id}.mp3"),
+                attribution: attr.map(str::to_string),
+                license: None,
+            },
+            role: Default::default(),
+            start_output_sec: 0.0,
+            offset_sec: 0.0,
+            duration_sec: 0.0,
+            gain: 100.0,
+            muted: false,
+            fade_in: 0.0,
+            fade_out: 0.0,
+            looping: false,
+            ducking: false,
+        };
+        let local = AudioClip {
+            source: AudioClipSource::Local {
+                path: "/x.mp3".into(),
+            },
+            ..provider("l", None)
+        };
+        let line = "\"Sunrise\" by Nova (Jamendo)";
+        let comment = build_credits_comment(&[
+            provider("1", Some(line)),
+            provider("2", Some(line)), // same line → deduped
+            local,                     // local → no credit
+        ])
+        .expect("comment");
+        assert_eq!(comment, format!("Music: {line}"));
+        assert!(build_credits_comment(&[provider("3", None)]).is_none());
+    }
+}
+
+#[cfg(test)]
 mod validate_tests {
     use super::*;
     use crate::render::graph::{CutRange, SegmentSpeed};
@@ -1290,6 +1639,20 @@ pub(crate) fn poster_webp_for_export(path: &str) -> Option<Vec<u8>> {
 /// export verb would call it too). It still owns its own cancel token in
 /// `state.export_cancel` (so `cancel_export` finds it by id) and takes a power
 /// lease for the run.
+/// Drops an export's cancellation token when the run ends, however it ends.
+struct CancelTokenGuard {
+    app: AppHandle,
+    export_id: String,
+}
+
+impl Drop for CancelTokenGuard {
+    fn drop(&mut self) {
+        if let Some(state) = self.app.try_state::<AppState>() {
+            state.export_cancel.lock().remove(&self.export_id);
+        }
+    }
+}
+
 pub(crate) async fn run_export_job(
     app: AppHandle,
     mut request: ExportRequest,
@@ -1308,6 +1671,14 @@ pub(crate) async fn run_export_job(
         .export_cancel
         .lock()
         .insert(export_id.clone(), cancel_flag.clone());
+    // RAII, like the power lease above: the token is removed on EVERY exit,
+    // including the `?`s during prep. Hand removal left an entry stranded for
+    // the process lifetime whenever prep failed, and a stale token poisons the
+    // next export that reuses the id.
+    let _cancel_token = CancelTokenGuard {
+        app: app.clone(),
+        export_id: export_id.clone(),
+    };
     emit_export_state(&app, ExportStateEvent::started(&export_id));
     emit_export_state(
         &app,
@@ -1568,9 +1939,12 @@ pub(crate) async fn run_export_job(
     // overlay pre-render separately — it's the plan's prime perf suspect.
     let prep_ms = export_start.elapsed().as_millis();
     let cursor_render_start = Instant::now();
-    let needs_overlay = request.render_state.cursor_enabled
-        || !request.render_state.annotations.is_empty()
-        || (request.render_state.shadow.enabled && request.render_state.shadow.opacity > 0.0);
+    // NOT gated on the drop shadow: that's composited separately as a static PNG
+    // in the graph (`drop_shadow_mask` → `compose_shadow_stage`), so including it
+    // here ran the whole per-frame overlay pre-render just to emit empty frames.
+    // Annotation glows still qualify via the `annotations` clause.
+    let needs_overlay =
+        request.render_state.cursor_enabled || !request.render_state.annotations.is_empty();
     // Surface the cursor/annotation pre-render — it's the longest prep sub-step
     // (it renders every output frame before the encode starts), so a plain
     // "Preparing…" here reads as a hang.
@@ -1764,28 +2138,121 @@ pub(crate) async fn run_export_job(
         ]);
     }
 
-    let mut audio_input_indices = Vec::new();
-    let source_has_audio = has_audio(&source_video);
-    if request.format != "gif" && source_has_audio {
-        audio_input_indices.push(0);
+    // Camera drop shadow: a padded black silhouette of the bubble shape, scaled
+    // + positioned by FFmpeg to follow the bubble. Mirrors the preview's
+    // box-shadow (cameraShadowStyle). `None` when the shadow strength is 0.
+    let camera_shadow: Option<(MaskResult, u32, u32, u32)> =
+        if let Some(&(_, _, _, bw, bh)) = camera_bubble.as_ref() {
+            match camera_shadow_geom(camera_overlay_settings.shadow, bw) {
+                Some(geom) => {
+                    let radius_px = match camera_overlay_settings.shape.as_str() {
+                        "circle" => bw as f64 / 2.0,
+                        "square" | "rectangle" => 0.0,
+                        _ => camera_overlay_settings.corner_radius * bw as f64,
+                    };
+                    crate::render::mask_export::render_camera_shadow(
+                        crate::render::mask_export::CameraShadowRequest {
+                            bubble_w: bw,
+                            bubble_h: bh,
+                            corner_radius_px: radius_px,
+                            blur_px: geom.blur_px,
+                            offset_y: geom.offset_px,
+                            opacity: geom.opacity,
+                            padding: geom.padding,
+                        },
+                    )
+                    .map_err(|e| AppError::msg(format!("camera shadow render failed: {e}")))?
+                    .map(|res| {
+                        (
+                            res,
+                            geom.padding,
+                            bw + 2 * geom.padding,
+                            bh + 2 * geom.padding,
+                        )
+                    })
+                }
+                None => None,
+            }
+        } else {
+            None
+        };
+    let camera_shadow_path = camera_shadow.as_ref().map(|(m, _, _, _)| m.path.clone());
+    let camera_shadow_input_index = camera_shadow_path.as_ref().map(|_| {
+        1 + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+            + camera_input_index.is_some() as usize
+            + camera_mask_input_index.is_some() as usize
+    });
+    if let Some(ref path) = camera_shadow_path {
+        args.extend([
+            "-loop".to_string(),
+            "1".to_string(),
+            "-i".to_string(),
+            path.to_string_lossy().to_string(),
+        ]);
     }
+    let camera_shadow_overlay = match (camera_shadow_input_index, camera_shadow.as_ref()) {
+        (Some(idx), Some((_, padding, cw, ch))) => Some(CameraShadowOverlay {
+            input_index: idx,
+            padding: *padding,
+            canvas_w: *cw,
+            canvas_h: *ch,
+        }),
+        _ => None,
+    };
+
+    // Detached audio: the recording's own audio is now edited as `voice` clips,
+    // so the monolithic source/system/mic tracks are dropped (the clips carry it).
+    let audio_detached = request
+        .render_state
+        .music_clips
+        .iter()
+        .any(|c| c.role == crate::render::node_types::AudioClipRole::Voice);
+
+    let mut audio_input_indices: Vec<(usize, AudioKind)> = Vec::new();
+    let source_has_audio = has_audio(&source_video);
+    if request.format != "gif" && source_has_audio && !audio_detached {
+        audio_input_indices.push((0, AudioKind::Source));
+    }
+    let mut music_inputs: Vec<(usize, &crate::render::node_types::AudioClip)> = Vec::new();
     if request.format != "gif" {
-        if let Some(project) = project.as_ref() {
-            let mut next_audio_input_index = 1
-                + export_plan.extra_inputs.len()
-                + cursor_overlay_path.is_some() as usize
-                + watermark_path.is_some() as usize
-                + camera_input_index.is_some() as usize
-                + camera_mask_input_index.is_some() as usize;
-            for path in [&project.audio_path, &project.microphone_path]
-                .into_iter()
-                .flatten()
-                .filter(|path| path.exists())
-            {
-                audio_input_indices.push(next_audio_input_index);
+        let mut next_audio_input_index = 1
+            + export_plan.extra_inputs.len()
+            + cursor_overlay_path.is_some() as usize
+            + watermark_path.is_some() as usize
+            + camera_input_index.is_some() as usize
+            + camera_mask_input_index.is_some() as usize
+            + camera_shadow_input_index.is_some() as usize;
+        if let Some(project) = project.as_ref().filter(|_| !audio_detached) {
+            for (path, kind) in [
+                (&project.audio_path, AudioKind::System),
+                (&project.microphone_path, AudioKind::Mic),
+            ] {
+                let Some(path) = path.as_ref().filter(|p| p.exists()) else {
+                    continue;
+                };
+                audio_input_indices.push((next_audio_input_index, kind));
                 next_audio_input_index += 1;
                 args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
             }
+        }
+        // Music / extra-audio clips. Looping clips get `-stream_loop -1` (an
+        // input-level flag); the filter stage trims them to the output length.
+        for clip in &request.render_state.music_clips {
+            if clip.muted || clip.gain <= 0.0 {
+                continue;
+            }
+            let path = clip.source.asset_path();
+            if path.is_empty() || !Path::new(path).exists() {
+                continue;
+            }
+            if clip.looping {
+                args.extend(["-stream_loop".to_string(), "-1".to_string()]);
+            }
+            args.extend(["-i".to_string(), path.to_string()]);
+            music_inputs.push((next_audio_input_index, clip));
+            next_audio_input_index += 1;
         }
     }
 
@@ -1826,6 +2293,34 @@ pub(crate) async fn run_export_job(
     // a user might want to apply over their own face).
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
     {
+        // Per-cut keyframe glide + zoom-follow grow/drift over time (mirrors the
+        // preview's cameraPlacementAt ∘ applyZoomFollow). None → the fixed
+        // placement, byte-identical to before when there are no keyframes and
+        // zoom-follow is off.
+        let camera_anim = if camera_overlay_settings.zoom_follow
+            || !camera_overlay_settings.keyframes.is_empty()
+        {
+            build_camera_follow_exprs(
+                &request.render_state.zoom_regions,
+                &camera_overlay_settings.keyframes,
+                camera_overlay_settings.keyframe_easing,
+                camera_overlay_settings.zoom_follow_easing,
+                camera_overlay_settings.zoom_follow_duration,
+                &camera_overlay_settings.default_placement,
+                camera_overlay_settings.zoom_follow_strength,
+                camera_overlay_settings.zoom_follow,
+                &canvas_geom,
+                trim_start,
+                request.render_state.trim_end,
+            )
+            .map(|(size_expr, x_expr, y_expr)| CameraOverlayAnim {
+                size_expr,
+                x_expr,
+                y_expr,
+            })
+        } else {
+            None
+        };
         let (new_complex, new_map) = append_camera_overlay_to_complex(
             filter_complex_after_cursor.as_deref(),
             &video_map_after_cursor,
@@ -1837,6 +2332,8 @@ pub(crate) async fn run_export_job(
                 bubble_w: *bw,
                 bubble_h: *bh,
                 mirror: camera_overlay_settings.mirror,
+                anim: camera_anim,
+                shadow: camera_shadow_overlay,
             },
         );
         filter_complex_after_cursor = Some(new_complex);
@@ -1997,12 +2494,10 @@ pub(crate) async fn run_export_job(
                 }
             }
             Err(GifPassError::Cancelled) => {
-                state.export_cancel.lock().remove(&export_id);
                 emit_export_state(&app, ExportStateEvent::cancelled(&export_id));
                 return Err(AppError::from("export cancelled"));
             }
             Err(GifPassError::Failed(msg)) => {
-                state.export_cancel.lock().remove(&export_id);
                 emit_export_state(&app, ExportStateEvent::error(&export_id, &msg));
                 return Err(AppError::from(msg));
             }
@@ -2063,13 +2558,64 @@ pub(crate) async fn run_export_job(
         speed_active,
     );
 
+    // Mix music/extra-audio clips onto the finished (output-time) audio. Runs
+    // after cut/speed so the clips sit on the same output timeline the viewer sees.
+    if !music_inputs.is_empty() {
+        let out_dur = warped_output_duration(&speed_segments);
+        if let Some((seg, map)) = build_music_stage(&music_inputs, audio_map.as_deref(), out_dur) {
+            if !seg.is_empty() {
+                filter_complex_after_cursor = Some(match filter_complex_after_cursor.take() {
+                    Some(fc) => format!("{fc};{seg}"),
+                    None => seg,
+                });
+            }
+            audio_map = Some(map);
+        }
+    }
+
+    // Merge any output-side filters (e.g. the final scale) into the complex graph
+    // BEFORE emitting it, so the string handed to FFmpeg is final. (Previously
+    // this happened after the args were built, patching the arg slot in place.)
+    if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
+        let (complex_filter, map_label) = append_output_filters_to_complex(
+            filter_complex_after_cursor.as_deref().unwrap_or_default(),
+            &video_map_after_cursor,
+            &output_filters,
+        );
+        filter_complex_after_cursor = Some(complex_filter);
+        video_map_after_cursor = map_label;
+    }
+
+    // Dense zoom/camera LUT expressions can push the filtergraph past Windows'
+    // ~32 KB command-line limit ("The filename or extension is too long",
+    // os error 206). Above a threshold, pass it via `-filter_complex_script
+    // <file>` (read from disk, no command-line cost) instead of inline. The
+    // file is removed after the encode finishes.
+    let mut filter_script_path: Option<PathBuf> = None;
     if let Some(ref filter_complex) = filter_complex_after_cursor {
-        args.extend([
-            "-filter_complex".to_string(),
-            filter_complex.clone(),
-            "-map".to_string(),
-            video_map_after_cursor.clone(),
-        ]);
+        if filter_complex.len() > FILTER_COMPLEX_SCRIPT_THRESHOLD {
+            let path = output_dir.join(format!("recast-filtergraph-{export_id}.txt"));
+            std::fs::write(&path, filter_complex).map_err(|e| {
+                AppError::msg(format!(
+                    "failed to write filter script {}: {e}",
+                    path.display()
+                ))
+            })?;
+            args.extend([
+                "-filter_complex_script".to_string(),
+                path.to_string_lossy().to_string(),
+                "-map".to_string(),
+                video_map_after_cursor.clone(),
+            ]);
+            filter_script_path = Some(path);
+        } else {
+            args.extend([
+                "-filter_complex".to_string(),
+                filter_complex.clone(),
+                "-map".to_string(),
+                video_map_after_cursor.clone(),
+            ]);
+        }
     } else {
         args.extend(["-map".to_string(), "0:v:0".to_string()]);
     }
@@ -2113,6 +2659,14 @@ pub(crate) async fn run_export_job(
         args.push("-shortest".to_string());
     }
 
+    // CC-BY music requires credit, so bake the attribution into the output's
+    // `comment` metadata (skipped for GIF — it carries no audio to credit).
+    if request.format != "gif" {
+        if let Some(comment) = build_credits_comment(&request.render_state.music_clips) {
+            args.extend(["-metadata".to_string(), format!("comment={comment}")]);
+        }
+    }
+
     append_codec_args(
         &mut args,
         &request.format,
@@ -2122,30 +2676,6 @@ pub(crate) async fn run_export_job(
         audio_map.is_some(),
         &output_path,
     );
-
-    if !output_filters.is_empty() && filter_complex_after_cursor.is_some() {
-        let (complex_filter, map_label) = append_output_filters_to_complex(
-            filter_complex_after_cursor.as_deref().unwrap_or_default(),
-            &video_map_after_cursor,
-            &output_filters,
-        );
-
-        let filter_index = args
-            .iter()
-            .position(|arg| arg == "-filter_complex")
-            .and_then(|index| args.get_mut(index + 1));
-        if let Some(slot) = filter_index {
-            *slot = complex_filter;
-        }
-
-        let map_index = args
-            .iter()
-            .position(|arg| arg == "-map")
-            .and_then(|index| args.get_mut(index + 1));
-        if let Some(slot) = map_index {
-            *slot = map_label;
-        }
-    }
 
     let output_path_str = output_path.to_string_lossy().to_string();
     log::info!("export ffmpeg args: {}", args.join(" "));
@@ -2193,12 +2723,13 @@ pub(crate) async fn run_export_job(
     })
     .await;
 
-    // Cleanup must run regardless of whether the task returned Ok/Err or even
-    // panicked — otherwise a panic would leak the cursor overlay's temp dir and
-    // leave a stale cancel token installed that would poison the next export.
+    // The cancel token is now owned by `_cancel_token` (RAII), so it survives
+    // `?` and panics. This drop is just the cursor overlay's temp dir.
     drop(cursor_overlay);
-    state.export_cancel.lock().remove(&export_id);
     if let Some(p) = palette_temp_path.as_ref() {
+        let _ = std::fs::remove_file(p);
+    }
+    if let Some(p) = filter_script_path.as_ref() {
         let _ = std::fs::remove_file(p);
     }
 

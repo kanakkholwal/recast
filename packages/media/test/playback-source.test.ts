@@ -14,6 +14,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MediabunnyVideoSource } from '../src/playback/source';
 
+/** Stands in for a transferred decode surface. Also installed as the global
+ *  `VideoFrame`, so the source's `instanceof` check passes. */
+class FakeFrame {
+	closed = false;
+	readonly codedWidth = 1920;
+	readonly codedHeight = 1080;
+	constructor(readonly timestamp: number) {}
+	close() {
+		this.closed = true;
+	}
+}
+
+function makeFrame(sec: number): FakeFrame {
+	return new FakeFrame(Math.round(sec * 1_000_000));
+}
+
+
 type WorkerMsg = { type: string; [k: string]: unknown };
 
 class FakeWorker {
@@ -61,7 +78,7 @@ class FakeWorker {
 				type: 'frame',
 				seq,
 				originalSec,
-				canvas: new OffscreenCanvas(1920, 1080),
+				frame: makeFrame(originalSec),
 				width: 1920,
 				height: 1080,
 			},
@@ -104,7 +121,7 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 		// Capability check: `static create` rejects when VideoFrame or
 		// OffscreenCanvas are missing. Stub them as no-constructible classes
 		// so the check passes without real implementations.
-		vi.stubGlobal('VideoFrame', class {} as unknown as typeof VideoFrame);
+		vi.stubGlobal('VideoFrame', FakeFrame as unknown as typeof VideoFrame);
 		vi.stubGlobal('OffscreenCanvas', class {} as unknown);
 	});
 
@@ -113,7 +130,9 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 	});
 
 	async function buildSource(): Promise<MediabunnyVideoSource> {
-		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4');
+		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4', {
+			createWorker: () => worker as unknown as Worker,
+		});
 		// Static `create` resolves once the worker posts `ready`. The fake
 		// does this via `queueMicrotask`; let microtasks drain.
 		await new Promise<void>((r) => queueMicrotask(() => r()));
@@ -151,6 +170,10 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 		const seek1 = worker.lastOfType('seek') as { seq: number } | undefined;
 		const seq1 = seek1?.seq ?? -1;
 		expect(seq1).toBeGreaterThan(0);
+
+		// Seeks are rate limited, so two jumps inside one window collapse into
+		// one. Wait past the window to get a genuinely separate second seek.
+		await new Promise((r) => setTimeout(r, 60));
 
 		// Second seek: 12.0 (post-cut, supersedes the first).
 		const f2 = src.frameAt(12.0, 0);
@@ -206,5 +229,65 @@ describe('MediabunnyVideoSource — supersede + cut-jump behavior', () => {
 		const newMessages = after - before;
 		expect(newMessages).toBeGreaterThanOrEqual(1);
 		expect(worker.lastOfType('dispose')).toBeDefined();
+	});
+});
+
+describe('seek rate limiting', () => {
+	let worker: FakeWorker;
+
+	beforeEach(() => {
+		vi.useFakeTimers();
+		worker = new FakeWorker();
+		vi.stubGlobal('Worker', class {} as unknown as typeof Worker);
+		vi.stubGlobal('VideoFrame', FakeFrame as unknown as typeof VideoFrame);
+		vi.stubGlobal('OffscreenCanvas', class {} as unknown);
+	});
+
+	afterEach(() => {
+		vi.useRealTimers();
+		vi.unstubAllGlobals();
+	});
+
+	async function build() {
+		const src = await MediabunnyVideoSource.create('asset://localhost/test.mp4', {
+			createWorker: () => worker as unknown as Worker,
+		});
+		await vi.advanceTimersByTimeAsync(0);
+		return src;
+	}
+
+	it('collapses a burst of drag seeks into one, keeping the final target', async () => {
+		const src = await build();
+		// A drag fires one jump per pointer move. Unthrottled, each started a
+		// fresh decode run with its own decoder.
+		for (let i = 0; i < 30; i++) src.advanceTo(i * 3);
+		const seeks = worker.messages.filter((m) => m.type === 'seek');
+		expect(seeks.length).toBe(1);
+
+		await vi.advanceTimersByTimeAsync(100);
+		const after = worker.messages.filter((m) => m.type === 'seek');
+		expect(after.length).toBe(2);
+		// The newest target always wins, so the picture lands where the drag ended.
+		expect(after[after.length - 1]?.originalSec).toBe(29 * 3);
+		src.dispose();
+	});
+
+	it('does not throttle steady playback, which never seeks', async () => {
+		const src = await build();
+		src.advanceTo(0);
+		for (let i = 1; i < 30; i++) src.advanceTo(i / 60);
+		expect(worker.messages.filter((m) => m.type === 'playhead').length).toBe(29);
+		expect(worker.messages.filter((m) => m.type === 'seek').length).toBe(1);
+		src.dispose();
+	});
+
+	it('leaves no timer armed after dispose', async () => {
+		const src = await build();
+		src.advanceTo(10);
+		src.advanceTo(20);
+		src.dispose();
+		const before = worker.messages.length;
+		await vi.advanceTimersByTimeAsync(200);
+		expect(worker.messages.length).toBe(before);
 	});
 });

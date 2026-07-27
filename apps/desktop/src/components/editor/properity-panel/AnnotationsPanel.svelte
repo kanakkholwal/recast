@@ -33,6 +33,7 @@
   import type { IconComponent } from "@recast/icons";
   import { toast } from "@recast/ui/sonner";
   import { pickImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
+  import { TITLE_PRESETS, type TitlePreset } from "$lib/annotations/title-presets";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import { Kbd } from "@recast/ui/kbd";
@@ -111,6 +112,16 @@
     } catch (error) {
       toast.error(`Could not insert image: ${error}`);
     }
+  }
+
+  // Insert a ready-styled title/lower-third: a positioned text annotation plus a
+  // legibility glow. The user edits the placeholder text in place.
+  function insertTitle(preset: TitlePreset) {
+    store.annotationTool = null;
+    store.addAnnotation(preset.build(), undefined, undefined, {
+      glow: { ...preset.glow },
+      name: preset.label,
+    });
   }
 
   async function replaceImage() {
@@ -214,6 +225,29 @@
         to cancel.
       </p>
     {/if}
+  </PanelSection>
+
+  <PanelSection
+    title="Titles"
+    hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
+    flush
+  >
+    <div class="grid grid-cols-2 gap-1">
+      {#each TITLE_PRESETS as preset (preset.id)}
+        <button
+          type="button"
+          onclick={() => insertTitle(preset)}
+          title={`Insert ${preset.label.toLowerCase()}`}
+          class={cn(
+            "flex h-9 items-center justify-center rounded-md border text-[11px] font-medium transition-all duration-150",
+            "focus:outline-none focus:ring-2 focus:ring-ring/40",
+            "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
+          )}
+        >
+          {preset.label}
+        </button>
+      {/each}
+    </div>
   </PanelSection>
 
   {#if store.annotations.length === 0}

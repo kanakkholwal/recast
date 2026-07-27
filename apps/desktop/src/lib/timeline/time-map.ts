@@ -133,16 +133,52 @@ export function displayTimeMap(args: {
 }
 
 /**
+ * Re-space a collapsed map so removed time between kept spans shows as a GAP,
+ * for the opt-in "show cut gaps" timeline view. Each kept span keeps its
+ * (speed-warped) output width but is pushed right by the original duration
+ * removed before it, so cuts read as empty space instead of a zero-width seam.
+ * Playback/export never use this — only rendering. With no cuts (contiguous
+ * spans) it returns an equivalent map, so the view is a no-op until you cut.
+ */
+export function buildGapMap(map: TimeMap): TimeMap {
+	const spans: MappedSpan[] = [];
+	let out = 0;
+	let prevOrigEnd: number | null = null;
+	for (const s of map.spans) {
+		if (prevOrigEnd !== null && s.origStart - prevOrigEnd > EPS) {
+			out += s.origStart - prevOrigEnd; // gap = removed original duration
+		}
+		const width = s.outEnd - s.outStart; // keep the collapsed (warped) width
+		spans.push({ ...s, outStart: out, outEnd: out + width });
+		out += width;
+		prevOrigEnd = s.origEnd;
+	}
+	return { spans, outputDuration: out };
+}
+
+/**
  * Map an original-timeline time to output time. A time in a removed gap (or
  * before the first span) collapses onto the next kept span's output start (the
  * seam), matching cuts.ts, where a time inside a cut maps to the cut's start.
  */
 export function originalToOutput(map: TimeMap, t: number): number {
-	for (const s of map.spans) {
-		if (t < s.origStart) return s.outStart;
-		if (t <= s.origEnd) return s.outStart + (t - s.origStart) / s.speed;
+	// Binary search for the first span with `origEnd >= t` — identical to the
+	// linear "first span where t <= origEnd" (a time before that span's start
+	// collapses onto its seam). Spans are ordered and non-overlapping, so origEnd
+	// is non-decreasing. The waveform lane evaluates this per bucket over ~2000
+	// buckets, so at high cut counts the old O(spans) scan dominated a zoom.
+	const spans = map.spans;
+	let lo = 0;
+	let hi = spans.length;
+	while (lo < hi) {
+		const mid = (lo + hi) >> 1;
+		if (spans[mid].origEnd >= t) hi = mid;
+		else lo = mid + 1;
 	}
-	return map.outputDuration;
+	if (lo >= spans.length) return map.outputDuration;
+	const s = spans[lo];
+	if (t < s.origStart) return s.outStart;
+	return s.outStart + (t - s.origStart) / s.speed;
 }
 
 /**

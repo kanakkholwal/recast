@@ -4,4 +4,5 @@
  */
 
 export { MediabunnyVideoSource } from './source';
+export type { MediabunnySourceOptions } from './source';
 export type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';

@@ -239,7 +239,31 @@ pub fn append_subtitles_to_complex(
 /// All pixel values are in **canvas pixels** (= source + padding × 2 with
 /// any letterbox bars), matching the coordinate space of every other overlay
 /// in the export filter graph.
+/// Time-varying camera bubble geometry (zoom-follow): FFmpeg `t`-expressions in
+/// output-stream time. `size_expr` drives both scale w and h (square). When set,
+/// the overlay animates; otherwise the fixed `bubble_*` pixels are used.
+#[derive(Debug, Clone)]
+pub struct CameraOverlayAnim {
+    pub size_expr: String,
+    pub x_expr: String,
+    pub y_expr: String,
+}
+
+/// Pre-rendered camera drop-shadow input. The PNG is a padded black silhouette
+/// of the bubble shape; FFmpeg scales it by the bubble's live size and overlays
+/// it just under the bubble. `None` on `CameraOverlayParams` = no shadow.
 #[derive(Debug, Clone, Copy)]
+pub struct CameraShadowOverlay {
+    /// FFmpeg input index of the shadow PNG.
+    pub input_index: usize,
+    /// Transparent margin baked around the bubble in the PNG.
+    pub padding: u32,
+    /// Shadow PNG dimensions (= bubble + 2·padding).
+    pub canvas_w: u32,
+    pub canvas_h: u32,
+}
+
+#[derive(Debug, Clone)]
 pub struct CameraOverlayParams {
     /// FFmpeg input index of the camera.mp4 stream.
     pub camera_input_index: usize,
@@ -257,6 +281,10 @@ pub struct CameraOverlayParams {
     /// Horizontally flip the camera so the rendered bubble matches what the
     /// user saw in the recording-time webcam preview (Phase 1 default: on).
     pub mirror: bool,
+    /// Zoom-follow animation; `None` = fixed placement (the pre-follow path).
+    pub anim: Option<CameraOverlayAnim>,
+    /// Drop shadow composited under the bubble; `None` = no shadow.
+    pub shadow: Option<CameraShadowOverlay>,
 }
 
 /// Append a camera-overlay stage to an existing filter_complex string.
@@ -290,27 +318,114 @@ pub fn append_camera_overlay_to_complex(
         bubble_w: bw,
         bubble_h: bh,
         mirror,
-    } = *params;
+        anim,
+        shadow,
+    } = params;
+    let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
+    // Match the preview's `object-fit: cover`: scale the camera to COVER the
+    // bubble (preserve aspect, fill), then crop the overflow — never stretch a
+    // non-square webcam into the square (that distorted the picture in export).
+    // The mask/shadow PNGs are already bw×bh, so they keep a plain scale.
+    let cam_cover = format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}");
 
-    // Use unique labels (`vcam_pre`, `vcam_mask`, `vcam_shaped`) so this
-    // stage can compose with cursor / watermark / blur stages without label
-    // collisions.
-    let cam_chain = match mask_input_index {
-        Some(mask_idx) => format!(
-            "[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_pre];\
-             [{mask_idx}:v]format=gray[vcam_mask];\
-             [vcam_pre][vcam_mask]alphamerge[vcam_shaped]"
-        ),
-        None => format!("[{cam}:v]{hflip}scale={bw}:{bh}[vcam_shaped]"),
-    };
+    let mut stages: Vec<String> = Vec::new();
 
-    let overlay =
-        format!("{normalized_current}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}");
+    match anim {
+        // Fixed placement: scale straight to the bubble rect. Sizes are constant,
+        // so the mask/camera alphamerge never sees a size mismatch. The optional
+        // shadow PNG is overlaid at `bubble_xy - padding` just under the bubble.
+        None => {
+            let cam_chain = match mask_input_index {
+                Some(mask_idx) => format!(
+                    "[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_pre];\
+                     [{mask_idx}:v]format=gray,scale={bw}:{bh}[vcam_mask];\
+                     [vcam_pre][vcam_mask]alphamerge[vcam_shaped]"
+                ),
+                None => format!("[{cam}:v]{hflip}{cam_cover}[vcam_shaped]"),
+            };
+            let base_map = match shadow {
+                Some(sh) => {
+                    stages.push(format!(
+                        "[{idx}:v]format=rgba[vcam_shadow];\
+                         {normalized_current}[vcam_shadow]overlay={sx}:{sy}:format=auto[vcam_bg]",
+                        idx = sh.input_index,
+                        sx = bx as i64 - sh.padding as i64,
+                        sy = by as i64 - sh.padding as i64,
+                    ));
+                    "[vcam_bg]".to_string()
+                }
+                None => normalized_current.clone(),
+            };
+            stages.push(cam_chain);
+            stages.push(format!(
+                "{base_map}[vcam_shaped]overlay={bx}:{by}:format=auto{out_label}"
+            ));
+        }
+        // Animated placement (zoom-follow / per-cut keyframes). CRITICAL: build the
+        // shaped bubble at FIXED native size and apply the single `eval=frame`
+        // scale to the MERGED stream. Scaling the camera and the (looped-image)
+        // mask independently with `eval=frame` evaluates the size expression at
+        // each input's OWN pts — and the mask image streams at a different frame
+        // rate — so their per-frame sizes diverge and `alphamerge` fails with
+        // EINVAL. One post-merge scale keeps them locked (verified against ffmpeg).
+        Some(a) => {
+            stages.push(match mask_input_index {
+                Some(mask_idx) => format!(
+                    "[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_pre];\
+                     [{mask_idx}:v]format=gray,scale={bw}:{bh}[vcam_mask];\
+                     [vcam_pre][vcam_mask]alphamerge[vcam_native]"
+                ),
+                None => format!("[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_native]"),
+            });
+            match shadow {
+                // Bake the shadow UNDER the bubble at native size (the padded
+                // canvas needs alpha, hence yuva420p above), then scale the whole
+                // composite by the size expr so shadow + bubble grow/track together
+                // with ONE expression per axis.
+                Some(sh) => {
+                    let ratio_w = sh.canvas_w as f64 / bw.max(1) as f64;
+                    let ratio_h = sh.canvas_h as f64 / bh.max(1) as f64;
+                    let p_over_bw = sh.padding as f64 / bw.max(1) as f64;
+                    let p_over_bh = sh.padding as f64 / bh.max(1) as f64;
+                    stages.push(format!(
+                        "[vcam_native]pad={cw}:{ch}:{p}:{p}:color=#00000000[vcam_padded];\
+                         [{idx}:v]format=rgba[vcam_sh];\
+                         [vcam_sh][vcam_padded]overlay=0:0[vcam_comp];\
+                         [vcam_comp]scale=w='({s})*{ratio_w:.6}':h='({s})*{ratio_h:.6}':eval=frame[vcam_scaled]",
+                        cw = sh.canvas_w,
+                        ch = sh.canvas_h,
+                        p = sh.padding,
+                        idx = sh.input_index,
+                        s = a.size_expr,
+                    ));
+                    stages.push(format!(
+                        "{normalized_current}[vcam_scaled]\
+                         overlay=x='({x})-{p_over_bw:.6}*({s})':y='({y})-{p_over_bh:.6}*({s})':format=auto{out_label}",
+                        x = a.x_expr,
+                        y = a.y_expr,
+                        s = a.size_expr,
+                    ));
+                }
+                None => {
+                    stages.push(format!(
+                        "[vcam_native]scale=w='{s}':h='{s}':eval=frame[vcam_scaled]",
+                        s = a.size_expr
+                    ));
+                    stages.push(format!(
+                        "{normalized_current}[vcam_scaled]overlay='{x}':'{y}':format=auto{out_label}",
+                        x = a.x_expr,
+                        y = a.y_expr,
+                    ));
+                }
+            }
+        }
+    }
 
+    let stage = stages.join(";");
     let new_complex = match filter_complex {
-        Some(existing) if !existing.is_empty() => format!("{existing};{cam_chain};{overlay}"),
-        _ => format!("{cam_chain};{overlay}"),
+        Some(existing) if !existing.is_empty() => format!("{existing};{stage}"),
+        _ => stage,
     };
     (new_complex, out_label.to_string())
 }
@@ -409,6 +524,108 @@ pub fn build_gif_palette_prepass_filter(
     let max_colors = options.max_colors.clamp(2, 256);
     let fps = options.fps.max(1);
     format!("fps={fps}{scale_clause},palettegen=max_colors={max_colors}:stats_mode=diff")
+}
+
+#[cfg(test)]
+mod camera_overlay_tests {
+    use super::*;
+
+    fn base_params() -> CameraOverlayParams {
+        CameraOverlayParams {
+            camera_input_index: 2,
+            mask_input_index: Some(3),
+            bubble_x: 100,
+            bubble_y: 80,
+            bubble_w: 200,
+            bubble_h: 200,
+            mirror: true,
+            anim: None,
+            shadow: None,
+        }
+    }
+
+    #[test]
+    fn no_shadow_keeps_the_classic_overlay() {
+        let (complex, map) = append_camera_overlay_to_complex(None, "vbg", &base_params());
+        assert_eq!(map, "[vcamera]");
+        assert!(!complex.contains("vcam_shadow"));
+        assert!(complex.contains("[vbg][vcam_shaped]overlay=100:80"));
+    }
+
+    #[test]
+    fn camera_is_cover_cropped_not_stretched() {
+        // Parity with the preview's `object-fit: cover`: the camera scales to
+        // COVER + crops, never stretches into the square. The mask keeps a plain
+        // scale (it is already bw×bh).
+        let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &base_params());
+        assert!(complex.contains(
+            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200,format=yuva420p[vcam_pre]"
+        ));
+        assert!(complex.contains("[3:v]format=gray,scale=200:200[vcam_mask]"));
+    }
+
+    #[test]
+    fn static_shadow_overlays_under_the_bubble_offset_by_padding() {
+        let mut p = base_params();
+        p.shadow = Some(CameraShadowOverlay {
+            input_index: 4,
+            padding: 24,
+            canvas_w: 248,
+            canvas_h: 248,
+        });
+        let (complex, _) = append_camera_overlay_to_complex(Some("PRE"), "vbg", &p);
+        // Shadow PNG normalised + overlaid at bubble_xy - padding, then the bubble
+        // composites on top of the shadowed background [vcam_bg].
+        assert!(complex.contains("[4:v]format=rgba[vcam_shadow]"));
+        assert!(complex.contains("[vbg][vcam_shadow]overlay=76:56"));
+        assert!(complex.contains("[vcam_bg][vcam_shaped]overlay=100:80"));
+    }
+
+    fn anim() -> CameraOverlayAnim {
+        CameraOverlayAnim {
+            size_expr: "SZ".to_string(),
+            x_expr: "XE".to_string(),
+            y_expr: "YE".to_string(),
+        }
+    }
+
+    #[test]
+    fn animated_no_shadow_alphamerges_at_native_size_then_scales_once() {
+        // Regression: the mask must scale to a FIXED native size (200:200), NOT
+        // with the per-frame size expr. Independent eval=frame scales on the
+        // camera and the looped-image mask desync (different pts) → alphamerge
+        // EINVAL. The single eval=frame scale lives on the merged stream.
+        let mut p = base_params();
+        p.anim = Some(anim());
+        let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
+        assert!(complex.contains("format=gray,scale=200:200[vcam_mask]"));
+        assert!(!complex.contains("scale=w='SZ':h='SZ':eval=frame[vcam_mask]"));
+        assert!(complex.contains("[vcam_pre][vcam_mask]alphamerge[vcam_native]"));
+        assert!(complex.contains("[vcam_native]scale=w='SZ':h='SZ':eval=frame[vcam_scaled]"));
+        assert!(complex.contains("[vbg][vcam_scaled]overlay='XE':'YE'"));
+    }
+
+    #[test]
+    fn animated_shadow_bakes_under_bubble_then_scales_the_composite_once() {
+        let mut p = base_params();
+        p.anim = Some(anim());
+        p.shadow = Some(CameraShadowOverlay {
+            input_index: 4,
+            padding: 20,
+            canvas_w: 240,
+            canvas_h: 240,
+        });
+        let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &p);
+        // Bubble merged at native size, shadow padded under it, one composite scale
+        // (ratio 240/200 = 1.2), and the overlay tracks bubble - scaled padding.
+        assert!(complex.contains("[vcam_pre][vcam_mask]alphamerge[vcam_native]"));
+        assert!(complex.contains("[vcam_native]pad=240:240:20:20:color=#00000000[vcam_padded]"));
+        assert!(complex.contains("[vcam_sh][vcam_padded]overlay=0:0[vcam_comp]"));
+        assert!(complex.contains("[vcam_comp]scale=w='(SZ)*1.200000':h='(SZ)*1.200000':eval=frame"));
+        assert!(complex.contains(
+            "overlay=x='(XE)-0.100000*(SZ)':y='(YE)-0.100000*(SZ)':format=auto[vcamera]"
+        ));
+    }
 }
 
 #[cfg(test)]

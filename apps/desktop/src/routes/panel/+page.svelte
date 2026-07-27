@@ -9,6 +9,7 @@
   import { checkCapability, loadCapabilities } from "$lib/capabilities";
   import {
     CAPTURE_INTENT_CHANGED_EVENT,
+    excludeWindowFromCapture,
     getAudioDevices,
     getCaptureIntent,
     getDisplays,
@@ -849,7 +850,7 @@
       if (existing) {
         await existing.close();
       }
-      new WebviewWindow("camera-preview", {
+      const win = new WebviewWindow("camera-preview", {
         url: `/camera-preview?deviceId=${encodeURIComponent(deviceId)}`,
         title: "Camera",
         width: 200,
@@ -859,8 +860,17 @@
         shadow: false,
         alwaysOnTop: !IS_LINUX,
         resizable: true,
+        skipTaskbar: true,
         x: 40,
         y: 40,
+      });
+      // MUST exclude from screen capture or DXGI Desktop Duplication bakes the
+      // camera bubble into the recorded screen video. The HWND isn't reachable
+      // until the window exists, so wait for `tauri://created`.
+      win.once("tauri://created", () => {
+        excludeWindowFromCapture("camera-preview").catch((err) =>
+          console.warn("camera preview exclusion failed:", err),
+        );
       });
     });
   }
@@ -1006,6 +1016,8 @@
     if (isStopping) return;
     try {
       isStopping = true;
+      // The camera flush is driven by Rust stop_recording (covers every stop
+      // path), so the panel just requests the stop.
       await stopRecording();
     } catch (e) {
       // Show the actual error, not a misleading "ffmpeg not installed"
@@ -1101,11 +1113,13 @@
     try {
       if (isPaused) {
         await resumeRecording();
+        if (cameraOn) void emit("camera-recording-resumed");
         if (pausedSince !== null) pausedAccumMs += Date.now() - pausedSince;
         pausedSince = null;
         isPaused = false;
       } else {
         await pauseRecording();
+        if (cameraOn) void emit("camera-recording-paused");
         pausedSince = Date.now();
         isPaused = true;
       }

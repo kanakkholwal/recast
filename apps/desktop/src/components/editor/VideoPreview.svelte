@@ -6,7 +6,8 @@
 	import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
 	import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 	import { PlaybackClock } from "$lib/playback/clock";
-	import { MediabunnyVideoSource } from "@recast/media/playback";
+	import type { MediabunnyVideoSource } from "@recast/media/playback";
+	import { createMediabunnySource } from "$lib/playback/mediabunny";
 	import {
 	  cursorSpriteHotspot,
 	  resolveBackgroundWireValue,
@@ -41,9 +42,13 @@
 	  idleAlphaAt,
 	  interpolateCursor,
 	  resolutionTier,
+	  shouldRecoverMbSource,
 	  type CursorSampleJS,
 	  type IdlePeriodJS,
 	} from "./video-preview.logic";
+	import { AudioStallMonitor, resolveAvSync } from "$lib/playback/av-sync";
+	import { FrameTextureRing } from "$lib/playback/frame-textures";
+	import { textureRingFrames } from "@recast/media";
 	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
 	import { compile, link } from "./webgl.logic";
 
@@ -57,7 +62,8 @@
 		 *  renders nothing when this is empty. */
 		cameraSrc?: string;
 		onTimeUpdate: () => void;
-		onEnded: () => void;
+		/** Return `true` if the host looped (moved the transport) instead of stopping. */
+		onEnded: () => boolean | void;
 		onLoadedMetadata: () => void;
 		onReady: () => void;
 		onError: () => void;
@@ -75,6 +81,10 @@
 		 *  encode fails. Bind in the parent so other UI (player controls
 		 *  copy-to-clipboard button) can trigger it. */
 		captureFrame?: () => Promise<Blob | null>;
+		/** Output-time position of the audio clock, or null when audio isn't
+		 *  scheduled. The picture clock re-anchors onto it past the perceptual
+		 *  drift threshold — two independent clocks otherwise separate. */
+		audioPositionSec?: () => number | null;
 	}
 
 	let {
@@ -91,16 +101,23 @@
 		onSeeked,
 		webcodecsActive = $bindable(false),
 		captureFrame = $bindable(),
+		audioPositionSec,
 	}: Props = $props();
 
 	let canvasEl: HTMLCanvasElement | null = $state(null);
 	// WebView doesn't expose WebGL2, so surface an actionable message rather than a
 	// silently blank canvas (old integrated GPUs, broken/outdated drivers).
 	let webgl2Unsupported = $state(false);
+	/** GPU context lost (driver reset / TDR); recoverable, unlike the above. */
+	let glLost = $state(false);
 	let containerEl: HTMLDivElement | null = $state(null);
 	/** Shrink-wrap around the WebGL canvas so the annotation overlay can sit
 	 * on top of it at the same rendered rect regardless of letterboxing. */
 	let previewRectEl: HTMLDivElement | null = $state(null);
+	// Per-FRAME picture time for smooth DOM overlays (camera bubble). store.currentTime
+	// is throttled to ~25Hz to spare the timeline/waveform fan-out; the camera grow
+	// tracks the zoom curve, so it reads this instead to stay as smooth as the shader.
+	let smoothPreviewTime = $state(0);
 	let isReady = $state(false);
 	// Internal decoder that pre-decodes the first post-cut frame to mask the
 	// primary element's seek latency. Only seeked once per cut, never played.
@@ -108,6 +125,7 @@
 
 	let gl: WebGL2RenderingContext | null = null;
 	let program: WebGLProgram | null = null;
+	let vertexBuf: WebGLBuffer | null = null;
 	let videoTex: WebGLTexture | null = null;
 	let bgTex: WebGLTexture | null = null;
 	let bgTexReady = false;
@@ -124,12 +142,28 @@
 	// imperative draw loop); `mbReady` is, because the markup and the
 	// pause-the-transport effect both branch on it.
 	let mbSource: MediabunnyVideoSource | null = null;
+	// Decoded frames live here as textures we own, so each VideoFrame goes back
+	// to the decoder's pool immediately after upload.
+	let frameRing: FrameTextureRing | null = null;
 	let mbReady = $state(false);
 	let loadedMbSrc = "";
+	// Automatic recovery from a transient decode failure — a GPU-process reset
+	// (TDR) under scrub-thrash kills the decoder + GL context but is recoverable;
+	// without this the preview degraded to <video> for the rest of the session.
+	const MB_RECOVER_DELAY_MS = 400;
+	let mbRecoverAttempts = 0;
+	let mbHealthyFrames = 0;
+	let mbRecoverPending = false;
+	let mbRecoverTimer: ReturnType<typeof setTimeout> | undefined;
+	let mbRecoverNonce = $state(0);
 	// True once a frame is in videoTex. preserveDrawingBuffer:false means an early
 	// return from draw() clears to BLACK; we re-render the last frame instead, and
 	// this guards that.
 	let hasRenderedFrame = false;
+	/** Worst |video − audio| seen this session; reported with the perf sample. */
+	let maxAvDriftSec = 0;
+	const audioStall = new AudioStallMonitor();
+	let audioStalledReported = false;
 	// Last original time published to store.currentTime. Throttled because the write
 	// fans out to overlays/timeline/waveform; every-rAF writes starve frame delivery.
 	let lastPublishedTime = -1;
@@ -195,6 +229,16 @@
 
 	let pressEvents: PressEvent[] = [];
 
+	/**
+	 * (Re)build the texture ring for the live source. Sized from the source, so
+	 * it must be rebuilt after a context restore too — the old handles belong to
+	 * the dead context and binding them fails silently.
+	 */
+	function rebuildFrameRing(width: number, height: number) {
+		frameRing?.dispose();
+		frameRing = gl ? new FrameTextureRing(gl, textureRingFrames(width, height)) : null;
+	}
+
 	function initGL() {
 		if (!canvasEl) return;
 		const g = canvasEl.getContext("webgl2", {
@@ -216,9 +260,10 @@
 		g.deleteShader(vs);
 		g.deleteShader(fs);
 
-		// Full-screen quad
-		const buf = g.createBuffer();
-		g.bindBuffer(g.ARRAY_BUFFER, buf);
+		// Full-screen quad. Kept on a field so teardown can delete it; initGL also
+		// runs on every context restore, so a local would leak one per restore.
+		vertexBuf = g.createBuffer();
+		g.bindBuffer(g.ARRAY_BUFFER, vertexBuf);
 		g.bufferData(
 			g.ARRAY_BUFFER,
 			new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
@@ -442,27 +487,61 @@
 		});
 	}
 
+	//  Per-frame memoization
+	// The draw loop runs at 60fps during playback; these recompute-on-change
+	// caches stop it re-parsing/re-allocating identical values every frame.
+	let geomCache: ReturnType<typeof computeCanvasGeometry> | null = null;
+	let geomSig = "";
+	function currentGeometry() {
+		const meta = store.metadata;
+		if (!meta?.width || !meta?.height) return null;
+		const sig = `${meta.width}x${meta.height}|${store.padding}|${store.outputAspect}`;
+		if (sig !== geomSig) {
+			geomCache = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
+			geomSig = sig;
+		}
+		return geomCache;
+	}
+
+	// Container CSS size, cached by the ResizeObserver so the draw loop never
+	// reads clientWidth/clientHeight — a forced synchronous reflow every frame,
+	// made worse by the overlays that dirty layout on the same tick.
+	let containerW = 0;
+	let containerH = 0;
+
+	let gradCache: ReturnType<typeof buildGradientUniforms> | null = null;
+	let gradSig = "\0";
+	function currentGradient(value: string) {
+		if (value !== gradSig) {
+			gradCache = buildGradientUniforms(value);
+			gradSig = value;
+		}
+		return gradCache!;
+	}
+
+	// Colours change rarely but hexToRgba (trim/replace/parseInt×3 + alloc) ran
+	// per frame; memoize and reuse the array (never mutated by callers).
+	const rgbaCache = new Map<string, number[]>();
+	function rgba(hex: string): number[] {
+		let v = rgbaCache.get(hex);
+		if (!v) {
+			if (rgbaCache.size > 32) rgbaCache.clear();
+			v = hexToRgba(hex);
+			rgbaCache.set(hex, v);
+		}
+		return v;
+	}
+
 	//  Sizing
 	function resizeCanvas() {
-		if (!canvasEl || !containerEl || !store.metadata) return false;
-		const meta = store.metadata;
-		if (!meta.width || !meta.height) return false;
-
-		// Final canvas geometry (source + padding + optional letterbox bars
-		// to satisfy the chosen output aspect). The shader receives the
-		// source-video rectangle directly, so anything outside that rect
-		// renders with the background.
-		const geom = computeCanvasGeometry(
-			meta.width,
-			meta.height,
-			store.padding,
-			store.outputAspect,
-		);
+		if (!canvasEl || !containerEl) return false;
+		const geom = currentGeometry();
+		if (!geom) return false;
 		const compW = geom.canvasW;
 		const compH = geom.canvasH;
 
-		const cw = containerEl.clientWidth;
-		const ch = containerEl.clientHeight;
+		const cw = containerW || containerEl.clientWidth;
+		const ch = containerH || containerEl.clientHeight;
 		if (cw <= 0 || ch <= 0) return false;
 
 		// Fit composition into container preserving aspect
@@ -517,26 +596,6 @@
 		return true;
 	}
 
-	// Uploads a WebCodecs-decoded VideoFrame into the sampling texture. A
-	// VideoFrame is a TexImageSource, so texImage2D accepts it directly (same
-	// hardware-accelerated path as a <video> element). The frame is owned by the
-	// source's cache; we only read it, never close it.
-	function uploadFrameObject(frame: VideoFrame): boolean {
-		if (!gl || !videoTex) return false;
-		gl.activeTexture(gl.TEXTURE0);
-		gl.bindTexture(gl.TEXTURE_2D, videoTex);
-		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-		try {
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
-		} catch (err) {
-			if (!loggedTexError) {
-				loggedTexError = true;
-				console.error("WebGL texImage2D failed for VideoFrame:", err);
-			}
-			return false;
-		}
-		return true;
-	}
 
 	// AnnotationOverlay reads this canvas back via drawImage from its OWN rAF
 	// loop. With preserveDrawingBuffer:false the GL buffer is only valid for a
@@ -634,17 +693,42 @@
 				lastPublishedTime = store.currentTime;
 				endHandled = false;
 			}
+			// Audio runs on the sound card's clock, the picture on wall time. Pull
+			// the picture back onto audio once the gap is perceptible.
+			const audioTime = audioPositionSec?.() ?? null;
+			const sync = resolveAvSync({
+				videoTime: picClock.time,
+				audioTime,
+				playing: true,
+				audioStalledSec: audioStall.observe(audioTime, true, performance.now()),
+			});
+			maxAvDriftSec = Math.max(maxAvDriftSec, Math.abs(sync.driftSec));
+			if (sync.resync) picClock.seek(sync.target);
+			// Report once per stall, not once per frame.
+			if (sync.audioStalled !== audioStalledReported) {
+				audioStalledReported = sync.audioStalled;
+				if (sync.audioStalled) console.warn("Audio clock stalled; picture running unmastered");
+			}
 			// Playing: the gapless output clock is the master.
 			playbackTime = outputToOriginal(store.timeMap, picClock.time);
-			// Reached the end of the edited timeline → stop cleanly. The clock
-			// clamps at its duration, so without this the picture would freeze on
-			// the last frame while still "playing" (and the decoder would sit idle).
-			// Setting isPlaying=false pauses the clock (via the play/pause effect);
-			// hitting play again restarts from the top (see the seed below).
+			// Reached the end of the edited timeline. Ask the host BEFORE stopping:
+			// it may want to loop, and stopping first would flip isPlaying
+			// false→true within one tick, which Svelte batches into no change at
+			// all — the play/pause effect never re-seeds, so the clock stays
+			// clamped at the end and the picture sticks on the last frame.
 			if (picClock.atEnd && !endHandled) {
-				endHandled = true;
-				store.isPlaying = false;
-				onEnded?.();
+				if (onEnded?.() === true) {
+					// The host moved the transport; follow it and keep playing.
+					picClock.seek(originalToOutput(store.timeMap, store.currentTime));
+					lastPublishedTime = store.currentTime;
+				} else {
+					// The clock clamps at its duration, so without this the picture
+					// would freeze on the last frame while still "playing" (and the
+					// decoder would sit idle). Hitting play again restarts from the
+					// top (see the seed below).
+					endHandled = true;
+					store.isPlaying = false;
+				}
 			}
 			// Publish to the store (drives overlays/timeline/audio) at ~25 Hz, not
 			// every rAF frame, because that fan-out is expensive and was starving decoded-
@@ -679,6 +763,10 @@
 			// clock so resuming continues from here.
 			playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
 		}
+
+		// Publish the per-frame clock for smooth overlays (unthrottled, unlike the
+		// store fan-out above). One number write; only the camera bubble reads it.
+		smoothPreviewTime = playbackTime;
 
 		// Legacy-path cut skip: two decoders leapfrog the removed gap.
 		//   1. As the playhead nears a cut, the SCOUT pre-decodes the first
@@ -782,17 +870,26 @@
 			for (const c of activeCuts) {
 				if (c.end <= playbackTime && c.end > floorSec) floorSec = c.end;
 			}
-			const f = mbSource.frameAt(Math.max(0, playbackTime), floorSec);
-			if (f) haveFrame = uploadFrameObject(f);
+			// Frames were uploaded to the ring as they arrived and released back
+			// to the decoder; here we only pick which texture to sample.
+			mbSource.advanceTo(Math.max(0, playbackTime));
+			const tUs = Math.max(0, Math.round(playbackTime * 1e6));
+			const floorUs = Math.max(0, Math.round(floorSec * 1e6));
+			haveFrame = frameRing?.bind(tUs, floorUs) ?? false;
 			// No fresh in-segment frame yet (briefly, right after a cut while the
-			// post-cut GOP decodes): hold by re-rendering whatever is in videoTex.
-			else if (hasRenderedFrame) haveFrame = true;
+			// post-cut GOP decodes): hold the last frame we actually displayed.
+			if (!haveFrame && hasRenderedFrame) haveFrame = frameRing?.bindLast() ?? false;
 		}
 		if (!haveFrame && !uploadVideoFrame(frameEl)) return;
 		hasRenderedFrame = true;
+		// The preview has painted, so hide the spinner — whichever engine drew it.
+		// Previously `isReady` came only from the <video>'s `canplay`, which forced
+		// `preload="auto"` (buffering the whole file) just to clear the spinner.
+		if (!isReady) isReady = true;
 
-		// Make sure background texture is current (fire-and-forget if it changed)
-		void loadBackgroundIfNeeded();
+		// Background (re)load is driven by a $effect on its reactive inputs and by
+		// onContextRestored — no per-frame call needed here (it allocated a Promise
+		// + key string every frame only to early-return).
 
 		gl.viewport(0, 0, canvasEl.width, canvasEl.height);
 		gl.clearColor(0, 0, 0, 1);
@@ -806,12 +903,8 @@
 		// current render-buffer scale. The canvas can be smaller than
 		// `geom.canvasW` (DPR cap, max-dim cap), so we scale uniformly.
 		const meta = store.metadata!;
-		const geom = computeCanvasGeometry(
-			meta.width,
-			meta.height,
-			store.padding,
-			store.outputAspect,
-		);
+		const geom = currentGeometry();
+		if (!geom) return;
 		const sx = canvasEl.width / Math.max(1, geom.canvasW);
 		const sy = canvasEl.height / Math.max(1, geom.canvasH);
 		// Scene entrance/exit animation: a per-segment transform on the video
@@ -844,10 +937,10 @@
 		let bgBlurPx = 0;
 		if (bgType === "color") {
 			gl.uniform1i(uniforms.u_bgType, 0);
-			gl.uniform4fv(uniforms.u_bgColor, hexToRgba(store.backgroundValue || "#111111"));
+			gl.uniform4fv(uniforms.u_bgColor, rgba(store.backgroundValue || "#111111"));
 		} else if (bgType === "gradient") {
 			gl.uniform1i(uniforms.u_bgType, 1);
-			const grad = buildGradientUniforms(store.backgroundValue || "");
+			const grad = currentGradient(store.backgroundValue || "");
 			gl.uniform4fv(uniforms["u_gradColors[0]"], grad.colors);
 			gl.uniform1fv(uniforms["u_gradStops[0]"], grad.positions);
 			gl.uniform1i(uniforms.u_gradCount, grad.count);
@@ -1000,20 +1093,27 @@
 		// sizes). We project the source-pixel cursor position into the
 		// canvas via the geometry helper, then divide by canvas dims.
 		const spriteSourcePx = cs.size * 16;
-		svgCursor = {
-			visible: overlayVisible,
-			alpha: cursorAlpha,
-			styleId: cs.style,
-			pressed: cursorPressed,
-			right: cursorRight,
-			dragging: cursorDragging,
-			scale: cursorScale,
-			canvasX: geom.videoX + svgUvX * geom.videoW,
-			canvasY: geom.videoY + svgUvY * geom.videoH,
-			compW: geom.canvasW,
-			compH: geom.canvasH,
-			spritePx: spriteSourcePx,
-		};
+		// Only write this reactive object when an SVG cursor is actually shown.
+		// The default dot cursor renders in the shader, so writing a fresh 13-field
+		// $state object every frame just fanned out reactivity 60×/s for nothing.
+		if (usingSvgCursor) {
+			svgCursor = {
+				visible: overlayVisible,
+				alpha: cursorAlpha,
+				styleId: cs.style,
+				pressed: cursorPressed,
+				right: cursorRight,
+				dragging: cursorDragging,
+				scale: cursorScale,
+				canvasX: geom.videoX + svgUvX * geom.videoW,
+				canvasY: geom.videoY + svgUvY * geom.videoH,
+				compW: geom.canvasW,
+				compH: geom.canvasH,
+				spritePx: spriteSourcePx,
+			};
+		} else if (svgCursor.visible) {
+			svgCursor = { ...svgCursor, visible: false };
+		}
 		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
 		// Multiplied by the press scale curve so the soft-dot pulses on
 		// click in lockstep with the SVG sprite, matching `bounce_scale`
@@ -1022,7 +1122,7 @@
 		const cursorRadiusCanvas = cs.size * 2 * sx * cursorScale;
 		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
 		gl.uniform4fv(uniforms.u_cursorColor, [1, 1, 1, 0.9]);
-		const [hr, hg, hb] = hexToRgba(cs.highlightColor || "#3b82f6");
+		const [hr, hg, hb] = rgba(cs.highlightColor || "#3b82f6");
 		gl.uniform4fv(uniforms.u_highlightColor, [hr, hg, hb, 1]);
 		gl.uniform1f(uniforms.u_highlightAlpha, highlightAlpha);
 		gl.uniform2f(uniforms.u_highlightPos, highlightPosX, highlightPosY);
@@ -1037,7 +1137,7 @@
 			gl.uniform1f(uniforms.u_shadowBlurPx, Math.max(0.5, shadow.blur * vpToCanvas));
 			gl.uniform1f(uniforms.u_shadowSpreadPx, Math.max(0, shadow.spread * vpToCanvas));
 			gl.uniform2f(uniforms.u_shadowOffsetPx, 0, shadow.offsetY * vpToCanvas);
-			const [sr, sg, sb] = hexToRgba(shadow.color || "#000000");
+			const [sr, sg, sb] = rgba(shadow.color || "#000000");
 			gl.uniform4fv(uniforms.u_shadowColor, [sr, sg, sb, shadow.opacity / 100]);
 		} else {
 			gl.uniform1i(uniforms.u_shadowEnabled, 0);
@@ -1120,27 +1220,153 @@
 		};
 	});
 
+	/**
+	 * A lost context makes every GL call a silent no-op — no throw, so nothing
+	 * downstream notices and the preview freezes for the rest of the session.
+	 * The browser only attempts restoration if the loss event is cancelled.
+	 */
+	function onContextLost(e: Event) {
+		e.preventDefault();
+		glLost = true;
+		stopVideoFrameLoop();
+		if (rafHandle !== null) {
+			cancelAnimationFrame(rafHandle);
+			rafHandle = null;
+		}
+		// The ring's textures died with the context. Drop it, or decoded frames
+		// keep uploading into stale handles — silent INVALID_OPERATION, and the
+		// preview stays frozen for the rest of the session.
+		frameRing?.dispose();
+		frameRing = null;
+		gl = null;
+		vertexBuf = null;
+		program = null;
+		videoTex = null;
+		bgTex = null;
+		bgTexReady = false;
+		lastBgKey = "";
+		hasRenderedFrame = false;
+	}
+
+	// A restored context comes back with every GPU object gone, so this is a
+	// full re-init, not a resume.
+	function onContextRestored() {
+		glLost = false;
+		initGL();
+		// initGL rebuilds the shader/textures it owns; the ring is sized from the
+		// source, so it needs its own rebuild. Until the next decode lands, draw()
+		// finds an empty ring and falls back to the <video> frame rather than
+		// showing black.
+		if (mbSource) rebuildFrameRing(mbSource.width, mbSource.height);
+		// onContextLost cleared lastBgKey, so the background texture is gone;
+		// reload it here since the draw loop no longer does it per frame.
+		void loadBackgroundIfNeeded();
+		requestRedraw();
+		// A recovery deferred while the context was lost can run now the GL is back.
+		if (mbRecoverPending) runMbRecover();
+		if (store.isPlaying) startVideoFrameLoop();
+	}
+
+	/** Playback we suspended on hide, to restore on show. */
+	let resumeOnVisible = false;
+
+	// devicePixelRatio has no change event, and ResizeObserver stays silent when
+	// only the scale factor changes — dragging the window to a monitor at a
+	// different DPI while paused would otherwise leave the buffer at the old DPR.
+	let dprQuery: MediaQueryList | null = null;
+	function watchDpr() {
+		dprQuery?.removeEventListener("change", onDprChange);
+		dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+		dprQuery.addEventListener("change", onDprChange);
+	}
+	function onDprChange() {
+		watchDpr();
+		requestRedraw();
+	}
+
+	/**
+	 * rAF stops when the window is hidden, but the picture clock and the audio
+	 * graph keep running — so playback would advance with no decoding behind it,
+	 * then jump on return. Cut-skipping and the end-of-timeline check also live
+	 * in the draw loop, so both would be missed entirely.
+	 */
+	function onVisibilityChange() {
+		if (document.hidden) {
+			resumeOnVisible = store.isPlaying;
+			if (resumeOnVisible) store.isPlaying = false;
+		} else if (resumeOnVisible) {
+			resumeOnVisible = false;
+			store.isPlaying = true;
+		}
+	}
+
 	//  Lifecycle & reactive wiring
 	onMount(() => {
 		initGL();
-		const ro = new ResizeObserver(() => requestRedraw());
+		canvasEl?.addEventListener("webglcontextlost", onContextLost);
+		canvasEl?.addEventListener("webglcontextrestored", onContextRestored);
+		document.addEventListener("visibilitychange", onVisibilityChange);
+		watchDpr();
+		const ro = new ResizeObserver(() => {
+			// Read layout here (rarely) instead of in the 60fps draw loop.
+			if (containerEl) {
+				containerW = containerEl.clientWidth;
+				containerH = containerEl.clientHeight;
+			}
+			requestRedraw();
+		});
 		if (containerEl) ro.observe(containerEl);
 		return () => ro.disconnect();
 	});
 
 	onDestroy(() => {
+		canvasEl?.removeEventListener("webglcontextlost", onContextLost);
+		canvasEl?.removeEventListener("webglcontextrestored", onContextRestored);
+		document.removeEventListener("visibilitychange", onVisibilityChange);
+		dprQuery?.removeEventListener("change", onDprChange);
 		stopVideoFrameLoop();
 		if (rafHandle !== null) cancelAnimationFrame(rafHandle);
+		clearTimeout(mbRecoverTimer);
 		smoother?.dispose();
 		smoother = null;
 		mbSource?.dispose();
 		mbSource = null;
+		frameRing?.dispose();
+		frameRing = null;
 		if (gl) {
 			if (videoTex) gl.deleteTexture(videoTex);
 			if (bgTex) gl.deleteTexture(bgTex);
+			if (vertexBuf) gl.deleteBuffer(vertexBuf);
 			if (program) gl.deleteProgram(program);
+			// This component remounts on every editor open, and reclaiming a
+			// context is GC-timed. Chromium allows ~16 live contexts and
+			// force-loses the OLDEST when it hits the cap — which would kill a
+			// live editor's preview. Release ours deterministically instead.
+			gl.getExtension("WEBGL_lose_context")?.loseContext();
+			gl = null;
 		}
 	});
+
+	function scheduleMbRecover() {
+		clearTimeout(mbRecoverTimer);
+		mbHealthyFrames = 0;
+		mbRecoverTimer = setTimeout(runMbRecover, MB_RECOVER_DELAY_MS);
+	}
+
+	// Re-create the MediaBunny source after a transient failure. Deferred until
+	// the GL context is back (onContextRestored re-fires this), or the ring would
+	// be allocated on a dead context.
+	function runMbRecover() {
+		mbRecoverTimer = undefined;
+		if (!videoSrc) return;
+		if (glLost || !gl) {
+			mbRecoverPending = true;
+			return;
+		}
+		mbRecoverPending = false;
+		loadedMbSrc = "";
+		mbRecoverNonce++;
+	}
 
 	// MediaBunny frame source (re)created when the media src changes. Owns its own
 	// worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
@@ -1148,12 +1374,21 @@
 	// mbSource null so draw() falls back to the <video> element automatically.
 	$effect(() => {
 		const src = videoSrc;
+		// Read so a recovery bump re-runs this effect; the rebuild also resets
+		// loadedMbSrc, so the same-src guard below doesn't short-circuit it.
+		void mbRecoverNonce;
 		// No src: tear down any live engine and fall back to the <video> path.
 		if (!src) {
+			clearTimeout(mbRecoverTimer);
+			mbRecoverTimer = undefined;
+			mbRecoverPending = false;
+			mbRecoverAttempts = 0;
 			if (mbSource) {
 				mbSource.dispose();
 				mbSource = null;
 			}
+			frameRing?.dispose();
+			frameRing = null;
 			mbReady = false;
 			webcodecsActive = false;
 			loadedMbSrc = "";
@@ -1170,13 +1405,51 @@
 		mbSource?.dispose();
 		mbSource = null;
 		let cancelled = false;
-		MediabunnyVideoSource.create(src, store.metadata?.sizeBytes)
+		createMediabunnySource(src, {
+			durationSec: store.metadata?.duration,
+			fps: store.metadata?.fps,
+		})
 			.then((source) => {
 				if (cancelled) {
 					source.dispose();
 					return;
 				}
+				rebuildFrameRing(source.width, source.height);
+				// Upload and hand back in the same tick. Holding decoded frames is
+				// what starved the decoder at 4K until it stopped emitting.
+				source.onFrameDecoded = (frame, tsUs) => {
+					frameRing?.put(frame, tsUs);
+					// Frames flowing again after a recovery: clear the streak so a
+					// later, unrelated failure gets its full retry budget.
+					if (mbRecoverAttempts > 0 && ++mbHealthyFrames > 30) {
+						mbRecoverAttempts = 0;
+						mbHealthyFrames = 0;
+					}
+				};
 				source.onFrame = () => requestRedraw();
+				// A dead decode run freezes the picture. A transient GPU reset gets a
+				// bounded auto-rebuild; a permanent failure (unsupported codec) hands
+				// back to <video>, which is worse quality but still moves.
+				source.onError = (err) => {
+					if (mbSource !== source) return;
+					const recover = shouldRecoverMbSource(err.code, mbRecoverAttempts);
+					console.error(
+						`MediaBunny decode failed mid-playback; ${recover ? "rebuilding" : "falling back"}`,
+						err,
+					);
+					analytics.capture("mediabunny_preview_fallback", { reason: err.code });
+					mbReady = false;
+					webcodecsActive = false;
+					mbSource = null;
+					source.dispose();
+					frameRing?.dispose();
+					frameRing = null;
+					requestRedraw();
+					if (recover) {
+						mbRecoverAttempts++;
+						scheduleMbRecover();
+					}
+				};
 				// Telemetry: the engine initialised successfully.
 				const tier = resolutionTier(source.width, source.height);
 				analytics.capture("mediabunny_preview_init", {
@@ -1192,6 +1465,9 @@
 						avg_fps: Math.round(s.avgFps),
 						min_fps: Math.round(s.minFps),
 						max_late_ms: Math.round(s.maxLateMs),
+						max_av_drift_ms: Math.round(maxAvDriftSec * 1000),
+						max_upload_ms: Math.round((frameRing?.uploadStats.maxMs ?? 0) * 100) / 100,
+						avg_upload_ms: Math.round((frameRing?.uploadStats.avgMs ?? 0) * 100) / 100,
 						width: source.width,
 						height: source.height,
 						fps: Math.round(source.fps),
@@ -1218,6 +1494,12 @@
 					"MediaBunny source unavailable; using <video> fallback:",
 					err,
 				);
+				// We fall back to <video>, so the previous source's ring is dead
+				// weight — 16 textures, ~133MB of VRAM at 1080p, never sampled
+				// again. The mid-playback onError path already did this; only
+				// creation-time failure missed it.
+				frameRing?.dispose();
+				frameRing = null;
 				// Telemetry: how often real users silently drop to <video>.
 				analytics.capture("mediabunny_preview_fallback", {
 					reason: classifyMbError(err),
@@ -1239,7 +1521,16 @@
 	// paused as a seek-only transport; it stays mounted for the fallback path.
 	$effect(() => {
 		void store.isPlaying;
-		if (mbReady && videoEl && !videoEl.paused) videoEl.pause();
+		if (!videoEl) return;
+		if (mbReady) {
+			if (!videoEl.paused) videoEl.pause();
+		} else if (store.isPlaying && videoEl.paused) {
+			// Falling back mid-playback (a dead decode run) leaves the element
+			// paused, since the page only plays it on the transport transition.
+			void videoEl.play().catch(() => {
+				/* rejects without a gesture; the transport will retry */
+			});
+		}
 	});
 
 	// Background (re)load when type/value changes, or when an asset:<id>
@@ -1346,6 +1637,21 @@
 			bind:this={canvasEl}
 			class="block max-h-full max-w-full transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-90"
 		></canvas>
+		{#if glLost}
+			<!-- Recoverable: the browser restores the context once the driver
+			     settles, so this is a wait, not a dead end. -->
+			<div
+				class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-background/95 p-6 text-center"
+				role="status"
+				aria-live="polite"
+			>
+				<div class="text-sm font-semibold text-foreground">Restoring preview</div>
+				<p class="max-w-md text-xs leading-relaxed text-muted-foreground">
+					The graphics driver reset. The preview will come back on its own — your
+					recording and edits are unaffected.
+				</p>
+			</div>
+		{/if}
 		{#if webgl2Unsupported}
 			<!-- Actionable message instead of a blank canvas: reads as a
 			     graphics-driver issue, not a broken app. -->
@@ -1429,6 +1735,7 @@
 			{videoEl}
 			{cameraSrc}
 			targetEl={previewRectEl}
+			previewTime={smoothPreviewTime}
 		/>
 		{/if}
 		<CaptionOverlay {store} />
@@ -1450,7 +1757,7 @@
 			class="pointer-events-none absolute h-px w-px opacity-0"
 			style="visibility: hidden;"
 			playsinline
-			preload="auto"
+			preload="metadata"
 			muted
 		></video>
 		<!-- Legacy scout decoder: only read on the `!mbReady` path, so mounting it
@@ -1464,7 +1771,7 @@
 				class="pointer-events-none absolute h-px w-px opacity-0"
 				style="visibility: hidden;"
 				playsinline
-				preload="auto"
+				preload="metadata"
 				muted
 			></video>
 		{/if}

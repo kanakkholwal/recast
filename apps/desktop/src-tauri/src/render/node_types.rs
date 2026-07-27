@@ -51,10 +51,24 @@ pub struct AudioSettings {
     pub volume: f64,
     #[serde(default)]
     pub muted: bool,
+    // Per-source gains/mutes, layered under the master. Defaulted so projects
+    // saved before these existed deserialize to unity (no silent gain change).
+    #[serde(default = "default_audio_volume")]
+    pub system_volume: f64,
+    #[serde(default)]
+    pub system_muted: bool,
+    #[serde(default = "default_audio_volume")]
+    pub mic_volume: f64,
+    #[serde(default)]
+    pub mic_muted: bool,
     #[serde(default)]
     pub fade_in: f64,
     #[serde(default)]
     pub fade_out: f64,
+    /// EBU R128 loudness normalize on the final mix (export only). Default off so
+    /// existing projects export byte-identical.
+    #[serde(default)]
+    pub normalize_loudness: bool,
 }
 
 impl Default for AudioSettings {
@@ -62,14 +76,101 @@ impl Default for AudioSettings {
         Self {
             volume: default_audio_volume(),
             muted: false,
+            system_volume: default_audio_volume(),
+            system_muted: false,
+            mic_volume: default_audio_volume(),
+            mic_muted: false,
             fade_in: 0.0,
             fade_out: 0.0,
+            normalize_loudness: false,
         }
     }
 }
 
 fn default_audio_volume() -> f64 {
     100.0
+}
+
+/// Where an {@link AudioClip}'s audio comes from. Mirrors `AudioClipSource` in
+/// `src/lib/audio/music.ts`. Internally tagged on `kind` to match the TS union.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum AudioClipSource {
+    Local {
+        path: String,
+    },
+    #[serde(rename_all = "camelCase")]
+    Provider {
+        #[serde(default)]
+        provider_id: String,
+        #[serde(default)]
+        track_id: String,
+        asset_path: String,
+        #[serde(default)]
+        attribution: Option<String>,
+        #[serde(default)]
+        license: Option<String>,
+    },
+}
+
+impl AudioClipSource {
+    /// The local file to decode/encode, whichever source kind it is.
+    pub fn asset_path(&self) -> &str {
+        match self {
+            AudioClipSource::Local { path } => path,
+            AudioClipSource::Provider { asset_path, .. } => asset_path,
+        }
+    }
+
+    /// Credit line for licenses that require attribution (CC-BY); None for local.
+    pub fn attribution(&self) -> Option<&str> {
+        match self {
+            AudioClipSource::Provider {
+                attribution: Some(a),
+                ..
+            } if !a.trim().is_empty() => Some(a.trim()),
+            _ => None,
+        }
+    }
+}
+
+/// `voice` = the recording's own detached audio; `music` = anything added on top.
+/// Mirrors `AudioClipRole` in `src/lib/audio/music.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AudioClipRole {
+    #[default]
+    Music,
+    Voice,
+}
+
+/// Music / extra-audio laid on the OUTPUT timeline. Mirrors `AudioClip` in
+/// `src/lib/audio/music.ts`; every field defaulted for forward-compat.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AudioClip {
+    pub id: String,
+    pub source: AudioClipSource,
+    #[serde(default)]
+    pub role: AudioClipRole,
+    #[serde(default)]
+    pub start_output_sec: f64,
+    #[serde(default)]
+    pub offset_sec: f64,
+    #[serde(default)]
+    pub duration_sec: f64,
+    #[serde(default = "default_audio_volume")]
+    pub gain: f64,
+    #[serde(default)]
+    pub muted: bool,
+    #[serde(default)]
+    pub fade_in: f64,
+    #[serde(default)]
+    pub fade_out: f64,
+    #[serde(default, rename = "loop")]
+    pub looping: bool,
+    #[serde(default)]
+    pub ducking: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -178,6 +279,16 @@ pub struct CameraMotionSegment {
     pub source: String,
 }
 
+/// A camera position pinned at an original-recording time. The effective base
+/// placement glides (eased) between consecutive keyframes — the per-cut motion.
+/// Mirrors the TS `CameraKeyframe`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CameraKeyframe {
+    pub at_sec: f64,
+    pub placement: CameraPlacement,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CameraOverlaySettings {
@@ -191,14 +302,58 @@ pub struct CameraOverlaySettings {
     pub corner_radius: f64,
     #[serde(default = "default_camera_animation_preset")]
     pub animation_preset: String,
+    #[serde(default = "default_camera_zoom_follow")]
+    pub zoom_follow: bool,
+    #[serde(default = "default_camera_zoom_follow_strength")]
+    pub zoom_follow_strength: f64,
+    /// Seconds the grow/shrink takes to ramp in/out (its own transition timing).
+    #[serde(default = "default_camera_zoom_follow_duration")]
+    pub zoom_follow_duration: f64,
+    /// Easing for the grow/shrink transition.
+    #[serde(default = "default_camera_keyframe_easing")]
+    pub zoom_follow_easing: Easing,
     #[serde(default)]
     pub default_placement: CameraPlacement,
     #[serde(default)]
     pub motion_segments: Vec<CameraMotionSegment>,
+    /// Per-cut position keyframes (original-time). Empty → static default_placement.
+    #[serde(default)]
+    pub keyframes: Vec<CameraKeyframe>,
+    /// Easing for the glide between keyframes.
+    #[serde(default = "default_camera_keyframe_easing")]
+    pub keyframe_easing: Easing,
+    /// Drop-shadow strength 0..1 (0 = none). Scales blur + offset + opacity.
+    #[serde(default = "default_camera_shadow")]
+    pub shadow: f64,
+}
+
+fn default_camera_keyframe_easing() -> Easing {
+    Easing {
+        x1: 0.42,
+        y1: 0.0,
+        x2: 0.58,
+        y2: 1.0,
+    }
+}
+
+fn default_camera_shadow() -> f64 {
+    0.35
 }
 
 fn default_camera_corner_radius() -> f64 {
     0.16
+}
+
+fn default_camera_zoom_follow() -> bool {
+    true
+}
+
+fn default_camera_zoom_follow_strength() -> f64 {
+    0.6
+}
+
+fn default_camera_zoom_follow_duration() -> f64 {
+    0.4
 }
 
 impl Default for CameraOverlaySettings {
@@ -209,8 +364,15 @@ impl Default for CameraOverlaySettings {
             shape: default_camera_shape(),
             corner_radius: default_camera_corner_radius(),
             animation_preset: default_camera_animation_preset(),
+            zoom_follow: default_camera_zoom_follow(),
+            zoom_follow_strength: default_camera_zoom_follow_strength(),
+            zoom_follow_duration: default_camera_zoom_follow_duration(),
+            zoom_follow_easing: default_camera_keyframe_easing(),
             default_placement: CameraPlacement::default(),
             motion_segments: Vec::new(),
+            keyframes: Vec::new(),
+            keyframe_easing: default_camera_keyframe_easing(),
+            shadow: default_camera_shadow(),
         }
     }
 }

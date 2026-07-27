@@ -373,6 +373,129 @@ Measured on the streaming harness (`test/playback-realtime.test.ts`):
 `ui:build` green with the streaming protocol present in the emitted worker
 chunk. **Still owed: runtime confirmation in the real WebView** — see below.
 
+## PR-J — A/V sync + protocol cleanup (2026-07-20)
+
+The last open item from the audit. The picture clock is a `performance.now()`
+integrator; audio schedules against `AudioContext.currentTime`. Two crystals,
+no correction — they separate over a long take, and nothing measured it.
+
+- `AudioTimelineEngine` now records the output-time ↔ audio-clock anchor at
+  schedule time and exposes `positionOutputSec`.
+- New pure `av-sync.ts` (`resolveAvSync`) decides when to act. **Audio is the
+  master**: a one-off picture re-anchor is far less noticeable than a gap or
+  pitch artefact. Threshold 60 ms, inside ITU-R BT.1359's ~45 ms lead / 125 ms
+  lag detectability window, and loose enough that jitter doesn't cause constant
+  re-anchoring. 10 unit tests.
+- `VideoPreview` applies it in the draw loop and tracks worst drift, now
+  reported as `max_av_drift_ms` on `mediabunny_preview_perf` — so §3's drift
+  row finally has real data behind it.
+- `av-drift.ts` stays for the legacy `<audio>` path; the two are not
+  interchangeable and each says so.
+
+Cleanup: removed the `cancel` protocol message (declared, half-handled, never
+sent — run supersession and `dispose` cover it) and `#inFlightSeq` (written,
+never read for a decision once late frames became keepable). Fixed a redundant
+master-mute term in `AudioTimelineEngine.#applyGains` that made the per-track
+mute check dead.
+
+New tests: `FrameCache.readNearest` floor semantics and index integrity across
+eviction/scope-change (6), seek-vs-playhead request policy (4), A/V sync
+policy (10). One of them caught a floating-point boundary bug in its own
+assertion — `10 + 0.06 - 10` exceeds `0.06` — fixed by anchoring at zero.
+
+## PR-K — instrumentation + doc rot (2026-07-20)
+
+- **`performance.measure` instrumentation** (REQUIREMENTS.md §5, unmet since
+  PR-A). New `src/marks.ts` emits `recast-media:time-to-first-frame` and
+  `recast-media:seek-latency` onto the DevTools Performance timeline — the two
+  §3 latency rows that can't be gated in Node are now at least *observable*
+  during manual testing. Self-limiting (clears past 200 entries), inert when
+  the Performance API is missing, and swallows its own errors so instrumenting
+  can never break playback. 4 tests.
+- **Stopped requesting impossible persistence.** The source passed
+  `persist: true` for every frame while `isPersistable` always rejected
+  `VideoFrame` — a call site that lied. Now explicitly memory-only, with the
+  reason. Also avoids what would have become a per-frame IndexedDB write under
+  the streaming decoder.
+- **Doc rot from PR-I/J deletions:** `architecture.md` still listed
+  `frame-index.ts` in two reading paths (deleted), and both `REQUIREMENTS.md`
+  and `AGENTS.md` cited `webcodecs-source.ts:22` — a file deleted three PRs
+  ago — as the authority for the VideoFrame-ownership rule. Repointed at
+  `cache/index.ts`'s `#evictMemoryUntilFits`, which is the real single close
+  path. Refreshed the file map, which still listed `sqlite-storage.ts` (a file
+  that never existed).
+- **Deleted `PLAN.md`.** Fully executed through PR-F and superseded by this
+  log; per the standing rule, plans go once done. Its risk register was
+  harvested first — every row is either resolved or captured below.
+
+## PR-L — the first runtime test failed, and it was the move (2026-07-20)
+
+Owner opened a recording and got `MediaError: worker error` on every file, so
+the engine silently fell back to `<video>` and **nothing from PR-I…PR-K was
+ever exercised**.
+
+- **Cause: the package spawned its own worker.** `new URL('./worker.ts',
+  import.meta.url)` inside `packages/media` makes Vite emit an out-of-root
+  `/@fs/…/packages/media/…` dev URL, and SvelteKit's default `server.fs.allow`
+  (app dirs + `node_modules`) answers **403**. The script never loads, so
+  `onerror` fires with an **empty** message — which the source reported as the
+  useless string "worker error". Production bundled it correctly the whole
+  time, so `ui:build`, `tsc` and 802 green tests all passed over a dev-only
+  break. Confirmed by curling the URL, not by reasoning.
+- **Fix (owner's design): the host app owns the spawn.** `create` now takes
+  `{ createWorker }` and the package never constructs a `Worker`. The body is
+  exported as `startMediabunnyWorker()` on the new
+  `@recast/media/playback/worker` subpath; the app mounts it from
+  `$lib/playback/mediabunny-worker.ts` and spawns via
+  `$lib/playback/mediabunny.ts`. The worker's top-level URL is now in-root, and
+  its import of the package body is allowed because the app entry puts it in
+  Vite's module graph. **`vite.config.ts` is byte-identical to before** — the
+  earlier `server.fs.allow` patch was reverted, since a fix every consuming app
+  must copy into its bundler config isn't a fix.
+- A factory, not a `Worker` instance, so `create` still rejects unsupported
+  containers *before* spawning — there's a test pinning that.
+- `worker.ts` no longer reads `self` at module scope (bound in
+  `startMediabunnyWorker`), so it's importable by tooling and tests.
+- **Unrelated bug in the same console log: the filmstrip worker transferred
+  `Blob`s.** `postMessage(msg, [blob])` — a Blob is structured-cloneable but
+  NOT transferable, so every tile and the storyboard threw and the message was
+  dropped. Timeline thumbnails have been silently dead. Transfer lists removed.
+- New `test/worker-resolution.test.ts` pins the inverse invariant: the package
+  contains no `new Worker` / `new URL(…, import.meta.url)`, exports the body,
+  and the worker bundles standalone.
+
+**Verified:** 103 media / 580 desktop green, both type-checks clean, dev serves
+the worker 200 with no config, production chunk unchanged in substance
+(355,712 B vs 355,671 B, full streaming protocol present).
+
+### PR-L.2 — the actual P0: the canvas pool
+
+With the worker finally running, the picture still froze on ~frame 1 while
+overlays animated — the exact symptom the PR-I streaming rewrite claimed to
+have fixed.
+
+- **Cause:** `new CanvasSink(track, { poolSize: 8 })`. MediaBunny **recycles
+  pooled canvases round-robin**, and we `postMessage(..., [canvas])` every one
+  of them, which **detaches** it. On the 9th frame the sink drew into a
+  detached canvas, the run threw, and `#onMessage` merely `console.warn`ed.
+  Eight frames at 60fps is 0.13 s — indistinguishable from "stuck on frame 1".
+- **Pooling is incompatible with this design by construction.** A pool assumes
+  the consumer is done with each canvas before the next yield; we *keep* every
+  frame in a cache. Fix is to not pool.
+- **Why every gate missed it:** the existing harness stubs the *worker*, so how
+  the worker drives the sink was never exercised — the bug lived entirely in
+  the untested seam. New `test/worker-decode-run.test.ts` drives the REAL
+  worker against a `vi.mock('mediabunny')` enforcing the true canvas contract
+  (ring-buffer reuse, detach-on-transfer). Confirmed to fail pre-fix delivering
+  **exactly 8 frames**, matching `poolSize` numerically.
+- **No more silent freezes:** `MediabunnyVideoSource.onError` added, the warn
+  escalated to `console.error`, and `VideoPreview` now drops back to `<video>`
+  when a run dies mid-playback instead of holding a still frame forever.
+
+Follow-up worth taking: `VideoSampleSink` + `toVideoFrame()` would remove the
+decode→canvas→`VideoFrame` round-trip, since the main thread re-wraps every
+transferred canvas in a `VideoFrame` regardless.
+
 ## What's genuinely left
 
 1. **No browser-based perf harness.** 5 rows (TTFF, scrub p95,
@@ -386,10 +509,19 @@ chunk. **Still owed: runtime confirmation in the real WebView** — see below.
    advances smoothly (PR-I's P0), that only one decode session runs, that
    crossing a cut is seamless, that opening two recordings back-to-back never
    shows the first one's frame, and that memory plateaus on a long 4K scrub.
-3. **`filmstrip-*` remains out of scope** (REQUIREMENTS.md §1) and
+3. **The IndexedDB layer is not used by the desktop preview.** A `VideoFrame`
+   can't be structured-cloned, and the streaming decoder would attempt a write
+   per frame — so the source now writes memory-only and re-decodes instead,
+   which is cheap once the pipeline streams. The persistent layer is built,
+   tested and correct; it's waiting on a consumer that stores `ImageBitmap`
+   (the future in-browser editor, where re-fetching over the network is the
+   expensive part). The "survives editor restarts" line in the End goal above
+   is therefore **not met today** — deliberately.
+
+4. **`filmstrip-*` remains out of scope** (REQUIREMENTS.md §1) and
    still composes MediaBunny directly, now via the `/mediabunny`
    subpath.
-4. **The editor package itself.** `ipc.ts` is split; the remaining work
+5. **The editor package itself.** `ipc.ts` is split; the remaining work
    is the 2,484-line `routes/editor/[file]/+page.svelte` shell and the
    `<Editor />` prop boundary. ~89% of the editor's 32.7k lines are
    already Tauri-free.
@@ -419,67 +551,39 @@ verifies bundle size / signing.
 
 ---
 
-## File map of what changed (close of PR-F)
+## File map (current, close of PR-J)
 
 ```
-packages/media/                          # NEW workspace package
+packages/media/
 ├── src/
-│   ├── audio/
-│   │   ├── schedule.ts                 # keptRegions + planAudioSchedule
-│   │   └── scheduler.ts                # AudioScheduler interface + 2 impls
+│   ├── audio/schedule.ts               # keptRegions + planAudioSchedule (shared)
 │   ├── cache/
-│   │   ├── index.ts                    # FrameCache orchestrator
-│   │   ├── indexeddb-storage.ts        # default backend
-│   │   ├── sqlite-storage.ts           # stub (kept for forward compat)
-│   │   ├── storage.ts                  # FrameStorage interface
-│   │   └── unsupported-formats.ts        # gap list (AVI / FLV / WMV / RealVideo / 3GP)
-│   ├── conversion.ts                    # runConversion + helpers
-│   ├── encoders.ts                     # GIF / WAV / MP3 / ZIP
-│   ├── errors.ts                       # MediaError + MediaErrorCode
-│   ├── handlers.ts                     # trim / mute / compress / resize / etc.
-│   ├── input.ts                        # openInput
-│   ├── playback.ts                     # PlaybackSource interface + openMediaSource
-│   ├── protocol.ts                     # ToolOp, ConvertError, etc.
-│   ├── seek.ts                         # snapToSeekTarget + nextCutWithin
-│   ├── sources.ts                      # encodeCanvasToMp4
-│   └── index.ts                        # public API barrel
-└── test/
-    ├── audio.test.ts
-    ├── cache.test.ts
-    ├── conversion.test.ts
-    ├── seek.test.ts
-    ├── smoke.test.ts
-    ├── unsupported-formats.test.ts
-    └── perf/budgets.test.ts
+│   │   ├── index.ts                    # FrameCache: LRU + readNearest + scope
+│   │   ├── frame-budget.ts             # resolution-adaptive caps
+│   │   ├── indexeddb-storage.ts        # persistent layer (v2 schema)
+│   │   ├── storage.ts                  # FrameStorage + CachedFrame/isPersistable
+│   │   └── unsupported-formats.ts      # gap list, gates create()
+│   ├── playback/
+│   │   ├── source.ts                   # MediabunnyVideoSource (main thread)
+│   │   ├── worker.ts                   # streaming decode run; host app mounts it
+│   │   └── index.ts                    # /playback subpath
+│   ├── marks.ts                        # performance.measure instrumentation
+│   ├── mediabunny.ts                   # /mediabunny subpath (workers only)
+│   ├── conversion.ts, encoders.ts, handlers.ts, input.ts, protocol.ts
+│   ├── errors.ts, playback.ts, seek.ts, vendor.d.ts
+│   └── index.ts                        # tree-shakable barrel
+└── test/                               # 96 tests
+    ├── playback-realtime.test.ts       # 60fps playback + seek policy
+    ├── cache.test.ts                   # lifetime, caps, readNearest
+    ├── perf/{budgets,bundle}.test.ts   # enforced budget rows
+    └── audio, conversion, seek, smoke, marks, frame-budget, unsupported-formats
 
-apps/desktop/src/lib/playback/         # REMAINING
-├── mediabunny-{source,worker,test}.ts  # MediaBunny-backed playback
-├── mediabunny-source.test.ts           # 6 tests, Worker mock
-├── audio-engine.ts                     # per-track gain engine (mirrors Worklet impl)
-├── audio-schedule.ts                   # (legacy; superseded by @recast/media/audio/schedule)
-└── frame-{index,budget}.ts             # (legacy; kept, no longer used by preview)
-
-apps/desktop/src/lib/playback/         # DELETED in PR-F
-├── webcodecs-{source,worker,protocol}.ts
-├── mp4-{demux,sample-table,sample-table.test}.ts
-├── feature-flag.{ts,test.ts}
-└── gop-byte-budget.{ts,test.ts}        # (also deleted, no longer needed)
-
-apps/desktop/src/components/editor/    # CHANGED
-├── VideoPreview.svelte                 # uses MediabunnyVideoSource only
-├── properity-panel/AudioPanel.svelte   # per-track mute + volume
-├── properity-panel/captions-panel...   # cut-aware caption clipping (already)
-└── _components/CaptionOverlay.svelte   # cut-aware (already)
-
-apps/desktop/src/__tests__/            # NEW (PR-D/E/F)
-├── cut-jump-parity.test.ts              # 14 tests
-├── editor-pipeline.test.ts              # 12 tests
-└── unsupported-formats.test.ts          # 6 tests
-
-apps/desktop/src/lib/timeline/         # CHANGED (PR-E)
-├── filmstrip-source.ts                 # MediabunnyTileProvider
-└── filmstrip-worker.ts                 # MediaBunny-backed worker
-
-packages/analytics/src/                # CHANGED (PR-F)
-└── taxonomy.ts                          # webcodecs_preview_* → mediabunny_preview_*
+apps/desktop/src/lib/playback/          # what remains desktop-side
+├── audio-engine.ts                     # Web Audio timeline engine (per-track gain)
+├── audio-schedule.ts                   # re-export shim over @recast/media
+├── mediabunny.ts                       # spawns the decode worker (app owns this)
+├── mediabunny-worker.ts                # worker entry: startMediabunnyWorker()
+├── av-sync.ts                          # picture-follows-audio policy (new)
+├── av-drift.ts                         # legacy <audio> path only
+└── clock.ts                            # PlaybackClock
 ```

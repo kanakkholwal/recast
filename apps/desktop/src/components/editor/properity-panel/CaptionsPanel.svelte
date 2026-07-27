@@ -21,7 +21,7 @@
   import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
   import { experimentalStore } from "$lib/stores/experimental.svelte";
   import { resolveCaptionAnimation, type CaptionAnimation } from "@recast/captions";
-  import { AiWand, AlertTriangle, AlignCenter, AlignLeft, AlignRight, Check, ChevronsUpDown, Cpu, Download, FileDown, Loader2, Lock, MicOff, Package, Trash2, Zap } from "@recast/icons";
+  import { AiWand, AlertTriangle, AlignCenter, AlignLeft, AlignRight, Check, ChevronsUpDown, Cpu, Download, FileDown, Info, LoaderCircle, Lock, MicOff, Package, Trash2, Zap } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { ColorField } from "@recast/ui/color-field";
   import * as Command from "@recast/ui/command";
@@ -198,7 +198,7 @@
       // Map onto the output timeline (trim + cuts + speed) so cues line up with
       // the exported video, not the raw recording, using the same warp the export dialog
       // and Cloud track apply.
-      await exportCaptions(toOutputTimeTranscript(store, t), format, dest);
+      await exportCaptions(toOutputTimeTranscript(store.timeMap, t), format, dest);
       toast.success(`Exported ${format.toUpperCase()}`);
     } catch (e) {
       toast.error(`Export failed: ${e}`);
@@ -289,6 +289,15 @@
     }
     return id;
   });
+
+  // Transcription that SUCCEEDED but returned nothing. Distinct from an error
+  // (which sets `error`) and from a recording with no audio track at all
+  // (`hasAudio`): here the model ran and genuinely heard no speech — silence, or
+  // music/room tone only. Without this the panel just re-rendered its empty
+  // pre-transcribe self, which reads as "the button did nothing".
+  const noSpeechFound = $derived(
+    !!store.transcript && store.transcript.segments.length === 0 && !error,
+  );
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
@@ -412,6 +421,13 @@
                       {#if m.id === selectedModelId}<Check size={13} class="text-primary" />{/if}
                     </span>
                     <span class="min-w-0 flex-1 truncate text-[12px]">{m.displayName}</span>
+                    {#if m.recommended}
+                      <span
+                        class="shrink-0 rounded bg-primary/10 px-1 py-0.5 text-[8.5px] font-semibold uppercase tracking-wider text-primary"
+                      >
+                        Rec
+                      </span>
+                    {/if}
                     {#if !m.runnable}
                       <Lock size={11} class="shrink-0 text-muted-foreground/70" />
                     {:else if m.installed}
@@ -481,7 +497,47 @@
               ≥ {formatSize(selected.minRamBytes)} RAM
             </span>
           {/if}
+          {#if selected.capabilities.streaming}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Streaming
+            </span>
+          {/if}
+          {#if selected.capabilities.translate}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Translate
+            </span>
+          {/if}
+          {#if selected.capabilities.langDetect}
+            <span class="rounded bg-muted/70 px-1.5 py-0.5 text-[9px] font-medium text-muted-foreground">
+              Detects language
+            </span>
+          {/if}
         </div>
+
+        <!-- Relative comparison bars. Editorial scores for ranking models
+             against each other, so they're labelled as such rather than shown
+             as a percentage or a benchmark figure. -->
+        {#if selected.accuracyScore !== null || selected.speedScore !== null}
+          <div class="mt-2 flex flex-col gap-1">
+            {#each [{ label: "accuracy", score: selected.accuracyScore }, { label: "speed", score: selected.speedScore }] as bar (bar.label)}
+              {#if bar.score !== null}
+                <div class="flex items-center gap-2">
+                  <span class="w-12 shrink-0 text-[9px] text-muted-foreground">{bar.label}</span>
+                  <div
+                    class="h-1 min-w-0 flex-1 overflow-hidden rounded-full bg-muted"
+                    role="meter"
+                    aria-label="{bar.label}, relative to other models"
+                    aria-valuenow={bar.score}
+                    aria-valuemin={0}
+                    aria-valuemax={100}
+                  >
+                    <div class="h-full rounded-full bg-primary" style="width: {bar.score}%"></div>
+                  </div>
+                </div>
+              {/if}
+            {/each}
+          </div>
+        {/if}
 
         {#if selected.warning}
           <p
@@ -566,7 +622,7 @@
         onclick={generate}
       >
         {#if transcribing}
-          <Loader2 size={14} class="animate-spin" />
+          <LoaderCircle size={14} class="animate-spin" />
           {phase === "extracting" ? "Reading audio…" : "Transcribing…"}
         {:else}
           <AiWand size={14} />
@@ -583,9 +639,22 @@
       {#if error}
         <div
           class="mt-2 flex items-start gap-1.5 rounded-md border border-warning/40 bg-warning/10 px-2 py-1.5 text-[10.5px] text-warning"
+          role="alert"
         >
           <AlertTriangle size={12} class="mt-px shrink-0" />
           <span class="min-w-0">{error}</span>
+        </div>
+      {:else if noSpeechFound}
+        <div
+          class="mt-2 flex items-start gap-1.5 rounded-md border border-border/60 bg-muted/40 px-2 py-1.5 text-[10.5px] text-muted-foreground"
+          role="status"
+        >
+          <Info size={12} class="mt-px shrink-0" />
+          <span class="min-w-0">
+            No speech found in this recording. If it's music or background noise only, there's
+            nothing to caption. Otherwise, check that the right audio track was recorded, or try a
+            larger model.
+          </span>
         </div>
       {/if}
     </div>

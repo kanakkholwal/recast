@@ -233,9 +233,9 @@ Current as of **Svelte 5.36+ / SvelteKit 2.12+**. Runes era — no Svelte 4 idio
 ### Media pipeline & non-linear-editor performance contract
 The desktop video editor's preview and the apps/web conversion tools read media through
 `@recast/media`. The full contract — performance budgets, curated web.dev guides,
-implementation rules, browser API surface — lives in `packages/media/REQUIREMENTS.md`. The
-migration sequence and per-milestone testing gates live in `packages/media/PLAN.md`. These
-rules are non-negotiable:
+implementation rules, browser API surface — lives in `packages/media/REQUIREMENTS.md`. What
+actually shipped, and the bugs found along the way, are in `packages/media/MIGRATION-LOG.md`.
+These rules are non-negotiable:
 
 - Decode, demux, and codec configuration MUST run inside a Web Worker. Never on the main thread.
 - `AudioWorklet` is the only acceptable audio path for sample-aligned scheduling. The legacy
@@ -247,7 +247,8 @@ rules are non-negotiable:
   by `packages/media/test/perf/budgets.test.ts` and `packages/media/test/perf/cut-jump.test.ts`.
 - All `VideoFrame`s crossing the worker boundary are owned by the consumer side; the producer side
   MUST NOT close them until a release message returns. This is the same invariant as the current
-  `apps/desktop/src/lib/playback/webcodecs-source.ts:22`.
+  `packages/media/src/cache/index.ts` (`#evictMemoryUntilFits`), which is the
+  single close path for every decoded frame.
 - Bundle: `@recast/media` ≤ 80 KB gz desktop, ≤ 150 KB gz web. Direct imports only; tree-shake
   relies on this.
 - IndexedDB-backed decoded-frame cache: ≤ 2 GB cap (user-configurable in Settings; default 2 GB),

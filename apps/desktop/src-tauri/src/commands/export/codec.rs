@@ -7,6 +7,15 @@ use std::path::Path;
 use crate::commands::ffmpeg::ExportSpeed;
 use crate::commands::types::{ExportProfile, GifSettings};
 
+/// Clamp a software-x264 `-preset` so a GPU-less export can't run the sub-realtime
+/// `slow`/`slower`/`veryslow` tiers at 4K. Faster presets pass through unchanged.
+fn cap_software_x264_preset(preset: &str) -> &str {
+    match preset {
+        "slow" | "slower" | "veryslow" | "placebo" => "medium",
+        other => other,
+    }
+}
+
 /// Append the codec/output tail to `args` for the requested `format`. Mirrors the
 /// former inline `match request.format` in `export_video` verbatim.
 pub(crate) fn append_codec_args(
@@ -92,16 +101,29 @@ pub(crate) fn append_codec_args(
             // tuned for quality (not the lowlatency presets used for live
             // recording); libx264 uses the user's chosen profile preset because
             // export isn't bound by real-time pacing. See `encoder::h264`.
+            let encoder = crate::encoder::h264::H264Encoder::from_ffmpeg_name(
+                crate::ffmpeg::preferred_h264_encoder(),
+            );
+            // Software x264 at `slow`/`slower` on a 4K frame is far below realtime
+            // and is what turned a ~40s export into minutes on GPU-less machines.
+            // Hardware encoders aren't preset-bound this way, so cap only libx264:
+            // slow→medium at the same CRF is ~2x faster for a barely-visible size
+            // change. The 4K profile's default is `slow`, so this only bites the
+            // pathological software-4K path.
+            let chosen_x264_preset = speed.x264_preset().unwrap_or(profile.mp4_preset);
+            let x264_preset = if matches!(encoder, crate::encoder::h264::H264Encoder::Libx264) {
+                cap_software_x264_preset(chosen_x264_preset)
+            } else {
+                chosen_x264_preset
+            };
             args.extend(crate::encoder::h264::codec_args(
-                crate::encoder::h264::H264Encoder::from_ffmpeg_name(
-                    crate::ffmpeg::preferred_h264_encoder(),
-                ),
+                encoder,
                 crate::encoder::h264::EncodePurpose::Export(
                     crate::encoder::h264::ExportEncodeParams {
                         nvenc_preset: speed.nvenc_preset(),
                         amf_quality: speed.amf_quality(),
                         qsv_preset: speed.qsv_preset(),
-                        x264_preset: speed.x264_preset().unwrap_or(profile.mp4_preset),
+                        x264_preset,
                         cq: profile.mp4_nvenc_cq,
                         crf: profile.mp4_crf,
                     },
@@ -118,6 +140,25 @@ pub(crate) fn append_codec_args(
                 args.push("-an".to_string());
             }
             args.push(output_path.to_string_lossy().to_string());
+        }
+    }
+}
+
+#[cfg(test)]
+mod preset_cap_tests {
+    use super::cap_software_x264_preset;
+
+    #[test]
+    fn caps_sub_realtime_presets_to_medium() {
+        for p in ["slow", "slower", "veryslow", "placebo"] {
+            assert_eq!(cap_software_x264_preset(p), "medium", "{p} should cap");
+        }
+    }
+
+    #[test]
+    fn leaves_fast_presets_untouched() {
+        for p in ["ultrafast", "veryfast", "faster", "fast", "medium"] {
+            assert_eq!(cap_software_x264_preset(p), p, "{p} should pass through");
         }
     }
 }

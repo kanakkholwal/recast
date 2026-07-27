@@ -51,6 +51,50 @@ export function clipWordsToSpan(
 	return out;
 }
 
+/** One piece of a caption segment that survived the cuts, still in SOURCE time. */
+export interface SegmentPiece {
+	/** Clipped source range. */
+	start: number;
+	end: number;
+	/** Words clipped to the same span; empty when the segment had no per-word timing. */
+	words: TranscriptWord[];
+	/** Index into the span list this piece belongs to. */
+	spanIndex: number;
+	/** True when the parent segment produced more than one piece. */
+	split: boolean;
+}
+
+/**
+ * Split a caption segment across the kept spans, dropping the parts that fall
+ * inside cuts. A segment that straddles a cut yields one piece per side.
+ *
+ * This is the batch form of what the preview does per-frame
+ * ({@link activeClippedSegment}). Emitting a straddling caption as ONE cue
+ * spanning the seam is wrong twice over: it carries text for audio the export
+ * removed, and its output range covers time the cue is not actually spoken
+ * over. Both the sidecar writer and the burn-in go through here so all three
+ * surfaces (preview, burned pixels, sidecar) agree on cue content.
+ */
+export function splitSegmentAcrossSpans(
+	segment: TranscriptSegment,
+	spans: ReadonlyArray<KeptSpan>,
+): SegmentPiece[] {
+	const pieces: SegmentPiece[] = [];
+	for (let i = 0; i < spans.length; i++) {
+		const visible = clipSegmentToSpan(segment, spans[i]);
+		if (!visible) continue;
+		pieces.push({
+			start: visible.start,
+			end: visible.end,
+			words: clipWordsToSpan(segment.words, spans[i]),
+			spanIndex: i,
+			split: false,
+		});
+	}
+	if (pieces.length > 1) for (const p of pieces) p.split = true;
+	return pieces;
+}
+
 /**
  * The active caption at source time `nowOrig`, intersected with the kept
  * span that contains `nowOrig`. Returns null if `nowOrig` is inside a cut

@@ -10,6 +10,11 @@ import {
 } from "$lib/share/password";
 import { grantCookieName, normalizeEmail, readGrantedEmail } from "$lib/share/grant";
 import { isStorageConfigured, signDownloadUrl } from "$lib/storage";
+import {
+	deliveryState,
+	getQuotaSnapshot,
+	recordDelivery,
+} from "$lib/storage/quota";
 import type { RequestHandler } from "./$types";
 
 type SessionShape = {
@@ -153,7 +158,11 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 	}
 
 	const [r] = await db
-		.select({ videoUrl: recast.videoUrl, status: recast.status })
+		.select({
+			videoUrl: recast.videoUrl,
+			status: recast.status,
+			sizeBytes: recast.sizeBytes,
+		})
 		.from(recast)
 		.where(eq(recast.id, s.recastId))
 		.limit(1);
@@ -162,10 +171,39 @@ export const GET: RequestHandler = async ({ params, request, cookies }) => {
 		return json({ ok: false, reason: "archived" }, { status: 410 });
 	}
 
+	// Egress is the dominant infra cost, so the monthly delivery allowance is
+	// enforced here — the one place a playable URL is handed out. Paid plans
+	// keep streaming past the cap (metered as overage); breaking a customer's
+	// live demo would cost more than the bandwidth.
+	if (s.organizationId) {
+		const snapshot = await getQuotaSnapshot(s.organizationId);
+		if (snapshot) {
+			const delivery = deliveryState(snapshot);
+			if (delivery.exceeded && snapshot.plan === "free") {
+				return json(
+					{
+						ok: false,
+						reason: "delivery_cap_reached",
+						capBytes: delivery.capBytes,
+					},
+					{ status: 402 },
+				);
+			}
+		}
+	}
+
 	const url = await signDownloadUrl({
 		key: r.videoUrl,
 		expiresInSeconds: SIGNED_URL_TTL_SECONDS,
 	});
+
+	// Counted per URL grant at full file size — an upper bound, since viewers
+	// who drop off transfer less. Deliberately conservative: it guards the bill.
+	if (s.organizationId && r.sizeBytes) {
+		await recordDelivery(s.organizationId, r.sizeBytes).catch((err) => {
+			console.error("[delivery] failed to record", err);
+		});
+	}
 
 	return json({
 		ok: true,

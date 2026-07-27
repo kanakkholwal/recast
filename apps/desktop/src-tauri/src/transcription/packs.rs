@@ -113,6 +113,14 @@ fn to_caption_model(c: CaptionModelContribution) -> Result<CaptionModel, String>
         min_ram_bytes: c.min_ram_bytes,
         source: ModelSource::Extension,
         remote: None,
+        // Catalog presentation metadata is curated for the built-in entries; a
+        // pack gets the neutral defaults (no scores, no badges, never
+        // "Recommended") rather than a way to self-promote in the picker.
+        capabilities: Default::default(),
+        language_count: None,
+        speed_score: None,
+        accuracy_score: None,
+        recommended: false,
     })
 }
 

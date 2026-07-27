@@ -3,6 +3,7 @@
   import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
   import type { IconComponent } from "@recast/icons";
   import {
+    AudioLines,
     Blocks,
     Captions,
     ImageIcon,
@@ -28,6 +29,7 @@
   import ExtensionsPanel from "./ExtensionsPanel.svelte";
   import FocusPanel from "./FocusPanel.svelte";
   import InfoPanel from "./InfoPanel.svelte";
+  import MusicPanel from "./MusicPanel.svelte";
 
   interface Props {
     store: EditorStore;
@@ -85,6 +87,13 @@
       icon: Volume,
       group: "composition",
       hint: "Volume and mute.",
+    },
+    {
+      id: "music",
+      label: "Music",
+      icon: AudioLines,
+      group: "composition",
+      hint: "Background music and voiceover.",
     },
     {
       id: "captions",
@@ -251,10 +260,12 @@
         <AnnotationsPanel {store} />
       {:else if store.activePanel === "cursor"}
         <CursorPanel {store} />
-      {:else if CAMERA_OVERLAY_UI_ENABLED && store.activePanel === "camera"}
+      {:else if store.activePanel === "camera"}
         <CameraPanel {store} {cameraPath} />
       {:else if store.activePanel === "audio"}
         <AudioPanel {store} />
+      {:else if store.activePanel === "music"}
+        <MusicPanel {store} />
       {:else if store.activePanel === "captions"}
         <CaptionsPanel {store} />
       {:else if store.activePanel === "extensions"}

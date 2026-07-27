@@ -17,6 +17,10 @@
 		"./playback": {
 			"types": "./src/playback/index.ts",
 			"default": "./src/playback/index.ts"
+		},
+		"./playback/worker": {
+			"types": "./src/playback/worker.ts",
+			"default": "./src/playback/worker.ts"
 		}
 	},
 	"dependencies": {

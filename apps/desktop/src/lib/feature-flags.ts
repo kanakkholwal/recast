@@ -8,8 +8,7 @@
 
 /**
  * Editor-side camera overlay UI (properties tab + draggable preview overlay).
- * Recording with the camera still works; this only hides the editor controls.
- * Re-enable plan + per-platform exclusion APIs are documented in
- * `apps/desktop/docs/camera-recording-todo.md`.
+ * Enabled now that camera recording (WebView MediaRecorder), editor
+ * resize/reposition, and zoom-follow with preview↔export parity are wired.
  */
-export const CAMERA_OVERLAY_UI_ENABLED = false;
+export const CAMERA_OVERLAY_UI_ENABLED = true;

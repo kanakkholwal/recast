@@ -347,6 +347,20 @@ export function updateCameraPreviewState(state: CameraPreviewState): Promise<voi
 	return invoke("update_camera_preview_state", { state });
 }
 
+/** Deliver the camera track recorded in the preview window (MediaRecorder blob)
+ *  to the active recording session. The ArrayBuffer is the raw invoke payload so
+ *  it ships as a binary body, not a giant JSON number array. */
+export function saveRecordedCamera(buffer: ArrayBuffer): Promise<void> {
+	return invoke<void>("save_recorded_camera", buffer);
+}
+
+/** Tell Rust the preview finished its flush attempt (releasing stop_recording's
+ *  wait). `error` is a human message when no track could be delivered, logged
+ *  backend-side so the reason is visible. */
+export function finishCameraFlush(error: string | null): Promise<void> {
+	return invoke<void>("finish_camera_flush", { error });
+}
+
 export function stopRecording(): Promise<string> {
 	analytics.capture("recording_stopped", {});
 	return invoke<string>("stop_recording");

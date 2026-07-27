@@ -30,6 +30,7 @@
     showZoomLane: boolean;
     showMarkupLane: boolean;
     showCutLane: boolean;
+    showCutGaps: boolean;
     onSetTrim: (kind: "in" | "out") => void;
     onSplit: () => void;
     onToggleRazor: () => void;
@@ -37,6 +38,7 @@
     onToggleZoomLane: () => void;
     onToggleMarkupLane: () => void;
     onToggleCutLane: () => void;
+    onToggleCutGaps: () => void;
     onAddFocusRegion: () => void;
     onResetTrim: () => void;
     onZoomTimeline: (dir: number) => void;
@@ -61,6 +63,7 @@
     showZoomLane,
     showMarkupLane,
     showCutLane,
+    showCutGaps,
     onSetTrim,
     onSplit,
     onToggleRazor,
@@ -68,6 +71,7 @@
     onToggleZoomLane,
     onToggleMarkupLane,
     onToggleCutLane,
+    onToggleCutGaps,
     onAddFocusRegion,
     onResetTrim,
     onZoomTimeline,
@@ -405,6 +409,13 @@
         >
           <Scissors class="size-3" />
           Cuts
+        </DropdownMenu.CheckboxItem>
+        <DropdownMenu.CheckboxItem
+          checked={showCutGaps}
+          onCheckedChange={onToggleCutGaps}
+        >
+          <SquareSplitHorizontal class="size-3" />
+          Show cut gaps
         </DropdownMenu.CheckboxItem>
 
         <DropdownMenu.Separator />

@@ -12,6 +12,7 @@
     Sparkles,
     Upload,
     X,
+    Layout2
   } from "@recast/icons";
   import { Button } from "@recast/ui/button";
   import { Kbd } from "@recast/ui/kbd";
@@ -198,7 +199,7 @@
             class="gap-1.5 text-[11px] text-muted-foreground"
             onclick={() => (showPresetsPicker = true)}
           >
-            <Sparkles size={12} />
+            <Layout2 size={12} />
             Presets
             <Kbd class="ml-1">{chordLabel("editor.presets")}</Kbd>
           </Button>

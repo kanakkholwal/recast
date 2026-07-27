@@ -29,9 +29,9 @@
 // MediaBunny primitives through `@recast/media` (the allowed channel —
 // see the override in biome.json). Same scope rule as the other worker
 // files in this package.
-import { ALL_FORMATS, BlobSource, CanvasSink, Input } from '@recast/media/mediabunny';
+import { ALL_FORMATS, CanvasSink, Input, UrlSource } from '@recast/media/mediabunny';
 
-type InitMessage = { type: 'init'; buffer: ArrayBuffer; tileHeightPx: number };
+type InitMessage = { type: 'init'; url: string; tileHeightPx: number; durationSec?: number };
 type DecodeMessage = {
 	type: 'decode';
 	requests: Array<{ id: number; originalSec: number }>;
@@ -71,16 +71,21 @@ let videoHeight = 0;
 let videoDurationSec = 0;
 let disposed = false;
 
-async function init(buffer: ArrayBuffer, hPx: number): Promise<void> {
+async function init(url: string, hPx: number, durationSec?: number): Promise<void> {
 	tileHeightPx = hPx;
-	const blob = new Blob([buffer]);
+	// UrlSource range-streams the file; it never holds the whole thing resident,
+	// unlike the old BlobSource that pinned ~600MB (plus a spec-mandated Blob
+	// copy) for the entire session on a 4K recording.
 	input = new Input({
-		source: new BlobSource(blob),
+		source: new UrlSource(url),
 		formats: ALL_FORMATS,
 	});
 	const track = await input.getPrimaryVideoTrack();
 	if (!track) throw new Error('Filmstrip: no video track in input.');
-	videoDurationSec = await input.computeDuration();
+	// Trust the caller's ffprobe duration; computeDuration() walks every fragment
+	// of a fragmented MP4, which over a streamed source means many range reads.
+	videoDurationSec =
+		durationSec && Number.isFinite(durationSec) ? durationSec : await input.computeDuration();
 	const w = await track.getCodedWidth();
 	const h = await track.getCodedHeight();
 	videoWidth = w ?? 0;
@@ -103,9 +108,9 @@ async function decodeRequests(requests: Array<{ id: number; originalSec: number 
 			const src = wrapped.canvas as OffscreenCanvas;
 			const blob = await canvasToJpeg(src);
 			if (disposed) return;
-			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height }, [
-				blob,
-			]);
+			// A Blob is structured-cloneable but NOT transferable; listing it
+			// throws and loses the whole tile.
+			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height });
 		} catch (err) {
 			post({
 				type: 'error',
@@ -155,19 +160,16 @@ async function buildStoryboard(): Promise<void> {
 			ctx2d.drawImage(src, col * cellW, row * cellH, cellW, cellH);
 		}
 		const blob = await sprite.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
-		post(
-			{
-				type: 'storyboard',
-				blob,
-				cols,
-				rows,
-				cellW,
-				cellH,
-				count,
-				durationSec: videoDurationSec,
-			},
-			[blob],
-		);
+		post({
+			type: 'storyboard',
+			blob,
+			cols,
+			rows,
+			cellW,
+			cellH,
+			count,
+			durationSec: videoDurationSec,
+		});
 	} catch (err) {
 		post({
 			type: 'error',
@@ -193,7 +195,7 @@ ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
 	const msg = e.data;
 	switch (msg.type) {
 		case 'init':
-			void init(msg.buffer, msg.tileHeightPx).catch((err) => {
+			void init(msg.url, msg.tileHeightPx, msg.durationSec).catch((err) => {
 				post({
 					type: 'error',
 					message: err instanceof Error ? err.message : String(err),

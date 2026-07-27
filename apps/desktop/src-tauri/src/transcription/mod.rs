@@ -254,6 +254,12 @@ pub struct CaptionModelInfo {
     /// Non-blocking caveat for this device (slow on CPU, low RAM, …), or the
     /// reason the runtime is unavailable when that's the blocker.
     pub warning: Option<String>,
+    // - catalog presentation (passed through from the registry) -
+    pub capabilities: models::ModelCapabilities,
+    pub language_count: Option<u32>,
+    pub speed_score: Option<u8>,
+    pub accuracy_score: Option<u8>,
+    pub recommended: bool,
 }
 
 /// Decide whether a model can run on this device and what to warn about.
@@ -354,6 +360,11 @@ pub async fn list_caption_models(app: AppHandle) -> AppResult<Vec<CaptionModelIn
                 runnable,
                 runtime_available,
                 warning,
+                capabilities: m.capabilities,
+                language_count: m.language_count,
+                speed_score: m.speed_score,
+                accuracy_score: m.accuracy_score,
+                recommended: m.recommended,
             }
         })
         .collect();

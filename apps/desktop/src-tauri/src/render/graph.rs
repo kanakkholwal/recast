@@ -130,6 +130,9 @@ pub struct RenderState {
     pub shadow: ShadowSettings,
     #[serde(default)]
     pub audio_settings: AudioSettings,
+    /// Music / extra-audio clips on the output timeline (mixed in at export).
+    #[serde(default)]
+    pub music_clips: Vec<crate::render::node_types::AudioClip>,
     #[serde(default)]
     pub watermark_settings: WatermarkSettings,
     #[serde(default)]
@@ -203,6 +206,7 @@ impl Default for RenderState {
             annotations: Vec::new(),
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
+            music_clips: Vec::new(),
             watermark_settings: WatermarkSettings::default(),
             camera_overlay: CameraOverlaySettings::default(),
             cursor_sprite_rest: None,
@@ -969,6 +973,70 @@ pub(crate) fn fmt_term(
             "if(gte({var},{ta:.4})*lt({var},{tb:.4}),({offset_a:.4}+{dv:.6}*({var}-{ta:.4})/{dt:.4}),0)"
         ))
     }
+}
+
+/// Generic collinear merge over per-region `(output_t, value)` samples — the
+/// same greedy line-fit as `merge_scale_segments`, but on arbitrary values (used
+/// by the camera zoom-follow LUTs).
+fn merge_value_segments(samples_per_region: &[Vec<(f64, f64)>], tol: f64) -> Vec<Vec<Segment>> {
+    samples_per_region
+        .iter()
+        .map(|samples| {
+            let mut segments: Vec<Segment> = Vec::new();
+            let mut run: Option<Segment> = None;
+            for pair in samples.windows(2) {
+                let (a, b) = (pair[0], pair[1]);
+                if b.0 <= a.0 {
+                    continue;
+                }
+                let (va, vb) = (a.1, b.1);
+                match run {
+                    Some((ra, rva, _rb, _rvb)) => {
+                        let span = b.0 - ra;
+                        let pred_at_a = if span > 1e-9 {
+                            rva + (vb - rva) * (a.0 - ra) / span
+                        } else {
+                            va
+                        };
+                        if (pred_at_a - va).abs() <= tol {
+                            run = Some((ra, rva, b.0, vb));
+                        } else {
+                            segments.push((ra, rva, a.0, va));
+                            run = Some((a.0, va, b.0, vb));
+                        }
+                    }
+                    None => run = Some((a.0, va, b.0, vb)),
+                }
+            }
+            if let Some(r) = run {
+                segments.push(r);
+            }
+            segments
+        })
+        .collect()
+}
+
+/// Build a time-varying FFmpeg expression (flat-sum of windowed linear terms) in
+/// `t` from per-region `(output_t, value)` samples, collinear-merged (coarsening
+/// the tolerance until it fits the parser budget). `default` is the value outside
+/// every region. Mirrors `build_zoom_exprs` for the camera zoom-follow LUTs.
+pub(crate) fn build_time_lut_expr(samples_per_region: &[Vec<(f64, f64)>], default: f64) -> String {
+    let base_tol = 0.5_f64; // pixels
+    let mut tol = base_tol;
+    let mut segs = merge_value_segments(samples_per_region, tol);
+    while segment_count(&segs) > MAX_TERMS_PER_EXPR && tol < base_tol * 512.0 {
+        tol *= 2.0;
+        segs = merge_value_segments(samples_per_region, tol);
+    }
+    let mut terms = Vec::new();
+    for region_segs in &segs {
+        for &(ta, va, tb, vb) in region_segs {
+            if let Some(term) = fmt_term(ta, va, tb, vb, default, "t") {
+                terms.push(term);
+            }
+        }
+    }
+    wrap_flat_sum(&format!("{default:.4}"), terms)
 }
 
 pub(crate) fn resolve_background_path(

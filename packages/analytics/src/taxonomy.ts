@@ -137,11 +137,20 @@ export interface EventPropMap {
 		reason?: string;
 	};
 	mediabunny_preview_perf: {
-		/** Decoded frames/sec, averaged over the playback windows of this source. */
+		/** Decoded frames/sec over this source's lifetime. */
 		avg_fps?: number;
+		/** Served/asked hit rate scaled to source fps: how often the render loop
+		 *  actually got a fresh picture. */
 		min_fps?: number;
 		/** Worst frame lateness vs the playback clock, ms. */
 		max_late_ms?: number;
+		/** Worst |video − audio| clock gap seen, ms (REQUIREMENTS.md §3 drift row). */
+		max_av_drift_ms?: number;
+		/** Worst CPU time to submit a frame→texture upload, ms. A large value
+		 *  means decoded frames are CPU-backed and each costs a real copy. */
+		max_upload_ms?: number;
+		/** Mean upload submit time, ms — the steady-state cost. */
+		avg_upload_ms?: number;
 		width?: number;
 		height?: number;
 		/** Source media fps, for context against avg_fps. */

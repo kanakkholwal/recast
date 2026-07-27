@@ -30,6 +30,11 @@ function model(over: Partial<CaptionModelInfo> = {}): CaptionModelInfo {
 		runnable: true,
 		runtimeAvailable: true,
 		warning: null,
+		capabilities: { streaming: false, translate: false, langDetect: false, timestamps: "token" },
+		languageCount: null,
+		speedScore: null,
+		accuracyScore: null,
+		recommended: false,
 		...over,
 	};
 }
@@ -96,6 +101,12 @@ describe("langLabel", () => {
 	});
 	it("upper-cases explicit language codes", () => {
 		expect(langLabel(model({ languages: ["en", "hi"] }))).toBe("EN, HI");
+	});
+	it("prefers the registry's language count over the vague 'multi' hint", () => {
+		expect(langLabel(model({ languages: ["multi"], languageCount: 28 }))).toBe("28 languages");
+	});
+	it("keeps the code list for a single-language model", () => {
+		expect(langLabel(model({ languages: ["en"], languageCount: 1 }))).toBe("EN");
 	});
 });
 

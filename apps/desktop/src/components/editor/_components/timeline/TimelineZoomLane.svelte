@@ -46,7 +46,7 @@
   // Snap targets are original times; place the guide on the output axis.
   const snapX = $derived(
     activeSnap
-      ? originalToOutput(store.timeMap, activeSnap.time) * pixelsPerSecond
+      ? originalToOutput(store.renderMap, activeSnap.time) * pixelsPerSecond
       : 0,
   );
 
@@ -78,7 +78,7 @@
       duration,
       Math.max(
         0,
-        outputToOriginal(store.timeMap, x / pixelsPerSecond),
+        outputToOriginal(store.renderMap, x / pixelsPerSecond),
       ),
     );
   }

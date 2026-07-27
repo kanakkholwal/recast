@@ -96,10 +96,23 @@
   }
 
   function tick_() {
+    rafHandle = null;
     // Fallback only while the size is still unknown; the $effect below keeps it
     // live once the element is observed.
     if ((layerSize.w <= 0 || layerSize.h <= 0) && layerEl) measureLayer();
     _frame++;
+    // Only the moving picture needs a per-frame re-derive; `styleFor` reads
+    // `videoEl.currentTime`, which is invisible to the reactive graph.
+    if (store.isPlaying) scheduleTick();
+  }
+
+  /**
+   * Coalesced re-derive. This used to re-arm unconditionally, dirtying `$state`
+   * 60x/sec for the whole session and recomputing every text annotation's inline
+   * style even when nothing was on screen.
+   */
+  function scheduleTick() {
+    if (rafHandle !== null) return;
     rafHandle = requestAnimationFrame(tick_);
   }
 
@@ -118,13 +131,29 @@
     const el = layerEl;
     if (!el) return;
     measureLayer();
-    const ro = new ResizeObserver(() => measureLayer());
+    const ro = new ResizeObserver(() => {
+      measureLayer();
+      scheduleTick();
+    });
     ro.observe(el);
     return () => ro.disconnect();
   });
 
+  // Re-derive positions when the state they depend on moves. While paused this
+  // replaces the old per-frame tick entirely.
+  $effect(() => {
+    void store.currentTime;
+    void store.annotations;
+    void store.zoomRegions;
+    void store.selectedAnnotationId;
+    void store.isPlaying;
+    void drag;
+    void layerSize;
+    scheduleTick();
+  });
+
   onMount(() => {
-    rafHandle = requestAnimationFrame(tick_);
+    scheduleTick();
   });
   onDestroy(() => {
     if (rafHandle !== null) cancelAnimationFrame(rafHandle);

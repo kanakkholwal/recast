@@ -62,11 +62,11 @@
   const isSelected = $derived(annotation.id === store.selectedAnnotationId);
   // Output (post-cut) axis. See ZoomLayerCard for the rationale.
   const xOf = (t: number) =>
-    originalToOutput(store.timeMap, t) * pixelsPerSecond;
+    originalToOutput(store.renderMap, t) * pixelsPerSecond;
   const tOf = (xPx: number) =>
-    outputToOriginal(store.timeMap, xPx / pixelsPerSecond);
+    outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
   // Labels read on the output axis, like the ruler and the playhead.
-  const outSec = (t: number) => originalToOutput(store.timeMap, t);
+  const outSec = (t: number) => originalToOutput(store.renderMap, t);
   const left = $derived(xOf(annotation.start));
   // 28px keeps a one-frame annotation grabbable.
   const width = $derived(

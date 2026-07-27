@@ -6,18 +6,12 @@ import {
 	text,
 	timestamp,
 } from "drizzle-orm/pg-core";
+import { limitsFor } from "$lib/billing/catalog";
 import { organization } from "./organization";
 
 /**
- * Per-workspace cached usage counters for the billing transparency surface
- * (storage bar, recast-count bar, live invoice estimate). One row per
- * workspace, upserted on every recast insert / delete / archive in the
- * same transaction. A nightly reconciliation cron recomputes from source
- * of truth (recast table sums) to repair drift.
- *
- * Quota limits themselves are NOT stored here — they're derived from
- * `organization.plan` via `TEAM_PLAN_*` constants. This table only holds
- * what the workspace is *currently using*.
+ * Per-workspace cached usage counters for the billing surface. One row per
+ * workspace, upserted in the same transaction as every recast/view mutation.
  */
 export const workspaceUsage = pgTable(
 	"workspace_usage",
@@ -36,9 +30,22 @@ export const workspaceUsage = pgTable(
 		/** Workspace member count, kept in sync from `member` inserts/deletes. */
 		membersCount: integer("members_count").notNull().default(1),
 		/**
+		 * Bytes served to viewers in the current billing month. Bumped per view
+		 * start by the recast's size — an upper bound, since partial watches
+		 * transfer less. Conservative on purpose: it protects the egress bill.
+		 */
+		deliveryBytesThisMonth: bigint("delivery_bytes_this_month", {
+			mode: "number",
+		})
+			.notNull()
+			.default(0),
+		/** Start of the window `deliveryBytesThisMonth` covers; reset rolls it forward. */
+		deliveryPeriodStart: timestamp("delivery_period_start")
+			.notNull()
+			.defaultNow(),
+		/**
 		 * Rolling 30d view count across all shares in the workspace. Used for
 		 * the analytics overview card and abuse detection (sudden spike).
-		 * Recomputed nightly from `share_view`.
 		 */
 		viewsLast30d: integer("views_last_30d").notNull().default(0),
 		lastRecalculatedAt: timestamp("last_recalculated_at").notNull().defaultNow(),
@@ -47,52 +54,16 @@ export const workspaceUsage = pgTable(
 	(t) => [
 		// Quota-warning sweep: workspaces past 80% / 100% of their plan cap.
 		index("workspace_usage_storage_idx").on(t.storageBytes),
+		// Delivery-cap sweep runs on the same cadence, filtered by period start.
+		index("workspace_usage_delivery_idx").on(t.deliveryPeriodStart),
 	],
 );
 
-/**
- * Pricing constants. Single source of truth read everywhere quota or
- * invoice math runs. Keep aligned with the public pricing page and the
- * "Why this number" explainer.
- *
- * R2 floor: $0.015/GB/mo storage, $0 egress. Overage rate is ~2× floor.
- */
+/** Enforcement view of the plan catalog. Edit `$lib/billing/catalog.ts`, not this. */
 export const QUOTA = {
-	free: {
-		storageBytes: 5 * 1024 * 1024 * 1024, // 5 GB
-		activeRecasts: 10,
-		maxDurationSec: 600, // 10 min
-		members: 3,
-		playbackMaxHeight: 720,
-		expireAfterNoViewsDays: 14,
-		hardDeleteAfterArchiveDays: 16, // 14 + 16 = 30d total
-	},
-	pro: {
-		storageBytes: 200 * 1024 * 1024 * 1024, // 200 GB included
-		activeRecasts: 200,
-		maxDurationSec: 4 * 60 * 60, // 4 h
-		members: 50,
-		playbackMaxHeight: 2160,
-		expireAfterNoViewsDays: null, // never auto-archive on Pro
-		hardDeleteAfterArchiveDays: null,
-	},
-	enterprise: {
-		storageBytes: Number.POSITIVE_INFINITY,
-		activeRecasts: Number.POSITIVE_INFINITY,
-		maxDurationSec: Number.POSITIVE_INFINITY,
-		members: Number.POSITIVE_INFINITY,
-		playbackMaxHeight: 2160,
-		expireAfterNoViewsDays: null,
-		hardDeleteAfterArchiveDays: null,
-	},
-} as const;
-
-/** Pro overage rates. Charged via Polar metered billing on usage report. */
-export const PRO_OVERAGE = {
-	/** Per GB per month past included storage. ~2× R2 cost. */
-	storagePerGbMonth: 0.03,
-	/** Per active recast per month past included count. */
-	perActiveRecastMonth: 0.1,
+	free: limitsFor("free"),
+	pro: limitsFor("pro"),
+	enterprise: limitsFor("enterprise"),
 } as const;
 
 export type WorkspaceUsage = typeof workspaceUsage.$inferSelect;

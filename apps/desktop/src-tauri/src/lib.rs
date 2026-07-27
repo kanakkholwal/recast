@@ -3,7 +3,6 @@ use std::path::PathBuf;
 
 mod audio;
 mod cache;
-mod camera;
 mod capture;
 pub mod cli;
 mod commands;
@@ -476,8 +475,18 @@ pub fn run() {
             let state = app.state::<AppState>();
             let output_dir = state.config.read().output_dir.clone();
             if let Some(dir) = output_dir {
-                project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
+                // Off the main thread: this readdir was the one disk walk left in
+                // setup(), which runs before the event loop and so delays first
+                // paint on macOS (in-process WKWebView). It only cleans abandoned
+                // autosave sessions, so it never races the just-opened UI.
+                tauri::async_runtime::spawn_blocking(move || {
+                    project::autosave::cleanup_stale_sessions(std::path::Path::new(&dir));
+                });
             }
+
+            // Evict stale/excess project extractions. Startup-only: nothing is
+            // open yet, so no live editor can lose the assets under it.
+            tauri::async_runtime::spawn_blocking(project::reader::sweep_cache);
 
             // Sweep abandoned `recast-thumbnails/*` subdirs left behind by
             // crashed/killed editor sessions. The thumbnail extractor
@@ -541,6 +550,8 @@ pub fn run() {
             commands::get_camera_devices,
             commands::validate_camera_source,
             commands::update_camera_preview_state,
+            commands::save_recorded_camera,
+            commands::finish_camera_flush,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
             commands::autosave_project,
@@ -650,6 +661,19 @@ pub fn run() {
                 // correctly; a force-kill leaves the snapshot stale, which
                 // the PID check rejects and clears.
                 commands::persist(app_handle.state::<AppState>().inner(), app_handle);
+            }
+
+            // Reap a live recording before the process ends. Only on `Exit`:
+            // `ExitRequested` can still be cancelled, and killing the user's
+            // in-progress recording on a quit they backed out of would be worse
+            // than the leak. Quitting via the tray calls `app.exit(0)`, which
+            // ends in `process::exit` and skips every destructor, so
+            // `Drop for RecordingManager` never fires and the mic/camera
+            // children outlive the app holding their devices.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(state) = app_handle.try_state::<AppState>() {
+                    state.recording_manager.abort_for_shutdown();
+                }
             }
 
             // macOS/iOS deliver file-association opens (a double-clicked

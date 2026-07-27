@@ -30,7 +30,8 @@
     openFileLocation,
     saveProjectEdits,
   } from "$lib/ipc";
-  import { AudioTimelineEngine } from "$lib/playback/audio-engine";
+  import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
+  import { clipAssetPath } from "$lib/audio/music";
   import { reconcileAvDrift } from "$lib/playback/av-drift";
   import { generateAutoZoom } from "$lib/services/analysis";
   import {
@@ -220,6 +221,9 @@
   // drift). Falls back to the <audio> elements if it can't init/decode.
   let audioEngine: AudioTimelineEngine | null = $state(null);
   let audioEngineTried = false;
+  // Bumped whenever the document changes or the editor is destroyed, so an
+  // engine that finishes decoding afterwards knows it is stale.
+  let audioEngineGen = 0;
   let audioEngineFailed = $state(false);
   let cursorPath = $state<string | null>(null);
   let cameraPath = $state<string | null>(null);
@@ -312,6 +316,15 @@
     for (const el of [systemAudioEl, micAudioEl]) {
       if (el) el.currentTime = start;
     }
+    // WebCodecs path: the picture clock is the transport and the <video> stays
+    // paused by design, so play()ing it just races that effect and rejects with
+    // AbortError. Publishing the position is the whole handoff — VideoPreview
+    // re-seats the clock onto it when we return true, and the audio engine
+    // reschedules off the same backward jump.
+    if (webcodecsActive) {
+      store.currentTime = start;
+      return true;
+    }
     // play() can reject (user-gesture), so log instead of stalling silently.
     void videoEl.play().catch((err) => {
       console.warn("loop replay failed:", err);
@@ -357,16 +370,17 @@
     }
   }
 
-  function handleVideoEnded() {
-    // Loop wins over stop-at-end. The short-circuit avoids the pause calls below
-    // racing loopBackToStart and the audio effect batching out the false→true flip.
+  // Returns true when we looped, so the WebCodecs caller keeps its clock running
+  // instead of stopping. Loop wins over stop-at-end: the short-circuit avoids the
+  // pause calls below racing loopBackToStart.
+  function handleVideoEnded(): boolean {
     if (loopEnabled && videoEl) {
-      loopBackToStart();
-      return;
+      return loopBackToStart();
     }
     store.isPlaying = false;
     systemAudioEl?.pause();
     micAudioEl?.pause();
+    return false;
   }
 
   // Slave the audio (full-recording WAVs) to the cut-aware picture clock so they
@@ -433,7 +447,12 @@
     }
   }
   onDestroy(stopAudioClockSync);
-  onDestroy(() => audioEngine?.dispose());
+  onDestroy(() => {
+    // Bump first: an engine still decoding here would otherwise resolve into a
+    // destroyed component and never be disposed.
+    audioEngineGen++;
+    audioEngine?.dispose();
+  });
   onDestroy(disposeTileProvider);
 
   // Kept audio regions and current OUTPUT time: what the Web Audio engine
@@ -459,15 +478,29 @@
       audioEngineFailed = true;
       return;
     }
+    const gen = audioEngineGen;
     try {
       const eng = await AudioTimelineEngine.create([
         { url: systemAudioSrc, kind: "system" },
         { url: micAudioSrc, kind: "mic" },
       ]);
+      // Decoding both tracks takes seconds on a long recording, and the file can
+      // change or the editor close in that window. Adopting a stale engine
+      // stranded its AudioContext — an OS audio thread — plus both fully decoded
+      // PCM buffers, and left the new file early-returning on a truthy engine.
+      if (gen !== audioEngineGen) {
+        eng.dispose();
+        return;
+      }
       const s = store.audioSettings;
+      // Detached: the recording's audio plays as voice clips, so the monolithic
+      // source tracks are muted here (the clips path carries it).
+      const detached = store.audioDetached;
       eng.setMasterVolume(s.volume, s.muted);
-      eng.setTrackVolume("system", s.systemVolume, s.systemMuted);
-      eng.setTrackVolume("mic", s.micVolume, s.micMuted);
+      eng.setTrackVolume("system", detached ? 0 : s.systemVolume, detached || s.systemMuted);
+      eng.setTrackVolume("mic", detached ? 0 : s.micVolume, detached || s.micMuted);
+      eng.setFades(s.fadeIn, s.fadeOut, store.timeMap.outputDuration);
+      void eng.setMusicClips(buildMusicSpecs());
       audioEngine = eng;
     } catch (err) {
       console.warn("Web Audio engine unavailable; using <audio> fallback:", err);
@@ -569,19 +602,46 @@
   // still zeros both.
   $effect(() => {
     const settings = store.audioSettings;
+    // Detached audio: the monolithic source tracks are silenced (voice clips
+    // carry the recording audio); guards against double-playing the un-cut source.
+    const detached = store.audioDetached;
     const systemVol =
-      settings.muted || settings.systemMuted
+      detached || settings.muted || settings.systemMuted
         ? 0
         : Math.max(0, Math.min(1, (settings.volume * settings.systemVolume) / 10_000));
     const micVol =
-      settings.muted || settings.micMuted
+      detached || settings.muted || settings.micMuted
         ? 0
         : Math.max(0, Math.min(1, (settings.volume * settings.micVolume) / 10_000));
     if (systemAudioEl) systemAudioEl.volume = systemVol;
     if (micAudioEl) micAudioEl.volume = micVol;
     audioEngine?.setMasterVolume(settings.volume, settings.muted);
-    audioEngine?.setTrackVolume("system", settings.systemVolume, settings.systemMuted);
-    audioEngine?.setTrackVolume("mic", settings.micVolume, settings.micMuted);
+    audioEngine?.setTrackVolume("system", detached ? 0 : settings.systemVolume, detached || settings.systemMuted);
+    audioEngine?.setTrackVolume("mic", detached ? 0 : settings.micVolume, detached || settings.micMuted);
+    // Re-arm fades on setting change and when cuts/speed reshape output length.
+    audioEngine?.setFades(settings.fadeIn, settings.fadeOut, store.timeMap.outputDuration);
+  });
+
+  // Resolve the store's music clips to playable specs (asset URLs).
+  function buildMusicSpecs(): MusicClipSpec[] {
+    return store.musicClips.map((c) => ({
+      url: convertFileSrc(clipAssetPath(c.source)),
+      startOutputSec: c.startOutputSec,
+      offsetSec: c.offsetSec,
+      durationSec: c.durationSec,
+      gain: c.muted ? 0 : c.gain,
+      fadeIn: c.fadeIn,
+      fadeOut: c.fadeOut,
+      loop: c.loop,
+    }));
+  }
+
+  // Re-decode/re-schedule music whenever the clip set changes (add/remove/edit).
+  // Reads the clips reactively; the engine dedupes decode work per call.
+  $effect(() => {
+    const specs = buildMusicSpecs();
+    void store.timeMap.outputDuration; // reschedule fill length on edit
+    audioEngine?.setMusicClips(specs);
   });
 
   // Transport seek for `store.seek()`: seeks from outside the player (a
@@ -659,6 +719,7 @@
     const provider = await createTileProvider({
       url,
       sizeBytes: store.metadata?.sizeBytes,
+      durationSec: store.metadata?.duration,
       tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),
       onChange: () => {
         filmstripVersion++;
@@ -755,6 +816,17 @@
     isLoading = false;
   }
 
+  // Run after the editor is interactive, so heavy secondary work never competes
+  // with the preview's cold start. Same idle mechanism the waveform uses; fires
+  // at browser-idle or the timeout, whichever comes first.
+  function runWhenIdle(fn: () => void, timeout = 2000) {
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(fn, { timeout });
+    } else {
+      setTimeout(fn, 300);
+    }
+  }
+
   async function loadDocument() {
     error = "";
     isLoading = true;
@@ -767,7 +839,9 @@
     videoEl?.pause();
     systemAudioEl?.pause();
     micAudioEl?.pause();
-    // Tear down the previous file's engine; it rebuilds on first play.
+    // Tear down the previous file's engine; it rebuilds on first play. The bump
+    // also disowns one still decoding, which `dispose()` alone cannot reach.
+    audioEngineGen++;
     audioEngine?.dispose();
     audioEngine = null;
     audioEngineTried = false;
@@ -797,9 +871,7 @@
         fps: document.metadata.fps,
         codec: document.metadata.codec,
       });
-      void loadThumbnailStrip(document.projectPath);
       videoSrc = convertFileSrc(document.mediaPath);
-      void setupTileProvider(videoSrc);
       cursorPath = document.cursorPath ?? null;
       store.cursorPath = cursorPath;
       // Raw on-disk media paths for Rust-side analysis (silence detection).
@@ -825,7 +897,20 @@
       videoEl?.load();
       systemAudioEl?.load();
       micAudioEl?.load();
-      void maybeRunAutoZoom();
+      // The preview now owns the main thread through its cold start. Defer the
+      // three heavy secondary decoders — the Rust thumbnail strip, the filmstrip
+      // tile decoder, and the cursor auto-zoom pass — to browser-idle. On a 4K
+      // clip these each decode the same file; firing them alongside the preview
+      // is what spiked open. The path guard drops them if a newer document opened
+      // in the meantime.
+      const loadedPath = document.projectPath;
+      const filmstripSrc = videoSrc;
+      runWhenIdle(() => {
+        if (documentPath !== loadedPath) return;
+        void loadThumbnailStrip(loadedPath);
+        void setupTileProvider(filmstripSrc);
+        void maybeRunAutoZoom();
+      });
     } catch (err) {
       console.error("Failed to load editor document", err);
       log.error("session", "recast_load_failed", { error: String(err) });
@@ -1738,6 +1823,7 @@
               onReady={handleVideoReady}
               onError={handleVideoError}
               onSeeked={handleVideoSeeked}
+              audioPositionSec={() => audioEngine?.positionOutputSec ?? null}
             />
           </div>
           <VideoPlayerControls
@@ -1823,12 +1909,14 @@
 
   <!-- .recast stores system + mic audio as separate WAVs (the mp4 has no audio);
        kept in lockstep with the video via the $effects above. -->
+  <!-- preload="metadata": the Web Audio engine decodes the WAVs itself, so these
+       fallback elements needn't buffer full PCM at open (~tens of MB each). -->
   {#if systemAudioSrc}
     <!-- svelte-ignore a11y_media_has_caption -->
     <audio
       bind:this={systemAudioEl}
       src={systemAudioSrc}
-      preload="auto"
+      preload="metadata"
       class="hidden"
     ></audio>
   {/if}
@@ -1837,7 +1925,7 @@
     <audio
       bind:this={micAudioEl}
       src={micAudioSrc}
-      preload="auto"
+      preload="metadata"
       class="hidden"
     ></audio>
   {/if}

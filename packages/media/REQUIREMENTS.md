@@ -67,10 +67,17 @@ export type { MediaErrorCode };
 Two additional subpaths exist, both deliberately off the main barrel:
 
 ```ts
-// @recast/media/playback — the decode worker + its main-thread proxy.
-// Lazily imported by `openMediaSource`; import directly only when you need
-// the lower-level sync `frameAt` surface (the editor's rAF loop does).
+// @recast/media/playback — the decode worker's main-thread proxy. Lazily
+// imported by `openMediaSource`; import directly only when you need the
+// lower-level sync `frameAt` surface (the editor's rAF loop does).
 export { MediabunnyVideoSource };
+export type { MediabunnySourceOptions };
+
+// @recast/media/playback/worker — the decode worker BODY. The host app mounts
+// it from a worker entry file of its own, and passes `createWorker` to
+// `create`. This package must never spawn the worker: the resulting URL points
+// outside the app's root and its dev server then has to whitelist the path.
+export { startMediabunnyWorker };
 
 // @recast/media/mediabunny — raw MediaBunny primitives, worker modules only.
 export { ALL_FORMATS, BlobSource, CanvasSink, Input, UrlSource };
@@ -214,7 +221,8 @@ article.
 - **`VideoFrame` ownership** crosses the worker boundary to the consumer;
   the producer side MUST NOT close a frame until the consumer returns a
   release message. This is the same invariant as the current
-  `apps/desktop/src/lib/playback/webcodecs-source.ts:22`.
+  `packages/media/src/cache/index.ts` (`#evictMemoryUntilFits`), which is the
+  single close path for every decoded frame.
 - **Workers are module workers** (`new Worker(url, { type: 'module' })`).
 - **IndexedDB schema is versioned** via `onupgradeneeded`; migrations are
   explicit, not best-effort.

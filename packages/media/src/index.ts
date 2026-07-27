@@ -75,7 +75,7 @@ export {
 } from './cache';
 export type { CacheStats, FrameCacheConfig } from './cache';
 export { IndexedDBFrameStorage } from './cache/indexeddb-storage';
-export { frameBudget, frameCacheCapBytes } from './cache/frame-budget';
+export { frameBudget, frameCacheCapBytes, textureRingFrames } from './cache/frame-budget';
 export type { FrameBudget } from './cache/frame-budget';
 export { estimateFrameBytes } from './cache/storage';
 export type { CacheableFrame, FrameStorage } from './cache/storage';

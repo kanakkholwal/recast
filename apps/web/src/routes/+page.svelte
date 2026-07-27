@@ -946,7 +946,7 @@
 				{#each founderUse as item, i}
 					{@const Icon = item.icon}
 					<Reveal variant="up" delay={i * 70}>
-						<article class="glass-card group flex h-full flex-col rounded-2xl p-7 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
+						<article class="glass-card group flex h-full flex-col rounded-2xl p-7">
 							<span class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-foreground">
 								<Icon class="size-5" />
 							</span>
@@ -968,7 +968,7 @@
 		<Container>
 			<div class="grid gap-4 md:grid-cols-2">
 				<Reveal variant="left">
-					<article class="glass-card flex h-full flex-col rounded-2xl p-8 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
+					<article class="glass-card flex h-full flex-col rounded-2xl p-8">
 						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 							The app
 						</span>

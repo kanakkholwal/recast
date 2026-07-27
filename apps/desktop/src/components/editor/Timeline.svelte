@@ -5,6 +5,8 @@
   } from "$lib/stores/editor-store.svelte";
   import {
     AudioLines,
+    Mic,
+    Music2,
     Pencil,
     Scissors,
     Video,
@@ -13,6 +15,7 @@
   import { onMount } from "svelte";
   import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
   import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
+  import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
   import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
   import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
   import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
@@ -79,6 +82,7 @@
     zoom: boolean;
     markup: boolean;
     cuts: boolean;
+    gaps: boolean;
   } {
     if (typeof localStorage !== "undefined") {
       try {
@@ -95,19 +99,25 @@
             zoom: v.zoom !== false,
             markup: v.markup !== false,
             cuts: v.cuts ?? v.silence ?? true,
+            gaps: v.gaps === true,
           };
         }
       } catch {
         /* fall through to defaults */
       }
     }
-    return { waveform: true, zoom: true, markup: true, cuts: true };
+    return { waveform: true, zoom: true, markup: true, cuts: true, gaps: false };
   }
   const _view = loadView();
   let showAudioLane = $state(_view.waveform);
   let showZoomLane = $state(_view.zoom);
   let showMarkupLane = $state(_view.markup);
   let showCutLane = $state(_view.cuts);
+  // "Show cut gaps" lives in the store (it reshapes the render axis every lane
+  // reads); seed it from the persisted view pref on mount.
+  onMount(() => {
+    store.showCutGaps = _view.gaps;
+  });
   $effect(() => {
     if (typeof localStorage === "undefined") return;
     try {
@@ -118,6 +128,7 @@
           zoom: showZoomLane,
           markup: showMarkupLane,
           cuts: showCutLane,
+          gaps: store.showCutGaps,
         }),
       );
     } catch {
@@ -260,7 +271,7 @@
       const center = (span.start + span.end) * 0.5;
       timelineEl.scrollLeft = Math.max(
         0,
-        originalToOutput(store.timeMap, center) * nextPps - timelineEl.clientWidth * 0.5,
+        originalToOutput(store.renderMap, center) * nextPps - timelineEl.clientWidth * 0.5,
       );
     });
   }
@@ -300,10 +311,10 @@
   }
 
   const duration = $derived(store.metadata?.duration ?? 0);
-  // The axis is OUTPUT time via `store.timeMap`: cuts collapse to zero width (NLE
-  // ripple) and each kept segment is warped by its per-segment speed. Trimmed
-  // head/tail stay as 1x context, so the in/out handles still bracket the clip.
-  const outputDuration = $derived(store.timeMap.outputDuration);
+  // The axis lanes render on: `store.renderMap`. Normally OUTPUT time (cuts
+  // collapse to zero width, each kept segment warped by its speed); with "Show cut
+  // gaps" on, cuts get real width instead. Playback/export stay on the collapsed map.
+  const outputDuration = $derived(store.renderMap.outputDuration);
   const pixelsPerSecond = $derived(
     outputDuration > 0 ? (timelineWidth * store.timelineZoom) / outputDuration : 100,
   );
@@ -311,13 +322,13 @@
     Math.max(outputDuration * pixelsPerSecond, timelineWidth),
   );
   // Canonical axis transforms: every lane positions with `xOf` and resolves pointers with `tOf`.
-  const xOf = (t: number) => originalToOutput(store.timeMap, t) * pixelsPerSecond;
-  const tOf = (x: number) => outputToOriginal(store.timeMap, x / pixelsPerSecond);
+  const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+  const tOf = (x: number) => outputToOriginal(store.renderMap, x / pixelsPerSecond);
   // The playhead reads on the OUTPUT axis, same as the ruler beneath it and the
   // transport readout above it. Showing `store.currentTime` (original time) here
   // made the chip disagree with the ruler it sits on the moment a cut existed.
   const playheadOutput = $derived(
-    originalToOutput(store.timeMap, store.currentTime),
+    originalToOutput(store.renderMap, store.currentTime),
   );
   const clipLeft = $derived(xOf(store.inPoint));
   const clipRight = $derived(xOf(store.outPoint));
@@ -375,13 +386,34 @@
     seekToPosition(event.clientX);
   }
 
+  // Coalesce pointer moves to one rAF: hover + drag-seek each did a
+  // getBoundingClientRect (a forced layout), and a drag also fanned out the full
+  // `store.currentTime` write — synchronously, per event. High-Hz mice fire well
+  // above 60/s, so this bounds that work to once per frame with no perceptible
+  // scrub lag.
+  let pendingPointer: { x: number; y: number } | null = null;
+  let pointerRaf: number | null = null;
+  function processPointer() {
+    pointerRaf = null;
+    const p = pendingPointer;
+    if (!p) return;
+    updateHover(p.x, p.y);
+    if (isDraggingPlayhead) seekToPosition(p.x);
+  }
   function handleTimelinePointerMove(event: PointerEvent) {
-    updateHover(event.clientX, event.clientY);
-    if (!isDraggingPlayhead) return;
-    seekToPosition(event.clientX);
+    pendingPointer = { x: event.clientX, y: event.clientY };
+    if (pointerRaf === null) pointerRaf = requestAnimationFrame(processPointer);
   }
 
   function handleTimelinePointerUp() {
+    // Land the final position immediately — the last queued rAF may be up to a
+    // frame stale, and a scrub must end exactly where the pointer was released.
+    if (pointerRaf !== null) {
+      cancelAnimationFrame(pointerRaf);
+      pointerRaf = null;
+    }
+    if (pendingPointer && isDraggingPlayhead) seekToPosition(pendingPointer.x);
+    pendingPointer = null;
     isDraggingPlayhead = false;
   }
 
@@ -536,7 +568,7 @@
       clientY,
       top: rect.top,
       outputSec,
-      originalSec: outputToOriginal(store.timeMap, outputSec),
+      originalSec: outputToOriginal(store.renderMap, outputSec),
     };
   }
   function clearHover() {
@@ -877,6 +909,7 @@
     return () => {
       observer.disconnect();
       offCommands();
+      if (pointerRaf !== null) cancelAnimationFrame(pointerRaf);
     };
   });
 </script>
@@ -910,6 +943,7 @@
     {showZoomLane}
     {showMarkupLane}
     {showCutLane}
+    showCutGaps={store.showCutGaps}
     onSetTrim={setTrimPoint}
     onSplit={splitAtPlayhead}
     onToggleRazor={toggleRazor}
@@ -924,6 +958,7 @@
     onToggleZoomLane={() => (showZoomLane = !showZoomLane)}
     onToggleMarkupLane={() => (showMarkupLane = !showMarkupLane)}
     onToggleCutLane={() => (showCutLane = !showCutLane)}
+    onToggleCutGaps={() => (store.showCutGaps = !store.showCutGaps)}
   />
 
   <!-- Rail lives OUTSIDE the scroller so lane names never overlap a card at t≈0.
@@ -944,6 +979,16 @@
         {#if showAudioLane}
           <div class="mt-1.5 flex h-9 items-center justify-center">
             {@render railLabel(AudioLines, "Audio", "text-lane-audio")}
+          </div>
+        {/if}
+        {#if store.voiceClips.length > 0}
+          <div class="mt-1.5 flex h-7 items-center justify-center">
+            {@render railLabel(Mic, "Voice", "text-lane-audio")}
+          </div>
+        {/if}
+        {#if store.musicOnlyClips.length > 0}
+          <div class="mt-1.5 flex h-7 items-center justify-center">
+            {@render railLabel(Music2, "Music", "text-lane-music")}
           </div>
         {/if}
         {#if showCutLane}
@@ -1014,6 +1059,27 @@
 
         {#if showAudioLane}
           <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
+        {/if}
+
+        <!-- Detached recording audio ("voice"), then music: both editable clip
+             lanes, appearing whenever they hold clips (not just in the panel). -->
+        {#if store.voiceClips.length > 0}
+          <TimelineMusicLane
+            {store}
+            clips={store.voiceClips}
+            {pixelsPerSecond}
+            variant="voice"
+            panelTab="audio"
+          />
+        {/if}
+        {#if store.musicOnlyClips.length > 0}
+          <TimelineMusicLane
+            {store}
+            clips={store.musicOnlyClips}
+            {pixelsPerSecond}
+            variant="music"
+            panelTab="music"
+          />
         {/if}
 
         <!-- Cuts sit next to Audio: cutting against the waveform is the common

@@ -84,7 +84,7 @@
   // One block per kept segment on the OUTPUT (post-cut) axis: a cut occupies zero
   // width and later clips slide left to close the gap. `xOf` maps original time onto that axis.
   const pps = $derived(pixelsPerSecond);
-  const xOf = (t: number) => originalToOutput(store.timeMap, t) * pps;
+  const xOf = (t: number) => originalToOutput(store.renderMap, t) * pps;
   // Thumbnail strip is laid across this; each block is internally cut-free, so it shows its slice via a margin offset.
   const clipDuration = $derived(Math.max(0.0001, store.outPoint - store.inPoint));
   const stripFullWidth = $derived(clipDuration * pps);
@@ -204,7 +204,7 @@
   const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
   let menuTime = $state(0);
   function rememberMenuTime(clientX: number) {
-    menuTime = outputToOriginal(store.timeMap, clientXToOutput(clientX));
+    menuTime = outputToOriginal(store.renderMap, clientXToOutput(clientX));
   }
 
   // Faint audio envelope over the footage, so you can see where to cut. Built in
@@ -287,10 +287,10 @@
     which: "in" | "out",
     scrub = false,
   ) {
-    // Output px → original time. While trimming, store.timeMap is the full
+    // Output px → original time. While trimming, store.renderMap is the full
     // recording axis (stable, not collapsing under the drag), so absolute
     // mapping tracks the cursor and lets the handle move across the whole source.
-    const raw = outputToOriginal(store.timeMap, clientXToOutput(clientX));
+    const raw = outputToOriginal(store.renderMap, clientXToOutput(clientX));
     const t = snapTrim(raw, which);
     const min = minClipDuration(fps);
     if (which === "in") {

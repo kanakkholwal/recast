@@ -402,26 +402,36 @@ pub fn cached_avfoundation_devices() -> &'static str {
 /// → `libx264` (CPU). Cached for the process lifetime; each probe costs
 /// ~300–500ms cold, so we stop at the first one that works.
 pub fn preferred_h264_encoder() -> &'static str {
-    static CACHED: OnceLock<&'static str> = OnceLock::new();
-    CACHED.get_or_init(|| {
-        for (name, extra_args) in [
-            // Apple Silicon / macOS Hardware Encoder
-            ("h264_videotoolbox", &["-realtime", "1"][..]),
-            // NVIDIA
-            ("h264_nvenc", &["-preset", "p1"][..]),
-            // AMD
-            ("h264_amf", &["-quality", "speed"][..]),
-            // Intel
-            ("h264_qsv", &["-preset", "veryfast"][..]),
-        ] {
-            if probe_encoder(name, extra_args) {
-                log::info!("preferred H.264 encoder: {name} (init probe ok)");
-                return name;
-            }
+    // Cache only a WORKING HARDWARE encoder — that can't regress mid-session.
+    // The software fallback is deliberately NOT cached: the usual cause is a
+    // TRANSIENT miss (NVENC's 3-session consumer-card limit while a recording or
+    // preview still holds a session, or a momentarily busy driver), and caching
+    // it pinned libx264 for the WHOLE app run even after the GPU freed — turning
+    // every subsequent export ~5-10x slower, silently. Re-probing on the next
+    // export costs ~1-2s, which is noise against a minutes-long software encode,
+    // and lets hardware recover the instant it's free.
+    static CACHED_HW: OnceLock<&'static str> = OnceLock::new();
+    if let Some(hw) = CACHED_HW.get() {
+        return hw;
+    }
+    for (name, extra_args) in [
+        // Apple Silicon / macOS Hardware Encoder
+        ("h264_videotoolbox", &["-realtime", "1"][..]),
+        // NVIDIA
+        ("h264_nvenc", &["-preset", "p1"][..]),
+        // AMD
+        ("h264_amf", &["-quality", "speed"][..]),
+        // Intel
+        ("h264_qsv", &["-preset", "veryfast"][..]),
+    ] {
+        if probe_encoder(name, extra_args) {
+            log::info!("preferred H.264 encoder: {name} (init probe ok)");
+            let _ = CACHED_HW.set(name);
+            return name;
         }
-        log::info!("preferred H.264 encoder: libx264 (no working hardware encoder)");
-        "libx264"
-    })
+    }
+    log::info!("preferred H.264 encoder: libx264 (no working hardware encoder this attempt)");
+    "libx264"
 }
 
 /// Real availability of one H.264 encoder on THIS machine. Unlike

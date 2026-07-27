@@ -41,8 +41,11 @@ export function pickDefaultModelId(models: CaptionModelInfo[]): string | null {
 	);
 }
 
-/** Language badge: "Multilingual" for `multi`, else the codes upper-cased. */
+/** Language badge: the covered-language count when the registry knows it
+ *  ("28 languages" reads better than "Multilingual"), else "Multilingual" for
+ *  `multi`, else the codes upper-cased. */
 export function langLabel(m: CaptionModelInfo): string {
+	if (m.languageCount && m.languageCount > 1) return `${m.languageCount} languages`;
 	return m.languages.includes("multi")
 		? "Multilingual"
 		: m.languages.join(", ").toUpperCase();

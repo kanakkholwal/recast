@@ -744,8 +744,25 @@
     ctx.restore();
   }
 
+  /** Only the moving picture and an active drag need a frame-by-frame repaint. */
+  function needsContinuousRedraw(): boolean {
+    return store.isPlaying || drag !== null;
+  }
+
   function tick() {
+    rafHandle = null;
     draw();
+    if (needsContinuousRedraw()) scheduleRedraw();
+  }
+
+  /**
+   * Coalesced one-shot repaint. This loop used to re-arm unconditionally for the
+   * whole editor session, so even with zero annotations it cleared a full
+   * DPR-scaled canvas 60x/sec — a full-viewport layer the compositor had to
+   * re-upload every frame, forever.
+   */
+  function scheduleRedraw() {
+    if (rafHandle !== null) return;
     rafHandle = requestAnimationFrame(tick);
   }
 
@@ -793,6 +810,7 @@
   }
 
   function handlePointerDown(e: PointerEvent) {
+    scheduleRedraw();
     if (!canvasEl || !store.metadata) return;
     if (store.annotationsGloballyHidden) return;
     const pt = pointerToCanvasPx(e);
@@ -989,6 +1007,7 @@
   }
 
   function handlePointerMove(e: PointerEvent) {
+    scheduleRedraw();
     if (!drag) {
       refreshHover(pointerToCanvasPx(e), playbackTime());
       return;
@@ -1139,6 +1158,7 @@
   }
 
   function handlePointerUp(e: PointerEvent) {
+    scheduleRedraw();
     if (!drag) return;
     (e.currentTarget as Element).releasePointerCapture(e.pointerId);
     // Drop snap guides immediately on release so the preview returns to
@@ -1321,13 +1341,31 @@
       if (r.width > 0 && r.height > 0) targetSize = { w: r.width, h: r.height };
     };
     measure();
-    const ro = new ResizeObserver(() => measure());
+    const ro = new ResizeObserver(() => {
+      measure();
+      scheduleRedraw();
+    });
     ro.observe(el);
     return () => ro.disconnect();
   });
 
+  // Repaint on the state the drawing actually depends on. `drag` and
+  // `targetSize` are plain locals, so their call sites schedule directly.
+  $effect(() => {
+    void store.annotationsByZ;
+    void store.currentTime;
+    void store.selectedAnnotationId;
+    void store.hoveredAnnotationId;
+    void store.activePanel;
+    void store.annotationsGloballyHidden;
+    void store.annotationTool;
+    void snapGuides;
+    void store.isPlaying;
+    scheduleRedraw();
+  });
+
   onMount(() => {
-    tick();
+    scheduleRedraw();
   });
 
   onDestroy(() => {

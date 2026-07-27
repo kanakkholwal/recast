@@ -36,7 +36,7 @@ recast/
 │   │   ├── src/                       Svelte 5 frontend (the editor UI)
 │   │   │   ├── lib/
 │   │   │   │   ├── timeline/          Cuts, segments, time map, storyboard
-│   │   │   │   ├── playback/          Frame index, clock, audio engine
+│   │   │   │   ├── playback/          Clock, A/V sync, Web Audio engine
 │   │   │   │   ├── render/            Pure preview maths (matches Rust export)
 │   │   │   │   ├── editor/            Time formatting, frame padding
 │   │   │   │   ├── stores/            Svelte 5 runes-based state containers
@@ -319,11 +319,10 @@ element. The list is curated and tested in
 > **Read these files in order:**
 >
 > 1. `packages/media/src/playback.ts` (the `PlaybackSource` interface)
-> 2. `apps/desktop/src/lib/playback/frame-index.ts` (the pure logic)
-> 3. `apps/desktop/src/lib/playback/mediabunny-worker.ts` (the worker)
-> 4. `apps/desktop/src/lib/playback/mediabunny-source.ts` (the main-thread proxy)
-> 5. `apps/desktop/src/lib/playback/frame-budget.ts` (resolution-adaptive cache sizes)
-> 6. `packages/media/src/cache/index.ts` (the IndexedDB-backed cold cache)
+> 2. `packages/media/src/playback/worker.ts` (the decode worker)
+> 3. `packages/media/src/playback/source.ts` (the main-thread proxy)
+> 4. `packages/media/src/cache/frame-budget.ts` (resolution-adaptive cache sizes)
+> 5. `packages/media/src/cache/index.ts` (the frame cache + `readNearest`)
 
 ---
 
@@ -481,7 +480,8 @@ preview.
 
 2. LOAD IN EDITOR
    JS:   fetch(recastUrl) via asset://
-   JS:   MediabunnyVideoSource.create(url, sizeBytes)
+   JS:   createMediabunnySource(url)   ($lib/playback/mediabunny — owns the
+           │                            worker spawn; the package never does)
            ├─ MediaBunny Input demuxes the file
            ├─ CanvasSink answers any timestamp
            ├─ worker range-reads as needed
@@ -684,7 +684,7 @@ together before merging any change that touches either side.
 | Editor timeline data model                    | `timeline/cuts.ts` → `timeline/segments.ts` → `timeline/time-map.ts`                       |
 | Per-segment speed                            | `timeline/segment-speed.ts`                                                              |
 | Hover storyboard (timeline thumbnail)         | `timeline/storyboard.ts` → `timeline/filmstrip.ts` → `timeline/filmstrip-worker.ts`        |
-| Playback (the hard one)                      | `playback/clock.ts` → `playback/frame-index.ts` → `packages/media/src/playback/source.ts` → `packages/media/src/cache/index.ts` |
+| Playback (the hard one)                      | `playback/clock.ts` → `playback/av-sync.ts` → `packages/media/src/playback/{worker,source}.ts` → `packages/media/src/cache/index.ts` |
 | Preview render loop                           | `components/editor/VideoPreview.svelte` → `components/editor/video-preview.logic.ts`     |
 | WebGL shader code                            | `components/editor/video-preview.shaders.ts`                                              |
 | Export (FFmpeg filter graph)                  | `render/mod.rs` → `render/graph.rs` → `render/cursor_export.rs` → `render/scene_anim.rs` |

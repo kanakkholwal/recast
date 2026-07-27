@@ -47,6 +47,7 @@ export const AUDIT_ACTIONS = [
 	"waitlist.approve",
 	"team.update_plan",
 	"team.rename",
+	"team.update_limits",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

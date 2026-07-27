@@ -66,6 +66,30 @@ pub struct ProjectMetadata {
     pub media: Option<ProjectMediaMetadata>,
 }
 
+impl ProjectMetadata {
+    /// Duration of the recorded *media*, in seconds — not of the capture
+    /// session.
+    ///
+    /// `stats.duration_ms` (and, for projects written before this split,
+    /// `video.duration_ms`) is wall-clock elapsed time. The encoder writes CFR
+    /// at `nominal_fps`, so whenever the capture dropped frames the file is
+    /// SHORTER than the wall clock: a 27.102 s session that encoded 3195 frames
+    /// at 120 fps produces exactly 26.625 s of video. Seeding `trim_end` from
+    /// the wall clock therefore wrote a render state the export validator
+    /// (which probes the real file) rejects as `trim_end_exceeds_source`.
+    ///
+    /// `encoded_frames / nominal_fps` is that CFR identity, so this matches
+    /// ffprobe to the microsecond without paying for a probe spawn. Falls back
+    /// to the stored duration when the frame count is unavailable.
+    pub fn media_duration_secs(&self) -> f64 {
+        if self.stats.encoded_frames > 0 && self.stats.nominal_fps > 0 {
+            self.stats.encoded_frames as f64 / self.stats.nominal_fps as f64
+        } else {
+            self.video.duration_ms as f64 / 1000.0
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectVideoMetadata {
@@ -81,4 +105,60 @@ pub struct ProjectMediaMetadata {
     pub has_system_audio: bool,
     pub has_microphone: bool,
     pub has_camera: bool,
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn metadata(encoded_frames: u64, nominal_fps: u32, wall_ms: u64) -> ProjectMetadata {
+        serde_json::from_value(json!({
+            "schemaVersion": 1,
+            "createdAtUnixMs": 1_700_000_000_000u64,
+            "captureTarget": {
+                "kind": "display", "id": 1, "label": "Display 1",
+                "source": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+                "crop": { "x": 0, "y": 0, "width": 1920, "height": 1080 },
+                "displayId": 1, "scaleFactor": 1.0
+            },
+            "stats": {
+                "capturedFrames": encoded_frames, "encodedFrames": encoded_frames,
+                "droppedFrames": 0, "durationMs": wall_ms, "nominalFps": nominal_fps
+            },
+            "video": { "width": 1920, "height": 1080, "fps": nominal_fps, "durationMs": wall_ms }
+        }))
+        .expect("fixture metadata")
+    }
+
+    /// Frame counts, fps and the ffprobe `format.duration` of real recordings on
+    /// disk. Every one of these had a wall clock LONGER than the file, which is
+    /// what made `enqueue_export` reject the app's own render state.
+    #[test]
+    fn media_duration_matches_probed_file_not_wall_clock() {
+        for (frames, fps, wall_ms, probed) in [
+            (3195u64, 120u32, 27_102u64, 26.625f64),
+            (5529, 120, 46_607, 46.075),
+            (1010, 60, 17_314, 16.833_333_333_333_332),
+            (2132, 120, 18_254, 17.766_666_666_666_666),
+            (13822, 60, 231_083, 230.366_666_666_666_67),
+        ] {
+            let m = metadata(frames, fps, wall_ms);
+            assert!(
+                (m.media_duration_secs() - probed).abs() < 1e-6,
+                "{frames}@{fps}: got {} want {probed}",
+                m.media_duration_secs(),
+            );
+            assert!(
+                m.media_duration_secs() < wall_ms as f64 / 1000.0,
+                "wall clock must be the longer of the two",
+            );
+        }
+    }
+
+    #[test]
+    fn falls_back_to_stored_duration_without_a_frame_count() {
+        assert_eq!(metadata(0, 60, 10_000).media_duration_secs(), 10.0);
+        assert_eq!(metadata(600, 0, 10_000).media_duration_secs(), 10.0);
+    }
 }

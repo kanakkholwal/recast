@@ -2,11 +2,10 @@
 	import { formatBytes } from "$lib/dashboard/format";
 	import { quotaStore } from "$lib/dashboard/store.svelte";
 	import { type UsageTone, usageView } from "./UsageMeter.logic";
-	import { HardDrive, Link2 } from "@recast/icons";
+	import { Gauge, HardDrive, Link2 } from "@recast/icons";
 
-	// Reactive snapshot pulled from the layout-injected quota. When the
-	// workspace plan is Enterprise (no cap) the bars render at 0% and the
-	// limit row reads "Unlimited" — same component, no special path.
+	// Reactive snapshot pulled from the layout-injected quota. Every plan has a
+	// concrete cap, so all three bars read the same way on every tier.
 	const view = $derived(usageView(quotaStore.value));
 
 	const barFill: Record<UsageTone, string> = {
@@ -32,7 +31,7 @@
 		<div class="flex items-center justify-between text-xs">
 			<span class="font-medium text-foreground">Storage</span>
 			<span class="font-mono text-[11px] text-muted-foreground">
-				{formatBytes(view.usedBytes)} / {view.storageLimit != null ? formatBytes(view.storageLimit) : "∞"}
+				{formatBytes(view.usedBytes)} / {view.storageLimit != null ? formatBytes(view.storageLimit) : "—"}
 			</span>
 		</div>
 		<div
@@ -53,6 +52,37 @@
 		</p>
 	</div>
 
+	<!-- Delivery: the metered cost driver, and the cap most workspaces hit first -->
+	<div>
+		<div class="flex items-center justify-between text-xs">
+			<span class="font-medium text-foreground">
+				<Gauge class="-mt-0.5 mr-1 inline size-3 text-muted-foreground" />
+				Delivered this month
+			</span>
+			<span class="font-mono text-[11px] text-muted-foreground">
+				{formatBytes(view.deliveryBytes)} / {view.deliveryLimit != null
+					? formatBytes(view.deliveryLimit)
+					: "—"}
+			</span>
+		</div>
+		<div
+			class="mt-2 h-1.5 overflow-hidden rounded-full bg-foreground/8"
+			role="progressbar"
+			aria-label="Delivery used this month"
+			aria-valuenow={view.deliveryPct}
+			aria-valuemin={0}
+			aria-valuemax={100}
+		>
+			<div
+				class="h-full rounded-full transition-[width] duration-700 ease-[cubic-bezier(0.625,0.05,0,1)] {barFill[view.deliveryTone]}"
+				style="width: {view.deliveryPct}%"
+			></div>
+		</div>
+		<p class="mt-1.5 text-[11px] text-muted-foreground">
+			{view.deliveryStatus}
+		</p>
+	</div>
+
 	<!-- Active links -->
 	<div>
 		<div class="flex items-center justify-between text-xs">
@@ -61,7 +91,7 @@
 				Active recasts
 			</span>
 			<span class="font-mono text-[11px] text-muted-foreground">
-				{view.activeRecasts} / {view.linksLimit ?? "∞"}
+				{view.activeRecasts} / {view.linksLimit ?? "—"}
 			</span>
 		</div>
 		<div
