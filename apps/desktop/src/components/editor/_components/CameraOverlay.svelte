@@ -60,50 +60,70 @@
   // the bubble and mirrors the export's render_camera_shadow.
   const shadowStyle = $derived(cameraShadowStyle(store.cameraOverlay.shadow ?? 0));
 
-  // Smooth per-frame clock while playing; store.currentTime (accurate on seek)
-  // when paused, so the grow is buttery in playback yet correct when scrubbing.
-  const clockTime = $derived(store.isPlaying ? previewTime : store.currentTime);
-
-  // BASE placement (no zoom-follow): drives the div's layout box.
-  const basePlacement = $derived(baseAt(clockTime));
-
-  // Effective placement = base + the zoom-follow grow/drift. The grow ramps on
-  // the camera's own duration + easing, gated to the zoom's active window.
-  const effectivePlacement = $derived.by(() => {
-    const base = basePlacement;
-    if (!store.cameraOverlay.zoomFollow || !store.focusEnabled) return base;
-    const zoom = cameraFollowScaleAt(
-      store.zoomRegions,
-      clockTime,
-      store.cameraOverlay.zoomFollowDuration,
-      store.cameraOverlay.zoomFollowEasing,
-    );
-    return applyZoomFollow(
-      base,
-      zoom,
-      { enabled: true, strength: store.cameraOverlay.zoomFollowStrength },
-      videoAspect,
-    );
-  });
-
-  // Position the div at the BASE and express the grow/drift as a GPU-composited
-  // `transform` (translate% + scale) so per-frame growth never triggers layout —
-  // that's what made it stutter next to the shader. Identity when no zoom is
-  // active, so a static bubble renders exactly as before.
+  // BASE placement (no zoom-follow): drives the div's LAYOUT box. Uses the store
+  // clock (paused-accurate; ~25 Hz while playing, fine because the base only
+  // MOVES on a per-cut glide). The grow/drift is applied on top via `transform`.
+  const basePlacement = $derived(baseAt(store.currentTime));
   const bubbleStyle = $derived(bubblePlacementStyle(geom, basePlacement));
-  const followTransform = $derived.by(() => {
-    const b = basePlacement;
-    const e = effectivePlacement;
-    if (b.width <= 0) return "translate(0,0) scale(1)";
+  const borderRadius = $derived(
+    shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
+  );
+
+  let outerEl: HTMLDivElement | null = $state(null);
+
+  // The grow/drift, expressed as a `transform` (translate% + scale) relative to
+  // the base box, so per-frame growth is GPU-composited and never triggers
+  // layout. Written IMPERATIVELY (below) rather than through Svelte reactivity so
+  // it updates once per rAF in lockstep with the display — same cadence as the
+  // zoom shader. `translateZ(0)` keeps the bubble on its own compositor layer.
+  function followTransform(t: number): string {
+    // Reference = the LAYOUT box (bubbleStyle uses store.currentTime), so the
+    // transform is a pure delta on it. Only the grow is evaluated at the smooth
+    // clock `t` — the base is constant during a grow, so this stays crisp (the
+    // <video> rasterises at its base size) and exact.
+    const b = baseAt(store.currentTime);
+    if (b.width <= 0) return "translateZ(0)";
+    let e = b;
+    if (store.cameraOverlay.zoomFollow && store.focusEnabled) {
+      const zoom = cameraFollowScaleAt(
+        store.zoomRegions,
+        t,
+        store.cameraOverlay.zoomFollowDuration,
+        store.cameraOverlay.zoomFollowEasing,
+      );
+      e = applyZoomFollow(
+        b,
+        zoom,
+        { enabled: true, strength: store.cameraOverlay.zoomFollowStrength },
+        videoAspect,
+      );
+    }
     const s = e.width / b.width;
     const baseH = Math.min(1, b.width * videoAspect);
     const tx = ((e.x - b.x) / b.width) * 100;
     const ty = baseH > 0 ? ((e.y - b.y) / baseH) * 100 : 0;
-    return `translate(${tx.toFixed(4)}%, ${ty.toFixed(4)}%) scale(${s.toFixed(5)})`;
+    return `translate(${tx.toFixed(4)}%, ${ty.toFixed(4)}%) scale(${s.toFixed(5)}) translateZ(0)`;
+  }
+
+  // Paused / scrub / edit: reactive write so the bubble tracks the playhead and
+  // edits exactly. (Reads store.currentTime + the overlay/zoom deps.)
+  $effect(() => {
+    if (store.isPlaying || !outerEl) return;
+    outerEl.style.transform = followTransform(store.currentTime);
   });
-  const borderRadius = $derived(
-    shapeBorderRadius(store.cameraOverlay.shape, store.cameraOverlay.cornerRadius),
-  );
+
+  // Playing: own rAF loop writing the transform from the unthrottled picture
+  // clock, so the grow is as buttery as the shader (no reactive-flush hop).
+  $effect(() => {
+    if (!store.isPlaying) return;
+    const el = outerEl;
+    if (!el) return;
+    let raf = requestAnimationFrame(function tick() {
+      el.style.transform = followTransform(previewTime);
+      raf = requestAnimationFrame(tick);
+    });
+    return () => cancelAnimationFrame(raf);
+  });
 
   // Keep the camera <video> within ~150ms of the screen video; the tolerance avoids
   // re-seeking on micro-jitter between the two HTMLVideoElement clocks.
@@ -232,7 +252,8 @@
   <div
     role="presentation"
     class="group absolute select-none"
-    style="{bubbleStyle} aspect-ratio: 1; container-type: size; transform-origin: 0 0; transform: {followTransform}; will-change: transform; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
+    bind:this={outerEl}
+    style="{bubbleStyle} aspect-ratio: 1; container-type: size; transform-origin: 0 0; will-change: transform; cursor: {isDragging ? 'grabbing' : 'grab'}; touch-action: none;"
     onpointerdown={onPointerDown}
     onpointermove={onPointerMove}
     onpointerup={onPointerUp}

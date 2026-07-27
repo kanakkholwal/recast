@@ -323,6 +323,11 @@ pub fn append_camera_overlay_to_complex(
     } = params;
     let (cam, bx, by, bw, bh, mirror) = (*cam, *bx, *by, *bw, *bh, *mirror);
     let hflip = if mirror { "hflip," } else { "" };
+    // Match the preview's `object-fit: cover`: scale the camera to COVER the
+    // bubble (preserve aspect, fill), then crop the overflow — never stretch a
+    // non-square webcam into the square (that distorted the picture in export).
+    // The mask/shadow PNGs are already bw×bh, so they keep a plain scale.
+    let cam_cover = format!("scale={bw}:{bh}:force_original_aspect_ratio=increase,crop={bw}:{bh}");
 
     let mut stages: Vec<String> = Vec::new();
 
@@ -333,11 +338,11 @@ pub fn append_camera_overlay_to_complex(
         None => {
             let cam_chain = match mask_input_index {
                 Some(mask_idx) => format!(
-                    "[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_pre];\
+                    "[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_pre];\
                      [{mask_idx}:v]format=gray,scale={bw}:{bh}[vcam_mask];\
                      [vcam_pre][vcam_mask]alphamerge[vcam_shaped]"
                 ),
-                None => format!("[{cam}:v]{hflip}scale={bw}:{bh}[vcam_shaped]"),
+                None => format!("[{cam}:v]{hflip}{cam_cover}[vcam_shaped]"),
             };
             let base_map = match shadow {
                 Some(sh) => {
@@ -367,11 +372,11 @@ pub fn append_camera_overlay_to_complex(
         Some(a) => {
             stages.push(match mask_input_index {
                 Some(mask_idx) => format!(
-                    "[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_pre];\
+                    "[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_pre];\
                      [{mask_idx}:v]format=gray,scale={bw}:{bh}[vcam_mask];\
                      [vcam_pre][vcam_mask]alphamerge[vcam_native]"
                 ),
-                None => format!("[{cam}:v]{hflip}scale={bw}:{bh},format=yuva420p[vcam_native]"),
+                None => format!("[{cam}:v]{hflip}{cam_cover},format=yuva420p[vcam_native]"),
             });
             match shadow {
                 // Bake the shadow UNDER the bubble at native size (the padded
@@ -545,6 +550,18 @@ mod camera_overlay_tests {
         assert_eq!(map, "[vcamera]");
         assert!(!complex.contains("vcam_shadow"));
         assert!(complex.contains("[vbg][vcam_shaped]overlay=100:80"));
+    }
+
+    #[test]
+    fn camera_is_cover_cropped_not_stretched() {
+        // Parity with the preview's `object-fit: cover`: the camera scales to
+        // COVER + crops, never stretches into the square. The mask keeps a plain
+        // scale (it is already bw×bh).
+        let (complex, _) = append_camera_overlay_to_complex(None, "vbg", &base_params());
+        assert!(complex.contains(
+            "[2:v]hflip,scale=200:200:force_original_aspect_ratio=increase,crop=200:200,format=yuva420p[vcam_pre]"
+        ));
+        assert!(complex.contains("[3:v]format=gray,scale=200:200[vcam_mask]"));
     }
 
     #[test]
