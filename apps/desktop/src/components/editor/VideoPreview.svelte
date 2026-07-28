@@ -14,7 +14,8 @@
 	  resolveCursorDataUrl,
 	  resolveCursorSprite,
 	} from "$lib/registry";
-	import { evalSceneAt } from "$lib/scenes/eval";
+	import { computeFrameParams } from "./frame-params";
+	import { applyFrameUniforms } from "./webgl-uniforms";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
@@ -28,20 +29,13 @@
 	import CaptionOverlay from "./_components/CaptionOverlay.svelte";
 	import FocusOverlay from "./_components/FocusOverlay.svelte";
 	import TextAnnotationLayer from "./_components/TextAnnotationLayer.svelte";
-	import { hexToRgba } from "./color.logic";
 	import {
 	  buildPressEvents,
-	  clickAnchorAt,
-	  clickHighlightAt,
-	  pressStateAt,
 	  type PressEvent,
 	} from "./cursor-animation.logic";
 	import { buildGradientUniforms } from "./gradient.logic";
 	import {
 	  classifyMbError,
-	  evaluateZoomAt,
-	  idleAlphaAt,
-	  interpolateCursor,
 	  resolutionTier,
 	  shouldRecoverMbSource,
 	  type CursorSampleJS,
@@ -530,18 +524,6 @@
 		return gradCache!;
 	}
 
-	// Colours change rarely but hexToRgba (trim/replace/parseInt×3 + alloc) ran
-	// per frame; memoize and reuse the array (never mutated by callers).
-	const rgbaCache = new Map<string, number[]>();
-	function rgba(hex: string): number[] {
-		let v = rgbaCache.get(hex);
-		if (!v) {
-			if (rgbaCache.size > 32) rgbaCache.clear();
-			v = hexToRgba(hex);
-			rgbaCache.set(hex, v);
-		}
-		return v;
-	}
 
 	//  Sizing
 	function resizeCanvas() {
@@ -908,251 +890,54 @@
 
 		gl.useProgram(program);
 
-		gl.uniform2f(uniforms.u_canvasSize, canvasEl.width, canvasEl.height);
-
-		// Map source-pixel geometry into canvas-pixel space using the
-		// current render-buffer scale. The canvas can be smaller than
-		// `geom.canvasW` (DPR cap, max-dim cap), so we scale uniformly.
 		const meta = store.metadata!;
 		const geom = currentGeometry();
 		if (!geom) return;
-		const sx = canvasEl.width / Math.max(1, geom.canvasW);
-		const sy = canvasEl.height / Math.max(1, geom.canvasH);
-		// Scene entrance/exit animation: a per-segment transform on the video
-		// layer only (background stays put). Evaluated in original/timeline time
-		// against the segment's window, exactly like zoom, so preview and the
-		// (tail-retimed) export graph stay in sync.
-		const scene = evalSceneAt(store.segments, store.segmentAnims, playbackTime);
-		let videoX = geom.videoX * sx;
-		let videoY = geom.videoY * sy;
-		let videoW = geom.videoW * sx;
-		let videoH = geom.videoH * sy;
-		// Scale about the rect centre, then translate (canvas-normalized).
-		if (scene.scale !== 1) {
-			const cx = videoX + videoW * 0.5;
-			const cy = videoY + videoH * 0.5;
-			videoW *= scene.scale;
-			videoH *= scene.scale;
-			videoX = cx - videoW * 0.5;
-			videoY = cy - videoH * 0.5;
+
+		// One pure scene→uniform evaluation (frame-params.ts) + a single GL apply,
+		// shared with the offline export renderer instead of a second compositor.
+		const gradient =
+			store.backgroundType === "gradient"
+				? currentGradient(store.backgroundValue || "")
+				: undefined;
+		const params = computeFrameParams({
+			meta: { width: meta.width, height: meta.height },
+			geom,
+			canvasPxW: canvasEl.width,
+			canvasPxH: canvasEl.height,
+			playbackTime,
+			segments: store.segments,
+			segmentAnims: store.segmentAnims,
+			backgroundType: store.backgroundType,
+			backgroundValue: store.backgroundValue,
+			backgroundBlur: store.backgroundBlur,
+			backgroundImageReady: bgTexReady,
+			gradient,
+			borderRadius: store.borderRadius ?? 0,
+			focusEnabled: store.focusEnabled,
+			zoomRegions: store.zoomRegions,
+			shadow: store.shadow,
+			cursor: store.cursorSettings,
+			cursorMotionEasing: store.cursorMotionEasing,
+			cursorSamples,
+			idlePeriods,
+			pressEvents,
+		});
+
+		// Image background: bind its texture to unit 1 before drawing.
+		if (params.bindBackgroundImage) {
+			gl.activeTexture(gl.TEXTURE1);
+			gl.bindTexture(gl.TEXTURE_2D, bgTex);
 		}
-		videoX += scene.translateX * canvasEl.width;
-		videoY += scene.translateY * canvasEl.height;
-		gl.uniform2f(uniforms.u_videoOrigin, videoX, videoY);
-		gl.uniform2f(uniforms.u_videoSize, videoW, videoH);
-		gl.uniform1f(uniforms.u_videoOpacity, scene.opacity);
-		gl.uniform1f(uniforms.u_videoRotation, (scene.rotate * Math.PI) / 180);
 
-		// Background
-		const bgType = store.backgroundType;
-		let bgBlurPx = 0;
-		if (bgType === "color") {
-			gl.uniform1i(uniforms.u_bgType, 0);
-			gl.uniform4fv(uniforms.u_bgColor, rgba(store.backgroundValue || "#111111"));
-		} else if (bgType === "gradient") {
-			gl.uniform1i(uniforms.u_bgType, 1);
-			const grad = currentGradient(store.backgroundValue || "");
-			gl.uniform4fv(uniforms["u_gradColors[0]"], grad.colors);
-			gl.uniform1fv(uniforms["u_gradStops[0]"], grad.positions);
-			gl.uniform1i(uniforms.u_gradCount, grad.count);
-			gl.uniform1f(uniforms.u_gradAngle, grad.angleRad);
-		} else {
-			// wallpaper / image
-			if (bgTexReady) {
-				gl.uniform1i(uniforms.u_bgType, 2);
-				gl.activeTexture(gl.TEXTURE1);
-				gl.bindTexture(gl.TEXTURE_2D, bgTex);
-				// Map the 0..100 blur slider to a pixel radius. 100 ≈ 24px is
-				// strong enough to be obvious without being too expensive.
-				bgBlurPx = Math.max(0, store.backgroundBlur * 0.24);
-			} else {
-				// Fallback to dark color until image is loaded
-				gl.uniform1i(uniforms.u_bgType, 0);
-				gl.uniform4fv(uniforms.u_bgColor, [0.067, 0.067, 0.067, 1]);
-			}
-		}
-		gl.uniform1f(uniforms.u_bgBlurPx, bgBlurPx);
+		applyFrameUniforms(gl, uniforms, params.uniforms);
 
-		// Border radius, user-provided as a percentage of the shorter video edge
-		// (0..50). Convert to canvas pixels using the same scale as padding.
-		const shorterEdge = Math.min(meta.width, meta.height);
-		const radiusSource = ((store.borderRadius ?? 0) / 100) * shorterEdge;
-		// `sx` already converts source-pixel sizes to canvas-pixel sizes
-		// (computed against `geom.canvasW`), so a raw multiply is correct.
-		const radiusPx = radiusSource * sx;
-		gl.uniform1f(uniforms.u_borderRadiusPx, Math.max(0, radiusPx));
-
-		// Zoom: eased per-frame scale + focus centre + motion-blur strength.
-		const zoom = store.focusEnabled
-			? evaluateZoomAt(store.zoomRegions, playbackTime)
-			: { scale: 1.0, cx: 0.5, cy: 0.5, motionBlur: 0 };
-		gl.uniform2f(uniforms.u_zoomCenter, zoom.cx, zoom.cy);
-		gl.uniform1f(uniforms.u_zoomScale, zoom.scale);
-
-		// Motion blur: radius scales with |d(scale)/dt| so hold frames are
-		// sharp and ramps smear toward the focus point. dt = 1/60 matches the
-		// preview's baseline and is fine as a finite-difference step since the
-		// ramp shapes are C1-continuous beziers.
-		let motionBlurPx = 0;
-		if (zoom.motionBlur > 0.001 && zoom.scale > 1.0001) {
-			const dt = 1 / 60;
-			const next = evaluateZoomAt(store.zoomRegions, playbackTime + dt);
-			const dScaleDt = Math.abs(next.scale - zoom.scale) / dt;
-			// k = 30 px per unit-scale-per-second is a good default at 1080p;
-			// cap at 20 px to keep the 7-tap sample cheap.
-			motionBlurPx = Math.min(20, zoom.motionBlur * dScaleDt * 30);
-		}
-		gl.uniform1f(uniforms.u_motionBlurPx, motionBlurPx);
-
-		// Cursor
-		const cs = store.cursorSettings;
-		let cursorAlpha = 0;
-		let highlightAlpha = 0;
-		let highlightPosX = 0;
-		let highlightPosY = 0;
-		let cursorPosX = 0;
-		let cursorPosY = 0;
-		let cursorPressed = false;
-		let cursorRight = false;
-		let cursorDragging = false;
-		let cursorScale = 1;
-		if (cs.enabled && cursorSamples.length > 0) {
-			const ts = Math.max(0, playbackTime) * 1_000_000;
-
-			// Idle visibility: smooth fade rather than a binary cut. Outside
-			// any idle period the alpha is 1; deep inside it's 0; near each
-			// boundary we linearly ramp over CURSOR_IDLE_FADE_US so the cursor
-			// dissolves in/out instead of popping.
-			const idleA = cs.hideWhenIdle ? idleAlphaAt(idlePeriods, ts, cs.idleTimeout) : 1;
-			// Press window can override idle-hide: even mid-idle, the cursor
-			// fades back in around an upcoming click so the viewer sees
-			// "intent → click → release" rather than a cursor materialising
-			// out of nowhere on the frame the click sound plays.
-			const press = pressStateAt(pressEvents, ts);
-			const baseAlpha = Math.max(idleA, press.visibleAlpha);
-
-			if (baseAlpha > 0) {
-				const pos = interpolateCursor(cursorSamples, store.cursorMotionEasing, ts);
-				if (pos && pos.visible) {
-					cursorAlpha = baseAlpha;
-					// Always-on click anchor snap. With strong smoothing and
-					// snapToClicks off, the smoothed x/y at the click frame
-					// can drift several pixels from the actual click target,
-					// making the impact land in the wrong place. Blend the
-					// rendered position toward the captured click anchor in
-					// a ±200 ms cosine window so the click impact ALWAYS
-					// sits on the captured click target, then unblends as
-					// the cursor moves on.
-					let posX = pos.x;
-					let posY = pos.y;
-					const anchor = clickAnchorAt(pressEvents, ts);
-					if (anchor) {
-						posX = posX * (1 - anchor.weight) + anchor.x * anchor.weight;
-						posY = posY * (1 - anchor.weight) + anchor.y * anchor.weight;
-					}
-					cursorPosX = posX / meta.width;
-					cursorPosY = posY / meta.height;
-					cursorPressed = press.pressedSprite;
-					cursorRight = press.right;
-					cursorDragging = press.dragging;
-					cursorScale = press.scale;
-				}
-			}
-
-			// Pinned click highlight, computed independent of the cursor's own
-			// visibility and smoothing so the ring lands EXACTLY at the captured
-			// click point and the click instant (riding the smoothed cursor made
-			// it lag behind, reading as delayed/off-target feedback). Uses the
-			// same affine zoom as the cursor so it tracks the zoomed video.
-			if (cs.highlightClicks) {
-				const hl = clickHighlightAt(pressEvents, ts);
-				if (hl) {
-					highlightAlpha = (cs.highlightOpacity / 100) * hl.alpha;
-					let hlUvX = hl.x / meta.width;
-					let hlUvY = hl.y / meta.height;
-					if (zoom.scale > 1.0001) {
-						hlUvX = (hlUvX - zoom.cx) * zoom.scale + zoom.cx;
-						hlUvY = (hlUvY - zoom.cy) * zoom.scale + zoom.cy;
-					}
-					highlightPosX = hlUvX;
-					highlightPosY = hlUvY;
-				}
-			}
-		}
-		// When the user picks a custom SVG cursor style, the WebGL shader's
-		// dot path is suppressed and the HTML <img> overlay below paints the
-		// cursor instead. The shader still renders the click-highlight halo.
-		const usingSvgCursor = cs.enabled && cs.style !== "dot";
-		const overlayVisible = usingSvgCursor && cursorAlpha > 0;
-		gl.uniform2f(uniforms.u_cursorPos, cursorPosX, cursorPosY);
-		gl.uniform1f(
-			uniforms.u_cursorVisible,
-			usingSvgCursor ? 0 : cursorAlpha,
-		);
-		// Push to reactive state so the HTML overlay updates each frame.
-		// We mirror the shader's cursor-zoom math so the SVG tracks the dot
-		// pixel-for-pixel: the shader applies `(uv - center)*scale + center`
-		// to the cursor UV; we do the same here before mapping to canvas px.
-		let svgUvX = cursorPosX;
-		let svgUvY = cursorPosY;
-		if (zoom.scale > 1.0001) {
-			svgUvX = (cursorPosX - zoom.cx) * zoom.scale + zoom.cx;
-			svgUvY = (cursorPosY - zoom.cy) * zoom.scale + zoom.cy;
-		}
-		// SVG-cursor overlay coordinates are expressed as percentages of
-		// the canvas (so the <img> repositions correctly across container
-		// sizes). We project the source-pixel cursor position into the
-		// canvas via the geometry helper, then divide by canvas dims.
-		const spriteSourcePx = cs.size * 16;
-		// Only write this reactive object when an SVG cursor is actually shown.
-		// The default dot cursor renders in the shader, so writing a fresh 13-field
-		// $state object every frame just fanned out reactivity 60×/s for nothing.
-		if (usingSvgCursor) {
-			svgCursor = {
-				visible: overlayVisible,
-				alpha: cursorAlpha,
-				styleId: cs.style,
-				pressed: cursorPressed,
-				right: cursorRight,
-				dragging: cursorDragging,
-				scale: cursorScale,
-				canvasX: geom.videoX + svgUvX * geom.videoW,
-				canvasY: geom.videoY + svgUvY * geom.videoH,
-				compW: geom.canvasW,
-				compH: geom.canvasH,
-				spritePx: spriteSourcePx,
-			};
+		// SVG cursor overlay: written only for a non-dot style, else cleared once so
+		// the HTML <img> hides (the shader draws the dot cursor itself).
+		if (params.svgCursor) {
+			svgCursor = params.svgCursor;
 		} else if (svgCursor.visible) {
 			svgCursor = { ...svgCursor, visible: false };
-		}
-		// Cursor radius is `cs.size * 2` source-pixels; scale to canvas.
-		// Multiplied by the press scale curve so the soft-dot pulses on
-		// click in lockstep with the SVG sprite, matching `bounce_scale`
-		// on the dot path in cursor_export.rs so preview and rendered MP4
-		// agree even on the default style.
-		const cursorRadiusCanvas = cs.size * 2 * sx * cursorScale;
-		gl.uniform1f(uniforms.u_cursorRadius, Math.max(2, cursorRadiusCanvas));
-		gl.uniform4fv(uniforms.u_cursorColor, [1, 1, 1, 0.9]);
-		const [hr, hg, hb] = rgba(cs.highlightColor || "#3b82f6");
-		gl.uniform4fv(uniforms.u_highlightColor, [hr, hg, hb, 1]);
-		gl.uniform1f(uniforms.u_highlightAlpha, highlightAlpha);
-		gl.uniform2f(uniforms.u_highlightPos, highlightPosX, highlightPosY);
-
-		// Drop shadow: offsets/blur/spread expressed in "video pixels" so the
-		// look scales consistently with the canvas at different container
-		// sizes. Same source-pixel → canvas-pixel factor as padding/radius.
-		const shadow = store.shadow;
-		if (shadow.enabled && shadow.opacity > 0) {
-			const vpToCanvas = sx;
-			gl.uniform1i(uniforms.u_shadowEnabled, 1);
-			gl.uniform1f(uniforms.u_shadowBlurPx, Math.max(0.5, shadow.blur * vpToCanvas));
-			gl.uniform1f(uniforms.u_shadowSpreadPx, Math.max(0, shadow.spread * vpToCanvas));
-			gl.uniform2f(uniforms.u_shadowOffsetPx, 0, shadow.offsetY * vpToCanvas);
-			const [sr, sg, sb] = rgba(shadow.color || "#000000");
-			gl.uniform4fv(uniforms.u_shadowColor, [sr, sg, sb, shadow.opacity / 100]);
-		} else {
-			gl.uniform1i(uniforms.u_shadowEnabled, 0);
-			gl.uniform4fv(uniforms.u_shadowColor, [0, 0, 0, 0]);
 		}
 
 		gl.drawArrays(gl.TRIANGLES, 0, 6);
