@@ -45,4 +45,7 @@ export type FromFilmstripWorker =
 			count: number;
 			durationSec: number;
 	  }
-	| { type: "error"; message: string };
+	/** `id` is set when a specific decode request failed, so the provider can
+	 *  clear it from in-flight (allowing a retry) instead of leaking the entry.
+	 *  Absent for init/storyboard errors that aren't tied to one request. */
+	| { type: "error"; message: string; id?: number };

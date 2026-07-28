@@ -242,6 +242,12 @@
   let filmstripVersion = $state(0);
   let tileProviderToken = 0;
 
+  // Free a hardware decoder during playback: pause the filmstrip's decoder while
+  // the preview decoder is under load; queued tiles decode when playback stops.
+  $effect(() => {
+    tileProvider?.setDecodePaused(store.isPlaying);
+  });
+
   // Legacy-format gate: a v1 `.recast` must be migrated before the editor
   // touches it. `migrationDone` distinguishes a confirmed update (→ reload)
   // from a dismissal (→ leave, don't open an un-migrated project).

@@ -31,13 +31,19 @@ export function isPersistable(frame: CachedFrame): frame is CacheableFrame {
 	return typeof VideoFrame === 'undefined' || !(frame instanceof VideoFrame);
 }
 
+/** Nominal RGBA bytes for a frame whose real dimensions are unreadable. Large
+ *  on purpose (4K) so an un-sizeable frame is evicted EARLY. Returning 0 here
+ *  let the cap check pass forever, disabling eviction and growing the Map (and
+ *  its retained decoder surfaces) without bound. */
+const UNKNOWN_FRAME_BYTES = 3840 * 2160 * 4;
+
 /** Per-entry byte estimate for budget accounting. */
 export function estimateFrameBytes(frame: CachedFrame): number {
 	// `VideoFrame` has codedWidth/codedHeight and no width/height; reading the
 	// wrong pair yields NaN and silently disables every cap.
 	const w = 'codedWidth' in frame ? frame.codedWidth : frame.width;
 	const h = 'codedHeight' in frame ? frame.codedHeight : frame.height;
-	if (!Number.isFinite(w) || !Number.isFinite(h)) return 0;
+	if (!Number.isFinite(w) || !Number.isFinite(h)) return UNKNOWN_FRAME_BYTES;
 	// No public byteLength; nominal RGBA size, over-estimating on purpose.
 	return w * h * 4;
 }

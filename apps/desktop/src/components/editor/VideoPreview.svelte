@@ -19,6 +19,7 @@
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 	import { Spinner } from "@recast/ui/spinner";
+	import { toast } from "@recast/ui/sonner";
 	import { convertFileSrc } from "@tauri-apps/api/core";
 	import { onDestroy, onMount } from "svelte";
 	import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
@@ -147,6 +148,16 @@
 	let frameRing: FrameTextureRing | null = null;
 	let mbReady = $state(false);
 	let loadedMbSrc = "";
+	// One user-facing notice per source when the hardware preview drops to the
+	// <video> fallback — otherwise a release failure is a silent blank screen.
+	let mbFallbackNotified = false;
+	function notifyPreviewFallback(reason: string) {
+		if (mbFallbackNotified) return;
+		mbFallbackNotified = true;
+		toast.warning("Using the standard preview player", {
+			description: `Hardware preview couldn't start for this video (${reason}). Playback works; scrubbing may be slower.`,
+		});
+	}
 	// Automatic recovery from a transient decode failure — a GPU-process reset
 	// (TDR) under scrub-thrash kills the decoder + GL context but is recoverable;
 	// without this the preview degraded to <video> for the rest of the session.
@@ -1399,6 +1410,7 @@
 		if (src === loadedMbSrc) return;
 		loadedMbSrc = src;
 		mbReady = false;
+		mbFallbackNotified = false;
 		webcodecsActive = false;
 		hasRenderedFrame = false;
 		lastPublishedTime = -1;
@@ -1448,6 +1460,9 @@
 					if (recover) {
 						mbRecoverAttempts++;
 						scheduleMbRecover();
+					} else {
+						// Permanent fallback (not a recoverable GPU reset): tell the user.
+						notifyPreviewFallback(err.code);
 					}
 				};
 				// Telemetry: the engine initialised successfully.
@@ -1501,9 +1516,9 @@
 				frameRing?.dispose();
 				frameRing = null;
 				// Telemetry: how often real users silently drop to <video>.
-				analytics.capture("mediabunny_preview_fallback", {
-					reason: classifyMbError(err),
-				});
+				const reason = classifyMbError(err);
+				analytics.capture("mediabunny_preview_fallback", { reason });
+				notifyPreviewFallback(reason);
 			});
 		return () => {
 			cancelled = true;
