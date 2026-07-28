@@ -119,3 +119,141 @@ export function planAudioSchedule(
 	}
 	return out;
 }
+
+/**
+ * Like `planAudioSchedule`, but plans only the slice of output time
+ * `[windowStart, windowEnd]` and anchors `whenDelay` to a fixed `anchorOutput`
+ * (the play-from time), not the window start. This lets a streaming engine
+ * schedule the timeline in disjoint slices — decoding + firing sources a window
+ * ahead of the playhead and evicting behind — instead of materialising the whole
+ * recording's PCM upfront. `planAudioScheduleWindow(r, from, from, Infinity)`
+ * equals `planAudioSchedule(r, from)`.
+ */
+export function planAudioScheduleWindow(
+	regions: ReadonlyArray<Region>,
+	anchorOutput: number,
+	windowStart: number,
+	windowEnd: number,
+): ScheduledChunk[] {
+	const out: ScheduledChunk[] = [];
+	if (windowEnd - windowStart <= EPS) return out;
+	let outCursor = 0;
+	for (const region of regions) {
+		const sourceDur = region.end - region.start;
+		if (sourceDur <= EPS) continue;
+		const rate = region.speed && region.speed > 0 ? region.speed : 1;
+		const outStart = outCursor;
+		const outEnd = outCursor + sourceDur / rate;
+		outCursor = outEnd;
+		const clipStart = Math.max(outStart, windowStart);
+		const clipEnd = Math.min(outEnd, windowEnd);
+		if (clipEnd - clipStart <= EPS) continue;
+		const sourceInto = (clipStart - outStart) * rate;
+		out.push({
+			whenDelay: Math.max(0, clipStart - anchorOutput),
+			bufferOffset: region.start + sourceInto,
+			duration: (clipEnd - clipStart) * rate,
+			rate,
+			outStart: clipStart,
+			outEnd: clipEnd,
+		});
+	}
+	return out;
+}
+
+/** A decoded audio chunk resident in the store, covering source time
+ *  `[startSec, startSec + durationSec)`. Chunks tile the source contiguously
+ *  and are sorted by `startSec` — the streaming decode fills them in order. */
+export interface AudioChunk {
+	/** Source-time (original-recording seconds) of the chunk's first sample. */
+	startSec: number;
+	/** Source-time length of the chunk. */
+	durationSec: number;
+}
+
+/** One `AudioBufferSourceNode` to fire so a scheduled chunk plays from the
+ *  chunk store: play `playDuration` SOURCE seconds of chunk `chunkIndex`'s
+ *  buffer from `offsetInChunk`, starting `whenDelay` OUTPUT-seconds from now,
+ *  at `rate`. */
+export interface SubPlay {
+	chunkIndex: number;
+	offsetInChunk: number;
+	playDuration: number;
+	whenDelay: number;
+	rate: number;
+}
+
+/** Sub-ranges of `[from, to]` NOT covered by the resident (sorted, possibly
+ *  gapped) chunks — the source ranges a streaming store still needs to decode.
+ *  Lets the store skip re-decoding audio it already holds. */
+export function missingRanges(
+	chunks: ReadonlyArray<AudioChunk>,
+	from: number,
+	to: number,
+): Array<{ start: number; end: number }> {
+	const out: Array<{ start: number; end: number }> = [];
+	if (to - from <= EPS) return out;
+	let cursor = from;
+	for (const c of chunks) {
+		const cEnd = c.startSec + c.durationSec;
+		if (cEnd <= cursor + EPS) continue;
+		if (c.startSec >= to - EPS) break;
+		if (c.startSec > cursor + EPS) out.push({ start: cursor, end: Math.min(c.startSec, to) });
+		cursor = Math.max(cursor, cEnd);
+		if (cursor >= to - EPS) break;
+	}
+	if (cursor < to - EPS) out.push({ start: cursor, end: to });
+	return out;
+}
+
+/** SOURCE-time position at gapless OUTPUT time `outputSec`, walking the kept
+ *  regions (speed-warped). Used to pick the eviction boundary: source audio well
+ *  behind the playhead can be dropped. Clamps to the last region's end. */
+export function outputToSource(regions: ReadonlyArray<Region>, outputSec: number): number {
+	let outCursor = 0;
+	for (const r of regions) {
+		const rate = r.speed && r.speed > 0 ? r.speed : 1;
+		const outDur = (r.end - r.start) / rate;
+		if (outputSec <= outCursor + outDur + EPS) {
+			return r.start + Math.max(0, outputSec - outCursor) * rate;
+		}
+		outCursor += outDur;
+	}
+	const last = regions[regions.length - 1];
+	return last ? last.end : 0;
+}
+
+/**
+ * Split one `ScheduledChunk` across the decoded chunk store. The scheduled chunk
+ * plays source range `[bufferOffset, bufferOffset+duration]` at `rate` starting
+ * at output time `whenDelay`; this cuts it at chunk boundaries so each piece
+ * plays from its own resident buffer. When the chunks tile the source
+ * contiguously the sub-plays reproduce the old single-big-buffer playback
+ * sample-for-sample; a hole in the store simply drops that slice (silent gap)
+ * rather than mis-indexing.
+ */
+export function sliceChunksForPlayback(
+	scheduled: ScheduledChunk,
+	chunks: ReadonlyArray<AudioChunk>,
+): SubPlay[] {
+	const out: SubPlay[] = [];
+	const playStart = scheduled.bufferOffset;
+	const playEnd = scheduled.bufferOffset + scheduled.duration;
+	const rate = scheduled.rate > 0 ? scheduled.rate : 1;
+	for (let i = 0; i < chunks.length; i++) {
+		const chunk = chunks[i];
+		const overlapStart = Math.max(playStart, chunk.startSec);
+		const overlapEnd = Math.min(playEnd, chunk.startSec + chunk.durationSec);
+		if (overlapEnd - overlapStart <= EPS) continue;
+		out.push({
+			chunkIndex: i,
+			offsetInChunk: overlapStart - chunk.startSec,
+			playDuration: overlapEnd - overlapStart,
+			// The earlier source part (overlapStart − playStart) has already played by
+			// the time this sub-play starts; at `rate` that is this much output time.
+			whenDelay: scheduled.whenDelay + (overlapStart - playStart) / rate,
+			rate,
+		});
+	}
+	return out;
+}

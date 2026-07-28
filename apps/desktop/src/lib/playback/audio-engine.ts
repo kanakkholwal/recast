@@ -20,7 +20,13 @@
  * pressing M to mute everything still works instantly.
  */
 
-import { planAudioSchedule, type Region } from './audio-schedule';
+import {
+	outputToSource,
+	planAudioScheduleWindow,
+	sliceChunksForPlayback,
+	type Region,
+} from './audio-schedule';
+import { AudioChunkStore } from './audio-chunk-store';
 
 /**
  * Output-time position the listener is actually HEARING right now.
@@ -99,7 +105,7 @@ export interface MusicClipSpec {
 export type AudioTrackKind = 'system' | 'mic';
 
 export interface AudioTrack {
-	buffer: AudioBuffer;
+	store: AudioChunkStore;
 	gain: GainNode;
 	kind: AudioTrackKind;
 }
@@ -109,6 +115,13 @@ export interface AudioTrackSpec {
 	url: string | null;
 	kind: AudioTrackKind;
 }
+
+// How far ahead of the playhead (output seconds) the streaming scheduler keeps
+// audio scheduled + decoded, and how far behind it keeps decoded chunks before
+// evicting. The window bounds resident PCM regardless of recording length.
+const AUDIO_LOOKAHEAD_SEC = 12;
+const AUDIO_BEHIND_SEC = 4;
+const TOPUP_INTERVAL_MS = 2000;
 
 export class AudioTimelineEngine {
 	#ctx: AudioContext;
@@ -134,6 +147,16 @@ export class AudioTimelineEngine {
 	// only, matching the export where music is amixed AFTER the source's fade).
 	#music: Array<{ spec: MusicClipSpec; buffer: AudioBuffer; gain: GainNode }> = [];
 	#musicActive: AudioBufferSourceNode[] = [];
+	// Streaming schedule-ahead state: schedule ~AUDIO_LOOKAHEAD_SEC of output
+	// time past the playhead and evict decoded chunks behind it, so a long
+	// recording never holds the whole file's PCM at once.
+	#regions: ReadonlyArray<Region> = [];
+	#scheduledUpToOutput = 0;
+	#topUpTimer: ReturnType<typeof setInterval> | undefined;
+	#topUpRunning = false;
+	// Bumped on every (re)schedule so an in-flight async top-up bails instead
+	// of scheduling stale nodes after a scrub.
+	#generation = 0;
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
@@ -164,13 +187,11 @@ export class AudioTimelineEngine {
 		for (const spec of specs) {
 			if (!spec.url) continue;
 			try {
-				const res = await fetch(spec.url);
-				if (!res.ok) continue;
-				const data = await res.arrayBuffer();
-				const buffer = await ctx.decodeAudioData(data);
+				const store = await AudioChunkStore.create(spec.url);
+				if (!store) continue;
 				const gain = ctx.createGain();
 				gain.connect(fadeGain);
-				tracks.push({ buffer, gain, kind: spec.kind });
+				tracks.push({ store, gain, kind: spec.kind });
 			} catch {
 				// Skip a track that won't fetch/decode; others may still work.
 			}
@@ -372,37 +393,86 @@ export class AudioTimelineEngine {
 		this.#active = [];
 	}
 
-	/** (Re)schedule all kept regions so audio plays from OUTPUT time `from`. */
+	/** (Re)schedule kept regions so audio plays from OUTPUT time `from`. Streams a
+	 *  window ahead + evicts behind rather than materialising the whole file. */
 	#schedule(regions: ReadonlyArray<Region>, from: number): void {
 		this.#stopActive();
-		const now = this.#ctx.currentTime;
-		this.#anchorCtxTime = now;
+		this.#stopTopUp();
+		this.#anchorCtxTime = this.#ctx.currentTime;
 		this.#anchorOutputTime = from;
 		this.#scheduled = true;
+		this.#regions = regions;
+		this.#scheduledUpToOutput = from;
+		this.#generation++;
 		this.#scheduleFades(from);
 		this.#scheduleMusic(from);
-		const chunks = planAudioSchedule(regions, from);
-		for (const t of this.#tracks) {
-			const bufDur = t.buffer.duration;
-			for (const c of chunks) {
-				// A track may be shorter than the timeline (e.g. mic stopped early);
-				// clamp the slice to the available buffer (in SOURCE seconds).
-				if (c.bufferOffset >= bufDur) continue;
-				const playDur = Math.min(c.duration, bufDur - c.bufferOffset);
-				if (playDur <= 0) continue;
-				const node = this.#ctx.createBufferSource();
-				node.buffer = t.buffer;
-				// Per-segment speed: play the slice faster/slower (pitch shifts,
-				// matches the sped-up video; pitch-preserved stretch is a follow-up).
-				node.playbackRate.value = c.rate;
-				node.connect(t.gain);
-				node.onended = () => {
-					const i = this.#active.indexOf(node);
-					if (i >= 0) this.#active.splice(i, 1);
-				};
-				node.start(now + c.whenDelay, c.bufferOffset, playDur);
-				this.#active.push(node);
+		void this.#topUp();
+		this.#topUpTimer = setInterval(() => void this.#topUp(), TOPUP_INTERVAL_MS);
+	}
+
+	// Schedule the next output slice a window ahead of the playhead and evict
+	// decoded audio behind it. whenDelay is anchored to the fixed play-start, so
+	// scheduling ahead still lands each source at the correct ctx time.
+	async #topUp(): Promise<void> {
+		if (!this.#scheduled || this.#topUpRunning || this.#tracks.length === 0) return;
+		this.#topUpRunning = true;
+		const gen = this.#generation;
+		try {
+			const heard = this.positionOutputSec ?? this.#anchorOutputTime;
+			const windowEnd = heard + AUDIO_LOOKAHEAD_SEC;
+			if (windowEnd > this.#scheduledUpToOutput + 1e-4) {
+				const plan = planAudioScheduleWindow(
+					this.#regions,
+					this.#anchorOutputTime,
+					this.#scheduledUpToOutput,
+					windowEnd,
+				);
+				for (const track of this.#tracks) {
+					for (const pc of plan) {
+						await track.store.ensureRange(pc.bufferOffset, pc.bufferOffset + pc.duration);
+						// A scrub/dispose during decode invalidates this pass.
+						if (this.#generation !== gen || !this.#scheduled) return;
+						for (const sub of sliceChunksForPlayback(pc, track.store.chunks())) {
+							const buf = track.store.buffer(sub.chunkIndex);
+							if (!buf) continue;
+							let startAt = this.#anchorCtxTime + sub.whenDelay;
+							let offset = sub.offsetInChunk;
+							let dur = sub.playDuration;
+							// Late (decode slower than the lead): skip the past part so we stay
+							// in sync instead of playing it delayed.
+							const late = this.#ctx.currentTime - startAt;
+							if (late > 0) {
+								offset += late * sub.rate;
+								dur -= late * sub.rate;
+								startAt = this.#ctx.currentTime;
+								if (dur <= 1e-4) continue;
+							}
+							const node = this.#ctx.createBufferSource();
+							node.buffer = buf;
+							node.playbackRate.value = sub.rate;
+							node.connect(track.gain);
+							node.onended = () => {
+								const i = this.#active.indexOf(node);
+								if (i >= 0) this.#active.splice(i, 1);
+							};
+							node.start(startAt, offset, dur);
+							this.#active.push(node);
+						}
+					}
+				}
+				this.#scheduledUpToOutput = windowEnd;
 			}
+			const behind = outputToSource(this.#regions, Math.max(0, heard - AUDIO_BEHIND_SEC));
+			for (const track of this.#tracks) track.store.evictBefore(behind);
+		} finally {
+			this.#topUpRunning = false;
+		}
+	}
+
+	#stopTopUp(): void {
+		if (this.#topUpTimer !== undefined) {
+			clearInterval(this.#topUpTimer);
+			this.#topUpTimer = undefined;
 		}
 	}
 
@@ -422,6 +492,7 @@ export class AudioTimelineEngine {
 	pause(): void {
 		this.#stopActive();
 		this.#stopMusic();
+		this.#stopTopUp();
 		this.#scheduled = false;
 	}
 
@@ -463,8 +534,10 @@ export class AudioTimelineEngine {
 
 	dispose(): void {
 		this.#stopActive();
+		this.#stopTopUp();
 		this.#disposeMusic();
 		this.#scheduled = false;
+		for (const t of this.#tracks) t.store.dispose();
 		this.#tracks = [];
 		try {
 			void this.#ctx.close();

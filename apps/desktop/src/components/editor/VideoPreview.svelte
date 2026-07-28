@@ -14,8 +14,8 @@
 	  resolveCursorDataUrl,
 	  resolveCursorSprite,
 	} from "$lib/registry";
-	import { computeFrameParams } from "./frame-params";
-	import { applyFrameUniforms } from "./webgl-uniforms";
+	import { RenderCore } from "./render-core";
+	import { WebGL2Backend } from "./webgl2-backend";
 	import { assetsStore } from "$lib/stores/assets-store.svelte";
 	import { type EditorStore } from "$lib/stores/editor-store.svelte";
 	import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
@@ -44,8 +44,6 @@
 	import { AudioStallMonitor, resolveAvSync } from "$lib/playback/av-sync";
 	import { FrameTextureRing } from "$lib/playback/frame-textures";
 	import { textureRingFrames } from "@recast/media";
-	import { FRAG_SRC, VERT_SRC } from "./video-preview.shaders";
-	import { compile, link } from "./webgl.logic";
 
 	interface Props {
 		store: EditorStore;
@@ -119,8 +117,8 @@
 	let scoutEl = $state<HTMLVideoElement | null>(null);
 
 	let gl: WebGL2RenderingContext | null = null;
-	let program: WebGLProgram | null = null;
-	let vertexBuf: WebGLBuffer | null = null;
+	let backend: WebGL2Backend | null = null;
+	let renderCore: RenderCore | null = null;
 	let videoTex: WebGLTexture | null = null;
 	let bgTex: WebGLTexture | null = null;
 	let bgTexReady = false;
@@ -183,8 +181,6 @@
 	// lookup; the <video> element stays the audio/seek transport and follows.
 	const picClock = new PlaybackClock();
 
-	// Uniform locations
-	const uniforms: Record<string, WebGLUniformLocation | null> = {};
 
 	// RAF handle for coalescing reactive redraws
 	let rafHandle: number | null = null;
@@ -259,60 +255,8 @@
 		}
 		gl = g;
 
-		const vs = compile(g, g.VERTEX_SHADER, VERT_SRC);
-		const fs = compile(g, g.FRAGMENT_SHADER, FRAG_SRC);
-		program = link(g, vs, fs);
-		g.deleteShader(vs);
-		g.deleteShader(fs);
-
-		// Full-screen quad. Kept on a field so teardown can delete it; initGL also
-		// runs on every context restore, so a local would leak one per restore.
-		vertexBuf = g.createBuffer();
-		g.bindBuffer(g.ARRAY_BUFFER, vertexBuf);
-		g.bufferData(
-			g.ARRAY_BUFFER,
-			new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]),
-			g.STATIC_DRAW,
-		);
-		const aPos = g.getAttribLocation(program, "a_pos");
-		g.enableVertexAttribArray(aPos);
-		g.vertexAttribPointer(aPos, 2, g.FLOAT, false, 0, 0);
-
-		// Cache uniform locations
-		for (const name of [
-			"u_video",
-			"u_background",
-			"u_canvasSize",
-			"u_videoOrigin",
-			"u_videoSize",
-			"u_bgType",
-			"u_bgColor",
-			"u_gradColors[0]",
-			"u_gradStops[0]",
-			"u_gradCount",
-			"u_gradAngle",
-			"u_bgBlurPx",
-			"u_zoomCenter",
-			"u_zoomScale",
-			"u_motionBlurPx",
-			"u_borderRadiusPx",
-			"u_videoOpacity",
-			"u_videoRotation",
-			"u_cursorPos",
-			"u_cursorVisible",
-			"u_cursorRadius",
-			"u_cursorColor",
-			"u_highlightColor",
-			"u_highlightAlpha",
-			"u_highlightPos",
-			"u_shadowEnabled",
-			"u_shadowBlurPx",
-			"u_shadowSpreadPx",
-			"u_shadowOffsetPx",
-			"u_shadowColor",
-		]) {
-			uniforms[name] = g.getUniformLocation(program, name);
-		}
+		backend = WebGL2Backend.create(g);
+		renderCore = new RenderCore(backend);
 
 		// Allocate textures
 		videoTex = g.createTexture();
@@ -330,10 +274,6 @@
 		g.texParameteri(g.TEXTURE_2D, g.TEXTURE_MAG_FILTER, g.LINEAR);
 		// Placeholder 1×1 transparent texture so the sampler is always valid
 		g.texImage2D(g.TEXTURE_2D, 0, g.RGBA, 1, 1, 0, g.RGBA, g.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]));
-
-		g.useProgram(program);
-		g.uniform1i(uniforms.u_video, 0);
-		g.uniform1i(uniforms.u_background, 1);
 	}
 
 	//  Background loading 
@@ -659,7 +599,7 @@
 	}
 
 	function draw() {
-		if (!gl || !program || !canvasEl || !store.metadata) return;
+		if (!gl || !renderCore || !canvasEl || !store.metadata) return;
 		if (!resizeCanvas()) return;
 
 		// Refresh the smoothed cursor path if any of its inputs changed since
@@ -884,63 +824,50 @@
 		// onContextRestored — no per-frame call needed here (it allocated a Promise
 		// + key string every frame only to early-return).
 
-		gl.viewport(0, 0, canvasEl.width, canvasEl.height);
-		gl.clearColor(0, 0, 0, 1);
-		gl.clear(gl.COLOR_BUFFER_BIT);
-
-		gl.useProgram(program);
-
 		const meta = store.metadata!;
 		const geom = currentGeometry();
 		if (!geom) return;
 
-		// One pure scene→uniform evaluation (frame-params.ts) + a single GL apply,
+		// One pure scene→uniform evaluation + a single GL apply via RenderCore,
 		// shared with the offline export renderer instead of a second compositor.
 		const gradient =
 			store.backgroundType === "gradient"
 				? currentGradient(store.backgroundValue || "")
 				: undefined;
-		const params = computeFrameParams({
-			meta: { width: meta.width, height: meta.height },
-			geom,
-			canvasPxW: canvasEl.width,
-			canvasPxH: canvasEl.height,
-			playbackTime,
-			segments: store.segments,
-			segmentAnims: store.segmentAnims,
-			backgroundType: store.backgroundType,
-			backgroundValue: store.backgroundValue,
-			backgroundBlur: store.backgroundBlur,
-			backgroundImageReady: bgTexReady,
-			gradient,
-			borderRadius: store.borderRadius ?? 0,
-			focusEnabled: store.focusEnabled,
-			zoomRegions: store.zoomRegions,
-			shadow: store.shadow,
-			cursor: store.cursorSettings,
-			cursorMotionEasing: store.cursorMotionEasing,
-			cursorSamples,
-			idlePeriods,
-			pressEvents,
-		});
-
-		// Image background: bind its texture to unit 1 before drawing.
-		if (params.bindBackgroundImage) {
-			gl.activeTexture(gl.TEXTURE1);
-			gl.bindTexture(gl.TEXTURE_2D, bgTex);
-		}
-
-		applyFrameUniforms(gl, uniforms, params.uniforms);
+		const frame = renderCore.renderFrame(
+			{
+				meta: { width: meta.width, height: meta.height },
+				geom,
+				canvasPxW: canvasEl.width,
+				canvasPxH: canvasEl.height,
+				playbackTime,
+				segments: store.segments,
+				segmentAnims: store.segmentAnims,
+				backgroundType: store.backgroundType,
+				backgroundValue: store.backgroundValue,
+				backgroundBlur: store.backgroundBlur,
+				backgroundImageReady: bgTexReady,
+				gradient,
+				borderRadius: store.borderRadius ?? 0,
+				focusEnabled: store.focusEnabled,
+				zoomRegions: store.zoomRegions,
+				shadow: store.shadow,
+				cursor: store.cursorSettings,
+				cursorMotionEasing: store.cursorMotionEasing,
+				cursorSamples,
+				idlePeriods,
+				pressEvents,
+			},
+			{ backgroundTex: bgTex },
+		);
 
 		// SVG cursor overlay: written only for a non-dot style, else cleared once so
 		// the HTML <img> hides (the shader draws the dot cursor itself).
-		if (params.svgCursor) {
-			svgCursor = params.svgCursor;
+		if (frame.svgCursor) {
+			svgCursor = frame.svgCursor;
 		} else if (svgCursor.visible) {
 			svgCursor = { ...svgCursor, visible: false };
 		}
-
-		gl.drawArrays(gl.TRIANGLES, 0, 6);
 
 		// In-task mirror for blur read-back (see comment on blurMirrorEl).
 		syncBlurMirror();
@@ -1035,8 +962,8 @@
 		frameRing?.dispose();
 		frameRing = null;
 		gl = null;
-		vertexBuf = null;
-		program = null;
+		backend = null;
+		renderCore = null;
 		videoTex = null;
 		bgTex = null;
 		bgTexReady = false;
@@ -1132,8 +1059,7 @@
 		if (gl) {
 			if (videoTex) gl.deleteTexture(videoTex);
 			if (bgTex) gl.deleteTexture(bgTex);
-			if (vertexBuf) gl.deleteBuffer(vertexBuf);
-			if (program) gl.deleteProgram(program);
+			backend?.dispose();
 			// This component remounts on every editor open, and reclaiming a
 			// context is GC-timed. Chromium allows ~16 live contexts and
 			// force-loses the OLDEST when it hits the cap — which would kill a
