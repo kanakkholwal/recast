@@ -464,6 +464,8 @@ export class AudioTimelineEngine {
 			}
 			const behind = outputToSource(this.#regions, Math.max(0, heard - AUDIO_BEHIND_SEC));
 			for (const track of this.#tracks) track.store.evictBefore(behind);
+		} catch (err) {
+			console.error("audio streaming top-up failed:", err);
 		} finally {
 			this.#topUpRunning = false;
 		}

@@ -4,5 +4,21 @@
  */
 
 // biome-ignore-all lint/style/noRestrictedImports: sanctioned re-export point.
-export { ALL_FORMATS, AudioBufferSink, BlobSource, CanvasSink, Input, UrlSource } from 'mediabunny';
-export type { InputVideoTrack, WrappedAudioBuffer, WrappedCanvas } from 'mediabunny';
+export {
+	ALL_FORMATS,
+	AudioBufferSink,
+	BlobSource,
+	BufferTarget,
+	CanvasSink,
+	CanvasSource,
+	Input,
+	Mp4OutputFormat,
+	Output,
+	QUALITY_HIGH,
+	QUALITY_LOW,
+	QUALITY_MEDIUM,
+	QUALITY_VERY_HIGH,
+	UrlSource,
+	VideoSampleSink,
+} from 'mediabunny';
+export type { InputVideoTrack, VideoEncodingConfig, WrappedAudioBuffer, WrappedCanvas } from 'mediabunny';

@@ -2,17 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { WebGL2Backend } from "./webgl2-backend";
 import type { FrameUniforms } from "./frame-params";
 
-const CONSTS = { VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4, ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TRIANGLES: 8, TEXTURE1: 9, TEXTURE_2D: 10, COLOR_BUFFER_BIT: 11 };
+const CONSTS = { VERTEX_SHADER: 1, FRAGMENT_SHADER: 2, COMPILE_STATUS: 3, LINK_STATUS: 4, ARRAY_BUFFER: 5, STATIC_DRAW: 6, FLOAT: 7, TRIANGLES: 8, TEXTURE1: 9, TEXTURE_2D: 10, COLOR_BUFFER_BIT: 11, TEXTURE0: 12, RGBA: 13, UNSIGNED_BYTE: 14 };
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function fakeGl(): any {
 	const gl: Record<string, unknown> = { ...CONSTS };
-	for (const m of ["shaderSource", "compileShader", "deleteShader", "attachShader", "linkProgram", "deleteProgram", "bindBuffer", "bufferData", "enableVertexAttribArray", "vertexAttribPointer", "useProgram", "uniform1i", "uniform1f", "uniform2f", "uniform4fv", "uniform1fv", "viewport", "clearColor", "clear", "activeTexture", "bindTexture", "drawArrays"]) {
+	for (const m of ["shaderSource", "compileShader", "deleteShader", "attachShader", "linkProgram", "deleteProgram", "bindBuffer", "bufferData", "enableVertexAttribArray", "vertexAttribPointer", "useProgram", "uniform1i", "uniform1f", "uniform2f", "uniform4fv", "uniform1fv", "viewport", "clearColor", "clear", "activeTexture", "bindTexture", "texParameteri", "texImage2D", "deleteTexture", "drawArrays"]) {
 		gl[m] = vi.fn();
 	}
 	gl.createShader = vi.fn(() => ({}));
 	gl.createProgram = vi.fn(() => ({}));
 	gl.createBuffer = vi.fn(() => ({}));
+	gl.createTexture = vi.fn(() => ({}));
 	gl.getAttribLocation = vi.fn(() => 0);
 	gl.getShaderParameter = vi.fn(() => true);
 	gl.getProgramParameter = vi.fn(() => true);
@@ -55,6 +56,20 @@ describe("WebGL2Backend.beginFrame", () => {
 		expect(gl.viewport).toHaveBeenCalledWith(0, 0, 640, 480);
 		expect(gl.clearColor).toHaveBeenCalledWith(0, 0, 0, 1);
 		expect(gl.clear).toHaveBeenCalledWith(CONSTS.COLOR_BUFFER_BIT);
+	});
+});
+
+describe("WebGL2Backend.uploadFrame", () => {
+	it("creates the frame texture once, binds it to unit 0, and uploads the source", () => {
+		const gl = fakeGl();
+		const backend = WebGL2Backend.create(gl);
+		for (const m of ["createTexture", "activeTexture", "bindTexture", "texImage2D"]) gl[m].mockClear();
+		const frame = {} as unknown as TexImageSource;
+		backend.uploadFrame(frame);
+		backend.uploadFrame(frame);
+		expect(gl.createTexture).toHaveBeenCalledTimes(1); // reused on the second upload
+		expect(gl.activeTexture).toHaveBeenCalledWith(CONSTS.TEXTURE0);
+		expect(gl.texImage2D).toHaveBeenCalledWith(CONSTS.TEXTURE_2D, 0, CONSTS.RGBA, CONSTS.RGBA, CONSTS.UNSIGNED_BYTE, frame);
 	});
 });
 

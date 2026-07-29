@@ -877,13 +877,19 @@
 		if (rafHandle !== null) return;
 		rafHandle = requestAnimationFrame(() => {
 			rafHandle = null;
-			draw();
+			try {
+				draw();
+			} catch (err) {
+				console.error("preview draw() failed:", err);
+			}
 		});
 	}
 
 	//  Playback frame loop (rAF)
 	// rAF handle for the preview playback loop (see startVideoFrameLoop).
 	let wcRafHandle: number | null = null;
+	// Consecutive draw() failures; a bad frame must not kill the loop.
+	let drawErrors = 0;
 
 	function startVideoFrameLoop() {
 		// Drive the loop with rAF, not the <video> element's requestVideoFrameCallback:
@@ -894,7 +900,19 @@
 		// WebCodecs path and the <video> fallback.
 		if (wcRafHandle !== null) return;
 		const loop = () => {
-			draw();
+			try {
+				draw();
+				drawErrors = 0;
+			} catch (err) {
+				// A bad frame must not kill the loop (a dead loop freezes the preview
+				// and reads as a crash). Log once, tolerate transients, stop if persistent.
+				if (drawErrors++ === 0) console.error("preview draw() failed:", err);
+				if (drawErrors > 120) {
+					console.error("preview draw() failing persistently; stopping loop");
+					wcRafHandle = null;
+					return;
+				}
+			}
 			wcRafHandle = requestAnimationFrame(loop);
 		};
 		wcRafHandle = requestAnimationFrame(loop);
