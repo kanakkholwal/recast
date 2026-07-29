@@ -14,19 +14,13 @@ function willBurnCaptions(store: EditorStore): boolean {
 	return !!t && t.segments.length > 0 && store.captionExport.burnIn && store.exportFormat !== "gif";
 }
 
-/** Why a project can't use the browser export path yet (so the caller falls back
- *  to the Rust compositor), or null when it's eligible. Painted + text
- *  annotations now render in the browser (text rasterized to an image); only
- *  blur still needs the Rust path (P1b framebuffer pass), as do burned captions.
- *  GIF keeps its 2-pass palette on the Rust side. */
+/** Why a project can't use the browser export path (so the caller falls back to
+ *  the Rust compositor), or null when it's eligible. All annotation kinds —
+ *  painted, text (rasterized to an image), and blur (samples the composited
+ *  frame) — now render in the browser. Only burned captions still need the Rust
+ *  path; GIF keeps its 2-pass palette on the Rust side. */
 export function browserExportBlockedReason(store: EditorStore): string | null {
 	if (store.exportFormat === "gif") return "gif";
 	if (willBurnCaptions(store)) return "burned captions";
-	if (
-		!store.annotationsGloballyHidden &&
-		store.annotations.some((a) => !a.hidden && a.kind.kind === "blur")
-	) {
-		return "blur annotations";
-	}
 	return null;
 }

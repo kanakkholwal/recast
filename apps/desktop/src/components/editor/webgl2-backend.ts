@@ -234,6 +234,12 @@ export class WebGL2Backend {
 		return this.#annoTex;
 	}
 
+	/** Force the GPU to complete queued commands so the drawing buffer is readable
+	 *  (the export reads it back via `drawImage` for blur). Offline-only cost. */
+	finish(): void {
+		this.#gl.finish();
+	}
+
 	/** Blit a texture into a pixel-space rect over the current frame (overlay
 	 *  passes). Lazily compiles the overlay program on first use. */
 	drawSprite(tex: WebGLTexture, rect: QuadRect, opts?: QuadDrawOptions): void {

@@ -24,7 +24,11 @@ import {
 	VideoSampleSink,
 	type VideoEncodingConfig,
 } from "@recast/media/mediabunny";
-import { RenderCore, type RenderPass } from "../../components/editor/render-core";
+import {
+	RenderCore,
+	type RenderPass,
+	type RenderPassContext,
+} from "../../components/editor/render-core";
 import { WebGL2Backend } from "../../components/editor/webgl2-backend";
 import type { FrameGeometry, FrameInput } from "../../components/editor/frame-params";
 import type { CameraOverlayShape, CameraPlacement } from "$lib/stores/editor-store.svelte";
@@ -39,6 +43,18 @@ export interface ExportOverlay {
 	dispose(): void;
 }
 export type ExportOverlayFactory = (backend: WebGL2Backend) => ExportOverlay;
+
+/** Blur env handed to the annotation-layer draw: the composited GL frame to
+ *  sample + a resizable scratch, so blur annotations blur the real frame. */
+export interface BlurLayerEnv {
+	composite: CanvasImageSource;
+	srcW: number;
+	srcH: number;
+	getScratch: (
+		w: number,
+		h: number,
+	) => { ctx: OffscreenCanvasRenderingContext2D; canvas: CanvasImageSource } | null;
+}
 
 /** Camera bubble inputs: its own decoded stream (sampled at the same original
  *  time as the main video) + the resolved per-frame placement. The bubble draws
@@ -76,8 +92,12 @@ export interface OffscreenExportOptions {
 	/** Camera bubble (a second decoded stream), drawn on top when present. */
 	camera?: CameraExportInputs | null;
 	/** Draw the annotation layer for original time `t` into a comp-native 2D ctx.
-	 *  Composited below the cursor (matching the preview), above the video. */
-	annotationLayer?: ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number) => void) | null;
+	 *  Composited below the cursor (matching the preview), above the video. Runs
+	 *  AFTER the main pass, so `blur` (the composited GL frame + a scratch) is
+	 *  available for blur annotations to sample. */
+	annotationLayer?:
+		| ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, blur: BlurLayerEnv) => void)
+		| null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
 }
@@ -101,6 +121,24 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	// cursor) via a pass ordered before the overlay passes.
 	let annoCanvas: OffscreenCanvas | null = null;
 	let annoCtx: OffscreenCanvasRenderingContext2D | null = null;
+	let scratchCanvas: OffscreenCanvas | null = null;
+	const getScratch = (w: number, h: number) => {
+		const cw = Math.max(1, w);
+		const ch = Math.max(1, h);
+		if (!scratchCanvas) scratchCanvas = new OffscreenCanvas(cw, ch);
+		if (scratchCanvas.width !== cw || scratchCanvas.height !== ch) {
+			scratchCanvas.width = cw;
+			scratchCanvas.height = ch;
+		}
+		const c = scratchCanvas.getContext("2d");
+		return c ? { ctx: c, canvas: scratchCanvas as CanvasImageSource } : null;
+	};
+	const blurEnv: BlurLayerEnv = {
+		composite: canvas,
+		srcW: opts.width,
+		srcH: opts.height,
+		getScratch,
+	};
 	const passes: RenderPass[] = [];
 	if (opts.annotationLayer) {
 		annoCanvas = new OffscreenCanvas(opts.width, opts.height);
@@ -154,13 +192,18 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				vf.close();
 				sample.close();
 			}
-			let annotationTex: WebGLTexture | null = null;
-			if (opts.annotationLayer && annoCtx && annoCanvas) {
-				annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
-				opts.annotationLayer(annoCtx, originalSec);
-				annotationTex = backend.uploadAnnotation(annoCanvas);
-			}
-			renderCore.renderFrame(frameInput, { backgroundTex, annotationTex });
+			// The annotation layer is drawn in `afterMain` (after the GL main pass)
+			// so blur annotations can sample the just-composited frame.
+			const ctx: RenderPassContext = { backgroundTex, annotationTex: null };
+			renderCore.renderFrame(frameInput, ctx, () => {
+				if (opts.annotationLayer && annoCtx && annoCanvas) {
+					// Flush so blur reads the completed main-pass frame off the GL canvas.
+					backend.finish();
+					annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+					opts.annotationLayer(annoCtx, originalSec, blurEnv);
+					ctx.annotationTex = backend.uploadAnnotation(annoCanvas);
+				}
+			});
 
 			if (opts.camera && camSink) {
 				const cs = await camSink.getSample(Math.max(0, originalSec));

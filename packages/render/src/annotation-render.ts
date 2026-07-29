@@ -9,6 +9,7 @@
 
 import {
 	arrowGeometry,
+	blurTint,
 	roundRectPath,
 	strokeDashPattern,
 	withAlpha,
@@ -211,5 +212,72 @@ export function paintBoxAnnotation(
 		ctx.stroke();
 	}
 
+	ctx.restore();
+}
+
+export interface RenderableBlur {
+	opacity?: number;
+	kind: { kind: string; strength: number; variant: string; tintColor: string; radius: number };
+}
+
+/** Composited frame to sample + a resizable scratch context, supplied by the
+ *  driver (preview: the WebGL canvas + a persistent scratch; export: the export
+ *  GL canvas + an OffscreenCanvas scratch). */
+export interface BlurEnv {
+	composite: CanvasImageSource;
+	srcW: number;
+	srcH: number;
+	dstW: number;
+	dstH: number;
+	/** Return a scratch 2D context sized `w×h` and its canvas (to draw back). */
+	getScratch: (w: number, h: number) => { ctx: Ctx2D; canvas: CanvasImageSource } | null;
+}
+
+/**
+ * Paint a blur annotation: copy the composited frame under the box, blur it
+ * (2D `filter`, reliable across WebView backends), tint per variant, and draw it
+ * back under a rounded clip. Samples a margin of real pixels so a large radius
+ * doesn't wash out against the transparent edge. Shared by preview + export.
+ */
+export function paintBlur(ctx: Ctx2D, a: RenderableBlur, box: Rect, env: BlurEnv): void {
+	const k = a.kind;
+	const { x, y, w, h } = box;
+	if (!(w > 1 && h > 1)) return;
+	const { composite, srcW, srcH, dstW, dstH } = env;
+	if (!(srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0)) return;
+	const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
+	const m = Math.ceil(blurPx);
+	const ew = w + 2 * m;
+	const eh = h + 2 * m;
+	const esx = ((x - m) / dstW) * srcW;
+	const esy = ((y - m) / dstH) * srcH;
+	const esw = (ew / dstW) * srcW;
+	const esh = (eh / dstH) * srcH;
+	const radius = Math.max(0, k.radius * Math.min(w, h));
+	const bw = Math.max(1, Math.round(w));
+	const bh = Math.max(1, Math.round(h));
+	const scratch = env.getScratch(bw, bh);
+	if (!scratch) return;
+	const octx = scratch.ctx;
+	octx.clearRect(0, 0, bw, bh);
+	octx.filter = `blur(${blurPx.toFixed(2)}px)`;
+	try {
+		octx.drawImage(composite, esx, esy, esw, esh, -m, -m, ew, eh);
+	} catch {
+		/* source not readable this frame */
+	}
+	octx.filter = "none";
+	const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
+	if (tint) {
+		octx.fillStyle = tint;
+		octx.fillRect(0, 0, bw, bh);
+	}
+	ctx.save();
+	ctx.globalAlpha = 1;
+	ctx.beginPath();
+	if (radius > 0) roundRectPath(ctx, x, y, w, h, radius);
+	else ctx.rect(x, y, w, h);
+	ctx.clip();
+	ctx.drawImage(scratch.canvas, x, y, w, h);
 	ctx.restore();
 }

@@ -45,10 +45,12 @@ export class RenderCore {
 		this.#passes = passes;
 	}
 
-	/** Evaluate the scene and draw the frame: main pass, then overlay passes. */
-	renderFrame(input: FrameInput, ctx: RenderPassContext): FrameResult {
+	/** Evaluate the scene and draw the frame: main pass, then overlay passes.
+	 *  `afterMain` runs after the main pass, before overlays — the export uses it
+	 *  to build the annotation layer (blur samples the just-composited frame). */
+	renderFrame(input: FrameInput, ctx: RenderPassContext, afterMain?: () => void): FrameResult {
 		const params = computeFrameParams(input);
-		return this.applyFrameParams(params, input.canvasPxW, input.canvasPxH, ctx);
+		return this.applyFrameParams(params, input.canvasPxW, input.canvasPxH, ctx, afterMain);
 	}
 
 	/** Draw already-computed params. Split out so the render worker can apply
@@ -59,12 +61,14 @@ export class RenderCore {
 		canvasPxW: number,
 		canvasPxH: number,
 		ctx: RenderPassContext,
+		afterMain?: () => void,
 	): FrameResult {
 		this.#backend.beginFrame(canvasPxW, canvasPxH);
 		this.#backend.renderMain(params.uniforms, {
 			bindBackground: params.bindBackgroundImage,
 			backgroundTex: ctx.backgroundTex,
 		});
+		afterMain?.();
 		for (const pass of this.#passes) pass.render(this.#backend, params, ctx);
 		return { svgCursor: params.svgCursor };
 	}

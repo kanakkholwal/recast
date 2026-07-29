@@ -26,7 +26,11 @@ import type { FrameGeometry } from "../../components/editor/frame-params";
 import { buildExportBase } from "./export-scene";
 import { makeExportFrameAt } from "./export-frame-input";
 import { videoEncodingConfigFor, type ExportQuality } from "./browser-export-plan";
-import { renderTimelineToVideo, type ExportOverlayFactory } from "./offscreen-export";
+import {
+	renderTimelineToVideo,
+	type BlurLayerEnv,
+	type ExportOverlayFactory,
+} from "./offscreen-export";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { cursorOverlayFactory } from "./cursor-overlay-export";
 import { drawAnnotationLayerExport } from "./annotation-layer-export";
@@ -142,13 +146,15 @@ async function buildAnnotationLayer(
 	meta: { width: number; height: number },
 	canvasPxW: number,
 	canvasPxH: number,
-): Promise<((ctx: OffscreenCanvasRenderingContext2D, t: number) => void) | null> {
+): Promise<
+	((ctx: OffscreenCanvasRenderingContext2D, t: number, blur: BlurLayerEnv) => void) | null
+> {
 	if (store.annotationsGloballyHidden) return null;
 	const annotations = await expandTextAnnotations(store.annotationsByZ, canvasPxW, canvasPxH);
-	const drawable = ["rect", "ellipse", "arrow", "image"];
+	const drawable = ["rect", "ellipse", "arrow", "image", "blur"];
 	if (!annotations.some((a) => !a.hidden && drawable.includes(a.kind.kind))) return null;
 	const images = await preloadAnnotationImages(annotations);
-	return (ctx, t) =>
+	return (ctx, t, blur) =>
 		drawAnnotationLayerExport(ctx, t, {
 			annotations,
 			meta,
@@ -158,6 +164,7 @@ async function buildAnnotationLayer(
 			canvasPxW,
 			canvasPxH,
 			getImage: (p) => images.get(p) ?? null,
+			blur,
 		});
 }
 

@@ -24,6 +24,9 @@ export {
 	type RenderableAnnotation,
 	type ShapeImage,
 	type ShapeDeps,
+	type RenderableBlur,
+	type BlurEnv,
 	paintArrow,
 	paintBoxAnnotation,
+	paintBlur,
 } from "./annotation-render";
