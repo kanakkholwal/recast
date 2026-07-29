@@ -5,6 +5,7 @@
 		"sharp": "^0.34.5"
 	},
 	"devDependencies": {
+		"@biomejs/biome": "^2.5.5",
 		"@changesets/cli": "^2.31.0",
 		"husky": "^9.1.7",
 		"turbo": "^2.9.16"
@@ -20,8 +21,12 @@
 		"build:web": "turbo build --filter=recast-web",
 		"build:packages": "turbo build --filter=@recast/*",
 		"check": "turbo check",
-		"fmt": "turbo fmt",
-		"fmt:check": "turbo fmt:check",
+		"fmt": "pnpm fmt:rust && pnpm fmt:js",
+		"fmt:check": "pnpm fmt:rust:check && pnpm fmt:js:check",
+		"fmt:rust": "turbo fmt",
+		"fmt:rust:check": "turbo fmt:check",
+		"fmt:js": "biome format --write .",
+		"fmt:js:check": "biome format .",
 		"lint": "turbo lint",
 		"lint:fix": "turbo lint:fix",
 		"test": "pnpm test:captions && pnpm test:media && pnpm test:web && pnpm test:desktop && pnpm test:rust",

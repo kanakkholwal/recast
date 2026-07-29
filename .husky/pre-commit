@@ -1,13 +1,47 @@
-# Run only when Rust sources in the desktop crate are staged. rustfmt is fast
-# (~1s, no compile) so blocking the commit is cheap. Clippy stays in CI — it
-# needs a full target build and would make every commit slow.
-staged_rust=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '^apps/desktop/src-tauri/.*\.rs$' || true)
+# Formats staged sources in place. rustfmt (~1s, no compile) and Biome (~250ms)
+# are cheap enough to block a commit. Clippy stays in CI — it needs a full build.
+# husky runs this with `sh -e`, so every grep needs `|| true` and notes go to
+# stderr — IDE git clients only surface stderr when a hook fails.
+say() { echo "[pre-commit] $*" >&2; }
 
-if [ -n "$staged_rust" ]; then
-  echo "[pre-commit] checking Rust formatting..."
-  if ! pnpm --filter recast-desktop --silent fmt:check; then
-    echo ""
-    echo "[pre-commit] rustfmt drift detected. Run: pnpm --filter recast-desktop fmt"
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+[ -n "$staged" ] || exit 0
+
+# Files staged *and* dirty in the worktree: safe to format, but re-adding them
+# would sweep the unstaged half into the commit.
+dirty=$(git diff --name-only)
+
+restage() {
+  while IFS= read -r file; do
+    [ -n "$file" ] && [ -f "$file" ] || continue
+    if printf '%s\n' "$dirty" | grep -Fxq "$file"; then
+      say "$file has unstaged edits — formatted, not re-staged"
+      continue
+    fi
+    git add -- "$file"
+  done
+}
+
+rust_files=$(printf '%s\n' "$staged" | grep -E '^apps/desktop/src-tauri/.*\.rs$' || true)
+if [ -n "$rust_files" ]; then
+  say "rustfmt…"
+  # Per-file rather than `cargo fmt --all`, to leave unstaged work alone. rustfmt
+  # still follows `mod` into child files — stable has no --skip-children.
+  edition=$(grep -m1 '^edition' apps/desktop/src-tauri/Cargo.toml | cut -d'"' -f2)
+  if ! printf '%s\n' "$rust_files" | xargs rustfmt --edition "${edition:-2021}"; then
+    say "rustfmt failed. Run: pnpm fmt:rust"
     exit 1
   fi
+  printf '%s\n' "$rust_files" | restage
+fi
+
+web_files=$(printf '%s\n' "$staged" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|svelte|json|jsonc)$' || true)
+if [ -n "$web_files" ]; then
+  say "biome format…"
+  # --staged scopes Biome to the index; a failure here is a parse error, not drift.
+  if ! pnpm exec biome format --write --staged --no-errors-on-unmatched . >&2; then
+    say "biome could not format some files. Run: pnpm fmt:js"
+    exit 1
+  fi
+  printf '%s\n' "$web_files" | restage
 fi

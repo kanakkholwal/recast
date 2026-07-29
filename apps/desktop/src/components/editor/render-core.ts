@@ -7,7 +7,12 @@
  * renderer both drive frames through here, so there is exactly one compositor.
  */
 
-import { computeFrameParams, type FrameInput, type FrameParams, type SvgCursorParams } from "./frame-params";
+import {
+	computeFrameParams,
+	type FrameInput,
+	type FrameParams,
+	type SvgCursorParams,
+} from "./frame-params";
 import type { WebGL2Backend } from "./webgl2-backend";
 
 export interface RenderPassContext {
@@ -40,7 +45,19 @@ export class RenderCore {
 	/** Evaluate the scene and draw the frame: main pass, then overlay passes. */
 	renderFrame(input: FrameInput, ctx: RenderPassContext): FrameResult {
 		const params = computeFrameParams(input);
-		this.#backend.beginFrame(input.canvasPxW, input.canvasPxH);
+		return this.applyFrameParams(params, input.canvasPxW, input.canvasPxH, ctx);
+	}
+
+	/** Draw already-computed params. Split out so the render worker can apply
+	 *  uniforms the main thread computed, without re-running computeFrameParams.
+	 *  The caller must bind the frame texture to unit 0 before calling. */
+	applyFrameParams(
+		params: FrameParams,
+		canvasPxW: number,
+		canvasPxH: number,
+		ctx: RenderPassContext,
+	): FrameResult {
+		this.#backend.beginFrame(canvasPxW, canvasPxH);
 		this.#backend.renderMain(params.uniforms, {
 			bindBackground: params.bindBackgroundImage,
 			backgroundTex: ctx.backgroundTex,
