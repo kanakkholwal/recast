@@ -5,11 +5,10 @@
 // (caption-render) — so preview == export by construction, no DOM renderer to
 // drift. Fills `previewRectEl` (the composited output rect), so the caption's
 // video-relative placement matches the frame.
-import { paintCaptionChunk, resolveCaptionView } from "$lib/captions/caption-render";
+import { captionClocks, paintCaptionChunk, resolveCaptionView } from "$lib/captions/caption-render";
 import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import { ensureFontLoaded } from "$lib/fonts/font-options";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { outputToOriginal } from "$lib/timeline/time-map";
 
 let { store }: { store: EditorStore } = $props();
 
@@ -25,10 +24,10 @@ $effect(() => {
 	ensureFontLoaded(store.captionStyle.fontFamily, store.captionStyle.fontWeight);
 });
 
-// Paint the active caption every time the playhead (OUTPUT time), style, or size
-// changes. The playhead is OUTPUT time; the transcript is SOURCE time, so map
-// back through the time map — captions and per-word timing stay synced across
-// cuts and per-segment speed. Entrance is clocked on OUTPUT time (viewer-rate).
+// Paint the active caption whenever the playhead, style, or size changes.
+// `store.currentTime` is SOURCE time, which resolves the chunk directly; the
+// entrance is clocked on OUTPUT time (viewer-rate) via the time map, so per-word
+// highlight and entrance stay correct across trims, cuts, and per-segment speed.
 $effect(() => {
 	const canvas = canvasEl;
 	if (!canvas) return;
@@ -44,18 +43,18 @@ $effect(() => {
 	if (!store.captionStyle.enabled) return;
 	const m = store.metadata;
 	if (!m?.width || !m?.height) return;
-	const nowOrig = outputToOriginal(store.timeMap, store.currentTime);
+	const { sourceSec, outputSec } = captionClocks(store.timeMap, store.currentTime);
 	// captionTranscript is rescaled onto the video/timeMap axis (fixes audio-vs-
 	// video CFR drift); every caption surface reads it so they stay in sync.
 	const view = resolveCaptionView(
 		store.captionTranscript,
 		store.captionStyle,
 		store.timeMap,
-		nowOrig,
+		sourceSec,
 	);
 	if (!view) return;
 	const g = computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
-	paintCaptionChunk(ctx, view, store.captionStyle, store.currentTime, {
+	paintCaptionChunk(ctx, view, store.captionStyle, outputSec, {
 		videoLeftFrac: g.videoX / g.canvasW,
 		videoRightFrac: (g.videoX + g.videoW) / g.canvasW,
 		videoTopFrac: g.videoY / g.canvasH,

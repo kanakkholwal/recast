@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { drawCaptionLayerExport } from "./caption-layer-export";
 import {
+	captionClocks,
 	paintCaptionChunk,
 	resolveCaptionView,
 	type CaptionView,
@@ -34,6 +35,35 @@ function transcript() {
 
 const style = (over: Partial<CaptionStyle> = {}): CaptionStyle =>
 	({ ...DEFAULT_CAPTION_STYLE, enabled: true, animation: undefined, ...over }) as CaptionStyle;
+
+// `store.currentTime` is ORIGINAL (source) time. The preview overlay must resolve
+// the chunk at that source time directly and clock the entrance on OUTPUT time —
+// NOT double-convert through outputToOriginal (the inverted-axis bug that made
+// highlight/emphasis/entrance never reflect on a trimmed/sped timeline).
+describe("captionClocks", () => {
+	it("passes source time through and derives output time (identity map)", () => {
+		const c = captionClocks(identity, 3);
+		expect(c.sourceSec).toBe(3);
+		expect(c.outputSec).toBeCloseTo(3, 6);
+	});
+
+	it("keeps source time but shifts the entrance clock under a trim (non-identity map)", () => {
+		// One kept span [3,13] → output [0,10]: playhead at source 5 is output 2.
+		const trimmed = buildTimeMap([{ origStart: 3, origEnd: 13, speed: 1 }]);
+		const c = captionClocks(trimmed, 5);
+		expect(c.sourceSec).toBe(5); // resolve words at the true source time
+		expect(c.outputSec).toBeCloseTo(2, 6); // entrance runs on viewer/output time
+		// The old inverted formula (outputToOriginal for the source) would have
+		// resolved at 8 — 3s ahead — killing per-word highlight and entrance.
+	});
+
+	it("compresses the entrance clock on a sped-up span (viewer-rate)", () => {
+		const sped = buildTimeMap([{ origStart: 0, origEnd: 10, speed: 2 }]);
+		const c = captionClocks(sped, 6); // 6s of source at 2× = 3s of output
+		expect(c.sourceSec).toBe(6);
+		expect(c.outputSec).toBeCloseTo(3, 6);
+	});
+});
 
 describe("resolveCaptionView", () => {
 	it("returns the active line inside a segment (static → all spoken)", () => {

@@ -36,6 +36,20 @@ import type { Transcript } from "$lib/ipc";
 /** 2D surface shared by the preview canvas and the export offscreen canvas. */
 export type CaptionCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
+/** The two caption clocks derived from the store playhead. `store.currentTime` is
+ *  ORIGINAL (source) time, so it resolves the chunk directly; the entrance is
+ *  clocked on OUTPUT time (viewer-rate) via the time map. Mirrors the export
+ *  driver, which feeds `resolveCaptionView(originalSec)` + `paintCaptionChunk(outputSec)`. */
+export function captionClocks(
+	timeMap: TimeMap,
+	currentTimeOriginal: number,
+): { sourceSec: number; outputSec: number } {
+	return {
+		sourceSec: currentTimeOriginal,
+		outputSec: originalToOutput(timeMap, currentTimeOriginal),
+	};
+}
+
 /** The active caption at a source time: the chunk's words plus speech progress
  *  and entrance origin (in OUTPUT time, so the entrance plays at viewer-rate even
  *  across a speed change). Null when nothing is on screen. */

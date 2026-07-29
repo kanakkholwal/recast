@@ -616,6 +616,8 @@ $effect(() => {
 	// Detached audio: the monolithic source tracks are silenced (voice clips
 	// carry the recording audio); guards against double-playing the un-cut source.
 	const detached = store.audioDetached;
+	// Capped at 1 because HTMLMediaElement.volume is spec-bound to 0..1: boost
+	// above 100% only reproduces on the Web Audio path (and in the export).
 	const systemVol =
 		detached || settings.muted || settings.systemMuted
 			? 0

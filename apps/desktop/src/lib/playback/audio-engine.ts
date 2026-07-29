@@ -20,13 +20,14 @@
  * pressing M to mute everything still works instantly.
  */
 
+import { AudioChunkStore } from "./audio-chunk-store";
+import { gainFromPercent } from "./audio-gain";
 import {
 	outputToSource,
 	planAudioScheduleWindow,
-	sliceChunksForPlayback,
 	type Region,
-} from './audio-schedule';
-import { AudioChunkStore } from './audio-chunk-store';
+	sliceChunksForPlayback,
+} from "./audio-schedule";
 
 /**
  * Output-time position the listener is actually HEARING right now.
@@ -102,7 +103,7 @@ export interface MusicClipSpec {
 	loop: boolean;
 }
 
-export type AudioTrackKind = 'system' | 'mic';
+export type AudioTrackKind = "system" | "mic";
 
 export interface AudioTrack {
 	store: AudioChunkStore;
@@ -172,11 +173,11 @@ export class AudioTimelineEngine {
 	 */
 	static async create(specs: ReadonlyArray<AudioTrackSpec>): Promise<AudioTimelineEngine> {
 		const Ctx: typeof AudioContext | undefined =
-			typeof AudioContext !== 'undefined'
+			typeof AudioContext !== "undefined"
 				? AudioContext
 				: // eslint-disable-next-line @typescript-eslint/no-explicit-any
 					(globalThis as any).webkitAudioContext;
-		if (!Ctx) throw new Error('Web Audio API unavailable');
+		if (!Ctx) throw new Error("Web Audio API unavailable");
 
 		const ctx = new Ctx();
 		// Per-track gains feed a shared fade node feeding the destination, so the
@@ -202,7 +203,7 @@ export class AudioTimelineEngine {
 			} catch {
 				/* ignore */
 			}
-			throw new Error('no decodable audio tracks');
+			throw new Error("no decodable audio tracks");
 		}
 		return new AudioTimelineEngine(ctx, tracks, fadeGain);
 	}
@@ -222,9 +223,9 @@ export class AudioTimelineEngine {
 		}
 	}
 
-	/** Apply the master volume (0–100) and mute flag. */
+	/** Apply the master volume (0–200) and mute flag. */
 	setMasterVolume(volume0to100: number, muted: boolean): void {
-		this.#volume = Math.max(0, Math.min(1, volume0to100 / 100));
+		this.#volume = gainFromPercent(volume0to100);
 		this.#muted = muted;
 		this.#applyGains();
 	}
@@ -235,7 +236,7 @@ export class AudioTimelineEngine {
 	 * supported way to silence just the mic without affecting system audio.
 	 */
 	setTrackVolume(kind: AudioTrackKind, volume0to100: number, muted: boolean): void {
-		this.#trackVolumes[kind] = Math.max(0, Math.min(1, volume0to100 / 100));
+		this.#trackVolumes[kind] = gainFromPercent(volume0to100);
 		this.#trackMuted[kind] = muted;
 		this.#applyGains();
 	}
@@ -302,7 +303,8 @@ export class AudioTimelineEngine {
 		const now = this.#ctx.currentTime;
 		const outDur = this.#outputDuration;
 		for (const { spec, buffer, gain } of this.#music) {
-			const play = spec.durationSec > 0 ? spec.durationSec : Math.max(0, outDur - spec.startOutputSec);
+			const play =
+				spec.durationSec > 0 ? spec.durationSec : Math.max(0, outDur - spec.startOutputSec);
 			if (play <= 0) continue;
 			const clipEnd = spec.startOutputSec + play;
 			if (from >= clipEnd) {
@@ -480,7 +482,7 @@ export class AudioTimelineEngine {
 
 	/** Start (or restart) playback from OUTPUT time `fromOutputTime`. */
 	async play(regions: ReadonlyArray<Region>, fromOutputTime: number): Promise<void> {
-		if (this.#ctx.state === 'suspended') {
+		if (this.#ctx.state === "suspended") {
 			try {
 				await this.#ctx.resume();
 			} catch {
@@ -520,7 +522,7 @@ export class AudioTimelineEngine {
 	 */
 	get outputLatencySec(): number {
 		const ctx = this.#ctx as AudioContext & { outputLatency?: number };
-		if (typeof ctx.outputLatency === 'number' && Number.isFinite(ctx.outputLatency)) {
+		if (typeof ctx.outputLatency === "number" && Number.isFinite(ctx.outputLatency)) {
 			return ctx.outputLatency;
 		}
 		return Number.isFinite(ctx.baseLatency) ? ctx.baseLatency : 0;
