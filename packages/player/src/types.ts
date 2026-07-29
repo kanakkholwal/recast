@@ -119,9 +119,13 @@ export type RecastPlayerProps = {
 	paused?: boolean | null;
 	markers?: RecastPlayerMarker[];
 	controls?: Partial<RecastPlayerControls>;
+	/**
+	 * Watermark overlay. Off by default — pass `RECAST_BRANDING` (or a partial
+	 * merged over it) only where the viewer needs telling whose player this is.
+	 */
+	branding?: RecastPlayerBranding | null;
 	/** Media-chrome hotkeys plus its built-in `?` shortcuts dialog. */
 	keyboardShortcuts?: boolean;
-	branding?: RecastPlayerBranding | null;
 	aspectRatio?: number | string | null;
 	/**
 	 * Seconds of pointer inactivity before the control bar auto-hides during

@@ -44,7 +44,13 @@ import {
 	type TranscriptWord,
 } from "@recast/captions";
 import CaptionBox from "@recast/captions/box";
-import { EngagementTracker, markerLeftPct, resolveDownloadPlan, volumeLevel } from "./player.logic";
+import {
+	EngagementTracker,
+	markerLeftPct,
+	RECAST_BRANDING,
+	resolveDownloadPlan,
+	volumeLevel,
+} from "./player.logic";
 
 // Minimal by default: play, time, then speed / volume / fullscreen. The +-10s
 // jog buttons and PiP are opt-in — the scrubber covers the same intent and a
@@ -58,16 +64,6 @@ const DEFAULT_CONTROLS: RecastPlayerControls = {
 	captions: true,
 	pip: false,
 	fullscreen: true,
-};
-
-const DEFAULT_BRANDING_SRC = "/logo.svg";
-const DEFAULT_BRANDING: RecastPlayerBranding = {
-	src: DEFAULT_BRANDING_SRC,
-	alt: "Recast",
-	name: "Recast",
-	width: 118,
-	height: 28,
-	className: "",
 };
 
 const PLAYBACK_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
@@ -91,7 +87,7 @@ let {
 	markers = [],
 	controls = {},
 	keyboardShortcuts = true,
-	branding = DEFAULT_BRANDING,
+	branding = null,
 	aspectRatio = null,
 	autohide = null,
 	objectFit = "contain",
@@ -224,7 +220,7 @@ $effect(() => {
 
 const resolvedBranding = $derived.by(() => {
 	if (branding === null) return null;
-	return { ...DEFAULT_BRANDING, ...branding };
+	return { ...RECAST_BRANDING, ...branding };
 });
 const resolvedAspectRatio = $derived.by(() => {
 	if (typeof aspectRatio === "number" && aspectRatio > 0) return `${aspectRatio}`;

@@ -8,6 +8,7 @@
  */
 
 export { default as RecastPlayer } from "./RecastPlayer.svelte";
+export { RECAST_BRANDING } from "./player.logic";
 export type {
 	RecastPlayerProps,
 	RecastPlayerEngagement,

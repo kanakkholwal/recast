@@ -41,7 +41,6 @@ import {
 	BadgeCheck,
 	Check,
 	Clock,
-	Code,
 	Copy,
 	Download,
 	ExternalLink,
@@ -72,6 +71,7 @@ import {
 	X,
 } from "@recast/icons";
 import {
+	RECAST_BRANDING,
 	RecastPlayer,
 	type RecastPlayerActionEvent,
 	type RecastPlayerApi,
@@ -92,7 +92,6 @@ import { Tween } from "svelte/motion";
 import { fade, fly, scale, slide } from "svelte/transition";
 import {
 	buildCommentMarkers,
-	buildEmbedCode,
 	toLegacyVisibility,
 	withTimeParam,
 	type LegacyVisibility,
@@ -108,6 +107,10 @@ const access = $derived(data.access);
 const okAccess = $derived(access.ok ? access : null);
 const deniedAccess = $derived(access.ok ? null : access);
 const recast = $derived(okAccess?.recast);
+
+// Watermark only for logged-out viewers — anyone signed in already knows what
+// Recast is. Custom/removable branding is a paid-plan concern for later.
+const playerBranding = $derived(data.signedIn ? null : RECAST_BRANDING);
 
 // Caption track for the player, when this recast has a captions sidecar.
 const captionTracks = $derived<RecastPlayerTrack[]>(
@@ -866,12 +869,6 @@ async function copyLinkAtCurrentTime() {
 	await writeClipboard(href, t ? `Link copied at ${formatTime(currentTime)}.` : "Link copied.");
 }
 
-async function copyEmbedCode() {
-	if (!browser) return;
-	const url = new URL(window.location.href);
-	await writeClipboard(buildEmbedCode(url.toString()), "Embed code copied.");
-}
-
 // ── Viewer identity ──────────────────────────────────────────────
 type SessionShape = {
 	data: {
@@ -1283,10 +1280,6 @@ $effect(() => {
 								Copy link at
 								<span class="ml-auto font-mono text-[10px] tabular-nums text-foreground">{formatTime(currentTime)}</span>
 							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={copyEmbedCode} class="gap-2.5 hidden">
-								<Code class="size-3.5 text-muted-foreground" />
-								Copy embed code
-							</DropdownMenu.Item>
 							{#if canManage}
 								<!-- Downloading the original master is an owner/admin
 								     action only — viewers stream but can't pull the file. -->
@@ -1481,6 +1474,7 @@ $effect(() => {
 								aspectRatio={playerAspect}
 								tracks={captionTracks}
 								markers={commentMarkers}
+								branding={playerBranding}
 								onengagement={onEngagement}
 								onaction={onPlayerAction}
 							/>
