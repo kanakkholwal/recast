@@ -187,9 +187,7 @@ export function getCaptureIntent(): Promise<CaptureIntentState> {
 }
 
 /** Replace the staged capture intent (broadcasts `capture-intent:changed`). */
-export function setCaptureIntent(
-	intent: CaptureIntentState,
-): Promise<CaptureIntentState> {
+export function setCaptureIntent(intent: CaptureIntentState): Promise<CaptureIntentState> {
 	return invoke<CaptureIntentState>("set_capture_intent", { intent });
 }
 
@@ -515,14 +513,14 @@ export function listenToAllExportState(
  * `export-state` events. Resolves once the job is durably queued; the export runs
  * in the background and survives closing this editor.
  */
-export function enqueueExport(req: EnqueueExportRequest): Promise<void> {
+export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 	analytics.capture("export_started", {
 		format: req.format,
 		quality: req.quality,
 		speed: req.speed ?? "balanced",
 		fps: req.fps ?? "source",
 	});
-	return invoke("enqueue_export", {
+	return invoke<string[]>("enqueue_export", {
 		request: {
 			exportId: req.exportId,
 			inputPath: req.inputPath,
@@ -826,54 +824,54 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 	return invoke<T>("fetch_extension_registry", { indexUrl });
 }
 
- export async function launchRecordingPanel(intent?: CaptureIntent) {
-    const existing = await WebviewWindow.getByLabel("recording-panel");
-    if (existing) {
-      await existing.setFocus();
-      // The window is already mounted, so a query param wouldn't re-trigger;
-      // hand the intent over on an event the panel listens for.
-      if (intent) {
-        const { emit } = await import("@tauri-apps/api/event");
-        await emit("panel-capture-intent", { intent });
-      }
-      return;
-    }
+export async function launchRecordingPanel(intent?: CaptureIntent) {
+	const existing = await WebviewWindow.getByLabel("recording-panel");
+	if (existing) {
+		await existing.setFocus();
+		// The window is already mounted, so a query param wouldn't re-trigger;
+		// hand the intent over on an event the panel listens for.
+		if (intent) {
+			const { emit } = await import("@tauri-apps/api/event");
+			await emit("panel-capture-intent", { intent });
+		}
+		return;
+	}
 
-    // Window is sized larger than the visible panel so the CSS drop shadow
-    // has room to paint without being clipped by the window bounds.
-    const panelWidth = 520;
-    const panelHeight = 72;
-    const panelWin = new WebviewWindow("recording-panel", {
-      url: intent ? `/panel?intent=${intent}` : "/panel",
-      title: "Recast Panel",
-      width: panelWidth,
-      height: panelHeight,
-      decorations: false,
-      transparent: true,
-	  shadow: false,
-      alwaysOnTop: !isLinux(),
-      resizable: false,
-      skipTaskbar: true,
-      x: Math.round(window.screen.availWidth / 2 - panelWidth / 2),
-      y: window.screen.availHeight - panelHeight - 40,
-    });
+	// Window is sized larger than the visible panel so the CSS drop shadow
+	// has room to paint without being clipped by the window bounds.
+	const panelWidth = 520;
+	const panelHeight = 72;
+	const panelWin = new WebviewWindow("recording-panel", {
+		url: intent ? `/panel?intent=${intent}` : "/panel",
+		title: "Recast Panel",
+		width: panelWidth,
+		height: panelHeight,
+		decorations: false,
+		transparent: true,
+		shadow: false,
+		alwaysOnTop: !isLinux(),
+		resizable: false,
+		skipTaskbar: true,
+		x: Math.round(window.screen.availWidth / 2 - panelWidth / 2),
+		y: window.screen.availHeight - panelHeight - 40,
+	});
 
-    // Keep Recast's own controls out of the recorded video. Gated on the
-    // user setting (default on); exclusion must run on `tauri://created`, once
-    // the native window handle exists. No-op on Linux (no OS support).
-    panelWin.once("tauri://created", async () => {
-      try {
-        if (await getHidePanelFromCapture()) {
-          await excludeWindowFromCapture("recording-panel");
-        }
-      } catch (err) {
-        // Non-fatal: the panel just won't be hidden from the capture.
-        console.warn("recording panel capture-exclusion failed:", err);
-      }
-    });
+	// Keep Recast's own controls out of the recorded video. Gated on the
+	// user setting (default on); exclusion must run on `tauri://created`, once
+	// the native window handle exists. No-op on Linux (no OS support).
+	panelWin.once("tauri://created", async () => {
+		try {
+			if (await getHidePanelFromCapture()) {
+				await excludeWindowFromCapture("recording-panel");
+			}
+		} catch (err) {
+			// Non-fatal: the panel just won't be hidden from the capture.
+			console.warn("recording panel capture-exclusion failed:", err);
+		}
+	});
 
-    panelWin.once("tauri://error", (e) => console.error(e));
-  }
+	panelWin.once("tauri://error", (e) => console.error(e));
+}
 
 // Floating webcam preview window.
 //
@@ -882,50 +880,47 @@ export function fetchExtensionRegistry<T = unknown>(indexUrl: string): Promise<T
 // (Windows: SetWindowDisplayAffinity WDA_EXCLUDEFROMCAPTURE) runs on
 // `tauri://created`; any earlier and the HWND isn't reachable yet.
 export async function openCameraPreviewWindow() {
-  const existing = await WebviewWindow.getByLabel("camera-preview");
-  if (existing) {
-    // Re-apply the exclusion in case the window was reused after a crash
-    // or stop/restart cycle that dropped the affinity.
-    excludeWindowFromCapture("camera-preview").catch(
-      (err) => console.warn("camera preview exclusion (existing) failed:", err),
-    );
-    await existing.setFocus();
-    return;
-  }
+	const existing = await WebviewWindow.getByLabel("camera-preview");
+	if (existing) {
+		// Re-apply the exclusion in case the window was reused after a crash
+		// or stop/restart cycle that dropped the affinity.
+		excludeWindowFromCapture("camera-preview").catch((err) =>
+			console.warn("camera preview exclusion (existing) failed:", err),
+		);
+		await existing.setFocus();
+		return;
+	}
 
-  const previewSize = 320;
-  // The window is the square video bubble plus a control strip below it. Keep
-  // this strip height in sync with `CONTROL_BAR_HEIGHT` in
-  // `routes/camera-preview/+page.svelte` so the window opens at the right size
-  // and doesn't visibly resize itself once the aspect lock kicks in on mount.
-  const CONTROL_BAR_HEIGHT = 40;
-  const previewWin = new WebviewWindow("camera-preview", {
-    url: "/camera-preview",
-    title: "Camera",
-    width: previewSize,
-    height: previewSize + CONTROL_BAR_HEIGHT,
-    decorations: false,
-    transparent: true,
-    shadow: false,
-    alwaysOnTop: !isLinux(),
-    resizable: true,
-    skipTaskbar: true,
-    x: Math.round(window.screen.availWidth - previewSize - 40),
-    y: Math.round(window.screen.availHeight - previewSize - CONTROL_BAR_HEIGHT - 40),
-  });
+	const previewSize = 320;
+	// The window is the square video bubble plus a control strip below it. Keep
+	// this strip height in sync with `CONTROL_BAR_HEIGHT` in
+	// `routes/camera-preview/+page.svelte` so the window opens at the right size
+	// and doesn't visibly resize itself once the aspect lock kicks in on mount.
+	const CONTROL_BAR_HEIGHT = 40;
+	const previewWin = new WebviewWindow("camera-preview", {
+		url: "/camera-preview",
+		title: "Camera",
+		width: previewSize,
+		height: previewSize + CONTROL_BAR_HEIGHT,
+		decorations: false,
+		transparent: true,
+		shadow: false,
+		alwaysOnTop: !isLinux(),
+		resizable: true,
+		skipTaskbar: true,
+		x: Math.round(window.screen.availWidth - previewSize - 40),
+		y: Math.round(window.screen.availHeight - previewSize - CONTROL_BAR_HEIGHT - 40),
+	});
 
-  previewWin.once("tauri://error", (e) => console.error(e));
-  previewWin.once("tauri://created", async () => {
-    try {
-      await excludeWindowFromCapture("camera-preview");
-    } catch (err) {
-      // Non-fatal, but the preview's pixels will leak into screen captures.
-      console.warn(
-        "Failed to exclude camera-preview from screen capture:",
-        err,
-      );
-    }
-  });
+	previewWin.once("tauri://error", (e) => console.error(e));
+	previewWin.once("tauri://created", async () => {
+		try {
+			await excludeWindowFromCapture("camera-preview");
+		} catch (err) {
+			// Non-fatal, but the preview's pixels will leak into screen captures.
+			console.warn("Failed to exclude camera-preview from screen capture:", err);
+		}
+	});
 }
 
 // System tray, diagnostics & misc commands.

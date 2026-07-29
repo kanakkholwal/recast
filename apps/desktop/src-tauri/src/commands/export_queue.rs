@@ -218,7 +218,14 @@ async fn run_one(app: &AppHandle, job: ClaimedJob) {
     };
     let sidecar = request.caption_sidecar.clone();
 
-    match crate::commands::editor::run_export_job(app.clone(), request).await {
+    // Browser-rendered payloads take the mux-only path (`-c:v copy` + audio);
+    // everything else runs the classic Rust filter_complex compositor.
+    let run_result = if let Some(browser_video) = request.browser_video_path.clone() {
+        crate::commands::editor::run_mux_job(app.clone(), request, browser_video).await
+    } else {
+        crate::commands::editor::run_export_job(app.clone(), request).await
+    };
+    match run_result {
         Ok(output_path) => {
             if let Some(sc) = sidecar {
                 write_sidecar(&output_path, &sc);
@@ -327,9 +334,9 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
 #[tauri::command]
 pub async fn enqueue_export(
     app: AppHandle,
-    request: ExportRequest,
+    mut request: ExportRequest,
     state: State<'_, AppState>,
-) -> AppResult<()> {
+) -> AppResult<Vec<String>> {
     // Fail-fast validation: probe the source's metadata on a blocking worker,
     // run `validate_render_state` against it, and reject bad payloads BEFORE
     // we serialize / persist. The cost is one extra ffprobe spawn per
@@ -357,6 +364,19 @@ pub async fn enqueue_export(
     .await
     .map_err(|e| AppError::msg(format!("probe source join error: {e}")))?
     .map_err(AppError::msg)?;
+    // Auto-repair before validating: an older project can carry a wall-clock
+    // trim_end slightly past the real (CFR-encoded) video, which the strict
+    // validator would otherwise reject. Clamp to the probed duration + tell the
+    // caller so it can surface a "verify this" toast.
+    let repairs =
+        crate::commands::repair_render_state(&mut request.render_state, source_meta.duration);
+    if !repairs.is_empty() {
+        log::warn!(
+            "enqueue_export[{}] auto-repaired render state: {:?}",
+            request.export_id,
+            repairs
+        );
+    }
     if let Err(issues) =
         crate::commands::validate_render_state(&request.render_state, source_meta.duration)
     {
@@ -403,7 +423,7 @@ pub async fn enqueue_export(
 
     state.export_wake.notify_one();
     emit_jobs_changed(&app);
-    Ok(())
+    Ok(repairs)
 }
 
 /// The whole queue (queued, running, and undismissed terminal jobs), oldest first.

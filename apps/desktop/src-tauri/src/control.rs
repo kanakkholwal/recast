@@ -1500,6 +1500,7 @@ fn dispatch(app: &tauri::AppHandle, method: &str, params: Value) -> Result<Value
                 fps,
                 burn_captions,
                 caption_sidecar,
+                browser_video_path: None,
             };
             tauri::async_runtime::block_on(crate::commands::enqueue_export(
                 app.clone(),

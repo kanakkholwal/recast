@@ -626,6 +626,42 @@ const VALIDATION_EPS: f64 = 1e-4;
 ///
 /// Pure (no I/O, no AppHandle, no State). Costs ~O(n) over the render state's
 /// collections; safe to call on a control-socket connection's thread without
+/// Clamp a render state's trim window and cuts to the real source duration,
+/// repairing the common `trim_end_exceeds_source` case: recordings saved before
+/// the wall-clock→CFR fix baked a slightly-too-long `trim_end` into their edits
+/// (see project/mod.rs), so exporting an old project fails validation. Pure;
+/// mutates `s` in place and returns human-readable descriptions of every change
+/// (empty = nothing needed repair). Run BEFORE `validate_render_state`.
+pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<String> {
+    let mut repairs = Vec::new();
+    if !(source_duration > 0.0) {
+        return repairs;
+    }
+    if s.trim_end.is_finite() && s.trim_end > source_duration + VALIDATION_EPS {
+        s.trim_end = source_duration;
+        repairs.push("Trim end clamped to the video length".to_string());
+    }
+    if s.trim_start.is_finite() && s.trim_start > source_duration {
+        s.trim_start = 0.0;
+        repairs.push("Trim start reset into range".to_string());
+    }
+    let before = s.cuts.len();
+    s.cuts.retain(|c| {
+        c.start.is_finite() && c.end.is_finite() && c.start < source_duration + VALIDATION_EPS
+    });
+    let mut clamped_cut = false;
+    for c in s.cuts.iter_mut() {
+        if c.end > source_duration + VALIDATION_EPS {
+            c.end = source_duration;
+            clamped_cut = true;
+        }
+    }
+    if before != s.cuts.len() || clamped_cut {
+        repairs.push("Cuts past the video end were trimmed".to_string());
+    }
+    repairs
+}
+
 /// `spawn_blocking`.
 pub fn validate_render_state(
     s: &RenderState,
@@ -1254,6 +1290,51 @@ mod validate_tests {
         assert!(err.is_ok(), "default state should be valid: {err:?}");
     }
 
+    #[test]
+    fn repair_clamps_trim_end_past_source_so_validation_passes() {
+        // Pre-fix regression: a wall-clock trim_end past the CFR-encoded video
+        // (27.102 session → 26.625 of video) is rejected by the validator.
+        let mut st = RenderState {
+            trim_start: 0.0,
+            trim_end: 27.102,
+            ..RenderState::default()
+        };
+        assert_eq!(
+            reason(&validate_render_state(&st, 26.625).unwrap_err(), "trimEnd"),
+            Some("trim_end_exceeds_source"),
+        );
+        // Repair clamps it to the real duration and reports the change; the same
+        // state now validates.
+        let repairs = repair_render_state(&mut st, 26.625);
+        assert_eq!(st.trim_end, 26.625);
+        assert!(!repairs.is_empty());
+        assert!(validate_render_state(&st, 26.625).is_ok());
+    }
+
+    #[test]
+    fn repair_is_a_noop_within_range() {
+        let mut st = RenderState {
+            trim_start: 0.0,
+            trim_end: 20.0,
+            ..RenderState::default()
+        };
+        assert!(repair_render_state(&mut st, 30.0).is_empty());
+        assert_eq!(st.trim_end, 20.0);
+    }
+
+    #[test]
+    fn repair_drops_cuts_past_source() {
+        let mut st = RenderState {
+            trim_start: 0.0,
+            trim_end: 30.0,
+            cuts: vec![cut(5.0, 8.0), cut(40.0, 45.0)],
+            ..RenderState::default()
+        };
+        let repairs = repair_render_state(&mut st, 30.0);
+        assert_eq!(st.cuts.len(), 1); // the 40..45 cut is entirely past the video
+        assert!(repairs.iter().any(|r| r.contains("Cuts")));
+    }
+
     fn reason<'a>(issues: &'a [ValidationIssue], field: &str) -> Option<&'a str> {
         issues
             .iter()
@@ -1650,6 +1731,208 @@ impl Drop for CancelTokenGuard {
         if let Some(state) = self.app.try_state::<AppState>() {
             state.export_cancel.lock().remove(&self.export_id);
         }
+    }
+}
+
+/// Mux a browser-rendered video (already composited AND warped to the output
+/// timeline) with the export's audio. Video is copied (`-c:v copy`); only the
+/// audio graph is (re)built here — the browser owns all compositing (Phase 4).
+/// Reuses run_export_job's queue/cancel/progress lifecycle and the shared audio
+/// helpers, which are index-parametric so the browser video can sit at input 0.
+pub(crate) async fn run_mux_job(
+    app: AppHandle,
+    request: ExportRequest,
+    browser_video_path: String,
+) -> AppResult<String> {
+    let state = app.state::<AppState>();
+    let export_id = request.export_id.clone();
+    let _power = state.power.lease();
+    let cancel_flag = Arc::new(AtomicBool::new(false));
+    state
+        .export_cancel
+        .lock()
+        .insert(export_id.clone(), cancel_flag.clone());
+    let _cancel_token = CancelTokenGuard {
+        app: app.clone(),
+        export_id: export_id.clone(),
+    };
+    emit_export_state(&app, ExportStateEvent::started(&export_id));
+    emit_export_state(
+        &app,
+        ExportStateEvent::preparing(&export_id, "Muxing export"),
+    );
+
+    let browser_video = PathBuf::from(&browser_video_path);
+    if !browser_video.exists() {
+        return Err("export failed: browser-rendered video not found".into());
+    }
+    let input_path = PathBuf::from(&request.input_path);
+    let project = open_project_if_needed(&input_path)?;
+    let source_video = project
+        .as_ref()
+        .map(|value| value.recording_path.clone())
+        .unwrap_or_else(|| input_path.clone());
+
+    let graph = RenderGraph::from_state(&request.render_state);
+    let (trim_start, trim_end) = graph.trim_range();
+    let duration = (trim_end - trim_start).max(0.0);
+
+    // Input 0 = the browser video (video only); audio inputs follow, indexed so
+    // append_audio_to_complex references the right streams.
+    let mut args: Vec<String> = vec![
+        "-y".to_string(),
+        "-i".to_string(),
+        browser_video.to_string_lossy().to_string(),
+    ];
+    let audio_detached = request
+        .render_state
+        .music_clips
+        .iter()
+        .any(|c| c.role == crate::render::node_types::AudioClipRole::Voice);
+    let mut audio_input_indices: Vec<(usize, AudioKind)> = Vec::new();
+    let mut next_input = 1usize;
+    if request.format != "gif" && has_audio(&source_video) && !audio_detached {
+        args.extend(["-i".to_string(), source_video.to_string_lossy().to_string()]);
+        audio_input_indices.push((next_input, AudioKind::Source));
+        next_input += 1;
+    }
+    if request.format != "gif" {
+        if let Some(project) = project.as_ref().filter(|_| !audio_detached) {
+            for (path, kind) in [
+                (&project.audio_path, AudioKind::System),
+                (&project.microphone_path, AudioKind::Mic),
+            ] {
+                let Some(path) = path.as_ref().filter(|p| p.exists()) else {
+                    continue;
+                };
+                args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
+                audio_input_indices.push((next_input, kind));
+                next_input += 1;
+            }
+        }
+    }
+    let mut music_inputs: Vec<(usize, &crate::render::node_types::AudioClip)> = Vec::new();
+    if request.format != "gif" {
+        for clip in &request.render_state.music_clips {
+            if clip.muted || clip.gain <= 0.0 {
+                continue;
+            }
+            let path = clip.source.asset_path();
+            if path.is_empty() || !Path::new(path).exists() {
+                continue;
+            }
+            if clip.looping {
+                args.extend(["-stream_loop".to_string(), "-1".to_string()]);
+            }
+            args.extend(["-i".to_string(), path.to_string()]);
+            music_inputs.push((next_input, clip));
+            next_input += 1;
+        }
+    }
+
+    // Audio graph: build the source/system/mic mix, warp it to the output timeline
+    // (cuts + speed — the browser video is ALREADY warped, so only audio needs it),
+    // then mix in the music clips.
+    let mut filter_complex: Option<String> = None;
+    let mut audio_map = append_audio_to_complex(
+        None,
+        &audio_input_indices,
+        &request.render_state.audio_settings,
+        trim_start,
+        duration,
+    )
+    .map(|(complex, map)| {
+        filter_complex = Some(complex);
+        map
+    });
+    let export_cuts = collect_export_cuts(&request.render_state, trim_start, trim_end);
+    let speed_segments = build_speed_segments(
+        duration,
+        &export_cuts,
+        &request.render_state.split_points,
+        &request.render_state.segment_speeds,
+        trim_start,
+    );
+    let speed_active = has_speed_change(&speed_segments);
+    crate::commands::export::cuts_speed::append_audio_cut_speed(
+        &mut filter_complex,
+        &mut audio_map,
+        &export_cuts,
+        &speed_segments,
+        speed_active,
+    );
+    let out_dur = warped_output_duration(&speed_segments);
+    if !music_inputs.is_empty() {
+        if let Some((seg, map)) = build_music_stage(&music_inputs, audio_map.as_deref(), out_dur) {
+            if !seg.is_empty() {
+                filter_complex = Some(match filter_complex.take() {
+                    Some(fc) => format!("{fc};{seg}"),
+                    None => seg,
+                });
+            }
+            audio_map = Some(map);
+        }
+    }
+
+    let output_dir = get_active_output_dir(&state).join("exports");
+    let _ = std::fs::create_dir_all(&output_dir);
+    let source_stem = input_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Recast_export".to_string());
+    let output_path = super::unique_path(&output_dir, &source_stem, "mp4");
+
+    if let Some(ref fc) = filter_complex {
+        args.extend(["-filter_complex".to_string(), fc.clone()]);
+    }
+    args.extend([
+        "-map".to_string(),
+        "0:v:0".to_string(),
+        "-c:v".to_string(),
+        "copy".to_string(),
+    ]);
+    if let Some(ref amap) = audio_map {
+        args.extend([
+            "-map".to_string(),
+            amap.clone(),
+            "-c:a".to_string(),
+            "aac".to_string(),
+            "-b:a".to_string(),
+            "192k".to_string(),
+        ]);
+    }
+    args.extend([
+        "-movflags".to_string(),
+        "+faststart".to_string(),
+        output_path.to_string_lossy().to_string(),
+    ]);
+
+    let expected_output_secs = if out_dur > 0.0 { out_dur } else { duration };
+    let output_path_str = output_path.to_string_lossy().to_string();
+    let progress_band = ProgressBand {
+        offset: 0.0,
+        scale: 1.0,
+    };
+    let app_for_task = app.clone();
+    let export_id_for_task = export_id.clone();
+    let task_result = tokio::task::spawn_blocking(move || {
+        run_encode(
+            args,
+            app_for_task,
+            export_id_for_task,
+            cancel_flag,
+            output_path_str,
+            expected_output_secs,
+            progress_band,
+        )
+    })
+    .await;
+
+    match task_result {
+        Ok(Ok(path)) => Ok(path),
+        Ok(Err(e)) => Err(AppError::msg(e)),
+        Err(join) => Err(AppError::msg(format!("mux task panicked: {join}"))),
     }
 }
 
