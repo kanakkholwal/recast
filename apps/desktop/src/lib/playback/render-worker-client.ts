@@ -21,6 +21,8 @@ export interface RenderWorkerClientOptions {
 	ringCapacity: number;
 	/** First presented frame means the preview has painted (hide the spinner). */
 	onPresented?: () => void;
+	/** GPU reset recovered: the caller must re-send the background image. */
+	onContextLost?: () => void;
 	onError?: (message: string) => void;
 }
 
@@ -34,10 +36,12 @@ export class RenderWorkerClient {
 	#seq = 0;
 	#presentedOnce = false;
 	#onPresented?: () => void;
+	#onContextLost?: () => void;
 	#onError?: (message: string) => void;
 
 	constructor(opts: RenderWorkerClientOptions) {
 		this.#onPresented = opts.onPresented;
+		this.#onContextLost = opts.onContextLost;
 		this.#onError = opts.onError;
 		// Opaque present: our composite fills the frame, so let the browser skip
 		// alpha blending on every present (MDN canvas-optimization guidance).
@@ -72,6 +76,13 @@ export class RenderWorkerClient {
 				break;
 			case "skipped":
 				this.#onAck();
+				break;
+			case "contextLost":
+				// The worker won't ack the in-flight render — unblock the mailbox so
+				// the next frame drives the rebuild. Background must be re-sent.
+				this.#inFlight = false;
+				this.#pending = null;
+				this.#onContextLost?.();
 				break;
 			case "error":
 				this.#onError?.(msg.message);

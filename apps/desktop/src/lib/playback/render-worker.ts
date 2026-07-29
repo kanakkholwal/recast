@@ -25,6 +25,22 @@ let bgReady = false;
 const post = (msg: FromRenderWorker, transfer: Transferable[] = []) =>
 	(self as unknown as Worker).postMessage(msg, transfer);
 
+function onContextLost(e: Event): void {
+	// GPU reset (TDR): the context and every GL object it owned are dead. Drop
+	// them so the next render rebuilds a fresh canvas/context; the ring refills
+	// from incoming frames, and the client re-sends the background (only it has it).
+	e.preventDefault();
+	ring?.dispose();
+	ring = null;
+	bgTex = null;
+	bgReady = false;
+	backend = null;
+	renderCore = null;
+	gl = null;
+	canvas = null;
+	post({ type: "contextLost" });
+}
+
 function ensureCanvas(w: number, h: number): boolean {
 	if (!gl) {
 		canvas = new OffscreenCanvas(Math.max(1, w), Math.max(1, h));
@@ -35,6 +51,7 @@ function ensureCanvas(w: number, h: number): boolean {
 		});
 		if (!ctx) return false;
 		gl = ctx;
+		canvas.addEventListener("webglcontextlost", onContextLost as EventListener);
 		backend = WebGL2Backend.create(gl);
 		renderCore = new RenderCore(backend);
 	} else if (canvas && (canvas.width !== w || canvas.height !== h)) {

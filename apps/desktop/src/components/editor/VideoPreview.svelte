@@ -265,6 +265,11 @@ function initGL() {
 					hasRenderedFrame = true;
 					if (!isReady) isReady = true;
 				},
+				onContextLost: () => {
+					hasRenderedFrame = false;
+					lastBgKey = "";
+					void loadBackgroundIfNeeded();
+				},
 				onError: (m) => console.error("render worker error:", m),
 			});
 			return;

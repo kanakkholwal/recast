@@ -44,6 +44,9 @@ export type FromRenderWorker =
 	| { type: "ready" }
 	| { type: "frame"; seq: number; bitmap: ImageBitmap; haveFrame: true }
 	| { type: "skipped"; seq: number }
+	// GL context lost (GPU reset): the worker tore its context/ring/bg down and
+	// rebuilds on the next render; the client must re-send the background.
+	| { type: "contextLost" }
 	| { type: "error"; message: string };
 
 /** Decode worker → render worker (over the MessageChannel port). `frame` is
