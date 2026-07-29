@@ -1,191 +1,190 @@
 <script lang="ts">
-  import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-  import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
-  import type { IconComponent } from "@recast/icons";
-  import {
-    AudioLines,
-    Blocks,
-    Captions,
-    ImageIcon,
-    Info,
-    MousePointer,
-    Pencil,
-    ScanText,
-    SquareSplitHorizontal,
-    Video,
-    Volume,
-    ZoomIn,
-  } from "@recast/icons";
-  import * as Tabs from "@recast/ui/tabs";
-  import * as Tooltip from "@recast/ui/tooltip";
-  import AnnotationsPanel from "./AnnotationsPanel.svelte";
-  import AudioPanel from "./AudioPanel.svelte";
-  import BackgroundPicker from "./BackgroundPicker.svelte";
-  import CameraPanel from "./CameraPanel.svelte";
-  import CaptionsPanel from "./CaptionsPanel.svelte";
-  import ClipPanel from "./ClipPanel.svelte";
-  import CursorPanel from "./CursorPanel.svelte";
-  import DevOcrPanel from "./DevOcrPanel.svelte";
-  import ExtensionsPanel from "./ExtensionsPanel.svelte";
-  import FocusPanel from "./FocusPanel.svelte";
-  import InfoPanel from "./InfoPanel.svelte";
-  import MusicPanel from "./MusicPanel.svelte";
+import type { IconComponent } from "@recast/icons";
+import {
+	AudioLines,
+	Blocks,
+	Captions,
+	ImageIcon,
+	Info,
+	MousePointer,
+	Pencil,
+	ScanText,
+	SquareSplitHorizontal,
+	Video,
+	Volume,
+	ZoomIn,
+} from "@recast/icons";
+import * as Tabs from "@recast/ui/tabs";
+import * as Tooltip from "@recast/ui/tooltip";
+import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
+import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
+import AnnotationsPanel from "./AnnotationsPanel.svelte";
+import AudioPanel from "./AudioPanel.svelte";
+import BackgroundPicker from "./BackgroundPicker.svelte";
+import CameraPanel from "./CameraPanel.svelte";
+import CaptionsPanel from "./CaptionsPanel.svelte";
+import ClipPanel from "./ClipPanel.svelte";
+import CursorPanel from "./CursorPanel.svelte";
+import DevOcrPanel from "./DevOcrPanel.svelte";
+import ExtensionsPanel from "./ExtensionsPanel.svelte";
+import FocusPanel from "./FocusPanel.svelte";
+import InfoPanel from "./InfoPanel.svelte";
+import MusicPanel from "./MusicPanel.svelte";
 
-  interface Props {
-    store: EditorStore;
-    /** Path to camera.mp4, or null when no camera was recorded. */
-    cameraPath?: string | null;
-  }
+interface Props {
+	store: EditorStore;
+	/** Path to camera.mp4, or null when no camera was recorded. */
+	cameraPath?: string | null;
+	/** Forwarded to FocusPanel; the editor page owns the auto-zoom run. */
+	onRegenerateAutoZoom?: () => void;
+}
 
-  // A section is one of three kinds. The rail groups by kind (thin dividers
-  // between groups) so ~9 sections read as structure, not a flat wall of icons:
-  //   composition  the whole video's look + sound (the panel's "home")
-  //   selection    properties of whatever is selected on the timeline
-  //   meta         packs + read-only info
-  type TabGroup = "composition" | "selection" | "meta";
-  type TabType = {
-    id: PanelTab;
-    label: string;
-    icon: IconComponent;
-    group: TabGroup;
-    // One line under the header, so an unlabeled icon rail still says where you are.
-    hint: string;
-  };
+// A section is one of three kinds. The rail groups by kind (thin dividers
+// between groups) so ~9 sections read as structure, not a flat wall of icons:
+//   composition  the whole video's look + sound (the panel's "home")
+//   selection    properties of whatever is selected on the timeline
+//   meta         packs + read-only info
+type TabGroup = "composition" | "selection" | "meta";
+type TabType = {
+	id: PanelTab;
+	label: string;
+	icon: IconComponent;
+	group: TabGroup;
+	// One line under the header, so an unlabeled icon rail still says where you are.
+	hint: string;
+};
 
-  // Clip/Zoom/Markup are selection-driven (the effects below force the panel to
-  // them when you select on the timeline), so a clip with no button would strand
-  // the panel; every id here has a rail button.
-  const TABS: TabType[] = [
-    {
-      id: "background",
-      label: "Background",
-      icon: ImageIcon,
-      group: "composition",
-      hint: "Wallpaper, padding, and shadow.",
-    },
-    {
-      id: "cursor",
-      label: "Cursor",
-      icon: MousePointer,
-      group: "composition",
-      hint: "Size, smoothing, and click effects.",
-    },
-    ...(CAMERA_OVERLAY_UI_ENABLED
-      ? [
-          {
-            id: "camera" as PanelTab,
-            label: "Camera",
-            icon: Video,
-            group: "composition" as TabGroup,
-            hint: "Webcam overlay position and shape.",
-          },
-        ]
-      : []),
-    {
-      id: "audio",
-      label: "Audio",
-      icon: Volume,
-      group: "composition",
-      hint: "Volume and mute.",
-    },
-    {
-      id: "music",
-      label: "Music",
-      icon: AudioLines,
-      group: "composition",
-      hint: "Background music and voiceover.",
-    },
-    {
-      id: "captions",
-      label: "Captions",
-      icon: Captions,
-      group: "composition",
-      hint: "Transcribe and style subtitles.",
-    },
-    {
-      id: "clip",
-      label: "Clip",
-      icon: SquareSplitHorizontal,
-      group: "selection",
-      hint: "Speed of the selected clip.",
-    },
-    {
-      id: "focus",
-      label: "Zoom",
-      icon: ZoomIn,
-      group: "selection",
-      hint: "Punch-in regions that highlight the action.",
-    },
-    {
-      id: "annotations",
-      label: "Markup",
-      icon: Pencil,
-      group: "selection",
-      hint: "Arrows, boxes, text, and blur.",
-    },
-    {
-      id: "extensions",
-      label: "Extensions",
-      icon: Blocks,
-      group: "meta",
-      hint: "Installed asset packs.",
-    },
-    {
-      id: "info",
-      label: "Info",
-      icon: Info,
-      group: "meta",
-      hint: "Recording details.",
-    },
-    // Dev builds only; tree-shaken out of production by import.meta.env.DEV.
-    ...(import.meta.env.DEV
-      ? [
-          {
-            id: "dev" as PanelTab,
-            label: "Screen text",
-            icon: ScanText,
-            group: "meta" as TabGroup,
-            hint: "On-device screen text (dev).",
-          },
-        ]
-      : []),
-  ];
+// Clip/Zoom/Markup are selection-driven (the effects below force the panel to
+// them when you select on the timeline), so a clip with no button would strand
+// the panel; every id here has a rail button.
+const TABS: TabType[] = [
+	{
+		id: "background",
+		label: "Background",
+		icon: ImageIcon,
+		group: "composition",
+		hint: "Wallpaper, padding, and shadow.",
+	},
+	{
+		id: "cursor",
+		label: "Cursor",
+		icon: MousePointer,
+		group: "composition",
+		hint: "Size, smoothing, and click effects.",
+	},
+	...(CAMERA_OVERLAY_UI_ENABLED
+		? [
+				{
+					id: "camera" as PanelTab,
+					label: "Camera",
+					icon: Video,
+					group: "composition" as TabGroup,
+					hint: "Webcam overlay position and shape.",
+				},
+			]
+		: []),
+	{
+		id: "audio",
+		label: "Audio",
+		icon: Volume,
+		group: "composition",
+		hint: "Volume and mute.",
+	},
+	{
+		id: "music",
+		label: "Music",
+		icon: AudioLines,
+		group: "composition",
+		hint: "Background music and voiceover.",
+	},
+	{
+		id: "captions",
+		label: "Captions",
+		icon: Captions,
+		group: "composition",
+		hint: "Transcribe and style subtitles.",
+	},
+	{
+		id: "clip",
+		label: "Clip",
+		icon: SquareSplitHorizontal,
+		group: "selection",
+		hint: "Speed of the selected clip.",
+	},
+	{
+		id: "focus",
+		label: "Zoom",
+		icon: ZoomIn,
+		group: "selection",
+		hint: "Punch-in regions that highlight the action.",
+	},
+	{
+		id: "annotations",
+		label: "Markup",
+		icon: Pencil,
+		group: "selection",
+		hint: "Arrows, boxes, text, and blur.",
+	},
+	{
+		id: "extensions",
+		label: "Extensions",
+		icon: Blocks,
+		group: "meta",
+		hint: "Installed asset packs.",
+	},
+	{
+		id: "info",
+		label: "Info",
+		icon: Info,
+		group: "meta",
+		hint: "Recording details.",
+	},
+	// Dev builds only; tree-shaken out of production by import.meta.env.DEV.
+	...(import.meta.env.DEV
+		? [
+				{
+					id: "dev" as PanelTab,
+					label: "Screen text",
+					icon: ScanText,
+					group: "meta" as TabGroup,
+					hint: "On-device screen text (dev).",
+				},
+			]
+		: []),
+];
 
-  const GROUP_ORDER: TabGroup[] = ["composition", "selection", "meta"];
-  // Grouped + ordered for the rail; empty groups drop out so dividers stay honest.
-  const groupedTabs = GROUP_ORDER.map((g) =>
-    TABS.filter((t) => t.group === g),
-  ).filter((g) => g.length > 0);
+const GROUP_ORDER: TabGroup[] = ["composition", "selection", "meta"];
+// Grouped + ordered for the rail; empty groups drop out so dividers stay honest.
+const groupedTabs = GROUP_ORDER.map((g) => TABS.filter((t) => t.group === g)).filter(
+	(g) => g.length > 0,
+);
 
-  let { store, cameraPath = null }: Props = $props();
+let { store, cameraPath = null, onRegenerateAutoZoom }: Props = $props();
 
-  // Switch to Clip when a clip/segment is selected from the timeline.
-  $effect(() => {
-    if (store.selectedClipStart !== null) {
-      store.activePanel = "clip";
-    }
-  });
+// Switch to Clip when a clip/segment is selected from the timeline.
+$effect(() => {
+	if (store.selectedClipStart !== null) {
+		store.activePanel = "clip";
+	}
+});
 
-  // Switch to Focus when a zoom region is selected from the timeline.
-  $effect(() => {
-    if (store.selectedZoomRegionId) {
-      store.activePanel = "focus";
-    }
-  });
+// Switch to Focus when a zoom region is selected from the timeline.
+$effect(() => {
+	if (store.selectedZoomRegionId) {
+		store.activePanel = "focus";
+	}
+});
 
-  // Switch to Annotations when one is selected or a tool is active.
-  $effect(() => {
-    if (store.selectedAnnotationId || store.annotationTool) {
-      store.activePanel = "annotations";
-    }
-  });
+// Switch to Annotations when one is selected or a tool is active.
+$effect(() => {
+	if (store.selectedAnnotationId || store.annotationTool) {
+		store.activePanel = "annotations";
+	}
+});
 
-  const activeTab = $derived(
-    TABS.find((t) => t.id === store.activePanel) ?? TABS[0],
-  );
+const activeTab = $derived(TABS.find((t) => t.id === store.activePanel) ?? TABS[0]);
 
-  const tabContentClass =
-    "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
+const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
 </script>
 
 <!-- One icon-per-section rail (fixed column, never reflows) beside the content.
@@ -255,7 +254,7 @@
       {:else if store.activePanel === "background"}
         <BackgroundPicker {store} />
       {:else if store.activePanel === "focus"}
-        <FocusPanel {store} />
+        <FocusPanel {store} {onRegenerateAutoZoom} />
       {:else if store.activePanel === "annotations"}
         <AnnotationsPanel {store} />
       {:else if store.activePanel === "cursor"}

@@ -24,8 +24,12 @@ import {
 	type CaptionStyle,
 	type TranscriptWord,
 } from "@recast/captions";
-import { activeClippedSegment, clipWordsToSpan } from "$lib/captions/clip-with-cuts";
-import { spanAtOriginal } from "$lib/timeline/time-map";
+import {
+	activeClippedSegment,
+	captionSpanAt,
+	clipWordsToSpan,
+	keptCaptionSpans,
+} from "$lib/captions/clip-with-cuts";
 import type { Transcript } from "$lib/ipc";
 import type { TimeMap } from "$lib/timeline/time-map";
 
@@ -72,7 +76,7 @@ export function resolveCaptionView(
 	t: number,
 ): CaptionView | null {
 	if (!transcript || !style.enabled) return null;
-	const span = spanAtOriginal(timeMap, t);
+	const span = captionSpanAt(keptCaptionSpans(timeMap), t);
 	if (!span) return null;
 	const clipped = activeClippedSegment(transcript.segments, span, t);
 	if (!clipped) return null;

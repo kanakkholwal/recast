@@ -1,153 +1,177 @@
 <script lang="ts">
-  import {
-    EASE,
-    easingEquals,
-    type Easing,
-  } from "$lib/easing/cubic-bezier";
-  import { registry } from "$lib/registry";
-  import { clockCentis as fmtTime } from "$lib/format/time";
-  import {
-    computeNewZoomBounds,
-    regionMaxRamp,
-    scaleAt,
-    sparklinePath,
-  } from "./focus-panel.logic";
-  import {
-    DEFAULT_ZOOM_CENTER,
-    DEFAULT_ZOOM_RAMP,
-    type EditorStore,
-    type ZoomRegion,
-  } from "$lib/stores/editor-store.svelte";
-  import { resolveZoomCenter } from "$lib/zoom/auto-apply";
-  import {
-    AiBrain,
-    AiWand,
-    Clock,
-    Copy,
-    Crosshair,
-    Eye,
-    EyeOff,
-    MoveHorizontal,
-    MoveVertical,
-    Plus,
-    Sparkles,
-    TrendingDown,
-    TrendingUp,
-    Trash2,
-    Wind,
-    ZoomIn,
-  } from "@recast/icons";
-  import { motionDuration } from "$lib/motion.svelte";
-  import { Button } from "@recast/ui/button";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cn } from "@recast/ui/utils";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
-  import BezierEditor from "../_components/BezierEditor.svelte";
-  import InspectorHint from "../InspectorHint.svelte";
-  import PanelSection from "./PanelSection.svelte";
+import {
+	AiWand,
+	Clock,
+	Copy,
+	Crosshair,
+	Eye,
+	EyeOff,
+	MoveHorizontal,
+	MoveVertical,
+	Plus,
+	Sparkles,
+	Trash2,
+	TrendingDown,
+	TrendingUp,
+	TriangleAlert,
+	Wind,
+	ZoomIn,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { EASE, type Easing, easingEquals } from "$lib/easing/cubic-bezier";
+import { clockCentis as fmtTime } from "$lib/format/time";
+import { motionDuration } from "$lib/motion.svelte";
+import { registry } from "$lib/registry";
+import {
+	DEFAULT_ZOOM_CENTER,
+	DEFAULT_ZOOM_RAMP,
+	type EditorStore,
+	type ZoomRegion,
+} from "$lib/stores/editor-store.svelte";
+import { resolveZoomCenter } from "$lib/zoom/auto-apply";
+import { overlappingZoomIds } from "$lib/zoom/resolve";
+import BezierEditor from "../_components/BezierEditor.svelte";
+import InspectorHint from "../InspectorHint.svelte";
+import { computeNewZoomBounds, regionMaxRamp, scaleAt, sparklinePath } from "./focus-panel.logic";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+	/** Regenerate auto-zoom regions from cursor activity. Owned by the editor page. */
+	onRegenerateAutoZoom?: () => void;
+}
 
-  let { store }: Props = $props();
+let { store, onRegenerateAutoZoom }: Props = $props();
 
-  // Built-in + extension easing presets, from the registry.
-  const easingPresets = $derived(
-    registry
-      .list("easing")
-      .map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
-  );
+// Built-in + extension easing presets, from the registry.
+const easingPresets = $derived(
+	registry.list("easing").map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
+);
 
-  const selected = $derived<ZoomRegion | null>(
-    store.zoomRegions.find((r) => r.id === store.selectedZoomRegionId) ?? null,
-  );
+const selected = $derived<ZoomRegion | null>(
+	store.zoomRegions.find((r) => r.id === store.selectedZoomRegionId) ?? null,
+);
 
-  // Listed in timeline order (by start time) so the panel scans the same way the
-  // timeline reads, left to right, and numbered so a row correlates with the
-  // "Region N" detail header.
-  const orderedRegions = $derived(
-    [...store.zoomRegions].sort((a, b) => a.start - b.start),
-  );
-  const selectedIndex = $derived(
-    selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
-  );
+// Listed in timeline order (by start time) so the panel scans the same way the
+// timeline reads, left to right, and numbered so a row correlates with the
+// "Region N" detail header.
+const orderedRegions = $derived([...store.zoomRegions].sort((a, b) => a.start - b.start));
+const selectedIndex = $derived(
+	selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
+);
 
-  // Which ramp the Custom-curves editor targets (one graph at a time).
-  let customCurve = $state<"in" | "out">("in");
+// Which ramp the Custom-curves editor targets (one graph at a time).
+let customCurve = $state<"in" | "out">("in");
 
-  function addRegion() {
-    const bounds = computeNewZoomBounds(
-      store.metadata?.duration ?? 0,
-      store.trimStart,
-      store.trimEnd,
-      store.currentTime,
-    );
-    if (!bounds) return;
-    // Zoom toward where the cursor actually was, not dead-centre.
-    const w = store.metadata?.width ?? 0;
-    const h = store.metadata?.height ?? 0;
-    const center = resolveZoomCenter(store.cursorSamplesRaw, store.currentTime, w, h);
-    store.addZoomRegion(bounds.start, bounds.end, 1.8, center);
-  }
+// NLE accessors, not raw trim fields: `outPoint` resolves the legacy
+// `trimEnd === 0` sentinel, which the timeline lane already respects.
+const clipIn = $derived(store.inPoint);
+const clipOut = $derived(store.outPoint);
 
-  let hasAutoZooms = $derived(store.zoomRegions.some((r) => r.source === "auto"));
+// Overlapping regions are ambiguous in preview and the FFmpeg export SUMS
+// their zoom instead of picking one, so they get called out, not hidden.
+const overlapping = $derived(new Set(overlappingZoomIds(store.zoomRegions)));
+const outOfClip = (r: ZoomRegion) => r.start < clipIn - 1e-6 || r.end > clipOut + 1e-6;
 
-  function rerunAutoZoom() {
-    window.dispatchEvent(new CustomEvent("recast:rerun-auto-zoom"));
-  }
+// Zoom is only legible with the playhead inside the region, so selecting one
+// parks the playhead at the moment it reaches full scale.
+function focusMoment(r: ZoomRegion) {
+	const half = Math.max(0, (r.end - r.start) * 0.5);
+	return Math.min(r.end - 0.01, r.start + Math.min(Math.max(0, r.rampIn), half) + 0.01);
+}
 
-  function clearAuto() {
-    store.clearAutoZooms();
-  }
+function selectRegion(r: ZoomRegion) {
+	store.selectedZoomRegionId = r.id;
+	store.seek(focusMoment(r));
+}
 
-  function removeSelected() {
-    if (!selected) return;
-    store.removeZoomRegion(selected.id);
-  }
+const playheadInSelected = $derived(
+	selected ? store.currentTime > selected.start && store.currentTime < selected.end : true,
+);
 
-  function clearAllRegions() {
-    store.clearZoomRegions();
-  }
+function clampToClip(r: ZoomRegion) {
+	store.pushUndoState();
+	store.updateZoomRegion(r.id, {
+		start: Math.max(clipIn, Math.min(r.start, clipOut - 0.1)),
+		end: Math.min(clipOut, Math.max(r.end, clipIn + 0.1)),
+	});
+}
 
-  function updateSelected(updates: Partial<ZoomRegion>, trackUndo = false) {
-    if (!selected) return;
-    if (trackUndo) store.pushUndoState();
-    store.updateZoomRegion(selected.id, updates);
-  }
+function addRegion() {
+	const bounds = computeNewZoomBounds(
+		store.metadata?.duration ?? 0,
+		store.trimStart,
+		store.trimEnd,
+		store.currentTime,
+	);
+	if (!bounds) return;
+	// Zoom toward where the cursor actually was, not dead-centre.
+	const w = store.metadata?.width ?? 0;
+	const h = store.metadata?.height ?? 0;
+	const center = resolveZoomCenter(store.cursorSamplesRaw, store.currentTime, w, h);
+	store.addZoomRegion(bounds.start, bounds.end, 1.8, center);
+}
 
-  function resetCurves() {
-    if (!selected) return;
-    store.pushUndoState();
-    store.updateZoomRegion(selected.id, {
-      easeIn: { ...EASE },
-      easeOut: { ...EASE },
-      rampIn: DEFAULT_ZOOM_RAMP,
-      rampOut: DEFAULT_ZOOM_RAMP,
-    });
-  }
+let hasAutoZooms = $derived(store.zoomRegions.some((r) => r.source === "auto"));
 
-  // Recenters the focus point only. Motion blur is a separate control in the Zoom
-  // section, so this button (in Focus point) must not silently reset it too.
-  function recenterFocus() {
-    if (!selected) return;
-    store.pushUndoState();
-    store.updateZoomRegion(selected.id, {
-      centerX: DEFAULT_ZOOM_CENTER,
-      centerY: DEFAULT_ZOOM_CENTER,
-    });
-  }
+function rerunAutoZoom() {
+	onRegenerateAutoZoom?.();
+}
 
-  function applyPresetToBoth(preset: Easing) {
-    if (!selected) return;
-    store.pushUndoState();
-    store.updateZoomRegion(selected.id, {
-      easeIn: { ...preset },
-      easeOut: { ...preset },
-    });
-  }
+function clearAuto() {
+	store.clearAutoZooms();
+}
+
+function removeSelected() {
+	if (!selected) return;
+	store.removeZoomRegion(selected.id);
+}
+
+function clearAllRegions() {
+	store.clearZoomRegions();
+}
+
+function updateSelected(updates: Partial<ZoomRegion>, trackUndo = false) {
+	if (!selected) return;
+	if (trackUndo) store.pushUndoState();
+	store.updateZoomRegion(selected.id, updates);
+}
+
+function resetCurves() {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateZoomRegion(selected.id, {
+		easeIn: { ...EASE },
+		easeOut: { ...EASE },
+		rampIn: DEFAULT_ZOOM_RAMP,
+		rampOut: DEFAULT_ZOOM_RAMP,
+	});
+}
+
+// Recenters the focus point only. Motion blur is a separate control in the Zoom
+// section, so this button (in Focus point) must not silently reset it too.
+function recenterFocus() {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateZoomRegion(selected.id, {
+		centerX: DEFAULT_ZOOM_CENTER,
+		centerY: DEFAULT_ZOOM_CENTER,
+	});
+}
+
+function applyPresetToBoth(preset: Easing) {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateZoomRegion(selected.id, {
+		easeIn: { ...preset },
+		easeOut: { ...preset },
+	});
+}
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
@@ -184,46 +208,37 @@
       </div>
     {/snippet}
 
-    <!-- Smart Auto-Zoom, kept next to "Add" rather than below the list.
-         On-import preference + an on-demand re-run. -->
-    <div
-      class="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 px-2.5 py-2 shadow-(--shadow-craft-inset) backdrop-blur"
-    >
-      <div class="flex items-center gap-1.5">
-        <AiBrain size={12} class="shrink-0 text-primary" />
-        <span class="text-[11px] font-medium text-foreground">Smart Auto-Zoom</span>
-        <InspectorHint
-          content="Adds a focus moment at every click and settle point when a recording first opens."
+    <!-- A settings row, not an AI badge: the persistent preference reads on
+         the first line, the one-shot action sits under it. -->
+    <div class="flex flex-col gap-2 rounded-xl border border-border/60 bg-card/70 px-2.5 py-2">
+      <div class="flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <p class="text-[11px] font-medium text-foreground">Auto-zoom on import</p>
+          <p class="text-[10px] leading-snug text-muted-foreground">
+            Adds a focus moment at each click and pause in cursor movement.
+          </p>
+        </div>
+        <SegmentedToggle
+          checked={store.autoZoomEnabled}
+          size="xs"
+          aria-label="Auto-zoom on import"
+          onCheckedChange={(next) => (store.autoZoomEnabled = next)}
         />
-        <div class="ml-auto flex items-center gap-1.5">
-          <span class="text-[10px] text-muted-foreground">On import</span>
-          <SegmentedToggle
-            checked={store.autoZoomEnabled}
-            size="xs"
-            aria-label="Smart auto-zoom on import"
-            onCheckedChange={(next) => (store.autoZoomEnabled = next)}
-          />
-        </div>
       </div>
-      <div class="flex items-center justify-between gap-2">
-        <p class="text-[10px] leading-snug text-muted-foreground">
-          Generate focus moments from cursor activity.
-        </p>
-        <div class="flex shrink-0 items-center gap-1">
-          {#if hasAutoZooms}
-            <Button variant="ghost" size="xs" onclick={clearAuto}>Clear</Button>
-          {/if}
-          <Button
-            variant="secondary"
-            size="xs"
-            class="gap-1.5"
-            onclick={rerunAutoZoom}
-            disabled={!store.cursorPath}
-          >
-            <AiWand size={11} />
-            Re-run
-          </Button>
-        </div>
+      <div class="flex items-center justify-end gap-1 border-t border-border/50 pt-2">
+        {#if hasAutoZooms}
+          <Button variant="ghost" size="xs" onclick={clearAuto}>Remove generated</Button>
+        {/if}
+        <Button
+          variant="secondary"
+          size="xs"
+          class="gap-1.5"
+          onclick={rerunAutoZoom}
+          disabled={!store.cursorPath || !onRegenerateAutoZoom}
+        >
+          <AiWand size={11} />
+          Generate now
+        </Button>
       </div>
     </div>
 
@@ -266,10 +281,10 @@
           >
             <button
               type="button"
-              onclick={() => (store.selectedZoomRegionId = region.id)}
+              onclick={() => selectRegion(region)}
               aria-pressed={isActive}
               aria-label={`Zoom region ${i + 1}: ${region.scale.toFixed(1)}× at ${fmtTime(region.start)}`}
-              class="absolute inset-0 z-0 rounded-lg focus:outline-none focus:ring-2 focus:ring-ring/40"
+              class="absolute inset-0 z-0 rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
             ></button>
             <span
               class={cn(
@@ -314,10 +329,27 @@
                 {/if}
                 {#if isHidden}
                   <span
-                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border bg-muted/60 px-1 text-[9px] font-semibold uppercase tracking-wider text-muted-foreground"
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border bg-muted/60 px-1 text-[9px] font-medium text-muted-foreground"
                   >
                     <EyeOff size={8} />
                     Hidden
+                  </span>
+                {/if}
+                {#if overlapping.has(region.id)}
+                  <span
+                    title="Overlaps another region. Only one can apply, and export and preview can disagree."
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-amber-500/40 bg-amber-500/10 px-1 text-[9px] font-medium text-amber-600 dark:text-amber-400"
+                  >
+                    <TriangleAlert size={8} />
+                    Overlaps
+                  </span>
+                {/if}
+                {#if outOfClip(region)}
+                  <span
+                    title="Part of this region sits outside the trimmed clip and will never play."
+                    class="inline-flex shrink-0 items-center gap-0.5 rounded-sm border border-border bg-muted/60 px-1 text-[9px] font-medium text-muted-foreground"
+                  >
+                    Outside clip
                   </span>
                 {/if}
               </div>
@@ -337,7 +369,7 @@
                 onclick={() => store.setZoomRegionHidden(region.id)}
                 aria-label={isHidden ? "Show region" : "Hide region"}
                 title={isHidden ? "Show" : "Hide"}
-                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 {#if isHidden}
                   <EyeOff size={12} />
@@ -350,7 +382,7 @@
                 onclick={() => store.duplicateZoomRegion(region.id)}
                 aria-label="Duplicate region"
                 title="Duplicate"
-                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
+                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 <Copy size={12} />
               </button>
@@ -359,7 +391,7 @@
                 onclick={() => store.removeZoomRegion(region.id)}
                 aria-label="Delete region"
                 title="Delete"
-                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive focus:outline-none focus:ring-2 focus:ring-ring/40"
+                class="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40"
               >
                 <Trash2 size={12} />
               </button>
@@ -426,6 +458,45 @@
         </div>
       </div>
 
+      <!-- Both notices explain why the controls below may look like they do
+           nothing, so they sit above the controls, not at the end of the panel. -->
+      {#if !playheadInSelected}
+        <button
+          type="button"
+          onclick={() => selectRegion(region)}
+          class="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-left text-[10px] text-muted-foreground transition-colors hover:bg-card"
+        >
+          <Crosshair size={11} class="shrink-0" />
+          <span class="flex-1">The playhead is outside this region, so its zoom isn't visible.</span>
+          <span class="shrink-0 font-medium text-foreground">Jump to it</span>
+        </button>
+      {/if}
+
+      {#if overlapping.has(region.id)}
+        <div
+          class="flex items-start gap-2 rounded-lg border border-amber-500/40 bg-amber-500/10 px-2.5 py-1.5 text-[10px] leading-snug text-amber-700 dark:text-amber-300"
+        >
+          <TriangleAlert size={11} class="mt-px shrink-0" />
+          <span>
+            Overlaps another region. Only one can apply at a time, and the exported
+            video can differ from this preview — trim one so they don't share time.
+          </span>
+        </div>
+      {/if}
+
+      {#if outOfClip(region)}
+        <div
+          class="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[10px] text-muted-foreground"
+        >
+          <span class="flex-1 leading-snug">
+            Part of this region sits outside the trimmed clip and will never play.
+          </span>
+          <Button variant="outline" size="xs" onclick={() => clampToClip(region)}>
+            Fit to clip
+          </Button>
+        </div>
+      {/if}
+
       <PanelSection title="Zoom">
         <SliderControl
           label="Scale"
@@ -469,7 +540,8 @@
             size="xs"
             class="gap-1.5"
             onclick={recenterFocus}
-            disabled={region.centerX === 0.5 && region.centerY === 0.5}
+            disabled={region.centerX === DEFAULT_ZOOM_CENTER &&
+              region.centerY === DEFAULT_ZOOM_CENTER}
           >
             <Crosshair size={11} />
             Recenter
@@ -512,8 +584,8 @@
         <SliderControl
           label="Start"
           value={region.start}
-          min={0}
-          max={Math.max(region.end - 0.1, 0)}
+          min={clipIn}
+          max={Math.max(region.end - 0.1, clipIn)}
           step={0.01}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
@@ -528,7 +600,7 @@
           label="End"
           value={region.end}
           min={region.start + 0.1}
-          max={store.metadata?.duration ?? region.end}
+          max={clipOut}
           step={0.01}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}

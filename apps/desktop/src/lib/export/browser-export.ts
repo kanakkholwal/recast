@@ -173,8 +173,10 @@ async function buildAnnotationLayer(
 }
 
 /** Build the per-frame caption burn-in callback, or null when captions aren't
- *  burned in (no transcript, burn-in off, or GIF). The font is preloaded so the
- *  first frame measures/draws with the right face, mirroring the preview. */
+ *  burned in (no transcript, burn-in off, captions hidden). GIF burns captions
+ *  too now: the browser draws them into the frames before the palette pass (the
+ *  old GIF caption skip was a Rust-pipeline limit, not a product choice). The
+ *  font is preloaded so the first frame draws with the real face. */
 async function buildCaptionLayer(
 	store: EditorStore,
 	meta: { width: number; height: number },
@@ -183,8 +185,13 @@ async function buildCaptionLayer(
 ): Promise<((ctx: OffscreenCanvasRenderingContext2D, t: number) => void) | null> {
 	const transcript = store.transcript;
 	const style = store.captionStyle;
-	const burn = store.captionExport.burnIn && store.exportFormat !== "gif";
-	if (!burn || !transcript || transcript.segments.length === 0 || !style.enabled) return null;
+	if (
+		!store.captionExport.burnIn ||
+		!transcript ||
+		transcript.segments.length === 0 ||
+		!style.enabled
+	)
+		return null;
 	// Kick off the face load, then wait for all pending fonts so the first burned
 	// frame measures/draws with the real face (the export can't repaint later).
 	ensureFontLoaded(style.fontFamily, style.fontWeight);

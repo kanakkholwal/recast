@@ -60,6 +60,55 @@ describe("resolveCaptionView", () => {
 		]);
 		expect(resolveCaptionView(transcript(), style(), cut, 3)).toBeNull();
 	});
+
+	// A split (or speed change) is a span boundary with NO removed content, so a
+	// caption spanning it must keep ALL its words — only real cuts clip captions.
+	function spanningTranscript() {
+		return {
+			segments: [
+				{
+					id: "s1",
+					start: 4,
+					end: 7,
+					text: "a b c",
+					words: [
+						{ start: 4, end: 5, text: "a" },
+						{ start: 5, end: 6, text: "b" },
+						{ start: 6, end: 7, text: "c" },
+					],
+				},
+			],
+		} as never;
+	}
+
+	it("keeps words across a split boundary (contiguous spans, no cut)", () => {
+		const split = buildTimeMap([
+			{ origStart: 0, origEnd: 5, speed: 1 },
+			{ origStart: 5, origEnd: 10, speed: 1 },
+		]);
+		const v = resolveCaptionView(spanningTranscript(), style(), split, 4.5);
+		expect(v?.words.map((w) => w.text)).toEqual(["a", "b", "c"]);
+	});
+
+	it("keeps words across a speed-change boundary (still no cut)", () => {
+		const speed = buildTimeMap([
+			{ origStart: 0, origEnd: 5, speed: 1 },
+			{ origStart: 5, origEnd: 10, speed: 2 },
+		]);
+		const v = resolveCaptionView(spanningTranscript(), style(), speed, 5.5);
+		expect(v?.words.map((w) => w.text)).toEqual(["a", "b", "c"]);
+	});
+
+	it("still clips words at a real cut (removed content between spans)", () => {
+		const cut = buildTimeMap([
+			{ origStart: 0, origEnd: 5, speed: 1 },
+			{ origStart: 6, origEnd: 10, speed: 1 },
+		]);
+		// Playhead at 4.5 is in the first kept span; the word "c" (6–7) sits past
+		// the cut and must NOT show here.
+		const v = resolveCaptionView(spanningTranscript(), style(), cut, 4.5);
+		expect(v?.words.map((w) => w.text)).toEqual(["a"]);
+	});
 });
 
 // Recording mock of the 2D surface paintCaptionChunk touches.

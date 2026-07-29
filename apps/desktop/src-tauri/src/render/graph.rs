@@ -716,14 +716,17 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: 
     // `y` are evaluated per frame regardless. This was the actual root cause
     // of "zoom is missing in exported videos" — verified by pixel-diffing
     // FFmpeg outputs of both filter shapes against an identity baseline.
-    let samples_per_region: Vec<Vec<ZoomSample>> = node
+    // Skip hidden regions (non-destructive mute) and regions whose entire
+    // timeline window precedes `trim_start` (their LUT entries would all
+    // have negative output-t and never fire).
+    let visible: Vec<&ZoomRegion> = node
         .regions
         .iter()
-        // Skip hidden regions (non-destructive mute) and regions whose entire
-        // timeline window precedes `trim_start` (their LUT entries would all
-        // have negative output-t and never fire).
         .filter(|region| !region.hidden && region.end > time_offset)
-        .map(|region| sample_region(region, source, time_offset))
+        .collect();
+    let samples_per_region: Vec<Vec<ZoomSample>> = disjoint_zoom_windows(&visible, time_offset)
+        .into_iter()
+        .map(|(idx, start, end)| sample_region(visible[idx], source, time_offset, (start, end)))
         .collect();
 
     // If filtering left us with nothing, skip the prelude entirely.
@@ -764,6 +767,51 @@ struct ZoomSample {
     center_y: f64,     // focus centre Y in UV space (0..1), constant per region
 }
 
+/// Disjoint `(region_index, start, end)` windows in which each region actually
+/// applies. Only one zoom can apply at a time, but the filter graph SUMS every
+/// region's term (`wrap_flat_sum`), so overlapping regions would stack their
+/// zoom — two 1.8x regions rendering as 2.6x while the preview shows 1.8x.
+/// A later-starting region takes over, matching `activeZoomIndex` in
+/// `src/lib/zoom/resolve.ts`; the earlier region resumes after it ends.
+fn disjoint_zoom_windows(regions: &[&ZoomRegion], time_offset: f64) -> Vec<(usize, f64, f64)> {
+    let mut out = Vec::new();
+    for (i, r) in regions.iter().enumerate() {
+        // Blockers are the regions that outrank this one at a shared instant:
+        // a later start, or an equal start later in the list (the tie-break).
+        let mut blockers: Vec<(f64, f64)> = regions
+            .iter()
+            .enumerate()
+            .filter(|(j, o)| {
+                *j != i && (o.start > r.start || (o.start == r.start && *j > i)) && o.end > o.start
+            })
+            .map(|(_, o)| (o.start, o.end))
+            .collect();
+        blockers.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut cursor = r.start.max(time_offset);
+        for (bs, be) in blockers {
+            if be <= cursor {
+                continue;
+            }
+            if bs >= r.end {
+                break;
+            }
+            if bs > cursor {
+                out.push((i, cursor, bs.min(r.end)));
+            }
+            cursor = cursor.max(be);
+            if cursor >= r.end {
+                break;
+            }
+        }
+        if cursor < r.end {
+            out.push((i, cursor, r.end));
+        }
+    }
+    out.retain(|(_, a, b)| b - a > 1e-6);
+    out
+}
+
 fn sample_region(
     region: &ZoomRegion,
     // Source dimensions are no longer needed: the crop origin is derived from
@@ -771,12 +819,14 @@ fn sample_region(
     // absolute pixels here. Kept in the signature for call-site symmetry.
     _source: SourceVideoMetadata,
     time_offset: f64,
+    window: (f64, f64),
 ) -> Vec<ZoomSample> {
     // Clamp the sampling window to the post-trim portion of the region.
     // `region.scale_at` still receives the true timeline t, so the eased
     // ramp curve is sampled correctly.
-    let effective_start = region.start.max(time_offset);
-    let duration = (region.end - effective_start).max(0.0);
+    let effective_start = window.0.max(region.start).max(time_offset);
+    let window_end = window.1.min(region.end);
+    let duration = (window_end - effective_start).max(0.0);
     let samples = ((duration * 20.0).ceil() as usize).clamp(8, 200);
     let step = if samples > 0 {
         duration / samples as f64
@@ -1497,6 +1547,60 @@ mod tests {
         assert!(fc.contains("gte(t,6.0000)"), "third region missing: {fc}");
     }
 
+    /// Overlapping regions used to each contribute a term to the summed zoom
+    /// expression, so two 1.8x regions rendered as 2.6x while the preview (which
+    /// picks a single region) showed 1.8x. Windows must be disjoint.
+    #[test]
+    fn overlapping_zoom_regions_do_not_stack() {
+        let a = region(0.0, 6.0, 1.8);
+        let b = region(4.0, 10.0, 1.8);
+        let windows = disjoint_zoom_windows(&[&a, &b], 0.0);
+        for (i, s0, e0) in &windows {
+            for (j, s1, e1) in &windows {
+                if std::ptr::eq(i, j) && (s0 - s1).abs() < f64::EPSILON {
+                    continue;
+                }
+                let overlap = e0.min(*e1) - s0.max(*s1);
+                assert!(
+                    overlap <= 1e-6,
+                    "windows overlap: ({i},{s0},{e0}) vs ({j},{s1},{e1})"
+                );
+            }
+        }
+    }
+
+    /// A later-starting region takes over, then the enclosing one resumes —
+    /// the same rule as `activeZoomIndex` in src/lib/zoom/resolve.ts.
+    #[test]
+    fn nested_zoom_region_wins_then_outer_resumes() {
+        let outer = region(0.0, 10.0, 1.5);
+        let inner = region(4.0, 6.0, 2.0);
+        let mut windows = disjoint_zoom_windows(&[&outer, &inner], 0.0);
+        windows.sort_by(|x, y| x.1.partial_cmp(&y.1).unwrap());
+        assert_eq!(
+            windows.len(),
+            3,
+            "expected outer/inner/outer, got {windows:?}"
+        );
+        assert_eq!(windows[0].0, 0);
+        assert!((windows[0].2 - 4.0).abs() < 1e-9, "{windows:?}");
+        assert_eq!(windows[1].0, 1);
+        assert!((windows[1].1 - 4.0).abs() < 1e-9 && (windows[1].2 - 6.0).abs() < 1e-9);
+        assert_eq!(windows[2].0, 0);
+        assert!((windows[2].1 - 6.0).abs() < 1e-9 && (windows[2].2 - 10.0).abs() < 1e-9);
+    }
+
+    /// Non-overlapping regions must be left exactly as authored.
+    #[test]
+    fn disjoint_zoom_regions_are_untouched() {
+        let a = region(1.0, 2.0, 1.4);
+        let b = region(3.0, 4.5, 1.6);
+        let windows = disjoint_zoom_windows(&[&a, &b], 0.0);
+        assert_eq!(windows.len(), 2, "{windows:?}");
+        assert!((windows[0].1 - 1.0).abs() < 1e-9 && (windows[0].2 - 2.0).abs() < 1e-9);
+        assert!((windows[1].1 - 3.0).abs() < 1e-9 && (windows[1].2 - 4.5).abs() < 1e-9);
+    }
+
     /// The generated `color=` background MUST carry an explicit `:r=<fps>`.
     /// Without it FFmpeg defaults the generator to 25 fps, and since it's the
     /// base of the composite overlay the whole export drops to 25 fps —
@@ -1635,6 +1739,7 @@ mod tests {
                 fps: 60.0,
             },
             0.0,
+            (r.start, r.end),
         )];
         let (z, x, y) = build_zoom_exprs(&samples, 1920.0, 1080.0);
         // Off-centre focus must actually move the crop (not identically 0).

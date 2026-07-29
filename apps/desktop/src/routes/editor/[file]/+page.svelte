@@ -998,17 +998,11 @@ async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
 	}
 }
 
-// Re-run is exposed to FocusPanel via a window CustomEvent so the nested panel
-// doesn't thread a prop through every component.
-$effect(() => {
-	function onRerun() {
-		store.clearAutoZooms();
-		store.autoZoomApplied = false;
-		void runAutoZoom({ silentEmpty: false });
-	}
-	window.addEventListener("recast:rerun-auto-zoom", onRerun);
-	return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
-});
+function regenerateAutoZoom() {
+	store.clearAutoZooms();
+	store.autoZoomApplied = false;
+	void runAutoZoom({ silentEmpty: false });
+}
 
 // Export lifecycle UI. The exportActivity store owns the queue + run; this
 // editor tracks the item it enqueued (myExportId) and maps it back to the
@@ -1915,7 +1909,7 @@ const stages = $derived.by(() => {
             ></div>
           </div>
           <div class="h-full" style="width: {sidebarWidth}px;">
-            <PropertiesPanel {store} {cameraPath} />
+            <PropertiesPanel {store} {cameraPath} onRegenerateAutoZoom={regenerateAutoZoom} />
           </div>
         </aside>
       {/if}
