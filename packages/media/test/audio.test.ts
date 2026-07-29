@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
 	keptRegions,
+	missingRanges,
+	outputToSource,
 	planAudioSchedule,
+	planAudioScheduleWindow,
+	sliceChunksForPlayback,
+	type AudioChunk,
 	type Region,
+	type ScheduledChunk,
 } from '../src/audio/schedule';
 
 /**
@@ -113,5 +119,150 @@ describe('planAudioSchedule', () => {
 	it('skips non-positive speed (treated as 1×)', () => {
 		const chunks = planAudioSchedule([{ start: 0, end: 4, speed: 0 }], 0);
 		expect(chunks[0]?.rate).toBe(1);
+	});
+});
+
+describe('planAudioScheduleWindow', () => {
+	const regions: Region[] = [
+		{ start: 0, end: 4 },
+		{ start: 6, end: 10 },
+	];
+
+	it('equals planAudioSchedule on the scheduling-critical fields over the full window', () => {
+		// outStart/outEnd differ by design (window clips them; planAudioSchedule keeps
+		// the region's full span) — they're debug-only. The load-bearing fields match.
+		const key = (c: ScheduledChunk) => ({ whenDelay: c.whenDelay, bufferOffset: c.bufferOffset, duration: c.duration, rate: c.rate });
+		for (const from of [0, 2, 5, 8]) {
+			expect(planAudioScheduleWindow(regions, from, from, Infinity).map(key)).toEqual(
+				planAudioSchedule(regions, from).map(key),
+			);
+		}
+	});
+
+	it('clips regions to the output window and anchors whenDelay to the play-from time', () => {
+		// Anchor at output 0, schedule only output [5, 7]. Region 2 occupies output
+		// [4, 8] (source [6, 10]); the [5, 7] slice is source [7, 9].
+		const chunks = planAudioScheduleWindow(regions, 0, 5, 7);
+		expect(chunks).toHaveLength(1);
+		expect(chunks[0]?.bufferOffset).toBeCloseTo(7, 6);
+		expect(chunks[0]?.duration).toBeCloseTo(2, 6);
+		expect(chunks[0]?.whenDelay).toBeCloseTo(5, 6); // anchored at 0, starts output 5
+		expect(chunks[0]?.outStart).toBeCloseTo(5, 6);
+		expect(chunks[0]?.outEnd).toBeCloseTo(7, 6);
+	});
+
+	it('returns nothing for an empty or inverted window', () => {
+		expect(planAudioScheduleWindow(regions, 0, 5, 5)).toEqual([]);
+		expect(planAudioScheduleWindow(regions, 0, 7, 5)).toEqual([]);
+	});
+
+	it('maps a speed-warped region to the correct source span', () => {
+		const fast: Region[] = [{ start: 0, end: 8, speed: 2 }]; // output [0,4]
+		const chunks = planAudioScheduleWindow(fast, 0, 1, 3);
+		expect(chunks[0]?.rate).toBe(2);
+		expect(chunks[0]?.bufferOffset).toBeCloseTo(2, 6); // 1 output * 2x
+		expect(chunks[0]?.duration).toBeCloseTo(4, 6); // 2 output * 2x
+	});
+});
+
+describe('missingRanges', () => {
+	it('returns the whole window when nothing is resident', () => {
+		expect(missingRanges([], 2, 8)).toEqual([{ start: 2, end: 8 }]);
+	});
+
+	it('returns nothing when a chunk fully covers the window', () => {
+		expect(missingRanges([{ startSec: 0, durationSec: 10 }], 2, 8)).toEqual([]);
+	});
+
+	it('returns the gaps between resident chunks, clipped to the window', () => {
+		const chunks: AudioChunk[] = [
+			{ startSec: 0, durationSec: 3 },
+			{ startSec: 6, durationSec: 3 },
+		];
+		expect(missingRanges(chunks, 2, 8)).toEqual([{ start: 3, end: 6 }]);
+	});
+
+	it('reports leading and trailing gaps', () => {
+		const chunks: AudioChunk[] = [{ startSec: 4, durationSec: 2 }];
+		expect(missingRanges(chunks, 2, 8)).toEqual([
+			{ start: 2, end: 4 },
+			{ start: 6, end: 8 },
+		]);
+	});
+});
+
+describe('outputToSource', () => {
+	const regions: Region[] = [
+		{ start: 0, end: 4 },
+		{ start: 6, end: 10 },
+	];
+
+	it('maps output time into the source across a cut', () => {
+		expect(outputToSource(regions, 0)).toBeCloseTo(0, 6);
+		expect(outputToSource(regions, 3)).toBeCloseTo(3, 6);
+		expect(outputToSource(regions, 4)).toBeCloseTo(4, 6); // boundary → end of region 1
+		expect(outputToSource(regions, 5)).toBeCloseTo(7, 6); // 1s into region 2 (source 6)
+	});
+
+	it('applies region speed', () => {
+		expect(outputToSource([{ start: 0, end: 8, speed: 2 }], 1)).toBeCloseTo(2, 6);
+	});
+
+	it('clamps past the end to the last region end', () => {
+		expect(outputToSource(regions, 100)).toBeCloseTo(10, 6);
+		expect(outputToSource([], 5)).toBe(0);
+	});
+});
+
+function scheduled(over: Partial<ScheduledChunk>): ScheduledChunk {
+	return { whenDelay: 0, bufferOffset: 0, duration: 0, rate: 1, outStart: 0, outEnd: 0, ...over };
+}
+
+describe('sliceChunksForPlayback', () => {
+	it('plays entirely from a single chunk that covers the range', () => {
+		const chunks: AudioChunk[] = [{ startSec: 0, durationSec: 10 }];
+		const subs = sliceChunksForPlayback(scheduled({ bufferOffset: 2, duration: 4 }), chunks);
+		expect(subs).toEqual([{ chunkIndex: 0, offsetInChunk: 2, playDuration: 4, whenDelay: 0, rate: 1 }]);
+	});
+
+	it('splits at a chunk boundary and offsets the second piece by the first piece output time', () => {
+		const chunks: AudioChunk[] = [{ startSec: 0, durationSec: 5 }, { startSec: 5, durationSec: 5 }];
+		const subs = sliceChunksForPlayback(scheduled({ bufferOffset: 3, duration: 4, whenDelay: 1 }), chunks);
+		expect(subs).toEqual([
+			{ chunkIndex: 0, offsetInChunk: 3, playDuration: 2, whenDelay: 1, rate: 1 },
+			{ chunkIndex: 1, offsetInChunk: 0, playDuration: 2, whenDelay: 3, rate: 1 },
+		]);
+	});
+
+	it('accounts for rate when offsetting the second piece (output time, not source)', () => {
+		const chunks: AudioChunk[] = [{ startSec: 0, durationSec: 5 }, { startSec: 5, durationSec: 5 }];
+		const subs = sliceChunksForPlayback(scheduled({ bufferOffset: 3, duration: 4, whenDelay: 1, rate: 2 }), chunks);
+		expect(subs[1]?.whenDelay).toBeCloseTo(2, 6); // 1 + (5-3)/2
+		expect(subs.every((s) => s.rate === 2)).toBe(true);
+	});
+
+	it('drops slices that fall in a hole in the store (silent gap, no mis-index)', () => {
+		const chunks: AudioChunk[] = [{ startSec: 0, durationSec: 3 }, { startSec: 6, durationSec: 4 }];
+		const subs = sliceChunksForPlayback(scheduled({ bufferOffset: 2, duration: 6 }), chunks);
+		expect(subs).toEqual([
+			{ chunkIndex: 0, offsetInChunk: 2, playDuration: 1, whenDelay: 0, rate: 1 },
+			{ chunkIndex: 1, offsetInChunk: 0, playDuration: 2, whenDelay: 4, rate: 1 },
+		]);
+	});
+
+	it('skips chunks that do not overlap the scheduled range', () => {
+		const chunks: AudioChunk[] = [{ startSec: 20, durationSec: 5 }];
+		expect(sliceChunksForPlayback(scheduled({ bufferOffset: 3, duration: 4 }), chunks)).toEqual([]);
+	});
+
+	it('reproduces the full duration when chunks tile the range contiguously', () => {
+		const chunks: AudioChunk[] = [
+			{ startSec: 0, durationSec: 2.5 },
+			{ startSec: 2.5, durationSec: 2.5 },
+			{ startSec: 5, durationSec: 2.5 },
+		];
+		const subs = sliceChunksForPlayback(scheduled({ bufferOffset: 1, duration: 5 }), chunks);
+		const total = subs.reduce((s, p) => s + p.playDuration, 0);
+		expect(total).toBeCloseTo(5, 6);
 	});
 });

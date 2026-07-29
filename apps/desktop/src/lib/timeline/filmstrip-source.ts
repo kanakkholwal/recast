@@ -39,6 +39,10 @@ export interface TileProvider {
 	/** The storyboard sprite for instant hover-scrub, or undefined until built;
 	 *  the first call kicks off the one-time build. */
 	storyboard(): Storyboard | undefined;
+	/** Pause/resume decoding new tiles. Paused during playback so the filmstrip's
+	 *  decoder doesn't compete with the preview decoder for hardware slots;
+	 *  requests made while paused are queued and flushed on resume. */
+	setDecodePaused(paused: boolean): void;
 	dispose(): void;
 }
 
@@ -81,6 +85,9 @@ class MediabunnyTileProvider implements TileProvider {
 	#pending = new Map<string, number>();
 	#flushScheduled = false;
 	#disposed = false;
+	/** When true, `#flush` holds requests in `#pending` instead of decoding, so
+	 *  the filmstrip decoder is quiet while the preview decoder is busy. */
+	#decodePaused = false;
 	/** Built storyboard sprite, and whether its one-time build is requested. */
 	#storyboard: Storyboard | undefined;
 	#storyboardRequested = false;
@@ -181,9 +188,18 @@ class MediabunnyTileProvider implements TileProvider {
 		}
 	}
 
+	setDecodePaused(paused: boolean): void {
+		if (this.#decodePaused === paused) return;
+		this.#decodePaused = paused;
+		// Resuming: drain whatever queued up while paused.
+		if (!paused) this.#scheduleFlush();
+	}
+
 	#flush(): void {
 		this.#flushScheduled = false;
 		if (this.#disposed || this.#pending.size === 0) return;
+		// Paused (playback): keep the requests queued; the resume drains them.
+		if (this.#decodePaused) return;
 		const requests: Array<{ id: number; originalSec: number }> = [];
 		for (const [cacheKey, originalSec] of this.#pending) {
 			const id = this.#nextId++;
@@ -199,6 +215,13 @@ class MediabunnyTileProvider implements TileProvider {
 	#onMessage(msg: FromFilmstripWorker): void {
 		if (msg.type === 'error') {
 			console.error('filmstrip worker:', msg.message);
+			// A per-request decode error carries its id: release it so the tile can
+			// be re-requested and #idToKey/#inflight don't grow without bound.
+			if (msg.id !== undefined) {
+				const cacheKey = this.#idToKey.get(msg.id);
+				this.#idToKey.delete(msg.id);
+				if (cacheKey !== undefined) this.#inflight.delete(cacheKey);
+			}
 			return;
 		}
 		if (msg.type === 'storyboard') {

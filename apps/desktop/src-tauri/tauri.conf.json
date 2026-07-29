@@ -28,7 +28,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https: data: blob:; media-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https://*.i.posthog.com; style-src 'self' 'unsafe-inline'; script-src 'self' 'wasm-unsafe-eval';",
+      "csp": "default-src 'self'; img-src 'self' asset: http://asset.localhost https: data: blob:; media-src 'self' asset: http://asset.localhost blob: data:; connect-src 'self' ipc: http://ipc.localhost asset: http://asset.localhost https://*.i.posthog.com; style-src 'self' 'unsafe-inline'; worker-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval';",
       "dangerousDisableAssetCspModification": [
         "style-src"
       ],

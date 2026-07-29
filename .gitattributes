@@ -1,0 +1,27 @@
+# Working tree is LF on every OS. Without this, Windows checkouts are CRLF and
+# Biome (which writes LF) reports every file as unformatted.
+* text=auto eol=lf
+
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.mp4 binary
+*.mov binary
+*.webm binary
+*.wav binary
+*.mp3 binary
+*.onnx binary
+*.gguf binary
+*.exe binary
+*.dll binary
+*.dylib binary
+*.so binary
+*.zip binary
+*.node binary

@@ -330,6 +330,11 @@ pub struct ExportRequest {
     /// when the user chose no sidecar or there is no transcript.
     #[serde(default)]
     pub caption_sidecar: Option<CaptionSidecar>,
+    /// Browser-rendered, already-composited video (Phase 4): when present the job
+    /// takes the mux-only path (`-c:v copy` + audio) instead of the Rust
+    /// filter_complex compositor. Absent = the classic full Rust export.
+    #[serde(default)]
+    pub browser_video_path: Option<String>,
 }
 
 #[derive(Clone, Copy)]

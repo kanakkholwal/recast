@@ -53,7 +53,7 @@ type StoryboardResultMessage = {
 	count: number;
 	durationSec: number;
 };
-type ErrorMessage = { type: 'error'; message: string };
+type ErrorMessage = { type: 'error'; message: string; id?: number };
 
 type FromFilmstripWorker = ReadyMessage | TileMessage | StoryboardResultMessage | ErrorMessage;
 
@@ -112,8 +112,11 @@ async function decodeRequests(requests: Array<{ id: number; originalSec: number 
 			// throws and loses the whole tile.
 			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height });
 		} catch (err) {
+			// Carry the request id so the provider clears it from in-flight;
+			// without it the tile is wedged forever and the id/inflight maps grow.
 			post({
 				type: 'error',
+				id: req.id,
 				message: err instanceof Error ? err.message : String(err),
 			});
 		}

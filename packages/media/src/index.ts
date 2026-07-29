@@ -48,8 +48,8 @@ export {
 	seekTo,
 } from './playback';
 export type { PlaybackSource, PlaybackFrame, PlaybackEvent } from './playback';
-export { keptRegions, planAudioSchedule } from './audio/schedule';
-export type { Region, ScheduledChunk } from './audio/schedule';
+export { keptRegions, missingRanges, outputToSource, planAudioSchedule, planAudioScheduleWindow, sliceChunksForPlayback } from './audio/schedule';
+export type { AudioChunk, Region, ScheduledChunk, SubPlay } from './audio/schedule';
 
 // seek helpers
 export { snapToSeekTarget, nextCutWithin } from './seek';

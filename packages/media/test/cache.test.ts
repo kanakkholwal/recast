@@ -183,6 +183,13 @@ describe('frame lifetime (REQUIREMENTS.md §3 memory cap, §5 ownership)', () =>
 		expect(bytes).toBe(1920 * 1080 * 4);
 	});
 
+	it('charges a large fallback (never 0) when dimensions are non-finite', () => {
+		// A 0-byte estimate never adds to the total, so the cap check always
+		// passes and eviction silently stops — the Map then grows unbounded.
+		const bytes = estimateFrameBytes(fakeVideoFrame(Number.NaN, Number.NaN) as never);
+		expect(bytes).toBeGreaterThan(0);
+	});
+
 	it('caps the in-memory layer and closes the frames it evicts', () => {
 		const frameBytes = 640 * 360 * 4; // 921,600
 		const cache = new FrameCache({

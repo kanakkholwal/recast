@@ -66,16 +66,11 @@ export async function buildExportRenderState(
 	// Run both hybrid-raster passes in parallel: independent, and the cursor SVG
 	// decode is non-trivial on cold boot (Image() onload is async even for blobs).
 	const [expandedAnnotations, cursorSprites] = await Promise.all([
-		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then(
-			(r) => {
-				hooks?.onText?.("done");
-				return r;
-			},
-		),
-		rasterizeCursorSprites(
-			store.cursorSettings.style,
-			store.cursorSettings.size * 16,
-		).then((r) => {
+		expandTextAnnotations(renderState.annotations, canvasW, canvasH).then((r) => {
+			hooks?.onText?.("done");
+			return r;
+		}),
+		rasterizeCursorSprites(store.cursorSettings.style, store.cursorSettings.size * 16).then((r) => {
 			hooks?.onCursor?.("done");
 			return r;
 		}),
@@ -218,6 +213,9 @@ export interface RunExportOptions {
 	fps?: number | null;
 	/** Caption emission (burn-in + sidecar). Built via {@link buildCaptionExport}. */
 	captions?: CaptionExportPayload;
+	/** Browser-rendered composited video temp path (Phase 4). When set, the job
+	 *  mux-copies it instead of running the Rust filter_complex compositor. */
+	browserVideoPath?: string;
 }
 
 /**
@@ -231,8 +229,11 @@ export interface RunExportOptions {
  * it off the same way. Progress + completion are observed via the queue (see
  * `listExportJobs` / `export-state`), not a returned promise of the output path.
  */
-export async function enqueueExport(opts: RunExportOptions): Promise<void> {
-	await enqueueExportIpc({
+export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
+	// Returns any auto-repairs the backend applied to the render state (e.g. a
+	// too-long trim_end clamped to the real video length) so a UI caller can
+	// surface a "verify this" notice. Empty = nothing needed repair.
+	return enqueueExportIpc({
 		inputPath: opts.inputPath,
 		format: opts.format,
 		quality: opts.quality,
@@ -243,5 +244,6 @@ export async function enqueueExport(opts: RunExportOptions): Promise<void> {
 		fps: opts.fps,
 		burnCaptions: opts.captions?.burnCaptions ?? false,
 		captionSidecar: opts.captions?.sidecar ?? null,
+		browserVideoPath: opts.browserVideoPath ?? null,
 	});
 }

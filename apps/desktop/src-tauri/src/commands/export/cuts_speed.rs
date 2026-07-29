@@ -338,6 +338,39 @@ pub(crate) fn append_cut_speed_stage(
     *filter_complex = Some(complex);
 }
 
+/// Audio-only cut+speed warp, for the browser-render mux path where the video is
+/// already warped to the output timeline (`-c:v copy`) and only the source audio
+/// needs the same `aselect`/`atempo` treatment. Shares the cut-select and speed
+/// helpers with `append_cut_speed_stage` so the two stay in lock-step.
+pub(crate) fn append_audio_cut_speed(
+    filter_complex: &mut Option<String>,
+    audio_map: &mut Option<String>,
+    export_cuts: &[(f64, f64)],
+    speed_segments: &[SpeedSegment],
+    speed_active: bool,
+) {
+    if export_cuts.is_empty() && !speed_active {
+        return;
+    }
+    let Some(amap) = audio_map.take() else {
+        return;
+    };
+    let mut complex = filter_complex.take().unwrap_or_default();
+    if !complex.is_empty() && !complex.ends_with(';') {
+        complex.push(';');
+    }
+    if speed_active {
+        complex.push_str(&build_speed_audio_filter(&amap, speed_segments));
+    } else {
+        let select_expr = build_cut_select_expr(export_cuts);
+        complex.push_str(&format!(
+            "{amap}aselect='{select_expr}',asetpts=N/SR/TB[acut]"
+        ));
+    }
+    *audio_map = Some("[acut]".to_string());
+    *filter_complex = Some(complex);
+}
+
 #[cfg(test)]
 mod cut_export_tests {
     use super::{

@@ -218,7 +218,14 @@ async fn run_one(app: &AppHandle, job: ClaimedJob) {
     };
     let sidecar = request.caption_sidecar.clone();
 
-    match crate::commands::editor::run_export_job(app.clone(), request).await {
+    // Browser-rendered payloads take the mux-only path (`-c:v copy` + audio);
+    // everything else runs the classic Rust filter_complex compositor.
+    let run_result = if let Some(browser_video) = request.browser_video_path.clone() {
+        crate::commands::editor::run_mux_job(app.clone(), request, browser_video).await
+    } else {
+        crate::commands::editor::run_export_job(app.clone(), request).await
+    };
+    match run_result {
         Ok(output_path) => {
             if let Some(sc) = sidecar {
                 write_sidecar(&output_path, &sc);
@@ -327,9 +334,9 @@ pub(crate) fn sweep_stale_jobs(app: &AppHandle) {
 #[tauri::command]
 pub async fn enqueue_export(
     app: AppHandle,
-    request: ExportRequest,
+    mut request: ExportRequest,
     state: State<'_, AppState>,
-) -> AppResult<()> {
+) -> AppResult<Vec<String>> {
     // Fail-fast validation: probe the source's metadata on a blocking worker,
     // run `validate_render_state` against it, and reject bad payloads BEFORE
     // we serialize / persist. The cost is one extra ffprobe spawn per
@@ -357,6 +364,19 @@ pub async fn enqueue_export(
     .await
     .map_err(|e| AppError::msg(format!("probe source join error: {e}")))?
     .map_err(AppError::msg)?;
+    // Auto-repair before validating: an older project can carry a wall-clock
+    // trim_end slightly past the real (CFR-encoded) video, which the strict
+    // validator would otherwise reject. Clamp to the probed duration + tell the
+    // caller so it can surface a "verify this" toast.
+    let repairs =
+        crate::commands::repair_render_state(&mut request.render_state, source_meta.duration);
+    if !repairs.is_empty() {
+        log::warn!(
+            "enqueue_export[{}] auto-repaired render state: {:?}",
+            request.export_id,
+            repairs
+        );
+    }
     if let Err(issues) =
         crate::commands::validate_render_state(&request.render_state, source_meta.duration)
     {
@@ -403,7 +423,44 @@ pub async fn enqueue_export(
 
     state.export_wake.notify_one();
     emit_jobs_changed(&app);
-    Ok(())
+    Ok(repairs)
+}
+
+/// Persist a browser-rendered export video (Phase 4): the mp4 bytes ride the
+/// invoke body as raw bytes (an ArrayBuffer), same as `save_recorded_camera`.
+/// Returns the temp path to hand back as `browser_video_path` on the follow-up
+/// `enqueue_export`; the mux job's success cleanup removes it.
+#[tauri::command]
+pub async fn save_browser_export_video(
+    app: AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> AppResult<String> {
+    let bytes: Vec<u8> = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|v| v.as_u64().map(|n| n as u8))
+            .collect::<Option<Vec<u8>>>()
+            .ok_or_else(|| AppError::msg("browser export payload was not a byte array"))?,
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err(AppError::msg("browser export payload must be raw bytes"));
+        }
+    };
+    let dir = payloads_dir(&app).join("browser-videos");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("browser-{stamp}.mp4"));
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<String> {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| AppError::msg(format!("create browser-videos dir: {e}")))?;
+        std::fs::write(&path, &bytes)
+            .map_err(|e| AppError::msg(format!("write browser export video: {e}")))?;
+        Ok(path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("save_browser_export_video worker panicked: {e}")))?
 }
 
 /// The whole queue (queued, running, and undismissed terminal jobs), oldest first.
