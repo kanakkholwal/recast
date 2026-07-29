@@ -4,6 +4,13 @@
   import { Plus, ZoomIn } from "@recast/icons";
   import type { TimeMode } from "./timeline-helpers";
   import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
+  import {
+    cardSpan,
+    laneHeight,
+    packRows,
+    rowTop,
+    ZOOM_ROW_HEIGHT_PX,
+  } from "./timeline-stack";
   import ZoomLayerCard from "./ZoomLayerCard.svelte";
 
   // Hosts zoom-region cards: builds the shared snap target list and paints
@@ -118,6 +125,25 @@
     drag = null;
   }
 
+  // Overlapping regions stacked on top of each other at top: 50%, so the covered
+  // one couldn't be clicked or resized. The FocusPanel warns about overlaps, so
+  // they're an expected state the lane has to be able to show.
+  const MIN_CARD_PX = 32;
+  const spans = $derived(
+    store.zoomRegions.map((r) => {
+      const s = cardSpan(
+        originalToOutput(store.renderMap, r.start) * pixelsPerSecond,
+        originalToOutput(store.renderMap, r.end) * pixelsPerSecond,
+        MIN_CARD_PX,
+      );
+      return { id: r.id, left: s.left, right: s.left + s.width, width: s.width };
+    }),
+  );
+  const rows = $derived(packRows(spans));
+  const height = $derived(
+    laneHeight(rows.length ? Math.max(...rows) + 1 : 0, ZOOM_ROW_HEIGHT_PX),
+  );
+
   // Empty-state affordance: the lane used to explain how to add a region without
   // letting you do it. Punches in around the playhead, like the toolbar button.
   function addAtPlayhead() {
@@ -138,7 +164,8 @@
   onpointermove={onLaneMove}
   onpointerup={onLaneUp}
   onpointercancel={onLaneUp}
-  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
+  class="relative mt-1.5 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[height]"
+  style="height: {height}px;"
 >
   {#if store.zoomRegions.length === 0}
     <button
@@ -152,13 +179,16 @@
       Drag here to add a zoom, or click to punch in at the playhead
     </button>
   {:else}
-    {#each store.zoomRegions as region (region.id)}
+    {#each store.zoomRegions as region, i (region.id)}
       <ZoomLayerCard
         {store}
         {region}
         {pixelsPerSecond}
         {fps}
         {duration}
+        left={spans[i].left}
+        width={spans[i].width}
+        top={rowTop(rows[i], ZOOM_ROW_HEIGHT_PX)}
         snapTargets={targetsFor(region.id)}
         {timeMode}
         onSnapChange={(snap) => (activeSnap = snap)}

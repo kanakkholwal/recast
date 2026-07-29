@@ -18,9 +18,12 @@ interface Props {
 	videoEl: HTMLVideoElement | null;
 	/** The container that wraps the WebGL preview canvas, which we stretch to fit. */
 	targetEl: HTMLElement | null;
+	/** Original-time position of the frame the compositor drew. See the same prop
+	 *  on AnnotationOverlay: the `<video>` element is not that clock. */
+	previewTime?: number;
 }
 
-let { store, videoEl, targetEl }: Props = $props();
+let { store, videoEl, targetEl, previewTime }: Props = $props();
 
 // Fetch + register any Google fonts used by text annotations so they render
 // in preview (and are available before export rasterizes the text).
@@ -57,8 +60,11 @@ function rectCssFor(a: { anchor?: AnnotationAnchor }) {
 		: videoRectPx(layerSize.w, layerSize.h, store.metadata, store.padding, store.outputAspect);
 }
 
+// Mirrors AnnotationOverlay.zoomFor: `focusEnabled` off means neither the
+// composite nor the export applies zoom, so neither should the text layer.
 function zoomForA(a: { anchor?: AnnotationAnchor }, t: number) {
-	return a.anchor === "frame" ? IDENTITY_ZOOM : evalZoom(store.zoomRegions, t);
+	if (a.anchor === "frame" || !store.focusEnabled) return IDENTITY_ZOOM;
+	return evalZoom(store.zoomRegions, t);
 }
 
 function uvToCss(a: { anchor?: AnnotationAnchor }, ux: number, uy: number, t: number) {
@@ -78,7 +84,7 @@ function pointerToCss(e: PointerEvent) {
 }
 
 function playbackTime(): number {
-	return videoEl?.currentTime ?? store.currentTime;
+	return previewTime ?? videoEl?.currentTime ?? store.currentTime;
 }
 
 function tick_() {
@@ -128,9 +134,13 @@ $effect(() => {
 // Re-derive positions when the state they depend on moves. While paused this
 // replaces the old per-frame tick entirely.
 $effect(() => {
+	void previewTime;
 	void store.currentTime;
 	void store.annotations;
 	void store.zoomRegions;
+	void store.focusEnabled;
+	void store.padding;
+	void store.outputAspect;
 	void store.selectedAnnotationId;
 	void store.isPlaying;
 	void drag;

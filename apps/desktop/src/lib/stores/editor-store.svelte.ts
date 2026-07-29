@@ -18,10 +18,11 @@ import {
 import {
 	BACKGROUND_COLORS,
 	BACKGROUND_GRADIENTS,
-	backgroundNeedsShadow,
 	type BackgroundPreset,
+	backgroundNeedsShadow,
 	migrateBackgroundValue,
 } from "@recast/design/backgrounds";
+import { scaleTranscript, transcriptTimeScale } from "$lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../annotations/canvas-tokens";
 import {
 	type AudioClip,
@@ -34,7 +35,6 @@ import type { CursorSampleLike } from "../cursor/smoothing";
 import { EASE, EASE_IN_OUT, type Easing } from "../easing/cubic-bezier";
 import type { TimeMode } from "../editor/time";
 import type { Transcript } from "../ipc";
-import { scaleTranscript, transcriptTimeScale } from "$lib/captions/normalize";
 import { log } from "../logger";
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // (which pulls this store's catalogs) can't form an import cycle.
@@ -2304,6 +2304,20 @@ export function createEditorStore() {
 	}
 
 	/** Split the clip at original time `t`. Returns true if a split was added. */
+	/** Whether a split at `t` would land. Goes through `planSplit` so a disabled
+	 *  Split button can never disagree with what pressing it would do. */
+	function canSplitAt(t: number): boolean {
+		const { start, end } = clipBounds();
+		return (
+			planSplit(t, {
+				trimStart: start,
+				trimEnd: end,
+				cuts: effectiveCutList(),
+				splitPoints,
+			}) !== null
+		);
+	}
+
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
 		const next = planSplit(t, {
@@ -3264,6 +3278,7 @@ export function createEditorStore() {
 		updateCut,
 		mergeCuts,
 		splitAt,
+		canSplitAt,
 		removeSplit,
 		clearSplits,
 		deleteSegmentAt,

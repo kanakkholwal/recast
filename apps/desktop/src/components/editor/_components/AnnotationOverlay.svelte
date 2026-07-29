@@ -1,12 +1,13 @@
 <script lang="ts">
-import { evalOpacity, evalZoom } from "$lib/annotations/eval";
+import { evalOpacity } from "$lib/annotations/eval";
+import { annotationZoom } from "./annotation-projection.logic";
 import {
 	handlePositions,
 	hitTestAnnotation,
 	hitTestHandle,
-	pointToSegmentDist,
 	type HandleName,
 } from "$lib/annotations/hit";
+import { isEditableTarget } from "$lib/dom/editable";
 import {
 	canvasToUV,
 	compositionRectPx,
@@ -22,6 +23,7 @@ import {
 	isCornerHandle,
 	lockAspect,
 } from "$lib/annotations/resize-constraints";
+import { clickPlacedArrow, clickPlacedBox } from "$lib/annotations/place-defaults";
 import { disposeCanvasTokens, selectionPalette } from "$lib/annotations/canvas-tokens";
 import {
 	blurTint,
@@ -51,9 +53,14 @@ interface Props {
 	 *  so we can blur the actual rendered frame (background + padding +
 	 *  shadow + video) rather than just the bare video. */
 	compositeCanvasEl?: HTMLCanvasElement | null;
+	/** Original-time position of the frame the compositor actually drew. The
+	 *  `<video>` element is NOT that clock on the MediaBunny path (it stays
+	 *  paused and is only re-synced past a 0.25s tolerance), so reading it here
+	 *  ramped fades and tracked zoom up to a quarter-second off the picture. */
+	previewTime?: number;
 }
 
-let { store, videoEl, targetEl, compositeCanvasEl = null }: Props = $props();
+let { store, videoEl, targetEl, compositeCanvasEl = null, previewTime }: Props = $props();
 
 let canvasEl: HTMLCanvasElement | null = $state(null);
 let rafHandle: number | null = null;
@@ -86,7 +93,10 @@ type DragState =
 			id: string;
 			anchor: { x: number; y: number };
 	  };
-let drag: DragState = null;
+// $state so `canvasCursor` recomputes when a gesture starts: as a plain local
+// its "grabbing" branch could never fire, because only `hoverHandle` re-ran the
+// derived and hover is deliberately frozen for the duration of a drag.
+let drag: DragState = $state(null);
 // Undo is pushed on the first real move of a move/resize drag, not at
 // pointer-down, so a pure select-click leaves no no-op entry. Placement
 // pushes via addAnnotation, so it starts "already pushed".
@@ -134,9 +144,8 @@ function rectFor(a: { anchor?: AnnotationAnchor }): Rect {
 	return a.anchor === "frame" ? compRect() : videoRect();
 }
 
-/** Frame-anchored annotations ignore zoom; video-anchored ones track it. */
 function zoomFor(a: { anchor?: AnnotationAnchor }, t: number) {
-	return a.anchor === "frame" ? IDENTITY_ZOOM : evalZoom(store.zoomRegions, t);
+	return annotationZoom(a.anchor, store.zoomRegions, t, store.focusEnabled);
 }
 
 function projectA(a: { anchor?: AnnotationAnchor }, ux: number, uy: number, t: number) {
@@ -165,7 +174,7 @@ function pointerToCanvasPx(e: PointerEvent): { x: number; y: number } {
 }
 
 function playbackTime(): number {
-	return videoEl?.currentTime ?? store.currentTime;
+	return previewTime ?? videoEl?.currentTime ?? store.currentTime;
 }
 
 //  Drawing
@@ -372,15 +381,17 @@ function drawSelection(ctx: CanvasRenderingContext2D, a: Annotation, t: number) 
 	ctx.restore();
 }
 
-/** Size badge pinned to the top-left of the box while placing or resizing,
- *  showing the annotation's dimensions in output-video pixels. Mirrors the
- *  recording overlay's `bg-primary` dimension chip. */
+/** Dimension badge shown while placing or resizing, in output-video pixels.
+ *  Centred below the box, as Figma and Framer both place it; above-left put it
+ *  directly under the pointer on a north-west drag. Flips above when there is
+ *  no room below. */
 function drawSizeBadge(ctx: CanvasRenderingContext2D, a: Annotation, t: number) {
-	if (a.kind.kind === "arrow" || !store.metadata) return;
+	if (a.kind.kind === "arrow" || !store.metadata || !canvasEl) return;
 	const dpr = getDpr();
 	const palette = selectionPalette();
 	const box = normaliseBox(a.kind);
 	const tl = projectA(a, box.x, box.y, t);
+	const br = projectA(a, box.x + box.w, box.y + box.h, t);
 	const wPx = Math.round(box.w * store.metadata.width);
 	const hPx = Math.round(box.h * store.metadata.height);
 	const label = `${wPx} × ${hPx}`;
@@ -390,10 +401,15 @@ function drawSizeBadge(ctx: CanvasRenderingContext2D, a: Annotation, t: number) 
 	ctx.textBaseline = "middle";
 	const padX = 6 * dpr;
 	const chipH = 18 * dpr;
+	const gap = 6 * dpr;
 	const textW = ctx.measureText(label).width;
 	const chipW = textW + padX * 2;
-	const chipX = tl.x;
-	const chipY = Math.max(tl.y - chipH - 4 * dpr, 2 * dpr);
+	const chipX = Math.min(
+		Math.max((tl.x + br.x) / 2 - chipW / 2, gap),
+		Math.max(gap, canvasEl.width - chipW - gap),
+	);
+	const below = br.y + gap;
+	const chipY = below + chipH + gap <= canvasEl.height ? below : Math.max(tl.y - chipH - gap, gap);
 
 	ctx.beginPath();
 	roundRectPath(ctx, chipX, chipY, chipW, chipH, 3 * dpr);
@@ -634,9 +650,6 @@ function handlePointerDown(e: PointerEvent) {
 	if (hitAnno) {
 		(e.currentTarget as Element).setPointerCapture(e.pointerId);
 		store.selectedAnnotationId = hitAnno.id;
-		// Distance-from-segment uses pointToSegmentDist for arrows; reused so
-		// future tools can hit-test against polylines without divergence.
-		void pointToSegmentDist;
 		const pointerUV = unprojectA(hitAnno, pt.x, pt.y, t);
 		if (hitAnno.kind.kind === "arrow") {
 			drag = {
@@ -715,8 +728,7 @@ function handlePointerDown(e: PointerEvent) {
 					radius: 0.005,
 				};
 				break;
-			case "image":
-				return;
+			// "image" is a one-shot insert from the panel, never an armed tool.
 			default:
 				return;
 		}
@@ -941,6 +953,7 @@ function handlePointerUp(e: PointerEvent) {
 	snapGuides = [];
 	if (drag.kind === "place") {
 		const anno = store.annotations.find((a) => a.id === drag!.id);
+		const f = frameDims();
 		if (anno) {
 			if (
 				anno.kind.kind === "rect" ||
@@ -949,10 +962,12 @@ function handlePointerUp(e: PointerEvent) {
 				anno.kind.kind === "blur"
 			) {
 				if (Math.abs(anno.kind.w) < 0.01 || Math.abs(anno.kind.h) < 0.01) {
-					// Cancelled placement: remove and unwind addAnnotation's undo push
-					// so a stray click leaves no undo entries.
-					store.removeAnnotation(drag.id, false);
-					store.popUndoState();
+					// A click with no drag places a default-sized shape rather than
+					// cancelling. Text already worked this way; arming the Rectangle
+					// tool and clicking used to produce nothing at all.
+					const box = clickPlacedBox(drag.anchor.x, drag.anchor.y, f.w, f.h);
+					store.updateAnnotation(drag.id, { kind: { ...anno.kind, ...box } });
+					store.selectedAnnotationId = drag.id;
 				}
 			} else if (anno.kind.kind === "text") {
 				if (Math.abs(anno.kind.w) < 0.04) {
@@ -969,8 +984,9 @@ function handlePointerUp(e: PointerEvent) {
 				const dx = anno.kind.x2 - anno.kind.x1;
 				const dy = anno.kind.y2 - anno.kind.y1;
 				if (Math.hypot(dx, dy) < 0.01) {
-					store.removeAnnotation(drag.id, false);
-					store.popUndoState();
+					const pts = clickPlacedArrow(anno.kind.x1, anno.kind.y1, f.w, f.h);
+					store.updateAnnotation(drag.id, { kind: { ...anno.kind, ...pts } });
+					store.selectedAnnotationId = drag.id;
 				}
 			}
 		}
@@ -1025,6 +1041,10 @@ function nudgeBy(dxUV: number, dyUV: number) {
 }
 
 function handleKeyDown(e: KeyboardEvent) {
+	// Typing surfaces own every key. Escape especially: TextAnnotationLayer uses
+	// it to cancel an inline text edit, and clearing the selection here too meant
+	// one Escape both reverted the text AND closed the panel that was editing it.
+	if (isEditableTarget(e.target)) return;
 	if (e.key === "Escape") {
 		if (store.annotationTool) {
 			store.annotationTool = null;
@@ -1048,11 +1068,6 @@ function handleKeyDown(e: KeyboardEvent) {
 		(e.metaKey || e.ctrlKey) &&
 		!e.altKey
 	) {
-		const target = e.target as HTMLElement | null;
-		const inEditable =
-			target &&
-			(target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-		if (inEditable) return;
 		if (e.key === "]") {
 			e.preventDefault();
 			store.reorderAnnotation(store.selectedAnnotationId, 1);
@@ -1080,11 +1095,6 @@ function handleKeyDown(e: KeyboardEvent) {
 		!e.altKey &&
 		["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
 	) {
-		const target = e.target as HTMLElement | null;
-		const inEditable =
-			target &&
-			(target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
-		if (inEditable) return;
 		const selForNudge = store.annotations.find((x) => x.id === store.selectedAnnotationId) ?? {};
 		const r = rectFor(selForNudge);
 		if (r.w <= 0 || r.h <= 0) return;
@@ -1126,10 +1136,11 @@ $effect(() => {
 	return () => ro.disconnect();
 });
 
-// Repaint on the state the drawing actually depends on. `drag` and
-// `targetSize` are plain locals, so their call sites schedule directly.
+// Repaint on the state the drawing actually depends on. `targetSize` is a plain
+// local, so its call sites schedule directly.
 $effect(() => {
 	void store.annotationsByZ;
+	void previewTime;
 	void store.currentTime;
 	void store.selectedAnnotationId;
 	void store.hoveredAnnotationId;
@@ -1138,6 +1149,14 @@ $effect(() => {
 	void store.annotationTool;
 	void snapGuides;
 	void store.isPlaying;
+	// Projection inputs: without these, changing padding, aspect or a zoom
+	// region while paused left the markup drawn against the previous geometry
+	// until something else happened to trigger a frame.
+	void store.padding;
+	void store.outputAspect;
+	void store.metadata;
+	void store.zoomRegions;
+	void store.focusEnabled;
 	scheduleRedraw();
 });
 
@@ -1149,6 +1168,14 @@ onDestroy(() => {
 	if (rafHandle !== null) cancelAnimationFrame(rafHandle);
 	disposeCanvasTokens();
 });
+
+// Editing is annotations-tab-only everywhere else in this file (selection chrome,
+// nudge, z-order), and TextAnnotationLayer gates its own pointer-events the same
+// way. The canvas didn't, so a click on the Audio or Captions tab could select
+// and drag a shape with no handles drawn to show it had happened.
+const interactive = $derived(
+	store.activePanel === "annotations" && !store.annotationsGloballyHidden,
+);
 
 const canvasCursor = $derived.by(() => {
 	if (store.annotationTool) return "crosshair";
@@ -1172,7 +1199,7 @@ const canvasCursor = $derived.by(() => {
   onpointercancel={handlePointerUp}
   onpointerleave={() => (hoverHandle = null)}
   class="absolute inset-0 h-full w-full"
-  style:pointer-events={store.annotationsGloballyHidden ? "none" : "auto"}
+  style:pointer-events={interactive ? "auto" : "none"}
   style:touch-action="none"
   style:cursor={canvasCursor}
 ></canvas>

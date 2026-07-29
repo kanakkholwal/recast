@@ -16,6 +16,7 @@
   } from "./timeline-card-drag.logic";
   import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
   import { type SnapResult, type SnapTarget } from "./timeline-snap";
+  import { edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
 
   // Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
   // (no sparkline) so the two lanes are distinguishable at a glance.
@@ -26,6 +27,10 @@
     pixelsPerSecond: number;
     fps: number;
     duration: number;
+    /** Layout comes from the lane, which packs overlapping cards into rows. */
+    left: number;
+    width: number;
+    top: number;
     snapTargets: SnapTarget[];
     timeMode: TimeMode;
     onSnapChange: (snap: SnapResult["target"] | null) => void;
@@ -38,6 +43,9 @@
     pixelsPerSecond,
     fps,
     duration,
+    left,
+    width,
+    top,
     snapTargets,
     timeMode,
     onSnapChange,
@@ -58,6 +66,10 @@
   }
 
   let drag = $state<DragContext | null>(null);
+  // Undo is pushed on the first real move, not at pointer-down: clicking a card
+  // to select it used to leave an undo entry that changed nothing, so Ctrl+Z
+  // after selecting five cards did nothing five times.
+  let dragUndoPushed = false;
 
   const isSelected = $derived(annotation.id === store.selectedAnnotationId);
   // Output (post-cut) axis. See ZoomLayerCard for the rationale.
@@ -67,12 +79,8 @@
     outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
   // Labels read on the output axis, like the ruler and the playhead.
   const outSec = (t: number) => originalToOutput(store.renderMap, t);
-  const left = $derived(xOf(annotation.start));
-  // 28px keeps a one-frame annotation grabbable.
-  const width = $derived(
-    Math.max(xOf(annotation.end) - xOf(annotation.start), 28),
-  );
   const showSubtitle = $derived(width >= 110);
+  const handlePx = $derived(edgeHandleWidth(width));
   const Icon = $derived(kindIcon(annotation));
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
@@ -82,7 +90,7 @@
     event.preventDefault();
     event.stopPropagation();
     store.selectedAnnotationId = annotation.id;
-    store.pushUndoState();
+    dragUndoPushed = false;
     drag = {
       mode,
       pointerId: event.pointerId,
@@ -100,6 +108,10 @@
 
   function onPointerMove(event: PointerEvent) {
     if (!drag) return;
+    if (!dragUndoPushed) {
+      store.pushUndoState();
+      dragUndoPushed = true;
+    }
     const geom = {
       origin: { start: drag.originalStart, end: drag.originalEnd },
       clientX: event.clientX,
@@ -198,9 +210,8 @@
   style="
     left: {left}px;
     width: {width}px;
-    top: 50%;
-    margin-top: -13px;
-    height: 26px;
+    top: {top}px;
+    height: {ROW_HEIGHT_PX}px;
   "
 >
   <button
@@ -255,22 +266,22 @@
     </div>
   </button>
 
+  <!-- Pointer-only grips. They used to carry role="slider" with tabindex="-1"
+       and no key handler: announced as sliders, impossible to focus or operate.
+       Keyboard resize lives on the card itself (Alt+Arrow). Width scales with
+       the card so a short one keeps more middle to drag than edge to resize. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize annotation start"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={annotation.start}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-start", e);
     }}
-    class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 left-0 z-10 cursor-ew-resize"
+    style="width: {handlePx}px;"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -278,20 +289,16 @@
   </div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize annotation end"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={annotation.end}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-end", e);
     }}
-    class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
+    style="width: {handlePx}px;"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

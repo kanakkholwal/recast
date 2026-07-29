@@ -10,26 +10,24 @@ import { EASE } from "$lib/easing/cubic-bezier";
 import {
 	DEFAULT_ANNOTATION_RAMP,
 	type Annotation,
-	type AnnotationKindName,
 	type EditorStore,
 } from "$lib/stores/editor-store.svelte";
 import {
 	AlignCenter,
 	AlignLeft,
 	AlignRight,
-	ArrowUpRight,
-	Circle,
-	Droplets,
 	Image as ImageIcon,
-	MousePointer2,
-	Square,
 	SquareDashedMousePointer,
 	Trash2,
-	Type as TypeIcon,
 } from "@recast/icons";
-import type { IconComponent } from "@recast/icons";
 import { toast } from "@recast/ui/sonner";
-import { pickImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
+import { insertImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
+import {
+	ANNOTATION_TOOLS,
+	IMAGE_TOOL,
+	toolForHotkey,
+	type AnnotationToolId,
+} from "$lib/annotations/tools";
 import type { TitlePreset } from "$lib/annotations/title-presets";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
@@ -43,6 +41,7 @@ import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { motionDuration } from "$lib/motion.svelte";
+import InspectorHint from "../InspectorHint.svelte";
 import EasingControl from "./EasingControl.svelte";
 import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
 import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
@@ -65,27 +64,10 @@ const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
 
-type ToolDef = {
-	id: AnnotationKindName | "select";
-	label: string;
-	icon: IconComponent;
-	hotkey: string;
-};
+// Shared with the on-canvas toolbar so labels, icons and shortcuts can't drift.
+const tools = ANNOTATION_TOOLS;
 
-// Modal tools only, so every tile in the grid is a mode you can be IN. Image
-// used to sit here but is a one-shot insert, so its tile could never light up.
-const tools: ToolDef[] = [
-	{ id: "select", label: "Select", icon: MousePointer2, hotkey: "V" },
-	{ id: "rect", label: "Rectangle", icon: Square, hotkey: "R" },
-	{ id: "ellipse", label: "Ellipse", icon: Circle, hotkey: "O" },
-	{ id: "arrow", label: "Arrow", icon: ArrowUpRight, hotkey: "A" },
-	{ id: "text", label: "Text", icon: TypeIcon, hotkey: "T" },
-	{ id: "blur", label: "Blur", icon: Droplets, hotkey: "B" },
-];
-
-const IMAGE_HOTKEY = "i";
-
-function setTool(id: ToolDef["id"]) {
+function setTool(id: AnnotationToolId) {
 	if (id === "select") {
 		store.annotationTool = null;
 		return;
@@ -93,17 +75,7 @@ function setTool(id: ToolDef["id"]) {
 	store.annotationTool = store.annotationTool === id ? null : id;
 }
 
-async function insertImage() {
-	store.annotationTool = null;
-	const meta = store.metadata;
-	const frameAspect = meta && meta.height > 0 ? meta.width / meta.height : 16 / 9;
-	try {
-		const kind = await pickImageAnnotation(frameAspect);
-		if (kind) store.addAnnotation(kind);
-	} catch (error) {
-		toast.error(`Could not insert image: ${error}`);
-	}
-}
+const insertImage = () => insertImageAnnotation(store);
 
 // Insert a ready-styled title/lower-third: a positioned text annotation plus a
 // legibility glow. The user edits the placeholder text in place.
@@ -135,12 +107,12 @@ function handleHotkey(event: KeyboardEvent) {
 	if (event.metaKey || event.ctrlKey || event.altKey) return;
 	if (isEditableTarget(event.target)) return;
 	const key = event.key.toLowerCase();
-	if (key === IMAGE_HOTKEY) {
+	if (key === IMAGE_TOOL.hotkey.toLowerCase()) {
 		event.preventDefault();
 		void insertImage();
 		return;
 	}
-	const tool = tools.find((t) => t.hotkey.toLowerCase() === key);
+	const tool = toolForHotkey(key);
 	if (!tool) return;
 	event.preventDefault();
 	setTool(tool.id);
@@ -206,12 +178,15 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Tools"
-    hint="Pick a tool, then drag on the preview. Annotations follow zoom and crop. Esc cancels placement; hold Alt to bypass snap."
+    hint="Pick a tool, then click to drop one or drag to draw it. Shift keeps a shape square or an arrow at 45°; Esc cancels; annotations follow zoom and crop."
     flush
   >
     {#snippet action()}
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1">
         <span class="text-[10px] text-muted-foreground">Snap</span>
+        <InspectorHint
+          content="While dragging, edges and centres pull into line with the frame and with your other annotations. Hold Alt to bypass it for one drag."
+        />
         <SegmentedToggle
           checked={store.annotationSnapEnabled}
           size="xs"

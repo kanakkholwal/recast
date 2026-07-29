@@ -12,10 +12,11 @@
   } from "./timeline-card-drag.logic";
   import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
   import { type SnapResult, type SnapTarget } from "./timeline-snap";
+  import { edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
 
   // Three drag modes through one pointer-handler: move (shift both edges),
-  // resize-start (move `start`), resize-end (move `end`).
-  // pushUndoState() fires once at pointer-down so the whole gesture is one undo entry.
+  // resize-start (move `start`), resize-end (move `end`). Undo is pushed on the
+  // first real move so a select-click leaves no empty history entry.
 
   interface Props {
     store: EditorStore;
@@ -23,6 +24,10 @@
     pixelsPerSecond: number;
     fps: number;
     duration: number;
+    /** Layout comes from the lane, which packs overlapping cards into rows. */
+    left: number;
+    width: number;
+    top: number;
     snapTargets: SnapTarget[];
     timeMode: TimeMode;
     onSnapChange: (snap: SnapResult["target"] | null) => void;
@@ -36,6 +41,9 @@
     pixelsPerSecond,
     fps,
     duration,
+    left,
+    width,
+    top,
     snapTargets,
     timeMode,
     onSnapChange,
@@ -59,6 +67,7 @@
   }
 
   let drag = $state<DragContext | null>(null);
+  let dragUndoPushed = false;
 
   const isSelected = $derived(region.id === store.selectedZoomRegionId);
   // Output (post-cut) axis so regions sit on the same gapless line as clips;
@@ -71,10 +80,8 @@
   // STORED in original time, so printing that raw would name a timecode the
   // exported file never reaches once anything upstream is cut.
   const outSec = (t: number) => originalToOutput(store.renderMap, t);
-  const left = $derived(xOf(region.start));
-  // 32px floor keeps even sub-frame regions clickable.
-  const width = $derived(Math.max(xOf(region.end) - xOf(region.start), 32));
   const showSubtitle = $derived(width >= 110);
+  const handlePx = $derived(edgeHandleWidth(width));
 
   function beginDrag(mode: DragMode, event: PointerEvent) {
     if (duration <= 0) return;
@@ -83,7 +90,7 @@
     event.preventDefault();
     event.stopPropagation();
     store.selectedZoomRegionId = region.id;
-    store.pushUndoState();
+    dragUndoPushed = false;
     drag = {
       mode,
       pointerId: event.pointerId,
@@ -101,6 +108,10 @@
 
   function onPointerMove(event: PointerEvent) {
     if (!drag) return;
+    if (!dragUndoPushed) {
+      store.pushUndoState();
+      dragUndoPushed = true;
+    }
     const geom = {
       origin: { start: drag.originalStart, end: drag.originalEnd },
       clientX: event.clientX,
@@ -198,9 +209,8 @@
   style="
     left: {left}px;
     width: {width}px;
-    top: 50%;
-    margin-top: -15px;
-    height: 30px;
+    top: {top}px;
+    height: {ZOOM_ROW_HEIGHT_PX}px;
   "
 >
   <!-- Body split from the resize edges so each gets its own cursor; selected state
@@ -261,20 +271,20 @@
     </div>
   </button>
 
-  <!-- Resize handles: 8px hit zone above the body so pointer events land here first. -->
+  <!-- Pointer-only grips, sitting above the body so events land here first. They
+       used to carry role="slider" with tabindex="-1" and no key handler, so they
+       announced as sliders that could never be focused; keyboard resize is on the
+       card (Alt+Arrow). Width scales with the card so a short one keeps more
+       middle to drag than edge to resize. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize region start"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={region.start}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-start", e);
     }}
-    class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 left-0 z-10 cursor-ew-resize"
+    style="width: {handlePx}px;"
   >
     <div
       class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
@@ -285,17 +295,13 @@
   </div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize region end"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={region.end}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-end", e);
     }}
-    class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
+    style="width: {handlePx}px;"
   >
     <div
       class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
