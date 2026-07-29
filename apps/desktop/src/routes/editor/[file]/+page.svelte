@@ -1167,11 +1167,21 @@ async function handleExport() {
 		const browserBlocked = browserExportBlockedReason(store);
 		if (BROWSER_EXPORT_ENABLED && !browserBlocked) {
 			try {
+				// GIF renders at its own target fps (the picker is MP4/WebM-only); the
+				// Rust palette pass re-reads this browser video, so match its fps here.
+				const gifFps =
+					store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
+				const renderFps =
+					store.exportFormat === "gif"
+						? (gifFps ?? meta?.fps ?? 15)
+						: store.exportFps && store.exportFps > 0
+							? store.exportFps
+							: (meta?.fps ?? 30);
 				browserVideoPath = await runBrowserExport(store, {
 					videoUrl: videoSrc,
 					cameraUrl: cameraSrc,
 					quality: store.exportQuality as ExportQuality,
-					fps: store.exportFps && store.exportFps > 0 ? store.exportFps : (meta?.fps ?? 30),
+					fps: renderFps,
 				});
 			} catch (e) {
 				console.error("browser export render failed; using the Rust compositor", e);

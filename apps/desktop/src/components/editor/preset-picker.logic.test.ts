@@ -7,6 +7,7 @@ import {
 	filterPresets,
 	frameInsetPct,
 	groupPresets,
+	resolveEscape,
 	rowMoveIndex,
 	score,
 	wallpaperId,
@@ -29,9 +30,7 @@ describe("score", () => {
 	it("ranks label prefix above substring and keyword", () => {
 		expect(score(preset, "stu")).toBe(100);
 		// label substring (90/category-prefix excluded by a non-matching category)
-		expect(
-			score({ ...preset, label: "My Studio", category: "Other" }, "studio"),
-		).toBe(80);
+		expect(score({ ...preset, label: "My Studio", category: "Other" }, "studio")).toBe(80);
 		expect(score({ ...preset, label: "X", category: "Y" }, "demo")).toBe(30);
 	});
 	it("returns 0 for no match", () => {
@@ -69,12 +68,8 @@ describe("wallpaperId", () => {
 
 describe("bgPreviewStyle", () => {
 	it("uses the value for gradient/color, muted otherwise", () => {
-		expect(bgPreviewStyle(preset)).toBe(
-			"background:linear-gradient(#000,#fff)",
-		);
-		expect(bgPreviewStyle({ ...preset, bg: "wallpaper" })).toBe(
-			"background:var(--color-muted)",
-		);
+		expect(bgPreviewStyle(preset)).toBe("background:linear-gradient(#000,#fff)");
+		expect(bgPreviewStyle({ ...preset, bg: "wallpaper" })).toBe("background:var(--color-muted)");
 	});
 });
 
@@ -88,17 +83,10 @@ const P = (label: string, category: string) => ({
 describe("filterPresets", () => {
 	const presets = [P("Studio", "Studio"), P("Reel", "Social"), P("Story", "Social")];
 	it("returns all in order for an empty query", () => {
-		expect(filterPresets(presets, "").map((p) => p.label)).toEqual([
-			"Studio",
-			"Reel",
-			"Story",
-		]);
+		expect(filterPresets(presets, "").map((p) => p.label)).toEqual(["Studio", "Reel", "Story"]);
 	});
 	it("filters and ranks by score", () => {
-		expect(filterPresets(presets, "st").map((p) => p.label)).toEqual([
-			"Studio",
-			"Story",
-		]);
+		expect(filterPresets(presets, "st").map((p) => p.label)).toEqual(["Studio", "Story"]);
 	});
 });
 
@@ -110,10 +98,31 @@ describe("groupPresets", () => {
 		expect(g[0][0]).toBe("Results");
 	});
 	it("groups by category and pins Current on top", () => {
-		const current = P("Studio", "Studio");
+		const current = filtered[0];
 		const g = groupPresets(filtered, "", current);
 		expect(g[0][0]).toBe("Current");
-		expect(g.map(([c]) => c)).toEqual(["Current", "Studio", "Instagram"]);
+		expect(g[0][1]).toEqual([current]);
+	});
+	it("does not repeat the pinned preset inside its own category", () => {
+		const current = filtered[0];
+		const g = groupPresets(filtered, "", current);
+		expect(g.map(([c]) => c)).toEqual(["Current", "Instagram"]);
+	});
+	it("keeps a category that still holds other presets", () => {
+		const items = [P("Studio", "Studio"), P("Focus", "Studio")];
+		const g = groupPresets(items, "", items[0]);
+		expect(g.map(([c]) => c)).toEqual(["Current", "Studio"]);
+		expect(g[1][1].map((x) => x.label)).toEqual(["Focus"]);
+	});
+});
+
+describe("resolveEscape", () => {
+	it("clears a typed query before it closes the dialog", () => {
+		expect(resolveEscape("story")).toBe("clear");
+	});
+	it("closes on an empty or whitespace query", () => {
+		expect(resolveEscape("")).toBe("close");
+		expect(resolveEscape("   ")).toBe("close");
 	});
 });
 

@@ -1,147 +1,167 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import {
-    ArrowLeft,
-    LoaderCircle,
-    Maximize2,
-    Minimize2,
-    PanelBottom,
-    PanelRight,
-    RotateCcw,
-    Save,
-    Sparkles,
-    Upload,
-    X,
-    Layout2
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { Kbd } from "@recast/ui/kbd";
-  import { Separator } from "@recast/ui/separator";
-  import * as Tooltip from "@recast/ui/tooltip";
-  import { cn } from "@recast/ui/utils";
-  import ConfirmDialog from "../recast/ConfirmDialog.svelte";
-  import PresetPicker, { PRESETS, type Preset } from "./PresetPicker.svelte";
-  import { onMount } from "svelte";
-  import {
-    chordLabel,
-    registerShortcutHandlers,
-  } from "$lib/shortcuts/registry.svelte";
+import {
+	ArrowLeft,
+	Layout2,
+	LoaderCircle,
+	Maximize2,
+	Minimize2,
+	PanelBottom,
+	PanelRight,
+	RotateCcw,
+	Save,
+	Sparkles,
+	Upload,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Kbd } from "@recast/ui/kbd";
+import { Separator } from "@recast/ui/separator";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
+import { onMount } from "svelte";
+import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import ConfirmDialog from "../recast/ConfirmDialog.svelte";
+import PresetPicker from "./PresetPicker.svelte";
+import { commitLook, type PresetLook, previewLook } from "./preset-look";
+import { PRESETS, type Preset } from "./presets.data";
 
-  interface Props {
-    store: EditorStore;
-    filename?: string;
-    onexport?: () => void;
-    onsave?: () => void | Promise<void>;
-    isSaving?: boolean;
-    // Drives the Export button's label/icon/action:
-    //   export   idle, opens the export surface
-    //   close    options picker is open, closes it
-    //   minimize export surface is foregrounded, sends it to the activity center
-    //   show     export is running/finished but minimized, reopens it
-    exportMode?: "export" | "close" | "minimize" | "show";
-    /** Whether this editor's export is actively encoding (for the minimized
-     *  "Exporting…" label). */
-    exportRunning?: boolean;
-    showSidebar?: boolean;
-    showTimeline?: boolean;
-    onToggleSidebar?: () => void;
-    onToggleTimeline?: () => void;
-  }
+interface Props {
+	store: EditorStore;
+	filename?: string;
+	onexport?: () => void;
+	onsave?: () => void | Promise<void>;
+	isSaving?: boolean;
+	// Drives the Export button's label/icon/action:
+	//   export   idle, opens the export surface
+	//   close    options picker is open, closes it
+	//   minimize export surface is foregrounded, sends it to the activity center
+	//   show     export is running/finished but minimized, reopens it
+	exportMode?: "export" | "close" | "minimize" | "show";
+	/** Whether this editor's export is actively encoding (for the minimized
+	 *  "Exporting…" label). */
+	exportRunning?: boolean;
+	showSidebar?: boolean;
+	showTimeline?: boolean;
+	onToggleSidebar?: () => void;
+	onToggleTimeline?: () => void;
+}
 
-  let {
-    store,
-    filename = "Recording",
-    onexport,
-    onsave,
-    isSaving = false,
-    exportMode = "export",
-    exportRunning = false,
-    showSidebar = true,
-    showTimeline = true,
-    onToggleSidebar,
-    onToggleTimeline,
-  }: Props = $props();
+let {
+	store,
+	filename = "Recording",
+	onexport,
+	onsave,
+	isSaving = false,
+	exportMode = "export",
+	exportRunning = false,
+	showSidebar = true,
+	showTimeline = true,
+	onToggleSidebar,
+	onToggleTimeline,
+}: Props = $props();
 
-  // The panel/timeline toggles are meaningless while the export surface owns the
-  // layout, so they're disabled then rather than silently doing nothing. (A
-  // minimized export is back in the normal editing layout, so they stay live.)
-  const exportOpen = $derived(
-    exportMode === "close" || exportMode === "minimize",
-  );
+// The panel/timeline toggles are meaningless while the export surface owns the
+// layout, so they're disabled then rather than silently doing nothing. (A
+// minimized export is back in the normal editing layout, so they stay live.)
+const exportOpen = $derived(exportMode === "close" || exportMode === "minimize");
 
-  const toggleClass = (active: boolean) =>
-    cn(
-      "cursor-pointer flex size-6 items-center justify-center rounded-md transition-colors duration-150",
-      "disabled:pointer-events-none disabled:opacity-40",
-      active
-        ? "text-foreground shadow-(--shadow-craft-inset)"
-        : "text-muted-foreground hover:bg-card/60 hover:text-foreground",
-    );
-  let showPresetsPicker = $state(false);
-  let showRevertConfirm = $state(false);
+const toggleClass = (active: boolean) =>
+	cn(
+		"cursor-pointer flex size-6 items-center justify-center rounded-md transition-colors duration-150",
+		"disabled:pointer-events-none disabled:opacity-40",
+		active
+			? "text-foreground shadow-(--shadow-craft-inset)"
+			: "text-muted-foreground hover:bg-card/60 hover:text-foreground",
+	);
+let showPresetsPicker = $state(false);
+let showRevertConfirm = $state(false);
 
-  // Mod+P via the central shortcut registry, which avoids a per-component window listener leaking under HMR.
-  onMount(() =>
-    registerShortcutHandlers({
-      "editor.presets": () => {
-        // The export surface owns the rail and its own Esc routing. Opening the
-        // picker over it strands Esc between two handlers, and the export one
-        // cancels the render. Every other editor chord already bails here.
-        if (exportOpen) return;
-        showPresetsPicker = !showPresetsPicker;
-      },
-    }),
-  );
+// Mod+P via the central shortcut registry, which avoids a per-component window listener leaking under HMR.
+onMount(() =>
+	registerShortcutHandlers({
+		"editor.presets": () => {
+			// The export surface owns the rail and its own Esc routing. Opening the
+			// picker over it strands Esc between two handlers, and the export one
+			// cancels the render. Every other editor chord already bails here.
+			if (exportOpen) return;
+			showPresetsPicker = !showPresetsPicker;
+		},
+	}),
+);
 
-  function applyPreset(preset: Preset) {
-    store.pushUndoState();
-    store.setBackground({
-      type: preset.bg,
-      value: preset.value ?? store.backgroundValue,
-    });
-    store.padding = preset.padding;
-    store.backgroundBlur = preset.blur;
-    if (preset.layout) store.layoutMode = preset.layout;
-    // Unrecognised aspects (e.g. "Source") fall back to the source-matched canvas.
-    const aspectMap: Record<
-      string,
-      import("$lib/stores/editor-store.svelte").OutputAspect
-    > = {
-      "16:9": "16:9",
-      "9:16": "9:16",
-      "1:1": "1:1",
-      "1.91:1": "1.91:1",
-    };
-    store.outputAspect = aspectMap[preset.aspect] ?? "source";
-    // UI-only: lets the toolbar surface the applied preset as a chip.
-    store.lastAppliedPresetId = preset.id;
-  }
+function readLook(): PresetLook {
+	return {
+		bg: store.backgroundType,
+		value: store.backgroundValue,
+		padding: store.padding,
+		blur: store.backgroundBlur,
+		layout: store.layoutMode,
+		aspect: store.outputAspect,
+		presetId: store.lastAppliedPresetId,
+	};
+}
 
-  // Reset to source aspect (removes letterbox bars) without touching background/padding/blur.
-  function clearPreset() {
-    if (
-      store.outputAspect === "source" &&
-      store.lastAppliedPresetId === null
-    ) {
-      return;
-    }
-    store.pushUndoState();
-    store.outputAspect = "source";
-    store.lastAppliedPresetId = null;
-  }
+function writeLook(look: PresetLook) {
+	store.setBackground({ type: look.bg, value: look.value });
+	store.padding = look.padding;
+	store.backgroundBlur = look.blur;
+	store.layoutMode = look.layout;
+	store.outputAspect = look.aspect;
+	store.lastAppliedPresetId = look.presetId;
+}
 
-  // null if the persisted id no longer exists in PRESETS (removed across versions).
-  const activePreset = $derived.by(() => {
-    const id = store.lastAppliedPresetId;
-    if (!id) return null;
-    return PRESETS.find((p) => p.id === id) ?? null;
-  });
+// The look to fall back to if the picker is dismissed. Captured on the first
+// preview so undo history stays clean while the cursor moves around.
+let lookBeforePreview: PresetLook | null = null;
 
-  // The action (open / close / minimize / show) is decided by the parent from
-  // exportMode; this just forwards the click.
-  function onExportClick() {
-    onexport?.();
-  }
+// Preview writes are transient, and several store setters push undo history of
+// their own — left unsuppressed, browsing the picker buried the real edit under
+// an undo entry per keystroke and flagged the project dirty.
+function previewPreset(preset: Preset) {
+	const before = (lookBeforePreview ??= readLook());
+	store.withoutUndo(() => writeLook(previewLook(preset, before)));
+}
+
+function restoreBeforePreview() {
+	const before = lookBeforePreview;
+	lookBeforePreview = null;
+	if (before) store.withoutUndo(() => writeLook(before));
+}
+
+function applyPreset(preset: Preset) {
+	// Rewind the preview first so undo lands on the look the user started with,
+	// not whatever the cursor last hovered over.
+	const before = lookBeforePreview ?? readLook();
+	lookBeforePreview = null;
+	store.withoutUndo(() => writeLook(before));
+	store.pushUndoState();
+	// pushUndoState already flagged dirty, and withoutUndo preserves that.
+	store.withoutUndo(() => writeLook(commitLook(preset, before)));
+}
+
+// Reset to source aspect (removes letterbox bars) without touching background/padding/blur.
+function clearPreset() {
+	if (store.outputAspect === "source" && store.lastAppliedPresetId === null) {
+		return;
+	}
+	store.pushUndoState();
+	store.outputAspect = "source";
+	store.lastAppliedPresetId = null;
+}
+
+// null if the persisted id no longer exists in PRESETS (removed across versions).
+const activePreset = $derived.by(() => {
+	const id = store.lastAppliedPresetId;
+	if (!id) return null;
+	return PRESETS.find((p) => p.id === id) ?? null;
+});
+
+// The action (open / close / minimize / show) is decided by the parent from
+// exportMode; this just forwards the click.
+function onExportClick() {
+	onexport?.();
+}
 </script>
 
 <div
@@ -438,6 +458,8 @@
   open={showPresetsPicker}
   onOpenChange={(v) => (showPresetsPicker = v)}
   onapply={applyPreset}
+  onpreview={previewPreset}
+  onrestore={restoreBeforePreview}
   currentId={store.lastAppliedPresetId}
 />
 

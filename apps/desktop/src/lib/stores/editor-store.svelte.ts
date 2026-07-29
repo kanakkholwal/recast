@@ -1204,10 +1204,29 @@ export function createEditorStore() {
 
 	const MAX_UNDO_HISTORY = 50;
 
+	let undoSuppression = 0;
+
 	function pushUndoState() {
+		if (undoSuppression > 0) return;
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 		isDirty = true;
+	}
+
+	/**
+	 * Run `fn` without recording undo history or marking the project dirty —
+	 * for transient writes the user hasn't committed, like previewing a preset
+	 * as the cursor moves over it. Commit the real change outside this scope.
+	 */
+	function withoutUndo(fn: () => void) {
+		const wasDirty = isDirty;
+		undoSuppression++;
+		try {
+			fn();
+		} finally {
+			undoSuppression--;
+			isDirty = wasDirty;
+		}
 	}
 
 	// Drop the most recent undo entry. For unwinding a push that turned into a
@@ -3173,6 +3192,7 @@ export function createEditorStore() {
 		redo,
 		pushUndoState,
 		popUndoState,
+		withoutUndo,
 		pushUndoStateCoalesced,
 		markSaved,
 		revertToSaved,
