@@ -270,9 +270,9 @@ export type ExportStateEvent =
 
 export interface ExportGifSettings {
 	fps: number | null;
-	quality: 'low' | 'medium' | 'high';
-	loop: 'infinite' | 'once' | number;
-	dither: 'bayer' | 'sierra2' | 'none';
+	quality: "low" | "medium" | "high";
+	loop: "infinite" | "once" | number;
+	dither: "bayer" | "sierra2" | "none";
 }
 
 /** Encoder effort axis, orthogonal to `quality` (resolution). "balanced"
@@ -295,6 +295,9 @@ export interface EnqueueExportRequest {
 	burnCaptions?: boolean;
 	/** Subtitle sidecar to write next to the export on success, or null. */
 	captionSidecar?: { format: "vtt" | "srt"; transcript: Transcript } | null;
+	/** Path to a browser-rendered, already-composited video (Phase 4). When set,
+	 *  the job mux-copies it instead of running the Rust filter_complex compositor. */
+	browserVideoPath?: string | null;
 }
 
 /** A queue row as the backend reports it (source of truth for the activity UI). */

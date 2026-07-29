@@ -39,6 +39,8 @@ import {
 	findMissingImageAnnotations,
 	hasBlurUnderZoom,
 } from "$lib/services/export";
+import { runBrowserExport } from "$lib/export/browser-export";
+import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
@@ -1103,6 +1105,9 @@ const exportResult = $derived<ExportResult | null>(
 				: null,
 );
 
+// Phase 4: browser-render the video + FFmpeg mux. OFF by default — flip to
+// exercise the new path; any failure falls back to the classic Rust export.
+const BROWSER_EXPORT_ENABLED = false;
 async function handleExport() {
 	if (isExportingHere) return;
 	const exportId = createExportId();
@@ -1157,6 +1162,20 @@ async function handleExport() {
 
 		// Hand the fully-built export to the queue; the store runs it (after any
 		// already-running one), so it survives leaving this editor.
+		let browserVideoPath: string | undefined;
+		if (BROWSER_EXPORT_ENABLED && store.exportFormat !== "gif") {
+			try {
+				browserVideoPath = await runBrowserExport(store, {
+					videoUrl: videoSrc,
+					quality: store.exportQuality as ExportQuality,
+					fps: store.exportFps && store.exportFps > 0 ? store.exportFps : (meta?.fps ?? 30),
+				});
+			} catch (e) {
+				console.error("browser export render failed; using the Rust compositor", e);
+				browserVideoPath = undefined;
+			}
+		}
+
 		exportActivity.enqueue({
 			id: exportId,
 			filename: data.filename,
@@ -1174,6 +1193,7 @@ async function handleExport() {
 				fps: store.exportFormat === "gif" ? undefined : store.exportFps,
 				// No-op unless a transcript exists and caption options are enabled.
 				captions: buildCaptionExport(store),
+				browserVideoPath,
 			},
 		});
 	} catch (err) {

@@ -213,6 +213,9 @@ export interface RunExportOptions {
 	fps?: number | null;
 	/** Caption emission (burn-in + sidecar). Built via {@link buildCaptionExport}. */
 	captions?: CaptionExportPayload;
+	/** Browser-rendered composited video temp path (Phase 4). When set, the job
+	 *  mux-copies it instead of running the Rust filter_complex compositor. */
+	browserVideoPath?: string;
 }
 
 /**
@@ -241,5 +244,6 @@ export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 		fps: opts.fps,
 		burnCaptions: opts.captions?.burnCaptions ?? false,
 		captionSidecar: opts.captions?.sidecar ?? null,
+		browserVideoPath: opts.browserVideoPath ?? null,
 	});
 }

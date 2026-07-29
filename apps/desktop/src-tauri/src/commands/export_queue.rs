@@ -426,6 +426,43 @@ pub async fn enqueue_export(
     Ok(repairs)
 }
 
+/// Persist a browser-rendered export video (Phase 4): the mp4 bytes ride the
+/// invoke body as raw bytes (an ArrayBuffer), same as `save_recorded_camera`.
+/// Returns the temp path to hand back as `browser_video_path` on the follow-up
+/// `enqueue_export`; the mux job's success cleanup removes it.
+#[tauri::command]
+pub async fn save_browser_export_video(
+    app: AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> AppResult<String> {
+    let bytes: Vec<u8> = match request.body() {
+        tauri::ipc::InvokeBody::Raw(bytes) => bytes.clone(),
+        tauri::ipc::InvokeBody::Json(serde_json::Value::Array(arr)) => arr
+            .iter()
+            .map(|v| v.as_u64().map(|n| n as u8))
+            .collect::<Option<Vec<u8>>>()
+            .ok_or_else(|| AppError::msg("browser export payload was not a byte array"))?,
+        tauri::ipc::InvokeBody::Json(_) => {
+            return Err(AppError::msg("browser export payload must be raw bytes"));
+        }
+    };
+    let dir = payloads_dir(&app).join("browser-videos");
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let path = dir.join(format!("browser-{stamp}.mp4"));
+    tauri::async_runtime::spawn_blocking(move || -> AppResult<String> {
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| AppError::msg(format!("create browser-videos dir: {e}")))?;
+        std::fs::write(&path, &bytes)
+            .map_err(|e| AppError::msg(format!("write browser export video: {e}")))?;
+        Ok(path.to_string_lossy().to_string())
+    })
+    .await
+    .map_err(|e| AppError::msg(format!("save_browser_export_video worker panicked: {e}")))?
+}
+
 /// The whole queue (queued, running, and undismissed terminal jobs), oldest first.
 #[tauri::command]
 pub async fn list_export_jobs(state: State<'_, AppState>) -> AppResult<Vec<ExportJobDto>> {

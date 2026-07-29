@@ -532,8 +532,16 @@ export function enqueueExport(req: EnqueueExportRequest): Promise<string[]> {
 			fps: req.fps ?? null,
 			burnCaptions: req.burnCaptions ?? false,
 			captionSidecar: req.captionSidecar ?? null,
+			browserVideoPath: req.browserVideoPath ?? null,
 		},
 	});
+}
+
+/** Persist a browser-rendered export video (mp4 bytes ride the invoke body as a
+ *  raw ArrayBuffer) to a temp file; returns the path to pass as `browserVideoPath`
+ *  on the follow-up {@link enqueueExport} so the job mux-copies it. */
+export function saveBrowserExportVideo(bytes: ArrayBuffer): Promise<string> {
+	return invoke<string>("save_browser_export_video", bytes);
 }
 
 /** The whole export queue (queued, running, and undismissed results), oldest first. */

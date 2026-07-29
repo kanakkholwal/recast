@@ -1930,7 +1930,12 @@ pub(crate) async fn run_mux_job(
     .await;
 
     match task_result {
-        Ok(Ok(path)) => Ok(path),
+        Ok(Ok(path)) => {
+            // The browser video was a pre-encode temp; the muxed output supersedes
+            // it. Kept on failure so a retry can re-mux without re-rendering.
+            let _ = std::fs::remove_file(&browser_video);
+            Ok(path)
+        }
         Ok(Err(e)) => Err(AppError::msg(e)),
         Err(join) => Err(AppError::msg(format!("mux task panicked: {join}"))),
     }

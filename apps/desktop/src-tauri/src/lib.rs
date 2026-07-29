@@ -551,6 +551,7 @@ pub fn run() {
             commands::validate_camera_source,
             commands::update_camera_preview_state,
             commands::save_recorded_camera,
+            commands::save_browser_export_video,
             commands::finish_camera_flush,
             commands::exclude_window_from_capture,
             commands::set_window_aspect_ratio,
