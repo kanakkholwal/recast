@@ -18,7 +18,7 @@ import {
 	ZoomIn,
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
@@ -34,8 +34,7 @@ import {
 } from "$lib/stores/editor-store.svelte";
 import { resolveZoomCenter } from "$lib/zoom/auto-apply";
 import { overlappingZoomIds } from "$lib/zoom/resolve";
-import BezierEditor from "../_components/BezierEditor.svelte";
-import InspectorHint from "../InspectorHint.svelte";
+import EasingControl from "./EasingControl.svelte";
 import {
 	computeNewZoomBounds,
 	isOutsideClip,
@@ -71,9 +70,6 @@ const orderedRegions = $derived([...store.zoomRegions].sort((a, b) => a.start - 
 const selectedIndex = $derived(
 	selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
 );
-
-// Which ramp the Custom-curves editor targets (one graph at a time).
-let customCurve = $state<"in" | "out">("in");
 
 // NLE accessors, not raw trim fields: `outPoint` resolves the legacy
 // `trimEnd === 0` sentinel, which the timeline lane already respects.
@@ -729,58 +725,21 @@ function applyPresetToBoth(preset: Easing) {
             <span class="text-[11px] text-muted-foreground">Custom</span>
           {/if}
         {/snippet}
-        <!-- One-of-many, so a radiogroup with arrow keys rather than a ragged
-             row of toggle buttons. -->
-        <Segmented
-          size="xs"
-          aria-label="Easing preset"
-          value={activeEasingId ?? ""}
-          options={easingPresets.map((p) => ({ value: p.id, label: p.label }))}
-          onValueChange={(id) => {
-            const preset = easingPresets.find((p) => p.id === id);
-            if (preset) applyPresetToBoth(preset.value);
+        <EasingControl
+          value={{ in: region.easeIn, out: region.easeOut }}
+          onpick={applyPresetToBoth}
+          ondrag={(next, which) => {
+            // Fires per pointermove, so coalesce instead of one entry per frame.
+            store.pushUndoStateCoalesced(`zoom-curve-${region.id}-${which}`, 500);
+            updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
           }}
+          size={220}
         />
         <div class="flex justify-end">
           <Button variant="ghost" size="xs" class="text-[10px]" onclick={resetCurves}>
             Reset curves
           </Button>
         </div>
-
-        <PanelSection title="Custom curves" flush collapsible defaultOpen={false}>
-          <div class="flex flex-col gap-2 pt-1">
-            <!-- One editor at a time, switched in/out; the card's sparkline
-                 previews the combined result. -->
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5">
-                <span class="text-[10px] font-medium text-muted-foreground">
-                  Editing the {customCurve === "in" ? "ease-in" : "ease-out"} ramp
-                </span>
-                <InspectorHint
-                  content="Drag the two handles to shape this ramp. Switch between the ease-in and ease-out curves with the toggle."
-                />
-              </div>
-              <SegmentedToggle
-                checked={customCurve === "out"}
-                offLabel="In"
-                onLabel="Out"
-                size="xs"
-                aria-label="Edit ease-in or ease-out curve"
-                onCheckedChange={(next) => (customCurve = next ? "out" : "in")}
-              />
-            </div>
-            <BezierEditor
-              value={customCurve === "in" ? region.easeIn : region.easeOut}
-              onchange={(v) =>
-                updateSelected(
-                  customCurve === "in" ? { easeIn: v } : { easeOut: v },
-                  true,
-                )}
-              showPresets={false}
-              size={220}
-            />
-          </div>
-        </PanelSection>
       </PanelSection>
     </div>
   {/if}

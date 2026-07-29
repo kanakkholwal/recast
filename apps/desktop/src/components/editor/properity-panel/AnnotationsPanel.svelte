@@ -43,7 +43,7 @@ import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { motionDuration } from "$lib/motion.svelte";
-import BezierEditor from "../_components/BezierEditor.svelte";
+import EasingControl from "./EasingControl.svelte";
 import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
 import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
 import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
@@ -64,9 +64,6 @@ function rememberColor(color: string) {
 const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
-
-// Which ramp the Fade-curves editor targets (one graph at a time).
-let customCurve = $state<"in" | "out">("in");
 
 type ToolDef = {
 	id: AnnotationKindName | "select";
@@ -706,38 +703,28 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
         </div>
       </PanelSection>
 
+      <!-- Presets now lead here too: this section used to offer a raw bezier
+           graph and nothing else. -->
       <PanelSection title="Fade curves" collapsible defaultOpen={false}>
         {#snippet action()}
           <Button variant="ghost" size="xs" class="text-[10px]" onclick={resetCurves}>
             Reset curves
           </Button>
         {/snippet}
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] font-medium text-muted-foreground">
-              Editing the fade-{customCurve} curve
-            </span>
-            <SegmentedToggle
-              checked={customCurve === "out"}
-              offLabel="In"
-              onLabel="Out"
-              size="xs"
-              aria-label="Edit fade-in or fade-out curve"
-              onCheckedChange={(next) => (customCurve = next ? "out" : "in")}
-            />
-          </div>
-          <BezierEditor
-            value={customCurve === "in" ? a.easeIn : a.easeOut}
-            onchange={(v) => {
-              // BezierEditor streams onchange per pointermove; coalesce so a
-              // whole curve drag is one undo entry, not one per frame.
-              store.pushUndoStateCoalesced(`anno-curve-${a.id}-${customCurve}`, 500);
-              updateSelected(customCurve === "in" ? { easeIn: v } : { easeOut: v });
-            }}
-            showPresets={false}
-            size={220}
-          />
-        </div>
+        <EasingControl
+          value={{ in: a.easeIn, out: a.easeOut }}
+          onpick={(next) => {
+            store.pushUndoState();
+            updateSelected({ easeIn: { ...next }, easeOut: { ...next } });
+          }}
+          ondrag={(next, which) => {
+            // Fires per pointermove; coalesce so a whole curve drag is one undo
+            // entry, not one per frame.
+            store.pushUndoStateCoalesced(`anno-curve-${a.id}-${which}`, 500);
+            updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
+          }}
+          size={220}
+        />
       </PanelSection>
 
       <AnnotationGeometry {store} annotation={a} />
