@@ -1,20 +1,5 @@
-/**
- * RecastPlayer theme — restyles media-chrome from the ground up to match
- * the shadcn/Tailwind vocabulary used across the rest of the Recast
- * surface. We don't just tint colors; we override sizes, border radii,
- * hover behaviour, tooltip styling, fonts, and scrubber geometry so the
- * player reads as "part of the app", not "a video widget bolted on".
- *
- * Everything keys off design-system tokens where it makes sense; chrome
- * surfaces stay dark + glassy regardless of host theme since the player
- * always sits over black video frames.
- */
-
-/* ──────────────────────────────────────────────────────────────────
-   1. Font + selection — applied to the controller AND every
-   descendant (custom-element shadow roots included via media-chrome's
-   `--media-font-family` variable, which the library does pipe through).
-   ────────────────────────────────────────────────────────────────── */
+/* Chrome surfaces stay dark + glassy regardless of host theme — the player
+   always sits over black video frames. */
 
 .recast-player,
 .recast-player * {
@@ -37,10 +22,6 @@
 	--media-text-font-weight: 500;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   2. Brand + chrome tokens
-   ────────────────────────────────────────────────────────────────── */
-
 .recast-player {
 	/* Neutral, not brand. The player sits over arbitrary video, so the chrome
 	   stays white-on-scrim and lets the frame be the only colourful thing. */
@@ -61,12 +42,8 @@
 	--media-button-icon-height: 16px;
 	--media-button-icon-width: 16px;
 	--media-button-padding: 0;
-	--media-focus-ring-color: var(--primary, #cdec3a);
+	--media-focus-ring-color: #ffffff;
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   3. Scrubber + volume range — white thumb, soft rail
-   ────────────────────────────────────────────────────────────────── */
 
 .recast-player {
 	--media-range-track-background: rgba(255, 255, 255, 0.18);
@@ -86,16 +63,12 @@
 	--media-range-thumb-opacity: 1;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   4. Tooltip + preview thumb — popover styling
-   ────────────────────────────────────────────────────────────────── */
-
 .recast-player {
-	--media-tooltip-background: var(--foreground, #111111);
+	--media-tooltip-background: #111111;
 	--media-tooltip-padding: 6px 12px;
 	--media-tooltip-border-radius: 6px;
 	--media-tooltip-font-size: 12px;
-	--media-tooltip-arrow-color: var(--foreground, #111111);
+	--media-tooltip-arrow-color: #111111;
 	--media-tooltip-border: none;
 	--media-tooltip-filter: none;
 
@@ -106,16 +79,12 @@
 		0 12px 24px -4px rgba(0, 0, 0, 0.18),
 		0 4px 8px -4px rgba(0, 0, 0, 0.14);
 
-	--media-preview-time-background: var(--foreground, #111111);
-	--media-preview-time-color: var(--background, #ffffff);
+	--media-preview-time-background: #111111;
+	--media-preview-time-color: #ffffff;
 	--media-preview-time-padding: 6px 12px;
 	--media-preview-time-border-radius: 6px;
 	--media-preview-time-margin: 6px 0 0;
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   5. Time display + small text
-   ────────────────────────────────────────────────────────────────── */
 
 .recast-player {
 	--media-text-color: rgba(255, 255, 255, 0.78);
@@ -123,13 +92,6 @@
 
 	--media-loading-indicator-icon-color: rgba(255, 255, 255, 0.92);
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   6. Control strip — two flush rows (scrubber, then transport) sitting
-   directly on a bottom scrim. No floating surface: a frosted pill read
-   as a second panel stacked on the video rather than chrome belonging
-   to it, and it cost ~40px of frame.
-   ────────────────────────────────────────────────────────────────── */
 
 .recast-control-bar {
 	/* The scrim is the only thing making the controls legible now that the
@@ -154,8 +116,11 @@
    Fade the bar out then (but keep it while paused, the usual player behaviour);
    it fades back on the next pointer move when the attribute clears. A control
    bar marked `noautohide` (pinned surfaces) opts out. */
+/* `:focus-within`: media-chrome only counts pointer moves and keyup as
+   activity, so a keyboard user who pauses to read loses sight of the control
+   they're focused on. */
 media-controller.recast-player[userinactive]:not([mediapaused])
-	.recast-control-bar:not([noautohide]) {
+	.recast-control-bar:not([noautohide]):not(:focus-within) {
 	opacity: 0;
 	transform: translateY(8px);
 	pointer-events: none;
@@ -207,10 +172,6 @@ media-controller.recast-player.recast-player-theater {
 	border-radius: 0;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   7. Bottom-bar buttons — shadcn ghost vocabulary
-   ────────────────────────────────────────────────────────────────── */
-
 .recast-btn {
 	height: 30px;
 	min-width: 30px;
@@ -223,14 +184,19 @@ media-controller.recast-player.recast-player-theater {
 	background: rgba(255, 255, 255, 0.14) !important;
 }
 
-.recast-btn:focus-visible {
-	outline: 2px solid var(--primary, #cdec3a);
+/* White ring + dark halo rather than --primary: the ring has to clear 3:1
+   against an arbitrary video frame, and --primary is reserved elsewhere. */
+.recast-btn:focus-visible,
+.recast-error-retry:focus-visible {
+	outline: 2px solid #ffffff;
 	outline-offset: 1px;
+	box-shadow: 0 0 0 4px rgba(0, 0, 0, 0.6);
 }
 
 .recast-player:focus-visible {
-	outline: 2px solid var(--primary, #cdec3a);
-	outline-offset: 2px;
+	outline: 2px solid #ffffff;
+	outline-offset: -3px;
+	box-shadow: inset 0 0 0 5px rgba(0, 0, 0, 0.6);
 }
 
 /* Text-only buttons (playback rate). Tighter padding, mono digit width
@@ -252,33 +218,44 @@ media-controller.recast-player.recast-player-theater {
 	height: 100%;
 }
 
-/* Captions toggle: the button only renders when a caption track exists, and
-   shows a clear on/off state. Lucide icons stroke with currentColor, so the
-   `color` here tints the icon. On = full-strength white on a held background;
-   off = dimmed. */
+/* On = held background, off = a strikethrough rule. The old off-state dimmed
+   the icon to 0.55 white, which read as disabled and missed 3:1 (WCAG 1.4.11). */
+.recast-caption-btn {
+	position: relative;
+	color: rgba(255, 255, 255, 0.92);
+}
+
 .recast-caption-btn[aria-pressed="true"] {
-	color: rgba(255, 255, 255, 0.98);
 	background: rgba(255, 255, 255, 0.16);
 }
-.recast-caption-btn[aria-pressed="false"] {
-	color: rgba(255, 255, 255, 0.55);
+
+.recast-caption-btn[aria-pressed="false"]::after {
+	content: "";
+	position: absolute;
+	left: 6px;
+	right: 6px;
+	top: 50%;
+	height: 1.5px;
+	border-radius: 2px;
+	background: currentColor;
+	box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.55);
+	transform: rotate(-20deg);
 }
 
 .recast-player :is(
 	media-play-button,
 	media-seek-backward-button,
 	media-seek-forward-button,
-	media-playback-rate-button,
-	media-captions-button,
+	media-playback-rate-menu-button,
 	media-pip-button,
 	media-fullscreen-button
 )::part(tooltip) {
-	background: var(--foreground, #111111);
-	color: var(--background, #ffffff);
+	background: #111111;
+	color: #ffffff;
 	padding: 6px 12px;
 	border-radius: 6px;
 	border: none;
-	box-shadow: var(--shadow-craft-sm);
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 	filter: none;
 	font-size: 12px;
 	font-weight: 500;
@@ -290,20 +267,15 @@ media-controller.recast-player.recast-player-theater {
 	media-play-button,
 	media-seek-backward-button,
 	media-seek-forward-button,
-	media-playback-rate-button,
-	media-captions-button,
+	media-playback-rate-menu-button,
 	media-pip-button,
 	media-fullscreen-button
 ) {
-	--media-tooltip-arrow-color: var(--foreground, #111111);
+	--media-tooltip-arrow-color: #111111;
 	--media-tooltip-arrow-width: 10px;
 	--media-tooltip-arrow-height: 6px;
 	--media-tooltip-filter: none;
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   8. Range elements — explicitly opt OUT of the button hover overlay
-   ────────────────────────────────────────────────────────────────── */
 
 .recast-scrubber,
 .recast-volume {
@@ -327,13 +299,6 @@ media-controller.recast-player.recast-player-theater {
 .recast-volume:focus-within {
 	width: 76px;
 }
-
-/* ──────────────────────────────────────────────────────────────────
-   9. Big center play overlay — absolutely centered, auto-hides during
-   playback. `mediapaused` is a media-chrome attribute toggled on the
-   controller; when it's gone we know playback is live and we fade the
-   button out instead of leaving it floating over the frame.
-   ────────────────────────────────────────────────────────────────── */
 
 .recast-big-play {
 	position: absolute;
@@ -386,10 +351,6 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	pointer-events: none;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   10. Scrubber sizing + time display alignment
-   ────────────────────────────────────────────────────────────────── */
-
 /* Thin line, but the element keeps a taller invisible hit area so seeking
    stays grabbable. Height here is the target, --media-range-track-height is
    what you actually see. */
@@ -397,7 +358,15 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	flex: 1;
 	min-width: 60px;
 	margin: 0 2px;
-	height: 16px;
+	height: 24px;
+	/* Buffered ahead of the playhead — without this the rail gives no sign
+	   anything is downloading on a cold fetch. */
+	--media-time-range-buffered-color: rgba(255, 255, 255, 0.42);
+}
+
+.recast-scrubber:hover,
+.recast-scrubber:focus-within {
+	--media-range-track-height: 5px;
 }
 
 /* Full-width top row of the pill; the button row sits below it. */
@@ -411,23 +380,47 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 .recast-marker-rail {
 	position: absolute;
 	inset: 50% 2px auto 2px;
-	height: 14px;
+	height: 24px;
 	transform: translateY(-50%);
 	pointer-events: none;
 }
 
+/* 24px hit target (WCAG 2.5.8) around an 8px dot. It overlaps the scrubber,
+   but a click here seeks to the marker — the same intent as scrubbing to it. */
 .recast-marker {
 	position: absolute;
 	top: 50%;
-	width: 8px;
-	height: 8px;
+	width: 24px;
+	height: 24px;
 	padding: 0;
 	border: 0;
 	border-radius: 999px;
-	background: var(--recast-marker-color, rgba(255, 255, 255, 0.95));
-	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+	background: none;
 	transform: translate(-50%, -50%);
 	pointer-events: auto;
+}
+
+.recast-marker::after {
+	content: "";
+	display: block;
+	width: 8px;
+	height: 8px;
+	margin: 0 auto;
+	border-radius: 999px;
+	background: var(--recast-marker-color, rgba(255, 255, 255, 0.95));
+	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.45);
+	transition: transform 150ms ease;
+}
+
+.recast-marker:hover::after,
+.recast-marker:focus-visible::after {
+	transform: scale(1.35);
+}
+
+.recast-marker:focus-visible {
+	outline: 2px solid #ffffff;
+	outline-offset: -4px;
+	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.7);
 }
 
 .recast-time {
@@ -444,9 +437,18 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	align-items: center;
 }
 
-/* ──────────────────────────────────────────────────────────────────
-   11. Preview chip sizing
-   ────────────────────────────────────────────────────────────────── */
+/* Speed used to cycle on click — eight rates meant seven clicks to go
+   1× → 0.75×. It's a menu now. */
+.recast-menu {
+	--media-menu-background: rgba(18, 18, 18, 0.96);
+	--media-menu-color: rgba(255, 255, 255, 0.96);
+	--media-menu-border-radius: 10px;
+	--media-menu-item-checked-indicator-display: block;
+	--media-font-size: 13px;
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+	box-shadow: 0 12px 28px rgba(0, 0, 0, 0.45);
+}
 
 .recast-thumb {
 	width: 160px;
@@ -454,7 +456,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 }
 
 .recast-preview-time {
-	--media-text-color: var(--background, #ffffff);
+	--media-text-color: #ffffff;
 	--media-font-size: 12px;
 	--media-font-weight: 500;
 	--media-text-content-height: 1.2;
@@ -462,7 +464,7 @@ media-controller.recast-player:not([mediapaused]) .recast-big-play {
 	font-size: 12px;
 	font-weight: 500;
 	letter-spacing: 0;
-	box-shadow: var(--shadow-craft-sm);
+	box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
 }
 
 @media (max-width: 640px) {

@@ -18,6 +18,9 @@ import type { WebGL2Backend } from "./webgl2-backend";
 export interface RenderPassContext {
 	/** Background image texture (unit 1), when the scene uses an image background. */
 	backgroundTex: WebGLTexture | null;
+	/** Annotation layer texture (the whole comp-native 2D layer for this frame),
+	 *  composited by the annotation pass below the cursor. Null when no annotations. */
+	annotationTex?: WebGLTexture | null;
 }
 
 /** An overlay drawn after the main pass. Kept minimal so cursor/camera/caption/

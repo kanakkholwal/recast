@@ -4,6 +4,11 @@
 
 import { bezierY, type Easing } from "$lib/easing/cubic-bezier";
 import type { Annotation } from "$lib/stores/editor-store.svelte";
+import type { ZoomTransform } from "@recast/render";
+
+// Re-exported so existing importers of `./eval` keep one site; the transform
+// type now lives with the pure projection in @recast/render.
+export type { ZoomTransform };
 
 export interface ZoomRegionLike {
 	start: number;
@@ -16,12 +21,6 @@ export interface ZoomRegionLike {
 	centerX?: number;
 	centerY?: number;
 	hidden?: boolean;
-}
-
-export interface ZoomTransform {
-	scale: number;
-	cx: number;
-	cy: number;
 }
 
 const IDENTITY: ZoomTransform = { scale: 1, cx: 0.5, cy: 0.5 };

@@ -75,6 +75,9 @@ export interface OffscreenExportOptions {
 	overlays?: ExportOverlayFactory[];
 	/** Camera bubble (a second decoded stream), drawn on top when present. */
 	camera?: CameraExportInputs | null;
+	/** Draw the annotation layer for original time `t` into a comp-native 2D ctx.
+	 *  Composited below the cursor (matching the preview), above the video. */
+	annotationLayer?: ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number) => void) | null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
 }
@@ -93,10 +96,26 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	if (!gl) throw new Error("WebGL2 unavailable for export");
 	const backend = WebGL2Backend.create(gl);
 	const overlays = (opts.overlays ?? []).map((make) => make(backend));
-	const renderCore = new RenderCore(
-		backend,
-		overlays.map((o) => o.pass),
-	);
+
+	// Annotation layer: its own comp-native 2D canvas, composited (below the
+	// cursor) via a pass ordered before the overlay passes.
+	let annoCanvas: OffscreenCanvas | null = null;
+	let annoCtx: OffscreenCanvasRenderingContext2D | null = null;
+	const passes: RenderPass[] = [];
+	if (opts.annotationLayer) {
+		annoCanvas = new OffscreenCanvas(opts.width, opts.height);
+		annoCtx = annoCanvas.getContext("2d");
+		passes.push({
+			name: "annotation-layer",
+			render(be, params, ctx) {
+				if (!ctx.annotationTex) return;
+				const [cw, ch] = params.uniforms.canvasSize;
+				be.drawSprite(ctx.annotationTex, { x: 0, y: 0, w: cw, h: ch });
+			},
+		});
+	}
+	passes.push(...overlays.map((o) => o.pass));
+	const renderCore = new RenderCore(backend, passes);
 
 	const input = new Input({ source: new UrlSource(opts.videoUrl), formats: ALL_FORMATS });
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
@@ -135,7 +154,13 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				vf.close();
 				sample.close();
 			}
-			renderCore.renderFrame(frameInput, { backgroundTex });
+			let annotationTex: WebGLTexture | null = null;
+			if (opts.annotationLayer && annoCtx && annoCanvas) {
+				annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+				opts.annotationLayer(annoCtx, originalSec);
+				annotationTex = backend.uploadAnnotation(annoCanvas);
+			}
+			renderCore.renderFrame(frameInput, { backgroundTex, annotationTex });
 
 			if (opts.camera && camSink) {
 				const cs = await camSink.getSample(Math.max(0, originalSec));

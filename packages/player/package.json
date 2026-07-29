@@ -1,30 +1,33 @@
 {
-  "name": "@recast/player",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "exports": {
-    ".": {
-      "svelte": "./src/index.ts",
-      "default": "./src/index.ts"
-    },
-    "./styles.css": "./src/styles.css"
-  },
-  "peerDependencies": {
-    "svelte": "^5.56.1"
-  },
-  "dependencies": {
-    "@recast/captions": "workspace:*",
-    "@recast/icons": "workspace:*",
-    "@recast/ui": "workspace:*",
-    "hls-video-element": "^1.5.11",
-    "media-chrome": "^4.19.0"
-  },
-  "devDependencies": {
-    "svelte": "^5.56.1"
-  },
-  "scripts": {
-    "build": "exit 0",
-    "check": "exit 0"
-  }
+	"name": "@recast/player",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"exports": {
+		".": {
+			"svelte": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./styles.css": "./src/styles.css"
+	},
+	"peerDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"dependencies": {
+		"@recast/captions": "workspace:*",
+		"@recast/icons": "workspace:*",
+		"@recast/ui": "workspace:*",
+		"hls-video-element": "^1.5.11",
+		"media-chrome": "^4.19.0"
+	},
+	"devDependencies": {
+		"svelte": "^5.56.1",
+		"vitest": "^3.2.4"
+	},
+	"scripts": {
+		"build": "exit 0",
+		"check": "exit 0",
+		"test:unit": "vitest run",
+		"test:unit:watch": "vitest"
+	}
 }

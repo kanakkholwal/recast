@@ -15,15 +15,18 @@ function willBurnCaptions(store: EditorStore): boolean {
 }
 
 /** Why a project can't use the browser export path yet (so the caller falls back
- *  to the Rust compositor), or null when it's eligible. Burned captions +
- *  annotations are DOM overlays not yet folded into the export RenderCore, so
- *  they keep the proven Rust/ASS pipeline until they migrate last. GIF keeps its
- *  2-pass palette on the Rust side. */
+ *  to the Rust compositor), or null when it's eligible. Painted + text
+ *  annotations now render in the browser (text rasterized to an image); only
+ *  blur still needs the Rust path (P1b framebuffer pass), as do burned captions.
+ *  GIF keeps its 2-pass palette on the Rust side. */
 export function browserExportBlockedReason(store: EditorStore): string | null {
 	if (store.exportFormat === "gif") return "gif";
 	if (willBurnCaptions(store)) return "burned captions";
-	if (!store.annotationsGloballyHidden && store.annotations.some((a) => !a.hidden)) {
-		return "annotations";
+	if (
+		!store.annotationsGloballyHidden &&
+		store.annotations.some((a) => !a.hidden && a.kind.kind === "blur")
+	) {
+		return "blur annotations";
 	}
 	return null;
 }

@@ -29,6 +29,10 @@ import { videoEncodingConfigFor, type ExportQuality } from "./browser-export-pla
 import { renderTimelineToVideo, type ExportOverlayFactory } from "./offscreen-export";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { cursorOverlayFactory } from "./cursor-overlay-export";
+import { drawAnnotationLayerExport } from "./annotation-layer-export";
+import { expandTextAnnotations } from "./rasterize-text";
+import type { ShapeImage } from "@recast/render";
+import { convertFileSrc } from "@tauri-apps/api/core";
 
 export interface BrowserExportOptions {
 	/** Source video asset URL (what the preview decodes, e.g. `convertFileSrc(...)`). */
@@ -101,6 +105,62 @@ async function buildCursorOverlay(store: EditorStore): Promise<ExportOverlayFact
 	});
 }
 
+/** Decode every image annotation up front (path → drawable), so the per-frame
+ *  layer draw is synchronous. Failed loads render as the placeholder box. */
+async function preloadAnnotationImages(
+	annotations: ReadonlyArray<{ hidden?: boolean; kind: { kind: string; path?: string } }>,
+): Promise<Map<string, ShapeImage>> {
+	const paths = new Set<string>();
+	for (const a of annotations) {
+		if (!a.hidden && a.kind.kind === "image" && a.kind.path) paths.add(a.kind.path);
+	}
+	const map = new Map<string, ShapeImage>();
+	await Promise.all(
+		[...paths].map(async (p) => {
+			try {
+				const img = new Image();
+				img.crossOrigin = "anonymous";
+				// Rasterized-text annotations carry a data: URL; file paths go through
+				// the asset protocol.
+				img.src = p.startsWith("data:") ? p : convertFileSrc(p);
+				await img.decode();
+				map.set(p, { img, ready: true });
+			} catch {
+				map.set(p, { img: new Image(), ready: false });
+			}
+		}),
+	);
+	return map;
+}
+
+/** Build the per-frame annotation-layer draw callback, or null when there's
+ *  nothing to draw. Text annotations are rasterized to comp-resolution images up
+ *  front (parity with the Rust path + preview) so the image path handles them;
+ *  blur still routes to Rust upstream. */
+async function buildAnnotationLayer(
+	store: EditorStore,
+	meta: { width: number; height: number },
+	canvasPxW: number,
+	canvasPxH: number,
+): Promise<((ctx: OffscreenCanvasRenderingContext2D, t: number) => void) | null> {
+	if (store.annotationsGloballyHidden) return null;
+	const annotations = await expandTextAnnotations(store.annotationsByZ, canvasPxW, canvasPxH);
+	const drawable = ["rect", "ellipse", "arrow", "image"];
+	if (!annotations.some((a) => !a.hidden && drawable.includes(a.kind.kind))) return null;
+	const images = await preloadAnnotationImages(annotations);
+	return (ctx, t) =>
+		drawAnnotationLayerExport(ctx, t, {
+			annotations,
+			meta,
+			padding: store.padding,
+			outputAspect: store.outputAspect,
+			zoomRegions: store.zoomRegions,
+			canvasPxW,
+			canvasPxH,
+			getImage: (p) => images.get(p) ?? null,
+		});
+}
+
 /** Render + encode the timeline in the browser; resolves with the temp path of
  *  the video-only mp4 to mux server-side. Throws if the source isn't ready. */
 export async function runBrowserExport(
@@ -151,6 +211,12 @@ export async function runBrowserExport(
 	const cursorOverlay = await buildCursorOverlay(store);
 	const overlays = cursorOverlay ? [cursorOverlay] : [];
 	const camera = buildCameraInputs(store, opts.cameraUrl, base.geom);
+	const annotationLayer = await buildAnnotationLayer(
+		store,
+		{ width: meta.width, height: meta.height },
+		base.canvasPxW,
+		base.canvasPxH,
+	);
 
 	const frameAt = makeExportFrameAt(base, timeMap);
 	try {
@@ -165,6 +231,7 @@ export async function runBrowserExport(
 			backgroundImage,
 			overlays,
 			camera,
+			annotationLayer,
 			onProgress: opts.onProgress,
 			signal: opts.signal,
 		});

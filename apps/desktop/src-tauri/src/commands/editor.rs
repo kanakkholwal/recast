@@ -659,6 +659,34 @@ pub fn repair_render_state(s: &mut RenderState, source_duration: f64) -> Vec<Str
     if before != s.cuts.len() || clamped_cut {
         repairs.push("Cuts past the video end were trimmed".to_string());
     }
+
+    // Annotations: clamp each into [trim_start, trim_end] with a forward window.
+    // Repairs the `annotation_end_before_start` / `annotation_out_of_trim` cases —
+    // e.g. an annotation added while the playhead was parked past the trim end.
+    let (ts, te) = (s.trim_start, s.trim_end);
+    if te > ts + VALIDATION_EPS {
+        let mut fixed = false;
+        for a in s.annotations.iter_mut() {
+            let mut start = a.start.clamp(ts, te);
+            let mut end = a.end.clamp(ts, te);
+            if end <= start + VALIDATION_EPS {
+                end = (start + 2.0).min(te);
+                if end <= start + VALIDATION_EPS {
+                    start = (te - 2.0).max(ts);
+                    end = te;
+                }
+            }
+            if (start - a.start).abs() > VALIDATION_EPS || (end - a.end).abs() > VALIDATION_EPS {
+                a.start = start;
+                a.end = end;
+                fixed = true;
+            }
+        }
+        if fixed {
+            repairs.push("Annotation timing repaired into the clip".to_string());
+        }
+    }
+
     repairs
 }
 
@@ -1262,7 +1290,7 @@ mod audio_mix_tests {
 mod validate_tests {
     use super::*;
     use crate::render::graph::{CutRange, SegmentSpeed};
-    use crate::render::node_types::ZoomRegion;
+    use crate::render::node_types::{Annotation, ZoomRegion};
 
     fn cut(start: f64, end: f64) -> CutRange {
         CutRange {
@@ -1333,6 +1361,43 @@ mod validate_tests {
         let repairs = repair_render_state(&mut st, 30.0);
         assert_eq!(st.cuts.len(), 1); // the 40..45 cut is entirely past the video
         assert!(repairs.iter().any(|r| r.contains("Cuts")));
+    }
+
+    fn anno(start: f64, end: f64) -> Annotation {
+        serde_json::from_value(serde_json::json!({
+            "id": "a", "start": start, "end": end,
+            "kind": { "kind": "rect", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2, "radius": 0.0 },
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn repair_fixes_annotation_end_before_start_so_validation_passes() {
+        // Reproduces the report: annotations added while the playhead was parked
+        // at/past the trim end got end <= start (or past trim), failing validation.
+        let mut st = RenderState {
+            trim_start: 0.0,
+            trim_end: 10.0,
+            annotations: vec![anno(2.0, 5.0), anno(9.5, 9.5), anno(8.0, 6.0)],
+            ..RenderState::default()
+        };
+        assert_eq!(
+            reason(
+                &validate_render_state(&st, 10.0).unwrap_err(),
+                "annotations/1"
+            ),
+            Some("annotation_end_before_start"),
+        );
+        let repairs = repair_render_state(&mut st, 10.0);
+        assert!(repairs.iter().any(|r| r.contains("Annotation")));
+        // The already-valid annotation is untouched.
+        assert_eq!((st.annotations[0].start, st.annotations[0].end), (2.0, 5.0));
+        // Every annotation now has a forward window inside the clip.
+        for a in &st.annotations {
+            assert!(a.end > a.start, "end {} > start {}", a.end, a.start);
+            assert!(a.start >= 0.0 && a.end <= 10.0 + VALIDATION_EPS);
+        }
+        assert!(validate_render_state(&st, 10.0).is_ok());
     }
 
     fn reason<'a>(issues: &'a [ValidationIssue], field: &str) -> Option<&'a str> {

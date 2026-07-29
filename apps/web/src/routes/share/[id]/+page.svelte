@@ -1,1037 +1,1014 @@
 <script lang="ts">
-	import { browser } from "$app/environment";
-	import { goto, invalidateAll } from "$app/navigation";
-	import { page } from "$app/state";
-	import { analytics } from "$lib/analytics/client";
-	import { authClient } from "$lib/auth/client";
-	import { SeoMeta } from "$lib/components";
-	import Logo from "$lib/logo.svelte";
-	import {
-	  deleteComment,
-	  loadEngagement,
-	  postComment,
-	  readApiError,
-	  rememberViewerName,
-	  shareSessionId,
-	  storedViewerName,
-	  toggleReaction,
-	  type ReactionCount,
-	  type ShareComment,
-	} from "$lib/share/client";
-	import { toggleReactionState } from "$lib/share/engagement";
-	import {
-	  commentHue,
-	  compactTime,
-	  formatTime,
-	  initials,
-	  parseCommentText,
-	  parseTimeParam
-	} from "$lib/share/format";
-	import ReactionIcon from "$lib/share/ReactionIcon.svelte";
-	import { REACTIONS } from "$lib/share/reactions";
-	import {
-	  activeCueIndex,
-	  filterCues,
-	  readCuesFromTrack,
-	  type TranscriptCue,
-	} from "$lib/share/transcript";
-	import {
-	  ArrowRight,
-	  AtSign,
-	  BadgeCheck,
-	  Check,
-	  Clock,
-	  Code,
-	  Copy,
-	  Download,
-	  ExternalLink,
-	  Eye,
-	  FileText,
-	  Film,
-	  Globe,
-	  LayoutDashboard,
-	  Link2,
-	  Lock,
-	  LogOut,
-	  Mail,
-	  Megaphone,
-	  MessageSquare,
-	  Moon,
-	  PencilLine,
-	  Play,
-	  RotateCcw,
-	  Search,
-	  Settings,
-	  Share2,
-	  ShieldOff,
-	  Sun,
-	  Trash2,
-	  User,
-	  UserCheck,
-	  Users,
-	  X,
-	} from "@recast/icons";
-	import {
-	  RecastPlayer,
-	  type RecastPlayerActionEvent,
-	  type RecastPlayerApi,
-	  type RecastPlayerTrack,
-	} from "@recast/player";
-	import { Button, buttonVariants } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import { mode as themeMode, toggleMode } from "@recast/ui/theme";
-	import * as Tooltip from "@recast/ui/tooltip";
-	import { cn } from "@recast/ui/utils";
-	import { onMount, tick, untrack } from "svelte";
-	import { cubicOut, quintOut } from "svelte/easing";
-	import { Tween } from "svelte/motion";
-	import { fade, fly, scale, slide } from "svelte/transition";
-	import {
-	  buildCommentMarkers,
-	  buildEmbedCode,
-	  toLegacyVisibility,
-	  withTimeParam,
-	  type LegacyVisibility,
-	} from "./share-page.logic";
+import { browser } from "$app/environment";
+import { goto, invalidateAll } from "$app/navigation";
+import { page } from "$app/state";
+import { analytics } from "$lib/analytics/client";
+import { authClient } from "$lib/auth/client";
+import { SeoMeta } from "$lib/components";
+import Logo from "$lib/logo.svelte";
+import {
+	deleteComment,
+	loadEngagement,
+	postComment,
+	readApiError,
+	rememberViewerName,
+	shareSessionId,
+	storedViewerName,
+	toggleReaction,
+	type ReactionCount,
+	type ShareComment,
+} from "$lib/share/client";
+import { toggleReactionState } from "$lib/share/engagement";
+import {
+	commentHue,
+	compactTime,
+	formatTime,
+	initials,
+	parseCommentText,
+	parseTimeParam,
+} from "$lib/share/format";
+import ReactionIcon from "$lib/share/ReactionIcon.svelte";
+import { REACTIONS } from "$lib/share/reactions";
+import {
+	activeCueIndex,
+	filterCues,
+	readCuesFromTrack,
+	type TranscriptCue,
+} from "$lib/share/transcript";
+import {
+	ArrowRight,
+	AtSign,
+	BadgeCheck,
+	Check,
+	Clock,
+	Code,
+	Copy,
+	Download,
+	ExternalLink,
+	Eye,
+	FileText,
+	Film,
+	Globe,
+	LayoutDashboard,
+	Link2,
+	Lock,
+	LogOut,
+	Mail,
+	Megaphone,
+	MessageSquare,
+	Moon,
+	PencilLine,
+	Play,
+	RotateCcw,
+	Search,
+	Settings,
+	Share2,
+	ShieldOff,
+	Sun,
+	Trash2,
+	User,
+	UserCheck,
+	Users,
+	X,
+} from "@recast/icons";
+import {
+	RecastPlayer,
+	type RecastPlayerActionEvent,
+	type RecastPlayerApi,
+	type RecastPlayerTrack,
+} from "@recast/player";
+import { Button, buttonVariants } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import { mode as themeMode, toggleMode } from "@recast/ui/theme";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
+import { onMount, tick, untrack } from "svelte";
+import { cubicOut, quintOut } from "svelte/easing";
+import { Tween } from "svelte/motion";
+import { fade, fly, scale, slide } from "svelte/transition";
+import {
+	buildCommentMarkers,
+	buildEmbedCode,
+	toLegacyVisibility,
+	withTimeParam,
+	type LegacyVisibility,
+} from "./share-page.logic";
 
-	let { data } = $props();
+let { data } = $props();
 
-	// `access` is the server-resolved permission envelope. When `ok` is
-	// true it carries the recast + share + canManage; when false it
-	// carries the reason + (for same-team viewers) the owner contact so
-	// the denial card can render a "request access" affordance.
-	const access = $derived(data.access);
-	const okAccess = $derived(access.ok ? access : null);
-	const deniedAccess = $derived(access.ok ? null : access);
-	const recast = $derived(okAccess?.recast);
+// `access` is the server-resolved permission envelope. When `ok` is
+// true it carries the recast + share + canManage; when false it
+// carries the reason + (for same-team viewers) the owner contact so
+// the denial card can render a "request access" affordance.
+const access = $derived(data.access);
+const okAccess = $derived(access.ok ? access : null);
+const deniedAccess = $derived(access.ok ? null : access);
+const recast = $derived(okAccess?.recast);
 
-	// Caption track for the player, when this recast has a captions sidecar.
-	const captionTracks = $derived<RecastPlayerTrack[]>(
-		recast?.captions
-			? [
-					{
-						src: recast.captions,
-						kind: "captions",
-						label: "English",
-						srclang: "en",
-						default: true,
-					},
-				]
-			: [],
-	);
-
-	// ── Account-less invitee claim (selected shares) ──────────────────────
-	// A denied viewer of a `selected` share can request an email access link.
-	let claimEmail = $state("");
-	let claimState = $state<"idle" | "sending" | "sent">("idle");
-	// The verify endpoint bounces back with ?claim=invalid on a bad/expired link.
-	const claimInvalid = $derived(page.url.searchParams.get("claim") === "invalid");
-
-	async function submitClaim(e: SubmitEvent) {
-		e.preventDefault();
-		const email = claimEmail.trim();
-		if (!email || claimState === "sending") return;
-		claimState = "sending";
-		try {
-			const res = await fetch(`/api/share/${page.params.id}/claim`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ email }),
-			});
-			if (!res.ok) throw new Error(await readApiError(res, "Couldn't send the link."));
-			claimState = "sent";
-		} catch (err) {
-			claimState = "idle";
-			toast.error((err as Error)?.message ?? "Couldn't send the link.");
-		}
-	}
-	const shareMeta = $derived(okAccess?.share);
-	const canManage = $derived(okAccess?.canManage ?? false);
-	// Exact source aspect ratio, when the recast row carries its dimensions.
-	// Passing this to the player reserves the precise box before metadata loads
-	// → zero layout shift. Null on legacy rows, where the player falls back to
-	// its 16/9 placeholder and adjusts once the real dimensions decode.
-	const playerAspect = $derived(
-		recast?.width && recast?.height ? `${recast.width} / ${recast.height}` : null,
-	);
-	// Numeric aspect for theater sizing — the video is capped by available
-	// height (`max-width = height × ratio`) so it grows as large as the viewport
-	// allows without overflowing the fold. Falls back to 16:9 on legacy rows.
-	const heroRatio = $derived(
-		recast?.width && recast?.height ? recast.width / recast.height : 16 / 9,
-	);
-	const slug = $derived(shareMeta?.slug ?? recast?.id ?? "");
-	const isDemo = $derived(slug === "demo");
-
-	// ── Social preview (dynamic OG) ───────────────────────────────────
-	// Shared recasts unfurl with a branded card that surfaces the recast's
-	// own title + description and who shared it, generated by /api/og so the
-	// Recast wordmark/footer branding stays consistent with the marketing
-	// pages. Denied/private shares fall back to a generic branded card. The
-	// page stays `noindex` either way (see <svelte:head> below) — rich link
-	// previews without making private content crawlable.
-	const ogTitle = $derived(recast?.title ?? "Private recast");
-	const ogDescription = $derived(
-		recast?.description?.trim() ||
-			(recast
-				? "Recorded, polished, and shared with Recast."
-				: "This recast is private."),
-	);
-	const ogEyebrow = $derived(recast ? `Shared by ${recast.sharedBy}` : undefined);
-
-	// Record a real share view, keyed to the anonymous shareView session id so
-	// PostHog reconciles with the first-party watch-metrics table. Viewers are
-	// never identified — this stays anonymous regardless of consent.
-	onMount(() => {
-		if (!browser || !okAccess || isDemo) return;
-		analytics.capture("share_viewed", {
-			visibility: shareMeta?.visibility,
-			share_session_id: shareSessionId(),
-		});
-	});
-
-	// `requiresPassword` is set by the page loader when the share has a
-	// passwordHash and the viewer doesn't carry a valid unlock cookie. In
-	// that case `recast.src` is empty and we render the prompt below
-	// instead of the player. On a successful unlock we `invalidateAll()`
-	// so the loader re-runs, signs the URL, and the player mounts.
-	const requiresPassword = $derived(
-		Boolean(okAccess && "requiresPassword" in access && access.requiresPassword),
-	);
-	let passwordInput = $state("");
-	let unlocking = $state(false);
-	let unlockError = $state<string | null>(null);
-	async function submitUnlock(e: SubmitEvent) {
-		e.preventDefault();
-		if (!shareMeta || unlocking || !passwordInput) return;
-		unlocking = true;
-		unlockError = null;
-		try {
-			const res = await fetch(`/api/share/${shareMeta.slug}/unlock`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({ password: passwordInput }),
-			});
-			if (!res.ok) {
-				unlockError =
-					res.status === 401 ? "Wrong password. Try again." : "Couldn't unlock.";
-				return;
-			}
-			passwordInput = "";
-			await invalidateAll();
-		} catch {
-			unlockError = "Network error. Try again.";
-		} finally {
-			unlocking = false;
-		}
-	}
-
-	// The toggle below writes the standard {public, team, private} scopes
-	// (`workspace` shows as "team", its alias). The richer `selected`
-	// specific-people allowlist is created from the share dialog, not here —
-	// but we surface it ACCURATELY (instead of masking it as "Only me") so the
-	// owner sees the real scope and can switch off it.
-	// The share's true current scope (full enum), synced from the server and
-	// updated optimistically on toggle.
-	let currentScope = $state<string>(
-		untrack(() => (data.access.ok ? data.access.share.visibility : "public")),
-	);
-	$effect(() => {
-		if (access.ok) currentScope = access.share.visibility;
-	});
-	const isSelectedScope = $derived(currentScope === "selected");
-	// Which toggle row reads as active — none while on the specific-people
-	// allowlist, so "selected" no longer masquerades as "Only me".
-	const activeScope: LegacyVisibility | null = $derived(
-		isSelectedScope ? null : toLegacyVisibility(currentScope),
-	);
-	let updatingVisibility = $state(false);
-
-	async function updateVisibility(next: "public" | "team" | "private") {
-		if (!shareMeta || !canManage || updatingVisibility) return;
-		if (next === activeScope) return;
-		const previous = currentScope;
-		currentScope = next;
-		updatingVisibility = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const res = await fetch(`/api/share/${shareMeta.slug}/access`, {
-						method: "PATCH",
-						headers: { "content-type": "application/json" },
-						body: JSON.stringify({ visibility: next }),
-					});
-					if (!res.ok) {
-						throw new Error(await readApiError(res, "Couldn't update access"));
-					}
-				})(),
+// Caption track for the player, when this recast has a captions sidecar.
+const captionTracks = $derived<RecastPlayerTrack[]>(
+	recast?.captions
+		? [
 				{
-					loading: "Updating who can view…",
-					success:
-						next === "public"
-							? "Anyone with the link can view."
-							: next === "team"
-								? "Restricted to your team."
-								: "Only you can view.",
-					error: (err) => (err as Error)?.message ?? "Couldn't update access.",
+					src: recast.captions,
+					kind: "captions",
+					label: "English",
+					srclang: "en",
+					default: true,
 				},
-			);
-		} catch {
-			currentScope = previous;
-		} finally {
-			updatingVisibility = false;
-		}
-	}
+			]
+		: [],
+);
 
-	// ── Player wiring ────────────────────────────────────────────────
+// ── Account-less invitee claim (selected shares) ──────────────────────
+// A denied viewer of a `selected` share can request an email access link.
+let claimEmail = $state("");
+let claimState = $state<"idle" | "sending" | "sent">("idle");
+// The verify endpoint bounces back with ?claim=invalid on a bad/expired link.
+const claimInvalid = $derived(page.url.searchParams.get("claim") === "invalid");
 
-	const initialSeekSeconds = untrack(() => parseTimeParam(page.url.searchParams.get("t")));
-
-	let api = $state<RecastPlayerApi | null>(null);
-
-	// Re-seek every time the player API publishes — covers the initial
-	// `?t=` URL seed and any later remount. Reading `currentTime` via
-	// `untrack` so this effect only re-runs when `api` itself changes.
-	$effect(() => {
-		if (!api) return;
-		const target = untrack(() => Math.max(initialSeekSeconds, currentTime));
-		if (target > 0) api.seek(target);
-	});
-
-	let currentTime = $state(initialSeekSeconds);
-	const smoothedTime = new Tween(0, { duration: 120, easing: cubicOut });
-	let watchedPct = $state(0);
-	let isPlaying = $state(false);
-	// True once the video reaches the end — drives the CTA end-card overlay.
-	let ended = $state(false);
-	// Pre-play hook: a sender + duration card owns the poster until the viewer
-	// commits to the first play. It's the highest-trust moment on the page (who
-	// sent this, how long), so we surface identity + duration instead of a bare
-	// poster. Cleared on the first view-start/progress or when the viewer plays here.
-	let hasStarted = $state(false);
-	function startPlayback() {
-		hasStarted = true;
-		api?.play();
-	}
-
-	$effect(() => {
-		smoothedTime.set(currentTime);
-	});
-
-	// First-party view recording. Bumps the cached view count AND — critically
-	// — refreshes `recast.lastViewedAt`, which the Free-tier expiry sweep keys
-	// off (without this, watched recasts still archive at 14 days). Anonymous:
-	// keyed only by the share session fingerprint. Skipped for the demo (no
-	// real share row) and SSR. `keepalive` lets the "ended" beacon survive a
-	// tab close.
-	let viewStartSent = false;
-	function recordView(event: "start" | "ended") {
-		if (!browser || isDemo || !slug) return;
-		if (event === "start") {
-			if (viewStartSent) return;
-			viewStartSent = true;
-		}
-		try {
-			void fetch(`/api/share/${slug}/view`, {
-				method: "POST",
-				headers: { "content-type": "application/json" },
-				body: JSON.stringify({
-					sessionId: shareSessionId(),
-					event,
-					watchPct: Math.round(watchedPct),
-					// Acquisition source — only meaningful on the first ("start")
-					// beacon; the server reduces it to a bare host and drops self-refs.
-					referrer: event === "start" ? document.referrer || null : null,
-				}),
-				keepalive: true,
-			}).catch(() => {});
-		} catch {
-			// Never let a metrics beacon disrupt playback.
-		}
-	}
-
-	function onEngagement(e: {
-		type: "view-start" | "progress" | "ended";
-		percent?: number;
-		currentTime?: number;
-	}) {
-		if (e.type === "view-start") {
-			isPlaying = true;
-			ended = false;
-			hasStarted = true;
-			recordView("start");
-			trackPlayOnce();
-		}
-		if (e.type === "progress") {
-			currentTime = e.currentTime ?? currentTime;
-			watchedPct = e.percent ?? watchedPct;
-			isPlaying = true;
-			ended = false;
-			hasStarted = true;
-			// Some players jump straight to progress without a view-start; the
-			// guard makes this idempotent so we still record the view once.
-			recordView("start");
-			trackPlayOnce();
-			trackDepth(watchedPct);
-		}
-		if (e.type === "ended") {
-			watchedPct = 100;
-			isPlaying = false;
-			ended = true;
-			recordView("ended");
-			trackDepth(100);
-		}
-	}
-
-	function replay() {
-		ended = false;
-		api?.seek(0);
-		api?.play();
-	}
-
-	// ── Call-to-action (owner-defined "next step") ───────────────────
-	let ctaLabel = $state(untrack(() => (data.access.ok ? data.access.share.ctaLabel : null)));
-	let ctaUrl = $state(untrack(() => (data.access.ok ? data.access.share.ctaUrl : null)));
-	const cta = $derived(ctaLabel && ctaUrl ? { label: ctaLabel, url: ctaUrl } : null);
-	// The owner's next-step card fires when they set a CTA. When they didn't,
-	// a finished stranger (not the owner) is the highest-intent moment to plant
-	// the growth loop — offer "record your own" instead of a blank overlay.
-	const showOwnerEndCard = $derived(ended && cta != null);
-	const showStrangerEndCard = $derived(ended && cta == null && !canManage);
-
-	// ── Comments + reactions (engagement layer) ──────────────────────
-	let commentsEnabled = $state(
-		untrack(() => (data.access.ok ? data.access.share.commentsEnabled : true)),
-	);
-	// Owner opt-in to search indexing (public shares only). Optimistic, like the
-	// comments toggle; the <svelte:head> robots/canonical below key off it.
-	let searchable = $state(
-		untrack(() => (data.access.ok ? data.access.share.searchable : false)),
-	);
-	const watermark = $derived(shareMeta?.watermark ?? true);
-	const viewsCount = $derived(shareMeta?.viewsCount ?? 0);
-
-	let comments = $state<ShareComment[]>([]);
-	let reactions = $state<ReactionCount[]>([]);
-	let myReactions = $state<Set<string>>(new Set());
-	// Fire-once guard so the load effect doesn't re-trigger; distinct from the
-	// UI-facing `engagementState`, which drives skeleton / retry / empty.
-	let engagementLoaded = $state(false);
-	let engagementState = $state<"loading" | "ready" | "error">("loading");
-
-	// ── Engagement side-panel (Transcript | Comments) ─────────────────
-	// The video and the conversation live side-by-side so a viewer can read,
-	// skim the transcript, and jump moments without scrolling the player away.
-	const hasTranscript = $derived(captionTracks.length > 0);
-	type PanelTab = "transcript" | "comments";
-	let activeTab = $state<PanelTab>("comments");
-	// Skim-first: default to the transcript on captioned recasts, comments
-	// otherwise. Runs once, then a viewer's tab choice sticks.
-	let tabInitialized = false;
-	$effect(() => {
-		if (tabInitialized || !recast) return;
-		activeTab = hasTranscript ? "transcript" : "comments";
-		tabInitialized = true;
-	});
-	// Keep the active tab valid if the owner toggles comments off mid-view.
-	$effect(() => {
-		if (activeTab === "comments" && !commentsEnabled && hasTranscript)
-			activeTab = "transcript";
-		else if (activeTab === "transcript" && !hasTranscript && commentsEnabled)
-			activeTab = "comments";
-	});
-
-	// Interactive transcript, read straight off the player's live caption
-	// `<track>` (no second fetch of the signed VTT, no CORS surface).
-	let transcriptCues = $state<TranscriptCue[]>([]);
-	let transcriptQuery = $state("");
-	let transcriptListEl = $state<HTMLElement | null>(null);
-	const filteredCues = $derived(filterCues(transcriptCues, transcriptQuery));
-	// The line to light as "now" — suppressed while searching (the filtered
-	// list no longer aligns with the playhead index).
-	const activeCue = $derived(
-		transcriptQuery.trim() ? -1 : activeCueIndex(transcriptCues, smoothedTime.current),
-	);
-
-	$effect(() => {
-		if (!browser || !api || !hasTranscript) return;
-		const video = api.getVideoElement();
-		if (!video) return;
-		// Both the `<track>` registration and its cue parsing land
-		// asynchronously after the player mounts, so poll for both.
-		const attempt = () => {
-			const track = Array.from(video.textTracks).find(
-				(t) => t.kind === "captions" || t.kind === "subtitles",
-			);
-			if (!track) return false;
-			// Populate cues without forcing captions on-screen — only nudge a
-			// disabled track to `hidden`; never override the viewer's CC choice.
-			if (track.mode === "disabled") track.mode = "hidden";
-			const cues = readCuesFromTrack(track);
-			if (cues.length) transcriptCues = cues;
-			return cues.length > 0;
-		};
-		if (attempt()) return;
-		let tries = 0;
-		const iv = setInterval(() => {
-			if (attempt() || ++tries > 25) clearInterval(iv);
-		}, 200);
-		return () => clearInterval(iv);
-	});
-
-	// Keep the active transcript line in view while it plays (not while the
-	// viewer is searching or reading a different tab).
-	$effect(() => {
-		const idx = activeCue;
-		if (idx < 0 || activeTab !== "transcript" || transcriptQuery.trim()) return;
-		transcriptListEl
-			?.querySelector<HTMLElement>(`[data-cue="${idx}"]`)
-			?.scrollIntoView({ block: "nearest" });
-	});
-
-	// Comments projected onto the scrubber — click a marker (handled inside the
-	// player) to seek; we also surface the comment in the panel.
-	const commentMarkers = $derived(buildCommentMarkers(comments, commentHue));
-
-	function onPlayerAction(e: RecastPlayerActionEvent) {
-		if (e.type !== "marker-select") return;
-		activeTab = "comments";
-		panelOpen = true;
-		ended = false;
-		if (!browser) return;
-		const id = e.marker.id;
-		queueMicrotask(() => {
-			document
-				.getElementById(`comment-${id}`)
-				?.scrollIntoView({ block: "center", behavior: "smooth" });
-		});
-	}
-
-	// Scroll-aware top bar: once the title scrolls under the sticky header
-	// we fade the owner + title into the bar so the viewer keeps context
-	// while reading/commenting. Driven off the title element itself via an
-	// IntersectionObserver (the `-72px` top margin ≈ the header height).
-	let titleAnchorEl = $state<HTMLElement | null>(null);
-	let showBarTitle = $state(false);
-	$effect(() => {
-		const el = titleAnchorEl;
-		if (!browser || !el) return;
-		const io = new IntersectionObserver(
-			([entry]) => {
-				showBarTitle = !entry.isIntersecting;
-			},
-			{ rootMargin: "-72px 0px 0px 0px", threshold: 0 },
-		);
-		io.observe(el);
-		return () => io.disconnect();
-	});
-
-	let sessionId = $state("");
-	let viewerName = $state("");
-	let draftText = $state("");
-	let inputEl = $state<HTMLInputElement | null>(null);
-	// Name is remembered, so it collapses to a compact "commenting as" line once
-	// set; `editingName` reopens the field, keeping the comment input the focus.
-	let editingName = $state(false);
-	let nameInputEl = $state<HTMLInputElement | null>(null);
-
-	async function editName() {
-		// Only guests choose a name; a signed-in viewer's identity is their account.
-		if (identityLocked) return;
-		editingName = true;
-		await tick();
-		nameInputEl?.focus();
-	}
-
-	function commitName() {
-		editingName = false;
-		// Never write an account name into the guest name store — the two
-		// identities must not bleed across sessions on a shared browser.
-		if (!identityLocked && viewerName.trim()) rememberViewerName(viewerName);
-	}
-
-
-	onMount(() => {
-		sessionId = shareSessionId();
-		viewerName = storedViewerName();
-	});
-
-	// Load engagement once the player surface is live (covers both the
-	// initial mount and the post-unlock case, where the loader re-runs but
-	// the component doesn't re-mount).
-	$effect(() => {
-		if (!browser || requiresPassword) return;
-		const s = slug;
-		if (!s || untrack(() => engagementLoaded)) return;
-		loadAll(s);
-	});
-
-	async function loadAll(s: string) {
-		engagementLoaded = true; // guard against the effect re-firing mid-await
-		engagementState = "loading";
-		const sid = shareSessionId();
-		sessionId = sid;
-		try {
-			const e = await loadEngagement(s, sid);
-			comments = e.comments;
-			reactions = e.reactions;
-			myReactions = new Set(e.myReactions);
-			commentsEnabled = e.commentsEnabled;
-			engagementState = "ready";
-		} catch {
-			// Surface a retry affordance rather than a false "No comments yet".
-			engagementState = "error";
-		}
-	}
-
-	// Manual retry after a failed engagement load (network / server error).
-	function retryEngagement() {
-		if (slug) loadAll(slug);
-	}
-
-	async function refresh() {
-		if (isDemo) return;
-		try {
-			const e = await loadEngagement(slug, sessionId);
-			comments = e.comments;
-			reactions = e.reactions;
-			myReactions = new Set(e.myReactions);
-			commentsEnabled = e.commentsEnabled;
-		} catch {
-			// best-effort
-		}
-	}
-
-	function countFor(emoji: string): number {
-		return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
-	}
-	// The engagement rail (Transcript | Comments) lives in the page's layout as
-	// a collapsible sticky sidebar — not a slide-in sheet. The reaction-bar
-	// buttons toggle it: opening to a tab, switching tabs while open, or
-	// collapsing when you click the tab that's already showing. It only mounts
-	// when there's a populated tab, so the video reclaims full width when it's
-	// collapsed or on a bare recast.
-	const hasSidebar = $derived(hasTranscript || commentsEnabled);
-	let panelOpen = $state(false);
-	let railEl = $state<HTMLElement | null>(null);
-	async function togglePanel(tab: PanelTab) {
-		if (panelOpen && activeTab === tab) {
-			panelOpen = false;
-			return;
-		}
-		activeTab = tab;
-		panelOpen = true;
-		// On mobile the rail stacks below the fold; without bringing it into view
-		// the toggle reads as "nothing happened". Desktop docks it beside the
-		// video (in-view already), so only scroll on the stacked breakpoint.
-		if (browser && window.matchMedia("(max-width: 1023px)").matches) {
-			await tick();
-			railEl?.scrollIntoView({ behavior: "smooth", block: "start" });
-		}
-	}
-
-	async function react(emoji: string) {
-		const nextState = toggleReactionState({ myReactions, reactions }, emoji);
-		myReactions = nextState.myReactions;
-		reactions = nextState.reactions;
-		if (isDemo) return;
-		try {
-			await toggleReaction(slug, { sessionId, emoji, atSeconds: Math.floor(currentTime) });
-		} catch {
-			refresh();
-		}
-	}
-
-	async function submitComment() {
-		const text = draftText.trim();
-		const name = viewerName.trim();
-		if (!text || !name) return;
-		if (!identityLocked) rememberViewerName(name);
-		const at = Math.floor(currentTime);
-		if (isDemo) {
-			comments = [
-				...comments,
-				{ id: `local-${comments.length}`, authorName: name, atSeconds: at, body: text, createdAt: 0, mine: true, verified: identityLocked },
-			];
-			draftText = "";
-			toast.success(`Posted at ${formatTime(at)}.`);
-			return;
-		}
-		try {
-			const c = await postComment(slug, { sessionId, authorName: name, atSeconds: at, body: text });
-			comments = [...comments, c];
-			draftText = "";
-			toast.success(`Posted at ${formatTime(at)}.`);
-		} catch (e) {
-			toast.error((e as Error)?.message ?? "Couldn't post comment.");
-		}
-	}
-
-	async function removeComment(id: string) {
-		const prev = comments;
-		comments = comments.filter((c) => c.id !== id);
-		if (isDemo) return;
-		try {
-			await deleteComment(slug, id, sessionId);
-		} catch (e) {
-			comments = prev;
-			toast.error((e as Error)?.message ?? "Couldn't delete comment.");
-		}
-	}
-
-	function insertCurrentTimestamp() {
-		const stamp = `[${formatTime(currentTime)}] `;
-		const el = inputEl;
-		if (!el) {
-			draftText += stamp;
-			return;
-		}
-		const start = el.selectionStart ?? draftText.length;
-		const end = el.selectionEnd ?? draftText.length;
-		draftText = draftText.slice(0, start) + stamp + draftText.slice(end);
-		queueMicrotask(() => {
-			el.focus();
-			const pos = start + stamp.length;
-			el.setSelectionRange(pos, pos);
-		});
-	}
-
-	// ── Owner share settings (CTA + comments toggle) ─────────────────
-	async function patchSettings(body: Record<string, unknown>) {
-		const res = await fetch(`/api/share/${slug}/settings`, {
-			method: "PATCH",
+async function submitClaim(e: SubmitEvent) {
+	e.preventDefault();
+	const email = claimEmail.trim();
+	if (!email || claimState === "sending") return;
+	claimState = "sending";
+	try {
+		const res = await fetch(`/api/share/${page.params.id}/claim`, {
+			method: "POST",
 			headers: { "content-type": "application/json" },
-			body: JSON.stringify(body),
+			body: JSON.stringify({ email }),
+		});
+		if (!res.ok) throw new Error(await readApiError(res, "Couldn't send the link."));
+		claimState = "sent";
+	} catch (err) {
+		claimState = "idle";
+		toast.error((err as Error)?.message ?? "Couldn't send the link.");
+	}
+}
+const shareMeta = $derived(okAccess?.share);
+const canManage = $derived(okAccess?.canManage ?? false);
+// Exact source aspect ratio, when the recast row carries its dimensions.
+// Passing this to the player reserves the precise box before metadata loads
+// → zero layout shift. Null on legacy rows, where the player falls back to
+// its 16/9 placeholder and adjusts once the real dimensions decode.
+const playerAspect = $derived(
+	recast?.width && recast?.height ? `${recast.width} / ${recast.height}` : null,
+);
+// Numeric aspect for theater sizing — the video is capped by available
+// height (`max-width = height × ratio`) so it grows as large as the viewport
+// allows without overflowing the fold. Falls back to 16:9 on legacy rows.
+const heroRatio = $derived(recast?.width && recast?.height ? recast.width / recast.height : 16 / 9);
+const slug = $derived(shareMeta?.slug ?? recast?.id ?? "");
+const isDemo = $derived(slug === "demo");
+
+// ── Social preview (dynamic OG) ───────────────────────────────────
+// Shared recasts unfurl with a branded card that surfaces the recast's
+// own title + description and who shared it, generated by /api/og so the
+// Recast wordmark/footer branding stays consistent with the marketing
+// pages. Denied/private shares fall back to a generic branded card. The
+// page stays `noindex` either way (see <svelte:head> below) — rich link
+// previews without making private content crawlable.
+const ogTitle = $derived(recast?.title ?? "Private recast");
+const ogDescription = $derived(
+	recast?.description?.trim() ||
+		(recast ? "Recorded, polished, and shared with Recast." : "This recast is private."),
+);
+const ogEyebrow = $derived(recast ? `Shared by ${recast.sharedBy}` : undefined);
+
+// Record a real share view, keyed to the anonymous shareView session id so
+// PostHog reconciles with the first-party watch-metrics table. Viewers are
+// never identified — this stays anonymous regardless of consent.
+onMount(() => {
+	if (!browser || !okAccess || isDemo) return;
+	analytics.capture("share_viewed", {
+		visibility: shareMeta?.visibility,
+		share_session_id: shareSessionId(),
+	});
+});
+
+// `requiresPassword` is set by the page loader when the share has a
+// passwordHash and the viewer doesn't carry a valid unlock cookie. In
+// that case `recast.src` is empty and we render the prompt below
+// instead of the player. On a successful unlock we `invalidateAll()`
+// so the loader re-runs, signs the URL, and the player mounts.
+const requiresPassword = $derived(
+	Boolean(okAccess && "requiresPassword" in access && access.requiresPassword),
+);
+let passwordInput = $state("");
+let unlocking = $state(false);
+let unlockError = $state<string | null>(null);
+async function submitUnlock(e: SubmitEvent) {
+	e.preventDefault();
+	if (!shareMeta || unlocking || !passwordInput) return;
+	unlocking = true;
+	unlockError = null;
+	try {
+		const res = await fetch(`/api/share/${shareMeta.slug}/unlock`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({ password: passwordInput }),
 		});
 		if (!res.ok) {
-			throw new Error(await readApiError(res, "Couldn't update share settings"));
-		}
-		return (await res.json()) as {
-			ctaLabel?: string | null;
-			ctaUrl?: string | null;
-			commentsEnabled?: boolean;
-			searchable?: boolean;
-			title?: string;
-			description?: string | null;
-		};
-	}
-
-	async function toggleCommentsEnabled() {
-		const next = !commentsEnabled;
-		commentsEnabled = next;
-		if (isDemo) return;
-		try {
-			await patchSettings({ commentsEnabled: next });
-			toast.success(next ? "Comments are on." : "Comments are off.");
-		} catch (e) {
-			commentsEnabled = !next;
-			toast.error((e as Error)?.message ?? "Couldn't update comments.");
-		}
-	}
-
-	async function toggleSearchable() {
-		const next = !searchable;
-		searchable = next;
-		if (isDemo) return;
-		try {
-			await patchSettings({ searchable: next });
-			toast.success(
-				next ? "Listed in search engines." : "Hidden from search engines.",
-			);
-		} catch (e) {
-			searchable = !next;
-			toast.error((e as Error)?.message ?? "Couldn't update search visibility.");
-		}
-	}
-
-	let ctaDialogOpen = $state(false);
-	let ctaLabelDraft = $state("");
-	let ctaUrlDraft = $state("");
-	let savingCta = $state(false);
-
-	function openCtaEditor() {
-		ctaLabelDraft = ctaLabel ?? "";
-		ctaUrlDraft = ctaUrl ?? "";
-		ctaDialogOpen = true;
-	}
-
-	async function saveCta(e: SubmitEvent) {
-		e.preventDefault();
-		const label = ctaLabelDraft.trim();
-		const url = ctaUrlDraft.trim();
-		if (label && !url) {
-			toast.error("Add a link for the button.");
+			unlockError = res.status === 401 ? "Wrong password. Try again." : "Couldn't unlock.";
 			return;
 		}
-		savingCta = true;
-		if (isDemo) {
-			ctaLabel = label || null;
-			ctaUrl = url || null;
-			ctaDialogOpen = false;
-			savingCta = false;
-			return;
-		}
-		try {
-			const r = await patchSettings({ ctaLabel: label, ctaUrl: url });
-			ctaLabel = r.ctaLabel ?? null;
-			ctaUrl = r.ctaUrl ?? null;
-			ctaDialogOpen = false;
-			toast.success(ctaLabel ? "Call-to-action saved." : "Call-to-action removed.");
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't save the call-to-action.");
-		} finally {
-			savingCta = false;
-		}
+		passwordInput = "";
+		await invalidateAll();
+	} catch {
+		unlockError = "Network error. Try again.";
+	} finally {
+		unlocking = false;
 	}
+}
 
+// The toggle below writes the standard {public, team, private} scopes
+// (`workspace` shows as "team", its alias). The richer `selected`
+// specific-people allowlist is created from the share dialog, not here —
+// but we surface it ACCURATELY (instead of masking it as "Only me") so the
+// owner sees the real scope and can switch off it.
+// The share's true current scope (full enum), synced from the server and
+// updated optimistically on toggle.
+let currentScope = $state<string>(
+	untrack(() => (data.access.ok ? data.access.share.visibility : "public")),
+);
+$effect(() => {
+	if (access.ok) currentScope = access.share.visibility;
+});
+const isSelectedScope = $derived(currentScope === "selected");
+// Which toggle row reads as active — none while on the specific-people
+// allowlist, so "selected" no longer masquerades as "Only me".
+const activeScope: LegacyVisibility | null = $derived(
+	isSelectedScope ? null : toLegacyVisibility(currentScope),
+);
+let updatingVisibility = $state(false);
 
-	function jumpTo(seconds: number) {
-		api?.seek(seconds);
-		if (!isPlaying) api?.play();
-		ended = false;
-		if (!browser) return;
-		const href = withTimeParam(new URL(window.location.href), seconds);
-		window.history.replaceState({}, "", href);
-	}
-
-	// ── Owner-editable video details (title + description — the recast's own
-	//    text, shown on the page and reused for the OG card). Locally mirrored
-	//    so an owner edit reflects at once; server-synced on navigation. ──────
-	let titleText = $state(untrack(() => (data.access.ok ? data.access.recast.title : "")));
-	let descriptionText = $state(
-		untrack(() => (data.access.ok ? data.access.recast.description : "")),
-	);
-	$effect(() => {
-		if (access.ok) {
-			titleText = access.recast.title;
-			descriptionText = access.recast.description;
-		}
-	});
-	let detailsOpen = $state(false);
-	let titleDraft = $state("");
-	let descDraft = $state("");
-	let savingDetails = $state(false);
-
-	function openDetailsEditor() {
-		titleDraft = titleText ?? "";
-		descDraft = descriptionText ?? "";
-		detailsOpen = true;
-	}
-
-	async function saveDetails(e: SubmitEvent) {
-		e.preventDefault();
-		const title = titleDraft.trim();
-		const description = descDraft.trim();
-		if (!title) {
-			toast.error("Title can't be empty.");
-			return;
-		}
-		savingDetails = true;
-		if (isDemo) {
-			titleText = title;
-			descriptionText = description;
-			detailsOpen = false;
-			savingDetails = false;
-			return;
-		}
-		try {
-			const r = await patchSettings({ title, description });
-			titleText = r.title ?? title;
-			descriptionText = r.description ?? "";
-			detailsOpen = false;
-			toast.success("Details saved.");
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't save the details.");
-		} finally {
-			savingDetails = false;
-		}
-	}
-
-
-	async function writeClipboard(text: string, okMsg: string) {
-		try {
-			await navigator.clipboard.writeText(text);
-			toast.success(okMsg);
-		} catch {
-			toast.error("Couldn't copy to clipboard.");
-		}
-	}
-
-	async function copyShareLink() {
-		if (!browser) return;
-		// Seconds 0 clears any `?t=` so the copied link starts from the top.
-		await writeClipboard(
-			withTimeParam(new URL(window.location.href), 0),
-			"Share link copied.",
-		);
-	}
-
-	async function copyLinkAtCurrentTime() {
-		if (!browser) return;
-		const href = withTimeParam(new URL(window.location.href), currentTime);
-		const t = compactTime(currentTime);
-		await writeClipboard(
-			href,
-			t ? `Link copied at ${formatTime(currentTime)}.` : "Link copied.",
-		);
-	}
-
-	async function copyEmbedCode() {
-		if (!browser) return;
-		const url = new URL(window.location.href);
-		await writeClipboard(buildEmbedCode(url.toString()), "Embed code copied.");
-	}
-
-	// ── Viewer identity ──────────────────────────────────────────────
-	type SessionShape = {
-		data: { user?: { name?: string | null; email?: string | null; image?: string | null } | null } | null;
-	};
-	const session = authClient.useSession();
-	const viewer = $derived(($session as unknown as SessionShape).data?.user ?? null);
-	// Signed-in viewers comment AS their account — the name is locked, not a
-	// guest field. Guests (no session) still self-supply and remember a name.
-	const identityLocked = $derived(viewer != null);
-	// Account avatar for the composer identity chip: real image when present,
-	// else initials on the neutral account swatch (distinct from guests' hued dots).
-	const viewerInitials = $derived(initials(viewer?.name, viewer?.email));
-
-	// Force the composer name to the account once the session hydrates — and keep
-	// it synced — so a signed-in viewer can't post under a stale guest name.
-	$effect(() => {
-		if (viewer)
-			viewerName = viewer.name?.trim() || viewer.email?.split("@")[0] || "Recast user";
-	});
-
-
-	async function signOut() {
-		await authClient.signOut();
-		await goto("/");
-	}
-
-	// Share→signup is the page's growth loop: a stranger watching a polished
-	// recast is the highest-intent moment to convert. Track each acquisition
-	// surface so the funnel is measurable by placement (header / end-card / mark).
-	function trackSignupCta(
-		placement:
-			| "header"
-			| "end-card"
-			| "watermark"
-			| "mid-watch"
-			| "positioning-chip",
-	) {
-		if (!browser) return;
-		analytics.capture("share_signup_cta_click", {
-			placement,
-			visibility: shareMeta?.visibility,
-		});
-	}
-
-	// ── Funnel instrumentation ────────────────────────────────────────
-	// share_viewed (mount) → share_play_started (real play) → share_watch_depth
-	// (25/50/75/100) → share_cta_impression / share_signup_cta_click. Together
-	// these give play-rate, drop-off, and per-placement CTA click-through, which
-	// clicks-only tracking couldn't. Skipped for the demo (no real share row).
-	let analyticsPlaySent = false;
-	function trackPlayOnce() {
-		if (analyticsPlaySent || !browser || isDemo) return;
-		analyticsPlaySent = true;
-		analytics.capture("share_play_started", {
-			visibility: shareMeta?.visibility,
-			share_session_id: shareSessionId(),
-		});
-	}
-	const depthSeen = new Set<number>();
-	function trackDepth(pct: number) {
-		if (!browser || isDemo) return;
-		for (const m of [25, 50, 75, 100]) {
-			if (pct >= m && !depthSeen.has(m)) {
-				depthSeen.add(m);
-				analytics.capture("share_watch_depth", {
-					pct: m,
-					visibility: shareMeta?.visibility,
+async function updateVisibility(next: "public" | "team" | "private") {
+	if (!shareMeta || !canManage || updatingVisibility) return;
+	if (next === activeScope) return;
+	const previous = currentScope;
+	currentScope = next;
+	updatingVisibility = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const res = await fetch(`/api/share/${shareMeta.slug}/access`, {
+					method: "PATCH",
+					headers: { "content-type": "application/json" },
+					body: JSON.stringify({ visibility: next }),
 				});
-			}
-		}
+				if (!res.ok) {
+					throw new Error(await readApiError(res, "Couldn't update access"));
+				}
+			})(),
+			{
+				loading: "Updating who can view…",
+				success:
+					next === "public"
+						? "Anyone with the link can view."
+						: next === "team"
+							? "Restricted to your team."
+							: "Only you can view.",
+				error: (err) => (err as Error)?.message ?? "Couldn't update access.",
+			},
+		);
+	} catch {
+		currentScope = previous;
+	} finally {
+		updatingVisibility = false;
 	}
-	function trackCtaImpression(
-		placement: "end-card" | "mid-watch" | "positioning-chip",
-	) {
-		if (!browser || isDemo) return;
-		analytics.capture("share_cta_impression", {
-			placement,
-			visibility: shareMeta?.visibility,
-		});
-	}
+}
 
-	// ── Growth loop for the majority who never finish ─────────────────
-	// The end-card only converts finishers. This reaches the same audience — an
-	// anonymous stranger on a public share with no owner CTA of its own — while
-	// they watch (a one-time nudge at 50%) and persistently (a positioning chip
-	// under the title). Signed-in viewers and owners are excluded (nothing to
-	// convert), and an owner's own CTA always takes precedence over ours.
-	const strangerLoop = $derived(
-		currentScope === "public" && !canManage && !viewer && !cta,
+// ── Player wiring ────────────────────────────────────────────────
+
+const initialSeekSeconds = untrack(() => parseTimeParam(page.url.searchParams.get("t")));
+
+let api = $state<RecastPlayerApi | null>(null);
+
+// Re-seek every time the player API publishes — covers the initial
+// `?t=` URL seed and any later remount. Reading `currentTime` via
+// `untrack` so this effect only re-runs when `api` itself changes.
+$effect(() => {
+	if (!api) return;
+	const target = untrack(() => Math.max(initialSeekSeconds, currentTime));
+	if (target > 0) api.seek(target);
+});
+
+let currentTime = $state(initialSeekSeconds);
+const smoothedTime = new Tween(0, { duration: 120, easing: cubicOut });
+let watchedPct = $state(0);
+let isPlaying = $state(false);
+// True once the video reaches the end — drives the CTA end-card overlay.
+let ended = $state(false);
+// Pre-play hook: a sender + duration card owns the poster until the viewer
+// commits to the first play. It's the highest-trust moment on the page (who
+// sent this, how long), so we surface identity + duration instead of a bare
+// poster. Cleared on the first view-start/progress or when the viewer plays here.
+let hasStarted = $state(false);
+function startPlayback() {
+	hasStarted = true;
+	api?.play();
+}
+
+$effect(() => {
+	smoothedTime.set(currentTime);
+});
+
+// First-party view recording. Bumps the cached view count AND — critically
+// — refreshes `recast.lastViewedAt`, which the Free-tier expiry sweep keys
+// off (without this, watched recasts still archive at 14 days). Anonymous:
+// keyed only by the share session fingerprint. Skipped for the demo (no
+// real share row) and SSR. `keepalive` lets the "ended" beacon survive a
+// tab close.
+let viewStartSent = false;
+function recordView(event: "start" | "ended") {
+	if (!browser || isDemo || !slug) return;
+	if (event === "start") {
+		if (viewStartSent) return;
+		viewStartSent = true;
+	}
+	try {
+		void fetch(`/api/share/${slug}/view`, {
+			method: "POST",
+			headers: { "content-type": "application/json" },
+			body: JSON.stringify({
+				sessionId: shareSessionId(),
+				event,
+				watchPct: Math.round(watchedPct),
+				// Acquisition source — only meaningful on the first ("start")
+				// beacon; the server reduces it to a bare host and drops self-refs.
+				referrer: event === "start" ? document.referrer || null : null,
+			}),
+			keepalive: true,
+		}).catch(() => {});
+	} catch {
+		// Never let a metrics beacon disrupt playback.
+	}
+}
+
+function onEngagement(e: {
+	type: "view-start" | "progress" | "ended";
+	percent?: number;
+	currentTime?: number;
+}) {
+	if (e.type === "view-start") {
+		isPlaying = true;
+		ended = false;
+		hasStarted = true;
+		recordView("start");
+		trackPlayOnce();
+	}
+	if (e.type === "progress") {
+		currentTime = e.currentTime ?? currentTime;
+		watchedPct = e.percent ?? watchedPct;
+		isPlaying = true;
+		ended = false;
+		hasStarted = true;
+		// Some players jump straight to progress without a view-start; the
+		// guard makes this idempotent so we still record the view once.
+		recordView("start");
+		trackPlayOnce();
+		trackDepth(watchedPct);
+	}
+	if (e.type === "ended") {
+		watchedPct = 100;
+		isPlaying = false;
+		ended = true;
+		recordView("ended");
+		trackDepth(100);
+	}
+}
+
+function replay() {
+	ended = false;
+	api?.seek(0);
+	api?.play();
+}
+
+// ── Call-to-action (owner-defined "next step") ───────────────────
+let ctaLabel = $state(untrack(() => (data.access.ok ? data.access.share.ctaLabel : null)));
+let ctaUrl = $state(untrack(() => (data.access.ok ? data.access.share.ctaUrl : null)));
+const cta = $derived(ctaLabel && ctaUrl ? { label: ctaLabel, url: ctaUrl } : null);
+// The owner's next-step card fires when they set a CTA. When they didn't,
+// a finished stranger (not the owner) is the highest-intent moment to plant
+// the growth loop — offer "record your own" instead of a blank overlay.
+const showOwnerEndCard = $derived(ended && cta != null);
+const showStrangerEndCard = $derived(ended && cta == null && !canManage);
+
+// ── Comments + reactions (engagement layer) ──────────────────────
+let commentsEnabled = $state(
+	untrack(() => (data.access.ok ? data.access.share.commentsEnabled : true)),
+);
+// Owner opt-in to search indexing (public shares only). Optimistic, like the
+// comments toggle; the <svelte:head> robots/canonical below key off it.
+let searchable = $state(untrack(() => (data.access.ok ? data.access.share.searchable : false)));
+const watermark = $derived(shareMeta?.watermark ?? true);
+const viewsCount = $derived(shareMeta?.viewsCount ?? 0);
+
+let comments = $state<ShareComment[]>([]);
+let reactions = $state<ReactionCount[]>([]);
+let myReactions = $state<Set<string>>(new Set());
+// Fire-once guard so the load effect doesn't re-trigger; distinct from the
+// UI-facing `engagementState`, which drives skeleton / retry / empty.
+let engagementLoaded = $state(false);
+let engagementState = $state<"loading" | "ready" | "error">("loading");
+
+// ── Engagement side-panel (Transcript | Comments) ─────────────────
+// The video and the conversation live side-by-side so a viewer can read,
+// skim the transcript, and jump moments without scrolling the player away.
+const hasTranscript = $derived(captionTracks.length > 0);
+type PanelTab = "transcript" | "comments";
+let activeTab = $state<PanelTab>("comments");
+// Skim-first: default to the transcript on captioned recasts, comments
+// otherwise. Runs once, then a viewer's tab choice sticks.
+let tabInitialized = false;
+$effect(() => {
+	if (tabInitialized || !recast) return;
+	activeTab = hasTranscript ? "transcript" : "comments";
+	tabInitialized = true;
+});
+// Keep the active tab valid if the owner toggles comments off mid-view.
+$effect(() => {
+	if (activeTab === "comments" && !commentsEnabled && hasTranscript) activeTab = "transcript";
+	else if (activeTab === "transcript" && !hasTranscript && commentsEnabled) activeTab = "comments";
+});
+
+// Interactive transcript, read straight off the player's live caption
+// `<track>` (no second fetch of the signed VTT, no CORS surface).
+let transcriptCues = $state<TranscriptCue[]>([]);
+let transcriptQuery = $state("");
+let transcriptListEl = $state<HTMLElement | null>(null);
+const filteredCues = $derived(filterCues(transcriptCues, transcriptQuery));
+// The line to light as "now" — suppressed while searching (the filtered
+// list no longer aligns with the playhead index).
+const activeCue = $derived(
+	transcriptQuery.trim() ? -1 : activeCueIndex(transcriptCues, smoothedTime.current),
+);
+
+$effect(() => {
+	if (!browser || !api || !hasTranscript) return;
+	const video = api.getVideoElement();
+	if (!video) return;
+	// Both the `<track>` registration and its cue parsing land
+	// asynchronously after the player mounts, so poll for both.
+	const attempt = () => {
+		const track = Array.from(video.textTracks).find(
+			(t) => t.kind === "captions" || t.kind === "subtitles",
+		);
+		if (!track) return false;
+		// Populate cues without forcing captions on-screen — only nudge a
+		// disabled track to `hidden`; never override the viewer's CC choice.
+		if (track.mode === "disabled") track.mode = "hidden";
+		const cues = readCuesFromTrack(track);
+		if (cues.length) transcriptCues = cues;
+		return cues.length > 0;
+	};
+	if (attempt()) return;
+	let tries = 0;
+	const iv = setInterval(() => {
+		if (attempt() || ++tries > 25) clearInterval(iv);
+	}, 200);
+	return () => clearInterval(iv);
+});
+
+// Keep the active transcript line in view while it plays (not while the
+// viewer is searching or reading a different tab).
+$effect(() => {
+	const idx = activeCue;
+	if (idx < 0 || activeTab !== "transcript" || transcriptQuery.trim()) return;
+	transcriptListEl
+		?.querySelector<HTMLElement>(`[data-cue="${idx}"]`)
+		?.scrollIntoView({ block: "nearest" });
+});
+
+// Comments projected onto the scrubber — click a marker (handled inside the
+// player) to seek; we also surface the comment in the panel.
+const commentMarkers = $derived(buildCommentMarkers(comments, commentHue));
+
+function onPlayerAction(e: RecastPlayerActionEvent) {
+	if (e.type !== "marker-select") return;
+	activeTab = "comments";
+	panelOpen = true;
+	ended = false;
+	if (!browser) return;
+	const id = e.marker.id;
+	queueMicrotask(() => {
+		document
+			.getElementById(`comment-${id}`)
+			?.scrollIntoView({ block: "center", behavior: "smooth" });
+	});
+}
+
+// Scroll-aware top bar: once the title scrolls under the sticky header
+// we fade the owner + title into the bar so the viewer keeps context
+// while reading/commenting. Driven off the title element itself via an
+// IntersectionObserver (the `-72px` top margin ≈ the header height).
+let titleAnchorEl = $state<HTMLElement | null>(null);
+let showBarTitle = $state(false);
+$effect(() => {
+	const el = titleAnchorEl;
+	if (!browser || !el) return;
+	const io = new IntersectionObserver(
+		([entry]) => {
+			showBarTitle = !entry.isIntersecting;
+		},
+		{ rootMargin: "-72px 0px 0px 0px", threshold: 0 },
 	);
+	io.observe(el);
+	return () => io.disconnect();
+});
 
-	const nudgeKey = $derived(slug ? `recast:share-nudge:${slug}` : null);
-	let nudgeDismissed = $state(false);
-	let nudgeArmed = $state(false);
-	onMount(() => {
-		if (browser && nudgeKey) nudgeDismissed = localStorage.getItem(nudgeKey) === "1";
+let sessionId = $state("");
+let viewerName = $state("");
+let draftText = $state("");
+let inputEl = $state<HTMLInputElement | null>(null);
+// Name is remembered, so it collapses to a compact "commenting as" line once
+// set; `editingName` reopens the field, keeping the comment input the focus.
+let editingName = $state(false);
+let nameInputEl = $state<HTMLInputElement | null>(null);
+
+async function editName() {
+	// Only guests choose a name; a signed-in viewer's identity is their account.
+	if (identityLocked) return;
+	editingName = true;
+	await tick();
+	nameInputEl?.focus();
+}
+
+function commitName() {
+	editingName = false;
+	// Never write an account name into the guest name store — the two
+	// identities must not bleed across sessions on a shared browser.
+	if (!identityLocked && viewerName.trim()) rememberViewerName(viewerName);
+}
+
+onMount(() => {
+	sessionId = shareSessionId();
+	viewerName = storedViewerName();
+});
+
+// Load engagement once the player surface is live (covers both the
+// initial mount and the post-unlock case, where the loader re-runs but
+// the component doesn't re-mount).
+$effect(() => {
+	if (!browser || requiresPassword) return;
+	const s = slug;
+	if (!s || untrack(() => engagementLoaded)) return;
+	loadAll(s);
+});
+
+async function loadAll(s: string) {
+	engagementLoaded = true; // guard against the effect re-firing mid-await
+	engagementState = "loading";
+	const sid = shareSessionId();
+	sessionId = sid;
+	try {
+		const e = await loadEngagement(s, sid);
+		comments = e.comments;
+		reactions = e.reactions;
+		myReactions = new Set(e.myReactions);
+		commentsEnabled = e.commentsEnabled;
+		engagementState = "ready";
+	} catch {
+		// Surface a retry affordance rather than a false "No comments yet".
+		engagementState = "error";
+	}
+}
+
+// Manual retry after a failed engagement load (network / server error).
+function retryEngagement() {
+	if (slug) loadAll(slug);
+}
+
+async function refresh() {
+	if (isDemo) return;
+	try {
+		const e = await loadEngagement(slug, sessionId);
+		comments = e.comments;
+		reactions = e.reactions;
+		myReactions = new Set(e.myReactions);
+		commentsEnabled = e.commentsEnabled;
+	} catch {
+		// best-effort
+	}
+}
+
+function countFor(emoji: string): number {
+	return reactions.find((r) => r.emoji === emoji)?.count ?? 0;
+}
+// The engagement rail (Transcript | Comments) lives in the page's layout as
+// a collapsible sticky sidebar — not a slide-in sheet. The reaction-bar
+// buttons toggle it: opening to a tab, switching tabs while open, or
+// collapsing when you click the tab that's already showing. It only mounts
+// when there's a populated tab, so the video reclaims full width when it's
+// collapsed or on a bare recast.
+const hasSidebar = $derived(hasTranscript || commentsEnabled);
+let panelOpen = $state(false);
+let railEl = $state<HTMLElement | null>(null);
+async function togglePanel(tab: PanelTab) {
+	if (panelOpen && activeTab === tab) {
+		panelOpen = false;
+		return;
+	}
+	activeTab = tab;
+	panelOpen = true;
+	// On mobile the rail stacks below the fold; without bringing it into view
+	// the toggle reads as "nothing happened". Desktop docks it beside the
+	// video (in-view already), so only scroll on the stacked breakpoint.
+	if (browser && window.matchMedia("(max-width: 1023px)").matches) {
+		await tick();
+		railEl?.scrollIntoView({ behavior: "smooth", block: "start" });
+	}
+}
+
+async function react(emoji: string) {
+	const nextState = toggleReactionState({ myReactions, reactions }, emoji);
+	myReactions = nextState.myReactions;
+	reactions = nextState.reactions;
+	if (isDemo) return;
+	try {
+		await toggleReaction(slug, { sessionId, emoji, atSeconds: Math.floor(currentTime) });
+	} catch {
+		refresh();
+	}
+}
+
+async function submitComment() {
+	const text = draftText.trim();
+	const name = viewerName.trim();
+	if (!text || !name) return;
+	if (!identityLocked) rememberViewerName(name);
+	const at = Math.floor(currentTime);
+	if (isDemo) {
+		comments = [
+			...comments,
+			{
+				id: `local-${comments.length}`,
+				authorName: name,
+				atSeconds: at,
+				body: text,
+				createdAt: 0,
+				mine: true,
+				verified: identityLocked,
+			},
+		];
+		draftText = "";
+		toast.success(`Posted at ${formatTime(at)}.`);
+		return;
+	}
+	try {
+		const c = await postComment(slug, { sessionId, authorName: name, atSeconds: at, body: text });
+		comments = [...comments, c];
+		draftText = "";
+		toast.success(`Posted at ${formatTime(at)}.`);
+	} catch (e) {
+		toast.error((e as Error)?.message ?? "Couldn't post comment.");
+	}
+}
+
+async function removeComment(id: string) {
+	const prev = comments;
+	comments = comments.filter((c) => c.id !== id);
+	if (isDemo) return;
+	try {
+		await deleteComment(slug, id, sessionId);
+	} catch (e) {
+		comments = prev;
+		toast.error((e as Error)?.message ?? "Couldn't delete comment.");
+	}
+}
+
+function insertCurrentTimestamp() {
+	const stamp = `[${formatTime(currentTime)}] `;
+	const el = inputEl;
+	if (!el) {
+		draftText += stamp;
+		return;
+	}
+	const start = el.selectionStart ?? draftText.length;
+	const end = el.selectionEnd ?? draftText.length;
+	draftText = draftText.slice(0, start) + stamp + draftText.slice(end);
+	queueMicrotask(() => {
+		el.focus();
+		const pos = start + stamp.length;
+		el.setSelectionRange(pos, pos);
 	});
-	// Never float over an immersive/fullscreen watch. (A fullscreen video also
-	// hides page-level fixed elements, but tracking it keeps the state honest and
-	// prevents any flash on exit.)
-	let isFullscreen = $state(false);
-	onMount(() => {
-		if (!browser) return;
-		const sync = () => (isFullscreen = !!document.fullscreenElement);
-		document.addEventListener("fullscreenchange", sync);
-		sync();
-		return () => document.removeEventListener("fullscreenchange", sync);
+}
+
+// ── Owner share settings (CTA + comments toggle) ─────────────────
+async function patchSettings(body: Record<string, unknown>) {
+	const res = await fetch(`/api/share/${slug}/settings`, {
+		method: "PATCH",
+		headers: { "content-type": "application/json" },
+		body: JSON.stringify(body),
 	});
-	const showMidWatchNudge = $derived(
-		strangerLoop && nudgeArmed && !nudgeDismissed && !ended && !isFullscreen,
-	);
-	$effect(() => {
-		if (strangerLoop && !nudgeArmed && !nudgeDismissed && !ended && watchedPct >= 50) {
-			nudgeArmed = true;
-			trackCtaImpression("mid-watch");
-		}
+	if (!res.ok) {
+		throw new Error(await readApiError(res, "Couldn't update share settings"));
+	}
+	return (await res.json()) as {
+		ctaLabel?: string | null;
+		ctaUrl?: string | null;
+		commentsEnabled?: boolean;
+		searchable?: boolean;
+		title?: string;
+		description?: string | null;
+	};
+}
+
+async function toggleCommentsEnabled() {
+	const next = !commentsEnabled;
+	commentsEnabled = next;
+	if (isDemo) return;
+	try {
+		await patchSettings({ commentsEnabled: next });
+		toast.success(next ? "Comments are on." : "Comments are off.");
+	} catch (e) {
+		commentsEnabled = !next;
+		toast.error((e as Error)?.message ?? "Couldn't update comments.");
+	}
+}
+
+async function toggleSearchable() {
+	const next = !searchable;
+	searchable = next;
+	if (isDemo) return;
+	try {
+		await patchSettings({ searchable: next });
+		toast.success(next ? "Listed in search engines." : "Hidden from search engines.");
+	} catch (e) {
+		searchable = !next;
+		toast.error((e as Error)?.message ?? "Couldn't update search visibility.");
+	}
+}
+
+let ctaDialogOpen = $state(false);
+let ctaLabelDraft = $state("");
+let ctaUrlDraft = $state("");
+let savingCta = $state(false);
+
+function openCtaEditor() {
+	ctaLabelDraft = ctaLabel ?? "";
+	ctaUrlDraft = ctaUrl ?? "";
+	ctaDialogOpen = true;
+}
+
+async function saveCta(e: SubmitEvent) {
+	e.preventDefault();
+	const label = ctaLabelDraft.trim();
+	const url = ctaUrlDraft.trim();
+	if (label && !url) {
+		toast.error("Add a link for the button.");
+		return;
+	}
+	savingCta = true;
+	if (isDemo) {
+		ctaLabel = label || null;
+		ctaUrl = url || null;
+		ctaDialogOpen = false;
+		savingCta = false;
+		return;
+	}
+	try {
+		const r = await patchSettings({ ctaLabel: label, ctaUrl: url });
+		ctaLabel = r.ctaLabel ?? null;
+		ctaUrl = r.ctaUrl ?? null;
+		ctaDialogOpen = false;
+		toast.success(ctaLabel ? "Call-to-action saved." : "Call-to-action removed.");
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't save the call-to-action.");
+	} finally {
+		savingCta = false;
+	}
+}
+
+function jumpTo(seconds: number) {
+	api?.seek(seconds);
+	if (!isPlaying) api?.play();
+	ended = false;
+	if (!browser) return;
+	const href = withTimeParam(new URL(window.location.href), seconds);
+	window.history.replaceState({}, "", href);
+}
+
+// ── Owner-editable video details (title + description — the recast's own
+//    text, shown on the page and reused for the OG card). Locally mirrored
+//    so an owner edit reflects at once; server-synced on navigation. ──────
+let titleText = $state(untrack(() => (data.access.ok ? data.access.recast.title : "")));
+let descriptionText = $state(untrack(() => (data.access.ok ? data.access.recast.description : "")));
+$effect(() => {
+	if (access.ok) {
+		titleText = access.recast.title;
+		descriptionText = access.recast.description;
+	}
+});
+let detailsOpen = $state(false);
+let titleDraft = $state("");
+let descDraft = $state("");
+let savingDetails = $state(false);
+
+function openDetailsEditor() {
+	titleDraft = titleText ?? "";
+	descDraft = descriptionText ?? "";
+	detailsOpen = true;
+}
+
+async function saveDetails(e: SubmitEvent) {
+	e.preventDefault();
+	const title = titleDraft.trim();
+	const description = descDraft.trim();
+	if (!title) {
+		toast.error("Title can't be empty.");
+		return;
+	}
+	savingDetails = true;
+	if (isDemo) {
+		titleText = title;
+		descriptionText = description;
+		detailsOpen = false;
+		savingDetails = false;
+		return;
+	}
+	try {
+		const r = await patchSettings({ title, description });
+		titleText = r.title ?? title;
+		descriptionText = r.description ?? "";
+		detailsOpen = false;
+		toast.success("Details saved.");
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't save the details.");
+	} finally {
+		savingDetails = false;
+	}
+}
+
+async function writeClipboard(text: string, okMsg: string) {
+	try {
+		await navigator.clipboard.writeText(text);
+		toast.success(okMsg);
+	} catch {
+		toast.error("Couldn't copy to clipboard.");
+	}
+}
+
+async function copyShareLink() {
+	if (!browser) return;
+	// Seconds 0 clears any `?t=` so the copied link starts from the top.
+	await writeClipboard(withTimeParam(new URL(window.location.href), 0), "Share link copied.");
+}
+
+async function copyLinkAtCurrentTime() {
+	if (!browser) return;
+	const href = withTimeParam(new URL(window.location.href), currentTime);
+	const t = compactTime(currentTime);
+	await writeClipboard(href, t ? `Link copied at ${formatTime(currentTime)}.` : "Link copied.");
+}
+
+async function copyEmbedCode() {
+	if (!browser) return;
+	const url = new URL(window.location.href);
+	await writeClipboard(buildEmbedCode(url.toString()), "Embed code copied.");
+}
+
+// ── Viewer identity ──────────────────────────────────────────────
+type SessionShape = {
+	data: {
+		user?: { name?: string | null; email?: string | null; image?: string | null } | null;
+	} | null;
+};
+const session = authClient.useSession();
+const viewer = $derived(($session as unknown as SessionShape).data?.user ?? null);
+// Signed-in viewers comment AS their account — the name is locked, not a
+// guest field. Guests (no session) still self-supply and remember a name.
+const identityLocked = $derived(viewer != null);
+// Account avatar for the composer identity chip: real image when present,
+// else initials on the neutral account swatch (distinct from guests' hued dots).
+const viewerInitials = $derived(initials(viewer?.name, viewer?.email));
+
+// Force the composer name to the account once the session hydrates — and keep
+// it synced — so a signed-in viewer can't post under a stale guest name.
+$effect(() => {
+	if (viewer) viewerName = viewer.name?.trim() || viewer.email?.split("@")[0] || "Recast user";
+});
+
+async function signOut() {
+	await authClient.signOut();
+	await goto("/");
+}
+
+// Share→signup is the page's growth loop: a stranger watching a polished
+// recast is the highest-intent moment to convert. Track each acquisition
+// surface so the funnel is measurable by placement (header / end-card / mark).
+function trackSignupCta(
+	placement: "header" | "end-card" | "watermark" | "mid-watch" | "positioning-chip",
+) {
+	if (!browser) return;
+	analytics.capture("share_signup_cta_click", {
+		placement,
+		visibility: shareMeta?.visibility,
 	});
-	function dismissNudge() {
-		nudgeDismissed = true;
-		if (browser && nudgeKey) {
-			try {
-				localStorage.setItem(nudgeKey, "1");
-			} catch {
-				// Private mode: a session-only dismissal is an acceptable fallback.
-			}
+}
+
+// ── Funnel instrumentation ────────────────────────────────────────
+// share_viewed (mount) → share_play_started (real play) → share_watch_depth
+// (25/50/75/100) → share_cta_impression / share_signup_cta_click. Together
+// these give play-rate, drop-off, and per-placement CTA click-through, which
+// clicks-only tracking couldn't. Skipped for the demo (no real share row).
+let analyticsPlaySent = false;
+function trackPlayOnce() {
+	if (analyticsPlaySent || !browser || isDemo) return;
+	analyticsPlaySent = true;
+	analytics.capture("share_play_started", {
+		visibility: shareMeta?.visibility,
+		share_session_id: shareSessionId(),
+	});
+}
+const depthSeen = new Set<number>();
+function trackDepth(pct: number) {
+	if (!browser || isDemo) return;
+	for (const m of [25, 50, 75, 100]) {
+		if (pct >= m && !depthSeen.has(m)) {
+			depthSeen.add(m);
+			analytics.capture("share_watch_depth", {
+				pct: m,
+				visibility: shareMeta?.visibility,
+			});
 		}
 	}
-
-	// End-card click-through needs its impression counted once per session.
-	let endCardImpressionSent = false;
-	$effect(() => {
-		if (showStrangerEndCard && !endCardImpressionSent) {
-			endCardImpressionSent = true;
-			trackCtaImpression("end-card");
-		}
+}
+function trackCtaImpression(placement: "end-card" | "mid-watch" | "positioning-chip") {
+	if (!browser || isDemo) return;
+	analytics.capture("share_cta_impression", {
+		placement,
+		visibility: shareMeta?.visibility,
 	});
+}
 
-	// The persistent positioning chip is always-on for the stranger loop; count
-	// its impression once so its click-through is comparable to the others.
-	let chipImpressionSent = false;
-	$effect(() => {
-		if (strangerLoop && !chipImpressionSent) {
-			chipImpressionSent = true;
-			trackCtaImpression("positioning-chip");
+// ── Growth loop for the majority who never finish ─────────────────
+// The end-card only converts finishers. This reaches the same audience — an
+// anonymous stranger on a public share with no owner CTA of its own — while
+// they watch (a one-time nudge at 50%) and persistently (a positioning chip
+// under the title). Signed-in viewers and owners are excluded (nothing to
+// convert), and an owner's own CTA always takes precedence over ours.
+const strangerLoop = $derived(currentScope === "public" && !canManage && !viewer && !cta);
+
+const nudgeKey = $derived(slug ? `recast:share-nudge:${slug}` : null);
+let nudgeDismissed = $state(false);
+let nudgeArmed = $state(false);
+onMount(() => {
+	if (browser && nudgeKey) nudgeDismissed = localStorage.getItem(nudgeKey) === "1";
+});
+// Never float over an immersive/fullscreen watch. (A fullscreen video also
+// hides page-level fixed elements, but tracking it keeps the state honest and
+// prevents any flash on exit.)
+let isFullscreen = $state(false);
+onMount(() => {
+	if (!browser) return;
+	const sync = () => (isFullscreen = !!document.fullscreenElement);
+	document.addEventListener("fullscreenchange", sync);
+	sync();
+	return () => document.removeEventListener("fullscreenchange", sync);
+});
+const showMidWatchNudge = $derived(
+	strangerLoop && nudgeArmed && !nudgeDismissed && !ended && !isFullscreen,
+);
+$effect(() => {
+	if (strangerLoop && !nudgeArmed && !nudgeDismissed && !ended && watchedPct >= 50) {
+		nudgeArmed = true;
+		trackCtaImpression("mid-watch");
+	}
+});
+function dismissNudge() {
+	nudgeDismissed = true;
+	if (browser && nudgeKey) {
+		try {
+			localStorage.setItem(nudgeKey, "1");
+		} catch {
+			// Private mode: a session-only dismissal is an acceptable fallback.
 		}
-	});
+	}
+}
+
+// End-card click-through needs its impression counted once per session.
+let endCardImpressionSent = false;
+$effect(() => {
+	if (showStrangerEndCard && !endCardImpressionSent) {
+		endCardImpressionSent = true;
+		trackCtaImpression("end-card");
+	}
+});
+
+// The persistent positioning chip is always-on for the stranger loop; count
+// its impression once so its click-through is comparable to the others.
+let chipImpressionSent = false;
+$effect(() => {
+	if (strangerLoop && !chipImpressionSent) {
+		chipImpressionSent = true;
+		trackCtaImpression("positioning-chip");
+	}
+});
 </script>
 
 <SeoMeta title={ogTitle} description={ogDescription} eyebrow={ogEyebrow} />
@@ -1504,7 +1481,6 @@
 								aspectRatio={playerAspect}
 								tracks={captionTracks}
 								markers={commentMarkers}
-								controls={{ captions: captionTracks.length > 0 }}
 								onengagement={onEngagement}
 								onaction={onPlayerAction}
 							/>

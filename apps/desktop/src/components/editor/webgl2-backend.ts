@@ -73,6 +73,8 @@ export class WebGL2Backend {
 	#bgTex: WebGLTexture | null = null;
 	/** Owned camera-frame texture (export camera bubble); re-uploaded each frame. */
 	#camTex: WebGLTexture | null = null;
+	/** Owned annotation-layer texture (export); re-uploaded each frame. */
+	#annoTex: WebGLTexture | null = null;
 
 	private constructor(
 		gl: WebGL2RenderingContext,
@@ -215,6 +217,23 @@ export class WebGL2Backend {
 		return this.#camTex;
 	}
 
+	/** Upload the comp-native annotation layer to the owned texture (export),
+	 *  reused across frames, and return it for the annotation pass to composite. */
+	uploadAnnotation(source: TexImageSource): WebGLTexture {
+		const gl = this.#gl;
+		if (!this.#annoTex) {
+			this.#annoTex = gl.createTexture();
+			gl.bindTexture(gl.TEXTURE_2D, this.#annoTex);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+		}
+		gl.bindTexture(gl.TEXTURE_2D, this.#annoTex);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
+		return this.#annoTex;
+	}
+
 	/** Blit a texture into a pixel-space rect over the current frame (overlay
 	 *  passes). Lazily compiles the overlay program on first use. */
 	drawSprite(tex: WebGLTexture, rect: QuadRect, opts?: QuadDrawOptions): void {
@@ -229,5 +248,6 @@ export class WebGL2Backend {
 		if (this.#frameTex) this.#gl.deleteTexture(this.#frameTex);
 		if (this.#bgTex) this.#gl.deleteTexture(this.#bgTex);
 		if (this.#camTex) this.#gl.deleteTexture(this.#camTex);
+		if (this.#annoTex) this.#gl.deleteTexture(this.#annoTex);
 	}
 }

@@ -45,17 +45,34 @@ describe("browserExportBlockedReason", () => {
 		).toBeNull();
 	});
 
-	it("blocks a project with a visible annotation", () => {
-		expect(browserExportBlockedReason(store({ annotations: [{ hidden: false }] }))).toBe(
-			"annotations",
-		);
+	it("allows painted + text annotations — the browser draws them", () => {
+		for (const kind of ["rect", "ellipse", "arrow", "image", "text"]) {
+			expect(
+				browserExportBlockedReason(store({ annotations: [{ hidden: false, kind: { kind } }] })),
+			).toBeNull();
+		}
 	});
 
-	it("ignores hidden / globally-hidden annotations", () => {
-		expect(browserExportBlockedReason(store({ annotations: [{ hidden: true }] }))).toBeNull();
+	it("blocks visible blur annotations (Rust until P1b)", () => {
 		expect(
 			browserExportBlockedReason(
-				store({ annotationsGloballyHidden: true, annotations: [{ hidden: false }] }),
+				store({ annotations: [{ hidden: false, kind: { kind: "blur" } }] }),
+			),
+		).toBe("blur annotations");
+	});
+
+	it("ignores hidden / globally-hidden blur annotations", () => {
+		expect(
+			browserExportBlockedReason(
+				store({ annotations: [{ hidden: true, kind: { kind: "blur" } }] }),
+			),
+		).toBeNull();
+		expect(
+			browserExportBlockedReason(
+				store({
+					annotationsGloballyHidden: true,
+					annotations: [{ hidden: false, kind: { kind: "blur" } }],
+				}),
 			),
 		).toBeNull();
 	});

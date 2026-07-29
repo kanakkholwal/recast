@@ -27,14 +27,6 @@ export type RecastPlayerBranding = {
 	width?: number;
 	height?: number;
 	className?: string;
-	position?: "top-left";
-};
-
-export type RecastPlayerChapter = {
-	id?: string;
-	label: string;
-	startTime: number;
-	endTime?: number | null;
 };
 
 export type RecastPlayerMarker = {
@@ -45,37 +37,11 @@ export type RecastPlayerMarker = {
 	color?: string;
 };
 
-export type RecastPlayerUtilityAction =
-	| { id: "share"; label?: string }
-	| { id: "download"; label?: string }
-	| { id: "screenshot"; label?: string }
-	| { id: "theater"; label?: string }
-	| { id: "chapters"; label?: string }
-	| { id: "shortcuts"; label?: string }
-	| { id: "settings"; label?: string }
-	| { id: "pip"; label?: string }
-	| { id: "custom"; label: string; actionId: string };
-
-export type RecastPlayerFeatures = {
-	settingsMenu: boolean;
-	chaptersMenu: boolean;
-	theaterMode: boolean;
-	miniPlayer: boolean;
-	share: boolean;
-	download: boolean;
-	screenshot: boolean;
-	keyboardShortcuts: boolean;
-	markers: boolean;
-};
-
 export type RecastPlayerActionEvent =
-	| { type: "share"; currentTime: number }
 	| { type: "download"; src: string }
 	| { type: "screenshot"; currentTime: number; dataUrl: string }
 	| { type: "theater"; active: boolean }
-	| { type: "chapter-select"; chapter: RecastPlayerChapter }
-	| { type: "marker-select"; marker: RecastPlayerMarker }
-	| { type: "custom"; actionId: string; currentTime: number };
+	| { type: "marker-select"; marker: RecastPlayerMarker };
 
 export type RecastPlayerState = {
 	paused: boolean;
@@ -109,11 +75,15 @@ export type RecastPlayerApi = {
 	setPlaybackRate: (next: number) => void;
 	togglePlay: () => Promise<void>;
 	setTheaterMode: (next: boolean) => void;
-	openSettings: () => void;
-	closeSettings: () => void;
 	enterFullscreen: () => Promise<void>;
 	exitFullscreen: () => Promise<void>;
 	enterPictureInPicture: () => Promise<void>;
+	/** Downloads the current source, routing cross-origin URLs through a blob. */
+	download: () => Promise<void>;
+	/** PNG data URL of the current frame, or null if the media isn't CORS-readable. */
+	captureScreenshot: () => string | null;
+	/** Reloads the media element — the retry path out of an error state. */
+	reload: () => void;
 	getCurrentTime: () => number;
 	getDuration: () => number;
 	getState: () => RecastPlayerState;
@@ -135,6 +105,11 @@ export type RecastPlayerProps = {
 	title?: string;
 	autoplay?: boolean;
 	preload?: "none" | "metadata" | "auto";
+	/**
+	 * Forces CORS mode. The source MUST send `Access-Control-Allow-Origin` or the
+	 * media will not load at all; pass `null` for hosts that can't (screenshots
+	 * and same-tab downloads stop working then).
+	 */
 	crossorigin?: "anonymous" | "use-credentials" | null;
 	loop?: boolean;
 	volume?: number;
@@ -142,12 +117,10 @@ export type RecastPlayerProps = {
 	playbackRate?: number;
 	currentTime?: number;
 	paused?: boolean | null;
-	chapters?: RecastPlayerChapter[];
 	markers?: RecastPlayerMarker[];
-	utilityActions?: RecastPlayerUtilityAction[];
-	features?: Partial<RecastPlayerFeatures>;
-	showMenu?: boolean;
 	controls?: Partial<RecastPlayerControls>;
+	/** Media-chrome hotkeys plus its built-in `?` shortcuts dialog. */
+	keyboardShortcuts?: boolean;
 	branding?: RecastPlayerBranding | null;
 	aspectRatio?: number | string | null;
 	/**
