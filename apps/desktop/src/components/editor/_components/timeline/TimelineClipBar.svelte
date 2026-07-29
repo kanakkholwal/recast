@@ -1,344 +1,320 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import {
-    type FilmstripTile,
-    planFilmstrip,
-  } from "$lib/timeline/filmstrip";
-  import type { TileProvider } from "$lib/timeline/filmstrip-source";
-  import {
-    storyboardCellSec,
-    storyboardCoverCrop,
-  } from "$lib/timeline/storyboard";
-  import { deriveSeams } from "$lib/timeline/segments";
-  import { motionDuration } from "$lib/motion.svelte";
-  import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
-  import * as ContextMenu from "@recast/ui/context-menu";
-  import { fade } from "svelte/transition";
-  import {
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { type FilmstripTile, planFilmstrip } from "$lib/timeline/filmstrip";
+import type { TileProvider } from "$lib/timeline/filmstrip-source";
+import { storyboardCellSec, storyboardCoverCrop } from "$lib/timeline/storyboard";
+import { deriveSeams } from "$lib/timeline/segments";
+import { motionDuration } from "$lib/motion.svelte";
+import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
+import * as ContextMenu from "@recast/ui/context-menu";
+import { fade } from "svelte/transition";
+import {
+	formatTimeByMode,
+	formatSmpte,
+	frameStep,
+	minClipDuration,
+	type TimeMode,
+} from "./timeline-helpers";
+import {
+	clampTrimIn,
+	clampTrimOut,
+	layoutClipBlocks,
+	nudgeTrimIn,
+	nudgeTrimOut,
+} from "./timeline-clipbar.logic";
+import { buildSnapTargets, snapTime } from "./timeline-snap";
 
-    formatTimeByMode,
-    formatSmpte,
-    frameStep,
-    minClipDuration,
-    type TimeMode,
-  } from "./timeline-helpers";
-  import {
-    clampTrimIn,
-    clampTrimOut,
-    layoutClipBlocks,
-    nudgeTrimIn,
-    nudgeTrimOut,
-  } from "./timeline-clipbar.logic";
-  import { buildSnapTargets, snapTime } from "./timeline-snap";
+// Clip bar with thumbnails and in/out trim handles. Owns its drag state;
+// the parent only supplies `clientXToOutput` (handles scroll offset) to resolve pointer X.
 
-  // Clip bar with thumbnails and in/out trim handles. Owns its drag state;
-  // the parent only supplies `clientXToOutput` (handles scroll offset) to resolve pointer X.
+interface Props {
+	store: EditorStore;
+	videoEl: HTMLVideoElement | null;
+	fps: number;
+	duration: number;
+	pixelsPerSecond: number;
+	clipLeft: number;
+	clipWidth: number;
+	thumbnailWidth: number;
+	timeMode: TimeMode;
+	/** Pointer clientX → output seconds (pre-map); trim maps it via a frozen map. */
+	clientXToOutput: (clientX: number) => number;
+	// Density-based filmstrip. When null, the stretched Rust strip is rendered.
+	tileProvider: TileProvider | null;
+	filmstripVersion: number;
+	viewportLeftPx: number;
+	viewportWidthPx: number;
+}
 
-  interface Props {
-    store: EditorStore;
-    videoEl: HTMLVideoElement | null;
-    fps: number;
-    duration: number;
-    pixelsPerSecond: number;
-    clipLeft: number;
-    clipWidth: number;
-    thumbnailWidth: number;
-    timeMode: TimeMode;
-    /** Pointer clientX → output seconds (pre-map); trim maps it via a frozen map. */
-    clientXToOutput: (clientX: number) => number;
-    // Density-based filmstrip. When null, the stretched Rust strip is rendered.
-    tileProvider: TileProvider | null;
-    filmstripVersion: number;
-    viewportLeftPx: number;
-    viewportWidthPx: number;
-  }
+let {
+	store,
+	videoEl,
+	fps,
+	duration,
+	pixelsPerSecond,
+	clipLeft,
+	clipWidth,
+	thumbnailWidth,
+	timeMode,
+	clientXToOutput,
+	tileProvider,
+	filmstripVersion,
+	viewportLeftPx,
+	viewportWidthPx,
+}: Props = $props();
 
-  let {
-    store,
-    videoEl,
-    fps,
-    duration,
-    pixelsPerSecond,
-    clipLeft,
-    clipWidth,
-    thumbnailWidth,
-    timeMode,
-    clientXToOutput,
-    tileProvider,
-    filmstripVersion,
-    viewportLeftPx,
-    viewportWidthPx,
-  }: Props = $props();
+// Target tile width and the cache-key height namespace; overscan decodes a bit
+// beyond the viewport so tiles are ready just before they scroll in.
+const TILE_TARGET_W = 96;
+const TILE_KEY_HEIGHT = 48;
+const FILMSTRIP_OVERSCAN = 240;
+/** Rendered height of the clip bar (`h-12`), the box a sprite cell fills. */
+const CLIP_H = 48;
 
-  // Target tile width and the cache-key height namespace; overscan decodes a bit
-  // beyond the viewport so tiles are ready just before they scroll in.
-  const TILE_TARGET_W = 96;
-  const TILE_KEY_HEIGHT = 48;
-  const FILMSTRIP_OVERSCAN = 240;
-  /** Rendered height of the clip bar (`h-12`), the box a sprite cell fills. */
-  const CLIP_H = 48;
+const formatSpeed = (s: number) => `${s}×`;
 
-  const formatSpeed = (s: number) => `${s}×`;
+// One block per kept segment on the OUTPUT (post-cut) axis: a cut occupies zero
+// width and later clips slide left to close the gap. `xOf` maps original time onto that axis.
+const pps = $derived(pixelsPerSecond);
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pps;
+// Thumbnail strip is laid across this; each block is internally cut-free, so it shows its slice via a margin offset.
+const clipDuration = $derived(Math.max(0.0001, store.outPoint - store.inPoint));
+const stripFullWidth = $derived(clipDuration * pps);
+const thumbW = $derived(
+	store.thumbnailStrip.length > 0
+		? Math.max(2, stripFullWidth / store.thumbnailStrip.length)
+		: thumbnailWidth,
+);
+const clipBlocks = $derived(layoutClipBlocks(store.segments, xOf, pps, store.inPoint));
+// Density-based filmstrip tiles, planned per kept block and virtualized to the
+// viewport. Empty (fallback to the stretched strip) when there's no provider.
+const filmstripTiles = $derived(
+	tileProvider
+		? planFilmstrip(
+				clipBlocks.map((b) => ({
+					key: b.key,
+					leftPx: b.left,
+					widthPx: b.width,
+					originalStart: b.start,
+					originalEnd: b.end,
+				})),
+				{ leftPx: viewportLeftPx, widthPx: viewportWidthPx },
+				{
+					tileWidthPx: TILE_TARGET_W,
+					tileHeightPx: TILE_KEY_HEIGHT,
+					overscanPx: FILMSTRIP_OVERSCAN,
+				},
+			)
+		: [],
+);
+// The clip bar's base layer is the STORYBOARD SPRITE: one image, built once in
+// the worker, cropped per tile with background-position. No per-tile decode, no
+// cache to evict, and every tile has pixels the moment the sheet lands.
+//
+// Per-tile decodes are now only a REFINEMENT, requested when the strip is
+// finer-grained than the sheet (i.e. zoomed in far enough that adjacent tiles
+// would otherwise crop the same cell). They fade in over the sprite, so the
+// strip is never blank and never stalls on a decoder.
+const storyboard = $derived.by(() => {
+	void filmstripVersion;
+	return tileProvider?.storyboard();
+});
+const cellSec = $derived(storyboard ? storyboardCellSec(storyboard) : Number.POSITIVE_INFINITY);
+/** Seconds of source one tile spans at the current zoom. */
+const tileSpanSec = $derived(pps > 0 ? TILE_TARGET_W / pps : Number.POSITIVE_INFINITY);
+// 0.75 leaves a little hysteresis so a nudge of the zoom doesn't flap the decoder on.
+const needsSharpTiles = $derived(!storyboard || tileSpanSec < cellSec * 0.75);
 
-  // One block per kept segment on the OUTPUT (post-cut) axis: a cut occupies zero
-  // width and later clips slide left to close the gap. `xOf` maps original time onto that axis.
-  const pps = $derived(pixelsPerSecond);
-  const xOf = (t: number) => originalToOutput(store.renderMap, t) * pps;
-  // Thumbnail strip is laid across this; each block is internally cut-free, so it shows its slice via a margin offset.
-  const clipDuration = $derived(Math.max(0.0001, store.outPoint - store.inPoint));
-  const stripFullWidth = $derived(clipDuration * pps);
-  const thumbW = $derived(
-    store.thumbnailStrip.length > 0
-      ? Math.max(2, stripFullWidth / store.thumbnailStrip.length)
-      : thumbnailWidth,
-  );
-  const clipBlocks = $derived(
-    layoutClipBlocks(store.segments, xOf, pps, store.inPoint),
-  );
-  // Density-based filmstrip tiles, planned per kept block and virtualized to the
-  // viewport. Empty (fallback to the stretched strip) when there's no provider.
-  const filmstripTiles = $derived(
-    tileProvider
-      ? planFilmstrip(
-          clipBlocks.map((b) => ({
-            key: b.key,
-            leftPx: b.left,
-            widthPx: b.width,
-            originalStart: b.start,
-            originalEnd: b.end,
-          })),
-          { leftPx: viewportLeftPx, widthPx: viewportWidthPx },
-          {
-            tileWidthPx: TILE_TARGET_W,
-            tileHeightPx: TILE_KEY_HEIGHT,
-            overscanPx: FILMSTRIP_OVERSCAN,
-          },
-        )
-      : [],
-  );
-  // The clip bar's base layer is the STORYBOARD SPRITE: one image, built once in
-  // the worker, cropped per tile with background-position. No per-tile decode, no
-  // cache to evict, and every tile has pixels the moment the sheet lands.
-  //
-  // Per-tile decodes are now only a REFINEMENT, requested when the strip is
-  // finer-grained than the sheet (i.e. zoomed in far enough that adjacent tiles
-  // would otherwise crop the same cell). They fade in over the sprite, so the
-  // strip is never blank and never stalls on a decoder.
-  const storyboard = $derived.by(() => {
-    void filmstripVersion;
-    return tileProvider?.storyboard();
-  });
-  const cellSec = $derived(
-    storyboard ? storyboardCellSec(storyboard) : Number.POSITIVE_INFINITY,
-  );
-  /** Seconds of source one tile spans at the current zoom. */
-  const tileSpanSec = $derived(pps > 0 ? TILE_TARGET_W / pps : Number.POSITIVE_INFINITY);
-  // 0.75 leaves a little hysteresis so a nudge of the zoom doesn't flap the decoder on.
-  const needsSharpTiles = $derived(!storyboard || tileSpanSec < cellSec * 0.75);
+const tilesByBlock = $derived.by(() => {
+	const map = new Map<number, FilmstripTile[]>();
+	for (const tile of filmstripTiles) {
+		const list = map.get(tile.blockKey);
+		if (list) list.push(tile);
+		else map.set(tile.blockKey, [tile]);
+	}
+	return map;
+});
+// Tile URLs, re-resolved whenever a freshly decoded tile bumps the version.
+const tileUrls = $derived.by(() => {
+	void filmstripVersion;
+	const map = new Map<string, string | undefined>();
+	if (tileProvider) {
+		for (const tile of filmstripTiles) {
+			map.set(tile.cacheKey, tileProvider.get(tile));
+		}
+	}
+	return map;
+});
+$effect(() => {
+	// Re-runs on `filmstripVersion` too, not just when the plan changes: a tile
+	// evicted from the LRU would otherwise stay grey forever, because nothing
+	// would ever ask for it again. `request` no-ops on cached/inflight tiles, so
+	// this settles immediately once the strip is populated.
+	void filmstripVersion;
+	if (!needsSharpTiles) return;
+	if (tileProvider && filmstripTiles.length > 0) {
+		tileProvider.request(filmstripTiles);
+	}
+});
 
-  const tilesByBlock = $derived.by(() => {
-    const map = new Map<number, FilmstripTile[]>();
-    for (const tile of filmstripTiles) {
-      const list = map.get(tile.blockKey);
-      if (list) list.push(tile);
-      else map.set(tile.blockKey, [tile]);
-    }
-    return map;
-  });
-  // Tile URLs, re-resolved whenever a freshly decoded tile bumps the version.
-  const tileUrls = $derived.by(() => {
-    void filmstripVersion;
-    const map = new Map<string, string | undefined>();
-    if (tileProvider) {
-      for (const tile of filmstripTiles) {
-        map.set(tile.cacheKey, tileProvider.get(tile));
-      }
-    }
-    return map;
-  });
-  $effect(() => {
-    // Re-runs on `filmstripVersion` too, not just when the plan changes: a tile
-    // evicted from the LRU would otherwise stay grey forever, because nothing
-    // would ever ask for it again. `request` no-ops on cached/inflight tiles, so
-    // this settles immediately once the strip is populated.
-    void filmstripVersion;
-    if (!needsSharpTiles) return;
-    if (tileProvider && filmstripTiles.length > 0) {
-      tileProvider.request(filmstripTiles);
-    }
-  });
+const splitMarkers = $derived(
+	store.splitPoints
+		.filter((p) => p > store.inPoint && p < store.outPoint)
+		.map((p) => ({ time: p, x: xOf(p) })),
+);
+// Where a removed cut sits between two kept segments, collapsed to one seam.
+// deriveSeams is the pure unit-tested helper; here we only add the output-axis x.
+const seamMarkers = $derived(
+	deriveSeams(store.segments).map((s) => ({ ...s, x: xOf(s.gapStart) })),
+);
+function restoreSeam(gapStart: number, gapEnd: number) {
+	// Restore every cut that lives inside the collapsed gap.
+	for (const c of store.effectiveCuts) {
+		if (c.start >= gapStart - 1e-3 && c.end <= gapEnd + 1e-3) {
+			store.removeCut(c.id);
+		}
+	}
+}
+const inHandleLeft = $derived(clipLeft);
+const outHandleLeft = $derived(clipLeft + clipWidth);
 
-  const splitMarkers = $derived(
-    store.splitPoints
-      .filter((p) => p > store.inPoint && p < store.outPoint)
-      .map((p) => ({ time: p, x: xOf(p) })),
-  );
-  // Where a removed cut sits between two kept segments, collapsed to one seam.
-  // deriveSeams is the pure unit-tested helper; here we only add the output-axis x.
-  const seamMarkers = $derived(
-    deriveSeams(store.segments).map((s) => ({ ...s, x: xOf(s.gapStart) })),
-  );
-  function restoreSeam(gapStart: number, gapEnd: number) {
-    // Restore every cut that lives inside the collapsed gap.
-    for (const c of store.effectiveCuts) {
-      if (c.start >= gapStart - 1e-3 && c.end <= gapEnd + 1e-3) {
-        store.removeCut(c.id);
-      }
-    }
-  }
-  const inHandleLeft = $derived(clipLeft);
-  const outHandleLeft = $derived(clipLeft + clipWidth);
+// Midpoint is always inside the block, so deleteSegmentAt targets exactly it; park playhead on the join.
+function deleteSegment(start: number, end: number) {
+	const joinAt = store.deleteSegmentAt((start + end) / 2);
+	if (joinAt === null) return;
+	store.currentTime = joinAt;
+	if (videoEl) videoEl.currentTime = joinAt;
+}
 
-  // Midpoint is always inside the block, so deleteSegmentAt targets exactly it; park playhead on the join.
-  function deleteSegment(start: number, end: number) {
-    const joinAt = store.deleteSegmentAt((start + end) / 2);
-    if (joinAt === null) return;
-    store.currentTime = joinAt;
-    if (videoEl) videoEl.currentTime = joinAt;
-  }
+// Right-click menu: original time the menu was opened at (set on pointerdown,
+// which fires for the right button before `contextmenu`), so "Split here"
+// splits exactly where you clicked rather than at the playhead.
+const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
+let menuTime = $state(0);
+function rememberMenuTime(clientX: number) {
+	menuTime = outputToOriginal(store.renderMap, clientXToOutput(clientX));
+}
 
-  // Right-click menu: original time the menu was opened at (set on pointerdown,
-  // which fires for the right button before `contextmenu`), so "Split here"
-  // splits exactly where you clicked rather than at the playhead.
-  const SPEED_PRESETS = [0.5, 1, 1.5, 2] as const;
-  let menuTime = $state(0);
-  function rememberMenuTime(clientX: number) {
-    menuTime = outputToOriginal(store.renderMap, clientXToOutput(clientX));
-  }
+// Faint audio envelope over the footage, so you can see where to cut. Built in
+// output-pixel space (each bucket at `xOf(bucketTime)`) over the kept range
+// only; buckets inside a removed cut collapse onto the seam like the cut lane.
+let activeTrimHandle = $state<"in" | "out" | null>(null);
+// Output-x of the active trim snap target (playhead/region/etc.), or null.
+let trimSnapX = $state<number | null>(null);
 
-  // Faint audio envelope over the footage, so you can see where to cut. Built in
-  // output-pixel space (each bucket at `xOf(bucketTime)`) over the kept range
-  // only; buckets inside a removed cut collapse onto the seam like the cut lane.
-  let activeTrimHandle = $state<"in" | "out" | null>(null);
-  // Output-x of the active trim snap target (playhead/region/etc.), or null.
-  let trimSnapX = $state<number | null>(null);
+// `originalAt` = the handle value at pointer-down, for the frames-delta tooltip.
+let trimDragContext = $state<{
+	which: "in" | "out";
+	originalAt: number;
+} | null>(null);
+function startTrimDrag(event: PointerEvent, which: "in" | "out") {
+	if (duration <= 0) return;
+	event.preventDefault();
+	event.stopPropagation();
+	// Single undo entry per drag.
+	store.pushUndoState();
+	// Un-collapse the axis for the drag: the clip un-brackets to the full
+	// recording (trimmed head/tail ghosted), the handle follows the cursor, and
+	// dragging outward restores. Reverts to the collapsed view on pointer-up.
+	store.isTrimming = true;
+	activeTrimHandle = which;
+	trimDragContext = {
+		which,
+		originalAt: which === "in" ? store.inPoint : store.outPoint,
+	};
+	document.body.style.cursor = "ew-resize";
+	(event.currentTarget as Element).setPointerCapture(event.pointerId);
+	updateTrimFromPointer(event.clientX, which, true);
+	const onMove = (e: PointerEvent) => {
+		updateTrimFromPointer(e.clientX, which, true);
+	};
+	const onUp = (e: PointerEvent) => {
+		activeTrimHandle = null;
+		trimDragContext = null;
+		trimSnapX = null;
+		store.isTrimming = false;
+		document.body.style.cursor = "";
+		try {
+			(event.currentTarget as Element).releasePointerCapture(e.pointerId);
+		} catch {
+			// already released on some browsers
+		}
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", onUp);
+		window.removeEventListener("pointercancel", onUp);
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", onUp);
+	window.addEventListener("pointercancel", onUp);
+}
 
-  // `originalAt` = the handle value at pointer-down, for the frames-delta tooltip.
-  let trimDragContext = $state<{
-    which: "in" | "out";
-    originalAt: number;
-  } | null>(null);
-  function startTrimDrag(event: PointerEvent, which: "in" | "out") {
-    if (duration <= 0) return;
-    event.preventDefault();
-    event.stopPropagation();
-    // Single undo entry per drag.
-    store.pushUndoState();
-    // Un-collapse the axis for the drag: the clip un-brackets to the full
-    // recording (trimmed head/tail ghosted), the handle follows the cursor, and
-    // dragging outward restores. Reverts to the collapsed view on pointer-up.
-    store.isTrimming = true;
-    activeTrimHandle = which;
-    trimDragContext = {
-      which,
-      originalAt: which === "in" ? store.inPoint : store.outPoint,
-    };
-    document.body.style.cursor = "ew-resize";
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    updateTrimFromPointer(event.clientX, which, true);
-    const onMove = (e: PointerEvent) => {
-      updateTrimFromPointer(e.clientX, which, true);
-    };
-    const onUp = (e: PointerEvent) => {
-      activeTrimHandle = null;
-      trimDragContext = null;
-      trimSnapX = null;
-      store.isTrimming = false;
-      document.body.style.cursor = "";
-      try {
-        (event.currentTarget as Element).releasePointerCapture(e.pointerId);
-      } catch {
-        // already released on some browsers
-      }
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
-    };
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
-  }
+// Snap the dragged handle to the playhead, clip edges, and region/annotation
+// boundaries (not its own point); falls through to the frame grid otherwise.
+function snapTrim(raw: number, which: "in" | "out"): number {
+	const targets = buildSnapTargets({
+		playhead: store.currentTime,
+		inPoint: store.inPoint,
+		outPoint: store.outPoint,
+		duration,
+		regions: store.zoomRegions,
+		annotations: store.annotations,
+	}).filter((target) =>
+		which === "in" ? target.kind !== "in-point" : target.kind !== "out-point",
+	);
+	const tolerance = pps > 0 ? 6 / pps : 0;
+	const result = snapTime(raw, targets, tolerance, fps);
+	// Surface the active snap as a guide line at the target's position.
+	trimSnapX = result.target ? xOf(result.target.time) : null;
+	return result.time;
+}
 
-  // Snap the dragged handle to the playhead, clip edges, and region/annotation
-  // boundaries (not its own point); falls through to the frame grid otherwise.
-  function snapTrim(raw: number, which: "in" | "out"): number {
-    const targets = buildSnapTargets({
-      playhead: store.currentTime,
-      inPoint: store.inPoint,
-      outPoint: store.outPoint,
-      duration,
-      regions: store.zoomRegions,
-      annotations: store.annotations,
-    }).filter((target) =>
-      which === "in"
-        ? target.kind !== "in-point"
-        : target.kind !== "out-point",
-    );
-    const tolerance = pps > 0 ? 6 / pps : 0;
-    const result = snapTime(raw, targets, tolerance, fps);
-    // Surface the active snap as a guide line at the target's position.
-    trimSnapX = result.target ? xOf(result.target.time) : null;
-    return result.time;
-  }
+function updateTrimFromPointer(clientX: number, which: "in" | "out", scrub = false) {
+	// Output px → original time. While trimming, store.renderMap is the full
+	// recording axis (stable, not collapsing under the drag), so absolute
+	// mapping tracks the cursor and lets the handle move across the whole source.
+	const raw = outputToOriginal(store.renderMap, clientXToOutput(clientX));
+	const t = snapTrim(raw, which);
+	const min = minClipDuration(fps);
+	if (which === "in") {
+		const next = clampTrimIn(t, store.outPoint, min);
+		store.trimStart = next;
+		// Park playback at the in point so the preview shows the first kept frame while dragging.
+		if (scrub) {
+			store.currentTime = next;
+			if (videoEl) videoEl.currentTime = next;
+		}
+	} else {
+		const next = clampTrimOut(t, duration, store.inPoint, min);
+		store.trimEnd = next;
+		if (scrub) {
+			// Show the last kept frame (one before the cut), the frame being decided on.
+			const previewAt = Math.max(store.inPoint, next - frameStep(fps));
+			store.currentTime = previewAt;
+			if (videoEl) videoEl.currentTime = previewAt;
+		}
+	}
+}
 
-  function updateTrimFromPointer(
-    clientX: number,
-    which: "in" | "out",
-    scrub = false,
-  ) {
-    // Output px → original time. While trimming, store.renderMap is the full
-    // recording axis (stable, not collapsing under the drag), so absolute
-    // mapping tracks the cursor and lets the handle move across the whole source.
-    const raw = outputToOriginal(store.renderMap, clientXToOutput(clientX));
-    const t = snapTrim(raw, which);
-    const min = minClipDuration(fps);
-    if (which === "in") {
-      const next = clampTrimIn(t, store.outPoint, min);
-      store.trimStart = next;
-      // Park playback at the in point so the preview shows the first kept frame while dragging.
-      if (scrub) {
-        store.currentTime = next;
-        if (videoEl) videoEl.currentTime = next;
-      }
-    } else {
-      const next = clampTrimOut(t, duration, store.inPoint, min);
-      store.trimEnd = next;
-      if (scrub) {
-        // Show the last kept frame (one before the cut), the frame being decided on.
-        const previewAt = Math.max(store.inPoint, next - frameStep(fps));
-        store.currentTime = previewAt;
-        if (videoEl) videoEl.currentTime = previewAt;
-      }
-    }
-  }
+function nudgeTrimByKey(which: "in" | "out", direction: 1 | -1, second: boolean) {
+	if (duration <= 0) return;
+	store.pushUndoStateCoalesced(`trim-${which}`, 500);
+	const delta = direction * (second ? 1 : frameStep(fps));
+	const min = minClipDuration(fps);
+	if (which === "in") {
+		store.trimStart = nudgeTrimIn(store.inPoint, store.outPoint, delta, min, fps);
+	} else {
+		store.trimEnd = nudgeTrimOut(store.inPoint, store.outPoint, duration, delta, min, fps);
+	}
+}
 
-  function nudgeTrimByKey(which: "in" | "out", direction: 1 | -1, second: boolean) {
-    if (duration <= 0) return;
-    store.pushUndoStateCoalesced(`trim-${which}`, 500);
-    const delta = direction * (second ? 1 : frameStep(fps));
-    const min = minClipDuration(fps);
-    if (which === "in") {
-      store.trimStart = nudgeTrimIn(store.inPoint, store.outPoint, delta, min, fps);
-    } else {
-      store.trimEnd = nudgeTrimOut(
-        store.inPoint,
-        store.outPoint,
-        duration,
-        delta,
-        min,
-        fps,
-      );
-    }
-  }
-
-  function handleTrimHandleKey(event: KeyboardEvent, which: "in" | "out") {
-    if (duration <= 0) return;
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    event.stopPropagation();
-    nudgeTrimByKey(which, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
-  }
+function handleTrimHandleKey(event: KeyboardEvent, which: "in" | "out") {
+	if (duration <= 0) return;
+	if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+	event.preventDefault();
+	event.stopPropagation();
+	nudgeTrimByKey(which, event.key === "ArrowLeft" ? -1 : 1, event.shiftKey);
+}
 </script>
 
 <div class="relative h-12">

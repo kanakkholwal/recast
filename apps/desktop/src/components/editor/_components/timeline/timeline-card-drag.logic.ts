@@ -46,12 +46,8 @@ export function computeCardMove(g: CardDragGeometry): CardDragResult {
 
 	const startSnap = snapTime(proposed, g.snapTargets, g.tolerance, g.fps);
 	const endSnap = snapTime(proposed + span, g.snapTargets, g.tolerance, g.fps);
-	const startDist = startSnap.target
-		? Math.abs(startSnap.time - proposed)
-		: Infinity;
-	const endDist = endSnap.target
-		? Math.abs(endSnap.time - (proposed + span))
-		: Infinity;
+	const startDist = startSnap.target ? Math.abs(startSnap.time - proposed) : Infinity;
+	const endDist = endSnap.target ? Math.abs(endSnap.time - (proposed + span)) : Infinity;
 
 	let nextStart: number;
 	let guide: SnapTarget | null = null;
@@ -76,18 +72,12 @@ export function computeCardResize(
 	if (g.edge === "start") {
 		const proposed = projectAnchor(g, g.origin.start);
 		const snap = snapTime(proposed, g.snapTargets, g.tolerance, g.fps);
-		const next = Math.max(
-			0,
-			Math.min(g.origin.end - g.minDuration, snap.time),
-		);
+		const next = Math.max(0, Math.min(g.origin.end - g.minDuration, snap.time));
 		return { start: next, end: g.origin.end, guide: snap.target };
 	}
 	const proposed = projectAnchor(g, g.origin.end);
 	const snap = snapTime(proposed, g.snapTargets, g.tolerance, g.fps);
-	const next = Math.min(
-		g.duration,
-		Math.max(g.origin.start + g.minDuration, snap.time),
-	);
+	const next = Math.min(g.duration, Math.max(g.origin.start + g.minDuration, snap.time));
 	return { start: g.origin.start, end: next, guide: snap.target };
 }
 

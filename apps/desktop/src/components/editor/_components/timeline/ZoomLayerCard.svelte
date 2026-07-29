@@ -1,205 +1,198 @@
 <script lang="ts">
-  import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { motionDuration } from "$lib/motion.svelte";
-  import { X, ZoomIn } from "@recast/icons";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
-  import {
-    computeCardMove,
-    computeCardNudge,
-    computeCardResize,
-  } from "./timeline-card-drag.logic";
-  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
-  import { type SnapResult, type SnapTarget } from "./timeline-snap";
-  import { edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
+import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { motionDuration } from "$lib/motion.svelte";
+import { X, ZoomIn } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
+import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
+import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+import { type SnapResult, type SnapTarget } from "./timeline-snap";
+import { edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
 
-  // Three drag modes through one pointer-handler: move (shift both edges),
-  // resize-start (move `start`), resize-end (move `end`). Undo is pushed on the
-  // first real move so a select-click leaves no empty history entry.
+// Three drag modes through one pointer-handler: move (shift both edges),
+// resize-start (move `start`), resize-end (move `end`). Undo is pushed on the
+// first real move so a select-click leaves no empty history entry.
 
-  interface Props {
-    store: EditorStore;
-    region: ZoomRegion;
-    pixelsPerSecond: number;
-    fps: number;
-    duration: number;
-    /** Layout comes from the lane, which packs overlapping cards into rows. */
-    left: number;
-    width: number;
-    top: number;
-    snapTargets: SnapTarget[];
-    timeMode: TimeMode;
-    onSnapChange: (snap: SnapResult["target"] | null) => void;
-    onCopy: (region: ZoomRegion) => void;
-    onDuplicate: (region: ZoomRegion) => void;
-  }
+interface Props {
+	store: EditorStore;
+	region: ZoomRegion;
+	pixelsPerSecond: number;
+	fps: number;
+	duration: number;
+	/** Layout comes from the lane, which packs overlapping cards into rows. */
+	left: number;
+	width: number;
+	top: number;
+	snapTargets: SnapTarget[];
+	timeMode: TimeMode;
+	onSnapChange: (snap: SnapResult["target"] | null) => void;
+	onCopy: (region: ZoomRegion) => void;
+	onDuplicate: (region: ZoomRegion) => void;
+}
 
-  let {
-    store,
-    region,
-    pixelsPerSecond,
-    fps,
-    duration,
-    left,
-    width,
-    top,
-    snapTargets,
-    timeMode,
-    onSnapChange,
-    onCopy,
-    onDuplicate,
-  }: Props = $props();
+let {
+	store,
+	region,
+	pixelsPerSecond,
+	fps,
+	duration,
+	left,
+	width,
+	top,
+	snapTargets,
+	timeMode,
+	onSnapChange,
+	onCopy,
+	onDuplicate,
+}: Props = $props();
 
-  // Floor so a card can't collapse to zero width (0.1s ≈ 6 frames at 60fps).
-  const MIN_DURATION = 0.1;
+// Floor so a card can't collapse to zero width (0.1s ≈ 6 frames at 60fps).
+const MIN_DURATION = 0.1;
 
-  const SNAP_TOLERANCE_PX = 6;
+const SNAP_TOLERANCE_PX = 6;
 
-  type DragMode = "move" | "resize-start" | "resize-end";
+type DragMode = "move" | "resize-start" | "resize-end";
 
-  interface DragContext {
-    mode: DragMode;
-    pointerId: number;
-    startClientX: number;
-    originalStart: number;
-    originalEnd: number;
-  }
+interface DragContext {
+	mode: DragMode;
+	pointerId: number;
+	startClientX: number;
+	originalStart: number;
+	originalEnd: number;
+}
 
-  let drag = $state<DragContext | null>(null);
-  let dragUndoPushed = false;
+let drag = $state<DragContext | null>(null);
+let dragUndoPushed = false;
 
-  const isSelected = $derived(region.id === store.selectedZoomRegionId);
-  // Output (post-cut) axis so regions sit on the same gapless line as clips;
-  // a region overlapping a cut renders narrower (correct NLE behaviour).
-  const xOf = (t: number) =>
-    originalToOutput(store.renderMap, t) * pixelsPerSecond;
-  const tOf = (xPx: number) =>
-    outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
-  // Labels read on the output axis, like the ruler and the playhead. Regions are
-  // STORED in original time, so printing that raw would name a timecode the
-  // exported file never reaches once anything upstream is cut.
-  const outSec = (t: number) => originalToOutput(store.renderMap, t);
-  const showSubtitle = $derived(width >= 110);
-  const handlePx = $derived(edgeHandleWidth(width));
+const isSelected = $derived(region.id === store.selectedZoomRegionId);
+// Output (post-cut) axis so regions sit on the same gapless line as clips;
+// a region overlapping a cut renders narrower (correct NLE behaviour).
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+const tOf = (xPx: number) => outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
+// Labels read on the output axis, like the ruler and the playhead. Regions are
+// STORED in original time, so printing that raw would name a timecode the
+// exported file never reaches once anything upstream is cut.
+const outSec = (t: number) => originalToOutput(store.renderMap, t);
+const showSubtitle = $derived(width >= 110);
+const handlePx = $derived(edgeHandleWidth(width));
 
-  function beginDrag(mode: DragMode, event: PointerEvent) {
-    if (duration <= 0) return;
-    // Let a razor click bubble through to carve, rather than dragging the card.
-    if (store.timelineTool === "razor") return;
-    event.preventDefault();
-    event.stopPropagation();
-    store.selectedZoomRegionId = region.id;
-    dragUndoPushed = false;
-    drag = {
-      mode,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      originalStart: region.start,
-      originalEnd: region.end,
-    };
-    document.body.style.cursor =
-      mode === "move" ? "grabbing" : "ew-resize";
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-  }
+function beginDrag(mode: DragMode, event: PointerEvent) {
+	if (duration <= 0) return;
+	// Let a razor click bubble through to carve, rather than dragging the card.
+	if (store.timelineTool === "razor") return;
+	event.preventDefault();
+	event.stopPropagation();
+	store.selectedZoomRegionId = region.id;
+	dragUndoPushed = false;
+	drag = {
+		mode,
+		pointerId: event.pointerId,
+		startClientX: event.clientX,
+		originalStart: region.start,
+		originalEnd: region.end,
+	};
+	document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+	(event.currentTarget as Element).setPointerCapture(event.pointerId);
+	window.addEventListener("pointermove", onPointerMove);
+	window.addEventListener("pointerup", onPointerUp);
+	window.addEventListener("pointercancel", onPointerUp);
+}
 
-  function onPointerMove(event: PointerEvent) {
-    if (!drag) return;
-    if (!dragUndoPushed) {
-      store.pushUndoState();
-      dragUndoPushed = true;
-    }
-    const geom = {
-      origin: { start: drag.originalStart, end: drag.originalEnd },
-      clientX: event.clientX,
-      startClientX: drag.startClientX,
-      pps: pixelsPerSecond,
-      xOf,
-      tOf,
-      snapTargets,
-      tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
-      fps,
-      duration,
-    };
-    const result =
-      drag.mode === "move"
-        ? computeCardMove(geom)
-        : computeCardResize({
-            ...geom,
-            edge: drag.mode === "resize-start" ? "start" : "end",
-            minDuration: MIN_DURATION,
-          });
-    store.updateZoomRegion(region.id, { start: result.start, end: result.end });
-    onSnapChange(result.guide);
-  }
+function onPointerMove(event: PointerEvent) {
+	if (!drag) return;
+	if (!dragUndoPushed) {
+		store.pushUndoState();
+		dragUndoPushed = true;
+	}
+	const geom = {
+		origin: { start: drag.originalStart, end: drag.originalEnd },
+		clientX: event.clientX,
+		startClientX: drag.startClientX,
+		pps: pixelsPerSecond,
+		xOf,
+		tOf,
+		snapTargets,
+		tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
+		fps,
+		duration,
+	};
+	const result =
+		drag.mode === "move"
+			? computeCardMove(geom)
+			: computeCardResize({
+					...geom,
+					edge: drag.mode === "resize-start" ? "start" : "end",
+					minDuration: MIN_DURATION,
+				});
+	store.updateZoomRegion(region.id, { start: result.start, end: result.end });
+	onSnapChange(result.guide);
+}
 
-  function onPointerUp(_event: PointerEvent) {
-    drag = null;
-    document.body.style.cursor = "";
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("pointercancel", onPointerUp);
-    onSnapChange(null);
-  }
+function onPointerUp(_event: PointerEvent) {
+	drag = null;
+	document.body.style.cursor = "";
+	window.removeEventListener("pointermove", onPointerMove);
+	window.removeEventListener("pointerup", onPointerUp);
+	window.removeEventListener("pointercancel", onPointerUp);
+	onSnapChange(null);
+}
 
-  // Coalesces sequential nudges into one undo entry so a held arrow is one edit.
-  function onCardKeydown(event: KeyboardEvent) {
-    if (duration <= 0) return;
+// Coalesces sequential nudges into one undo entry so a held arrow is one edit.
+function onCardKeydown(event: KeyboardEvent) {
+	if (duration <= 0) return;
 
-    // Delete is owned by the editor page and acts on the selection (this card is
-    // the selection whenever it has focus), so it is deliberately not handled here.
+	// Delete is owned by the editor page and acts on the selection (this card is
+	// the selection whenever it has focus), so it is deliberately not handled here.
 
-    // Paste lives at timeline scope so regions land at the playhead, not here.
-    const isMod = event.ctrlKey || event.metaKey;
-    if (isMod && (event.key === "d" || event.key === "D")) {
-      event.preventDefault();
-      event.stopPropagation();
-      onDuplicate(region);
-      return;
-    }
-    if (isMod && (event.key === "c" || event.key === "C")) {
-      event.preventDefault();
-      event.stopPropagation();
-      onCopy(region);
-      return;
-    }
+	// Paste lives at timeline scope so regions land at the playhead, not here.
+	const isMod = event.ctrlKey || event.metaKey;
+	if (isMod && (event.key === "d" || event.key === "D")) {
+		event.preventDefault();
+		event.stopPropagation();
+		onDuplicate(region);
+		return;
+	}
+	if (isMod && (event.key === "c" || event.key === "C")) {
+		event.preventDefault();
+		event.stopPropagation();
+		onCopy(region);
+		return;
+	}
 
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    event.stopPropagation();
+	if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+	event.preventDefault();
+	event.stopPropagation();
 
-    store.pushUndoStateCoalesced(`nudge-zoom-${region.id}`, 600);
+	store.pushUndoStateCoalesced(`nudge-zoom-${region.id}`, 600);
 
-    const next = computeCardNudge({
-      origin: { start: region.start, end: region.end },
-      direction: event.key === "ArrowLeft" ? -1 : 1,
-      shift: event.shiftKey,
-      alt: event.altKey,
-      fps,
-      duration,
-      minDuration: MIN_DURATION,
-    });
-    store.updateZoomRegion(region.id, { start: next.start, end: next.end });
-  }
+	const next = computeCardNudge({
+		origin: { start: region.start, end: region.end },
+		direction: event.key === "ArrowLeft" ? -1 : 1,
+		shift: event.shiftKey,
+		alt: event.altKey,
+		fps,
+		duration,
+		minDuration: MIN_DURATION,
+	});
+	store.updateZoomRegion(region.id, { start: next.start, end: next.end });
+}
 
-  function onCardClick(event: MouseEvent) {
-    // A real drag never fires this (window-level pointer handlers); only a static click does.
-    if (store.timelineTool === "razor") return; // razor click is not a select
-    event.stopPropagation();
-    store.selectedZoomRegionId = region.id;
-  }
+function onCardClick(event: MouseEvent) {
+	// A real drag never fires this (window-level pointer handlers); only a static click does.
+	if (store.timelineTool === "razor") return; // razor click is not a select
+	event.stopPropagation();
+	store.selectedZoomRegionId = region.id;
+}
 
-  function onRemove(event: Event) {
-    event.stopPropagation();
-    if (event instanceof KeyboardEvent) {
-      event.preventDefault();
-      if (event.key !== "Enter" && event.key !== " ") return;
-    }
-    store.removeZoomRegion(region.id);
-  }
+function onRemove(event: Event) {
+	event.stopPropagation();
+	if (event instanceof KeyboardEvent) {
+		event.preventDefault();
+		if (event.key !== "Enter" && event.key !== " ") return;
+	}
+	store.removeZoomRegion(region.id);
+}
 </script>
 
 <div

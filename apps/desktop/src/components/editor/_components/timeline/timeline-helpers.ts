@@ -65,13 +65,9 @@ export const MAX_PIXELS_PER_SECOND = 400;
 /** Zoom that fits the whole clip. Below this the viewport just grows dead space. */
 export const MIN_TIMELINE_ZOOM = 1;
 
-export function maxTimelineZoom(
-	outputDuration: number,
-	viewportWidth: number,
-): number {
+export function maxTimelineZoom(outputDuration: number, viewportWidth: number): number {
 	if (outputDuration <= 0 || viewportWidth <= 0) return MIN_TIMELINE_ZOOM;
-	const zoomAtCeiling =
-		(MAX_PIXELS_PER_SECOND * outputDuration) / viewportWidth;
+	const zoomAtCeiling = (MAX_PIXELS_PER_SECOND * outputDuration) / viewportWidth;
 	return Math.max(MIN_TIMELINE_ZOOM, zoomAtCeiling);
 }
 
@@ -96,8 +92,7 @@ export function steppedZoom(
 	outputDuration: number,
 	viewportWidth: number,
 ): number {
-	const next =
-		direction > 0 ? zoom * ZOOM_STEP_FACTOR : zoom / ZOOM_STEP_FACTOR;
+	const next = direction > 0 ? zoom * ZOOM_STEP_FACTOR : zoom / ZOOM_STEP_FACTOR;
 	return clampTimelineZoom(next, outputDuration, viewportWidth);
 }
 
@@ -168,14 +163,10 @@ export function buildWaveformPath(p: {
 }
 
 // Minor tick marks between labels.
-export function buildMinorTicks(
-	duration: number,
-	pixelsPerSecond: number,
-): number[] {
+export function buildMinorTicks(duration: number, pixelsPerSecond: number): number[] {
 	if (duration <= 0) return [];
 	const ticks: number[] = [];
-	const interval =
-		pixelsPerSecond > 180 ? 0.25 : pixelsPerSecond > 80 ? 0.5 : 1;
+	const interval = pixelsPerSecond > 180 ? 0.25 : pixelsPerSecond > 80 ? 0.5 : 1;
 	for (let t = 0; t <= duration + interval * 0.5; t += interval) {
 		ticks.push(t);
 	}

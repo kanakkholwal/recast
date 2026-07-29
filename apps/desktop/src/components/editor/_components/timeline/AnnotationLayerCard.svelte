@@ -1,206 +1,196 @@
 <script lang="ts">
-  import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-  import type {
-    Annotation,
-    EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { motionDuration } from "$lib/motion.svelte";
-  import { X } from "@recast/icons";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
-  import {
-    computeCardMove,
-    computeCardNudge,
-    computeCardResize,
-  } from "./timeline-card-drag.logic";
-  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
-  import { type SnapResult, type SnapTarget } from "./timeline-snap";
-  import { edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
+import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
+import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { motionDuration } from "$lib/motion.svelte";
+import { X } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
+import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
+import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+import { type SnapResult, type SnapTarget } from "./timeline-snap";
+import { edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
 
-  // Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
-  // (no sparkline) so the two lanes are distinguishable at a glance.
+// Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
+// (no sparkline) so the two lanes are distinguishable at a glance.
 
-  interface Props {
-    store: EditorStore;
-    annotation: Annotation;
-    pixelsPerSecond: number;
-    fps: number;
-    duration: number;
-    /** Layout comes from the lane, which packs overlapping cards into rows. */
-    left: number;
-    width: number;
-    top: number;
-    snapTargets: SnapTarget[];
-    timeMode: TimeMode;
-    onSnapChange: (snap: SnapResult["target"] | null) => void;
-    onDuplicate: (annotation: Annotation) => void;
-  }
+interface Props {
+	store: EditorStore;
+	annotation: Annotation;
+	pixelsPerSecond: number;
+	fps: number;
+	duration: number;
+	/** Layout comes from the lane, which packs overlapping cards into rows. */
+	left: number;
+	width: number;
+	top: number;
+	snapTargets: SnapTarget[];
+	timeMode: TimeMode;
+	onSnapChange: (snap: SnapResult["target"] | null) => void;
+	onDuplicate: (annotation: Annotation) => void;
+}
 
-  let {
-    store,
-    annotation,
-    pixelsPerSecond,
-    fps,
-    duration,
-    left,
-    width,
-    top,
-    snapTargets,
-    timeMode,
-    onSnapChange,
-    onDuplicate,
-  }: Props = $props();
+let {
+	store,
+	annotation,
+	pixelsPerSecond,
+	fps,
+	duration,
+	left,
+	width,
+	top,
+	snapTargets,
+	timeMode,
+	onSnapChange,
+	onDuplicate,
+}: Props = $props();
 
-  const MIN_DURATION = 0.05; // Annotations can be tighter than zooms.
-  const SNAP_TOLERANCE_PX = 6;
+const MIN_DURATION = 0.05; // Annotations can be tighter than zooms.
+const SNAP_TOLERANCE_PX = 6;
 
-  type DragMode = "move" | "resize-start" | "resize-end";
+type DragMode = "move" | "resize-start" | "resize-end";
 
-  interface DragContext {
-    mode: DragMode;
-    pointerId: number;
-    startClientX: number;
-    originalStart: number;
-    originalEnd: number;
-  }
+interface DragContext {
+	mode: DragMode;
+	pointerId: number;
+	startClientX: number;
+	originalStart: number;
+	originalEnd: number;
+}
 
-  let drag = $state<DragContext | null>(null);
-  // Undo is pushed on the first real move, not at pointer-down: clicking a card
-  // to select it used to leave an undo entry that changed nothing, so Ctrl+Z
-  // after selecting five cards did nothing five times.
-  let dragUndoPushed = false;
+let drag = $state<DragContext | null>(null);
+// Undo is pushed on the first real move, not at pointer-down: clicking a card
+// to select it used to leave an undo entry that changed nothing, so Ctrl+Z
+// after selecting five cards did nothing five times.
+let dragUndoPushed = false;
 
-  const isSelected = $derived(annotation.id === store.selectedAnnotationId);
-  // Output (post-cut) axis. See ZoomLayerCard for the rationale.
-  const xOf = (t: number) =>
-    originalToOutput(store.renderMap, t) * pixelsPerSecond;
-  const tOf = (xPx: number) =>
-    outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
-  // Labels read on the output axis, like the ruler and the playhead.
-  const outSec = (t: number) => originalToOutput(store.renderMap, t);
-  const showSubtitle = $derived(width >= 110);
-  const handlePx = $derived(edgeHandleWidth(width));
-  const Icon = $derived(kindIcon(annotation));
+const isSelected = $derived(annotation.id === store.selectedAnnotationId);
+// Output (post-cut) axis. See ZoomLayerCard for the rationale.
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+const tOf = (xPx: number) => outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
+// Labels read on the output axis, like the ruler and the playhead.
+const outSec = (t: number) => originalToOutput(store.renderMap, t);
+const showSubtitle = $derived(width >= 110);
+const handlePx = $derived(edgeHandleWidth(width));
+const Icon = $derived(kindIcon(annotation));
 
-  function beginDrag(mode: DragMode, event: PointerEvent) {
-    if (duration <= 0) return;
-    // Let a razor click bubble through to carve, rather than dragging the card.
-    if (store.timelineTool === "razor") return;
-    event.preventDefault();
-    event.stopPropagation();
-    store.selectedAnnotationId = annotation.id;
-    dragUndoPushed = false;
-    drag = {
-      mode,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      originalStart: annotation.start,
-      originalEnd: annotation.end,
-    };
-    document.body.style.cursor =
-      mode === "move" ? "grabbing" : "ew-resize";
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-  }
+function beginDrag(mode: DragMode, event: PointerEvent) {
+	if (duration <= 0) return;
+	// Let a razor click bubble through to carve, rather than dragging the card.
+	if (store.timelineTool === "razor") return;
+	event.preventDefault();
+	event.stopPropagation();
+	store.selectedAnnotationId = annotation.id;
+	dragUndoPushed = false;
+	drag = {
+		mode,
+		pointerId: event.pointerId,
+		startClientX: event.clientX,
+		originalStart: annotation.start,
+		originalEnd: annotation.end,
+	};
+	document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+	(event.currentTarget as Element).setPointerCapture(event.pointerId);
+	window.addEventListener("pointermove", onPointerMove);
+	window.addEventListener("pointerup", onPointerUp);
+	window.addEventListener("pointercancel", onPointerUp);
+}
 
-  function onPointerMove(event: PointerEvent) {
-    if (!drag) return;
-    if (!dragUndoPushed) {
-      store.pushUndoState();
-      dragUndoPushed = true;
-    }
-    const geom = {
-      origin: { start: drag.originalStart, end: drag.originalEnd },
-      clientX: event.clientX,
-      startClientX: drag.startClientX,
-      pps: pixelsPerSecond,
-      xOf,
-      tOf,
-      snapTargets,
-      tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
-      fps,
-      duration,
-    };
-    const result =
-      drag.mode === "move"
-        ? computeCardMove(geom)
-        : computeCardResize({
-            ...geom,
-            edge: drag.mode === "resize-start" ? "start" : "end",
-            minDuration: MIN_DURATION,
-          });
-    store.updateAnnotation(annotation.id, {
-      start: result.start,
-      end: result.end,
-    });
-    onSnapChange(result.guide);
-  }
+function onPointerMove(event: PointerEvent) {
+	if (!drag) return;
+	if (!dragUndoPushed) {
+		store.pushUndoState();
+		dragUndoPushed = true;
+	}
+	const geom = {
+		origin: { start: drag.originalStart, end: drag.originalEnd },
+		clientX: event.clientX,
+		startClientX: drag.startClientX,
+		pps: pixelsPerSecond,
+		xOf,
+		tOf,
+		snapTargets,
+		tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
+		fps,
+		duration,
+	};
+	const result =
+		drag.mode === "move"
+			? computeCardMove(geom)
+			: computeCardResize({
+					...geom,
+					edge: drag.mode === "resize-start" ? "start" : "end",
+					minDuration: MIN_DURATION,
+				});
+	store.updateAnnotation(annotation.id, {
+		start: result.start,
+		end: result.end,
+	});
+	onSnapChange(result.guide);
+}
 
-  function onPointerUp(_event: PointerEvent) {
-    drag = null;
-    document.body.style.cursor = "";
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("pointercancel", onPointerUp);
-    onSnapChange(null);
-  }
+function onPointerUp(_event: PointerEvent) {
+	drag = null;
+	document.body.style.cursor = "";
+	window.removeEventListener("pointermove", onPointerMove);
+	window.removeEventListener("pointerup", onPointerUp);
+	window.removeEventListener("pointercancel", onPointerUp);
+	onSnapChange(null);
+}
 
-  function onCardKeydown(event: KeyboardEvent) {
-    if (duration <= 0) return;
+function onCardKeydown(event: KeyboardEvent) {
+	if (duration <= 0) return;
 
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      event.stopPropagation();
-      store.removeAnnotation(annotation.id);
-      return;
-    }
+	if (event.key === "Delete" || event.key === "Backspace") {
+		event.preventDefault();
+		event.stopPropagation();
+		store.removeAnnotation(annotation.id);
+		return;
+	}
 
-    const isMod = event.ctrlKey || event.metaKey;
-    if (isMod && (event.key === "d" || event.key === "D")) {
-      event.preventDefault();
-      event.stopPropagation();
-      onDuplicate(annotation);
-      return;
-    }
+	const isMod = event.ctrlKey || event.metaKey;
+	if (isMod && (event.key === "d" || event.key === "D")) {
+		event.preventDefault();
+		event.stopPropagation();
+		onDuplicate(annotation);
+		return;
+	}
 
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    event.stopPropagation();
+	if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+	event.preventDefault();
+	event.stopPropagation();
 
-    store.pushUndoStateCoalesced(`nudge-annotation-${annotation.id}`, 600);
+	store.pushUndoStateCoalesced(`nudge-annotation-${annotation.id}`, 600);
 
-    const next = computeCardNudge({
-      origin: { start: annotation.start, end: annotation.end },
-      direction: event.key === "ArrowLeft" ? -1 : 1,
-      shift: event.shiftKey,
-      alt: event.altKey,
-      fps,
-      duration,
-      minDuration: MIN_DURATION,
-    });
-    store.updateAnnotation(annotation.id, {
-      start: next.start,
-      end: next.end,
-    });
-  }
+	const next = computeCardNudge({
+		origin: { start: annotation.start, end: annotation.end },
+		direction: event.key === "ArrowLeft" ? -1 : 1,
+		shift: event.shiftKey,
+		alt: event.altKey,
+		fps,
+		duration,
+		minDuration: MIN_DURATION,
+	});
+	store.updateAnnotation(annotation.id, {
+		start: next.start,
+		end: next.end,
+	});
+}
 
-  function onCardClick(event: MouseEvent) {
-    if (store.timelineTool === "razor") return; // razor click is not a select
-    event.stopPropagation();
-    store.selectedAnnotationId = annotation.id;
-  }
+function onCardClick(event: MouseEvent) {
+	if (store.timelineTool === "razor") return; // razor click is not a select
+	event.stopPropagation();
+	store.selectedAnnotationId = annotation.id;
+}
 
-  function onRemove(event: Event) {
-    event.stopPropagation();
-    if (event instanceof KeyboardEvent) {
-      event.preventDefault();
-      if (event.key !== "Enter" && event.key !== " ") return;
-    }
-    store.removeAnnotation(annotation.id);
-  }
+function onRemove(event: Event) {
+	event.stopPropagation();
+	if (event instanceof KeyboardEvent) {
+		event.preventDefault();
+		if (event.key !== "Enter" && event.key !== " ") return;
+	}
+	store.removeAnnotation(annotation.id);
+}
 </script>
 
 <div

@@ -21,10 +21,7 @@ describe("maxTimelineZoom", () => {
 	it("lets a long recording reach the same px/sec as a short one", () => {
 		for (const duration of [30, 300, 1800]) {
 			const zoom = maxTimelineZoom(duration, VIEWPORT);
-			expect(pixelsPerSecond(zoom, duration)).toBeCloseTo(
-				MAX_PIXELS_PER_SECOND,
-				6,
-			);
+			expect(pixelsPerSecond(zoom, duration)).toBeCloseTo(MAX_PIXELS_PER_SECOND, 6);
 		}
 	});
 

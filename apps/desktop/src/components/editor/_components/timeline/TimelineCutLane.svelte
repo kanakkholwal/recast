@@ -1,185 +1,184 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { type TimelineCut } from "$lib/timeline/cuts";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { Scissors, X } from "@recast/icons";
-  import { buildWaveformPath } from "./timeline-helpers";
-  import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { type TimelineCut } from "$lib/timeline/cuts";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { Scissors, X } from "@recast/icons";
+import { buildWaveformPath } from "./timeline-helpers";
+import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
 
-  // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
+// Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
 
-  interface Props {
-    store: EditorStore;
-    pixelsPerSecond: number;
-    duration: number;
-    /** Draw the faint audio envelope behind the bands. Off when the dedicated
-     *  Audio lane is visible right above (it already shows the same data), on
-     *  when that lane is hidden so you can still cut against the audio. */
-    showWaveform?: boolean;
-  }
+interface Props {
+	store: EditorStore;
+	pixelsPerSecond: number;
+	duration: number;
+	/** Draw the faint audio envelope behind the bands. Off when the dedicated
+	 *  Audio lane is visible right above (it already shows the same data), on
+	 *  when that lane is hidden so you can still cut against the audio. */
+	showWaveform?: boolean;
+}
 
-  let { store, pixelsPerSecond, duration, showWaveform = true }: Props =
-    $props();
+let { store, pixelsPerSecond, duration, showWaveform = true }: Props = $props();
 
-  // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
-  const MIN_CUT = 0.1;
+// Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
+const MIN_CUT = 0.1;
 
-  let laneEl = $state<HTMLDivElement | null>(null);
+let laneEl = $state<HTMLDivElement | null>(null);
 
-  // Output axis via the shared render map. An applied cut normally collapses to
-  // zero width (a seam); with "Show cut gaps" on the map re-spaces it to real
-  // width, so the same band UI (drag/resize/restore) renders it as a gap.
-  const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
-  const axisWidth = $derived(xOf(duration));
+// Output axis via the shared render map. An applied cut normally collapses to
+// zero width (a seam); with "Show cut gaps" on the map re-spaces it to real
+// width, so the same band UI (drag/resize/restore) renders it as a gap.
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+const axisWidth = $derived(xOf(duration));
 
-  type DragMode = "create" | "move" | "resize-l" | "resize-r";
-  interface DragState {
-    mode: DragMode;
-    pointerId: number;
-    /** The cut being adjusted. Always null while creating: see `pending`. */
-    id: string | null;
-    anchorTime: number;
-    originStart: number;
-    originEnd: number;
-  }
-  let drag = $state<DragState | null>(null);
+type DragMode = "create" | "move" | "resize-l" | "resize-r";
+interface DragState {
+	mode: DragMode;
+	pointerId: number;
+	/** The cut being adjusted. Always null while creating: see `pending`. */
+	id: string | null;
+	anchorTime: number;
+	originStart: number;
+	originEnd: number;
+}
+let drag = $state<DragState | null>(null);
 
-  // A create-drag is PREVIEWED, then committed on release.
-  //
-  // It used to call addCut() as soon as the span passed MIN_CUT, which applied
-  // the cut immediately: the time map collapsed the removed range, every later
-  // frame slid left, and the original time under the pointer changed mid-gesture.
-  // The band you were dragging shrank to a seam under your own cursor and the
-  // drag came apart. Nothing touches the store now until pointerup.
-  let pending = $state<{ start: number; end: number } | null>(null);
+// A create-drag is PREVIEWED, then committed on release.
+//
+// It used to call addCut() as soon as the span passed MIN_CUT, which applied
+// the cut immediately: the time map collapsed the removed range, every later
+// frame slid left, and the original time under the pointer changed mid-gesture.
+// The band you were dragging shrank to a seam under your own cursor and the
+// drag came apart. Nothing touches the store now until pointerup.
+let pending = $state<{ start: number; end: number } | null>(null);
 
-  function timeAt(clientX: number): number {
-    if (!laneEl) return 0;
-    const x = clientX - laneEl.getBoundingClientRect().left;
-    // Pointer is in OUTPUT pixels → output seconds → original time.
-    return Math.min(duration, Math.max(0, outputToOriginal(store.renderMap, x / pixelsPerSecond)));
-  }
+function timeAt(clientX: number): number {
+	if (!laneEl) return 0;
+	const x = clientX - laneEl.getBoundingClientRect().left;
+	// Pointer is in OUTPUT pixels → output seconds → original time.
+	return Math.min(duration, Math.max(0, outputToOriginal(store.renderMap, x / pixelsPerSecond)));
+}
 
-  function onLaneDown(e: PointerEvent) {
-    // Only the bare lane background starts a create-drag; bands and their
-    // handles stop propagation in their own handlers. Left button only: a
-    // right-drag is for the context menu, not for carving a cut.
-    if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
-    // The razor tool owns clicks timeline-wide: let this one bubble to the
-    // scroller's razor handler instead of starting a create-drag.
-    if (store.timelineTool === "razor") return;
-    // Bypassed track: refuse the edit rather than carve a cut that silently
-    // wouldn't apply. The inline hint says why.
-    if (!store.cutsEnabled) return;
-    // Stop the timeline's scrub handler from also claiming this drag.
-    e.preventDefault();
-    e.stopPropagation();
-    const t = timeAt(e.clientX);
-    drag = {
-      mode: "create",
-      pointerId: e.pointerId,
-      id: null,
-      anchorTime: t,
-      originStart: t,
-      originEnd: t,
-    };
-    pending = null;
-    laneEl?.setPointerCapture(e.pointerId);
-  }
+function onLaneDown(e: PointerEvent) {
+	// Only the bare lane background starts a create-drag; bands and their
+	// handles stop propagation in their own handlers. Left button only: a
+	// right-drag is for the context menu, not for carving a cut.
+	if (e.target !== laneEl || duration <= 0 || e.button !== 0) return;
+	// The razor tool owns clicks timeline-wide: let this one bubble to the
+	// scroller's razor handler instead of starting a create-drag.
+	if (store.timelineTool === "razor") return;
+	// Bypassed track: refuse the edit rather than carve a cut that silently
+	// wouldn't apply. The inline hint says why.
+	if (!store.cutsEnabled) return;
+	// Stop the timeline's scrub handler from also claiming this drag.
+	e.preventDefault();
+	e.stopPropagation();
+	const t = timeAt(e.clientX);
+	drag = {
+		mode: "create",
+		pointerId: e.pointerId,
+		id: null,
+		anchorTime: t,
+		originStart: t,
+		originEnd: t,
+	};
+	pending = null;
+	laneEl?.setPointerCapture(e.pointerId);
+}
 
-  function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
-    // Left button only; let a razor click carve through the band, not move it.
-    if (e.button !== 0) return;
-    if (store.timelineTool === "razor") return;
-    // Bypassed track: no move/resize (the X to restore a cut still works).
-    if (!store.cutsEnabled) return;
-    e.preventDefault();
-    e.stopPropagation();
-    if (!laneEl) return;
-    // Selecting the band makes document-level Delete restore this exact cut.
-    store.selectedCutId = cut.id;
-    // A drag is one discrete action → one undo entry.
-    store.pushUndoState();
-    drag = {
-      mode,
-      pointerId: e.pointerId,
-      id: cut.id,
-      anchorTime: timeAt(e.clientX),
-      originStart: cut.start,
-      originEnd: cut.end,
-    };
-    laneEl.setPointerCapture(e.pointerId);
-  }
+function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
+	// Left button only; let a razor click carve through the band, not move it.
+	if (e.button !== 0) return;
+	if (store.timelineTool === "razor") return;
+	// Bypassed track: no move/resize (the X to restore a cut still works).
+	if (!store.cutsEnabled) return;
+	e.preventDefault();
+	e.stopPropagation();
+	if (!laneEl) return;
+	// Selecting the band makes document-level Delete restore this exact cut.
+	store.selectedCutId = cut.id;
+	// A drag is one discrete action → one undo entry.
+	store.pushUndoState();
+	drag = {
+		mode,
+		pointerId: e.pointerId,
+		id: cut.id,
+		anchorTime: timeAt(e.clientX),
+		originStart: cut.start,
+		originEnd: cut.end,
+	};
+	laneEl.setPointerCapture(e.pointerId);
+}
 
-  function onMove(e: PointerEvent) {
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    const t = timeAt(e.clientX);
+function onMove(e: PointerEvent) {
+	if (!drag || e.pointerId !== drag.pointerId) return;
+	const t = timeAt(e.clientX);
 
-    if (drag.mode === "create") {
-      const lo = Math.min(drag.anchorTime, t);
-      const hi = Math.max(drag.anchorTime, t);
-      // Preview only. The map stays put, so `timeAt` keeps tracking the cursor.
-      pending = hi - lo >= MIN_CUT ? { start: lo, end: hi } : null;
-      return;
-    }
+	if (drag.mode === "create") {
+		const lo = Math.min(drag.anchorTime, t);
+		const hi = Math.max(drag.anchorTime, t);
+		// Preview only. The map stays put, so `timeAt` keeps tracking the cursor.
+		pending = hi - lo >= MIN_CUT ? { start: lo, end: hi } : null;
+		return;
+	}
 
-    if (!drag.id) return;
-    const delta = t - drag.anchorTime;
-    const next =
-      drag.mode === "move"
-        ? clampCutMove({
-            originStart: drag.originStart,
-            originEnd: drag.originEnd,
-            delta,
-            duration,
-          })
-        : clampCutResize({
-            edge: drag.mode === "resize-l" ? "l" : "r",
-            originStart: drag.originStart,
-            originEnd: drag.originEnd,
-            delta,
-            duration,
-            minCut: MIN_CUT,
-          });
-    store.updateCut(drag.id, next.start, next.end);
-  }
+	if (!drag.id) return;
+	const delta = t - drag.anchorTime;
+	const next =
+		drag.mode === "move"
+			? clampCutMove({
+					originStart: drag.originStart,
+					originEnd: drag.originEnd,
+					delta,
+					duration,
+				})
+			: clampCutResize({
+					edge: drag.mode === "resize-l" ? "l" : "r",
+					originStart: drag.originStart,
+					originEnd: drag.originEnd,
+					delta,
+					duration,
+					minCut: MIN_CUT,
+				});
+	store.updateCut(drag.id, next.start, next.end);
+}
 
-  function onUp(e: PointerEvent) {
-    if (!drag || e.pointerId !== drag.pointerId) return;
-    // Commit the previewed span now, as one undo entry. addCut() pushes the undo
-    // state itself, so pushing here too would leave a duplicate snapshot: the
-    // first Ctrl+Z removes the cut, the second re-applies the same state and
-    // looks like undo is broken.
-    if (drag.mode === "create" && pending) {
-      const id = store.addCut(pending.start, pending.end, "manual");
-      if (id) store.mergeCuts();
-    } else if (drag.id) {
-      // Fold any cut a drag pushed into a neighbour into one clean band.
-      store.mergeCuts();
-    }
-    pending = null;
-    laneEl?.releasePointerCapture(e.pointerId);
-    drag = null;
-  }
+function onUp(e: PointerEvent) {
+	if (!drag || e.pointerId !== drag.pointerId) return;
+	// Commit the previewed span now, as one undo entry. addCut() pushes the undo
+	// state itself, so pushing here too would leave a duplicate snapshot: the
+	// first Ctrl+Z removes the cut, the second re-applies the same state and
+	// looks like undo is broken.
+	if (drag.mode === "create" && pending) {
+		const id = store.addCut(pending.start, pending.end, "manual");
+		if (id) store.mergeCuts();
+	} else if (drag.id) {
+		// Fold any cut a drag pushed into a neighbour into one clean band.
+		store.mergeCuts();
+	}
+	pending = null;
+	laneEl?.releasePointerCapture(e.pointerId);
+	drag = null;
+}
 
-  function remove(e: Event, id: string) {
-    e.stopPropagation();
-    store.removeCut(id);
-  }
+function remove(e: Event, id: string) {
+	e.stopPropagation();
+	store.removeCut(id);
+}
 
-  // Peak envelope behind the bands, spanning the whole axis (buckets inside an
-  // applied cut collapse onto the seam via xOf).
-  const waveformPath = $derived(
-    showWaveform
-      ? buildWaveformPath({
-          waveform: store.waveform,
-          duration,
-          xOf,
-          height: 100,
-          amp: 46,
-        })
-      : "",
-  );
+// Peak envelope behind the bands, spanning the whole axis (buckets inside an
+// applied cut collapse onto the seam via xOf).
+const waveformPath = $derived(
+	showWaveform
+		? buildWaveformPath({
+				waveform: store.waveform,
+				duration,
+				xOf,
+				height: 100,
+				amp: 46,
+			})
+		: "",
+);
 </script>
 
 <div

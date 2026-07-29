@@ -36,15 +36,9 @@ export function clampCutResize(p: {
 	minCut: number;
 }): CutBounds {
 	if (p.edge === "l") {
-		const s = Math.min(
-			Math.max(0, p.originStart + p.delta),
-			p.originEnd - p.minCut,
-		);
+		const s = Math.min(Math.max(0, p.originStart + p.delta), p.originEnd - p.minCut);
 		return { start: s, end: p.originEnd };
 	}
-	const en = Math.max(
-		Math.min(p.duration, p.originEnd + p.delta),
-		p.originStart + p.minCut,
-	);
+	const en = Math.max(Math.min(p.duration, p.originEnd + p.delta), p.originStart + p.minCut);
 	return { start: p.originStart, end: en };
 }
