@@ -1,8 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
 	paintArrow,
+	paintBlur,
 	paintBoxAnnotation,
+	type BlurEnv,
 	type RenderableAnnotation,
+	type RenderableBlur,
 	type ShapeDeps,
 } from "@recast/render";
 
@@ -26,6 +29,7 @@ function mockCtx() {
 		lineCap: "butt",
 		save: rec("save"),
 		restore: rec("restore"),
+		clearRect: rec("clearRect"),
 		beginPath: rec("beginPath"),
 		closePath: rec("closePath"),
 		rect: rec("rect"),
@@ -167,5 +171,52 @@ describe("paintArrow", () => {
 			1,
 		);
 		expect(ctx.calls).toEqual([]);
+	});
+});
+
+describe("paintBlur", () => {
+	const blur = (over: Partial<RenderableBlur["kind"]> = {}): RenderableBlur => ({
+		opacity: 1,
+		kind: { kind: "blur", strength: 0.5, variant: "none", tintColor: "", radius: 0, ...over },
+	});
+
+	function blurEnv() {
+		const octx = mockCtx();
+		const scratchSizes: Array<[number, number]> = [];
+		const env: BlurEnv = {
+			composite: {} as CanvasImageSource,
+			srcW: 1920,
+			srcH: 1080,
+			dstW: 1920,
+			dstH: 1080,
+			getScratch: (w, h) => {
+				scratchSizes.push([w, h]);
+				return { ctx: octx as never, canvas: {} as CanvasImageSource };
+			},
+		};
+		return { octx, scratchSizes, env };
+	}
+
+	// The scratch must include the blur margin on every side; otherwise the box
+	// edges sample the canvas boundary (transparent) and corners bevel ("hexagon").
+	it("blurs a margin-inclusive scratch and samples the inner box", () => {
+		const outer = mockCtx();
+		const { scratchSizes, env } = blurEnv();
+		const box = { x: 100, y: 100, w: 200, h: 120 };
+		paintBlur(outer as never, blur(), box, env);
+
+		const blurPx = Math.max(0.001, 0.5 * 0.12 * Math.min(1920, 1080));
+		const m = Math.ceil(blurPx);
+		expect(scratchSizes[0]).toEqual([200 + 2 * m, 120 + 2 * m]);
+		expect(outer.calls).toContain("clip");
+		// 9-arg blit = sampling the inner box out of the margin, not the whole scratch.
+		expect(outer.calls).toContain("drawImage(9)");
+	});
+
+	it("skips a degenerate (sub-pixel) blur box", () => {
+		const outer = mockCtx();
+		const { env } = blurEnv();
+		paintBlur(outer as never, blur(), { x: 0, y: 0, w: 1, h: 40 }, env);
+		expect(outer.calls).toEqual([]);
 	});
 });

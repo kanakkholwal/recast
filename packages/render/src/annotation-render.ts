@@ -236,8 +236,13 @@ export interface BlurEnv {
 /**
  * Paint a blur annotation: copy the composited frame under the box, blur it
  * (2D `filter`, reliable across WebView backends), tint per variant, and draw it
- * back under a rounded clip. Samples a margin of real pixels so a large radius
- * doesn't wash out against the transparent edge. Shared by preview + export.
+ * back under a rounded clip. Shared by preview + export.
+ *
+ * The scratch is sized box + an `m`-px bleed margin on every side, and the
+ * extended region is drawn to fill it; blitting only the INNER box back means
+ * the box edges are always fed real neighbouring pixels. Sizing the scratch to
+ * the box alone (margin off-canvas) let the blur sample the transparent canvas
+ * edge, bevelling the corners into a "hexagon" — worst at high blur/export res.
  */
 export function paintBlur(ctx: Ctx2D, a: RenderableBlur, box: Rect, env: BlurEnv): void {
 	const k = a.kind;
@@ -247,22 +252,22 @@ export function paintBlur(ctx: Ctx2D, a: RenderableBlur, box: Rect, env: BlurEnv
 	if (!(srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0)) return;
 	const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
 	const m = Math.ceil(blurPx);
-	const ew = w + 2 * m;
-	const eh = h + 2 * m;
-	const esx = ((x - m) / dstW) * srcW;
-	const esy = ((y - m) / dstH) * srcH;
-	const esw = (ew / dstW) * srcW;
-	const esh = (eh / dstH) * srcH;
 	const radius = Math.max(0, k.radius * Math.min(w, h));
 	const bw = Math.max(1, Math.round(w));
 	const bh = Math.max(1, Math.round(h));
-	const scratch = env.getScratch(bw, bh);
+	const sw = bw + 2 * m;
+	const sh = bh + 2 * m;
+	const scratch = env.getScratch(sw, sh);
 	if (!scratch) return;
 	const octx = scratch.ctx;
-	octx.clearRect(0, 0, bw, bh);
+	octx.clearRect(0, 0, sw, sh);
+	const esx = ((x - m) / dstW) * srcW;
+	const esy = ((y - m) / dstH) * srcH;
+	const esw = (sw / dstW) * srcW;
+	const esh = (sh / dstH) * srcH;
 	octx.filter = `blur(${blurPx.toFixed(2)}px)`;
 	try {
-		octx.drawImage(composite, esx, esy, esw, esh, -m, -m, ew, eh);
+		octx.drawImage(composite, esx, esy, esw, esh, 0, 0, sw, sh);
 	} catch {
 		/* source not readable this frame */
 	}
@@ -270,7 +275,7 @@ export function paintBlur(ctx: Ctx2D, a: RenderableBlur, box: Rect, env: BlurEnv
 	const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
 	if (tint) {
 		octx.fillStyle = tint;
-		octx.fillRect(0, 0, bw, bh);
+		octx.fillRect(0, 0, sw, sh);
 	}
 	ctx.save();
 	ctx.globalAlpha = 1;
@@ -278,6 +283,6 @@ export function paintBlur(ctx: Ctx2D, a: RenderableBlur, box: Rect, env: BlurEnv
 	if (radius > 0) roundRectPath(ctx, x, y, w, h, radius);
 	else ctx.rect(x, y, w, h);
 	ctx.clip();
-	ctx.drawImage(scratch.canvas, x, y, w, h);
+	ctx.drawImage(scratch.canvas, m, m, bw, bh, x, y, w, h);
 	ctx.restore();
 }

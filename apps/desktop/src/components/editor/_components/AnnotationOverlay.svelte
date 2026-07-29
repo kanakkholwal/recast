@@ -31,7 +31,7 @@ import {
 	IDENTITY_ZOOM,
 	roundRectPath,
 } from "./annotation-draw.logic";
-import { paintArrow, paintBoxAnnotation } from "@recast/render";
+import { paintArrow, paintBlur, paintBoxAnnotation } from "@recast/render";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
 import type {
 	Annotation,
@@ -224,61 +224,25 @@ function drawAnnotation(ctx: CanvasRenderingContext2D, a: Annotation, opacity: n
 	});
 }
 
-// Blur samples `compositeCanvasEl` (the WebGL frame) — the shared renderer has
-// no handle on it, so it stays here. The export blurs via a GL pass instead.
+// Blur samples `compositeCanvasEl` (the WebGL frame); paintBlur is shared with
+// the export, which feeds its own GL canvas + scratch through the same path.
 function drawBlur(
 	ctx: CanvasRenderingContext2D,
 	a: Annotation,
 	rect: { x: number; y: number; w: number; h: number },
 ) {
-	if (a.kind.kind !== "blur") return;
-	const k = a.kind;
-	const { x, y, w, h } = rect;
-	if (!(compositeCanvasEl && w > 1 && h > 1)) return;
-	const srcW = compositeCanvasEl.width;
-	const srcH = compositeCanvasEl.height;
-	const dstW = canvasEl?.width ?? 0;
-	const dstH = canvasEl?.height ?? 0;
-	const blurPx = Math.max(0.001, k.strength * 0.12 * Math.min(dstW, dstH));
-	if (!(srcW > 0 && srcH > 0 && dstW > 0 && dstH > 0)) return;
-	const m = Math.ceil(blurPx);
-	const ex = x - m;
-	const ey = y - m;
-	const ew = w + 2 * m;
-	const eh = h + 2 * m;
-	const esx = (ex / dstW) * srcW;
-	const esy = (ey / dstH) * srcH;
-	const esw = (ew / dstW) * srcW;
-	const esh = (eh / dstH) * srcH;
-	const radius = Math.max(0, k.radius * Math.min(w, h));
-	const bw = Math.max(1, Math.round(w));
-	const bh = Math.max(1, Math.round(h));
-	const octx = getBlurScratch(bw, bh);
-	if (!octx) return;
-	octx.clearRect(0, 0, bw, bh);
-	octx.filter = `blur(${blurPx.toFixed(2)}px)`;
-	try {
-		octx.drawImage(compositeCanvasEl, esx, esy, esw, esh, -m, -m, ew, eh);
-	} catch {
-		// source not readable this frame; next rAF repaints.
-	}
-	octx.filter = "none";
-	const tint = blurTint(k.variant, k.tintColor, k.strength, a.opacity ?? 1);
-	if (tint) {
-		octx.fillStyle = tint;
-		octx.fillRect(0, 0, bw, bh);
-	}
-	ctx.save();
-	ctx.globalAlpha = 1;
-	ctx.beginPath();
-	if (radius > 0) {
-		roundRectPath(ctx, x, y, w, h, radius);
-	} else {
-		ctx.rect(x, y, w, h);
-	}
-	ctx.clip();
-	ctx.drawImage(blurScratch!, x, y, w, h);
-	ctx.restore();
+	if (a.kind.kind !== "blur" || !compositeCanvasEl) return;
+	paintBlur(ctx, { opacity: a.opacity, kind: a.kind }, rect, {
+		composite: compositeCanvasEl,
+		srcW: compositeCanvasEl.width,
+		srcH: compositeCanvasEl.height,
+		dstW: canvasEl?.width ?? 0,
+		dstH: canvasEl?.height ?? 0,
+		getScratch: (w, h) => {
+			const c = getBlurScratch(w, h);
+			return c ? { ctx: c, canvas: blurScratch as CanvasImageSource } : null;
+		},
+	});
 }
 
 // Decoded <img> per source path, reused across frames. The rAF loop repaints
@@ -331,11 +295,9 @@ $effect(() => {
 	for (const path of stale) imageCache.delete(path);
 });
 
-// Offscreen scratch canvas for blur. We render the blur + tint here
-// (rectangular) then composite onto the overlay under a rounded clip. A
-// rounded `ctx.clip()` is NOT reliably honoured while `ctx.filter = blur()`
-// is active (WebView2/Chromium blurs to the full bounding box), so the
-// corners are applied afterwards with no filter in effect.
+// Reusable offscreen scratch that paintBlur renders the blur + tint into before
+// compositing under a rounded clip (a rounded clip isn't honoured while the blur
+// filter is active, so paintBlur applies corners in a filter-free second pass).
 let blurScratch: HTMLCanvasElement | null = null;
 function getBlurScratch(w: number, h: number): CanvasRenderingContext2D | null {
 	if (!blurScratch) blurScratch = document.createElement("canvas");
