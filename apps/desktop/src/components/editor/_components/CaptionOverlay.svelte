@@ -15,13 +15,18 @@ import {
 	isStaticAnimation,
 	resolveCaptionAnimation,
 	spokenWordCount,
-} from '@recast/captions';
-import CaptionBox from '@recast/captions/box';
-import { activeClippedSegment, clipWordsToSpan } from '$lib/captions/clip-with-cuts';
-import { computeCanvasGeometry } from '$lib/canvas-geometry';
-import { ensureFontLoaded } from '$lib/fonts/font-options';
-import type { EditorStore } from '$lib/stores/editor-store.svelte';
-import { outputToOriginal, spanAtOriginal } from '$lib/timeline/time-map';
+} from "@recast/captions";
+import CaptionBox from "@recast/captions/box";
+import {
+	activeClippedSegment,
+	captionSpanAt,
+	clipWordsToSpan,
+	keptCaptionSpans,
+} from "$lib/captions/clip-with-cuts";
+import { computeCanvasGeometry } from "$lib/canvas-geometry";
+import { ensureFontLoaded } from "$lib/fonts/font-options";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { outputToOriginal } from "$lib/timeline/time-map";
 
 let { store }: { store: EditorStore } = $props();
 
@@ -40,7 +45,11 @@ const nowOrig = $derived(outputToOriginal(store.timeMap, store.currentTime));
 // playhead is inside a cut (the gap between two kept spans) — in that
 // case no caption should be on screen. Computed once per `nowOrig` change
 // and reused by both the segment lookup and the word clipping below.
-const keptSpan = $derived(spanAtOriginal(store.timeMap, nowOrig));
+// Caption-clipping spans break only at real CUTS: splits/speed changes are
+// contiguous in source time and merge, so a caption spanning one keeps all its
+// words (clipping there dropped the far-side words).
+const captionSpans = $derived(keptCaptionSpans(store.timeMap));
+const keptSpan = $derived(captionSpanAt(captionSpans, nowOrig));
 
 // Active segment intersected with the kept span. We use the CLIPPED
 // segment (not the original) so a caption that spans a cut only displays

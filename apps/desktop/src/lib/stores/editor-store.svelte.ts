@@ -14,28 +14,28 @@ import {
 	type CaptionStyle,
 	DEFAULT_CAPTION_ANIMATION,
 	DEFAULT_CAPTION_STYLE,
-} from '@recast/captions';
-import { resolveTokenRgb, resolveTokenRgba } from '../annotations/canvas-tokens';
+} from "@recast/captions";
+import { resolveTokenRgb, resolveTokenRgba } from "../annotations/canvas-tokens";
 import {
 	type AudioClip,
 	type AudioClipSource,
 	defaultAudioClip,
 	splitClip,
 	voiceClip,
-} from '../audio/music';
-import type { CursorSampleLike } from '../cursor/smoothing';
-import { EASE, EASE_IN_OUT, type Easing } from '../easing/cubic-bezier';
-import type { TimeMode } from '../editor/time';
-import type { Transcript } from '../ipc';
-import { log } from '../logger';
+} from "../audio/music";
+import type { CursorSampleLike } from "../cursor/smoothing";
+import { EASE, EASE_IN_OUT, type Easing } from "../easing/cubic-bezier";
+import type { TimeMode } from "../editor/time";
+import type { Transcript } from "../ipc";
+import { log } from "../logger";
 // Narrow import (not `$lib/registry`) so the registry's `builtins` side-effect
 // (which pulls this store's catalogs) can't form an import cycle.
-import { resolveBackgroundWireValue } from '../registry/resolve';
+import { resolveBackgroundWireValue } from "../registry/resolve";
 import {
 	setSeamTransition as applySeamTransition,
 	seamTransitionAt as readSeamTransition,
 	type SeamTransition,
-} from '../scenes/seam';
+} from "../scenes/seam";
 import {
 	segmentAnimAt as animAtAnchor,
 	type MotionTone,
@@ -44,8 +44,8 @@ import {
 	type SceneAnimSpec,
 	type SegmentAnim,
 	setSegmentAnim as upsertSegmentAnim,
-} from '../scenes/segment-anim';
-import { type CutSource, type TimelineCut, totalCutDuration } from '../timeline/cuts';
+} from "../scenes/segment-anim";
+import { type CutSource, type TimelineCut, totalCutDuration } from "../timeline/cuts";
 import {
 	buildSpeedOf,
 	pruneSegmentSpeeds,
@@ -53,24 +53,24 @@ import {
 	segmentSpeedAt as speedAtAnchor,
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
-} from '../timeline/segment-speed';
+} from "../timeline/segment-speed";
 import {
 	deriveSegments,
 	planDeleteSegment,
 	planSplit,
 	type Segment,
 	segmentAt,
-} from '../timeline/segments';
+} from "../timeline/segments";
 import {
 	buildGapMap,
 	displayTimeMap,
 	originalToOutput,
 	outputToOriginal,
 	timeMapFromSegments,
-} from '../timeline/time-map';
-import { experimentalStore } from './experimental.svelte';
+} from "../timeline/time-map";
+import { experimentalStore } from "./experimental.svelte";
 
-export type BackgroundType = 'wallpaper' | 'image' | 'color' | 'gradient';
+export type BackgroundType = "wallpaper" | "image" | "color" | "gradient";
 
 export interface WallpaperOption {
 	/** Matches the `id` in `assets/manifest.json`. Stored in `backgroundValue`
@@ -101,7 +101,7 @@ export interface ZoomRegion {
 	 * load; flipped to "manual" the moment the user edits any field so
 	 * "Clear auto zooms" leaves their tweaks alone.
 	 */
-	source: 'manual' | 'auto';
+	source: "manual" | "auto";
 	/**
 	 * Muted in preview AND export but kept in the project: a non-destructive
 	 * toggle so you can A/B a zoom without losing its settings. Absent = visible.
@@ -125,7 +125,7 @@ export interface ShadowSettings {
 // Annotations. Position/size live in video UV space (0..1) so they follow zoom
 // and crop transforms without re-projection. `kind` is a discriminated union.
 
-export type AnnotationStrokeStyle = 'solid' | 'dashed' | 'dotted';
+export type AnnotationStrokeStyle = "solid" | "dashed" | "dotted";
 
 export interface AnnotationStroke {
 	width: number; // UV
@@ -147,7 +147,7 @@ export interface AnnotationGlow {
 
 export type AnnotationKind =
 	| {
-			kind: 'rect';
+			kind: "rect";
 			x: number;
 			y: number;
 			w: number;
@@ -155,14 +155,14 @@ export type AnnotationKind =
 			radius: number; // UV corner radius; 0 = sharp
 	  }
 	| {
-			kind: 'ellipse';
+			kind: "ellipse";
 			x: number; // UV bounding-box top-left
 			y: number;
 			w: number;
 			h: number;
 	  }
 	| {
-			kind: 'arrow';
+			kind: "arrow";
 			// Endpoints in UV; the arrow head is drawn at (x2, y2).
 			x1: number;
 			y1: number;
@@ -174,7 +174,7 @@ export type AnnotationKind =
 	| {
 			// Text overlays render in the WebView only and are rasterized to a
 			// PNG (kind=image) at export time. They never reach the Rust enum.
-			kind: 'text';
+			kind: "text";
 			x: number; // UV top-left of bounding box
 			y: number;
 			w: number;
@@ -185,7 +185,7 @@ export type AnnotationKind =
 			fontSize: number;
 			fontWeight: 400 | 500 | 600 | 700;
 			color: string; // CSS colour
-			align: 'left' | 'center' | 'right';
+			align: "left" | "center" | "right";
 			/** Multiplier on font size; default 1.2. */
 			lineHeight: number;
 	  }
@@ -193,7 +193,7 @@ export type AnnotationKind =
 			// Generic image overlay: a PNG/JPG composited at the UV rect.
 			// Used both for the (deferred) Image tool and as the export
 			// substitute for text annotations after hybrid rasterization.
-			kind: 'image';
+			kind: "image";
 			x: number;
 			y: number;
 			w: number;
@@ -207,7 +207,7 @@ export type AnnotationKind =
 			// proportional to `strength`) over the bounding rect, optionally
 			// tinted by `variant`. `glass` = clear blur, white/black tint at
 			// 30% over the blurred pixels, `color` = `tintColor` at 30%.
-			kind: 'blur';
+			kind: "blur";
 			x: number;
 			y: number;
 			w: number;
@@ -215,14 +215,14 @@ export type AnnotationKind =
 			/** Blur strength 0..1, mapping to a box-blur radius up to ~5% of the canvas. */
 			strength: number;
 			/** Tint mode applied over the blurred pixels. */
-			variant: 'glass' | 'white' | 'black' | 'color';
+			variant: "glass" | "white" | "black" | "color";
 			/** Tint colour used when `variant === "color"`. CSS `#rrggbb`. */
 			tintColor: string;
 			/** Corner rounding in UV space. 0 = sharp. */
 			radius: number;
 	  };
 
-export type AnnotationKindName = AnnotationKind['kind'];
+export type AnnotationKindName = AnnotationKind["kind"];
 
 export interface Annotation {
 	id: string;
@@ -258,20 +258,20 @@ export interface Annotation {
 }
 
 /** Coordinate space an annotation is anchored to. */
-export type AnnotationAnchor = 'video' | 'frame';
+export type AnnotationAnchor = "video" | "frame";
 
 export const DEFAULT_ANNOTATION_RAMP = 0.2;
 export const DEFAULT_ANNOTATION_STROKE: AnnotationStroke = {
 	width: 0.004,
-	color: '#3b82f6',
+	color: "#3b82f6",
 };
-export const DEFAULT_ANNOTATION_FILL = 'rgba(59,130,246,0.20)';
+export const DEFAULT_ANNOTATION_FILL = "rgba(59,130,246,0.20)";
 
 // Bundled built-in cursor styles. `dot` is the default soft circle (drawn by
 // the WebGL2 shader and the Rust export overlay); the system sets are SVG
 // sprites. The legacy macos/windows/outline/target styles moved into the
 // installable "Classic Cursors" pack (`ext:classic-cursors:<id>`).
-export type CursorStyleId = 'dot' | 'macos-system' | 'windows-system';
+export type CursorStyleId = "dot" | "macos-system" | "windows-system";
 
 /**
  * Stored cursor selection: a built-in {@link CursorStyleId} or an
@@ -326,14 +326,14 @@ export interface AudioSettings {
 }
 
 /** Convenience: read a track's effective volume (0-1) with mute applied. */
-export function effectiveTrackVolume(settings: AudioSettings, kind: 'system' | 'mic'): number {
-	const muted = kind === 'system' ? settings.systemMuted : settings.micMuted;
+export function effectiveTrackVolume(settings: AudioSettings, kind: "system" | "mic"): number {
+	const muted = kind === "system" ? settings.systemMuted : settings.micMuted;
 	if (settings.muted || muted) return 0;
-	const v = kind === 'system' ? settings.systemVolume : settings.micVolume;
+	const v = kind === "system" ? settings.systemVolume : settings.micVolume;
 	return Math.max(0, Math.min(1, v / 100));
 }
 
-export type WatermarkPosition = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+export type WatermarkPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
 export interface WatermarkSettings {
 	enabled: boolean;
@@ -345,9 +345,9 @@ export interface WatermarkSettings {
 	inset: number; // pixels
 }
 
-export type CameraOverlayShape = 'square' | 'rectangle' | 'rounded' | 'circle';
-export type CameraOverlayAnimationPreset = 'none' | 'soft' | 'lively';
-export type CameraMotionSource = 'live-recorded' | 'manual';
+export type CameraOverlayShape = "square" | "rectangle" | "rounded" | "circle";
+export type CameraOverlayAnimationPreset = "none" | "soft" | "lively";
+export type CameraMotionSource = "live-recorded" | "manual";
 
 export interface CameraPlacement {
 	x: number;
@@ -410,15 +410,15 @@ export interface CameraOverlaySettings {
  * after a drag-snap.
  */
 export type CameraPositionPreset =
-	| 'top-left'
-	| 'top-center'
-	| 'top-right'
-	| 'left-center'
-	| 'right-center'
-	| 'bottom-left'
-	| 'bottom-center'
-	| 'bottom-right'
-	| 'custom';
+	| "top-left"
+	| "top-center"
+	| "top-right"
+	| "left-center"
+	| "right-center"
+	| "bottom-left"
+	| "bottom-center"
+	| "bottom-right"
+	| "custom";
 
 /** Default size (16% of frame) and inset (2% margin) for preset placements. */
 export const CAMERA_DEFAULT_SIZE = 0.16;
@@ -446,15 +446,15 @@ export function cameraPlacementFromPreset(
 	const centerX = (1 - size) / 2;
 	const farY = Math.max(0, 1 - height - inset);
 	const centerY = Math.max(0, (1 - height) / 2);
-	if (preset === 'custom') {
+	if (preset === "custom") {
 		return { x: farX, y: farY, width: size, height };
 	}
 	// The preset ids mix conventions ('top-left' is row-col but 'left-center' is
 	// col-row), so detect each axis by token rather than by split position — else
 	// 'left-center'/'right-center' resolve to the wrong cell.
-	const tokens = preset.split('-');
-	const x = tokens.includes('left') ? inset : tokens.includes('right') ? farX : centerX;
-	const y = tokens.includes('top') ? inset : tokens.includes('bottom') ? farY : centerY;
+	const tokens = preset.split("-");
+	const x = tokens.includes("left") ? inset : tokens.includes("right") ? farX : centerX;
+	const y = tokens.includes("top") ? inset : tokens.includes("bottom") ? farY : centerY;
 	return { x, y, width: size, height };
 }
 
@@ -469,14 +469,14 @@ export function cameraPresetFromPlacement(
 	aspect: number = 1,
 ): CameraPositionPreset {
 	const presets: CameraPositionPreset[] = [
-		'top-left',
-		'top-center',
-		'top-right',
-		'left-center',
-		'right-center',
-		'bottom-left',
-		'bottom-center',
-		'bottom-right',
+		"top-left",
+		"top-center",
+		"top-right",
+		"left-center",
+		"right-center",
+		"bottom-left",
+		"bottom-center",
+		"bottom-right",
 	];
 	const tolerance = 0.005;
 	for (const preset of presets) {
@@ -485,7 +485,7 @@ export function cameraPresetFromPlacement(
 			return preset;
 		}
 	}
-	return 'custom';
+	return "custom";
 }
 
 export interface VideoMetadata {
@@ -505,7 +505,7 @@ import {
 	framePaddingPixels,
 	MAX_FRAME_PADDING_PERCENT,
 	normalizeFramePaddingPercent,
-} from '$lib/editor/frame-padding';
+} from "$lib/editor/frame-padding";
 
 export {
 	clampFramePaddingPercent,
@@ -572,7 +572,7 @@ export interface EditorRenderState {
 		centerX: number;
 		centerY: number;
 		motionBlur: number;
-		source?: 'manual' | 'auto';
+		source?: "manual" | "auto";
 		hidden?: boolean;
 	}>;
 	autoZoomApplied?: boolean;
@@ -602,7 +602,7 @@ export interface EditorRenderState {
 	/** Silence suggestions the user dismissed, kept so they don't resurface. */
 	dismissedSilences?: Array<{ start: number; end: number }>;
 	cursorMotionEasing: Easing | null;
-	annotations: Array<Omit<Annotation, 'id'>>;
+	annotations: Array<Omit<Annotation, "id">>;
 	shadow: ShadowSettings;
 	audioSettings: AudioSettings;
 	/** Music / extra-audio clips on the output timeline. Optional for back-compat. */
@@ -628,18 +628,18 @@ export interface EditorRenderState {
 	cursorSpriteSizePx?: number; // sprite render size in source pixels
 }
 
-export type ExportFormat = 'mp4' | 'gif' | 'webm';
-export type ExportQuality = 'small' | 'hd' | '4k' | 'source';
+export type ExportFormat = "mp4" | "gif" | "webm";
+export type ExportQuality = "small" | "hd" | "4k" | "source";
 /** Encoder effort axis, orthogonal to {@link ExportQuality} (resolution).
  *  'balanced' reproduces the historical encoder settings exactly. */
-export type ExportSpeed = 'fast' | 'balanced' | 'quality';
+export type ExportSpeed = "fast" | "balanced" | "quality";
 
 /** GIF dithering algorithm. Trades file size against gradient quality. */
-export type GifDither = 'bayer' | 'sierra2' | 'none';
+export type GifDither = "bayer" | "sierra2" | "none";
 /** GIF quality preset: controls palette size + dither bias. */
-export type GifQuality = 'low' | 'medium' | 'high';
+export type GifQuality = "low" | "medium" | "high";
 /** GIF loop behavior. `infinite` writes Netscape loop=0, `once` writes loop=-1, `n` writes loop=n. */
-export type GifLoop = 'infinite' | 'once' | number;
+export type GifLoop = "infinite" | "once" | number;
 
 export interface GifSettings {
 	/** Output frame rate. `null` = inherit from quality profile. */
@@ -651,12 +651,12 @@ export interface GifSettings {
 
 export const DEFAULT_GIF_SETTINGS: GifSettings = {
 	fps: null,
-	quality: 'medium',
-	loop: 'infinite',
-	dither: 'bayer',
+	quality: "medium",
+	loop: "infinite",
+	dither: "bayer",
 };
 
-export type LayoutMode = 'auto' | 'crop';
+export type LayoutMode = "auto" | "crop";
 
 /**
  * Final-canvas aspect ratio. `source` keeps the canvas matched to the
@@ -667,28 +667,28 @@ export type LayoutMode = 'auto' | 'crop';
  * Strings are kept human-readable so they round-trip through the preset
  * picker (`preset.aspect`) and the project JSON without translation.
  */
-export type OutputAspect = 'source' | '16:9' | '9:16' | '1:1' | '1.91:1';
+export type OutputAspect = "source" | "16:9" | "9:16" | "1:1" | "1.91:1";
 
 /** Parse an OutputAspect to a width/height ratio. Returns null for `source`. */
 export function aspectRatio(a: OutputAspect): number | null {
 	switch (a) {
-		case 'source':
+		case "source":
 			return null;
-		case '16:9':
+		case "16:9":
 			return 16 / 9;
-		case '9:16':
+		case "9:16":
 			return 9 / 16;
-		case '1:1':
+		case "1:1":
 			return 1;
-		case '1.91:1':
+		case "1.91:1":
 			return 1.91;
 	}
 }
 
-export type EditorWindowBehavior = 'navigate' | 'new-window';
+export type EditorWindowBehavior = "navigate" | "new-window";
 
 /** What the editor currently has selected. Exactly one, or nothing. */
-export type SelectionKind = 'clip' | 'zoom' | 'annotation' | 'cut' | 'music';
+export type SelectionKind = "clip" | "zoom" | "annotation" | "cut" | "music";
 export interface EditorSelection {
 	kind: SelectionKind;
 	/** Segment start in original seconds for 'clip'; the entity id otherwise. */
@@ -703,24 +703,24 @@ export interface DeleteSelectionResult {
 // 'dev' is a dev-build-only tab (experimental OCR review); it is UI state only and
 // is never serialized into a project.
 export type PanelTab =
-	| 'clip'
-	| 'background'
-	| 'focus'
-	| 'annotations'
-	| 'cursor'
-	| 'camera'
-	| 'audio'
-	| 'music'
-	| 'captions'
-	| 'extensions'
-	| 'info'
-	| 'dev';
+	| "clip"
+	| "background"
+	| "focus"
+	| "annotations"
+	| "cursor"
+	| "camera"
+	| "audio"
+	| "music"
+	| "captions"
+	| "extensions"
+	| "info"
+	| "dev";
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,
  *  not of the focused element, so it lives here where every lane can read it and
  *  decline the gesture the tool owns. */
-export type TimelineTool = 'select' | 'razor';
+export type TimelineTool = "select" | "razor";
 
 /** Timeline editing commands the route-level keyboard handler invokes so the
  *  S/C/I/O/Home/End keys work without the timeline scroller holding DOM focus.
@@ -730,8 +730,8 @@ export interface TimelineCommands {
 	splitAtPlayhead: () => void;
 	toggleRazor: () => void;
 	exitTool: () => void;
-	trimToPlayhead: (kind: 'in' | 'out') => void;
-	seekToEdge: (which: 'in' | 'out') => void;
+	trimToPlayhead: (kind: "in" | "out") => void;
+	seekToEdge: (which: "in" | "out") => void;
 }
 
 // Wallpapers 19–23 were moved into the installable "Waves" extension pack
@@ -765,18 +765,18 @@ export const MAX_GRADIENT_STOPS = 8;
  * the exact source of truth the preview shader and export rasteriser both parse.
  */
 export const GRADIENT_PRESETS: { label: string; value: string }[] = [
-	{ label: 'Indigo', value: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%)' },
-	{ label: 'Sunset', value: 'linear-gradient(120deg, #ff6a00 0%, #ee0979 100%)' },
-	{ label: 'Ocean', value: 'linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)' },
-	{ label: 'Aurora', value: 'linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%)' },
-	{ label: 'Ember', value: 'linear-gradient(135deg, #f12711 0%, #f5af19 100%)' },
-	{ label: 'Mint', value: 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)' },
-	{ label: 'Grape', value: 'linear-gradient(135deg, #7028e4 0%, #e5b2ca 100%)' },
-	{ label: 'Berry', value: 'linear-gradient(135deg, #c31432 0%, #240b36 100%)' },
-	{ label: 'Royal', value: 'linear-gradient(160deg, #141e30 0%, #243b55 100%)' },
-	{ label: 'Slate', value: 'linear-gradient(135deg, #232526 0%, #414345 100%)' },
-	{ label: 'Peach', value: 'linear-gradient(135deg, #ed4264 0%, #ffedbc 100%)' },
-	{ label: 'Lagoon', value: 'linear-gradient(160deg, #43c6ac 0%, #191654 100%)' },
+	{ label: "Indigo", value: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%)" },
+	{ label: "Sunset", value: "linear-gradient(120deg, #ff6a00 0%, #ee0979 100%)" },
+	{ label: "Ocean", value: "linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)" },
+	{ label: "Aurora", value: "linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%)" },
+	{ label: "Ember", value: "linear-gradient(135deg, #f12711 0%, #f5af19 100%)" },
+	{ label: "Mint", value: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)" },
+	{ label: "Grape", value: "linear-gradient(135deg, #7028e4 0%, #e5b2ca 100%)" },
+	{ label: "Berry", value: "linear-gradient(135deg, #c31432 0%, #240b36 100%)" },
+	{ label: "Royal", value: "linear-gradient(160deg, #141e30 0%, #243b55 100%)" },
+	{ label: "Slate", value: "linear-gradient(135deg, #232526 0%, #414345 100%)" },
+	{ label: "Peach", value: "linear-gradient(135deg, #ed4264 0%, #ffedbc 100%)" },
+	{ label: "Lagoon", value: "linear-gradient(160deg, #43c6ac 0%, #191654 100%)" },
 ];
 
 /** Default gradient used when a fresh custom gradient is created. */
@@ -788,12 +788,12 @@ function clampNum(v: number, lo: number, hi: number): number {
 
 /** Expand #rgb/#rgba shorthand and lowercase, so downstream parsing is uniform. */
 function normalizeHex(hex: string): string {
-	let h = hex.trim().replace(/^#/, '');
+	let h = hex.trim().replace(/^#/, "");
 	if (h.length === 3 || h.length === 4) {
 		h = h
-			.split('')
+			.split("")
 			.map((c) => c + c)
-			.join('');
+			.join("");
 	}
 	return `#${h.toLowerCase()}`;
 }
@@ -822,8 +822,8 @@ export function parseGradient(value: string): GradientSpec {
 		return {
 			angle,
 			stops: [
-				{ color: '#6366f1', pos: 0 },
-				{ color: '#d946ef', pos: 100 },
+				{ color: "#6366f1", pos: 0 },
+				{ color: "#d946ef", pos: 100 },
 			],
 		};
 	}
@@ -850,23 +850,23 @@ export function serializeGradient(spec: GradientSpec): string {
 	const body = [...spec.stops]
 		.sort((a, b) => a.pos - b.pos)
 		.map((s) => `${normalizeHex(s.color)} ${Math.round(clampNum(s.pos, 0, 100))}%`)
-		.join(', ');
+		.join(", ");
 	return `linear-gradient(${angle}deg, ${body})`;
 }
 
 export const COLOR_PRESETS = [
-	'#eaffd0',
-	'#95e1d3',
-	'#ffffff',
-	'#f5f5f5',
-	'#533483',
-	'#e94560',
-	'#f38181',
-	'#fce38a',
-	'#0f3460',
-	'#16213e',
-	'#1a1a2e',
-	'#000000',
+	"#eaffd0",
+	"#95e1d3",
+	"#ffffff",
+	"#f5f5f5",
+	"#533483",
+	"#e94560",
+	"#f38181",
+	"#fce38a",
+	"#0f3460",
+	"#16213e",
+	"#1a1a2e",
+	"#000000",
 ];
 
 function generateId(): string {
@@ -889,17 +889,17 @@ export interface CaptionExportOptions {
 	/** Burn the captions into the video (overlay). Ignored for GIF. */
 	burnIn: boolean;
 	/** Write a separate subtitle file next to the export ('none' to skip). */
-	sidecar: 'none' | 'vtt' | 'srt';
+	sidecar: "none" | "vtt" | "srt";
 }
 
 export const DEFAULT_CAPTION_EXPORT: CaptionExportOptions = {
 	burnIn: false,
-	sidecar: 'vtt',
+	sidecar: "vtt",
 };
 
 export function createEditorStore() {
 	// Video source
-	let videoPath = $state('');
+	let videoPath = $state("");
 	let cursorPath = $state<string | null>(null);
 	// Raw on-disk media paths (the extracted recording / audio tracks), needed
 	// by Rust-side analysis commands such as silence detection.
@@ -931,7 +931,7 @@ export function createEditorStore() {
 
 	// Active pointer tool. Reset to 'select' on every document load: a mode should
 	// never survive into a different recording.
-	let timelineTool = $state<TimelineTool>('select');
+	let timelineTool = $state<TimelineTool>("select");
 
 	// Trim
 	let trimStart = $state(0);
@@ -949,7 +949,7 @@ export function createEditorStore() {
 	let segmentAnims = $state<SegmentAnim[]>([]);
 	// Project-wide motion style for scene animations. Authoring-only: it bakes
 	// concrete values into each spec, so the export pipeline never reads it.
-	let motionTone = $state<MotionTone>('balanced');
+	let motionTone = $state<MotionTone>("balanced");
 	// Transient (not serialized): true only while a trim handle is being dragged.
 	// Flips the timeline onto the full-recording axis so the handle can move
 	// across the whole source and reveal the trimmed head/tail (Cap-style ghost).
@@ -975,7 +975,7 @@ export function createEditorStore() {
 	let focusEnabled = $state(true);
 
 	// Background
-	let backgroundType = $state<BackgroundType>('wallpaper');
+	let backgroundType = $state<BackgroundType>("wallpaper");
 	let backgroundValue = $state(wallpaperBackgroundValue(WALLPAPERS[0].id));
 	let backgroundBlur = $state(40);
 	let padding = $state(3);
@@ -988,16 +988,16 @@ export function createEditorStore() {
 		spread: 0,
 		offsetY: 24,
 		opacity: 40,
-		color: '#000000',
+		color: "#000000",
 	});
 
 	// Layout
-	let layoutMode = $state<LayoutMode>('auto');
+	let layoutMode = $state<LayoutMode>("auto");
 
 	// Final-canvas aspect. `source` means "follow the input video"; any other
 	// value reframes the canvas via letterbox/pillarbox bars. The preset
 	// picker writes this when the user picks an Instagram/YouTube/X preset.
-	let outputAspect = $state<OutputAspect>('source');
+	let outputAspect = $state<OutputAspect>("source");
 
 	// Id of the most recently applied preset. Pure UI affordance that lets the
 	// toolbar surface "Story · 9:16" so users see, per project, what's in
@@ -1037,13 +1037,13 @@ export function createEditorStore() {
 	// Which properties-panel tab is active. Overlays (FocusOverlay,
 	// AnnotationOverlay) gate their editing UI on this so users don't interact
 	// with handles for a feature whose panel isn't visible.
-	let activePanel = $state<PanelTab>('background');
+	let activePanel = $state<PanelTab>("background");
 
 	// How every timecode in the editor renders. Lives here, not in Timeline.svelte,
 	// so the transport readout and the timeline agree: when this was timeline-local
 	// the player controls had their own hardcoded format and ignored the setting.
 	// UI-only, never serialized into a project.
-	let timeMode = $state<TimeMode>('smpte');
+	let timeMode = $state<TimeMode>("smpte");
 
 	// Global cursor motion easing. `null` means linear (today's behaviour);
 	// a non-null curve reshapes the per-sample lerp in the WebGL preview.
@@ -1053,12 +1053,12 @@ export function createEditorStore() {
 	let cursorSettings = $state<CursorSettings>({
 		enabled: true,
 		size: 2,
-		style: 'dot',
+		style: "dot",
 		smoothing: 50,
 		snapToClicks: true,
 		snapWindowMs: 80,
 		highlightClicks: true,
-		highlightColor: '#3b82f6',
+		highlightColor: "#3b82f6",
 		highlightOpacity: 40,
 		hideWhenIdle: false,
 		idleTimeout: 3,
@@ -1087,11 +1087,11 @@ export function createEditorStore() {
 	// Watermark settings
 	let watermarkSettings = $state<WatermarkSettings>({
 		enabled: false,
-		imagePath: '',
-		imageSrc: '',
+		imagePath: "",
+		imageSrc: "",
 		opacity: 70,
 		scale: 18,
-		position: 'bottom-right',
+		position: "bottom-right",
 		inset: 24,
 	});
 	// Camera overlay defaults, Phase 1 spec:
@@ -1103,14 +1103,14 @@ export function createEditorStore() {
 	let cameraOverlay = $state<CameraOverlaySettings>({
 		enabled: false,
 		mirror: true,
-		shape: 'rounded',
+		shape: "rounded",
 		cornerRadius: 0.16,
-		animationPreset: 'soft',
+		animationPreset: "soft",
 		zoomFollow: true,
 		zoomFollowStrength: 0.6,
 		zoomFollowDuration: 0.4,
 		zoomFollowEasing: { ...EASE_IN_OUT },
-		defaultPlacement: cameraPlacementFromPreset('bottom-right'),
+		defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 		motionSegments: [],
 		keyframes: [],
 		keyframeEasing: { ...EASE_IN_OUT },
@@ -1118,11 +1118,11 @@ export function createEditorStore() {
 	});
 
 	// Export
-	let exportFormat = $state<ExportFormat>('mp4');
+	let exportFormat = $state<ExportFormat>("mp4");
 	// Default to source resolution; downscaling a 1080p+ screen recording to a
 	// fixed "HD" needlessly softens sharp text/UI.
-	let exportQuality = $state<ExportQuality>('source');
-	let exportSpeed = $state<ExportSpeed>('balanced');
+	let exportQuality = $state<ExportQuality>("source");
+	let exportSpeed = $state<ExportSpeed>("balanced");
 	// Output frame rate for MP4/WebM. `null` = keep the source recording's rate
 	// (the quality-preserving default). A number requests a clean downsample to
 	// that rate (only ever offered ≤ source, so we never duplicate frames). GIF
@@ -1204,10 +1204,29 @@ export function createEditorStore() {
 
 	const MAX_UNDO_HISTORY = 50;
 
+	let undoSuppression = 0;
+
 	function pushUndoState() {
+		if (undoSuppression > 0) return;
 		undoStack = [...undoStack, getSettingsSnapshot()].slice(-MAX_UNDO_HISTORY);
 		redoStack = [];
 		isDirty = true;
+	}
+
+	/**
+	 * Run `fn` without recording undo history or marking the project dirty —
+	 * for transient writes the user hasn't committed, like previewing a preset
+	 * as the cursor moves over it. Commit the real change outside this scope.
+	 */
+	function withoutUndo(fn: () => void) {
+		const wasDirty = isDirty;
+		undoSuppression++;
+		try {
+			fn();
+		} finally {
+			undoSuppression--;
+			isDirty = wasDirty;
+		}
 	}
 
 	// Drop the most recent undo entry. For unwinding a push that turned into a
@@ -1224,7 +1243,7 @@ export function createEditorStore() {
 	let lastCoalesceKey: string | null = null;
 	let lastCoalesceAt = 0;
 	function pushUndoStateCoalesced(key: string, ttlMs = 500) {
-		const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+		const now = typeof performance !== "undefined" ? performance.now() : Date.now();
 		if (lastCoalesceKey === key && now - lastCoalesceAt < ttlMs) {
 			lastCoalesceAt = now;
 			isDirty = true;
@@ -1288,7 +1307,7 @@ export function createEditorStore() {
 			centerX: r.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: r.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: r.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
-			source: r.source ?? 'manual',
+			source: r.source ?? "manual",
 		}));
 		autoZoomEnabled = s.autoZoomEnabled ?? autoZoomEnabled;
 		autoZoomApplied = s.autoZoomApplied ?? autoZoomApplied;
@@ -1296,7 +1315,7 @@ export function createEditorStore() {
 		splitPoints = [...(s.splitPoints ?? [])];
 		segmentSpeeds = (s.segmentSpeeds ?? []).map((o: SegmentSpeed) => ({ ...o }));
 		segmentAnims = (s.segmentAnims ?? []).map((o: SegmentAnim) => ({ ...o }));
-		motionTone = s.motionTone ?? 'balanced';
+		motionTone = s.motionTone ?? "balanced";
 		// Annotation undo: restore the captured array. Each entry already
 		// carries its own id from the snapshot, so we keep them so refs from
 		// `selectedAnnotationId` etc. survive the undo cleanly.
@@ -1339,7 +1358,7 @@ export function createEditorStore() {
 				...s.cameraOverlay,
 				defaultPlacement: { ...s.cameraOverlay.defaultPlacement },
 				motionSegments: (s.cameraOverlay.motionSegments ?? []).map(
-					(seg: CameraOverlaySettings['motionSegments'][number]) => ({ ...seg }),
+					(seg: CameraOverlaySettings["motionSegments"][number]) => ({ ...seg }),
 				),
 				keyframes: (s.cameraOverlay.keyframes ?? []).map((k) => ({
 					atSec: k.atSec,
@@ -1349,7 +1368,7 @@ export function createEditorStore() {
 			};
 		}
 		layoutMode = s.layoutMode;
-		outputAspect = s.outputAspect ?? 'source';
+		outputAspect = s.outputAspect ?? "source";
 		lastAppliedPresetId = s.lastAppliedPresetId ?? null;
 		cursorMotionEasing = s.cursorMotionEasing ?? null;
 	}
@@ -1373,11 +1392,11 @@ export function createEditorStore() {
 			centerX: center?.x ?? DEFAULT_ZOOM_CENTER,
 			centerY: center?.y ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
-			source: 'manual',
+			source: "manual",
 		};
 		zoomRegions = [...zoomRegions, region];
 		selectZoomRegion(region.id);
-		log.info('focus', 'zoom_added', { id: region.id, start, end, scale });
+		log.info("focus", "zoom_added", { id: region.id, start, end, scale });
 		return region.id;
 	}
 
@@ -1405,17 +1424,17 @@ export function createEditorStore() {
 			centerX,
 			centerY,
 			motionBlur: DEFAULT_ZOOM_MOTION_BLUR,
-			source: 'auto',
+			source: "auto",
 		};
 		zoomRegions = [...zoomRegions, region];
 		return region.id;
 	}
 
 	function clearAutoZooms() {
-		const hasAuto = zoomRegions.some((z) => z.source === 'auto');
+		const hasAuto = zoomRegions.some((z) => z.source === "auto");
 		if (!hasAuto) return;
 		pushUndoState();
-		zoomRegions = zoomRegions.filter((z) => z.source !== 'auto');
+		zoomRegions = zoomRegions.filter((z) => z.source !== "auto");
 		if (selectedZoomRegionId && !zoomRegions.find((z) => z.id === selectedZoomRegionId)) {
 			selectedZoomRegionId = null;
 		}
@@ -1428,7 +1447,7 @@ export function createEditorStore() {
 		backgroundType = selection.type;
 		backgroundValue = selection.value;
 		// `value` can be a long wallpaper/gradient string, so log only the type.
-		log.info('background', 'changed', { type: selection.type });
+		log.info("background", "changed", { type: selection.type });
 	}
 
 	/**
@@ -1440,7 +1459,7 @@ export function createEditorStore() {
 	 * remove stop) should use {@link setBackground} for a clean undo step.
 	 */
 	function setBackgroundLive(type: BackgroundType, value: string) {
-		pushUndoStateCoalesced('background-live');
+		pushUndoStateCoalesced("background-live");
 		backgroundType = type;
 		backgroundValue = value;
 		isDirty = true;
@@ -1449,12 +1468,12 @@ export function createEditorStore() {
 	function updateCursorSettings(updates: Partial<CursorSettings>) {
 		cursorSettings = { ...cursorSettings, ...updates };
 		// Sliders (size, smoothing) fire continuously, so debounce to one line.
-		log.debounced('cursor-settings', 'cursor', 'settings_changed', { ...updates });
+		log.debounced("cursor-settings", "cursor", "settings_changed", { ...updates });
 	}
 
 	function updateAudioSettings(updates: Partial<AudioSettings>) {
 		audioSettings = { ...audioSettings, ...updates };
-		log.debounced('audio-settings', 'audio', 'settings_changed', { ...updates });
+		log.debounced("audio-settings", "audio", "settings_changed", { ...updates });
 	}
 
 	function updateWatermarkSettings(updates: Partial<WatermarkSettings>) {
@@ -1495,10 +1514,10 @@ export function createEditorStore() {
 	// The recording's own audio, detached for independent editing, lives as `voice`
 	// clips in `musicClips` (same model + render paths). "Detached" is simply "a
 	// voice clip exists" — no separate flag to keep in sync across undo/serialize.
-	const audioDetached = $derived(musicClips.some((c) => c.role === 'voice'));
+	const audioDetached = $derived(musicClips.some((c) => c.role === "voice"));
 	const canDetachAudio = $derived(!!(audioPath || microphonePath));
-	const voiceClips = $derived(musicClips.filter((c) => c.role === 'voice'));
-	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== 'voice'));
+	const voiceClips = $derived(musicClips.filter((c) => c.role === "voice"));
+	const musicOnlyClips = $derived(musicClips.filter((c) => c.role !== "voice"));
 
 	/** Split system+mic into independent `voice` clips (their per-source gain/mute
 	 *  and the timeline fades carried over) and suppress the monolithic source path.
@@ -1539,7 +1558,7 @@ export function createEditorStore() {
 	function reattachRecordingAudio(): boolean {
 		if (!audioDetached) return false;
 		pushUndoState();
-		musicClips = musicClips.filter((c) => c.role !== 'voice');
+		musicClips = musicClips.filter((c) => c.role !== "voice");
 		if (selectedMusicClipId && !musicClips.find((c) => c.id === selectedMusicClipId)) {
 			selectedMusicClipId = null;
 		}
@@ -1659,19 +1678,19 @@ export function createEditorStore() {
 
 	const selection = $derived.by<EditorSelection | null>(() => {
 		if (selectedAnnotationId !== null) {
-			return { kind: 'annotation', id: selectedAnnotationId };
+			return { kind: "annotation", id: selectedAnnotationId };
 		}
 		if (selectedZoomRegionId !== null) {
-			return { kind: 'zoom', id: selectedZoomRegionId };
+			return { kind: "zoom", id: selectedZoomRegionId };
 		}
 		if (selectedCutId !== null) {
-			return { kind: 'cut', id: selectedCutId };
+			return { kind: "cut", id: selectedCutId };
 		}
 		if (selectedMusicClipId !== null) {
-			return { kind: 'music', id: selectedMusicClipId };
+			return { kind: "music", id: selectedMusicClipId };
 		}
 		if (selectedClipStart !== null) {
-			return { kind: 'clip', id: selectedClipStart };
+			return { kind: "clip", id: selectedClipStart };
 		}
 		return null;
 	});
@@ -1684,25 +1703,25 @@ export function createEditorStore() {
 	function deleteSelection(): DeleteSelectionResult | null {
 		if (selectedAnnotationId !== null) {
 			removeAnnotation(selectedAnnotationId);
-			return { kind: 'annotation', joinAt: null };
+			return { kind: "annotation", joinAt: null };
 		}
 		if (selectedZoomRegionId !== null) {
 			removeZoomRegion(selectedZoomRegionId);
-			return { kind: 'zoom', joinAt: null };
+			return { kind: "zoom", joinAt: null };
 		}
 		if (selectedCutId !== null) {
 			// Removing a cut restores the section; park on its (original) start.
 			const cut = cuts.find((c) => c.id === selectedCutId);
 			removeCut(selectedCutId);
-			return { kind: 'cut', joinAt: cut ? cut.start : null };
+			return { kind: "cut", joinAt: cut ? cut.start : null };
 		}
 		if (selectedMusicClipId !== null) {
 			removeMusicClip(selectedMusicClipId);
-			return { kind: 'music', joinAt: null };
+			return { kind: "music", joinAt: null };
 		}
 		if (selectedClipStart !== null) {
 			const joinAt = deleteSegmentAt(selectedClipStart);
-			return joinAt === null ? null : { kind: 'clip', joinAt };
+			return joinAt === null ? null : { kind: "clip", joinAt };
 		}
 		return null;
 	}
@@ -1711,7 +1730,7 @@ export function createEditorStore() {
 		pushUndoState();
 		zoomRegions = zoomRegions.filter((z) => z.id !== id);
 		if (selectedZoomRegionId === id) selectedZoomRegionId = null;
-		log.info('focus', 'zoom_removed', { id });
+		log.info("focus", "zoom_removed", { id });
 	}
 
 	/** Remove every zoom region in one undo step. */
@@ -1720,7 +1739,7 @@ export function createEditorStore() {
 		pushUndoState();
 		zoomRegions = [];
 		selectedZoomRegionId = null;
-		log.info('focus', 'zoom_cleared_all', {});
+		log.info("focus", "zoom_cleared_all", {});
 	}
 
 	/**
@@ -1753,14 +1772,14 @@ export function createEditorStore() {
 			easeOut: { ...src.easeOut },
 			start,
 			end,
-			source: 'manual',
+			source: "manual",
 			hidden: src.hidden ?? false,
 		};
 		// Insert right after the source so list order matches the timeline.
 		const idx = zoomRegions.findIndex((z) => z.id === id);
 		zoomRegions = [...zoomRegions.slice(0, idx + 1), copy, ...zoomRegions.slice(idx + 1)];
 		selectZoomRegion(copy.id);
-		log.info('focus', 'zoom_duplicated', { from: id, id: copy.id });
+		log.info("focus", "zoom_duplicated", { from: id, id: copy.id });
 		return copy.id;
 	}
 
@@ -1771,19 +1790,19 @@ export function createEditorStore() {
 		pushUndoState();
 		const next = hidden ?? !(src.hidden ?? false);
 		zoomRegions = zoomRegions.map((z) => (z.id === id ? { ...z, hidden: next } : z));
-		log.info('focus', 'zoom_hidden_toggled', { id, hidden: next });
+		log.info("focus", "zoom_hidden_toggled", { id, hidden: next });
 	}
 
 	function updateZoomRegion(id: string, updates: Partial<ZoomRegion>) {
 		// Drag/resize/slider edits stream in, so debounce per region id.
-		log.debounced(`zoom-${id}`, 'focus', 'zoom_updated', { id, ...updates });
+		log.debounced(`zoom-${id}`, "focus", "zoom_updated", { id, ...updates });
 		zoomRegions = zoomRegions.map((z) => {
 			if (z.id !== id) return z;
 			// First user edit on an auto region detaches it, so "Clear auto
 			// zooms" should leave anything they've tweaked alone.
 			const next = { ...z, ...updates };
-			if (z.source === 'auto' && updates.source === undefined) {
-				next.source = 'manual';
+			if (z.source === "auto" && updates.source === undefined) {
+				next.source = "manual";
 			}
 			return next;
 		});
@@ -1793,17 +1812,23 @@ export function createEditorStore() {
 		kind: AnnotationKind,
 		start?: number,
 		end?: number,
-		overrides?: Partial<Pick<Annotation, 'glow' | 'name' | 'anchor'>>,
+		overrides?: Partial<Pick<Annotation, "glow" | "name" | "anchor">>,
 	): Annotation {
 		pushUndoState();
-		const now = currentTime;
 		const clipEnd = trimEnd || metadata?.duration || 0;
-		const s = start ?? Math.max(trimStart, now);
-		const e = end ?? Math.min(clipEnd, Math.max(s + 2.0, now + 2.0));
+		// Clamp the playhead into the trimmed clip so adding an annotation while
+		// parked at/past the trim end still yields a valid forward [start,end].
+		const now = Math.min(Math.max(currentTime, trimStart), clipEnd);
+		let s = start ?? now;
+		let e = end ?? Math.min(clipEnd, s + 2.0);
+		if (!(e > s)) {
+			s = Math.max(trimStart, clipEnd - 2.0);
+			e = clipEnd;
+		}
 		// New annotations pick up the current theme colour rather than a fixed
 		// blue, so markup matches the app out of the box (resolved to a concrete
 		// colour here since the export bakes it).
-		const themeColor = resolveTokenRgb('var(--primary)');
+		const themeColor = resolveTokenRgb("var(--primary)");
 		const annotation: Annotation = {
 			id: generateId(),
 			start: s,
@@ -1817,9 +1842,9 @@ export function createEditorStore() {
 			stroke: {
 				...DEFAULT_ANNOTATION_STROKE,
 				color: themeColor,
-				width: kind.kind === 'image' ? 0 : DEFAULT_ANNOTATION_STROKE.width,
+				width: kind.kind === "image" ? 0 : DEFAULT_ANNOTATION_STROKE.width,
 			},
-			fill: resolveTokenRgba('var(--primary)', 0.18),
+			fill: resolveTokenRgba("var(--primary)", 0.18),
 			kind,
 			zIndex: annotationZSeq++,
 			opacity: 1,
@@ -1827,13 +1852,13 @@ export function createEditorStore() {
 		};
 		annotations = [...annotations, annotation];
 		selectAnnotation(annotation.id);
-		log.info('annotation', 'added', { id: annotation.id, kind: kind.kind });
+		log.info("annotation", "added", { id: annotation.id, kind: kind.kind });
 		return annotation;
 	}
 
 	function updateAnnotation(id: string, updates: Partial<Annotation>) {
 		// Position/style edits stream from drags + property sliders, so debounce.
-		log.debounced(`annotation-${id}`, 'annotation', 'updated', {
+		log.debounced(`annotation-${id}`, "annotation", "updated", {
 			id,
 			fields: Object.keys(updates),
 		});
@@ -1845,7 +1870,7 @@ export function createEditorStore() {
 		annotations = annotations.filter((a) => a.id !== id);
 		if (selectedAnnotationId === id) selectedAnnotationId = null;
 		if (hoveredAnnotationId === id) hoveredAnnotationId = null;
-		log.info('annotation', 'removed', { id });
+		log.info("annotation", "removed", { id });
 	}
 
 	/** Sorted view by (zIndex, insertion-order). Higher z draws later. */
@@ -1887,14 +1912,14 @@ export function createEditorStore() {
 		dup.name = source.name ? `${source.name} copy` : undefined;
 		// Nudge the geometry diagonally so the duplicate is visible.
 		if (
-			dup.kind.kind === 'rect' ||
-			dup.kind.kind === 'ellipse' ||
-			dup.kind.kind === 'image' ||
-			dup.kind.kind === 'text' ||
-			dup.kind.kind === 'blur'
+			dup.kind.kind === "rect" ||
+			dup.kind.kind === "ellipse" ||
+			dup.kind.kind === "image" ||
+			dup.kind.kind === "text" ||
+			dup.kind.kind === "blur"
 		) {
 			dup.kind = { ...dup.kind, x: dup.kind.x + offset, y: dup.kind.y + offset };
-		} else if (dup.kind.kind === 'arrow') {
+		} else if (dup.kind.kind === "arrow") {
 			dup.kind = {
 				...dup.kind,
 				x1: dup.kind.x1 + offset,
@@ -1942,7 +1967,7 @@ export function createEditorStore() {
 		isPlaying = false;
 		trimStart = 0;
 		trimEnd = metadata?.duration ?? 0;
-		backgroundType = 'wallpaper';
+		backgroundType = "wallpaper";
 		backgroundValue = wallpaperBackgroundValue(WALLPAPERS[0].id);
 		backgroundBlur = 40;
 		padding = 3;
@@ -1953,12 +1978,12 @@ export function createEditorStore() {
 			spread: 0,
 			offsetY: 24,
 			opacity: 40,
-			color: '#000000',
+			color: "#000000",
 		};
 		musicClips = [];
 		selectedMusicClipId = null;
-		layoutMode = 'auto';
-		outputAspect = 'source';
+		layoutMode = "auto";
+		outputAspect = "source";
 		lastAppliedPresetId = null;
 		zoomRegions = [];
 		selectedZoomRegionId = null;
@@ -1966,7 +1991,7 @@ export function createEditorStore() {
 		splitPoints = [];
 		segmentSpeeds = [];
 		segmentAnims = [];
-		motionTone = 'balanced';
+		motionTone = "balanced";
 		cutsEnabled = true;
 		focusEnabled = true;
 		dismissedSilences = [];
@@ -1975,7 +2000,7 @@ export function createEditorStore() {
 		annotations = [];
 		selectedAnnotationId = null;
 		annotationTool = null;
-		timelineTool = 'select';
+		timelineTool = "select";
 		hoveredAnnotationId = null;
 		annotationsGloballyHidden = false;
 		annotationSnapEnabled = true;
@@ -1984,12 +2009,12 @@ export function createEditorStore() {
 		cursorSettings = {
 			enabled: true,
 			size: 2,
-			style: 'dot',
+			style: "dot",
 			smoothing: 50,
 			snapToClicks: true,
 			snapWindowMs: 80,
 			highlightClicks: true,
-			highlightColor: '#3b82f6',
+			highlightColor: "#3b82f6",
 			highlightOpacity: 40,
 			hideWhenIdle: false,
 			idleTimeout: 3,
@@ -2011,20 +2036,20 @@ export function createEditorStore() {
 		};
 		watermarkSettings = {
 			enabled: false,
-			imagePath: '',
-			imageSrc: '',
+			imagePath: "",
+			imageSrc: "",
 			opacity: 70,
 			scale: 18,
-			position: 'bottom-right',
+			position: "bottom-right",
 			inset: 24,
 		};
 		cameraOverlay = {
 			enabled: false,
 			mirror: true,
-			shape: 'rounded',
+			shape: "rounded",
 			cornerRadius: 0.16,
-			animationPreset: 'soft',
-			defaultPlacement: cameraPlacementFromPreset('bottom-right'),
+			animationPreset: "soft",
+			defaultPlacement: cameraPlacementFromPreset("bottom-right"),
 			motionSegments: [],
 			keyframes: [],
 			keyframeEasing: { ...EASE_IN_OUT },
@@ -2034,8 +2059,8 @@ export function createEditorStore() {
 			zoomFollowDuration: 0.4,
 			zoomFollowEasing: { ...EASE_IN_OUT },
 		};
-		exportQuality = 'source';
-		exportSpeed = 'balanced';
+		exportQuality = "source";
+		exportSpeed = "balanced";
 		exportFps = null;
 		exportFpsDefaulted = false;
 		undoStack = [];
@@ -2048,7 +2073,7 @@ export function createEditorStore() {
 	 * accepting several silence suggestions at once should batch with their
 	 * own `pushUndoState` and use the lower-level array if needed.
 	 */
-	function addCut(start: number, end: number, source: CutSource = 'silence'): string | null {
+	function addCut(start: number, end: number, source: CutSource = "silence"): string | null {
 		if (end - start <= 0.01) return null;
 		pushUndoState();
 		const cut: TimelineCut = { id: generateId(), start, end, source };
@@ -2090,7 +2115,7 @@ export function createEditorStore() {
 			const last = merged[merged.length - 1];
 			if (last && c.start <= last.end + 0.001) {
 				last.end = Math.max(last.end, c.end);
-				if (c.source === 'manual') last.source = 'manual';
+				if (c.source === "manual") last.source = "manual";
 			} else {
 				merged.push({ ...c });
 			}
@@ -2113,7 +2138,7 @@ export function createEditorStore() {
 	// cuts lane is enabled. A disabled silence flag preserves those edits but
 	// ignores them, so toggling it back on restores them.
 	function cutFlagAllows(c: TimelineCut): boolean {
-		return c.source === 'silence' ? experimentalStore.silenceDetection : true;
+		return c.source === "silence" ? experimentalStore.silenceDetection : true;
 	}
 	/** Cuts that actually apply right now (flag-gated + lane-enabled). */
 	// The cut → segment → time-map chain is memoized with $derived, then exposed
@@ -2222,7 +2247,7 @@ export function createEditorStore() {
 	/** Set or clear (spec = null) the entrance/exit animation of the segment
 	 * anchored at original `start`. Coalesced into one undo entry per anchor+side
 	 * while presets/sliders change; orphaned anchors are pruned. */
-	function setSegmentAnim(start: number, side: 'in' | 'out', spec: SceneAnimSpec | null) {
+	function setSegmentAnim(start: number, side: "in" | "out", spec: SceneAnimSpec | null) {
 		pushUndoStateCoalesced(`segment-anim-${side}-${start.toFixed(3)}`, 400);
 		const next = upsertSegmentAnim(segmentAnims, start, side, spec);
 		segmentAnims = pruneSegmentAnims(next, currentSegments());
@@ -2250,7 +2275,7 @@ export function createEditorStore() {
 	}
 
 	/** The transition currently spanning that seam ("none" / a push / "custom"). */
-	function seamTransitionAt(leftStart: number, rightStart: number): SeamTransition | 'custom' {
+	function seamTransitionAt(leftStart: number, rightStart: number): SeamTransition | "custom" {
 		return readSeamTransition(segmentAnims, leftStart, rightStart);
 	}
 
@@ -2306,7 +2331,7 @@ export function createEditorStore() {
 				id: generateId(),
 				start: plan.cut.start,
 				end: plan.cut.end,
-				source: 'manual' as CutSource,
+				source: "manual" as CutSource,
 			},
 		].sort((a, b) => a.start - b.start);
 		selectedClipStart = null;
@@ -2413,10 +2438,10 @@ export function createEditorStore() {
 	function loadRenderState(state: Partial<EditorRenderState>) {
 		trimStart = state.trimStart ?? 0;
 		trimEnd = state.trimEnd ?? metadata?.duration ?? 0;
-		outputAspect = state.outputAspect ?? 'source';
+		outputAspect = state.outputAspect ?? "source";
 		lastAppliedPresetId = state.lastAppliedPresetId ?? null;
-		backgroundType = state.backgroundType ?? 'color';
-		backgroundValue = state.backgroundValue ?? '#111111';
+		backgroundType = state.backgroundType ?? "color";
+		backgroundValue = state.backgroundValue ?? "#111111";
 		backgroundBlur = state.backgroundBlur ?? 0;
 		padding = normalizeFramePaddingPercent(state.padding ?? 0, metadata);
 		borderRadius = state.borderRadius ?? 0;
@@ -2450,7 +2475,7 @@ export function createEditorStore() {
 			centerX: region.centerX ?? DEFAULT_ZOOM_CENTER,
 			centerY: region.centerY ?? DEFAULT_ZOOM_CENTER,
 			motionBlur: region.motionBlur ?? DEFAULT_ZOOM_MOTION_BLUR,
-			source: region.source ?? 'manual',
+			source: region.source ?? "manual",
 			hidden: region.hidden ?? false,
 		}));
 		// Legacy projects predate the auto-zoom flags. Treat them as already
@@ -2462,7 +2487,7 @@ export function createEditorStore() {
 			id: c.id ?? generateId(),
 			start: c.start,
 			end: c.end,
-			source: c.source ?? 'silence',
+			source: c.source ?? "silence",
 		}));
 		dismissedSilences = (state.dismissedSilences ?? []).map((d) => ({
 			start: d.start,
@@ -2472,7 +2497,7 @@ export function createEditorStore() {
 		splitPoints = [...(state.splitPoints ?? [])];
 		segmentSpeeds = (state.segmentSpeeds ?? []).map((o) => ({ ...o }));
 		segmentAnims = (state.segmentAnims ?? []).map((o) => ({ ...o }));
-		motionTone = state.motionTone ?? 'balanced';
+		motionTone = state.motionTone ?? "balanced";
 		focusEnabled = state.focusEnabled ?? true;
 		shadow = state.shadow ?? shadow;
 		musicClips = (state.musicClips ?? []).map((c) => ({ ...c, source: { ...c.source } }));
@@ -2502,13 +2527,13 @@ export function createEditorStore() {
 		// 16% size. Older projects stored top-right at 22%; the explicit
 		// `?? `-fallbacks below preserve those if present, only swapping in
 		// the new defaults when the field is absent on the loaded state.
-		const fallbackPlacement = cameraPlacementFromPreset('bottom-right');
+		const fallbackPlacement = cameraPlacementFromPreset("bottom-right");
 		cameraOverlay = {
 			enabled: state.cameraOverlay?.enabled ?? false,
 			mirror: state.cameraOverlay?.mirror ?? true,
-			shape: state.cameraOverlay?.shape ?? 'rounded',
+			shape: state.cameraOverlay?.shape ?? "rounded",
 			cornerRadius: state.cameraOverlay?.cornerRadius ?? 0.16,
-			animationPreset: state.cameraOverlay?.animationPreset ?? 'soft',
+			animationPreset: state.cameraOverlay?.animationPreset ?? "soft",
 			zoomFollow: state.cameraOverlay?.zoomFollow ?? true,
 			zoomFollowStrength: state.cameraOverlay?.zoomFollowStrength ?? 0.6,
 			zoomFollowDuration: state.cameraOverlay?.zoomFollowDuration ?? 0.4,
@@ -2542,7 +2567,7 @@ export function createEditorStore() {
 				toHeight: segment.toHeight,
 				easeIn: segment.easeIn ?? { ...EASE },
 				easeOut: segment.easeOut ?? { ...EASE },
-				source: segment.source ?? 'manual',
+				source: segment.source ?? "manual",
 			})),
 		};
 		cursorMotionEasing = state.cursorMotionEasing ?? null;
@@ -2570,7 +2595,7 @@ export function createEditorStore() {
 		annotationZSeq = annotations.length + 1;
 		selectedAnnotationId = null;
 		annotationTool = null;
-		timelineTool = 'select';
+		timelineTool = "select";
 		hoveredAnnotationId = null;
 		// Restore the "hide all annotations" toggle. Hidden only when explicitly
 		// disabled; absent (older projects) or true → visible.
@@ -2853,7 +2878,7 @@ export function createEditorStore() {
 		set cutsEnabled(v: boolean) {
 			cutsEnabled = v;
 			isDirty = true;
-			log.info('feature', 'toggled', { feature: 'cuts', enabled: v });
+			log.info("feature", "toggled", { feature: "cuts", enabled: v });
 		},
 
 		// Split/segment editing. `segments` is derived (trim − active cuts, sliced
@@ -2925,7 +2950,7 @@ export function createEditorStore() {
 		set focusEnabled(v: boolean) {
 			focusEnabled = v;
 			isDirty = true;
-			log.info('feature', 'toggled', { feature: 'focus', enabled: v });
+			log.info("feature", "toggled", { feature: "focus", enabled: v });
 		},
 
 		get autoZoomEnabled() {
@@ -2934,7 +2959,7 @@ export function createEditorStore() {
 		set autoZoomEnabled(v: boolean) {
 			autoZoomEnabled = v;
 			isDirty = true;
-			log.info('feature', 'toggled', { feature: 'autoZoom', enabled: v });
+			log.info("feature", "toggled", { feature: "autoZoom", enabled: v });
 		},
 
 		get autoZoomApplied() {
@@ -3017,7 +3042,7 @@ export function createEditorStore() {
 		},
 		set annotationsGloballyHidden(v: boolean) {
 			annotationsGloballyHidden = v;
-			log.info('feature', 'toggled', { feature: 'annotations', enabled: !v });
+			log.info("feature", "toggled", { feature: "annotations", enabled: !v });
 		},
 		get annotationSnapEnabled() {
 			return annotationSnapEnabled;
@@ -3167,6 +3192,7 @@ export function createEditorStore() {
 		redo,
 		pushUndoState,
 		popUndoState,
+		withoutUndo,
 		pushUndoStateCoalesced,
 		markSaved,
 		revertToSaved,

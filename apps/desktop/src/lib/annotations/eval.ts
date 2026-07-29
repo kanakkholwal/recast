@@ -2,8 +2,14 @@
 // Single copy (was duplicated in AnnotationOverlay/TextAnnotationLayer) so the
 // math is unit-testable and fixed in one place.
 
+import type { ZoomTransform } from "@recast/render";
 import { bezierY, type Easing } from "$lib/easing/cubic-bezier";
 import type { Annotation } from "$lib/stores/editor-store.svelte";
+import { activeZoomIndex } from "$lib/zoom/resolve";
+
+// Re-exported so existing importers of `./eval` keep one site; the transform
+// type now lives with the pure projection in @recast/render.
+export type { ZoomTransform };
 
 export interface ZoomRegionLike {
 	start: number;
@@ -18,12 +24,6 @@ export interface ZoomRegionLike {
 	hidden?: boolean;
 }
 
-export interface ZoomTransform {
-	scale: number;
-	cx: number;
-	cy: number;
-}
-
 const IDENTITY: ZoomTransform = { scale: 1, cx: 0.5, cy: 0.5 };
 
 /**
@@ -32,9 +32,9 @@ const IDENTITY: ZoomTransform = { scale: 1, cx: 0.5, cy: 0.5 };
  * frame.
  */
 export function evalZoom(zoomRegions: ZoomRegionLike[], t: number): ZoomTransform {
-	for (const r of zoomRegions) {
-		if (r.hidden) continue;
-		if (t <= r.start || t >= r.end) continue;
+	const active = activeZoomIndex(zoomRegions, t);
+	if (active !== -1) {
+		const r = zoomRegions[active];
 		const duration = Math.max(0, r.end - r.start);
 		const half = duration * 0.5;
 		const rampIn = Math.min(Math.max(0, r.rampIn), half);

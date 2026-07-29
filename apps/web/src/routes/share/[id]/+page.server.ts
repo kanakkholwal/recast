@@ -5,11 +5,7 @@ import { getDb } from "$lib/db";
 import { share } from "$lib/db/schema";
 import { loadViewer, resolveShareAccess, type ResolvedShare } from "$lib/share/access";
 import { grantCookieName, readGrantedEmail } from "$lib/share/grant";
-import {
-	constantTimeEquals,
-	unlockCookieName,
-	unlockToken,
-} from "$lib/share/password";
+import { constantTimeEquals, unlockCookieName, unlockToken } from "$lib/share/password";
 import { isStorageConfigured, resolvePlaybackUrl, signDownloadUrl } from "$lib/storage";
 import type { PageServerLoad } from "./$types";
 
@@ -71,32 +67,28 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 	// share page's own <SeoMeta> (branded card with this recast's title/owner)
 	// is the single authoritative set of og: tags.
 	if (params.id === "demo") {
-		return { access: DEMO, customSeo: true };
+		return { access: DEMO, customSeo: true, signedIn: false };
 	}
 
 	const session = (await getAuth()
 		.api.getSession({ headers: request.headers })
 		.catch(() => null)) as SessionShape | null;
 
+	// Drives the player watermark: a signed-in viewer already knows what Recast is.
+	const signedIn = session != null;
+
 	const viewer = await loadViewer(session?.user.id ?? null);
 	// Account-less invitee grant (selected shares). Verified here; the
 	// resolver re-checks the email against the allowlist.
-	const grantedEmail = await readGrantedEmail(
-		params.id,
-		cookies.get(grantCookieName(params.id)),
-	);
-	const access: DemoOrResolved = await resolveShareAccess(
-		params.id,
-		viewer,
-		grantedEmail,
-	);
+	const grantedEmail = await readGrantedEmail(params.id, cookies.get(grantCookieName(params.id)));
+	const access: DemoOrResolved = await resolveShareAccess(params.id, viewer, grantedEmail);
 
 	if ("reason" in access && access.reason === "not-found") {
 		error(404, "Share link not found");
 	}
 
 	// Deny branch — page renders the denial card, no need to sign anything.
-	if (!access.ok) return { access, customSeo: true };
+	if (!access.ok) return { access, customSeo: true, signedIn };
 
 	// Look up the share's passwordHash separately so `resolveShareAccess`
 	// stays focused on visibility. One extra round-trip is fine here —
@@ -120,6 +112,7 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 					recast: { ...access.recast, src: "" },
 				},
 				customSeo: true,
+				signedIn,
 			};
 		}
 	}
@@ -133,18 +126,15 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 	//   • captions: signed so the player can load it as a `<track>` (and the
 	//     page's interactive transcript can read cues off it).
 	// `resolvePlaybackUrl` no-ops on empty/absolute values and never throws.
-	const needsSign =
-		isStorageConfigured() && !/^https?:\/\//.test(access.recast.src);
+	const needsSign = isStorageConfigured() && !/^https?:\/\//.test(access.recast.src);
 	const [src, poster, captions] = await Promise.all([
 		needsSign
-			? signDownloadUrl({ key: access.recast.src, expiresInSeconds: 60 * 60 }).catch(
-					(err) => {
-						console.error("[share] signDownloadUrl failed", err);
-						// Empty src → the page renders "playback unavailable" rather
-						// than a broken player.
-						return "";
-					},
-				)
+			? signDownloadUrl({ key: access.recast.src, expiresInSeconds: 60 * 60 }).catch((err) => {
+					console.error("[share] signDownloadUrl failed", err);
+					// Empty src → the page renders "playback unavailable" rather
+					// than a broken player.
+					return "";
+				})
 			: Promise.resolve(access.recast.src),
 		resolvePlaybackUrl(access.recast.poster, 60 * 60),
 		resolvePlaybackUrl(access.recast.captions, 60 * 60),
@@ -153,5 +143,5 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 	access.recast.poster = poster;
 	access.recast.captions = captions;
 
-	return { access, customSeo: true };
+	return { access, customSeo: true, signedIn };
 };

@@ -8,9 +8,9 @@
  * layer pulls in Tauri + analytics that unit tests can't load.
  */
 
-import type { Transcript } from '$lib/ipc';
-import { originalToOutput, type TimeMap } from '$lib/timeline/time-map';
-import { splitSegmentAcrossSpans } from './clip-with-cuts';
+import type { Transcript } from "$lib/ipc";
+import { originalToOutput, type TimeMap } from "$lib/timeline/time-map";
+import { keptCaptionSpans, splitSegmentAcrossSpans } from "./clip-with-cuts";
 
 /** Map a transcript onto the OUTPUT timeline (trim + cuts + per-segment speed)
  *  so sidecar timings line up with the exported video, not the raw recording. */
@@ -22,9 +22,13 @@ export function toOutputTimeTranscript(map: TimeMap, src: Transcript): Transcrip
 	// across removed time, carrying words the export dropped. Splitting first
 	// means every emitted cue lies wholly inside one kept span, so the mapping
 	// is linear over it and cues can't overlap or reorder.
-	const segments: Transcript['segments'] = [];
+	// Break cues only at real CUTS: the time map carries one span per segment, so
+	// splitting against it alone would break a cue at every split/speed boundary
+	// (dropping the far-side words). Merge contiguous spans first.
+	const spans = keptCaptionSpans(map);
+	const segments: Transcript["segments"] = [];
 	for (const seg of src.segments) {
-		for (const piece of splitSegmentAcrossSpans(seg, map.spans)) {
+		for (const piece of splitSegmentAcrossSpans(seg, spans)) {
 			const words = piece.words
 				.map((w) => ({ ...w, start: at(w.start), end: at(w.end) }))
 				.filter((w) => w.end - w.start > 0);
@@ -37,7 +41,13 @@ export function toOutputTimeTranscript(map: TimeMap, src: Transcript): Transcrip
 				// on it) and its own text — the half of the line actually spoken
 				// here, not the whole original line repeated on both sides.
 				id: piece.split ? `${seg.id}:${piece.spanIndex}` : seg.id,
-				text: piece.split && words.length > 0 ? words.map((w) => w.text).join(' ').trim() : seg.text,
+				text:
+					piece.split && words.length > 0
+						? words
+								.map((w) => w.text)
+								.join(" ")
+								.trim()
+						: seg.text,
 				start,
 				end,
 				words,

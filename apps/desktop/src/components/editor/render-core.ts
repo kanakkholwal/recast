@@ -18,6 +18,9 @@ import type { WebGL2Backend } from "./webgl2-backend";
 export interface RenderPassContext {
 	/** Background image texture (unit 1), when the scene uses an image background. */
 	backgroundTex: WebGLTexture | null;
+	/** Annotation layer texture (the whole comp-native 2D layer for this frame),
+	 *  composited by the annotation pass below the cursor. Null when no annotations. */
+	annotationTex?: WebGLTexture | null;
 }
 
 /** An overlay drawn after the main pass. Kept minimal so cursor/camera/caption/
@@ -42,10 +45,12 @@ export class RenderCore {
 		this.#passes = passes;
 	}
 
-	/** Evaluate the scene and draw the frame: main pass, then overlay passes. */
-	renderFrame(input: FrameInput, ctx: RenderPassContext): FrameResult {
+	/** Evaluate the scene and draw the frame: main pass, then overlay passes.
+	 *  `afterMain` runs after the main pass, before overlays — the export uses it
+	 *  to build the annotation layer (blur samples the just-composited frame). */
+	renderFrame(input: FrameInput, ctx: RenderPassContext, afterMain?: () => void): FrameResult {
 		const params = computeFrameParams(input);
-		return this.applyFrameParams(params, input.canvasPxW, input.canvasPxH, ctx);
+		return this.applyFrameParams(params, input.canvasPxW, input.canvasPxH, ctx, afterMain);
 	}
 
 	/** Draw already-computed params. Split out so the render worker can apply
@@ -56,12 +61,14 @@ export class RenderCore {
 		canvasPxW: number,
 		canvasPxH: number,
 		ctx: RenderPassContext,
+		afterMain?: () => void,
 	): FrameResult {
 		this.#backend.beginFrame(canvasPxW, canvasPxH);
 		this.#backend.renderMain(params.uniforms, {
 			bindBackground: params.bindBackgroundImage,
 			backgroundTex: ctx.backgroundTex,
 		});
+		afterMain?.();
 		for (const pass of this.#passes) pass.render(this.#backend, params, ctx);
 		return { svgCursor: params.svgCursor };
 	}

@@ -5,12 +5,13 @@
  * slice in as an argument (zoom regions, cursor samples, idle periods, …).
  */
 
+import type { Easing } from "$lib/easing/cubic-bezier";
+import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
+import { activeZoomIndex } from "$lib/zoom/resolve";
 // Runtime import via relative path (not `$lib`): the standalone vitest config
 // has no `$lib` alias, and this module is unit-tested. Type-only `$lib` imports
 // elsewhere are fine; they're erased before the test runs.
 import { bezierY } from "../../lib/easing/cubic-bezier";
-import type { Easing } from "$lib/easing/cubic-bezier";
-import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
 
 export type CursorSampleJS = {
 	timestampUs: number;
@@ -36,9 +37,9 @@ export interface ZoomState {
  * `ZoomRegion::scale_at` 1:1 so preview and export stay aligned.
  */
 export function evaluateZoomAt(regions: ZoomRegion[], timeSec: number): ZoomState {
-	for (const r of regions) {
-		if (r.hidden) continue;
-		if (timeSec <= r.start || timeSec >= r.end) continue;
+	const active = activeZoomIndex(regions, timeSec);
+	if (active !== -1) {
+		const r = regions[active];
 		const duration = Math.max(0, r.end - r.start);
 		const half = duration * 0.5;
 		const rampIn = Math.min(Math.max(0, r.rampIn), half);
@@ -173,11 +174,7 @@ const MB_TRANSIENT_CODES: ReadonlySet<string> = new Set([
  * `unsupported`/`bad-input` codec would just fail again, so we degrade instead.
  * `attempts` is the number already made in the current failure streak.
  */
-export function shouldRecoverMbSource(
-	code: string,
-	attempts: number,
-	maxAttempts = 3,
-): boolean {
+export function shouldRecoverMbSource(code: string, attempts: number, maxAttempts = 3): boolean {
 	return MB_TRANSIENT_CODES.has(code) && attempts < maxAttempts;
 }
 

@@ -40,6 +40,7 @@ import {
 	hasBlurUnderZoom,
 } from "$lib/services/export";
 import { runBrowserExport } from "$lib/export/browser-export";
+import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
@@ -997,17 +998,11 @@ async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
 	}
 }
 
-// Re-run is exposed to FocusPanel via a window CustomEvent so the nested panel
-// doesn't thread a prop through every component.
-$effect(() => {
-	function onRerun() {
-		store.clearAutoZooms();
-		store.autoZoomApplied = false;
-		void runAutoZoom({ silentEmpty: false });
-	}
-	window.addEventListener("recast:rerun-auto-zoom", onRerun);
-	return () => window.removeEventListener("recast:rerun-auto-zoom", onRerun);
-});
+function regenerateAutoZoom() {
+	store.clearAutoZooms();
+	store.autoZoomApplied = false;
+	void runAutoZoom({ silentEmpty: false });
+}
 
 // Export lifecycle UI. The exportActivity store owns the queue + run; this
 // editor tracks the item it enqueued (myExportId) and maps it back to the
@@ -1163,12 +1158,24 @@ async function handleExport() {
 		// Hand the fully-built export to the queue; the store runs it (after any
 		// already-running one), so it survives leaving this editor.
 		let browserVideoPath: string | undefined;
-		if (BROWSER_EXPORT_ENABLED && store.exportFormat !== "gif") {
+		const browserBlocked = browserExportBlockedReason(store);
+		if (BROWSER_EXPORT_ENABLED && !browserBlocked) {
 			try {
+				// GIF renders at its own target fps (the picker is MP4/WebM-only); the
+				// Rust palette pass re-reads this browser video, so match its fps here.
+				const gifFps =
+					store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
+				const renderFps =
+					store.exportFormat === "gif"
+						? (gifFps ?? meta?.fps ?? 15)
+						: store.exportFps && store.exportFps > 0
+							? store.exportFps
+							: (meta?.fps ?? 30);
 				browserVideoPath = await runBrowserExport(store, {
 					videoUrl: videoSrc,
+					cameraUrl: cameraSrc,
 					quality: store.exportQuality as ExportQuality,
-					fps: store.exportFps && store.exportFps > 0 ? store.exportFps : (meta?.fps ?? 30),
+					fps: renderFps,
 				});
 			} catch (e) {
 				console.error("browser export render failed; using the Rust compositor", e);
@@ -1902,7 +1909,7 @@ const stages = $derived.by(() => {
             ></div>
           </div>
           <div class="h-full" style="width: {sidebarWidth}px;">
-            <PropertiesPanel {store} {cameraPath} />
+            <PropertiesPanel {store} {cameraPath} onRegenerateAutoZoom={regenerateAutoZoom} />
           </div>
         </aside>
       {/if}

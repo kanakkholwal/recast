@@ -36,8 +36,7 @@ export function score(p: PresetLike, q: string): number {
 
 /** Inline style for a preset's thumbnail background. */
 export function bgPreviewStyle(p: PresetLike): string {
-	if ((p.bg === "gradient" || p.bg === "color") && p.value)
-		return `background:${p.value}`;
+	if ((p.bg === "gradient" || p.bg === "color") && p.value) return `background:${p.value}`;
 	return "background:var(--color-muted)";
 }
 
@@ -88,10 +87,7 @@ export interface PresetModel<T> {
 }
 
 /** Presets matching `query`, best-first; all presets (in input order) if empty. */
-export function filterPresets<T extends PresetLike>(
-	presets: T[],
-	query: string,
-): T[] {
+export function filterPresets<T extends PresetLike>(presets: T[], query: string): T[] {
 	return presets
 		.map((p) => ({ p, s: score(p, query) }))
 		.filter((x) => x.s > 0)
@@ -111,24 +107,32 @@ export function groupPresets<T extends PresetLike>(
 	if (query.trim()) return [["Results", filtered]];
 	const map = new Map<string, T[]>();
 	for (const p of filtered) {
+		// The pinned copy is the only one — listing it twice made the cursor pass
+		// over the same preset at two different indices.
+		if (p === current) continue;
 		if (!map.has(p.category)) map.set(p.category, []);
 		map.get(p.category)!.push(p);
 	}
-	const entries = [...map.entries()];
-	// Pin the currently-applied preset to the top for instant re-apply.
+	const entries = [...map.entries()].filter(([, items]) => items.length > 0);
 	if (current) entries.unshift(["Current", [current]]);
 	return entries;
 }
 
+/** Esc clears a typed query first and only closes once the field is empty. */
+export function resolveEscape(query: string): "clear" | "close" {
+	return query.trim() ? "clear" : "close";
+}
+
+/** Stable option id for `aria-activedescendant` on the listbox cursor. */
+export function optionId(baseId: string, index: number): string {
+	return `${baseId}-option-${index}`;
+}
+
 /**
  * Chunk grouped presets into rows of `cols`, assigning each cell a unique running
- * `index`. Indices stay unique even though the pinned "Current" preset also
- * appears in its own category, so navigation never relies on `indexOf`.
+ * `index` so navigation never relies on `indexOf`.
  */
-export function buildModel<T>(
-	grouped: [string, T[]][],
-	cols: number,
-): PresetModel<T> {
+export function buildModel<T>(grouped: [string, T[]][], cols: number): PresetModel<T> {
 	const groups: PresetModel<T>["groups"] = [];
 	const flat: T[] = [];
 	const rows: Cell<T>[][] = [];
@@ -164,11 +168,7 @@ export function locateCell<T>(rows: Cell<T>[][], index: number): [number, number
  * column, clamped when the target row is shorter), or null if there's no row in
  * that direction.
  */
-export function rowMoveIndex<T>(
-	model: PresetModel<T>,
-	index: number,
-	dir: 1 | -1,
-): number | null {
+export function rowMoveIndex<T>(model: PresetModel<T>, index: number, dir: 1 | -1): number | null {
 	const [row, col] = locateCell(model.rows, index);
 	const target = model.rows[row + dir];
 	if (!target) return null;

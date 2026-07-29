@@ -9,13 +9,48 @@
  * Pure functions, no DOM. Vitest covers the math (see clip-captions.test.ts).
  */
 
-import type { TranscriptSegment, TranscriptWord } from '$lib/ipc';
+import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
 
 export interface KeptSpan {
 	/** Original-recording span start (seconds). */
 	origStart: number;
 	/** Original-recording span end (seconds). */
 	origEnd: number;
+}
+
+const SPAN_EPS = 1e-3;
+
+/**
+ * Merge a time map's spans into caption-clipping spans: adjacent spans that are
+ * contiguous in ORIGINAL time (a split or a speed change — no removed content)
+ * collapse into one, so a caption only ever breaks at a REAL cut. The time map
+ * carries one span PER SEGMENT, so without this a caption spanning a split loses
+ * the words on the far side of the split boundary.
+ */
+export function keptCaptionSpans(map: {
+	spans: ReadonlyArray<{ origStart: number; origEnd: number }>;
+}): KeptSpan[] {
+	const merged: KeptSpan[] = [];
+	for (const s of map.spans) {
+		const last = merged[merged.length - 1];
+		if (last && s.origStart <= last.origEnd + SPAN_EPS) {
+			last.origEnd = Math.max(last.origEnd, s.origEnd);
+		} else {
+			merged.push({ origStart: s.origStart, origEnd: s.origEnd });
+		}
+	}
+	return merged;
+}
+
+/** The merged kept span containing original time `t`, or null when `t` is inside
+ *  a real cut. Mirrors `spanAtOriginal`'s boundary handling. */
+export function captionSpanAt(spans: ReadonlyArray<KeptSpan>, t: number): KeptSpan | null {
+	for (const s of spans) {
+		if (t >= s.origStart - 1e-4 && t < s.origEnd - 1e-4) return s;
+	}
+	const last = spans[spans.length - 1];
+	if (last && Math.abs(t - last.origEnd) <= 1e-4) return last;
+	return null;
 }
 
 /** Clamp a value to `[lo, hi]`. */

@@ -1,137 +1,150 @@
 <script lang="ts">
-  import { clockCentis } from "$lib/format/time";
-  import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { keyOf, normalizeCenter, reasonLabel } from "./zoom-suggestions.logic";
-  import {
-    AUTO_ZOOM_SCALE,
-    findFreeSlot as _findFreeSlot,
-    planPlacement,
-    type Interval,
-  } from "$lib/zoom/auto-apply";
-  import { AlertTriangle, Check, MousePointerClick, XCircle, AiBrain, AiWand } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Tooltip from "@recast/ui/tooltip";
-  import { cn } from "@recast/ui/utils";
+import {
+	AiWand,
+	AlertTriangle,
+	Check,
+	Crosshair,
+	MousePointerClick,
+	Sparkles,
+	XCircle,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
+import { clockCentis } from "$lib/format/time";
+import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import {
+	findFreeSlot as _findFreeSlot,
+	AUTO_ZOOM_SCALE,
+	type Interval,
+	planPlacement,
+} from "$lib/zoom/auto-apply";
+import { keyOf, normalizeCenter, reasonLabel } from "./zoom-suggestions.logic";
 
-  interface Props {
-    store: EditorStore;
-    onclose: () => void;
-  }
+interface Props {
+	store: EditorStore;
+	onclose: () => void;
+}
 
-  let { store, onclose }: Props = $props();
-  // Re-export to silence unused-import noise in case findFreeSlot is removed below.
-  void _findFreeSlot;
+let { store, onclose }: Props = $props();
+// Re-export to silence unused-import noise in case findFreeSlot is removed below.
+void _findFreeSlot;
 
-  type Status = "idle" | "loading" | "ready" | "error" | "empty";
-  let status = $state<Status>("idle");
-  let errorMsg = $state<string | null>(null);
-  // Suggestions not yet accepted or dismissed; each refresh replaces the set.
-  let pending = $state<ZoomSuggestion[]>([]);
+type Status = "idle" | "loading" | "ready" | "error" | "empty";
+let status = $state<Status>("idle");
+let errorMsg = $state<string | null>(null);
+// Suggestions not yet accepted or dismissed; each refresh replaces the set.
+let pending = $state<ZoomSuggestion[]>([]);
 
-  $effect(() => {
-    void loadSuggestions();
-  });
+$effect(() => {
+	void loadSuggestions();
+});
 
-  async function loadSuggestions() {
-    if (!store.cursorPath) {
-      status = "error";
-      errorMsg = "This clip has no captured cursor data to analyse.";
-      return;
-    }
-    status = "loading";
-    errorMsg = null;
-    try {
-      const result = await suggestZoomRegions(store.cursorPath);
-      pending = result;
-      status = result.length === 0 ? "empty" : "ready";
-    } catch (err) {
-      console.error("Failed to load zoom suggestions", err);
-      errorMsg = err instanceof Error ? err.message : String(err);
-      status = "error";
-    }
-  }
+async function loadSuggestions() {
+	if (!store.cursorPath) {
+		status = "error";
+		errorMsg = "This clip has no captured cursor data to analyse.";
+		return;
+	}
+	status = "loading";
+	errorMsg = null;
+	try {
+		const result = await suggestZoomRegions(store.cursorPath);
+		pending = result;
+		status = result.length === 0 ? "empty" : "ready";
+	} catch (err) {
+		console.error("Failed to load zoom suggestions", err);
+		errorMsg = err instanceof Error ? err.message : String(err);
+		status = "error";
+	}
+}
 
-  function reasonIcon(r: ZoomSuggestion["reason"]) {
-    return r === "click" ? MousePointerClick : AiBrain;
-  }
+function reasonIcon(r: ZoomSuggestion["reason"]) {
+	return r === "click" ? MousePointerClick : Crosshair;
+}
 
-  function previewAt(sug: ZoomSuggestion) {
-    store.seek(sug.timestampUs / 1_000_000);
-  }
+function previewAt(sug: ZoomSuggestion) {
+	store.seek(sug.timestampUs / 1_000_000);
+}
 
-  function currentOccupied(): Interval[] {
-    return store.zoomRegions
-      .map((z) => ({ start: z.start, end: z.end }))
-      .sort((a, b) => a.start - b.start);
-  }
+function currentOccupied(): Interval[] {
+	return store.zoomRegions
+		.map((z) => ({ start: z.start, end: z.end }))
+		.sort((a, b) => a.start - b.start);
+}
 
-  function clipBounds(): { start: number; end: number } | null {
-    const duration = store.metadata?.duration ?? 0;
-    if (duration <= 0) return null;
-    return { start: store.trimStart, end: store.trimEnd || duration };
-  }
+function clipBounds(): { start: number; end: number } | null {
+	const duration = store.metadata?.duration ?? 0;
+	if (duration <= 0) return null;
+	return { start: store.trimStart, end: store.trimEnd || duration };
+}
 
-  // Per-suggestion placement (null = blocked) so blocked rows can be greyed out.
-  const placements = $derived.by(() => {
-    const bounds = clipBounds();
-    if (!bounds) return new Map<string, Interval | null>();
-    const occupied = currentOccupied();
-    const map = new Map<string, Interval | null>();
-    for (const sug of pending) {
-      const centerSec = sug.timestampUs / 1_000_000;
-      const key = sug.timestampUs + "-" + sug.reason;
-      map.set(key, planPlacement(occupied, bounds.start, bounds.end, centerSec));
-    }
-    return map;
-  });
+// Per-suggestion placement (null = blocked) so blocked rows can be greyed out.
+const placements = $derived.by(() => {
+	const bounds = clipBounds();
+	if (!bounds) return new Map<string, Interval | null>();
+	const occupied = currentOccupied();
+	const map = new Map<string, Interval | null>();
+	for (const sug of pending) {
+		const centerSec = sug.timestampUs / 1_000_000;
+		const key = sug.timestampUs + "-" + sug.reason;
+		map.set(key, planPlacement(occupied, bounds.start, bounds.end, centerSec));
+	}
+	return map;
+});
 
-  function accept(idx: number) {
-    const sug = pending[idx];
-    if (!sug) return;
-    const bounds = clipBounds();
-    if (!bounds) return;
-    const plan = planPlacement(currentOccupied(), bounds.start, bounds.end, sug.timestampUs / 1_000_000);
-    if (!plan) return; // blocked, button should already be disabled
-    store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
-    pending = pending.filter((_, i) => i !== idx);
-    if (pending.length === 0) status = "empty";
-  }
+function accept(idx: number) {
+	const sug = pending[idx];
+	if (!sug) return;
+	const bounds = clipBounds();
+	if (!bounds) return;
+	const plan = planPlacement(
+		currentOccupied(),
+		bounds.start,
+		bounds.end,
+		sug.timestampUs / 1_000_000,
+	);
+	if (!plan) return; // blocked, button should already be disabled
+	store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
+	pending = pending.filter((_, i) => i !== idx);
+	if (pending.length === 0) status = "empty";
+}
 
-  function centerOf(sug: ZoomSuggestion): { x: number; y: number } | undefined {
-    return normalizeCenter(sug.x, sug.y, store.metadata?.width ?? 0, store.metadata?.height ?? 0);
-  }
+function centerOf(sug: ZoomSuggestion): { x: number; y: number } | undefined {
+	return normalizeCenter(sug.x, sug.y, store.metadata?.width ?? 0, store.metadata?.height ?? 0);
+}
 
-  function dismiss(idx: number) {
-    pending = pending.filter((_, i) => i !== idx);
-    if (pending.length === 0) status = "empty";
-  }
+function dismiss(idx: number) {
+	pending = pending.filter((_, i) => i !== idx);
+	if (pending.length === 0) status = "empty";
+}
 
-  function acceptAll() {
-    const bounds = clipBounds();
-    if (!bounds) return;
-    // Re-plan after each placement (sorted by timestamp) so adjacent suggestions don't claim the same slot.
-    const occupied = currentOccupied();
-    const sorted = [...pending].sort((a, b) => a.timestampUs - b.timestampUs);
-    const skipped: ZoomSuggestion[] = [];
-    for (const sug of sorted) {
-      const plan = planPlacement(occupied, bounds.start, bounds.end, sug.timestampUs / 1_000_000);
-      if (!plan) {
-        skipped.push(sug);
-        continue;
-      }
-      store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
-      occupied.push(plan);
-      occupied.sort((a, b) => a.start - b.start);
-    }
-    pending = skipped;
-    if (pending.length === 0) status = "empty";
-  }
+function acceptAll() {
+	const bounds = clipBounds();
+	if (!bounds) return;
+	// Re-plan after each placement (sorted by timestamp) so adjacent suggestions don't claim the same slot.
+	const occupied = currentOccupied();
+	const sorted = [...pending].sort((a, b) => a.timestampUs - b.timestampUs);
+	const skipped: ZoomSuggestion[] = [];
+	for (const sug of sorted) {
+		const plan = planPlacement(occupied, bounds.start, bounds.end, sug.timestampUs / 1_000_000);
+		if (!plan) {
+			skipped.push(sug);
+			continue;
+		}
+		store.addZoomRegion(plan.start, plan.end, AUTO_ZOOM_SCALE, centerOf(sug));
+		occupied.push(plan);
+		occupied.sort((a, b) => a.start - b.start);
+	}
+	pending = skipped;
+	if (pending.length === 0) status = "empty";
+}
 
-  function dismissAll() {
-    pending = [];
-    status = "empty";
-  }
+function dismissAll() {
+	pending = [];
+	status = "empty";
+}
 </script>
 
 <div
@@ -162,7 +175,7 @@
     </div>
   {:else if status === "empty"}
     <div class="flex flex-col items-center gap-1 px-3 py-6 text-center text-[11px] text-muted-foreground">
-      <AiBrain size={14} class="text-muted-foreground/70" />
+      <Sparkles size={14} class="text-muted-foreground/70" />
       <p class="font-medium text-foreground">No candidates left</p>
       <p>Add a focus manually or re-run analysis.</p>
       <Button variant="ghost" size="xs" onclick={loadSuggestions} class="mt-1">Re-scan</Button>

@@ -55,8 +55,3 @@ export function withTimeParam(url: URL, seconds: number): string {
 	else url.searchParams.delete("t");
 	return url.toString();
 }
-
-/** The embeddable iframe snippet for a share URL. */
-export function buildEmbedCode(url: string): string {
-	return `<iframe src="${url}" width="640" height="360" frameborder="0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
-}
