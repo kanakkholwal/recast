@@ -27,6 +27,22 @@ export function computeNewZoomBounds(
 /** Shortest a region may get by dragging one edge onto the other. */
 const MIN_REGION_LENGTH = 0.1;
 
+/** Tolerance for trim maths float drift, so a flush span reads as inside. */
+const CLIP_EPS = 1e-6;
+
+/**
+ * Whether part of a timed span sits outside the trimmed clip, so it never plays.
+ * Shared by the zoom and annotation panels; the Rust side reports the same state
+ * as `zoom_out_of_trim` / `annotation_out_of_trim` and silently repairs it.
+ */
+export function isOutsideClip(
+	r: { start: number; end: number },
+	clipIn: number,
+	clipOut: number,
+): boolean {
+	return r.start < clipIn - CLIP_EPS || r.end > clipOut + CLIP_EPS;
+}
+
 /**
  * The visible slice of the frame at a given focus point and scale, in UV 0..1.
  *

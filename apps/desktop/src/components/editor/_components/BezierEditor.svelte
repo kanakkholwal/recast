@@ -1,10 +1,10 @@
 <script lang="ts">
   import {
-    easingEquals,
+    clampEasingCoord,
+    EASING_OVERSHOOT,
     sampleCurve,
     type Easing,
   } from "$lib/easing/cubic-bezier";
-  import { registry } from "$lib/registry";
   import { Input } from "@recast/ui/input";
   import { cn } from "@recast/ui/utils";
 
@@ -13,8 +13,6 @@
     onchange: (next: Easing) => void;
     label?: string;
     description?: string;
-    /** Hide preset chips when the editor is used in a compact context. */
-    showPresets?: boolean;
     /** Graph size in px (square). Padding for overshoot is added around it. */
     size?: number;
     disabled?: boolean;
@@ -25,16 +23,18 @@
     onchange,
     label,
     description,
-    showPresets = true,
     size = 176,
     disabled = false,
   }: Props = $props();
 
-  // viewBox is the unit square plus OVERSHOOT padding so bounce/spring handles
+  // viewBox is the unit square plus the overshoot band so bounce/spring handles
   // (y outside [0,1]) stay grabbable. y is flipped at render time (SVG y grows down).
-  const OVERSHOOT = 0.6;
-  const VB_MIN = -OVERSHOOT;
-  const VB_SPAN = 1 + OVERSHOOT * 2;
+  const VB_MIN = -EASING_OVERSHOOT;
+  const VB_SPAN = 1 + EASING_OVERSHOOT * 2;
+
+  // Arrow-key step, and the coarse step for Shift+Arrow.
+  const KEY_STEP = 0.01;
+  const KEY_STEP_COARSE = 0.1;
 
   let svgEl: SVGSVGElement | null = $state(null);
   let dragging: "p1" | "p2" | null = $state(null);
@@ -50,17 +50,6 @@
       .join(" ");
   });
 
-  // Built-in + extension easing presets, from the registry.
-  const easingPresets = $derived(
-    registry
-      .list("easing")
-      .map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
-  );
-
-  const selectedPresetId = $derived(
-    easingPresets.find((p) => easingEquals(p.value, value))?.id ?? null,
-  );
-
   function svgPoint(e: PointerEvent): { x: number; y: number } | null {
     if (!svgEl) return null;
     const pt = svgEl.createSVGPoint();
@@ -73,14 +62,52 @@
   }
 
   function updateHandle(which: "p1" | "p2", x: number, y: number) {
-    const nx = Math.max(0, Math.min(1, x));
-    // Let y stay within the viewBox so overshoot is reachable by drag.
-    const ny = Math.max(VB_MIN, Math.min(1 + OVERSHOOT, y));
     if (which === "p1") {
-      onchange({ ...value, x1: nx, y1: ny });
+      onchange({
+        ...value,
+        x1: clampEasingCoord("x1", x),
+        y1: clampEasingCoord("y1", y),
+      });
     } else {
-      onchange({ ...value, x2: nx, y2: ny });
+      onchange({
+        ...value,
+        x2: clampEasingCoord("x2", x),
+        y2: clampEasingCoord("y2", y),
+      });
     }
+  }
+
+  // The handles carry `role="slider"` and were focusable, but nothing listened
+  // for keys: a keyboard user heard "Control point 1, slider" and could not move
+  // it. Left/Right walk x, Up/Down walk y, Shift for a coarse step.
+  function handleKey(which: "p1" | "p2", e: KeyboardEvent) {
+    if (disabled) return;
+    const step = e.shiftKey ? KEY_STEP_COARSE : KEY_STEP;
+    const x = which === "p1" ? value.x1 : value.x2;
+    const y = which === "p1" ? value.y1 : value.y2;
+    switch (e.key) {
+      case "ArrowLeft":
+        updateHandle(which, x - step, y);
+        break;
+      case "ArrowRight":
+        updateHandle(which, x + step, y);
+        break;
+      case "ArrowDown":
+        updateHandle(which, x, y - step);
+        break;
+      case "ArrowUp":
+        updateHandle(which, x, y + step);
+        break;
+      case "Home":
+        updateHandle(which, 0, y);
+        break;
+      case "End":
+        updateHandle(which, 1, y);
+        break;
+      default:
+        return;
+    }
+    e.preventDefault();
   }
 
   function handleStart(which: "p1" | "p2", e: PointerEvent) {

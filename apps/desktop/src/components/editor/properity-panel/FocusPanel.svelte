@@ -38,6 +38,7 @@ import BezierEditor from "../_components/BezierEditor.svelte";
 import InspectorHint from "../InspectorHint.svelte";
 import {
 	computeNewZoomBounds,
+	isOutsideClip,
 	regionMaxRamp,
 	retimeEnd,
 	retimeStart,
@@ -82,7 +83,7 @@ const clipOut = $derived(store.outPoint);
 // Overlapping regions are ambiguous in preview and the FFmpeg export SUMS
 // their zoom instead of picking one, so they get called out, not hidden.
 const overlapping = $derived(new Set(overlappingZoomIds(store.zoomRegions)));
-const outOfClip = (r: ZoomRegion) => r.start < clipIn - 1e-6 || r.end > clipOut + 1e-6;
+const outOfClip = (r: ZoomRegion) => isOutsideClip(r, clipIn, clipOut);
 
 // Zoom is only legible with the playhead inside the region, so selecting one
 // parks the playhead at the moment it reaches full scale.

@@ -27,6 +27,25 @@ export const EASING_PRESETS: { id: string; label: string; value: Easing }[] = [
 	{ id: "bounce", label: "Bounce", value: BOUNCE },
 ];
 
+/** How far past [0,1] a control point's y may sit. Bounded so an overshoot
+ *  handle stays inside the editor's viewBox and remains grabbable. */
+export const EASING_OVERSHOOT = 0.6;
+
+/** Clamp one typed/dragged control-point coordinate to the editable range: x to
+ *  the unit interval, y to the unit interval plus overshoot. */
+export function clampEasingCoord(field: keyof Easing, n: number): number {
+	if (!Number.isFinite(n)) return Number.isNaN(n) || n < 0 ? lowerBound(field) : upperBound(field);
+	return Math.min(upperBound(field), Math.max(lowerBound(field), n));
+}
+
+function lowerBound(field: keyof Easing): number {
+	return field === "x1" || field === "x2" ? 0 : -EASING_OVERSHOOT;
+}
+
+function upperBound(field: keyof Easing): number {
+	return field === "x1" || field === "x2" ? 1 : 1 + EASING_OVERSHOOT;
+}
+
 // Polynomial form coefficients (see https://pomax.github.io/bezierinfo/).
 function coeffs(c1: number, c2: number): [number, number, number] {
 	const a = 1 - 3 * c2 + 3 * c1;

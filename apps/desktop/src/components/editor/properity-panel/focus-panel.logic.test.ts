@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
 import {
 	focusWindow,
+	isOutsideClip,
 	regionMaxRamp,
 	retimeEnd,
 	retimeStart,
@@ -125,5 +126,22 @@ describe("focusWindow", () => {
 				expect(w.left + w.size).toBeCloseTo(shaderAt(1, c, s), 10);
 			}
 		}
+	});
+});
+
+describe("isOutsideClip", () => {
+	it("is false for a span inside the clip", () => {
+		expect(isOutsideClip({ start: 2, end: 5 }, 1, 9)).toBe(false);
+	});
+
+	it("is true when either edge escapes the clip", () => {
+		expect(isOutsideClip({ start: 0.5, end: 5 }, 1, 9)).toBe(true);
+		expect(isOutsideClip({ start: 2, end: 9.5 }, 1, 9)).toBe(true);
+	});
+
+	// Float drift from trim maths must not light up the warning on a span that
+	// is flush with the clip edges.
+	it("tolerates float drift at the edges", () => {
+		expect(isOutsideClip({ start: 1 - 1e-9, end: 9 + 1e-9 }, 1, 9)).toBe(false);
 	});
 });

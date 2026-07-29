@@ -1,149 +1,137 @@
 <script lang="ts">
-  import { formatBytes as formatBytesBase } from "$lib/format/bytes";
-  import { clock } from "$lib/format/time";
-  import { openFileLocation } from "$lib/ipc";
-  import type {
-    AnnotationKindName,
-    EditorStore,
-    PanelTab
-  } from "$lib/stores/editor-store.svelte";
-  import type { IconComponent } from "@recast/icons";
-  import {
-    ArrowUpRight,
-    ChevronRight,
-    Circle,
-    Clock,
-    Copy,
-    Disc3,
-    Film,
-    FolderOpen,
-    Gauge,
-    HardDrive,
-    ImageIcon,
-    MousePointer,
-    Pencil,
-    Scissors,
-    Square,
-    Stamp,
-    Target,
-    Type as TypeIcon,
-    Volume2,
-    VolumeX,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { toast } from "@recast/ui/sonner";
-  import { onDestroy, onMount } from "svelte";
-  import { countByKind, formatRelative } from "./info-panel.logic";
-  import PanelSection from "./PanelSection.svelte";
+import { formatBytes as formatBytesBase } from "$lib/format/bytes";
+import { clock } from "$lib/format/time";
+import { openFileLocation } from "$lib/ipc";
+import type { AnnotationKindName, EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
+import type { IconComponent } from "@recast/icons";
+import {
+	ArrowUpRight,
+	ChevronRight,
+	Circle,
+	Clock,
+	Copy,
+	Disc3,
+	Film,
+	FolderOpen,
+	Gauge,
+	HardDrive,
+	ImageIcon,
+	MousePointer,
+	Pencil,
+	Scissors,
+	Square,
+	Target,
+	Type as TypeIcon,
+	Volume2,
+	VolumeX,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import * as Tooltip from "@recast/ui/tooltip";
+import { onDestroy, onMount } from "svelte";
+import { countByKind, formatRelative } from "./info-panel.logic";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  let { store }: Props = $props();
+let { store }: Props = $props();
 
-  // Tick every 30s so relative-time labels stay fresh without a per-frame redraw.
-  let now = $state(Date.now());
-  let nowTimer: ReturnType<typeof setInterval> | null = null;
-  onMount(() => {
-    nowTimer = setInterval(() => (now = Date.now()), 30_000);
-  });
-  onDestroy(() => {
-    if (nowTimer !== null) clearInterval(nowTimer);
-  });
+// Tick every 30s so relative-time labels stay fresh without a per-frame redraw.
+let now = $state(Date.now());
+let nowTimer: ReturnType<typeof setInterval> | null = null;
+onMount(() => {
+	nowTimer = setInterval(() => (now = Date.now()), 30_000);
+});
+onDestroy(() => {
+	if (nowTimer !== null) clearInterval(nowTimer);
+});
 
-  function goTo(tab: PanelTab) {
-    store.activePanel = tab;
-  }
+function goTo(tab: PanelTab) {
+	store.activePanel = tab;
+}
 
-  // Keeps the "--:--" placeholder; defers clock formatting to the shared helper.
-  function formatDuration(seconds: number | undefined): string {
-    if (!seconds || seconds <= 0) return "--:--";
-    return clock(seconds);
-  }
+// Keeps the "--:--" placeholder; defers clock formatting to the shared helper.
+function formatDuration(seconds: number | undefined): string {
+	if (!seconds || seconds <= 0) return "--:--";
+	return clock(seconds);
+}
 
-  function formatResolution(): string {
-    if (!store.metadata?.width || !store.metadata?.height) return "Unknown";
-    return `${store.metadata.width}×${store.metadata.height}`;
-  }
+function formatResolution(): string {
+	if (!store.metadata?.width || !store.metadata?.height) return "Unknown";
+	return `${store.metadata.width}×${store.metadata.height}`;
+}
 
-  function formatFps(): string {
-    if (!store.metadata?.fps) return "--";
-    return `${Math.round(store.metadata.fps)} fps`;
-  }
+function formatFps(): string {
+	if (!store.metadata?.fps) return "--";
+	return `${Math.round(store.metadata.fps)} fps`;
+}
 
-  // Wrapper: InfoPanel shows "--" for missing sizes (vs the shared default "0 B").
-  const formatBytes = (bytes: number | undefined): string =>
-    formatBytesBase(bytes, "--");
+// Wrapper: InfoPanel shows "--" for missing sizes (vs the shared default "0 B").
+const formatBytes = (bytes: number | undefined): string => formatBytesBase(bytes, "--");
 
-  // Every kind always rendered (with 0) so the row doesn't shift as shapes change.
-  const KIND_META: Array<{
-    id: AnnotationKindName;
-    label: string;
-    icon: IconComponent;
-  }> = [
-    { id: "rect", label: "Rect", icon: Square },
-    { id: "ellipse", label: "Ellipse", icon: Circle },
-    { id: "arrow", label: "Arrow", icon: ArrowUpRight },
-    { id: "text", label: "Text", icon: TypeIcon },
-    { id: "image", label: "Image", icon: ImageIcon },
-  ];
+// Every kind always rendered (with 0) so the row doesn't shift as shapes change.
+const KIND_META: Array<{
+	id: AnnotationKindName;
+	label: string;
+	icon: IconComponent;
+}> = [
+	{ id: "rect", label: "Rect", icon: Square },
+	{ id: "ellipse", label: "Ellipse", icon: Circle },
+	{ id: "arrow", label: "Arrow", icon: ArrowUpRight },
+	{ id: "text", label: "Text", icon: TypeIcon },
+	{ id: "image", label: "Image", icon: ImageIcon },
+];
 
-  const annotationCounts = $derived(countByKind(store.annotations));
-  const totalAnnotations = $derived(store.annotations.length);
+const annotationCounts = $derived(countByKind(store.annotations));
+const totalAnnotations = $derived(store.annotations.length);
 
-  const trimmed = $derived(
-    store.metadata !== null &&
-      (store.inPoint > 0 || store.outPoint < (store.metadata?.duration ?? 0)),
-  );
+const trimmed = $derived(
+	store.metadata !== null &&
+		(store.inPoint > 0 || store.outPoint < (store.metadata?.duration ?? 0)),
+);
 
-  // Inline spec summary for the hero card: "1:24 · 1920×1080 · 60 fps".
-  const specLine = $derived(
-    [
-      formatDuration(store.metadata?.duration),
-      formatResolution(),
-      formatFps(),
-    ]
-      .filter((s) => s && s !== "Unknown" && s !== "--" && s !== "--:--")
-      .join(" · ") || "No metadata",
-  );
+// Inline spec summary for the hero card: "1:24 · 1920×1080 · 60 fps".
+const specLine = $derived(
+	[formatDuration(store.metadata?.duration), formatResolution(), formatFps()]
+		.filter((s) => s && s !== "Unknown" && s !== "--" && s !== "--:--")
+		.join(" · ") || "No metadata",
+);
 
-  const cursorOn = $derived(store.cursorSettings.enabled);
-  const muted = $derived(store.audioSettings?.muted ?? false);
-  const audioValue = $derived(
-    muted ? "Muted" : `${Math.round(store.audioSettings?.volume ?? 100)}%`,
-  );
+const cursorOn = $derived(store.cursorSettings.enabled);
+const muted = $derived(store.audioSettings?.muted ?? false);
+const audioValue = $derived(muted ? "Muted" : `${Math.round(store.audioSettings?.volume ?? 100)}%`);
 
-  // Saved-status pill summary.
-  const saveStatus = $derived.by(() => {
-    if (store.isDirty)
-      return { label: "Unsaved changes", tone: "warning" } as const;
-    if (store.lastSavedAt)
-      return {
-        label: `Saved ${formatRelative(store.lastSavedAt, now)}`,
-        tone: "ok",
-      } as const;
-    return { label: "Not yet saved", tone: "muted" } as const;
-  });
+// Saved-status pill summary.
+const saveStatus = $derived.by(() => {
+	if (store.isDirty) return { label: "Unsaved changes", tone: "warning" } as const;
+	if (store.lastSavedAt)
+		return {
+			label: `Saved ${formatRelative(store.lastSavedAt, now)}`,
+			tone: "ok",
+		} as const;
+	return { label: "Not yet saved", tone: "muted" } as const;
+});
 
-  async function copyToClipboard(text: string, label: string) {
-    try {
-      await navigator.clipboard.writeText(text);
-      toast.success(`${label} copied`);
-    } catch {
-      toast.error("Could not copy to clipboard");
-    }
-  }
+async function copyToClipboard(text: string, label: string) {
+	try {
+		await navigator.clipboard.writeText(text);
+		toast.success(`${label} copied`);
+	} catch {
+		toast.error("Could not copy to clipboard");
+	}
+}
 
-  async function revealInFolder(path: string) {
-    if (!path) return;
-    try {
-      await openFileLocation(path);
-    } catch (err) {
-      const msg = typeof err === "string" ? err : String(err);
-      toast.error(`Could not open folder: ${msg}`);
-    }
-  }
+async function revealInFolder(path: string) {
+	if (!path) return;
+	try {
+		await openFileLocation(path);
+	} catch (err) {
+		const msg = typeof err === "string" ? err : String(err);
+		toast.error(`Could not open folder: ${msg}`);
+	}
+}
 </script>
 
 <!-- Read-only stat row: icon + label on the left, mono value on the right. -->
@@ -201,19 +189,24 @@
       {#if trimmed}
         <div class="flex items-center justify-between gap-2 px-1.5 py-1 pl-7">
           <span class="text-muted-foreground">In / Out</span>
+          <!-- `clock`, not `formatDuration`: an in-point of 0 is valid and must
+               read "0:00", where formatDuration's missing-metadata guard shows "--:--". -->
           <span class="font-mono tabular-nums text-foreground">
-            {formatDuration(store.inPoint)} → {formatDuration(store.outPoint)}
+            {clock(store.inPoint)} → {clock(store.outPoint)}
           </span>
         </div>
       {/if}
-      {#if store.lastSavedAt}
-        <div class="flex items-center justify-between gap-2 px-1.5 py-1">
-          <span class="text-muted-foreground">Last saved</span>
-          <span class="font-mono tabular-nums text-foreground">
-            {new Date(store.lastSavedAt).toLocaleString()}
-          </span>
-        </div>
-      {/if}
+      <div class="flex items-center justify-between gap-2 px-1.5 py-1">
+        <span class="text-muted-foreground">Save state</span>
+        <span
+          class="text-foreground"
+          title={store.lastSavedAt
+            ? new Date(store.lastSavedAt).toLocaleString()
+            : undefined}
+        >
+          {saveStatus.label}
+        </span>
+      </div>
     </div>
   </PanelSection>
 
@@ -238,10 +231,12 @@
           {#each KIND_META as kind (kind.id)}
             {@const Icon = kind.icon}
             {@const count = annotationCounts[kind.id] ?? 0}
+            <!-- Counts are read-only data, not selection or action, so they stay
+                 neutral: a primary tint here is the decorative-accent drift. -->
             <div
               class="flex flex-col items-center gap-0.5 rounded-sm px-1 py-1 {count >
               0
-                ? 'bg-primary/8 text-primary ring-1 ring-primary/20'
+                ? 'bg-foreground/5 text-foreground ring-1 ring-border/60'
                 : 'text-muted-foreground/50'}"
               title="{kind.label}: {count}"
             >
@@ -258,11 +253,6 @@
         "cursor",
       )}
       {@render navStat(muted ? VolumeX : Volume2, "Audio", audioValue, "audio")}
-      {@render stat(
-        Stamp,
-        "Watermark",
-        store.watermarkSettings?.enabled ? "On" : "Off",
-      )}
     </div>
   </PanelSection>
 
@@ -272,24 +262,38 @@
         <div class="flex items-center justify-between gap-2">
           <span class="text-muted-foreground">Recording</span>
           <div class="flex items-center gap-0.5">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onclick={() => copyToClipboard(store.videoPath, "Path")}
-              aria-label="Copy recording path"
-              title="Copy path"
-            >
-              <Copy size={11} />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onclick={() => revealInFolder(store.videoPath)}
-              aria-label="Reveal in folder"
-              title="Reveal in folder"
-            >
-              <FolderOpen size={11} />
-            </Button>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props as Record<string, unknown>}
+                    variant="ghost"
+                    size="icon-sm"
+                    onclick={() => copyToClipboard(store.videoPath, "Path")}
+                    aria-label="Copy recording path"
+                  >
+                    <Copy size={11} />
+                  </Button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Copy path</Tooltip.Content>
+            </Tooltip.Root>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props as Record<string, unknown>}
+                    variant="ghost"
+                    size="icon-sm"
+                    onclick={() => revealInFolder(store.videoPath)}
+                    aria-label="Reveal in folder"
+                  >
+                    <FolderOpen size={11} />
+                  </Button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Reveal in folder</Tooltip.Content>
+            </Tooltip.Root>
           </div>
         </div>
         <p
@@ -303,17 +307,24 @@
         <div class="space-y-1">
           <div class="flex items-center justify-between gap-2">
             <span class="text-muted-foreground">Cursor track</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onclick={() =>
-                store.cursorPath &&
-                copyToClipboard(store.cursorPath, "Cursor path")}
-              aria-label="Copy cursor track path"
-              title="Copy path"
-            >
-              <Copy size={11} />
-            </Button>
+            <Tooltip.Root>
+              <Tooltip.Trigger>
+                {#snippet child({ props })}
+                  <Button
+                    {...props as Record<string, unknown>}
+                    variant="ghost"
+                    size="icon-sm"
+                    onclick={() =>
+                      store.cursorPath &&
+                      copyToClipboard(store.cursorPath, "Cursor path")}
+                    aria-label="Copy cursor track path"
+                  >
+                    <Copy size={11} />
+                  </Button>
+                {/snippet}
+              </Tooltip.Trigger>
+              <Tooltip.Content>Copy path</Tooltip.Content>
+            </Tooltip.Root>
           </div>
           <p
             class="truncate rounded border border-border bg-background/60 px-1.5 py-1 font-mono text-[10px] text-foreground"

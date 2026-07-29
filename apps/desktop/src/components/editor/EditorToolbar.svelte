@@ -164,10 +164,7 @@ function onExportClick() {
 }
 </script>
 
-<div
-  class="flex h-full w-full items-center gap-1.5 px-2 text-[11px]"
-  
->
+<div class="flex h-full w-full items-center gap-1.5 px-2 text-[11px]">
   <!-- Every Tooltip.Trigger below uses `child` to merge its props onto our own
        element. Without it the trigger renders a button AROUND the control:
        nested interactive elements, two tab stops each, and a disabled control
@@ -221,11 +218,15 @@ function onExportClick() {
           >
             <Layout2 size={12} />
             Presets
-            <Kbd class="ml-1">{chordLabel("editor.presets")}</Kbd>
           </Button>
         {/snippet}
       </Tooltip.Trigger>
-      <Tooltip.Content>Browse social & studio presets</Tooltip.Content>
+      <Tooltip.Content>
+        <span class="inline-flex items-center gap-1.5">
+          Browse social &amp; studio presets
+          <Kbd>{chordLabel("editor.presets")}</Kbd>
+        </span>
+      </Tooltip.Content>
     </Tooltip.Root>
 
     {#if activePreset || store.outputAspect !== "source"}
@@ -395,18 +396,21 @@ function onExportClick() {
 
       <Tooltip.Root>
         <Tooltip.Trigger>
+          <!-- Span wrapper: a disabled <button> swallows hover, so without it the
+               "Unavailable while…" branch below could never render. -->
           {#snippet child({ props })}
-            <button
-              {...props}
-              type="button"
-              onclick={() => onToggleTimeline?.()}
-              disabled={exportOpen}
-              aria-label="Toggle timeline"
-              aria-pressed={!exportOpen && showTimeline}
-              class={toggleClass(showTimeline)}
-            >
-              <PanelBottom size={12} />
-            </button>
+            <span {...props as Record<string, unknown>} class="inline-flex">
+              <button
+                type="button"
+                onclick={() => onToggleTimeline?.()}
+                disabled={exportOpen}
+                aria-label="Toggle timeline"
+                aria-pressed={!exportOpen && showTimeline}
+                class={toggleClass(showTimeline)}
+              >
+                <PanelBottom size={12} />
+              </button>
+            </span>
           {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>
@@ -424,17 +428,18 @@ function onExportClick() {
       <Tooltip.Root>
         <Tooltip.Trigger>
           {#snippet child({ props })}
-            <button
-              {...props}
-              type="button"
-              onclick={() => onToggleSidebar?.()}
-              disabled={exportOpen}
-              aria-label="Toggle properties panel"
-              aria-pressed={!exportOpen && showSidebar}
-              class={toggleClass(showSidebar)}
-            >
-              <PanelRight size={12} />
-            </button>
+            <span {...props as Record<string, unknown>} class="inline-flex">
+              <button
+                type="button"
+                onclick={() => onToggleSidebar?.()}
+                disabled={exportOpen}
+                aria-label="Toggle properties panel"
+                aria-pressed={!exportOpen && showSidebar}
+                class={toggleClass(showSidebar)}
+              >
+                <PanelRight size={12} />
+              </button>
+            </span>
           {/snippet}
         </Tooltip.Trigger>
         <Tooltip.Content>
