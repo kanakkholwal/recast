@@ -7,20 +7,12 @@
 
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 
-/** Mirror of `buildCaptionExport(...).burnCaptions` — inlined so the gate carries
- *  no heavy imports. Keep in lockstep with services/export.ts. */
-function willBurnCaptions(store: EditorStore): boolean {
-	const t = store.transcript;
-	return !!t && t.segments.length > 0 && store.captionExport.burnIn && store.exportFormat !== "gif";
-}
-
 /** Why a project can't use the browser export path (so the caller falls back to
- *  the Rust compositor), or null when it's eligible. All annotation kinds —
- *  painted, text (rasterized to an image), and blur (samples the composited
- *  frame) — now render in the browser. Only burned captions still need the Rust
- *  path; GIF keeps its 2-pass palette on the Rust side. */
-export function browserExportBlockedReason(store: EditorStore): string | null {
-	if (store.exportFormat === "gif") return "gif";
-	if (willBurnCaptions(store)) return "burned captions";
+ *  the Rust compositor), or null when it's eligible. Every effect now renders in
+ *  the browser — all annotation kinds (painted/text/blur), GIF (browser
+ *  composites, Rust runs only the palette), and burned captions — so nothing
+ *  gates. Kept as a hook: the fallback-on-failure path still consults it, and a
+ *  future effect that needs Rust would return its reason here. */
+export function browserExportBlockedReason(_store: EditorStore): string | null {
 	return null;
 }

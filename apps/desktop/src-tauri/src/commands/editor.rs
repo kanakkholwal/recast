@@ -17,15 +17,16 @@ use super::export::cuts_speed::{
     append_cut_speed_stage, build_speed_segments, collect_export_cuts, has_speed_change,
     output_duration_cap, warped_output_duration,
 };
-use super::export::gif::{run_gif_pass, GifPassError, GifPassParams};
+use super::export::gif::{run_gif_palette_prepass, run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
 use super::export::run::run_encode;
 use super::export::state::{emit_export_state, ExportStateEvent};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
-    append_output_filters_to_complex, build_annotation_blur_complex, build_output_scale_filter,
-    has_audio, probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
-    CameraOverlayParams, CameraShadowOverlay, ExportSpeed,
+    append_output_filters_to_complex, build_annotation_blur_complex,
+    build_gif_paletteuse_external_complex, build_output_scale_filter, has_audio,
+    probe_video_metadata, resolve_export_profile, BlurRegion, CameraOverlayAnim,
+    CameraOverlayParams, CameraShadowOverlay, ExportSpeed, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
 use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
@@ -1832,6 +1833,21 @@ pub(crate) async fn run_mux_job(
         return Err("export failed: browser-rendered video not found".into());
     }
     let input_path = PathBuf::from(&request.input_path);
+
+    // GIF has no audio to mux: the browser video is already composited + warped,
+    // so we only run the 2-pass palette on it (no cuts/speed re-apply).
+    if request.format == "gif" {
+        return mux_browser_gif(
+            &app,
+            &request,
+            &browser_video,
+            &input_path,
+            &export_id,
+            cancel_flag,
+        )
+        .await;
+    }
+
     let project = open_project_if_needed(&input_path)?;
     let source_video = project
         .as_ref()
@@ -2003,6 +2019,152 @@ pub(crate) async fn run_mux_job(
         }
         Ok(Err(e)) => Err(AppError::msg(e)),
         Err(join) => Err(AppError::msg(format!("mux task panicked: {join}"))),
+    }
+}
+
+/// GIF muxing for a browser-rendered export: the browser already composited and
+/// warped every frame, so we just run the existing 2-pass palette (pass 1 →
+/// palette PNG, pass 2 → paletteuse) on that video at the GIF's fps + scale. No
+/// cuts/speed (already baked), no audio. Reuses the classic GIF building blocks.
+async fn mux_browser_gif(
+    app: &AppHandle,
+    request: &ExportRequest,
+    browser_video: &Path,
+    input_path: &Path,
+    export_id: &str,
+    cancel_flag: Arc<AtomicBool>,
+) -> AppResult<String> {
+    let state = app.state::<AppState>();
+    let profile = resolve_export_profile(&request.quality);
+    let gif_fps_default = profile.gif_fps;
+    let output_scale_filter = build_output_scale_filter(profile);
+    let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
+    let source_duration = probe_video_metadata(browser_video)?.duration.max(0.0);
+
+    let output_dir = get_active_output_dir(&state).join("exports");
+    let _ = std::fs::create_dir_all(&output_dir);
+    let source_stem = input_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "Recast_export".to_string());
+    let output_path = super::unique_path(&output_dir, &source_stem, "gif");
+
+    let resolved_fps = gif_settings.fps.unwrap_or(gif_fps_default);
+    let max_colors = gif_settings.max_colors();
+    let dither = gif_settings.dither.clone();
+    let palette_stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let palette_path = output_dir.join(format!(
+        "recast_palette_{palette_stamp}_{}.png",
+        std::process::id()
+    ));
+
+    // Pass 1: palette (own thread; whole file, so trim=0/duration=0).
+    let app_p = app.clone();
+    let eid_p = export_id.to_string();
+    let bv_p = browser_video.to_path_buf();
+    let pal_p = palette_path.clone();
+    let cancel_p = cancel_flag.clone();
+    let scale_p = output_scale_filter.clone();
+    let dither_p = dither.clone();
+    let prepass = tokio::task::spawn_blocking(move || {
+        run_gif_palette_prepass(
+            &app_p,
+            &eid_p,
+            &bv_p,
+            &pal_p,
+            0.0,
+            0.0,
+            source_duration,
+            GifFilterOptions {
+                fps: resolved_fps,
+                max_colors,
+                dither: dither_p.as_str(),
+            },
+            scale_p.as_deref(),
+            None,
+            cancel_p,
+            ProgressBand {
+                offset: 0.0,
+                scale: 0.4,
+            },
+        )
+    })
+    .await;
+    match prepass {
+        Ok(Ok(())) => {}
+        Ok(Err(msg)) => {
+            let _ = std::fs::remove_file(&palette_path);
+            if cancel_flag.load(Ordering::Acquire) {
+                emit_export_state(app, ExportStateEvent::cancelled(export_id));
+                return Err(AppError::from("export cancelled"));
+            }
+            emit_export_state(app, ExportStateEvent::error(export_id, &msg));
+            return Err(AppError::msg(msg));
+        }
+        Err(join) => {
+            let _ = std::fs::remove_file(&palette_path);
+            return Err(AppError::msg(format!("gif palette task panicked: {join}")));
+        }
+    }
+
+    // Pass 2: paletteuse on the browser video (input 0) + palette (input 1).
+    let (complex, video_map) = build_gif_paletteuse_external_complex(
+        None,
+        "[0:v]",
+        1,
+        GifFilterOptions {
+            fps: resolved_fps,
+            max_colors,
+            dither: dither.as_str(),
+        },
+        output_scale_filter.as_deref(),
+    );
+    let args: Vec<String> = vec![
+        "-y".into(),
+        "-i".into(),
+        browser_video.to_string_lossy().to_string(),
+        "-i".into(),
+        palette_path.to_string_lossy().to_string(),
+        "-filter_complex".into(),
+        complex,
+        "-map".into(),
+        video_map,
+        "-an".into(),
+        output_path.to_string_lossy().to_string(),
+    ];
+
+    let app_e = app.clone();
+    let eid_e = export_id.to_string();
+    let out_str = output_path.to_string_lossy().to_string();
+    let cancel_e = cancel_flag.clone();
+    let encode = tokio::task::spawn_blocking(move || {
+        run_encode(
+            args,
+            app_e,
+            eid_e,
+            cancel_e,
+            out_str,
+            source_duration,
+            ProgressBand {
+                offset: 40.0,
+                scale: 0.6,
+            },
+        )
+    })
+    .await;
+
+    let _ = std::fs::remove_file(&palette_path);
+    match encode {
+        Ok(Ok(path)) => {
+            let _ = std::fs::remove_file(browser_video);
+            Ok(path)
+        }
+        Ok(Err(e)) => Err(AppError::msg(e)),
+        Err(join) => Err(AppError::msg(format!("gif encode task panicked: {join}"))),
     }
 }
 

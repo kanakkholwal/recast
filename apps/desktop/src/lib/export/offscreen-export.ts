@@ -98,6 +98,9 @@ export interface OffscreenExportOptions {
 	annotationLayer?:
 		| ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, blur: BlurLayerEnv) => void)
 		| null;
+	/** Draw burned captions for original time `t`, onto the SAME layer canvas as
+	 *  the annotations but after them (matching the preview's overlay order). */
+	captionLayer?: ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number) => void) | null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
 }
@@ -139,8 +142,10 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		srcH: opts.height,
 		getScratch,
 	};
+	// One comp-native 2D layer carries annotations AND burned captions (captions
+	// drawn on top, matching the preview's overlay order).
 	const passes: RenderPass[] = [];
-	if (opts.annotationLayer) {
+	if (opts.annotationLayer || opts.captionLayer) {
 		annoCanvas = new OffscreenCanvas(opts.width, opts.height);
 		annoCtx = annoCanvas.getContext("2d");
 		passes.push({
@@ -192,17 +197,17 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				vf.close();
 				sample.close();
 			}
-			// The annotation layer is drawn in `afterMain` (after the GL main pass)
-			// so blur annotations can sample the just-composited frame.
+			// The annotation + caption layer is drawn in `afterMain` (after the GL
+			// main pass) so blur annotations can sample the just-composited frame.
 			const ctx: RenderPassContext = { backgroundTex, annotationTex: null };
 			renderCore.renderFrame(frameInput, ctx, () => {
-				if (opts.annotationLayer && annoCtx && annoCanvas) {
-					// Flush so blur reads the completed main-pass frame off the GL canvas.
-					backend.finish();
-					annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
-					opts.annotationLayer(annoCtx, originalSec, blurEnv);
-					ctx.annotationTex = backend.uploadAnnotation(annoCanvas);
-				}
+				if (!annoCtx || !annoCanvas) return;
+				// Flush so blur reads the completed main-pass frame off the GL canvas.
+				if (opts.annotationLayer) backend.finish();
+				annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
+				opts.annotationLayer?.(annoCtx, originalSec, blurEnv);
+				opts.captionLayer?.(annoCtx, originalSec);
+				ctx.annotationTex = backend.uploadAnnotation(annoCanvas);
 			});
 
 			if (opts.camera && camSink) {

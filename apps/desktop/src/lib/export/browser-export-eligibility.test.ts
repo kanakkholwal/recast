@@ -21,27 +21,15 @@ describe("browserExportBlockedReason", () => {
 		expect(browserExportBlockedReason(store())).toBeNull();
 	});
 
-	it("blocks GIF (2-pass palette stays on Rust)", () => {
-		expect(browserExportBlockedReason(store({ exportFormat: "gif" }))).toBe("gif");
+	it("allows GIF (browser composites; Rust runs only the palette)", () => {
+		expect(browserExportBlockedReason(store({ exportFormat: "gif" }))).toBeNull();
 	});
 
-	it("blocks burned captions but not sidecar-only", () => {
+	it("allows burned captions (the browser burns them now)", () => {
 		expect(
 			browserExportBlockedReason(
 				store({ transcript, captionExport: { burnIn: true, sidecar: "none" } }),
 			),
-		).toBe("burned captions");
-		// Sidecar without burn-in doesn't block (only pixels burned into the video do).
-		expect(
-			browserExportBlockedReason(
-				store({ transcript, captionExport: { burnIn: false, sidecar: "none" } }),
-			),
-		).toBeNull();
-	});
-
-	it("does not block burn-in when there's no transcript", () => {
-		expect(
-			browserExportBlockedReason(store({ captionExport: { burnIn: true, sidecar: "none" } })),
 		).toBeNull();
 	});
 

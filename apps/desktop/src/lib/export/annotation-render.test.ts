@@ -13,6 +13,7 @@ import {
 // so we can assert the paint sequence without a real canvas.
 function mockCtx() {
 	const calls: string[] = [];
+	const drawArgs: unknown[][] = [];
 	const rec =
 		(name: string) =>
 		(...args: unknown[]) => {
@@ -20,6 +21,7 @@ function mockCtx() {
 		};
 	const ctx = {
 		calls,
+		drawArgs,
 		globalAlpha: 1,
 		shadowBlur: 0,
 		shadowColor: "",
@@ -41,7 +43,10 @@ function mockCtx() {
 		stroke: rec("stroke"),
 		fillRect: rec("fillRect"),
 		strokeRect: rec("strokeRect"),
-		drawImage: rec("drawImage"),
+		drawImage: (...args: unknown[]) => {
+			calls.push(`drawImage(${args.length})`);
+			drawArgs.push(args);
+		},
 		clip: rec("clip"),
 		setLineDash: rec("setLineDash"),
 	};
@@ -197,6 +202,8 @@ describe("paintBlur", () => {
 		return { octx, scratchSizes, env };
 	}
 
+	const m0 = Math.ceil(Math.max(0.001, 0.5 * 0.12 * Math.min(1920, 1080)));
+
 	// The scratch must include the blur margin on every side; otherwise the box
 	// edges sample the canvas boundary (transparent) and corners bevel ("hexagon").
 	it("blurs a margin-inclusive scratch and samples the inner box", () => {
@@ -205,12 +212,38 @@ describe("paintBlur", () => {
 		const box = { x: 100, y: 100, w: 200, h: 120 };
 		paintBlur(outer as never, blur(), box, env);
 
-		const blurPx = Math.max(0.001, 0.5 * 0.12 * Math.min(1920, 1080));
-		const m = Math.ceil(blurPx);
-		expect(scratchSizes[0]).toEqual([200 + 2 * m, 120 + 2 * m]);
+		expect(scratchSizes[0]).toEqual([200 + 2 * m0, 120 + 2 * m0]);
 		expect(outer.calls).toContain("clip");
 		// 9-arg blit = sampling the inner box out of the margin, not the whole scratch.
 		expect(outer.calls).toContain("drawImage(9)");
+	});
+
+	// Guards the actual geometry: the composite is sampled with the margin (so the
+	// blur has real neighbours), and only the inner box (offset m) is blitted back.
+	it("samples the composite with the margin and blits the inner box", () => {
+		const outer = mockCtx();
+		const { octx, env } = blurEnv();
+		paintBlur(outer as never, blur(), { x: 100, y: 100, w: 200, h: 120 }, env);
+
+		const sw = 200 + 2 * m0;
+		const sh = 120 + 2 * m0;
+		// composite → scratch: src starts a margin before the box, fills the scratch.
+		expect(octx.drawArgs[0].slice(1)).toEqual([100 - m0, 100 - m0, sw, sh, 0, 0, sw, sh]);
+		// scratch → overlay: skip the m-px bleed ring, land the box at (x, y, w, h).
+		expect(outer.drawArgs[0].slice(1)).toEqual([m0, m0, 200, 120, 100, 100, 200, 120]);
+	});
+
+	// A box flush at the frame corner asks for source past the edge; the real
+	// canvas clamps that read, and we still clip + blit the inner box (no crash).
+	it("still blits the inner box for a box at the frame edge", () => {
+		const outer = mockCtx();
+		const { octx, env } = blurEnv();
+		paintBlur(outer as never, blur(), { x: 0, y: 0, w: 200, h: 120 }, env);
+
+		expect(octx.drawArgs[0][1]).toBe(-m0); // requests a margin past the frame edge
+		expect(octx.drawArgs[0][2]).toBe(-m0);
+		expect(outer.calls).toContain("clip");
+		expect(outer.drawArgs[0].slice(1)).toEqual([m0, m0, 200, 120, 0, 0, 200, 120]);
 	});
 
 	it("skips a degenerate (sub-pixel) blur box", () => {

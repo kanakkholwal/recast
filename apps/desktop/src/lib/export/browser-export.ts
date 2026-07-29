@@ -6,14 +6,16 @@
  * audio. One compositor, so preview and export can't diverge.
  *
  * Scene rendered today: background colour/gradient/image, video, zoom, shadow,
- * dot + sprite cursor, click highlight, scene entrance/exit anim, camera bubble.
- * Burned captions + annotations still route to the Rust compositor (they render
- * as DOM in preview; see {@link browserExportBlockedReason}) and migrate last.
+ * dot + sprite cursor, click highlight, scene entrance/exit anim, camera bubble,
+ * and every annotation kind (painted/text/blur). GIF renders here too — the Rust
+ * side then runs only the palette pass on this video. Only burned captions still
+ * route to the Rust compositor (see {@link browserExportBlockedReason}).
  */
 
 import { saveBrowserExportVideo } from "$lib/ipc";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import { buildGradientUniforms } from "../../components/editor/gradient.logic";
+import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import { loadBackgroundBitmap } from "../../components/editor/background-source";
 import { buildPressEvents } from "../../components/editor/cursor-animation.logic";
 import {
@@ -34,7 +36,9 @@ import {
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { cursorOverlayFactory } from "./cursor-overlay-export";
 import { drawAnnotationLayerExport } from "./annotation-layer-export";
+import { drawCaptionLayerExport } from "./caption-layer-export";
 import { expandTextAnnotations } from "./rasterize-text";
+import { ensureFontLoaded } from "$lib/fonts/font-options";
 import type { ShapeImage } from "@recast/render";
 import { convertFileSrc } from "@tauri-apps/api/core";
 
@@ -168,6 +172,45 @@ async function buildAnnotationLayer(
 		});
 }
 
+/** Build the per-frame caption burn-in callback, or null when captions aren't
+ *  burned in (no transcript, burn-in off, or GIF). The font is preloaded so the
+ *  first frame measures/draws with the right face, mirroring the preview. */
+async function buildCaptionLayer(
+	store: EditorStore,
+	meta: { width: number; height: number },
+	canvasPxW: number,
+	canvasPxH: number,
+): Promise<((ctx: OffscreenCanvasRenderingContext2D, t: number) => void) | null> {
+	const transcript = store.transcript;
+	const style = store.captionStyle;
+	const burn = store.captionExport.burnIn && store.exportFormat !== "gif";
+	if (!burn || !transcript || transcript.segments.length === 0 || !style.enabled) return null;
+	// Kick off the face load, then wait for all pending fonts so the first burned
+	// frame measures/draws with the real face (the export can't repaint later).
+	ensureFontLoaded(style.fontFamily, style.fontWeight);
+	try {
+		await document.fonts.ready;
+	} catch {
+		/* fall back to the system face */
+	}
+	const g = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
+	const video = {
+		leftFrac: g.videoX / g.canvasW,
+		rightFrac: (g.videoX + g.videoW) / g.canvasW,
+		topFrac: g.videoY / g.canvasH,
+		bottomFrac: (g.videoY + g.videoH) / g.canvasH,
+	};
+	return (ctx, t) =>
+		drawCaptionLayerExport(ctx, t, {
+			transcript,
+			style,
+			timeMap: store.timeMap,
+			video,
+			canvasPxW,
+			canvasPxH,
+		});
+}
+
 /** Render + encode the timeline in the browser; resolves with the temp path of
  *  the video-only mp4 to mux server-side. Throws if the source isn't ready. */
 export async function runBrowserExport(
@@ -224,6 +267,12 @@ export async function runBrowserExport(
 		base.canvasPxW,
 		base.canvasPxH,
 	);
+	const captionLayer = await buildCaptionLayer(
+		store,
+		{ width: meta.width, height: meta.height },
+		base.canvasPxW,
+		base.canvasPxH,
+	);
 
 	const frameAt = makeExportFrameAt(base, timeMap);
 	try {
@@ -239,6 +288,7 @@ export async function runBrowserExport(
 			overlays,
 			camera,
 			annotationLayer,
+			captionLayer,
 			onProgress: opts.onProgress,
 			signal: opts.signal,
 		});
