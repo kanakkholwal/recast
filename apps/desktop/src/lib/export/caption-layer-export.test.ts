@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { drawCaptionLayerExport } from "./caption-layer-export";
 import {
-	drawCaptionLayerExport,
 	paintCaptionChunk,
 	resolveCaptionView,
 	type CaptionView,
-} from "./caption-layer-export";
+} from "$lib/captions/caption-render";
 import { buildTimeMap } from "$lib/timeline/time-map";
 import {
 	DEFAULT_CAPTION_STYLE,
@@ -48,9 +48,29 @@ describe("resolveCaptionView", () => {
 		expect(resolveCaptionView(transcript(), style(), identity, 5)).toBeNull();
 	});
 
-	it("returns null when captions are disabled or there's no transcript", () => {
-		expect(resolveCaptionView(transcript(), style({ enabled: false }), identity, 1)).toBeNull();
+	it("ignores the preview `enabled` toggle (the caller gates); null only without a transcript", () => {
+		// Export burn keys on burnIn, not the preview-visibility toggle — the pure
+		// resolver must not swallow the caption when `enabled` is false.
+		expect(resolveCaptionView(transcript(), style({ enabled: false }), identity, 1)).not.toBeNull();
 		expect(resolveCaptionView(null, style(), identity, 1)).toBeNull();
+	});
+
+	it("resolves an animated (chunked / progressive) caption to a valid chunk", () => {
+		const s = style({
+			animation: {
+				chunk: "word",
+				chunkSize: 1,
+				emphasis: "none",
+				emphasisColor: "#ffffff",
+				highlight: "progressive",
+				entrance: "pop",
+				entranceMs: 300,
+				holdGaps: true,
+			},
+		});
+		const v = resolveCaptionView(transcript(), s, identity, 1.5); // within "world" [1,2]
+		expect(v).not.toBeNull();
+		expect(v?.words.map((w) => w.text)).toEqual(["world"]);
 	});
 
 	it("returns null inside a cut (playhead in the gap between kept spans)", () => {
@@ -155,7 +175,7 @@ const view = (over: Partial<CaptionView> = {}): CaptionView => ({
 	],
 	spoken: 2,
 	activeIndex: -1,
-	chunkStart: 0,
+	chunkStartOutput: 0,
 	anim: resolveCaptionAnimation(undefined),
 	...over,
 });
@@ -194,7 +214,7 @@ describe("paintCaptionChunk", () => {
 describe("drawCaptionLayerExport", () => {
 	it("draws nothing when no caption is active", () => {
 		const ctx = mockCtx();
-		drawCaptionLayerExport(ctx as never, 5, {
+		drawCaptionLayerExport(ctx as never, 5, 5, {
 			transcript: transcript(),
 			style: style(),
 			timeMap: identity,

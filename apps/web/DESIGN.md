@@ -53,12 +53,13 @@ CSS variables — never hardcode colors.
 | --- | --- |
 | `--background` / `--foreground` | Page background and primary text. |
 | `--card` / `--card-foreground` | Surface containers (glass cards, mockups). |
-| `--primary` (vivid lime green) | Accents, CTA buttons, callouts, and brand emphasis. |
+| `--primary` (indigo) | The one accent. CTA, selection, focus ring, active route, toggle-on, primary chart series. |
 | `--muted-foreground` | Secondary copy, microlabels. |
-| `--border` / `--border-low` / `--border-strong` | All separators, subtle dividers. |
+| `--border` / `--border-low` / `--border-strong` | Decorative separators and dividers. |
+| `--border-control` | Boundaries that *identify* a control — inputs, selects, checkboxes. |
 | `--destructive` / `--success` / `--warning` | Status only — never decorative. |
 
-### Color ratio (60/30/10)
+### Colour ratio (60/30/10)
 
 Every surface budgets colour the same way. This is a hard rule, not a vibe:
 
@@ -66,7 +67,7 @@ Every surface budgets colour the same way. This is a hard rule, not a vibe:
 | --- | --- | --- |
 | **60%** | Canvas. The page ground. | `--background`, `--canvas` |
 | **30%** | Structure. Surfaces, borders, secondary text, chart neutrals — everything that builds hierarchy. | `glass-card`, `bg-foreground/5-10`, `--border*`, `--muted-foreground`, `--foreground` |
-| **10%** | Brand. `--primary` only. | see the reserved list below |
+| **10%** | Accent. `--primary` only. | see the reserved list below |
 
 **`--primary` is reserved for these, and nothing else:**
 
@@ -78,29 +79,39 @@ Every surface budgets colour the same way. This is a hard rule, not a vibe:
 6. Plan / upgrade affordances (the `Crown` surfaces) — the monetization signal.
 7. Focus rings and active-input borders (`--ring` is `--primary`).
 
-**Never** use `--primary` as a decorative tint. Specifically: section-header icons,
-`glass-chip` contents, avatars, play buttons, progress fills, tab underlines, and
-hover text colours are all **neutral**. If an icon just labels a heading, it takes
+**Never** use `--primary` as a decorative tint. Section-header icons, `glass-chip`
+contents, avatars, play buttons, progress fills, tab underlines, and hover text
+are all **neutral**. If an icon just labels a heading, it takes
 `text-muted-foreground` — or no colour class at all, inheriting from its row.
+
+There is exactly one accent hue. If a surface seems to need a second, it needs
+hierarchy instead — weight, size, or spacing.
 
 Progress and meter fills are neutral (`bg-foreground/30-60`) and escalate to
 `--warning` / `--destructive` only on real thresholds, so a bar's colour always
 means something. See [UsageMeter.logic.ts](src/lib/dashboard/components/UsageMeter.logic.ts).
 
-> The failure mode this rule exists to prevent: a lime tick on *every* card, chip,
-> and heading. Each one looks fine alone; together the brand colour stops being an
-> accent and the eye has nowhere to land.
+### Contrast floors
+
+Non-negotiable, and cheaper to check than to relitigate:
+
+| Thing | Floor |
+| --- | --- |
+| Body text on its surface | 4.5:1 |
+| Focus ring, control boundary, meaningful icon | 3:1 |
+| Two controls distinguished by colour | 3:1 **luminance**, never hue alone |
+
+This section exists because the old lime `--primary` measured **1.95:1** as a
+focus ring in light mode. Hue-wheel distance is *not* colour-blind distance: red
+and green sit far apart on the wheel and collapse under deuteranopia, so lane and
+status identity must always be carried by label or shape as well as colour.
 
 ### Dark mode
 
-The dark-mode `--primary` is a **highly saturated lime** (`oklch(92% 0.234 …)`).
-Even small blends create heavy contrast. When mixing primary into backgrounds,
-**stay below 8%** in dark mode (vs ~15% in light). When in doubt, use neutral
-foreground tints (`color-mix(... var(--color-foreground) 4-6%)`) for ambient glows
-instead of primary.
-
-> Lesson learned: a `bg-aurora` with primary ~22% in dark mode produces a heavy
-> green band behind the navbar that looks oversaturated. Tone it down.
+`--primary` is defined per mode and holds its hue across both — `oklch(0.52 0.20
+264)` on light, `oklch(0.70 0.155 264)` on dark. Test new sections in both modes.
+The old lime could not do this: to stay legible on white it had to drop to L0.55,
+where sRGB's gamut collapses its chroma and it reads as olive rather than lime.
 
 ---
 

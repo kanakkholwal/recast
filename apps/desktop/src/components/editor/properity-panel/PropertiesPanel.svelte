@@ -1,23 +1,23 @@
 <script lang="ts">
+import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
+import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	AudioLines,
 	Blocks,
 	Captions,
+	DeviceComputerCamera,
 	ImageIcon,
 	Info,
 	MousePointer,
 	Pencil,
 	ScanText,
 	SquareSplitHorizontal,
-	Video,
 	Volume,
 	ZoomIn,
 } from "@recast/icons";
 import * as Tabs from "@recast/ui/tabs";
 import * as Tooltip from "@recast/ui/tooltip";
-import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import AnnotationsPanel from "./AnnotationsPanel.svelte";
 import AudioPanel from "./AudioPanel.svelte";
 import BackgroundPicker from "./BackgroundPicker.svelte";
@@ -77,7 +77,7 @@ const TABS: TabType[] = [
 				{
 					id: "camera" as PanelTab,
 					label: "Camera",
-					icon: Video,
+					icon: DeviceComputerCamera,
 					group: "composition" as TabGroup,
 					hint: "Webcam overlay position and shape.",
 				},

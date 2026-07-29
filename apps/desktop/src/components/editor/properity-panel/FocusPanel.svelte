@@ -479,7 +479,7 @@ function applyPresetToBoth(preset: Easing) {
           <TriangleAlert size={11} class="mt-px shrink-0" />
           <span>
             Overlaps another region. Only one can apply at a time, and the exported
-            video can differ from this preview — trim one so they don't share time.
+            video can differ from this preview. Trim one so they don't share time.
           </span>
         </div>
       {/if}

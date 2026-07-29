@@ -173,30 +173,31 @@ async function buildAnnotationLayer(
 }
 
 /** Build the per-frame caption burn-in callback, or null when captions aren't
- *  burned in (no transcript, burn-in off, captions hidden). GIF burns captions
- *  too now: the browser draws them into the frames before the palette pass (the
- *  old GIF caption skip was a Rust-pipeline limit, not a product choice). The
- *  font is preloaded so the first frame draws with the real face. */
+ *  burned in. Gated on the export's `burnIn` intent + a transcript ONLY — NOT the
+ *  preview-visibility toggle (matching the Rust burn); GIF burns too now (the old
+ *  GIF skip was a Rust-pipeline limit). The specific face is awaited so the first
+ *  frame draws with it — the export can't repaint later. */
 async function buildCaptionLayer(
 	store: EditorStore,
 	meta: { width: number; height: number },
 	canvasPxW: number,
 	canvasPxH: number,
-): Promise<((ctx: OffscreenCanvasRenderingContext2D, t: number) => void) | null> {
+): Promise<
+	((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, outputSec: number) => void) | null
+> {
 	const transcript = store.transcript;
 	const style = store.captionStyle;
-	if (
-		!store.captionExport.burnIn ||
-		!transcript ||
-		transcript.segments.length === 0 ||
-		!style.enabled
-	)
-		return null;
-	// Kick off the face load, then wait for all pending fonts so the first burned
-	// frame measures/draws with the real face (the export can't repaint later).
+	if (!store.captionExport.burnIn || !transcript || transcript.segments.length === 0) return null;
+	// Load THIS face and wait for it specifically. `document.fonts.ready` is racy
+	// (resolves for whatever is pending when awaited, not our just-queued load), and
+	// the first family of the CSS stack is what canvas actually paints.
 	ensureFontLoaded(style.fontFamily, style.fontWeight);
+	const family = style.fontFamily
+		.split(",")[0]
+		.trim()
+		.replace(/^['"]|['"]$/g, "");
 	try {
-		await document.fonts.ready;
+		await document.fonts.load(`${style.fontWeight} 32px "${family}"`);
 	} catch {
 		/* fall back to the system face */
 	}
@@ -207,8 +208,8 @@ async function buildCaptionLayer(
 		topFrac: g.videoY / g.canvasH,
 		bottomFrac: (g.videoY + g.videoH) / g.canvasH,
 	};
-	return (ctx, t) =>
-		drawCaptionLayerExport(ctx, t, {
+	return (ctx, originalSec, outputSec) =>
+		drawCaptionLayerExport(ctx, originalSec, outputSec, {
 			transcript,
 			style,
 			timeMap: store.timeMap,

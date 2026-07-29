@@ -499,7 +499,7 @@ const errorMessage = $derived.by(() => {
 		case MediaError.MEDIA_ERR_DECODE:
 			return "This video couldn't be decoded on this device.";
 		case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
-			return "This video is unavailable — the link may have expired.";
+			return "This video is unavailable. The link may have expired.";
 		default:
 			return "Playback was interrupted.";
 	}
@@ -910,7 +910,7 @@ $effect(() => {
 	}
 	@media (prefers-reduced-motion: reduce) {
 		/* CaptionBox drops its own entrance/scale; this covers the branding and
-		   control transitions. Opacity fades are kept — they aren't motion. */
+		   control transitions. Opacity fades are kept; they aren't motion. */
 		:global(.recast-player *) {
 			transition-property: opacity, background-color, color !important;
 			animation-duration: 0.01ms !important;

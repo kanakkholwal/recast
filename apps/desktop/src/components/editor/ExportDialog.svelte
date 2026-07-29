@@ -1,3 +1,8 @@
+<script lang="ts" module>
+// Survives the export panel's per-phase remount.
+let advancedWasOpen = $state(false);
+</script>
+
 <script lang="ts">
   import type {
     EditorStore,
@@ -14,26 +19,19 @@
     computeExportDurations,
     computeRemovedDuration,
   } from "./export-dialog.logic";
-  import {
-    Check,
-    ChevronDown,
-    Circle,
-    Film,
-    Image as ImageIcon,
-    Infinity as InfinityIcon,
-    Minus,
-    Plus,
-    RotateCcw,
-    Settings2,
-    Upload,
-    Video,
-  } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
+  import { ChevronDown, Film, Minus, Plus, RotateCcw, Settings2, Upload } from "@recast/icons";
   import { Button } from "@recast/ui/button";
+  import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
   import { SliderControl } from "@recast/ui/slider-control";
   import { cn } from "@recast/ui/utils";
   import { cubicOut } from "svelte/easing";
-  import { fade, fly, scale, slide } from "svelte/transition";
+  import { fade, slide } from "svelte/transition";
+  import { motionDuration } from "$lib/motion.svelte";
+  import {
+    estimateExportBytes,
+    formatByteRange,
+    outputResolution,
+  } from "./export-estimate";
 
   interface Props {
     store: EditorStore;
@@ -47,25 +45,24 @@
     value: ExportFormat;
     label: string;
     desc: string;
-    icon: IconComponent;
   }[] = [
-    { value: "mp4", label: "MP4", desc: "Universal", icon: Video },
-    { value: "webm", label: "WebM", desc: "Web · VP9", icon: Film },
-    { value: "gif", label: "GIF", desc: "Animated", icon: ImageIcon },
+    { value: "mp4", label: "MP4", desc: "Plays everywhere" },
+    { value: "webm", label: "WebM", desc: "VP9, smaller files, for the web" },
+    { value: "gif", label: "GIF", desc: "Silent, loops, large" },
   ];
 
   const qualities: { value: ExportQuality; label: string; desc: string }[] = [
-    { value: "small", label: "Small", desc: "720p · lightest" },
-    { value: "hd", label: "HD", desc: "1080p · balanced" },
-    { value: "4k", label: "4K", desc: "2160p · high detail" },
-    { value: "source", label: "Source", desc: "Original resolution" },
+    { value: "small", label: "720p", desc: "Lightest file" },
+    { value: "hd", label: "1080p", desc: "Balanced, the usual choice" },
+    { value: "4k", label: "4K", desc: "2160p, high detail, large file" },
+    { value: "source", label: "Source", desc: "Keeps the original resolution" },
   ];
 
   // Encoder effort, orthogonal to resolution; trades encode time for file size.
   const speeds: { value: ExportSpeed; label: string; desc: string }[] = [
-    { value: "fast", label: "Fast", desc: "Quicker · larger" },
+    { value: "fast", label: "Fast", desc: "Encodes quicker, larger file" },
     { value: "balanced", label: "Balanced", desc: "Recommended" },
-    { value: "quality", label: "Quality", desc: "Slower · smaller" },
+    { value: "quality", label: "Quality", desc: "Slower, smallest file" },
   ];
 
   // Swatch is a brand-tinted intensity ramp (faint to full primary) so it reads
@@ -107,15 +104,11 @@
   const sidecarOptions: {
     value: "none" | "vtt" | "srt";
     label: string;
-    desc: string;
+    desc?: string;
   }[] = [
-    { value: "none", label: "None", desc: "Skip file" },
+    { value: "none", label: "None" },
     { value: "vtt", label: ".VTT", desc: "Web player" },
     { value: "srt", label: ".SRT", desc: "Universal" },
-  ];
-  const burnOptions: { value: boolean; label: string; desc: string }[] = [
-    { value: true, label: "On", desc: "Baked in" },
-    { value: false, label: "Off", desc: "Clean video" },
   ];
   function setBurnIn(v: boolean) {
     store.updateCaptionExport({ burnIn: v });
@@ -153,6 +146,44 @@
         store.trimEnd < sourceDuration),
   );
 
+  // What the export actually produces. The quality preset is a BOUND, so a
+  // portrait clip at "HD" is 608x1080, so the preset label alone misleads.
+  const outRes = $derived(
+    outputResolution(
+      store.metadata?.width ?? 0,
+      store.metadata?.height ?? 0,
+      store.exportQuality,
+    ),
+  );
+  const effectiveFps = $derived(
+    store.exportFormat === "gif"
+      ? (store.gifSettings.fps ?? 15)
+      : (store.exportFps ?? sourceFps),
+  );
+  const sizeEstimate = $derived(
+    formatByteRange(
+      outRes
+        ? estimateExportBytes({
+            format: store.exportFormat,
+            quality: store.exportQuality,
+            speed: store.exportSpeed,
+            seconds: outputDuration,
+            width: outRes.width,
+            height: outRes.height,
+            fps: effectiveFps,
+          })
+        : null,
+    ),
+  );
+
+  const activeFormat = $derived(formats.find((f) => f.value === store.exportFormat));
+  const activeQuality = $derived(qualities.find((q) => q.value === store.exportQuality));
+  const activeSpeed = $derived(speeds.find((sp) => sp.value === store.exportSpeed));
+  const activeFps = $derived(fpsOptions.find((f) => f.value === store.exportFps));
+  const activeSidecar = $derived(
+    sidecarOptions.find((o) => o.value === store.captionExport.sidecar),
+  );
+
   const isGif = $derived(store.exportFormat === "gif");
   const activeGifQuality = $derived(
     gifQualities.find((g) => g.value === store.gifSettings.quality),
@@ -160,6 +191,16 @@
   const activeDither = $derived(
     ditherModes.find((d) => d.value === store.gifSettings.dither),
   );
+
+  // Shown on the collapsed Advanced row so its contents aren't a mystery box.
+  const advancedSummary = $derived(
+    store.exportFormat === "gif"
+      ? [activeGifQuality?.label, activeDither?.label].filter(Boolean).join(" · ")
+      : [showFps ? activeFps?.label : null, activeSpeed?.label]
+          .filter(Boolean)
+          .join(" · "),
+  );
+
 
   function setLoop(value: "infinite" | "once" | number) {
     store.updateGifSettings({ loop: value });
@@ -191,8 +232,13 @@
   }
 
   // Frame rate + Speed are power-user tuning, tucked behind a disclosure so the
-  // common Format/Quality choices lead.
-  let advancedOpen = $state(false);
+  // common Format/Quality choices lead. Module-level so it survives the panel's
+  // per-phase remount: someone who always tunes Speed shouldn't reopen it every
+  // single export.
+  let advancedOpen = $state(advancedWasOpen);
+  $effect(() => {
+    advancedWasOpen = advancedOpen;
+  });
 
   function resetGifDefaults() {
     store.updateGifSettings({
@@ -213,39 +259,69 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-{#snippet sectionLabel(label: string, description?: string)}
-  <div class="flex flex-col gap-0.5">
-    <span
-      class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-    >
-      {label}
-    </span>
-    {#if description}
-      <span class="text-[11px] text-muted-foreground/80">{description}</span>
-    {/if}
-  </div>
-{/snippet}
-
 {#snippet gifSettingsBody()}
-  <!-- No outer padding or heading of its own: it slots into the Advanced
-       accordion body alongside the other sections so GIF matches the other
-       export modes instead of reading as a separate, deeper-inset card. -->
   <div class="flex flex-col gap-4">
-    <div class="flex justify-end">
-      <Button
-        variant="ghost"
-        size="xs"
-        class="h-6 gap-1 px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
-        onclick={resetGifDefaults}
-        title="Reset GIF defaults"
-      >
-        <RotateCcw class="size-3" />
-        Reset
-      </Button>
-    </div>
+    {#snippet gifQualityControl()}
+      <Segmented
+        options={gifQualities.map((g) => ({ value: g.value, label: g.label }))}
+        value={store.gifSettings.quality}
+        onValueChange={setGifQuality}
+        aria-label="Color richness"
+      />
+    {/snippet}
+    {@render field("Color richness", activeGifQuality?.desc, gifQualityControl)}
 
-    <!-- Frame rate -->
-    <div class="flex flex-col gap-1">
+    {#snippet ditherControl()}
+      <Segmented
+        options={ditherModes.map((d) => ({ value: d.value, label: d.label }))}
+        value={store.gifSettings.dither}
+        onValueChange={setDither}
+        aria-label="Gradients"
+      />
+    {/snippet}
+    {@render field("Gradients", activeDither?.desc, ditherControl)}
+
+    {#snippet loopControl()}
+      <div class="flex items-center gap-1.5">
+        <Segmented
+          class="flex-1"
+          options={[
+            { value: "infinite", label: "Forever" },
+            { value: "once", label: "Once" },
+            { value: "count", label: loopCount !== null ? `${loopCount}x` : "Count" },
+          ]}
+          value={loopCount !== null ? "count" : (store.gifSettings.loop as string)}
+          onValueChange={(v) =>
+            v === "count" ? setLoop(loopCount ?? LOOP_MIN) : setLoop(v as "infinite" | "once")}
+          aria-label="Loop"
+        />
+        {#if loopCount !== null}
+          <div class="flex shrink-0 items-center rounded-lg ring-1 ring-inset ring-border/40">
+            <button
+              type="button"
+              onclick={() => stepLoop(-1)}
+              disabled={loopCount <= LOOP_MIN}
+              aria-label="Fewer loops"
+              class="grid size-7 place-items-center rounded-l-lg text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Minus class="size-3" />
+            </button>
+            <button
+              type="button"
+              onclick={() => stepLoop(1)}
+              disabled={loopCount >= LOOP_MAX}
+              aria-label="More loops"
+              class="grid size-7 place-items-center rounded-r-lg text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
+            >
+              <Plus class="size-3" />
+            </button>
+          </div>
+        {/if}
+      </div>
+    {/snippet}
+    {@render field("Loop", undefined, loopControl)}
+
+    {#snippet gifFpsControl()}
       <SliderControl
         label="Frame rate"
         value={store.gifSettings.fps ?? 15}
@@ -253,590 +329,216 @@
         max={30}
         step={1}
         unit=" fps"
-        description={store.gifSettings.fps === null
-          ? "Auto (follows the quality preset)"
-          : undefined}
+        description={store.gifSettings.fps === null ? "Auto, follows the preset" : undefined}
         onchange={(next: number) => store.updateGifSettings({ fps: next })}
       >
         {#snippet icon()}
           <Film class="size-3" />
         {/snippet}
       </SliderControl>
+    {/snippet}
+    {@render gifFpsControl()}
+
+    <div class="flex justify-end gap-1">
       {#if store.gifSettings.fps !== null}
-        <div class="flex justify-end" in:fade={{ duration: 140 }}>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="h-6 gap-1 px-1.5 text-[10.5px] text-muted-foreground hover:text-foreground"
-            onclick={clearFpsOverride}
-            title="Use the quality preset's default fps"
-          >
-            <RotateCcw class="size-3" />
-            Use auto
-          </Button>
-        </div>
+        <Button
+          variant="ghost"
+          size="xs"
+          class="text-[11px] text-muted-foreground hover:text-foreground"
+          onclick={clearFpsOverride}
+        >
+          Auto frame rate
+        </Button>
       {/if}
-    </div>
-
-    <!-- Color richness -->
-    <div class="flex flex-col gap-1.5">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        title="More colors = richer image, larger file"
+      <Button
+        variant="ghost"
+        size="xs"
+        class="gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+        onclick={resetGifDefaults}
       >
-        Color richness
-      </span>
-      <div class="flex gap-1">
-        {#each gifQualities as gq, i (gq.value)}
-          {@const sel = store.gifSettings.quality === gq.value}
-          <span
-            class="flex flex-1"
-            in:scale={{ start: 0.92, duration: 200, delay: 60 + i * 30, easing: cubicOut }}
-          >
-            <button
-              type="button"
-              onclick={() => setGifQuality(gq.value)}
-              aria-pressed={sel}
-              title={gq.desc}
-              class={cn(
-                "group flex w-full flex-col items-center gap-1 rounded-md border px-1.5 py-1.5 transition-all duration-200",
-                sel
-                  ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-                  : "border-border/40 bg-card/40 hover:border-border/70 hover:bg-card/70",
-              )}
-            >
-              <span
-                class={cn(
-                  "h-1.5 w-full rounded-full bg-gradient-to-r",
-                  gq.swatch,
-                  !sel && "opacity-60",
-                )}
-              ></span>
-              <span
-                class={cn(
-                  "text-[10.5px] font-semibold",
-                  sel ? "text-primary" : "text-foreground",
-                )}
-              >
-                {gq.label}
-              </span>
-            </button>
-          </span>
-        {/each}
-      </div>
-    </div>
-
-    <!-- Gradients -->
-    <div class="flex flex-col gap-1.5">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        title="How smoothly colors blend in gradients"
-      >
-        Gradients
-      </span>
-      <div class="flex gap-1">
-        {#each ditherModes as dm, i (dm.value)}
-          {@const sel = store.gifSettings.dither === dm.value}
-          <span
-            class="flex flex-1"
-            in:scale={{ start: 0.92, duration: 200, delay: 100 + i * 30, easing: cubicOut }}
-          >
-            <button
-              type="button"
-              onclick={() => setDither(dm.value)}
-              aria-pressed={sel}
-              title={dm.desc}
-              class={cn(
-                "w-full rounded-md border px-2 py-1.5 text-[10.5px] font-semibold transition-all duration-200",
-                sel
-                  ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
-                  : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
-              )}
-            >
-              {dm.label}
-            </button>
-          </span>
-        {/each}
-      </div>
-    </div>
-
-    <p
-      class="-mt-2 text-[11px] leading-snug text-muted-foreground/90"
-      aria-live="polite"
-    >
-      {activeGifQuality?.desc ?? ""}
-      <span class="text-muted-foreground/40">·</span>
-      {activeDither?.desc ?? ""}
-    </p>
-
-    <!-- Loop -->
-    <div class="flex flex-col gap-1.5">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Loop
-      </span>
-      <div class="flex items-center gap-1">
-        <button
-          type="button"
-          onclick={() => setLoop("infinite")}
-          aria-pressed={store.gifSettings.loop === "infinite"}
-          class={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
-            store.gifSettings.loop === "infinite"
-              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
-              : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
-          )}
-        >
-          <InfinityIcon class="size-3.5" />
-          Forever
-        </button>
-        <button
-          type="button"
-          onclick={() => setLoop("once")}
-          aria-pressed={store.gifSettings.loop === "once"}
-          class={cn(
-            "flex flex-1 items-center justify-center gap-1.5 rounded-md border px-2 py-1.5 text-[11px] font-medium transition-all duration-200",
-            store.gifSettings.loop === "once"
-              ? "border-primary/40 bg-primary/10 text-primary ring-1 ring-primary/25"
-              : "border-border/40 bg-card/40 text-foreground hover:border-border/70 hover:bg-card/70",
-          )}
-        >
-          <Circle class="size-3" />
-          Once
-        </button>
-        <div
-          class={cn(
-            "flex flex-1 items-center justify-between rounded-md border transition-all duration-200",
-            loopCount !== null
-              ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-              : "border-border/40 bg-card/40",
-          )}
-        >
-          <button
-            type="button"
-            onclick={() => stepLoop(-1)}
-            disabled={loopCount !== null && loopCount <= LOOP_MIN}
-            aria-label="Fewer loops"
-            class="grid size-7 place-items-center rounded-l-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Minus class="size-3" />
-          </button>
-          <button
-            type="button"
-            onclick={() => loopCount === null && setLoop(LOOP_MIN)}
-            aria-pressed={loopCount !== null}
-            title="Loop a set number of times"
-            class={cn(
-              "font-mono text-[11px] tabular-nums transition-colors",
-              loopCount !== null ? "text-primary" : "text-muted-foreground",
-            )}
-          >
-            {loopCount !== null ? `${loopCount}×` : "Count"}
-          </button>
-          <button
-            type="button"
-            onclick={() => stepLoop(1)}
-            disabled={loopCount !== null && loopCount >= LOOP_MAX}
-            aria-label="More loops"
-            class="grid size-7 place-items-center rounded-r-md text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-40"
-          >
-            <Plus class="size-3" />
-          </button>
-        </div>
-      </div>
+        <RotateCcw class="size-3" />
+        Reset
+      </Button>
     </div>
   </div>
 {/snippet}
 
-{#snippet formatSection()}
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 110, easing: cubicOut }}
-    class="flex flex-col gap-2.5"
-  >
-    {@render sectionLabel("Format", "How the file is encoded.")}
-    <div class="grid grid-cols-3 gap-1.5">
-      {#each formats as fmt, i (fmt.value)}
-        {@const selected = store.exportFormat === fmt.value}
-        {@const Icon = fmt.icon}
-        <span
-          class="flex"
-          in:scale={{ start: 0.92, duration: 220, delay: 140 + i * 35, easing: cubicOut }}
-        >
-          <button
-            type="button"
-            onclick={() => setFormat(fmt.value)}
-            aria-pressed={selected}
-            class={cn(
-              "group relative flex w-full flex-col items-start gap-1 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
-              selected
-                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-                : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
-            )}
-          >
-            <span
-              class={cn(
-                "flex items-center gap-1.5 text-[12.5px] font-semibold tracking-tight",
-                selected ? "text-primary" : "text-foreground",
-              )}
-            >
-              <Icon class="size-3.5" />
-              {fmt.label}
-            </span>
-            <span class="text-[10.5px] leading-tight text-muted-foreground">
-              {fmt.desc}
-            </span>
-            {#if selected}
-              <span
-                class="absolute right-2 top-2"
-                in:scale={{ start: 0.5, duration: 180, easing: cubicOut }}
-              >
-                <Check class="size-3 text-primary" />
-              </span>
-            {/if}
-          </button>
-        </span>
-      {/each}
-    </div>
-  </section>
-{/snippet}
-
-{#snippet qualitySection()}
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 170, easing: cubicOut }}
-    class="flex flex-col gap-2.5"
-  >
-    {@render sectionLabel("Quality", "Resolution preset for the export.")}
-    <div class="grid grid-cols-2 gap-1.5">
-      {#each qualities as q, i (q.value)}
-        {@const selected = store.exportQuality === q.value}
-        <span
-          class="flex"
-          in:scale={{ start: 0.92, duration: 220, delay: 200 + i * 35, easing: cubicOut }}
-        >
-          <button
-            type="button"
-            onclick={() => setQuality(q.value)}
-            aria-pressed={selected}
-            class={cn(
-              "group flex w-full items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left transition-all duration-200",
-              selected
-                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-                : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
-            )}
-          >
-            <div class="flex min-w-0 flex-col gap-0.5">
-              <span
-                class={cn(
-                  "text-[12.5px] font-semibold tracking-tight",
-                  selected ? "text-primary" : "text-foreground",
-                )}
-              >
-                {q.label}
-              </span>
-              <span
-                class="truncate text-[10.5px] leading-tight text-muted-foreground"
-              >
-                {q.desc}
-              </span>
-            </div>
-            {#if selected}
-              <Check class="size-3 shrink-0 text-primary" />
-            {/if}
-          </button>
-        </span>
-      {/each}
-    </div>
-  </section>
-{/snippet}
-
-{#snippet fpsSection()}
-  <!-- Output fps for MP4/WebM. Hidden for GIF (own fps control) and when the
-       source is already ≤24 fps (no meaningful choice). -->
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 185, easing: cubicOut }}
-    class="flex flex-col gap-2.5"
-  >
-    {@render sectionLabel("Frame rate", "Original keeps the source rate.")}
-    <div
-      class={cn(
-        "grid gap-1.5",
-        fpsOptions.length === 2 ? "grid-cols-2" : "grid-cols-3",
-      )}
-    >
-      {#each fpsOptions as f, i (f.value ?? "original")}
-        {@const selected = store.exportFps === f.value}
-        <span
-          class="flex"
-          in:scale={{ start: 0.92, duration: 220, delay: 215 + i * 35, easing: cubicOut }}
-        >
-          <button
-            type="button"
-            onclick={() => setFps(f.value)}
-            aria-pressed={selected}
-            title={f.desc}
-            class={cn(
-              "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
-              selected
-                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-                : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
-            )}
-          >
-            <span
-              class={cn(
-                "text-[12.5px] font-semibold tracking-tight",
-                selected ? "text-primary" : "text-foreground",
-              )}
-            >
-              {f.label}
-            </span>
-            <span
-              class="truncate text-[10px] leading-tight text-muted-foreground"
-            >
-              {f.desc}
-            </span>
-          </button>
-        </span>
-      {/each}
-    </div>
-  </section>
-{/snippet}
-
-{#snippet speedSection()}
-  <!-- Hidden for GIF, which uses a palette 2-pass and ignores codec presets. -->
-  <section
-    in:fly={{ y: 8, duration: 240, delay: 200, easing: cubicOut }}
-    class="flex flex-col gap-2.5"
-  >
-    {@render sectionLabel("Speed", "Encoder effort. Same resolution.")}
-    <div class="grid grid-cols-3 gap-1.5">
-      {#each speeds as s, i (s.value)}
-        {@const selected = store.exportSpeed === s.value}
-        <span
-          class="flex"
-          in:scale={{ start: 0.92, duration: 220, delay: 230 + i * 35, easing: cubicOut }}
-        >
-          <button
-            type="button"
-            onclick={() => setSpeed(s.value)}
-            aria-pressed={selected}
-            title={s.desc}
-            class={cn(
-              "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
-              selected
-                ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-                : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
-            )}
-          >
-            <span
-              class={cn(
-                "text-[12.5px] font-semibold tracking-tight",
-                selected ? "text-primary" : "text-foreground",
-              )}
-            >
-              {s.label}
-            </span>
-            <span
-              class="truncate text-[10px] leading-tight text-muted-foreground"
-            >
-              {s.desc}
-            </span>
-          </button>
-        </span>
-      {/each}
-    </div>
-  </section>
+{#snippet field(label: string, desc: string | undefined, control: import("svelte").Snippet)}
+  <div class="flex flex-col gap-1.5">
+    <span class="text-[11px] font-semibold text-foreground">{label}</span>
+    {@render control()}
+    {#if desc}
+      <p class="text-[11px] leading-snug text-muted-foreground">{desc}</p>
+    {/if}
+  </div>
 {/snippet}
 
 {#snippet captionsSection()}
-  <!-- Only shown once a transcript exists. Two independent choices: burn the
-       captions into the pixels, and/or save a sidecar file (the sidecar is also
-       what Cloud uploads as a selectable track). Stacked in the rail. -->
-  <section
-    in:fly={{ y: 8, duration: 220, delay: 140, easing: cubicOut }}
-    class="flex flex-col gap-2.5"
-  >
-    {@render sectionLabel("Captions", "From your transcript, burn in and/or export a file.")}
-    <div class="grid grid-cols-1 items-start gap-x-6 gap-y-3">
-      {#if !isGif}
-        <div class="flex flex-col gap-1.5">
-          {@render captionSubLabel("Burn into video")}
-          <div class="grid grid-cols-2 gap-1.5">
-            {#each burnOptions as o (o.label)}
-              {@render optionButton(
-                store.captionExport.burnIn === o.value,
-                o.label,
-                o.desc,
-                () => setBurnIn(o.value),
-              )}
-            {/each}
-          </div>
-        </div>
-      {/if}
-      <div class="flex flex-col gap-1.5">
-        {@render captionSubLabel("Separate file")}
-        <div class="grid grid-cols-3 gap-1.5">
-          {#each sidecarOptions as s (s.value)}
-            {@render optionButton(
-              store.captionExport.sidecar === s.value,
-              s.label,
-              s.desc,
-              () => setSidecar(s.value),
-            )}
-          {/each}
-        </div>
+  <!-- Only shown once a transcript exists. Burning in and writing a sidecar are
+       independent: the sidecar is also what Cloud uploads as a selectable track. -->
+  <div class="flex flex-col gap-3">
+    <div class="flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <p class="text-[11px] font-semibold text-foreground">Burn captions in</p>
+        <p class="text-[11px] leading-snug text-muted-foreground">
+          Viewers can't turn them off.
+        </p>
       </div>
+      <SegmentedToggle
+        checked={store.captionExport.burnIn}
+        size="xs"
+        aria-label="Burn captions into the video"
+        onCheckedChange={setBurnIn}
+      />
     </div>
-  </section>
-{/snippet}
-
-{#snippet captionSubLabel(label: string)}
-  <span class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70">
-    {label}
-  </span>
-{/snippet}
-
-{#snippet optionButton(
-  selected: boolean,
-  label: string,
-  desc: string,
-  onclick: () => void,
-)}
-  <button
-    type="button"
-    {onclick}
-    aria-pressed={selected}
-    title={desc}
-    class={cn(
-      "group flex w-full flex-col items-center gap-0.5 rounded-xl border px-2 py-2 text-center transition-all duration-200",
-      selected
-        ? "border-primary/40 bg-primary/10 ring-1 ring-primary/25"
-        : "border-border/40 bg-card/40 hover:-translate-y-0.5 hover:border-border/70 hover:bg-card/70 hover:shadow-craft-sm",
-    )}
-  >
-    <span
-      class={cn(
-        "text-[12.5px] font-semibold tracking-tight",
-        selected ? "text-primary" : "text-foreground",
-      )}
-    >
-      {label}
-    </span>
-    <span class="truncate text-[10px] leading-tight text-muted-foreground">{desc}</span>
-  </button>
+    {#snippet sidecarControl()}
+      <Segmented
+        options={sidecarOptions.map((o) => ({ value: o.value, label: o.label }))}
+        value={store.captionExport.sidecar}
+        onValueChange={setSidecar}
+        aria-label="Caption file"
+      />
+    {/snippet}
+    {@render field("Caption file", activeSidecar?.desc, sidecarControl)}
+  </div>
 {/snippet}
 
 <div class="flex h-full min-h-0 flex-col">
   <!-- Pinned header + summary. Stays put while the option list scrolls, so the
        "what am I exporting" anchor is always visible. -->
   <div class="shrink-0">
-    <header
-      class="flex items-start gap-3 border-b border-border/40 px-5 py-4"
-    >
-      <div
-        class="flex size-10 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
+    <!-- Title and the three facts that answer "what am I about to get" read as
+         one block. Three stacked bands (title, tinted stats, trim note) made a
+         header taller than the first two controls put together. -->
+    <header class="flex flex-col gap-3 border-b border-border/40 px-5 pb-3.5 pt-4">
+      <h3
+        id="export-flow-title"
+        class="text-[15px] font-semibold tracking-tight text-foreground"
       >
-        <Upload class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
-        <h3
-          id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
-        >
-          Export recording
-        </h3>
-        <p class="mt-0.5 text-[11px] text-muted-foreground">
-          Choose a format and quality, then start the export.
+        Export recording
+      </h3>
+      <dl class="grid grid-cols-3 gap-x-3">
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11px] text-muted-foreground">Duration</dt>
+          <dd class="font-mono text-[13px] font-medium tabular-nums text-foreground">
+            {formatTime(outputDuration)}
+          </dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11px] text-muted-foreground">Resolution</dt>
+          <dd class="font-mono text-[13px] font-medium tabular-nums text-foreground">
+            {outRes ? `${outRes.width}×${outRes.height}` : "–"}
+          </dd>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <dt class="text-[11px] text-muted-foreground">Est. size</dt>
+          <dd class="font-mono text-[13px] font-medium tabular-nums text-foreground">
+            {sizeEstimate ?? "–"}
+          </dd>
+        </div>
+      </dl>
+      {#if removedDuration > 0.05 || hasTrim}
+        <p class="text-[11px] text-muted-foreground">
+          {#if hasTrim}
+            Trimmed to
+            <span class="font-mono tabular-nums text-foreground">
+              {formatTime(store.trimStart)}–{formatTime(clipEnd)}
+            </span>
+          {/if}
+          {#if removedDuration > 0.05}
+            {hasTrim ? "·" : ""} cuts remove
+            <span class="font-mono tabular-nums text-foreground">
+              {formatTime(removedDuration)}
+            </span>
+          {/if}
         </p>
-      </div>
+      {/if}
     </header>
-
-    <section
-      class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
-    >
-      <div class="flex flex-1 flex-col gap-0.5 pr-4">
-        <span
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Output
-        </span>
-        <span class="font-mono text-[12px] tabular-nums text-foreground">
-          {formatTime(outputDuration)}
-        </span>
-      </div>
-      <div class="flex flex-1 flex-col gap-0.5 pl-4">
-        <span
-          class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >
-          Range
-        </span>
-        <span class="font-mono text-[12px] tabular-nums text-foreground">
-          {formatTime(store.trimStart)} – {formatTime(clipEnd)}
-        </span>
-      </div>
-    </section>
-    {#if removedDuration > 0.05}
-      <p
-        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      >
-        Cuts remove
-        <span class="mx-1 font-mono tabular-nums text-foreground">
-          {formatTime(removedDuration)}
-        </span>
-        from the {formatTime(clipDuration)} trimmed clip
-      </p>
-    {/if}
-    {#if hasTrim}
-      <p
-        class="border-b border-border/40 bg-muted/10 px-5 py-1.5 text-[10.5px] text-muted-foreground"
-      >
-        Source length
-        <span class="ml-1 font-mono tabular-nums text-foreground">
-          {formatTime(sourceDuration)}
-        </span>
-      </p>
-    {/if}
   </div>
 
   <!-- Scrollable option list. Format + Quality lead; Frame rate + Speed are
        tucked under Advanced so the common decisions aren't buried in tuning. -->
   <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <div class="flex flex-col gap-4 px-5 py-4">
-      {@render formatSection()}
-      {@render qualitySection()}
-      <!-- Advanced tuning, collapsed by default in every mode so Format +
-           Quality lead. GIF puts its palette/loop settings here; MP4/WebM put
-           frame rate + speed. -->
-      <div class="flex flex-col gap-3">
+      {#snippet formatControl()}
+        <Segmented
+          options={formats.map((f) => ({ value: f.value, label: f.label }))}
+          value={store.exportFormat}
+          onValueChange={setFormat}
+          aria-label="Format"
+        />
+      {/snippet}
+      {@render field("Format", activeFormat?.desc, formatControl)}
+
+      {#snippet qualityControl()}
+        <Segmented
+          options={qualities.map((q) => ({ value: q.value, label: q.label }))}
+          value={store.exportQuality}
+          onValueChange={setQuality}
+          aria-label="Quality"
+        />
+      {/snippet}
+      {@render field("Quality", activeQuality?.desc, qualityControl)}
+
+      <!-- Advanced tuning. The collapsed row carries its current values so you
+           can tell whether opening it is worth it. -->
+      <div
+        class={cn(
+          "flex flex-col rounded-xl border transition-colors",
+          advancedOpen ? "border-border/60 bg-card/40" : "border-border/50",
+        )}
+      >
         <button
           type="button"
           onclick={() => (advancedOpen = !advancedOpen)}
           aria-expanded={advancedOpen}
-          class="group flex cursor-pointer items-center justify-between gap-2 rounded-md py-0.5 text-left outline-none transition-colors focus-visible:text-foreground"
+          aria-controls="export-advanced"
+          class="group flex cursor-pointer items-center gap-2 rounded-xl px-3 py-2 text-left transition-colors hover:bg-muted/40 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
-          <span
-            class="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70 group-hover:text-muted-foreground"
-          >
-            <Settings2 class="size-3" />
-            Advanced
+          <Settings2 class="size-3.5 shrink-0 text-muted-foreground" />
+          <span class="shrink-0 text-[11px] font-semibold text-foreground">Advanced</span>
+          <span class="ml-auto min-w-0 truncate text-right text-[11px] text-muted-foreground">
+            {advancedOpen ? "" : advancedSummary}
           </span>
           <ChevronDown
             class={cn(
-              "size-3.5 text-muted-foreground/70 transition-transform duration-200",
+              "size-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
               advancedOpen && "rotate-180",
             )}
           />
         </button>
         {#if advancedOpen}
           <div
-            class="flex flex-col gap-4"
-            transition:slide={{ duration: 200, easing: cubicOut }}
+            id="export-advanced"
+            class="flex flex-col gap-4 border-t border-border/50 px-3 py-3"
+            transition:slide={{ duration: motionDuration(200), easing: cubicOut }}
           >
             {#if isGif}
               {@render gifSettingsBody()}
             {:else}
-              {#if showFps}{@render fpsSection()}{/if}
-              {@render speedSection()}
+              {#if showFps}
+                {#snippet fpsControl()}
+                  <Segmented
+                    options={fpsOptions.map((f) => ({
+                      value: String(f.value ?? "original"),
+                      label: f.label,
+                    }))}
+                    value={String(store.exportFps ?? "original")}
+                    onValueChange={(v) => setFps(v === "original" ? null : Number(v))}
+                    aria-label="Frame rate"
+                  />
+                {/snippet}
+                {@render field("Frame rate", activeFps?.desc, fpsControl)}
+              {/if}
+              {#snippet speedControl()}
+                <Segmented
+                  options={speeds.map((sp) => ({ value: sp.value, label: sp.label }))}
+                  value={store.exportSpeed}
+                  onValueChange={setSpeed}
+                  aria-label="Speed"
+                />
+              {/snippet}
+              {@render field("Speed", activeSpeed?.desc, speedControl)}
             {/if}
           </div>
         {/if}
@@ -850,12 +552,7 @@
     class="flex shrink-0 items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
   >
     <Button variant="ghost" size="xs" onclick={onCancel}>Cancel</Button>
-    <Button
-      variant="default"
-      size="xs"
-      class="gap-1.5"
-      onclick={onConfirm}
-    >
+    <Button variant="default" size="xs" class="gap-1.5" onclick={onConfirm}>
       <Upload class="size-3" />
       Export {store.exportFormat.toUpperCase()}
     </Button>
