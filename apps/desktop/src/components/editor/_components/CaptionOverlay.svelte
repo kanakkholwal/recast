@@ -45,7 +45,14 @@ $effect(() => {
 	const m = store.metadata;
 	if (!m?.width || !m?.height) return;
 	const nowOrig = outputToOriginal(store.timeMap, store.currentTime);
-	const view = resolveCaptionView(store.transcript, store.captionStyle, store.timeMap, nowOrig);
+	// captionTranscript is rescaled onto the video/timeMap axis (fixes audio-vs-
+	// video CFR drift); every caption surface reads it so they stay in sync.
+	const view = resolveCaptionView(
+		store.captionTranscript,
+		store.captionStyle,
+		store.timeMap,
+		nowOrig,
+	);
 	if (!view) return;
 	const g = computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
 	paintCaptionChunk(ctx, view, store.captionStyle, store.currentTime, {

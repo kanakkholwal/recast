@@ -1,9 +1,7 @@
 <script lang="ts">
-import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
-	AudioLines,
 	Blocks,
 	Captions,
 	DeviceComputerCamera,
@@ -72,17 +70,15 @@ const TABS: TabType[] = [
 		group: "composition",
 		hint: "Size, smoothing, and click effects.",
 	},
-	...(CAMERA_OVERLAY_UI_ENABLED
-		? [
-				{
-					id: "camera" as PanelTab,
-					label: "Camera",
-					icon: DeviceComputerCamera,
-					group: "composition" as TabGroup,
-					hint: "Webcam overlay position and shape.",
-				},
-			]
-		: []),
+
+	{
+		id: "camera" as PanelTab,
+		label: "Camera",
+		icon: DeviceComputerCamera,
+		group: "composition" as TabGroup,
+		hint: "Webcam overlay position and shape.",
+	},
+
 	{
 		id: "audio",
 		label: "Audio",
@@ -90,13 +86,14 @@ const TABS: TabType[] = [
 		group: "composition",
 		hint: "Volume and mute.",
 	},
-	{
-		id: "music",
-		label: "Music",
-		icon: AudioLines,
-		group: "composition",
-		hint: "Background music and voiceover.",
-	},
+	// TODO: re-enable when we have a music panel. The audio panel is enough for now.
+	// {
+	// 	id: "music",
+	// 	label: "Music",
+	// 	icon: AudioLines,
+	// 	group: "composition",
+	// 	hint: "Background music and voiceover.",
+	// },
 	{
 		id: "captions",
 		label: "Captions",

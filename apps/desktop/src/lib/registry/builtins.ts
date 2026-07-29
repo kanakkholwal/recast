@@ -86,12 +86,12 @@ export function registerBuiltins(): void {
 
 	registry.registerMany(
 		COLOR_PRESETS.map(
-			(hex): RegistryEntry<"color"> => ({
-				id: hex,
+			(preset): RegistryEntry<"color"> => ({
+				id: preset.value,
 				kind: "color",
-				label: hex,
+				label: preset.label,
 				source: BUILTIN,
-				value: { value: hex },
+				value: { value: preset.value },
 			}),
 		),
 	);

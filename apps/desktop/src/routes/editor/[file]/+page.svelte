@@ -49,6 +49,7 @@ import {
 	detectSilence,
 	extractWaveform,
 	generateThumbnails,
+	getVideoMetadata,
 	listExports,
 	loadEditorDocument,
 	migrateProject,
@@ -892,6 +893,21 @@ async function loadDocument() {
 		store.recordingPath = document.mediaPath;
 		store.audioPath = document.audioPath ?? null;
 		store.microphonePath = document.microphonePath ?? null;
+		// Probe the transcribed audio's true (wall-clock) duration so captions can
+		// be rescaled onto the video's frame-time axis (count-based CFR makes them
+		// differ, drifting captions toward the end). Mic is the speech source; fall
+		// back to system audio. Best-effort — on failure the scale stays 1.
+		store.captionAudioDurationSec = null;
+		{
+			const capAudioPath = document.microphonePath ?? document.audioPath;
+			if (capAudioPath) {
+				getVideoMetadata(capAudioPath)
+					.then((m) => {
+						store.captionAudioDurationSec = m.duration > 0 ? m.duration : null;
+					})
+					.catch(() => {});
+			}
+		}
 		store.waveform = [];
 		// Lazy: the idle-scheduled effect below extracts the waveform once the
 		// editor is interactive, so the ffmpeg pass never competes with load.

@@ -174,7 +174,9 @@ export { toOutputTimeTranscript };
  * unconditionally ("only export captions when there are captions").
  */
 export function buildCaptionExport(store: EditorStore): CaptionExportPayload {
-	const transcript = store.transcript;
+	// captionTranscript is rescaled onto the video/timeMap axis so the sidecar cue
+	// times line up with the exported frames (audio-vs-video CFR drift fix).
+	const transcript = store.captionTranscript;
 	const opts = store.captionExport;
 	if (!transcript || transcript.segments.length === 0) {
 		return { burnCaptions: false, sidecar: null };

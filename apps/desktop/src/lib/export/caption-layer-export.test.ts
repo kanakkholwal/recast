@@ -119,15 +119,18 @@ describe("resolveCaptionView", () => {
 		expect(v?.words.map((w) => w.text)).toEqual(["a", "b", "c"]);
 	});
 
-	it("still clips words at a real cut (removed content between spans)", () => {
+	it("shows the full caption on each side of a cut, but nothing inside the gap", () => {
 		const cut = buildTimeMap([
 			{ origStart: 0, origEnd: 5, speed: 1 },
 			{ origStart: 6, origEnd: 10, speed: 1 },
 		]);
-		// Playhead at 4.5 is in the first kept span; the word "c" (6–7) sits past
-		// the cut and must NOT show here.
-		const v = resolveCaptionView(spanningTranscript(), style(), cut, 4.5);
-		expect(v?.words.map((w) => w.text)).toEqual(["a"]);
+		// A caption straddling the cut keeps ALL its words on each side (reliable),
+		// rather than dropping the far-side ones and reading as gone.
+		expect(
+			resolveCaptionView(spanningTranscript(), style(), cut, 4.5)?.words.map((w) => w.text),
+		).toEqual(["a", "b", "c"]);
+		// ...and it correctly disappears while the playhead is inside the cut gap.
+		expect(resolveCaptionView(spanningTranscript(), style(), cut, 5.5)).toBeNull();
 	});
 });
 

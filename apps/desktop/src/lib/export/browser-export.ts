@@ -185,7 +185,9 @@ async function buildCaptionLayer(
 ): Promise<
 	((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, outputSec: number) => void) | null
 > {
-	const transcript = store.transcript;
+	// captionTranscript is rescaled onto the video/timeMap axis (audio-vs-video CFR
+	// drift fix) — the same source the preview + sidecar read.
+	const transcript = store.captionTranscript;
 	const style = store.captionStyle;
 	if (!store.captionExport.burnIn || !transcript || transcript.segments.length === 0) return null;
 	// Load THIS face and wait for it specifically. `document.fonts.ready` is racy

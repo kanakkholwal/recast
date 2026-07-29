@@ -28,7 +28,6 @@ import {
 import {
 	activeClippedSegment,
 	captionSpanAt,
-	clipWordsToSpan,
 	keptCaptionSpans,
 } from "$lib/captions/clip-with-cuts";
 import { originalToOutput, type TimeMap } from "$lib/timeline/time-map";
@@ -76,12 +75,16 @@ export function resolveCaptionView(
 	if (!span) return null;
 	const clipped = activeClippedSegment(transcript.segments, span, t);
 	if (!clipped) return null;
-	const words = clipWordsToSpan(clipped.segment.words, span);
+	// Reliability: show the FULL segment, not the words clipped to this span. The
+	// span gate above already hides the caption during the cut gap (so it never
+	// outlasts a cut), but a caption STRADDLING a cut keeps all its words on each
+	// side instead of dropping the far-side ones and reading as "gone" — which
+	// also stopped later captions from showing (owner: "just show the caption").
 	const active = {
-		start: clipped.visible.start,
-		end: clipped.visible.end,
+		start: clipped.segment.start,
+		end: clipped.segment.end,
 		text: clipped.segment.text,
-		words,
+		words: clipped.segment.words,
 	};
 	const anim = resolveCaptionAnimation(style.animation);
 	const animated = active.words.length > 0 && !isStaticAnimation(anim);

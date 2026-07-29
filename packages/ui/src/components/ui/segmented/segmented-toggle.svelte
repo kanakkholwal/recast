@@ -1,19 +1,21 @@
 <script lang="ts" module>
-	export interface SegmentedToggleProps {
-		/** Current checked state. */
-		checked: boolean;
-		onCheckedChange: (next: boolean) => void;
-		/** Label for the "on" segment. Default `On`. */
-		onLabel?: string;
-		/** Label for the "off" segment. Default `Off`. */
-		offLabel?: string;
-		size?: "xs" | "sm" | "md";
-		/** Stretch to fill parent width. Default false (compact). */
-		fill?: boolean;
-		disabled?: boolean;
-		class?: string;
-		"aria-label"?: string;
-	}
+export interface SegmentedToggleProps {
+	/** Current checked state. */
+	checked: boolean;
+	onCheckedChange: (next: boolean) => void;
+	/** Label for the "on" segment. Default `On`. */
+	onLabel?: string;
+	/** Label for the "off" segment. Default `Off`. */
+	offLabel?: string;
+	size?: "xs" | "sm" | "md";
+	/** Stretch to fill parent width. Default false (compact). */
+	fill?: boolean;
+	disabled?: boolean;
+	class?: string;
+	"aria-label"?: string;
+	/** Point at a visible label instead of duplicating it as `aria-label`. */
+	"aria-labelledby"?: string;
+}
 </script>
 
 <script lang="ts">
@@ -29,6 +31,7 @@
 		disabled = false,
 		class: className,
 		"aria-label": ariaLabel,
+		"aria-labelledby": ariaLabelledby,
 	}: SegmentedToggleProps = $props();
 
 	// Thin shorthand around <Segmented> for the canonical Off/On DialKit
@@ -48,4 +51,5 @@
 	{disabled}
 	class={className}
 	aria-label={ariaLabel}
+	aria-labelledby={ariaLabelledby}
 />
