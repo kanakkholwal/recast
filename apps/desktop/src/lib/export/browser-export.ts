@@ -5,29 +5,100 @@
  * mux job (`browserVideoPath`) — which copies the video (`-c:v copy`) and adds the
  * audio. One compositor, so preview and export can't diverge.
  *
- * MAIN-PASS scene only for now: background colour/gradient, video, zoom, shadow,
- * dot cursor, click highlight, scene entrance/exit anim. Overlays (sprite cursor,
- * camera bubble, captions, annotations, image backgrounds) are CON-7 follow-ups —
- * they render as DOM in preview today and get folded into the export RenderCore's
- * pass list next.
+ * Scene rendered today: background colour/gradient/image, video, zoom, shadow,
+ * dot + sprite cursor, click highlight, scene entrance/exit anim, camera bubble.
+ * Burned captions + annotations still route to the Rust compositor (they render
+ * as DOM in preview; see {@link browserExportBlockedReason}) and migrate last.
  */
 
 import { saveBrowserExportVideo } from "$lib/ipc";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import { buildGradientUniforms } from "../../components/editor/gradient.logic";
+import { loadBackgroundBitmap } from "../../components/editor/background-source";
 import { buildPressEvents } from "../../components/editor/cursor-animation.logic";
+import {
+	applyZoomFollow,
+	cameraFollowScaleAt,
+	cameraPlacementAt,
+} from "../../components/editor/_components/camera-overlay.logic";
+import type { CameraExportInputs } from "./offscreen-export";
+import type { FrameGeometry } from "../../components/editor/frame-params";
 import { buildExportBase } from "./export-scene";
 import { makeExportFrameAt } from "./export-frame-input";
 import { videoEncodingConfigFor, type ExportQuality } from "./browser-export-plan";
-import { renderTimelineToVideo } from "./offscreen-export";
+import { renderTimelineToVideo, type ExportOverlayFactory } from "./offscreen-export";
+import { rasterizeCursorSprites } from "./rasterize-cursor";
+import { cursorOverlayFactory } from "./cursor-overlay-export";
 
 export interface BrowserExportOptions {
 	/** Source video asset URL (what the preview decodes, e.g. `convertFileSrc(...)`). */
 	videoUrl: string;
+	/** Camera stream URL (`convertFileSrc(camera.mp4)`), or empty when none. */
+	cameraUrl?: string;
 	quality: ExportQuality;
 	fps: number;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
+}
+
+/** Camera bubble inputs from the store, or null when no camera / disabled. The
+ *  effective placement mirrors CameraOverlay: base keyframe glide, then the
+ *  zoom-follow grow/drift (gated on focus), using the shared pure helpers. */
+function buildCameraInputs(
+	store: EditorStore,
+	cameraUrl: string | undefined,
+	geom: FrameGeometry,
+): CameraExportInputs | null {
+	const cam = store.cameraOverlay;
+	if (!cameraUrl || !cam.enabled) return null;
+	const videoAspect = geom.videoH > 0 ? geom.videoW / geom.videoH : 1;
+	const placementAt = (t: number) => {
+		const b = cameraPlacementAt(cam.defaultPlacement, cam.keyframes, t, cam.keyframeEasing);
+		if (!cam.zoomFollow || !store.focusEnabled) return b;
+		const zoom = cameraFollowScaleAt(
+			store.zoomRegions,
+			t,
+			cam.zoomFollowDuration,
+			cam.zoomFollowEasing,
+		);
+		return applyZoomFollow(
+			b,
+			zoom,
+			{ enabled: true, strength: cam.zoomFollowStrength },
+			videoAspect,
+		);
+	};
+	return {
+		url: cameraUrl,
+		geom,
+		shape: cam.shape,
+		cornerRadius: cam.cornerRadius,
+		mirror: cam.mirror,
+		placementAt,
+	};
+}
+
+/** Rasterize the SVG cursor sprites (bitmaps + hotspots) into an export overlay
+ *  factory, or null for the dot style / disabled cursor (the main shader draws
+ *  those). Bitmaps are consumed by the factory on upload. */
+async function buildCursorOverlay(store: EditorStore): Promise<ExportOverlayFactory | null> {
+	const cs = store.cursorSettings;
+	if (!cs.enabled || cs.style === "dot") return null;
+	const bundle = await rasterizeCursorSprites(cs.style, cs.size * 16).catch(() => null);
+	if (!bundle) return null;
+	const toBmp = async (u: string) => createImageBitmap(await (await fetch(u)).blob());
+	const rest = await toBmp(bundle.rest);
+	const press = bundle.press === bundle.rest ? rest : await toBmp(bundle.press);
+	return cursorOverlayFactory({
+		rest,
+		press,
+		rightPress: bundle.rightPress ? await toBmp(bundle.rightPress) : undefined,
+		drag: bundle.drag ? await toBmp(bundle.drag) : undefined,
+		restHotspot: bundle.restHotspot,
+		pressHotspot: bundle.pressHotspot,
+		rightPressHotspot: bundle.rightPressHotspot,
+		dragHotspot: bundle.dragHotspot,
+	});
 }
 
 /** Render + encode the timeline in the browser; resolves with the temp path of
@@ -46,6 +117,12 @@ export async function runBrowserExport(
 		store.backgroundType === "gradient"
 			? buildGradientUniforms(store.backgroundValue || "")
 			: undefined;
+	// Image/wallpaper backgrounds decode once to a texture; null keeps the flat
+	// fallback (the main pass renders colour/gradient without one).
+	const backgroundImage = await loadBackgroundBitmap(
+		store.backgroundType,
+		store.backgroundValue,
+	).catch(() => null);
 	// Cursor comes from the store's published raw samples (the preview loaded them);
 	// press events derive from those. Idle-hide + smoothing are follow-ups.
 	const cursorSamples = store.cursorSamplesRaw ?? [];
@@ -58,7 +135,7 @@ export async function runBrowserExport(
 		backgroundType: store.backgroundType,
 		backgroundValue: store.backgroundValue,
 		backgroundBlur: store.backgroundBlur,
-		backgroundImageReady: false,
+		backgroundImageReady: backgroundImage != null,
 		gradient,
 		borderRadius: store.borderRadius ?? 0,
 		focusEnabled: store.focusEnabled,
@@ -71,20 +148,31 @@ export async function runBrowserExport(
 		pressEvents: buildPressEvents(cursorSamples),
 	});
 
-	const frameAt = makeExportFrameAt(base, timeMap);
-	const mp4 = await renderTimelineToVideo({
-		videoUrl: opts.videoUrl,
-		width: base.canvasPxW,
-		height: base.canvasPxH,
-		fps: opts.fps,
-		outputDurationSec,
-		encodingConfig: videoEncodingConfigFor(opts.quality),
-		frameAt,
-		onProgress: opts.onProgress,
-		signal: opts.signal,
-	});
+	const cursorOverlay = await buildCursorOverlay(store);
+	const overlays = cursorOverlay ? [cursorOverlay] : [];
+	const camera = buildCameraInputs(store, opts.cameraUrl, base.geom);
 
-	// Copy out of the (possibly larger) backing buffer so the transfer is exact.
-	const bytes = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
-	return saveBrowserExportVideo(bytes);
+	const frameAt = makeExportFrameAt(base, timeMap);
+	try {
+		const mp4 = await renderTimelineToVideo({
+			videoUrl: opts.videoUrl,
+			width: base.canvasPxW,
+			height: base.canvasPxH,
+			fps: opts.fps,
+			outputDurationSec,
+			encodingConfig: videoEncodingConfigFor(opts.quality),
+			frameAt,
+			backgroundImage,
+			overlays,
+			camera,
+			onProgress: opts.onProgress,
+			signal: opts.signal,
+		});
+
+		// Copy out of the (possibly larger) backing buffer so the transfer is exact.
+		const bytes = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
+		return await saveBrowserExportVideo(bytes);
+	} finally {
+		backgroundImage?.close();
+	}
 }

@@ -1,6 +1,5 @@
 <script lang="ts">
 import { analytics } from "$lib/analytics/client";
-import { resolveAsset } from "$lib/assets";
 import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import { CursorSmoother } from "$lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
@@ -8,13 +7,9 @@ import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
 import { PlaybackClock } from "$lib/playback/clock";
 import type { MediabunnyVideoSource } from "@recast/media/playback";
 import { createMediabunnySource } from "$lib/playback/mediabunny";
-import {
-	cursorSpriteHotspot,
-	resolveBackgroundWireValue,
-	resolveCursorDataUrl,
-	resolveCursorSprite,
-} from "$lib/registry";
+import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "$lib/registry";
 import { RenderCore } from "./render-core";
+import { resolveBackgroundSrc } from "./background-source";
 import { WebGL2Backend } from "./webgl2-backend";
 import { RenderWorkerClient } from "$lib/playback/render-worker-client";
 import { renderWorkerCapable } from "$lib/playback/render-worker-protocol";
@@ -324,42 +319,6 @@ function initGL() {
 }
 
 //  Background loading
-async function resolveBackgroundSrc(value: string): Promise<string> {
-	if (!value) return "";
-	// Extension wallpaper: `ext:<extId>:<localId>` → the pack's hydrated
-	// absolute path. Unresolved (pack removed) → fallback colour, no texture.
-	if (value.startsWith("ext:")) {
-		const wire = resolveBackgroundWireValue(value);
-		if (!wire || wire.startsWith("#")) return "";
-		return convertFileSrc(wire);
-	}
-	// Defensive: keep gradient/colour values away from convertFileSrc, since a
-	// stray write leaving a CSS gradient here while type briefly reads "image"
-	// would otherwise log a bogus "File does not exist" via the asset protocol.
-	if (value.includes("gradient(") || value.startsWith("#")) return "";
-	if (value.startsWith("asset:") && !value.startsWith("asset://")) {
-		const id = value.slice("asset:".length);
-		const cached = await resolveAsset(id);
-		if (cached) return convertFileSrc(cached);
-		const thumb = assetsStore.thumbPaths[id];
-		if (thumb) return convertFileSrc(thumb);
-		return "";
-	}
-	if (
-		value.startsWith("data:") ||
-		value.startsWith("http://") ||
-		value.startsWith("https://") ||
-		value.startsWith("asset://") ||
-		value.startsWith("/")
-	) {
-		// Already a URL (served or data) or a root-relative path served
-		// from the frontend's static/ dir.
-		return value;
-	}
-	// Raw filesystem path: convert to the Tauri asset protocol.
-	return convertFileSrc(value);
-}
-
 async function loadBackgroundIfNeeded() {
 	if (!renderWorkerClient && (!gl || !bgTex)) return;
 	const type = store.backgroundType;

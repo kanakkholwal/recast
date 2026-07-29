@@ -9,9 +9,8 @@
  * scene (`frameAt`) so the RenderState→FrameInput mapping stays testable and out
  * of this imperative glue.
  *
- * Not yet handled here (follow-ups): image backgrounds and the DOM-overlay passes
- * (cursor sprite, camera, captions, annotations) need textures wired in — color
- * and gradient backgrounds + the main pass render today.
+ * Not yet handled here (follow-ups): caption + annotation passes. Background
+ * (colour/gradient/image), sprite cursor, and the camera bubble render today.
  */
 
 import {
@@ -25,10 +24,35 @@ import {
 	VideoSampleSink,
 	type VideoEncodingConfig,
 } from "@recast/media/mediabunny";
-import { RenderCore } from "../../components/editor/render-core";
+import { RenderCore, type RenderPass } from "../../components/editor/render-core";
 import { WebGL2Backend } from "../../components/editor/webgl2-backend";
-import type { FrameInput } from "../../components/editor/frame-params";
+import type { FrameGeometry, FrameInput } from "../../components/editor/frame-params";
+import type { CameraOverlayShape, CameraPlacement } from "$lib/stores/editor-store.svelte";
 import { exportFrameCount, exportFrameTime } from "./browser-export-plan";
+import { bubbleCornerRadiusPx, cameraBubbleRect, coverUvRect } from "./camera-overlay-export";
+
+/** An overlay bound to the export GL context: its per-frame pass + a disposer for
+ *  the textures it uploaded. Built by a factory so browser-export owns the data
+ *  (sprites, bitmaps) and this renderer stays generic. */
+export interface ExportOverlay {
+	readonly pass: RenderPass;
+	dispose(): void;
+}
+export type ExportOverlayFactory = (backend: WebGL2Backend) => ExportOverlay;
+
+/** Camera bubble inputs: its own decoded stream (sampled at the same original
+ *  time as the main video) + the resolved per-frame placement. The bubble draws
+ *  on top of all other overlays, matching the preview's stacking. */
+export interface CameraExportInputs {
+	/** Camera stream URL (`convertFileSrc(camera.mp4)`). */
+	url: string;
+	geom: FrameGeometry;
+	shape: CameraOverlayShape;
+	cornerRadius: number | undefined;
+	mirror: boolean;
+	/** Effective placement at original time `t` (base → keyframes → zoom-follow). */
+	placementAt: (originalSec: number) => CameraPlacement;
+}
 
 export interface OffscreenExportOptions {
 	/** Source video URL (range-streamed for random access). */
@@ -43,6 +67,14 @@ export interface OffscreenExportOptions {
 	/** Scene for output frame `index`: the FrameInput to composite and the
 	 *  ORIGINAL source time to sample the decoded frame at. */
 	frameAt: (index: number, outputSec: number) => { input: FrameInput; originalSec: number };
+	/** Decoded image/wallpaper background, uploaded once to a texture; null for
+	 *  colour/gradient backgrounds. Must match the scene's `backgroundImageReady`. */
+	backgroundImage?: ImageBitmap | null;
+	/** Overlay passes (cursor sprite, captions, annotations) drawn after the main
+	 *  compositor pass. Built + disposed by the caller's data. */
+	overlays?: ExportOverlayFactory[];
+	/** Camera bubble (a second decoded stream), drawn on top when present. */
+	camera?: CameraExportInputs | null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
 }
@@ -60,18 +92,35 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	});
 	if (!gl) throw new Error("WebGL2 unavailable for export");
 	const backend = WebGL2Backend.create(gl);
-	const renderCore = new RenderCore(backend);
+	const overlays = (opts.overlays ?? []).map((make) => make(backend));
+	const renderCore = new RenderCore(
+		backend,
+		overlays.map((o) => o.pass),
+	);
 
 	const input = new Input({ source: new UrlSource(opts.videoUrl), formats: ALL_FORMATS });
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
+	let camInput: Input | null = null;
 	try {
 		const track = await input.getPrimaryVideoTrack();
 		if (!track) throw new Error("no video track to export");
 		const sink = new VideoSampleSink(track);
 
+		// Camera bubble: its own decoder, sampled at the same original time.
+		let camSink: VideoSampleSink | null = null;
+		if (opts.camera) {
+			camInput = new Input({ source: new UrlSource(opts.camera.url), formats: ALL_FORMATS });
+			const camTrack = await camInput.getPrimaryVideoTrack();
+			if (camTrack) camSink = new VideoSampleSink(camTrack);
+		}
+
 		const source = new CanvasSource(canvas, opts.encodingConfig);
 		output.addVideoTrack(source);
 		await output.start();
+
+		const backgroundTex = opts.backgroundImage
+			? backend.uploadBackground(opts.backgroundImage)
+			: null;
 
 		const frames = exportFrameCount(opts.fps, opts.outputDurationSec);
 		const frameDur = opts.fps > 0 ? 1 / opts.fps : 0;
@@ -86,7 +135,29 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				vf.close();
 				sample.close();
 			}
-			renderCore.renderFrame(frameInput, { backgroundTex: null });
+			renderCore.renderFrame(frameInput, { backgroundTex });
+
+			if (opts.camera && camSink) {
+				const cs = await camSink.getSample(Math.max(0, originalSec));
+				if (cs) {
+					const cvf = cs.toVideoFrame();
+					const camTex = backend.uploadCamera(cvf);
+					const camAspect = cvf.displayHeight > 0 ? cvf.displayWidth / cvf.displayHeight : 1;
+					const placement = opts.camera.placementAt(originalSec);
+					const rect = cameraBubbleRect(placement, opts.camera.geom, opts.width, opts.height);
+					backend.drawSprite(camTex, rect, {
+						uvRect: coverUvRect(camAspect, opts.camera.mirror),
+						cornerRadiusPx: bubbleCornerRadiusPx(
+							opts.camera.shape,
+							opts.camera.cornerRadius,
+							rect.w,
+						),
+					});
+					cvf.close();
+					cs.close();
+				}
+			}
+
 			await source.add(outputSec, frameDur); // backpressure
 			opts.onProgress?.((i + 1) / frames);
 		}
@@ -103,7 +174,9 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		}
 		throw err;
 	} finally {
+		for (const o of overlays) o.dispose();
 		input.dispose();
+		camInput?.dispose();
 		backend.dispose();
 	}
 }

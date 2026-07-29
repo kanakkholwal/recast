@@ -40,6 +40,7 @@ import {
 	hasBlurUnderZoom,
 } from "$lib/services/export";
 import { runBrowserExport } from "$lib/export/browser-export";
+import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
@@ -1163,10 +1164,12 @@ async function handleExport() {
 		// Hand the fully-built export to the queue; the store runs it (after any
 		// already-running one), so it survives leaving this editor.
 		let browserVideoPath: string | undefined;
-		if (BROWSER_EXPORT_ENABLED && store.exportFormat !== "gif") {
+		const browserBlocked = browserExportBlockedReason(store);
+		if (BROWSER_EXPORT_ENABLED && !browserBlocked) {
 			try {
 				browserVideoPath = await runBrowserExport(store, {
 					videoUrl: videoSrc,
+					cameraUrl: cameraSrc,
 					quality: store.exportQuality as ExportQuality,
 					fps: store.exportFps && store.exportFps > 0 ? store.exportFps : (meta?.fps ?? 30),
 				});
