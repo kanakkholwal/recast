@@ -2,7 +2,7 @@
 import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { motionDuration } from "$lib/motion.svelte";
-import { X, ZoomIn } from "@recast/icons";
+import { ZoomIn } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
 import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
@@ -51,6 +51,8 @@ let {
 const MIN_DURATION = 0.1;
 
 const SNAP_TOLERANCE_PX = 6;
+/** Below this the label can't fit legibly, so the card shows its icon. */
+const NAME_WIDTH_PX = 56;
 
 type DragMode = "move" | "resize-start" | "resize-end";
 
@@ -184,15 +186,6 @@ function onCardClick(event: MouseEvent) {
 	event.stopPropagation();
 	store.selectedZoomRegionId = region.id;
 }
-
-function onRemove(event: Event) {
-	event.stopPropagation();
-	if (event instanceof KeyboardEvent) {
-		event.preventDefault();
-		if (event.key !== "Enter" && event.key !== " ") return;
-	}
-	store.removeZoomRegion(region.id);
-}
 </script>
 
 <div
@@ -219,48 +212,35 @@ function onRemove(event: Event) {
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-zoom/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-zoom/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-lane-zoom cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-zoom)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-zoom)]'
-      : 'border-lane-zoom/30 hover:border-lane-zoom/60 cursor-grab'} {drag?.mode === 'move'
+    class="absolute inset-0 overflow-hidden rounded-[3px] border-l-2 text-left transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {isSelected
+      ? 'border-l-lane-zoom bg-lane-zoom/35 cursor-grabbing ring-1 ring-inset ring-lane-zoom/70'
+      : 'border-l-lane-zoom/70 bg-lane-zoom/20 cursor-grab hover:bg-lane-zoom/30'} {drag?.mode ===
+    'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
+    <!-- Content by available width, like an NLE clip: icon when narrow, then the
+         scale, then the length. Same tiers as the markup card so the two lanes
+         read as one system in different colours. -->
     <div
-      class="relative flex h-full items-center gap-1.5 px-1.5"
+      class="pointer-events-none flex h-full items-center gap-1 px-1.5"
       id={`zoom-region-${region.id}`}
       aria-label={`Focus region from ${formatTimeByMode(outSec(region.start), timeMode, fps)} to ${formatTimeByMode(outSec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
-      <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-zoom/20 text-lane-zoom"
-      >
-        <ZoomIn class="size-3" />
-      </span>
-      <div class="min-w-0 flex-1 pointer-events-none">
-        <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
-          Zoom <span class="text-lane-zoom">{region.scale.toFixed(1)}×</span>
-        </p>
+      {#if width < NAME_WIDTH_PX}
+        <ZoomIn class="size-3 shrink-0 text-lane-zoom" />
+      {:else}
+        <span class="truncate text-[10px] font-semibold leading-none text-foreground">
+          {region.scale.toFixed(1)}×
+        </span>
         {#if showSubtitle}
-          <p
-            class="truncate text-[9px] leading-tight tabular-nums text-muted-foreground"
+          <span
+            class="ml-auto shrink-0 font-mono text-[9px] leading-none tabular-nums text-foreground/55"
           >
-            {formatTimeByMode(outSec(region.start), timeMode, fps)}
-          </p>
+            {formatTimeByMode(outSec(region.end) - outSec(region.start), timeMode, fps)}
+          </span>
         {/if}
-      </div>
-      <span
-        role="button"
-        id={`remove-zoom-region-${region.id}`}
-        tabindex="0"
-        onclick={onRemove}
-        onpointerdown={(e) => e.stopPropagation()}
-        onkeydown={onRemove}
-        class="pointer-events-auto flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground opacity-0 transition-all hover:border-destructive hover:text-destructive group-hover/card:opacity-100 focus:opacity-100 {isSelected
-          ? 'opacity-100'
-          : ''}"
-        aria-label="Remove focus region"
-      >
-        <X size={9} stroke={2.5} />
-      </span>
+      {/if}
     </div>
   </button>
 

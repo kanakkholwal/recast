@@ -4,7 +4,7 @@ import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Plus, ZoomIn } from "@recast/icons";
 import type { TimeMode } from "./timeline-helpers";
 import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
-import { cardSpan, laneHeight, packRows, rowTop, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
+import type { LaneCardLayout } from "./timeline-stack";
 import ZoomLayerCard from "./ZoomLayerCard.svelte";
 
 // Hosts zoom-region cards: builds the shared snap target list and paints
@@ -20,11 +20,15 @@ interface Props {
 	fps: number;
 	duration: number;
 	timeMode: TimeMode;
+	/** Card placement + lane height, computed by the timeline so the track rail
+	 *  and this lane can never disagree on how tall the lane is. */
+	layout: LaneCardLayout;
 	onCopy: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
 	onDuplicate: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
 }
 
-let { store, pixelsPerSecond, fps, duration, timeMode, onCopy, onDuplicate }: Props = $props();
+let { store, pixelsPerSecond, fps, duration, timeMode, layout, onCopy, onDuplicate }: Props =
+	$props();
 
 // Matches the toolbar's "Zoom" button, so a region reads the same however it
 // was made.
@@ -103,23 +107,6 @@ function onLaneUp(e: PointerEvent) {
 	drag = null;
 }
 
-// Overlapping regions stacked on top of each other at top: 50%, so the covered
-// one couldn't be clicked or resized. The FocusPanel warns about overlaps, so
-// they're an expected state the lane has to be able to show.
-const MIN_CARD_PX = 32;
-const spans = $derived(
-	store.zoomRegions.map((r) => {
-		const s = cardSpan(
-			originalToOutput(store.renderMap, r.start) * pixelsPerSecond,
-			originalToOutput(store.renderMap, r.end) * pixelsPerSecond,
-			MIN_CARD_PX,
-		);
-		return { id: r.id, left: s.left, right: s.left + s.width, width: s.width };
-	}),
-);
-const rows = $derived(packRows(spans));
-const height = $derived(laneHeight(rows.length ? Math.max(...rows) + 1 : 0, ZOOM_ROW_HEIGHT_PX));
-
 // Empty-state affordance: the lane used to explain how to add a region without
 // letting you do it. Punches in around the playhead, like the toolbar button.
 function addAtPlayhead() {
@@ -138,7 +125,7 @@ function addAtPlayhead() {
   onpointerup={onLaneUp}
   onpointercancel={onLaneUp}
   class="relative mt-1.5 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[height]"
-  style="height: {height}px;"
+  style="height: {layout.height}px;"
 >
   {#if store.zoomRegions.length === 0}
     <button
@@ -159,9 +146,9 @@ function addAtPlayhead() {
         {pixelsPerSecond}
         {fps}
         {duration}
-        left={spans[i].left}
-        width={spans[i].width}
-        top={rowTop(rows[i], ZOOM_ROW_HEIGHT_PX)}
+        left={layout.cards[i].left}
+        width={layout.cards[i].width}
+        top={layout.cards[i].top}
         snapTargets={targetsFor(region.id)}
         {timeMode}
         onSnapChange={(snap) => (activeSnap = snap)}

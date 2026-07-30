@@ -3,7 +3,7 @@ import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
 import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { motionDuration } from "$lib/motion.svelte";
-import { X } from "@recast/icons";
+
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
 import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
@@ -47,6 +47,8 @@ let {
 
 const MIN_DURATION = 0.05; // Annotations can be tighter than zooms.
 const SNAP_TOLERANCE_PX = 6;
+/** Below this the name can't fit legibly, so the card shows its kind icon. */
+const NAME_WIDTH_PX = 56;
 
 type DragMode = "move" | "resize-start" | "resize-end";
 
@@ -182,15 +184,6 @@ function onCardClick(event: MouseEvent) {
 	event.stopPropagation();
 	store.selectedAnnotationId = annotation.id;
 }
-
-function onRemove(event: Event) {
-	event.stopPropagation();
-	if (event instanceof KeyboardEvent) {
-		event.preventDefault();
-		if (event.key !== "Enter" && event.key !== " ") return;
-	}
-	store.removeAnnotation(annotation.id);
-}
 </script>
 
 <div
@@ -213,46 +206,36 @@ function onRemove(event: Event) {
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-markup/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-markup/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-lane-markup/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-markup)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-markup)]'
-      : 'border-lane-markup/40 hover:border-lane-markup/70 cursor-grab'} {drag?.mode ===
+    class="absolute inset-0 overflow-hidden rounded-[3px] border-l-2 text-left transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {isSelected
+      ? 'border-l-lane-markup bg-lane-markup/35 cursor-grabbing ring-1 ring-inset ring-lane-markup/70'
+      : 'border-l-lane-markup/70 bg-lane-markup/20 cursor-grab hover:bg-lane-markup/30'} {drag?.mode ===
     'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
+    <!-- Content by available width, the way an NLE clip degrades: icon only when
+         narrow, then the name, then the length. The old card always rendered a
+         20px icon tile AND the name AND a timecode, which on a short card left
+         nothing but a clipped icon. -->
     <div
-      class="relative flex h-full items-center gap-1.5 px-1.5"
+      class="pointer-events-none flex h-full items-center gap-1 px-1.5"
       id={`annotation-region-${annotation.id}`}
       aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
-      <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-markup/20 text-lane-markup"
-      >
-        <Icon class="size-3" />
-      </span>
-      <div class="min-w-0 flex-1 pointer-events-none">
-        <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
+      {#if width < NAME_WIDTH_PX}
+        <Icon class="size-3 shrink-0 text-lane-markup" />
+      {:else}
+        <span class="truncate text-[10px] font-semibold leading-none text-foreground">
           {kindLabel(annotation)}
-        </p>
+        </span>
         {#if showSubtitle}
-          <p class="truncate text-[9px] leading-tight text-muted-foreground">
-            {formatTimeByMode(outSec(annotation.start), timeMode, fps)}
-          </p>
+          <span
+            class="ml-auto shrink-0 font-mono text-[9px] leading-none tabular-nums text-foreground/55"
+          >
+            {formatTimeByMode(outSec(annotation.end) - outSec(annotation.start), timeMode, fps)}
+          </span>
         {/if}
-      </div>
-      <span
-        role="button"
-        tabindex="0"
-        onclick={onRemove}
-        onpointerdown={(e) => e.stopPropagation()}
-        onkeydown={onRemove}
-        class="pointer-events-auto flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground opacity-0 transition-all hover:border-destructive hover:text-destructive group-hover/card:opacity-100 focus:opacity-100 {isSelected
-          ? 'opacity-100'
-          : ''}"
-        aria-label="Remove annotation"
-      >
-        <X size={9} stroke={2.5} />
-      </span>
+      {/if}
     </div>
   </button>
 

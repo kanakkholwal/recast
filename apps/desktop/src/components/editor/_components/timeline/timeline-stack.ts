@@ -11,6 +11,8 @@
 export const ROW_HEIGHT_PX = 26;
 /** Zoom cards are taller: they carry a sparkline as well as a label. */
 export const ZOOM_ROW_HEIGHT_PX = 30;
+/** Audio-clip cards (music, detached voice) sit between the two. */
+export const CLIP_ROW_HEIGHT_PX = 22;
 /** Vertical space between stacked rows. */
 export const ROW_SPACING_PX = 4;
 /** Horizontal breathing room required between two cards sharing a row. */
@@ -18,7 +20,10 @@ export const ROW_GAP_PX = 4;
 /** Narrowest a card may render, so a one-frame item stays clickable. */
 export const CARD_MIN_WIDTH_PX = 28;
 /** Lane padding above and below the stack, matching the lane's py class. */
-const LANE_PADDING_PX = 6;
+export const LANE_PADDING_PX = 6;
+/** Lane border width. Counted because a card is positioned in the lane's
+ *  PADDING box, which excludes the border but includes the padding. */
+export const LANE_BORDER_PX = 1;
 
 export interface CardSpan {
 	id: string;
@@ -52,12 +57,13 @@ export function packRows(spans: CardSpan[]): number[] {
 /** Lane height needed to show `rows` stacked cards without clipping. */
 export function laneHeight(rows: number, rowHeightPx = ROW_HEIGHT_PX): number {
 	const n = Math.max(1, rows);
-	return n * rowHeightPx + (n - 1) * ROW_SPACING_PX + LANE_PADDING_PX * 2;
+	const stack = n * rowHeightPx + (n - 1) * ROW_SPACING_PX;
+	return stack + LANE_PADDING_PX * 2 + LANE_BORDER_PX * 2;
 }
 
 /** Top offset of a card on the given row, relative to the lane's padding box. */
 export function rowTop(row: number, rowHeightPx = ROW_HEIGHT_PX): number {
-	return row * (rowHeightPx + ROW_SPACING_PX);
+	return LANE_PADDING_PX + row * (rowHeightPx + ROW_SPACING_PX);
 }
 
 /**
@@ -87,4 +93,52 @@ export function cardSpan(
 export function edgeHandleWidth(cardWidthPx: number): number {
 	const byShare = Math.floor(cardWidthPx / 3.2);
 	return Math.max(1, Math.min(12, byShare));
+}
+
+export interface PlacedCard {
+	id: string;
+	left: number;
+	width: number;
+	top: number;
+}
+
+export interface LaneCardLayout {
+	cards: PlacedCard[];
+	rowCount: number;
+	height: number;
+}
+
+/**
+ * Full layout for one lane: every card placed, and the lane height that fits
+ * them. Computed once by the timeline so the track rail and the lane body can
+ * never disagree about how tall a lane is -- the rail used to hard-code each
+ * lane's height as a Tailwind class, which silently broke the moment a lane
+ * could grow.
+ *
+ * `xOf` maps an original time to a pixel offset, keeping this free of the
+ * store and the time map.
+ */
+export function cardLayout(
+	items: readonly { id: string; start: number; end: number }[],
+	xOf: (t: number) => number,
+	opts: { minWidthPx?: number; rowHeightPx?: number } = {},
+): LaneCardLayout {
+	const minWidth = opts.minWidthPx ?? CARD_MIN_WIDTH_PX;
+	const rowHeight = opts.rowHeightPx ?? ROW_HEIGHT_PX;
+	const spans = items.map((it) => {
+		const s = cardSpan(xOf(it.start), xOf(it.end), minWidth);
+		return { id: it.id, left: s.left, right: s.left + s.width, width: s.width };
+	});
+	const rows = packRows(spans);
+	const rowCount = rows.length ? Math.max(...rows) + 1 : 0;
+	return {
+		cards: spans.map((s, i) => ({
+			id: s.id,
+			left: s.left,
+			width: s.width,
+			top: rowTop(rows[i], rowHeight),
+		})),
+		rowCount,
+		height: laneHeight(rowCount, rowHeight),
+	};
 }

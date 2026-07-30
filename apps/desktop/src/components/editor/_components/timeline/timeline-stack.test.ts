@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+	cardLayout,
 	cardSpan,
 	edgeHandleWidth,
+	LANE_BORDER_PX,
 	laneHeight,
 	packRows,
 	ROW_GAP_PX,
@@ -75,7 +77,17 @@ describe("laneHeight", () => {
 	it("follows a taller row height", () => {
 		expect(laneHeight(2, 30)).toBeGreaterThan(laneHeight(2, 26));
 		expect(rowTop(1, 30)).toBeGreaterThan(rowTop(1, 26));
-		expect(rowTop(0, 30)).toBe(0);
+	});
+
+	// A lane's absolute children are positioned in its PADDING box, so a row at
+	// top 0 sits against the padding edge and every pixel of slack pools at the
+	// bottom -- a single-row lane looked top-heavy by the full padding.
+	it("centres a single row between the lane's padding edges", () => {
+		for (const rowHeight of [22, 26, 30]) {
+			const paddingBox = laneHeight(1, rowHeight) - LANE_BORDER_PX * 2;
+			const top = rowTop(0, rowHeight);
+			expect(top, `row height ${rowHeight}`).toBe(paddingBox - top - rowHeight);
+		}
 	});
 });
 
@@ -115,5 +127,66 @@ describe("edgeHandleWidth", () => {
 	it("never returns a target too small to hit", () => {
 		expect(edgeHandleWidth(28)).toBeGreaterThanOrEqual(4);
 		expect(edgeHandleWidth(1)).toBeGreaterThanOrEqual(1);
+	});
+});
+
+describe("cardLayout", () => {
+	// 10px per second, so times read straight off as tens of pixels.
+	const xOf = (t: number) => t * 10;
+
+	it("is empty but still claims a lane height", () => {
+		const l = cardLayout([], xOf);
+		expect(l.cards).toEqual([]);
+		expect(l.rowCount).toBe(0);
+		expect(l.height).toBe(laneHeight(0));
+	});
+
+	it("places non-overlapping cards on one row", () => {
+		const l = cardLayout(
+			[
+				{ id: "a", start: 0, end: 5 },
+				{ id: "b", start: 10, end: 15 },
+			],
+			xOf,
+		);
+		expect(l.rowCount).toBe(1);
+		expect(l.cards.map((c) => c.top)).toEqual([rowTop(0), rowTop(0)]);
+		expect(l.cards[0]).toMatchObject({ left: 0, width: 50 });
+	});
+
+	it("stacks an overlap onto a second row and grows the lane", () => {
+		const flat = cardLayout([{ id: "a", start: 0, end: 10 }], xOf);
+		const stacked = cardLayout(
+			[
+				{ id: "a", start: 0, end: 10 },
+				{ id: "b", start: 5, end: 15 },
+			],
+			xOf,
+		);
+		expect(stacked.rowCount).toBe(2);
+		expect(stacked.cards[1].top).toBeGreaterThan(0);
+		expect(stacked.height).toBeGreaterThan(flat.height);
+	});
+
+	// The rail and the lane body both read `height`, so it must always be the
+	// height that actually fits `rowCount` rows at the given row height.
+	it("reports a height that matches its own row count and row height", () => {
+		const l = cardLayout(
+			[
+				{ id: "a", start: 0, end: 10 },
+				{ id: "b", start: 5, end: 15 },
+				{ id: "c", start: 6, end: 16 },
+			],
+			xOf,
+			{ rowHeightPx: 30 },
+		);
+		expect(l.rowCount).toBe(3);
+		expect(l.height).toBe(laneHeight(3, 30));
+		expect(l.cards[2].top).toBe(rowTop(2, 30));
+	});
+
+	it("honours a lane's own minimum card width", () => {
+		const l = cardLayout([{ id: "a", start: 1, end: 1.05 }], xOf, { minWidthPx: 32 });
+		expect(l.cards[0].width).toBe(32);
 	});
 });

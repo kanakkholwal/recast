@@ -5,6 +5,7 @@ import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Scissors, X } from "@recast/icons";
 import { buildWaveformPath } from "./timeline-helpers";
 import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
+import { cardSpan, edgeHandleWidth } from "./timeline-stack";
 
 // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
 
@@ -22,6 +23,9 @@ let { store, pixelsPerSecond, duration, showWaveform = true }: Props = $props();
 
 // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
 const MIN_CUT = 0.1;
+// A band narrower than this can't hold two grips and a middle to drag. Kept well
+// under the other lanes' 28px so the band doesn't overstate what was removed.
+const MIN_BAND_PX = 16;
 
 let laneEl = $state<HTMLDivElement | null>(null);
 
@@ -42,6 +46,9 @@ interface DragState {
 	originEnd: number;
 }
 let drag = $state<DragState | null>(null);
+// Pushed on the first real move: clicking a band to select it used to leave an
+// undo entry that changed nothing.
+let dragUndoPushed = false;
 
 // A create-drag is PREVIEWED, then committed on release.
 //
@@ -97,8 +104,7 @@ function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
 	if (!laneEl) return;
 	// Selecting the band makes document-level Delete restore this exact cut.
 	store.selectedCutId = cut.id;
-	// A drag is one discrete action → one undo entry.
-	store.pushUndoState();
+	dragUndoPushed = false;
 	drag = {
 		mode,
 		pointerId: e.pointerId,
@@ -123,6 +129,11 @@ function onMove(e: PointerEvent) {
 	}
 
 	if (!drag.id) return;
+	// A drag is one discrete action → one undo entry.
+	if (!dragUndoPushed) {
+		store.pushUndoState();
+		dragUndoPushed = true;
+	}
 	const delta = t - drag.anchorTime;
 	const next =
 		drag.mode === "move"
@@ -262,7 +273,9 @@ const waveformPath = $derived(
         </span>
       </button>
     {:else}
-      {@const w = Math.max(8, cutW)}
+      {@const band = cardSpan(cutLeft, cutLeft + cutW, MIN_BAND_PX)}
+      {@const w = band.width}
+      {@const gripPx = edgeHandleWidth(w)}
       {@const isSel = store.selectedCutId === cut.id}
       <!-- svelte-ignore a11y_no_static_element_interactions -->
       <div
@@ -283,18 +296,21 @@ const waveformPath = $derived(
         class="group/cut absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-sm border bg-lane-cut/20 transition-shadow active:cursor-grabbing focus-visible:outline-none {isSel
           ? 'border-lane-cut ring-2 ring-lane-cut/50'
           : 'border-lane-cut/50'}"
-        style="left: {cutLeft}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 10px);"
+        style="left: {band.left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 10px);"
       >
-        <!-- Edge resize handles -->
+        <!-- Grips scale with the band so a short one always keeps more middle to
+             drag than edge to resize; two fixed 6px grips on a 16px band did not. -->
         <div
           role="presentation"
           onpointerdown={(e) => onBandDown(e, cut, "resize-l")}
-          class="absolute inset-y-0 left-0 w-1.5 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          class="absolute inset-y-0 left-0 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          style="width: {gripPx}px;"
         ></div>
         <div
           role="presentation"
           onpointerdown={(e) => onBandDown(e, cut, "resize-r")}
-          class="absolute inset-y-0 right-0 w-1.5 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          class="absolute inset-y-0 right-0 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          style="width: {gripPx}px;"
         ></div>
 
         {#if w > 44}

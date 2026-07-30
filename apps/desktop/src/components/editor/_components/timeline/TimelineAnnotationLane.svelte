@@ -3,7 +3,7 @@ import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput } from "$lib/timeline/time-map";
 import type { TimeMode } from "./timeline-helpers";
 import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
-import { cardSpan, laneHeight, packRows, rowTop } from "./timeline-stack";
+import type { LaneCardLayout } from "./timeline-stack";
 import AnnotationLayerCard from "./AnnotationLayerCard.svelte";
 
 // Sister of TimelineZoomLane; same lifted snap-guide pattern.
@@ -14,10 +14,13 @@ interface Props {
 	fps: number;
 	duration: number;
 	timeMode: TimeMode;
+	/** Card placement + lane height, computed by the timeline so the track rail
+	 *  and this lane can never disagree on how tall the lane is. */
+	layout: LaneCardLayout;
 	onDuplicate: (annotation: Annotation) => void;
 }
 
-let { store, pixelsPerSecond, fps, duration, timeMode, onDuplicate }: Props = $props();
+let { store, pixelsPerSecond, fps, duration, timeMode, layout, onDuplicate }: Props = $props();
 
 let activeSnap = $state<SnapTarget | null>(null);
 const snapX = $derived(
@@ -35,28 +38,12 @@ function targetsFor(excludeId: string): SnapTarget[] {
 		excludeAnnotationId: excludeId,
 	});
 }
-
-// Overlapping annotations are the normal case (a box and its label share a
-// moment), and every card used to sit at top: 50%, so the covered one could
-// not be clicked or resized at all. The lane owns layout now: it measures each
-// card, packs them into rows, and grows to fit.
-const spans = $derived(
-	store.annotations.map((a) => {
-		const s = cardSpan(
-			originalToOutput(store.renderMap, a.start) * pixelsPerSecond,
-			originalToOutput(store.renderMap, a.end) * pixelsPerSecond,
-		);
-		return { id: a.id, left: s.left, right: s.left + s.width, width: s.width };
-	}),
-);
-const rows = $derived(packRows(spans));
-const height = $derived(laneHeight(rows.length ? Math.max(...rows) + 1 : 0));
 </script>
 
 <div
   class="relative mt-1.5 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[opacity,height]"
   class:opacity-50={store.annotationsGloballyHidden}
-  style="height: {height}px;"
+  style="height: {layout.height}px;"
 >
   {#if store.annotations.length === 0}
     <div
@@ -72,9 +59,9 @@ const height = $derived(laneHeight(rows.length ? Math.max(...rows) + 1 : 0));
         {pixelsPerSecond}
         {fps}
         {duration}
-        left={spans[i].left}
-        width={spans[i].width}
-        top={rowTop(rows[i])}
+        left={layout.cards[i].left}
+        width={layout.cards[i].width}
+        top={layout.cards[i].top}
         snapTargets={targetsFor(annotation.id)}
         {timeMode}
         onSnapChange={(snap) => (activeSnap = snap)}
