@@ -244,7 +244,7 @@ export async function runBrowserExport(
 		store.backgroundValue,
 	).catch(() => null);
 	// Cursor comes from the store's published raw samples (the preview loaded them);
-	// press events derive from those. Idle-hide + smoothing are follow-ups.
+	// press events + idle spans derive from the same track. Path smoothing is a follow-up.
 	const cursorSamples = store.cursorSamplesRaw ?? [];
 	const base = buildExportBase({
 		meta: { width: meta.width, height: meta.height },
@@ -264,7 +264,7 @@ export async function runBrowserExport(
 		cursor: store.cursorSettings,
 		cursorMotionEasing: store.cursorMotionEasing,
 		cursorSamples,
-		idlePeriods: [],
+		idlePeriods: store.cursorIdlePeriods ?? [],
 		pressEvents: buildPressEvents(cursorSamples),
 	});
 

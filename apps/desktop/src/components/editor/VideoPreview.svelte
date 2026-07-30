@@ -398,6 +398,8 @@ async function loadCursorTrackIfNeeded() {
 		smoothingSignature = "";
 		// Publish raw samples for the Cursor panel's trajectory minimap.
 		store.cursorSamplesRaw = cursorSamplesRaw;
+		// Idle spans feed the browser export's idle-hide fade (parity with preview).
+		store.cursorIdlePeriods = idlePeriods;
 		// Press events come from raw samples, smoothing-independent.
 		// Rebuild once per track load; the result is keyed by sample
 		// timestamps, which never move regardless of smoothing settings.

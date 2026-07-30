@@ -23,7 +23,7 @@ this is configured. Below is the one-time bootstrap.
    cannot push to a different repo, so a PAT is required.
 
 3. **Cut a release.** On the next tagged release, the job downloads the
-   `recast_<version>_aarch64.dmg` and `recast_<version>_x64.dmg` assets, hashes
+   `Recast_<version>_aarch64.dmg` and `Recast_<version>_x64.dmg` assets, hashes
    them, and pushes the rendered cask. No manual formula editing.
 
 ## User install

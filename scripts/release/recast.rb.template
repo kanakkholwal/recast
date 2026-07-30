@@ -1,7 +1,8 @@
 # Homebrew Cask formula for Recast.
 #
 # This file is the template; `scripts/release/update-homebrew-cask.sh`
-# substitutes @VERSION@ / @ARM_SHA256@ / @INTEL_SHA256@ on each release
+# substitutes @VERSION@ / @ARM_SHA256@ / @INTEL_SHA256@ / @ARM_DMG@ /
+# @INTEL_DMG@ on each release
 # and pushes the rendered file to `kanakkholwal/homebrew-recast` as
 # `Casks/recast.rb`. End users then install with
 #
@@ -23,7 +24,7 @@ cask "recast" do
   on_arm do
     sha256 "@ARM_SHA256@"
 
-    url "https://github.com/kanakkholwal/recast/releases/download/v#{version}/recast_#{version}_aarch64.dmg",
+    url "https://github.com/kanakkholwal/recast/releases/download/v#{version}/@ARM_DMG@",
         verified: "github.com/kanakkholwal/recast/"
   end
 
@@ -31,7 +32,7 @@ cask "recast" do
   on_intel do
     sha256 "@INTEL_SHA256@"
 
-    url "https://github.com/kanakkholwal/recast/releases/download/v#{version}/recast_#{version}_x64.dmg",
+    url "https://github.com/kanakkholwal/recast/releases/download/v#{version}/@INTEL_DMG@",
         verified: "github.com/kanakkholwal/recast/"
   end
 

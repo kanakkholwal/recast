@@ -33,7 +33,7 @@ jobs:
     
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       # pnpm version comes from the root package.json `packageManager` field.
       # Do NOT pin it here: a hardcoded version silently drifted CI onto pnpm 10

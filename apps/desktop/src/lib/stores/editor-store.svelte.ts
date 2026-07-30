@@ -992,6 +992,9 @@ export function createEditorStore() {
 	// trajectory minimap. Set by VideoPreview on load; read-only elsewhere.
 	// `$state.raw`: tens of thousands of samples, replace-only on load.
 	let cursorSamplesRaw = $state.raw<CursorSampleLike[]>([]);
+	// Idle spans (µs, from the cursor track) for the idle-hide fade. Published by
+	// VideoPreview with the raw samples; read by the browser export for parity.
+	let cursorIdlePeriods = $state.raw<{ startUs: number; endUs: number }[]>([]);
 
 	// Annotations + active tool (for the preview canvas's place-mode).
 	let annotations = $state<Annotation[]>([]);
@@ -3074,6 +3077,13 @@ export function createEditorStore() {
 		},
 		set cursorSamplesRaw(v: CursorSampleLike[]) {
 			cursorSamplesRaw = v;
+		},
+
+		get cursorIdlePeriods() {
+			return cursorIdlePeriods;
+		},
+		set cursorIdlePeriods(v: { startUs: number; endUs: number }[]) {
+			cursorIdlePeriods = v;
 		},
 
 		get selectedZoomRegionId() {

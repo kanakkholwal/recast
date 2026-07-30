@@ -71,11 +71,12 @@ fi
   echo
   echo "| Platform | Asset |"
   echo "| --- | --- |"
-  echo "| Windows (x64) | \`recast_${version}_x64-setup.exe\` |"
-  echo "| macOS Apple Silicon — beta | \`recast_${version}_aarch64.dmg\` |"
-  echo "| macOS Intel — beta | \`recast_${version}_x64.dmg\` |"
-  echo "| Linux (AppImage) — beta | \`recast_${version}_amd64.AppImage\` |"
-  echo "| Linux (Debian / Ubuntu) — beta | \`recast_${version}_amd64.deb\` |"
+  # Tauri names bundles from `productName` ("Recast"), so assets are capitalised.
+  echo "| Windows (x64) | \`Recast_${version}_x64-setup.exe\` |"
+  echo "| macOS Apple Silicon — beta | \`Recast_${version}_aarch64.dmg\` |"
+  echo "| macOS Intel — beta | \`Recast_${version}_x64.dmg\` |"
+  echo "| Linux (AppImage) — beta | \`Recast_${version}_amd64.AppImage\` |"
+  echo "| Linux (Debian / Ubuntu) — beta | \`Recast_${version}_amd64.deb\` |"
   echo
 } >> "$body_file"
 
