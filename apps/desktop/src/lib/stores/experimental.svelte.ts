@@ -9,7 +9,8 @@ import { PersistedState } from "@recast/ui/persisted-state";
 export type ExperimentalFlag =
 	| "silenceDetection"
 	| "selfHosting"
-	| "remoteTranscription";
+	| "remoteTranscription"
+	| "browserExportBeta";
 
 interface FlagMeta {
 	key: ExperimentalFlag;
@@ -36,12 +37,19 @@ export const FLAG_META: FlagMeta[] = [
 		description:
 			"Transcribe captions through an OpenAI-compatible endpoint (LM Studio, a self-hosted server, or a third-party API) instead of an on-device model. Response formats vary between servers, so treat this as early.",
 	},
+	{
+		key: "browserExportBeta",
+		label: "New export engine (beta)",
+		description:
+			"Render exports through the new browser engine so they match the preview exactly, instead of the FFmpeg compositor. Falls back automatically if your device can't. Early — compare an export before relying on it.",
+	},
 ];
 
 const DEFAULTS: Record<ExperimentalFlag, boolean> = {
 	silenceDetection: false,
 	selfHosting: false,
 	remoteTranscription: false,
+	browserExportBeta: false,
 };
 
 const STORAGE_KEY = "recast-experimental-flags";

@@ -1333,11 +1333,13 @@ async function handleExport() {
 		// Hand the fully-built export to the queue; the store runs it (after any
 		// already-running one), so it survives leaving this editor.
 		let browserVideoPath: string | undefined;
-		// Resolve the export engine. Master flag off ⇒ always Rust (no behavior change)
-		// until the A/B gate; the resolver still falls back per capability/eligibility.
-		const capability = BROWSER_EXPORT_ENABLED ? await probeBrowserExportCapability() : null;
+		// Resolve the export engine. Browser export is on when the master flag is set OR
+		// the user opted into the beta; otherwise Rust. The resolver still falls back per
+		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
+		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
+		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
 		const engine = chooseExportEngine({
-			masterEnabled: BROWSER_EXPORT_ENABLED,
+			masterEnabled: wantBrowser,
 			forceLegacy: false,
 			blockedReason: browserExportBlockedReason(store),
 			capabilitySupported: capability?.supported ?? false,

@@ -40,8 +40,10 @@ if [[ -z "${HOMEBREW_TAP_TOKEN:-}" ]]; then
 fi
 
 version="${TAG#v}"
-arm_dmg="recast_${version}_aarch64.dmg"
-intel_dmg="recast_${version}_x64.dmg"
+# Tauri names bundles from `productName` ("Recast"), so the DMG assets are
+# capitalised — and GitHub's asset URLs are case-sensitive.
+arm_dmg="Recast_${version}_aarch64.dmg"
+intel_dmg="Recast_${version}_x64.dmg"
 
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
@@ -56,7 +58,14 @@ gh release download "$TAG" \
   --repo "$GITHUB_REPOSITORY" \
   --pattern "$arm_dmg" \
   --pattern "$intel_dmg" \
-  --dir "$work_dir"
+  --dir "$work_dir" \
+  || {
+    echo "::error::Could not download $arm_dmg / $intel_dmg from release $TAG."
+    echo "::error::Assets actually on the release:"
+    gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+      --json assets --jq '.assets[].name' | sed 's/^/::error::  /'
+    exit 1
+  }
 
 [[ -f "$work_dir/$arm_dmg" ]] || {
   echo "::error::$arm_dmg not found in release $TAG"
@@ -67,8 +76,9 @@ gh release download "$TAG" \
   exit 1
 }
 
-arm_sha=$(shasum -a 256 "$work_dir/$arm_dmg" | awk '{print $1}')
-intel_sha=$(shasum -a 256 "$work_dir/$intel_dmg" | awk '{print $1}')
+sha256() { sha256sum "$1" 2>/dev/null || shasum -a 256 "$1"; }
+arm_sha=$(sha256 "$work_dir/$arm_dmg" | awk '{print $1}')
+intel_sha=$(sha256 "$work_dir/$intel_dmg" | awk '{print $1}')
 
 echo "Computed SHA256s:"
 echo "  arm64:  $arm_sha"
@@ -90,10 +100,19 @@ mkdir -p "$tap_dir/Casks"
 # Render the formula by substituting @-delimited placeholders.
 template="$SCRIPT_DIR/recast.rb.template"
 formula="$tap_dir/Casks/recast.rb"
+# The DMG filenames are substituted (not hardcoded in the template) so the
+# URLs users download can never drift from the files we just hashed.
 sed -e "s|@VERSION@|${version}|g" \
     -e "s|@ARM_SHA256@|${arm_sha}|g" \
     -e "s|@INTEL_SHA256@|${intel_sha}|g" \
+    -e "s|@ARM_DMG@|${arm_dmg}|g" \
+    -e "s|@INTEL_DMG@|${intel_dmg}|g" \
     "$template" > "$formula"
+
+if grep -n '@[A-Z_]*@' "$formula"; then
+  echo "::error::Unsubstituted placeholder left in the rendered cask (above)."
+  exit 1
+fi
 
 # Commit + push. Skip the commit if the formula is byte-identical to
 # what's already in the tap (re-runs of the same release).
