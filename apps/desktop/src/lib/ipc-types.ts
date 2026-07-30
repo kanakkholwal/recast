@@ -47,6 +47,16 @@ export interface RecordingEntry {
 	needsMigration: boolean;
 }
 
+/**
+ * How the face camera was captured. The camera is always recorded to its own
+ * track and composited at export, so the overlay stays editable; this says
+ * whether that happened and, when it didn't, why.
+ *
+ * `legacy` is a bundle written before the backend recorded capture metadata —
+ * unknowable, and deliberately NOT folded into `off`.
+ */
+export type CameraCapture = "separate" | "off" | "legacy";
+
 export interface EditorDocument {
 	projectPath: string;
 	mediaPath: string;
@@ -55,6 +65,9 @@ export interface EditorDocument {
 	audioPath?: string | null;
 	microphonePath?: string | null;
 	cameraPath?: string | null;
+	/** Why `cameraPath` is or isn't set. Absent on documents from an older
+	 *  backend, which the editor reads as `legacy` (unknowable, not "off"). */
+	cameraCapture?: CameraCapture;
 	metadata: VideoMetadata;
 	renderState: EditorRenderState;
 	/** True for a legacy bundle: migrate before loading the editor. */

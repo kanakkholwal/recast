@@ -20,10 +20,7 @@ export function isCompactViewport(viewportWidth: number): boolean {
  * Compact = fluid up to a cap; wide = fixed form column, plus the aside width
  * when the device panel is showing.
  */
-export function computeDialogWidth(
-	viewportWidth: number,
-	showDevicePanel: boolean,
-): number {
+export function computeDialogWidth(viewportWidth: number, showDevicePanel: boolean): number {
 	if (isCompactViewport(viewportWidth)) {
 		return Math.min(440, viewportWidth - 32);
 	}
@@ -39,11 +36,7 @@ export function summarize(profile: RecordingProfile): string {
 	if (profile.microphone) parts.push(profile.micLabel ?? "Default mic");
 	if (profile.camera) parts.push(profile.cameraLabel ?? "Camera");
 	if (profile.countdown != null) {
-		parts.push(
-			profile.countdown === 0
-				? "No countdown"
-				: `${profile.countdown}s countdown`,
-		);
+		parts.push(profile.countdown === 0 ? "No countdown" : `${profile.countdown}s countdown`);
 	}
 	return parts.length === 0 ? "Screen capture only" : parts.join(" · ");
 }
@@ -79,12 +72,45 @@ export function buildDuplicate(profile: RecordingProfile): RecordingProfile {
 }
 
 /**
+ * True when the draft differs from the profile the dialog was opened with, so a
+ * stray Escape or click-outside only prompts when there is something to lose.
+ * Compared post-normalization: clearing a device pointer that a disabled
+ * capability was going to drop anyway is not a change worth warning about.
+ */
+export function isDraftDirty(draft: RecordingProfile, original: RecordingProfile): boolean {
+	const a = normalizeProfileForSave({ ...draft, name: draft.name.trim() });
+	const b = normalizeProfileForSave({ ...original, name: original.name.trim() });
+	return (
+		a.name !== b.name ||
+		a.systemAudio !== b.systemAudio ||
+		a.microphone !== b.microphone ||
+		a.micDeviceId !== b.micDeviceId ||
+		a.camera !== b.camera ||
+		a.cameraDeviceId !== b.cameraDeviceId ||
+		(a.countdown ?? null) !== (b.countdown ?? null) ||
+		a.isDefault !== b.isDefault
+	);
+}
+
+/**
+ * Another profile sharing this one's name, ignoring case and surrounding space.
+ * The picker and the CLI both identify a profile by name, so two called
+ * "Meeting" are indistinguishable in every list that shows them.
+ */
+export function nameClashOf(
+	draft: RecordingProfile,
+	profiles: RecordingProfile[],
+): RecordingProfile | null {
+	const name = draft.name.trim().toLowerCase();
+	if (!name) return null;
+	return profiles.find((p) => p.id !== draft.id && p.name.trim().toLowerCase() === name) ?? null;
+}
+
+/**
  * When a capability is off, clear the matching device pointers so we don't
  * persist stale identity that won't be applied anyway.
  */
-export function normalizeProfileForSave(
-	profile: RecordingProfile,
-): RecordingProfile {
+export function normalizeProfileForSave(profile: RecordingProfile): RecordingProfile {
 	const next = { ...profile };
 	if (!next.microphone) {
 		next.micDeviceId = null;

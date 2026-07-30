@@ -29,7 +29,9 @@ use super::ffmpeg::{
     CameraOverlayParams, CameraShadowOverlay, ExportSpeed, GifFilterOptions,
 };
 use super::system::get_active_output_dir;
-use super::types::{AppState, EditorDocument, ExportRequest, GifSettings, VideoMetadata};
+use super::types::{
+    AppState, CameraCapture, EditorDocument, ExportRequest, GifSettings, VideoMetadata,
+};
 use crate::project::reader::ProjectOpenResult;
 #[allow(unused_imports)]
 use crate::render::cursor_export::{render_cursor_overlay, CursorOverlayRequest};
@@ -412,6 +414,13 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
                 .microphone_path
                 .map(|p| p.to_string_lossy().to_string()),
             camera_path: project.camera_path.map(|p| p.to_string_lossy().to_string()),
+            // `media` is absent on bundles written before it existed, which is
+            // exactly the case the editor must not describe as "camera off".
+            camera_capture: match project.metadata.media.as_ref() {
+                Some(media) if media.has_camera => CameraCapture::Separate,
+                Some(_) => CameraCapture::Off,
+                None => CameraCapture::Legacy,
+            },
             metadata: VideoMetadata {
                 duration: media_duration,
                 width: project.metadata.video.width,
@@ -434,6 +443,9 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
         audio_path: None,
         microphone_path: None,
         camera_path: None,
+        // A plain video opened directly: no camera was recorded for it, which is
+        // what `Off` says. `Legacy` would claim it's an old Recast bundle.
+        camera_capture: CameraCapture::Off,
         metadata: metadata.clone(),
         render_state: RenderState {
             trim_end: metadata.duration,

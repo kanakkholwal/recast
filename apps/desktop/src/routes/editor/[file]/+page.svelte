@@ -66,6 +66,7 @@ import {
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
+import type { CameraCapture } from "$lib/ipc-types";
 import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
@@ -283,6 +284,9 @@ let audioEngineGen = 0;
 let audioEngineFailed = $state(false);
 let cursorPath = $state<string | null>(null);
 let cameraPath = $state<string | null>(null);
+// Why the camera track is or isn't there; the path alone can't tell the editor
+// whether the camera was off or the project simply predates camera capture.
+let cameraCapture = $state<CameraCapture>("legacy");
 let cameraSrc = $state("");
 let documentPath = $state("");
 let isLoading = $state(true);
@@ -914,6 +918,7 @@ async function loadDocument() {
 	micAudioSrc = "";
 	cursorPath = null;
 	cameraPath = null;
+	cameraCapture = "legacy";
 	cameraSrc = "";
 	videoEl?.pause();
 	systemAudioEl?.pause();
@@ -979,6 +984,8 @@ async function loadDocument() {
 		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
 		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
 		cameraPath = document.cameraPath ?? null;
+		// Absent from an older backend: unknowable, so `legacy` — never "off".
+		cameraCapture = document.cameraCapture ?? "legacy";
 		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
 		// Mount the editor body (VideoPreview renders only when !isLoading) so the
 		// <video> exists before load().
@@ -1995,7 +2002,12 @@ const stages = $derived.by(() => {
             ></div>
           </div>
           <div class="h-full" style="width: {sidebarWidth}px;">
-            <PropertiesPanel {store} {cameraPath} onRegenerateAutoZoom={regenerateAutoZoom} />
+            <PropertiesPanel
+              {store}
+              {cameraPath}
+              {cameraCapture}
+              onRegenerateAutoZoom={regenerateAutoZoom}
+            />
           </div>
         </aside>
       {/if}

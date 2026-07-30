@@ -103,9 +103,24 @@ pub(crate) fn run_encode(
     let stderr_thread = std::thread::Builder::new()
         .name("recast-export-stderr".into())
         .spawn(move || {
-            let reader = std::io::BufReader::new(stderr);
+            let mut reader = std::io::BufReader::new(stderr);
             let mut logged_near_done = false;
-            for line in reader.lines().map_while(Result::ok) {
+            // Read raw bytes per line and lossy-decode, rather than `.lines()`
+            // (which yields `Result<String>` and stops at the FIRST non-UTF-8 line
+            // — silently dropping any real error printed after it, so the failure
+            // path then reports "no detailed error").
+            let mut raw: Vec<u8> = Vec::new();
+            loop {
+                raw.clear();
+                match reader.read_until(b'\n', &mut raw) {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                while matches!(raw.last(), Some(b'\n' | b'\r')) {
+                    raw.pop();
+                }
+                let line = String::from_utf8_lossy(&raw).into_owned();
                 // FFmpeg progress blocks are key=value lines terminated by
                 // `progress=continue` (between blocks) or `progress=end`
                 // (final block). Treat all of these as non-log noise.
@@ -569,7 +584,18 @@ pub(crate) fn run_encode(
     if !status.success() {
         let stderr_bytes = stderr_buf.lock().clone();
         let _ = std::fs::remove_file(&output_path_str);
-        let err_msg = format!("export failed:\n{}", summarize_ffmpeg_error(&stderr_bytes));
+        // Include the exit code: when stderr carries no diagnostic (e.g. ffmpeg was
+        // killed by the OS, crashed, or aborted before logging), the code is the
+        // only signal — a large Windows code like 3221225477 (0xC0000005) means a
+        // crash, not a normal encode error.
+        let code = status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "terminated by signal".into());
+        let err_msg = format!(
+            "export failed (ffmpeg exit {code}):\n{}",
+            summarize_ffmpeg_error(&stderr_bytes)
+        );
         emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
         return Err(err_msg);
     }

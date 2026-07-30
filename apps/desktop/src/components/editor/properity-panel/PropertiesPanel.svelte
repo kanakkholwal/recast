@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { CameraCapture } from "$lib/ipc-types";
 import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
@@ -33,6 +34,8 @@ interface Props {
 	store: EditorStore;
 	/** Path to camera.mp4, or null when no camera was recorded. */
 	cameraPath?: string | null;
+	/** Why that path is or isn't set, so the panel can say which. */
+	cameraCapture?: CameraCapture;
 	/** Forwarded to FocusPanel; the editor page owns the auto-zoom run. */
 	onRegenerateAutoZoom?: () => void;
 }
@@ -156,7 +159,7 @@ const groupedTabs = GROUP_ORDER.map((g) => TABS.filter((t) => t.group === g)).fi
 	(g) => g.length > 0,
 );
 
-let { store, cameraPath = null, onRegenerateAutoZoom }: Props = $props();
+let { store, cameraPath = null, cameraCapture = "legacy", onRegenerateAutoZoom }: Props = $props();
 
 // Switch to Clip when a clip/segment is selected from the timeline.
 $effect(() => {
@@ -257,7 +260,7 @@ const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-tran
       {:else if store.activePanel === "cursor"}
         <CursorPanel {store} />
       {:else if store.activePanel === "camera"}
-        <CameraPanel {store} {cameraPath} />
+        <CameraPanel {store} {cameraPath} {cameraCapture} />
       {:else if store.activePanel === "audio"}
         <AudioPanel {store} />
       {:else if store.activePanel === "music"}

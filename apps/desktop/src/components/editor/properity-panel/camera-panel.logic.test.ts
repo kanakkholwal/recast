@@ -1,5 +1,43 @@
 import { describe, expect, it } from "vitest";
-import { dotStyleFor, labelFor } from "./camera-panel.logic";
+import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
+
+describe("cameraAvailability", () => {
+	it("enables the overlay only when a separate track resolved to a file", () => {
+		expect(cameraAvailability("separate", true).editable).toBe(true);
+		expect(cameraAvailability("separate", false).editable).toBe(false);
+		expect(cameraAvailability("off", false).editable).toBe(false);
+		expect(cameraAvailability("legacy", false).editable).toBe(false);
+	});
+
+	// The whole reason capture state is carried separately from the file path:
+	// "you left the camera off" is wrong for a project recorded before the
+	// camera could be captured at all.
+	it("distinguishes a camera that was off from a project that predates capture", () => {
+		const off = cameraAvailability("off", false).description;
+		const legacy = cameraAvailability("legacy", false).description;
+		expect(off).not.toBe(legacy);
+		expect(off).toMatch(/turn the camera on/i);
+		expect(legacy).toMatch(/predates/i);
+	});
+
+	// A recorded-but-missing track is a broken project, not a choice, and must
+	// never read as "no camera was recorded".
+	it("calls out a recorded track whose file is missing", () => {
+		const missing = cameraAvailability("separate", false);
+		expect(missing.title).toMatch(/missing/i);
+		expect(missing.description).not.toMatch(/no camera was recorded/i);
+	});
+
+	it("never returns empty copy for any state", () => {
+		for (const capture of ["separate", "off", "legacy"] as const) {
+			for (const hasFile of [true, false]) {
+				const result = cameraAvailability(capture, hasFile);
+				expect(result.title.length, `${capture}/${hasFile}`).toBeGreaterThan(0);
+				expect(result.description.length, `${capture}/${hasFile}`).toBeGreaterThan(0);
+			}
+		}
+	});
+});
 
 describe("dotStyleFor", () => {
 	// The preset ids mix conventions ('top-left' = row-col, 'left-center' =

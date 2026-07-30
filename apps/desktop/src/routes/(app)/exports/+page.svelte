@@ -550,14 +550,9 @@ function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
             <div
               in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
               animate:morph={{ duration: 340 }}
-              role="button"
-              tabindex="0"
-              aria-label={entry.filename}
               title={entry.filename}
-              onclick={() => activateEntry(entry)}
-              onkeydown={(e) => handleCardKeydown(e, entry)}
               class={cn(
-                "group/card relative flex cursor-pointer overflow-hidden border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:ring-ring/60",
+                "group/card relative flex overflow-hidden border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
                 view === "grid"
                   ? "flex-col rounded-xl"
                   : "flex-row items-center gap-3 rounded-lg p-1.5",
@@ -661,15 +656,24 @@ function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
                 </div>
               </div>
 
+
+              <!-- Primary action as a real button spanning the card. A role="button"
+                   wrapper would nest the menu trigger inside a button, whose
+                   children ARIA treats as presentational. Sibling + higher
+                   z-index keeps the menu clickable without stopPropagation. -->
+              <button
+                type="button"
+                onclick={() => activateEntry(entry)}
+                class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+              >
+                <span class="sr-only">{entry.filename}</span>
+              </button>
               <!-- Actions -->
               {#if !selection.selectMode}
                 <div
-                  role="presentation"
-                  onclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
                   class={view === "grid"
-                    ? "absolute right-2 top-2"
-                    : "shrink-0 pr-1"}
+                    ? "absolute right-2 top-2 z-20"
+                    : "relative z-20 shrink-0 pr-1"}
                 >
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger>
