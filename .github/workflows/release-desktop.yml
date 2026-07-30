@@ -210,7 +210,7 @@ jobs:
         run: sudo apt-get install -y cmake
 
       - name: Install workspace dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --no-frozen-lockfile
 
       - name: Cache FFmpeg sidecars
         id: ffmpeg-cache
