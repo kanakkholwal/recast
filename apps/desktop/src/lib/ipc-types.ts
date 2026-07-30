@@ -52,10 +52,12 @@ export interface RecordingEntry {
  * track and composited at export, so the overlay stays editable; this says
  * whether that happened and, when it didn't, why.
  *
+ * `failed` is "requested but no track arrived" (device busy, permission denied).
  * `legacy` is a bundle written before the backend recorded capture metadata —
- * unknowable, and deliberately NOT folded into `off`.
+ * unknowable. Neither is folded into `off`: both would blame the user for a
+ * toggle they either did set or never had.
  */
-export type CameraCapture = "separate" | "off" | "legacy";
+export type CameraCapture = "separate" | "off" | "failed" | "legacy";
 
 export interface EditorDocument {
 	projectPath: string;

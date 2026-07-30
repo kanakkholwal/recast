@@ -222,6 +222,7 @@ pub async fn stop_recording(
                     has_system_audio: artifacts.has_system_audio,
                     has_microphone: artifacts.microphone_path.is_some(),
                     has_camera: artifacts.camera_path.is_some(),
+                    camera_requested: artifacts.camera_requested,
                 }),
             };
             let default_render_state = RenderState {

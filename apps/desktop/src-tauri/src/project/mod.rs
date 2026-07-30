@@ -105,6 +105,15 @@ pub struct ProjectMediaMetadata {
     pub has_system_audio: bool,
     pub has_microphone: bool,
     pub has_camera: bool,
+    /// Whether the camera was ASKED for, regardless of whether a track arrived.
+    ///
+    /// `has_camera` alone can't tell a camera that was switched off from one
+    /// that was requested and failed (device busy, permission denied) — and the
+    /// editor otherwise tells someone to "turn the camera on" when they did.
+    /// Defaulted so bundles written before this field read as "not requested",
+    /// which for them is indistinguishable from off anyway.
+    #[serde(default)]
+    pub camera_requested: bool,
 }
 
 #[cfg(test)]
@@ -160,5 +169,30 @@ mod duration_tests {
     fn falls_back_to_stored_duration_without_a_frame_count() {
         assert_eq!(metadata(0, 60, 10_000).media_duration_secs(), 10.0);
         assert_eq!(metadata(600, 0, 10_000).media_duration_secs(), 10.0);
+    }
+
+    /// `cameraRequested` is additive: bundles written before it must keep
+    /// deserializing, and must not claim the camera was asked for.
+    #[test]
+    fn media_metadata_without_camera_requested_reads_as_not_requested() {
+        let media: ProjectMediaMetadata = serde_json::from_value(json!({
+            "hasSystemAudio": true, "hasMicrophone": true, "hasCamera": false
+        }))
+        .expect("pre-field media metadata must still parse");
+        assert!(!media.camera_requested);
+    }
+
+    #[test]
+    fn media_metadata_round_trips_camera_requested() {
+        let media: ProjectMediaMetadata = serde_json::from_value(json!({
+            "hasSystemAudio": false, "hasMicrophone": false,
+            "hasCamera": false, "cameraRequested": true
+        }))
+        .expect("fixture media metadata");
+        assert!(media.camera_requested);
+        // The pair that means "asked for it, never arrived".
+        assert!(!media.has_camera);
+        let back = serde_json::to_value(&media).expect("serialize");
+        assert_eq!(back["cameraRequested"], json!(true));
     }
 }

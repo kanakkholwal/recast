@@ -89,6 +89,10 @@ pub enum CameraCapture {
     Separate,
     /// The recording ran with the camera off (or this isn't a Recast project).
     Off,
+    /// The camera WAS requested but no track arrived — device busy, permission
+    /// denied, or the flush never landed. A warning fired at record time; this
+    /// keeps the editor from blaming the user for a toggle they did set.
+    Failed,
     /// Bundle written before `media` metadata existed, so capture is unknowable.
     Legacy,
 }

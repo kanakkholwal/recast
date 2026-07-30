@@ -39,6 +39,14 @@ export function cameraAvailability(capture: CameraCapture, hasFile: boolean): Ca
 				"This project recorded a camera, but its track can't be found. Re-open the recording, or export without the overlay.",
 		};
 	}
+	if (capture === "failed") {
+		return {
+			editable: false,
+			title: "Camera didn't record",
+			description:
+				"The camera was switched on for this recording, but no track came through — usually the webcam being in use by another app, or camera permission being denied.",
+		};
+	}
 	if (capture === "legacy") {
 		return {
 			editable: false,

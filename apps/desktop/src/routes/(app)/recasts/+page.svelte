@@ -12,6 +12,7 @@ import {
 } from "$lib/ipc";
 import { openInEditor as openEditorWindow, openInNewWindow } from "$lib/library/editor-window";
 import { filterEntries, sortEntries, sumBytes, type LibrarySort } from "$lib/library/list";
+import { canReportCount, libraryStatus } from "$lib/library/status";
 import { createSelection } from "$lib/library/selection.svelte";
 import {
 	createThumbnailLoader,
@@ -22,6 +23,7 @@ import {
 } from "$lib/library/thumbnails";
 import { morph } from "$lib/morph";
 import { isShareSupported, shareRecording } from "$lib/share";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
 import { shareTargetFor } from "$lib/share-target";
 import { platform } from "@tauri-apps/plugin-os";
 import {
@@ -34,6 +36,7 @@ import {
 	Grid3x3,
 	History,
 	List,
+	TriangleAlert,
 	ListChecks,
 	MoreHorizontal,
 	Pencil,
@@ -61,6 +64,9 @@ import { fade, fly } from "svelte/transition";
 
 let entries = $state<RecordingEntry[]>([]);
 let isLoading = $state(true);
+/** Last scan failure. Kept so a broken scan can't masquerade as an empty disk. */
+let loadError = $state<string | null>(null);
+let searchEl = $state<HTMLInputElement | null>(null);
 let thumbnails = $state<Record<string, string>>({});
 let editorWindow = $state<"navigate" | "new-window">("navigate");
 const loadThumbnails = createThumbnailLoader();
@@ -93,8 +99,10 @@ onMount(() => {
 	editorWindow = safeStorage.get<"navigate" | "new-window">("recast-editor-window", editorWindow);
 	view = safeStorage.get<"grid" | "list">("recasts-view", view);
 	const unlisten = listen("refresh-recordings", () => fetchRecasts());
+	window.addEventListener("keydown", focusSearch);
 	return () => {
 		unlisten.then((fn) => fn());
+		window.removeEventListener("keydown", focusSearch);
 	};
 });
 
@@ -117,8 +125,10 @@ async function fetchRecasts() {
 	isLoading = true;
 	try {
 		entries = await listRecasts();
+		loadError = null;
 		void refreshThumbnails(entries);
 	} catch (e) {
+		loadError = String(e);
 		toast.error(`Could not load recordings: ${e}`);
 	} finally {
 		isLoading = false;
@@ -190,6 +200,27 @@ async function shareEntry(entry: RecordingEntry) {
 
 const filtered = $derived(sortEntries(filterEntries(entries, query), sort));
 
+const status = $derived(
+	libraryStatus({
+		loading: isLoading,
+		error: loadError,
+		total: entries.length,
+		matches: filtered.length,
+		query,
+	}),
+);
+
+// Search is the spine of this page, so it gets a shortcut of its own.
+function focusSearch(e: KeyboardEvent) {
+	const t = e.target as HTMLElement | null;
+	const typing = !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+	if (e.key === "/" && !typing && !e.metaKey && !e.ctrlKey && !e.altKey) {
+		e.preventDefault();
+		searchEl?.focus();
+		searchEl?.select();
+	}
+}
+
 const totalSize = $derived(sumBytes(entries));
 
 // Grid and list share one keyed {#each}. Touching `view` here gives the
@@ -203,13 +234,6 @@ const displayed = $derived.by(() => {
 function activateEntry(entry: RecordingEntry) {
 	if (selection.selectMode) selection.toggle(entry.path);
 	else openInEditor(entry);
-}
-
-function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
-	if (e.key === "Enter" || e.key === " ") {
-		e.preventDefault();
-		activateEntry(entry);
-	}
 }
 
 const selectedCount = $derived(selection.count);
@@ -268,15 +292,20 @@ async function handleMigrateOne(entry: RecordingEntry) {
           <span
             class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
           >
-            {entries.length === 0
-              ? "No recordings yet"
-              : entries.length === 1
-                ? "1 recording"
-                : `${entries.length} recordings`}
+            {#if !canReportCount(status)}
+              Library
+            {:else if entries.length === 0}
+              No recordings yet
+            {:else if entries.length === 1}
+              1 recording
+            {:else}
+              {entries.length} recordings
+            {/if}
           </span>
         </h1>
         <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-          {formatSize(totalSize)} on disk · open any clip in the editor or use ⌘K to jump anywhere.
+          {#if canReportCount(status)}{formatSize(totalSize)} on disk · {/if}open
+          any clip in the editor or use {chordLabel("general.palette")} to jump anywhere.
         </p>
       </div>
 
@@ -295,9 +324,16 @@ async function handleMigrateOne(entry: RecordingEntry) {
         class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
       />
       <input
+        bind:this={searchEl}
         bind:value={query}
+        onkeydown={(e) => {
+          if (e.key === "Escape" && query) {
+            e.preventDefault();
+            query = "";
+          }
+        }}
         type="text"
-        placeholder="Search recordings…"
+        placeholder="Search recordings…  (press / )"
         aria-label="Search recordings"
         class="flex-1 bg-transparent text-[13px] font-medium text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
       />
@@ -354,6 +390,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
             )}
             onclick={selection.toggleMode}
             disabled={entries.length === 0}
+            aria-pressed={selection.selectMode}
             title="Select multiple recordings"
           >
             <ListChecks size={11} />
@@ -398,6 +435,8 @@ async function handleMigrateOne(entry: RecordingEntry) {
               variant={view === "grid" ? "secondary" : "ghost"}
               size="icon-sm"
               onclick={() => (view = "grid")}
+              aria-label="Grid view"
+              aria-pressed={view === "grid"}
               title="Grid view"
             >
               <Grid3x3 size={12} />
@@ -406,6 +445,8 @@ async function handleMigrateOne(entry: RecordingEntry) {
               variant={view === "list" ? "secondary" : "ghost"}
               size="icon-sm"
               onclick={() => (view = "list")}
+              aria-label="List view"
+              aria-pressed={view === "list"}
               title="List view"
             >
               <List size={12} />
@@ -417,6 +458,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
             size="icon-sm"
             onclick={fetchRecasts}
             disabled={isLoading}
+            aria-label="Refresh recordings"
             title="Refresh"
           >
             <RefreshCw
@@ -427,7 +469,7 @@ async function handleMigrateOne(entry: RecordingEntry) {
         </div>
       </div>
 
-      {#if isLoading && entries.length === 0}
+      {#if status === "loading"}
       <div
         class={cn(
           "grid gap-3",
@@ -443,7 +485,30 @@ async function handleMigrateOne(entry: RecordingEntry) {
           />
         {/each}
       </div>
-    {:else if filtered.length === 0}
+    {:else if status === "error"}
+      <!-- A failed scan is not an empty library: say so, and offer the retry. -->
+      <div
+        in:fade={{ duration: 200 }}
+        class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-destructive/40 bg-destructive/5 p-12 text-center"
+        role="alert"
+      >
+        <div
+          class="flex size-12 items-center justify-center rounded-xl bg-destructive/10 text-destructive"
+        >
+          <TriangleAlert class="size-5" />
+        </div>
+        <div>
+          <p class="text-[14px] font-semibold text-foreground">
+            Couldn't load your recordings
+          </p>
+          <p class="mt-1 max-w-md text-[11.5px] text-muted-foreground">{loadError}</p>
+        </div>
+        <Button variant="secondary" size="sm" class="gap-1.5" onclick={fetchRecasts}>
+          <RefreshCw class="size-3.5" />
+          Try again
+        </Button>
+      </div>
+    {:else if status === "empty" || status === "no-matches"}
       <div
         in:fade={{ duration: 200 }}
         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
@@ -594,9 +659,12 @@ async function handleMigrateOne(entry: RecordingEntry) {
             <button
               type="button"
               onclick={() => activateEntry(entry)}
+              aria-pressed={selection.selectMode ? isSelected : undefined}
               class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
             >
-              <span class="sr-only">{entry.filename}</span>
+              <span class="sr-only">
+                {selection.selectMode ? `Select ${entry.filename}` : `Open ${entry.filename}`}
+              </span>
             </button>
             <!-- Actions -->
             {#if !selection.selectMode}

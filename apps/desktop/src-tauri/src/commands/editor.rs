@@ -418,6 +418,9 @@ fn load_editor_document_blocking(path: String) -> Result<EditorDocument, String>
             // exactly the case the editor must not describe as "camera off".
             camera_capture: match project.metadata.media.as_ref() {
                 Some(media) if media.has_camera => CameraCapture::Separate,
+                // Asked for but never arrived. Older bundles default this false,
+                // so they fall through to `Off` exactly as before.
+                Some(media) if media.camera_requested => CameraCapture::Failed,
                 Some(_) => CameraCapture::Off,
                 None => CameraCapture::Legacy,
             },

@@ -280,9 +280,9 @@ function handleDialogKeydown(e: KeyboardEvent) {
 	}
 }
 
-function enableProfileSystem() {
-	profilesStore.setEnabled(true);
-	toast.success("Profiles enabled");
+function setProfilesEnabled(next: boolean) {
+	profilesStore.setEnabled(next);
+	toast.success(next ? "Profiles enabled" : "Profiles turned off");
 }
 
 const filtered = $derived.by(() => {
@@ -356,40 +356,46 @@ const capabilities: Cap[] = [
       </p>
     </header>
 
-    <!-- Profiles stay editable here but the recording panel won't auto-apply
-         them until re-enabled. -->
-    {#if !profilesStore.enabled}
-      <div
-        in:fly={{ y: 8, duration: 240, easing: cubicOut }}
-        class="flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 shadow-(--shadow-craft-inset)"
-        role="status"
+    <!-- One row for both states rather than an off-only banner: the page could
+         turn profiles back on but never off, so the only way out was Settings.
+         Profiles stay editable either way; the switch governs whether the
+         recording panel applies them. -->
+    <div
+      in:fly={{ y: 8, duration: 240, easing: cubicOut }}
+      class={cn(
+        "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
+        profilesStore.enabled
+          ? "border-border/50 bg-card/60"
+          : "border-warning/30 bg-warning/10",
+      )}
+    >
+      <span
+        class={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-colors",
+          profilesStore.enabled
+            ? "bg-background/70 text-muted-foreground ring-border/40"
+            : "bg-warning/15 text-warning ring-warning/30",
+        )}
+        aria-hidden="true"
       >
-        <span
-          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning ring-1 ring-inset ring-warning/30"
-          aria-hidden="true"
-        >
-          <Power size={14} />
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="text-[12.5px] font-semibold text-foreground">
-            Profiles are off
-          </div>
-          <div class="text-[11px] text-muted-foreground">
-            The recording panel won't auto-apply a default profile or show the
-            switcher. Edits here are still saved for when you re-enable.
-          </div>
+        <Power size={14} />
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[12.5px] font-semibold text-foreground">
+          {profilesStore.enabled ? "Profiles are on" : "Profiles are off"}
         </div>
-        <Button
-          onclick={enableProfileSystem}
-          variant="secondary"
-          size="sm"
-          class="h-8 shrink-0 gap-1.5"
-        >
-          <Power class="size-3.5" />
-          <span class="text-[11.5px]">Enable</span>
-        </Button>
+        <div class="text-[11px] text-muted-foreground">
+          {profilesStore.enabled
+            ? "The recording panel loads your default profile and shows the switcher."
+            : "The recording panel won't auto-apply a default profile or show the switcher. Edits here are still saved for when you re-enable."}
+        </div>
       </div>
-    {/if}
+      <Switch
+        checked={profilesStore.enabled}
+        onCheckedChange={setProfilesEnabled}
+        aria-label="Apply profiles when recording"
+      />
+    </div>
 
     <label
       in:fly={{ y: 8, duration: 280, delay: 60, easing: cubicOut }}
