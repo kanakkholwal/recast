@@ -63,6 +63,7 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - A dedicated audio waveform lane in the timeline, shown alongside the thumbnails so you can cut against the sound.
 - Drag across the Zoom or Cuts lane to create a zoom region or remove a section, the same gesture in both.
 - A resizable properties panel: drag its edge to set the width, and it is remembered between sessions.
+- A resizable timeline: drag its top edge, or focus the handle and use the arrow keys, to trade height between the timeline and the preview. It stops well short of taking over the window, and the height is remembered between sessions.
 - Cut sections are now selectable and can be removed from the keyboard, like zoom regions and markup.
 
 ### Changed
@@ -76,6 +77,9 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The smoother WebCodecs playback engine is now the default, so playback stays fluid across cuts and splits. It falls back to the standard player automatically where a device cannot use it.
 - The editor now respects the system "reduce motion" setting throughout.
 - The preview shows a scrubber only when the timeline is hidden, so there are no longer two scrubbers at once.
+- The Zoom and Markup tracks now appear once they hold something and stay out of the way while empty, so a fresh recording opens with a shorter timeline and a bigger preview. Turning either on or off in the Layers menu keeps your choice.
+- The mouse wheel now scrolls the timeline down to tracks that do not fit, instead of only ever scrolling sideways. Shift+wheel still pans, Ctrl (Cmd on macOS) still zooms, and with nothing below the fold the wheel pans as before.
+- The time ruler and the track names now stay put while you scroll the timeline. The ruler holds at the top as the tracks scroll under it, and the names stay pinned at the left as you scroll sideways, so you never lose track of where you are or which track you are looking at.
 
 ### Fixed
 - Dragging a zoom or markup block on the timeline barely moved it. The drag maths mixed up pixels and seconds, so a block travelled a hundredth of the distance your pointer did, which read as the block being stuck.

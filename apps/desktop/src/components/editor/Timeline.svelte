@@ -1,26 +1,21 @@
 <script lang="ts">
-import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
 import { AudioLines, Mic, Music2, Pencil, Scissors, Video, ZoomIn } from "@recast/icons";
 import { onMount, untrack } from "svelte";
-import { provideLaneDrag } from "./_components/timeline/timeline-drag.svelte";
+import { type AudioClip, clipEndSec } from "$lib/audio/music";
+import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type { TileProvider } from "$lib/timeline/filmstrip-source";
+import { storyboardCrop } from "$lib/timeline/storyboard";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
 import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
-import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
 import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
 import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
+import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
 import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
 import TimelineRuler from "./_components/timeline/TimelineRuler.svelte";
 import TimelineToolbar from "./_components/timeline/TimelineToolbar.svelte";
 import TimelineZoomLane from "./_components/timeline/TimelineZoomLane.svelte";
-import {
-	AUDIO_LANE_HEIGHT_PX,
-	cardLayout,
-	CLIP_LANE_HEIGHT_PX,
-	CLIP_ROW_HEIGHT_PX,
-	CUT_LANE_HEIGHT_PX,
-	ZOOM_ROW_HEIGHT_PX,
-} from "./_components/timeline/timeline-stack";
-import { clipEndSec, type AudioClip } from "$lib/audio/music";
+import { provideLaneDrag } from "./_components/timeline/timeline-drag.svelte";
 import {
 	clampTimelineZoom,
 	effectiveFps as effFps,
@@ -32,11 +27,16 @@ import {
 	quantizeToFrame as quantizeToFrameOf,
 	steppedZoom,
 } from "./_components/timeline/timeline-helpers";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
+import {
+	AUDIO_LANE_HEIGHT_PX,
+	CLIP_LANE_HEIGHT_PX,
+	CLIP_ROW_HEIGHT_PX,
+	CUT_LANE_HEIGHT_PX,
+	cardLayout,
+	ZOOM_ROW_HEIGHT_PX,
+} from "./_components/timeline/timeline-stack";
 import { wheelIntent } from "./_components/timeline/timeline-wheel.logic";
-import { storyboardCrop } from "$lib/timeline/storyboard";
-import type { TileProvider } from "$lib/timeline/filmstrip-source";
 
 // Orchestrator: owns the scroll container, sizing, transport (JKL/speed),
 // keyboard routing, and the click-to-seek scrubber. Subviews live under `_components/timeline/`.
@@ -51,7 +51,7 @@ interface Props {
 let { store, videoEl = null, tileProvider = null, filmstripVersion = 0 }: Props = $props();
 
 let timelineEl: HTMLDivElement | undefined = $state();
-let laneScrollEl: HTMLDivElement | undefined = $state();
+let railInnerEl: HTMLDivElement | undefined = $state();
 let isDraggingPlayhead = $state(false);
 let timelineWidth = $state(900);
 // Horizontal scroll offset, tracked so the clip bar can virtualize its tiles.
@@ -828,20 +828,31 @@ function handleResize() {
 	timelineWidth = timelineEl.clientWidth;
 }
 
+// Hiding a lane can shrink the content until the browser clamps scrollTop back
+// to 0; resync so the rail never keeps an offset the track no longer has.
+$effect(() => {
+	lanes.length;
+	untrack(() => handleScroll());
+});
+
 function handleScroll() {
-	if (timelineEl) scrollLeft = timelineEl.scrollLeft;
+	if (!timelineEl) return;
+	scrollLeft = timelineEl.scrollLeft;
+	// Written straight to the node, not through state: a reactive round-trip
+	// would land a frame late and shear the labels off their lanes mid-scroll.
+	if (railInnerEl) railInnerEl.style.transform = `translateY(${-timelineEl.scrollTop}px)`;
 }
 
 function handleTimelineWheel(event: WheelEvent) {
 	if (!timelineEl) return;
 
-	// The track column clips its own y-overflow, so a vertical notch has to be
-	// forwarded to the lane scroller by hand; it would not chain there itself.
-	const scroller = laneScrollEl;
-	const canScrollVertically = !!scroller && scroller.scrollHeight - scroller.clientHeight > 1;
+	const canScrollVertically = timelineEl.scrollHeight - timelineEl.clientHeight > 1;
 	const intent = wheelIntent(event, canScrollVertically);
 
-	if (intent.kind === "none") return;
+	// The scroller owns both axes, so a vertical notch is left to the browser:
+	// native scrolling is smoother than anything we'd write, and `handleScroll`
+	// still fires to carry the rail along.
+	if (intent.kind === "none" || intent.kind === "vertical") return;
 
 	if (intent.kind === "zoom") {
 		event.preventDefault();
@@ -867,11 +878,7 @@ function handleTimelineWheel(event: WheelEvent) {
 	}
 
 	event.preventDefault();
-	if (intent.kind === "vertical") {
-		if (scroller) scroller.scrollTop += intent.delta;
-	} else {
-		timelineEl.scrollLeft += intent.delta;
-	}
+	timelineEl.scrollLeft += intent.delta;
 }
 
 function syncVideoTime() {
@@ -1057,42 +1064,41 @@ onMount(() => {
   />
   </div>
 
-  <!-- Rail lives OUTSIDE the horizontal scroller so lane names never overlap a
-       card at t≈0. Row heights mirror the track side so labels align.
-       The scroll container and the rail/track ROW are deliberately two elements.
-       When they were one, both columns stretched to the container's fixed height
-       and the track column (which clips its own y-overflow to keep the ruler
-       from scrolling) simply cut the lower lanes off, while the container saw
-       nothing to scroll. The inner row is sized by its CONTENT, so extra rows
-       make it overflow and the container scrolls; `min-h-full` keeps the rail's
-       background and border reaching the bottom when the lanes are short. -->
+  <!-- Frozen row and column, the way a spreadsheet does it: the rail is a
+       sibling of the horizontal scroller so lane names never move sideways (and
+       never overlap a card at t≈0), and the ruler is `sticky top-0` inside the
+       scroller so it holds while the lanes scroll under it. The scroller owns
+       BOTH axes for that to work — sticky resolves against the nearest scrolling
+       ancestor, so a separate outer y-scroller would leave the ruler pinned to
+       content that never moves. The rail has no scrollbar of its own; it follows
+       the track's scrollTop, which keeps every label on its lane's row. -->
   <div
-    bind:this={laneScrollEl}
-    class="lane-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
+    class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
   >
-  <div class="relative flex min-h-full">
     <div
       class="relative z-10 flex w-16 shrink-0 flex-col border-r border-border/60 bg-card/50"
     >
-      <!-- Aligns with the ruler -->
-      <div class="h-7 border-b border-border/60"></div>
-      <div class="px-1 pb-2 pt-1.5">
+      <!-- Corner cell: holds the rail's edge against the sticky ruler. -->
+      <div class="h-7 shrink-0 border-b border-border/60"></div>
+      <div class="min-h-0 flex-1 overflow-hidden">
         <!-- Track headers. Each row's height comes from the same `lanes` entry the
              body uses, so a lane that grows takes its label with it. -->
-        <div
-          class="flex items-center justify-center"
-          style="height: {CLIP_LANE_HEIGHT_PX}px;"
-        >
-          {@render railLabel(Video, "Clip", "text-foreground/70")}
-        </div>
-        {#each lanes as lane (lane.id)}
+        <div bind:this={railInnerEl} class="px-1 pb-2 pt-1.5 will-change-transform">
           <div
-            class="flex items-start justify-center"
-            style="height: {lane.height}px; margin-top: {LANE_GAP}px;"
+            class="flex items-center justify-center"
+            style="height: {CLIP_LANE_HEIGHT_PX}px;"
           >
-            {@render railLabel(lane.icon, lane.label, lane.tone)}
+            {@render railLabel(Video, "Clip", "text-foreground/70")}
           </div>
-        {/each}
+          {#each lanes as lane (lane.id)}
+            <div
+              class="flex items-start justify-center"
+              style="height: {lane.height}px; margin-top: {LANE_GAP}px;"
+            >
+              {@render railLabel(lane.icon, lane.label, lane.tone)}
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
 
@@ -1104,7 +1110,7 @@ onMount(() => {
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={store.currentTime}
-      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+      class="custom-scrollbar relative min-w-0 flex-1 overflow-auto overscroll-contain rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
       style={razorActive ? "cursor: none" : ""}
       onpointerdown={handleTimelinePointerDown}
       onpointermove={handleTimelinePointerMove}
@@ -1116,12 +1122,17 @@ onMount(() => {
       onkeydown={handleTimelineKeydown}
     >
       <div class="relative min-w-full" style="width: {totalWidth}px;">
-        <TimelineRuler
-          duration={outputDuration}
-          {pixelsPerSecond}
-          {timeMode}
-          fps={effectiveFps()}
-        />
+        <!-- Opaque, or the lanes scrolling underneath show through the ticks.
+             z-20 puts it over the cards but under the playhead (z-30), so the
+             head still reads as crossing the ruler band. -->
+        <div class="sticky top-0 z-20 bg-background">
+          <TimelineRuler
+            duration={outputDuration}
+            {pixelsPerSecond}
+            {timeMode}
+            fps={effectiveFps()}
+          />
+        </div>
 
       <!-- No horizontal padding: lanes must share the x-origin of the ruler and
            playhead (both direct children at x=0), or every tile sits offset from
@@ -1236,7 +1247,6 @@ onMount(() => {
       </div>
     </div>
   </div>
-  </div>
 </div>
 
 <!-- Scissor cursor for the razor tool: the scroller hides its native cursor
@@ -1294,27 +1304,10 @@ onMount(() => {
 {/if}
 
 <style>
+  /* Width applies to the vertical bar, shown once the lanes outgrow the panel. */
   .custom-scrollbar::-webkit-scrollbar {
     height: 8px;
-  }
-
-  /* Vertical track scroll, shown only once the lanes outgrow the panel. */
-  .lane-scroll::-webkit-scrollbar {
     width: 8px;
-  }
-  .lane-scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .lane-scroll::-webkit-scrollbar-thumb {
-    background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
-    border-radius: 999px;
-  }
-  .lane-scroll::-webkit-scrollbar-thumb:hover {
-    background: color-mix(in srgb, var(--color-foreground) 24%, transparent);
-  }
-  .lane-scroll {
-    scrollbar-width: thin;
-    scrollbar-color: color-mix(in srgb, var(--color-foreground) 14%, transparent) transparent;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {

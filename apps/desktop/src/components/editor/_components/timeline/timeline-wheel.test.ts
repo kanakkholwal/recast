@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { wheelIntent, type WheelGesture } from "./timeline-wheel.logic";
+import { type WheelGesture, wheelIntent } from "./timeline-wheel.logic";
 
 function gesture(partial: Partial<WheelGesture>): WheelGesture {
 	return { deltaX: 0, deltaY: 0, shiftKey: false, ctrlKey: false, metaKey: false, ...partial };
