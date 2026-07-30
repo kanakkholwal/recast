@@ -16,6 +16,7 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
+import { Spinner } from "@recast/ui/spinner";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
@@ -23,8 +24,23 @@ import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
-import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { page } from "$app/state";
+import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
+import EditorToolbar from "$components/editor/EditorToolbar.svelte";
+import ExportDialog from "$components/editor/ExportDialog.svelte";
+import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
+import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
+import Timeline from "$components/editor/Timeline.svelte";
+import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
+import VideoPreview from "$components/editor/VideoPreview.svelte";
+import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import PlayerDialog from "$components/recast/PlayerDialog.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+import { clipAssetPath } from "$lib/audio/music";
+import { type DestinationTile, destinationTile, uploadForPath } from "$lib/cloud/destination-tile";
+import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
 import {
 	boolParam,
 	PANEL_PARAM,
@@ -34,23 +50,12 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "$lib/editor/editor-url";
-import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import EditorToolbar from "$components/editor/EditorToolbar.svelte";
-import ExportDialog from "$components/editor/ExportDialog.svelte";
-import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
-import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
-import RecastMark from "$components/recast-mark.svelte";
-import { type DestinationTile, destinationTile, uploadForPath } from "$lib/cloud/destination-tile";
-import { Spinner } from "@recast/ui/spinner";
-import Timeline from "$components/editor/Timeline.svelte";
-import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
-import VideoPreview from "$components/editor/VideoPreview.svelte";
-import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
-import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
-import PlayerDialog from "$components/recast/PlayerDialog.svelte";
-import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-import { clipAssetPath } from "$lib/audio/music";
-import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
+import {
+	clampTimelineHeight,
+	TIMELINE_DEFAULT_HEIGHT_PX,
+	TIMELINE_MIN_HEIGHT_PX,
+	timelineMaxHeight,
+} from "$lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "$lib/editor/time";
 import { runBrowserExport } from "$lib/export/browser-export";
 import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
@@ -71,12 +76,6 @@ import {
 	saveProjectEdits,
 } from "$lib/ipc";
 import type { CameraCapture } from "$lib/ipc-types";
-import {
-	clampTimelineHeight,
-	TIMELINE_DEFAULT_HEIGHT_PX,
-	TIMELINE_MIN_HEIGHT_PX,
-	timelineMaxHeight,
-} from "$lib/editor/panel-size";
 import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
@@ -99,6 +98,7 @@ import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { createTileProvider, type TileProvider } from "$lib/timeline/filmstrip-source";
 import { originalToOutput } from "$lib/timeline/time-map";
+import { settingsHref } from "../../(app)/settings/settings-tabs";
 import {
 	basename,
 	exportEtaMs as computeExportEtaMs,

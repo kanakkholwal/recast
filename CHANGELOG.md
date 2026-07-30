@@ -82,6 +82,8 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The time ruler and the track names now stay put while you scroll the timeline. The ruler holds at the top as the tracks scroll under it, and the names stay pinned at the left as you scroll sideways, so you never lose track of where you are or which track you are looking at.
 
 ### Fixed
+- Uploading a finished export to Recast Cloud or Google Drive looked like nothing had happened. The buttons now show that the click landed and go quiet while the transfer runs, so a single export can no longer be uploaded three times because it seemed unresponsive. Once it lands, the same button copies the link, and a failed one offers a retry.
+- Sharing an export to Recast Cloud from the editor never opened its progress window; it only appeared in the activity centre. It now opens the same window a share from the Exports page does.
 - Dragging a zoom or markup block on the timeline barely moved it. The drag maths mixed up pixels and seconds, so a block travelled a hundredth of the distance your pointer did, which read as the block being stuck.
 - Timeline blocks jumped to a different row mid-drag as soon as they touched a neighbour, leaving the block you were holding somewhere other than under the cursor.
 - Clicking a timeline block to select it could nudge it slightly and add an undo step that changed nothing.

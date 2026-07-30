@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { destinationTile, uploadForPath, type UploadPhase } from "./destination-tile";
+import { destinationTile, type UploadPhase, uploadForPath } from "./destination-tile";
 
 const LABELS = { idle: "Recast Cloud", done: "Copy link" };
 
