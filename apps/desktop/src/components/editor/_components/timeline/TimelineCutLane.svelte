@@ -4,6 +4,7 @@ import { type TimelineCut } from "$lib/timeline/cuts";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Scissors, X } from "@recast/icons";
 import { buildWaveformPath } from "./timeline-helpers";
+import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
 import { cardSpan, edgeHandleWidth } from "./timeline-stack";
 
@@ -44,6 +45,11 @@ interface DragState {
 	anchorTime: number;
 	originStart: number;
 	originEnd: number;
+	startClientX: number;
+	/** False until the pointer clears the drag threshold (bands only). */
+	engaged: boolean;
+	/** Shift held: pointer travel is damped for fine positioning. */
+	precision: boolean;
 }
 let drag = $state<DragState | null>(null);
 // Pushed on the first real move: clicking a band to select it used to leave an
@@ -88,6 +94,9 @@ function onLaneDown(e: PointerEvent) {
 		anchorTime: t,
 		originStart: t,
 		originEnd: t,
+		startClientX: e.clientX,
+		engaged: true,
+		precision: e.shiftKey,
 	};
 	pending = null;
 	laneEl?.setPointerCapture(e.pointerId);
@@ -112,13 +121,35 @@ function onBandDown(e: PointerEvent, cut: TimelineCut, mode: DragMode) {
 		anchorTime: timeAt(e.clientX),
 		originStart: cut.start,
 		originEnd: cut.end,
+		startClientX: e.clientX,
+		engaged: false,
+		precision: e.shiftKey,
 	};
 	laneEl.setPointerCapture(e.pointerId);
 }
 
 function onMove(e: PointerEvent) {
 	if (!drag || e.pointerId !== drag.pointerId) return;
-	const t = timeAt(e.clientX);
+	// A band press is a click until it clears the threshold, so selecting a band
+	// can't nudge it or leave an undo entry that changed nothing.
+	if (drag.mode !== "create" && !drag.engaged) {
+		if (!dragEngaged(e.clientX, drag.startClientX)) return;
+		drag.engaged = true;
+	}
+	// Shift damps pointer travel for fine positioning. Re-seed the anchor (and,
+	// for a band, its origin) on a modifier flip so the change in gearing is
+	// continuous rather than a jump.
+	if (e.shiftKey !== drag.precision) {
+		drag.precision = e.shiftKey;
+		drag.anchorTime = timeAt(e.clientX);
+		const live = drag.id ? store.cuts.find((c) => c.id === drag!.id) : null;
+		if (live) {
+			drag.originStart = live.start;
+			drag.originEnd = live.end;
+		}
+	}
+	const raw = timeAt(e.clientX);
+	const t = drag.precision ? drag.anchorTime + (raw - drag.anchorTime) * PRECISION_SCALE : raw;
 
 	if (drag.mode === "create") {
 		const lo = Math.min(drag.anchorTime, t);

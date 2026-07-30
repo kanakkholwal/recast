@@ -59,6 +59,35 @@ describe("packRows", () => {
 	});
 });
 
+// The bug this exists for: re-packing on every pointer move moved the DRAGGED
+// card to another row the instant it touched a neighbour, so it left the cursor.
+describe("packRows with a pinned card", () => {
+	const pin = (id: string, row: number) => new Map([[id, row]]);
+
+	it("keeps the pinned card on its row and moves the other one instead", () => {
+		const spans = [span("a", 0, 100), span("dragged", 50, 150)];
+		expect(packRows(spans)).toEqual([0, 1]);
+		expect(packRows(spans, pin("dragged", 0))).toEqual([1, 0]);
+	});
+
+	it("holds the row even once the overlap clears", () => {
+		const spans = [span("a", 0, 100), span("dragged", 300, 400)];
+		expect(packRows(spans, pin("dragged", 1))).toEqual([0, 1]);
+	});
+
+	// A pin placed out of left-to-right order must not push earlier cards down:
+	// tracking only each row's rightmost edge did exactly that.
+	it("lets an earlier card take the room before a pinned one", () => {
+		const spans = [span("early", 0, 50), span("dragged", 300, 400)];
+		expect(packRows(spans, pin("dragged", 0))).toEqual([0, 0]);
+	});
+
+	it("ignores a pin for an id that isn't in the lane", () => {
+		const spans = [span("a", 0, 100), span("b", 50, 150)];
+		expect(packRows(spans, pin("gone", 0))).toEqual([0, 1]);
+	});
+});
+
 describe("laneHeight", () => {
 	it("reserves the minimum for an empty lane", () => {
 		expect(laneHeight(0)).toBeGreaterThan(0);
@@ -121,6 +150,14 @@ describe("edgeHandleWidth", () => {
 		for (const w of [28, 32, 40, 60, 120, 400]) {
 			const handle = edgeHandleWidth(w);
 			expect(w - handle * 2, `width ${w}`).toBeGreaterThan(handle);
+		}
+	});
+
+	// `Math.max(1, …)` used to hand a sliver card a 1px target, which no pointer
+	// can reliably hit.
+	it("stays hittable on a narrow card", () => {
+		for (const w of [16, 20, 28]) {
+			expect(edgeHandleWidth(w), `width ${w}`).toBeGreaterThanOrEqual(5);
 		}
 	});
 

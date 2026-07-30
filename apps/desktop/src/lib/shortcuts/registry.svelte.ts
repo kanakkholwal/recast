@@ -54,15 +54,7 @@ const IS_MAC =
 
 //  chord parsing / matching -
 
-const MODIFIER_KEYS = new Set([
-	"Control",
-	"Shift",
-	"Alt",
-	"Meta",
-	"OS",
-	"AltGraph",
-	"CapsLock",
-]);
+const MODIFIER_KEYS = new Set(["Control", "Shift", "Alt", "Meta", "OS", "AltGraph", "CapsLock"]);
 
 function normalizeKey(k: string): string {
 	if (k === " " || k === "Space" || k === "Spacebar") return "Space";
@@ -87,15 +79,10 @@ function chordFromEvent(e: KeyboardEvent): string {
 function chordFromKeys(keys: string): string {
 	const segs = keys.split("+").map((s) => s.trim());
 	const key = segs.pop() ?? "";
-	return canonical(
-		segs.includes("Mod"),
-		segs.includes("Shift"),
-		segs.includes("Alt"),
-		key,
-	);
+	return canonical(segs.includes("Mod"), segs.includes("Shift"), segs.includes("Alt"), key);
 }
 
-//  display 
+//  display
 
 const KEY_GLYPHS: Record<string, string> = {
 	Mod: IS_MAC ? "⌘" : "Ctrl",
@@ -253,11 +240,12 @@ export const shortcutDefs: ShortcutDef[] = [
 	{ id: "anno.forward", keys: "Mod+]", label: "Bring forward", category: "Annotations" },
 	{ id: "anno.backward", keys: "Mod+[", label: "Send backward", category: "Annotations" },
 	{
+		// Alt-qualified: bare arrows stay with the transport's frame-step.
 		id: "anno.nudge",
-		keys: "Arrows",
-		display: ["←", "→", "↑", "↓"],
+		keys: "Alt+Arrows",
+		display: ["Alt", "←", "→", "↑", "↓"],
 		label: "Nudge position",
-		description: "Hold Shift for 10px",
+		description: "Add Shift for 10px",
 		category: "Annotations",
 		scopeNote: "when selected",
 	},
@@ -266,7 +254,13 @@ export const shortcutDefs: ShortcutDef[] = [
 	{ id: "audio.mute", keys: "M", label: "Toggle mute", category: "Audio" },
 
 	// Timeline: when the timeline has focus.
-	{ id: "timeline.split", keys: "S", label: "Split at playhead", category: "Timeline", scopeNote: "timeline focused" },
+	{
+		id: "timeline.split",
+		keys: "S",
+		label: "Split at playhead",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
 	{
 		id: "timeline.razor",
 		keys: "C",
@@ -275,16 +269,76 @@ export const shortcutDefs: ShortcutDef[] = [
 		category: "Timeline",
 		scopeNote: "timeline focused",
 	},
-	{ id: "timeline.in", keys: "I", label: "Set in point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.out", keys: "O", label: "Set out point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.reverse", keys: "J", label: "Shuttle reverse", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.stop", keys: "K", label: "Shuttle stop", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.forward", keys: "L", label: "Shuttle forward", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.home", keys: "Home", label: "Jump to in point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.end", keys: "End", label: "Jump to out point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.trimIn", keys: "Alt+[", label: "Trim in point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.trimOut", keys: "Alt+]", label: "Trim out point", category: "Timeline", scopeNote: "timeline focused" },
-	{ id: "timeline.paste", keys: "Mod+V", label: "Paste region", category: "Timeline", scopeNote: "timeline focused" },
+	{
+		id: "timeline.in",
+		keys: "I",
+		label: "Set in point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.out",
+		keys: "O",
+		label: "Set out point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.reverse",
+		keys: "J",
+		label: "Shuttle reverse",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.stop",
+		keys: "K",
+		label: "Shuttle stop",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.forward",
+		keys: "L",
+		label: "Shuttle forward",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.home",
+		keys: "Home",
+		label: "Jump to in point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.end",
+		keys: "End",
+		label: "Jump to out point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.trimIn",
+		keys: "Alt+[",
+		label: "Trim in point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.trimOut",
+		keys: "Alt+]",
+		label: "Trim out point",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
+	{
+		id: "timeline.paste",
+		keys: "Mod+V",
+		label: "Paste region",
+		category: "Timeline",
+		scopeNote: "timeline focused",
+	},
 
 	// Navigation: the app sidebar (library routes). Same chord as the editor's
 	// properties panel, but a different route, so they never collide at runtime.
@@ -331,12 +385,7 @@ function isEditableTarget(t: EventTarget | null): boolean {
 	const el = t as HTMLElement | null;
 	if (!el || !el.tagName) return false;
 	const tag = el.tagName;
-	return (
-		tag === "INPUT" ||
-		tag === "TEXTAREA" ||
-		tag === "SELECT" ||
-		el.isContentEditable === true
-	);
+	return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || el.isContentEditable === true;
 }
 
 /**

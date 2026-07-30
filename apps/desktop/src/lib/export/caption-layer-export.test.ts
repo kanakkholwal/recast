@@ -65,6 +65,43 @@ describe("captionClocks", () => {
 	});
 });
 
+// The "size" active-word emphasis must EASE in/out over time (a per-word bump),
+// not snap binary 1→1.14→1 per word — the hard pop reads as jitter/overlap.
+describe("emphasis scale (smooth pop)", () => {
+	const scaleStyle = () =>
+		style({
+			animation: {
+				chunk: "line",
+				chunkSize: 3,
+				emphasis: "scale",
+				emphasisColor: "#ffffff",
+				highlight: "none",
+				entrance: "none",
+				entranceMs: 200,
+				holdGaps: true,
+			},
+		});
+
+	it("pops the active word and leaves the not-yet-spoken word unscaled", () => {
+		const v = resolveCaptionView(transcript(), scaleStyle(), identity, 0.5); // mid "hello" [0,1]
+		expect(v?.wordScales?.[0]).toBeGreaterThan(1.05); // active → popped up
+		expect(v?.wordScales?.[1]).toBeCloseTo(1, 2); // "world" not started → unscaled
+	});
+
+	it("ramps the scale (not a binary jump) just after the word starts", () => {
+		const full =
+			resolveCaptionView(transcript(), scaleStyle(), identity, 0.5)?.wordScales?.[0] ?? 0;
+		const rising =
+			resolveCaptionView(transcript(), scaleStyle(), identity, 0.02)?.wordScales?.[0] ?? 0;
+		expect(rising).toBeGreaterThan(1); // already lifting off
+		expect(rising).toBeLessThan(full); // but below full — proves the ease-in, not a snap
+	});
+
+	it("carries no scales when emphasis isn't 'scale'", () => {
+		expect(resolveCaptionView(transcript(), style(), identity, 0.5)?.wordScales).toBeUndefined();
+	});
+});
+
 describe("resolveCaptionView", () => {
 	it("returns the active line inside a segment (static → all spoken)", () => {
 		const v = resolveCaptionView(transcript(), style(), identity, 1);

@@ -5,6 +5,20 @@
 import { frameStep } from "./timeline-helpers";
 import { snapTime, type SnapTarget } from "./timeline-snap";
 
+/**
+ * Pointer travel before a press becomes a drag. Without it a 1px tremor during
+ * a click-to-select moved the card and pushed an undo entry.
+ */
+export const DRAG_THRESHOLD_PX = 3;
+
+/** Pointer-travel multiplier while the precision modifier (Shift) is held. */
+export const PRECISION_SCALE = 0.25;
+
+/** Whether a press has travelled far enough to be a drag rather than a click. */
+export function dragEngaged(clientX: number, startClientX: number): boolean {
+	return Math.abs(clientX - startClientX) >= DRAG_THRESHOLD_PX;
+}
+
 export interface CardBounds {
 	start: number;
 	end: number;
@@ -22,20 +36,27 @@ export interface CardDragGeometry {
 	origin: CardBounds;
 	clientX: number;
 	startClientX: number;
-	pps: number;
 	xOf: (t: number) => number;
 	tOf: (x: number) => number;
 	snapTargets: SnapTarget[];
 	tolerance: number;
 	fps: number;
 	duration: number;
+	/** Pointer-travel multiplier; `PRECISION_SCALE` for a fine drag. Callers
+	 *  re-seed `origin`/`startClientX` when it changes, so it never jumps. */
+	scale?: number;
 }
 
 // Move an original-time anchor by the pointer's output-space delta, so the card
 // tracks the cursor on the collapsed (post-cut) axis.
+//
+// The delta stays in PIXELS. It used to be divided by `pps` before being added
+// to `xOf(orig)`, which is pixels — so the card advanced by delta/pps² seconds
+// and a 150px drag at 100px/s moved it 15ms instead of 1.5s. Dragging a zoom or
+// markup card looked like it did nothing.
 function projectAnchor(g: CardDragGeometry, orig: number): number {
-	const outDelta = (g.clientX - g.startClientX) / g.pps;
-	return g.tOf(g.xOf(orig) + outDelta);
+	const deltaPx = (g.clientX - g.startClientX) * (g.scale ?? 1);
+	return g.tOf(g.xOf(orig) + deltaPx);
 }
 
 // Translate the whole card, snapping whichever edge is closer to a target so it

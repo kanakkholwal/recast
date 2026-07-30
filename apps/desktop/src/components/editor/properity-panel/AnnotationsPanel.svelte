@@ -1,6 +1,5 @@
 <script lang="ts">
 import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-import { isEditableTarget } from "$lib/dom/editable";
 import { clockCentis as fmtTime } from "$lib/format/time";
 import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
 import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
@@ -16,18 +15,11 @@ import {
 	AlignCenter,
 	AlignLeft,
 	AlignRight,
-	Image as ImageIcon,
 	SquareDashedMousePointer,
 	Trash2,
 } from "@recast/icons";
 import { toast } from "@recast/ui/sonner";
-import { insertImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
-import {
-	ANNOTATION_TOOLS,
-	IMAGE_TOOL,
-	toolForHotkey,
-	type AnnotationToolId,
-} from "$lib/annotations/tools";
+import { pickImageFile } from "$lib/annotations/image-import";
 import type { TitlePreset } from "$lib/annotations/title-presets";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
@@ -37,7 +29,6 @@ import { SegmentedToggle } from "@recast/ui/segmented";
 import FontPicker from "./FontPicker.svelte";
 import { SliderControl } from "@recast/ui/slider-control";
 import { Textarea } from "@recast/ui/textarea";
-import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 import { motionDuration } from "$lib/motion.svelte";
@@ -64,19 +55,6 @@ const selected = $derived<Annotation | null>(
 	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
 );
 
-// Shared with the on-canvas toolbar so labels, icons and shortcuts can't drift.
-const tools = ANNOTATION_TOOLS;
-
-function setTool(id: AnnotationToolId) {
-	if (id === "select") {
-		store.annotationTool = null;
-		return;
-	}
-	store.annotationTool = store.annotationTool === id ? null : id;
-}
-
-const insertImage = () => insertImageAnnotation(store);
-
 // Insert a ready-styled title/lower-third: a positioned text annotation plus a
 // legibility glow. The user edits the placeholder text in place.
 function insertTitle(preset: TitlePreset) {
@@ -99,23 +77,6 @@ async function replaceImage() {
 	} catch (error) {
 		toast.error(`Could not replace image: ${error}`);
 	}
-}
-
-// Tool hotkeys. Suppressed when focus is in an editable element so typing
-// in a text annotation or any input doesn't switch tools.
-function handleHotkey(event: KeyboardEvent) {
-	if (event.metaKey || event.ctrlKey || event.altKey) return;
-	if (isEditableTarget(event.target)) return;
-	const key = event.key.toLowerCase();
-	if (key === IMAGE_TOOL.hotkey.toLowerCase()) {
-		event.preventDefault();
-		void insertImage();
-		return;
-	}
-	const tool = toolForHotkey(key);
-	if (!tool) return;
-	event.preventDefault();
-	setTool(tool.id);
 }
 
 function updateSelected(updates: Partial<Annotation>, trackUndo = false) {
@@ -171,14 +132,12 @@ const startFromPlayhead = $derived(
 const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTime, clipOut) : null);
 </script>
 
-<!-- Tool hotkeys (V/R/O/A/T/B, plus I to insert an image). `<svelte:window>` so
-     HMR can't leak the listener. -->
-<svelte:window onkeydown={handleHotkey} />
-
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  <!-- The tools themselves live on the player bar under the preview, next to the
+       picture you draw on. This panel describes the SELECTION, not the mode. -->
   <PanelSection
-    title="Tools"
-    hint="Pick a tool, then click to drop one or drag to draw it. Shift keeps a shape square or an arrow at 45°; Esc cancels; annotations follow zoom and crop."
+    title="Drawing"
+    hint="Pick a tool from the bar under the preview, then click to drop one or drag to draw it. Shift keeps a shape square or an arrow at 45°; annotations follow zoom and crop."
     flush
   >
     {#snippet action()}
@@ -196,40 +155,8 @@ const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTim
       </div>
     {/snippet}
 
-    <div class="grid grid-cols-3 gap-1">
-      {#each tools as tool (tool.id)}
-        {@const Icon = tool.icon}
-        {@const isActive =
-          tool.id === "select"
-            ? store.annotationTool === null
-            : store.annotationTool === tool.id}
-        <button
-          type="button"
-          aria-pressed={isActive}
-          onclick={() => setTool(tool.id)}
-          title={`${tool.label} (${tool.hotkey})`}
-          class={cn(
-            "group flex h-12 flex-col items-center justify-center gap-1 rounded-md border text-[10px] font-medium transition-all duration-150",
-            "focus:outline-none focus:ring-2 focus:ring-ring/40",
-            isActive
-              ? "border-primary/60 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
-              : "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-        >
-          <Icon size={14} />
-          <span class="leading-none">{tool.label}</span>
-        </button>
-      {/each}
-    </div>
-    <!-- Not a tool: it opens a file picker and drops the image in, so it reads
-         as an action rather than a mode you can sit in. -->
-    <Button variant="outline" size="sm" class="mt-1 w-full gap-1.5" onclick={insertImage}>
-      <ImageIcon size={13} />
-      Insert image…
-    </Button>
-
     {#if toolHint}
-      <p class="mt-1.5 text-[10px] text-muted-foreground">
+      <p class="text-[10px] text-muted-foreground">
         {toolHint}
         <Kbd class="ml-1">Esc</Kbd>
         to cancel.

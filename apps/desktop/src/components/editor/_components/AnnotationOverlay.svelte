@@ -1,6 +1,7 @@
 <script lang="ts">
 import { evalOpacity } from "$lib/annotations/eval";
 import { annotationZoom } from "./annotation-projection.logic";
+import { nudgeVectorPx } from "./annotation-keys.logic";
 import {
 	handlePositions,
 	hitTestAnnotation,
@@ -1085,27 +1086,15 @@ function handleKeyDown(e: KeyboardEvent) {
 		}
 	}
 
-	// Arrow-key nudge: only when annotations tab is active and a non-locked
-	// annotation is selected. Step is 1 device-px / 10 device-px in UV.
-	if (
-		store.activePanel === "annotations" &&
-		store.selectedAnnotationId &&
-		!e.metaKey &&
-		!e.ctrlKey &&
-		!e.altKey &&
-		["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(e.key)
-	) {
+	// Alt+arrow, never a bare arrow — see nudgeVectorPx.
+	const nudge = nudgeVectorPx(e);
+	if (nudge && store.activePanel === "annotations" && store.selectedAnnotationId) {
 		const selForNudge = store.annotations.find((x) => x.id === store.selectedAnnotationId) ?? {};
 		const r = rectFor(selForNudge);
 		if (r.w <= 0 || r.h <= 0) return;
-		const stepX = (e.shiftKey ? 10 : 1) / Math.max(1, r.w);
-		const stepY = (e.shiftKey ? 10 : 1) / Math.max(1, r.h);
-		let dx = 0;
-		let dy = 0;
-		if (e.key === "ArrowLeft") dx = -stepX;
-		if (e.key === "ArrowRight") dx = stepX;
-		if (e.key === "ArrowUp") dy = -stepY;
-		if (e.key === "ArrowDown") dy = stepY;
+		// Device pixels → UV, against the rect this annotation is anchored to.
+		const dx = nudge.dx / Math.max(1, r.w);
+		const dy = nudge.dy / Math.max(1, r.h);
 		e.preventDefault();
 		// Coalesce a held/repeated arrow key into one undo entry (same key the
 		// timeline layer card uses), so Ctrl+Z reverts the nudge, not an

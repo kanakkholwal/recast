@@ -6,10 +6,17 @@ import { motionDuration } from "$lib/motion.svelte";
 
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
-import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
+import {
+	computeCardMove,
+	computeCardNudge,
+	computeCardResize,
+	dragEngaged,
+	PRECISION_SCALE,
+} from "./timeline-card-drag.logic";
+import { useLaneDrag } from "./timeline-drag.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
-import { edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
+import { EDGE_HIT_OVERHANG_PX, edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
 
 // Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
 // (no sparkline) so the two lanes are distinguishable at a glance.
@@ -58,6 +65,10 @@ interface DragContext {
 	startClientX: number;
 	originalStart: number;
 	originalEnd: number;
+	/** False until the pointer clears the drag threshold. */
+	engaged: boolean;
+	/** Shift held: pointer travel is damped for fine positioning. */
+	precision: boolean;
 }
 
 let drag = $state<DragContext | null>(null);
@@ -65,6 +76,8 @@ let drag = $state<DragContext | null>(null);
 // to select it used to leave an undo entry that changed nothing, so Ctrl+Z
 // after selecting five cards did nothing five times.
 let dragUndoPushed = false;
+// Holds this card's row for the gesture, so re-packing can't move it off the cursor.
+const laneDrag = useLaneDrag();
 
 const isSelected = $derived(annotation.id === store.selectedAnnotationId);
 // Output (post-cut) axis. See ZoomLayerCard for the rationale.
@@ -84,12 +97,15 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 	event.stopPropagation();
 	store.selectedAnnotationId = annotation.id;
 	dragUndoPushed = false;
+	laneDrag?.begin(annotation.id);
 	drag = {
 		mode,
 		pointerId: event.pointerId,
 		startClientX: event.clientX,
 		originalStart: annotation.start,
 		originalEnd: annotation.end,
+		engaged: false,
+		precision: event.shiftKey,
 	};
 	document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
 	(event.currentTarget as Element).setPointerCapture(event.pointerId);
@@ -100,6 +116,20 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
 	if (!drag) return;
+	// A press is a click until it clears the threshold, so selecting a card
+	// can't nudge it or leave an undo entry that changed nothing.
+	if (!drag.engaged) {
+		if (!dragEngaged(event.clientX, drag.startClientX)) return;
+		drag.engaged = true;
+	}
+	// Shift can go down or up mid-drag; re-seed the anchor to the current
+	// pointer and bounds so the change in gearing never jumps the card.
+	if (event.shiftKey !== drag.precision) {
+		drag.precision = event.shiftKey;
+		drag.startClientX = event.clientX;
+		drag.originalStart = annotation.start;
+		drag.originalEnd = annotation.end;
+	}
 	if (!dragUndoPushed) {
 		store.pushUndoState();
 		dragUndoPushed = true;
@@ -108,13 +138,14 @@ function onPointerMove(event: PointerEvent) {
 		origin: { start: drag.originalStart, end: drag.originalEnd },
 		clientX: event.clientX,
 		startClientX: drag.startClientX,
-		pps: pixelsPerSecond,
 		xOf,
 		tOf,
-		snapTargets,
+		// Ctrl/Cmd suspends magnetism for a placement the snap targets fight.
+		snapTargets: event.ctrlKey || event.metaKey ? [] : snapTargets,
 		tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
 		fps,
 		duration,
+		scale: drag.precision ? PRECISION_SCALE : 1,
 	};
 	const result =
 		drag.mode === "move"
@@ -133,6 +164,7 @@ function onPointerMove(event: PointerEvent) {
 
 function onPointerUp(_event: PointerEvent) {
 	drag = null;
+	laneDrag?.end();
 	document.body.style.cursor = "";
 	window.removeEventListener("pointermove", onPointerMove);
 	window.removeEventListener("pointerup", onPointerUp);
@@ -250,8 +282,8 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("resize-start", e);
     }}
-    class="absolute inset-y-0 left-0 z-10 cursor-ew-resize"
-    style="width: {handlePx}px;"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; left: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
       class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
@@ -267,8 +299,8 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("resize-end", e);
     }}
-    class="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
-    style="width: {handlePx}px;"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; right: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
       class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||

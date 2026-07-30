@@ -17,6 +17,7 @@ import { Kbd } from "@recast/ui/kbd";
 import { toast } from "@recast/ui/sonner";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
+import { onDestroy } from "svelte";
 import MarkupControls from "./_components/MarkupControls.svelte";
 import { BAR_BTN, BAR_BTN_DISABLED, BAR_BTN_ON, BAR_GROUP } from "./_components/player-bar.styles";
 
@@ -97,13 +98,19 @@ const fullDuration = $derived(store.metadata?.duration ?? 0);
 const outputDuration = $derived(originalToOutput(timeMap, fullDuration));
 const currentOutput = $derived(originalToOutput(timeMap, store.currentTime));
 
+// Output time under the pointer while scrubbing, or null when the store owns the
+// position. The thumb used to be driven by `store.currentTime`, so it fought the
+// drag whenever a seek landed late.
+let scrubOutput = $state<number | null>(null);
+const displayOutput = $derived(scrubOutput ?? currentOutput);
+
 // Same formatter and same Time-display setting as the timeline, so the readout
 // and the playhead can't show two different numbers for one moment.
 const fps = $derived(store.metadata?.fps || 60);
-const currentTimeFormatted = $derived(formatTimeByMode(currentOutput, store.timeMode, fps));
+const currentTimeFormatted = $derived(formatTimeByMode(displayOutput, store.timeMode, fps));
 const durationFormatted = $derived(formatTimeByMode(outputDuration, store.timeMode, fps));
 const progressPct = $derived(
-	outputDuration > 0 ? Math.min(100, (currentOutput / outputDuration) * 100) : 0,
+	outputDuration > 0 ? Math.min(100, (displayOutput / outputDuration) * 100) : 0,
 );
 
 function togglePlay() {
@@ -117,23 +124,52 @@ function togglePlay() {
 	}
 }
 
+// Every seek here goes through `store.seek`, which moves the playhead AND the
+// registered transport. Writing `videoEl.currentTime` directly left the system
+// and microphone audio elements behind, so a frame-step or a scrub desynced
+// sound from picture on the <video> path.
 function stepFrame(direction: number) {
 	if (!store.metadata) return;
 	// Step on the OUTPUT axis so stepping past a cut boundary lands on the next
 	// kept frame instead of inside the removed range.
-	const orig = frameStepOutput(timeMap, store.metadata, store.currentTime, direction);
-	if (videoEl) videoEl.currentTime = orig;
-	store.currentTime = orig;
+	store.seek(frameStepOutput(timeMap, store.metadata, store.currentTime, direction));
 }
 
-function handleSeek(e: Event) {
-	const target = e.target as HTMLInputElement;
-	// The scrubber is in output time; map back to original time (skipping over
-	// collapsed cuts) before driving the transport.
-	const orig = outputToOriginal(timeMap, parseFloat(target.value));
-	if (videoEl) videoEl.currentTime = orig;
-	store.currentTime = orig;
+// The scrubber is in output time; map back to original (skipping over collapsed
+// cuts) before driving the transport.
+function seekToOutput(outputTime: number) {
+	store.seek(outputToOriginal(timeMap, outputTime));
 }
+
+// Coalesced to one seek per frame. `oninput` fires per pointer-pixel and each
+// seek now moves three media elements, so writing straight through thrashed the
+// decoder for positions no one ever saw.
+let scrubRaf: number | null = null;
+
+function flushScrub() {
+	scrubRaf = null;
+	if (scrubOutput !== null) seekToOutput(scrubOutput);
+}
+
+function handleScrubInput(e: Event) {
+	scrubOutput = parseFloat((e.target as HTMLInputElement).value);
+	if (scrubRaf === null) scrubRaf = requestAnimationFrame(flushScrub);
+}
+
+/** Pointer release (and every keyboard step): land exactly on the committed
+ *  value, then hand the readout back to the store. */
+function handleScrubCommit(e: Event) {
+	if (scrubRaf !== null) {
+		cancelAnimationFrame(scrubRaf);
+		scrubRaf = null;
+	}
+	seekToOutput(parseFloat((e.target as HTMLInputElement).value));
+	scrubOutput = null;
+}
+
+onDestroy(() => {
+	if (scrubRaf !== null) cancelAnimationFrame(scrubRaf);
+});
 </script>
 
 <!-- Transport left, markup centred, view controls right. Capped at the preview's
@@ -162,8 +198,9 @@ function handleSeek(e: Event) {
 				min="0"
 				max={outputDuration}
 				step={1 / fps}
-				value={currentOutput}
-				oninput={handleSeek}
+				value={displayOutput}
+				oninput={handleScrubInput}
+				onchange={handleScrubCommit}
 				class="relative z-10 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-(--shadow-craft-inset) [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-background [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125 active:[&::-webkit-slider-thumb]:scale-110"
 				aria-label="Video progress"
 				aria-valuetext={currentTimeFormatted}

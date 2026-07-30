@@ -10,6 +10,7 @@ import {
 import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import { originalToOutput } from "$lib/timeline/time-map";
 import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
+import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import { CLIP_ROW_HEIGHT_PX, edgeHandleWidth, type LaneCardLayout } from "./timeline-stack";
 
 // Editable audio clips on the OUTPUT timeline: drag the body to move, the edges
@@ -73,6 +74,15 @@ interface Drag {
 	mode: DragMode;
 	/** Body drag: pointer's offset from the clip start, so the grab point holds. */
 	grabSec: number;
+	startClientX: number;
+	/** False until the pointer clears the drag threshold. */
+	engaged: boolean;
+	/** Shift held: pointer travel is damped for fine positioning. */
+	precision: boolean;
+	/** Output second the precision gearing is measured from. */
+	precisionAnchor: number;
+	/** Keeps the geared position continuous across a modifier flip. */
+	gearOffset: number;
 }
 let drag = $state<Drag | null>(null);
 // Pushed on the first real move, not at pointer-down: clicking a clip to select
@@ -86,12 +96,37 @@ function outputSecAt(clientX: number): number {
 }
 
 // Snap the dragged edge/position to the playhead and the timeline ends.
-function snap(sec: number): number {
+// `bypass` is Ctrl/Cmd held, for a placement the magnetism fights.
+function snap(sec: number, bypass = false): number {
+	if (bypass) return sec;
 	const tol = pps > 0 ? 6 / pps : 0;
 	for (const target of [playheadOutput, 0, outputDuration]) {
 		if (Math.abs(sec - target) <= tol) return target;
 	}
 	return sec;
+}
+
+function gearedValue(raw: number): number {
+	if (!drag) return raw;
+	const base = drag.precision
+		? drag.precisionAnchor + (raw - drag.precisionAnchor) * PRECISION_SCALE
+		: raw;
+	return base + drag.gearOffset;
+}
+
+// Pointer position in output seconds, damped while Shift is held. On a modifier
+// flip the anchor and offset are re-seeded so `gearedValue` is continuous —
+// otherwise letting go of Shift would teleport the clip to the raw pointer.
+function gearedSecAt(event: PointerEvent): number {
+	if (!drag) return 0;
+	const raw = outputSecAt(event.clientX);
+	if (event.shiftKey !== drag.precision) {
+		const before = gearedValue(raw);
+		drag.precision = event.shiftKey;
+		drag.precisionAnchor = raw;
+		drag.gearOffset = before - raw;
+	}
+	return gearedValue(raw);
 }
 
 function startDrag(e: PointerEvent, clip: AudioClip, mode: DragMode) {
@@ -105,25 +140,37 @@ function startDrag(e: PointerEvent, clip: AudioClip, mode: DragMode) {
 		id: clip.id,
 		mode,
 		grabSec: outputSecAt(e.clientX) - clip.startOutputSec,
+		startClientX: e.clientX,
+		engaged: false,
+		precision: e.shiftKey,
+		precisionAnchor: outputSecAt(e.clientX),
+		gearOffset: 0,
 	};
 	laneEl?.setPointerCapture(e.pointerId);
 }
 
 function onMove(e: PointerEvent) {
 	if (!drag || e.pointerId !== drag.pointerId) return;
+	// A press is a click until it clears the threshold, so selecting a clip
+	// can't nudge it or leave an undo entry that changed nothing.
+	if (!drag.engaged) {
+		if (!dragEngaged(e.clientX, drag.startClientX)) return;
+		drag.engaged = true;
+	}
 	const clip = store.musicClips.find((c) => c.id === drag!.id);
 	if (!clip) return;
 	if (!dragUndoPushed) {
 		store.pushUndoState();
 		dragUndoPushed = true;
 	}
-	const at = outputSecAt(e.clientX);
+	const at = gearedSecAt(e);
+	const bypass = e.ctrlKey || e.metaKey;
 	if (drag.mode === "move") {
-		store.updateMusicClip(clip.id, moveClip(clip, snap(at - drag.grabSec), outputDuration));
+		store.updateMusicClip(clip.id, moveClip(clip, snap(at - drag.grabSec, bypass), outputDuration));
 	} else if (drag.mode === "trim-left") {
-		store.updateMusicClip(clip.id, trimClipLeft(clip, snap(at), outputDuration));
+		store.updateMusicClip(clip.id, trimClipLeft(clip, snap(at, bypass), outputDuration));
 	} else {
-		store.updateMusicClip(clip.id, trimClipRight(clip, snap(at), outputDuration));
+		store.updateMusicClip(clip.id, trimClipRight(clip, snap(at, bypass), outputDuration));
 	}
 }
 

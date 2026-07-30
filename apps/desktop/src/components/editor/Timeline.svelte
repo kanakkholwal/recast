@@ -1,7 +1,8 @@
 <script lang="ts">
 import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
 import { AudioLines, Mic, Music2, Pencil, Scissors, Video, ZoomIn } from "@recast/icons";
-import { onMount } from "svelte";
+import { onMount, untrack } from "svelte";
+import { provideLaneDrag } from "./_components/timeline/timeline-drag.svelte";
 import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
 import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
 import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
@@ -313,13 +314,46 @@ const clipWidth = $derived(Math.max(clipRight - clipLeft, 0));
 // Stacking lanes: one layout each, computed here and handed down, so the track
 // rail and the lane body read the same height. The rail used to hard-code each
 // lane's height as a Tailwind class, which broke as soon as a lane could grow.
+//
+// The card under an active drag keeps the row it started on (see `pinnedRows`),
+// so it stays under the cursor while everything else flows around it.
+const laneDrag = provideLaneDrag();
+let pinnedRows = $state<ReadonlyMap<string, number> | null>(null);
+
+const zoomRowsLive = $derived(
+	cardLayout(store.zoomRegions, xOf, { minWidthPx: 32, rowHeightPx: ZOOM_ROW_HEIGHT_PX }),
+);
+const markupRowsLive = $derived(cardLayout(store.annotations, xOf));
+
+// Snapshot the dragged card's row once, at the start of the gesture. Reads the
+// unpinned layouts untracked so this can't feed back into the pinned ones.
+$effect(() => {
+	const id = laneDrag.cardId;
+	if (!id) {
+		pinnedRows = null;
+		return;
+	}
+	untrack(() => {
+		for (const layout of [zoomRowsLive, markupRowsLive]) {
+			const card = layout.cards.find((c) => c.id === id);
+			if (card) {
+				pinnedRows = new Map([[id, card.row]]);
+				return;
+			}
+		}
+	});
+});
+
 const zoomLayout = $derived(
 	cardLayout(store.zoomRegions, xOf, {
 		minWidthPx: 32,
 		rowHeightPx: ZOOM_ROW_HEIGHT_PX,
+		pinnedRows: pinnedRows ?? undefined,
 	}),
 );
-const markupLayout = $derived(cardLayout(store.annotations, xOf));
+const markupLayout = $derived(
+	cardLayout(store.annotations, xOf, { pinnedRows: pinnedRows ?? undefined }),
+);
 // Audio clips are stored in OUTPUT seconds, not original time, so they get their
 // own projection: output seconds -> render-axis pixels.
 const clipXOf = (outputSec: number) => store.outputToRenderSec(outputSec) * pixelsPerSecond;
@@ -453,6 +487,17 @@ function processPointer() {
 function handleTimelinePointerMove(event: PointerEvent) {
 	pendingPointer = { x: event.clientX, y: event.clientY };
 	if (pointerRaf === null) pointerRaf = requestAnimationFrame(processPointer);
+}
+
+// A clip block lets pointerdown bubble so a click still seeks, then tells us to
+// drop the scrub once the same gesture turns out to be a slip.
+function cancelScrub() {
+	if (pointerRaf !== null) {
+		cancelAnimationFrame(pointerRaf);
+		pointerRaf = null;
+	}
+	pendingPointer = null;
+	isDraggingPlayhead = false;
 }
 
 function handleTimelinePointerUp() {
@@ -1052,6 +1097,7 @@ onMount(() => {
           {thumbnailWidth}
           {timeMode}
           {clientXToOutput}
+          onSpineGesture={cancelScrub}
           {tileProvider}
           {filmstripVersion}
           viewportLeftPx={Math.max(0, scrollLeft - LANE_PAD)}

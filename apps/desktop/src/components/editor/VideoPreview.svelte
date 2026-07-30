@@ -1511,7 +1511,7 @@ const isAnnotationActive = $derived(
 			previewTime={smoothPreviewTime ?? 0}
 		/>
 		{/if}
-		<CaptionOverlay {store} />
+		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>
 
 	{#if videoSrc}

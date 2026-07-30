@@ -20,7 +20,6 @@ import {
 	spokenWordCount,
 	withAlpha,
 	wordColor,
-	wordScaled,
 	type CaptionAnimation,
 	type CaptionStyle,
 	type TranscriptWord,
@@ -61,6 +60,10 @@ export interface CaptionView {
 	activeIndex: number;
 	/** OUTPUT-time start of the chunk, for the entrance clock. */
 	chunkStartOutput: number;
+	/** Per-word emphasis scale (1 = none), aligned to `words`; present only for the
+	 *  `scale` emphasis — a time-eased bump so the active word pops cleanly instead
+	 *  of snapping. Absent for every other mode. */
+	wordScales?: number[];
 	anim: CaptionAnimation;
 }
 
@@ -126,14 +129,33 @@ export function resolveCaptionView(
 		spoken: spokenWordCount(chunk.words, t),
 		activeIndex: activeWordIndex(chunk.words, t, anim.holdGaps),
 		chunkStartOutput: outAt(chunk.words[0]?.start ?? active.start),
+		wordScales: emphasisScales(chunk.words, anim, t),
 		anim,
 	};
+}
+
+/** Emphasis-scale bump: each word eases up to {@link SCALE_EMPHASIS} over `POP_SEC`
+ *  after it starts and eases back as the next word takes over, so the "size" active
+ *  word crossfades cleanly instead of snapping 1↔1.14. Suppressed for a lone word
+ *  (the entrance pop already carries it) and for any non-scale emphasis. */
+const POP_SEC = 0.13;
+function emphasisScales(
+	words: TranscriptWord[],
+	anim: CaptionAnimation,
+	t: number,
+): number[] | undefined {
+	if (anim.emphasis !== "scale" || words.length <= 1) return undefined;
+	return words.map((w, i) => {
+		const deact = anim.holdGaps ? (words[i + 1]?.start ?? w.end) : w.end;
+		const amount = easeOutCubic((t - w.start) / POP_SEC) * easeOutCubic((deact - t) / POP_SEC);
+		return 1 + (SCALE_EMPHASIS - 1) * amount;
+	});
 }
 
 const clamp01 = (x: number) => Math.max(0, Math.min(1, x));
 const easeOutCubic = (x: number) => 1 - Math.pow(1 - clamp01(x), 3);
 const easeOutQuad = (x: number) => 1 - (1 - clamp01(x)) * (1 - clamp01(x));
-const SCALE_EMPHASIS = 1.14;
+const SCALE_EMPHASIS = 1.1;
 
 /** Draw the resolved chunk with CaptionBox's look. `outputSec` is OUTPUT (viewer)
  *  time — the entrance clock — while the chunk's words were resolved at source
@@ -158,14 +180,24 @@ export function paintCaptionChunk(
 	const cased = (s: string) => (style.uppercase ? s.toUpperCase() : s);
 	const lines = breakIntoLines(view.words, style.maxCharsPerLine, style.maxLines);
 	const spaceW = ctx.measureText(" ").width;
-	const lineWidths = lines.map((line) =>
-		line.reduce(
-			(w, wi, k) => w + (k > 0 ? spaceW : 0) + ctx.measureText(cased(view.words[wi].text)).width,
-			0,
-		),
-	);
-	const widest = lineWidths.reduce((m, w) => Math.max(m, w), 0);
-	const pill = pillBox(style, fontPx, widest, lines.length);
+	// Lay each word out at its SCALED advance so the "size" active word never
+	// overlaps its neighbours; the pill reserves room for the single widest word at
+	// full pop so the box stays put (no per-frame breathing, no clip).
+	const laidLines = lines.map((line) => {
+		const words = line.map((wi) => {
+			const text = cased(view.words[wi].text);
+			const w = ctx.measureText(text).width;
+			return { wi, text, w, s: view.wordScales?.[wi] ?? 1 };
+		});
+		const gaps = Math.max(0, words.length - 1) * spaceW;
+		const curWidth = words.reduce((a, o) => a + o.w * o.s, gaps);
+		const maxW = words.reduce((m, o) => Math.max(m, o.w), 0);
+		const stableWidth =
+			words.reduce((a, o) => a + o.w, gaps) + (view.wordScales ? (SCALE_EMPHASIS - 1) * maxW : 0);
+		return { words, curWidth, stableWidth };
+	});
+	const widest = laidLines.reduce((m, l) => Math.max(m, l.stableWidth), 0);
+	const pill = pillBox(style, fontPx, widest, laidLines.length);
 
 	// Horizontal band = the video rect, inset 4% (matching CaptionOverlay's
 	// px-[4%]); the pill is justified within it.
@@ -231,34 +263,29 @@ export function paintCaptionChunk(
 	const contentWidth = pill.width - 2 * pill.padX;
 	const outlinePx = style.outlineWidth > 0 ? (style.outlineWidth / 100) * fontPx * 2 : 0;
 
-	lines.forEach((line, li) => {
+	laidLines.forEach((ln, li) => {
 		const lineCenterY = pillY + pill.padY + (li + 0.5) * lineBox;
 		let x =
 			style.align === "left"
 				? contentLeft
 				: style.align === "right"
-					? contentLeft + contentWidth - lineWidths[li]
-					: contentLeft + (contentWidth - lineWidths[li]) / 2;
-		line.forEach((wi, k) => {
+					? contentLeft + contentWidth - ln.curWidth
+					: contentLeft + (contentWidth - ln.curWidth) / 2;
+		ln.words.forEach((o, k) => {
 			if (k > 0) x += spaceW;
-			const text = cased(view.words[wi].text);
-			const w = ctx.measureText(text).width;
 			const color = wordColor({
-				index: wi,
+				index: o.wi,
 				activeIndex: view.activeIndex,
 				spokenCount: view.spoken,
 				wordCount: view.words.length,
 				style,
 				anim: view.anim,
 			});
-			const scaled = wordScaled({
-				index: wi,
-				activeIndex: view.activeIndex,
-				wordCount: view.words.length,
-				anim: view.anim,
-			});
-			drawWord(ctx, text, x, lineCenterY, w, color, scaled, style, outlinePx);
-			x += w;
+			const sw = o.w * o.s;
+			// Centre the glyph in its scaled slot so drawWord's scale-about-centre lands
+			// inside [x, x+sw]; advance by the scaled width so the next word can't overlap.
+			drawWord(ctx, o.text, x + (sw - o.w) / 2, lineCenterY, o.w, color, o.s, style, outlinePx);
+			x += sw;
 		});
 	});
 
@@ -272,15 +299,15 @@ function drawWord(
 	y: number,
 	w: number,
 	color: string,
-	scaled: boolean,
+	wordScale: number,
 	style: CaptionStyle,
 	outlinePx: number,
 ): void {
 	ctx.save();
-	if (scaled) {
+	if (wordScale !== 1) {
 		const cx = x + w / 2;
 		ctx.translate(cx, y);
-		ctx.scale(SCALE_EMPHASIS, SCALE_EMPHASIS);
+		ctx.scale(wordScale, wordScale);
 		ctx.translate(-cx, -y);
 	}
 	if (style.background === "soft") {

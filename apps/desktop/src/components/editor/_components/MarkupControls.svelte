@@ -1,6 +1,12 @@
 <script lang="ts">
 import { insertImageAnnotation } from "$lib/annotations/image-import";
-import { ANNOTATION_TOOLS, IMAGE_TOOL, type AnnotationToolId } from "$lib/annotations/tools";
+import {
+	ANNOTATION_TOOLS,
+	IMAGE_TOOL,
+	toolForHotkey,
+	type AnnotationToolId,
+} from "$lib/annotations/tools";
+import { isEditableTarget } from "$lib/dom/editable";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import { Eye, EyeOff } from "@recast/icons";
 import * as Tooltip from "@recast/ui/tooltip";
@@ -33,7 +39,29 @@ function isActive(id: AnnotationToolId): boolean {
 function toggleHide() {
 	store.annotationsGloballyHidden = !store.annotationsGloballyHidden;
 }
+
+// Tool hotkeys live with the tools they drive. Unlike the markup panel, this
+// component stays mounted on every tab, so the tab check is explicit rather
+// than a side effect of when it happens to be rendered.
+function handleHotkey(event: KeyboardEvent) {
+	if (!onTab) return;
+	if (event.metaKey || event.ctrlKey || event.altKey) return;
+	if (isEditableTarget(event.target)) return;
+	const key = event.key.toLowerCase();
+	if (key === IMAGE_TOOL.hotkey.toLowerCase()) {
+		event.preventDefault();
+		void insertImageAnnotation(store);
+		return;
+	}
+	const tool = toolForHotkey(key);
+	if (!tool) return;
+	event.preventDefault();
+	pickTool(tool.id);
+}
 </script>
+
+<!-- `<svelte:window>` so HMR rebinds rather than leaking the listener. -->
+<svelte:window onkeydown={handleHotkey} />
 
 <!-- Drawing tools sit on the player bar, one row under the picture, rather than
      floating over it: markup is placed by eye and a pill over the frame covers

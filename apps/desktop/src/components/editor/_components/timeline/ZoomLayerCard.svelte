@@ -5,10 +5,17 @@ import { motionDuration } from "$lib/motion.svelte";
 import { ZoomIn } from "@recast/icons";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
-import { computeCardMove, computeCardNudge, computeCardResize } from "./timeline-card-drag.logic";
+import {
+	computeCardMove,
+	computeCardNudge,
+	computeCardResize,
+	dragEngaged,
+	PRECISION_SCALE,
+} from "./timeline-card-drag.logic";
+import { useLaneDrag } from "./timeline-drag.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
-import { edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
+import { EDGE_HIT_OVERHANG_PX, edgeHandleWidth, ZOOM_ROW_HEIGHT_PX } from "./timeline-stack";
 
 // Three drag modes through one pointer-handler: move (shift both edges),
 // resize-start (move `start`), resize-end (move `end`). Undo is pushed on the
@@ -62,10 +69,16 @@ interface DragContext {
 	startClientX: number;
 	originalStart: number;
 	originalEnd: number;
+	/** False until the pointer clears the drag threshold. */
+	engaged: boolean;
+	/** Shift held: pointer travel is damped for fine positioning. */
+	precision: boolean;
 }
 
 let drag = $state<DragContext | null>(null);
 let dragUndoPushed = false;
+// Holds this card's row for the gesture, so re-packing can't move it off the cursor.
+const laneDrag = useLaneDrag();
 
 const isSelected = $derived(region.id === store.selectedZoomRegionId);
 // Output (post-cut) axis so regions sit on the same gapless line as clips;
@@ -87,12 +100,15 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 	event.stopPropagation();
 	store.selectedZoomRegionId = region.id;
 	dragUndoPushed = false;
+	laneDrag?.begin(region.id);
 	drag = {
 		mode,
 		pointerId: event.pointerId,
 		startClientX: event.clientX,
 		originalStart: region.start,
 		originalEnd: region.end,
+		engaged: false,
+		precision: event.shiftKey,
 	};
 	document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
 	(event.currentTarget as Element).setPointerCapture(event.pointerId);
@@ -103,6 +119,20 @@ function beginDrag(mode: DragMode, event: PointerEvent) {
 
 function onPointerMove(event: PointerEvent) {
 	if (!drag) return;
+	// A press is a click until it clears the threshold, so selecting a card
+	// can't nudge it or leave an undo entry that changed nothing.
+	if (!drag.engaged) {
+		if (!dragEngaged(event.clientX, drag.startClientX)) return;
+		drag.engaged = true;
+	}
+	// Shift can go down or up mid-drag; re-seed the anchor to the current
+	// pointer and bounds so the change in gearing never jumps the card.
+	if (event.shiftKey !== drag.precision) {
+		drag.precision = event.shiftKey;
+		drag.startClientX = event.clientX;
+		drag.originalStart = region.start;
+		drag.originalEnd = region.end;
+	}
 	if (!dragUndoPushed) {
 		store.pushUndoState();
 		dragUndoPushed = true;
@@ -111,13 +141,14 @@ function onPointerMove(event: PointerEvent) {
 		origin: { start: drag.originalStart, end: drag.originalEnd },
 		clientX: event.clientX,
 		startClientX: drag.startClientX,
-		pps: pixelsPerSecond,
 		xOf,
 		tOf,
-		snapTargets,
+		// Ctrl/Cmd suspends magnetism for a placement the snap targets fight.
+		snapTargets: event.ctrlKey || event.metaKey ? [] : snapTargets,
 		tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
 		fps,
 		duration,
+		scale: drag.precision ? PRECISION_SCALE : 1,
 	};
 	const result =
 		drag.mode === "move"
@@ -133,6 +164,7 @@ function onPointerMove(event: PointerEvent) {
 
 function onPointerUp(_event: PointerEvent) {
 	drag = null;
+	laneDrag?.end();
 	document.body.style.cursor = "";
 	window.removeEventListener("pointermove", onPointerMove);
 	window.removeEventListener("pointerup", onPointerUp);
@@ -256,8 +288,8 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("resize-start", e);
     }}
-    class="absolute inset-y-0 left-0 z-10 cursor-ew-resize"
-    style="width: {handlePx}px;"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; left: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
       class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
@@ -273,8 +305,8 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("resize-end", e);
     }}
-    class="absolute inset-y-0 right-0 z-10 cursor-ew-resize"
-    style="width: {handlePx}px;"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; right: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
       class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||

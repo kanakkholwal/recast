@@ -2348,6 +2348,74 @@ export function createEditorStore() {
 	}
 
 	/**
+	 * Carry a segment's anchored settings across a boundary move. Speeds and
+	 * scene animations are keyed by the segment's ORIGINAL start, so without this
+	 * a roll/slide/slip silently drops them (`prune*` treats the anchor as
+	 * orphaned the moment the start it names no longer exists).
+	 */
+	function reanchorSegment(from: number, to: number) {
+		if (Math.abs(from - to) <= 1e-4) return;
+		const move = <T extends { start: number }>(list: readonly T[]): T[] =>
+			list
+				.map((it) => (Math.abs(it.start - from) <= 1e-4 ? { ...it, start: to } : { ...it }))
+				.sort((a, b) => a.start - b.start);
+		segmentSpeeds = move(segmentSpeeds);
+		segmentAnims = move(segmentAnims);
+	}
+
+	/**
+	 * Roll the split at `from` to `to`: the left segment's end and the right
+	 * segment's start move together, total length unchanged. Returns false if no
+	 * split sits at `from`. Does NOT push undo — the clip bar's drag handler owns
+	 * coalescing, like `updateCut`.
+	 */
+	function moveSplit(from: number, to: number): boolean {
+		const index = splitPoints.findIndex((p) => Math.abs(p - from) <= 1e-4);
+		if (index === -1) return false;
+		const next = [...splitPoints];
+		next[index] = to;
+		splitPoints = next.sort((a, b) => a - b);
+		reanchorSegment(from, to);
+		return true;
+	}
+
+	/**
+	 * Slide a removed range as a unit, so the blocks either side of it grow and
+	 * shrink by the same amount and the output length never changes. Callers own
+	 * undo coalescing.
+	 */
+	function slideCut(id: string, start: number, end: number) {
+		const cut = cuts.find((c) => c.id === id);
+		if (!cut) return;
+		// The following segment starts where the cut ends, so its anchor rides along.
+		reanchorSegment(cut.end, end);
+		cuts = cuts
+			.map((c) => (c.id === id ? { ...c, start, end } : c))
+			.sort((a, b) => a.start - b.start);
+	}
+
+	/**
+	 * Slip a block: its source window shifts inside its slot while it stays put
+	 * on the output axis, absorbed by the removed ranges either side. Callers own
+	 * undo coalescing.
+	 */
+	function slipSegment(p: {
+		from: number;
+		to: number;
+		before: { id: string; start: number; end: number };
+		after: { id: string; start: number; end: number };
+	}) {
+		reanchorSegment(p.from, p.to);
+		cuts = cuts
+			.map((c) => {
+				if (c.id === p.before.id) return { ...c, start: p.before.start, end: p.before.end };
+				if (c.id === p.after.id) return { ...c, start: p.after.start, end: p.after.end };
+				return c;
+			})
+			.sort((a, b) => a.start - b.start);
+	}
+
+	/**
 	 * Ripple-delete the segment containing original time `t`: the segment's
 	 * range becomes a manual cut and the gap closes via the cut time-map. Pruned
 	 * split points that bordered it are dropped. Returns the original-time
@@ -3281,6 +3349,9 @@ export function createEditorStore() {
 		canSplitAt,
 		removeSplit,
 		clearSplits,
+		moveSplit,
+		slideCut,
+		slipSegment,
 		deleteSegmentAt,
 		dismissSilence,
 		clearDismissedSilences,
