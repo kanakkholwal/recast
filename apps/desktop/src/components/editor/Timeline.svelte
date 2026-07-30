@@ -34,6 +34,7 @@ import {
 } from "./_components/timeline/timeline-helpers";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
+import { wheelIntent } from "./_components/timeline/timeline-wheel.logic";
 import { storyboardCrop } from "$lib/timeline/storyboard";
 import type { TileProvider } from "$lib/timeline/filmstrip-source";
 
@@ -50,6 +51,7 @@ interface Props {
 let { store, videoEl = null, tileProvider = null, filmstripVersion = 0 }: Props = $props();
 
 let timelineEl: HTMLDivElement | undefined = $state();
+let laneScrollEl: HTMLDivElement | undefined = $state();
 let isDraggingPlayhead = $state(false);
 let timelineWidth = $state(900);
 // Horizontal scroll offset, tracked so the clip bar can virtualize its tiles.
@@ -74,11 +76,18 @@ const timeMode = $derived(store.timeMode);
 // outright, so hiding it hides the envelope everywhere. Zoom/Markup/Cuts lanes
 // show/hide independently. Persisted to localStorage so the choice survives
 // reopening the editor.
+// Zoom and Markup default to AUTO (`null`): shown once they hold something,
+// hidden while empty. Every lane visible by default made the panel tall enough
+// to squeeze the preview, and two of the four were usually empty. A lane the
+// user has toggled stores a real boolean and stops following its content, so an
+// explicit choice is never overridden.
 const VIEW_KEY = "recast.timeline.view";
+/** `null` = follow the lane's content. */
+type LanePref = boolean | null;
 function loadView(): {
 	waveform: boolean;
-	zoom: boolean;
-	markup: boolean;
+	zoom: LanePref;
+	markup: LanePref;
 	cuts: boolean;
 	gaps: boolean;
 } {
@@ -91,8 +100,9 @@ function loadView(): {
 					// Migrate the old `clipContent: "waveform" | "thumbnails"` radio: anyone
 					// who had chosen the waveform still wants to see it, now as an overlay.
 					waveform: typeof v.waveform === "boolean" ? v.waveform : v.clipContent === "waveform",
-					zoom: v.zoom !== false,
-					markup: v.markup !== false,
+					// Anyone with a stored boolean chose it before auto existed; keep it.
+					zoom: typeof v.zoom === "boolean" ? v.zoom : null,
+					markup: typeof v.markup === "boolean" ? v.markup : null,
 					cuts: v.cuts ?? v.silence ?? true,
 					gaps: v.gaps === true,
 				};
@@ -101,13 +111,15 @@ function loadView(): {
 			/* fall through to defaults */
 		}
 	}
-	return { waveform: true, zoom: true, markup: true, cuts: true, gaps: false };
+	return { waveform: true, zoom: null, markup: null, cuts: true, gaps: false };
 }
 const _view = loadView();
 let showAudioLane = $state(_view.waveform);
-let showZoomLane = $state(_view.zoom);
-let showMarkupLane = $state(_view.markup);
 let showCutLane = $state(_view.cuts);
+let zoomLanePref = $state<LanePref>(_view.zoom);
+let markupLanePref = $state<LanePref>(_view.markup);
+const showZoomLane = $derived(zoomLanePref ?? store.zoomRegions.length > 0);
+const showMarkupLane = $derived(markupLanePref ?? store.annotations.length > 0);
 // "Show cut gaps" lives in the store (it reshapes the render axis every lane
 // reads); seed it from the persisted view pref on mount.
 onMount(() => {
@@ -120,8 +132,10 @@ $effect(() => {
 			VIEW_KEY,
 			JSON.stringify({
 				waveform: showAudioLane,
-				zoom: showZoomLane,
-				markup: showMarkupLane,
+				// The PREF, not the resolved value: persisting the resolved boolean
+				// would freeze a lane the moment its content happened to appear.
+				zoom: zoomLanePref,
+				markup: markupLanePref,
 				cuts: showCutLane,
 				gaps: store.showCutGaps,
 			}),
@@ -821,7 +835,15 @@ function handleScroll() {
 function handleTimelineWheel(event: WheelEvent) {
 	if (!timelineEl) return;
 
-	if (event.ctrlKey || event.metaKey) {
+	// The track column clips its own y-overflow, so a vertical notch has to be
+	// forwarded to the lane scroller by hand; it would not chain there itself.
+	const scroller = laneScrollEl;
+	const canScrollVertically = !!scroller && scroller.scrollHeight - scroller.clientHeight > 1;
+	const intent = wheelIntent(event, canScrollVertically);
+
+	if (intent.kind === "none") return;
+
+	if (intent.kind === "zoom") {
 		event.preventDefault();
 		const rect = timelineEl.getBoundingClientRect();
 		const anchorX = event.clientX - rect.left;
@@ -830,7 +852,7 @@ function handleTimelineWheel(event: WheelEvent) {
 		// Multiplicative, so one wheel notch covers the same proportion of the
 		// range whether the clip is 10 seconds or 30 minutes long.
 		const nextZoom = clampTimelineZoom(
-			store.timelineZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
+			store.timelineZoom * (intent.direction > 0 ? 1.12 : 1 / 1.12),
 			outputDuration,
 			timelineWidth,
 		);
@@ -844,9 +866,11 @@ function handleTimelineWheel(event: WheelEvent) {
 		return;
 	}
 
-	if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-		event.preventDefault();
-		timelineEl.scrollLeft += event.deltaY;
+	event.preventDefault();
+	if (intent.kind === "vertical") {
+		if (scroller) scroller.scrollTop += intent.delta;
+	} else {
+		timelineEl.scrollLeft += intent.delta;
 	}
 }
 
@@ -993,9 +1017,12 @@ onMount(() => {
   </span>
 {/snippet}
 
+<!-- Fills whatever height the editor gives it (the panel is user-resizable), so
+     the toolbar stays pinned and the tracks scroll inside the rest. -->
 <div
-  class="shrink-0 select-none border-t border-border/60 bg-card/30 px-2 pt-1.5 pb-2"
+  class="flex h-full min-h-0 select-none flex-col border-t border-border/60 bg-card/30 px-2 pt-1.5 pb-2"
 >
+  <div class="shrink-0">
   <TimelineToolbar
     {store}
     fps={effectiveFps()}
@@ -1023,17 +1050,27 @@ onMount(() => {
     onZoomToFit={zoomToFit}
     onZoomToSelection={zoomToSelection}
     onToggleAudioLane={() => (showAudioLane = !showAudioLane)}
-    onToggleZoomLane={() => (showZoomLane = !showZoomLane)}
-    onToggleMarkupLane={() => (showMarkupLane = !showMarkupLane)}
+    onToggleZoomLane={() => (zoomLanePref = !showZoomLane)}
+    onToggleMarkupLane={() => (markupLanePref = !showMarkupLane)}
     onToggleCutLane={() => (showCutLane = !showCutLane)}
     onToggleCutGaps={() => (store.showCutGaps = !store.showCutGaps)}
   />
+  </div>
 
-  <!-- Rail lives OUTSIDE the scroller so lane names never overlap a card at t≈0.
-       Row heights mirror the track side (h-7 ruler, h-12 clip, mt-1.5+min-h-9 lanes) so labels align. -->
+  <!-- Rail lives OUTSIDE the horizontal scroller so lane names never overlap a
+       card at t≈0. Row heights mirror the track side so labels align.
+       The scroll container and the rail/track ROW are deliberately two elements.
+       When they were one, both columns stretched to the container's fixed height
+       and the track column (which clips its own y-overflow to keep the ruler
+       from scrolling) simply cut the lower lanes off, while the container saw
+       nothing to scroll. The inner row is sized by its CONTENT, so extra rows
+       make it overflow and the container scrolls; `min-h-full` keeps the rail's
+       background and border reaching the bottom when the lanes are short. -->
   <div
-    class="relative flex overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
+    bind:this={laneScrollEl}
+    class="lane-scroll min-h-0 flex-1 overflow-x-hidden overflow-y-auto rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
   >
+  <div class="relative flex min-h-full">
     <div
       class="relative z-10 flex w-16 shrink-0 flex-col border-r border-border/60 bg-card/50"
     >
@@ -1199,6 +1236,7 @@ onMount(() => {
       </div>
     </div>
   </div>
+  </div>
 </div>
 
 <!-- Scissor cursor for the razor tool: the scroller hides its native cursor
@@ -1258,6 +1296,25 @@ onMount(() => {
 <style>
   .custom-scrollbar::-webkit-scrollbar {
     height: 8px;
+  }
+
+  /* Vertical track scroll, shown only once the lanes outgrow the panel. */
+  .lane-scroll::-webkit-scrollbar {
+    width: 8px;
+  }
+  .lane-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .lane-scroll::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-foreground) 14%, transparent);
+    border-radius: 999px;
+  }
+  .lane-scroll::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-foreground) 24%, transparent);
+  }
+  .lane-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-foreground) 14%, transparent) transparent;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {

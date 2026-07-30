@@ -19,7 +19,7 @@ use super::export::cuts_speed::{
 };
 use super::export::gif::{run_gif_palette_prepass, run_gif_pass, GifPassError, GifPassParams};
 use super::export::progress::ProgressBand;
-use super::export::run::run_encode;
+use super::export::run::{is_ffmpeg_crash_code, parse_ffmpeg_exit_code, run_encode};
 use super::export::state::{emit_export_state, ExportStateEvent};
 use super::ffmpeg::{
     append_camera_overlay_to_complex, append_cursor_overlay_to_complex,
@@ -3197,6 +3197,9 @@ pub(crate) async fn run_export_job(
         }
     }
 
+    // Snapshot inputs+filter+maps before the codec tail so a hardware-encoder
+    // crash can be re-run with software from the same base command.
+    let base_args = args.clone();
     append_codec_args(
         &mut args,
         &request.format,
@@ -3205,10 +3208,11 @@ pub(crate) async fn run_export_job(
         speed,
         audio_map.is_some(),
         &output_path,
+        false,
     );
 
     let output_path_str = output_path.to_string_lossy().to_string();
-    log::info!("export ffmpeg args: {}", args.join(" "));
+    // (the full command is logged once inside run_encode at spawn.)
 
     // Record which encoder/decoder actually ran — the plan's #1 open question
     // (hardware vs the libx264 software fallback). Read off the emitted args so it
@@ -3219,6 +3223,29 @@ pub(crate) async fn run_export_job(
         .position(|a| a == "-c:v")
         .and_then(|i| args.get(i + 1).cloned())
         .unwrap_or_else(|| "unknown".to_string());
+    // Hardware h264 encoders (NVENC/AMF/QSV/VideoToolbox) can segfault mid-encode
+    // on some drivers/content (Windows exit 0xC0000005). Pre-build a software-x264
+    // variant of the SAME command so the encode task can retry once rather than
+    // hard-failing. Only h264/mp4 has a hardware encoder to fall back from.
+    let sw_retry_args = if ["nvenc", "amf", "qsv", "videotoolbox"]
+        .iter()
+        .any(|k| video_encoder.contains(k))
+    {
+        let mut a = base_args;
+        append_codec_args(
+            &mut a,
+            &request.format,
+            &gif_settings,
+            &profile,
+            speed,
+            audio_map.is_some(),
+            &output_path,
+            true,
+        );
+        Some(a)
+    } else {
+        None
+    };
     // `-hwaccel auto` may still fall back to software internally, so report the
     // requested mode rather than claiming hardware.
     let decode_mode = args
@@ -3240,8 +3267,14 @@ pub(crate) async fn run_export_job(
     let app_for_task = app.clone();
     let export_id_for_task = export_id.clone();
     let export_id_for_fallback = export_id.clone();
+    // Clones so the software-x264 retry (see `sw_retry_args`) can run inside the
+    // same task after a hardware-encoder crash, reusing the same output + inputs.
+    let retry_app = app.clone();
+    let retry_export_id = export_id.clone();
+    let retry_output = output_path_str.clone();
+    let retry_cancel = cancel_flag.clone();
     let task_result = tokio::task::spawn_blocking(move || {
-        run_encode(
+        let first = run_encode(
             args,
             app_for_task,
             export_id_for_task,
@@ -3249,7 +3282,27 @@ pub(crate) async fn run_export_job(
             output_path_str,
             expected_output_secs,
             progress_band,
-        )
+        );
+        match first {
+            Err(e)
+                if sw_retry_args.is_some()
+                    && parse_ffmpeg_exit_code(&e).map_or(false, is_ffmpeg_crash_code) =>
+            {
+                log::warn!(
+                    "export[{retry_export_id}]: hardware encoder crashed ({e}); retrying with software x264"
+                );
+                run_encode(
+                    sw_retry_args.unwrap(),
+                    retry_app,
+                    retry_export_id,
+                    retry_cancel,
+                    retry_output,
+                    expected_output_secs,
+                    progress_band,
+                )
+            }
+            other => other,
+        }
     })
     .await;
 

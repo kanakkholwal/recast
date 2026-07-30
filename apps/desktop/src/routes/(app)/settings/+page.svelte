@@ -39,6 +39,15 @@ import {
 } from "$lib/profiles";
 import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
 import {
+	DEFAULT_SETTINGS_TAB,
+	parseSettingsTab,
+	SETTINGS_TAB_PARAM,
+	type SettingsTab,
+} from "./settings-tabs";
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
 	ArrowUpRight,
 	BrandGoogleDrive,
 	Cloud,
@@ -71,7 +80,7 @@ import * as Tabs from "@recast/ui/tabs";
 import { setMode } from "@recast/ui/theme";
 import { listen } from "@tauri-apps/api/event";
 import { platform } from "@tauri-apps/plugin-os";
-import { onMount } from "svelte";
+import { onMount, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
 
@@ -91,7 +100,8 @@ type Theme = "light" | "dark" | "system";
 type EditorBehavior = "navigate" | "new-window";
 // Experimental + About + device/diagnostics collapse into one "Advanced"
 // section. Low-frequency, expert-facing config kept out of the main tabs.
-type SettingsTab = "general" | "recording" | "cloud" | "advanced";
+// The tab list itself lives in `settings-tabs.ts`, so links elsewhere in the app
+// can target a tab without importing this page.
 
 let outputDir = $state("");
 let currentTheme = $state<Theme>("system");
@@ -110,7 +120,7 @@ let recordingFps = $state<number>(60);
 // Highest display refresh. Capture can't produce more unique fps than this,
 // so fps options are capped to it. 60 until displays are probed.
 let maxRefreshHz = $state(60);
-let activeTab = $state<SettingsTab>("general");
+let activeTab = $state<SettingsTab>(DEFAULT_SETTINGS_TAB);
 // `recast` command-line tool PATH state. null until the first probe.
 let cliStatus = $state<CliInstallStatus | null>(null);
 let cliBusy = $state(false);
@@ -134,6 +144,35 @@ onMount(() => {
 	return () => {
 		unlistenSource.then((fn) => fn());
 	};
+});
+
+// --- Tab ⇄ URL ---
+// Reader first, so a deep-linked `?tab=` beats the default on the first flush.
+// Each effect reads only its own source and bails when the two already agree.
+$effect(() => {
+	const fromUrl = parseSettingsTab(page.url.searchParams.get(SETTINGS_TAB_PARAM));
+	if (fromUrl && fromUrl !== untrack(() => activeTab)) activeTab = fromUrl;
+});
+
+// `replaceState` throws until the router has booted, and effects run during
+// hydration, which is earlier than that.
+let routerReady = $state(false);
+afterNavigate(() => {
+	routerReady = true;
+});
+
+$effect(() => {
+	const tab = activeTab;
+	if (!routerReady) return;
+	const url = untrack(() => new URL(page.url));
+	if (url.searchParams.get(SETTINGS_TAB_PARAM) === tab) return;
+	url.searchParams.set(SETTINGS_TAB_PARAM, tab);
+	// replaceState, not goto: the open tab is view state, and one history entry
+	// per tab click would make Back mean "previous tab".
+	replaceState(
+		url,
+		untrack(() => page.state),
+	);
 });
 
 /** Selected monitor's refresh when a monitor is the active source, else the
@@ -412,7 +451,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
         </span>
       </h1>
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Tune storage, theme and editor defaults. Changes save instantly.
+        Tune appearance, storage and editor defaults. Changes save instantly.
       </p>
     </header>
 
@@ -449,7 +488,76 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
           </Tabs.Trigger>
         </Tabs.List>
 
-        <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
+              <SectionCard
+                id="settings-appearance"
+                label="Appearance"
+                description="How Recast looks and how the window is arranged."
+              >
+                <SettingsRow
+                  label="Theme"
+                  description={currentTheme === "system"
+                    ? "Following your OS preference."
+                    : `Locked to ${currentTheme} mode.`}
+                >
+                  <Segmented
+                    options={themeSegments}
+                    value={currentTheme}
+                    onValueChange={updateTheme}
+                    fill={false}
+                    aria-label="Theme"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window chrome"
+                  description={LAYOUT_MODES.find(
+                    (m) => m.value === layoutMode.current,
+                  )?.hint}
+                >
+                  <Segmented
+                    options={layoutSegments}
+                    value={layoutMode.current}
+                    onValueChange={(v) => (layoutMode.current = v)}
+                    fill={false}
+                    aria-label="Window chrome layout"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window transparency"
+                  description={isLinux
+                    ? "Not available on Linux."
+                    : windowTransparency
+                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
+                      : "The window uses a solid background."}
+                >
+                  <Switch
+                    checked={!isLinux && windowTransparency}
+                    disabled={isLinux}
+                    onCheckedChange={() => toggleWindowTransparency()}
+                    aria-label="Window transparency"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
+              <SectionCard
+                id="settings-editor"
+                label="Editor"
+                description="Behavior when you open a recording."
+              >
+                <SettingsRow
+                  label="Window behavior"
+                  description="Replace the current view or pop the editor into its own window."
+                >
+                  <Segmented
+                    options={editorSegments}
+                    value={editorWindow}
+                    onValueChange={updateEditorWindow}
+                    fill={false}
+                    aria-label="Window behavior"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
               <SectionCard
                 id="settings-storage"
                 label="Storage"
@@ -482,6 +590,60 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                   </Button>
                 </SettingsRow>
               </SectionCard>
+
+              <SectionCard
+                id="settings-system"
+                label="System"
+                description="Behavior when you close the main window."
+              >
+                <SettingsRow
+                  label="Minimize to tray on close"
+                  description={closeToTray
+                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+                    : "Closing the window quits Recast immediately."}
+                >
+                  <Switch
+                    checked={closeToTray}
+                    onCheckedChange={() => toggleCloseToTray()}
+                    aria-label="Minimize to tray on close"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
+              <!-- Two locally-stored opt-ins: usage analytics (default off) and
+                   crash reports (default on, PII-scrubbed). -->
+              <SectionCard
+                id="settings-privacy"
+                label="Privacy & Telemetry"
+                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+              >
+                {#snippet icon()}
+                  <Shield class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Share anonymous usage analytics"
+                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
+                >
+                  <Switch
+                    checked={desktopConsent.product}
+                    onCheckedChange={() => toggleProductAnalytics()}
+                    aria-label="Share anonymous usage analytics"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Send anonymous crash reports"
+                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+                >
+                  <Switch
+                    checked={desktopConsent.errors}
+                    onCheckedChange={() => toggleCrashReports()}
+                    aria-label="Send anonymous crash reports"
+                  />
+                </SettingsRow>
+              </SectionCard>
+        </Tabs.Content>
+
+        <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
 
               <!-- Read by the recording panel via shared localStorage; profiles
                    can override it per-profile. -->
@@ -590,25 +752,6 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
 
               <SectionCard
-                id="settings-editor"
-                label="Editor"
-                description="Behavior when you open a recording."
-              >
-                <SettingsRow
-                  label="Window behavior"
-                  description="Replace the current view or pop the editor into its own window."
-                >
-                  <Segmented
-                    options={editorSegments}
-                    value={editorWindow}
-                    onValueChange={updateEditorWindow}
-                    fill={false}
-                    aria-label="Window behavior"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
                 id="settings-profiles"
                 label="Recording profiles"
                 description="Save preset combinations of audio, mic, and camera."
@@ -706,109 +849,6 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
               </SectionCard>
         </Tabs.Content>
 
-        <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
-              <SectionCard
-                id="settings-appearance"
-                label="Appearance"
-                description="How Recast looks and how the window is arranged."
-              >
-                <SettingsRow
-                  label="Theme"
-                  description={currentTheme === "system"
-                    ? "Following your OS preference."
-                    : `Locked to ${currentTheme} mode.`}
-                >
-                  <Segmented
-                    options={themeSegments}
-                    value={currentTheme}
-                    onValueChange={updateTheme}
-                    fill={false}
-                    aria-label="Theme"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window chrome"
-                  description={LAYOUT_MODES.find(
-                    (m) => m.value === layoutMode.current,
-                  )?.hint}
-                >
-                  <Segmented
-                    options={layoutSegments}
-                    value={layoutMode.current}
-                    onValueChange={(v) => (layoutMode.current = v)}
-                    fill={false}
-                    aria-label="Window chrome layout"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window transparency"
-                  description={isLinux
-                    ? "Not available on Linux."
-                    : windowTransparency
-                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
-                      : "The window uses a solid background."}
-                >
-                  <Switch
-                    checked={!isLinux && windowTransparency}
-                    disabled={isLinux}
-                    onCheckedChange={() => toggleWindowTransparency()}
-                    aria-label="Window transparency"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
-                id="settings-system"
-                label="System"
-                description="Behavior when you close the main window."
-              >
-                <SettingsRow
-                  label="Minimize to tray on close"
-                  description={closeToTray
-                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
-                    : "Closing the window quits Recast immediately."}
-                >
-                  <Switch
-                    checked={closeToTray}
-                    onCheckedChange={() => toggleCloseToTray()}
-                    aria-label="Minimize to tray on close"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <!-- Two locally-stored opt-ins: usage analytics (default off) and
-                   crash reports (default on, PII-scrubbed). -->
-              <SectionCard
-                id="settings-privacy"
-                label="Privacy & Telemetry"
-                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
-              >
-                {#snippet icon()}
-                  <Shield class="size-3 text-primary" />
-                {/snippet}
-                <SettingsRow
-                  label="Share anonymous usage analytics"
-                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
-                >
-                  <Switch
-                    checked={desktopConsent.product}
-                    onCheckedChange={() => toggleProductAnalytics()}
-                    aria-label="Share anonymous usage analytics"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Send anonymous crash reports"
-                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
-                >
-                  <Switch
-                    checked={desktopConsent.errors}
-                    onCheckedChange={() => toggleCrashReports()}
-                    aria-label="Send anonymous crash reports"
-                  />
-                </SettingsRow>
-              </SectionCard>
-        </Tabs.Content>
-
         <Tabs.Content value="advanced" class="flex min-w-0 flex-col gap-8">
               <SectionCard
                 id="settings-experimental"
@@ -900,6 +940,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                   <Switch
                     checked={cliAutoInstall}
                     onCheckedChange={() => toggleCliAutoInstall()}
+                    aria-label="Auto-install on first launch"
                   />
                 </SettingsRow>
 
@@ -963,21 +1004,22 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
                       <span>What's new</span>
                       <ArrowUpRight class="text-muted-foreground" />
                     </Button>
+                    <!-- `openUrl`, not `target="_blank"`: the webview silently
+                         swallows a new-window request, so both of these were
+                         dead buttons. -->
                     <Button
-                      href={config.website}
-                      target="_blank"
                       variant="outline"
                       size="xs"
+                      onclick={() => void openUrl(config.website)}
                     >
                       <Globe />
                       <span>Website</span>
                       <ArrowUpRight class="text-muted-foreground" />
                     </Button>
                     <Button
-                      href={config.github}
-                      target="_blank"
                       variant="outline"
                       size="xs"
+                      onclick={() => void openUrl(config.github)}
                     >
                       <GithubBrand />
                       <span>GitHub</span>

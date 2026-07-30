@@ -1,70 +1,78 @@
 <script lang="ts">
-  import { page } from "$app/state";
-  import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
-  import Logo from "$components/logo.svelte";
-  import { launchRecordingPanel } from "$lib/ipc";
-  import {
-    Download,
-    LayoutDashboard,
-    Broadcast,
-    Settings,
-    SlidersHorizontal,
-    Video
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Sidebar from "@recast/ui/sidebar";
-  import { useSidebar } from "@recast/ui/sidebar";
-  import { cn } from "@recast/ui/utils";
-  import type { ComponentProps } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { crossfade, fade } from "svelte/transition";
-  import { isActive } from "./app-sidebar.logic";
+import { page } from "$app/state";
+import SearchCommandMenu from "$components/layout/SearchCommandMenu.svelte";
+import Logo from "$components/logo.svelte";
+import { launchRecordingPanel } from "$lib/ipc";
+import { chordLabel } from "$lib/shortcuts/registry.svelte";
+import {
+	Download,
+	LayoutDashboard,
+	Broadcast,
+	Settings,
+	SlidersHorizontal,
+	Video,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Sidebar from "@recast/ui/sidebar";
+import { useSidebar } from "@recast/ui/sidebar";
+import { cn } from "@recast/ui/utils";
+import type { ComponentProps } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { crossfade, fade } from "svelte/transition";
+import { isActive } from "./app-sidebar.logic";
 
-  let {
-    ref = $bindable(null),
-    variant = "inset",
-    ...restProps
-  }: ComponentProps<typeof Sidebar.Root> = $props();
+let {
+	ref = $bindable(null),
+	variant = "inset",
+	...restProps
+}: ComponentProps<typeof Sidebar.Root> = $props();
 
-  // Read the parent <Sidebar.Provider> state so transitions can fire on
-  // open/collapse rather than being purely CSS-driven.
-  const sidebar = useSidebar();
-  const open = $derived(sidebar.state === "expanded");
+// Read the parent <Sidebar.Provider> state so transitions can fire on
+// open/collapse rather than being purely CSS-driven.
+const sidebar = useSidebar();
+const open = $derived(sidebar.state === "expanded");
 
-  let currentPath = $derived(page.url.pathname);
+let currentPath = $derived(page.url.pathname);
 
-  // Split destinations (things you make/browse) from configuration so Settings
-  // and Profiles read as a distinct band rather than trailing the content nav.
-  const navGroups = [
-    {
-      label: "Workspace",
-      links: [
-        { title: "Home", href: "/", icon: LayoutDashboard },
-        { title: "Recasts", href: "/recasts", icon: Video },
-        { title: "Exports", href: "/exports", icon: Download },
-      ],
-    },
-    {
-      label: "Configure",
-      links: [
-        { title: "Profiles", href: "/profiles", icon: SlidersHorizontal },
-        { title: "Settings", href: "/settings", icon: Settings },
-      ],
-    },
-  ];
+// From the registry, so the tooltip can't drift from the real binding. The
+// hardcoded one here read "⌘⇧R", a chord that launches nothing.
+const recordShortcut = $derived(chordLabel("general.record"));
 
-  // Crossfade between active rows so the highlight slides between items.
-  const [send, receive] = crossfade({
-    duration: 280,
-    easing: cubicOut,
-    fallback: (node) => fade(node, { duration: 120 }),
-  });
+// Split destinations (things you make/browse) from configuration so Settings
+// and Profiles read as a distinct band rather than trailing the content nav.
+const navGroups = [
+	{
+		label: "Workspace",
+		links: [
+			{ title: "Home", href: "/", icon: LayoutDashboard },
+			{ title: "Recasts", href: "/recasts", icon: Video },
+			{ title: "Exports", href: "/exports", icon: Download },
+		],
+	},
+	{
+		label: "Configure",
+		links: [
+			{ title: "Profiles", href: "/profiles", icon: SlidersHorizontal },
+			{ title: "Settings", href: "/settings", icon: Settings },
+		],
+	},
+];
+
+// Crossfade between active rows so the highlight slides between items.
+const [send, receive] = crossfade({
+	duration: 280,
+	easing: cubicOut,
+	fallback: (node) => fade(node, { duration: 120 }),
+});
 </script>
 
 <Sidebar.Root bind:ref {variant} collapsible="icon" {...restProps}>
   <Sidebar.Rail class="data-[state=collapsed]:hidden" />
 
-  <Sidebar.Header class="gap-3 py-3">
+  <!-- Drag region on the header, not on the logo link: Tauri starts a window
+       drag from the element carrying the attribute, and on an <a> that competes
+       with the click. Children without it still behave normally. -->
+  <Sidebar.Header class="gap-3 py-3" data-tauri-drag-region>
     <Sidebar.MenuItem class="relative">
       <a
         href="/"
@@ -72,7 +80,6 @@
           "flex h-10 items-center gap-2.5 overflow-hidden rounded-lg transition-[padding,opacity] duration-200 ease-linear hover:opacity-80",
           open ? "px-2 pr-9" : "px-1.5",
         )}
-        data-tauri-drag-region
         aria-label="Recast home"
       >
         <Logo size="24" class="shrink-0" />
@@ -94,7 +101,7 @@
     </Sidebar.MenuItem>
   </Sidebar.Header>
 
-  <Sidebar.Content class="scrollbar-hide">
+  <Sidebar.Content class="no-scrollbar">
     {#each navGroups as group (group.label)}
     <Sidebar.Group>
       <!-- Kept mounted: GroupLabel has a built-in collapse
@@ -121,6 +128,7 @@
                     href={link.href}
                     {...(props as Record<string, unknown>)}
                     data-active={active}
+                    aria-current={active ? "page" : undefined}
                     class={cn(
                       "group/item relative flex h-9 w-full items-center gap-2.5 overflow-hidden rounded-lg px-2.5 text-[12.5px] font-medium transition-colors duration-200",
                       active
@@ -178,7 +186,7 @@
         "group/launch h-9 w-full justify-center overflow-hidden rounded-lg transition-[padding] duration-200 ease-linear",
         open ? "px-3 gap-1.5" : "px-0 gap-0",
       )}
-      title="Launch Recording Panel (⌘⇧R)"
+      title={`Launch recording panel  ·  ${recordShortcut}`}
     >
       <Broadcast
         size={13}
@@ -196,12 +204,3 @@
   </Sidebar.Footer>
 </Sidebar.Root>
 
-<style>
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-</style>

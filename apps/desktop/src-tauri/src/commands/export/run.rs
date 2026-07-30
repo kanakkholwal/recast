@@ -38,6 +38,26 @@ fn completed_export_looks_usable(path: &Path, expected_duration: f64) -> bool {
     metadata.duration + 0.05 >= min_duration
 }
 
+/// True for an abnormal-termination exit code (a crash / signal) rather than a
+/// normal ffmpeg error exit (0..=255). A hardware-encoder crash on Windows shows
+/// up as an NTSTATUS such as 0xC0000005 (`-1073741819` as i32).
+pub(crate) fn is_ffmpeg_crash_code(code: i32) -> bool {
+    !(0..=255).contains(&code)
+}
+
+/// Pull the ffmpeg exit code out of a `run_encode` error string
+/// (`export failed (ffmpeg exit <code>): …`). None when the message carries none.
+pub(crate) fn parse_ffmpeg_exit_code(err: &str) -> Option<i32> {
+    let start = err.find("ffmpeg exit ")? + "ffmpeg exit ".len();
+    let rest = &err[start..];
+    let end = rest
+        .char_indices()
+        .find(|&(_, c)| !(c.is_ascii_digit() || c == '-'))
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
 pub(crate) fn run_encode(
     args: Vec<String>,
     app: AppHandle,
@@ -638,4 +658,35 @@ pub(crate) fn run_encode(
         encode_started_at.elapsed().as_millis()
     );
     Ok(output_path_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_ffmpeg_crash_code, parse_ffmpeg_exit_code};
+
+    #[test]
+    fn crash_codes_are_out_of_the_normal_exit_range() {
+        assert!(is_ffmpeg_crash_code(-1073741819)); // 0xC0000005 access violation
+        assert!(is_ffmpeg_crash_code(-1));
+        assert!(is_ffmpeg_crash_code(256));
+        assert!(!is_ffmpeg_crash_code(0));
+        assert!(!is_ffmpeg_crash_code(1)); // a normal ffmpeg error, not a crash
+        assert!(!is_ffmpeg_crash_code(255));
+    }
+
+    #[test]
+    fn parses_exit_code_from_the_error_message() {
+        assert_eq!(
+            parse_ffmpeg_exit_code("export failed (ffmpeg exit -1073741819):\nboom"),
+            Some(-1073741819)
+        );
+        assert_eq!(
+            parse_ffmpeg_exit_code("export failed (ffmpeg exit 1):\nx"),
+            Some(1)
+        );
+        assert_eq!(
+            parse_ffmpeg_exit_code("export timed out: no progress"),
+            None
+        );
+    }
 }

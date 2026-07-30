@@ -22,6 +22,7 @@ import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
+import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { page } from "$app/state";
 import {
 	boolParam,
@@ -67,6 +68,12 @@ import {
 	saveProjectEdits,
 } from "$lib/ipc";
 import type { CameraCapture } from "$lib/ipc-types";
+import {
+	clampTimelineHeight,
+	TIMELINE_DEFAULT_HEIGHT_PX,
+	TIMELINE_MIN_HEIGHT_PX,
+	timelineMaxHeight,
+} from "$lib/editor/panel-size";
 import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
@@ -264,6 +271,88 @@ function onSidebarHandleKey(e: KeyboardEvent) {
 		case "End":
 			e.preventDefault();
 			sidebarWidth = SIDEBAR_MIN;
+			break;
+	}
+}
+
+// Resizable timeline panel. Same splitter idiom as the sidebar, on the other
+// axis. Bounded at BOTH ends: the floor keeps the ruler, clip bar and one lane
+// on screen, and the ceiling is a share of the editor column so the timeline can
+// never take the preview's space (which is what made this necessary — every lane
+// visible at once left the video a strip).
+const TIMELINE_HEIGHT_KEY = "recast-editor-timeline-height";
+let editorColumnH = $state(0);
+let timelineHeight = $state(TIMELINE_DEFAULT_HEIGHT_PX);
+let resizingTimeline = $state(false);
+
+const timelineMax = $derived(timelineMaxHeight(editorColumnH));
+const clampTimeline = (h: number) => clampTimelineHeight(h, editorColumnH);
+
+if (browser) {
+	const raw = Number(localStorage.getItem(TIMELINE_HEIGHT_KEY));
+	if (Number.isFinite(raw) && raw > 0) timelineHeight = raw;
+}
+// Re-clamp when the window (and so the ceiling) changes, so a height saved on a
+// big display doesn't swallow the preview on a laptop. Depends on the CEILING
+// only; reading the height tracked would make the effect depend on its own write.
+$effect(() => {
+	const max = timelineMax;
+	untrack(() => {
+		if (timelineHeight > max) timelineHeight = max;
+		else if (timelineHeight < TIMELINE_MIN_HEIGHT_PX) timelineHeight = TIMELINE_MIN_HEIGHT_PX;
+	});
+});
+$effect(() => {
+	if (!browser) return;
+	try {
+		localStorage.setItem(TIMELINE_HEIGHT_KEY, String(timelineHeight));
+	} catch {
+		// Best-effort, same as the layout prefs above.
+	}
+});
+
+// Docked bottom, so dragging the splitter UP grows it: height rises as y falls.
+function startTimelineResize(e: PointerEvent) {
+	if (e.button !== 0) return;
+	e.preventDefault();
+	resizingTimeline = true;
+	const startY = e.clientY;
+	const startH = timelineHeight;
+	document.body.style.cursor = "row-resize";
+	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	const onMove = (ev: PointerEvent) => {
+		timelineHeight = clampTimeline(startH - (ev.clientY - startY));
+	};
+	const onUp = () => {
+		resizingTimeline = false;
+		document.body.style.cursor = "";
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", onUp);
+		window.removeEventListener("pointercancel", onUp);
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", onUp);
+	window.addEventListener("pointercancel", onUp);
+}
+
+function onTimelineHandleKey(e: KeyboardEvent) {
+	const step = e.shiftKey ? 48 : 16;
+	switch (e.key) {
+		case "ArrowUp":
+			e.preventDefault();
+			timelineHeight = clampTimeline(timelineHeight + step);
+			break;
+		case "ArrowDown":
+			e.preventDefault();
+			timelineHeight = clampTimeline(timelineHeight - step);
+			break;
+		case "Home":
+			e.preventDefault();
+			timelineHeight = timelineMax;
+			break;
+		case "End":
+			e.preventDefault();
+			timelineHeight = TIMELINE_MIN_HEIGHT_PX;
 			break;
 	}
 }
@@ -1485,7 +1574,7 @@ async function uploadExportToDrive() {
 	await gdrive.init();
 	if (!gdrive.connected) {
 		toast.info("Connect Google Drive in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	// Progress lives in the foreground dialog (and the activity center once
@@ -1501,7 +1590,7 @@ async function shareCurrentExportToCloud() {
 	await cloudShare.init();
 	if (!cloudShare.signedIn) {
 		toast.info("Sign in to Recast Cloud in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	const title = basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
@@ -1903,7 +1992,12 @@ const stages = $derived.by(() => {
   {:else}
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <!-- Preview + playback + timeline -->
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <!-- Measured so the timeline's maximum height stays a share of the space
+           actually available, not a fixed number that overwhelms a short window. -->
+      <div
+        bind:clientHeight={editorColumnH}
+        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
         <div
           bind:this={previewContainerEl}
           class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-2 pt-1.5 pb-1"
@@ -1946,7 +2040,33 @@ const stages = $derived.by(() => {
             class="shrink-0 overflow-hidden"
             transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
           >
-            <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+            <!-- Height on the INNER div: `slide` animates the wrapper's own
+                 height, so the two would fight over the same property. -->
+            <div class="relative" style="height: {timelineHeight}px;">
+              <!-- Splitter: drag or arrow-key to resize the panel. Sits in the
+                   timeline's top padding so it never overlaps the toolbar.
+                   Modelled as a horizontal slider (aria-valuenow = height), the
+                   same idiom as the properties-panel splitter. -->
+              <div
+                role="slider"
+                tabindex="0"
+                aria-orientation="horizontal"
+                aria-label="Resize timeline"
+                aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
+                aria-valuemax={timelineMax}
+                aria-valuenow={timelineHeight}
+                onpointerdown={startTimelineResize}
+                onkeydown={onTimelineHandleKey}
+                class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
+              >
+                <div
+                  class="my-auto h-px w-full bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingTimeline
+                    ? 'bg-primary!'
+                    : ''}"
+                ></div>
+              </div>
+              <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+            </div>
           </div>
         {/if}
       </div>

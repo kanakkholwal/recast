@@ -1,5 +1,6 @@
 <script lang="ts">
 import { goto } from "$app/navigation";
+import { settingsHref } from "../settings/settings-tabs";
 import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
 import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
 import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
@@ -185,7 +186,7 @@ async function shareToCloud(entry: RecordingEntry) {
 	}
 	if (!cloudShare.signedIn) {
 		toast.info("Sign in to Recast Cloud in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	const title = entry.filename.replace(/\.[^.]+$/, "");
@@ -249,7 +250,7 @@ async function uploadToDrive(entry: RecordingEntry) {
 	await gdrive.init();
 	if (!gdrive.connected) {
 		toast.info("Connect Google Drive in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	// Progress lives in the foreground dialog (and the activity center once
