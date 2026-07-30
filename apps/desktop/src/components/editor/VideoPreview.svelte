@@ -734,6 +734,19 @@ function draw() {
 		// frame-step sets it directly. handleSeeked realigns the picture
 		// clock so resuming continues from here.
 		playbackTime = videoEl ? videoEl.currentTime : store.currentTime;
+		// Publish from this rAF loop, NOT from the element's `timeupdate`: that
+		// event fires on a ~250ms tick, so everything reading store.currentTime
+		// (the scrubber, the playhead, overlays) advanced in visible ~4Hz steps.
+		// Same ~25Hz throttle as the WebCodecs branch above, and only while
+		// playing — paused, the store owns the position and echoing the element
+		// back would fight a scrub.
+		if (
+			store.isPlaying &&
+			(playbackTime >= lastPublishedTime + 0.04 || playbackTime < lastPublishedTime)
+		) {
+			store.currentTime = playbackTime;
+			lastPublishedTime = playbackTime;
+		}
 	}
 
 	// Publish the per-frame clock for smooth overlays (unthrottled, unlike the

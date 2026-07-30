@@ -1,40 +1,23 @@
 <script lang="ts">
-  import {
-    Container,
-    HeroBackdrop,
-    MacWindow,
-    Section,
-    SelectionWord,
-  } from "$lib/components";
-  import {
-    autoplayInView,
-    prefersReducedMotion,
-    TextLoop,
-  } from "$lib/motion-core";
-  import { ArrowRight, CloudDownloadIcon, Megaphone } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { fly } from "svelte/transition";
-  import {
-    backdropUrl,
-    heroStagger,
-    platforms,
-    rise,
-    steps,
-    words,
-  } from "./Hero.logic";
+import { Container, HeroBackdrop, MacWindow, Section, SelectionWord } from "$lib/components";
+import { autoplayInView, prefersReducedMotion, TextLoop } from "$lib/motion-core";
+import { ArrowRight, CloudDownloadIcon, Megaphone } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { fly } from "svelte/transition";
+import { backdropUrl, heroStagger, platforms, rise, steps, words } from "./Hero.logic";
 
-  // Svelte transitions use WAAPI, which the CSS reduced-motion guard can't
-  // reach; gate the mount choreography here so a reduced-motion visitor gets
-  // the hero fully-formed instead of a staggered fly-in. `duration: 0` keeps
-  // the directive attached (no markup branching) while removing the motion.
-  const reduced = $derived(prefersReducedMotion());
-  const riseM = (delay: number) => (reduced ? { duration: 0 } : rise(delay));
+// Svelte transitions use WAAPI, which the CSS reduced-motion guard can't
+// reach; gate the mount choreography here so a reduced-motion visitor gets
+// the hero fully-formed instead of a staggered fly-in. `duration: 0` keeps
+// the directive attached (no markup branching) while removing the motion.
+const reduced = $derived(prefersReducedMotion());
+const riseM = (delay: number) => (reduced ? { duration: 0 } : rise(delay));
 
-  // Hero preview asset. Pass the polished demo URL from the parent (single
-  // source of truth alongside the before/after proof clips). Falls back to
-  // the static screenshot if no URL is provided, so the hero never breaks
-  // on a missing prop.
-  let { previewSrc = "" }: { previewSrc?: string } = $props();
+// Hero preview asset. Pass the polished demo URL from the parent (single
+// source of truth alongside the before/after proof clips). Falls back to
+// the static screenshot if no URL is provided, so the hero never breaks
+// on a missing prop.
+let { previewSrc = "" }: { previewSrc?: string } = $props();
 </script>
 
 <Section
@@ -166,7 +149,7 @@
             <video
               use:autoplayInView
               src={previewSrc}
-              poster="/product_preview_hero.png"
+              poster="/product_preview_hero.webp"
               autoplay
               loop
               muted
@@ -176,7 +159,7 @@
             ></video>
           {:else}
             <img
-              src="/product_preview_hero.png"
+              src="/product_preview_hero.webp"
               alt="Recast app preview"
               width="1920"
               height="1080"

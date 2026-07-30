@@ -75,6 +75,28 @@ pub struct VideoMetadata {
     pub size_bytes: u64,
 }
 
+/// How the face camera was captured for this project.
+///
+/// The camera is always recorded to its OWN file and composited at export, so
+/// the overlay stays editable; this reports whether that file exists and, when
+/// it doesn't, WHY. The editor needs the reason: "camera was switched off" and
+/// "this project predates camera capture" both present as a missing file, and
+/// telling the user they forgot a toggle that didn't exist yet is wrong.
+#[derive(Serialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[serde(rename_all = "camelCase")]
+pub enum CameraCapture {
+    /// Captured to its own track; the overlay is editable.
+    Separate,
+    /// The recording ran with the camera off (or this isn't a Recast project).
+    Off,
+    /// The camera WAS requested but no track arrived — device busy, permission
+    /// denied, or the flush never landed. A warning fired at record time; this
+    /// keeps the editor from blaming the user for a toggle they did set.
+    Failed,
+    /// Bundle written before `media` metadata existed, so capture is unknowable.
+    Legacy,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EditorDocument {
@@ -85,6 +107,8 @@ pub struct EditorDocument {
     pub audio_path: Option<String>,
     pub microphone_path: Option<String>,
     pub camera_path: Option<String>,
+    /// Why `camera_path` is (or isn't) there. Not inferable from the path alone.
+    pub camera_capture: CameraCapture,
     pub metadata: VideoMetadata,
     pub render_state: RenderState,
     /// True when a legacy bundle must be migrated before the editor loads it.

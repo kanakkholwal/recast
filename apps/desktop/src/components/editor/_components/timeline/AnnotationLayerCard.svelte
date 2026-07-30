@@ -13,6 +13,15 @@ import {
 	dragEngaged,
 	PRECISION_SCALE,
 } from "./timeline-card-drag.logic";
+import {
+	CLIP_BASE,
+	CLIP_FOCUS,
+	CLIP_HOVER,
+	CLIP_LABEL,
+	CLIP_META,
+	CLIP_SELECTED,
+	clipSurface,
+} from "./timeline-clip.styles";
 import { useLaneDrag } from "./timeline-drag.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
@@ -88,6 +97,7 @@ const outSec = (t: number) => originalToOutput(store.renderMap, t);
 const showSubtitle = $derived(width >= 110);
 const handlePx = $derived(edgeHandleWidth(width));
 const Icon = $derived(kindIcon(annotation));
+const surface = clipSurface("markup");
 
 function beginDrag(mode: DragMode, event: PointerEvent) {
 	if (duration <= 0) return;
@@ -238,11 +248,10 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-[3px] border-l-2 text-left transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {isSelected
-      ? 'border-l-lane-markup bg-lane-markup/35 cursor-grabbing ring-1 ring-inset ring-lane-markup/70'
-      : 'border-l-lane-markup/70 bg-lane-markup/20 cursor-grab hover:bg-lane-markup/30'} {drag?.mode ===
-    'move'
-      ? 'cursor-grabbing shadow-craft-floating'
+    class="absolute inset-0 text-left {CLIP_BASE} {CLIP_FOCUS} {surface.fill} {isSelected
+      ? `${CLIP_SELECTED} cursor-grabbing`
+      : `${CLIP_HOVER} cursor-grab`} {drag?.mode === 'move'
+      ? 'cursor-grabbing shadow-craft-floating brightness-110'
       : ''}"
   >
     <!-- Content by available width, the way an NLE clip degrades: icon only when
@@ -250,20 +259,20 @@ function onCardClick(event: MouseEvent) {
          20px icon tile AND the name AND a timecode, which on a short card left
          nothing but a clipped icon. -->
     <div
-      class="pointer-events-none flex h-full items-center gap-1 px-1.5"
+      class="pointer-events-none flex h-full items-center gap-1 px-1.5 {width < NAME_WIDTH_PX
+        ? 'justify-center'
+        : ''}"
       id={`annotation-region-${annotation.id}`}
       aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
       {#if width < NAME_WIDTH_PX}
-        <Icon class="size-3 shrink-0 text-lane-markup" />
+        <!-- Too narrow for a label; the glyph sits back so a short annotation
+             reads as a clip, not a button. -->
+        <Icon class="size-3 shrink-0 {surface.accent} opacity-60" />
       {:else}
-        <span class="truncate text-[10px] font-semibold leading-none text-foreground">
-          {kindLabel(annotation)}
-        </span>
+        <span class={CLIP_LABEL}>{kindLabel(annotation)}</span>
         {#if showSubtitle}
-          <span
-            class="ml-auto shrink-0 font-mono text-[9px] leading-none tabular-nums text-foreground/55"
-          >
+          <span class="ml-auto {CLIP_META}">
             {formatTimeByMode(outSec(annotation.end) - outSec(annotation.start), timeMode, fps)}
           </span>
         {/if}
@@ -286,7 +295,7 @@ function onCardClick(event: MouseEvent) {
     style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; left: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm {surface.grip} opacity-0 transition-opacity group-hover/card:opacity-100 {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -303,7 +312,7 @@ function onCardClick(event: MouseEvent) {
     style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; right: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm {surface.grip} opacity-0 transition-opacity group-hover/card:opacity-100 {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

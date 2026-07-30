@@ -41,13 +41,13 @@ function targetsFor(excludeId: string): SnapTarget[] {
 </script>
 
 <div
-  class="relative mt-1.5 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[opacity,height]"
+  class="relative mt-1.5 rounded-md bg-muted/20 px-1.5 py-1.5 transition-[opacity,height]"
   class:opacity-50={store.annotationsGloballyHidden}
   style="height: {layout.height}px;"
 >
   {#if store.annotations.length === 0}
     <div
-      class="flex h-6 items-center justify-center text-[10px] text-muted-foreground"
+      class="flex h-8 items-center justify-center text-[11px] text-muted-foreground"
     >
       Annotations you draw on the preview appear here as draggable layers
     </div>

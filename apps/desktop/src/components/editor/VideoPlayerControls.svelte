@@ -30,9 +30,10 @@ interface Props {
 	captureFrame?: (() => Promise<Blob | null>) | undefined;
 	/** Loop toggle. Just flips the flag here; the editor page does the seek-and-replay (needs audio + `ended`). */
 	loopEnabled?: boolean;
-	/** Show the inline progress scrubber. Off when the timeline is visible (it
-	 *  is the scrubber): two scrubbers for one position is redundant, and only
-	 *  the timeline shows cuts/zoom/markup. On when the timeline is collapsed. */
+	/** Whether the timeline is hiding, so this bar owns the scrubbing. Off when
+	 *  the timeline is visible (it is the better scrubber): two scrubbers for one
+	 *  position is redundant, and only the timeline shows cuts/zoom/markup.
+	 *  Fullscreen overrides this — see `scrubberVisible`. */
 	showScrubber?: boolean;
 }
 
@@ -91,6 +92,11 @@ async function toggleFullscreen() {
 	if (fullscreenTargetEl) await fullscreenTargetEl.requestFullscreen();
 }
 
+// Fullscreen puts ONLY the preview container on screen, so the timeline isn't
+// there to scrub with however `showScrubber` was resolved — leaving fullscreen
+// with no transport at all whenever the timeline happened to be open.
+const scrubberVisible = $derived(showScrubber || isFullscreen);
+
 // OUTPUT (post-cut) time: readout/scrubber reflect the edited length and can't land
 // in a removed region. `store.currentTime` stays the source of truth (original time); we map to output only for display + seek.
 const timeMap = $derived(store.timeMap);
@@ -109,8 +115,21 @@ const displayOutput = $derived(scrubOutput ?? currentOutput);
 const fps = $derived(store.metadata?.fps || 60);
 const currentTimeFormatted = $derived(formatTimeByMode(displayOutput, store.timeMode, fps));
 const durationFormatted = $derived(formatTimeByMode(outputDuration, store.timeMode, fps));
-const progressPct = $derived(
-	outputDuration > 0 ? Math.min(100, (displayOutput / outputDuration) * 100) : 0,
+/** Thumb diameter. The fill and the thumb are placed from this same number, so
+ *  it has to match the rendered size (`size-3`). */
+const THUMB_PX = 12;
+
+const progressFraction = $derived(
+	outputDuration > 0 ? Math.min(1, Math.max(0, displayOutput / outputDuration)) : 0,
+);
+
+// A range input's thumb travels between its own half-widths, not 0→100%, so a
+// fill sized at a flat `fraction * 100%` only lines up with the thumb at the two
+// ends and drifts by up to a quarter thumb in between. Both the fill's width and
+// the thumb's centre are placed with THIS expression, so they cannot disagree at
+// any position, and it needs no measurement of the track.
+const progressOffset = $derived(
+	`calc(${progressFraction} * (100% - ${THUMB_PX}px) + ${THUMB_PX / 2}px)`,
 );
 
 function togglePlay() {
@@ -176,22 +195,33 @@ onDestroy(() => {
      own max width so the outer groups sit under the picture rather than out at
      the column edges, where they read as belonging to nothing. -->
 <div class="mx-auto flex w-full max-w-280 flex-col gap-1 px-2 py-1">
-	{#if showScrubber}
+	{#if scrubberVisible}
 		<!-- Full width, on its own row. Squeezed between the readout and the right
 		     cluster it had a few hundred pixels for the whole recording, which made
-		     precise scrubbing impossible. Only shown when the timeline is collapsed,
-		     since the timeline is the better scrubber. -->
-		<div class="relative flex h-4 w-full items-center">
+		     precise scrubbing impossible. Shown when the timeline is collapsed (it
+		     is the better scrubber) and always in fullscreen. -->
+		<div class="group/scrub relative flex h-4 w-full items-center">
 			<div
 				class="pointer-events-none absolute inset-x-0 top-1/2 h-1 -translate-y-1/2 rounded-full bg-muted/80 ring-1 ring-inset ring-border/40"
 				aria-hidden="true"
 			></div>
+			<!-- Fill and thumb are DRAWN BY US from one offset, and the input's own
+			     thumb is transparent. Styling the native thumb meant the fill (sized
+			     as a plain percentage) and the thumb (inset by its own half-width)
+			     tracked two different geometries; no tween can reconcile that, and a
+			     transition on only one of the two just made the fill trail the thumb. -->
 			<div
 				class="pointer-events-none absolute top-1/2 left-0 h-1 -translate-y-1/2 rounded-full bg-primary"
-				style="width: {progressPct}%"
+				style="width: {progressOffset};"
 				aria-hidden="true"
 			></div>
-			<!-- Step is one frame, not 10ms: arrow keys here now move exactly as far as
+			<div
+				class="pointer-events-none absolute top-1/2 z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary shadow-(--shadow-craft-inset) ring-2 ring-background transition-transform group-hover/scrub:scale-125 group-active/scrub:scale-110"
+				style="left: {progressOffset};"
+				aria-hidden="true"
+			></div>
+			<!-- Interaction and a11y only; the visuals above ride on the same value.
+			     Step is one frame, not 10ms: arrow keys here move exactly as far as
 			     the frame-step buttons whose tooltips advertise the same arrows. -->
 			<input
 				type="range"
@@ -201,7 +231,7 @@ onDestroy(() => {
 				value={displayOutput}
 				oninput={handleScrubInput}
 				onchange={handleScrubCommit}
-				class="relative z-10 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-(--shadow-craft-inset) [&::-webkit-slider-thumb]:ring-2 [&::-webkit-slider-thumb]:ring-background [&::-webkit-slider-thumb]:transition-transform hover:[&::-webkit-slider-thumb]:scale-125 active:[&::-webkit-slider-thumb]:scale-110"
+				class="relative z-20 m-0 h-3 w-full cursor-pointer appearance-none bg-transparent p-0 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring [&::-webkit-slider-runnable-track]:h-3 [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-transparent"
 				aria-label="Video progress"
 				aria-valuetext={currentTimeFormatted}
 			/>

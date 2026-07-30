@@ -3,24 +3,37 @@ import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import { type TimelineCut } from "$lib/timeline/cuts";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Scissors, X } from "@recast/icons";
-import { buildWaveformPath } from "./timeline-helpers";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
+import {
+	CLIP_BASE,
+	CLIP_FOCUS,
+	CLIP_HOVER,
+	CLIP_SELECTED,
+	clipSurface,
+} from "./timeline-clip.styles";
 import { clampCutMove, clampCutResize } from "./timeline-cutlane.logic";
-import { cardSpan, edgeHandleWidth } from "./timeline-stack";
+import {
+	cardSpan,
+	CUT_LANE_HEIGHT_PX,
+	edgeHandleWidth,
+	LANE_PADDING_PX,
+	ROW_HEIGHT_PX,
+} from "./timeline-stack";
 
 // Hosts cut bands. Drag empty lane space to carve a cut; drag a band's edges or body to adjust it.
+//
+// This lane deliberately draws NO waveform. It used to render a faint copy
+// whenever the Audio lane was hidden, which put the envelope in a lane that
+// isn't the audio track and made it appear exactly when the user had asked for
+// it to be gone. The waveform lives in TimelineAudioLane and nowhere else.
 
 interface Props {
 	store: EditorStore;
 	pixelsPerSecond: number;
 	duration: number;
-	/** Draw the faint audio envelope behind the bands. Off when the dedicated
-	 *  Audio lane is visible right above (it already shows the same data), on
-	 *  when that lane is hidden so you can still cut against the audio. */
-	showWaveform?: boolean;
 }
 
-let { store, pixelsPerSecond, duration, showWaveform = true }: Props = $props();
+let { store, pixelsPerSecond, duration }: Props = $props();
 
 // Cuts shorter than this are dropped. A sub-100ms removal reads as a glitch.
 const MIN_CUT = 0.1;
@@ -29,6 +42,7 @@ const MIN_CUT = 0.1;
 const MIN_BAND_PX = 16;
 
 let laneEl = $state<HTMLDivElement | null>(null);
+const surface = clipSurface("cut");
 
 // Output axis via the shared render map. An applied cut normally collapses to
 // zero width (a seam); with "Show cut gaps" on the map re-spaces it to real
@@ -207,20 +221,6 @@ function remove(e: Event, id: string) {
 	e.stopPropagation();
 	store.removeCut(id);
 }
-
-// Peak envelope behind the bands, spanning the whole axis (buckets inside an
-// applied cut collapse onto the seam via xOf).
-const waveformPath = $derived(
-	showWaveform
-		? buildWaveformPath({
-				waveform: store.waveform,
-				duration,
-				xOf,
-				height: 100,
-				amp: 46,
-			})
-		: "",
-);
 </script>
 
 <div
@@ -230,31 +230,22 @@ const waveformPath = $derived(
   onpointermove={onMove}
   onpointerup={onUp}
   onpointercancel={onUp}
-  class="relative mt-1.5 min-h-9 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5"
+  class="relative mt-1.5 cursor-crosshair rounded-md bg-muted/20 px-1.5 py-1.5"
+  style="min-height: {CUT_LANE_HEIGHT_PX}px;"
 >
-  {#if showWaveform && waveformPath}
-    <svg
-      class="pointer-events-none absolute left-0 top-1.5 bottom-1.5"
-      style="width: {axisWidth}px;"
-      viewBox="0 0 {axisWidth} 100"
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path d={waveformPath} class="fill-foreground/20" />
-    </svg>
-  {/if}
-
   <!-- Live preview of the span the release will remove. -->
   {#if pending}
     {@const px = xOf(pending.start)}
     {@const pw = Math.max(2, xOf(pending.end) - px)}
+    <!-- Same body as a committed band (at 80%), so the preview shows what the
+         release will actually leave behind. -->
     <div
-      class="pointer-events-none absolute top-1.5 bottom-1.5 z-10 rounded-sm border border-lane-cut/70 bg-lane-cut/25"
-      style="left: {px}px; width: {pw}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 10px);"
+      class="pointer-events-none absolute z-10 rounded-[4px] opacity-80 {surface.fill}"
+      style="left: {px}px; width: {pw}px; top: {LANE_PADDING_PX}px; height: {ROW_HEIGHT_PX}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-on) 18%, transparent) 5px, color-mix(in srgb, var(--lane-on) 18%, transparent) 10px);"
     >
       {#if pw > 44}
         <span
-          class="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-lane-cut"
+          class="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[9px] font-bold text-lane-on"
         >
           −{(pending.end - pending.start).toFixed(1)}s
         </span>
@@ -272,7 +263,7 @@ const waveformPath = $derived(
     </div>
   {:else if store.cuts.length === 0 && !pending}
     <div
-      class="pointer-events-none flex h-6 items-center justify-center text-[10px] text-muted-foreground"
+      class="pointer-events-none flex h-8 items-center justify-center text-[11px] text-muted-foreground"
     >
       Drag across this lane to remove a section
     </div>
@@ -291,8 +282,8 @@ const waveformPath = $derived(
         onclick={(e) => remove(e, cut.id)}
         title="Removed {(cut.end - cut.start).toFixed(2)}s. Click to restore."
         aria-label="Restore this section"
-        class="group/seam absolute top-1.5 bottom-1.5 z-6 w-3 -translate-x-1/2 cursor-pointer"
-        style="left: {cutLeft}px;"
+        class="group/seam absolute z-6 w-3 -translate-x-1/2 cursor-pointer"
+        style="left: {cutLeft}px; top: {LANE_PADDING_PX}px; height: {ROW_HEIGHT_PX}px;"
       >
         <div
           class="mx-auto h-full w-0.5 bg-lane-cut/70 transition-all group-hover/seam:w-1 group-hover/seam:bg-lane-cut"
@@ -324,29 +315,29 @@ const waveformPath = $derived(
           }
         }}
         title="Removed section · {(cut.end - cut.start).toFixed(2)}s"
-        class="group/cut absolute top-1.5 bottom-1.5 cursor-grab overflow-hidden rounded-sm border bg-lane-cut/20 transition-shadow active:cursor-grabbing focus-visible:outline-none {isSel
-          ? 'border-lane-cut ring-2 ring-lane-cut/50'
-          : 'border-lane-cut/50'}"
-        style="left: {band.left}px; width: {w}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 5px, color-mix(in srgb, var(--lane-cut) 22%, transparent) 10px);"
+        class="group/cut absolute cursor-grab active:cursor-grabbing {CLIP_BASE} {CLIP_FOCUS} {surface.fill} {isSel
+          ? CLIP_SELECTED
+          : CLIP_HOVER}"
+        style="left: {band.left}px; width: {w}px; top: {LANE_PADDING_PX}px; height: {ROW_HEIGHT_PX}px; background-image: repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, var(--lane-on) 18%, transparent) 5px, color-mix(in srgb, var(--lane-on) 18%, transparent) 10px);"
       >
         <!-- Grips scale with the band so a short one always keeps more middle to
              drag than edge to resize; two fixed 6px grips on a 16px band did not. -->
         <div
           role="presentation"
           onpointerdown={(e) => onBandDown(e, cut, "resize-l")}
-          class="absolute inset-y-0 left-0 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          class="absolute inset-y-0 left-0 cursor-ew-resize {surface.grip} opacity-0 transition-opacity group-hover/cut:opacity-100"
           style="width: {gripPx}px;"
         ></div>
         <div
           role="presentation"
           onpointerdown={(e) => onBandDown(e, cut, "resize-r")}
-          class="absolute inset-y-0 right-0 cursor-ew-resize bg-lane-cut/60 opacity-0 transition-opacity group-hover/cut:opacity-100"
+          class="absolute inset-y-0 right-0 cursor-ew-resize {surface.grip} opacity-0 transition-opacity group-hover/cut:opacity-100"
           style="width: {gripPx}px;"
         ></div>
 
         {#if w > 44}
           <span
-            class="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[8px] font-bold text-lane-cut"
+            class="pointer-events-none absolute inset-0 flex items-center justify-center font-mono text-[9px] font-bold text-lane-on"
           >
             −{(cut.end - cut.start).toFixed(1)}s
           </span>

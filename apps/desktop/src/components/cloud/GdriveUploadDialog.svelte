@@ -1,96 +1,92 @@
 <script lang="ts">
-	/**
-	 * Foreground progress for a Google Drive upload, the Drive counterpart of
-	 * CloudShareDialog. Reads live state from the gdrive store (byte progress +
-	 * result/error). Minimize keeps the upload running and hands it to the
-	 * activity center; the store fires success/error toasts either way. Drive
-	 * uploads can be cancelled, so the running state offers Cancel.
-	 */
-	import { formatSize } from "$lib/format/files";
-	import { etaLabel } from "$lib/format/time";
-	import { gdrive } from "$lib/stores/gdrive.svelte";
-	import {
-	  AlertTriangle,
-	  Ban,
-	  Check,
-	  ExternalLink,
-	  HardDriveUpload,
-	  Link2,
-	  Minus,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Input } from "@recast/ui/input";
-	import { toast } from "@recast/ui/sonner";
-	import { Spinner } from "@recast/ui/spinner";
-	import { cn } from "@recast/ui/utils";
+/**
+ * Foreground progress for a Google Drive upload, the Drive counterpart of
+ * CloudShareDialog. Reads live state from the gdrive store (byte progress +
+ * result/error). Minimize keeps the upload running and hands it to the
+ * activity center; the store fires success/error toasts either way. Drive
+ * uploads can be cancelled, so the running state offers Cancel.
+ */
+import { formatSize } from "$lib/format/files";
+import { etaLabel } from "$lib/format/time";
+import { gdrive } from "$lib/stores/gdrive.svelte";
+import {
+	AlertTriangle,
+	Ban,
+	Check,
+	ExternalLink,
+	BrandGoogleDrive,
+	Link2,
+	Minus,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Input } from "@recast/ui/input";
+import { toast } from "@recast/ui/sonner";
+import { Spinner } from "@recast/ui/spinner";
+import { cn } from "@recast/ui/utils";
 
-	let { uploadId }: { uploadId: string } = $props();
+let { uploadId }: { uploadId: string } = $props();
 
-	const upload = $derived(gdrive.uploads[uploadId]);
-	const fileName = $derived(upload?.fileName ?? "");
-	const status = $derived(upload?.status ?? "uploading");
-	const link = $derived(upload?.webViewLink ?? "");
-	const pct = $derived(
-		upload && upload.totalBytes > 0
-			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
-			: null,
-	);
-	// Byte + ETA readout during the transfer so a multi-minute upload feels
-	// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
-	const transferLabel = $derived.by(() => {
-		if (!upload || upload.totalBytes <= 0) return null;
-		const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
-		const eta =
-			upload.bytesPerSec && upload.bytesPerSec > 0
-				? etaLabel((upload.totalBytes - upload.bytesSent) / upload.bytesPerSec)
-				: null;
-		return eta ? `${size} · ${eta}` : size;
-	});
-	// Determinate once bytes are flowing; a short indeterminate sweep before then.
-	const indeterminate = $derived(status === "uploading" && pct == null);
+const upload = $derived(gdrive.uploads[uploadId]);
+const fileName = $derived(upload?.fileName ?? "");
+const status = $derived(upload?.status ?? "uploading");
+const link = $derived(upload?.webViewLink ?? "");
+const pct = $derived(
+	upload && upload.totalBytes > 0
+		? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
+		: null,
+);
+// Byte + ETA readout during the transfer so a multi-minute upload feels
+// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+const transferLabel = $derived.by(() => {
+	if (!upload || upload.totalBytes <= 0) return null;
+	const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
+	const eta =
+		upload.bytesPerSec && upload.bytesPerSec > 0
+			? etaLabel((upload.totalBytes - upload.bytesSent) / upload.bytesPerSec)
+			: null;
+	return eta ? `${size} · ${eta}` : size;
+});
+// Determinate once bytes are flowing; a short indeterminate sweep before then.
+const indeterminate = $derived(status === "uploading" && pct == null);
 
-	const title = $derived(
-		status === "complete"
-			? "Uploaded to Google Drive"
-			: status === "error"
-				? "Upload failed"
-				: status === "cancelled"
-					? "Upload cancelled"
-					: "Uploading to Google Drive",
-	);
-	const phaseLabel = $derived(
-		status === "uploading"
-			? pct != null
-				? `Uploading… ${pct}%`
-				: "Starting upload…"
-			: title,
-	);
+const title = $derived(
+	status === "complete"
+		? "Uploaded to Google Drive"
+		: status === "error"
+			? "Upload failed"
+			: status === "cancelled"
+				? "Upload cancelled"
+				: "Uploading to Google Drive",
+);
+const phaseLabel = $derived(
+	status === "uploading" ? (pct != null ? `Uploading… ${pct}%` : "Starting upload…") : title,
+);
 
-	function onMinimize() {
-		gdrive.setForeground(null);
+function onMinimize() {
+	gdrive.setForeground(null);
+}
+function onClose() {
+	gdrive.setForeground(null);
+	gdrive.dismissUpload(uploadId);
+}
+
+async function copyLink() {
+	try {
+		await navigator.clipboard.writeText(link);
+		toast.success("Drive link copied.");
+	} catch (e) {
+		toast.error(`Couldn't copy: ${e}`);
 	}
-	function onClose() {
-		gdrive.setForeground(null);
-		gdrive.dismissUpload(uploadId);
+}
+async function openLink() {
+	try {
+		const { openUrl } = await import("@tauri-apps/plugin-opener");
+		await openUrl(link);
+	} catch {
+		window.open(link, "_blank", "noopener");
 	}
-
-	async function copyLink() {
-		try {
-			await navigator.clipboard.writeText(link);
-			toast.success("Drive link copied.");
-		} catch (e) {
-			toast.error(`Couldn't copy: ${e}`);
-		}
-	}
-	async function openLink() {
-		try {
-			const { openUrl } = await import("@tauri-apps/plugin-opener");
-			await openUrl(link);
-		} catch {
-			window.open(link, "_blank", "noopener");
-		}
-	}
+}
 </script>
 
 <Dialog.Root
@@ -122,7 +118,7 @@
 					{:else if status === "cancelled"}
 						<Ban class="size-3.5" />
 					{:else}
-						<HardDriveUpload class="size-3.5" />
+						<BrandGoogleDrive class="size-3.5" />
 					{/if}
 				</span>
 				{title}

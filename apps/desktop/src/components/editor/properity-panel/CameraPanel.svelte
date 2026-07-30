@@ -11,7 +11,8 @@ import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { cn } from "@recast/ui/utils";
 import { SliderControl } from "@recast/ui/slider-control";
-import { dotStyleFor, labelFor } from "./camera-panel.logic";
+import type { CameraCapture } from "$lib/ipc-types";
+import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import PanelSection from "./PanelSection.svelte";
 
@@ -24,11 +25,15 @@ interface Props {
 	 * "no camera track" mode unless this resolves to a real file.
 	 */
 	cameraPath: string | null | undefined;
+	/** Why that path is or isn't set. The path alone can't distinguish a camera
+	 *  that was switched off from a project recorded before camera capture. */
+	cameraCapture?: CameraCapture;
 }
 
-let { store, cameraPath }: Props = $props();
+let { store, cameraPath, cameraCapture = "legacy" }: Props = $props();
 
 const hasCamera = $derived(!!cameraPath);
+const availability = $derived(cameraAvailability(cameraCapture, hasCamera));
 
 // Video pixel aspect. The bubble is square in pixels, so its UV height is
 // `width * aspect`; the presets need it to anchor vertically on a wide frame.
@@ -113,7 +118,11 @@ const shapeOptions = [
 
   {#if !hasCamera}
     <!-- Empty state. The panel stays in the tab strip for a predictable
-         layout, collapsed to an actionable hint. -->
+         layout, collapsed to a hint that says which case this is: a camera
+         that was off, a project older than camera capture, or a recorded
+         track whose file has gone missing. All three used to read the same,
+         so an old recording told you to enable a toggle that hadn't shipped
+         when it was made. -->
     <div
       class="flex flex-col items-start gap-2 rounded-lg border border-dashed border-border/60 bg-muted/30 p-3"
     >
@@ -122,13 +131,9 @@ const shapeOptions = [
       >
         <VideoOff size={14} />
       </div>
-      <p class="text-[11px] font-medium text-foreground">
-        No camera track in this recording.
-      </p>
+      <p class="text-[11px] font-medium text-foreground">{availability.title}</p>
       <p class="text-[10px] leading-snug text-muted-foreground">
-        Enable the camera before starting your next recording to use this
-        panel. Position, size, and shape can be tweaked here once a camera
-        track is captured.
+        {availability.description}
       </p>
     </div>
   {:else if store.cameraOverlay.enabled}

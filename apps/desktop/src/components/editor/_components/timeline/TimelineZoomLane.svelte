@@ -124,7 +124,7 @@ function addAtPlayhead() {
   onpointermove={onLaneMove}
   onpointerup={onLaneUp}
   onpointercancel={onLaneUp}
-  class="relative mt-1.5 cursor-crosshair rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[height]"
+  class="relative mt-1.5 cursor-crosshair rounded-md bg-muted/20 px-1.5 py-1.5 transition-[height]"
   style="height: {layout.height}px;"
 >
   {#if store.zoomRegions.length === 0}
@@ -133,7 +133,7 @@ function addAtPlayhead() {
       onpointerdown={(e) => e.stopPropagation()}
       onclick={addAtPlayhead}
       disabled={duration <= 0}
-      class="flex h-6 w-full items-center justify-center gap-1 rounded text-[10px] text-muted-foreground transition-colors hover:bg-lane-zoom/5 hover:text-foreground disabled:opacity-50"
+      class="flex h-8 w-full items-center justify-center gap-1 rounded text-[11px] text-muted-foreground transition-colors hover:bg-lane-zoom/10 hover:text-foreground disabled:opacity-50"
     >
       <Plus class="size-3" />
       Drag here to add a zoom, or click to punch in at the playhead

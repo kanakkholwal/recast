@@ -1,13 +1,20 @@
 import { describe, expect, it } from "vitest";
 import {
+	AUDIO_LANE_HEIGHT_PX,
 	cardLayout,
 	cardSpan,
+	CLIP_LANE_HEIGHT_PX,
+	CLIP_ROW_HEIGHT_PX,
+	CUT_LANE_HEIGHT_PX,
 	edgeHandleWidth,
 	LANE_BORDER_PX,
+	LANE_PADDING_PX,
 	laneHeight,
 	packRows,
 	ROW_GAP_PX,
+	ROW_HEIGHT_PX,
 	rowTop,
+	ZOOM_ROW_HEIGHT_PX,
 } from "./timeline-stack";
 
 function span(id: string, left: number, right: number) {
@@ -85,6 +92,32 @@ describe("packRows with a pinned card", () => {
 	it("ignores a pin for an id that isn't in the lane", () => {
 		const spans = [span("a", 0, 100), span("b", 50, 150)];
 		expect(packRows(spans, pin("gone", 0))).toEqual([0, 1]);
+	});
+});
+
+// One block height across every lane, so rows line up into a grid. The
+// single-block lanes (audio, cuts) derive their height from it rather than
+// carrying their own number, which is how they drifted apart before.
+describe("block height is one number", () => {
+	it("is 36px, and every lane row height agrees", () => {
+		expect(ROW_HEIGHT_PX).toBe(36);
+		expect(ZOOM_ROW_HEIGHT_PX).toBe(ROW_HEIGHT_PX);
+		expect(CLIP_ROW_HEIGHT_PX).toBe(ROW_HEIGHT_PX);
+	});
+
+	it("leaves exactly one block inside a single-block lane", () => {
+		for (const lane of [AUDIO_LANE_HEIGHT_PX, CUT_LANE_HEIGHT_PX]) {
+			expect(lane - LANE_PADDING_PX * 2).toBe(ROW_HEIGHT_PX);
+		}
+	});
+
+	// The spine carries thumbnails and a name bar, so it is deliberately taller.
+	it("keeps the clip bar taller than a lane block", () => {
+		expect(CLIP_LANE_HEIGHT_PX).toBeGreaterThan(ROW_HEIGHT_PX);
+	});
+
+	it("stacks one block plus padding for a one-row lane", () => {
+		expect(laneHeight(1)).toBe(ROW_HEIGHT_PX + LANE_PADDING_PX * 2 + LANE_BORDER_PX * 2);
 	});
 });
 

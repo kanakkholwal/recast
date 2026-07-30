@@ -35,16 +35,23 @@ const tweenMs = $derived(isDragging || isPlaying ? 0 : motionDuration(90));
   style="transform: translate3d({leftPx}px, 0, 0); transition-duration: {tweenMs}ms;"
 >
   <div class="relative flex h-full flex-col -translate-x-1/2">
+    <!-- Timecode only while scrubbing. It used to sit above the head at all
+         times, which put a permanent chip over the first lane for a reading the
+         transport already shows. -->
+    {#if isDragging}
+      <div
+        class="absolute left-1/2 top-0 -translate-x-1/2 rounded bg-foreground px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-background shadow-craft-sm"
+      >
+        {formatTimeByMode(outputTime, timeMode, fps)}
+      </div>
+    {/if}
+    <!-- Marker sits in the ruler band and tapers into the line, so the head
+         reads as the top of the playhead rather than a dot floating above it. -->
     <div
-      class="absolute left-1/2 top-1 -translate-x-1/2 rounded border border-border bg-foreground px-1.5 py-0.5 font-mono text-[9px] tabular-nums text-background shadow-craft-sm"
-    >
-      {formatTimeByMode(outputTime, timeMode, fps)}
-    </div>
-    <div
-      class="mx-auto mt-6 size-2 shrink-0 rounded-full border border-background bg-primary ring-1 ring-primary/30"
+      class="mx-auto mt-1.5 h-3.5 w-2.5 shrink-0 rounded-[2px] rounded-b-[3px] bg-primary shadow-craft-sm"
     ></div>
     <div
-      class="mx-auto w-px flex-1 bg-primary/70 pointer-events-none"
+      class="mx-auto w-px flex-1 bg-primary pointer-events-none"
       id="timeline-control"
     ></div>
   </div>

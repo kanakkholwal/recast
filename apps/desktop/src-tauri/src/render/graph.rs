@@ -752,10 +752,14 @@ fn build_zoom_filter(node: &ZoomNode, source: SourceVideoMetadata, time_offset: 
     let ih = source.height as f64;
     let (z_expr, x_expr, y_expr) = build_zoom_exprs(&samples_per_region, iw, ih);
 
+    // Clamp scaled dims to >= crop size and force even: FP drift in the piecewise
+    // z_expr can dip a hair below 1.0 at ramp tails, shrinking the frame under the
+    // fixed crop rect -> crop reads out of bounds -> segfault (0xC0000005).
     format!(
-        "scale=w='iw*({z_expr})':h='ih*({z_expr})':eval=frame,\
-         crop={}:{}:x='{x_expr}':y='{y_expr}'",
-        source.width, source.height
+        "scale=w='max({w},ceil(iw*({z_expr})/2)*2)':h='max({h},ceil(ih*({z_expr})/2)*2)':eval=frame,\
+         crop={w}:{h}:x='{x_expr}':y='{y_expr}'",
+        w = source.width,
+        h = source.height
     )
 }
 
@@ -1453,7 +1457,7 @@ mod tests {
             .expect("filter_complex must exist when zoom present");
         // Must use scale with eval=frame so width/height re-evaluate per frame.
         assert!(
-            fc.contains("scale=w='iw*(") && fc.contains(":eval=frame"),
+            fc.contains("ceil(iw*(") && fc.contains(":eval=frame"),
             "zoom must scale via eval=frame: {fc}"
         );
         // Crop must have LITERAL fixed w/h (=source dims) — anything inside
@@ -1505,7 +1509,7 @@ mod tests {
         let fc = plan.filter_complex.expect("filter_complex still emitted");
         // Pruned zoom must leave NO scale/crop prelude.
         assert!(
-            !fc.contains("scale=w='iw*("),
+            !fc.contains("ceil(iw*("),
             "pruned zoom should leave no scale prelude: {fc}"
         );
         assert!(fc.contains("[vout]"), "rest of plan intact: {fc}");
@@ -1943,7 +1947,7 @@ mod tests {
             .filter_complex
             .expect("color bg still produces a complex");
         assert!(
-            !fc.contains("scale=w='iw*("),
+            !fc.contains("ceil(iw*("),
             "no zoom prelude expected when all regions are pre-trim: {fc}"
         );
     }

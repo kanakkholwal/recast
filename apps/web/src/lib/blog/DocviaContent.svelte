@@ -1,16 +1,23 @@
 <script lang="ts">
-	// Recursive walker over docvia's compiled node tree. Self-imports to recurse
-	// (Svelte 5's replacement for `<svelte:self>`).
-	import Self from "./DocviaContent.svelte";
-	import { VOID_TAGS, type DocNodes } from "./render";
+// Recursive walker over docvia's compiled node tree. Self-imports to recurse
+// (Svelte 5's replacement for `<svelte:self>`).
+import Self from "./DocviaContent.svelte";
+import MermaidDiagram from "./MermaidDiagram.svelte";
+import { mermaidSourceOf } from "./mermaid";
+import { VOID_TAGS, type DocNodes } from "./render";
 
-	let { nodes }: { nodes: DocNodes } = $props();
+let { nodes }: { nodes: DocNodes } = $props();
 
-	const list = $derived(Array.isArray(nodes) ? nodes : [nodes]);
+const list = $derived(Array.isArray(nodes) ? nodes : [nodes]);
 </script>
 
 {#each list as node (node)}
-	{#if node.kind === "text"}
+	{@const diagram = mermaidSourceOf(node)}
+	{#if diagram}
+		<!-- A ```mermaid fence. Rendered client-side so mermaid stays out of the
+		     SSR pass and off every page that has no diagram. -->
+		<MermaidDiagram source={diagram} />
+	{:else if node.kind === "text"}
 		{node.value}
 	{:else if node.kind === "html"}
 		<!-- Build-time output (e.g. Shiki-highlighted code). It is our own content,

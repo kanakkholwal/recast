@@ -111,14 +111,18 @@ fn caption_top_frac(
     if position == "center" {
         return None;
     }
-    // Signed: + pushes outward into the padding, - pulls back onto the video.
+    // Signed: + moves the caption INWARD over the video, - tucks it outward into
+    // the padding. Baseline anchors at the clamped frame edge so the whole Offset
+    // range stays live even for a full-bleed video.
     let offset = offset_pct / 100.0;
     let cap = cap.clamp(0.0, MAX_CAP_FRAC);
     let max_top = (1.0 - cap).max(0.0);
     if position == "bottom" {
-        Some((v_bottom + offset).min(max_top))
+        let base = v_bottom.min(max_top);
+        Some((base - offset).clamp(0.0, max_top))
     } else {
-        Some((v_top - offset - cap).clamp(0.0, max_top))
+        let base = (v_top - cap).max(0.0);
+        Some((base + offset).clamp(0.0, max_top))
     }
 }
 
@@ -1215,15 +1219,18 @@ mod tests {
     }
 
     #[test]
-    fn caption_top_frac_places_bottom_in_padding_and_clamps() {
+    fn caption_top_frac_places_bottom_and_offset_moves_inward() {
         let cap = 0.12;
-        // 15% padding top/bottom → block sits at/below the video's bottom edge.
+        // 15% padding top/bottom → at Offset 0 the block sits at the video's edge.
         let top = caption_top_frac("bottom", 0.0, cap, 0.15, 0.85).unwrap();
         assert!(top >= 0.85 - 1e-9);
         assert!(top + cap <= 1.0 + 1e-9);
-        // No padding → clamped so the caption stays on-frame (over the video).
-        let full = caption_top_frac("bottom", 8.0, cap, 0.0, 1.0).unwrap();
-        assert!((full - (1.0 - cap)).abs() < 1e-9);
+        // Full-bleed video: baseline at the frame edge, positive Offset still lifts
+        // the caption up (inward) — no dead clamp across the range.
+        let base = caption_top_frac("bottom", 0.0, cap, 0.0, 1.0).unwrap();
+        let lifted = caption_top_frac("bottom", 8.0, cap, 0.0, 1.0).unwrap();
+        assert!((base - (1.0 - cap)).abs() < 1e-9);
+        assert!((lifted - (1.0 - cap - 0.08)).abs() < 1e-9);
         // Centre is handled by the middle band.
         assert!(caption_top_frac("center", 8.0, cap, 0.15, 0.85).is_none());
     }

@@ -1,205 +1,216 @@
 <script lang="ts">
-	import {
-	  BeforeAfterSlider,
-	  Container,
-	  ExportMock,
-	  Footer,
-	  Hero,
-	  MacWindow,
-	  PolishGrid,
-	  RecordMock,
-	  Reveal,
-	  Section,
-	  SectionHeader,
-	  SeoMeta,
-	  ShowcasePanel,
-	} from "$lib/components";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import {
-	  ArrowRight,
-	  Check,
-	  Cloud,
-	  Compass,
-	  Download,
-	  HardDriveUpload,
-	  KeyRound,
-	  LoaderCircle,
-	  Minus,
-	  Play,
-	  Plus,
-	  Star,
-	  X
-	} from "@recast/icons";
-	import { GithubBrand } from "@recast/ui/brand-icons";
-	import { Button } from "@recast/ui/button";
-	import { Image } from "@unpic/svelte";
+import {
+	BeforeAfterSlider,
+	Container,
+	ExportMock,
+	Footer,
+	Hero,
+	MacWindow,
+	PolishGrid,
+	RecordMock,
+	Reveal,
+	Section,
+	SectionHeader,
+	SeoMeta,
+	ShowcasePanel,
+} from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
+import {
+	ArrowRight,
+	Check,
+	Cloud,
+	Compass,
+	Download,
+	HardDriveUpload,
+	KeyRound,
+	LoaderCircle,
+	Minus,
+	Play,
+	Plus,
+	Star,
+	X,
+} from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { Image } from "@unpic/svelte";
 
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { cubicOut } from "svelte/easing";
-	import { fly, slide } from "svelte/transition";
-	import { beforeAfterClips, cloudFeatures, contrast, editorFeatures, extensionBeat, faqJsonLd, faqs, founderUse, kindChip, openSourceClaims, platformDownloads, polishFeatures, recordingFeatures, shareFeatures, stabilityChip, storageTiers } from "./data";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { cubicOut } from "svelte/easing";
+import { fly, slide } from "svelte/transition";
+import {
+	beforeAfterClips,
+	cloudFeatures,
+	contrast,
+	editorFeatures,
+	extensionBeat,
+	faqJsonLd,
+	faqs,
+	founderUse,
+	kindChip,
+	openSourceClaims,
+	platformDownloads,
+	polishFeatures,
+	recordingFeatures,
+	shareFeatures,
+	stabilityChip,
+	storageTiers,
+} from "./data";
 
+// Svelte transitions bypass the CSS reduced-motion guard (WAAPI), so gate
+// the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
+const reduced = $derived(prefersReducedMotion());
 
-	// Svelte transitions bypass the CSS reduced-motion guard (WAAPI), so gate
-	// the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
-	const reduced = $derived(prefersReducedMotion());
-
-	
-	// Recast Cloud — premium hosted tier (not shipped yet). Drive sharing
-	// covers the free user-owned path today; Cloud is the future paid
-	// offering with workspace, analytics, and access controls beyond what a
-	// Drive link can express.
-	let email = $state("");
-	let joined = $state(false);
-	let loading = $state(false);
-	async function joinWaitlist(e: SubmitEvent) {
-		e.preventDefault();
-		if (!email.trim() || loading) return;
-		loading = true;
-		try {
-			toast.promise(
-				(async () => {
-					const res = await fetch("/api/waitlist", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ email, source: "home-cloud" }),
-					});
-					const data = (await res.json().catch(() => ({}))) as {
-						ok?: boolean;
-						error?: string;
-					};
-					if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
-				})(),
-				{
-					loading: "Adding you to the waitlist…",
-					success: "You're on the list. We'll email when access opens.",
-					error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
-				},
-			);
-			joined = true;
-		} finally {
-			loading = false;
-		}
-	}
-
-	// Per-feature error flag. Flipped by the <img>'s onerror handler when the
-	// asset file isn't there yet — the rail card then falls back to its icon
-	// hero, so a half-produced screenshot batch never shows broken images.
-	let editorImgErrored = $state<Record<string, boolean>>({});
-
-	let openFaq = $state<number | null>(0);
-
-	
-	// Drag-to-scroll for the editor rail with flick-to-fling momentum. Pointer
-	// tracks 1:1 while the button is held; on release we measure the last few
-	// moves as velocity, then animate a decaying rAF loop until the rail
-	// either settles or hits a bound. Snap is suspended during the drag (so
-	// the pointer never fights the snap), then restored so the rail settles
-	// to the nearest card on release. Keyboard users get the same reach via
-	// the rail's tabindex (native arrow-key scroll on a focused scroll
-	// container). Touch users pan natively — the rail only intercepts
-	// mouse/pen, so a finger flick never conflicts.
-	//
-	// Tuned so a quick 200px flick decays over ~700ms (4px initial velocity
-	// → ~0). Reduced motion keeps the action direct (no inertia).
-	function dragScroll(node: HTMLElement) {
-		const reduced =
-			typeof window !== "undefined" &&
-			window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-
-		let down = false;
-		let startX = 0;
-		let startScroll = 0;
-		let snap = "";
-		// Velocity sample window: most recent N ms of pointer motion.
-		const samples: Array<{ x: number; t: number }> = [];
-		const SAMPLE_WINDOW_MS = 120;
-		let raf = 0;
-
-		function onDown(e: PointerEvent) {
-			if (e.pointerType === "touch") return;
-			cancelAnimationFrame(raf);
-			down = true;
-			startX = e.clientX;
-			startScroll = node.scrollLeft;
-			snap = node.style.scrollSnapType;
-			node.style.scrollSnapType = "none";
-			samples.length = 0;
-			samples.push({ x: e.clientX, t: performance.now() });
-			node.setPointerCapture(e.pointerId);
-		}
-
-		function onMove(e: PointerEvent) {
-			if (!down) return;
-			node.scrollLeft = startScroll - (e.clientX - startX);
-			const now = performance.now();
-			samples.push({ x: e.clientX, t: now });
-			// Drop samples outside the window.
-			while (
-				samples.length > 1 &&
-				now - samples[0]!.t > SAMPLE_WINDOW_MS
-			) {
-				samples.shift();
-			}
-		}
-
-		function onUp(e: PointerEvent) {
-			if (!down) return;
-			down = false;
-			node.style.scrollSnapType = snap;
-			try {
-				node.releasePointerCapture(e.pointerId);
-			} catch {
-				// Some browsers throw if the capture was already released; ignore.
-			}
-			if (reduced) return;
-
-			// Velocity = Δx / Δt over the recent sample window. Negative because
-			// the rail scrolls opposite the pointer (drag right → rail moves
-			// leftward in scroll coordinates).
-			const first = samples[0];
-			const last = samples[samples.length - 1];
-			if (!first || !last || first === last) return;
-			const dt = last.t - first.t;
-			if (dt <= 0) return;
-			const vx = (last.x - first.x) / dt; // px/ms
-			const scrollV = -vx; // px/ms in scroll direction
-			if (Math.abs(scrollV) < 0.1) return; // too slow to bother
-
-			const FRICTION = 0.0014; // per-ms decay coefficient
-			let v = scrollV;
-			const max = node.scrollWidth - node.clientWidth;
-			const tick = () => {
-				v *= 1 - FRICTION * 16; // ~60fps frame budget
-				node.scrollLeft = clamp(node.scrollLeft + v * 16, 0, max);
-				if (Math.abs(v) < 0.05 || node.scrollLeft <= 0 || node.scrollLeft >= max) {
-					raf = 0;
-					return;
-				}
-				raf = requestAnimationFrame(tick);
-			};
-			raf = requestAnimationFrame(tick);
-		}
-
-		node.addEventListener("pointerdown", onDown);
-		node.addEventListener("pointermove", onMove);
-		node.addEventListener("pointerup", onUp);
-		node.addEventListener("pointercancel", onUp);
-		return {
-			destroy() {
-				cancelAnimationFrame(raf);
-				node.removeEventListener("pointerdown", onDown);
-				node.removeEventListener("pointermove", onMove);
-				node.removeEventListener("pointerup", onUp);
-				node.removeEventListener("pointercancel", onUp);
+// Recast Cloud — premium hosted tier (not shipped yet). Drive sharing
+// covers the free user-owned path today; Cloud is the future paid
+// offering with workspace, analytics, and access controls beyond what a
+// Drive link can express.
+let email = $state("");
+let joined = $state(false);
+let loading = $state(false);
+async function joinWaitlist(e: SubmitEvent) {
+	e.preventDefault();
+	if (!email.trim() || loading) return;
+	loading = true;
+	try {
+		toast.promise(
+			(async () => {
+				const res = await fetch("/api/waitlist", {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify({ email, source: "home-cloud" }),
+				});
+				const data = (await res.json().catch(() => ({}))) as {
+					ok?: boolean;
+					error?: string;
+				};
+				if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
+			})(),
+			{
+				loading: "Adding you to the waitlist…",
+				success: "You're on the list. We'll email when access opens.",
+				error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
 			},
-		};
+		);
+		joined = true;
+	} finally {
+		loading = false;
+	}
+}
 
-		function clamp(v: number, lo: number, hi: number) {
-			return Math.min(hi, Math.max(lo, v));
+// Per-feature error flag. Flipped by the <img>'s onerror handler when the
+// asset file isn't there yet — the rail card then falls back to its icon
+// hero, so a half-produced screenshot batch never shows broken images.
+let editorImgErrored = $state<Record<string, boolean>>({});
+
+let openFaq = $state<number | null>(0);
+
+// Drag-to-scroll for the editor rail with flick-to-fling momentum. Pointer
+// tracks 1:1 while the button is held; on release we measure the last few
+// moves as velocity, then animate a decaying rAF loop until the rail
+// either settles or hits a bound. Snap is suspended during the drag (so
+// the pointer never fights the snap), then restored so the rail settles
+// to the nearest card on release. Keyboard users get the same reach via
+// the rail's tabindex (native arrow-key scroll on a focused scroll
+// container). Touch users pan natively — the rail only intercepts
+// mouse/pen, so a finger flick never conflicts.
+//
+// Tuned so a quick 200px flick decays over ~700ms (4px initial velocity
+// → ~0). Reduced motion keeps the action direct (no inertia).
+function dragScroll(node: HTMLElement) {
+	const reduced =
+		typeof window !== "undefined" &&
+		window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+
+	let down = false;
+	let startX = 0;
+	let startScroll = 0;
+	let snap = "";
+	// Velocity sample window: most recent N ms of pointer motion.
+	const samples: Array<{ x: number; t: number }> = [];
+	const SAMPLE_WINDOW_MS = 120;
+	let raf = 0;
+
+	function onDown(e: PointerEvent) {
+		if (e.pointerType === "touch") return;
+		cancelAnimationFrame(raf);
+		down = true;
+		startX = e.clientX;
+		startScroll = node.scrollLeft;
+		snap = node.style.scrollSnapType;
+		node.style.scrollSnapType = "none";
+		samples.length = 0;
+		samples.push({ x: e.clientX, t: performance.now() });
+		node.setPointerCapture(e.pointerId);
+	}
+
+	function onMove(e: PointerEvent) {
+		if (!down) return;
+		node.scrollLeft = startScroll - (e.clientX - startX);
+		const now = performance.now();
+		samples.push({ x: e.clientX, t: now });
+		// Drop samples outside the window.
+		while (samples.length > 1 && now - samples[0]!.t > SAMPLE_WINDOW_MS) {
+			samples.shift();
 		}
 	}
+
+	function onUp(e: PointerEvent) {
+		if (!down) return;
+		down = false;
+		node.style.scrollSnapType = snap;
+		try {
+			node.releasePointerCapture(e.pointerId);
+		} catch {
+			// Some browsers throw if the capture was already released; ignore.
+		}
+		if (reduced) return;
+
+		// Velocity = Δx / Δt over the recent sample window. Negative because
+		// the rail scrolls opposite the pointer (drag right → rail moves
+		// leftward in scroll coordinates).
+		const first = samples[0];
+		const last = samples[samples.length - 1];
+		if (!first || !last || first === last) return;
+		const dt = last.t - first.t;
+		if (dt <= 0) return;
+		const vx = (last.x - first.x) / dt; // px/ms
+		const scrollV = -vx; // px/ms in scroll direction
+		if (Math.abs(scrollV) < 0.1) return; // too slow to bother
+
+		const FRICTION = 0.0014; // per-ms decay coefficient
+		let v = scrollV;
+		const max = node.scrollWidth - node.clientWidth;
+		const tick = () => {
+			v *= 1 - FRICTION * 16; // ~60fps frame budget
+			node.scrollLeft = clamp(node.scrollLeft + v * 16, 0, max);
+			if (Math.abs(v) < 0.05 || node.scrollLeft <= 0 || node.scrollLeft >= max) {
+				raf = 0;
+				return;
+			}
+			raf = requestAnimationFrame(tick);
+		};
+		raf = requestAnimationFrame(tick);
+	}
+
+	node.addEventListener("pointerdown", onDown);
+	node.addEventListener("pointermove", onMove);
+	node.addEventListener("pointerup", onUp);
+	node.addEventListener("pointercancel", onUp);
+	return {
+		destroy() {
+			cancelAnimationFrame(raf);
+			node.removeEventListener("pointerdown", onDown);
+			node.removeEventListener("pointermove", onMove);
+			node.removeEventListener("pointerup", onUp);
+			node.removeEventListener("pointercancel", onUp);
+		},
+	};
+
+	function clamp(v: number, lo: number, hi: number) {
+		return Math.min(hi, Math.max(lo, v));
+	}
+}
 </script>
 
 <SeoMeta
@@ -471,7 +482,7 @@
 						<MacWindow title="Recast · Editor" class="shadow-craft-xl">
 							<div class="bg-linear-to-b from-muted/10 to-background p-1.5">
 								<Image
-									src="/product_preview_hero.png"
+									src="/product_preview_hero.webp"
 									alt="Recast editor"
 									width="1920"
 									height="1080"

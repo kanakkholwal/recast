@@ -1,15 +1,13 @@
 <script lang="ts">
 import {
 	ArrowLeft,
+	BrandGoogleDrive,
 	CheckCircle2,
 	Clock,
-	Cloud,
 	Copy,
 	FlaskConical,
 	FolderOpen,
-	HardDriveUpload,
 	Play,
-	Share2,
 	TriangleAlert,
 	Upload,
 	VolumeX,
@@ -18,16 +16,29 @@ import {
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
-import { goto } from "$app/navigation";
+import { afterNavigate, goto, replaceState } from "$app/navigation";
+import { settingsHref } from "../../(app)/settings/settings-tabs";
+import { page } from "$app/state";
+import {
+	boolParam,
+	PANEL_PARAM,
+	parseBoolParam,
+	parsePanelTab,
+	SIDEBAR_PARAM,
+	TIMELINE_PARAM,
+	withEditorParams,
+} from "$lib/editor/editor-url";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import EditorToolbar from "$components/editor/EditorToolbar.svelte";
 import ExportDialog from "$components/editor/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
 import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
+import RecastMark from "$components/recast-mark.svelte";
 import Timeline from "$components/editor/Timeline.svelte";
 import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
 import VideoPreview from "$components/editor/VideoPreview.svelte";
@@ -56,6 +67,13 @@ import {
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
+import type { CameraCapture } from "$lib/ipc-types";
+import {
+	clampTimelineHeight,
+	TIMELINE_DEFAULT_HEIGHT_PX,
+	TIMELINE_MIN_HEIGHT_PX,
+	timelineMaxHeight,
+} from "$lib/editor/panel-size";
 import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
@@ -69,6 +87,7 @@ import {
 	hasBlurUnderZoom,
 } from "$lib/services/export";
 import { isShareSupported, shareRecording } from "$lib/share";
+import { shareTargetFor } from "$lib/share-target";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { createEditorStore, type VideoMetadata } from "$lib/stores/editor-store.svelte";
@@ -128,6 +147,57 @@ $effect(() => {
 		// localStorage can throw in private-mode/quota edge cases. The toggle
 		// still works for the session, it just won't be remembered.
 	}
+});
+
+// --- View state ⇄ URL ---
+// Two layers, not two sources of truth: localStorage above is "my usual layout"
+// and seeds a fresh open, while the URL describes THIS view and wins whenever it
+// carries a param. So a shared link opens as sent, and opening the editor from
+// the library still respects the remembered layout.
+//
+// Reader declared first, so a deep-linked param beats the seeded defaults on the
+// first flush. Each effect reads only its own source and bails when the two
+// already agree, so they converge instead of ping-ponging.
+$effect(() => {
+	const params = page.url.searchParams;
+	const tab = parsePanelTab(params.get(PANEL_PARAM), import.meta.env.DEV);
+	const sidebar = parseBoolParam(params.get(SIDEBAR_PARAM));
+	const timeline = parseBoolParam(params.get(TIMELINE_PARAM));
+	untrack(() => {
+		if (tab && tab !== store.activePanel) store.activePanel = tab;
+		if (sidebar !== null && sidebar !== showSidebar) showSidebar = sidebar;
+		if (timeline !== null && timeline !== showTimeline) showTimeline = timeline;
+	});
+});
+
+// `replaceState` throws until the router has booted, and effects run during
+// hydration, which is earlier than that. The first `afterNavigate` (type
+// "enter" on initial load) is the earliest guaranteed-safe point.
+let routerReady = $state(false);
+afterNavigate(() => {
+	routerReady = true;
+});
+
+$effect(() => {
+	// Read all three before the guard so this stays subscribed to every one.
+	const next = {
+		[PANEL_PARAM]: store.activePanel,
+		[SIDEBAR_PARAM]: boolParam(showSidebar),
+		[TIMELINE_PARAM]: boolParam(showTimeline),
+	};
+	if (!routerReady) return;
+	const url = withEditorParams(
+		untrack(() => new URL(page.url)),
+		next,
+	);
+	if (!url) return;
+	// replaceState, not goto: this is view state. One history entry per tab click
+	// or panel toggle would make Back mean "undo my last toggle" rather than
+	// "previous page".
+	replaceState(
+		url,
+		untrack(() => page.state),
+	);
 });
 
 // Resizable properties panel. Width is user-set (drag the splitter or arrow
@@ -205,6 +275,88 @@ function onSidebarHandleKey(e: KeyboardEvent) {
 	}
 }
 
+// Resizable timeline panel. Same splitter idiom as the sidebar, on the other
+// axis. Bounded at BOTH ends: the floor keeps the ruler, clip bar and one lane
+// on screen, and the ceiling is a share of the editor column so the timeline can
+// never take the preview's space (which is what made this necessary — every lane
+// visible at once left the video a strip).
+const TIMELINE_HEIGHT_KEY = "recast-editor-timeline-height";
+let editorColumnH = $state(0);
+let timelineHeight = $state(TIMELINE_DEFAULT_HEIGHT_PX);
+let resizingTimeline = $state(false);
+
+const timelineMax = $derived(timelineMaxHeight(editorColumnH));
+const clampTimeline = (h: number) => clampTimelineHeight(h, editorColumnH);
+
+if (browser) {
+	const raw = Number(localStorage.getItem(TIMELINE_HEIGHT_KEY));
+	if (Number.isFinite(raw) && raw > 0) timelineHeight = raw;
+}
+// Re-clamp when the window (and so the ceiling) changes, so a height saved on a
+// big display doesn't swallow the preview on a laptop. Depends on the CEILING
+// only; reading the height tracked would make the effect depend on its own write.
+$effect(() => {
+	const max = timelineMax;
+	untrack(() => {
+		if (timelineHeight > max) timelineHeight = max;
+		else if (timelineHeight < TIMELINE_MIN_HEIGHT_PX) timelineHeight = TIMELINE_MIN_HEIGHT_PX;
+	});
+});
+$effect(() => {
+	if (!browser) return;
+	try {
+		localStorage.setItem(TIMELINE_HEIGHT_KEY, String(timelineHeight));
+	} catch {
+		// Best-effort, same as the layout prefs above.
+	}
+});
+
+// Docked bottom, so dragging the splitter UP grows it: height rises as y falls.
+function startTimelineResize(e: PointerEvent) {
+	if (e.button !== 0) return;
+	e.preventDefault();
+	resizingTimeline = true;
+	const startY = e.clientY;
+	const startH = timelineHeight;
+	document.body.style.cursor = "row-resize";
+	(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+	const onMove = (ev: PointerEvent) => {
+		timelineHeight = clampTimeline(startH - (ev.clientY - startY));
+	};
+	const onUp = () => {
+		resizingTimeline = false;
+		document.body.style.cursor = "";
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", onUp);
+		window.removeEventListener("pointercancel", onUp);
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", onUp);
+	window.addEventListener("pointercancel", onUp);
+}
+
+function onTimelineHandleKey(e: KeyboardEvent) {
+	const step = e.shiftKey ? 48 : 16;
+	switch (e.key) {
+		case "ArrowUp":
+			e.preventDefault();
+			timelineHeight = clampTimeline(timelineHeight + step);
+			break;
+		case "ArrowDown":
+			e.preventDefault();
+			timelineHeight = clampTimeline(timelineHeight - step);
+			break;
+		case "Home":
+			e.preventDefault();
+			timelineHeight = timelineMax;
+			break;
+		case "End":
+			e.preventDefault();
+			timelineHeight = TIMELINE_MIN_HEIGHT_PX;
+			break;
+	}
+}
+
 let previewContainerEl: HTMLDivElement | null = $state(null);
 let systemAudioEl: HTMLAudioElement | null = $state(null);
 let micAudioEl: HTMLAudioElement | null = $state(null);
@@ -221,6 +373,9 @@ let audioEngineGen = 0;
 let audioEngineFailed = $state(false);
 let cursorPath = $state<string | null>(null);
 let cameraPath = $state<string | null>(null);
+// Why the camera track is or isn't there; the path alone can't tell the editor
+// whether the camera was off or the project simply predates camera capture.
+let cameraCapture = $state<CameraCapture>("legacy");
 let cameraSrc = $state("");
 let documentPath = $state("");
 let isLoading = $state(true);
@@ -852,6 +1007,7 @@ async function loadDocument() {
 	micAudioSrc = "";
 	cursorPath = null;
 	cameraPath = null;
+	cameraCapture = "legacy";
 	cameraSrc = "";
 	videoEl?.pause();
 	systemAudioEl?.pause();
@@ -917,6 +1073,8 @@ async function loadDocument() {
 		systemAudioSrc = document.audioPath ? convertFileSrc(document.audioPath) : "";
 		micAudioSrc = document.microphonePath ? convertFileSrc(document.microphonePath) : "";
 		cameraPath = document.cameraPath ?? null;
+		// Absent from an older backend: unknowable, so `legacy` — never "off".
+		cameraCapture = document.cameraCapture ?? "legacy";
 		cameraSrc = cameraPath ? convertFileSrc(cameraPath) : "";
 		// Mount the editor body (VideoPreview renders only when !isLoading) so the
 		// <video> exists before load().
@@ -1416,7 +1574,7 @@ async function uploadExportToDrive() {
 	await gdrive.init();
 	if (!gdrive.connected) {
 		toast.info("Connect Google Drive in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	// Progress lives in the foreground dialog (and the activity center once
@@ -1432,7 +1590,7 @@ async function shareCurrentExportToCloud() {
 	await cloudShare.init();
 	if (!cloudShare.signedIn) {
 		toast.info("Sign in to Recast Cloud in Settings first.");
-		void goto("/settings");
+		void goto(settingsHref("cloud"));
 		return;
 	}
 	const title = basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
@@ -1456,8 +1614,10 @@ async function shareCurrentExportToCloud() {
 }
 
 // `navigator.share` exposure is static; sample once so the button renders
-// without a reactive read.
+// without a reactive read. Same for the host OS, which names and marks the sheet
+// this opens — "Windows share" beats a generic node on a machine that has one.
 const shareSupported = isShareSupported();
+const shareTarget = shareTargetFor(platform());
 
 async function shareExportedFile() {
 	if (exportResult?.kind !== "success") return;
@@ -1832,7 +1992,12 @@ const stages = $derived.by(() => {
   {:else}
     <div class="flex min-h-0 flex-1 overflow-hidden">
       <!-- Preview + playback + timeline -->
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <!-- Measured so the timeline's maximum height stays a share of the space
+           actually available, not a fixed number that overwhelms a short window. -->
+      <div
+        bind:clientHeight={editorColumnH}
+        class="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
         <div
           bind:this={previewContainerEl}
           class="flex min-h-0 flex-1 flex-col items-center justify-center bg-background px-2 pt-1.5 pb-1"
@@ -1875,7 +2040,33 @@ const stages = $derived.by(() => {
             class="shrink-0 overflow-hidden"
             transition:slide={{ axis: "y", duration: 280, easing: cubicOut }}
           >
-            <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+            <!-- Height on the INNER div: `slide` animates the wrapper's own
+                 height, so the two would fight over the same property. -->
+            <div class="relative" style="height: {timelineHeight}px;">
+              <!-- Splitter: drag or arrow-key to resize the panel. Sits in the
+                   timeline's top padding so it never overlaps the toolbar.
+                   Modelled as a horizontal slider (aria-valuenow = height), the
+                   same idiom as the properties-panel splitter. -->
+              <div
+                role="slider"
+                tabindex="0"
+                aria-orientation="horizontal"
+                aria-label="Resize timeline"
+                aria-valuemin={TIMELINE_MIN_HEIGHT_PX}
+                aria-valuemax={timelineMax}
+                aria-valuenow={timelineHeight}
+                onpointerdown={startTimelineResize}
+                onkeydown={onTimelineHandleKey}
+                class="group absolute inset-x-0 top-0 z-20 h-1.5 cursor-row-resize focus-visible:outline-none"
+              >
+                <div
+                  class="my-auto h-px w-full bg-border/50 transition-colors group-hover:bg-primary/60 group-focus-visible:bg-primary {resizingTimeline
+                    ? 'bg-primary!'
+                    : ''}"
+                ></div>
+              </div>
+              <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+            </div>
           </div>
         {/if}
       </div>
@@ -1931,7 +2122,12 @@ const stages = $derived.by(() => {
             ></div>
           </div>
           <div class="h-full" style="width: {sidebarWidth}px;">
-            <PropertiesPanel {store} {cameraPath} onRegenerateAutoZoom={regenerateAutoZoom} />
+            <PropertiesPanel
+              {store}
+              {cameraPath}
+              {cameraCapture}
+              onRegenerateAutoZoom={regenerateAutoZoom}
+            />
           </div>
         </aside>
       {/if}
@@ -2338,7 +2534,7 @@ const stages = $derived.by(() => {
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <Cloud class="size-4" />
+            <RecastMark class="size-4" />
           </span>
           <span class="text-[11px] font-medium leading-none text-foreground">
             Recast Cloud
@@ -2353,7 +2549,7 @@ const stages = $derived.by(() => {
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <HardDriveUpload class="size-4" />
+            <BrandGoogleDrive class="size-4" />
           </span>
           <span class="text-[11px] font-medium leading-none text-foreground">
             Google Drive
@@ -2361,6 +2557,7 @@ const stages = $derived.by(() => {
         </button>
 
         {#if shareSupported}
+          {@const ShareIcon = shareTarget.icon}
           <button
             type="button"
             onclick={shareExportedFile}
@@ -2370,10 +2567,10 @@ const stages = $derived.by(() => {
             <span
               class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
             >
-              <Share2 class="size-4" />
+              <ShareIcon class="size-4" />
             </span>
             <span class="text-[11px] font-medium leading-none text-foreground">
-              System share
+              {shareTarget.label}
             </span>
           </button>
         {/if}

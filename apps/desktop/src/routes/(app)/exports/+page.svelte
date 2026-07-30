@@ -1,348 +1,364 @@
 <script lang="ts">
-  import { goto } from "$app/navigation";
-  import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
-  import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
-  import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
-  import { formatSize, getExtension, isImageFile } from "$lib/format/files";
-  import {
-    deleteFile,
-    listExports,
-    openFileLocation,
-    renameFile,
-    type RecordingEntry,
-  } from "$lib/ipc";
-  import {
-    filterEntries,
-    sortEntries,
-    sumBytes,
-    type LibrarySort,
-  } from "$lib/library/list";
-  import { createSelection } from "$lib/library/selection.svelte";
-  import {
-    createThumbnailLoader,
-    libraryDate,
-    removeThumbnail,
-    removeThumbnails,
-    renameThumbnail,
-  } from "$lib/library/thumbnails";
-  import { morph } from "$lib/morph";
-  import { isShareSupported, shareRecording } from "$lib/share";
-  import { cloudShare } from "$lib/stores/cloudShare.svelte";
-  import { gdrive } from "$lib/stores/gdrive.svelte";
-  import {
-    Check,
-    Clock,
-    Cloud,
-    CopyIcon,
-    Download,
-    ExternalLink,
-    Eye,
-    FolderOpen,
-    Grid3x3,
-    HardDriveUpload,
-    Link2,
-    List,
-    ListChecks,
-    MoreHorizontal,
-    Pencil,
-    Play,
-    RefreshCw,
-    Search,
-    Share2,
-    SlidersHorizontal,
-    SortAsc,
-    Trash2,
-    Unlink2,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { ButtonGroup } from "@recast/ui/button-group";
-  import { Cutout } from "@recast/ui/cutout";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { safeStorage } from "@recast/ui/persisted-state";
-  import * as Select from "@recast/ui/select";
-  import { Skeleton } from "@recast/ui/skeleton";
-  import { toast } from "@recast/ui/sonner";
-  import { cn } from "@recast/ui/utils";
-  import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { settingsHref } from "../settings/settings-tabs";
+import ShareManageDialog from "$components/cloud/ShareManageDialog.svelte";
+import WorkspacePickerDialog from "$components/cloud/WorkspacePickerDialog.svelte";
+import { ConfirmDialog, PlayerDialog, RenameDialog } from "$components/recast";
+import {
+	LibraryEmpty,
+	LibraryError,
+	LibrarySearch,
+	LibrarySkeletonGrid,
+	LibrarySortSelect,
+	LibraryViewToggle,
+	SelectionBar,
+} from "$components/library";
+import {
+	CARD_OVERLAY_CLASS,
+	cardActionsClass,
+	cardShellClass,
+	listClass,
+	selectTickClass,
+	thumbFrameClass,
+} from "$lib/library/card-styles";
+import { formatSize, getExtension, isImageFile } from "$lib/format/files";
+import {
+	deleteFile,
+	listExports,
+	openFileLocation,
+	renameFile,
+	type RecordingEntry,
+} from "$lib/ipc";
+import { filterEntries, sortEntries, sumBytes, type LibrarySort } from "$lib/library/list";
+import { canReportCount, libraryStatus } from "$lib/library/status";
+import { createSelection } from "$lib/library/selection.svelte";
+import {
+	createThumbnailLoader,
+	libraryDate,
+	removeThumbnail,
+	removeThumbnails,
+	renameThumbnail,
+} from "$lib/library/thumbnails";
+import { morph } from "$lib/morph";
+import { isShareSupported, shareRecording } from "$lib/share";
+import { shareTargetFor } from "$lib/share-target";
+import { platform } from "@tauri-apps/plugin-os";
+import RecastMark from "$components/recast-mark.svelte";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
+import {
+	Check,
+	CopyIcon,
+	Download,
+	ExternalLink,
+	Eye,
+	FolderOpen,
+	BrandGoogleDrive,
+	Link2,
+	ListChecks,
+	MoreHorizontal,
+	Pencil,
+	Play,
+	RefreshCw,
+	SlidersHorizontal,
+	Trash2,
+	TriangleAlert,
+	Unlink2,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Cutout } from "@recast/ui/cutout";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { safeStorage } from "@recast/ui/persisted-state";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
 
-  let entries = $state<RecordingEntry[]>([]);
-  let isLoading = $state(true);
-  let thumbnails = $state<Record<string, string>>({});
-  const loadThumbnails = createThumbnailLoader();
+let entries = $state<RecordingEntry[]>([]);
+let isLoading = $state(true);
+/** Last scan failure. Kept so a broken scan can't masquerade as an empty folder. */
+let loadError = $state<string | null>(null);
+let thumbnails = $state<Record<string, string>>({});
+const loadThumbnails = createThumbnailLoader();
 
-  let query = $state("");
-  let view = $state<"grid" | "list">("grid");
-  let sort = $state<LibrarySort>("recent");
-  let renameTarget = $state<RecordingEntry | null>(null);
-  let deleteTarget = $state<RecordingEntry | null>(null);
-  let manageTarget = $state<RecordingEntry | null>(null);
-  let playTarget = $state<RecordingEntry | null>(null);
-  // Set when a share needs a workspace choice (user is in >1 workspace).
-  let workspacePick = $state<{ path: string; title: string; fileName: string } | null>(null);
+let query = $state("");
+let view = $state<"grid" | "list">("grid");
+let sort = $state<LibrarySort>("recent");
+let renameTarget = $state<RecordingEntry | null>(null);
+let deleteTarget = $state<RecordingEntry | null>(null);
+let manageTarget = $state<RecordingEntry | null>(null);
+let playTarget = $state<RecordingEntry | null>(null);
+// Set when a share needs a workspace choice (user is in >1 workspace).
+let workspacePick = $state<{ path: string; title: string; fileName: string } | null>(null);
 
-  // Multi-select: a toolbar "Select" toggle flips the page into selection
-  // mode, where clicking a card checks it instead of opening the file.
-  let bulkDeleteOpen = $state(false);
-  const selection = createSelection({
-    noun: "export",
-    deleteFile,
-    onDeleted: (deleted) => {
-      entries = entries.filter((e) => !deleted.has(e.path));
-      if (deleted.size > 0) thumbnails = removeThumbnails(thumbnails, deleted);
-    },
-  });
+// Multi-select: a toolbar "Select" toggle flips the page into selection
+// mode, where clicking a card checks it instead of opening the file.
+let bulkDeleteOpen = $state(false);
+const selection = createSelection({
+	noun: "export",
+	deleteFile,
+	onDeleted: (deleted) => {
+		entries = entries.filter((e) => !deleted.has(e.path));
+		if (deleted.size > 0) thumbnails = removeThumbnails(thumbnails, deleted);
+	},
+});
 
-  onMount(() => {
-    fetchExports();
-    // Hydrate upload history so each row's dropdown picks the right action
-    // (upload vs. copy-link/manage) without a per-row roundtrip.
-    void gdrive.init();
-    void cloudShare.init();
-    view = safeStorage.get<"grid" | "list">("exports-view", view);
-  });
+onMount(() => {
+	fetchExports();
+	// Hydrate upload history so each row's dropdown picks the right action
+	// (upload vs. copy-link/manage) without a per-row roundtrip.
+	void gdrive.init();
+	void cloudShare.init();
+	view = safeStorage.get<"grid" | "list">("exports-view", view);
+});
 
-  $effect(() => {
-    safeStorage.set("exports-view", view);
-  });
+$effect(() => {
+	safeStorage.set("exports-view", view);
+});
 
-  async function fetchExports() {
-    isLoading = true;
-    try {
-      entries = await listExports();
-      void refreshThumbnails(entries);
-    } catch (e) {
-      toast.error(`Could not load exports: ${e}`);
-    } finally {
-      isLoading = false;
-    }
-  }
+async function fetchExports() {
+	isLoading = true;
+	try {
+		entries = await listExports();
+		loadError = null;
+		void refreshThumbnails(entries);
+	} catch (e) {
+		loadError = String(e);
+		toast.error(`Could not load exports: ${e}`);
+	} finally {
+		isLoading = false;
+	}
+}
 
-  async function refreshThumbnails(items: RecordingEntry[]) {
-    const next = await loadThumbnails(items);
-    if (next) thumbnails = next;
-  }
+async function refreshThumbnails(items: RecordingEntry[]) {
+	const next = await loadThumbnails(items);
+	if (next) thumbnails = next;
+}
 
-  async function copyPath(entry: RecordingEntry) {
-    try {
-      await navigator.clipboard.writeText(entry.path);
-      toast.success("Path copied");
-    } catch (e) {
-      toast.error(`Copy failed: ${e}`);
-    }
-  }
+async function copyPath(entry: RecordingEntry) {
+	try {
+		await navigator.clipboard.writeText(entry.path);
+		toast.success("Path copied");
+	} catch (e) {
+		toast.error(`Copy failed: ${e}`);
+	}
+}
 
-  async function handleRename(entry: RecordingEntry, nextName: string) {
-    const newPath = await renameFile(entry.path, nextName);
-    entries = entries.map((e) =>
-      e.path === entry.path
-        ? {
-            ...e,
-            path: newPath,
-            filename: newPath.split(/[\\/]/).pop() ?? nextName,
-          }
-        : e,
-    );
-    thumbnails = renameThumbnail(thumbnails, entry.path, newPath);
-    toast.success("Renamed");
-  }
+async function handleRename(entry: RecordingEntry, nextName: string) {
+	const newPath = await renameFile(entry.path, nextName);
+	entries = entries.map((e) =>
+		e.path === entry.path
+			? {
+					...e,
+					path: newPath,
+					filename: newPath.split(/[\\/]/).pop() ?? nextName,
+				}
+			: e,
+	);
+	thumbnails = renameThumbnail(thumbnails, entry.path, newPath);
+	toast.success("Renamed");
+}
 
-  async function handleDelete(entry: RecordingEntry) {
-    await deleteFile(entry.path);
-    entries = entries.filter((e) => e.path !== entry.path);
-    thumbnails = removeThumbnail(thumbnails, entry.path);
-    // Local file is gone, so drop its upload records so the row doesn't return
-    // next session claiming a copy. The remote objects are left untouched.
-    void gdrive.forgetUpload(entry.path);
-    void cloudShare.forget(entry.path);
-    toast.success(`Moved "${entry.filename}" to trash`);
-  }
+async function handleDelete(entry: RecordingEntry) {
+	await deleteFile(entry.path);
+	entries = entries.filter((e) => e.path !== entry.path);
+	thumbnails = removeThumbnail(thumbnails, entry.path);
+	// Local file is gone, so drop its upload records so the row doesn't return
+	// next session claiming a copy. The remote objects are left untouched.
+	void gdrive.forgetUpload(entry.path);
+	void cloudShare.forget(entry.path);
+	toast.success(`Moved "${entry.filename}" to trash`);
+}
 
-  /**
-   * Share an export to Recast Cloud: upload, create a public link, copy it.
-   * Routes to Settings when signed out, because device sign-in opens a browser tab
-   * and shouldn't happen inline from a menu.
-   */
-  async function shareToCloud(entry: RecordingEntry) {
-    // Only block on the network before the store has hydrated; a loading toast
-    // covers that first wait. Afterwards the cached workspace list is instant.
-    if (!cloudShare.initialized) {
-      const tid = toast.loading("Connecting to Recast Cloud…");
-      await cloudShare.init();
-      toast.dismiss(tid);
-    }
-    if (!cloudShare.signedIn) {
-      toast.info("Sign in to Recast Cloud in Settings first.");
-      void goto("/settings");
-      return;
-    }
-    const title = entry.filename.replace(/\.[^.]+$/, "");
-    // Multiple workspaces → confirm the target before the upload commits.
-    if (cloudShare.workspaces.length > 1) {
-      workspacePick = { path: entry.path, title, fileName: entry.filename };
-      // Freshen plan/recast counts in the background while they choose.
-      void cloudShare.refreshStatus();
-      return;
-    }
-    beginCloudShare(entry.path, title);
-  }
+/**
+ * Share an export to Recast Cloud: upload, create a public link, copy it.
+ * Routes to Settings when signed out, because device sign-in opens a browser tab
+ * and shouldn't happen inline from a menu.
+ */
+async function shareToCloud(entry: RecordingEntry) {
+	// Only block on the network before the store has hydrated; a loading toast
+	// covers that first wait. Afterwards the cached workspace list is instant.
+	if (!cloudShare.initialized) {
+		const tid = toast.loading("Connecting to Recast Cloud…");
+		await cloudShare.init();
+		toast.dismiss(tid);
+	}
+	if (!cloudShare.signedIn) {
+		toast.info("Sign in to Recast Cloud in Settings first.");
+		void goto(settingsHref("cloud"));
+		return;
+	}
+	const title = entry.filename.replace(/\.[^.]+$/, "");
+	// Multiple workspaces → confirm the target before the upload commits.
+	if (cloudShare.workspaces.length > 1) {
+		workspacePick = { path: entry.path, title, fileName: entry.filename };
+		// Freshen plan/recast counts in the background while they choose.
+		void cloudShare.refreshStatus();
+		return;
+	}
+	beginCloudShare(entry.path, title);
+}
 
-  /**
-   * Start an upload + share and surface it in the global foreground dialog
-   * (CloudShareHost). No toast: the store records phase/byte/result/error and the
-   * dialog reads it live, so the store's rejection is swallowed here.
-   *
-   * The dialog is opened on the next frame so a closing overlay (the row's
-   * dropdown, or the workspace picker) fully settles first. Opening a second
-   * modal in the same tick makes bits-ui hand focus back and the new dialog never
-   * appears, which read as "no dialog showed up".
-   */
-  function beginCloudShare(path: string, title: string, workspaceId?: string) {
-    void cloudShare.share(path, title, workspaceId).catch(() => {});
-    requestAnimationFrame(() => cloudShare.setForeground(path));
-  }
+/**
+ * Start an upload + share and surface it in the global foreground dialog
+ * (CloudShareHost). No toast: the store records phase/byte/result/error and the
+ * dialog reads it live, so the store's rejection is swallowed here.
+ *
+ * The dialog is opened on the next frame so a closing overlay (the row's
+ * dropdown, or the workspace picker) fully settles first. Opening a second
+ * modal in the same tick makes bits-ui hand focus back and the new dialog never
+ * appears, which read as "no dialog showed up".
+ */
+function beginCloudShare(path: string, title: string, workspaceId?: string) {
+	void cloudShare.share(path, title, workspaceId).catch(() => {});
+	requestAnimationFrame(() => cloudShare.setForeground(path));
+}
 
-  async function copyCloudLink(entry: RecordingEntry) {
-    const record = cloudShare.getRecordForPath(entry.path);
-    if (!record) return;
-    try {
-      await navigator.clipboard.writeText(record.shareUrl);
-      toast.success("Share link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
-    }
-  }
+async function copyCloudLink(entry: RecordingEntry) {
+	const record = cloudShare.getRecordForPath(entry.path);
+	if (!record) return;
+	try {
+		await navigator.clipboard.writeText(record.shareUrl);
+		toast.success("Share link copied.");
+	} catch (e) {
+		toast.error(`Could not copy link: ${e}`);
+	}
+}
 
-  async function openCloudLink(entry: RecordingEntry) {
-    const record = cloudShare.getRecordForPath(entry.path);
-    if (!record) return;
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(record.shareUrl);
-    } catch {
-      window.open(record.shareUrl, "_blank", "noopener");
-    }
-  }
+async function openCloudLink(entry: RecordingEntry) {
+	const record = cloudShare.getRecordForPath(entry.path);
+	if (!record) return;
+	try {
+		const { openUrl } = await import("@tauri-apps/plugin-opener");
+		await openUrl(record.shareUrl);
+	} catch {
+		window.open(record.shareUrl, "_blank", "noopener");
+	}
+}
 
-  async function forgetCloudShare(entry: RecordingEntry) {
-    await cloudShare.forget(entry.path);
-    toast.success(`Forgot cloud link for "${entry.filename}"`);
-  }
+async function forgetCloudShare(entry: RecordingEntry) {
+	await cloudShare.forget(entry.path);
+	toast.success(`Forgot cloud link for "${entry.filename}"`);
+}
 
-  /**
-   * Drive upload from the exports list. Routes to Settings when Drive isn't
-   * connected, because the consent flow opens a browser tab, not inline.
-   */
-  async function uploadToDrive(entry: RecordingEntry) {
-    await gdrive.init();
-    if (!gdrive.connected) {
-      toast.info("Connect Google Drive in Settings first.");
-      void goto("/settings");
-      return;
-    }
-    // Progress lives in the foreground dialog (and the activity center once
-    // minimized), never in-place on the card. The store toasts the outcome.
-    const id = gdrive.startUpload(entry.path);
-    requestAnimationFrame(() => gdrive.setForeground(id));
-  }
+/**
+ * Drive upload from the exports list. Routes to Settings when Drive isn't
+ * connected, because the consent flow opens a browser tab, not inline.
+ */
+async function uploadToDrive(entry: RecordingEntry) {
+	await gdrive.init();
+	if (!gdrive.connected) {
+		toast.info("Connect Google Drive in Settings first.");
+		void goto(settingsHref("cloud"));
+		return;
+	}
+	// Progress lives in the foreground dialog (and the activity center once
+	// minimized), never in-place on the card. The store toasts the outcome.
+	const id = gdrive.startUpload(entry.path);
+	requestAnimationFrame(() => gdrive.setForeground(id));
+}
 
-  // `navigator.share` exposure is static, so sample once at module load so the
-  // dropdown can conditionally render the Share item without a reactive read.
-  const shareSupported = isShareSupported();
+// `navigator.share` exposure is static, so sample once at module load so the
+// dropdown can conditionally render the Share item without a reactive read.
+const shareSupported = isShareSupported();
+// Capitalised binding so it reads as a component in markup.
+const ShareIcon = shareTargetFor(platform()).icon;
 
-  /**
-   * Open the OS share sheet for an export. Tries the file payload (Web Share
-   * Level 2), falling back to the recorded Drive link if files can't be shared.
-   */
-  async function shareEntry(entry: RecordingEntry) {
-    const fallbackLink = gdrive.getRecordForPath(entry.path)?.webViewLink;
-    const result = await shareRecording({
-      path: entry.path,
-      fileName: entry.filename,
-      title: entry.filename,
-      text: "Made with Recast",
-      fallbackLink,
-    });
-    if (result.ok || result.reason === "cancelled") return;
-    if (result.reason === "unsupported") {
-      toast.error(
-        fallbackLink
-          ? "Sharing isn't available on this device."
-          : "Sharing files isn't available here. Upload to Drive first to share a link.",
-      );
-    } else {
-      toast.error(`Share failed: ${result.message ?? "unknown error"}`);
-    }
-  }
+/**
+ * Open the OS share sheet for an export. Tries the file payload (Web Share
+ * Level 2), falling back to the recorded Drive link if files can't be shared.
+ */
+async function shareEntry(entry: RecordingEntry) {
+	const fallbackLink = gdrive.getRecordForPath(entry.path)?.webViewLink;
+	const result = await shareRecording({
+		path: entry.path,
+		fileName: entry.filename,
+		title: entry.filename,
+		text: "Made with Recast",
+		fallbackLink,
+	});
+	if (result.ok || result.reason === "cancelled") return;
+	if (result.reason === "unsupported") {
+		toast.error(
+			fallbackLink
+				? "Sharing isn't available on this device."
+				: "Sharing files isn't available here. Upload to Drive first to share a link.",
+		);
+	} else {
+		toast.error(`Share failed: ${result.message ?? "unknown error"}`);
+	}
+}
 
-  /** Copy the recorded Drive link from the local manifest (no network). */
-  async function copyDriveLink(entry: RecordingEntry) {
-    const record = gdrive.getRecordForPath(entry.path);
-    if (!record?.webViewLink) {
-      toast.error("No Drive link recorded for this file.");
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(record.webViewLink);
-      toast.success("Drive link copied.");
-    } catch (e) {
-      toast.error(`Could not copy link: ${e}`);
-    }
-  }
+/** Copy the recorded Drive link from the local manifest (no network). */
+async function copyDriveLink(entry: RecordingEntry) {
+	const record = gdrive.getRecordForPath(entry.path);
+	if (!record?.webViewLink) {
+		toast.error("No Drive link recorded for this file.");
+		return;
+	}
+	try {
+		await navigator.clipboard.writeText(record.webViewLink);
+		toast.success("Drive link copied.");
+	} catch (e) {
+		toast.error(`Could not copy link: ${e}`);
+	}
+}
 
-  // openUrl via the opener plugin; window.open fallback for the web build.
-  async function openDriveLink(entry: RecordingEntry) {
-    const record = gdrive.getRecordForPath(entry.path);
-    if (!record?.webViewLink) {
-      toast.error("No Drive link recorded for this file.");
-      return;
-    }
-    try {
-      const { openUrl } = await import("@tauri-apps/plugin-opener");
-      await openUrl(record.webViewLink);
-    } catch {
-      window.open(record.webViewLink, "_blank", "noopener");
-    }
-  }
+// openUrl via the opener plugin; window.open fallback for the web build.
+async function openDriveLink(entry: RecordingEntry) {
+	const record = gdrive.getRecordForPath(entry.path);
+	if (!record?.webViewLink) {
+		toast.error("No Drive link recorded for this file.");
+		return;
+	}
+	try {
+		const { openUrl } = await import("@tauri-apps/plugin-opener");
+		await openUrl(record.webViewLink);
+	} catch {
+		window.open(record.webViewLink, "_blank", "noopener");
+	}
+}
 
-  // Recovery path when the Drive file was deleted or no longer matches: drops
-  // the local association so the dropdown flips back to "Upload to Drive". The
-  // Drive object is left untouched.
-  async function forgetDriveLink(entry: RecordingEntry) {
-    await gdrive.forgetUpload(entry.path);
-    toast.success(`Forgot Drive link for "${entry.filename}"`);
-  }
+// Recovery path when the Drive file was deleted or no longer matches: drops
+// the local association so the dropdown flips back to "Upload to Drive". The
+// Drive object is left untouched.
+async function forgetDriveLink(entry: RecordingEntry) {
+	await gdrive.forgetUpload(entry.path);
+	toast.success(`Forgot Drive link for "${entry.filename}"`);
+}
 
-  const filtered = $derived(
-    sortEntries(filterEntries(entries, query, { matchExtension: true }), sort),
-  );
+const filtered = $derived(
+	sortEntries(filterEntries(entries, query, { matchExtension: true }), sort),
+);
 
-  const totalSize = $derived(sumBytes(entries));
+const totalSize = $derived(sumBytes(entries));
 
-  const selectedCount = $derived(selection.count);
-  const allFilteredSelected = $derived(selection.allSelected(filtered));
+const status = $derived(
+	libraryStatus({
+		loading: isLoading,
+		error: loadError,
+		total: entries.length,
+		matches: filtered.length,
+		query,
+	}),
+);
 
-  // Grid and list share one keyed {#each}. Touching `view` here gives the
-  // each block a reason to re-run on a layout toggle (returning a fresh
-  // array each time), which is what makes `animate:morph` fire.
-  const displayed = $derived.by(() => {
-    void view;
-    return filtered.slice();
-  });
+const selectedCount = $derived(selection.count);
+const allFilteredSelected = $derived(selection.allSelected(filtered));
 
-  function activateEntry(entry: RecordingEntry) {
-    if (selection.selectMode) selection.toggle(entry.path);
-    else playTarget = entry;
-  }
+// Grid and list share one keyed {#each}. Touching `view` here gives the
+// each block a reason to re-run on a layout toggle (returning a fresh
+// array each time), which is what makes `animate:morph` fire.
+const displayed = $derived.by(() => {
+	void view;
+	return filtered.slice();
+});
 
-  function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      activateEntry(entry);
-    }
-  }
+function activateEntry(entry: RecordingEntry) {
+	if (selection.selectMode) selection.toggle(entry.path);
+	else playTarget = entry;
+}
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -364,46 +380,26 @@
         <span
           class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
         >
-          {entries.length === 0
-            ? "Nothing exported yet"
-            : entries.length === 1
-              ? "1 export"
-              : `${entries.length} exports`}
+          {#if !canReportCount(status)}
+            Exports
+          {:else if entries.length === 0}
+            Nothing exported yet
+          {:else if entries.length === 1}
+            1 export
+          {:else}
+            {entries.length} exports
+          {/if}
         </span>
       </h1>
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        {formatSize(totalSize)} on disk · open a file in its folder or send straight
-        to a teammate.
+        {#if canReportCount(status)}{formatSize(totalSize)} on disk · {/if}open a
+        file in its folder or send straight to a teammate.
       </p>
     </header>
 
-    <!-- Search bar -->
-    <label
-      in:fly={{ y: 12, duration: 320, delay: 60, easing: cubicOut }}
-      class="group/search flex h-12 items-center gap-3 rounded-xl border border-border/60 bg-card/70 px-4 shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:border-border hover:bg-card hover:shadow-craft-sm focus-within:border-border focus-within:bg-card focus-within:shadow-craft-sm"
-    >
-      <Search
-        class="size-4 shrink-0 text-muted-foreground/70 transition-colors group-hover/search:text-foreground group-focus-within/search:text-foreground"
-      />
-      <input
-        bind:value={query}
-        type="text"
-        placeholder="Search exports…"
-        aria-label="Search exports"
-        class="flex-1 bg-transparent text-[13px] font-medium text-foreground placeholder:text-muted-foreground/80 focus:outline-none"
-      />
-      {#if query}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          class="size-6"
-          onclick={() => (query = "")}
-          title="Clear search"
-        >
-          <X class="size-3" />
-        </Button>
-      {/if}
-    </label>
+    <div in:fly={{ y: 12, duration: 320, delay: 60, easing: cubicOut }}>
+      <LibrarySearch bind:value={query} noun="exports" />
+    </div>
 
     <!-- Section header -->
     <div
@@ -427,73 +423,23 @@
             )}
             onclick={selection.toggleMode}
             disabled={entries.length === 0}
+            aria-pressed={selection.selectMode}
             title="Select multiple exports"
           >
             <ListChecks size={11} />
             {selection.selectMode ? "Done" : "Select"}
           </Button>
 
-          <Select.Root
-            type="single"
-            value={sort}
-            onValueChange={(v: string) => {
-              if (v === "recent" || v === "name" || v === "size") sort = v;
-            }}
-          >
-            <Select.Trigger
-              size="sm"
-              class="h-7 gap-1 rounded-lg border-border/50 px-2.5 text-[11px] font-medium text-muted-foreground hover:text-foreground"
-              aria-label="Sort exports"
-            >
-              <span data-slot="select-value" class="flex items-center gap-1">
-                <SortAsc size={11} />
-                {sort === "recent"
-                  ? "Recent"
-                  : sort === "name"
-                    ? "Name"
-                    : "Size"}
-              </span>
-            </Select.Trigger>
-            <Select.Content align="end" sideOffset={6} class="w-36 p-1">
-              <Select.Item value="recent" label="Recent" class="text-[11.5px]">
-                <Clock class="size-3 text-muted-foreground" />
-                Recent
-              </Select.Item>
-              <Select.Item value="name" label="Name" class="text-[11.5px]">
-                <SortAsc class="size-3 text-muted-foreground" />
-                Name
-              </Select.Item>
-              <Select.Item value="size" label="Size" class="text-[11.5px]">
-                <Download class="size-3 text-muted-foreground" />
-                Size
-              </Select.Item>
-            </Select.Content>
-          </Select.Root>
+          <LibrarySortSelect bind:value={sort} noun="exports" />
 
-          <ButtonGroup>
-            <Button
-              variant={view === "grid" ? "secondary" : "ghost"}
-              size="icon-sm"
-              onclick={() => (view = "grid")}
-              title="Grid view"
-            >
-              <Grid3x3 size={12} />
-            </Button>
-            <Button
-              variant={view === "list" ? "secondary" : "ghost"}
-              size="icon-sm"
-              onclick={() => (view = "list")}
-              title="List view"
-            >
-              <List size={12} />
-            </Button>
-          </ButtonGroup>
+          <LibraryViewToggle bind:value={view} />
 
           <Button
             variant="ghost"
             size="icon-sm"
             onclick={fetchExports}
             disabled={isLoading}
+            aria-label="Refresh exports"
             title="Refresh"
           >
             <RefreshCw size={12} class={isLoading ? "animate-spin" : ""} />
@@ -501,50 +447,27 @@
         </div>
       </div>
 
-      {#if isLoading && entries.length === 0}
-        <div
-          class={cn(
-            "grid gap-3",
-            view === "grid"
-              ? "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4"
-              : "grid-cols-1",
-          )}
-        >
-          {#each Array.from({ length: 8 }) as _, i (i)}
-            <Skeleton
-              class={cn(view === "grid" ? "aspect-video" : "h-16")}
-              style="animation-delay: {i * 80}ms"
-            />
-          {/each}
-        </div>
-      {:else if filtered.length === 0}
-        <div
-          in:fade={{ duration: 200 }}
-          class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
-        >
-          <div
-            class="flex size-12 items-center justify-center rounded-xl bg-foreground/5 text-muted-foreground"
-          >
-            <Download class="size-5" />
-          </div>
-          <div>
-            <p class="text-[14px] font-semibold text-foreground">
-              {query ? "No matches" : "Nothing exported yet"}
-            </p>
-            <p class="mt-1 text-[11.5px] text-muted-foreground">
-              {query
-                ? `Nothing matches "${query}".`
-                : "Render a recording from the editor and it'll show up here."}
-            </p>
-          </div>
-        </div>
+      {#if status === "loading"}
+        <LibrarySkeletonGrid {view} />
+      {:else if status === "error"}
+        <LibraryError
+          title="Couldn't load your exports"
+          message={loadError ?? "Unknown error"}
+          onRetry={fetchExports}
+        />
+      {:else if status === "empty" || status === "no-matches"}
+        <LibraryEmpty
+          icon={Download}
+          title={query ? "No matches" : "Nothing exported yet"}
+          description={query
+            ? `Nothing matches "${query}".`
+            : "Render a recording from the editor and it'll show up here."}
+        />
       {:else}
         <!-- Grid and list share one keyed {#each} so each card is the same
              DOM node in both layouts and can morph between them. -->
         <div
-          class={view === "grid"
-            ? "grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4"
-            : "flex flex-col gap-1.5"}
+          class={listClass(view)}
         >
           {#each displayed as entry, i (entry.path)}
             {@const isSelected = selection.has(entry.path)}
@@ -552,30 +475,12 @@
             <div
               in:fade={{ duration: 200, delay: Math.min(i * 25, 200) }}
               animate:morph={{ duration: 340 }}
-              role="button"
-              tabindex="0"
-              aria-label={entry.filename}
               title={entry.filename}
-              onclick={() => activateEntry(entry)}
-              onkeydown={(e) => handleCardKeydown(e, entry)}
-              class={cn(
-                "group/card relative flex cursor-pointer overflow-hidden border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:ring-ring/60",
-                view === "grid"
-                  ? "flex-col rounded-xl"
-                  : "flex-row items-center gap-3 rounded-lg p-1.5",
-                isSelected
-                  ? "border-primary/60 bg-primary/5"
-                  : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
-              )}
+              class={cardShellClass(view, isSelected)}
             >
               <!-- Thumbnail -->
               <div
-                class={cn(
-                  "relative shrink-0 overflow-hidden bg-muted/40",
-                  view === "grid"
-                    ? "aspect-video w-full"
-                    : "aspect-video w-22 rounded-md",
-                )}
+                class={thumbFrameClass(view)}
               >
                 {#if thumbnails[entry.path]}
                   <img
@@ -604,12 +509,7 @@
                 {#if selection.selectMode}
                   <div class="absolute left-1.5 top-1.5 z-10">
                     <span
-                      class={cn(
-                        "flex size-5 items-center justify-center rounded-md border backdrop-blur-md transition-all",
-                        isSelected
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border/70 bg-background/80",
-                      )}
+                      class={selectTickClass(isSelected)}
                     >
                       {#if isSelected}<Check size={12} />{/if}
                     </span>
@@ -663,15 +563,25 @@
                 </div>
               </div>
 
+
+              <!-- Primary action as a real button spanning the card. A role="button"
+                   wrapper would nest the menu trigger inside a button, whose
+                   children ARIA treats as presentational. Sibling + higher
+                   z-index keeps the menu clickable without stopPropagation. -->
+              <button
+                type="button"
+                onclick={() => activateEntry(entry)}
+                aria-pressed={selection.selectMode ? isSelected : undefined}
+                class={CARD_OVERLAY_CLASS}
+              >
+                <span class="sr-only">
+                  {selection.selectMode ? `Select ${entry.filename}` : `Open ${entry.filename}`}
+                </span>
+              </button>
               <!-- Actions -->
               {#if !selection.selectMode}
                 <div
-                  role="presentation"
-                  onclick={(e) => e.stopPropagation()}
-                  onkeydown={(e) => e.stopPropagation()}
-                  class={view === "grid"
-                    ? "absolute right-2 top-2"
-                    : "shrink-0 pr-1"}
+                  class={cardActionsClass(view)}
                 >
                   <DropdownMenu.Root>
                     <DropdownMenu.Trigger>
@@ -707,7 +617,7 @@
                       </DropdownMenu.Item>
                       {#if shareSupported}
                         <DropdownMenu.Item onSelect={() => shareEntry(entry)}>
-                          <Share2 /> Share…
+                          <ShareIcon /> Share…
                         </DropdownMenu.Item>
                       {/if}
                       <DropdownMenu.Separator />
@@ -736,7 +646,7 @@
                         <DropdownMenu.Item
                           onSelect={() => uploadToDrive(entry)}
                         >
-                          <HardDriveUpload /> Upload to Drive
+                          <BrandGoogleDrive /> Upload to Drive
                         </DropdownMenu.Item>
                       {/if}
                       <DropdownMenu.Separator />
@@ -761,7 +671,7 @@
                         </DropdownMenu.Item>
                       {:else}
                         <DropdownMenu.Item onSelect={() => shareToCloud(entry)} class="whitespace-nowrap">
-                          <Cloud /> Share to Recast Cloud
+                          <RecastMark /> Share to Recast Cloud
                         </DropdownMenu.Item>
                       {/if}
                       <DropdownMenu.Separator />
@@ -784,59 +694,14 @@
   </div>
 </div>
 
-<!-- Floating bulk-action bar, visible whenever selection mode is on. -->
 {#if selection.selectMode}
-  <div
-    in:fly={{ y: 24, duration: 220, easing: cubicOut }}
-    out:fly={{ y: 24, duration: 160, easing: cubicOut }}
-    class="fixed inset-x-0 bottom-6 z-40 flex justify-center px-6"
-  >
-    <div
-      class="flex items-center gap-1.5 rounded-2xl border border-border bg-card/95 p-1.5 px-5 shadow-2xl ring-1 ring-border/40 backdrop-blur-xl"
-    >
-      <span class="text-[12px] font-medium tabular-nums text-foreground">
-        {selectedCount} selected
-      </span>
-      <div class="mx-1 h-4 w-px bg-border/60"></div>
-      <Button
-        variant="ghost"
-        size="xs"
-        onclick={() => selection.toggleAll(filtered)}
-        disabled={filtered.length === 0}
-      >
-        {allFilteredSelected ? "Clear all" : "Select all"}
-      </Button>
-      <Button
-        variant="destructive"
-        size="xs"
-        onclick={() => (bulkDeleteOpen = true)}
-        disabled={selectedCount === 0}
-      >
-        <Trash2 size={12} />
-        Delete{selectedCount > 0 ? ` (${selectedCount})` : ""}
-      </Button>
-      <Button
-        variant="secondary"
-        size="xs"
-        onclick={selection.exit}
-      >
-        Cancel
-      </Button>
-    </div>
-  </div>
-{/if}
-
-{#if bulkDeleteOpen}
-  <ConfirmDialog
-    open={true}
-    title={`Move ${selectedCount} export${selectedCount === 1 ? "" : "s"} to trash?`}
-    description="The selected exports will be sent to the recycle bin. You can restore them from there if needed."
-    confirmLabel="Move to trash"
-    variant="destructive"
-    onConfirm={selection.bulkDelete}
-    onOpenChange={(v) => {
-      if (!v) bulkDeleteOpen = false;
-    }}
+  <SelectionBar
+    count={selectedCount}
+    allSelected={allFilteredSelected}
+    canSelectAll={filtered.length > 0}
+    onToggleAll={() => selection.toggleAll(filtered)}
+    onDelete={() => (bulkDeleteOpen = true)}
+    onCancel={selection.exit}
   />
 {/if}
 

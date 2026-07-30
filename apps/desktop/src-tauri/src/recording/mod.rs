@@ -447,6 +447,10 @@ pub struct RecordingArtifacts {
     pub has_system_audio: bool,
     pub microphone_path: Option<PathBuf>,
     pub camera_path: Option<PathBuf>,
+    /// Whether the session asked for a camera. Paired with `camera_path` this
+    /// separates "camera was off" from "camera was on but didn't arrive"; the
+    /// latter also pushes a warning, but the project has to remember it.
+    pub camera_requested: bool,
     pub camera_overlay: CameraOverlaySettings,
     pub started_at_unix_ms: u64,
     pub stats: RecordingStats,
@@ -1184,6 +1188,7 @@ impl RecordingManager {
             has_system_audio,
             microphone_path,
             camera_path,
+            camera_requested: session.camera_requested,
             camera_overlay: session.camera_overlay.overlay,
             started_at_unix_ms: session.started_at_unix_ms,
             stats,

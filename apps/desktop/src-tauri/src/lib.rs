@@ -260,6 +260,20 @@ pub fn run() {
     builder = builder.plugin(
         tauri_plugin_log::Builder::default()
             .level(log::LevelFilter::Trace)
+            // Third-party crates that flood the log at debug/trace and drown our
+            // own diagnostics (e.g. tract's per-tensor shape-inference dump when
+            // the VAD model loads, tao's event-loop churn). Cap them at Warn even
+            // when the user turns diagnostic logging all the way up.
+            .level_for("tract_hir", log::LevelFilter::Warn)
+            .level_for("tract_core", log::LevelFilter::Warn)
+            .level_for("tract_linalg", log::LevelFilter::Warn)
+            .level_for("tract_onnx", log::LevelFilter::Warn)
+            .level_for("tract_nnef", log::LevelFilter::Warn)
+            .level_for("tract_pulse", log::LevelFilter::Warn)
+            .level_for("tao", log::LevelFilter::Warn)
+            .level_for("wgpu_core", log::LevelFilter::Warn)
+            .level_for("wgpu_hal", log::LevelFilter::Warn)
+            .level_for("naga", log::LevelFilter::Warn)
             .build(),
     );
 

@@ -2,11 +2,10 @@
  * Caption placement relative to the VIDEO rect inside the output frame.
  *
  * The output frame (canvas) is the video plus padding plus any letterbox bars.
- * Anchoring captions to the frame edge means a top/bottom caption lands ON the
- * video once padding is added. Instead we anchor to the video's edge and push
- * the caption OUTWARD into the padding, so it never covers the video, with a
- * clamp so a no-padding video still shows captions (they fall back to the frame
- * edge, over the video, as before).
+ * At Offset 0 a top/bottom caption sits at the video's edge (in the padding, not
+ * covering the video); positive Offset moves it INWARD over the video and negative
+ * tucks it OUTWARD into the padding. The baseline is clamped to the frame edge so a
+ * full-bleed video keeps the whole Offset range live instead of dead-clamping.
  *
  * Both renderers derive from this: the CSS preview overlay and the Rust ASS
  * generator (which mirrors `captionHeightFrac` / `captionTopFrac`). All values
@@ -47,17 +46,20 @@ export function captionTopFrac(
 	video: Pick<VideoRect, "top" | "bottom">,
 ): number | null {
 	if (position === "center") return null;
-	// Signed: positive pushes the caption outward into the padding, negative
-	// pulls it back toward (onto) the video. The result is clamped to the frame.
+	// Signed: positive Offset moves the caption INWARD over the video, negative
+	// tucks it OUTWARD into the padding. The baseline is the on-frame edge (the
+	// video edge, or the frame edge for a full-bleed video), so every slider value
+	// is live — anchoring on the raw video edge left the whole positive range
+	// dead-clamped whenever the video reached the frame edge.
 	const offset = offsetPct / 100;
 	const cap = Math.max(0, Math.min(MAX_CAP_FRAC, capFrac));
 	const maxTop = Math.max(0, 1 - cap);
 	if (position === "bottom") {
-		// Top edge sits just below the video's bottom edge (in the padding),
-		// clamped so the block never runs off the frame.
-		return Math.min(video.bottom + offset, maxTop);
+		// Baseline just below the video (clamped on-frame); positive lifts up.
+		const base = Math.min(video.bottom, maxTop);
+		return Math.max(0, Math.min(base - offset, maxTop));
 	}
-	// Top: the block's BOTTOM rests just above the video's top edge, so its top
-	// is that minus the block height.
-	return Math.max(0, Math.min(video.top - offset - cap, maxTop));
+	// Top: baseline just above the video (clamped on-frame); positive pushes down.
+	const base = Math.max(0, video.top - cap);
+	return Math.max(0, Math.min(base + offset, maxTop));
 }

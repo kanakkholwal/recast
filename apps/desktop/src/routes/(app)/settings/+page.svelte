@@ -1,408 +1,431 @@
 <script lang="ts">
-  import Logo from "$components/logo.svelte";
-  import SectionCard from "$components/layout/SectionCard.svelte";
-  import SettingsRow from "$components/layout/SettingsRow.svelte";
-  import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
-  import CloudSignIn from "$components/settings/CloudSignIn.svelte";
-  import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
-  import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
-  import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
-  import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
-  import { config } from "$constants/app";
-  import {
-    cliInstallStatus,
-    getCliAutoInstall,
-    getCloseToTray,
-    getDisplays,
-    getHidePanelFromCapture,
-    getLastSource,
-    getOutputDir,
-    getWindowTransparency,
-    installCli,
-    setCliAutoInstall,
-    setCloseToTray,
-    setHidePanelFromCapture,
-    setOutputDir,
-    setWindowTransparency,
-    uninstallCli,
-    type CliInstallStatus,
-  } from "$lib/ipc";
-  import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
-  import { emit } from "@tauri-apps/api/event";
-  import {
-    loadRecordingFps,
-    loadRecordingQuality,
-    persistRecordingFps,
-    persistRecordingQuality,
-    type RecordingQuality,
-  } from "$lib/profiles";
-  import {
-    clampFps,
-    computeFpsOptions,
-    fpsToStored,
-    resolveMaxRefresh,
-  } from "./settings.logic";
-  import {
-    ArrowUpRight,
-    Cloud,
-    Cpu,
-    EyeOff,
-    FlaskConical,
-    FolderOpen,
-    Globe,
-    HardDrive,
-    Monitor,
-    Moon,
-    Server,
-    Settings as SettingsIcon,
-    Shield,
-    SlidersHorizontal as SlidersIcon,
-    Sparkles,
-    Sun,
-    Terminal,
-    Timer,
-    Video,
-    Wrench,
-  } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
-  import { GithubBrand } from "@recast/ui/brand-icons";
-  import { Button } from "@recast/ui/button";
-  import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
-  import { toast } from "@recast/ui/sonner";
-  import { Switch } from "@recast/ui/switch";
-  import * as Tabs from "@recast/ui/tabs";
-  import { setMode } from "@recast/ui/theme";
-  import { listen } from "@tauri-apps/api/event";
-  import { platform } from "@tauri-apps/plugin-os";
-  import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
+import Logo from "$components/logo.svelte";
+import SectionCard from "$components/layout/SectionCard.svelte";
+import SettingsRow from "$components/layout/SettingsRow.svelte";
+import CloudEndpoint from "$components/settings/CloudEndpoint.svelte";
+import CloudSignIn from "$components/settings/CloudSignIn.svelte";
+import DeviceCapabilities from "$components/settings/DeviceCapabilities.svelte";
+import DiagnosticsPanel from "$components/settings/DiagnosticsPanel.svelte";
+import GoogleDriveConnection from "$components/settings/GoogleDriveConnection.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import RemoteEndpoints from "$components/settings/RemoteEndpoints.svelte";
+import { config } from "$constants/app";
+import {
+	cliInstallStatus,
+	getCliAutoInstall,
+	getCloseToTray,
+	getDisplays,
+	getHidePanelFromCapture,
+	getLastSource,
+	getOutputDir,
+	getWindowTransparency,
+	installCli,
+	setCliAutoInstall,
+	setCloseToTray,
+	setHidePanelFromCapture,
+	setOutputDir,
+	setWindowTransparency,
+	uninstallCli,
+	type CliInstallStatus,
+} from "$lib/ipc";
+import { BACKDROP_CHANGED_EVENT } from "$lib/windowBackdrop";
+import { emit } from "@tauri-apps/api/event";
+import {
+	loadRecordingFps,
+	loadRecordingQuality,
+	persistRecordingFps,
+	persistRecordingQuality,
+	type RecordingQuality,
+} from "$lib/profiles";
+import { clampFps, computeFpsOptions, fpsToStored, resolveMaxRefresh } from "./settings.logic";
+import {
+	DEFAULT_SETTINGS_TAB,
+	parseSettingsTab,
+	SETTINGS_TAB_PARAM,
+	type SettingsTab,
+} from "./settings-tabs";
+import { afterNavigate, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import {
+	ArrowUpRight,
+	BrandGoogleDrive,
+	Cloud,
+	Cpu,
+	EyeOff,
+	FlaskConical,
+	FolderOpen,
+	Globe,
+	HardDrive,
+	Monitor,
+	Moon,
+	Server,
+	Settings as SettingsIcon,
+	Shield,
+	SlidersHorizontal as SlidersIcon,
+	Sparkles,
+	Sun,
+	Terminal,
+	Timer,
+	Video,
+	Wrench,
+} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
+import { toast } from "@recast/ui/sonner";
+import { Switch } from "@recast/ui/switch";
+import * as Tabs from "@recast/ui/tabs";
+import { setMode } from "@recast/ui/theme";
+import { listen } from "@tauri-apps/api/event";
+import { platform } from "@tauri-apps/plugin-os";
+import { onMount, untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-  import { syncConsent } from "$lib/analytics/client";
-  import { desktopConsent } from "$lib/stores/consent.svelte";
-  import {
-    FLAG_META,
-    experimentalStore,
-    type ExperimentalFlag,
-  } from "$lib/stores/experimental.svelte";
-  import {
-    LAYOUT_MODES,
-    layoutMode,
-    type LayoutMode,
-  } from "$lib/stores/layout-mode.svelte";
-  import { profilesStore } from "$lib/stores/profiles.svelte";
-  import {
-    recordingCountdown,
-    type CountdownSeconds,
-  } from "$lib/stores/recording-countdown.svelte";
-  import { safeStorage } from "@recast/ui/persisted-state";
+import { syncConsent } from "$lib/analytics/client";
+import { desktopConsent } from "$lib/stores/consent.svelte";
+import {
+	FLAG_META,
+	experimentalStore,
+	type ExperimentalFlag,
+} from "$lib/stores/experimental.svelte";
+import { LAYOUT_MODES, layoutMode, type LayoutMode } from "$lib/stores/layout-mode.svelte";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import { recordingCountdown, type CountdownSeconds } from "$lib/stores/recording-countdown.svelte";
+import { safeStorage } from "@recast/ui/persisted-state";
 
-  type Theme = "light" | "dark" | "system";
-  type EditorBehavior = "navigate" | "new-window";
-  // Experimental + About + device/diagnostics collapse into one "Advanced"
-  // section. Low-frequency, expert-facing config kept out of the main tabs.
-  type SettingsTab = "general" | "recording" | "cloud" | "advanced";
+type Theme = "light" | "dark" | "system";
+type EditorBehavior = "navigate" | "new-window";
+// Experimental + About + device/diagnostics collapse into one "Advanced"
+// section. Low-frequency, expert-facing config kept out of the main tabs.
+// The tab list itself lives in `settings-tabs.ts`, so links elsewhere in the app
+// can target a tab without importing this page.
 
-  let outputDir = $state("");
-  let currentTheme = $state<Theme>("system");
-  let editorWindow = $state<EditorBehavior>("navigate");
-  let countdown = $state<CountdownSeconds>(3);
-  let closeToTray = $state(true);
-  let windowTransparency = $state(false);
-  let hidePanelFromCapture = $state(true);
-  // Content protection is a compile-time no-op on Linux (tao gates it to
-  // macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
-  // the toggle is shown disabled there rather than pretending it does anything.
-  const isLinux = platform() === "linux";
-  // Global recording prefs, read by the recording panel via shared localStorage.
-  let recordingQuality = $state<RecordingQuality>("auto");
-  let recordingFps = $state<number>(60);
-  // Highest display refresh. Capture can't produce more unique fps than this,
-  // so fps options are capped to it. 60 until displays are probed.
-  let maxRefreshHz = $state(60);
-  let activeTab = $state<SettingsTab>("general");
-  // `recast` command-line tool PATH state. null until the first probe.
-  let cliStatus = $state<CliInstallStatus | null>(null);
-  let cliBusy = $state(false);
-  let cliAutoInstall = $state(true);
+let outputDir = $state("");
+let currentTheme = $state<Theme>("system");
+let editorWindow = $state<EditorBehavior>("navigate");
+let countdown = $state<CountdownSeconds>(3);
+let closeToTray = $state(true);
+let windowTransparency = $state(false);
+let hidePanelFromCapture = $state(true);
+// Content protection is a compile-time no-op on Linux (tao gates it to
+// macOS+Windows; X11/Wayland expose no per-window capture-exclusion API), so
+// the toggle is shown disabled there rather than pretending it does anything.
+const isLinux = platform() === "linux";
+// Global recording prefs, read by the recording panel via shared localStorage.
+let recordingQuality = $state<RecordingQuality>("auto");
+let recordingFps = $state<number>(60);
+// Highest display refresh. Capture can't produce more unique fps than this,
+// so fps options are capped to it. 60 until displays are probed.
+let maxRefreshHz = $state(60);
+let activeTab = $state<SettingsTab>(DEFAULT_SETTINGS_TAB);
+// `recast` command-line tool PATH state. null until the first probe.
+let cliStatus = $state<CliInstallStatus | null>(null);
+let cliBusy = $state(false);
+let cliAutoInstall = $state(true);
 
-  onMount(() => {
-    fetchSettings();
-    void refreshCliStatus();
-    profilesStore.hydrate();
-    // `mode-watcher-mode` is owned by mode-watcher; we only read it to reflect
-    // the current choice in the radio group.
-    currentTheme = safeStorage.get<Theme>("mode-watcher-mode", currentTheme);
-    editorWindow = safeStorage.get<EditorBehavior>(
-      "recast-editor-window",
-      editorWindow,
-    );
-    countdown = recordingCountdown.value;
-    recordingQuality = loadRecordingQuality();
-    recordingFps = loadRecordingFps() ?? 60;
-    // Gate fps options by the refresh of the display that'll actually be
-    // recorded (the last-selected source); re-sync when the source changes.
-    void syncMaxRefresh();
-    const unlistenSource = listen("source-selected", () => void syncMaxRefresh());
-    return () => {
-      unlistenSource.then((fn) => fn());
-    };
-  });
+onMount(() => {
+	fetchSettings();
+	void refreshCliStatus();
+	profilesStore.hydrate();
+	// `mode-watcher-mode` is owned by mode-watcher; we only read it to reflect
+	// the current choice in the radio group.
+	currentTheme = safeStorage.get<Theme>("mode-watcher-mode", currentTheme);
+	editorWindow = safeStorage.get<EditorBehavior>("recast-editor-window", editorWindow);
+	countdown = recordingCountdown.value;
+	recordingQuality = loadRecordingQuality();
+	recordingFps = loadRecordingFps() ?? 60;
+	// Gate fps options by the refresh of the display that'll actually be
+	// recorded (the last-selected source); re-sync when the source changes.
+	void syncMaxRefresh();
+	const unlistenSource = listen("source-selected", () => void syncMaxRefresh());
+	return () => {
+		unlistenSource.then((fn) => fn());
+	};
+});
 
-  /** Selected monitor's refresh when a monitor is the active source, else the
-   *  highest attached display (windows/regions don't pin one). Falls back to 60. */
-  async function syncMaxRefresh() {
-    try {
-      const [displays, last] = await Promise.all([
-        getDisplays(),
-        getLastSource(),
-      ]);
-      maxRefreshHz = resolveMaxRefresh(displays, last);
-    } catch {
-      maxRefreshHz = 60;
-    }
-  }
+// --- Tab ⇄ URL ---
+// Reader first, so a deep-linked `?tab=` beats the default on the first flush.
+// Each effect reads only its own source and bails when the two already agree.
+$effect(() => {
+	const fromUrl = parseSettingsTab(page.url.searchParams.get(SETTINGS_TAB_PARAM));
+	if (fromUrl && fromUrl !== untrack(() => activeTab)) activeTab = fromUrl;
+});
 
-  function updateRecordingQuality(value: RecordingQuality) {
-    recordingQuality = value;
-    persistRecordingQuality(value);
-  }
+// `replaceState` throws until the router has booted, and effects run during
+// hydration, which is earlier than that.
+let routerReady = $state(false);
+afterNavigate(() => {
+	routerReady = true;
+});
 
-  function updateRecordingFps(value: number) {
-    recordingFps = value;
-    persistRecordingFps(fpsToStored(value));
-  }
+$effect(() => {
+	const tab = activeTab;
+	if (!routerReady) return;
+	const url = untrack(() => new URL(page.url));
+	if (url.searchParams.get(SETTINGS_TAB_PARAM) === tab) return;
+	url.searchParams.set(SETTINGS_TAB_PARAM, tab);
+	// replaceState, not goto: the open tab is view state, and one history entry
+	// per tab click would make Back mean "previous tab".
+	replaceState(
+		url,
+		untrack(() => page.state),
+	);
+});
 
-  const fpsOptions = $derived(computeFpsOptions(maxRefreshHz));
+/** Selected monitor's refresh when a monitor is the active source, else the
+ *  highest attached display (windows/regions don't pin one). Falls back to 60. */
+async function syncMaxRefresh() {
+	try {
+		const [displays, last] = await Promise.all([getDisplays(), getLastSource()]);
+		maxRefreshHz = resolveMaxRefresh(displays, last);
+	} catch {
+		maxRefreshHz = 60;
+	}
+}
 
-  // The stored preference is never mutated, so switching back to a high-refresh
-  // display restores it.
-  const effectiveFps = $derived(clampFps(recordingFps, fpsOptions));
+function updateRecordingQuality(value: RecordingQuality) {
+	recordingQuality = value;
+	persistRecordingQuality(value);
+}
 
-  const recordingQualityOptions: {
-    value: RecordingQuality;
-    label: string;
-    desc: string;
-  }[] = [
-    {
-      value: "auto",
-      label: "Auto",
-      desc: "Best quality your hardware can record in real time.",
-    },
-    {
-      value: "balanced",
-      label: "Balanced",
-      desc: "Fast, low CPU/GPU load. Use on weak machines.",
-    },
-    {
-      value: "high",
-      label: "High",
-      desc: "Sharper detail. Slightly more load.",
-    },
-    {
-      value: "pristine",
-      label: "Pristine",
-      desc: "Near-lossless. Needs a strong GPU.",
-    },
-  ];
+function updateRecordingFps(value: number) {
+	recordingFps = value;
+	persistRecordingFps(fpsToStored(value));
+}
 
-  function toggleProfilesEnabled() {
-    const next = !profilesStore.enabled;
-    profilesStore.setEnabled(next);
-    toast.success(
-      next ? "Profiles enabled" : "Profiles disabled",
-    );
-  }
+const fpsOptions = $derived(computeFpsOptions(maxRefreshHz));
 
-  function toggleExperimental(key: ExperimentalFlag, label: string) {
-    const next = !experimentalStore.isEnabled(key);
-    experimentalStore.setEnabled(key, next);
-    toast.success(next ? `${label} enabled` : `${label} disabled`);
-  }
+// The stored preference is never mutated, so switching back to a high-refresh
+// display restores it.
+const effectiveFps = $derived(clampFps(recordingFps, fpsOptions));
 
-  function toggleProductAnalytics() {
-    const next = !desktopConsent.product;
-    desktopConsent.setProduct(next);
-    syncConsent();
-    toast.success(next ? "Usage analytics enabled" : "Usage analytics disabled");
-  }
+const recordingQualityOptions: {
+	value: RecordingQuality;
+	label: string;
+	desc: string;
+}[] = [
+	{
+		value: "auto",
+		label: "Auto",
+		desc: "Best quality your hardware can record in real time.",
+	},
+	{
+		value: "balanced",
+		label: "Balanced",
+		desc: "Fast, low CPU/GPU load. Use on weak machines.",
+	},
+	{
+		value: "high",
+		label: "High",
+		desc: "Sharper detail. Slightly more load.",
+	},
+	{
+		value: "pristine",
+		label: "Pristine",
+		desc: "Near-lossless. Needs a strong GPU.",
+	},
+];
 
-  function toggleCrashReports() {
-    const next = !desktopConsent.errors;
-    desktopConsent.setErrors(next);
-    syncConsent();
-    toast.success(next ? "Crash reports enabled" : "Crash reports disabled");
-  }
+function toggleProfilesEnabled() {
+	const next = !profilesStore.enabled;
+	profilesStore.setEnabled(next);
+	toast.success(next ? "Profiles enabled" : "Profiles disabled");
+}
 
-  async function fetchSettings() {
-    try {
-      outputDir = await getOutputDir();
-    } catch (e) {
-      toast.error(`Could not load settings: ${e}`);
-    }
-    try {
-      closeToTray = await getCloseToTray();
-    } catch {
-      // Pre-tray builds or non-Tauri preview, so leave the default and let
-      // the UI render the optimistic value.
-    }
-    try {
-      windowTransparency = await getWindowTransparency();
-    } catch {
-      // Leave the default off.
-    }
-    try {
-      hidePanelFromCapture = await getHidePanelFromCapture();
-    } catch {
-      // Older builds or non-Tauri preview, so keep the optimistic default.
-    }
-    try {
-      cliAutoInstall = await getCliAutoInstall();
-    } catch {
-      // Optimistic default (true) is fine; settings just don't reflect
-      // an explicit off toggle if the command isn't available.
-    }
-  }
+function toggleExperimental(key: ExperimentalFlag, label: string) {
+	const next = !experimentalStore.isEnabled(key);
+	experimentalStore.setEnabled(key, next);
+	toast.success(next ? `${label} enabled` : `${label} disabled`);
+}
 
-  async function toggleCloseToTray() {
-    const next = !closeToTray;
-    closeToTray = next;
-    try {
-      await setCloseToTray(next);
-    } catch (e) {
-      // Roll back on failure so the UI mirrors the actual persisted state.
-      closeToTray = !next;
-      toast.error(`Could not update setting: ${e}`);
-    }
-  }
+function toggleProductAnalytics() {
+	const next = !desktopConsent.product;
+	desktopConsent.setProduct(next);
+	syncConsent();
+	toast.success(next ? "Usage analytics enabled" : "Usage analytics disabled");
+}
 
-  async function toggleWindowTransparency() {
-    const next = !windowTransparency;
-    windowTransparency = next;
-    try {
-      await setWindowTransparency(next);
-      // Every open window re-applies its backdrop off this broadcast.
-      await emit(BACKDROP_CHANGED_EVENT, next);
-    } catch (e) {
-      windowTransparency = !next;
-      toast.error(`Could not update setting: ${e}`);
-    }
-  }
+function toggleCrashReports() {
+	const next = !desktopConsent.errors;
+	desktopConsent.setErrors(next);
+	syncConsent();
+	toast.success(next ? "Crash reports enabled" : "Crash reports disabled");
+}
 
-  async function toggleHidePanelFromCapture() {
-    const next = !hidePanelFromCapture;
-    hidePanelFromCapture = next;
-    try {
-      await setHidePanelFromCapture(next);
-    } catch (e) {
-      hidePanelFromCapture = !next;
-      toast.error(`Could not update setting: ${e}`);
-    }
-  }
+async function fetchSettings() {
+	try {
+		outputDir = await getOutputDir();
+	} catch (e) {
+		toast.error(`Could not load settings: ${e}`);
+	}
+	try {
+		closeToTray = await getCloseToTray();
+	} catch {
+		// Pre-tray builds or non-Tauri preview, so leave the default and let
+		// the UI render the optimistic value.
+	}
+	try {
+		windowTransparency = await getWindowTransparency();
+	} catch {
+		// Leave the default off.
+	}
+	try {
+		hidePanelFromCapture = await getHidePanelFromCapture();
+	} catch {
+		// Older builds or non-Tauri preview, so keep the optimistic default.
+	}
+	try {
+		cliAutoInstall = await getCliAutoInstall();
+	} catch {
+		// Optimistic default (true) is fine; settings just don't reflect
+		// an explicit off toggle if the command isn't available.
+	}
+}
 
-  async function refreshCliStatus() {
-    try {
-      cliStatus = await cliInstallStatus();
-    } catch {
-      // Non-Tauri preview or an older build without the command.
-      cliStatus = null;
-    }
-  }
+async function toggleCloseToTray() {
+	const next = !closeToTray;
+	closeToTray = next;
+	try {
+		await setCloseToTray(next);
+	} catch (e) {
+		// Roll back on failure so the UI mirrors the actual persisted state.
+		closeToTray = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
 
-  async function toggleCliInstall() {
-    cliBusy = true;
-    try {
-      const message = cliStatus?.onPath
-        ? await uninstallCli()
-        : await installCli();
-      toast.success(message);
-      await refreshCliStatus();
-    } catch (e) {
-      toast.error(`Could not update the command line tool: ${e}`);
-    } finally {
-      cliBusy = false;
-    }
-  }
+async function toggleWindowTransparency() {
+	const next = !windowTransparency;
+	windowTransparency = next;
+	try {
+		await setWindowTransparency(next);
+		// Every open window re-applies its backdrop off this broadcast.
+		await emit(BACKDROP_CHANGED_EVENT, next);
+	} catch (e) {
+		windowTransparency = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
 
-  async function toggleCliAutoInstall() {
-    const next = !cliAutoInstall;
-    cliAutoInstall = next;
-    try {
-      await setCliAutoInstall(next);
-    } catch (e) {
-      cliAutoInstall = !next;
-      toast.error(`Could not update auto-install setting: ${e}`);
-    }
-  }
+async function toggleHidePanelFromCapture() {
+	const next = !hidePanelFromCapture;
+	hidePanelFromCapture = next;
+	try {
+		await setHidePanelFromCapture(next);
+	} catch (e) {
+		hidePanelFromCapture = !next;
+		toast.error(`Could not update setting: ${e}`);
+	}
+}
 
-  function updateTheme(theme: Theme) {
-    setMode(theme);
-    currentTheme = theme;
-  }
+async function refreshCliStatus() {
+	try {
+		cliStatus = await cliInstallStatus();
+	} catch {
+		// Non-Tauri preview or an older build without the command.
+		cliStatus = null;
+	}
+}
 
-  function updateEditorWindow(value: EditorBehavior) {
-    editorWindow = value;
-    safeStorage.set("recast-editor-window", value);
-  }
+async function toggleCliInstall() {
+	cliBusy = true;
+	try {
+		const message = cliStatus?.onPath ? await uninstallCli() : await installCli();
+		toast.success(message);
+		await refreshCliStatus();
+	} catch (e) {
+		toast.error(`Could not update the command line tool: ${e}`);
+	} finally {
+		cliBusy = false;
+	}
+}
 
-  function updateCountdown(value: CountdownSeconds) {
-    countdown = value;
-    recordingCountdown.set(value);
-  }
+async function toggleCliAutoInstall() {
+	const next = !cliAutoInstall;
+	cliAutoInstall = next;
+	try {
+		await setCliAutoInstall(next);
+	} catch (e) {
+		cliAutoInstall = !next;
+		toast.error(`Could not update auto-install setting: ${e}`);
+	}
+}
 
-  const countdownOptions: { value: CountdownSeconds; label: string }[] = [
-    { value: 0, label: "Off" },
-    { value: 3, label: "3s" },
-    { value: 5, label: "5s" },
-    { value: 10, label: "10s" },
-  ];
+function updateTheme(theme: Theme) {
+	setMode(theme);
+	currentTheme = theme;
+}
 
-  async function pickDirectory() {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      directory: true,
-      multiple: false,
-      title: "Select Recording Directory",
-    });
-    if (selected && typeof selected === "string") {
-      try {
-        await setOutputDir(selected);
-        outputDir = selected;
-        toast.success("Output directory updated");
-      } catch (e) {
-        toast.error(`Could not set directory: ${e}`);
-      }
-    }
-  }
+function updateEditorWindow(value: EditorBehavior) {
+	editorWindow = value;
+	safeStorage.set("recast-editor-window", value);
+}
 
-  const themes: { value: Theme; label: string; icon: IconComponent }[] = [
-    { value: "light", label: "Light", icon: Sun },
-    { value: "dark", label: "Dark", icon: Moon },
-    { value: "system", label: "System", icon: Monitor },
-  ];
+function updateCountdown(value: CountdownSeconds) {
+	countdown = value;
+	recordingCountdown.set(value);
+}
 
-  // Segmented-control option lists, derived from the tables above so labels
-  // stay in one place. Values are strings (Segmented is string-keyed); numeric
-  // settings parse back on change.
-  const themeSegments: SegmentedOption<Theme>[] = themes.map((t) => ({
-    value: t.value,
-    label: t.label,
-  }));
-  const layoutSegments: SegmentedOption<LayoutMode>[] = LAYOUT_MODES.map(
-    (m) => ({ value: m.value, label: m.label }),
-  );
-  const countdownSegments: SegmentedOption<string>[] = countdownOptions.map(
-    (o) => ({ value: String(o.value), label: o.label }),
-  );
-  const qualitySegments: SegmentedOption<RecordingQuality>[] =
-    recordingQualityOptions.map((o) => ({ value: o.value, label: o.label }));
-  const fpsSegments = $derived(
-    fpsOptions.map((rate) => ({ value: String(rate), label: String(rate) })),
-  );
-  const editorSegments: SegmentedOption<EditorBehavior>[] = [
-    { value: "navigate", label: "Navigate" },
-    { value: "new-window", label: "New window" },
-  ];
+const countdownOptions: { value: CountdownSeconds; label: string }[] = [
+	{ value: 0, label: "Off" },
+	{ value: 3, label: "3s" },
+	{ value: 5, label: "5s" },
+	{ value: 10, label: "10s" },
+];
+
+async function pickDirectory() {
+	const { open } = await import("@tauri-apps/plugin-dialog");
+	const selected = await open({
+		directory: true,
+		multiple: false,
+		title: "Select Recording Directory",
+	});
+	if (selected && typeof selected === "string") {
+		try {
+			await setOutputDir(selected);
+			outputDir = selected;
+			toast.success("Output directory updated");
+		} catch (e) {
+			toast.error(`Could not set directory: ${e}`);
+		}
+	}
+}
+
+const themes: { value: Theme; label: string; icon: IconComponent }[] = [
+	{ value: "light", label: "Light", icon: Sun },
+	{ value: "dark", label: "Dark", icon: Moon },
+	{ value: "system", label: "System", icon: Monitor },
+];
+
+// Segmented-control option lists, derived from the tables above so labels
+// stay in one place. Values are strings (Segmented is string-keyed); numeric
+// settings parse back on change.
+const themeSegments: SegmentedOption<Theme>[] = themes.map((t) => ({
+	value: t.value,
+	label: t.label,
+}));
+const layoutSegments: SegmentedOption<LayoutMode>[] = LAYOUT_MODES.map((m) => ({
+	value: m.value,
+	label: m.label,
+}));
+const countdownSegments: SegmentedOption<string>[] = countdownOptions.map((o) => ({
+	value: String(o.value),
+	label: o.label,
+}));
+const qualitySegments: SegmentedOption<RecordingQuality>[] = recordingQualityOptions.map((o) => ({
+	value: o.value,
+	label: o.label,
+}));
+const fpsSegments = $derived(
+	fpsOptions.map((rate) => ({ value: String(rate), label: String(rate) })),
+);
+const editorSegments: SegmentedOption<EditorBehavior>[] = [
+	{ value: "navigate", label: "Navigate" },
+	{ value: "new-window", label: "New window" },
+];
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -428,7 +451,7 @@
         </span>
       </h1>
       <p class="text-[12.5px] leading-relaxed text-muted-foreground">
-        Tune storage, theme and editor defaults. Changes save instantly.
+        Tune appearance, storage and editor defaults. Changes save instantly.
       </p>
     </header>
 
@@ -465,7 +488,76 @@
           </Tabs.Trigger>
         </Tabs.List>
 
-        <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
+        <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
+              <SectionCard
+                id="settings-appearance"
+                label="Appearance"
+                description="How Recast looks and how the window is arranged."
+              >
+                <SettingsRow
+                  label="Theme"
+                  description={currentTheme === "system"
+                    ? "Following your OS preference."
+                    : `Locked to ${currentTheme} mode.`}
+                >
+                  <Segmented
+                    options={themeSegments}
+                    value={currentTheme}
+                    onValueChange={updateTheme}
+                    fill={false}
+                    aria-label="Theme"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window chrome"
+                  description={LAYOUT_MODES.find(
+                    (m) => m.value === layoutMode.current,
+                  )?.hint}
+                >
+                  <Segmented
+                    options={layoutSegments}
+                    value={layoutMode.current}
+                    onValueChange={(v) => (layoutMode.current = v)}
+                    fill={false}
+                    aria-label="Window chrome layout"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Window transparency"
+                  description={isLinux
+                    ? "Not available on Linux."
+                    : windowTransparency
+                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
+                      : "The window uses a solid background."}
+                >
+                  <Switch
+                    checked={!isLinux && windowTransparency}
+                    disabled={isLinux}
+                    onCheckedChange={() => toggleWindowTransparency()}
+                    aria-label="Window transparency"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
+              <SectionCard
+                id="settings-editor"
+                label="Editor"
+                description="Behavior when you open a recording."
+              >
+                <SettingsRow
+                  label="Window behavior"
+                  description="Replace the current view or pop the editor into its own window."
+                >
+                  <Segmented
+                    options={editorSegments}
+                    value={editorWindow}
+                    onValueChange={updateEditorWindow}
+                    fill={false}
+                    aria-label="Window behavior"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
               <SectionCard
                 id="settings-storage"
                 label="Storage"
@@ -498,6 +590,60 @@
                   </Button>
                 </SettingsRow>
               </SectionCard>
+
+              <SectionCard
+                id="settings-system"
+                label="System"
+                description="Behavior when you close the main window."
+              >
+                <SettingsRow
+                  label="Minimize to tray on close"
+                  description={closeToTray
+                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
+                    : "Closing the window quits Recast immediately."}
+                >
+                  <Switch
+                    checked={closeToTray}
+                    onCheckedChange={() => toggleCloseToTray()}
+                    aria-label="Minimize to tray on close"
+                  />
+                </SettingsRow>
+              </SectionCard>
+
+              <!-- Two locally-stored opt-ins: usage analytics (default off) and
+                   crash reports (default on, PII-scrubbed). -->
+              <SectionCard
+                id="settings-privacy"
+                label="Privacy & Telemetry"
+                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
+              >
+                {#snippet icon()}
+                  <Shield class="size-3 text-primary" />
+                {/snippet}
+                <SettingsRow
+                  label="Share anonymous usage analytics"
+                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
+                >
+                  <Switch
+                    checked={desktopConsent.product}
+                    onCheckedChange={() => toggleProductAnalytics()}
+                    aria-label="Share anonymous usage analytics"
+                  />
+                </SettingsRow>
+                <SettingsRow
+                  label="Send anonymous crash reports"
+                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
+                >
+                  <Switch
+                    checked={desktopConsent.errors}
+                    onCheckedChange={() => toggleCrashReports()}
+                    aria-label="Send anonymous crash reports"
+                  />
+                </SettingsRow>
+              </SectionCard>
+        </Tabs.Content>
+
+        <Tabs.Content value="recording" class="flex min-w-0 flex-col gap-8">
 
               <!-- Read by the recording panel via shared localStorage; profiles
                    can override it per-profile. -->
@@ -606,25 +752,6 @@
               </SectionCard>
 
               <SectionCard
-                id="settings-editor"
-                label="Editor"
-                description="Behavior when you open a recording."
-              >
-                <SettingsRow
-                  label="Window behavior"
-                  description="Replace the current view or pop the editor into its own window."
-                >
-                  <Segmented
-                    options={editorSegments}
-                    value={editorWindow}
-                    onValueChange={updateEditorWindow}
-                    fill={false}
-                    aria-label="Window behavior"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
                 id="settings-profiles"
                 label="Recording profiles"
                 description="Save preset combinations of audio, mic, and camera."
@@ -673,7 +800,7 @@
                 description="Share recordings as Loom-style links, layered on top of your local recordings."
               >
                 {#snippet icon()}
-                  <Cloud class="size-3 text-primary" />
+                  <RecastMark class="size-3 text-primary" />
                 {/snippet}
                 <CloudSignIn />
               </SectionCard>
@@ -716,112 +843,9 @@
                 description="Upload exports to your own Drive. Files land in a private /Recast/ folder."
               >
                 {#snippet icon()}
-                  <HardDrive class="size-3 text-primary" />
+                  <BrandGoogleDrive class="size-3 text-primary" />
                 {/snippet}
                 <GoogleDriveConnection />
-              </SectionCard>
-        </Tabs.Content>
-
-        <Tabs.Content value="general" class="flex min-w-0 flex-col gap-8">
-              <SectionCard
-                id="settings-appearance"
-                label="Appearance"
-                description="How Recast looks and how the window is arranged."
-              >
-                <SettingsRow
-                  label="Theme"
-                  description={currentTheme === "system"
-                    ? "Following your OS preference."
-                    : `Locked to ${currentTheme} mode.`}
-                >
-                  <Segmented
-                    options={themeSegments}
-                    value={currentTheme}
-                    onValueChange={updateTheme}
-                    fill={false}
-                    aria-label="Theme"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window chrome"
-                  description={LAYOUT_MODES.find(
-                    (m) => m.value === layoutMode.current,
-                  )?.hint}
-                >
-                  <Segmented
-                    options={layoutSegments}
-                    value={layoutMode.current}
-                    onValueChange={(v) => (layoutMode.current = v)}
-                    fill={false}
-                    aria-label="Window chrome layout"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Window transparency"
-                  description={isLinux
-                    ? "Not available on Linux."
-                    : windowTransparency
-                      ? "The window uses a translucent system backdrop (Mica on Windows 11, vibrancy on macOS). Solid on Windows 10."
-                      : "The window uses a solid background."}
-                >
-                  <Switch
-                    checked={!isLinux && windowTransparency}
-                    disabled={isLinux}
-                    onCheckedChange={() => toggleWindowTransparency()}
-                    aria-label="Window transparency"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <SectionCard
-                id="settings-system"
-                label="System"
-                description="Behavior when you close the main window."
-              >
-                <SettingsRow
-                  label="Minimize to tray on close"
-                  description={closeToTray
-                    ? "Closing the window hides Recast to the system tray. Quit from the tray menu to fully exit."
-                    : "Closing the window quits Recast immediately."}
-                >
-                  <Switch
-                    checked={closeToTray}
-                    onCheckedChange={() => toggleCloseToTray()}
-                    aria-label="Minimize to tray on close"
-                  />
-                </SettingsRow>
-              </SectionCard>
-
-              <!-- Two locally-stored opt-ins: usage analytics (default off) and
-                   crash reports (default on, PII-scrubbed). -->
-              <SectionCard
-                id="settings-privacy"
-                label="Privacy & Telemetry"
-                description="Recast is offline-first, so your recordings never leave this machine. These control anonymous diagnostics only."
-              >
-                {#snippet icon()}
-                  <Shield class="size-3 text-primary" />
-                {/snippet}
-                <SettingsRow
-                  label="Share anonymous usage analytics"
-                  description="Which features you use, so we know what to improve. Off by default. Nothing is sent unless you turn this on."
-                >
-                  <Switch
-                    checked={desktopConsent.product}
-                    onCheckedChange={() => toggleProductAnalytics()}
-                    aria-label="Share anonymous usage analytics"
-                  />
-                </SettingsRow>
-                <SettingsRow
-                  label="Send anonymous crash reports"
-                  description="Scrubbed error details when something breaks, with no file names or paths. On by default."
-                >
-                  <Switch
-                    checked={desktopConsent.errors}
-                    onCheckedChange={() => toggleCrashReports()}
-                    aria-label="Send anonymous crash reports"
-                  />
-                </SettingsRow>
               </SectionCard>
         </Tabs.Content>
 
@@ -916,6 +940,7 @@
                   <Switch
                     checked={cliAutoInstall}
                     onCheckedChange={() => toggleCliAutoInstall()}
+                    aria-label="Auto-install on first launch"
                   />
                 </SettingsRow>
 
@@ -979,21 +1004,22 @@
                       <span>What's new</span>
                       <ArrowUpRight class="text-muted-foreground" />
                     </Button>
+                    <!-- `openUrl`, not `target="_blank"`: the webview silently
+                         swallows a new-window request, so both of these were
+                         dead buttons. -->
                     <Button
-                      href={config.website}
-                      target="_blank"
                       variant="outline"
                       size="xs"
+                      onclick={() => void openUrl(config.website)}
                     >
                       <Globe />
                       <span>Website</span>
                       <ArrowUpRight class="text-muted-foreground" />
                     </Button>
                     <Button
-                      href={config.github}
-                      target="_blank"
                       variant="outline"
                       size="xs"
+                      onclick={() => void openUrl(config.github)}
                     >
                       <GithubBrand />
                       <span>GitHub</span>

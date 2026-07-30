@@ -156,6 +156,15 @@ export const shortcutDefs: ShortcutDef[] = [
 			await launchRecordingPanel();
 		},
 	},
+	{
+		// Handler registered by the Profiles route, so the chord is inert elsewhere.
+		id: "profiles.new",
+		keys: "Mod+N",
+		label: "New recording profile",
+		category: "General",
+		central: true,
+		scopeNote: "On the Profiles page",
+	},
 
 	// Global (OS-wide) recording hotkeys, registered by the Rust global-shortcut
 	// plugin, not the window dispatcher (hence central: false). Listed here so

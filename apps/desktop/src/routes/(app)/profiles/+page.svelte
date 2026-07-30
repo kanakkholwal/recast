@@ -1,293 +1,310 @@
 <script lang="ts">
-  import {
-    Camera,
-    CheckCircle2,
-    Copy,
-    Info,
-    Mic,
-    MicOff,
-    MoreHorizontal,
-    Pencil,
-    Plus,
-    Power,
-    Search,
-    SlidersHorizontal as SlidersIcon,
-    Star,
-    Timer,
-    Trash2,
-    VideoOff,
-    Volume2,
-    VolumeX,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { Cutout } from "@recast/ui/cutout";
-  import * as Dialog from "@recast/ui/dialog";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Kbd } from "@recast/ui/kbd";
-  import * as Select from "@recast/ui/select";
-  import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
-  import { toast } from "@recast/ui/sonner";
-  import { Switch } from "@recast/ui/switch";
-  import { cn } from "@recast/ui/utils";
-  import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
+import {
+	Camera,
+	CheckCircle2,
+	Copy,
+	Info,
+	Mic,
+	MicOff,
+	MoreHorizontal,
+	Pencil,
+	Plus,
+	Power,
+	Search,
+	SlidersHorizontal as SlidersIcon,
+	Star,
+	Timer,
+	Trash2,
+	VideoOff,
+	Volume2,
+	VolumeX,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Cutout } from "@recast/ui/cutout";
+import * as Dialog from "@recast/ui/dialog";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import * as Select from "@recast/ui/select";
+import { Segmented, type SegmentedOption } from "@recast/ui/segmented";
+import { toast } from "@recast/ui/sonner";
+import { Switch } from "@recast/ui/switch";
+import { cn } from "@recast/ui/utils";
+import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
 
-  import {
-    enumerateCameras,
-    type BrowserCamera,
-  } from "$lib/camera/browser-devices";
-  import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
-  import {
-    COUNTDOWN_OPTIONS,
-    countdownToken,
-    type RecordingProfile,
-  } from "$lib/profiles";
-  import { profilesStore } from "$lib/stores/profiles.svelte";
-  import {
-    buildDuplicate,
-    buildNewDraft,
-    computeDialogWidth,
-    DIALOG_ASIDE_W,
-    DIALOG_MAIN_W,
-    isCompactViewport,
-    normalizeProfileForSave,
-    summarize,
-  } from "./profiles.logic";
+import { enumerateCameras, type BrowserCamera } from "$lib/camera/browser-devices";
+import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
+import { COUNTDOWN_OPTIONS, countdownToken, type RecordingProfile } from "$lib/profiles";
+import { profilesStore } from "$lib/stores/profiles.svelte";
+import {
+	buildDuplicate,
+	buildNewDraft,
+	computeDialogWidth,
+	DIALOG_ASIDE_W,
+	DIALOG_MAIN_W,
+	isCompactViewport,
+	isDraftDirty,
+	nameClashOf,
+	normalizeProfileForSave,
+	summarize,
+} from "./profiles.logic";
+import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
 
-  // mode = 'create' means draft is not yet in the store; mode = 'edit' means
-  // draft mirrors an existing entry. Persistence only happens on Save.
-  let mode = $state<"create" | "edit" | null>(null);
-  let draft = $state<RecordingProfile | null>(null);
-  let nameInputEl = $state<HTMLInputElement | null>(null);
-  let query = $state("");
+// mode = 'create' means draft is not yet in the store; mode = 'edit' means
+// draft mirrors an existing entry. Persistence only happens on Save.
+let mode = $state<"create" | "edit" | null>(null);
+let draft = $state<RecordingProfile | null>(null);
+/** The profile the dialog opened with, for the unsaved-changes check. */
+let original = $state<RecordingProfile | null>(null);
+let discardPrompt = $state(false);
+let nameInputEl = $state<HTMLInputElement | null>(null);
+let query = $state("");
 
-  // Refreshed each time the dialog opens since devices come and go between
-  // recordings; camera enumeration may trigger a permission probe.
-  let mics = $state<AudioDeviceInfo[]>([]);
-  let cameras = $state<BrowserCamera[]>([]);
-  let devicesLoading = $state(false);
+// Refreshed each time the dialog opens since devices come and go between
+// recordings; camera enumeration may trigger a permission probe.
+let mics = $state<AudioDeviceInfo[]>([]);
+let cameras = $state<BrowserCamera[]>([]);
+let devicesLoading = $state(false);
 
-  let viewportWidth = $state(
-    typeof window !== "undefined" ? window.innerWidth : 1280,
-  );
-  $effect(() => {
-    const onResize = () => (viewportWidth = window.innerWidth);
-    onResize();
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  });
-  const isCompactDialog = $derived(isCompactViewport(viewportWidth));
-  const showDevicePanel = $derived(
-    !isCompactDialog && !!draft && (draft.microphone || draft.camera),
-  );
-  const dialogWidth = $derived(computeDialogWidth(viewportWidth, showDevicePanel));
+let viewportWidth = $state(typeof window !== "undefined" ? window.innerWidth : 1280);
+$effect(() => {
+	const onResize = () => (viewportWidth = window.innerWidth);
+	onResize();
+	window.addEventListener("resize", onResize);
+	return () => window.removeEventListener("resize", onResize);
+});
+const isCompactDialog = $derived(isCompactViewport(viewportWidth));
+const showDevicePanel = $derived(!isCompactDialog && !!draft && (draft.microphone || draft.camera));
+const dialogWidth = $derived(computeDialogWidth(viewportWidth, showDevicePanel));
 
-  onMount(() => {
-    profilesStore.hydrate();
-    void loadDevices();
+onMount(() => {
+	profilesStore.hydrate();
+	// Devices are only ever read inside the dialog, so nothing is enumerated
+	// here. That matters for the camera specifically — see `loadCameras`.
+	return registerShortcutHandlers({ "profiles.new": addProfile });
+});
 
-    window.addEventListener("keydown", handleGlobalShortcut);
-    return () => window.removeEventListener("keydown", handleGlobalShortcut);
-  });
+async function loadMics() {
+	devicesLoading = true;
+	try {
+		mics = await getAudioDevices().catch(() => [] as AudioDeviceInfo[]);
+	} finally {
+		devicesLoading = false;
+	}
+}
 
-  async function loadDevices() {
-    devicesLoading = true;
-    try {
-      const [audioDevices, videoDevices] = await Promise.all([
-        getAudioDevices().catch(() => [] as AudioDeviceInfo[]),
-        enumerateCameras().catch(() => [] as BrowserCamera[]),
-      ]);
-      mics = audioDevices;
-      cameras = videoDevices;
-    } finally {
-      devicesLoading = false;
-    }
-  }
+// Cameras are loaded only once the draft actually wants one, and once per
+// dialog. `enumerateCameras` calls getUserMedia when labels are blank — the
+// only way to unlock them — which turns the webcam on and can raise a
+// permission prompt. Doing that on page load lit the camera for anyone who
+// merely opened Profiles.
+let camerasRequested = false;
+async function loadCameras() {
+	if (camerasRequested) return;
+	camerasRequested = true;
+	devicesLoading = true;
+	try {
+		cameras = await enumerateCameras().catch(() => [] as BrowserCamera[]);
+	} finally {
+		devicesLoading = false;
+	}
+}
 
-  function addProfile() {
-    openDialog("create", buildNewDraft(profilesStore.profiles.length));
-  }
+function addProfile() {
+	openDialog("create", buildNewDraft(profilesStore.profiles.length));
+}
 
-  function duplicateProfile(profile: RecordingProfile) {
-    openDialog("create", buildDuplicate(profile));
-  }
+function duplicateProfile(profile: RecordingProfile) {
+	openDialog("create", buildDuplicate(profile));
+}
 
-  function openDialog(next: "create" | "edit", profile: RecordingProfile) {
-    mode = next;
-    draft = profile;
-    void loadDevices();
-    queueMicrotask(() => {
-      nameInputEl?.focus();
-      nameInputEl?.select();
-    });
-  }
+function openDialog(next: "create" | "edit", profile: RecordingProfile) {
+	mode = next;
+	draft = profile;
+	original = { ...profile };
+	camerasRequested = false;
+	cameras = [];
+	void loadMics();
+	// An existing camera profile needs the list to show its saved device.
+	if (profile.camera) void loadCameras();
+	queueMicrotask(() => {
+		nameInputEl?.focus();
+		nameInputEl?.select();
+	});
+}
 
-  function deleteProfile(id: string) {
-    const victim = profilesStore.findById(id);
-    if (!victim) return;
-    profilesStore.remove(id);
-    toast.success(`Deleted "${victim.name}"`);
-    if (draft?.id === id) {
-      mode = null;
-      draft = null;
-    }
-  }
+// Deleting a profile is immediate and unrecoverable — there is no trash for
+// them the way there is for recordings — so it asks first, like every other
+// destructive action in the app.
+let deleteTarget = $state<RecordingProfile | null>(null);
 
-  function setDefault(id: string) {
-    profilesStore.setDefault(id);
-    toast.success("Default profile updated");
-  }
+function confirmDelete() {
+	const victim = deleteTarget;
+	if (!victim) return;
+	profilesStore.remove(victim.id);
+	toast.success(`Deleted "${victim.name}"`);
+	if (draft?.id === victim.id) closeDialog();
+	deleteTarget = null;
+}
 
-  function startEditing(profile: RecordingProfile) {
-    openDialog("edit", { ...profile });
-  }
+function setDefault(id: string) {
+	profilesStore.setDefault(id);
+	toast.success("Default profile updated");
+}
 
-  function finishEditing() {
-    if (!mode || !draft) return;
-    const trimmed = draft.name.trim();
-    if (!trimmed) {
-      toast.error("Name can't be empty");
-      return;
-    }
-    const next = normalizeProfileForSave({ ...draft, name: trimmed });
+function startEditing(profile: RecordingProfile) {
+	openDialog("edit", { ...profile });
+}
 
-    if (mode === "create") {
-      profilesStore.insert(next);
-      toast.success("Profile created");
-    } else {
-      profilesStore.update(next);
-      toast.success("Profile saved");
-    }
+function finishEditing() {
+	if (!mode || !draft) return;
+	const trimmed = draft.name.trim();
+	if (!trimmed) {
+		toast.error("Name can't be empty");
+		return;
+	}
+	const next = normalizeProfileForSave({ ...draft, name: trimmed });
 
-    mode = null;
-    draft = null;
-  }
+	if (mode === "create") {
+		profilesStore.insert(next);
+		toast.success("Profile created");
+	} else {
+		profilesStore.update(next);
+		toast.success("Profile saved");
+	}
 
-  // Soft nudge: another saved profile with identical capture settings. Profiles
-  // are told apart by name, so this informs without blocking the save.
-  const twin = $derived.by(() =>
-    draft ? profilesStore.twinOf(normalizeProfileForSave(draft)) : null,
-  );
+	closeDialog();
+}
 
-  function cancelEditing() {
-    mode = null;
-    draft = null;
-  }
+// Soft nudge: another saved profile with identical capture settings. Profiles
+// are told apart by name, so this informs without blocking the save.
+const twin = $derived.by(() =>
+	draft ? profilesStore.twinOf(normalizeProfileForSave(draft)) : null,
+);
 
-  function toggleDraft(
-    field: "systemAudio" | "microphone" | "camera" | "isDefault",
-  ) {
-    if (!draft) return;
-    if (field === "isDefault" && draft.isDefault) {
-      const others = profilesStore.profiles.filter(
-        (p) => p.id !== draft!.id,
-      );
-      if (others.length === 0) {
-        toast.info("At least one profile must be default");
-        return;
-      }
-    }
-    const nextValue = !draft[field];
-    draft = { ...draft, [field]: nextValue };
+// Every list that shows a profile identifies it by name, so two called the
+// same thing are indistinguishable. Informs rather than blocks, matching how
+// `twin` treats duplicate capture settings.
+const nameClash = $derived(draft ? nameClashOf(draft, profilesStore.profiles) : null);
 
-    // When turning a device-bound capability ON, prefill the saved device
-    // from the current default so the dropdown isn't blank.
-    if (field === "microphone" && nextValue && !draft.micDeviceId) {
-      const def = mics.find((d) => d.isDefault) ?? mics[0];
-      if (def) draft = { ...draft, micDeviceId: def.id, micLabel: def.name };
-    }
-    if (field === "camera" && nextValue && !draft.cameraDeviceId) {
-      const def = cameras.find((c) => !c.isVirtual) ?? cameras[0];
-      if (def)
-        draft = {
-          ...draft,
-          cameraDeviceId: def.deviceId,
-          cameraLabel: def.label,
-        };
-    }
-  }
+function closeDialog() {
+	mode = null;
+	draft = null;
+	original = null;
+	discardPrompt = false;
+}
 
-  function setMicSelection(id: string) {
-    if (!draft) return;
-    const dev = mics.find((m) => m.id === id);
-    if (!dev) return;
-    draft = { ...draft, micDeviceId: dev.id, micLabel: dev.name };
-  }
+/** Escape / click-outside / Cancel. Prompts only when there is a change to
+ *  lose, so dismissing an untouched dialog stays instant. */
+function requestClose() {
+	if (draft && original && isDraftDirty(draft, original)) {
+		discardPrompt = true;
+		return;
+	}
+	closeDialog();
+}
 
-  function setCameraSelection(id: string) {
-    if (!draft) return;
-    const dev = cameras.find((c) => c.deviceId === id);
-    if (!dev) return;
-    draft = { ...draft, cameraDeviceId: dev.deviceId, cameraLabel: dev.label };
-  }
+function toggleDraft(field: "systemAudio" | "microphone" | "camera" | "isDefault") {
+	if (!draft) return;
+	if (field === "isDefault" && draft.isDefault) {
+		const others = profilesStore.profiles.filter((p) => p.id !== draft!.id);
+		if (others.length === 0) {
+			toast.info("At least one profile must be default");
+			return;
+		}
+	}
+	const nextValue = !draft[field];
+	draft = { ...draft, [field]: nextValue };
 
-  // `null` = inherit the global countdown; `0` = off. Derived from the shared
-  // COUNTDOWN_OPTIONS so the picker and the combination math can't drift.
-  const countdownChoices: { value: number | null; label: string }[] =
-    COUNTDOWN_OPTIONS.map((value) => ({
-      value,
-      label: value == null ? "Default" : value === 0 ? "Off" : `${value}s`,
-    }));
+	// When turning a device-bound capability ON, prefill the saved device
+	// from the current default so the dropdown isn't blank.
+	if (field === "microphone" && nextValue && !draft.micDeviceId) {
+		const def = mics.find((d) => d.isDefault) ?? mics[0];
+		if (def) draft = { ...draft, micDeviceId: def.id, micLabel: def.name };
+	}
+	if (field === "camera" && nextValue) void loadCameras();
+	if (field === "camera" && nextValue && !draft.cameraDeviceId) {
+		const def = cameras.find((c) => !c.isVirtual) ?? cameras[0];
+		if (def)
+			draft = {
+				...draft,
+				cameraDeviceId: def.deviceId,
+				cameraLabel: def.label,
+			};
+	}
+}
 
-  const countdownSegments: SegmentedOption<string>[] = countdownChoices.map(
-    (c) => ({ value: countdownToken(c.value), label: c.label }),
-  );
+function setMicSelection(id: string) {
+	if (!draft) return;
+	const dev = mics.find((m) => m.id === id);
+	if (!dev) return;
+	draft = { ...draft, micDeviceId: dev.id, micLabel: dev.name };
+}
 
-  function setDraftCountdown(value: number | null) {
-    if (!draft) return;
-    draft = { ...draft, countdown: value };
-  }
+function setCameraSelection(id: string) {
+	if (!draft) return;
+	const dev = cameras.find((c) => c.deviceId === id);
+	if (!dev) return;
+	draft = { ...draft, cameraDeviceId: dev.deviceId, cameraLabel: dev.label };
+}
 
-  function setDraftCountdownToken(token: string) {
-    setDraftCountdown(token === "inherit" ? null : Number(token));
-  }
+// `null` = inherit the global countdown; `0` = off. Derived from the shared
+// COUNTDOWN_OPTIONS so the picker and the combination math can't drift.
+const countdownChoices: { value: number | null; label: string }[] = COUNTDOWN_OPTIONS.map(
+	(value) => ({
+		value,
+		label: value == null ? "Default" : value === 0 ? "Off" : `${value}s`,
+	}),
+);
 
-  function handleGlobalShortcut(e: KeyboardEvent) {
-    const meta = e.metaKey || e.ctrlKey;
-    if (!meta || e.shiftKey || e.altKey) return;
-    if (mode) return;
-    if (e.key.toLowerCase() === "n") {
-      e.preventDefault();
-      addProfile();
-    }
-  }
+const countdownSegments: SegmentedOption<string>[] = countdownChoices.map((c) => ({
+	value: countdownToken(c.value),
+	label: c.label,
+}));
 
-  function handleDialogKeydown(e: KeyboardEvent) {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      finishEditing();
-    }
-  }
+function setDraftCountdown(value: number | null) {
+	if (!draft) return;
+	draft = { ...draft, countdown: value };
+}
 
-  function enableProfileSystem() {
-    profilesStore.setEnabled(true);
-    toast.success("Profiles enabled");
-  }
+function setDraftCountdownToken(token: string) {
+	setDraftCountdown(token === "inherit" ? null : Number(token));
+}
 
-  const filtered = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return profilesStore.profiles;
-    return profilesStore.profiles.filter((p) =>
-      p.name.toLowerCase().includes(q),
-    );
-  });
+function handleDialogKeydown(e: KeyboardEvent) {
+	if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+		e.preventDefault();
+		finishEditing();
+	}
+}
 
-  // Capture sources rendered as the faceplate readout at the bottom of each
-  // card. On/off is carried by icon shape (Mic vs MicOff) as well as color, so
-  // it doesn't depend on color alone.
-  type Cap = {
-    field: "systemAudio" | "microphone" | "camera";
-    label: string;
-    iconOn: typeof Volume2;
-    iconOff: typeof Volume2;
-  };
-  const capabilities: Cap[] = [
-    { field: "systemAudio", label: "System audio", iconOn: Volume2, iconOff: VolumeX },
-    { field: "microphone", label: "Microphone", iconOn: Mic, iconOff: MicOff },
-    { field: "camera", label: "Camera", iconOn: Camera, iconOff: VideoOff },
-  ];
+function setProfilesEnabled(next: boolean) {
+	profilesStore.setEnabled(next);
+	toast.success(next ? "Profiles enabled" : "Profiles turned off");
+}
+
+const filtered = $derived.by(() => {
+	const q = query.trim().toLowerCase();
+	if (!q) return profilesStore.profiles;
+	return profilesStore.profiles.filter((p) => p.name.toLowerCase().includes(q));
+});
+
+// Capture sources rendered as the faceplate readout at the bottom of each
+// card. On/off is carried by icon shape (Mic vs MicOff) as well as color, so
+// it doesn't depend on color alone.
+type Cap = {
+	field: "systemAudio" | "microphone" | "camera";
+	label: string;
+	iconOn: typeof Volume2;
+	iconOff: typeof Volume2;
+};
+const capabilities: Cap[] = [
+	{ field: "systemAudio", label: "System audio", iconOn: Volume2, iconOff: VolumeX },
+	{ field: "microphone", label: "Microphone", iconOn: Mic, iconOff: MicOff },
+	{ field: "camera", label: "Camera", iconOn: Camera, iconOff: VideoOff },
+];
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -310,11 +327,15 @@
           <span
             class="bg-linear-to-r from-foreground to-foreground/55 bg-clip-text text-transparent"
           >
-            {profilesStore.profiles.length === 0
-              ? "No profiles yet"
-              : profilesStore.profiles.length === 1
-                ? "1 profile"
-                : `${profilesStore.profiles.length} profiles`}
+            {#if !profilesStore.hydrated}
+              Profiles
+            {:else if profilesStore.profiles.length === 0}
+              No profiles yet
+            {:else if profilesStore.profiles.length === 1}
+              1 profile
+            {:else}
+              {profilesStore.profiles.length} profiles
+            {/if}
           </span>
         </h1>
         <Button
@@ -324,9 +345,6 @@
         >
           <Plus size={13} />
           New profile
-          <Kbd class="bg-primary-foreground/15 text-primary-foreground/90"
-            >⌘N</Kbd
-          >
         </Button>
       </div>
       <p
@@ -338,40 +356,46 @@
       </p>
     </header>
 
-    <!-- Profiles stay editable here but the recording panel won't auto-apply
-         them until re-enabled. -->
-    {#if !profilesStore.enabled}
-      <div
-        in:fly={{ y: 8, duration: 240, easing: cubicOut }}
-        class="flex items-center gap-3 rounded-xl border border-warning/30 bg-warning/10 px-4 py-3 shadow-(--shadow-craft-inset)"
-        role="status"
+    <!-- One row for both states rather than an off-only banner: the page could
+         turn profiles back on but never off, so the only way out was Settings.
+         Profiles stay editable either way; the switch governs whether the
+         recording panel applies them. -->
+    <div
+      in:fly={{ y: 8, duration: 240, easing: cubicOut }}
+      class={cn(
+        "flex items-center gap-3 rounded-xl border px-4 py-3 shadow-(--shadow-craft-inset) transition-colors duration-200",
+        profilesStore.enabled
+          ? "border-border/50 bg-card/60"
+          : "border-warning/30 bg-warning/10",
+      )}
+    >
+      <span
+        class={cn(
+          "flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 ring-inset transition-colors",
+          profilesStore.enabled
+            ? "bg-background/70 text-muted-foreground ring-border/40"
+            : "bg-warning/15 text-warning ring-warning/30",
+        )}
+        aria-hidden="true"
       >
-        <span
-          class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-warning/15 text-warning ring-1 ring-inset ring-warning/30"
-          aria-hidden="true"
-        >
-          <Power size={14} />
-        </span>
-        <div class="min-w-0 flex-1">
-          <div class="text-[12.5px] font-semibold text-foreground">
-            Profiles are off
-          </div>
-          <div class="text-[11px] text-muted-foreground">
-            The recording panel won't auto-apply a default profile or show the
-            switcher. Edits here are still saved for when you re-enable.
-          </div>
+        <Power size={14} />
+      </span>
+      <div class="min-w-0 flex-1">
+        <div class="text-[12.5px] font-semibold text-foreground">
+          {profilesStore.enabled ? "Profiles are on" : "Profiles are off"}
         </div>
-        <Button
-          onclick={enableProfileSystem}
-          variant="secondary"
-          size="sm"
-          class="h-8 shrink-0 gap-1.5"
-        >
-          <Power class="size-3.5" />
-          <span class="text-[11.5px]">Enable</span>
-        </Button>
+        <div class="text-[11px] text-muted-foreground">
+          {profilesStore.enabled
+            ? "The recording panel loads your default profile and shows the switcher."
+            : "The recording panel won't auto-apply a default profile or show the switcher. Edits here are still saved for when you re-enable."}
+        </div>
       </div>
-    {/if}
+      <Switch
+        checked={profilesStore.enabled}
+        onCheckedChange={setProfilesEnabled}
+        aria-label="Apply profiles when recording"
+      />
+    </div>
 
     <label
       in:fly={{ y: 8, duration: 280, delay: 60, easing: cubicOut }}
@@ -400,7 +424,15 @@
       {/if}
     </label>
 
-    {#if filtered.length === 0}
+    {#if !profilesStore.hydrated}
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3" aria-hidden="true">
+        {#each { length: 3 } as _, i (i)}
+          <div
+            class="h-44 animate-pulse rounded-xl border border-border/40 bg-card/60"
+          ></div>
+        {/each}
+      </div>
+    {:else if filtered.length === 0}
       <div
         in:fade={{ duration: 200 }}
         class="flex flex-col items-center gap-3 rounded-xl border border-dashed border-border/60 bg-card/40 p-12 text-center"
@@ -412,7 +444,7 @@
         </div>
         <div>
           <p class="text-[14px] font-semibold text-foreground">
-            {query ? "No matches" : "No profiles yet"}
+            {query ? "No matches" : "Nothing saved yet"}
           </p>
           <p class="mt-1 text-[11.5px] text-muted-foreground">
             {query
@@ -436,18 +468,8 @@
               delay: Math.min(i * 40, 240),
               easing: cubicOut,
             }}
-            role="button"
-            tabindex="0"
-            aria-label={`Edit ${profile.name}`}
-            onclick={() => startEditing(profile)}
-            onkeydown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                startEditing(profile);
-              }
-            }}
             class={cn(
-              "group/card relative flex cursor-pointer flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200 focus-visible:ring-2 focus-visible:ring-ring/60",
+              "group/card relative flex flex-col overflow-hidden rounded-xl border shadow-(--shadow-craft-inset) outline-none transition-[background-color,border-color,box-shadow] duration-200",
               profile.isDefault
                 ? "border-primary/60 bg-card"
                 : "border-border/40 bg-card hover:border-border hover:shadow-craft-sm",
@@ -492,6 +514,7 @@
                   {@const on = profile[cap.field]}
                   {@const Icon = on ? cap.iconOn : cap.iconOff}
                   <Icon
+                    role="img"
                     class={cn(
                       "size-3 transition-colors",
                       on ? "text-primary" : "text-muted-foreground/40",
@@ -512,13 +535,21 @@
               </div>
             </div>
 
-            <!-- Actions, same placement/treatment as the recasts card. -->
-            <div
-              role="presentation"
-              onclick={(e) => e.stopPropagation()}
-              onkeydown={(e) => e.stopPropagation()}
-              class="absolute right-2 top-2 z-20"
+            <!-- The card's primary action is a real button spanning it, not a
+                 role="button" wrapper: the menu trigger below would then be a
+                 button inside a button, whose children ARIA treats as
+                 presentational. Sibling + higher z-index keeps the menu clickable
+                 without stopPropagation. -->
+            <button
+              type="button"
+              onclick={() => startEditing(profile)}
+              class="absolute inset-0 z-10 cursor-pointer rounded-[inherit] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
             >
+              <span class="sr-only">Edit {profile.name}</span>
+            </button>
+
+            <!-- Actions, same placement/treatment as the recasts card. -->
+            <div class="absolute right-2 top-2 z-20">
               <DropdownMenu.Root>
                 <DropdownMenu.Trigger>
                   {#snippet child({ props })}
@@ -547,7 +578,7 @@
                   {/if}
                   <DropdownMenu.Separator />
                   <DropdownMenu.Item
-                    onSelect={() => deleteProfile(profile.id)}
+                    onSelect={() => (deleteTarget = profile)}
                     class="text-destructive focus:bg-destructive/10 focus:text-destructive"
                   >
                     <Trash2 class="size-3" /> Delete
@@ -725,7 +756,7 @@
   <Dialog.Root
     open={true}
     onOpenChange={(v) => {
-      if (!v) cancelEditing();
+      if (!v) requestClose();
     }}
   >
     <Dialog.Content
@@ -874,6 +905,19 @@
         {/if}
       </div>
 
+      {#if nameClash}
+        <div
+          class="flex items-center gap-2 border-t border-border/30 bg-muted/20 px-5 py-2.5 text-[11px] text-muted-foreground"
+        >
+          <Info class="size-3.5 shrink-0 text-muted-foreground/70" />
+          <span>
+            Another profile is already called
+            <span class="font-semibold text-foreground">{nameClash.name}</span>.
+            Lists identify profiles by name.
+          </span>
+        </div>
+      {/if}
+
       {#if twin}
         <div
           class="flex items-center gap-2 border-t border-border/30 bg-muted/20 px-5 py-2.5 text-[11px] text-muted-foreground"
@@ -895,7 +939,7 @@
             size="xs"
             class="gap-1.5"
             onclick={() => {
-              if (draft) deleteProfile(draft.id);
+              if (draft) deleteTarget = draft;
             }}
           >
             <Trash2 size={12} />
@@ -905,7 +949,7 @@
           <span></span>
         {/if}
         <div class="flex items-center gap-2">
-          <Button variant="ghost" size="xs" onclick={cancelEditing}
+          <Button variant="ghost" size="xs" onclick={requestClose}
             >Cancel</Button
           >
           <Button
@@ -915,14 +959,46 @@
             onclick={finishEditing}
           >
             Save
-            <Kbd class="bg-primary-foreground/10 text-primary-foreground/80"
-              >⌘↵</Kbd
-            >
           </Button>
         </div>
       </footer>
     </Dialog.Content>
   </Dialog.Root>
+{/if}
+
+{#if deleteTarget}
+  <ConfirmDialog
+    open={true}
+    title="Delete this profile?"
+    description={`“${deleteTarget.name}” will be removed. ${
+      deleteTarget.isDefault && profilesStore.profiles.length > 1
+        ? "It is your default, so another profile will take over."
+        : profilesStore.profiles.length === 1
+          ? "It is your last profile, so recordings will fall back to global settings."
+          : "This can't be undone."
+    }`}
+    confirmLabel="Delete"
+    variant="destructive"
+    onConfirm={confirmDelete}
+    onOpenChange={(v) => {
+      if (!v) deleteTarget = null;
+    }}
+  />
+{/if}
+
+{#if discardPrompt}
+  <ConfirmDialog
+    open={true}
+    title="Discard changes?"
+    description="This profile has unsaved edits."
+    confirmLabel="Discard"
+    cancelLabel="Keep editing"
+    variant="destructive"
+    onConfirm={closeDialog}
+    onOpenChange={(v) => {
+      if (!v) discardPrompt = false;
+    }}
+  />
 {/if}
 
 <style>

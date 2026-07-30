@@ -26,6 +26,9 @@ pub(crate) fn append_codec_args(
     speed: ExportSpeed,
     has_audio_map: bool,
     output_path: &Path,
+    // Force the software x264 encoder even when a hardware one is available — the
+    // retry path after a hardware encoder (NVENC/AMF/QSV) crashes mid-encode.
+    force_software: bool,
 ) {
     match format {
         "gif" => {
@@ -101,9 +104,13 @@ pub(crate) fn append_codec_args(
             // tuned for quality (not the lowlatency presets used for live
             // recording); libx264 uses the user's chosen profile preset because
             // export isn't bound by real-time pacing. See `encoder::h264`.
-            let encoder = crate::encoder::h264::H264Encoder::from_ffmpeg_name(
-                crate::ffmpeg::preferred_h264_encoder(),
-            );
+            let encoder = if force_software {
+                crate::encoder::h264::H264Encoder::Libx264
+            } else {
+                crate::encoder::h264::H264Encoder::from_ffmpeg_name(
+                    crate::ffmpeg::preferred_h264_encoder(),
+                )
+            };
             // Software x264 at `slow`/`slower` on a 4K frame is far below realtime
             // and is what turned a ~40s export into minutes on GPU-less machines.
             // Hardware encoders aren't preset-bound this way, so cap only libx264:

@@ -38,6 +38,26 @@ fn completed_export_looks_usable(path: &Path, expected_duration: f64) -> bool {
     metadata.duration + 0.05 >= min_duration
 }
 
+/// True for an abnormal-termination exit code (a crash / signal) rather than a
+/// normal ffmpeg error exit (0..=255). A hardware-encoder crash on Windows shows
+/// up as an NTSTATUS such as 0xC0000005 (`-1073741819` as i32).
+pub(crate) fn is_ffmpeg_crash_code(code: i32) -> bool {
+    !(0..=255).contains(&code)
+}
+
+/// Pull the ffmpeg exit code out of a `run_encode` error string
+/// (`export failed (ffmpeg exit <code>): …`). None when the message carries none.
+pub(crate) fn parse_ffmpeg_exit_code(err: &str) -> Option<i32> {
+    let start = err.find("ffmpeg exit ")? + "ffmpeg exit ".len();
+    let rest = &err[start..];
+    let end = rest
+        .char_indices()
+        .find(|&(_, c)| !(c.is_ascii_digit() || c == '-'))
+        .map(|(i, _)| i)
+        .unwrap_or(rest.len());
+    rest[..end].parse().ok()
+}
+
 pub(crate) fn run_encode(
     args: Vec<String>,
     app: AppHandle,
@@ -54,6 +74,11 @@ pub(crate) fn run_encode(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     crate::ffmpeg::configure_silent_command(&mut command);
+
+    // Log the full invocation so a crash (ffmpeg segfaults print nothing to
+    // stderr) is still diagnosable — this is the only record of which encoder /
+    // filters / inputs were in play when it died.
+    log::info!("export: ffmpeg args: {}", args.join(" "));
 
     let mut child = command
         .spawn()
@@ -103,9 +128,24 @@ pub(crate) fn run_encode(
     let stderr_thread = std::thread::Builder::new()
         .name("recast-export-stderr".into())
         .spawn(move || {
-            let reader = std::io::BufReader::new(stderr);
+            let mut reader = std::io::BufReader::new(stderr);
             let mut logged_near_done = false;
-            for line in reader.lines().map_while(Result::ok) {
+            // Read raw bytes per line and lossy-decode, rather than `.lines()`
+            // (which yields `Result<String>` and stops at the FIRST non-UTF-8 line
+            // — silently dropping any real error printed after it, so the failure
+            // path then reports "no detailed error").
+            let mut raw: Vec<u8> = Vec::new();
+            loop {
+                raw.clear();
+                match reader.read_until(b'\n', &mut raw) {
+                    Ok(0) => break,
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+                while matches!(raw.last(), Some(b'\n' | b'\r')) {
+                    raw.pop();
+                }
+                let line = String::from_utf8_lossy(&raw).into_owned();
                 // FFmpeg progress blocks are key=value lines terminated by
                 // `progress=continue` (between blocks) or `progress=end`
                 // (final block). Treat all of these as non-log noise.
@@ -569,7 +609,18 @@ pub(crate) fn run_encode(
     if !status.success() {
         let stderr_bytes = stderr_buf.lock().clone();
         let _ = std::fs::remove_file(&output_path_str);
-        let err_msg = format!("export failed:\n{}", summarize_ffmpeg_error(&stderr_bytes));
+        // Include the exit code: when stderr carries no diagnostic (e.g. ffmpeg was
+        // killed by the OS, crashed, or aborted before logging), the code is the
+        // only signal — a large Windows code like 3221225477 (0xC0000005) means a
+        // crash, not a normal encode error.
+        let code = status
+            .code()
+            .map(|c| c.to_string())
+            .unwrap_or_else(|| "terminated by signal".into());
+        let err_msg = format!(
+            "export failed (ffmpeg exit {code}):\n{}",
+            summarize_ffmpeg_error(&stderr_bytes)
+        );
         emit_export_state(&app, ExportStateEvent::error(&export_id, &err_msg));
         return Err(err_msg);
     }
@@ -607,4 +658,35 @@ pub(crate) fn run_encode(
         encode_started_at.elapsed().as_millis()
     );
     Ok(output_path_str)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{is_ffmpeg_crash_code, parse_ffmpeg_exit_code};
+
+    #[test]
+    fn crash_codes_are_out_of_the_normal_exit_range() {
+        assert!(is_ffmpeg_crash_code(-1073741819)); // 0xC0000005 access violation
+        assert!(is_ffmpeg_crash_code(-1));
+        assert!(is_ffmpeg_crash_code(256));
+        assert!(!is_ffmpeg_crash_code(0));
+        assert!(!is_ffmpeg_crash_code(1)); // a normal ffmpeg error, not a crash
+        assert!(!is_ffmpeg_crash_code(255));
+    }
+
+    #[test]
+    fn parses_exit_code_from_the_error_message() {
+        assert_eq!(
+            parse_ffmpeg_exit_code("export failed (ffmpeg exit -1073741819):\nboom"),
+            Some(-1073741819)
+        );
+        assert_eq!(
+            parse_ffmpeg_exit_code("export failed (ffmpeg exit 1):\nx"),
+            Some(1)
+        );
+        assert_eq!(
+            parse_ffmpeg_exit_code("export timed out: no progress"),
+            None
+        );
+    }
 }

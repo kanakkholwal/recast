@@ -1,23 +1,21 @@
 <script lang="ts">
-import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
 import { AudioLines, Mic, Music2, Pencil, Scissors, Video, ZoomIn } from "@recast/icons";
 import { onMount, untrack } from "svelte";
-import { provideLaneDrag } from "./_components/timeline/timeline-drag.svelte";
+import { type AudioClip, clipEndSec } from "$lib/audio/music";
+import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type { TileProvider } from "$lib/timeline/filmstrip-source";
+import { storyboardCrop } from "$lib/timeline/storyboard";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
 import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
-import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
 import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
 import TimelineCutLane from "./_components/timeline/TimelineCutLane.svelte";
+import TimelineMusicLane from "./_components/timeline/TimelineMusicLane.svelte";
 import TimelinePlayhead from "./_components/timeline/TimelinePlayhead.svelte";
 import TimelineRuler from "./_components/timeline/TimelineRuler.svelte";
 import TimelineToolbar from "./_components/timeline/TimelineToolbar.svelte";
 import TimelineZoomLane from "./_components/timeline/TimelineZoomLane.svelte";
-import {
-	cardLayout,
-	CLIP_ROW_HEIGHT_PX,
-	ZOOM_ROW_HEIGHT_PX,
-} from "./_components/timeline/timeline-stack";
-import { clipEndSec, type AudioClip } from "$lib/audio/music";
+import { provideLaneDrag } from "./_components/timeline/timeline-drag.svelte";
 import {
 	clampTimelineZoom,
 	effectiveFps as effFps,
@@ -29,10 +27,16 @@ import {
 	quantizeToFrame as quantizeToFrameOf,
 	steppedZoom,
 } from "./_components/timeline/timeline-helpers";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { buildSnapTargets, snapTime } from "./_components/timeline/timeline-snap";
-import { storyboardCrop } from "$lib/timeline/storyboard";
-import type { TileProvider } from "$lib/timeline/filmstrip-source";
+import {
+	AUDIO_LANE_HEIGHT_PX,
+	CLIP_LANE_HEIGHT_PX,
+	CLIP_ROW_HEIGHT_PX,
+	CUT_LANE_HEIGHT_PX,
+	cardLayout,
+	ZOOM_ROW_HEIGHT_PX,
+} from "./_components/timeline/timeline-stack";
+import { wheelIntent } from "./_components/timeline/timeline-wheel.logic";
 
 // Orchestrator: owns the scroll container, sizing, transport (JKL/speed),
 // keyboard routing, and the click-to-seek scrubber. Subviews live under `_components/timeline/`.
@@ -47,6 +51,7 @@ interface Props {
 let { store, videoEl = null, tileProvider = null, filmstripVersion = 0 }: Props = $props();
 
 let timelineEl: HTMLDivElement | undefined = $state();
+let railInnerEl: HTMLDivElement | undefined = $state();
 let isDraggingPlayhead = $state(false);
 let timelineWidth = $state(900);
 // Horizontal scroll offset, tracked so the clip bar can virtualize its tiles.
@@ -58,10 +63,8 @@ const LANE_PAD = 0;
 const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
 let playbackSpeed = $state(1.0);
 
-// Heights of the lanes that don't stack, mirroring each component's own
-// constant. The stacking lanes report theirs through `cardLayout`.
-const AUDIO_LANE_H = 36;
-const CUT_LANE_H = 36;
+// Gap between lanes. Fixed lane heights come from timeline-stack, shared with
+// the components that render them; stacking lanes report theirs via `cardLayout`.
 const LANE_GAP = 6;
 
 // Lives in the store, not here: the transport readout under the video reads it
@@ -69,15 +72,22 @@ const LANE_GAP = 6;
 const timeMode = $derived(store.timeMode);
 
 // Layer visibility (the toolbar's Layers menu). The clip track is always shown
-// (the editing spine); the waveform now rides ALONG its bottom edge rather than
-// replacing the thumbnails, so it's an independent toggle, not a radio. Zoom/
-// Markup/Cuts lanes show/hide independently. Persisted to localStorage so the
-// choice survives reopening the editor.
+// (the editing spine); the Audio lane is its own track and owns the waveform
+// outright, so hiding it hides the envelope everywhere. Zoom/Markup/Cuts lanes
+// show/hide independently. Persisted to localStorage so the choice survives
+// reopening the editor.
+// Zoom and Markup default to AUTO (`null`): shown once they hold something,
+// hidden while empty. Every lane visible by default made the panel tall enough
+// to squeeze the preview, and two of the four were usually empty. A lane the
+// user has toggled stores a real boolean and stops following its content, so an
+// explicit choice is never overridden.
 const VIEW_KEY = "recast.timeline.view";
+/** `null` = follow the lane's content. */
+type LanePref = boolean | null;
 function loadView(): {
 	waveform: boolean;
-	zoom: boolean;
-	markup: boolean;
+	zoom: LanePref;
+	markup: LanePref;
 	cuts: boolean;
 	gaps: boolean;
 } {
@@ -90,8 +100,9 @@ function loadView(): {
 					// Migrate the old `clipContent: "waveform" | "thumbnails"` radio: anyone
 					// who had chosen the waveform still wants to see it, now as an overlay.
 					waveform: typeof v.waveform === "boolean" ? v.waveform : v.clipContent === "waveform",
-					zoom: v.zoom !== false,
-					markup: v.markup !== false,
+					// Anyone with a stored boolean chose it before auto existed; keep it.
+					zoom: typeof v.zoom === "boolean" ? v.zoom : null,
+					markup: typeof v.markup === "boolean" ? v.markup : null,
 					cuts: v.cuts ?? v.silence ?? true,
 					gaps: v.gaps === true,
 				};
@@ -100,13 +111,15 @@ function loadView(): {
 			/* fall through to defaults */
 		}
 	}
-	return { waveform: true, zoom: true, markup: true, cuts: true, gaps: false };
+	return { waveform: true, zoom: null, markup: null, cuts: true, gaps: false };
 }
 const _view = loadView();
 let showAudioLane = $state(_view.waveform);
-let showZoomLane = $state(_view.zoom);
-let showMarkupLane = $state(_view.markup);
 let showCutLane = $state(_view.cuts);
+let zoomLanePref = $state<LanePref>(_view.zoom);
+let markupLanePref = $state<LanePref>(_view.markup);
+const showZoomLane = $derived(zoomLanePref ?? store.zoomRegions.length > 0);
+const showMarkupLane = $derived(markupLanePref ?? store.annotations.length > 0);
 // "Show cut gaps" lives in the store (it reshapes the render axis every lane
 // reads); seed it from the persisted view pref on mount.
 onMount(() => {
@@ -119,8 +132,10 @@ $effect(() => {
 			VIEW_KEY,
 			JSON.stringify({
 				waveform: showAudioLane,
-				zoom: showZoomLane,
-				markup: showMarkupLane,
+				// The PREF, not the resolved value: persisting the resolved boolean
+				// would freeze a lane the moment its content happened to appear.
+				zoom: zoomLanePref,
+				markup: markupLanePref,
 				cuts: showCutLane,
 				gaps: store.showCutGaps,
 			}),
@@ -321,7 +336,7 @@ const laneDrag = provideLaneDrag();
 let pinnedRows = $state<ReadonlyMap<string, number> | null>(null);
 
 const zoomRowsLive = $derived(
-	cardLayout(store.zoomRegions, xOf, { minWidthPx: 32, rowHeightPx: ZOOM_ROW_HEIGHT_PX }),
+	cardLayout(store.zoomRegions, xOf, { minWidthPx: 40, rowHeightPx: ZOOM_ROW_HEIGHT_PX }),
 );
 const markupRowsLive = $derived(cardLayout(store.annotations, xOf));
 
@@ -346,7 +361,7 @@ $effect(() => {
 
 const zoomLayout = $derived(
 	cardLayout(store.zoomRegions, xOf, {
-		minWidthPx: 32,
+		minWidthPx: 40,
 		rowHeightPx: ZOOM_ROW_HEIGHT_PX,
 		pinnedRows: pinnedRows ?? undefined,
 	}),
@@ -379,7 +394,7 @@ const lanes = $derived(
 			label: "Audio",
 			icon: AudioLines,
 			tone: "text-lane-audio",
-			height: AUDIO_LANE_H,
+			height: AUDIO_LANE_HEIGHT_PX,
 			show: showAudioLane,
 		},
 		{
@@ -403,7 +418,7 @@ const lanes = $derived(
 			label: "Cuts",
 			icon: Scissors,
 			tone: "text-lane-cut",
-			height: CUT_LANE_H,
+			height: CUT_LANE_HEIGHT_PX,
 			show: showCutLane,
 		},
 		{
@@ -813,14 +828,33 @@ function handleResize() {
 	timelineWidth = timelineEl.clientWidth;
 }
 
+// Hiding a lane can shrink the content until the browser clamps scrollTop back
+// to 0; resync so the rail never keeps an offset the track no longer has.
+$effect(() => {
+	lanes.length;
+	untrack(() => handleScroll());
+});
+
 function handleScroll() {
-	if (timelineEl) scrollLeft = timelineEl.scrollLeft;
+	if (!timelineEl) return;
+	scrollLeft = timelineEl.scrollLeft;
+	// Written straight to the node, not through state: a reactive round-trip
+	// would land a frame late and shear the labels off their lanes mid-scroll.
+	if (railInnerEl) railInnerEl.style.transform = `translateY(${-timelineEl.scrollTop}px)`;
 }
 
 function handleTimelineWheel(event: WheelEvent) {
 	if (!timelineEl) return;
 
-	if (event.ctrlKey || event.metaKey) {
+	const canScrollVertically = timelineEl.scrollHeight - timelineEl.clientHeight > 1;
+	const intent = wheelIntent(event, canScrollVertically);
+
+	// The scroller owns both axes, so a vertical notch is left to the browser:
+	// native scrolling is smoother than anything we'd write, and `handleScroll`
+	// still fires to carry the rail along.
+	if (intent.kind === "none" || intent.kind === "vertical") return;
+
+	if (intent.kind === "zoom") {
 		event.preventDefault();
 		const rect = timelineEl.getBoundingClientRect();
 		const anchorX = event.clientX - rect.left;
@@ -829,7 +863,7 @@ function handleTimelineWheel(event: WheelEvent) {
 		// Multiplicative, so one wheel notch covers the same proportion of the
 		// range whether the clip is 10 seconds or 30 minutes long.
 		const nextZoom = clampTimelineZoom(
-			store.timelineZoom * (event.deltaY < 0 ? 1.12 : 1 / 1.12),
+			store.timelineZoom * (intent.direction > 0 ? 1.12 : 1 / 1.12),
 			outputDuration,
 			timelineWidth,
 		);
@@ -843,10 +877,8 @@ function handleTimelineWheel(event: WheelEvent) {
 		return;
 	}
 
-	if (Math.abs(event.deltaY) > Math.abs(event.deltaX)) {
-		event.preventDefault();
-		timelineEl.scrollLeft += event.deltaY;
-	}
+	event.preventDefault();
+	timelineEl.scrollLeft += intent.delta;
 }
 
 function syncVideoTime() {
@@ -992,9 +1024,12 @@ onMount(() => {
   </span>
 {/snippet}
 
+<!-- Fills whatever height the editor gives it (the panel is user-resizable), so
+     the toolbar stays pinned and the tracks scroll inside the rest. -->
 <div
-  class="shrink-0 select-none border-t border-border/60 bg-card/30 px-2 pt-1.5 pb-2"
+  class="flex h-full min-h-0 select-none flex-col border-t border-border/60 bg-card/30 px-2 pt-1.5 pb-2"
 >
+  <div class="shrink-0">
   <TimelineToolbar
     {store}
     fps={effectiveFps()}
@@ -1022,36 +1057,48 @@ onMount(() => {
     onZoomToFit={zoomToFit}
     onZoomToSelection={zoomToSelection}
     onToggleAudioLane={() => (showAudioLane = !showAudioLane)}
-    onToggleZoomLane={() => (showZoomLane = !showZoomLane)}
-    onToggleMarkupLane={() => (showMarkupLane = !showMarkupLane)}
+    onToggleZoomLane={() => (zoomLanePref = !showZoomLane)}
+    onToggleMarkupLane={() => (markupLanePref = !showMarkupLane)}
     onToggleCutLane={() => (showCutLane = !showCutLane)}
     onToggleCutGaps={() => (store.showCutGaps = !store.showCutGaps)}
   />
+  </div>
 
-  <!-- Rail lives OUTSIDE the scroller so lane names never overlap a card at t≈0.
-       Row heights mirror the track side (h-7 ruler, h-12 clip, mt-1.5+min-h-9 lanes) so labels align. -->
+  <!-- Frozen row and column, the way a spreadsheet does it: the rail is a
+       sibling of the horizontal scroller so lane names never move sideways (and
+       never overlap a card at t≈0), and the ruler is `sticky top-0` inside the
+       scroller so it holds while the lanes scroll under it. The scroller owns
+       BOTH axes for that to work — sticky resolves against the nearest scrolling
+       ancestor, so a separate outer y-scroller would leave the ruler pinned to
+       content that never moves. The rail has no scrollbar of its own; it follows
+       the track's scrollTop, which keeps every label on its lane's row. -->
   <div
-    class="relative flex overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
+    class="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border/60 bg-background/60 shadow-(--shadow-craft-inset)"
   >
     <div
       class="relative z-10 flex w-16 shrink-0 flex-col border-r border-border/60 bg-card/50"
     >
-      <!-- Aligns with the ruler -->
-      <div class="h-7 border-b border-border/60"></div>
-      <div class="px-1 pb-2 pt-1.5">
+      <!-- Corner cell: holds the rail's edge against the sticky ruler. -->
+      <div class="h-7 shrink-0 border-b border-border/60"></div>
+      <div class="min-h-0 flex-1 overflow-hidden">
         <!-- Track headers. Each row's height comes from the same `lanes` entry the
              body uses, so a lane that grows takes its label with it. -->
-        <div class="flex h-12 items-center justify-center">
-          {@render railLabel(Video, "Clip", "text-foreground/70")}
-        </div>
-        {#each lanes as lane (lane.id)}
+        <div bind:this={railInnerEl} class="px-1 pb-2 pt-1.5 will-change-transform">
           <div
-            class="flex items-start justify-center"
-            style="height: {lane.height}px; margin-top: {LANE_GAP}px;"
+            class="flex items-center justify-center"
+            style="height: {CLIP_LANE_HEIGHT_PX}px;"
           >
-            {@render railLabel(lane.icon, lane.label, lane.tone)}
+            {@render railLabel(Video, "Clip", "text-foreground/70")}
           </div>
-        {/each}
+          {#each lanes as lane (lane.id)}
+            <div
+              class="flex items-start justify-center"
+              style="height: {lane.height}px; margin-top: {LANE_GAP}px;"
+            >
+              {@render railLabel(lane.icon, lane.label, lane.tone)}
+            </div>
+          {/each}
+        </div>
       </div>
     </div>
 
@@ -1063,7 +1110,7 @@ onMount(() => {
       aria-valuemin={0}
       aria-valuemax={duration}
       aria-valuenow={store.currentTime}
-      class="custom-scrollbar relative min-w-0 flex-1 overflow-x-auto overflow-y-hidden rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
+      class="custom-scrollbar relative min-w-0 flex-1 overflow-auto overscroll-contain rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/60"
       style={razorActive ? "cursor: none" : ""}
       onpointerdown={handleTimelinePointerDown}
       onpointermove={handleTimelinePointerMove}
@@ -1075,12 +1122,17 @@ onMount(() => {
       onkeydown={handleTimelineKeydown}
     >
       <div class="relative min-w-full" style="width: {totalWidth}px;">
-        <TimelineRuler
-          duration={outputDuration}
-          {pixelsPerSecond}
-          {timeMode}
-          fps={effectiveFps()}
-        />
+        <!-- Opaque, or the lanes scrolling underneath show through the ticks.
+             z-20 puts it over the cards but under the playhead (z-30), so the
+             head still reads as crossing the ruler band. -->
+        <div class="sticky top-0 z-20 bg-background">
+          <TimelineRuler
+            duration={outputDuration}
+            {pixelsPerSecond}
+            {timeMode}
+            fps={effectiveFps()}
+          />
+        </div>
 
       <!-- No horizontal padding: lanes must share the x-origin of the ruler and
            playhead (both direct children at x=0), or every tile sits offset from
@@ -1106,8 +1158,8 @@ onMount(() => {
 
         <!-- Same `lanes` list as the rail: same order, same visibility, same
              heights. Cuts sit next to Audio because cutting against the waveform
-             is the common task; the cut lane draws its own faint waveform only
-             when the Audio lane is hidden, so the two never duplicate. -->
+             is the common task — by adjacency, not by the cut lane drawing its
+             own copy of the envelope. The waveform belongs to the Audio lane. -->
         {#each lanes as lane (lane.id)}
           {#if lane.id === "audio"}
             <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
@@ -1130,12 +1182,7 @@ onMount(() => {
               panelTab="music"
             />
           {:else if lane.id === "cuts"}
-            <TimelineCutLane
-              {store}
-              {pixelsPerSecond}
-              {duration}
-              showWaveform={!showAudioLane}
-            />
+            <TimelineCutLane {store} {pixelsPerSecond} {duration} />
           {:else if lane.id === "zoom"}
             <TimelineZoomLane
               {store}
@@ -1257,8 +1304,10 @@ onMount(() => {
 {/if}
 
 <style>
+  /* Width applies to the vertical bar, shown once the lanes outgrow the panel. */
   .custom-scrollbar::-webkit-scrollbar {
     height: 8px;
+    width: 8px;
   }
 
   .custom-scrollbar::-webkit-scrollbar-track {
