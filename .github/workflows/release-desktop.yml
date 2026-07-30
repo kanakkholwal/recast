@@ -42,7 +42,7 @@ jobs:
       release_id: ${{ steps.create_release.outputs.id }}
       tag_name: ${{ steps.resolve_tag.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
           fetch-tags: true

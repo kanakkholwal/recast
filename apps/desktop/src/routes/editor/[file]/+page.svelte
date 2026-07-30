@@ -60,6 +60,9 @@ import { formatClock, frameStepOutput } from "$lib/editor/time";
 import { runBrowserExport } from "$lib/export/browser-export";
 import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
+import { chooseExportEngine } from "$lib/export/choose-export-engine";
+import { probeBrowserExportCapability } from "$lib/export/export-capability";
+import { BROWSER_EXPORT_ENABLED } from "$lib/feature-flags";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	autosaveProject,
@@ -1275,9 +1278,6 @@ const exportResult = $derived<ExportResult | null>(
 				: null,
 );
 
-// Phase 4: browser-render the video + FFmpeg mux. OFF by default — flip to
-// exercise the new path; any failure falls back to the classic Rust export.
-const BROWSER_EXPORT_ENABLED = false;
 async function handleExport() {
 	if (isExportingHere) return;
 	const exportId = createExportId();
@@ -1333,8 +1333,22 @@ async function handleExport() {
 		// Hand the fully-built export to the queue; the store runs it (after any
 		// already-running one), so it survives leaving this editor.
 		let browserVideoPath: string | undefined;
-		const browserBlocked = browserExportBlockedReason(store);
-		if (BROWSER_EXPORT_ENABLED && !browserBlocked) {
+		// Resolve the export engine. Master flag off ⇒ always Rust (no behavior change)
+		// until the A/B gate; the resolver still falls back per capability/eligibility.
+		const capability = BROWSER_EXPORT_ENABLED ? await probeBrowserExportCapability() : null;
+		const engine = chooseExportEngine({
+			masterEnabled: BROWSER_EXPORT_ENABLED,
+			forceLegacy: false,
+			blockedReason: browserExportBlockedReason(store),
+			capabilitySupported: capability?.supported ?? false,
+		});
+		log.info("export", "export_engine", {
+			exportId,
+			engine: engine.engine,
+			reason: engine.reason,
+			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
+		});
+		if (engine.engine === "browser") {
 			try {
 				// GIF renders at its own target fps (the picker is MP4/WebM-only); the
 				// Rust palette pass re-reads this browser video, so match its fps here.
@@ -1346,13 +1360,19 @@ async function handleExport() {
 						: store.exportFps && store.exportFps > 0
 							? store.exportFps
 							: (meta?.fps ?? 30);
+				const renderStart = performance.now();
 				browserVideoPath = await runBrowserExport(store, {
 					videoUrl: videoSrc,
 					cameraUrl: cameraSrc,
 					quality: store.exportQuality as ExportQuality,
 					fps: renderFps,
 				});
+				log.info("export", "export_render", {
+					exportId,
+					renderMs: Math.round(performance.now() - renderStart),
+				});
 			} catch (e) {
+				log.error("export", "export_render_failed", { exportId, message: String(e) });
 				console.error("browser export render failed; using the Rust compositor", e);
 				browserVideoPath = undefined;
 			}
