@@ -71,6 +71,7 @@
 		"drizzle-orm": "^0.45.2",
 		"files-sdk": "^1.6.0",
 		"gsap": "^3.15.0",
+		"mermaid": "^11.16.0",
 		"mode-watcher": "^1.1.0",
 		"nanoid": "^5.1.11",
 		"postgres": "^3.4.9",

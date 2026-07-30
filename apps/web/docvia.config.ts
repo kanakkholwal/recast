@@ -5,6 +5,67 @@ import { z } from "zod";
 
 type Renderer = ReturnType<typeof createSvelteRenderer>;
 
+/** Class the browser looks for to swap a fenced block for a rendered diagram. */
+const MERMAID_CLASS = "docvia-mermaid";
+
+// Derived from `defineConfig` rather than imported: `@docvia/ir` is a
+// transitive dependency, and reaching into one would break the moment pnpm
+// stops hoisting it.
+type DocviaPlugin = NonNullable<Parameters<typeof defineConfig>[0]["plugins"]>[number];
+type IRDoc = Parameters<NonNullable<DocviaPlugin["beforeRender"]>>[0];
+type IRNode = IRDoc["children"][number];
+
+function escapeHtml(value: string): string {
+	return value
+		.replace(/&/g, "&amp;")
+		.replace(/</g, "&lt;")
+		.replace(/>/g, "&gt;")
+		.replace(/"/g, "&quot;");
+}
+
+/**
+ * Tag ```mermaid fences so the browser can find them.
+ *
+ * Shiki has no mermaid grammar, so it throws and falls back to a bare
+ * `<pre><code>` with no language class at all. The IR still knows the language
+ * (`props.lang`), but the Svelte renderer drops it, so by the time the tree
+ * reaches the page a mermaid block is indistinguishable from any other
+ * unhighlighted one. Detecting it by sniffing for `flowchart` in the source
+ * would hijack any post that quotes mermaid syntax in prose.
+ *
+ * So the language is turned into a class here, while it is still known.
+ * `phase: "post"` with a priority above Shiki's default 100 means this runs
+ * AFTER highlighting and overwrites its fallback rather than being overwritten.
+ */
+function mermaidBlocks(): DocviaPlugin {
+	const mark = (nodes: readonly IRNode[]): IRNode[] =>
+		nodes.map((node) => {
+			if (node.type === "code-block" && String(node.props.lang ?? "").trim() === "mermaid") {
+				const source = String(node.props.value ?? "");
+				return {
+					...node,
+					props: {
+						...node.props,
+						html: `<pre class="${MERMAID_CLASS}"><code>${escapeHtml(source)}</code></pre>`,
+					},
+				};
+			}
+			if (node.children.length > 0) return { ...node, children: mark(node.children) };
+			return node;
+		});
+
+	return {
+		name: "recast/mermaid-blocks",
+		version: "1.0.0",
+		phase: "post",
+		priority: 200,
+		cacheKey: () => `recast-mermaid@1|${MERMAID_CLASS}`,
+		beforeRender(doc) {
+			return { ...doc, children: mark(doc.children) };
+		},
+	};
+}
+
 /**
  * Fields beyond docvia's built-ins (title, description, tags, slug, order).
  * Validated at compile time, so a post that forgets its byline or date fails the
@@ -88,5 +149,7 @@ export default defineConfig({
 				"yaml",
 			],
 		}),
+		// Must stay AFTER shiki: it rewrites shiki's unknown-language fallback.
+		mermaidBlocks(),
 	],
 });

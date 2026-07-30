@@ -50,7 +50,9 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - More precise timeline editing: the playhead tracks the video exactly, timecodes match everywhere, and the Cut tool works across every lane.
 
 ### Added
-- Camera overlay. Your webcam records as its own track and appears as a bubble in the editor. Move and resize it, pick a square, rounded, or circle shape, mirror it, and give it a drop shadow. It renders in the preview and the exported video.
+- Roll, slide, and slip editing on the video track. Drag a split to move the cut point between two clips, drag a removed section to shift it without changing its length, and Alt+drag a clip that has a removed section on both sides to slide its footage inside its slot.
+- Fine control while dragging anything on the timeline. Hold Shift for slow, precise movement, and hold Ctrl (Cmd on macOS) to ignore snapping when you need a position the guides keep pulling you off.
+- Clip names on the timeline. Video blocks show the source file and their length, and the audio track names what it captured, so a split clip and its neighbour are no longer identical grey blocks. Move and resize it, pick a square, rounded, or circle shape, mirror it, and give it a drop shadow. It renders in the preview and the exported video.
 - Grow the camera on zoom. As a zoom ramps in, the bubble grows and drifts away from the focus so it never covers the zoomed area, with its own transition length and easing.
 - Per-cut camera positioning. Set a different camera position for each cut and the bubble glides between them, with easing you control.
 - Independent audio levels for the system and microphone tracks, each with its own volume, a mute toggle, and smooth fades.
@@ -64,6 +66,10 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - Cut sections are now selectable and can be removed from the keyboard, like zoom regions and markup.
 
 ### Changed
+- Redesigned the timeline blocks. Clips are solid, readable objects with their name inside them, at one consistent height across every track, instead of faint tinted strips.
+- New timeline track colours, picked to match editing conventions rather than the brand: red for removed sections, green for the recording's audio, teal for music, blue for zoom, violet for markup.
+- The waveform now appears only in the Audio track. It used to be redrawn faintly behind the Cuts track whenever you hid the Audio one, which put it back on screen at the moment you asked for it to go away.
+- The Camera panel now says why there is no camera to edit: the camera was off, it was switched on but failed to record, or the recording was made before Recast could capture a camera at all.
 - The properties panel section switcher is now a grouped vertical icon rail instead of a wrapping row of icons, with consistent active states and calmer motion.
 - In the Background section, the controls follow the order you build a look: background first, then framing (padding and corner radius), then drop shadow. Corner radius has a tighter range and finer steps.
 - Timeline editing shortcuts (Split, Cut, and set in/out points) now work without clicking the timeline first, and the on-screen keys reflect that.
@@ -72,6 +78,12 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The preview shows a scrubber only when the timeline is hidden, so there are no longer two scrubbers at once.
 
 ### Fixed
+- Dragging a zoom or markup block on the timeline barely moved it. The drag maths mixed up pixels and seconds, so a block travelled a hundredth of the distance your pointer did, which read as the block being stuck.
+- Timeline blocks jumped to a different row mid-drag as soon as they touched a neighbour, leaving the block you were holding somewhere other than under the cursor.
+- Clicking a timeline block to select it could nudge it slightly and add an undo step that changed nothing.
+- The preview's progress bar lagged behind its own handle, and stepped forward in visible jumps during playback instead of moving smoothly.
+- The preview had no scrubber at all in fullscreen when the timeline was open.
+- Very short blocks were nearly impossible to grab by the edge to resize.
 - The Cut (razor) tool now works when clicking over any lane, not only empty timeline space, and can be exited with the keyboard or Escape.
 - Undo now correctly reverses a cut dragged out on the Cuts lane.
 - The timeline playhead no longer lags behind the video during playback.

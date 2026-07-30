@@ -55,6 +55,11 @@ pub(crate) fn run_encode(
         .stderr(Stdio::piped());
     crate::ffmpeg::configure_silent_command(&mut command);
 
+    // Log the full invocation so a crash (ffmpeg segfaults print nothing to
+    // stderr) is still diagnosable — this is the only record of which encoder /
+    // filters / inputs were in play when it died.
+    log::info!("export: ffmpeg args: {}", args.join(" "));
+
     let mut child = command
         .spawn()
         .map_err(|e| format!("failed to start ffmpeg: {e}"))?;
