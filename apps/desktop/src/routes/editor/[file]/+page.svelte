@@ -1,4 +1,5 @@
 <script lang="ts">
+import type { IconComponent } from "@recast/icons";
 import {
 	ArrowLeft,
 	BrandGoogleDrive,
@@ -15,6 +16,7 @@ import {
 } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
+import { Spinner } from "@recast/ui/spinner";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
@@ -22,8 +24,23 @@ import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
-import { settingsHref } from "../../(app)/settings/settings-tabs";
 import { page } from "$app/state";
+import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
+import EditorToolbar from "$components/editor/EditorToolbar.svelte";
+import ExportDialog from "$components/editor/ExportDialog.svelte";
+import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
+import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
+import Timeline from "$components/editor/Timeline.svelte";
+import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
+import VideoPreview from "$components/editor/VideoPreview.svelte";
+import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
+import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import PlayerDialog from "$components/recast/PlayerDialog.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+import { clipAssetPath } from "$lib/audio/music";
+import { type DestinationTile, destinationTile, uploadForPath } from "$lib/cloud/destination-tile";
+import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
 import {
 	boolParam,
 	PANEL_PARAM,
@@ -33,21 +50,12 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "$lib/editor/editor-url";
-import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import EditorToolbar from "$components/editor/EditorToolbar.svelte";
-import ExportDialog from "$components/editor/ExportDialog.svelte";
-import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
-import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
-import RecastMark from "$components/recast-mark.svelte";
-import Timeline from "$components/editor/Timeline.svelte";
-import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
-import VideoPreview from "$components/editor/VideoPreview.svelte";
-import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
-import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
-import PlayerDialog from "$components/recast/PlayerDialog.svelte";
-import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
-import { clipAssetPath } from "$lib/audio/music";
-import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
+import {
+	clampTimelineHeight,
+	TIMELINE_DEFAULT_HEIGHT_PX,
+	TIMELINE_MIN_HEIGHT_PX,
+	timelineMaxHeight,
+} from "$lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "$lib/editor/time";
 import { runBrowserExport } from "$lib/export/browser-export";
 import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
@@ -68,12 +76,6 @@ import {
 	saveProjectEdits,
 } from "$lib/ipc";
 import type { CameraCapture } from "$lib/ipc-types";
-import {
-	clampTimelineHeight,
-	TIMELINE_DEFAULT_HEIGHT_PX,
-	TIMELINE_MIN_HEIGHT_PX,
-	timelineMaxHeight,
-} from "$lib/editor/panel-size";
 import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
@@ -96,6 +98,7 @@ import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { createTileProvider, type TileProvider } from "$lib/timeline/filmstrip-source";
 import { originalToOutput } from "$lib/timeline/time-map";
+import { settingsHref } from "../../(app)/settings/settings-tabs";
 import {
 	basename,
 	exportEtaMs as computeExportEtaMs,
@@ -1567,49 +1570,104 @@ async function revealExportInFolder() {
 	}
 }
 
+// `init()` is a network round-trip, and until it resolves the tile has nothing
+// to read from the store. Without this the button sat dead for a beat and got
+// clicked again, which is how a single export ended up uploaded three times.
+let checkingDestination = $state<"cloud" | "drive" | null>(null);
+
+const exportPath = $derived(exportResult?.kind === "success" ? exportResult.path : null);
+const cloudTile = $derived(
+	destinationTile(
+		{ idle: "Recast Cloud", done: "Copy link" },
+		{
+			checking: checkingDestination === "cloud",
+			phase: exportPath ? cloudShare.uploads[exportPath]?.status : undefined,
+			hasRecord: !!exportPath && !!cloudShare.getRecordForPath(exportPath),
+		},
+	),
+);
+const driveTile = $derived(
+	destinationTile(
+		{ idle: "Google Drive", done: "Copy link" },
+		{
+			checking: checkingDestination === "drive",
+			phase: exportPath ? uploadForPath(gdrive.uploads, exportPath)?.status : undefined,
+			hasRecord: !!exportPath && !!gdrive.getRecordForPath(exportPath),
+		},
+	),
+);
+
+async function copyToClipboard(text: string, label: string) {
+	try {
+		await navigator.clipboard.writeText(text);
+		toast.success(`${label} copied.`);
+	} catch {
+		toast.error("Could not copy the link.");
+	}
+}
+
 // Push the latest export to Drive, or route to Settings to connect first
 // (connecting opens a browser tab, which can't happen from this card).
 async function uploadExportToDrive() {
-	if (exportResult?.kind !== "success") return;
-	await gdrive.init();
-	if (!gdrive.connected) {
-		toast.info("Connect Google Drive in Settings first.");
-		void goto(settingsHref("cloud"));
-		return;
+	if (exportResult?.kind !== "success" || driveTile.disabled) return;
+	const path = exportResult.path;
+	const link = gdrive.getRecordForPath(path)?.webViewLink;
+	// A finished upload turns the tile into its own link: re-uploading on a
+	// second click is never what "Copy link" means.
+	if (link && driveTile.status === "done") return copyToClipboard(link, "Drive link");
+
+	checkingDestination = "drive";
+	try {
+		await gdrive.init();
+		if (!gdrive.connected) {
+			toast.info("Connect Google Drive in Settings first.");
+			void goto(settingsHref("cloud"));
+			return;
+		}
+		// Byte progress lives in the foreground dialog (and the activity center
+		// once minimized); the tile only reports state. The store toasts the outcome.
+		const id = gdrive.startUpload(path);
+		requestAnimationFrame(() => gdrive.setForeground(id));
+	} finally {
+		checkingDestination = null;
 	}
-	// Progress lives in the foreground dialog (and the activity center once
-	// minimized), never in-place on the card. The store toasts the outcome.
-	const id = gdrive.startUpload(exportResult.path);
-	requestAnimationFrame(() => gdrive.setForeground(id));
 }
 
 // Share the export to Recast Cloud and copy the link; routes to Settings if
-// not signed in. Progress surfaces through corner-notifications (phase-based).
+// not signed in.
 async function shareCurrentExportToCloud() {
-	if (exportResult?.kind !== "success") return;
-	await cloudShare.init();
-	if (!cloudShare.signedIn) {
-		toast.info("Sign in to Recast Cloud in Settings first.");
-		void goto(settingsHref("cloud"));
-		return;
-	}
-	const title = basename(exportResult.path)?.replace(/\.[^.]+$/, "") ?? "Recast";
+	if (exportResult?.kind !== "success" || cloudTile.disabled) return;
+	const path = exportResult.path;
+	const shareUrl = cloudShare.getRecordForPath(path)?.shareUrl;
+	if (shareUrl && cloudTile.status === "done") return copyToClipboard(shareUrl, "Share link");
+
+	checkingDestination = "cloud";
 	try {
-		// The store surfaces success/error toasts and tracks progress in the
-		// activity center, so just copy the link on success here.
-		const result = await cloudShare.share(
-			exportResult.path,
-			title,
-			undefined,
-			buildCloudCaptionTranscript(store),
-		);
-		try {
-			await navigator.clipboard.writeText(result.shareUrl);
-		} catch {
-			// Clipboard blocked; the link is still in the activity center.
+		await cloudShare.init();
+		if (!cloudShare.signedIn) {
+			toast.info("Sign in to Recast Cloud in Settings first.");
+			void goto(settingsHref("cloud"));
+			return;
 		}
+	} finally {
+		checkingDestination = null;
+	}
+
+	const title = basename(path)?.replace(/\.[^.]+$/, "") ?? "Recast";
+	// Fire-and-forget, then foreground on the next frame: the store seeds its
+	// entry synchronously, and the rAF lets any closing overlay settle before a
+	// second modal opens (bits-ui hands focus back otherwise, and the dialog
+	// never appears). The store owns the success/failure toasts.
+	const shared = cloudShare
+		.share(path, title, undefined, buildCloudCaptionTranscript(store))
+		.catch(() => null);
+	requestAnimationFrame(() => cloudShare.setForeground(path));
+	const result = await shared;
+	if (!result) return;
+	try {
+		await navigator.clipboard.writeText(result.shareUrl);
 	} catch {
-		// The store already surfaced the failure.
+		// Clipboard blocked; the link is still in the dialog and activity center.
 	}
 }
 
@@ -2484,6 +2542,47 @@ const stages = $derived.by(() => {
   </div>
 {/snippet}
 
+{#snippet destination(
+  Icon: IconComponent,
+  tile: DestinationTile,
+  onclick: () => void,
+  hint?: string,
+)}
+  <button
+    type="button"
+    {onclick}
+    disabled={tile.disabled}
+    title={hint}
+    aria-busy={tile.status === "busy"}
+    class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border px-3 py-3 text-center transition-colors duration-150 disabled:cursor-default {tile.status ===
+    'error'
+      ? 'border-destructive/40 bg-destructive/5 hover:border-destructive/60'
+      : 'border-border/50 bg-card/60 not-disabled:hover:border-border not-disabled:hover:bg-card'}"
+  >
+    <span
+      class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 shadow-(--shadow-craft-inset) transition-colors {tile.status ===
+      'error'
+        ? 'text-destructive'
+        : tile.status === 'done'
+          ? 'text-success'
+          : 'text-muted-foreground group-hover/dest:text-primary'}"
+    >
+      {#if tile.status === "busy"}
+        <Spinner class="size-4" />
+      {:else if tile.status === "done"}
+        <CheckCircle2 class="size-4" />
+      {:else if tile.status === "error"}
+        <TriangleAlert class="size-4" />
+      {:else}
+        <Icon class="size-4" />
+      {/if}
+    </span>
+    <span class="text-[11px] font-medium leading-none text-foreground">
+      {tile.label}
+    </span>
+  </button>
+{/snippet}
+
 {#snippet success()}
   <div class="flex h-full min-h-0 flex-col">
     <header class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4">
@@ -2521,58 +2620,23 @@ const stages = $derived.by(() => {
 
     <div class="min-h-0 flex-1 overflow-y-auto scrollbar-transparent">
     <!-- Share/upload tiles, grouped out of the footer so they read as one
-         "where does this go?" choice. Upload progress is never shown inline
-         here; it opens the foreground dialog and tracks in the activity center. -->
+         "where does this go?" choice. The tiles carry STATE (working, done,
+         failed) but never a percentage or bar: byte progress belongs to the
+         foreground dialog and the activity center. -->
     <div class="border-t border-border/40 bg-muted/15 px-5 py-3.5">
       <p class="mb-2.5 text-[11px] font-semibold text-foreground">Share or upload</p>
       <div class="flex items-stretch gap-2">
-        <button
-          type="button"
-          onclick={shareCurrentExportToCloud}
-          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
-        >
-          <span
-            class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
-          >
-            <RecastMark class="size-4" />
-          </span>
-          <span class="text-[11px] font-medium leading-none text-foreground">
-            Recast Cloud
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onclick={uploadExportToDrive}
-          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
-        >
-          <span
-            class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
-          >
-            <BrandGoogleDrive class="size-4" />
-          </span>
-          <span class="text-[11px] font-medium leading-none text-foreground">
-            Google Drive
-          </span>
-        </button>
-
+        {@render destination(RecastMark, cloudTile, shareCurrentExportToCloud)}
+        {@render destination(BrandGoogleDrive, driveTile, uploadExportToDrive)}
         {#if shareSupported}
-          {@const ShareIcon = shareTarget.icon}
-          <button
-            type="button"
-            onclick={shareExportedFile}
-            title="Open the system share sheet"
-            class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
-          >
-            <span
-              class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
-            >
-              <ShareIcon class="size-4" />
-            </span>
-            <span class="text-[11px] font-medium leading-none text-foreground">
-              {shareTarget.label}
-            </span>
-          </button>
+          <!-- The OS sheet is its own feedback and finishes with the click, so
+               this one has no state to carry. -->
+          {@render destination(
+            shareTarget.icon,
+            { status: "idle", label: shareTarget.label, disabled: false },
+            shareExportedFile,
+            "Open the system share sheet",
+          )}
         {/if}
       </div>
     </div>
