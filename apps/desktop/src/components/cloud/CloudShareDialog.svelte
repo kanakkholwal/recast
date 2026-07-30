@@ -1,86 +1,85 @@
 <script lang="ts">
-	/**
-	 * Foreground progress for a Recast Cloud share. Reads live upload state from
-	 * the cloudShare store (phase + byte counts + result/error). When the upload
-	 * finishes it shows the share settings inline (link, visibility, password,
-	 * expiry) like the web QuickUpload flow. Minimize keeps the upload running and
-	 * hands it to the activity center. The store also fires success/error toasts,
-	 * so feedback still lands if this dialog is minimized.
-	 */
-	import { formatSize } from "$lib/format/files";
-	import { etaLabel } from "$lib/format/time";
-	import { cloudShare } from "$lib/stores/cloudShare.svelte";
-	import { AlertTriangle, Check, Cloud, Minus } from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Spinner } from "@recast/ui/spinner";
-	import { cn } from "@recast/ui/utils";
-	import CloudShareSettings from "./CloudShareSettings.svelte";
+/**
+ * Foreground progress for a Recast Cloud share. Reads live upload state from
+ * the cloudShare store (phase + byte counts + result/error). When the upload
+ * finishes it shows the share settings inline (link, visibility, password,
+ * expiry) like the web QuickUpload flow. Minimize keeps the upload running and
+ * hands it to the activity center. The store also fires success/error toasts,
+ * so feedback still lands if this dialog is minimized.
+ */
+import { formatSize } from "$lib/format/files";
+import { etaLabel } from "$lib/format/time";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { AlertTriangle, Check, Minus } from "@recast/icons";
+import RecastMark from "$components/recast-mark.svelte";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { Spinner } from "@recast/ui/spinner";
+import { cn } from "@recast/ui/utils";
+import CloudShareSettings from "./CloudShareSettings.svelte";
 
-	let { path }: { path: string } = $props();
+let { path }: { path: string } = $props();
 
-	const upload = $derived(cloudShare.uploads[path]);
-	const record = $derived(cloudShare.uploadHistory[path]);
-	const fileName = $derived(
-		upload?.fileName ?? path.split(/[\\/]/).pop() ?? "",
-	);
-	const status = $derived(upload?.status ?? "uploading");
+const upload = $derived(cloudShare.uploads[path]);
+const record = $derived(cloudShare.uploadHistory[path]);
+const fileName = $derived(upload?.fileName ?? path.split(/[\\/]/).pop() ?? "");
+const status = $derived(upload?.status ?? "uploading");
 
-	/** Background the upload and dismiss the dialog (upload keeps running, and
-	 * resurfaces in the activity center). */
-	function onMinimize() {
-		cloudShare.setForeground(null);
-	}
-	/** Terminal-state dismiss: clears the store entry and closes. */
-	function onClose() {
-		cloudShare.setForeground(null);
-		cloudShare.dismiss(path);
-	}
-	function onRetry() {
-		cloudShare.retry(path);
-	}
-	const phase = $derived(upload?.phase ?? "preparing");
-	const pct = $derived(
-		upload && upload.totalBytes > 0
-			? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
-			: null,
-	);
-	// Byte + ETA readout during the transfer so a multi-minute upload feels
-	// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
-	const transferLabel = $derived.by(() => {
-		if (!upload || upload.totalBytes <= 0) return null;
-		const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
-		const eta =
-			upload.bytesPerSec && upload.bytesPerSec > 0
-				? etaLabel((upload.totalBytes - upload.bytesSent) / upload.bytesPerSec)
-				: null;
-		return eta ? `${size} · ${eta}` : size;
-	});
+/** Background the upload and dismiss the dialog (upload keeps running, and
+ * resurfaces in the activity center). */
+function onMinimize() {
+	cloudShare.setForeground(null);
+}
+/** Terminal-state dismiss: clears the store entry and closes. */
+function onClose() {
+	cloudShare.setForeground(null);
+	cloudShare.dismiss(path);
+}
+function onRetry() {
+	cloudShare.retry(path);
+}
+const phase = $derived(upload?.phase ?? "preparing");
+const pct = $derived(
+	upload && upload.totalBytes > 0
+		? Math.min(100, Math.round((upload.bytesSent / upload.totalBytes) * 100))
+		: null,
+);
+// Byte + ETA readout during the transfer so a multi-minute upload feels
+// in-control (e.g. "12.3 MB of 45.0 MB · ~40s left").
+const transferLabel = $derived.by(() => {
+	if (!upload || upload.totalBytes <= 0) return null;
+	const size = `${formatSize(upload.bytesSent)} of ${formatSize(upload.totalBytes)}`;
+	const eta =
+		upload.bytesPerSec && upload.bytesPerSec > 0
+			? etaLabel((upload.totalBytes - upload.bytesSent) / upload.bytesPerSec)
+			: null;
+	return eta ? `${size} · ${eta}` : size;
+});
 
-	const phaseLabel = $derived(
-		status === "error"
-			? "Upload failed"
-			: phase === "preparing"
-				? "Preparing…"
-				: phase === "uploading"
-					? pct != null
-						? `Uploading… ${pct}%`
-						: "Uploading…"
-					: phase === "finalizing"
-						? "Finalizing…"
-						: "Creating share link…",
-	);
+const phaseLabel = $derived(
+	status === "error"
+		? "Upload failed"
+		: phase === "preparing"
+			? "Preparing…"
+			: phase === "uploading"
+				? pct != null
+					? `Uploading… ${pct}%`
+					: "Uploading…"
+				: phase === "finalizing"
+					? "Finalizing…"
+					: "Creating share link…",
+);
 
-	// Determinate only during the byte upload; other phases sweep indeterminately.
-	const indeterminate = $derived(status === "uploading" && pct == null);
+// Determinate only during the byte upload; other phases sweep indeterminately.
+const indeterminate = $derived(status === "uploading" && pct == null);
 
-	let save = $state<() => Promise<boolean>>(async () => true);
-	let saving = $state(false);
-	let loading = $state(true);
+let save = $state<() => Promise<boolean>>(async () => true);
+let saving = $state(false);
+let loading = $state(true);
 
-	async function done() {
-		if (await save()) onClose();
-	}
+async function done() {
+	if (await save()) onClose();
+}
 </script>
 
 <Dialog.Root
@@ -111,7 +110,7 @@
 					{:else if status === "error"}
 						<AlertTriangle class="size-3.5" />
 					{:else}
-						<Cloud class="size-3.5" />
+						<RecastMark class="size-3.5" />
 					{/if}
 				</span>
 				{status === "complete" ? "Shared to Recast Cloud" : "Share to Recast Cloud"}

@@ -1,260 +1,251 @@
 <script lang="ts">
-  import { ConfirmDialog, RenameDialog } from "$components/recast";
-  import { formatSize } from "$lib/format/files";
-  import {
-    deleteFile,
-    launchRecordingPanel,
-    listRecasts,
-    migrateProject,
-    openFileLocation,
-    renameFile,
-    type RecordingEntry,
-  } from "$lib/ipc";
-  import {
-    openInEditor as openEditorWindow,
-    openInNewWindow,
-  } from "$lib/library/editor-window";
-  import {
-    filterEntries,
-    sortEntries,
-    sumBytes,
-    type LibrarySort,
-  } from "$lib/library/list";
-  import { createSelection } from "$lib/library/selection.svelte";
-  import {
-    createThumbnailLoader,
-    libraryDate,
-    removeThumbnail,
-    removeThumbnails,
-    renameThumbnail,
-  } from "$lib/library/thumbnails";
-  import { morph } from "$lib/morph";
-  import { isShareSupported, shareRecording } from "$lib/share";
-  import {
-    Check,
-    Clock,
-    CopyIcon,
-    ExternalLink,
-    Film,
-    FolderOpen,
-    Grid3x3,
-    History,
-    List,
-    ListChecks,
-    MoreHorizontal,
-    Pencil,
-    Play,
-    RefreshCw,
-    Search,
-    Share2,
-    SortAsc,
-    Trash2,
-    Video,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { ButtonGroup } from "@recast/ui/button-group";
-  import { Cutout } from "@recast/ui/cutout";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { safeStorage } from "@recast/ui/persisted-state";
-  import * as Select from "@recast/ui/select";
-  import { Skeleton } from "@recast/ui/skeleton";
-  import { toast } from "@recast/ui/sonner";
-  import { cn } from "@recast/ui/utils";
-  import { listen } from "@tauri-apps/api/event";
-  import { onMount } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
+import { ConfirmDialog, RenameDialog } from "$components/recast";
+import { formatSize } from "$lib/format/files";
+import {
+	deleteFile,
+	launchRecordingPanel,
+	listRecasts,
+	migrateProject,
+	openFileLocation,
+	renameFile,
+	type RecordingEntry,
+} from "$lib/ipc";
+import { openInEditor as openEditorWindow, openInNewWindow } from "$lib/library/editor-window";
+import { filterEntries, sortEntries, sumBytes, type LibrarySort } from "$lib/library/list";
+import { createSelection } from "$lib/library/selection.svelte";
+import {
+	createThumbnailLoader,
+	libraryDate,
+	removeThumbnail,
+	removeThumbnails,
+	renameThumbnail,
+} from "$lib/library/thumbnails";
+import { morph } from "$lib/morph";
+import { isShareSupported, shareRecording } from "$lib/share";
+import { shareTargetFor } from "$lib/share-target";
+import { platform } from "@tauri-apps/plugin-os";
+import {
+	Check,
+	Clock,
+	CopyIcon,
+	ExternalLink,
+	Film,
+	FolderOpen,
+	Grid3x3,
+	History,
+	List,
+	ListChecks,
+	MoreHorizontal,
+	Pencil,
+	Play,
+	RefreshCw,
+	Search,
+	SortAsc,
+	Trash2,
+	Video,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { ButtonGroup } from "@recast/ui/button-group";
+import { Cutout } from "@recast/ui/cutout";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { safeStorage } from "@recast/ui/persisted-state";
+import * as Select from "@recast/ui/select";
+import { Skeleton } from "@recast/ui/skeleton";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { listen } from "@tauri-apps/api/event";
+import { onMount } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
 
-  let entries = $state<RecordingEntry[]>([]);
-  let isLoading = $state(true);
-  let thumbnails = $state<Record<string, string>>({});
-  let editorWindow = $state<"navigate" | "new-window">("navigate");
-  const loadThumbnails = createThumbnailLoader();
+let entries = $state<RecordingEntry[]>([]);
+let isLoading = $state(true);
+let thumbnails = $state<Record<string, string>>({});
+let editorWindow = $state<"navigate" | "new-window">("navigate");
+const loadThumbnails = createThumbnailLoader();
 
-  let query = $state("");
-  let view = $state<"grid" | "list">("grid");
-  let sort = $state<LibrarySort>("recent");
-  let renameTarget = $state<RecordingEntry | null>(null);
-  let deleteTarget = $state<RecordingEntry | null>(null);
+let query = $state("");
+let view = $state<"grid" | "list">("grid");
+let sort = $state<LibrarySort>("recent");
+let renameTarget = $state<RecordingEntry | null>(null);
+let deleteTarget = $state<RecordingEntry | null>(null);
 
-  // Multi-select: a toolbar "Select" toggle flips the page into selection
-  // mode, where clicking a card checks it instead of opening the editor.
-  let bulkDeleteOpen = $state(false);
-  const selection = createSelection({
-    noun: "recording",
-    deleteFile,
-    onDeleted: (deleted) => {
-      entries = entries.filter((e) => !deleted.has(e.path));
-      if (deleted.size > 0) thumbnails = removeThumbnails(thumbnails, deleted);
-    },
-  });
+// Multi-select: a toolbar "Select" toggle flips the page into selection
+// mode, where clicking a card checks it instead of opening the editor.
+let bulkDeleteOpen = $state(false);
+const selection = createSelection({
+	noun: "recording",
+	deleteFile,
+	onDeleted: (deleted) => {
+		entries = entries.filter((e) => !deleted.has(e.path));
+		if (deleted.size > 0) thumbnails = removeThumbnails(thumbnails, deleted);
+	},
+});
 
-  // Legacy-format migration: surfaced only when the scan finds older bundles.
-  let migrateAllOpen = $state(false);
-  let migrating = $state(false);
-  const legacyCount = $derived(entries.filter((e) => e.needsMigration).length);
+// Legacy-format migration: surfaced only when the scan finds older bundles.
+let migrateAllOpen = $state(false);
+let migrating = $state(false);
+const legacyCount = $derived(entries.filter((e) => e.needsMigration).length);
 
-  onMount(() => {
-    fetchRecasts();
-    editorWindow = safeStorage.get<"navigate" | "new-window">(
-      "recast-editor-window",
-      editorWindow,
-    );
-    view = safeStorage.get<"grid" | "list">("recasts-view", view);
-    const unlisten = listen("refresh-recordings", () => fetchRecasts());
-    return () => {
-      unlisten.then((fn) => fn());
-    };
-  });
+onMount(() => {
+	fetchRecasts();
+	editorWindow = safeStorage.get<"navigate" | "new-window">("recast-editor-window", editorWindow);
+	view = safeStorage.get<"grid" | "list">("recasts-view", view);
+	const unlisten = listen("refresh-recordings", () => fetchRecasts());
+	return () => {
+		unlisten.then((fn) => fn());
+	};
+});
 
-  $effect(() => {
-    safeStorage.set("recasts-view", view);
-  });
+$effect(() => {
+	safeStorage.set("recasts-view", view);
+});
 
-  // Opens the floating recorder (same entry point as ⌘⇧R and the command
-  // palette). Surfaced from the header and the empty state so the core loop
-  // starts from the library, not just Home.
-  async function newRecording() {
-    try {
-      await launchRecordingPanel();
-    } catch (e) {
-      toast.error(`Couldn't open the recorder: ${e}`);
-    }
-  }
+// Opens the floating recorder (same entry point as ⌘⇧R and the command
+// palette). Surfaced from the header and the empty state so the core loop
+// starts from the library, not just Home.
+async function newRecording() {
+	try {
+		await launchRecordingPanel();
+	} catch (e) {
+		toast.error(`Couldn't open the recorder: ${e}`);
+	}
+}
 
-  async function fetchRecasts() {
-    isLoading = true;
-    try {
-      entries = await listRecasts();
-      void refreshThumbnails(entries);
-    } catch (e) {
-      toast.error(`Could not load recordings: ${e}`);
-    } finally {
-      isLoading = false;
-    }
-  }
+async function fetchRecasts() {
+	isLoading = true;
+	try {
+		entries = await listRecasts();
+		void refreshThumbnails(entries);
+	} catch (e) {
+		toast.error(`Could not load recordings: ${e}`);
+	} finally {
+		isLoading = false;
+	}
+}
 
-  async function refreshThumbnails(items: RecordingEntry[]) {
-    const next = await loadThumbnails(items);
-    if (next) thumbnails = next;
-  }
+async function refreshThumbnails(items: RecordingEntry[]) {
+	const next = await loadThumbnails(items);
+	if (next) thumbnails = next;
+}
 
-  const openInEditor = (entry: RecordingEntry) =>
-    openEditorWindow(entry, editorWindow);
+const openInEditor = (entry: RecordingEntry) => openEditorWindow(entry, editorWindow);
 
-  async function handleRename(entry: RecordingEntry, nextName: string) {
-    const newPath = await renameFile(entry.path, nextName);
-    entries = entries.map((e) =>
-      e.path === entry.path
-        ? {
-            ...e,
-            path: newPath,
-            filename: newPath.split(/[\\/]/).pop() ?? nextName,
-          }
-        : e,
-    );
-    thumbnails = renameThumbnail(thumbnails, entry.path, newPath);
-    toast.success("Renamed");
-  }
+async function handleRename(entry: RecordingEntry, nextName: string) {
+	const newPath = await renameFile(entry.path, nextName);
+	entries = entries.map((e) =>
+		e.path === entry.path
+			? {
+					...e,
+					path: newPath,
+					filename: newPath.split(/[\\/]/).pop() ?? nextName,
+				}
+			: e,
+	);
+	thumbnails = renameThumbnail(thumbnails, entry.path, newPath);
+	toast.success("Renamed");
+}
 
-  async function handleDelete(entry: RecordingEntry) {
-    await deleteFile(entry.path);
-    entries = entries.filter((e) => e.path !== entry.path);
-    thumbnails = removeThumbnail(thumbnails, entry.path);
-    toast.success(`Moved "${entry.filename}" to trash`);
-  }
+async function handleDelete(entry: RecordingEntry) {
+	await deleteFile(entry.path);
+	entries = entries.filter((e) => e.path !== entry.path);
+	thumbnails = removeThumbnail(thumbnails, entry.path);
+	toast.success(`Moved "${entry.filename}" to trash`);
+}
 
-  async function copyPath(entry: RecordingEntry) {
-    try {
-      await navigator.clipboard.writeText(entry.path);
-      toast.success("Path copied");
-    } catch (e) {
-      toast.error(`Copy failed: ${e}`);
-    }
-  }
+async function copyPath(entry: RecordingEntry) {
+	try {
+		await navigator.clipboard.writeText(entry.path);
+		toast.success("Path copied");
+	} catch (e) {
+		toast.error(`Copy failed: ${e}`);
+	}
+}
 
-  // `navigator.share` exposure is static, so sample once at module load so the
-  // dropdown can conditionally render the Share item without a reactive read.
-  const shareSupported = isShareSupported();
+// `navigator.share` exposure is static, so sample once at module load so the
+// dropdown can conditionally render the Share item without a reactive read.
+const shareSupported = isShareSupported();
+// Capitalised binding so it reads as a component in markup.
+const ShareIcon = shareTargetFor(platform()).icon;
 
-  /**
-   * Open the OS share sheet for a recording. Raw recordings have no Drive link,
-   * so this only tries the file payload (Web Share Level 2).
-   */
-  async function shareEntry(entry: RecordingEntry) {
-    const result = await shareRecording({
-      path: entry.path,
-      fileName: entry.filename,
-      title: entry.filename,
-      text: "Recorded with Recast",
-    });
-    if (result.ok || result.reason === "cancelled") return;
-    if (result.reason === "unsupported") {
-      toast.error("Sharing files isn't available on this device.");
-    } else {
-      toast.error(`Share failed: ${result.message ?? "unknown error"}`);
-    }
-  }
+/**
+ * Open the OS share sheet for a recording. Raw recordings have no Drive link,
+ * so this only tries the file payload (Web Share Level 2).
+ */
+async function shareEntry(entry: RecordingEntry) {
+	const result = await shareRecording({
+		path: entry.path,
+		fileName: entry.filename,
+		title: entry.filename,
+		text: "Recorded with Recast",
+	});
+	if (result.ok || result.reason === "cancelled") return;
+	if (result.reason === "unsupported") {
+		toast.error("Sharing files isn't available on this device.");
+	} else {
+		toast.error(`Share failed: ${result.message ?? "unknown error"}`);
+	}
+}
 
-  const filtered = $derived(sortEntries(filterEntries(entries, query), sort));
+const filtered = $derived(sortEntries(filterEntries(entries, query), sort));
 
-  const totalSize = $derived(sumBytes(entries));
+const totalSize = $derived(sumBytes(entries));
 
-  // Grid and list share one keyed {#each}. Touching `view` here gives the
-  // each block a reason to re-run on a layout toggle (returning a fresh
-  // array each time), which is what makes `animate:morph` fire.
-  const displayed = $derived.by(() => {
-    void view;
-    return filtered.slice();
-  });
+// Grid and list share one keyed {#each}. Touching `view` here gives the
+// each block a reason to re-run on a layout toggle (returning a fresh
+// array each time), which is what makes `animate:morph` fire.
+const displayed = $derived.by(() => {
+	void view;
+	return filtered.slice();
+});
 
-  function activateEntry(entry: RecordingEntry) {
-    if (selection.selectMode) selection.toggle(entry.path);
-    else openInEditor(entry);
-  }
+function activateEntry(entry: RecordingEntry) {
+	if (selection.selectMode) selection.toggle(entry.path);
+	else openInEditor(entry);
+}
 
-  function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      activateEntry(entry);
-    }
-  }
+function handleCardKeydown(e: KeyboardEvent, entry: RecordingEntry) {
+	if (e.key === "Enter" || e.key === " ") {
+		e.preventDefault();
+		activateEntry(entry);
+	}
+}
 
-  const selectedCount = $derived(selection.count);
-  const allFilteredSelected = $derived(selection.allSelected(filtered));
+const selectedCount = $derived(selection.count);
+const allFilteredSelected = $derived(selection.allSelected(filtered));
 
-  // Migrate every legacy bundle sequentially. Each `migrateProject` runs off
-  // the Rust main thread, and awaiting one at a time avoids parallel disk
-  // re-zips. Failures are surfaced, not thrown, so the dialog still closes.
-  async function handleMigrateAll() {
-    const legacy = entries.filter((e) => e.needsMigration);
-    migrating = true;
-    let ok = 0;
-    for (const e of legacy) {
-      try {
-        await migrateProject(e.path);
-        ok++;
-      } catch (err) {
-        console.warn("Migration failed:", e.path, err);
-      }
-    }
-    migrating = false;
-    const failed = legacy.length - ok;
-    if (failed > 0) toast.error(`Updated ${ok} · ${failed} failed`);
-    else toast.success(`Updated ${ok} project${ok === 1 ? "" : "s"}`);
-    await fetchRecasts();
-  }
+// Migrate every legacy bundle sequentially. Each `migrateProject` runs off
+// the Rust main thread, and awaiting one at a time avoids parallel disk
+// re-zips. Failures are surfaced, not thrown, so the dialog still closes.
+async function handleMigrateAll() {
+	const legacy = entries.filter((e) => e.needsMigration);
+	migrating = true;
+	let ok = 0;
+	for (const e of legacy) {
+		try {
+			await migrateProject(e.path);
+			ok++;
+		} catch (err) {
+			console.warn("Migration failed:", e.path, err);
+		}
+	}
+	migrating = false;
+	const failed = legacy.length - ok;
+	if (failed > 0) toast.error(`Updated ${ok} · ${failed} failed`);
+	else toast.success(`Updated ${ok} project${ok === 1 ? "" : "s"}`);
+	await fetchRecasts();
+}
 
-  async function handleMigrateOne(entry: RecordingEntry) {
-    try {
-      await migrateProject(entry.path);
-      toast.success(`Updated "${entry.filename}"`);
-      await fetchRecasts();
-    } catch (err) {
-      toast.error(`Update failed: ${err}`);
-    }
-  }
+async function handleMigrateOne(entry: RecordingEntry) {
+	try {
+		await migrateProject(entry.path);
+		toast.success(`Updated "${entry.filename}"`);
+		await fetchRecasts();
+	} catch (err) {
+		toast.error(`Update failed: ${err}`);
+	}
+}
 </script>
 
 <div class="h-full overflow-y-auto scrollbar-transparent no-scrollbar">
@@ -653,7 +644,7 @@
                     </DropdownMenu.Item>
                     {#if shareSupported}
                       <DropdownMenu.Item onSelect={() => shareEntry(entry)}>
-                        <Share2 class="size-3" /> Share…
+                        <ShareIcon class="size-3" /> Share…
                       </DropdownMenu.Item>
                     {/if}
                     <DropdownMenu.Separator />

@@ -290,11 +290,19 @@ export { IconStarFilled as StarFilled } from "@tabler/icons-svelte";
 export { IconUserFilled as UserFilled } from "@tabler/icons-svelte";
 export { IconXFilled as XFilled } from "@tabler/icons-svelte";
 
+// Brand marks. Named `Brand*` because they depict a third party's logo and are
+// only correct for that product — never reach for one as a generic glyph.
+// (`Apple` above is Tabler's fruit; `BrandApple` is the company.)
+export { IconBrandGoogleDrive as BrandGoogleDrive } from "@tabler/icons-svelte";
+export { IconBrandWindows as BrandWindows } from "@tabler/icons-svelte";
+export { IconBrandApple as BrandApple } from "@tabler/icons-svelte";
+
 // Hand-stitched fallbacks — Tabler has no direct equivalent.
 // Each entry re-exports from `../fallback/<Name>.svelte`,
 // authored under `packages/icons/src/fallback/`.
 
 export { default as AlignVerticalSpaceAround } from "../fallback/AlignVerticalSpaceAround.svelte";
+export { default as BrandLinux } from "../fallback/BrandLinux.svelte";
 export { default as Grid2X2 } from "../fallback/Grid2x2.svelte";
 export { default as MonitorPlay } from "../fallback/MonitorPlay.svelte";
 export { default as Move3d } from "../fallback/Move3d.svelte";

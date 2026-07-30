@@ -1,37 +1,37 @@
 <script lang="ts">
-  import { gdrive } from "$lib/stores/gdrive.svelte";
-  import { HardDriveUpload, LoaderCircle, LogOut } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { toast } from "@recast/ui/sonner";
-  import { onMount } from "svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
+import { BrandGoogleDrive, LoaderCircle, LogOut } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { onMount } from "svelte";
 
-  /**
-   * Settings tile for the Google Drive connection. Modeled on
-   * `CloudSignIn.svelte`, but the OAuth flow uses loopback redirect (no
-   * device code to surface) so this is a much simpler two-state row:
-   * connected (show email + Disconnect), or disconnected (Connect button).
-   */
+/**
+ * Settings tile for the Google Drive connection. Modeled on
+ * `CloudSignIn.svelte`, but the OAuth flow uses loopback redirect (no
+ * device code to surface) so this is a much simpler two-state row:
+ * connected (show email + Disconnect), or disconnected (Connect button).
+ */
 
-  let loadingStatus = $state(true);
+let loadingStatus = $state(true);
 
-  onMount(async () => {
-    await gdrive.init();
-    loadingStatus = false;
-  });
+onMount(async () => {
+	await gdrive.init();
+	loadingStatus = false;
+});
 
-  async function handleConnect() {
-    try {
-      await gdrive.connect();
-      // Success surfaces via the gdrive:connected listener; only toast failures.
-    } catch (e) {
-      toast.error(`Couldn't connect Google Drive: ${e}`);
-    }
-  }
+async function handleConnect() {
+	try {
+		await gdrive.connect();
+		// Success surfaces via the gdrive:connected listener; only toast failures.
+	} catch (e) {
+		toast.error(`Couldn't connect Google Drive: ${e}`);
+	}
+}
 
-  async function handleDisconnect() {
-    await gdrive.disconnect();
-    toast.success("Disconnected from Google Drive.");
-  }
+async function handleDisconnect() {
+	await gdrive.disconnect();
+	toast.success("Disconnected from Google Drive.");
+}
 </script>
 
 <div class="px-4 py-3">
@@ -46,7 +46,7 @@
         <div
           class="flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary ring-1 ring-inset ring-primary/30"
         >
-          <HardDriveUpload class="size-4" />
+          <BrandGoogleDrive class="size-4" />
         </div>
         <div class="min-w-0">
           <div class="text-[12px] font-semibold text-foreground">
@@ -88,7 +88,7 @@
           <LoaderCircle class="size-3.5 animate-spin" />
           <span class="text-[11.5px]">Connecting…</span>
         {:else}
-          <HardDriveUpload class="size-3.5" />
+          <BrandGoogleDrive class="size-3.5" />
           <span class="text-[11.5px]">Connect</span>
         {/if}
       </Button>

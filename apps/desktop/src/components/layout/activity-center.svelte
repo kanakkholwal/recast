@@ -1,149 +1,137 @@
 <script lang="ts">
-	/**
-	 * Titlebar activity center: a bell button that surfaces background upload
-	 * progress (Recast Cloud + Google Drive) and their completions in a popover.
-	 * Minimizing the share dialog lands here. The button badges the pending count
-	 * and the icon pulses while anything is uploading.
-	 */
-	import { goto } from "$app/navigation";
-	import { openFileLocation } from "$lib/ipc";
-	import { cloudShare } from "$lib/stores/cloudShare.svelte";
-	import {
-	  exportActivity,
-	  type ExportItem,
-	} from "$lib/stores/exportActivity.svelte";
-	import { gdrive } from "$lib/stores/gdrive.svelte";
-	import {
-	  CheckCircle2,
-	  Clock,
-	  Cloud,
-	  Copy,
-	  ExternalLink,
-	  Film,
-	  FolderOpen,
-	  Inbox,
-	  RefreshCw,
-	  TriangleAlert,
-	  X
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import * as Popover from "@recast/ui/popover";
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { cloudPhaseLabel, uploadPct } from "../corner-notifications.logic";
+/**
+ * Titlebar activity center: a bell button that surfaces background upload
+ * progress (Recast Cloud + Google Drive) and their completions in a popover.
+ * Minimizing the share dialog lands here. The button badges the pending count
+ * and the icon pulses while anything is uploading.
+ */
+import { goto } from "$app/navigation";
+import { openFileLocation } from "$lib/ipc";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import { exportActivity, type ExportItem } from "$lib/stores/exportActivity.svelte";
+import { gdrive } from "$lib/stores/gdrive.svelte";
+import RecastMark from "$components/recast-mark.svelte";
+import {
+	CheckCircle2,
+	Clock,
+	BrandGoogleDrive,
+	Copy,
+	ExternalLink,
+	Film,
+	FolderOpen,
+	Inbox,
+	RefreshCw,
+	TriangleAlert,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Popover from "@recast/ui/popover";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { cloudPhaseLabel, uploadPct } from "../corner-notifications.logic";
 
-	// Cloud uploads shown in a foreground dialog are hidden here; they reappear
-	// on minimize.
-	const cloudItems = $derived(
-		cloudShare.activeUploads.filter(
-			(u) => u.sourcePath !== cloudShare.foregroundPath,
-		),
-	);
-	// Same for Drive: hide the one currently in its foreground dialog.
-	const driveItems = $derived(
-		gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId),
-	);
-	// Export queue, hiding the one item whose panel is on screen in the editor
-	// (foregrounded AND an editor mounted); on any other route every item stays
-	// visible so a background export is never hidden with nowhere to show it.
-	const exportItems = $derived(
-		exportActivity.items.filter(
-			(it) =>
-				!(
-					exportActivity.foreground &&
-					exportActivity.editorPresent &&
-					it.id === exportActivity.foregroundId
-				),
-		),
-	);
-	const total = $derived(
-		cloudItems.length + driveItems.length + exportItems.length,
-	);
-	const busy = $derived(
-		exportItems.some((i) => i.status === "running") ||
-			cloudItems.some((u) => u.status === "uploading") ||
-			driveItems.some((u) => u.status === "uploading"),
-	);
+// Cloud uploads shown in a foreground dialog are hidden here; they reappear
+// on minimize.
+const cloudItems = $derived(
+	cloudShare.activeUploads.filter((u) => u.sourcePath !== cloudShare.foregroundPath),
+);
+// Same for Drive: hide the one currently in its foreground dialog.
+const driveItems = $derived(gdrive.activeUploads.filter((u) => u.uploadId !== gdrive.foregroundId));
+// Export queue, hiding the one item whose panel is on screen in the editor
+// (foregrounded AND an editor mounted); on any other route every item stays
+// visible so a background export is never hidden with nowhere to show it.
+const exportItems = $derived(
+	exportActivity.items.filter(
+		(it) =>
+			!(
+				exportActivity.foreground &&
+				exportActivity.editorPresent &&
+				it.id === exportActivity.foregroundId
+			),
+	),
+);
+const total = $derived(cloudItems.length + driveItems.length + exportItems.length);
+const busy = $derived(
+	exportItems.some((i) => i.status === "running") ||
+		cloudItems.some((u) => u.status === "uploading") ||
+		driveItems.some((u) => u.status === "uploading"),
+);
 
-	const exportPhaseLabel: Record<string, string> = {
-		preparing: "Preparing export",
-		encoding: "Rendering video",
-		finalizing: "Finalising file",
-		cancelling: "Cancelling export",
-	};
+const exportPhaseLabel: Record<string, string> = {
+	preparing: "Preparing export",
+	encoding: "Rendering video",
+	finalizing: "Finalising file",
+	cancelling: "Cancelling export",
+};
 
-	// "Clear all" dismisses every FINISHED item across the panel, leaving anything
-	// still in progress or queued/uploading. Reuses each store's per-item dismiss.
-	const clearableExports = $derived(
-		exportItems.filter((i) => i.status !== "running" && i.status !== "queued"),
-	);
-	const clearableCloud = $derived(
-		cloudItems.filter((u) => u.status !== "uploading"),
-	);
-	const clearableDrive = $derived(
-		driveItems.filter((u) => u.status !== "uploading"),
-	);
-	const clearableCount = $derived(
-		clearableExports.length + clearableCloud.length + clearableDrive.length,
-	);
+// "Clear all" dismisses every FINISHED item across the panel, leaving anything
+// still in progress or queued/uploading. Reuses each store's per-item dismiss.
+const clearableExports = $derived(
+	exportItems.filter((i) => i.status !== "running" && i.status !== "queued"),
+);
+const clearableCloud = $derived(cloudItems.filter((u) => u.status !== "uploading"));
+const clearableDrive = $derived(driveItems.filter((u) => u.status !== "uploading"));
+const clearableCount = $derived(
+	clearableExports.length + clearableCloud.length + clearableDrive.length,
+);
 
-	function clearAll() {
-		for (const it of clearableExports) exportActivity.dismiss(it.id);
-		for (const u of clearableCloud) cloudShare.dismiss(u.sourcePath);
-		for (const u of clearableDrive) gdrive.dismissUpload(u.uploadId);
+function clearAll() {
+	for (const it of clearableExports) exportActivity.dismiss(it.id);
+	for (const u of clearableCloud) cloudShare.dismiss(u.sourcePath);
+	for (const u of clearableDrive) gdrive.dismissUpload(u.uploadId);
+}
+
+let open = $state(false);
+
+// A finished export opens the Exports page; an active/queued one reopens its
+// panel in the owning editor.
+function openExportItem(item: ExportItem) {
+	open = false;
+	if (item.status === "success") {
+		void goto("/exports");
+		return;
 	}
+	exportActivity.show(item.id);
+}
 
-	let open = $state(false);
+async function showExportInFolder(path: string) {
+	try {
+		await openFileLocation(path);
+	} catch (e) {
+		toast.error(`Could not open folder: ${e}`);
+	}
+}
 
-	// A finished export opens the Exports page; an active/queued one reopens its
-	// panel in the owning editor.
-	function openExportItem(item: ExportItem) {
-		open = false;
-		if (item.status === "success") {
-			void goto("/exports");
-			return;
-		}
-		exportActivity.show(item.id);
-	}
+// Reopen the foreground share dialog for a Recast Cloud upload: progress while
+// it runs, share settings once it lands. Closes the popover so the two
+// overlays don't fight.
+function openShare(path: string) {
+	open = false;
+	cloudShare.setForeground(path);
+}
 
-	async function showExportInFolder(path: string) {
-		try {
-			await openFileLocation(path);
-		} catch (e) {
-			toast.error(`Could not open folder: ${e}`);
-		}
-	}
+// Same for a Google Drive upload: reopen its progress/result dialog.
+function openDrive(uploadId: string) {
+	open = false;
+	gdrive.setForeground(uploadId);
+}
 
-	// Reopen the foreground share dialog for a Recast Cloud upload: progress while
-	// it runs, share settings once it lands. Closes the popover so the two
-	// overlays don't fight.
-	function openShare(path: string) {
-		open = false;
-		cloudShare.setForeground(path);
+async function copy(link: string, label: string) {
+	try {
+		await navigator.clipboard.writeText(link);
+		toast.success(label);
+	} catch (e) {
+		toast.error(`Could not copy link: ${e}`);
 	}
-
-	// Same for a Google Drive upload: reopen its progress/result dialog.
-	function openDrive(uploadId: string) {
-		open = false;
-		gdrive.setForeground(uploadId);
+}
+async function openLink(link: string) {
+	try {
+		const { openUrl } = await import("@tauri-apps/plugin-opener");
+		await openUrl(link);
+	} catch {
+		window.open(link, "_blank", "noopener");
 	}
-
-	async function copy(link: string, label: string) {
-		try {
-			await navigator.clipboard.writeText(link);
-			toast.success(label);
-		} catch (e) {
-			toast.error(`Could not copy link: ${e}`);
-		}
-	}
-	async function openLink(link: string) {
-		try {
-			const { openUrl } = await import("@tauri-apps/plugin-opener");
-			await openUrl(link);
-		} catch {
-			window.open(link, "_blank", "noopener");
-		}
-	}
+}
 </script>
 
 <Popover.Root {open} onOpenChange={(v) => (open = v)}>
@@ -364,7 +352,7 @@
 									)}
 								>
 									{#if up.status === "uploading"}
-										<Cloud class="size-3.5 motion-safe:animate-pulse" />
+										<RecastMark class="size-3.5 motion-safe:animate-pulse" />
 									{:else if up.status === "complete"}
 										<CheckCircle2 class="size-3.5" />
 									{:else}
@@ -454,7 +442,7 @@
 									)}
 								>
 									{#if up.status === "uploading"}
-										<RefreshCw class="size-3.5 motion-safe:animate-spin" />
+										<BrandGoogleDrive class="size-3.5 motion-safe:animate-pulse" />
 									{:else if up.status === "complete"}
 										<CheckCircle2 class="size-3.5" />
 									{:else}

@@ -1,15 +1,13 @@
 <script lang="ts">
 import {
 	ArrowLeft,
+	BrandGoogleDrive,
 	CheckCircle2,
 	Clock,
-	Cloud,
 	Copy,
 	FlaskConical,
 	FolderOpen,
-	HardDriveUpload,
 	Play,
-	Share2,
 	TriangleAlert,
 	Upload,
 	VolumeX,
@@ -18,6 +16,7 @@ import {
 import { Button } from "@recast/ui/button";
 import { toast } from "@recast/ui/sonner";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { platform } from "@tauri-apps/plugin-os";
 import { onDestroy, onMount, tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
@@ -38,6 +37,7 @@ import EditorToolbar from "$components/editor/EditorToolbar.svelte";
 import ExportDialog from "$components/editor/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
 import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
+import RecastMark from "$components/recast-mark.svelte";
 import Timeline from "$components/editor/Timeline.svelte";
 import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
 import VideoPreview from "$components/editor/VideoPreview.svelte";
@@ -79,6 +79,7 @@ import {
 	hasBlurUnderZoom,
 } from "$lib/services/export";
 import { isShareSupported, shareRecording } from "$lib/share";
+import { shareTargetFor } from "$lib/share-target";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { createEditorStore, type VideoMetadata } from "$lib/stores/editor-store.svelte";
@@ -1517,8 +1518,10 @@ async function shareCurrentExportToCloud() {
 }
 
 // `navigator.share` exposure is static; sample once so the button renders
-// without a reactive read.
+// without a reactive read. Same for the host OS, which names and marks the sheet
+// this opens — "Windows share" beats a generic node on a machine that has one.
 const shareSupported = isShareSupported();
+const shareTarget = shareTargetFor(platform());
 
 async function shareExportedFile() {
 	if (exportResult?.kind !== "success") return;
@@ -2399,7 +2402,7 @@ const stages = $derived.by(() => {
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <Cloud class="size-4" />
+            <RecastMark class="size-4" />
           </span>
           <span class="text-[11px] font-medium leading-none text-foreground">
             Recast Cloud
@@ -2414,7 +2417,7 @@ const stages = $derived.by(() => {
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
           >
-            <HardDriveUpload class="size-4" />
+            <BrandGoogleDrive class="size-4" />
           </span>
           <span class="text-[11px] font-medium leading-none text-foreground">
             Google Drive
@@ -2422,6 +2425,7 @@ const stages = $derived.by(() => {
         </button>
 
         {#if shareSupported}
+          {@const ShareIcon = shareTarget.icon}
           <button
             type="button"
             onclick={shareExportedFile}
@@ -2431,10 +2435,10 @@ const stages = $derived.by(() => {
             <span
               class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
             >
-              <Share2 class="size-4" />
+              <ShareIcon class="size-4" />
             </span>
             <span class="text-[11px] font-medium leading-none text-foreground">
-              System share
+              {shareTarget.label}
             </span>
           </button>
         {/if}

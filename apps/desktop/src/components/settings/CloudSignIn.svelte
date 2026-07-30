@@ -1,71 +1,70 @@
 <script lang="ts">
- import { formatBytes } from "$lib/format/bytes";
-	import { cloudShare } from "$lib/stores/cloudShare.svelte";
-	import {
-	  ArrowUpRight,
-	  BarChart3,
-	  Check,
-	  ChevronsUpDown,
-	  Cloud,
-	  Crown,
-	  LoaderCircle,
-	  Lock,
-	  LogOut,
-	  MessageSquare,
-	  Palette,
-	  ShieldAlert,
-	  Sparkles,
-	  Users,
-	  Video,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import * as DropdownMenu from "@recast/ui/dropdown-menu";
-	import { toast } from "@recast/ui/sonner";
-	import { cn } from "@recast/ui/utils";
-	import { openUrl } from "@tauri-apps/plugin-opener";
-	import { onDestroy, onMount } from "svelte";
-	import {
-	  formatMemberSince,
-	  formatUserCode,
-	  initials,
-	  planLabel,
-	  roleLabel,
-	} from "./cloud-signin.logic";
-	import { CloudAuth } from "./cloud-signin.svelte";
+import { formatBytes } from "$lib/format/bytes";
+import { cloudShare } from "$lib/stores/cloudShare.svelte";
+import {
+	ArrowUpRight,
+	BarChart3,
+	Check,
+	ChevronsUpDown,
+	Crown,
+	LoaderCircle,
+	Lock,
+	LogOut,
+	MessageSquare,
+	Palette,
+	ShieldAlert,
+	Sparkles,
+	Users,
+	Video,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import RecastMark from "$components/recast-mark.svelte";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { toast } from "@recast/ui/sonner";
+import { cn } from "@recast/ui/utils";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { onDestroy, onMount } from "svelte";
+import {
+	formatMemberSince,
+	formatUserCode,
+	initials,
+	planLabel,
+	roleLabel,
+} from "./cloud-signin.logic";
+import { CloudAuth } from "./cloud-signin.svelte";
 
-  // Recast Cloud sign-in state machine (see cloud-signin.svelte.ts). `view` is
-  // read through a local $derived so discriminated-union narrowing on it keeps
-  // working in the markup below.
-  const auth = new CloudAuth();
-  const view = $derived(auth.view);
-  const busy = $derived(auth.busy);
-  const inFlight = $derived(auth.inFlight);
-  const startSignIn = () => auth.startSignIn();
-  const signOut = () => auth.signOut();
-  const cancelSignIn = () => auth.cancelSignIn();
+// Recast Cloud sign-in state machine (see cloud-signin.svelte.ts). `view` is
+// read through a local $derived so discriminated-union narrowing on it keeps
+// working in the markup below.
+const auth = new CloudAuth();
+const view = $derived(auth.view);
+const busy = $derived(auth.busy);
+const inFlight = $derived(auth.inFlight);
+const startSignIn = () => auth.startSignIn();
+const signOut = () => auth.signOut();
+const cancelSignIn = () => auth.cancelSignIn();
 
-  // Value-first sell for the signed-out state: show what Cloud unlocks before
-  // asking the user to authenticate.
-  const cloudBenefits = [
-    { icon: BarChart3, label: "Viewer analytics" },
-    { icon: MessageSquare, label: "Timestamped comments" },
-    { icon: Lock, label: "Password protection" },
-    { icon: Palette, label: "Custom branding" },
-  ];
+// Value-first sell for the signed-out state: show what Cloud unlocks before
+// asking the user to authenticate.
+const cloudBenefits = [
+	{ icon: BarChart3, label: "Viewer analytics" },
+	{ icon: MessageSquare, label: "Timestamped comments" },
+	{ icon: Lock, label: "Password protection" },
+	{ icon: Palette, label: "Custom branding" },
+];
 
-  const dashboardUrl =
-    "https://recast.nexonauts.com/dashboard/settings/profile";
+const dashboardUrl = "https://recast.nexonauts.com/dashboard/settings/profile";
 
-  async function openDashboard() {
-    try {
-      await openUrl(dashboardUrl);
-    } catch (e) {
-      toast.error(`Couldn't open browser: ${e}`);
-    }
-  }
+async function openDashboard() {
+	try {
+		await openUrl(dashboardUrl);
+	} catch (e) {
+		toast.error(`Couldn't open browser: ${e}`);
+	}
+}
 
-  onMount(() => auth.start());
-  onDestroy(() => auth.dispose());
+onMount(() => auth.start());
+onDestroy(() => auth.dispose());
 </script>
 
 <div class="px-4 py-3">
@@ -365,7 +364,7 @@
           <LoaderCircle class="size-3.5 animate-spin" />
           <span class="text-[11.5px]">Signing in…</span>
         {:else}
-          <Cloud class="size-3.5" />
+          <RecastMark class="size-3.5" />
           <span class="text-[11.5px]">Try again</span>
         {/if}
       </Button>
@@ -398,7 +397,7 @@
           <LoaderCircle class="size-3.5 animate-spin" />
           <span class="text-[11.5px]">Signing in…</span>
         {:else}
-          <Cloud class="size-3.5" />
+          <RecastMark class="size-3.5" />
           <span class="text-[11.5px]">Try again</span>
         {/if}
       </Button>
@@ -433,7 +432,7 @@
             <LoaderCircle class="size-3.5 animate-spin" />
             <span class="text-[11.5px]">Signing in…</span>
           {:else}
-            <Cloud class="size-3.5" />
+            <RecastMark class="size-3.5" />
             <span class="text-[11.5px]">Sign in to Recast Cloud</span>
           {/if}
         </Button>
