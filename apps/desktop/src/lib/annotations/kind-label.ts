@@ -2,14 +2,7 @@
 // layer panel, the status rail, and the selected-annotation header.
 
 import type { Annotation, AnnotationKindName } from "$lib/stores/editor-store.svelte";
-import {
-	ArrowUpRight,
-	Circle,
-	Droplets,
-	ImageIcon,
-	Square,
-	Type as TypeIcon,
-} from "@recast/icons";
+import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } from "@recast/icons";
 import type { IconComponent } from "@recast/icons";
 
 export function kindLabel(a: Annotation): string {
@@ -48,7 +41,11 @@ export function defaultKindLabel(kind: AnnotationKindName): string {
 }
 
 export function kindIcon(a: Annotation): IconComponent {
-	switch (a.kind.kind) {
+	return defaultKindIcon(a.kind.kind);
+}
+
+export function defaultKindIcon(kind: AnnotationKindName): IconComponent {
+	switch (kind) {
 		case "rect":
 			return Square;
 		case "ellipse":

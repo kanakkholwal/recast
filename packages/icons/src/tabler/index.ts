@@ -7,8 +7,8 @@
 import type { IconComponent } from "../types";
 
 // Outline icons (the 90% case).
-export {IconLayout2Filled  as Layout2Filled} from "@tabler/icons-svelte";
-export {IconLayout2   as Layout2} from "@tabler/icons-svelte";
+export { IconLayout2Filled as Layout2Filled } from "@tabler/icons-svelte";
+export { IconLayout2 as Layout2 } from "@tabler/icons-svelte";
 export { IconActivity as Activity } from "@tabler/icons-svelte";
 export { IconActivity as ActivityIcon } from "@tabler/icons-svelte";
 export { IconAlertCircle as AlertCircle } from "@tabler/icons-svelte";
@@ -49,6 +49,7 @@ export { IconCalendarClock as CalendarClock } from "@tabler/icons-svelte";
 export { IconCalendar as CalendarDays } from "@tabler/icons-svelte";
 export { IconCamera as Camera } from "@tabler/icons-svelte";
 export { IconCameraOff as CameraOff } from "@tabler/icons-svelte";
+export { IconDeviceComputerCamera as DeviceComputerCamera } from "@tabler/icons-svelte";
 export { IconSubtitles as Captions } from "@tabler/icons-svelte";
 export { IconCheck as Check } from "@tabler/icons-svelte";
 export { IconCircleCheck as CheckCircle2 } from "@tabler/icons-svelte";
@@ -276,7 +277,7 @@ export { IconZoomOut as ZoomOut } from "@tabler/icons-svelte";
 export { IconPlayerRecord as Record } from "@tabler/icons-svelte";
 export { IconBroadcast as Broadcast } from "@tabler/icons-svelte";
 // Filled-via-name variants.
-export { IconPlayerRecordFilled as RecordFilled } from '@tabler/icons-svelte';
+export { IconPlayerRecordFilled as RecordFilled } from "@tabler/icons-svelte";
 export { IconCheckFilled as CheckFilled } from "@tabler/icons-svelte";
 export { IconChevronDownFilled as ChevronDownFilled } from "@tabler/icons-svelte";
 export { IconChevronRightFilled as ChevronRightFilled } from "@tabler/icons-svelte";
@@ -299,10 +300,8 @@ export { default as MonitorPlay } from "../fallback/MonitorPlay.svelte";
 export { default as Move3d } from "../fallback/Move3d.svelte";
 export { default as Sparkles } from "../fallback/Sparkles.svelte";
 
-
 // Svelte 4 → 5 type bridge (Tabler icons are class components).
 // Each export is cast through `IconComponent` (a Svelte 5 `Component<Props>`)
 // alias. The runtime exports are unchanged.
 type _LegacyIcon = unknown;
 // `as unknown as IconComponent` is the bridge — see types.ts.
-

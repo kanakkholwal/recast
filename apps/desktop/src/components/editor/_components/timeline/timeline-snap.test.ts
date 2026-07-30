@@ -52,16 +52,8 @@ describe("buildSnapTargets", () => {
 	};
 
 	it("always includes playhead, in/out, origin and duration", () => {
-		const kinds = buildSnapTargets({ ...base, regions: [], annotations: [] }).map(
-			(t) => t.kind,
-		);
-		expect(kinds).toEqual([
-			"playhead",
-			"in-point",
-			"out-point",
-			"origin",
-			"duration",
-		]);
+		const kinds = buildSnapTargets({ ...base, regions: [], annotations: [] }).map((t) => t.kind);
+		expect(kinds).toEqual(["playhead", "in-point", "out-point", "origin", "duration"]);
 	});
 
 	it("adds both edges of every region and annotation", () => {

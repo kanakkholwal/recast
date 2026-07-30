@@ -4,10 +4,10 @@
  * picker's "active theme vs. Custom" readout.
  */
 
-import type { CaptionModelInfo, DeviceCapabilities } from "$lib/ipc-types";
+import { resolveCaptionAnimation } from "@recast/captions";
+import type { CaptionModelInfo, DeviceCapabilities, TranscriptSegment } from "$lib/ipc-types";
 import type { CaptionPresetValue } from "$lib/registry/types";
 import type { CaptionStyle } from "$lib/stores/editor-store.svelte";
-import { resolveCaptionAnimation } from "@recast/captions";
 
 /** Models grouped by family, preserving first-seen order, for the picker. */
 export function groupModelsByFamily(
@@ -46,15 +46,28 @@ export function pickDefaultModelId(models: CaptionModelInfo[]): string | null {
  *  `multi`, else the codes upper-cased. */
 export function langLabel(m: CaptionModelInfo): string {
 	if (m.languageCount && m.languageCount > 1) return `${m.languageCount} languages`;
-	return m.languages.includes("multi")
-		? "Multilingual"
-		: m.languages.join(", ").toUpperCase();
+	return m.languages.includes("multi") ? "Multilingual" : m.languages.join(", ").toUpperCase();
 }
 
 /** Compute backend label: the GPU backend when available, else "CPU only". */
 export function gpuLabel(caps: DeviceCapabilities | null): string {
 	if (!caps) return "";
 	return caps.gpu.available ? (caps.gpu.backend?.toUpperCase() ?? "GPU") : "CPU only";
+}
+
+/** Transcript lines containing `query` (case-insensitive substring). Returns the
+ *  same array reference for a blank query, so the list does not re-key. */
+export function filterSegments(segments: TranscriptSegment[], query: string): TranscriptSegment[] {
+	const q = query.trim().toLowerCase();
+	if (!q) return segments;
+	return segments.filter((s) => s.text.toLowerCase().includes(q));
+}
+
+/** Wall-clock label for a running job: `0s` under a minute, then `m:ss`. */
+export function elapsedLabel(ms: number): string {
+	const total = Math.max(0, Math.floor(ms / 1000));
+	if (total < 60) return `${total}s`;
+	return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 /** Download percent (0..100), clamped; 0 when total size is unknown. */
@@ -70,10 +83,7 @@ export function downloadProgressPct(downloaded: number, total: number): number {
  * that adds progressive highlight to an otherwise-identical look would otherwise
  * read as already active.
  */
-export function captionStyleMatchesPreset(
-	cs: CaptionStyle,
-	v: CaptionPresetValue,
-): boolean {
+export function captionStyleMatchesPreset(cs: CaptionStyle, v: CaptionPresetValue): boolean {
 	const styleMatches =
 		v.fontFamily === cs.fontFamily &&
 		v.fontWeight === cs.fontWeight &&

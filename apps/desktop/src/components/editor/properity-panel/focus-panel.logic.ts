@@ -24,6 +24,73 @@ export function computeNewZoomBounds(
 	return { start, end };
 }
 
+/** Shortest a region may get by dragging one edge onto the other. */
+const MIN_REGION_LENGTH = 0.1;
+
+/** Tolerance for trim maths float drift, so a flush span reads as inside. */
+const CLIP_EPS = 1e-6;
+
+/**
+ * Whether part of a timed span sits outside the trimmed clip, so it never plays.
+ * Shared by the zoom and annotation panels; the Rust side reports the same state
+ * as `zoom_out_of_trim` / `annotation_out_of_trim` and silently repairs it.
+ */
+export function isOutsideClip(
+	r: { start: number; end: number },
+	clipIn: number,
+	clipOut: number,
+): boolean {
+	return r.start < clipIn - CLIP_EPS || r.end > clipOut + CLIP_EPS;
+}
+
+/**
+ * The visible slice of the frame at a given focus point and scale, in UV 0..1.
+ *
+ * Both renderers pin the focus point to its own screen position rather than
+ * centring on it (`content_uv = (screen_uv - c) / scale + c` in the preview
+ * shader, `crop_x = cx*iw*(Z-1)` in render/graph.rs), so the window is only
+ * centred at c = 0.5 and always stays inside the frame.
+ */
+export function focusWindow(
+	centerX: number,
+	centerY: number,
+	scale: number,
+): { left: number; top: number; size: number } {
+	const s = Math.max(1, scale);
+	const size = 1 / s;
+	return {
+		left: Math.min(Math.max(centerX, 0), 1) * (1 - size),
+		top: Math.min(Math.max(centerY, 0), 1) * (1 - size),
+		size,
+	};
+}
+
+/**
+ * Patch moving a region's start to the playhead, clamped to the clip in-point.
+ * Null when there is no room left before the end, so the caller can disable the
+ * action instead of snapping to a value the user didn't ask for.
+ */
+export function retimeStart(
+	r: { start: number; end: number },
+	playhead: number,
+	clipIn: number,
+): { start: number } | null {
+	const start = Math.max(clipIn, playhead);
+	if (start > r.end - MIN_REGION_LENGTH) return null;
+	return { start };
+}
+
+/** Mirror of {@link retimeStart} for the region's end, clamped to the out-point. */
+export function retimeEnd(
+	r: { start: number; end: number },
+	playhead: number,
+	clipOut: number,
+): { end: number } | null {
+	const end = Math.min(clipOut, playhead);
+	if (end < r.start + MIN_REGION_LENGTH) return null;
+	return { end };
+}
+
 /**
  * Longest a single ramp can be: half the span (so in+out can't overlap). Widened
  * past ZoomRegion so annotation fades (same half-span rule) can reuse it.
@@ -72,8 +139,7 @@ export function scaleAt(r: ZoomRegion, t: number): number {
 export function sparklinePath(r: ZoomRegion, w: number, h: number): string {
 	const duration = Math.max(0.001, r.end - r.start);
 	const maxScale = Math.max(r.scale, 1.0);
-	const normScale = (s: number) =>
-		maxScale === 1 ? 1 : (s - 1) / (maxScale - 1);
+	const normScale = (s: number) => (maxScale === 1 ? 1 : (s - 1) / (maxScale - 1));
 	const samples: Array<[number, number]> = [];
 	const N = 40;
 	for (let i = 0; i <= N; i++) {

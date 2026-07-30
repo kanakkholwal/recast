@@ -1,167 +1,100 @@
 <script lang="ts">
-// Live caption overlay over the preview. This is the ADAPTER: it reads the
-// transcript + style from the store, maps the playhead back to source time,
-// places the caption relative to the video rect, and picks the chunk active at
-// the playhead. The LOOK (pill, per-word colour, entrance) is rendered by the
-// shared <CaptionBox> from @recast/captions, so the editor and the web player
-// render captions identically. Sits inside `previewRectEl`, so `cqh` font
-// sizing tracks the preview size.
-import {
-	activeChunkIndex,
-	activeWordIndex,
-	captionHeightFrac,
-	captionTopFrac,
-	chunkWords,
-	isStaticAnimation,
-	resolveCaptionAnimation,
-	spokenWordCount,
-} from "@recast/captions";
-import CaptionBox from "@recast/captions/box";
-import {
-	activeClippedSegment,
-	captionSpanAt,
-	clipWordsToSpan,
-	keptCaptionSpans,
-} from "$lib/captions/clip-with-cuts";
+// Live caption overlay over the preview. Reads the transcript + style from the
+// store, resolves the active caption at SOURCE time, and paints it onto a 2D
+// canvas via the SAME resolve + paint path the export burn-in uses (caption-render)
+// — so preview == export by construction, no DOM renderer to drift. Fills the
+// composited output rect, so the caption's video-relative placement matches the frame.
+import { captionClocks, paintCaptionChunk, resolveCaptionView } from "$lib/captions/caption-render";
 import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import { ensureFontLoaded } from "$lib/fonts/font-options";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { outputToOriginal } from "$lib/timeline/time-map";
 
-let { store }: { store: EditorStore } = $props();
+// `previewTime` is the rAF-smooth picture clock (SOURCE time), published every
+// frame by VideoPreview. Captions ride it, not the ~25Hz-throttled
+// store.currentTime — a sub-second entrance falls between the throttled samples
+// and never renders. Falls back to the store when the prop is absent.
+let { store, previewTime }: { store: EditorStore; previewTime?: number } = $props();
 
-// Fetch + register the selected Google font (idempotent) so the preview
-// renders it. Covers picker changes and reloading a saved project.
+let canvasEl = $state<HTMLCanvasElement | null>(null);
+// CSS box size, tracked reactively so the backing store follows the preview.
+let cssW = $state(0);
+let cssH = $state(0);
+// Local entrance clock (output seconds since the chunk's start) for the PAUSED
+// replay below; ignored during playback, where the picture clock drives entrance.
+let replaySec = $state(0);
+
+// Fetch + register the selected Google font (idempotent) so the canvas paints it.
 $effect(() => {
 	ensureFontLoaded(store.captionStyle.fontFamily, store.captionStyle.fontWeight);
 });
 
-// The playhead is OUTPUT time; the transcript is SOURCE time. Map back through
-// the time map so captions (and per-word timing) stay synced across cuts and
-// per-segment speed changes.
-const nowOrig = $derived(outputToOriginal(store.timeMap, store.currentTime));
+const clockSec = $derived(previewTime ?? store.currentTime);
 
-// The kept source-time span that contains the playhead. Null when the
-// playhead is inside a cut (the gap between two kept spans) — in that
-// case no caption should be on screen. Computed once per `nowOrig` change
-// and reused by both the segment lookup and the word clipping below.
-// Caption-clipping spans break only at real CUTS: splits/speed changes are
-// contiguous in source time and merge, so a caption spanning one keeps all its
-// words (clipping there dropped the far-side words).
-const captionSpans = $derived(keptCaptionSpans(store.timeMap));
-const keptSpan = $derived(captionSpanAt(captionSpans, nowOrig));
-
-// Active segment intersected with the kept span. We use the CLIPPED
-// segment (not the original) so a caption that spans a cut only displays
-// the kept portion — without this, a caption that crosses a cut stays
-// on screen for the full source-time duration, which appears to
-// "outlast" the cut and drift relative to the audio.
-const active = $derived.by(() => {
-	const t = store.transcript;
-	if (!t || !store.captionStyle.enabled) return null;
-	const span = keptSpan;
-	if (!span) return null;
-	const clipped = activeClippedSegment(t.segments, span, nowOrig);
-	if (!clipped) return null;
-	// Replace the segment's words with the span-clipped versions so the
-	// per-word animation re-times correctly across the cut. The chunk
-	// boundary math re-runs against the clipped words.
-	return {
-		...clipped.segment,
-		start: clipped.visible.start,
-		end: clipped.visible.end,
-		words: clipWordsToSpan(clipped.segment.words, span),
-	};
-});
-
-const anim = $derived(resolveCaptionAnimation(store.captionStyle.animation));
-const animated = $derived(!!active && active.words.length > 0 && !isStaticAnimation(anim));
-
-// The chunk to show plus its progress. For a static line the whole segment is
-// one chunk with every word "spoken" (so nothing renders muted). `key`
-// re-mounts <CaptionBox> when the chunk changes, replaying the entrance.
-// Chunk boundaries depend only on the segment + animation, NOT on the playhead,
-// so keep them out of the per-tick derived below — this used to re-chunk the
-// active segment 25×/s for nothing.
-const _runs = $derived(active && animated ? chunkWords(active.words, anim) : null);
-
-const _view = $derived.by(() => {
-	if (!active) return null;
-	if (active.words.length === 0) {
-		// Defensive: a segment with text but no per-word timing renders as one word.
-		const w = [{ start: active.start, end: active.end, text: active.text }];
-		return { key: active.id, words: w, spoken: 1, wi: -1 };
-	}
-	if (!animated || !_runs) {
-		return { key: active.id, words: active.words, spoken: active.words.length, wi: -1 };
-	}
-	const runs = _runs;
-	const ci = activeChunkIndex(runs, nowOrig);
-	const chunk = runs[ci];
-	if (!chunk) return null;
-	return {
-		// Include the visible window in the key so a cut-cross inside a
-		// segment re-mounts the box (a new visual identity, not a continuation).
-		key: `${active.id}:${ci}:${active.start}:${active.end}`,
-		words: chunk.words,
-		spoken: spokenWordCount(chunk.words, nowOrig),
-		wi: activeWordIndex(chunk.words, nowOrig, anim.holdGaps),
-	};
-});
-
-// The video rect inside the output canvas (with padding + aspect bars around
-// it). Captions are placed relative to it so top/bottom sit in the padding,
-// not over the video, mirroring the Rust ASS generator.
-const _box = $derived.by(() => {
-	const s = store.captionStyle;
+// The active caption at the current playhead. `store.currentTime`/`previewTime`
+// are SOURCE time, so resolve directly (captionTranscript is pre-rescaled onto
+// the video axis for CFR-drift). Null when nothing is on screen or captions off.
+const view = $derived.by(() => {
+	if (!store.captionStyle.enabled) return null;
 	const m = store.metadata;
-	const g =
-		m?.width && m.height
-			? computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect)
-			: null;
-	const vLeft = g ? g.videoX / g.canvasW : 0;
-	const vRight = g ? (g.videoX + g.videoW) / g.canvasW : 1;
-	const vTop = g ? g.videoY / g.canvasH : 0;
-	const vBottom = g ? (g.videoY + g.videoH) / g.canvasH : 1;
-	const cap = captionHeightFrac(s.fontSizePct, s.maxLines);
-	const topFrac = captionTopFrac(s.position, s.offsetPct, cap, { top: vTop, bottom: vBottom });
-	// `topFrac === null` -> centre vertically on the video.
-	const vertical =
-		topFrac === null
-			? `top: ${((vTop + vBottom) / 2) * 100}%; transform: translateY(-50%);`
-			: `top: ${topFrac * 100}%;`;
-	return { leftPct: vLeft * 100, widthPct: (vRight - vLeft) * 100, vertical };
+	if (!m?.width || !m?.height) return null;
+	const { sourceSec } = captionClocks(store.timeMap, clockSec);
+	return resolveCaptionView(store.captionTranscript, store.captionStyle, store.timeMap, sourceSec);
+});
+
+// Paused entrance replay: while paused, tweaking the Motion tab (or seeking onto
+// a caption) can't show a transient entrance — the playhead is frozen past it. So
+// ramp a local clock through the entrance once whenever the shown chunk or its
+// animation changes, giving the Motion tab a live preview. No-op during playback.
+$effect(() => {
+	const v = view;
+	if (store.isPlaying || !v || v.anim.entrance === "none") return;
+	const entranceSec = Math.max(0, v.anim.entranceMs) / 1000;
+	if (!(entranceSec > 0)) return;
+	replaySec = 0;
+	let start: number | null = null;
+	let handle = requestAnimationFrame(function tick(now) {
+		if (start === null) start = now;
+		replaySec = Math.min(entranceSec, (now - start) / 1000);
+		if (replaySec < entranceSec) handle = requestAnimationFrame(tick);
+	});
+	return () => cancelAnimationFrame(handle);
+});
+
+// Paint on every clock tick, style/size change, or replay frame.
+$effect(() => {
+	const canvas = canvasEl;
+	if (!canvas) return;
+	const dpr = window.devicePixelRatio || 1;
+	const cw = Math.max(1, Math.round(cssW * dpr));
+	const ch = Math.max(1, Math.round(cssH * dpr));
+	if (canvas.width !== cw) canvas.width = cw;
+	if (canvas.height !== ch) canvas.height = ch;
+	const ctx = canvas.getContext("2d");
+	if (!ctx) return;
+	ctx.clearRect(0, 0, cw, ch);
+
+	const v = view;
+	const m = store.metadata;
+	if (!v || !m?.width || !m?.height) return;
+	const { outputSec } = captionClocks(store.timeMap, clockSec);
+	// Playing: the picture clock drives the entrance. Paused: replay it from the
+	// chunk's own start so the Motion tab previews the animation.
+	const entranceClock = store.isPlaying ? outputSec : v.chunkStartOutput + replaySec;
+	const g = computeCanvasGeometry(m.width, m.height, store.padding, store.outputAspect);
+	paintCaptionChunk(ctx, v, store.captionStyle, entranceClock, {
+		videoLeftFrac: g.videoX / g.canvasW,
+		videoRightFrac: (g.videoX + g.videoW) / g.canvasW,
+		videoTopFrac: g.videoY / g.canvasH,
+		videoBottomFrac: (g.videoY + g.videoH) / g.canvasH,
+		canvasPxW: cw,
+		canvasPxH: ch,
+	});
 });
 </script>
 
-{#if active && _view}
-	{@const s = store.captionStyle}
-	<div class="caption-layer pointer-events-none absolute inset-0">
-		<div
-			class="caption-box absolute flex px-[4%]"
-			class:justify-start={s.align === 'left'}
-			class:justify-center={s.align === 'center'}
-			class:justify-end={s.align === 'right'}
-			style="left: {_box.leftPct}%; width: {_box.widthPct}%; {_box.vertical}"
-		>
-			{#key _view.key}
-				<CaptionBox
-					words={_view.words}
-					style={s}
-					{anim}
-					spokenCount={_view.spoken}
-					activeIndex={_view.wi}
-					fontSize="{s.fontSizePct}cqh"
-				/>
-			{/key}
-		</div>
-	</div>
-{/if}
-
-<style>
-	/* Establish a size container so the caption's `cqh` font scales with the
-	   preview rectangle (which this layer fills). */
-	.caption-layer {
-		container-type: size;
-	}
-</style>
+<canvas
+	bind:this={canvasEl}
+	bind:clientWidth={cssW}
+	bind:clientHeight={cssH}
+	class="pointer-events-none absolute inset-0 h-full w-full"
+></canvas>

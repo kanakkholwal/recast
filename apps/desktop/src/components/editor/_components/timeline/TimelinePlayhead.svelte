@@ -1,34 +1,31 @@
 <script lang="ts">
-  import { motionDuration } from "$lib/motion.svelte";
-  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+import { motionDuration } from "$lib/motion.svelte";
+import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
-  // Positioned with `transform: translate3d`, not `left`: `left` relays out the
-  // whole track every frame of playback, and its transition made the head lag the
-  // picture. transform is composited and cheap.
-  //
-  // The tween exists only to smooth a discrete jump (click-to-seek, frame step).
-  // During playback the store already publishes a fresh position every frame, so
-  // any tween there is pure lag: suppressed, like it is while dragging. Reduced
-  // motion drops it everywhere.
+// Positioned with `transform: translate3d`, not `left`: `left` relays out the
+// whole track every frame of playback, and its transition made the head lag the
+// picture. transform is composited and cheap.
+//
+// The tween exists only to smooth a discrete jump (click-to-seek, frame step).
+// During playback the store already publishes a fresh position every frame, so
+// any tween there is pure lag: suppressed, like it is while dragging. Reduced
+// motion drops it everywhere.
 
-  interface Props {
-    /** Seconds on the OUTPUT (post-cut) axis: the same axis as the ruler under
-     *  the head and the transport readout above it. Never original time. */
-    outputTime: number;
-    /** px on the output axis. */
-    leftPx: number;
-    fps: number;
-    isDragging: boolean;
-    isPlaying: boolean;
-    timeMode: TimeMode;
-  }
+interface Props {
+	/** Seconds on the OUTPUT (post-cut) axis: the same axis as the ruler under
+	 *  the head and the transport readout above it. Never original time. */
+	outputTime: number;
+	/** px on the output axis. */
+	leftPx: number;
+	fps: number;
+	isDragging: boolean;
+	isPlaying: boolean;
+	timeMode: TimeMode;
+}
 
-  let { outputTime, leftPx, fps, isDragging, isPlaying, timeMode }: Props =
-    $props();
+let { outputTime, leftPx, fps, isDragging, isPlaying, timeMode }: Props = $props();
 
-  const tweenMs = $derived(
-    isDragging || isPlaying ? 0 : motionDuration(90),
-  );
+const tweenMs = $derived(isDragging || isPlaying ? 0 : motionDuration(90));
 </script>
 
 <!-- Spans the full track height via inset-y-0 so it tracks however many lanes are

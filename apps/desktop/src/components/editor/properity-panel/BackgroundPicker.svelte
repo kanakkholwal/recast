@@ -1,141 +1,134 @@
 <script lang="ts">
-  import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
-  import {
-    getRecentColors,
-    pushRecentColor,
-  } from "$lib/annotations/recent-colors";
-  import { registry } from "$lib/registry";
-  import {
-    COLOR_PRESETS,
-    GRADIENT_PRESETS,
-    MAX_FRAME_PADDING_PERCENT,
-    WALLPAPERS,
-    wallpaperBackgroundValue,
-    type BackgroundType,
-    type EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import type { IconComponent } from "@recast/icons";
-  import {
-    Blend,
-    FolderOpen,
-    ImageIcon,
-    LayoutTemplate,
-    Move,
-    Palette,
-    SquareRoundCorner,
-    Wallpaper,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { ColorField } from "@recast/ui/color-field";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import * as Tabs from "@recast/ui/tabs";
-  import { cn } from "@recast/ui/utils";
-  import { convertFileSrc } from "@tauri-apps/api/core";
-  import { Image } from "@unpic/svelte";
-  import {
-    imagePreviewSrc,
-    isValidImageValue,
-    selectionValueForType,
-  } from "./background-picker.logic";
-  import GradientBuilder from "./GradientBuilder.svelte";
-  import PanelSection from "./PanelSection.svelte";
+import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
+import { getRecentColors, pushRecentColor } from "$lib/annotations/recent-colors";
+import { registry } from "$lib/registry";
+import {
+	COLOR_PRESETS,
+	GRADIENT_PRESETS,
+	MAX_FRAME_PADDING_PERCENT,
+	WALLPAPERS,
+	wallpaperBackgroundValue,
+	type BackgroundType,
+	type EditorStore,
+} from "$lib/stores/editor-store.svelte";
+import type { IconComponent } from "@recast/icons";
+import {
+	Blend,
+	Check,
+	FolderOpen,
+	ImageIcon,
+	LayoutTemplate,
+	Move,
+	Palette,
+	SquareRoundCorner,
+	Wallpaper,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { ColorField } from "@recast/ui/color-field";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import * as Tabs from "@recast/ui/tabs";
+import { cn } from "@recast/ui/utils";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { Image } from "@unpic/svelte";
+import {
+	imagePreviewSrc,
+	isValidImageValue,
+	selectionValueForType,
+} from "./background-picker.logic";
+import GradientBuilder from "./GradientBuilder.svelte";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  type BackgroundMode = {
-    type: BackgroundType;
-    label: string;
-    icon: IconComponent;
-  };
+type BackgroundMode = {
+	type: BackgroundType;
+	label: string;
+	icon: IconComponent;
+};
 
-  const backgroundModes: BackgroundMode[] = [
-    { type: "wallpaper", label: "Wallpaper", icon: Wallpaper },
-    { type: "color", label: "Color", icon: Palette },
-    { type: "gradient", label: "Gradient", icon: Blend },
-    { type: "image", label: "Image", icon: ImageIcon },
-  ];
+const backgroundModes: BackgroundMode[] = [
+	{ type: "wallpaper", label: "Wallpaper", icon: Wallpaper },
+	{ type: "color", label: "Color", icon: Palette },
+	{ type: "gradient", label: "Gradient", icon: Blend },
+	{ type: "image", label: "Image", icon: ImageIcon },
+];
 
-  const DEFAULT_BACKGROUND_VALUES: Record<BackgroundType, string> = {
-    wallpaper: WALLPAPERS[0] ? wallpaperBackgroundValue(WALLPAPERS[0].id) : "",
-    color: COLOR_PRESETS[0] ?? "#000000",
-    gradient:
-      GRADIENT_PRESETS[0]?.value ??
-      "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
-    image: "",
-  };
+const DEFAULT_BACKGROUND_VALUES: Record<BackgroundType, string> = {
+	wallpaper: WALLPAPERS[0] ? wallpaperBackgroundValue(WALLPAPERS[0].id) : "",
+	color: COLOR_PRESETS[0]?.value ?? "#000000",
+	gradient: GRADIENT_PRESETS[0]?.value ?? "linear-gradient(135deg, #111827 0%, #1f2937 100%)",
+	image: "",
+};
 
-  let { store }: Props = $props();
+let { store }: Props = $props();
 
-  let recents = $state<string[]>(getRecentColors());
-  function rememberColor(color: string) {
-    recents = pushRecentColor(color);
-  }
+let recents = $state<string[]>(getRecentColors());
+function rememberColor(color: string) {
+	recents = pushRecentColor(color);
+}
 
-  // Mode tabs only choose which preset list is shown; they don't mutate the
-  // background (only an explicit preset pick does), so browsing other modes
-  // keeps the applied background intact.
-  let displayedMode = $derived<BackgroundType>(store.backgroundType);
-  $effect(() => {
-    displayedMode = store.backgroundType;
-  });
+// Mode tabs only choose which preset list is shown; they don't mutate the
+// background (only an explicit preset pick does), so browsing other modes
+// keeps the applied background intact.
+// Overridable $derived: re-syncs when the store's type changes, and the tab's
+// onValueChange writes over it for browsing. No $effect needed to mirror it.
+let displayedMode = $derived<BackgroundType>(store.backgroundType);
 
-  let blurValue = $state(0);
-  let paddingValue = $state(0);
-  let borderRadiusValue = $state(0);
+let blurValue = $state(0);
+let paddingValue = $state(0);
+let borderRadiusValue = $state(0);
 
-  const isRegisteredBackground = (id: string) =>
-    registry.get("background", id) !== undefined;
+const isRegisteredBackground = (id: string) => registry.get("background", id) !== undefined;
 
-  function getSelectionValue(type: BackgroundType) {
-    return selectionValueForType(
-      type,
-      store.backgroundValue,
-      DEFAULT_BACKGROUND_VALUES,
-      isRegisteredBackground,
-    );
-  }
+function getSelectionValue(type: BackgroundType) {
+	return selectionValueForType(
+		type,
+		store.backgroundValue,
+		DEFAULT_BACKGROUND_VALUES,
+		isRegisteredBackground,
+	);
+}
 
-  function applyBackground(
-    type: BackgroundType,
-    value = getSelectionValue(type),
-  ) {
-    // When the user clicks the "Image" tab and there is no valid image yet,
-    // jump straight into the file picker instead of setting an empty value
-    // (which would leave the preview showing the fallback dark background).
-    if (type === "image" && !value) {
-      void pickBackgroundImage();
-      return;
-    }
-    store.setBackground({ type, value });
-  }
+function applyBackground(type: BackgroundType, value = getSelectionValue(type)) {
+	store.setBackground({ type, value });
+}
 
-  async function pickBackgroundImage() {
-    const { open } = await import("@tauri-apps/plugin-dialog");
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      title: "Choose Background Image",
-      filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
-    });
-    if (!selected || typeof selected !== "string") return;
-    store.setBackground({ type: "image", value: selected });
-  }
+async function pickBackgroundImage() {
+	const { open } = await import("@tauri-apps/plugin-dialog");
+	const selected = await open({
+		multiple: false,
+		directory: false,
+		title: "Choose Background Image",
+		filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
+	});
+	if (!selected || typeof selected !== "string") return;
+	store.setBackground({ type: "image", value: selected });
+}
 
-  // Wrapper: injects Tauri's convertFileSrc into the shared resolver.
-  const getImagePreviewSrc = (value: string): string =>
-    imagePreviewSrc(value, convertFileSrc);
+// Wrapper: injects Tauri's convertFileSrc into the shared resolver.
+const getImagePreviewSrc = (value: string): string => imagePreviewSrc(value, convertFileSrc);
 
-  $effect(() => {
-    blurValue = store.backgroundBlur;
-    paddingValue = store.padding;
-    borderRadiusValue = store.borderRadius;
-  });
+$effect(() => {
+	blurValue = store.backgroundBlur;
+	paddingValue = store.padding;
+	borderRadiusValue = store.borderRadius;
+});
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  <!-- Carries its own contrast so selection reads on any swatch — white, black
+       or a gradient — and isn't signalled by colour alone. -->
+  {#snippet selectedMark()}
+    <span
+      class="absolute right-1 top-1 grid size-3.5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"
+    >
+      <Check class="size-2.5" />
+    </span>
+  {/snippet}
+
   <!-- Blur only affects texture backgrounds (image/wallpaper), so it lives
        inside those modes rather than as a global knob. -->
   {#snippet blurControl()}
@@ -233,6 +226,9 @@
                 class="size-full object-cover transition-transform duration-200 group-hover:scale-[1.03]"
               />
             {/if}
+            {#if isSelected}
+              {@render selectedMark()}
+            {/if}
           </Button>
         {/each}
       </div>
@@ -257,16 +253,21 @@
             variant="raw"
             size="raw"
             onclick={() => applyBackground("color", color)}
-            aria-label="Use color {color}"
+            title={entry.label}
+            aria-label="Use {entry.label} background"
             aria-pressed={isSelected}
             class={cn(
-              "aspect-square rounded-md border-2 transition-all",
+              "group relative aspect-square overflow-hidden rounded-md border transition-all",
               isSelected
-                ? "border-foreground shadow-sm"
-                : "border-border/40 hover:border-border",
+                ? "border-primary ring-2 ring-primary/30"
+                : "border-border hover:border-foreground/30",
             )}
             style="background-color: {color}"
-          ></Button>
+          >
+            {#if isSelected}
+              {@render selectedMark()}
+            {/if}
+          </Button>
         {/each}
       </div>
 
@@ -287,7 +288,7 @@
     </PanelSection>
   </Tabs.Content>
 
-  <Tabs.Content value="gradient">
+  <Tabs.Content value="gradient" class="space-y-4">
     <PanelSection
       title="Gradients"
       hint="Rich preset backdrops, rendered live in the preview and the export."
@@ -317,12 +318,17 @@
             aria-pressed={isSelected}
           >
             <div class="flex h-full items-end">
+              <!-- Opaque scrim, not black/40: at 40% the label failed 4.5:1 over
+                   the lighter gradients (Blush, Sage, Fog). -->
               <span
-                class="rounded border border-black/10 bg-black/40 px-1.5 py-0.5 text-[9px] font-medium text-white backdrop-blur-sm"
+                class="rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white"
               >
                 {entry.label}
               </span>
             </div>
+            {#if isSelected}
+              {@render selectedMark()}
+            {/if}
           </Button>
         {/each}
       </div>

@@ -1,73 +1,71 @@
 <script lang="ts">
-  import { EASE, easingEquals } from "$lib/easing/cubic-bezier";
-  import { registry } from "$lib/registry";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { Activity, EyeOff, GitGraph, MousePointer, Spline, Target, Waves, Wind, AiAtom } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cn } from "@recast/ui/utils";
-  import { Image } from "@unpic/svelte";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
-  import BezierEditor from "../_components/BezierEditor.svelte";
-  import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
-  import InspectorHint from "../InspectorHint.svelte";
-  import PanelSection from "./PanelSection.svelte";
-  import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
-  import { motionDuration } from "$lib/motion.svelte";
-  const highlightColors = [
-    "#3b82f6",
-    "#ef4444",
-    "#22c55e",
-    "#f59e0b",
-    "#8b5cf6",
-    "#ec4899",
-    "#06b6d4",
-    "#ffffff",
-  ];
+import { EASE } from "$lib/easing/cubic-bezier";
+import { motionDuration } from "$lib/motion.svelte";
+import { registry } from "$lib/registry";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import {
+	Activity,
+	AiAtom,
+	Check,
+	EyeOff,
+	GitGraph,
+	MousePointer,
+	Spline,
+	Target,
+	Waves,
+	Wind,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
+import { Image } from "@unpic/svelte";
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
+import InspectorHint from "../InspectorHint.svelte";
+import CursorTrajectoryMap from "../_components/CursorTrajectoryMap.svelte";
+import EasingControl from "./EasingControl.svelte";
+import PanelSection from "./PanelSection.svelte";
+import { isCursorAnimTouched, svgSwatchUrl } from "./cursor-panel.logic";
+// Named so the swatch announces "Amber", not "#f59e0b". Deliberately vivid:
+// this ring sits on top of the recording and has to survive busy content.
+const highlightColors: { label: string; value: string }[] = [
+	{ label: "Blue", value: "#3b82f6" },
+	{ label: "Red", value: "#ef4444" },
+	{ label: "Green", value: "#22c55e" },
+	{ label: "Amber", value: "#f59e0b" },
+	{ label: "Violet", value: "#8b5cf6" },
+	{ label: "Pink", value: "#ec4899" },
+	{ label: "Cyan", value: "#06b6d4" },
+	{ label: "White", value: "#ffffff" },
+];
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  let { store }: Props = $props();
-  let showTrajectoryMap = $state(false);
+let { store }: Props = $props();
+let showTrajectoryMap = $state(false);
 
-  const activeStyle = $derived(
-    registry.get("cursor", store.cursorSettings.style),
-  );
+const activeStyle = $derived(registry.get("cursor", store.cursorSettings.style));
 
-  // From the registry so installed extension packs surface alongside built-ins.
-  const smoothingPresets = $derived(registry.list("smoothing"));
-  const easingPresets = $derived(
-    registry
-      .list("easing")
-      .map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
-  );
+// From the registry so installed extension packs surface alongside built-ins.
+const smoothingPresets = $derived(registry.list("smoothing"));
 
-  function updateCursorSettings(
-    updates: Partial<EditorStore["cursorSettings"]>,
-    trackUndo = false,
-  ) {
-    if (trackUndo) store.pushUndoState();
-    store.updateCursorSettings(updates);
-  }
+function updateCursorSettings(updates: Partial<EditorStore["cursorSettings"]>, trackUndo = false) {
+	if (trackUndo) store.pushUndoState();
+	store.updateCursorSettings(updates);
+}
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
-  <div
-    class="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card/40 px-2.5 py-1.5"
-  >
-    <span class="text-[11px] text-muted-foreground">
-      Tune how the captured pointer feels during playback.
-    </span>
+  <div class="flex items-center justify-between gap-2">
+    <span class="text-[11px] font-medium text-foreground">Show cursor</span>
     <SegmentedToggle
       checked={store.cursorSettings.enabled}
-      offLabel="Hidden"
-      onLabel="Visible"
       size="xs"
-      aria-label="Cursor visibility"
+      aria-label="Show cursor"
       onCheckedChange={(next) => updateCursorSettings({ enabled: next }, true)}
     />
   </div>
@@ -75,7 +73,7 @@
   {#if store.cursorSettings.enabled}
     <PanelSection
       title="Style"
-      hint="Pick a cursor style and size. The soft dot works in preview and export; other styles preview in the editor but export as the soft dot for now."
+      hint="Pick a cursor style and size. Styles render in the preview and the export alike; pointer styles also swap art for press, right-click, and drag."
       flush
     >
       {#snippet action()}
@@ -161,15 +159,25 @@
       collapsible
     >
       {#snippet action()}
-        <Button
-          size="icon-xs"
-          variant="raw"
-          title="Toggle trajectory map"
-          aria-pressed={showTrajectoryMap}
-          onclick={() => (showTrajectoryMap = !showTrajectoryMap)}
-        >
-          <GitGraph size={11} class="text-muted-foreground" />
-        </Button>
+        <Tooltip.Root>
+          <Tooltip.Trigger>
+            {#snippet child({ props })}
+              <Button
+                {...props as Record<string, unknown>}
+                size="icon-xs"
+                variant="raw"
+                aria-label="Toggle trajectory map"
+                aria-pressed={showTrajectoryMap}
+                onclick={() => (showTrajectoryMap = !showTrajectoryMap)}
+              >
+                <GitGraph size={11} class="text-muted-foreground" />
+              </Button>
+            {/snippet}
+          </Tooltip.Trigger>
+          <Tooltip.Content>
+            {showTrajectoryMap ? "Hide" : "Show"} trajectory map
+          </Tooltip.Content>
+        </Tooltip.Root>
       {/snippet}
 
       <div class="flex flex-col gap-2.5">
@@ -275,7 +283,7 @@
             <span
               class="inline-flex items-center gap-1.5 text-[11px] font-medium text-foreground"
             >
-              <Spline size={11} class="text-primary" />
+              <Spline size={11} class="text-muted-foreground" />
               Motion easing
               <InspectorHint
                 content="Reshape how the cursor interpolates between captured samples. Default (off) preserves the raw trajectory; ease-out curves decelerate into rest. Preview only."
@@ -291,40 +299,15 @@
           </div>
 
           {#if store.cursorMotionEasing}
-            {@const cur = store.cursorMotionEasing}
-            <div class="flex flex-wrap gap-1">
-              {#each easingPresets as preset (preset.id)}
-                {@const active = easingEquals(cur, preset.value)}
-                <Button
-                  type="button"
-                  size="xs"
-                  aria-pressed={active}
-                  variant={active ? "default_soft" : "outline"}
-                  onclick={() => {
-                    store.pushUndoState();
-                    store.cursorMotionEasing = { ...preset.value };
-                  }}
-                >
-                  {preset.label}
-                </Button>
-              {/each}
-            </div>
-
-            <PanelSection
-              title="Custom curve"
-              flush
-              collapsible
-              defaultOpen={false}
-            >
-              <div class="pt-1">
-                <BezierEditor
-                  value={cur}
-                  onchange={(next) => (store.cursorMotionEasing = next)}
-                  showPresets={false}
-                  size={200}
-                />
-              </div>
-            </PanelSection>
+            <EasingControl
+              value={store.cursorMotionEasing}
+              onpick={(next) => {
+                // The setter pushes its own undo entry; a second push here
+                // made one Ctrl+Z look like a no-op.
+                store.cursorMotionEasing = next;
+              }}
+              ondrag={(next) => store.setCursorMotionEasingLive(next)}
+            />
 
             <p class="text-[10px] leading-snug text-muted-foreground">
               Applies to preview only.
@@ -336,7 +319,7 @@
 
     <PanelSection
       title="Animation"
-      hint="Applied at export. Bounce reacts to clicks, sway adds life at rest, and motion blur trails fast movement."
+      hint="Bounce reacts to clicks, sway adds life at rest, and motion blur trails fast movement. These render at export only — the preview will not change as you drag."
       collapsible
     >
       {#snippet action()}
@@ -455,26 +438,42 @@
           class="grid grid-cols-8 gap-1"
           in:fade={{ duration: motionDuration(140) }}
         >
-          {#each highlightColors as color (color)}
-            {@const isSelected = store.cursorSettings.highlightColor === color}
+          {#each highlightColors as swatch (swatch.value)}
+            {@const isSelected =
+              store.cursorSettings.highlightColor === swatch.value}
             <Button
               variant="raw"
               size="raw"
               onclick={() =>
                 updateCursorSettings(
-                  { highlightColor: color },
-                  store.cursorSettings.highlightColor !== color,
+                  { highlightColor: swatch.value },
+                  store.cursorSettings.highlightColor !== swatch.value,
                 )}
-              aria-label="Use {color} click highlight color"
+              title={swatch.label}
+              aria-label="Use {swatch.label} click highlight"
               aria-pressed={isSelected}
               class={cn(
-                "aspect-square w-full rounded-md border-2 transition-all",
+                "group relative aspect-square w-full overflow-hidden rounded-md border transition-all",
                 isSelected
-                  ? "border-foreground shadow-sm"
-                  : "border-border/40 hover:border-border",
+                  ? "border-primary ring-2 ring-primary/30"
+                  : "border-border hover:border-foreground/30",
               )}
-              style="background-color: {color}"
-            ></Button>
+              style="background-color: {swatch.value}"
+            >
+              {#if isSelected}
+                <!-- Carries its own contrast so the mark reads on the white swatch too. -->
+                <span
+                  class="absolute inset-0 grid place-items-center"
+                  aria-hidden="true"
+                >
+                  <span
+                    class="grid size-3.5 place-items-center rounded-full bg-primary text-primary-foreground shadow-sm"
+                  >
+                    <Check class="size-2.5" />
+                  </span>
+                </span>
+              {/if}
+            </Button>
           {/each}
         </div>
 
@@ -529,7 +528,7 @@
     >
       <EyeOff size={13} class="shrink-0 text-muted-foreground" />
       <p class="flex-1 text-[11px] text-muted-foreground">
-        Cursor is hidden. Enable it to tune style, motion, and click highlights.
+        Enable it to tune style, motion, and click highlights.
       </p>
     </div>
   {/if}

@@ -1,119 +1,150 @@
 <script lang="ts">
-  import InspectorHint from "$components/editor/InspectorHint.svelte";
-  import { experimentalStore } from "$lib/stores/experimental.svelte";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { AudioLines, Clapperboard, Clock, Expand, Eye, FastForward, Keyboard, Layers, Maximize2, Minus, Pencil, Plus, Redo2, Scissors, SlidersHorizontal, SquareSplitHorizontal, Target, Undo2, VolumeX, ZoomIn, AiWand } from "@recast/icons";
-  import * as DropdownMenu from "@recast/ui/dropdown-menu";
-  import { Kbd } from "@recast/ui/kbd";
-  import * as Popover from "@recast/ui/popover";
-  import { cn } from "@recast/ui/utils";
-  import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
-  import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
-  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+import InspectorHint from "$components/editor/InspectorHint.svelte";
+import { experimentalStore } from "$lib/stores/experimental.svelte";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import {
+	AudioLines,
+	Clapperboard,
+	Clock,
+	Expand,
+	Eye,
+	FastForward,
+	Keyboard,
+	Layers,
+	Maximize2,
+	Minus,
+	Pencil,
+	Plus,
+	Redo2,
+	Scissors,
+	SlidersHorizontal,
+	SquareSplitHorizontal,
+	Target,
+	Undo2,
+	VolumeX,
+	ZoomIn,
+	AiWand,
+} from "@recast/icons";
+import * as DropdownMenu from "@recast/ui/dropdown-menu";
+import { Kbd } from "@recast/ui/kbd";
+import * as Popover from "@recast/ui/popover";
+import { cn } from "@recast/ui/utils";
+import SilenceReviewPopover from "../../SilenceReviewPopover.svelte";
+import ZoomSuggestionsPopover from "../../ZoomSuggestionsPopover.svelte";
+import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
-  // Three clusters: EDIT (split + trim to playhead) · INSERT (focus/suggest/
-  // silence) · VIEW (zoom + display options). Popovers are portalled because the
-  // timeline lives in an `overflow-hidden` slide wrapper that would clip them.
+// Three clusters: EDIT (split + trim to playhead) · INSERT (focus/suggest/
+// silence) · VIEW (zoom + display options). Popovers are portalled because the
+// timeline lives in an `overflow-hidden` slide wrapper that would clip them.
 
-  interface Props {
-    store: EditorStore;
-    fps: number;
-    hasTrim: boolean;
-    aspectRatioLabel: string;
-    frameCount: number;
-    playbackSpeed: number;
-    speeds: readonly number[];
-    timeMode: TimeMode;
-    hasSelectedRegion: boolean;
-    razorActive: boolean;
-    showAudioLane: boolean;
-    showZoomLane: boolean;
-    showMarkupLane: boolean;
-    showCutLane: boolean;
-    showCutGaps: boolean;
-    onSetTrim: (kind: "in" | "out") => void;
-    onSplit: () => void;
-    onToggleRazor: () => void;
-    onToggleAudioLane: () => void;
-    onToggleZoomLane: () => void;
-    onToggleMarkupLane: () => void;
-    onToggleCutLane: () => void;
-    onToggleCutGaps: () => void;
-    onAddFocusRegion: () => void;
-    onResetTrim: () => void;
-    onZoomTimeline: (dir: number) => void;
-    onSelectSpeed: (speed: number) => void;
-    onSetTimeMode: (mode: TimeMode) => void;
-    onZoomToFit: () => void;
-    onZoomToSelection: () => void;
-  }
+interface Props {
+	store: EditorStore;
+	fps: number;
+	hasTrim: boolean;
+	aspectRatioLabel: string;
+	frameCount: number;
+	playbackSpeed: number;
+	speeds: readonly number[];
+	timeMode: TimeMode;
+	hasSelectedRegion: boolean;
+	razorActive: boolean;
+	showAudioLane: boolean;
+	showZoomLane: boolean;
+	showMarkupLane: boolean;
+	showCutLane: boolean;
+	showCutGaps: boolean;
+	onSetTrim: (kind: "in" | "out") => void;
+	onSplit: () => void;
+	onToggleRazor: () => void;
+	onToggleAudioLane: () => void;
+	onToggleZoomLane: () => void;
+	onToggleMarkupLane: () => void;
+	onToggleCutLane: () => void;
+	onToggleCutGaps: () => void;
+	onAddFocusRegion: () => void;
+	onResetTrim: () => void;
+	onZoomTimeline: (dir: number) => void;
+	onSelectSpeed: (speed: number) => void;
+	onSetTimeMode: (mode: TimeMode) => void;
+	onZoomToFit: () => void;
+	onZoomToSelection: () => void;
+}
 
-  let {
-    store,
-    fps,
-    hasTrim,
-    aspectRatioLabel,
-    frameCount,
-    playbackSpeed,
-    speeds,
-    timeMode,
-    hasSelectedRegion,
-    razorActive,
-    showAudioLane,
-    showZoomLane,
-    showMarkupLane,
-    showCutLane,
-    showCutGaps,
-    onSetTrim,
-    onSplit,
-    onToggleRazor,
-    onToggleAudioLane,
-    onToggleZoomLane,
-    onToggleMarkupLane,
-    onToggleCutLane,
-    onToggleCutGaps,
-    onAddFocusRegion,
-    onResetTrim,
-    onZoomTimeline,
-    onSelectSpeed,
-    onSetTimeMode,
-    onZoomToFit,
-    onZoomToSelection,
-  }: Props = $props();
+let {
+	store,
+	fps,
+	hasTrim,
+	aspectRatioLabel,
+	frameCount,
+	playbackSpeed,
+	speeds,
+	timeMode,
+	hasSelectedRegion,
+	razorActive,
+	showAudioLane,
+	showZoomLane,
+	showMarkupLane,
+	showCutLane,
+	showCutGaps,
+	onSetTrim,
+	onSplit,
+	onToggleRazor,
+	onToggleAudioLane,
+	onToggleZoomLane,
+	onToggleMarkupLane,
+	onToggleCutLane,
+	onToggleCutGaps,
+	onAddFocusRegion,
+	onResetTrim,
+	onZoomTimeline,
+	onSelectSpeed,
+	onSetTimeMode,
+	onZoomToFit,
+	onZoomToSelection,
+}: Props = $props();
 
-  const trimHint = `Set in/out points (I/O) to keep the ends you want. Remove a section with the Cut tool (C, click two points), by splitting at the playhead (S) and deleting the clip, or by dragging across the Cuts lane. Add zoom regions to highlight moments; Recast can also suggest them from your cursor activity.`;
+const trimHint =
+	"Trim start / Trim end keep the middle. Cut removes a section between two clicks. Split breaks the clip at the playhead so you can delete or re-speed one piece.";
 
-  let suggestOpen = $state(false);
-  let showSilence = $state(false);
+// `splitAt` already returns false for a split that can't land (clip edges, a
+// point inside a removed range, or one that already exists) but the caller
+// discarded that, so the button and the S key both silently did nothing.
+const canSplit = $derived(store.canSplitAt(store.currentTime));
+const splitTitle = $derived(
+	canSplit
+		? "Split the clip at the playhead (S)"
+		: "Can't split here: the playhead is on a clip edge, an existing split, or inside a removed section",
+);
 
-  // Counts only silence-detected cuts; manual ripple deletes shouldn't inflate this.
-  const silenceCutCount = $derived(
-    store.cuts.filter((c) => c.source === "silence").length,
-  );
+let suggestOpen = $state(false);
+let showSilence = $state(false);
 
-  // How many export-affecting effects are currently switched off. Surfaced as a
-  // badge on the Layers button so "my cuts didn't apply" is visible without
-  // opening the menu: this is the state that changes the output file, unlike the
-  // lane-visibility toggles above it (which are purely cosmetic).
-  const effectsOff = $derived(
-    (store.cutsEnabled ? 0 : 1) +
-      (store.focusEnabled ? 0 : 1) +
-      (store.annotationsGloballyHidden ? 1 : 0),
-  );
+// Counts only silence-detected cuts; manual ripple deletes shouldn't inflate this.
+const silenceCutCount = $derived(store.cuts.filter((c) => c.source === "silence").length);
 
-  // Shared control styling so every toolbar affordance reads the same.
-  const GROUP =
-    "flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40";
-  const SEG =
-    "flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
-  const SEG_ICON =
-    "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
-  const SEG_ACTIVE =
-    "bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40";
-  const SOLO =
-    "flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+// How many export-affecting effects are currently switched off. Surfaced as a
+// badge on the Layers button so "my cuts didn't apply" is visible without
+// opening the menu: this is the state that changes the output file, unlike the
+// lane-visibility toggles above it (which are purely cosmetic).
+const effectsOff = $derived(
+	(store.cutsEnabled ? 0 : 1) +
+		(store.focusEnabled ? 0 : 1) +
+		(store.annotationsGloballyHidden ? 1 : 0),
+);
 
-  const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
+// Shared control styling so every toolbar affordance reads the same.
+const GROUP =
+	"flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5 ring-1 ring-inset ring-border/40";
+const SEG =
+	"flex h-6 items-center gap-1 rounded-md px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+const SEG_ICON =
+	"flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+const SEG_ACTIVE =
+	"bg-card text-foreground shadow-(--shadow-craft-inset) ring-1 ring-inset ring-border/40";
+const SOLO =
+	"flex h-6 items-center gap-1 rounded-md border border-border/40 bg-muted/40 px-2 text-[11px] font-semibold text-muted-foreground transition-colors duration-150 hover:bg-card hover:text-foreground disabled:opacity-40";
+
+const speedLabel = (s: number) => `${s.toFixed(2).replace(/\.?0+$/, "")}×`;
 </script>
 
 <div class="mb-2 flex flex-wrap items-center justify-between gap-2 text-[11px]">
@@ -145,48 +176,53 @@
       </button>
     </div>
 
-    <!-- Edit: split + trim to playhead -->
+    <!-- Edit: split + trim to playhead. Shortcuts live in tooltips and the View
+         menu's Shortcuts list, never as chips on the buttons themselves. -->
     <div class={GROUP}>
       <button
         type="button"
         onclick={onSplit}
-        title="Split the clip at the playhead (S)"
+        disabled={!canSplit}
+        aria-label="Split at playhead"
+        title={splitTitle}
         class={SEG}
       >
         <SquareSplitHorizontal class="size-3" />
         <span class="hidden sm:inline">Split</span>
-        <Kbd class="ml-0.5">S</Kbd>
       </button>
       <button
         type="button"
         onclick={onToggleRazor}
         aria-pressed={razorActive}
+        aria-label="Cut tool"
         title="Cut tool (C). Click two points to remove a section. Esc to exit."
         class={cn(SEG, razorActive && SEG_ACTIVE)}
       >
         <Scissors class="size-3" />
         <span class="hidden sm:inline">Cut</span>
-        <Kbd class="ml-0.5">C</Kbd>
       </button>
+      <!-- "Trim start", not "Start here": the properties panels use "Start here"
+           for moving a zoom/markup region's own edge to the playhead, and these
+           two trim the whole clip. -->
       <button
         type="button"
         onclick={() => onSetTrim("in")}
-        title="Trim the start to the playhead (I)"
+        aria-label="Trim clip start to playhead"
+        title="Trim the clip's start to the playhead (I)"
         class={SEG}
       >
-        <span class="hidden sm:inline">Start here</span>
-        <span class="sm:hidden">Start</span>
-        <Kbd class="ml-0.5">I</Kbd>
+        <span class="hidden sm:inline">Trim start</span>
+        <span class="sm:hidden">Trim in</span>
       </button>
       <button
         type="button"
         onclick={() => onSetTrim("out")}
-        title="Trim the end to the playhead (O)"
+        aria-label="Trim clip end to playhead"
+        title="Trim the clip's end to the playhead (O)"
         class={SEG}
       >
-        <span class="hidden sm:inline">End here</span>
-        <span class="sm:hidden">End</span>
-        <Kbd class="ml-0.5">O</Kbd>
+        <span class="hidden sm:inline">Trim end</span>
+        <span class="sm:hidden">Trim out</span>
       </button>
     </div>
 
@@ -280,11 +316,12 @@
   <!-- VIEW -->
   <div class="flex items-center gap-1.5 text-muted-foreground">
     {#if hasTrim}
+      <!-- No scissors here: in this toolbar that icon already means the Cut tool,
+           the Cuts lane, and Apply cuts. This is the kept length after trimming. -->
       <span
-        class="inline-flex h-6 items-center gap-1 rounded-md border border-primary/30 bg-primary/10 px-2 font-mono text-[10px] font-semibold tabular-nums text-primary"
-        title="Length of the kept clip"
+        class="inline-flex h-6 items-center rounded-md border border-primary/30 bg-primary/10 px-2 font-mono text-[10px] font-semibold tabular-nums text-primary"
+        title="Length of the trimmed clip"
       >
-        <Scissors class="size-2.5" />
         {formatTimeByMode(store.clipDuration, timeMode, fps)}
       </span>
     {/if}

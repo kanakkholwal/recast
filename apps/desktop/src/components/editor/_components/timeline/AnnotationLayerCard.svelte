@@ -1,194 +1,221 @@
 <script lang="ts">
-  import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-  import type {
-    Annotation,
-    EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-  import { motionDuration } from "$lib/motion.svelte";
-  import { X } from "@recast/icons";
-  import { cubicOut } from "svelte/easing";
-  import { fade, fly } from "svelte/transition";
-  import {
-    computeCardMove,
-    computeCardNudge,
-    computeCardResize,
-  } from "./timeline-card-drag.logic";
-  import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
-  import { type SnapResult, type SnapTarget } from "./timeline-snap";
+import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
+import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { motionDuration } from "$lib/motion.svelte";
 
-  // Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
-  // (no sparkline) so the two lanes are distinguishable at a glance.
+import { cubicOut } from "svelte/easing";
+import { fade, fly } from "svelte/transition";
+import {
+	computeCardMove,
+	computeCardNudge,
+	computeCardResize,
+	dragEngaged,
+	PRECISION_SCALE,
+} from "./timeline-card-drag.logic";
+import { useLaneDrag } from "./timeline-drag.svelte";
+import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
+import { type SnapResult, type SnapTarget } from "./timeline-snap";
+import { EDGE_HIT_OVERHANG_PX, edgeHandleWidth, ROW_HEIGHT_PX } from "./timeline-stack";
 
-  interface Props {
-    store: EditorStore;
-    annotation: Annotation;
-    pixelsPerSecond: number;
-    fps: number;
-    duration: number;
-    snapTargets: SnapTarget[];
-    timeMode: TimeMode;
-    onSnapChange: (snap: SnapResult["target"] | null) => void;
-    onDuplicate: (annotation: Annotation) => void;
-  }
+// Mirrors ZoomLayerCard's drag/resize/snap on annotations; outline-only
+// (no sparkline) so the two lanes are distinguishable at a glance.
 
-  let {
-    store,
-    annotation,
-    pixelsPerSecond,
-    fps,
-    duration,
-    snapTargets,
-    timeMode,
-    onSnapChange,
-    onDuplicate,
-  }: Props = $props();
+interface Props {
+	store: EditorStore;
+	annotation: Annotation;
+	pixelsPerSecond: number;
+	fps: number;
+	duration: number;
+	/** Layout comes from the lane, which packs overlapping cards into rows. */
+	left: number;
+	width: number;
+	top: number;
+	snapTargets: SnapTarget[];
+	timeMode: TimeMode;
+	onSnapChange: (snap: SnapResult["target"] | null) => void;
+	onDuplicate: (annotation: Annotation) => void;
+}
 
-  const MIN_DURATION = 0.05; // Annotations can be tighter than zooms.
-  const SNAP_TOLERANCE_PX = 6;
+let {
+	store,
+	annotation,
+	pixelsPerSecond,
+	fps,
+	duration,
+	left,
+	width,
+	top,
+	snapTargets,
+	timeMode,
+	onSnapChange,
+	onDuplicate,
+}: Props = $props();
 
-  type DragMode = "move" | "resize-start" | "resize-end";
+const MIN_DURATION = 0.05; // Annotations can be tighter than zooms.
+const SNAP_TOLERANCE_PX = 6;
+/** Below this the name can't fit legibly, so the card shows its kind icon. */
+const NAME_WIDTH_PX = 56;
 
-  interface DragContext {
-    mode: DragMode;
-    pointerId: number;
-    startClientX: number;
-    originalStart: number;
-    originalEnd: number;
-  }
+type DragMode = "move" | "resize-start" | "resize-end";
 
-  let drag = $state<DragContext | null>(null);
+interface DragContext {
+	mode: DragMode;
+	pointerId: number;
+	startClientX: number;
+	originalStart: number;
+	originalEnd: number;
+	/** False until the pointer clears the drag threshold. */
+	engaged: boolean;
+	/** Shift held: pointer travel is damped for fine positioning. */
+	precision: boolean;
+}
 
-  const isSelected = $derived(annotation.id === store.selectedAnnotationId);
-  // Output (post-cut) axis. See ZoomLayerCard for the rationale.
-  const xOf = (t: number) =>
-    originalToOutput(store.renderMap, t) * pixelsPerSecond;
-  const tOf = (xPx: number) =>
-    outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
-  // Labels read on the output axis, like the ruler and the playhead.
-  const outSec = (t: number) => originalToOutput(store.renderMap, t);
-  const left = $derived(xOf(annotation.start));
-  // 28px keeps a one-frame annotation grabbable.
-  const width = $derived(
-    Math.max(xOf(annotation.end) - xOf(annotation.start), 28),
-  );
-  const showSubtitle = $derived(width >= 110);
-  const Icon = $derived(kindIcon(annotation));
+let drag = $state<DragContext | null>(null);
+// Undo is pushed on the first real move, not at pointer-down: clicking a card
+// to select it used to leave an undo entry that changed nothing, so Ctrl+Z
+// after selecting five cards did nothing five times.
+let dragUndoPushed = false;
+// Holds this card's row for the gesture, so re-packing can't move it off the cursor.
+const laneDrag = useLaneDrag();
 
-  function beginDrag(mode: DragMode, event: PointerEvent) {
-    if (duration <= 0) return;
-    // Let a razor click bubble through to carve, rather than dragging the card.
-    if (store.timelineTool === "razor") return;
-    event.preventDefault();
-    event.stopPropagation();
-    store.selectedAnnotationId = annotation.id;
-    store.pushUndoState();
-    drag = {
-      mode,
-      pointerId: event.pointerId,
-      startClientX: event.clientX,
-      originalStart: annotation.start,
-      originalEnd: annotation.end,
-    };
-    document.body.style.cursor =
-      mode === "move" ? "grabbing" : "ew-resize";
-    (event.currentTarget as Element).setPointerCapture(event.pointerId);
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-    window.addEventListener("pointercancel", onPointerUp);
-  }
+const isSelected = $derived(annotation.id === store.selectedAnnotationId);
+// Output (post-cut) axis. See ZoomLayerCard for the rationale.
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+const tOf = (xPx: number) => outputToOriginal(store.renderMap, xPx / pixelsPerSecond);
+// Labels read on the output axis, like the ruler and the playhead.
+const outSec = (t: number) => originalToOutput(store.renderMap, t);
+const showSubtitle = $derived(width >= 110);
+const handlePx = $derived(edgeHandleWidth(width));
+const Icon = $derived(kindIcon(annotation));
 
-  function onPointerMove(event: PointerEvent) {
-    if (!drag) return;
-    const geom = {
-      origin: { start: drag.originalStart, end: drag.originalEnd },
-      clientX: event.clientX,
-      startClientX: drag.startClientX,
-      pps: pixelsPerSecond,
-      xOf,
-      tOf,
-      snapTargets,
-      tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
-      fps,
-      duration,
-    };
-    const result =
-      drag.mode === "move"
-        ? computeCardMove(geom)
-        : computeCardResize({
-            ...geom,
-            edge: drag.mode === "resize-start" ? "start" : "end",
-            minDuration: MIN_DURATION,
-          });
-    store.updateAnnotation(annotation.id, {
-      start: result.start,
-      end: result.end,
-    });
-    onSnapChange(result.guide);
-  }
+function beginDrag(mode: DragMode, event: PointerEvent) {
+	if (duration <= 0) return;
+	// Let a razor click bubble through to carve, rather than dragging the card.
+	if (store.timelineTool === "razor") return;
+	event.preventDefault();
+	event.stopPropagation();
+	store.selectedAnnotationId = annotation.id;
+	dragUndoPushed = false;
+	laneDrag?.begin(annotation.id);
+	drag = {
+		mode,
+		pointerId: event.pointerId,
+		startClientX: event.clientX,
+		originalStart: annotation.start,
+		originalEnd: annotation.end,
+		engaged: false,
+		precision: event.shiftKey,
+	};
+	document.body.style.cursor = mode === "move" ? "grabbing" : "ew-resize";
+	(event.currentTarget as Element).setPointerCapture(event.pointerId);
+	window.addEventListener("pointermove", onPointerMove);
+	window.addEventListener("pointerup", onPointerUp);
+	window.addEventListener("pointercancel", onPointerUp);
+}
 
-  function onPointerUp(_event: PointerEvent) {
-    drag = null;
-    document.body.style.cursor = "";
-    window.removeEventListener("pointermove", onPointerMove);
-    window.removeEventListener("pointerup", onPointerUp);
-    window.removeEventListener("pointercancel", onPointerUp);
-    onSnapChange(null);
-  }
+function onPointerMove(event: PointerEvent) {
+	if (!drag) return;
+	// A press is a click until it clears the threshold, so selecting a card
+	// can't nudge it or leave an undo entry that changed nothing.
+	if (!drag.engaged) {
+		if (!dragEngaged(event.clientX, drag.startClientX)) return;
+		drag.engaged = true;
+	}
+	// Shift can go down or up mid-drag; re-seed the anchor to the current
+	// pointer and bounds so the change in gearing never jumps the card.
+	if (event.shiftKey !== drag.precision) {
+		drag.precision = event.shiftKey;
+		drag.startClientX = event.clientX;
+		drag.originalStart = annotation.start;
+		drag.originalEnd = annotation.end;
+	}
+	if (!dragUndoPushed) {
+		store.pushUndoState();
+		dragUndoPushed = true;
+	}
+	const geom = {
+		origin: { start: drag.originalStart, end: drag.originalEnd },
+		clientX: event.clientX,
+		startClientX: drag.startClientX,
+		xOf,
+		tOf,
+		// Ctrl/Cmd suspends magnetism for a placement the snap targets fight.
+		snapTargets: event.ctrlKey || event.metaKey ? [] : snapTargets,
+		tolerance: SNAP_TOLERANCE_PX / pixelsPerSecond,
+		fps,
+		duration,
+		scale: drag.precision ? PRECISION_SCALE : 1,
+	};
+	const result =
+		drag.mode === "move"
+			? computeCardMove(geom)
+			: computeCardResize({
+					...geom,
+					edge: drag.mode === "resize-start" ? "start" : "end",
+					minDuration: MIN_DURATION,
+				});
+	store.updateAnnotation(annotation.id, {
+		start: result.start,
+		end: result.end,
+	});
+	onSnapChange(result.guide);
+}
 
-  function onCardKeydown(event: KeyboardEvent) {
-    if (duration <= 0) return;
+function onPointerUp(_event: PointerEvent) {
+	drag = null;
+	laneDrag?.end();
+	document.body.style.cursor = "";
+	window.removeEventListener("pointermove", onPointerMove);
+	window.removeEventListener("pointerup", onPointerUp);
+	window.removeEventListener("pointercancel", onPointerUp);
+	onSnapChange(null);
+}
 
-    if (event.key === "Delete" || event.key === "Backspace") {
-      event.preventDefault();
-      event.stopPropagation();
-      store.removeAnnotation(annotation.id);
-      return;
-    }
+function onCardKeydown(event: KeyboardEvent) {
+	if (duration <= 0) return;
 
-    const isMod = event.ctrlKey || event.metaKey;
-    if (isMod && (event.key === "d" || event.key === "D")) {
-      event.preventDefault();
-      event.stopPropagation();
-      onDuplicate(annotation);
-      return;
-    }
+	if (event.key === "Delete" || event.key === "Backspace") {
+		event.preventDefault();
+		event.stopPropagation();
+		store.removeAnnotation(annotation.id);
+		return;
+	}
 
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    event.stopPropagation();
+	const isMod = event.ctrlKey || event.metaKey;
+	if (isMod && (event.key === "d" || event.key === "D")) {
+		event.preventDefault();
+		event.stopPropagation();
+		onDuplicate(annotation);
+		return;
+	}
 
-    store.pushUndoStateCoalesced(`nudge-annotation-${annotation.id}`, 600);
+	if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+	event.preventDefault();
+	event.stopPropagation();
 
-    const next = computeCardNudge({
-      origin: { start: annotation.start, end: annotation.end },
-      direction: event.key === "ArrowLeft" ? -1 : 1,
-      shift: event.shiftKey,
-      alt: event.altKey,
-      fps,
-      duration,
-      minDuration: MIN_DURATION,
-    });
-    store.updateAnnotation(annotation.id, {
-      start: next.start,
-      end: next.end,
-    });
-  }
+	store.pushUndoStateCoalesced(`nudge-annotation-${annotation.id}`, 600);
 
-  function onCardClick(event: MouseEvent) {
-    if (store.timelineTool === "razor") return; // razor click is not a select
-    event.stopPropagation();
-    store.selectedAnnotationId = annotation.id;
-  }
+	const next = computeCardNudge({
+		origin: { start: annotation.start, end: annotation.end },
+		direction: event.key === "ArrowLeft" ? -1 : 1,
+		shift: event.shiftKey,
+		alt: event.altKey,
+		fps,
+		duration,
+		minDuration: MIN_DURATION,
+	});
+	store.updateAnnotation(annotation.id, {
+		start: next.start,
+		end: next.end,
+	});
+}
 
-  function onRemove(event: Event) {
-    event.stopPropagation();
-    if (event instanceof KeyboardEvent) {
-      event.preventDefault();
-      if (event.key !== "Enter" && event.key !== " ") return;
-    }
-    store.removeAnnotation(annotation.id);
-  }
+function onCardClick(event: MouseEvent) {
+	if (store.timelineTool === "razor") return; // razor click is not a select
+	event.stopPropagation();
+	store.selectedAnnotationId = annotation.id;
+}
 </script>
 
 <div
@@ -198,9 +225,8 @@
   style="
     left: {left}px;
     width: {width}px;
-    top: 50%;
-    margin-top: -13px;
-    height: 26px;
+    top: {top}px;
+    height: {ROW_HEIGHT_PX}px;
   "
 >
   <button
@@ -212,65 +238,55 @@
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-md border bg-lane-markup/10 text-left backdrop-blur-sm transition-all duration-150 hover:bg-lane-markup/20 hover:shadow-craft-sm focus:outline-none focus:ring-1 focus:ring-ring {isSelected
-      ? 'border-lane-markup/80 cursor-grabbing shadow-[inset_3px_0_0_0_var(--color-lane-markup)] hover:shadow-[inset_3px_0_0_0_var(--color-lane-markup)]'
-      : 'border-lane-markup/40 hover:border-lane-markup/70 cursor-grab'} {drag?.mode ===
+    class="absolute inset-0 overflow-hidden rounded-[3px] border-l-2 text-left transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {isSelected
+      ? 'border-l-lane-markup bg-lane-markup/35 cursor-grabbing ring-1 ring-inset ring-lane-markup/70'
+      : 'border-l-lane-markup/70 bg-lane-markup/20 cursor-grab hover:bg-lane-markup/30'} {drag?.mode ===
     'move'
       ? 'cursor-grabbing shadow-craft-floating'
       : ''}"
   >
+    <!-- Content by available width, the way an NLE clip degrades: icon only when
+         narrow, then the name, then the length. The old card always rendered a
+         20px icon tile AND the name AND a timecode, which on a short card left
+         nothing but a clipped icon. -->
     <div
-      class="relative flex h-full items-center gap-1.5 px-1.5"
+      class="pointer-events-none flex h-full items-center gap-1 px-1.5"
       id={`annotation-region-${annotation.id}`}
       aria-label={`${kindLabel(annotation)} annotation from ${formatTimeByMode(outSec(annotation.start), timeMode, fps)} to ${formatTimeByMode(outSec(annotation.end), timeMode, fps)}. Click to select; drag to move; drag the edges to resize.`}
     >
-      <span
-        class="flex size-5 shrink-0 items-center justify-center rounded-md bg-lane-markup/20 text-lane-markup"
-      >
-        <Icon class="size-3" />
-      </span>
-      <div class="min-w-0 flex-1 pointer-events-none">
-        <p class="truncate text-[10px] font-semibold leading-tight text-foreground">
+      {#if width < NAME_WIDTH_PX}
+        <Icon class="size-3 shrink-0 text-lane-markup" />
+      {:else}
+        <span class="truncate text-[10px] font-semibold leading-none text-foreground">
           {kindLabel(annotation)}
-        </p>
+        </span>
         {#if showSubtitle}
-          <p class="truncate text-[9px] leading-tight text-muted-foreground">
-            {formatTimeByMode(outSec(annotation.start), timeMode, fps)}
-          </p>
+          <span
+            class="ml-auto shrink-0 font-mono text-[9px] leading-none tabular-nums text-foreground/55"
+          >
+            {formatTimeByMode(outSec(annotation.end) - outSec(annotation.start), timeMode, fps)}
+          </span>
         {/if}
-      </div>
-      <span
-        role="button"
-        tabindex="0"
-        onclick={onRemove}
-        onpointerdown={(e) => e.stopPropagation()}
-        onkeydown={onRemove}
-        class="pointer-events-auto flex size-4 shrink-0 cursor-pointer items-center justify-center rounded border border-border bg-background/70 text-muted-foreground opacity-0 transition-all hover:border-destructive hover:text-destructive group-hover/card:opacity-100 focus:opacity-100 {isSelected
-          ? 'opacity-100'
-          : ''}"
-        aria-label="Remove annotation"
-      >
-        <X size={9} stroke={2.5} />
-      </span>
+      {/if}
     </div>
   </button>
 
+  <!-- Pointer-only grips. They used to carry role="slider" with tabindex="-1"
+       and no key handler: announced as sliders, impossible to focus or operate.
+       Keyboard resize lives on the card itself (Alt+Arrow). Width scales with
+       the card so a short one keeps more middle to drag than edge to resize. -->
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize annotation start"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={annotation.start}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-start", e);
     }}
-    class="absolute inset-y-0 left-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; left: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -278,20 +294,16 @@
   </div>
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
-    role="slider"
-    tabindex="-1"
-    aria-label="Resize annotation end"
-    aria-valuemin={0}
-    aria-valuemax={duration}
-    aria-valuenow={annotation.end}
+    aria-hidden="true"
     onpointerdown={(e) => {
       if (e.button !== 0) return;
       beginDrag("resize-end", e);
     }}
-    class="absolute inset-y-0 right-0 z-10 w-2 cursor-ew-resize"
+    class="absolute inset-y-0 z-10 cursor-ew-resize"
+    style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; right: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-markup/70 opacity-0 transition-opacity group-hover/card:opacity-60 {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"

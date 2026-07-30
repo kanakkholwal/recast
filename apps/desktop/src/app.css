@@ -15,18 +15,10 @@
 	--font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco,
 		Consolas, monospace;
 
-	/* Light-mode surface contrast (desktop-only override of @recast/design):
-	   lift the content area toward white so the gray sidebar/backdrop reads as a
-	   distinct frame, and darken the hairline border so cards — translucent-white
-	   on the now-bright content — keep a crisp outline instead of washing out.
-	   Dark-mode values are restored in `.dark` below so this stays light-only. */
-	--background: oklch(0.985 0 0);
-	--border: oklch(0.91 0 0);
-
 	--sidebar: oklch(93.403% 0.00011 271.152);
 	--sidebar-foreground: oklch(0.145 0 0);
-	--sidebar-primary: oklch(0.205 0 0);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-primary: var(--primary);
+	--sidebar-primary-foreground: var(--primary-foreground);
 	--sidebar-accent: oklch(0.97 0 0);
 	--sidebar-accent-foreground: oklch(0.205 0 0);
 	--sidebar-border: oklch(0.922 0 0);
@@ -34,15 +26,10 @@
 }
 
 .dark {
-	/* Restore @recast/design's dark surfaces — the `:root` block above is
-	   light-mode tuning and must not leak into dark mode. */
-	--background: oklch(20.352% 0.00157 197.844);
-	--border: oklch(23.929% 0.00003 271.152);
-
 	--sidebar: oklch(0.24 0 0);
 	--sidebar-foreground: oklch(0.985 0 0);
-	--sidebar-primary: oklch(0.488 0.243 264.376);
-	--sidebar-primary-foreground: oklch(0.985 0 0);
+	--sidebar-primary: var(--primary);
+	--sidebar-primary-foreground: var(--primary-foreground);
 	--sidebar-accent: oklch(0.269 0 0);
 	--sidebar-accent-foreground: oklch(0.985 0 0);
 	--sidebar-border: oklch(1 0 0 / 10%);

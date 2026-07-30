@@ -1,109 +1,108 @@
 <script lang="ts">
-  import {
-    cameraPlacementFromPreset,
-    cameraPresetFromPlacement,
-    type CameraPositionPreset,
-    type EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import { cameraPlacementAt } from "../_components/camera-overlay.logic";
-  import { EASING_PRESETS, easingEquals } from "$lib/easing/cubic-bezier";
-  import { VideoOff } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { cn } from "@recast/ui/utils";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import BezierEditor from "../_components/BezierEditor.svelte";
-  import { dotStyleFor, labelFor } from "./camera-panel.logic";
-  import PanelSection from "./PanelSection.svelte";
+import {
+	cameraPlacementFromPreset,
+	cameraPresetFromPlacement,
+	type CameraPositionPreset,
+	type EditorStore,
+} from "$lib/stores/editor-store.svelte";
+import { cameraPlacementAt } from "../_components/camera-overlay.logic";
+import { VideoOff } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { cn } from "@recast/ui/utils";
+import { SliderControl } from "@recast/ui/slider-control";
+import { dotStyleFor, labelFor } from "./camera-panel.logic";
+import EasingControl from "./EasingControl.svelte";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-    /**
-     * Path to the captured `camera.mp4` for this project, or null/empty
-     * when the recording was made without a camera. Drives the empty-state
-     * UI. The panel is always present in the tab strip but stays in
-     * "no camera track" mode unless this resolves to a real file.
-     */
-    cameraPath: string | null | undefined;
-  }
+interface Props {
+	store: EditorStore;
+	/**
+	 * Path to the captured `camera.mp4` for this project, or null/empty
+	 * when the recording was made without a camera. Drives the empty-state
+	 * UI. The panel is always present in the tab strip but stays in
+	 * "no camera track" mode unless this resolves to a real file.
+	 */
+	cameraPath: string | null | undefined;
+}
 
-  let { store, cameraPath }: Props = $props();
+let { store, cameraPath }: Props = $props();
 
-  const hasCamera = $derived(!!cameraPath);
+const hasCamera = $derived(!!cameraPath);
 
-  // Video pixel aspect. The bubble is square in pixels, so its UV height is
-  // `width * aspect`; the presets need it to anchor vertically on a wide frame.
-  const videoAspect = $derived(
-    store.metadata && store.metadata.height
-      ? store.metadata.width / store.metadata.height
-      : 1,
-  );
+// Video pixel aspect. The bubble is square in pixels, so its UV height is
+// `width * aspect`; the presets need it to anchor vertically on a wide frame.
+const videoAspect = $derived(
+	store.metadata && store.metadata.height ? store.metadata.width / store.metadata.height : 1,
+);
 
-  const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
+const perCut = $derived(store.cameraOverlay.keyframes.length > 0);
 
-  // The placement being edited: in per-cut mode it's the glide value at the
-  // playhead (the keyframe you're setting); else the static placement.
-  const currentBase = $derived(
-    cameraPlacementAt(
-      store.cameraOverlay.defaultPlacement,
-      store.cameraOverlay.keyframes,
-      store.currentTime,
-      store.cameraOverlay.keyframeEasing,
-    ),
-  );
+// The placement being edited: in per-cut mode it's the glide value at the
+// playhead (the keyframe you're setting); else the static placement.
+const currentBase = $derived(
+	cameraPlacementAt(
+		store.cameraOverlay.defaultPlacement,
+		store.cameraOverlay.keyframes,
+		store.currentTime,
+		store.cameraOverlay.keyframeEasing,
+	),
+);
 
-  // Derived from the placement so a preview drag onto a corner re-highlights
-  // the matching chip without a re-click.
-  const activePreset = $derived(cameraPresetFromPlacement(currentBase, videoAspect));
+// Derived from the placement so a preview drag onto a corner re-highlights
+// the matching chip without a re-click.
+const activePreset = $derived(cameraPresetFromPlacement(currentBase, videoAspect));
 
-  function applyPreset(preset: CameraPositionPreset) {
-    if (preset === "custom") return; // Custom is the drag fallback.
-    store.pushUndoState();
-    const next = cameraPlacementFromPreset(preset, currentBase.width, undefined, videoAspect);
-    store.setCameraPlacement(next);
-  }
+function applyPreset(preset: CameraPositionPreset) {
+	if (preset === "custom") return; // Custom is the drag fallback.
+	store.pushUndoState();
+	const next = cameraPlacementFromPreset(preset, currentBase.width, undefined, videoAspect);
+	store.setCameraPlacement(next);
+}
 
-  function setSize(size: number) {
-    // Anchor the resize on the current preset corner so the bubble doesn't
-    // drift; custom placements just scale from their top-left.
-    if (activePreset === "custom") {
-      store.setCameraPlacement({
-        ...currentBase,
-        width: size,
-        height: Math.min(1, size * videoAspect),
-      });
-      return;
-    }
-    store.setCameraPlacement(cameraPlacementFromPreset(activePreset, size, undefined, videoAspect));
-  }
+function setSize(size: number) {
+	// Anchor the resize on the current preset corner so the bubble doesn't
+	// drift; custom placements just scale from their top-left.
+	if (activePreset === "custom") {
+		store.setCameraPlacement({
+			...currentBase,
+			width: size,
+			height: Math.min(1, size * videoAspect),
+		});
+		return;
+	}
+	store.setCameraPlacement(cameraPlacementFromPreset(activePreset, size, undefined, videoAspect));
+}
 
-  // 3×3 grid mirroring the spatial position each chip represents, so users
-  // pick by location rather than reading labels.
-  const presetGrid: Array<CameraPositionPreset | null> = [
-    "top-left", "top-center", "top-right",
-    "left-center", null, "right-center",
-    "bottom-left", "bottom-center", "bottom-right",
-  ];
+// 3×3 grid mirroring the spatial position each chip represents, so users
+// pick by location rather than reading labels.
+const presetGrid: Array<CameraPositionPreset | null> = [
+	"top-left",
+	"top-center",
+	"top-right",
+	"left-center",
+	null,
+	"right-center",
+	"bottom-left",
+	"bottom-center",
+	"bottom-right",
+];
 
-  const shapeOptions = [
-    { id: "circle" as const, label: "Circle" },
-    { id: "rounded" as const, label: "Rounded" },
-    { id: "square" as const, label: "Square" },
-  ];
+const shapeOptions = [
+	{ id: "circle" as const, label: "Circle" },
+	{ id: "rounded" as const, label: "Rounded" },
+	{ id: "square" as const, label: "Square" },
+];
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
   {#if hasCamera}
-    <div class="flex items-center justify-between gap-2 rounded-md border border-border/60 bg-card/40 px-2.5 py-1.5">
-      <span class="text-[11px] text-muted-foreground">
-        Composite the camera track onto the screen video.
-      </span>
+    <div class="flex items-center justify-between gap-2">
+      <span class="text-[11px] font-medium text-foreground">Show camera</span>
       <SegmentedToggle
         checked={store.cameraOverlay.enabled}
-        offLabel="Hidden"
-        onLabel="Visible"
         size="xs"
-        aria-label="Camera visibility"
+        aria-label="Show camera"
         onCheckedChange={(next) => {
           store.pushUndoState();
           store.updateCameraOverlay({ enabled: next });
@@ -199,13 +198,14 @@
             {store.cameraOverlay.keyframes.length}
             {store.cameraOverlay.keyframes.length === 1 ? "position" : "positions"} · glides between cuts
           </span>
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="xs"
+            class="text-[10.5px] text-muted-foreground"
             onclick={() => store.removeCameraKeyframeNear(store.currentTime)}
-            class="rounded-md border border-transparent px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40"
           >
             Clear this cut
-          </button>
+          </Button>
         </div>
       {/if}
     </PanelSection>
@@ -310,36 +310,19 @@
           onstart={() => store.pushUndoState()}
           onchange={(next) => store.updateCameraOverlay({ zoomFollowDuration: next / 1000 })}
         />
-        <div class="flex flex-wrap gap-1">
-          {#each EASING_PRESETS as preset (preset.id)}
-            {@const active = easingEquals(store.cameraOverlay.zoomFollowEasing, preset.value)}
-            <Button
-              type="button"
-              size="xs"
-              aria-pressed={active}
-              variant={active ? "default_soft" : "outline"}
-              onclick={() => {
-                store.pushUndoState();
-                store.updateCameraOverlay({ zoomFollowEasing: { ...preset.value } });
-              }}
-            >
-              {preset.label}
-            </Button>
-          {/each}
-        </div>
-        <PanelSection title="Custom curve" flush collapsible defaultOpen={false}>
-          <div class="pt-1">
-            <BezierEditor
-              value={store.cameraOverlay.zoomFollowEasing}
-              onchange={(v) => {
-                store.pushUndoState();
-                store.updateCameraOverlay({ zoomFollowEasing: v });
-              }}
-              showPresets={false}
-              size={220}
-            />
-          </div>
-        </PanelSection>
+        <EasingControl
+          value={store.cameraOverlay.zoomFollowEasing}
+          size={220}
+          onpick={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ zoomFollowEasing: v });
+          }}
+          ondrag={(v) =>
+            store.updateCameraOverlayLive(
+              { zoomFollowEasing: v },
+              "camera-zoomfollow-easing",
+            )}
+        />
       {/if}
     </PanelSection>
 
@@ -361,36 +344,19 @@
         title="Animation smoothness"
         hint="How the camera eases as it glides between per-cut positions."
       >
-        <div class="flex flex-wrap gap-1">
-          {#each EASING_PRESETS as preset (preset.id)}
-            {@const active = easingEquals(store.cameraOverlay.keyframeEasing, preset.value)}
-            <Button
-              type="button"
-              size="xs"
-              aria-pressed={active}
-              variant={active ? "default_soft" : "outline"}
-              onclick={() => {
-                store.pushUndoState();
-                store.updateCameraOverlay({ keyframeEasing: { ...preset.value } });
-              }}
-            >
-              {preset.label}
-            </Button>
-          {/each}
-        </div>
-        <PanelSection title="Custom curve" flush collapsible defaultOpen={false}>
-          <div class="pt-1">
-            <BezierEditor
-              value={store.cameraOverlay.keyframeEasing}
-              onchange={(v) => {
-                store.pushUndoState();
-                store.updateCameraOverlay({ keyframeEasing: v });
-              }}
-              showPresets={false}
-              size={220}
-            />
-          </div>
-        </PanelSection>
+        <EasingControl
+          value={store.cameraOverlay.keyframeEasing}
+          size={220}
+          onpick={(v) => {
+            store.pushUndoState();
+            store.updateCameraOverlay({ keyframeEasing: v });
+          }}
+          ondrag={(v) =>
+            store.updateCameraOverlayLive(
+              { keyframeEasing: v },
+              "camera-keyframe-easing",
+            )}
+        />
       </PanelSection>
     {/if}
   {/if}

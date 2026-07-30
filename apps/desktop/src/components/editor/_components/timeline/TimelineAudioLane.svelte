@@ -1,45 +1,44 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { originalToOutput } from "$lib/timeline/time-map";
-  import { buildWaveformPath } from "./timeline-helpers";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { originalToOutput } from "$lib/timeline/time-map";
+import { buildWaveformPath } from "./timeline-helpers";
 
-  // The audio track gets its own lane, like every real NLE.
-  //
-  // It used to be an either-or radio with the clip thumbnails, then a 16px strip
-  // squeezed along the bottom of the clip bar. Neither works: cutting dead air is
-  // the most common task in a screen recorder and it needs the waveform AND the
-  // frames legible at the same time. A dedicated lane gives the envelope real
-  // height and leaves the clip bar alone.
+// The audio track gets its own lane, like every real NLE.
+//
+// It used to be an either-or radio with the clip thumbnails, then a 16px strip
+// squeezed along the bottom of the clip bar. Neither works: cutting dead air is
+// the most common task in a screen recorder and it needs the waveform AND the
+// frames legible at the same time. A dedicated lane gives the envelope real
+// height and leaves the clip bar alone.
 
-  interface Props {
-    store: EditorStore;
-    pixelsPerSecond: number;
-    duration: number;
-  }
+interface Props {
+	store: EditorStore;
+	pixelsPerSecond: number;
+	duration: number;
+}
 
-  let { store, pixelsPerSecond, duration }: Props = $props();
+let { store, pixelsPerSecond, duration }: Props = $props();
 
-  // Full lane height, so quiet passages are still readable.
-  const LANE_H = 36;
+// Full lane height, so quiet passages are still readable.
+const LANE_H = 36;
 
-  // Same output-axis mapping as every other lane: a removed range collapses onto
-  // its seam, so the envelope stays aligned with the frames above it.
-  const xOf = (t: number) =>
-    originalToOutput(store.renderMap, t) * pixelsPerSecond;
-  const axisWidth = $derived(Math.max(0, xOf(duration)));
+// Same output-axis mapping as every other lane: a removed range collapses onto
+// its seam, so the envelope stays aligned with the frames above it.
+const xOf = (t: number) => originalToOutput(store.renderMap, t) * pixelsPerSecond;
+const axisWidth = $derived(Math.max(0, xOf(duration)));
 
-  const waveformPath = $derived(
-    buildWaveformPath({
-      waveform: store.waveform,
-      duration,
-      xOf,
-      height: LANE_H,
-      amp: LANE_H / 2 - 2,
-      range: { start: store.inPoint, end: store.outPoint },
-    }),
-  );
+const waveformPath = $derived(
+	buildWaveformPath({
+		waveform: store.waveform,
+		duration,
+		xOf,
+		height: LANE_H,
+		amp: LANE_H / 2 - 2,
+		range: { start: store.inPoint, end: store.outPoint },
+	}),
+);
 
-  const hasAudio = $derived(!!store.audioPath || !!store.microphonePath);
+const hasAudio = $derived(!!store.audioPath || !!store.microphonePath);
 </script>
 
 <div

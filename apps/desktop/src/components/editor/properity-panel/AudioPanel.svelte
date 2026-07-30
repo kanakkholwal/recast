@@ -1,213 +1,190 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { isEditableTarget } from "$lib/dom/editable";
-  import { clock } from "$lib/format/time";
-  import {
-    activePreset as activePresetLabel,
-    dbForVolume,
-    envelopePath as envelopePathBase,
-    FADE_PRESETS,
-    volumeZone as classifyVolume,
-    type FadePreset,
-  } from "./audio-panel.logic";
-  import {
-    AudioLines,
-    AudioWaveform,
-    Mic,
-    RotateCcw,
-    Speaker,
-    Waves,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cubicOut } from "svelte/easing";
-  import { scale } from "svelte/transition";
-  import { motionDuration } from "$lib/motion.svelte";
-  import PanelSection from "./PanelSection.svelte";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { isEditableTarget } from "$lib/dom/editable";
+import { clock } from "$lib/format/time";
+import {
+	activePreset as activePresetLabel,
+	dbForVolume,
+	envelopePath as envelopePathBase,
+	FADE_PRESETS,
+	volumeZone as classifyVolume,
+	type FadePreset,
+} from "./audio-panel.logic";
+import { AudioLines, Mic, MicOff, RotateCcw, Speaker, VolumeOff, Waves } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cubicOut } from "svelte/easing";
+import { scale } from "svelte/transition";
+import { motionDuration } from "$lib/motion.svelte";
+import PanelSection from "./PanelSection.svelte";
+import SettingRow from "./SettingRow.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  let { store }: Props = $props();
+let { store }: Props = $props();
 
-  type AudioSettings = EditorStore["audioSettings"];
+type AudioSettings = EditorStore["audioSettings"];
 
-  function updateAudioSettings(
-    updates: Partial<AudioSettings>,
-    trackUndo = false,
-  ) {
-    if (trackUndo) store.pushUndoState();
-    store.updateAudioSettings(updates);
-  }
+function updateAudioSettings(updates: Partial<AudioSettings>, trackUndo = false) {
+	if (trackUndo) store.pushUndoState();
+	store.updateAudioSettings(updates);
+}
 
-  function toggleMute() {
-    updateAudioSettings({ muted: !store.audioSettings.muted }, true);
-  }
-  function resetVolume() {
-    updateAudioSettings({ volume: 100 }, true);
-  }
-  function resetSystemVolume() {
-    updateAudioSettings({ systemVolume: 100 }, true);
-  }
-  function resetMicVolume() {
-    updateAudioSettings({ micVolume: 100 }, true);
-  }
+function toggleMute() {
+	updateAudioSettings({ muted: !store.audioSettings.muted }, true);
+}
+function resetVolume() {
+	updateAudioSettings({ volume: 100 }, true);
+}
+function resetSystemVolume() {
+	updateAudioSettings({ systemVolume: 100 }, true);
+}
+function resetMicVolume() {
+	updateAudioSettings({ micVolume: 100 }, true);
+}
 
-  // Suppress the M shortcut while typing in an input/contenteditable.
-  function handleKey(e: KeyboardEvent) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (isEditableTarget(e.target)) return;
-    if (e.key === "m" || e.key === "M") {
-      e.preventDefault();
-      toggleMute();
-    }
-  }
+// Suppress the M shortcut while typing in an input/contenteditable.
+function handleKey(e: KeyboardEvent) {
+	if (e.metaKey || e.ctrlKey || e.altKey) return;
+	if (isEditableTarget(e.target)) return;
+	if (e.key === "m" || e.key === "M") {
+		e.preventDefault();
+		toggleMute();
+	}
+}
 
-  const volumeZone = $derived(
-    classifyVolume(store.audioSettings.muted, store.audioSettings.volume),
-  );
+const volumeZone = $derived(classifyVolume(store.audioSettings.muted, store.audioSettings.volume));
 
-  function applyPreset(preset: FadePreset) {
-    store.pushUndoState();
-    store.updateAudioSettings({ fadeIn: preset.in, fadeOut: preset.out });
-  }
+function applyPreset(preset: FadePreset) {
+	store.pushUndoState();
+	store.updateAudioSettings({ fadeIn: preset.in, fadeOut: preset.out });
+}
 
-  // Matching preset drives the Segmented selection; a custom slider value
-  // leaves nothing selected.
-  const activePreset = $derived(activePresetLabel(store.audioSettings));
-  const fadePresetOptions = $derived(
-    FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })),
-  );
+// Matching preset drives the Segmented selection; a custom slider value
+// leaves nothing selected.
+const activePreset = $derived(activePresetLabel(store.audioSettings));
+const fadePresetOptions = $derived(FADE_PRESETS.map((p) => ({ value: p.label, label: p.label })));
 
-  // Wrappers: read the reactive store, defer maths to the shared helpers.
-  const envelopePath = (fadeIn: number, fadeOut: number): string =>
-    envelopePathBase(fadeIn, fadeOut, store.clipDuration || 1);
-  const formatClipDuration = (): string => clock(store.clipDuration || 0);
+// Wrappers: read the reactive store, defer maths to the shared helpers.
+const envelopePath = (fadeIn: number, fadeOut: number): string =>
+	envelopePathBase(fadeIn, fadeOut, store.clipDuration || 1);
+const formatClipDuration = (): string => clock(store.clipDuration || 0);
+
+// Per-source gain only reaches the export when the source is a SEPARATE track:
+// `effective_audio_gain` (commands/editor.rs) ignores system/mic gain for
+// muxed `AudioKind::Source` audio. Showing sliders for a track that doesn't
+// exist meant setting mic gain to 180% on a recording with no mic.
+const hasSystemTrack = $derived(!!store.audioPath);
+const hasMicTrack = $derived(!!store.microphonePath);
+
+const zoneText = $derived(
+	volumeZone === "hot"
+		? "text-destructive"
+		: volumeZone === "boost"
+			? "text-warning"
+			: "text-muted-foreground",
+);
 </script>
 
-<!-- `M` toggles master mute. `<svelte:window>` so Svelte rebinds it on each HMR patch. -->
+<!-- `M` toggles master mute. Bound here, so it only works while this panel is
+     mounted; promoting it to the editor's keymap is a separate change. -->
 <svelte:window onkeydown={handleKey} />
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
   <PanelSection
     title="Output"
-    hint="Master volume affects editor playback and export. Press M to toggle mute."
+    hint="Master level for editor playback and export. Press M to toggle mute while this panel is open."
     flush
   >
     {#snippet action()}
-      <div class="flex items-center gap-1">
-        <Button
-          variant="ghost"
-          size="xs"
-          class="gap-1 text-muted-foreground hover:text-foreground"
-          onclick={resetVolume}
-          title="Reset master volume to 100%"
-        >
-          <RotateCcw size={11} />
-          100%
-        </Button>
-        <SegmentedToggle
-          checked={!store.audioSettings.muted}
-          offLabel="Muted"
-          onLabel="Live"
-          size="xs"
-          aria-label="Mute (M)"
-          onCheckedChange={(next) => {
-            store.pushUndoState();
-            store.updateAudioSettings({ muted: !next });
-          }}
-        />
-      </div>
+      <SegmentedToggle
+        checked={!store.audioSettings.muted}
+        offLabel="Muted"
+        onLabel="Live"
+        size="xs"
+        aria-label="Mute (M)"
+        onCheckedChange={(next) => {
+          store.pushUndoState();
+          store.updateAudioSettings({ muted: !next });
+        }}
+      />
     {/snippet}
 
     <div class="flex flex-col gap-2.5">
-      <div
-        class="rounded-md border border-border bg-card/60 px-3 py-2.5"
-        class:opacity-50={store.audioSettings.muted}
-      >
-        <div class="flex items-end justify-between gap-2">
-          <div>
-            <p class="text-[10px] uppercase tracking-wider text-muted-foreground">
-              Master gain
-            </p>
-            <p
-              class="font-mono text-2xl font-medium tabular-nums leading-none {volumeZone ===
-              'hot'
-                ? 'text-destructive'
-                : volumeZone === 'boost'
-                  ? 'text-warning'
-                  : 'text-foreground'}"
-            >
-              {store.audioSettings.volume}<span
-                class="ml-0.5 text-base text-muted-foreground">%</span
-              >
-            </p>
-            <p
-              class="mt-0.5 font-mono text-[10px] tabular-nums {volumeZone === 'hot'
-                ? 'text-destructive'
-                : volumeZone === 'boost'
-                  ? 'text-warning'
-                  : 'text-muted-foreground'}"
-            >
-              {dbForVolume(store.audioSettings.volume)}
-            </p>
-          </div>
-          {#if volumeZone === "boost" || volumeZone === "hot"}
-            <span
-              in:scale={{ start: 0.85, duration: motionDuration(220), easing: cubicOut }}
-              class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-wider {volumeZone ===
-              'hot'
-                ? 'border-destructive/40 bg-destructive/10 text-destructive'
-                : 'border-warning/40 bg-warning/10 text-warning'}"
-            >
-              <Waves size={10} />
-              {volumeZone === "hot" ? "Clipping risk" : "Boost"}
-            </span>
-          {/if}
-        </div>
-
-        <div class="relative mt-2 h-1.5 overflow-hidden rounded-full bg-background">
-          <div
-            class="absolute inset-y-0 left-0 transition-all duration-300 {volumeZone ===
-            'hot'
-              ? 'bg-destructive'
-              : volumeZone === 'boost'
-                ? 'bg-warning'
-                : volumeZone === 'low'
-                  ? 'bg-success/70'
-                  : 'bg-success'}"
-            style="width: {Math.min(100, (store.audioSettings.volume / 200) * 100)}%"
-          ></div>
-          <!-- 100% reference tick -->
-          <div
-            class="absolute inset-y-0 w-px bg-foreground/40"
-            style="left: 50%"
-            aria-hidden="true"
-          ></div>
-        </div>
+      <div class="flex items-center gap-1">
+        <SliderControl
+          class="min-w-0 flex-1"
+          label="Master"
+          value={store.audioSettings.volume}
+          min={0}
+          max={200}
+          step={5}
+          unit="%"
+          disabled={store.audioSettings.muted}
+          onstart={() => store.pushUndoState()}
+          onchange={(next) => store.updateAudioSettings({ volume: next })}
+          formatValue={(v) => `${v}%`}
+        >
+          {#snippet icon()}
+            <AudioLines size={11} />
+          {/snippet}
+        </SliderControl>
+        <Button
+          variant="ghost"
+          size="xs"
+          class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+          onclick={resetVolume}
+          title="Reset master volume to 100%"
+          aria-label="Reset master volume"
+        >
+          <RotateCcw size={11} />
+        </Button>
       </div>
 
-      <SliderControl
-        label="Output volume"
-        value={store.audioSettings.volume}
-        min={0}
-        max={200}
-        step={5}
-        unit="%"
-        disabled={store.audioSettings.muted}
-        onstart={() => store.pushUndoState()}
-        onchange={(next) => store.updateAudioSettings({ volume: next })}
-        formatValue={(v) => `${v}%`}
+      <!-- dB, plus the boost/clipping warning. The old version put this in a
+           hero card with a 0-200 bar that read as a level meter but only ever
+           showed the setting the slider already shows. -->
+      <div class="flex items-center justify-between gap-2 px-0.5">
+        <span class="font-mono text-[10px] tabular-nums {zoneText}">
+          {store.audioSettings.muted ? "Muted" : dbForVolume(store.audioSettings.volume)}
+        </span>
+        {#if !store.audioSettings.muted && (volumeZone === "boost" || volumeZone === "hot")}
+          <span
+            in:scale={{ start: 0.85, duration: motionDuration(220), easing: cubicOut }}
+            class="inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-medium {volumeZone ===
+            'hot'
+              ? 'border-destructive/40 bg-destructive/10 text-destructive'
+              : 'border-warning/40 bg-warning/10 text-warning'}"
+          >
+            <Waves size={10} />
+            {volumeZone === "hot" ? "Clipping risk" : "Boost"}
+          </span>
+        {/if}
+      </div>
+
+      <SettingRow
+        label="Normalize on export"
+        description="Evens out loudness to about −14 LUFS. Export only."
       >
-        {#snippet icon()}
-          <AudioLines size={11} />
+        {#snippet children(props)}
+          <SegmentedToggle
+            checked={store.audioSettings.normalizeLoudness}
+            size="xs"
+            {...props}
+            onCheckedChange={(next) =>
+              updateAudioSettings({ normalizeLoudness: next }, true)}
+          />
         {/snippet}
-      </SliderControl>
+      </SettingRow>
     </div>
   </PanelSection>
 
+  <!-- Detach-to-timeline is hidden: not production ready. The store side
+       (detachRecordingAudio / reattachRecordingAudio / audioDetached) still
+       works, so restoring this is uncommenting it plus re-importing AudioWaveform.
   <PanelSection
     title="Timeline audio"
     hint="Detach the recording's audio to trim, move, split, or silence it on its own lane. Once detached it edits independently and no longer follows video cuts."
@@ -219,7 +196,7 @@
       >
         <span class="inline-flex items-center gap-1.5 text-[11px] text-foreground">
           <Mic size={12} class="text-lane-audio" />
-          On the Voice lane — edit it there.
+          On the Voice lane, edit it there.
         </span>
         <Button variant="outline" size="xs" onclick={() => store.reattachRecordingAudio()}>
           Reattach
@@ -242,6 +219,7 @@
       {/if}
     {/if}
   </PanelSection>
+  -->
 
   <PanelSection
     title="Fades"
@@ -250,12 +228,11 @@
     collapsible
   >
     {#snippet action()}
-      <span
-        class="inline-flex items-center gap-1 text-[10px] text-muted-foreground"
-      >
-        <AudioWaveform size={10} />
-        Envelope
-      </span>
+      <!-- Dragging either slider off a preset leaves the Segmented with nothing
+           selected, which reads as broken unless the state is named. -->
+      {#if !activePreset}
+        <span class="text-[11px] text-muted-foreground">Custom</span>
+      {/if}
     {/snippet}
 
     <div class="rounded-md border border-border bg-background/60 p-2">
@@ -333,154 +310,90 @@
     </div>
   </PanelSection>
 
-  <PanelSection
-    title="Loudness"
-    hint="Even out overall loudness to about −14 LUFS (the common social target). Applies to the exported file."
-    flush
-  >
-    <div class="flex items-center justify-between">
-      <span class="text-[11px] text-foreground">Normalize on export</span>
-      <SegmentedToggle
-        checked={store.audioSettings.normalizeLoudness}
+  <!-- One row per source: level, mute, reset. Both cards were the same markup
+       twice, and each showed its value in a caption line the slider already
+       renders on the right. -->
+  {#snippet sourceRow(kind: "system" | "mic")}
+    {@const isSystem = kind === "system"}
+    {@const name = isSystem ? "System audio" : "Microphone"}
+    {@const level = isSystem
+      ? store.audioSettings.systemVolume
+      : store.audioSettings.micVolume}
+    {@const muted = isSystem
+      ? store.audioSettings.systemMuted
+      : store.audioSettings.micMuted}
+    <div class="flex items-center gap-1">
+      <SliderControl
+        class="min-w-0 flex-1"
+        label={name}
+        value={level}
+        min={0}
+        max={200}
+        step={5}
+        unit="%"
+        disabled={muted || store.audioSettings.muted}
+        onstart={() => store.pushUndoState()}
+        onchange={(next) =>
+          store.updateAudioSettings(
+            isSystem ? { systemVolume: next } : { micVolume: next },
+          )}
+        formatValue={(v) => `${v}%`}
+      >
+        {#snippet icon()}
+          {#if isSystem}
+            <Speaker size={11} />
+          {:else}
+            <Mic size={11} />
+          {/if}
+        {/snippet}
+      </SliderControl>
+      <Button
+        variant="ghost"
         size="xs"
-        aria-label="Normalize loudness on export"
-        onCheckedChange={(next) =>
-          updateAudioSettings({ normalizeLoudness: next }, true)}
-      />
-    </div>
-  </PanelSection>
-
-  <!-- Per-track gain: system audio and microphone each get their own level +
-       mute, layered on top of the master. The user can keep the system audio
-       loud and mute just the mic, or vice versa. Master mute still overrides
-       both. -->
-  <PanelSection
-    title="Sources"
-    hint="Per-track gain is layered on the master. Mute one source without touching the other."
-    flush
-  >
-    <div class="flex flex-col gap-3">
-      <!-- System audio row -->
-      <div
-        class="rounded-lg border border-border/60 bg-card/40 p-2.5 shadow-(--shadow-craft-inset)"
+        class="size-6 shrink-0 p-0 {muted
+          ? 'text-destructive hover:text-destructive'
+          : 'text-muted-foreground hover:text-foreground'}"
+        aria-label="Mute {name}"
+        aria-pressed={muted}
+        title={muted ? `Unmute ${name}` : `Mute ${name}`}
+        onclick={() => {
+          store.pushUndoState();
+          store.updateAudioSettings(
+            isSystem ? { systemMuted: !muted } : { micMuted: !muted },
+          );
+        }}
       >
-        <div class="flex items-center gap-2">
-          <span
-            class="grid size-7 place-items-center rounded-md bg-muted/60 text-muted-foreground"
-            aria-hidden="true"
-          >
-            <Speaker size={13} />
-          </span>
-          <div class="min-w-0 flex-1">
-            <p class="text-[11px] font-medium text-foreground">System audio</p>
-            <p class="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
-              {store.audioSettings.systemMuted
-                ? "Muted"
-                : `${store.audioSettings.systemVolume}%`}
-            </p>
-          </div>
-          <SegmentedToggle
-            checked={!store.audioSettings.systemMuted}
-            offLabel="Muted"
-            onLabel="Live"
-            size="xs"
-            aria-label="Mute system audio"
-            onCheckedChange={(next) => {
-              store.pushUndoState();
-              store.updateAudioSettings({ systemMuted: !next });
-            }}
-          />
-        </div>
-        <div class="mt-2 flex items-center gap-1">
-          <SliderControl
-            label="Volume"
-            value={store.audioSettings.systemVolume}
-            min={0}
-            max={200}
-            step={5}
-            unit="%"
-            disabled={store.audioSettings.systemMuted || store.audioSettings.muted}
-            onstart={() => store.pushUndoState()}
-            onchange={(next) => store.updateAudioSettings({ systemVolume: next })}
-            formatValue={(v) => `${v}%`}
-          >
-            {#snippet icon()}
-              <Speaker size={11} />
-            {/snippet}
-          </SliderControl>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onclick={resetSystemVolume}
-            title="Reset system volume to 100%"
-            aria-label="Reset system volume"
-          >
-            <RotateCcw size={11} />
-          </Button>
-        </div>
-      </div>
-
-      <!-- Microphone row -->
-      <div
-        class="rounded-lg border border-border/60 bg-card/40 p-2.5 shadow-(--shadow-craft-inset)"
+        {#if muted}
+          {#if isSystem}<VolumeOff size={12} />{:else}<MicOff size={12} />{/if}
+        {:else if isSystem}
+          <Speaker size={12} />
+        {:else}
+          <Mic size={12} />
+        {/if}
+      </Button>
+      <Button
+        variant="ghost"
+        size="xs"
+        class="size-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+        onclick={isSystem ? resetSystemVolume : resetMicVolume}
+        title="Reset {name} to 100%"
+        aria-label="Reset {name} level"
       >
-        <div class="flex items-center gap-2">
-          <span
-            class="grid size-7 place-items-center rounded-md bg-muted/60 text-muted-foreground"
-            aria-hidden="true"
-          >
-            <Mic size={13} />
-          </span>
-          <div class="min-w-0 flex-1">
-            <p class="text-[11px] font-medium text-foreground">Microphone</p>
-            <p class="truncate font-mono text-[10px] tabular-nums text-muted-foreground">
-              {store.audioSettings.micMuted
-                ? "Muted"
-                : `${store.audioSettings.micVolume}%`}
-            </p>
-          </div>
-          <SegmentedToggle
-            checked={!store.audioSettings.micMuted}
-            offLabel="Muted"
-            onLabel="Live"
-            size="xs"
-            aria-label="Mute microphone"
-            onCheckedChange={(next) => {
-              store.pushUndoState();
-              store.updateAudioSettings({ micMuted: !next });
-            }}
-          />
-        </div>
-        <div class="mt-2 flex items-center gap-1">
-          <SliderControl
-            label="Volume"
-            value={store.audioSettings.micVolume}
-            min={0}
-            max={200}
-            step={5}
-            unit="%"
-            disabled={store.audioSettings.micMuted || store.audioSettings.muted}
-            onstart={() => store.pushUndoState()}
-            onchange={(next) => store.updateAudioSettings({ micVolume: next })}
-            formatValue={(v) => `${v}%`}
-          >
-            {#snippet icon()}
-              <Mic size={11} />
-            {/snippet}
-          </SliderControl>
-          <Button
-            variant="ghost"
-            size="xs"
-            class="h-6 w-6 shrink-0 p-0 text-muted-foreground hover:text-foreground"
-            onclick={resetMicVolume}
-            title="Reset microphone volume to 100%"
-            aria-label="Reset microphone volume"
-          >
-            <RotateCcw size={11} />
-          </Button>
-        </div>
-      </div>
+        <RotateCcw size={11} />
+      </Button>
     </div>
-  </PanelSection>
+  {/snippet}
+
+  {#if hasSystemTrack || hasMicTrack}
+    <PanelSection
+      title="Sources"
+      hint="Per-track level, layered on the master. Mute one source without touching the other."
+      flush
+    >
+      <div class="flex flex-col gap-2">
+        {#if hasSystemTrack}{@render sourceRow("system")}{/if}
+        {#if hasMicTrack}{@render sourceRow("mic")}{/if}
+      </div>
+    </PanelSection>
+  {/if}
 </div>

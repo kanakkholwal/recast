@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { AnnotationKind } from "$lib/stores/editor-store.svelte";
+import type { AnnotationKind, EditorStore } from "$lib/stores/editor-store.svelte";
+import { toast } from "@recast/ui/sonner";
 import { fitImageBox } from "./resize-constraints";
 
 export type ImageAnnotationKind = Extract<AnnotationKind, { kind: "image" }>;
@@ -41,4 +42,19 @@ export async function pickImageAnnotation(
 	const natural = await loadNaturalSize(convertFileSrc(selected));
 	const box = fitImageBox(natural, frameAspect > 0 ? frameAspect : 16 / 9);
 	return { kind: "image", ...box, path: selected, opacity: 1, radius: 0 };
+}
+
+/** Pick + insert in one step, for the two surfaces that offer Insert image (the
+ *  markup panel and the canvas toolbar). Disarms any tool first: an insert is a
+ *  one-shot action, so leaving a drawing mode armed behind it is a trap. */
+export async function insertImageAnnotation(store: EditorStore): Promise<void> {
+	store.annotationTool = null;
+	const meta = store.metadata;
+	const frameAspect = meta && meta.height > 0 ? meta.width / meta.height : 16 / 9;
+	try {
+		const kind = await pickImageAnnotation(frameAspect);
+		if (kind) store.addAnnotation(kind);
+	} catch (error) {
+		toast.error(`Could not insert image: ${error}`);
+	}
 }

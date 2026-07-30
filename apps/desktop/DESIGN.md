@@ -79,9 +79,10 @@ in [app.css](src/app.css) but does not override the token palette.
 | `--background` / `--foreground` | App background, primary text. |
 | `--card` / `--card-foreground` | Glass surfaces (settings rows, profile cards, panel body). |
 | `--popover` / `--popover-foreground` | Dropdowns, tooltips, popovers, **toasts**. |
-| `--primary` (lime) | Reserved. See the colour ratio below. **Never** a full surface fill, never a decorative icon tint. |
+| `--primary` (indigo) | The one accent. Page-level action, selected profile, active route, selected timeline block, toggle-on, focus ring. |
 | `--muted-foreground` | Secondary copy, microlabels, inactive icons. |
-| `--border` / `--border-subtle` | Hairlines, ring-insets. Always at 40–60% alpha. |
+| `--border` / `--border-subtle` | Decorative hairlines, ring-insets. Always at 40–60% alpha. |
+| `--border-control` | Input / select / checkbox boundaries. Full opacity — this one carries meaning. |
 | `--destructive` | Stop-recording button, delete actions, error toasts, validation errors. |
 | `--success` | Successful save toasts, "ready" device validation. |
 | `--warning` | Default-profile badge, missing-device fallback toast. |
@@ -97,13 +98,13 @@ dense app surface:
 | --- | --- | --- |
 | **60%** | Canvas. The app ground and the noise gradient. | `--background`, `--canvas` |
 | **30%** | Structure. Glass surfaces, hairlines, secondary text — all hierarchy. | `bg-card/70`, `--border*`, `--muted-foreground`, `--foreground` |
-| **10%** | Brand. `--primary` only. | see the reserved list |
+| **10%** | Accent. `--primary` only. | see the reserved list |
 
 **`--primary` is reserved for these, and nothing else:**
 
-1. The page-level primary action (default `<Button>`).
-2. Active / selected state: sidebar route, selected profile, selected timeline
-   block, drag-drop targets.
+1. The page-level primary action (default `<Button>`) — at most one per view.
+2. Active / selected: sidebar route, selected profile, selected timeline block,
+   drag-drop targets.
 3. The default-profile star and equivalent "this one is the current one" marks.
 4. Focus rings and active-input borders (`--ring` is `--primary`).
 5. Toggle "on" states.
@@ -115,8 +116,11 @@ inherits from its row. The status tokens keep their own reserved meanings (see
 the mapping below) and are never decorative either.
 
 Density makes this stricter than web, not looser. A settings page shows 40 rows
-where a landing page shows four; a lime glyph on each one turns the accent into
-wallpaper.
+where a landing page shows four; an accent glyph on each one turns the accent
+into wallpaper.
+
+There is exactly one accent hue. If a surface seems to need a second, it needs
+hierarchy instead — weight, size, or spacing.
 
 ### Timeline lanes
 
@@ -127,16 +131,22 @@ reading the rail:
 | Token | Hue | Lane |
 | --- | --- | --- |
 | `--lane-cut` | 22 | Cuts. Soft red, pulled off pure red. |
-| `--lane-zoom` | 128 | Zoom. The brand hue. |
+| `--lane-zoom` | 128 | Zoom. Green. |
 | `--lane-audio` | 215 | Audio. The conventional audio-track blue. |
-| `--lane-markup` | 285 | Markup. Violet, furthest from both brand and cut-red. |
+| `--lane-markup` | 305 | Markup. Magenta-violet, clear of both cut-red and `--primary`. |
 
 This is **encoding, not decoration** — the same licence chart series get on web.
-Two rules keep it from competing with the brand: hues stay spaced around the
-wheel (semantic tokens were reused here once and failed, `warning` at h43 and
-`destructive` at h25 read as the same orange-red), and lane chroma stays well
-under the brand's `0.21`. Do not reach for `--lane-*` outside the timeline, and
-do not add a fifth lane hue without re-checking the spacing.
+Two rules keep it from competing with the UI: hues stay spaced around the wheel
+(semantic tokens were reused here once and failed, `warning` at h43 and
+`destructive` at h25 read as the same orange-red), and lane chroma stays under
+`0.16`. Do not reach for `--lane-*` outside the timeline, and do not add a lane
+hue without re-checking the spacing — including against `--primary` at h264.
+
+**Wheel distance is not colour-blind distance.** `cut` (h22) and `zoom` (h128)
+sit on the red–green axis that dichromats collapse, and roughly 8% of men have
+some form of it. Lane identity must therefore never rest on hue alone — the rail
+label and block shape carry it too. Treat the colour as a fast lookup for people
+who can use it, not as the encoding.
 
 See the rationale block in [index.css](../../packages/design/src/index.css).
 
@@ -153,13 +163,26 @@ Status colors are **only** for status — never decorative. The mapping is fixed
 | Capacity / blocking info | `--info` | `toast.info` | "All N capability combinations are in use" |
 | Recording in progress | `--destructive` | n/a (live UI) | Stop button, recording dot |
 
+### Contrast floors
+
+| Thing | Floor |
+| --- | --- |
+| Body text on its surface | 4.5:1 |
+| Focus ring, control boundary, meaningful icon | 3:1 |
+| Two controls distinguished by colour | 3:1 **luminance**, never hue alone |
+
+The last row constrains which hue `--primary` may be. It and `--destructive` are
+close in luminance, so the primary action and the Stop button — this app's two
+highest-stakes controls — are separated by hue alone. h264 was picked because it
+holds that separation under simulated protanopia and deuteranopia; blues, teals
+and magentas all measured worse. Re-run that check before changing the hue.
+
 ### Dark mode
 
-The dark `--primary` is a highly saturated lime (`oklch(92.249% 0.234 …)`). When
-mixing primary into surfaces, **stay below 8%** in dark mode. Prefer
-`color-mix(in srgb, var(--color-foreground) 4-6%, transparent)` for ambient
-glows. Always test new components in both modes; the cards/panels look
-identical at a glance but dark-mode primary mixes are aggressive.
+`--primary` lifts to `oklch(0.70 0.155 264)` — defined per mode, so a component
+that uses the token needs no dark-mode special-casing. Prefer `color-mix(in srgb,
+var(--color-foreground) 4-6%, transparent)` for ambient glows rather than tinting
+with the accent. Always test new components in both modes.
 
 ---
 
@@ -442,7 +465,7 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 - Use a different icon library (no Tabler, no Phosphor, no Material).
 - Add disabled `<button>`s without wrapping them in a tooltip span — hover gets eaten otherwise.
 - Echo marketing voice ("Empower your workflow") inside the app.
-- Use full primary fills on large surfaces in dark mode — the saturated lime overpowers everything.
+- Use more than one `--primary` fill per view — a second one means you needed hierarchy, not colour.
 - Tint an icon `--primary` just to make it look branded. Decorative primary is the single most common drift in this app; see the colour ratio.
 - Use `--lane-*` outside the editor timeline, or add a fifth lane hue without re-checking hue spacing.
 - Register Tauri JS-injecting plugins inside `setup()` — boot splash hangs.
@@ -452,12 +475,18 @@ shape. Never throw on a parse failure; reset to the empty-state instead.
 
 ## Known drift
 
-The colour ratio above is the **target**, not a description of the current app.
-As of 2026-07-20 the desktop source has ~244 `--primary` sites, ~41 of them
-decorative icon tints, concentrated in `components/editor/properity-panel`,
-`components/editor`, and `components/recast`. The web dashboard was migrated
-first; desktop has not been. Treat the ratio as binding for new and touched
-code, and expect to find non-compliant neighbours.
+`--primary` changed hue from lime to indigo, and the ~427 `*-primary` sites
+across both apps were **not** audited as part of that change. They render
+correctly and now pass contrast, but many are decorative tints that the colour
+ratio forbids. A `*-primary` site is not evidence of intent — treat the ratio as
+binding for new and touched code, and expect non-compliant neighbours.
+
+The status tokens (`--success`, `--warning`, `--info`, `--destructive`) have
+**not** been retuned. As text on a white card they measure 3.02, 2.58, 3.66 and
+3.76:1 — below the 4.5:1 floor above. They are safe as fills behind
+`*-foreground` labels, which is how the Toaster uses them. Auditing each site as
+fill-vs-text is the next colour task; until then do not introduce new
+status-coloured body text.
 
 ---
 

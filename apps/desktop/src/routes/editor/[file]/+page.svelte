@@ -1,4 +1,26 @@
 <script lang="ts">
+import {
+	ArrowLeft,
+	CheckCircle2,
+	Clock,
+	Cloud,
+	Copy,
+	FlaskConical,
+	FolderOpen,
+	HardDriveUpload,
+	Play,
+	Share2,
+	TriangleAlert,
+	Upload,
+	VolumeX,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { onDestroy, onMount, tick, untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
 import { goto } from "$app/navigation";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
@@ -13,7 +35,12 @@ import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
 import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
 import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
+import { clipAssetPath } from "$lib/audio/music";
 import { activatesOnSpace, isOverlayOpen } from "$lib/dom/keyboard";
+import { formatClock, frameStepOutput } from "$lib/editor/time";
+import { runBrowserExport } from "$lib/export/browser-export";
+import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
+import type { ExportQuality } from "$lib/export/browser-export-plan";
 import type { RecordingEntry } from "$lib/ipc";
 import {
 	autosaveProject,
@@ -22,15 +49,17 @@ import {
 	detectSilence,
 	extractWaveform,
 	generateThumbnails,
+	getVideoMetadata,
 	listExports,
 	loadEditorDocument,
 	migrateProject,
 	openFileLocation,
 	saveProjectEdits,
 } from "$lib/ipc";
+import { log } from "$lib/logger";
 import { AudioTimelineEngine, type MusicClipSpec } from "$lib/playback/audio-engine";
-import { clipAssetPath } from "$lib/audio/music";
 import { reconcileAvDrift } from "$lib/playback/av-drift";
+import { decoderBudget } from "$lib/playback/decoder-budget";
 import { generateAutoZoom } from "$lib/services/analysis";
 import {
 	buildCaptionExport,
@@ -39,9 +68,6 @@ import {
 	findMissingImageAnnotations,
 	hasBlurUnderZoom,
 } from "$lib/services/export";
-import { runBrowserExport } from "$lib/export/browser-export";
-import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
-import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { isShareSupported, shareRecording } from "$lib/share";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
@@ -51,36 +77,9 @@ import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { createTileProvider, type TileProvider } from "$lib/timeline/filmstrip-source";
 import { originalToOutput } from "$lib/timeline/time-map";
-import { decoderBudget } from "$lib/playback/decoder-budget";
-import {
-	ArrowLeft,
-	CheckCircle2,
-	Clock,
-	Cloud,
-	FlaskConical,
-	FolderOpen,
-	HardDriveUpload,
-	Play,
-	Share2,
-	TriangleAlert,
-	Upload,
-	VolumeX,
-	X,
-} from "@recast/icons";
-import { Button } from "@recast/ui/button";
-import { Kbd } from "@recast/ui/kbd";
-import { toast } from "@recast/ui/sonner";
-import { convertFileSrc } from "@tauri-apps/api/core";
-import { onDestroy, onMount, tick, untrack } from "svelte";
-
-import { formatClock, frameStepOutput } from "$lib/editor/time";
-import { log } from "$lib/logger";
-import { cubicOut } from "svelte/easing";
-import { fade, slide } from "svelte/transition";
 import {
 	basename,
 	exportEtaMs as computeExportEtaMs,
-	ENCODE_MESSAGES,
 	formatElapsed,
 	parseLayout,
 } from "./editor-page.logic";
@@ -617,6 +616,8 @@ $effect(() => {
 	// Detached audio: the monolithic source tracks are silenced (voice clips
 	// carry the recording audio); guards against double-playing the un-cut source.
 	const detached = store.audioDetached;
+	// Capped at 1 because HTMLMediaElement.volume is spec-bound to 0..1: boost
+	// above 100% only reproduces on the Web Audio path (and in the export).
 	const systemVol =
 		detached || settings.muted || settings.systemMuted
 			? 0
@@ -894,6 +895,21 @@ async function loadDocument() {
 		store.recordingPath = document.mediaPath;
 		store.audioPath = document.audioPath ?? null;
 		store.microphonePath = document.microphonePath ?? null;
+		// Probe the transcribed audio's true (wall-clock) duration so captions can
+		// be rescaled onto the video's frame-time axis (count-based CFR makes them
+		// differ, drifting captions toward the end). Mic is the speech source; fall
+		// back to system audio. Best-effort — on failure the scale stays 1.
+		store.captionAudioDurationSec = null;
+		{
+			const capAudioPath = document.microphonePath ?? document.audioPath;
+			if (capAudioPath) {
+				getVideoMetadata(capAudioPath)
+					.then((m) => {
+						store.captionAudioDurationSec = m.duration > 0 ? m.duration : null;
+					})
+					.catch(() => {});
+			}
+		}
 		store.waveform = [];
 		// Lazy: the idle-scheduled effect below extracts the waveform once the
 		// editor is interactive, so the ffmpeg pass never competes with load.
@@ -1021,8 +1037,6 @@ const exportFinalizing = $derived(myItem?.phase === "finalizing");
 const exportHasProgress = $derived((myItem?.progress ?? 0) > 0);
 // Items ahead of this editor's queued export (the running one counts).
 const queueAhead = $derived(myExportId ? exportActivity.queuePosition(myExportId) : 0);
-
-let encodeMessageIndex = $state(0);
 
 // Preparing-stage substages, surfaced in the dialog instead of a generic spinner.
 let prepText = $state<"pending" | "running" | "done">("pending");
@@ -1366,6 +1380,26 @@ function handleExportEscape() {
 	}
 }
 
+async function copyExportError() {
+	if (exportResult?.kind !== "error") return;
+	try {
+		await navigator.clipboard.writeText(exportResult.message);
+		toast.success("Error details copied");
+	} catch {
+		toast.error("Could not copy to clipboard");
+	}
+}
+
+async function copyExportPath() {
+	if (exportResult?.kind !== "success" || !exportResult.path) return;
+	try {
+		await navigator.clipboard.writeText(exportResult.path);
+		toast.success("Path copied");
+	} catch {
+		toast.error("Could not copy to clipboard");
+	}
+}
+
 async function revealExportInFolder() {
 	if (exportResult?.kind !== "success") return;
 	try {
@@ -1669,18 +1703,6 @@ $effect(() => {
 	return () => clearInterval(timer);
 });
 
-// Cycle the encode status messages while an export is running.
-$effect(() => {
-	if (myItem?.status !== "running") {
-		encodeMessageIndex = 0;
-		return;
-	}
-	const timer = setInterval(() => {
-		encodeMessageIndex = (encodeMessageIndex + 1) % ENCODE_MESSAGES.length;
-	}, 2600);
-	return () => clearInterval(timer);
-});
-
 // Substages. During the frontend prep window (buildingExport) the rasterize
 // sub-steps drive text/cursor/ship; once enqueued, the render state is built,
 // so those are done and the single FFmpeg pass (which stitches cuts + overlays
@@ -1954,18 +1976,11 @@ const stages = $derived.by(() => {
 
 {#snippet queued()}
   <div class="flex h-full min-h-0 flex-col">
-    <header
-      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
-    >
-      <div
-        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
-      >
-        <Clock class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
+    <header class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4">
+      <div class="min-w-0">
         <h3
           id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
+          class="text-[15px] font-semibold tracking-tight text-foreground"
         >
           Queued for export
         </h3>
@@ -2038,46 +2053,29 @@ const stages = $derived.by(() => {
       ? `${store.exportFps}`
       : `${srcFps}`}
   <!-- Carries the committed export settings forward so every later phase stays
-       anchored to "what you're exporting". -->
-  <section
-    class="flex items-stretch divide-x divide-border/40 border-b border-border/40 bg-muted/15 px-5 py-2.5"
-  >
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5 pr-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >Format</span
-      >
-      <span class="truncate text-[12px] font-medium tabular-nums text-foreground">
-        {fmt.toUpperCase()}
-      </span>
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5 px-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >{isGifFmt ? "Colors" : "Quality"}</span
-      >
-      <span class="truncate text-[12px] font-medium tabular-nums text-foreground">
-        {qualityLabel}
-      </span>
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5 px-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >FPS</span
-      >
-      <span class="truncate text-[12px] font-medium tabular-nums text-foreground">
-        {fpsLabel}
-      </span>
-    </div>
-    <div class="flex min-w-0 flex-1 flex-col gap-0.5 pl-4">
-      <span
-        class="text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-        >Duration</span
-      >
-      <span class="truncate font-mono text-[12px] tabular-nums text-foreground">
-        {formatClock(getExportDuration())}
-      </span>
-    </div>
+       anchored to "what you're exporting". Same shape as the options header so
+       the panel doesn't restructure itself the moment you press Export. -->
+  <section class="border-b border-border/40 px-5 py-2.5">
+    <dl class="grid grid-cols-4 gap-x-3">
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class="text-[11px] text-muted-foreground">Format</dt>
+        <dd class="truncate text-[12px] font-medium text-foreground">{fmt.toUpperCase()}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class="text-[11px] text-muted-foreground">{isGifFmt ? "Colors" : "Quality"}</dt>
+        <dd class="truncate text-[12px] font-medium text-foreground">{qualityLabel}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class="text-[11px] text-muted-foreground">FPS</dt>
+        <dd class="truncate font-mono text-[12px] tabular-nums text-foreground">{fpsLabel}</dd>
+      </div>
+      <div class="flex min-w-0 flex-col gap-0.5">
+        <dt class="text-[11px] text-muted-foreground">Duration</dt>
+        <dd class="truncate font-mono text-[12px] tabular-nums text-foreground">
+          {formatClock(getExportDuration())}
+        </dd>
+      </div>
+    </dl>
   </section>
 {/snippet}
 
@@ -2093,18 +2091,11 @@ const stages = $derived.by(() => {
   {@const RING_R = 52}
 
   <div class="flex h-full min-h-0 flex-col">
-    <header
-      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
-    >
-      <div
-        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-primary/30 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
-      >
-        <Upload class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
+    <header class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4">
+      <div class="min-w-0">
         <h3
           id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
+          class="text-[15px] font-semibold tracking-tight text-foreground"
         >
           {#if exportCancelling}
             Cancelling export…
@@ -2136,7 +2127,19 @@ const stages = $derived.by(() => {
       <div
         class="mx-auto flex min-h-full w-full max-w-xs flex-col items-center justify-center gap-5 px-5 py-6"
       >
-      <div class="relative size-32" aria-live="polite">
+      <div
+        class="relative size-32"
+        role="progressbar"
+        aria-label="Export progress"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={isPreparing ? undefined : Math.floor(ringPct)}
+        aria-valuetext={isPreparing
+          ? "Preparing"
+          : exportFinalizing
+            ? "Finalising"
+            : `${Math.floor(ringPct)}%`}
+      >
         <svg
           viewBox="0 0 120 120"
           class="size-full -rotate-90 overflow-visible"
@@ -2194,20 +2197,10 @@ const stages = $derived.by(() => {
                 class="absolute inset-0 flex flex-col items-center justify-center"
               >
                 {#if isPreparing}
-                  <span
-                    class="text-[11px] uppercase tracking-wider text-muted-foreground"
-                    >Prep</span
-                  >
-                  <span class="text-[10px] text-muted-foreground">…</span>
+                  <span class="text-[13px] font-medium text-foreground">Preparing</span>
                 {:else if exportFinalizing}
-                  <span
-                    class="font-mono text-2xl font-semibold tabular-nums text-foreground"
-                    >99%</span
-                  >
-                  <span
-                    class="text-[10px] uppercase tracking-wider text-muted-foreground"
-                    >Finalising</span
-                  >
+                  <span class="text-[13px] font-medium text-foreground">Finalising</span>
+                  <span class="text-[11px] text-muted-foreground">Writing the file</span>
                 {:else}
                   <span
                     class="font-mono text-2xl font-semibold tabular-nums text-foreground"
@@ -2217,34 +2210,17 @@ const stages = $derived.by(() => {
                     >
                   </span>
                   {#if eta !== null}
-                    <span
-                      class="text-[10px] uppercase tracking-wider text-muted-foreground"
-                      >~{formatElapsed(eta)} left</span
-                    >
+                    <span class="text-[11px] text-muted-foreground">
+                      ~{formatElapsed(eta)} left
+                    </span>
                   {:else if exportStartedAt}
-                    <span
-                      class="text-[10px] uppercase tracking-wider text-muted-foreground"
-                      >{formatElapsed(exportNow - exportStartedAt)} elapsed</span
-                    >
+                    <span class="text-[11px] text-muted-foreground">
+                      {formatElapsed(exportNow - exportStartedAt)} elapsed
+                    </span>
                   {/if}
                 {/if}
               </div>
             </div>
-
-            <!-- Rotating status line, shown only while frames are encoding. -->
-            {#if !isPreparing && !exportFinalizing && !exportCancelling}
-              <div class="relative h-4 self-stretch" aria-live="polite">
-                {#key encodeMessageIndex}
-                  <span
-                    in:fade={{ duration: 320 }}
-                    out:fade={{ duration: 320 }}
-                    class="export-shimmer absolute inset-0 flex items-center justify-center text-[11px] font-medium tracking-tight"
-                  >
-                    {ENCODE_MESSAGES[encodeMessageIndex]}…
-                  </span>
-                {/key}
-              </div>
-            {/if}
 
             <!-- Substage stepper: done steps check off, the active step is the
                  highlighted row with a live pulsing dot, the rest stay dim. One
@@ -2314,28 +2290,35 @@ const stages = $derived.by(() => {
 
 {#snippet success()}
   <div class="flex h-full min-h-0 flex-col">
-    <header class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4">
-      <div
-        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-success/30 bg-success/10 text-success shadow-(--shadow-craft-inset)"
+    <header class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4">
+      <h3
+        id="export-flow-title"
+        class="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground"
       >
-        <CheckCircle2 class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
-        <h3
-          id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
-        >
-          Export complete
-        </h3>
-        {#if exportResult?.kind === "success"}
+        <CheckCircle2 class="size-4 text-success" />
+        Export complete
+      </h3>
+      {#if exportResult?.kind === "success"}
+        <!-- Where it went is the point of this screen, so the path is
+             selectable and copyable rather than a truncated tooltip. -->
+        <div class="mt-2 flex items-center gap-1.5">
           <p
-            class="mt-0.5 truncate font-mono text-[11px] text-muted-foreground"
+            class="min-w-0 flex-1 select-text truncate font-mono text-[11px] text-muted-foreground"
             title={exportResult.path}
           >
             {exportResult.path}
           </p>
-        {/if}
-      </div>
+          <Button
+            variant="ghost"
+            size="xs"
+            class="shrink-0 gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            onclick={copyExportPath}
+          >
+            <Copy class="size-3" />
+            Copy
+          </Button>
+        </div>
+      {/if}
     </header>
 
     {@render exportSpecStrip()}
@@ -2345,16 +2328,12 @@ const stages = $derived.by(() => {
          "where does this go?" choice. Upload progress is never shown inline
          here; it opens the foreground dialog and tracks in the activity center. -->
     <div class="border-t border-border/40 bg-muted/15 px-5 py-3.5">
-      <p
-        class="mb-2.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Share or upload
-      </p>
+      <p class="mb-2.5 text-[11px] font-semibold text-foreground">Share or upload</p>
       <div class="flex items-stretch gap-2">
         <button
           type="button"
           onclick={shareCurrentExportToCloud}
-          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
         >
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
@@ -2369,7 +2348,7 @@ const stages = $derived.by(() => {
         <button
           type="button"
           onclick={uploadExportToDrive}
-          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+          class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
         >
           <span
             class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
@@ -2386,7 +2365,7 @@ const stages = $derived.by(() => {
             type="button"
             onclick={shareExportedFile}
             title="Open the system share sheet"
-            class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center shadow-(--shadow-craft-inset) backdrop-blur transition-all duration-200 hover:-translate-y-0.5 hover:border-border hover:shadow-craft-sm"
+            class="group/dest flex flex-1 flex-col items-center gap-2 rounded-lg border border-border/50 bg-card/60 px-3 py-3 text-center transition-colors duration-150 hover:border-border hover:bg-card"
           >
             <span
               class="flex size-8 items-center justify-center rounded-lg border border-border/50 bg-card/70 text-muted-foreground shadow-(--shadow-craft-inset) transition-colors group-hover/dest:text-primary"
@@ -2412,7 +2391,6 @@ const stages = $derived.by(() => {
         onclick={dismissExportResult}
       >
         Dismiss
-        <Kbd class="ml-0.5">Esc</Kbd>
       </Button>
 
       <div class="flex items-center gap-1.5">
@@ -2442,17 +2420,12 @@ const stages = $derived.by(() => {
 {#snippet cancelled()}
   <div class="flex h-full min-h-0 flex-col">
     <header
-      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
+      class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4"
     >
-      <div
-        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border/60 bg-muted text-muted-foreground shadow-(--shadow-craft-inset)"
-      >
-        <X class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
+      <div class="min-w-0">
         <h3
           id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
+          class="text-[15px] font-semibold tracking-tight text-foreground"
         >
           Export cancelled
         </h3>
@@ -2490,18 +2463,14 @@ const stages = $derived.by(() => {
 {#snippet errorPanel()}
   <div class="flex h-full min-h-0 flex-col">
     <header
-      class="flex shrink-0 items-start gap-3 border-b border-border/40 px-5 py-4"
+      class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4"
     >
-      <div
-        class="flex size-10 shrink-0 items-center justify-center rounded-xl border border-destructive/30 bg-destructive/10 text-destructive shadow-(--shadow-craft-inset)"
-      >
-        <TriangleAlert class="size-4" />
-      </div>
-      <div class="min-w-0 flex-1 pt-0.5">
+      <div class="min-w-0">
         <h3
           id="export-flow-title"
-          class="text-[14px] font-semibold tracking-tight text-foreground"
+          class="flex items-center gap-2 text-[15px] font-semibold tracking-tight text-foreground"
         >
+          <TriangleAlert class="size-4 text-destructive" />
           Export failed
         </h3>
         <p class="mt-0.5 text-[11px] text-muted-foreground">
@@ -2518,11 +2487,20 @@ const stages = $derived.by(() => {
     <div
       class="min-h-0 flex-1 overflow-y-auto border-b border-border/40 px-5 py-3 scrollbar-transparent"
     >
-      <p
-        class="mb-1.5 text-[10px] font-bold uppercase tracking-[0.15em] text-muted-foreground/70"
-      >
-        Details
-      </p>
+      <div class="mb-1.5 flex items-center justify-between gap-2">
+        <p class="text-[11px] font-semibold text-foreground">Details</p>
+        {#if exportResult?.kind === "error"}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+            onclick={copyExportError}
+          >
+            <Copy class="size-3" />
+            Copy
+          </Button>
+        {/if}
+      </div>
       {#if exportResult?.kind === "error"}
         <pre
           class="whitespace-pre-wrap wrap-break-word font-mono text-[10px] leading-snug text-destructive">{exportResult.message}</pre>
@@ -2547,35 +2525,3 @@ const stages = $derived.by(() => {
   </div>
 {/snippet}
 
-<style>
-  /* Primary-tinted highlight sweeps across muted text for a subtle shimmer. */
-  .export-shimmer {
-    background: linear-gradient(
-      100deg,
-      var(--muted-foreground) 0%,
-      var(--muted-foreground) 38%,
-      var(--primary) 50%,
-      var(--muted-foreground) 62%,
-      var(--muted-foreground) 100%
-    );
-    background-size: 220% 100%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: export-shimmer-sweep 2.4s linear infinite;
-  }
-  @keyframes export-shimmer-sweep {
-    from {
-      background-position: 160% 0;
-    }
-    to {
-      background-position: -160% 0;
-    }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .export-shimmer {
-      animation: none;
-      background-position: 50% 0;
-    }
-  }
-</style>

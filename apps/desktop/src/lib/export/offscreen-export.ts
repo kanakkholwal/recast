@@ -98,9 +98,12 @@ export interface OffscreenExportOptions {
 	annotationLayer?:
 		| ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, blur: BlurLayerEnv) => void)
 		| null;
-	/** Draw burned captions for original time `t`, onto the SAME layer canvas as
-	 *  the annotations but after them (matching the preview's overlay order). */
-	captionLayer?: ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number) => void) | null;
+	/** Draw burned captions onto the SAME layer canvas as the annotations but after
+	 *  them (matching the preview's overlay order). `originalSec` resolves the
+	 *  chunk/highlight; `outputSec` clocks the entrance at viewer-rate. */
+	captionLayer?:
+		| ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, outputSec: number) => void)
+		| null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
 }
@@ -186,6 +189,11 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 
 		const frames = exportFrameCount(opts.fps, opts.outputDurationSec);
 		const frameDur = opts.fps > 0 ? 1 / opts.fps : 0;
+		// A layer draw that throws must NOT abort the whole export (which would
+		// silently fall back to the Rust path and drop the overlay with no signal).
+		// Log the first failure per layer and keep rendering the rest of the frame.
+		let annoErrLogged = false;
+		let capErrLogged = false;
 		for (let i = 0; i < frames; i++) {
 			if (opts.signal?.aborted) throw new Error("export cancelled");
 			const outputSec = exportFrameTime(i, opts.fps);
@@ -205,8 +213,26 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				// Flush so blur reads the completed main-pass frame off the GL canvas.
 				if (opts.annotationLayer) backend.finish();
 				annoCtx.clearRect(0, 0, annoCanvas.width, annoCanvas.height);
-				opts.annotationLayer?.(annoCtx, originalSec, blurEnv);
-				opts.captionLayer?.(annoCtx, originalSec);
+				if (opts.annotationLayer) {
+					try {
+						opts.annotationLayer(annoCtx, originalSec, blurEnv);
+					} catch (e) {
+						if (!annoErrLogged) {
+							annoErrLogged = true;
+							console.error("export: annotation layer draw failed (frames continue)", e);
+						}
+					}
+				}
+				if (opts.captionLayer) {
+					try {
+						opts.captionLayer(annoCtx, originalSec, outputSec);
+					} catch (e) {
+						if (!capErrLogged) {
+							capErrLogged = true;
+							console.error("export: caption layer draw failed (frames continue)", e);
+						}
+					}
+				}
 				ctx.annotationTex = backend.uploadAnnotation(annoCanvas);
 			});
 

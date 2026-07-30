@@ -29,15 +29,21 @@ import { motionDuration } from "$lib/motion.svelte";
 import { registry } from "$lib/registry";
 import {
 	DEFAULT_ZOOM_CENTER,
-	DEFAULT_ZOOM_RAMP,
 	type EditorStore,
 	type ZoomRegion,
 } from "$lib/stores/editor-store.svelte";
 import { resolveZoomCenter } from "$lib/zoom/auto-apply";
 import { overlappingZoomIds } from "$lib/zoom/resolve";
-import BezierEditor from "../_components/BezierEditor.svelte";
-import InspectorHint from "../InspectorHint.svelte";
-import { computeNewZoomBounds, regionMaxRamp, scaleAt, sparklinePath } from "./focus-panel.logic";
+import EasingControl from "./EasingControl.svelte";
+import {
+	computeNewZoomBounds,
+	isOutsideClip,
+	regionMaxRamp,
+	retimeEnd,
+	retimeStart,
+	sparklinePath,
+} from "./focus-panel.logic";
+import FocusPad from "./FocusPad.svelte";
 import PanelSection from "./PanelSection.svelte";
 
 interface Props {
@@ -65,9 +71,6 @@ const selectedIndex = $derived(
 	selected ? orderedRegions.findIndex((r) => r.id === selected.id) : -1,
 );
 
-// Which ramp the Custom-curves editor targets (one graph at a time).
-let customCurve = $state<"in" | "out">("in");
-
 // NLE accessors, not raw trim fields: `outPoint` resolves the legacy
 // `trimEnd === 0` sentinel, which the timeline lane already respects.
 const clipIn = $derived(store.inPoint);
@@ -76,7 +79,7 @@ const clipOut = $derived(store.outPoint);
 // Overlapping regions are ambiguous in preview and the FFmpeg export SUMS
 // their zoom instead of picking one, so they get called out, not hidden.
 const overlapping = $derived(new Set(overlappingZoomIds(store.zoomRegions)));
-const outOfClip = (r: ZoomRegion) => r.start < clipIn - 1e-6 || r.end > clipOut + 1e-6;
+const outOfClip = (r: ZoomRegion) => isOutsideClip(r, clipIn, clipOut);
 
 // Zoom is only legible with the playhead inside the region, so selecting one
 // parks the playhead at the moment it reaches full scale.
@@ -93,6 +96,29 @@ function selectRegion(r: ZoomRegion) {
 const playheadInSelected = $derived(
 	selected ? store.currentTime > selected.start && store.currentTime < selected.end : true,
 );
+
+// Null when the playhead leaves no room, which disables the button instead of
+// snapping the edge somewhere the user didn't point at.
+const startFromPlayhead = $derived(
+	selected ? retimeStart(selected, store.currentTime, clipIn) : null,
+);
+const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTime, clipOut) : null);
+
+const frameAspect = $derived(
+	store.metadata?.width && store.metadata?.height
+		? store.metadata.width / store.metadata.height
+		: 16 / 9,
+);
+
+// The preset both ramps share, or null once the curves diverge or go custom.
+const activeEasingId = $derived.by(() => {
+	if (!selected) return null;
+	const r = selected;
+	return (
+		easingPresets.find((p) => easingEquals(r.easeIn, p.value) && easingEquals(r.easeOut, p.value))
+			?.id ?? null
+	);
+});
 
 function clampToClip(r: ZoomRegion) {
 	store.pushUndoState();
@@ -142,19 +168,20 @@ function updateSelected(updates: Partial<ZoomRegion>, trackUndo = false) {
 	store.updateZoomRegion(selected.id, updates);
 }
 
+// Curves only. It used to reset rampIn/rampOut too, which are Timing controls:
+// a button in one section silently changing another section's values is the same
+// trap `recenterFocus` is careful to avoid.
 function resetCurves() {
 	if (!selected) return;
 	store.pushUndoState();
 	store.updateZoomRegion(selected.id, {
 		easeIn: { ...EASE },
 		easeOut: { ...EASE },
-		rampIn: DEFAULT_ZOOM_RAMP,
-		rampOut: DEFAULT_ZOOM_RAMP,
 	});
 }
 
-// Recenters the focus point only. Motion blur is a separate control in the Zoom
-// section, so this button (in Focus point) must not silently reset it too.
+// The focus point only: scale and motion blur sit in the same section now, and
+// Recenter must not quietly reset those too.
 function recenterFocus() {
 	if (!selected) return;
 	store.pushUndoState();
@@ -479,7 +506,7 @@ function applyPresetToBoth(preset: Easing) {
           <TriangleAlert size={11} class="mt-px shrink-0" />
           <span>
             Overlaps another region. Only one can apply at a time, and the exported
-            video can differ from this preview — trim one so they don't share time.
+            video can differ from this preview. Trim one so they don't share time.
           </span>
         </div>
       {/if}
@@ -497,7 +524,33 @@ function applyPresetToBoth(preset: Easing) {
         </div>
       {/if}
 
-      <PanelSection title="Zoom">
+      <PanelSection
+        title="Zoom"
+        hint="How far in, and where. Drag the pad to move the focus point; the outlined box is what the viewer sees."
+      >
+        {#snippet action()}
+          <Button
+            variant="ghost"
+            size="xs"
+            class="gap-1.5"
+            onclick={recenterFocus}
+            disabled={region.centerX === DEFAULT_ZOOM_CENTER &&
+              region.centerY === DEFAULT_ZOOM_CENTER}
+          >
+            <Crosshair size={11} />
+            Recenter
+          </Button>
+        {/snippet}
+
+        <FocusPad
+          centerX={region.centerX}
+          centerY={region.centerY}
+          scale={region.scale}
+          aspect={frameAspect}
+          onstart={() => store.pushUndoState()}
+          onchange={(x, y) => updateSelected({ centerX: x, centerY: y })}
+        />
+
         <SliderControl
           label="Scale"
           value={region.scale}
@@ -513,40 +566,6 @@ function applyPresetToBoth(preset: Easing) {
             <ZoomIn size={11} />
           {/snippet}
         </SliderControl>
-        <SliderControl
-          label="Motion blur"
-          value={Math.round(region.motionBlur * 100)}
-          min={0}
-          max={100}
-          step={1}
-          unit="%"
-          formatValue={(v) => `${v.toFixed(0)}%`}
-          onstart={() => store.pushUndoState()}
-          onchange={(v) => updateSelected({ motionBlur: v / 100 })}
-        >
-          {#snippet icon()}
-            <Wind size={11} />
-          {/snippet}
-        </SliderControl>
-      </PanelSection>
-
-      <PanelSection
-        title="Focus point"
-        hint="Drag the rectangle on the preview, or use the sliders. Values are 0..1 across the frame (0.5 = center)."
-      >
-        {#snippet action()}
-          <Button
-            variant="ghost"
-            size="xs"
-            class="gap-1.5"
-            onclick={recenterFocus}
-            disabled={region.centerX === DEFAULT_ZOOM_CENTER &&
-              region.centerY === DEFAULT_ZOOM_CENTER}
-          >
-            <Crosshair size={11} />
-            Recenter
-          </Button>
-        {/snippet}
         <SliderControl
           label="Focus X"
           value={region.centerX}
@@ -575,12 +594,63 @@ function applyPresetToBoth(preset: Easing) {
             <MoveVertical size={11} />
           {/snippet}
         </SliderControl>
+
+        <!-- Preview-only, and it must say so: the Rust compositor has no zoom
+             motion blur (only the cursor trail does), and every region defaults
+             to 0.5, so exports come out sharper than the editor looks. -->
+        <SliderControl
+          label="Motion blur"
+          description="Preview only. Not applied to exported video."
+          value={Math.round(region.motionBlur * 100)}
+          min={0}
+          max={100}
+          step={1}
+          unit="%"
+          formatValue={(v) => (v === 0 ? "Off" : `${v.toFixed(0)}%`)}
+          onstart={() => store.pushUndoState()}
+          onchange={(v) => updateSelected({ motionBlur: v / 100 })}
+        >
+          {#snippet icon()}
+            <Wind size={11} />
+          {/snippet}
+        </SliderControl>
+        {#if region.motionBlur > 0.001}
+          <p class="px-0.5 text-[10px] leading-snug text-muted-foreground">
+            Motion blur shows in the preview only. The exported video is not blurred.
+          </p>
+        {/if}
       </PanelSection>
 
       <PanelSection
         title="Timing"
         hint="When the region runs and how long it ramps in and out. Use split ramps to hold at full zoom before releasing."
       >
+        {#snippet action()}
+          <!-- The playhead is how every other edit is timed, so it should be
+               able to set these two without dragging a slider to a timecode. -->
+          <div class="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-[10px]"
+              disabled={!startFromPlayhead}
+              title="Move the region's start to the playhead"
+              onclick={() => startFromPlayhead && updateSelected(startFromPlayhead, true)}
+            >
+              Start here
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-[10px]"
+              disabled={!endFromPlayhead}
+              title="Move the region's end to the playhead"
+              onclick={() => endFromPlayhead && updateSelected(endFromPlayhead, true)}
+            >
+              End here
+            </Button>
+          </div>
+        {/snippet}
         <SliderControl
           label="Start"
           value={region.start}
@@ -644,61 +714,32 @@ function applyPresetToBoth(preset: Easing) {
       </PanelSection>
 
       <!-- Presets lead; raw bezier curves live behind a "Custom curves" disclosure. -->
-      <PanelSection title="Easing" hint="How the zoom accelerates in and decelerates out.">
+      <PanelSection
+        title="Easing"
+        hint="How the zoom accelerates in and decelerates out."
+        collapsible
+        defaultOpen={false}
+      >
         {#snippet action()}
-          <Button variant="ghost" size="xs" onclick={resetCurves}>Reset</Button>
+          {#if !activeEasingId}
+            <span class="text-[11px] text-muted-foreground">Custom</span>
+          {/if}
         {/snippet}
-        <div class="flex flex-wrap gap-1">
-          {#each easingPresets as preset (preset.id)}
-            {@const active =
-              easingEquals(region.easeIn, preset.value) &&
-              easingEquals(region.easeOut, preset.value)}
-            <Button
-              type="button"
-              size="xs"
-              aria-pressed={active}
-              variant={active ? "default_soft" : "outline"}
-              onclick={() => applyPresetToBoth(preset.value)}
-            >
-              {preset.label}
-            </Button>
-          {/each}
+        <EasingControl
+          value={{ in: region.easeIn, out: region.easeOut }}
+          onpick={applyPresetToBoth}
+          ondrag={(next, which) => {
+            // Fires per pointermove, so coalesce instead of one entry per frame.
+            store.pushUndoStateCoalesced(`zoom-curve-${region.id}-${which}`, 500);
+            updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
+          }}
+          size={220}
+        />
+        <div class="flex justify-end">
+          <Button variant="ghost" size="xs" class="text-[10px]" onclick={resetCurves}>
+            Reset curves
+          </Button>
         </div>
-
-        <PanelSection title="Custom curves" flush collapsible defaultOpen={false}>
-          <div class="flex flex-col gap-2 pt-1">
-            <!-- One editor at a time, switched in/out; the card's sparkline
-                 previews the combined result. -->
-            <div class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-1.5">
-                <span class="text-[10px] font-medium text-muted-foreground">
-                  Editing the {customCurve === "in" ? "ease-in" : "ease-out"} ramp
-                </span>
-                <InspectorHint
-                  content="Drag the two handles to shape this ramp. Switch between the ease-in and ease-out curves with the toggle."
-                />
-              </div>
-              <SegmentedToggle
-                checked={customCurve === "out"}
-                offLabel="In"
-                onLabel="Out"
-                size="xs"
-                aria-label="Edit ease-in or ease-out curve"
-                onCheckedChange={(next) => (customCurve = next ? "out" : "in")}
-              />
-            </div>
-            <BezierEditor
-              value={customCurve === "in" ? region.easeIn : region.easeOut}
-              onchange={(v) =>
-                updateSelected(
-                  customCurve === "in" ? { easeIn: v } : { easeOut: v },
-                  true,
-                )}
-              showPresets={false}
-              size={220}
-            />
-          </div>
-        </PanelSection>
       </PanelSection>
     </div>
   {/if}

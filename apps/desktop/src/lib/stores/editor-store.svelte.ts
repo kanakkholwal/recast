@@ -15,6 +15,14 @@ import {
 	DEFAULT_CAPTION_ANIMATION,
 	DEFAULT_CAPTION_STYLE,
 } from "@recast/captions";
+import {
+	BACKGROUND_COLORS,
+	BACKGROUND_GRADIENTS,
+	type BackgroundPreset,
+	backgroundNeedsShadow,
+	migrateBackgroundValue,
+} from "@recast/design/backgrounds";
+import { scaleTranscript, transcriptTimeScale } from "$lib/captions/normalize";
 import { resolveTokenRgb, resolveTokenRgba } from "../annotations/canvas-tokens";
 import {
 	type AudioClip,
@@ -763,21 +771,9 @@ export const MAX_GRADIENT_STOPS = 8;
 /**
  * Curated gradient presets, authored as full `linear-gradient(...)` strings:
  * the exact source of truth the preview shader and export rasteriser both parse.
+ * Values live in `@recast/design/backgrounds` so the screenshot editor shares them.
  */
-export const GRADIENT_PRESETS: { label: string; value: string }[] = [
-	{ label: "Indigo", value: "linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #d946ef 100%)" },
-	{ label: "Sunset", value: "linear-gradient(120deg, #ff6a00 0%, #ee0979 100%)" },
-	{ label: "Ocean", value: "linear-gradient(135deg, #2193b0 0%, #6dd5ed 100%)" },
-	{ label: "Aurora", value: "linear-gradient(135deg, #00c9ff 0%, #92fe9d 100%)" },
-	{ label: "Ember", value: "linear-gradient(135deg, #f12711 0%, #f5af19 100%)" },
-	{ label: "Mint", value: "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)" },
-	{ label: "Grape", value: "linear-gradient(135deg, #7028e4 0%, #e5b2ca 100%)" },
-	{ label: "Berry", value: "linear-gradient(135deg, #c31432 0%, #240b36 100%)" },
-	{ label: "Royal", value: "linear-gradient(160deg, #141e30 0%, #243b55 100%)" },
-	{ label: "Slate", value: "linear-gradient(135deg, #232526 0%, #414345 100%)" },
-	{ label: "Peach", value: "linear-gradient(135deg, #ed4264 0%, #ffedbc 100%)" },
-	{ label: "Lagoon", value: "linear-gradient(160deg, #43c6ac 0%, #191654 100%)" },
-];
+export const GRADIENT_PRESETS: BackgroundPreset[] = BACKGROUND_GRADIENTS;
 
 /** Default gradient used when a fresh custom gradient is created. */
 export const DEFAULT_GRADIENT = GRADIENT_PRESETS[0].value;
@@ -854,20 +850,9 @@ export function serializeGradient(spec: GradientSpec): string {
 	return `linear-gradient(${angle}deg, ${body})`;
 }
 
-export const COLOR_PRESETS = [
-	"#eaffd0",
-	"#95e1d3",
-	"#ffffff",
-	"#f5f5f5",
-	"#533483",
-	"#e94560",
-	"#f38181",
-	"#fce38a",
-	"#0f3460",
-	"#16213e",
-	"#1a1a2e",
-	"#000000",
-];
+/** Solid backdrop presets. Labelled (not a bare hex list) so the picker and
+ *  screen readers can name a swatch. */
+export const COLOR_PRESETS: BackgroundPreset[] = BACKGROUND_COLORS;
 
 function generateId(): string {
 	return Math.random().toString(36).substring(2, 9);
@@ -911,6 +896,15 @@ export function createEditorStore() {
 	let transcript = $state.raw<Transcript | null>(null);
 	let captionStyle = $state<CaptionStyle>({ ...DEFAULT_CAPTION_STYLE });
 	let metadata = $state<VideoMetadata | null>(null);
+	// The transcribed audio's duration (probed on load). The transcript is timed
+	// on the AUDIO axis but the playhead maps to VIDEO SOURCE time; count-based
+	// CFR makes them differ by a whole-clip gap, so `captionTranscript` rescales.
+	let captionAudioDurationSec = $state<number | null>(null);
+	// Memoized so the per-frame caption redraw doesn't re-map every word: only
+	// recomputes when the transcript, video duration, or audio duration changes.
+	const captionTranscriptMemo = $derived(
+		scaleTranscript(transcript, transcriptTimeScale(metadata?.duration, captionAudioDurationSec)),
+	);
 	// `$state.raw` for large replace-only arrays: swapped wholesale, never
 	// mutated element-wise, so deep-proxying thousands of entries is pure
 	// overhead; only the array identity needs reactivity. See AGENTS.md.
@@ -1446,6 +1440,13 @@ export function createEditorStore() {
 		pushUndoState();
 		backgroundType = selection.type;
 		backgroundValue = selection.value;
+		// A backdrop too close in luminance to the recording leaves the frame with
+		// no visible edge. Turn the shadow on rather than shipping a broken frame;
+		// only ever on, so an explicit disable on a safe backdrop is respected.
+		if (!shadow.enabled && backgroundNeedsShadow(selection.value)) {
+			shadow = { ...shadow, enabled: true };
+			log.info("background", "auto-enabled drop shadow for low-separation backdrop");
+		}
 		// `value` can be a long wallpaper/gradient string, so log only the type.
 		log.info("background", "changed", { type: selection.type });
 	}
@@ -1462,6 +1463,18 @@ export function createEditorStore() {
 		pushUndoStateCoalesced("background-live");
 		backgroundType = type;
 		backgroundValue = value;
+		isDirty = true;
+	}
+
+	/**
+	 * Stream the cursor easing curve during a bezier-handle drag. The plain
+	 * `cursorMotionEasing` setter pushes an undo entry per assignment, which the
+	 * drag fires on every pointermove — one gesture buried the stack in dozens of
+	 * entries. Discrete picks (presets) keep using the setter.
+	 */
+	function setCursorMotionEasingLive(v: Easing | null) {
+		pushUndoStateCoalesced("cursor-easing-live");
+		cursorMotionEasing = v;
 		isDirty = true;
 	}
 
@@ -1572,6 +1585,17 @@ export function createEditorStore() {
 	 */
 	function updateCameraOverlay(updates: Partial<CameraOverlaySettings>) {
 		cameraOverlay = { ...cameraOverlay, ...updates };
+	}
+
+	/**
+	 * Stream a camera-overlay edit during a continuous gesture (a bezier-handle
+	 * drag fires on every pointermove). `coalesceKey` scopes the window so two
+	 * different curves in the same panel don't merge into one undo entry.
+	 */
+	function updateCameraOverlayLive(updates: Partial<CameraOverlaySettings>, coalesceKey: string) {
+		pushUndoStateCoalesced(coalesceKey);
+		cameraOverlay = { ...cameraOverlay, ...updates };
+		isDirty = true;
 	}
 
 	// Route a position edit (preset/drag/resize): in per-cut mode it upserts a
@@ -2280,6 +2304,20 @@ export function createEditorStore() {
 	}
 
 	/** Split the clip at original time `t`. Returns true if a split was added. */
+	/** Whether a split at `t` would land. Goes through `planSplit` so a disabled
+	 *  Split button can never disagree with what pressing it would do. */
+	function canSplitAt(t: number): boolean {
+		const { start, end } = clipBounds();
+		return (
+			planSplit(t, {
+				trimStart: start,
+				trimEnd: end,
+				cuts: effectiveCutList(),
+				splitPoints,
+			}) !== null
+		);
+	}
+
 	function splitAt(t: number): boolean {
 		const { start, end } = clipBounds();
 		const next = planSplit(t, {
@@ -2307,6 +2345,74 @@ export function createEditorStore() {
 		if (splitPoints.length === 0) return;
 		pushUndoState();
 		splitPoints = [];
+	}
+
+	/**
+	 * Carry a segment's anchored settings across a boundary move. Speeds and
+	 * scene animations are keyed by the segment's ORIGINAL start, so without this
+	 * a roll/slide/slip silently drops them (`prune*` treats the anchor as
+	 * orphaned the moment the start it names no longer exists).
+	 */
+	function reanchorSegment(from: number, to: number) {
+		if (Math.abs(from - to) <= 1e-4) return;
+		const move = <T extends { start: number }>(list: readonly T[]): T[] =>
+			list
+				.map((it) => (Math.abs(it.start - from) <= 1e-4 ? { ...it, start: to } : { ...it }))
+				.sort((a, b) => a.start - b.start);
+		segmentSpeeds = move(segmentSpeeds);
+		segmentAnims = move(segmentAnims);
+	}
+
+	/**
+	 * Roll the split at `from` to `to`: the left segment's end and the right
+	 * segment's start move together, total length unchanged. Returns false if no
+	 * split sits at `from`. Does NOT push undo — the clip bar's drag handler owns
+	 * coalescing, like `updateCut`.
+	 */
+	function moveSplit(from: number, to: number): boolean {
+		const index = splitPoints.findIndex((p) => Math.abs(p - from) <= 1e-4);
+		if (index === -1) return false;
+		const next = [...splitPoints];
+		next[index] = to;
+		splitPoints = next.sort((a, b) => a - b);
+		reanchorSegment(from, to);
+		return true;
+	}
+
+	/**
+	 * Slide a removed range as a unit, so the blocks either side of it grow and
+	 * shrink by the same amount and the output length never changes. Callers own
+	 * undo coalescing.
+	 */
+	function slideCut(id: string, start: number, end: number) {
+		const cut = cuts.find((c) => c.id === id);
+		if (!cut) return;
+		// The following segment starts where the cut ends, so its anchor rides along.
+		reanchorSegment(cut.end, end);
+		cuts = cuts
+			.map((c) => (c.id === id ? { ...c, start, end } : c))
+			.sort((a, b) => a.start - b.start);
+	}
+
+	/**
+	 * Slip a block: its source window shifts inside its slot while it stays put
+	 * on the output axis, absorbed by the removed ranges either side. Callers own
+	 * undo coalescing.
+	 */
+	function slipSegment(p: {
+		from: number;
+		to: number;
+		before: { id: string; start: number; end: number };
+		after: { id: string; start: number; end: number };
+	}) {
+		reanchorSegment(p.from, p.to);
+		cuts = cuts
+			.map((c) => {
+				if (c.id === p.before.id) return { ...c, start: p.before.start, end: p.before.end };
+				if (c.id === p.after.id) return { ...c, start: p.after.start, end: p.after.end };
+				return c;
+			})
+			.sort((a, b) => a.start - b.start);
 	}
 
 	/**
@@ -2441,7 +2547,10 @@ export function createEditorStore() {
 		outputAspect = state.outputAspect ?? "source";
 		lastAppliedPresetId = state.lastAppliedPresetId ?? null;
 		backgroundType = state.backgroundType ?? "color";
-		backgroundValue = state.backgroundValue ?? "#111111";
+		// Retired stock presets forward to their replacement, so a project saved
+		// against the old set still highlights a swatch instead of reading as
+		// "custom". Untouched for any value that was never a preset.
+		backgroundValue = migrateBackgroundValue(state.backgroundValue ?? "#111111");
 		backgroundBlur = state.backgroundBlur ?? 0;
 		padding = normalizeFramePaddingPercent(state.padding ?? 0, metadata);
 		borderRadius = state.borderRadius ?? 0;
@@ -3072,6 +3181,20 @@ export function createEditorStore() {
 			transcript = v;
 			isDirty = true;
 		},
+		/** Duration (s) of the audio the transcript was timed against; set on load
+		 *  so `captionTranscript` can correct the audio-vs-video CFR drift. */
+		get captionAudioDurationSec() {
+			return captionAudioDurationSec;
+		},
+		set captionAudioDurationSec(v: number | null) {
+			captionAudioDurationSec = v;
+		},
+		/** The transcript rescaled onto the video/timeMap time axis. EVERY caption
+		 *  surface (preview overlay, export burn, sidecar) reads THIS, so they stay
+		 *  in sync with the frames instead of drifting toward the end. */
+		get captionTranscript() {
+			return captionTranscriptMemo;
+		},
 		get captionStyle() {
 			return captionStyle;
 		},
@@ -3198,11 +3321,13 @@ export function createEditorStore() {
 		revertToSaved,
 		setBackground,
 		setBackgroundLive,
+		setCursorMotionEasingLive,
 		updateCursorSettings,
 		updateAudioSettings,
 		updateWatermarkSettings,
 		updateShadow,
 		updateCameraOverlay,
+		updateCameraOverlayLive,
 		setCameraPlacement,
 		setCameraPerCut,
 		removeCameraKeyframeNear,
@@ -3221,8 +3346,12 @@ export function createEditorStore() {
 		updateCut,
 		mergeCuts,
 		splitAt,
+		canSplitAt,
 		removeSplit,
 		clearSplits,
+		moveSplit,
+		slideCut,
+		slipSegment,
 		deleteSegmentAt,
 		dismissSilence,
 		clearDismissedSilences,

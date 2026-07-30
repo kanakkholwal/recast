@@ -3,21 +3,18 @@
 @custom-variant dark (&:where([data-theme="dark"], .dark, .dark *, [data-theme="dark"] *));
 
 /* =============================================================
-   Framer-inspired token system
+   Token system
    - Surfaces: canvas → surface-1 → surface-2 (lift, not opacity)
    - Text:    ink + ink-muted (binary hierarchy)
-   - Hairline borders, accent-blue as a single signal color
-   - Gradient spotlight cards: violet, magenta, orange, coral
-   Primary color and font tokens are intentionally preserved.
+   - Accent split three ways — see the Action/Signal/Brand block below.
    ============================================================= */
 
 :root,
 [data-theme="light"] {
-  /* - Framer surfaces (light counterpart) - */
+  /* - Surfaces - */
   --canvas: oklch(98% 0.002 60);
   --surface-1: oklch(95% 0.002 60);
   --surface-2: oklch(92% 0.002 60);
-  --inverse-canvas: oklch(8% 0.005 60);
 
   --hairline: oklch(0% 0 0 / 0.10);
   --hairline-soft: oklch(0% 0 0 / 0.06);
@@ -26,18 +23,8 @@
   --ink: oklch(15% 0 0);
   --ink-muted: oklch(45% 0 0);
 
-  /* - Signal accent (links, focus, selection only) - */
-  --accent-blue: oklch(63% 0.19 245);
-  --accent-blue-soft: oklch(63% 0.19 245 / 0.15);
-
-  /* - Gradient spotlight base anchors - */
-  --gradient-violet: oklch(55% 0.24 290);
-  --gradient-magenta: oklch(60% 0.27 350);
-  --gradient-orange: oklch(72% 0.18 50);
-  --gradient-coral: oklch(70% 0.18 20);
-
-  /* - Legacy shadcn tokens (original values; Framer tokens above are opt-in) - */
-  --background: oklch(92.823% 0.00458 215.437);
+  /* - Legacy shadcn tokens - */
+  --background: oklch(0.985 0 0);
   --foreground: oklch(21.779% 0.00002 271.152);
 
   --card: oklch(100% 0.00011 271.152);
@@ -46,8 +33,14 @@
   --popover: oklch(100% 0.00011 271.152);
   --popover-foreground: oklch(21.342% 0.00002 271.152);
 
-  --primary: oklch(76% 0.21 125.904);
-  --primary-foreground: oklch(0.25 0 0);
+  /* Indigo, not the old lime. Lime cannot be legible on white and stay lime —
+     sRGB has no dark saturated corner at h126, so it measured 1.95:1 as a focus
+     ring. h264 holds its hue from L0.45–0.75 and is the most separable candidate
+     from --destructive under protanopia/deuteranopia, which matters because the
+     CTA and the Stop button are this app's two highest-stakes controls.
+     Both values are inside sRGB; the ceiling at L0.70 is C0.156. */
+  --primary: oklch(0.52 0.20 264);
+  --primary-foreground: oklch(1 0 0);
 
   --secondary: oklch(96.744% 0.00143 285.225);
   --secondary-foreground: oklch(21.033% 0.00588 285.832);
@@ -81,19 +74,26 @@
      These are spaced around the wheel instead, anchored on the brand lime
      (h 126) which the zoom lane keeps.
        cut    h 22   soft red, the removal colour, pulled off pure red
-       zoom   h 128  the brand hue
+       zoom   h 128  green, kept from the old brand hue
        audio  h 215  calm blue, the conventional audio-track colour
-       markup h 285  violet, furthest from both the brand and the cut red
-     Chroma is held well under the brand's 0.21 so four accents on screen at once
-     support the primary instead of competing with it. */
+       markup h 305  magenta-violet, clear of both the cut red and --primary (h264)
+     Chroma is held under 0.16 so four accents on screen at once support the UI
+     instead of competing with it.
+     Caveat: wheel distance is not CVD distance. cut (h22) and zoom (h128) sit on
+     the red-green axis that dichromats collapse, so lane identity must never rest
+     on hue alone — keep the rail label and block shape carrying it too. */
   --lane-cut: oklch(0.58 0.15 22);
   --lane-zoom: oklch(0.56 0.16 128);
   --lane-audio: oklch(0.56 0.12 215);
-  --lane-markup: oklch(0.54 0.15 285);
+  --lane-markup: oklch(0.54 0.15 305);
   --lane-music: oklch(0.60 0.13 75);
 
-  --border: oklch(96.115% 0.00011 271.152);
+  --border: oklch(0.91 0 0);
   --border-subtle: oklch(0% 0 0 / 0.05);
+  /* Boundaries that identify a control (inputs, selects, checkboxes) must clear
+     3:1 per WCAG 1.4.11 — the decorative hairline above is 1.31:1 on a white
+     card and cannot do that job. 3.64:1 on white. */
+  --border-control: oklch(0.62 0 0);
   /* Input surface — used as the fill for text fields and the off-state track
      for toggles. Sits ~5% below the white card/popover surfaces so a field reads
      as a subtle recess (not a hard gray pill) while a toggle track is still
@@ -135,11 +135,10 @@
 
 .dark,
 [data-theme="dark"] {
-  /* - Framer surfaces (the canonical dark) - */
+  /* - Surfaces (the canonical dark) - */
   --canvas: oklch(0.16 0 0);            /* near-black with faint warmth */
   --surface-1: oklch(16% 0.005 60);        /* charcoal lift — cards */
   --surface-2: oklch(22% 0.005 60);        /* featured / selected lift */
-  --inverse-canvas: oklch(100% 0 0);       /* pure white pill CTAs */
 
   --hairline: oklch(100% 0 0 / 0.10);
   --hairline-soft: oklch(100% 0 0 / 0.06);
@@ -148,19 +147,9 @@
   --ink: oklch(100% 0 0);
   --ink-muted: oklch(64% 0 0);             /* ≈ #999999 */
 
-  /* - Signal accent - */
-  --accent-blue: oklch(68% 0.19 240);
-  --accent-blue-soft: oklch(68% 0.19 240 / 0.15);
-
-  /* - Gradient spotlight base anchors - */
-  --gradient-violet: oklch(58% 0.25 290);
-  --gradient-magenta: oklch(62% 0.27 350);
-  --gradient-orange: oklch(72% 0.19 50);
-  --gradient-coral: oklch(70% 0.18 20);
-
-  /* - Legacy shadcn tokens (original values; Framer tokens above are opt-in) - */
-  --primary: oklch(92.249% 0.23442 125.904);
-  --primary-foreground: oklch(15.907% 0.00002 271.152);
+  /* - Legacy shadcn tokens - */
+  --primary: oklch(0.70 0.155 264);
+  --primary-foreground: oklch(0.16 0 0);
 
   --background: oklch(20.352% 0.00157 197.844);
   --foreground: oklch(95.514% 0.00011 271.152);
@@ -199,11 +188,14 @@
   --lane-cut: oklch(0.72 0.16 22);
   --lane-zoom: oklch(0.82 0.17 128);
   --lane-audio: oklch(0.74 0.12 215);
-  --lane-markup: oklch(0.74 0.15 285);
+  --lane-markup: oklch(0.74 0.15 305);
   --lane-music: oklch(0.80 0.13 75);
 
-  --border: oklch(23.929% 0.00003 271.152);
+  /* Sits above --card (0.27) so a card outline reads as an edge, not a seam.
+     The old 0.239 was darker than the surface it bounded. */
+  --border: oklch(0.32 0 0);
   --border-subtle: oklch(100% 0.00011 271.152 / 0.05);
+  --border-control: oklch(0.55 0 0);  /* 3.11:1 on --card */
   /* Input surface — lifted above the card (0.27) and popover (0.205) surfaces so
      a filled field reads clearly in dark dialogs. The old 0.301 sat ~3% over the
      card, which all but vanished; 0.34 keeps a visible recess without glowing. */
@@ -229,21 +221,12 @@
   --color-canvas: var(--canvas);
   --color-surface-1: var(--surface-1);
   --color-surface-2: var(--surface-2);
-  --color-inverse-canvas: var(--inverse-canvas);
   --color-hairline: var(--hairline);
   --color-hairline-soft: var(--hairline-soft);
 
   /* - Ink - */
   --color-ink: var(--ink);
   --color-ink-muted: var(--ink-muted);
-
-  /* - Signal & gradients - */
-  --color-accent-blue: var(--accent-blue);
-  --color-accent-blue-soft: var(--accent-blue-soft);
-  --color-gradient-violet: var(--gradient-violet);
-  --color-gradient-magenta: var(--gradient-magenta);
-  --color-gradient-orange: var(--gradient-orange);
-  --color-gradient-coral: var(--gradient-coral);
 
   /* - Legacy color aliases (kept) - */
   --color-background: var(--background);
@@ -277,12 +260,13 @@
   --color-lane-music: var(--lane-music);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
+  --color-border-control: var(--border-control);
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* - Fonts (preserved) - */
+  /* - Fonts - */
   --font-sans: 'Geist Variable', sans-serif;
-  --font-mono: 'Space Mono', 'Fira Code', 'Courier New', monospace;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-heading: 'Geist Variable', sans-serif;
 
   /* NOTE: Framer's spacing (--space-*) and letter-spacing (--tracking-*)
@@ -306,8 +290,10 @@
     inset 0 0.5px 0 rgba(255, 255, 255, 0.10),
     0 10px 30px rgba(0, 0, 0, 0.25);
 
-  /* Blue selection / focus ring (level 3) */
-  --shadow-focus-ring: 0 0 0 1px rgba(0, 153, 255, 0.45), 0 0 0 4px rgba(0, 153, 255, 0.15);
+  /* Selection / focus ring (level 3). Tracks --primary, the single focus colour. */
+  --shadow-focus-ring:
+    0 0 0 1px color-mix(in srgb, var(--primary) 45%, transparent),
+    0 0 0 4px color-mix(in srgb, var(--primary) 15%, transparent);
 
   /* Craft-specific multi-layer shadows (kept) */
   --shadow-craft-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -321,13 +307,7 @@
     0 4px 12px 0 rgba(0, 0, 0, 0.05),
     0 12px 24px -4px rgba(0, 0, 0, 0.05);
 
-  /* - Gradient utilities (spotlight card backgrounds) - */
-  --gradient-spotlight-violet: radial-gradient(120% 100% at 30% 20%, oklch(70% 0.25 290) 0%, oklch(45% 0.22 285) 60%, oklch(28% 0.16 280) 100%);
-  --gradient-spotlight-magenta: radial-gradient(120% 100% at 30% 20%, oklch(72% 0.27 350) 0%, oklch(50% 0.25 340) 60%, oklch(30% 0.18 335) 100%);
-  --gradient-spotlight-orange: radial-gradient(120% 100% at 30% 20%, oklch(82% 0.18 60) 0%, oklch(65% 0.20 40) 60%, oklch(40% 0.15 30) 100%);
-  --gradient-spotlight-coral: radial-gradient(120% 100% at 30% 20%, oklch(80% 0.16 25) 0%, oklch(62% 0.20 15) 60%, oklch(38% 0.14 10) 100%);
-
-  /* - Animations (kept) - */
+  /* - Animations - */
   --animate-accordion-down: accordion-down 0.2s ease-out;
   --animate-accordion-up: accordion-up 0.2s ease-out;
 
@@ -367,29 +347,24 @@
   height: 8px
 }
 
+/* These were `hsl(var(--primary))` against oklch() tokens — invalid, so every
+   declaration was dropped and the scrollbar fell back to the UA default. */
 .scrollbar-transparent::-webkit-scrollbar-track {
-  background: hsl(var(--muted));
-  border-radius: .5rem
+  background: transparent;
 }
 
 .scrollbar-transparent::-webkit-scrollbar-thumb {
-  background: linear-gradient(135deg, hsl(var(--primary) / .6), hsl(var(--secondary) / .8));
-  border: 2px solid hsl(var(--background));
+  background: color-mix(in srgb, var(--foreground) 15%, transparent);
   border-radius: .5rem;
-  transition: all .2s ease-in-out
+  transition: background .2s ease-in-out;
 }
 
 .scrollbar-transparent::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(135deg, hsl(var(--primary) / .8), hsl(var(--secondary) / 1));
-  transform: scale(1.1)
-}
-
-.scrollbar-transparent::-webkit-scrollbar-thumb:active {
-  background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--secondary)))
+  background: color-mix(in srgb, var(--foreground) 28%, transparent);
 }
 
 .scrollbar-transparent::-webkit-scrollbar-corner {
-  background: hsl(var(--background))
+  background: transparent;
 }
   /* Hide scrollbar for Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {
@@ -407,15 +382,9 @@ li:has([class]) {
   list-style: none;
 }
 
-input[type="number"]:has(class) {
-  -webkit-appearance: textfield;
-  appearance: textfield;
-  -moz-appearance: textfield;
-}
-button[type="button"]:has(class) {
-  all: unset;
-  cursor: pointer;
-}
+/* `button[type="button"]:has(class) { all: unset }` lived here. `:has(class)`
+   matches a <class> descendant, so it never fired — but one typo away from
+   stripping focus rings and disabled states off every classed button. */
 html {
   scroll-behavior: smooth;
   scrollbar-width: thin;

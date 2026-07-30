@@ -1,125 +1,138 @@
 <script lang="ts">
-  import {
-    easingEquals,
-    sampleCurve,
-    type Easing,
-  } from "$lib/easing/cubic-bezier";
-  import { registry } from "$lib/registry";
-  import { Input } from "@recast/ui/input";
-  import { cn } from "@recast/ui/utils";
+import {
+	clampEasingCoord,
+	EASING_OVERSHOOT,
+	sampleCurve,
+	type Easing,
+} from "$lib/easing/cubic-bezier";
+import { Input } from "@recast/ui/input";
+import { cn } from "@recast/ui/utils";
 
-  interface Props {
-    value: Easing;
-    onchange: (next: Easing) => void;
-    label?: string;
-    description?: string;
-    /** Hide preset chips when the editor is used in a compact context. */
-    showPresets?: boolean;
-    /** Graph size in px (square). Padding for overshoot is added around it. */
-    size?: number;
-    disabled?: boolean;
-  }
+interface Props {
+	value: Easing;
+	onchange: (next: Easing) => void;
+	label?: string;
+	description?: string;
+	/** Graph size in px (square). Padding for overshoot is added around it. */
+	size?: number;
+	disabled?: boolean;
+}
 
-  let {
-    value,
-    onchange,
-    label,
-    description,
-    showPresets = true,
-    size = 176,
-    disabled = false,
-  }: Props = $props();
+let { value, onchange, label, description, size = 176, disabled = false }: Props = $props();
 
-  // viewBox is the unit square plus OVERSHOOT padding so bounce/spring handles
-  // (y outside [0,1]) stay grabbable. y is flipped at render time (SVG y grows down).
-  const OVERSHOOT = 0.6;
-  const VB_MIN = -OVERSHOOT;
-  const VB_SPAN = 1 + OVERSHOOT * 2;
+// viewBox is the unit square plus the overshoot band so bounce/spring handles
+// (y outside [0,1]) stay grabbable. y is flipped at render time (SVG y grows down).
+const VB_MIN = -EASING_OVERSHOOT;
+const VB_SPAN = 1 + EASING_OVERSHOOT * 2;
 
-  let svgEl: SVGSVGElement | null = $state(null);
-  let dragging: "p1" | "p2" | null = $state(null);
-  let activePointerId = $state<number | null>(null);
+// Arrow-key step, and the coarse step for Shift+Arrow.
+const KEY_STEP = 0.01;
+const KEY_STEP_COARSE = 0.1;
 
-  const curvePath = $derived.by(() => {
-    const pts = sampleCurve(value, 48);
-    return pts
-      .map(
-        ([x, y], i) =>
-          `${i === 0 ? "M" : "L"} ${x.toFixed(4)} ${(1 - y).toFixed(4)}`,
-      )
-      .join(" ");
-  });
+let svgEl: SVGSVGElement | null = $state(null);
+let dragging: "p1" | "p2" | null = $state(null);
+let activePointerId = $state<number | null>(null);
 
-  // Built-in + extension easing presets, from the registry.
-  const easingPresets = $derived(
-    registry
-      .list("easing")
-      .map((e) => ({ id: e.id, label: e.label, value: e.value.value })),
-  );
+const curvePath = $derived.by(() => {
+	const pts = sampleCurve(value, 48);
+	return pts
+		.map(([x, y], i) => `${i === 0 ? "M" : "L"} ${x.toFixed(4)} ${(1 - y).toFixed(4)}`)
+		.join(" ");
+});
 
-  const selectedPresetId = $derived(
-    easingPresets.find((p) => easingEquals(p.value, value))?.id ?? null,
-  );
+function svgPoint(e: PointerEvent): { x: number; y: number } | null {
+	if (!svgEl) return null;
+	const pt = svgEl.createSVGPoint();
+	pt.x = e.clientX;
+	pt.y = e.clientY;
+	const ctm = svgEl.getScreenCTM();
+	if (!ctm) return null;
+	const { x, y } = pt.matrixTransform(ctm.inverse());
+	return { x, y: 1 - y };
+}
 
-  function svgPoint(e: PointerEvent): { x: number; y: number } | null {
-    if (!svgEl) return null;
-    const pt = svgEl.createSVGPoint();
-    pt.x = e.clientX;
-    pt.y = e.clientY;
-    const ctm = svgEl.getScreenCTM();
-    if (!ctm) return null;
-    const { x, y } = pt.matrixTransform(ctm.inverse());
-    return { x, y: 1 - y };
-  }
+function updateHandle(which: "p1" | "p2", x: number, y: number) {
+	if (which === "p1") {
+		onchange({
+			...value,
+			x1: clampEasingCoord("x1", x),
+			y1: clampEasingCoord("y1", y),
+		});
+	} else {
+		onchange({
+			...value,
+			x2: clampEasingCoord("x2", x),
+			y2: clampEasingCoord("y2", y),
+		});
+	}
+}
 
-  function updateHandle(which: "p1" | "p2", x: number, y: number) {
-    const nx = Math.max(0, Math.min(1, x));
-    // Let y stay within the viewBox so overshoot is reachable by drag.
-    const ny = Math.max(VB_MIN, Math.min(1 + OVERSHOOT, y));
-    if (which === "p1") {
-      onchange({ ...value, x1: nx, y1: ny });
-    } else {
-      onchange({ ...value, x2: nx, y2: ny });
-    }
-  }
+// The handles carry `role="slider"` and were focusable, but nothing listened
+// for keys: a keyboard user heard "Control point 1, slider" and could not move
+// it. Left/Right walk x, Up/Down walk y, Shift for a coarse step.
+function handleKey(which: "p1" | "p2", e: KeyboardEvent) {
+	if (disabled) return;
+	const step = e.shiftKey ? KEY_STEP_COARSE : KEY_STEP;
+	const x = which === "p1" ? value.x1 : value.x2;
+	const y = which === "p1" ? value.y1 : value.y2;
+	switch (e.key) {
+		case "ArrowLeft":
+			updateHandle(which, x - step, y);
+			break;
+		case "ArrowRight":
+			updateHandle(which, x + step, y);
+			break;
+		case "ArrowDown":
+			updateHandle(which, x, y - step);
+			break;
+		case "ArrowUp":
+			updateHandle(which, x, y + step);
+			break;
+		case "Home":
+			updateHandle(which, 0, y);
+			break;
+		case "End":
+			updateHandle(which, 1, y);
+			break;
+		default:
+			return;
+	}
+	e.preventDefault();
+}
 
-  function handleStart(which: "p1" | "p2", e: PointerEvent) {
-    if (disabled) return;
-    e.preventDefault();
-    dragging = which;
-    activePointerId = e.pointerId;
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
-  }
+function handleStart(which: "p1" | "p2", e: PointerEvent) {
+	if (disabled) return;
+	e.preventDefault();
+	dragging = which;
+	activePointerId = e.pointerId;
+	(e.currentTarget as Element).setPointerCapture(e.pointerId);
+}
 
-  function handleMove(e: PointerEvent) {
-    if (!dragging || e.pointerId !== activePointerId) return;
-    const p = svgPoint(e);
-    if (!p) return;
-    updateHandle(dragging, p.x, p.y);
-  }
+function handleMove(e: PointerEvent) {
+	if (!dragging || e.pointerId !== activePointerId) return;
+	const p = svgPoint(e);
+	if (!p) return;
+	updateHandle(dragging, p.x, p.y);
+}
 
-  function handleEnd(e: PointerEvent) {
-    if (!dragging || e.pointerId !== activePointerId) return;
-    (e.currentTarget as Element).releasePointerCapture(e.pointerId);
-    dragging = null;
-    activePointerId = null;
-  }
+function handleEnd(e: PointerEvent) {
+	if (!dragging || e.pointerId !== activePointerId) return;
+	(e.currentTarget as Element).releasePointerCapture(e.pointerId);
+	dragging = null;
+	activePointerId = null;
+}
 
-  function setField(field: "x1" | "y1" | "x2" | "y2", raw: string) {
-    const n = Number(raw);
-    if (Number.isNaN(n)) return;
-    const clamped =
-      field === "x1" || field === "x2" ? Math.max(0, Math.min(1, n)) : n;
-    onchange({ ...value, [field]: clamped });
-  }
+// Dragging clamped y; typing did not, so `y1: 50` parked the handle far
+// outside the viewBox where no pointer could reach it again.
+function setField(field: keyof Easing, raw: string) {
+	const n = Number(raw);
+	if (Number.isNaN(n)) return;
+	onchange({ ...value, [field]: clampEasingCoord(field, n) });
+}
 
-  function applyPreset(preset: Easing) {
-    onchange({ ...preset });
-  }
-
-  function numField(v: number): string {
-    return v.toFixed(2);
-  }
+function numField(v: number): string {
+	return v.toFixed(2);
+}
 </script>
 
 <div class="flex flex-col gap-2">
@@ -245,6 +258,7 @@
         )}
         style:cursor={dragging === "p1" ? "grabbing" : undefined}
         onpointerdown={(e) => handleStart("p1", e)}
+        onkeydown={(e) => handleKey("p1", e)}
       />
 
       <!-- P2 handle -->
@@ -266,6 +280,7 @@
         )}
         style:cursor={dragging === "p2" ? "grabbing" : undefined}
         onpointerdown={(e) => handleStart("p2", e)}
+        onkeydown={(e) => handleKey("p2", e)}
       />
     </svg>
   </div>
@@ -280,8 +295,9 @@
         >
         <Input
           type="number"
-          pattern="^-?(?:\d+|\d*\.\d+)$"
           step="0.01"
+          min={field === "x1" || field === "x2" ? 0 : -EASING_OVERSHOOT}
+          max={field === "x1" || field === "x2" ? 1 : 1 + EASING_OVERSHOOT}
           {disabled}
           value={numField(v)}
           onchange={(e) =>
@@ -291,26 +307,4 @@
       </label>
     {/each}
   </div>
-
-  {#if showPresets}
-    <div class="flex flex-wrap gap-1">
-      {#each easingPresets as preset (preset.id)}
-        {@const isActive = selectedPresetId === preset.id}
-        <button
-          type="button"
-          {disabled}
-          onclick={() => applyPreset(preset.value)}
-          class={cn(
-            "h-6 rounded-sm border px-2 text-[10px] font-medium transition-colors",
-            "focus:outline-none focus:ring-1 focus:ring-ring",
-            isActive
-              ? "border-primary bg-primary/10 text-primary"
-              : "border-border bg-background text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {preset.label}
-        </button>
-      {/each}
-    </div>
-  {/if}
 </div>

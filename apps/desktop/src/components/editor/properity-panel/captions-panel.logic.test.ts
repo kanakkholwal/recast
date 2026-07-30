@@ -1,10 +1,12 @@
-import { describe, expect, it } from "vitest";
-import type { CaptionModelInfo } from "$lib/ipc-types";
 import { CAPTION_PRESETS, type CaptionStyle } from "@recast/captions";
+import { describe, expect, it } from "vitest";
+import type { CaptionModelInfo, TranscriptSegment } from "$lib/ipc-types";
 import type { CaptionPresetValue } from "$lib/registry/types";
 import {
 	captionStyleMatchesPreset,
 	downloadProgressPct,
+	elapsedLabel,
+	filterSegments,
 	groupModelsByFamily,
 	langLabel,
 	pickDefaultModelId,
@@ -39,16 +41,17 @@ function model(over: Partial<CaptionModelInfo> = {}): CaptionModelInfo {
 	};
 }
 
+function seg(id: string, start: number, text: string): TranscriptSegment {
+	return { id, start, end: start + 3, text, words: [] };
+}
+
 describe("pickDefaultModelId", () => {
 	it("returns null for an empty list", () => {
 		expect(pickDefaultModelId([])).toBeNull();
 	});
 
 	it("prefers an installed, runnable, runtime-available default", () => {
-		const models = [
-			model({ id: "a" }),
-			model({ id: "b", isDefault: true }),
-		];
+		const models = [model({ id: "a" }), model({ id: "b", isDefault: true })];
 		expect(pickDefaultModelId(models)).toBe("b");
 	});
 
@@ -146,5 +149,49 @@ describe("captionStyleMatchesPreset", () => {
 		const plainVal = { ...val, animation: undefined } as CaptionPresetValue;
 		const plainCs: CaptionStyle = { ...cs(), animation: undefined };
 		expect(captionStyleMatchesPreset(plainCs, plainVal)).toBe(true);
+	});
+});
+
+describe("filterSegments", () => {
+	const segs = [
+		seg("a", 0, "Welcome to the demo"),
+		seg("b", 4, "Let's open the editor"),
+		seg("c", 9, "OPEN the export dialog"),
+	];
+
+	it("returns the list untouched for an empty or whitespace query", () => {
+		expect(filterSegments(segs, "")).toBe(segs);
+		expect(filterSegments(segs, "   ")).toBe(segs);
+	});
+
+	it("matches case-insensitively", () => {
+		expect(filterSegments(segs, "open").map((s) => s.id)).toEqual(["b", "c"]);
+	});
+
+	it("matches on the whole phrase, not on each word separately", () => {
+		// "the demo" must not also pull in every line containing "the".
+		expect(filterSegments(segs, "the demo").map((s) => s.id)).toEqual(["a"]);
+	});
+
+	it("returns nothing when no line matches", () => {
+		expect(filterSegments(segs, "zzz")).toEqual([]);
+	});
+});
+
+describe("elapsedLabel", () => {
+	it("counts seconds under a minute", () => {
+		expect(elapsedLabel(0)).toBe("0s");
+		expect(elapsedLabel(9_400)).toBe("9s");
+	});
+
+	it("switches to m:ss at a minute", () => {
+		expect(elapsedLabel(60_000)).toBe("1:00");
+		expect(elapsedLabel(125_000)).toBe("2:05");
+	});
+
+	// A negative delta means the clock moved backwards mid-run; showing "-3s"
+	// would look like a bug in the progress readout.
+	it("never renders a negative time", () => {
+		expect(elapsedLabel(-3_000)).toBe("0s");
 	});
 });

@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
+import { drawCaptionLayerExport } from "./caption-layer-export";
 import {
-	drawCaptionLayerExport,
+	captionClocks,
 	paintCaptionChunk,
 	resolveCaptionView,
 	type CaptionView,
-} from "./caption-layer-export";
+} from "$lib/captions/caption-render";
 import { buildTimeMap } from "$lib/timeline/time-map";
 import {
 	DEFAULT_CAPTION_STYLE,
@@ -35,6 +36,72 @@ function transcript() {
 const style = (over: Partial<CaptionStyle> = {}): CaptionStyle =>
 	({ ...DEFAULT_CAPTION_STYLE, enabled: true, animation: undefined, ...over }) as CaptionStyle;
 
+// `store.currentTime` is ORIGINAL (source) time. The preview overlay must resolve
+// the chunk at that source time directly and clock the entrance on OUTPUT time —
+// NOT double-convert through outputToOriginal (the inverted-axis bug that made
+// highlight/emphasis/entrance never reflect on a trimmed/sped timeline).
+describe("captionClocks", () => {
+	it("passes source time through and derives output time (identity map)", () => {
+		const c = captionClocks(identity, 3);
+		expect(c.sourceSec).toBe(3);
+		expect(c.outputSec).toBeCloseTo(3, 6);
+	});
+
+	it("keeps source time but shifts the entrance clock under a trim (non-identity map)", () => {
+		// One kept span [3,13] → output [0,10]: playhead at source 5 is output 2.
+		const trimmed = buildTimeMap([{ origStart: 3, origEnd: 13, speed: 1 }]);
+		const c = captionClocks(trimmed, 5);
+		expect(c.sourceSec).toBe(5); // resolve words at the true source time
+		expect(c.outputSec).toBeCloseTo(2, 6); // entrance runs on viewer/output time
+		// The old inverted formula (outputToOriginal for the source) would have
+		// resolved at 8 — 3s ahead — killing per-word highlight and entrance.
+	});
+
+	it("compresses the entrance clock on a sped-up span (viewer-rate)", () => {
+		const sped = buildTimeMap([{ origStart: 0, origEnd: 10, speed: 2 }]);
+		const c = captionClocks(sped, 6); // 6s of source at 2× = 3s of output
+		expect(c.sourceSec).toBe(6);
+		expect(c.outputSec).toBeCloseTo(3, 6);
+	});
+});
+
+// The "size" active-word emphasis must EASE in/out over time (a per-word bump),
+// not snap binary 1→1.14→1 per word — the hard pop reads as jitter/overlap.
+describe("emphasis scale (smooth pop)", () => {
+	const scaleStyle = () =>
+		style({
+			animation: {
+				chunk: "line",
+				chunkSize: 3,
+				emphasis: "scale",
+				emphasisColor: "#ffffff",
+				highlight: "none",
+				entrance: "none",
+				entranceMs: 200,
+				holdGaps: true,
+			},
+		});
+
+	it("pops the active word and leaves the not-yet-spoken word unscaled", () => {
+		const v = resolveCaptionView(transcript(), scaleStyle(), identity, 0.5); // mid "hello" [0,1]
+		expect(v?.wordScales?.[0]).toBeGreaterThan(1.05); // active → popped up
+		expect(v?.wordScales?.[1]).toBeCloseTo(1, 2); // "world" not started → unscaled
+	});
+
+	it("ramps the scale (not a binary jump) just after the word starts", () => {
+		const full =
+			resolveCaptionView(transcript(), scaleStyle(), identity, 0.5)?.wordScales?.[0] ?? 0;
+		const rising =
+			resolveCaptionView(transcript(), scaleStyle(), identity, 0.02)?.wordScales?.[0] ?? 0;
+		expect(rising).toBeGreaterThan(1); // already lifting off
+		expect(rising).toBeLessThan(full); // but below full — proves the ease-in, not a snap
+	});
+
+	it("carries no scales when emphasis isn't 'scale'", () => {
+		expect(resolveCaptionView(transcript(), style(), identity, 0.5)?.wordScales).toBeUndefined();
+	});
+});
+
 describe("resolveCaptionView", () => {
 	it("returns the active line inside a segment (static → all spoken)", () => {
 		const v = resolveCaptionView(transcript(), style(), identity, 1);
@@ -48,9 +115,29 @@ describe("resolveCaptionView", () => {
 		expect(resolveCaptionView(transcript(), style(), identity, 5)).toBeNull();
 	});
 
-	it("returns null when captions are disabled or there's no transcript", () => {
-		expect(resolveCaptionView(transcript(), style({ enabled: false }), identity, 1)).toBeNull();
+	it("ignores the preview `enabled` toggle (the caller gates); null only without a transcript", () => {
+		// Export burn keys on burnIn, not the preview-visibility toggle — the pure
+		// resolver must not swallow the caption when `enabled` is false.
+		expect(resolveCaptionView(transcript(), style({ enabled: false }), identity, 1)).not.toBeNull();
 		expect(resolveCaptionView(null, style(), identity, 1)).toBeNull();
+	});
+
+	it("resolves an animated (chunked / progressive) caption to a valid chunk", () => {
+		const s = style({
+			animation: {
+				chunk: "word",
+				chunkSize: 1,
+				emphasis: "none",
+				emphasisColor: "#ffffff",
+				highlight: "progressive",
+				entrance: "pop",
+				entranceMs: 300,
+				holdGaps: true,
+			},
+		});
+		const v = resolveCaptionView(transcript(), s, identity, 1.5); // within "world" [1,2]
+		expect(v).not.toBeNull();
+		expect(v?.words.map((w) => w.text)).toEqual(["world"]);
 	});
 
 	it("returns null inside a cut (playhead in the gap between kept spans)", () => {
@@ -99,15 +186,18 @@ describe("resolveCaptionView", () => {
 		expect(v?.words.map((w) => w.text)).toEqual(["a", "b", "c"]);
 	});
 
-	it("still clips words at a real cut (removed content between spans)", () => {
+	it("shows the full caption on each side of a cut, but nothing inside the gap", () => {
 		const cut = buildTimeMap([
 			{ origStart: 0, origEnd: 5, speed: 1 },
 			{ origStart: 6, origEnd: 10, speed: 1 },
 		]);
-		// Playhead at 4.5 is in the first kept span; the word "c" (6–7) sits past
-		// the cut and must NOT show here.
-		const v = resolveCaptionView(spanningTranscript(), style(), cut, 4.5);
-		expect(v?.words.map((w) => w.text)).toEqual(["a"]);
+		// A caption straddling the cut keeps ALL its words on each side (reliable),
+		// rather than dropping the far-side ones and reading as gone.
+		expect(
+			resolveCaptionView(spanningTranscript(), style(), cut, 4.5)?.words.map((w) => w.text),
+		).toEqual(["a", "b", "c"]);
+		// ...and it correctly disappears while the playhead is inside the cut gap.
+		expect(resolveCaptionView(spanningTranscript(), style(), cut, 5.5)).toBeNull();
 	});
 });
 
@@ -155,7 +245,7 @@ const view = (over: Partial<CaptionView> = {}): CaptionView => ({
 	],
 	spoken: 2,
 	activeIndex: -1,
-	chunkStart: 0,
+	chunkStartOutput: 0,
 	anim: resolveCaptionAnimation(undefined),
 	...over,
 });
@@ -194,7 +284,7 @@ describe("paintCaptionChunk", () => {
 describe("drawCaptionLayerExport", () => {
 	it("draws nothing when no caption is active", () => {
 		const ctx = mockCtx();
-		drawCaptionLayerExport(ctx as never, 5, {
+		drawCaptionLayerExport(ctx as never, 5, 5, {
 			transcript: transcript(),
 			style: style(),
 			timeMap: identity,

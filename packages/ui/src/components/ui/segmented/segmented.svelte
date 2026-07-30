@@ -1,28 +1,30 @@
 <script lang="ts" module>
-	import type { Snippet } from "svelte";
+import type { Snippet } from "svelte";
 
-	export interface SegmentedOption<T extends string = string> {
-		value: T;
-		label?: string;
-		icon?: Snippet;
-		disabled?: boolean;
-		/** Optional tooltip / a11y title for the segment. */
-		title?: string;
-	}
+export interface SegmentedOption<T extends string = string> {
+	value: T;
+	label?: string;
+	icon?: Snippet;
+	disabled?: boolean;
+	/** Optional tooltip / a11y title for the segment. */
+	title?: string;
+}
 
-	export interface SegmentedProps<T extends string = string> {
-		/** Two or more segments. */
-		options: SegmentedOption<T>[];
-		value: T;
-		onValueChange: (next: T) => void;
-		/** Sets the row size. Default `sm`. */
-		size?: "xs" | "sm" | "md";
-		/** Stretch each segment to equal flex-1 width. Default true. */
-		fill?: boolean;
-		disabled?: boolean;
-		class?: string;
-		"aria-label"?: string;
-	}
+export interface SegmentedProps<T extends string = string> {
+	/** Two or more segments. */
+	options: SegmentedOption<T>[];
+	value: T;
+	onValueChange: (next: T) => void;
+	/** Sets the row size. Default `sm`. */
+	size?: "xs" | "sm" | "md";
+	/** Stretch each segment to equal flex-1 width. Default true. */
+	fill?: boolean;
+	disabled?: boolean;
+	class?: string;
+	"aria-label"?: string;
+	/** Point at a visible label instead of duplicating it as `aria-label`. */
+	"aria-labelledby"?: string;
+}
 </script>
 
 <script lang="ts" generics="T extends string">
@@ -37,6 +39,7 @@
 		disabled = false,
 		class: className,
 		"aria-label": ariaLabel,
+		"aria-labelledby": ariaLabelledby,
 	}: SegmentedProps<T> = $props();
 
 	// Animated pill that slides under the active segment. First render skips
@@ -86,6 +89,50 @@
 		}
 	});
 
+	// Roving tabindex + arrow keys: the ARIA radiogroup contract. Without it each
+	// segment was its own tab stop and arrows did nothing, so a panel of these
+	// cost a dozen tab presses to cross.
+	let buttons = $state<(HTMLButtonElement | null)[]>([]);
+	const selectableIndexes = $derived(
+		options.map((o, i) => (o.disabled ? -1 : i)).filter((i) => i !== -1),
+	);
+	const activeIndex = $derived(Math.max(0, options.findIndex((o) => o.value === value)));
+
+	function moveTo(index: number) {
+		const option = options[index];
+		if (!option || option.disabled) return;
+		if (option.value !== value) onValueChange(option.value);
+		buttons[index]?.focus();
+	}
+
+	function handleKeydown(e: KeyboardEvent) {
+		if (disabled || selectableIndexes.length === 0) return;
+		const at = selectableIndexes.indexOf(activeIndex);
+		const from = at === -1 ? 0 : at;
+		switch (e.key) {
+			case "ArrowRight":
+			case "ArrowDown":
+				e.preventDefault();
+				moveTo(selectableIndexes[(from + 1) % selectableIndexes.length]);
+				break;
+			case "ArrowLeft":
+			case "ArrowUp":
+				e.preventDefault();
+				moveTo(
+					selectableIndexes[(from - 1 + selectableIndexes.length) % selectableIndexes.length],
+				);
+				break;
+			case "Home":
+				e.preventDefault();
+				moveTo(selectableIndexes[0]);
+				break;
+			case "End":
+				e.preventDefault();
+				moveTo(selectableIndexes[selectableIndexes.length - 1]);
+				break;
+		}
+	}
+
 	const sizing = $derived(
 		size === "xs"
 			? { row: "h-6 p-0.5", btn: "h-5 text-[10px] px-2", gap: "gap-0.5" }
@@ -98,7 +145,10 @@
 <div
 	bind:this={containerEl}
 	role="radiogroup"
+	tabindex="-1"
 	aria-label={ariaLabel}
+	aria-labelledby={ariaLabelledby}
+	onkeydown={handleKeydown}
 	class={cn(
 		"relative inline-flex items-center rounded-lg bg-muted/60 ring-1 ring-inset ring-border/40",
 		sizing.row,
@@ -126,11 +176,13 @@
 		></div>
 	{/if}
 
-	{#each options as option (option.value)}
+	{#each options as option, i (option.value)}
 		{@const active = option.value === value}
 		<button
+			bind:this={buttons[i]}
 			type="button"
 			role="radio"
+			tabindex={i === activeIndex ? 0 : -1}
 			aria-checked={active}
 			aria-label={option.label ?? option.value}
 			title={option.title}

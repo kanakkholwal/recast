@@ -1,189 +1,151 @@
 <script lang="ts">
-  import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-  import { isEditableTarget } from "$lib/dom/editable";
-  import { clockCentis as fmtTime } from "$lib/format/time";
-  import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
-  import { regionMaxRamp } from "./focus-panel.logic";
-  import { FONT_WEIGHTS, STROKE_SWATCHES } from "$lib/annotations/palette";
-  import {
-    getRecentColors,
-    pushRecentColor,
-  } from "$lib/annotations/recent-colors";
-  import { EASE } from "$lib/easing/cubic-bezier";
-  import {
-    DEFAULT_ANNOTATION_RAMP,
-    type Annotation,
-    type AnnotationKindName,
-    type EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import {
-    AlignCenter,
-    AlignLeft,
-    AlignRight,
-    ArrowUpRight,
-    Circle,
-    Droplets,
-    Image as ImageIcon,
-    MousePointer2,
-    Square,
-    SquareDashedMousePointer,
-    Trash2,
-    Type as TypeIcon,
-  } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
-  import { toast } from "@recast/ui/sonner";
-  import { pickImageAnnotation, pickImageFile } from "$lib/annotations/image-import";
-  import { TITLE_PRESETS, type TitlePreset } from "$lib/annotations/title-presets";
-  import { Button } from "@recast/ui/button";
-  import { ColorField } from "@recast/ui/color-field";
-  import { Kbd } from "@recast/ui/kbd";
-  import { Segmented } from "@recast/ui/segmented";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import FontPicker from "./FontPicker.svelte";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { Textarea } from "@recast/ui/textarea";
-  import { cn } from "@recast/ui/utils";
-  import { cubicOut } from "svelte/easing";
-  import { fly } from "svelte/transition";
-  import { motionDuration } from "$lib/motion.svelte";
-  import BezierEditor from "../_components/BezierEditor.svelte";
-  import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
-  import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
-  import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
-  import PanelSection from "./PanelSection.svelte";
+import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
+import { clockCentis as fmtTime } from "$lib/format/time";
+import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
+import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
+import { FONT_WEIGHTS, STROKE_SWATCHES } from "$lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "$lib/annotations/recent-colors";
+import { EASE } from "$lib/easing/cubic-bezier";
+import {
+	DEFAULT_ANNOTATION_RAMP,
+	type Annotation,
+	type EditorStore,
+} from "$lib/stores/editor-store.svelte";
+import {
+	AlignCenter,
+	AlignLeft,
+	AlignRight,
+	SquareDashedMousePointer,
+	Trash2,
+} from "@recast/icons";
+import { toast } from "@recast/ui/sonner";
+import { pickImageFile } from "$lib/annotations/image-import";
+import type { TitlePreset } from "$lib/annotations/title-presets";
+import { Button } from "@recast/ui/button";
+import { ColorField } from "@recast/ui/color-field";
+import { Kbd } from "@recast/ui/kbd";
+import { Segmented } from "@recast/ui/segmented";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import FontPicker from "./FontPicker.svelte";
+import { SliderControl } from "@recast/ui/slider-control";
+import { Textarea } from "@recast/ui/textarea";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { motionDuration } from "$lib/motion.svelte";
+import InspectorHint from "../InspectorHint.svelte";
+import EasingControl from "./EasingControl.svelte";
+import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";
+import AnnotationGeometry from "./annotations/AnnotationGeometry.svelte";
+import AnnotationLayerPanel from "./annotations/AnnotationLayerPanel.svelte";
+import PanelSection from "./PanelSection.svelte";
+import TitlePresetTiles from "./TitlePresetTiles.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  let { store }: Props = $props();
+let { store }: Props = $props();
 
-  let recents = $state<string[]>(getRecentColors());
-  function rememberColor(color: string) {
-    recents = pushRecentColor(color);
-  }
+let recents = $state<string[]>(getRecentColors());
+function rememberColor(color: string) {
+	recents = pushRecentColor(color);
+}
 
-  const selected = $derived<Annotation | null>(
-    store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
-  );
+const selected = $derived<Annotation | null>(
+	store.annotations.find((a) => a.id === store.selectedAnnotationId) ?? null,
+);
 
-  // Which ramp the Fade-curves editor targets (one graph at a time).
-  let customCurve = $state<"in" | "out">("in");
+// Insert a ready-styled title/lower-third: a positioned text annotation plus a
+// legibility glow. The user edits the placeholder text in place.
+function insertTitle(preset: TitlePreset) {
+	store.annotationTool = null;
+	store.addAnnotation(preset.build(), undefined, undefined, {
+		glow: { ...preset.glow },
+		name: preset.label,
+	});
+}
 
-  type ToolDef = {
-    id: AnnotationKindName | "select";
-    label: string;
-    icon: IconComponent;
-    hotkey: string;
-  };
+async function replaceImage() {
+	if (!selected || selected.kind.kind !== "image") return;
+	try {
+		const path = await pickImageFile();
+		if (!path) return;
+		store.pushUndoState();
+		store.updateAnnotation(selected.id, {
+			kind: { ...selected.kind, path },
+		});
+	} catch (error) {
+		toast.error(`Could not replace image: ${error}`);
+	}
+}
 
-  // Working tools only. Disabled/locked roadmap tiles are clutter.
-  const tools: ToolDef[] = [
-    { id: "select", label: "Select", icon: MousePointer2, hotkey: "V" },
-    { id: "rect", label: "Rectangle", icon: Square, hotkey: "R" },
-    { id: "ellipse", label: "Ellipse", icon: Circle, hotkey: "O" },
-    { id: "arrow", label: "Arrow", icon: ArrowUpRight, hotkey: "A" },
-    { id: "text", label: "Text", icon: TypeIcon, hotkey: "T" },
-    { id: "image", label: "Image", icon: ImageIcon, hotkey: "I" },
-    { id: "blur", label: "Blur", icon: Droplets, hotkey: "B" },
-  ];
+function updateSelected(updates: Partial<Annotation>, trackUndo = false) {
+	if (!selected) return;
+	if (trackUndo) store.pushUndoState();
+	store.updateAnnotation(selected.id, updates);
+}
 
-  function setTool(id: ToolDef["id"]) {
-    if (id === "select") {
-      store.annotationTool = null;
-      return;
-    }
-    // Image is an insert action, not a draggable tool: pick a file, then place
-    // it centered at its own aspect ratio.
-    if (id === "image") {
-      void insertImage();
-      return;
-    }
-    store.annotationTool = store.annotationTool === id ? null : id;
-  }
+// Curves only. Resetting rampIn/rampOut from here changed the Fade in / Fade
+// out sliders in the Timing section above, with no hint that it would.
+function resetCurves() {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateAnnotation(selected.id, {
+		easeIn: { ...EASE },
+		easeOut: { ...EASE },
+	});
+}
 
-  async function insertImage() {
-    store.annotationTool = null;
-    const meta = store.metadata;
-    const frameAspect = meta && meta.height > 0 ? meta.width / meta.height : 16 / 9;
-    try {
-      const kind = await pickImageAnnotation(frameAspect);
-      if (kind) store.addAnnotation(kind);
-    } catch (error) {
-      toast.error(`Could not insert image: ${error}`);
-    }
-  }
+function resetFades() {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateAnnotation(selected.id, {
+		rampIn: DEFAULT_ANNOTATION_RAMP,
+		rampOut: DEFAULT_ANNOTATION_RAMP,
+	});
+}
 
-  // Insert a ready-styled title/lower-third: a positioned text annotation plus a
-  // legibility glow. The user edits the placeholder text in place.
-  function insertTitle(preset: TitlePreset) {
-    store.annotationTool = null;
-    store.addAnnotation(preset.build(), undefined, undefined, {
-      glow: { ...preset.glow },
-      name: preset.label,
-    });
-  }
+const toolHint = $derived(toolHintFor(store.annotationTool));
 
-  async function replaceImage() {
-    if (!selected || selected.kind.kind !== "image") return;
-    try {
-      const path = await pickImageFile();
-      if (!path) return;
-      store.pushUndoState();
-      store.updateAnnotation(selected.id, {
-        kind: { ...selected.kind, path },
-      });
-    } catch (error) {
-      toast.error(`Could not replace image: ${error}`);
-    }
-  }
+// NLE accessors, matching FocusPanel: `outPoint` resolves the legacy
+// `trimEnd === 0` sentinel.
+const clipIn = $derived(store.inPoint);
+const clipOut = $derived(store.outPoint);
 
-  // Tool hotkeys. Suppressed when focus is in an editable element so typing
-  // in a text annotation or any input doesn't switch tools.
-  function handleHotkey(event: KeyboardEvent) {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    if (isEditableTarget(event.target)) return;
-    const key = event.key.toLowerCase();
-    const tool = tools.find((t) => t.hotkey.toLowerCase() === key);
-    if (!tool) return;
-    event.preventDefault();
-    setTool(tool.id);
-  }
+// An annotation timed outside the trim never plays, and the Rust side silently
+// repairs it at export ("annotation_out_of_trim" in validate_render_state), so
+// it has to be visible and fixable here instead.
+const outOfClip = $derived(!!selected && isOutsideClip(selected, clipIn, clipOut));
 
+function fitToClip() {
+	if (!selected) return;
+	store.pushUndoState();
+	store.updateAnnotation(selected.id, {
+		start: Math.max(clipIn, Math.min(selected.start, clipOut - 0.1)),
+		end: Math.min(clipOut, Math.max(selected.end, clipIn + 0.1)),
+	});
+}
 
-
-  function updateSelected(updates: Partial<Annotation>, trackUndo = false) {
-    if (!selected) return;
-    if (trackUndo) store.pushUndoState();
-    store.updateAnnotation(selected.id, updates);
-  }
-
-  function resetCurves() {
-    if (!selected) return;
-    store.pushUndoState();
-    store.updateAnnotation(selected.id, {
-      easeIn: { ...EASE },
-      easeOut: { ...EASE },
-      rampIn: DEFAULT_ANNOTATION_RAMP,
-      rampOut: DEFAULT_ANNOTATION_RAMP,
-    });
-  }
-
-  const toolHint = $derived(toolHintFor(store.annotationTool));
+const startFromPlayhead = $derived(
+	selected ? retimeStart(selected, store.currentTime, clipIn) : null,
+);
+const endFromPlayhead = $derived(selected ? retimeEnd(selected, store.currentTime, clipOut) : null);
 </script>
 
-<!-- Tool hotkeys (V/R/O/A/T/B). `<svelte:window>` so HMR can't leak the listener. -->
-<svelte:window onkeydown={handleHotkey} />
-
 <div class="flex flex-col gap-4 animate-in fade-in duration-200">
+  <!-- The tools themselves live on the player bar under the preview, next to the
+       picture you draw on. This panel describes the SELECTION, not the mode. -->
   <PanelSection
-    title="Tools"
-    hint="Pick a tool, then drag on the preview. Annotations follow zoom and crop. Esc cancels placement; hold Alt to bypass snap."
+    title="Drawing"
+    hint="Pick a tool from the bar under the preview, then click to drop one or drag to draw it. Shift keeps a shape square or an arrow at 45°; annotations follow zoom and crop."
     flush
   >
     {#snippet action()}
-      <div class="flex items-center gap-1.5">
+      <div class="flex items-center gap-1">
         <span class="text-[10px] text-muted-foreground">Snap</span>
+        <InspectorHint
+          content="While dragging, edges and centres pull into line with the frame and with your other annotations. Hold Alt to bypass it for one drag."
+        />
         <SegmentedToggle
           checked={store.annotationSnapEnabled}
           size="xs"
@@ -193,33 +155,8 @@
       </div>
     {/snippet}
 
-    <div class="grid grid-cols-3 gap-1">
-      {#each tools as tool (tool.id)}
-        {@const Icon = tool.icon}
-        {@const isActive =
-          tool.id === "select"
-            ? store.annotationTool === null
-            : store.annotationTool === tool.id}
-        <button
-          type="button"
-          aria-pressed={isActive}
-          onclick={() => setTool(tool.id)}
-          title={`${tool.label} (${tool.hotkey})`}
-          class={cn(
-            "group flex h-12 flex-col items-center justify-center gap-1 rounded-md border text-[10px] font-medium transition-all duration-150",
-            "focus:outline-none focus:ring-2 focus:ring-ring/40",
-            isActive
-              ? "border-primary/60 bg-primary/10 text-primary shadow-(--shadow-craft-inset)"
-              : "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-        >
-          <Icon size={14} />
-          <span class="leading-none">{tool.label}</span>
-        </button>
-      {/each}
-    </div>
     {#if toolHint}
-      <p class="mt-1.5 text-[10px] text-muted-foreground">
+      <p class="text-[10px] text-muted-foreground">
         {toolHint}
         <Kbd class="ml-1">Esc</Kbd>
         to cancel.
@@ -232,22 +169,7 @@
     hint="Drop in a styled title, subtitle, lower-third, or callout, then edit the text on the preview."
     flush
   >
-    <div class="grid grid-cols-2 gap-1">
-      {#each TITLE_PRESETS as preset (preset.id)}
-        <button
-          type="button"
-          onclick={() => insertTitle(preset)}
-          title={`Insert ${preset.label.toLowerCase()}`}
-          class={cn(
-            "flex h-9 items-center justify-center rounded-md border text-[11px] font-medium transition-all duration-150",
-            "focus:outline-none focus:ring-2 focus:ring-ring/40",
-            "border-border/60 bg-card/60 text-muted-foreground hover:border-border hover:text-foreground",
-          )}
-        >
-          {preset.label}
-        </button>
-      {/each}
-    </div>
+    <TitlePresetTiles oninsert={insertTitle} />
   </PanelSection>
 
   {#if store.annotations.length === 0}
@@ -593,11 +515,50 @@
       {/if}
 
       <PanelSection title="Timing" collapsible defaultOpen>
+        {#snippet action()}
+          <div class="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-[10px]"
+              disabled={!startFromPlayhead}
+              title="Move the start to the playhead"
+              onclick={() => startFromPlayhead && updateSelected(startFromPlayhead, true)}
+            >
+              Start here
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              class="text-[10px]"
+              disabled={!endFromPlayhead}
+              title="Move the end to the playhead"
+              onclick={() => endFromPlayhead && updateSelected(endFromPlayhead, true)}
+            >
+              End here
+            </Button>
+          </div>
+        {/snippet}
+
+        {#if outOfClip}
+          <div
+            class="flex items-center gap-2 rounded-lg border border-border/60 bg-card/60 px-2.5 py-1.5 text-[10px] text-muted-foreground"
+          >
+            <span class="flex-1 leading-snug">
+              This annotation is timed outside the trimmed clip, so it never plays.
+            </span>
+            <Button variant="outline" size="xs" onclick={fitToClip}>Fit to clip</Button>
+          </div>
+        {/if}
+
+        <!-- Bounded by the clip, not the raw recording: the old 0..duration range
+             let you park an annotation outside the trim, which the export then
+             silently moved back in. -->
         <SliderControl
           label="Start"
           value={a.start}
-          min={0}
-          max={Math.max(a.end - 0.1, 0)}
+          min={clipIn}
+          max={Math.max(a.end - 0.1, clipIn)}
           step={0.05}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
@@ -608,7 +569,7 @@
           label="End"
           value={a.end}
           min={a.start + 0.1}
-          max={store.metadata?.duration ?? a.end}
+          max={clipOut}
           step={0.05}
           unit="s"
           formatValue={(v) => `${v.toFixed(2)}s`}
@@ -637,38 +598,35 @@
           onstart={() => store.pushUndoState()}
           onchange={(v) => updateSelected({ rampOut: v })}
         />
+        <div class="flex justify-end">
+          <Button variant="ghost" size="xs" class="text-[10px]" onclick={resetFades}>
+            Reset fades
+          </Button>
+        </div>
       </PanelSection>
 
+      <!-- Presets now lead here too: this section used to offer a raw bezier
+           graph and nothing else. -->
       <PanelSection title="Fade curves" collapsible defaultOpen={false}>
         {#snippet action()}
-          <Button variant="ghost" size="xs" onclick={resetCurves}>Reset</Button>
+          <Button variant="ghost" size="xs" class="text-[10px]" onclick={resetCurves}>
+            Reset curves
+          </Button>
         {/snippet}
-        <div class="flex flex-col gap-2">
-          <div class="flex items-center justify-between gap-2">
-            <span class="text-[10px] font-medium text-muted-foreground">
-              Editing the fade-{customCurve} curve
-            </span>
-            <SegmentedToggle
-              checked={customCurve === "out"}
-              offLabel="In"
-              onLabel="Out"
-              size="xs"
-              aria-label="Edit fade-in or fade-out curve"
-              onCheckedChange={(next) => (customCurve = next ? "out" : "in")}
-            />
-          </div>
-          <BezierEditor
-            value={customCurve === "in" ? a.easeIn : a.easeOut}
-            onchange={(v) => {
-              // BezierEditor streams onchange per pointermove; coalesce so a
-              // whole curve drag is one undo entry, not one per frame.
-              store.pushUndoStateCoalesced(`anno-curve-${a.id}-${customCurve}`, 500);
-              updateSelected(customCurve === "in" ? { easeIn: v } : { easeOut: v });
-            }}
-            showPresets={false}
-            size={220}
-          />
-        </div>
+        <EasingControl
+          value={{ in: a.easeIn, out: a.easeOut }}
+          onpick={(next) => {
+            store.pushUndoState();
+            updateSelected({ easeIn: { ...next }, easeOut: { ...next } });
+          }}
+          ondrag={(next, which) => {
+            // Fires per pointermove; coalesce so a whole curve drag is one undo
+            // entry, not one per frame.
+            store.pushUndoStateCoalesced(`anno-curve-${a.id}-${which}`, 500);
+            updateSelected(which === "out" ? { easeOut: next } : { easeIn: next });
+          }}
+          size={220}
+        />
       </PanelSection>
 
       <AnnotationGeometry {store} annotation={a} />

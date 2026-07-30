@@ -22,7 +22,6 @@ import { toast } from "@recast/ui/sonner";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { onDestroy, onMount } from "svelte";
 import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
-import AnnotationStatusRail from "./_components/AnnotationStatusRail.svelte";
 import CameraOverlay from "./_components/CameraOverlay.svelte";
 import CaptionOverlay from "./_components/CaptionOverlay.svelte";
 import FocusOverlay from "./_components/FocusOverlay.svelte";
@@ -105,7 +104,10 @@ let previewRectEl: HTMLDivElement | null = $state(null);
 // Per-FRAME picture time for smooth DOM overlays (camera bubble). store.currentTime
 // is throttled to ~25Hz to spare the timeline/waveform fan-out; the camera grow
 // tracks the zoom curve, so it reads this instead to stay as smooth as the shader.
-let smoothPreviewTime = $state(0);
+// null until the loop has drawn once: draw() early-returns while metadata or GL
+// is missing, and pinning the overlays to a stale 0 is worse than letting them
+// fall back to the <video> transport.
+let smoothPreviewTime = $state<number | null>(null);
 let isReady = $state(false);
 // Internal decoder that pre-decodes the first post-cut frame to mask the
 // primary element's seek latency. Only seeked once per cut, never played.
@@ -1393,7 +1395,6 @@ const isAnnotationActive = $derived(
 	bind:this={containerEl}
 	class="relative flex h-full w-full max-w-280 items-center justify-center overflow-hidden transition-all duration-200 ease-out motion-reduce:transition-none"
 >
-	<AnnotationStatusRail {store} />
 	<div
 		bind:this={previewRectEl}
 		data-annotations-active={isAnnotationActive}
@@ -1445,8 +1446,14 @@ const isAnnotationActive = $derived(
 			{videoEl}
 			targetEl={previewRectEl}
 			compositeCanvasEl={blurMirrorEl ?? canvasEl}
+			previewTime={smoothPreviewTime ?? undefined}
 		/>
-		<TextAnnotationLayer {store} {videoEl} targetEl={previewRectEl} />
+		<TextAnnotationLayer
+			{store}
+			{videoEl}
+			targetEl={previewRectEl}
+			previewTime={smoothPreviewTime ?? undefined}
+		/>
 		<div class="contents transition-opacity duration-200 ease-out motion-reduce:transition-none group-data-[annotations-active=true]/preview:opacity-55">
 			<FocusOverlay {store} {videoEl} targetEl={previewRectEl} />
 		</div>
@@ -1501,10 +1508,10 @@ const isAnnotationActive = $derived(
 			{videoEl}
 			{cameraSrc}
 			targetEl={previewRectEl}
-			previewTime={smoothPreviewTime}
+			previewTime={smoothPreviewTime ?? 0}
 		/>
 		{/if}
-		<CaptionOverlay {store} />
+		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>
 
 	{#if videoSrc}

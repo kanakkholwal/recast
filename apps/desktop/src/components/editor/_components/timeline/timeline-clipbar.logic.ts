@@ -36,12 +36,7 @@ export function clampTrimIn(t: number, outPoint: number, min: number): number {
 	return Math.max(0, Math.min(t, outPoint - min));
 }
 
-export function clampTrimOut(
-	t: number,
-	duration: number,
-	inPoint: number,
-	min: number,
-): number {
+export function clampTrimOut(t: number, duration: number, inPoint: number, min: number): number {
 	return Math.min(duration, Math.max(t, inPoint + min));
 }
 
@@ -53,10 +48,7 @@ export function nudgeTrimIn(
 	min: number,
 	fps: number,
 ): number {
-	return quantizeToFrame(
-		Math.max(0, Math.min(outPoint - min, inPoint + delta)),
-		fps,
-	);
+	return quantizeToFrame(Math.max(0, Math.min(outPoint - min, inPoint + delta)), fps);
 }
 
 export function nudgeTrimOut(
@@ -67,8 +59,5 @@ export function nudgeTrimOut(
 	min: number,
 	fps: number,
 ): number {
-	return quantizeToFrame(
-		Math.max(inPoint + min, Math.min(duration, outPoint + delta)),
-		fps,
-	);
+	return quantizeToFrame(Math.max(inPoint + min, Math.min(duration, outPoint + delta)), fps);
 }

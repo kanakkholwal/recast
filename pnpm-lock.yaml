@@ -357,6 +357,9 @@ importers:
 
   packages/application:
     dependencies:
+      '@recast/design':
+        specifier: workspace:*
+        version: link:../design
       '@recast/icons':
         specifier: workspace:*
         version: link:../icons

@@ -1,38 +1,39 @@
 {
-  "name": "@recast/application",
-  "version": "0.0.1",
-  "private": true,
-  "type": "module",
-  "description": "Heavy application-level features and composite components shared by apps/web and apps/desktop. First tenant: the Screenshot Editor.",
-  "exports": {
-    "./screenshot-editor": {
-      "svelte": "./src/screenshot-editor/index.ts",
-      "default": "./src/screenshot-editor/index.ts"
-    },
-    "./screenshot-editor/defaults": {
-      "svelte": "./src/screenshot-editor/defaults.ts",
-      "default": "./src/screenshot-editor/defaults.ts"
-    },
-    "./screenshot-editor/render": {
-      "svelte": "./src/screenshot-editor/render.ts",
-      "default": "./src/screenshot-editor/render.ts"
-    },
-    "./styles.css": "./src/styles.css"
-  },
-  "peerDependencies": {
-    "svelte": "^5.56.1"
-  },
-  "dependencies": {
-    "@recast/icons": "workspace:*",
-    "@recast/ui": "workspace:*",
-    "modern-screenshot": "^4.6.6",
-    "mp4-muxer": "^5.2.2"
-  },
-  "devDependencies": {
-    "svelte": "^5.56.1"
-  },
-  "scripts": {
-    "build": "exit 0",
-    "check": "exit 0"
-  }
+	"name": "@recast/application",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "Heavy application-level features and composite components shared by apps/web and apps/desktop. First tenant: the Screenshot Editor.",
+	"exports": {
+		"./screenshot-editor": {
+			"svelte": "./src/screenshot-editor/index.ts",
+			"default": "./src/screenshot-editor/index.ts"
+		},
+		"./screenshot-editor/defaults": {
+			"svelte": "./src/screenshot-editor/defaults.ts",
+			"default": "./src/screenshot-editor/defaults.ts"
+		},
+		"./screenshot-editor/render": {
+			"svelte": "./src/screenshot-editor/render.ts",
+			"default": "./src/screenshot-editor/render.ts"
+		},
+		"./styles.css": "./src/styles.css"
+	},
+	"peerDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"dependencies": {
+		"@recast/design": "workspace:*",
+		"@recast/icons": "workspace:*",
+		"@recast/ui": "workspace:*",
+		"modern-screenshot": "^4.6.6",
+		"mp4-muxer": "^5.2.2"
+	},
+	"devDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"scripts": {
+		"build": "exit 0",
+		"check": "exit 0"
+	}
 }
