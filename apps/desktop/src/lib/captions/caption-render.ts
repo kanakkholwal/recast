@@ -180,23 +180,19 @@ export function paintCaptionChunk(
 	const cased = (s: string) => (style.uppercase ? s.toUpperCase() : s);
 	const lines = breakIntoLines(view.words, style.maxCharsPerLine, style.maxLines);
 	const spaceW = ctx.measureText(" ").width;
-	// Lay each word out at its SCALED advance so the "size" active word never
-	// overlaps its neighbours; the pill reserves room for the single widest word at
-	// full pop so the box stays put (no per-frame breathing, no clip).
+	// Fixed RESTING layout (unscaled widths): words never move, so the "size"
+	// emphasis scales in place about each word's centre without re-flowing the line.
+	// Overlap is prevented per-word at paint time by clamping the pop to the gap.
 	const laidLines = lines.map((line) => {
 		const words = line.map((wi) => {
 			const text = cased(view.words[wi].text);
 			const w = ctx.measureText(text).width;
 			return { wi, text, w, s: view.wordScales?.[wi] ?? 1 };
 		});
-		const gaps = Math.max(0, words.length - 1) * spaceW;
-		const curWidth = words.reduce((a, o) => a + o.w * o.s, gaps);
-		const maxW = words.reduce((m, o) => Math.max(m, o.w), 0);
-		const stableWidth =
-			words.reduce((a, o) => a + o.w, gaps) + (view.wordScales ? (SCALE_EMPHASIS - 1) * maxW : 0);
-		return { words, curWidth, stableWidth };
+		const width = words.reduce((a, o, k) => a + (k > 0 ? spaceW : 0) + o.w, 0);
+		return { words, width };
 	});
-	const widest = laidLines.reduce((m, l) => Math.max(m, l.stableWidth), 0);
+	const widest = laidLines.reduce((m, l) => Math.max(m, l.width), 0);
 	const pill = pillBox(style, fontPx, widest, laidLines.length);
 
 	// Horizontal band = the video rect, inset 4% (matching CaptionOverlay's
@@ -269,8 +265,8 @@ export function paintCaptionChunk(
 			style.align === "left"
 				? contentLeft
 				: style.align === "right"
-					? contentLeft + contentWidth - ln.curWidth
-					: contentLeft + (contentWidth - ln.curWidth) / 2;
+					? contentLeft + contentWidth - ln.width
+					: contentLeft + (contentWidth - ln.width) / 2;
 		ln.words.forEach((o, k) => {
 			if (k > 0) x += spaceW;
 			const color = wordColor({
@@ -281,11 +277,12 @@ export function paintCaptionChunk(
 				style,
 				anim: view.anim,
 			});
-			const sw = o.w * o.s;
-			// Centre the glyph in its scaled slot so drawWord's scale-about-centre lands
-			// inside [x, x+sw]; advance by the scaled width so the next word can't overlap.
-			drawWord(ctx, o.text, x + (sw - o.w) / 2, lineCenterY, o.w, color, o.s, style, outlinePx);
-			x += sw;
+			// Scale about the word's fixed centre (no re-flow), but cap the pop so its
+			// half-growth stays inside the gap to each neighbour (0.7·space) — a long
+			// word emphasises less rather than colliding.
+			const maxScale = 1 + (1.4 * spaceW) / Math.max(1, o.w);
+			drawWord(ctx, o.text, x, lineCenterY, o.w, color, Math.min(o.s, maxScale), style, outlinePx);
+			x += o.w;
 		});
 	});
 

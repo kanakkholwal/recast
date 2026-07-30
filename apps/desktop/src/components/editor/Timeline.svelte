@@ -13,8 +13,11 @@ import TimelineRuler from "./_components/timeline/TimelineRuler.svelte";
 import TimelineToolbar from "./_components/timeline/TimelineToolbar.svelte";
 import TimelineZoomLane from "./_components/timeline/TimelineZoomLane.svelte";
 import {
+	AUDIO_LANE_HEIGHT_PX,
 	cardLayout,
+	CLIP_LANE_HEIGHT_PX,
 	CLIP_ROW_HEIGHT_PX,
+	CUT_LANE_HEIGHT_PX,
 	ZOOM_ROW_HEIGHT_PX,
 } from "./_components/timeline/timeline-stack";
 import { clipEndSec, type AudioClip } from "$lib/audio/music";
@@ -58,10 +61,8 @@ const LANE_PAD = 0;
 const SPEEDS = [0.25, 0.5, 1.0, 1.5, 2.0] as const;
 let playbackSpeed = $state(1.0);
 
-// Heights of the lanes that don't stack, mirroring each component's own
-// constant. The stacking lanes report theirs through `cardLayout`.
-const AUDIO_LANE_H = 36;
-const CUT_LANE_H = 36;
+// Gap between lanes. Fixed lane heights come from timeline-stack, shared with
+// the components that render them; stacking lanes report theirs via `cardLayout`.
 const LANE_GAP = 6;
 
 // Lives in the store, not here: the transport readout under the video reads it
@@ -69,10 +70,10 @@ const LANE_GAP = 6;
 const timeMode = $derived(store.timeMode);
 
 // Layer visibility (the toolbar's Layers menu). The clip track is always shown
-// (the editing spine); the waveform now rides ALONG its bottom edge rather than
-// replacing the thumbnails, so it's an independent toggle, not a radio. Zoom/
-// Markup/Cuts lanes show/hide independently. Persisted to localStorage so the
-// choice survives reopening the editor.
+// (the editing spine); the Audio lane is its own track and owns the waveform
+// outright, so hiding it hides the envelope everywhere. Zoom/Markup/Cuts lanes
+// show/hide independently. Persisted to localStorage so the choice survives
+// reopening the editor.
 const VIEW_KEY = "recast.timeline.view";
 function loadView(): {
 	waveform: boolean;
@@ -321,7 +322,7 @@ const laneDrag = provideLaneDrag();
 let pinnedRows = $state<ReadonlyMap<string, number> | null>(null);
 
 const zoomRowsLive = $derived(
-	cardLayout(store.zoomRegions, xOf, { minWidthPx: 32, rowHeightPx: ZOOM_ROW_HEIGHT_PX }),
+	cardLayout(store.zoomRegions, xOf, { minWidthPx: 40, rowHeightPx: ZOOM_ROW_HEIGHT_PX }),
 );
 const markupRowsLive = $derived(cardLayout(store.annotations, xOf));
 
@@ -346,7 +347,7 @@ $effect(() => {
 
 const zoomLayout = $derived(
 	cardLayout(store.zoomRegions, xOf, {
-		minWidthPx: 32,
+		minWidthPx: 40,
 		rowHeightPx: ZOOM_ROW_HEIGHT_PX,
 		pinnedRows: pinnedRows ?? undefined,
 	}),
@@ -379,7 +380,7 @@ const lanes = $derived(
 			label: "Audio",
 			icon: AudioLines,
 			tone: "text-lane-audio",
-			height: AUDIO_LANE_H,
+			height: AUDIO_LANE_HEIGHT_PX,
 			show: showAudioLane,
 		},
 		{
@@ -403,7 +404,7 @@ const lanes = $derived(
 			label: "Cuts",
 			icon: Scissors,
 			tone: "text-lane-cut",
-			height: CUT_LANE_H,
+			height: CUT_LANE_HEIGHT_PX,
 			show: showCutLane,
 		},
 		{
@@ -1041,7 +1042,10 @@ onMount(() => {
       <div class="px-1 pb-2 pt-1.5">
         <!-- Track headers. Each row's height comes from the same `lanes` entry the
              body uses, so a lane that grows takes its label with it. -->
-        <div class="flex h-12 items-center justify-center">
+        <div
+          class="flex items-center justify-center"
+          style="height: {CLIP_LANE_HEIGHT_PX}px;"
+        >
           {@render railLabel(Video, "Clip", "text-foreground/70")}
         </div>
         {#each lanes as lane (lane.id)}
@@ -1106,8 +1110,8 @@ onMount(() => {
 
         <!-- Same `lanes` list as the rail: same order, same visibility, same
              heights. Cuts sit next to Audio because cutting against the waveform
-             is the common task; the cut lane draws its own faint waveform only
-             when the Audio lane is hidden, so the two never duplicate. -->
+             is the common task — by adjacency, not by the cut lane drawing its
+             own copy of the envelope. The waveform belongs to the Audio lane. -->
         {#each lanes as lane (lane.id)}
           {#if lane.id === "audio"}
             <TimelineAudioLane {store} {pixelsPerSecond} {duration} />
@@ -1130,12 +1134,7 @@ onMount(() => {
               panelTab="music"
             />
           {:else if lane.id === "cuts"}
-            <TimelineCutLane
-              {store}
-              {pixelsPerSecond}
-              {duration}
-              showWaveform={!showAudioLane}
-            />
+            <TimelineCutLane {store} {pixelsPerSecond} {duration} />
           {:else if lane.id === "zoom"}
             <TimelineZoomLane
               {store}

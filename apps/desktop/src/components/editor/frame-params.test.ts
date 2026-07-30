@@ -6,8 +6,24 @@ import type { CursorSettings, ShadowSettings, ZoomRegion } from "$lib/stores/edi
 
 const GEOM = { canvasW: 1920, canvasH: 1080, videoX: 100, videoY: 50, videoW: 1720, videoH: 980 };
 
-const CURSOR_OFF = { enabled: false, style: "dot", size: 1, hideWhenIdle: false, idleTimeout: 2, highlightClicks: false, highlightOpacity: 50, highlightColor: "#3b82f6" } as unknown as CursorSettings;
-const SHADOW_OFF = { enabled: false, opacity: 0, blur: 0, spread: 0, offsetY: 0, color: "#000000" } as unknown as ShadowSettings;
+const CURSOR_OFF = {
+	enabled: false,
+	style: "dot",
+	size: 1,
+	hideWhenIdle: false,
+	idleTimeout: 2,
+	highlightClicks: false,
+	highlightOpacity: 50,
+	highlightColor: "#3b82f6",
+} as unknown as CursorSettings;
+const SHADOW_OFF = {
+	enabled: false,
+	opacity: 0,
+	blur: 0,
+	spread: 0,
+	offsetY: 0,
+	color: "#000000",
+} as unknown as ShadowSettings;
 
 function baseInput(over: Partial<FrameInput> = {}): FrameInput {
 	return {
@@ -77,7 +93,9 @@ describe("computeFrameParams — render-buffer scale", () => {
 	it("converts border radius (percent of shorter edge) to canvas pixels via sx", () => {
 		const full = computeFrameParams(baseInput({ borderRadius: 10 }));
 		expect(full.uniforms.borderRadiusPx).toBeCloseTo(108, 5); // 0.10 * 1080 * 1
-		const half = computeFrameParams(baseInput({ borderRadius: 10, canvasPxW: 960, canvasPxH: 540 }));
+		const half = computeFrameParams(
+			baseInput({ borderRadius: 10, canvasPxW: 960, canvasPxH: 540 }),
+		);
 		expect(half.uniforms.borderRadiusPx).toBeCloseTo(54, 5);
 	});
 });
@@ -94,12 +112,16 @@ describe("computeFrameParams — background modes", () => {
 	});
 
 	it("binds and blurs an image background only once ready", () => {
-		const ready = computeFrameParams(baseInput({ backgroundType: "image", backgroundImageReady: true, backgroundBlur: 50 }));
+		const ready = computeFrameParams(
+			baseInput({ backgroundType: "image", backgroundImageReady: true, backgroundBlur: 50 }),
+		);
 		expect(ready.uniforms.bgType).toBe(2);
 		expect(ready.uniforms.bgBlurPx).toBeCloseTo(12, 5); // 50 * 0.24
 		expect(ready.bindBackgroundImage).toBe(true);
 
-		const pending = computeFrameParams(baseInput({ backgroundType: "image", backgroundImageReady: false }));
+		const pending = computeFrameParams(
+			baseInput({ backgroundType: "image", backgroundImageReady: false }),
+		);
 		expect(pending.uniforms.bgType).toBe(0);
 		expect(pending.uniforms.bgColor).toEqual([0.067, 0.067, 0.067, 1]);
 		expect(pending.bindBackgroundImage).toBe(false);
@@ -107,18 +129,73 @@ describe("computeFrameParams — background modes", () => {
 });
 
 describe("computeFrameParams — zoom", () => {
-	const region = { start: 0, end: 10, scale: 2, centerX: 0.3, centerY: 0.7, rampIn: 0, rampOut: 0, easeIn: EASE_IN_OUT, easeOut: EASE_IN_OUT, motionBlur: 0, hidden: false } as unknown as ZoomRegion;
+	const region = {
+		start: 0,
+		end: 10,
+		scale: 2,
+		centerX: 0.3,
+		centerY: 0.7,
+		rampIn: 0,
+		rampOut: 0,
+		easeIn: EASE_IN_OUT,
+		easeOut: EASE_IN_OUT,
+		motionBlur: 0,
+		hidden: false,
+	} as unknown as ZoomRegion;
 
 	it("applies eased scale and constant focus centre in the hold", () => {
-		const { uniforms } = computeFrameParams(baseInput({ focusEnabled: true, zoomRegions: [region], playbackTime: 5 }));
+		const { uniforms } = computeFrameParams(
+			baseInput({ focusEnabled: true, zoomRegions: [region], playbackTime: 5 }),
+		);
 		expect(uniforms.zoomScale).toBeCloseTo(2, 5);
 		expect(uniforms.zoomCenter[0]).toBeCloseTo(0.3, 5);
 		expect(uniforms.zoomCenter[1]).toBeCloseTo(0.7, 5);
 	});
 
 	it("stays at scale 1 when focus is disabled", () => {
-		const { uniforms } = computeFrameParams(baseInput({ focusEnabled: false, zoomRegions: [region], playbackTime: 5 }));
+		const { uniforms } = computeFrameParams(
+			baseInput({ focusEnabled: false, zoomRegions: [region], playbackTime: 5 }),
+		);
 		expect(uniforms.zoomScale).toBe(1);
+	});
+});
+
+describe("computeFrameParams — zoom motion blur", () => {
+	// A ramped region so the scale is actually moving (motion blur is velocity-driven).
+	const ramped = (motionBlur: number) =>
+		({
+			start: 0,
+			end: 10,
+			scale: 2,
+			centerX: 0.5,
+			centerY: 0.5,
+			rampIn: 0.35,
+			rampOut: 0.35,
+			easeIn: EASE_IN_OUT,
+			easeOut: EASE_IN_OUT,
+			motionBlur,
+			hidden: false,
+		}) as unknown as ZoomRegion;
+
+	it("smears strongly mid-ramp — past the old 20px clamp that made it invisible", () => {
+		const { uniforms } = computeFrameParams(
+			baseInput({ focusEnabled: true, zoomRegions: [ramped(0.5)], playbackTime: 0.175 }),
+		);
+		expect(uniforms.motionBlurPx).toBeGreaterThan(20);
+	});
+
+	it("is inert during the hold (no scale motion → no blur)", () => {
+		const { uniforms } = computeFrameParams(
+			baseInput({ focusEnabled: true, zoomRegions: [ramped(0.5)], playbackTime: 5 }),
+		);
+		expect(uniforms.motionBlurPx).toBeCloseTo(0, 5);
+	});
+
+	it("is off when the region's motion blur strength is 0", () => {
+		const { uniforms } = computeFrameParams(
+			baseInput({ focusEnabled: true, zoomRegions: [ramped(0)], playbackTime: 0.175 }),
+		);
+		expect(uniforms.motionBlurPx).toBe(0);
 	});
 });
 
@@ -128,8 +205,15 @@ describe("computeFrameParams — cursor", () => {
 	];
 
 	it("normalises the dot cursor position and drives the shader path", () => {
-		const cursor = { ...CURSOR_OFF, enabled: true, style: "dot", size: 1 } as unknown as CursorSettings;
-		const { uniforms, svgCursor } = computeFrameParams(baseInput({ cursor, cursorSamples: samples, playbackTime: 1 }));
+		const cursor = {
+			...CURSOR_OFF,
+			enabled: true,
+			style: "dot",
+			size: 1,
+		} as unknown as CursorSettings;
+		const { uniforms, svgCursor } = computeFrameParams(
+			baseInput({ cursor, cursorSamples: samples, playbackTime: 1 }),
+		);
 		expect(uniforms.cursorPos[0]).toBeCloseTo(0.5, 5);
 		expect(uniforms.cursorPos[1]).toBeCloseTo(0.5, 5);
 		expect(uniforms.cursorVisible).toBe(1);
@@ -137,8 +221,15 @@ describe("computeFrameParams — cursor", () => {
 	});
 
 	it("routes a non-dot style to the SVG overlay and suppresses the shader dot", () => {
-		const cursor = { ...CURSOR_OFF, enabled: true, style: "arrow", size: 2 } as unknown as CursorSettings;
-		const { uniforms, svgCursor } = computeFrameParams(baseInput({ cursor, cursorSamples: samples, playbackTime: 1 }));
+		const cursor = {
+			...CURSOR_OFF,
+			enabled: true,
+			style: "arrow",
+			size: 2,
+		} as unknown as CursorSettings;
+		const { uniforms, svgCursor } = computeFrameParams(
+			baseInput({ cursor, cursorSamples: samples, playbackTime: 1 }),
+		);
 		expect(uniforms.cursorVisible).toBe(0);
 		expect(svgCursor).not.toBeNull();
 		expect(svgCursor?.styleId).toBe("arrow");
@@ -151,7 +242,14 @@ describe("computeFrameParams — cursor", () => {
 
 describe("computeFrameParams — shadow", () => {
 	it("scales shadow geometry by sx and folds opacity into the colour alpha", () => {
-		const shadow = { enabled: true, opacity: 50, blur: 20, spread: 4, offsetY: 8, color: "#000000" } as unknown as ShadowSettings;
+		const shadow = {
+			enabled: true,
+			opacity: 50,
+			blur: 20,
+			spread: 4,
+			offsetY: 8,
+			color: "#000000",
+		} as unknown as ShadowSettings;
 		const { uniforms } = computeFrameParams(baseInput({ shadow }));
 		expect(uniforms.shadowEnabled).toBe(1);
 		expect(uniforms.shadowBlurPx).toBeCloseTo(20, 5);

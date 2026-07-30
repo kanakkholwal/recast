@@ -158,6 +158,9 @@ export class AudioTimelineEngine {
 	// Bumped on every (re)schedule so an in-flight async top-up bails instead
 	// of scheduling stale nodes after a scrub.
 	#generation = 0;
+	// Aborts the in-flight decode on a scrub so a stale 12s window can't block the
+	// fresh one — without it a seek can stall until the next interval top-up.
+	#abort: AbortController | null = null;
 
 	private constructor(ctx: AudioContext, tracks: AudioTrack[], fadeGain: GainNode) {
 		this.#ctx = ctx;
@@ -400,6 +403,10 @@ export class AudioTimelineEngine {
 	#schedule(regions: ReadonlyArray<Region>, from: number): void {
 		this.#stopActive();
 		this.#stopTopUp();
+		// Cut short any decode from the previous position so this seek's window
+		// starts immediately instead of queueing behind a now-stale 12s decode.
+		this.#abort?.abort();
+		this.#abort = new AbortController();
 		this.#anchorCtxTime = this.#ctx.currentTime;
 		this.#anchorOutputTime = from;
 		this.#scheduled = true;
@@ -419,6 +426,7 @@ export class AudioTimelineEngine {
 		if (!this.#scheduled || this.#topUpRunning || this.#tracks.length === 0) return;
 		this.#topUpRunning = true;
 		const gen = this.#generation;
+		const signal = this.#abort?.signal;
 		try {
 			const heard = this.positionOutputSec ?? this.#anchorOutputTime;
 			const windowEnd = heard + AUDIO_LOOKAHEAD_SEC;
@@ -431,7 +439,7 @@ export class AudioTimelineEngine {
 				);
 				for (const track of this.#tracks) {
 					for (const pc of plan) {
-						await track.store.ensureRange(pc.bufferOffset, pc.bufferOffset + pc.duration);
+						await track.store.ensureRange(pc.bufferOffset, pc.bufferOffset + pc.duration, signal);
 						// A scrub/dispose during decode invalidates this pass.
 						if (this.#generation !== gen || !this.#scheduled) return;
 						for (const sub of sliceChunksForPlayback(pc, track.store.chunks())) {
@@ -470,6 +478,10 @@ export class AudioTimelineEngine {
 			console.error("audio streaming top-up failed:", err);
 		} finally {
 			this.#topUpRunning = false;
+			// A scrub bumped the generation while we were decoding (and the guard above
+			// skipped its own top-up). Re-run now for the current playhead instead of
+			// waiting out the interval, so audio catches up right after the seek.
+			if (this.#scheduled && this.#generation !== gen) void this.#topUp();
 		}
 	}
 
@@ -497,6 +509,7 @@ export class AudioTimelineEngine {
 		this.#stopActive();
 		this.#stopMusic();
 		this.#stopTopUp();
+		this.#abort?.abort();
 		this.#scheduled = false;
 	}
 
@@ -539,6 +552,7 @@ export class AudioTimelineEngine {
 	dispose(): void {
 		this.#stopActive();
 		this.#stopTopUp();
+		this.#abort?.abort();
 		this.#disposeMusic();
 		this.#scheduled = false;
 		for (const t of this.#tracks) t.store.dispose();

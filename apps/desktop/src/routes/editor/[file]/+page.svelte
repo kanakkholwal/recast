@@ -22,7 +22,17 @@ import { onDestroy, onMount, tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, slide } from "svelte/transition";
 import { browser } from "$app/environment";
-import { goto } from "$app/navigation";
+import { afterNavigate, goto, replaceState } from "$app/navigation";
+import { page } from "$app/state";
+import {
+	boolParam,
+	PANEL_PARAM,
+	parseBoolParam,
+	parsePanelTab,
+	SIDEBAR_PARAM,
+	TIMELINE_PARAM,
+	withEditorParams,
+} from "$lib/editor/editor-url";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import EditorToolbar from "$components/editor/EditorToolbar.svelte";
 import ExportDialog from "$components/editor/ExportDialog.svelte";
@@ -128,6 +138,57 @@ $effect(() => {
 		// localStorage can throw in private-mode/quota edge cases. The toggle
 		// still works for the session, it just won't be remembered.
 	}
+});
+
+// --- View state ⇄ URL ---
+// Two layers, not two sources of truth: localStorage above is "my usual layout"
+// and seeds a fresh open, while the URL describes THIS view and wins whenever it
+// carries a param. So a shared link opens as sent, and opening the editor from
+// the library still respects the remembered layout.
+//
+// Reader declared first, so a deep-linked param beats the seeded defaults on the
+// first flush. Each effect reads only its own source and bails when the two
+// already agree, so they converge instead of ping-ponging.
+$effect(() => {
+	const params = page.url.searchParams;
+	const tab = parsePanelTab(params.get(PANEL_PARAM), import.meta.env.DEV);
+	const sidebar = parseBoolParam(params.get(SIDEBAR_PARAM));
+	const timeline = parseBoolParam(params.get(TIMELINE_PARAM));
+	untrack(() => {
+		if (tab && tab !== store.activePanel) store.activePanel = tab;
+		if (sidebar !== null && sidebar !== showSidebar) showSidebar = sidebar;
+		if (timeline !== null && timeline !== showTimeline) showTimeline = timeline;
+	});
+});
+
+// `replaceState` throws until the router has booted, and effects run during
+// hydration, which is earlier than that. The first `afterNavigate` (type
+// "enter" on initial load) is the earliest guaranteed-safe point.
+let routerReady = $state(false);
+afterNavigate(() => {
+	routerReady = true;
+});
+
+$effect(() => {
+	// Read all three before the guard so this stays subscribed to every one.
+	const next = {
+		[PANEL_PARAM]: store.activePanel,
+		[SIDEBAR_PARAM]: boolParam(showSidebar),
+		[TIMELINE_PARAM]: boolParam(showTimeline),
+	};
+	if (!routerReady) return;
+	const url = withEditorParams(
+		untrack(() => new URL(page.url)),
+		next,
+	);
+	if (!url) return;
+	// replaceState, not goto: this is view state. One history entry per tab click
+	// or panel toggle would make Back mean "undo my last toggle" rather than
+	// "previous page".
+	replaceState(
+		url,
+		untrack(() => page.state),
+	);
 });
 
 // Resizable properties panel. Width is user-set (drag the splitter or arrow

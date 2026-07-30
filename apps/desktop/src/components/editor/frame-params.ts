@@ -29,7 +29,12 @@ import {
 import type { Segment } from "$lib/timeline/segments";
 import type { SegmentAnim } from "$lib/scenes/segment-anim";
 import type { Easing } from "$lib/easing/cubic-bezier";
-import type { CursorSettings, ShadowSettings, StoredCursorId, ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type {
+	CursorSettings,
+	ShadowSettings,
+	StoredCursorId,
+	ZoomRegion,
+} from "$lib/stores/editor-store.svelte";
 
 /** Source-video rectangle inside the canvas, in canvas-geometry pixels (the
  *  `computeCanvasGeometry` output, before the render-buffer scale). */
@@ -217,7 +222,10 @@ export function computeFrameParams(input: FrameInput): FrameParams {
 		const dt = 1 / 60;
 		const next = evaluateZoomAt(input.zoomRegions, playbackTime + dt);
 		const dScaleDt = Math.abs(next.scale - zoom.scale) / dt;
-		motionBlurPx = Math.min(20, zoom.motionBlur * dScaleDt * 30);
+		// `strength * dScaleDt * 45` overshoots the physically-correct per-frame smear
+		// (≈ dScaleDt * videoW / 2fps) for a punchier, more legible dolly blur; the
+		// old 20px clamp made it invisible (shown ~half-size), so allow up to 100px.
+		motionBlurPx = Math.min(100, zoom.motionBlur * dScaleDt * 45);
 	}
 
 	// Cursor + click highlight.

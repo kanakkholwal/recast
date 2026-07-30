@@ -32,7 +32,9 @@ import {
 	type SpineShape,
 } from "./timeline-spine.logic";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
+import { CLIP_LABEL, CLIP_META, CLIP_SELECTED } from "./timeline-clip.styles";
 import { buildSnapTargets, snapTime } from "./timeline-snap";
+import { CLIP_LANE_HEIGHT_PX } from "./timeline-stack";
 
 // Clip bar with thumbnails and in/out trim handles. Owns its drag state;
 // the parent only supplies `clientXToOutput` (handles scroll offset) to resolve pointer X.
@@ -80,10 +82,10 @@ let {
 // Target tile width and the cache-key height namespace; overscan decodes a bit
 // beyond the viewport so tiles are ready just before they scroll in.
 const TILE_TARGET_W = 96;
-const TILE_KEY_HEIGHT = 48;
 const FILMSTRIP_OVERSCAN = 240;
-/** Rendered height of the clip bar (`h-12`), the box a sprite cell fills. */
-const CLIP_H = 48;
+/** Rendered height of the clip bar, and the box a sprite cell cover-crops into.
+ *  Doubles as the tile cache's height namespace. */
+const CLIP_H = CLIP_LANE_HEIGHT_PX;
 
 const formatSpeed = (s: number) => `${s}×`;
 
@@ -100,6 +102,11 @@ const thumbW = $derived(
 		: thumbnailWidth,
 );
 const clipBlocks = $derived(layoutClipBlocks(store.segments, xOf, pps, store.inPoint));
+// Every block comes from the one recording, so a split shows the same source
+// name on both halves — which is what an NLE does too.
+const clipName = $derived((store.videoPath ?? "").split(/[\\/]/).pop() || "Recording");
+// Block lengths read on the OUTPUT axis, like the ruler and every lane label.
+const outSec = (t: number) => originalToOutput(store.renderMap, t);
 // Density-based filmstrip tiles, planned per kept block and virtualized to the
 // viewport. Empty (fallback to the stretched strip) when there's no provider.
 const filmstripTiles = $derived(
@@ -115,7 +122,7 @@ const filmstripTiles = $derived(
 				{ leftPx: viewportLeftPx, widthPx: viewportWidthPx },
 				{
 					tileWidthPx: TILE_TARGET_W,
-					tileHeightPx: TILE_KEY_HEIGHT,
+					tileHeightPx: CLIP_H,
 					overscanPx: FILMSTRIP_OVERSCAN,
 				},
 			)
@@ -565,7 +572,7 @@ const slipLabel = $derived(
 );
 </script>
 
-<div class="relative h-12">
+<div class="relative" style="height: {CLIP_H}px;">
   <!-- Ghost bands: while trimming, the axis un-collapses to the full recording
        and the trimmed head/tail show dimmed, so you can see and re-drag them. -->
   {#if store.isTrimming}
@@ -618,13 +625,11 @@ const slipLabel = $derived(
                 store.selectedClipStart = block.start;
               startSlip(e, blockIndex);
             }}
-            class="group/clip absolute inset-y-0 overflow-hidden rounded-md border transition-[box-shadow,border-color] {slippable
+            class="group/clip absolute inset-y-0 overflow-hidden rounded-[3px] transition-shadow {slippable
               ? 'cursor-ew-resize'
-              : 'cursor-pointer'} {selected
-              ? 'border-primary ring-2 ring-primary/50'
-              : 'border-border/70 hover:border-foreground/30'} {slipping
-              ? 'ring-2 ring-primary'
-              : ''}"
+              : 'cursor-pointer'} {selected || slipping
+              ? CLIP_SELECTED
+              : 'ring-1 ring-inset ring-lane-on/15 hover:ring-lane-on/35'}"
             style="left: {block.left}px; width: {block.width}px;"
           >
       <!-- Thumbnails are LAYERED, cheapest first, so the strip can never be blank:
@@ -687,6 +692,23 @@ const slipLabel = $derived(
             {/if}
           </div>
         {/each}
+      {/if}
+
+      <!-- Name bar over the frames, the way Premiere labels a video item. The
+           block was the only one on the timeline with no label at all, so a
+           split clip and its neighbour were indistinguishable at a glance. The
+           scrim keeps it legible over any frame. -->
+      {#if block.width >= 64}
+        <div
+          class="pointer-events-none absolute inset-x-0 top-0 z-7 flex h-4 items-center gap-1 bg-linear-to-b from-background/85 to-transparent px-1.5"
+        >
+          <span class={CLIP_LABEL}>{clipName}</span>
+          {#if block.width >= 132}
+            <span class="ml-auto {CLIP_META}">
+              {formatTimeByMode(outSec(block.end) - outSec(block.start), timeMode, fps)}
+            </span>
+          {/if}
+        </div>
       {/if}
 
       <!-- Live slip readout: the block holds its place, so the frame offset is

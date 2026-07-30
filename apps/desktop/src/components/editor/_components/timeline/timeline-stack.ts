@@ -1,29 +1,32 @@
-// Vertical stacking for timeline lane cards, plus the two size decisions that
-// depend on a card's pixel width.
-//
-// Cards used to be pinned to `top: 50%`, so two annotations covering the same
-// moment drew on top of each other and only the last one in DOM order could be
-// clicked or resized. Packing is done in PIXELS, not seconds, because a very
-// short card is widened to stay grabbable and can therefore collide with a
-// neighbour it doesn't actually overlap in time.
-
-/** Annotation card height in px. Must match the height the card renders at. */
-export const ROW_HEIGHT_PX = 26;
-/** Zoom cards are taller: they carry a sparkline as well as a label. */
-export const ZOOM_ROW_HEIGHT_PX = 30;
-/** Audio-clip cards (music, detached voice) sit between the two. */
-export const CLIP_ROW_HEIGHT_PX = 22;
+/** Block height in px. Must match the height the card renders at. */
+export const ROW_HEIGHT_PX = 36;
+export const ZOOM_ROW_HEIGHT_PX = ROW_HEIGHT_PX;
+export const CLIP_ROW_HEIGHT_PX = ROW_HEIGHT_PX;
 /** Vertical space between stacked rows. */
 export const ROW_SPACING_PX = 4;
 /** Horizontal breathing room required between two cards sharing a row. */
 export const ROW_GAP_PX = 4;
 /** Narrowest a card may render, so a one-frame item stays clickable. */
-export const CARD_MIN_WIDTH_PX = 28;
+export const CARD_MIN_WIDTH_PX = 36;
+// Fixed-height lanes. These live here, not in the components, because the track
+// RAIL sizes its label rows from the same numbers — when the clip bar owned its
+// own `h-12` the rail had to hard-code a matching class, and the two drifted.
 /** Lane padding above and below the stack, matching the lane's py class. */
 export const LANE_PADDING_PX = 6;
+
+/** Clip bar. Taller than a lane block on purpose — it's the spine, and it
+ *  carries thumbnails plus a name bar. Also the box a storyboard cell
+ *  cover-crops into. */
+export const CLIP_LANE_HEIGHT_PX = 56;
+/** Lanes holding a single full-width block. Derived, so their block lands at
+ *  exactly ROW_HEIGHT_PX like every stacked one. */
+export const AUDIO_LANE_HEIGHT_PX = ROW_HEIGHT_PX + LANE_PADDING_PX * 2;
+export const CUT_LANE_HEIGHT_PX = AUDIO_LANE_HEIGHT_PX;
 /** Lane border width. Counted because a card is positioned in the lane's
- *  PADDING box, which excludes the border but includes the padding. */
-export const LANE_BORDER_PX = 1;
+ *  PADDING box, which excludes the border but includes the padding. Lanes are
+ *  flush tracks (no outline — the rail carries lane identity), so this is 0;
+ *  kept as a named term so the height maths still says what it accounts for. */
+export const LANE_BORDER_PX = 0;
 
 export interface CardSpan {
 	id: string;

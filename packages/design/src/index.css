@@ -68,25 +68,49 @@
 
   /* Timeline lane accents.
      One hue per lane, so a block's colour tells you which lane it belongs to
-     without reading the rail. Semantic tokens were being reused for this and it
-     did not work: markup sat on `warning` (h 43) and cuts on `destructive`
-     (h 25), only 18 degrees apart, so the two lanes read as the same orange-red.
-     These are spaced around the wheel instead, anchored on the brand lime
-     (h 126) which the zoom lane keeps.
-       cut    h 22   soft red, the removal colour, pulled off pure red
-       zoom   h 128  green, kept from the old brand hue
-       audio  h 215  calm blue, the conventional audio-track colour
-       markup h 305  magenta-violet, clear of both the cut red and --primary (h264)
-     Chroma is held under 0.16 so four accents on screen at once support the UI
+     without reading the rail. Assignment follows editing convention rather than
+     brand, because these are read against Premiere/Resolve muscle memory:
+       cut    h 25   red — removal. The only warm hue on the timeline, so warm
+                     reliably means destructive.
+       audio  h 150  green — the recorded-audio colour every NLE uses.
+       music  h 195  teal — the audio family, one step off the voice green so
+                     the two audio lanes are siblings, not twins.
+       zoom   h 255  blue — a picture effect, and the conventional video-clip hue.
+       markup h 310  violet — graphics/titles, clear of the cut red.
+     Two earlier mistakes this replaces. (1) Reusing semantic tokens: markup on
+     `warning` h43 and cuts on `destructive` h25 sat 18 degrees apart and read as
+     one orange-red. (2) Anchoring zoom on the brand lime h128 — lime is a
+     YELLOW-green, so a lime CLIP BODY read as olive. Brand belongs to --primary;
+     a categorical scale has no business being pinned to it.
+     Chroma stays under the brand's 0.21 so five accents on screen support the UI
      instead of competing with it.
-     Caveat: wheel distance is not CVD distance. cut (h22) and zoom (h128) sit on
+     Caveat: wheel distance is not CVD distance. cut (h25) and audio (h150) sit on
      the red-green axis that dichromats collapse, so lane identity must never rest
-     on hue alone — keep the rail label and block shape carrying it too. */
-  --lane-cut: oklch(0.58 0.15 22);
-  --lane-zoom: oklch(0.56 0.16 128);
-  --lane-audio: oklch(0.56 0.12 215);
-  --lane-markup: oklch(0.54 0.15 305);
-  --lane-music: oklch(0.60 0.13 75);
+     on hue alone — the rail label, the cut lane's diagonal hatch, and block shape
+     all keep carrying it. */
+  --lane-cut: oklch(0.56 0.16 25);
+  --lane-zoom: oklch(0.54 0.13 255);
+  --lane-audio: oklch(0.55 0.13 150);
+  --lane-markup: oklch(0.54 0.14 310);
+  --lane-music: oklch(0.56 0.10 195);
+
+  /* Clip BODY fills. The accents above are the lane's identity colour — a
+     hairline, an icon, a waveform. A clip is a solid object, and painting it as
+     a 20-35% wash of the accent made every block read as a faint tint of the
+     lane background instead of a thing you can pick up.
+     Chroma is held BELOW the accent's: a body is a large area, and the same
+     chroma that reads as a crisp hairline reads as poster paint across a whole
+     block. Lightness carries near-white label text at ~4.8:1, so the label
+     lives INSIDE the clip the way Premiere and Resolve place it. */
+  --lane-cut-fill: oklch(0.52 0.13 25);
+  --lane-zoom-fill: oklch(0.50 0.11 255);
+  --lane-audio-fill: oklch(0.50 0.10 150);
+  --lane-markup-fill: oklch(0.50 0.12 310);
+  --lane-music-fill: oklch(0.51 0.09 195);
+  /* One near-white for every clip label and the selection outline: the text
+     colour must not carry lane identity (the fill already does), and five
+     tinted whites would only drift apart. */
+  --lane-on: oklch(0.99 0 0);
 
   --border: oklch(0.91 0 0);
   --border-subtle: oklch(0% 0 0 / 0.05);
@@ -185,11 +209,22 @@
   --info-foreground: oklch(0.985 0 0);
 
   /* Same lane hues, lifted for a dark ground. See the light block for the why. */
-  --lane-cut: oklch(0.72 0.16 22);
-  --lane-zoom: oklch(0.82 0.17 128);
-  --lane-audio: oklch(0.74 0.12 215);
-  --lane-markup: oklch(0.74 0.15 305);
-  --lane-music: oklch(0.80 0.13 75);
+  --lane-cut: oklch(0.70 0.17 25);
+  --lane-zoom: oklch(0.72 0.13 255);
+  --lane-audio: oklch(0.74 0.14 150);
+  --lane-markup: oklch(0.74 0.15 310);
+  --lane-music: oklch(0.76 0.11 195);
+
+  /* Clip body fills. Darker than the light-mode set so a block sits ON the
+     dark lane rather than glowing off it, while still clearing 4.5:1 for the
+     near-white label. The bright accents above stay the waveform and hairline
+     colour, so a clip reads as fill + accent, not one flat slab. */
+  --lane-cut-fill: oklch(0.47 0.12 25);
+  --lane-zoom-fill: oklch(0.45 0.10 255);
+  --lane-audio-fill: oklch(0.45 0.09 150);
+  --lane-markup-fill: oklch(0.45 0.11 310);
+  --lane-music-fill: oklch(0.46 0.08 195);
+  --lane-on: oklch(0.98 0 0);
 
   /* Sits above --card (0.27) so a card outline reads as an edge, not a seam.
      The old 0.239 was darker than the surface it bounded. */
@@ -258,6 +293,12 @@
   --color-lane-audio: var(--lane-audio);
   --color-lane-markup: var(--lane-markup);
   --color-lane-music: var(--lane-music);
+  --color-lane-cut-fill: var(--lane-cut-fill);
+  --color-lane-zoom-fill: var(--lane-zoom-fill);
+  --color-lane-audio-fill: var(--lane-audio-fill);
+  --color-lane-markup-fill: var(--lane-markup-fill);
+  --color-lane-music-fill: var(--lane-music-fill);
+  --color-lane-on: var(--lane-on);
   --color-border: var(--border);
   --color-border-subtle: var(--border-subtle);
   --color-border-control: var(--border-control);

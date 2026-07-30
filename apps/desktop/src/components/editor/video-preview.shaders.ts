@@ -171,14 +171,14 @@ void main() {
 
 		// Radial motion blur centred on the focus point. Direction = vector
 		// from zoom centre outward; magnitude driven by d(scale)/dt in JS.
-		// 7 taps with a triangular weight, cheap enough per fragment.
+		// 13 taps with a triangular weight so a strong dolly smear stays smooth.
 		vec4 videoColor;
 		if (u_motionBlurPx > 0.5) {
 			vec2 dir = (videoUV - u_zoomCenter) * (u_motionBlurPx / max(u_canvasSize.x, 1.0));
 			vec4 acc = vec4(0.0);
 			float w = 0.0;
-			for (int i = -3; i <= 3; i++) {
-				float fi = float(i) / 3.0;
+			for (int i = -6; i <= 6; i++) {
+				float fi = float(i) / 6.0;
 				vec2 uv = clamp(videoUV + dir * fi, 0.0, 1.0);
 				float wi = 1.0 - abs(fi) * 0.5;
 				acc += texture(u_video, uv) * wi;

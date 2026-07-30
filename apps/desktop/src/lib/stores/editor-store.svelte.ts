@@ -708,21 +708,11 @@ export interface DeleteSelectionResult {
 	joinAt: number | null;
 }
 
-// 'dev' is a dev-build-only tab (experimental OCR review); it is UI state only and
-// is never serialized into a project.
-export type PanelTab =
-	| "clip"
-	| "background"
-	| "focus"
-	| "annotations"
-	| "cursor"
-	| "camera"
-	| "audio"
-	| "music"
-	| "captions"
-	| "extensions"
-	| "info"
-	| "dev";
+// Re-exported so the many existing `import type { PanelTab } from "…/editor-store"`
+// sites keep working; the list itself lives in a module light enough to import
+// from a unit test (see panel-tabs.ts).
+export { PANEL_TABS, type PanelTab } from "$lib/editor/panel-tabs";
+import type { PanelTab } from "$lib/editor/panel-tabs";
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,

@@ -11,6 +11,14 @@ import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import { originalToOutput } from "$lib/timeline/time-map";
 import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
+import {
+	CLIP_BASE,
+	CLIP_FOCUS,
+	CLIP_HOVER,
+	CLIP_LABEL,
+	CLIP_SELECTED,
+	clipSurface,
+} from "./timeline-clip.styles";
 import { CLIP_ROW_HEIGHT_PX, edgeHandleWidth, type LaneCardLayout } from "./timeline-stack";
 
 // Editable audio clips on the OUTPUT timeline: drag the body to move, the edges
@@ -46,24 +54,8 @@ const outputDuration = $derived(store.timeMap.outputDuration);
 const playheadOutput = $derived(originalToOutput(store.timeMap, store.currentTime));
 const pps = $derived(pixelsPerSecond);
 
-// Literal class strings per variant so Tailwind keeps them (no dynamic names).
-// Same shape as the zoom and markup cards -- colour spine, tiered fill -- so
-// every lane reads as one system in its own colour.
-const cls = $derived(
-	variant === "voice"
-		? {
-				bar: "border-l-lane-audio/70 bg-lane-audio/20 hover:bg-lane-audio/30",
-				sel: "border-l-lane-audio bg-lane-audio/35 ring-1 ring-inset ring-lane-audio/70",
-				icon: "text-lane-audio",
-				handle: "bg-lane-audio/70",
-			}
-		: {
-				bar: "border-l-lane-music/70 bg-lane-music/20 hover:bg-lane-music/30",
-				sel: "border-l-lane-music bg-lane-music/35 ring-1 ring-inset ring-lane-music/70",
-				icon: "text-lane-music",
-				handle: "bg-lane-music/70",
-			},
-);
+// Same solid-body treatment as every other lane, in this lane's hue.
+const surface = $derived(clipSurface(variant === "voice" ? "audio" : "music"));
 
 let laneEl = $state<HTMLDivElement | null>(null);
 
@@ -229,7 +221,7 @@ function onClipKeydown(e: KeyboardEvent, clip: AudioClip) {
   onpointermove={onMove}
   onpointerup={endDrag}
   onpointercancel={endDrag}
-  class="relative mt-1.5 rounded-md border border-border/60 bg-background/40 px-1.5 py-1.5 transition-[height]"
+  class="relative mt-1.5 rounded-md bg-muted/20 px-1.5 py-1.5 transition-[height]"
   style="height: {layout.height}px;"
 >
   {#each clips as clip, i (clip.id)}
@@ -244,17 +236,19 @@ function onClipKeydown(e: KeyboardEvent, clip: AudioClip) {
       onpointerdown={(e) => startDrag(e, clip, "move")}
       ondblclick={() => (store.activePanel = panelTab)}
       onkeydown={(e) => onClipKeydown(e, clip)}
-      class="group/clip absolute flex touch-none items-center gap-1 overflow-hidden rounded-[3px] border-l-2 px-1.5 text-[10px] text-foreground transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {selected
-        ? cls.sel
-        : cls.bar} {clip.muted ? 'opacity-50' : ''} {drag ? 'cursor-grabbing' : 'cursor-grab'}"
+      class="group/clip absolute flex touch-none items-center gap-1 px-1.5 {CLIP_BASE} {CLIP_FOCUS} {surface.fill} {selected
+        ? CLIP_SELECTED
+        : CLIP_HOVER} {clip.muted ? 'opacity-50' : ''} {drag
+        ? 'cursor-grabbing'
+        : 'cursor-grab'}"
       style="left: {card.left}px; width: {card.width}px; top: {card.top}px; height: {CLIP_ROW_HEIGHT_PX}px;"
     >
       {#if card.width < NAME_WIDTH_PX}
-        <AudioLines size={10} class="pointer-events-none shrink-0 {cls.icon}" />
+        <AudioLines size={10} class="pointer-events-none mx-auto shrink-0 {surface.accent} opacity-60" />
       {:else}
-        <span class="pointer-events-none truncate font-medium">{clipDisplayName(clip)}</span>
+        <span class={CLIP_LABEL}>{clipDisplayName(clip)}</span>
         {#if clip.loop}
-          <Repeat size={9} class="pointer-events-none ml-auto shrink-0 opacity-70" />
+          <Repeat size={9} class="pointer-events-none ml-auto shrink-0 {surface.accent} opacity-70" />
         {/if}
       {/if}
 
@@ -270,7 +264,7 @@ function onClipKeydown(e: KeyboardEvent, clip: AudioClip) {
         style="width: {gripPx}px;"
       >
         <div
-          class="mx-auto h-full w-0.5 rounded-l-sm opacity-0 transition-opacity group-hover/clip:opacity-100 {cls.handle} {selected
+          class="mx-auto h-full w-0.5 rounded-l-sm opacity-0 transition-opacity group-hover/clip:opacity-100 {surface.grip} {selected
             ? 'opacity-100!'
             : ''}"
         ></div>
@@ -283,7 +277,7 @@ function onClipKeydown(e: KeyboardEvent, clip: AudioClip) {
         style="width: {gripPx}px;"
       >
         <div
-          class="ml-auto h-full w-0.5 rounded-r-sm opacity-0 transition-opacity group-hover/clip:opacity-100 {cls.handle} {selected
+          class="ml-auto h-full w-0.5 rounded-r-sm opacity-0 transition-opacity group-hover/clip:opacity-100 {surface.grip} {selected
             ? 'opacity-100!'
             : ''}"
         ></div>

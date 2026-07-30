@@ -12,6 +12,15 @@ import {
 	dragEngaged,
 	PRECISION_SCALE,
 } from "./timeline-card-drag.logic";
+import {
+	CLIP_BASE,
+	CLIP_FOCUS,
+	CLIP_HOVER,
+	CLIP_LABEL,
+	CLIP_META,
+	CLIP_SELECTED,
+	clipSurface,
+} from "./timeline-clip.styles";
 import { useLaneDrag } from "./timeline-drag.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 import { type SnapResult, type SnapTarget } from "./timeline-snap";
@@ -91,6 +100,7 @@ const tOf = (xPx: number) => outputToOriginal(store.renderMap, xPx / pixelsPerSe
 const outSec = (t: number) => originalToOutput(store.renderMap, t);
 const showSubtitle = $derived(width >= 110);
 const handlePx = $derived(edgeHandleWidth(width));
+const surface = clipSurface("zoom");
 
 function beginDrag(mode: DragMode, event: PointerEvent) {
 	if (duration <= 0) return;
@@ -231,8 +241,9 @@ function onCardClick(event: MouseEvent) {
     height: {ZOOM_ROW_HEIGHT_PX}px;
   "
 >
-  <!-- Body split from the resize edges so each gets its own cursor; selected state
-       uses a box-shadow inset accent bar to avoid layout shift. -->
+  <!-- Body split from the resize edges so each gets its own cursor. Solid fill
+       with the label inside it, like an NLE clip; the bright lane accent is left
+       to the grips and the icon so the block reads as fill + accent. -->
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <button
     type="button"
@@ -244,31 +255,31 @@ function onCardClick(event: MouseEvent) {
       if (e.button !== 0) return;
       beginDrag("move", e);
     }}
-    class="absolute inset-0 overflow-hidden rounded-[3px] border-l-2 text-left transition-colors duration-150 focus:outline-none focus:ring-1 focus:ring-inset focus:ring-ring {isSelected
-      ? 'border-l-lane-zoom bg-lane-zoom/35 cursor-grabbing ring-1 ring-inset ring-lane-zoom/70'
-      : 'border-l-lane-zoom/70 bg-lane-zoom/20 cursor-grab hover:bg-lane-zoom/30'} {drag?.mode ===
-    'move'
-      ? 'cursor-grabbing shadow-craft-floating'
+    class="absolute inset-0 text-left {CLIP_BASE} {CLIP_FOCUS} {surface.fill} {isSelected
+      ? `${CLIP_SELECTED} cursor-grabbing`
+      : `${CLIP_HOVER} cursor-grab`} {drag?.mode === 'move'
+      ? 'cursor-grabbing shadow-craft-floating brightness-110'
       : ''}"
   >
     <!-- Content by available width, like an NLE clip: icon when narrow, then the
          scale, then the length. Same tiers as the markup card so the two lanes
          read as one system in different colours. -->
     <div
-      class="pointer-events-none flex h-full items-center gap-1 px-1.5"
+      class="pointer-events-none flex h-full items-center gap-1 px-1.5 {width < NAME_WIDTH_PX
+        ? 'justify-center'
+        : ''}"
       id={`zoom-region-${region.id}`}
       aria-label={`Focus region from ${formatTimeByMode(outSec(region.start), timeMode, fps)} to ${formatTimeByMode(outSec(region.end), timeMode, fps)}, scale ${region.scale.toFixed(1)}x. Click to select; drag to move; drag the edges to resize.`}
     >
       {#if width < NAME_WIDTH_PX}
-        <ZoomIn class="size-3 shrink-0 text-lane-zoom" />
+        <!-- Too narrow for a label. The fill already says which lane this is, so
+             the glyph sits back at 60% rather than turning a short region into a
+             high-contrast button. -->
+        <ZoomIn class="size-3 shrink-0 {surface.accent} opacity-60" />
       {:else}
-        <span class="truncate text-[10px] font-semibold leading-none text-foreground">
-          {region.scale.toFixed(1)}×
-        </span>
+        <span class={CLIP_LABEL}>{region.scale.toFixed(1)}× zoom</span>
         {#if showSubtitle}
-          <span
-            class="ml-auto shrink-0 font-mono text-[9px] leading-none tabular-nums text-foreground/55"
-          >
+          <span class="ml-auto {CLIP_META}">
             {formatTimeByMode(outSec(region.end) - outSec(region.start), timeMode, fps)}
           </span>
         {/if}
@@ -291,8 +302,10 @@ function onCardClick(event: MouseEvent) {
     class="absolute inset-y-0 z-10 cursor-ew-resize"
     style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; left: -{EDGE_HIT_OVERHANG_PX}px;"
   >
+    <!-- `group-hover:` (unnamed) never matched the `group/card` root, so these
+         grips were invisible until the card was selected. -->
     <div
-      class="mx-auto h-full w-0.5 rounded-l-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
+      class="mx-auto h-full w-0.5 rounded-l-sm {surface.grip} opacity-0 transition-opacity group-hover/card:opacity-100 {isSelected ||
       drag?.mode === 'resize-start'
         ? 'opacity-100!'
         : ''}"
@@ -309,7 +322,7 @@ function onCardClick(event: MouseEvent) {
     style="width: {handlePx + EDGE_HIT_OVERHANG_PX}px; right: -{EDGE_HIT_OVERHANG_PX}px;"
   >
     <div
-      class="ml-auto h-full w-0.5 rounded-r-sm bg-lane-zoom/70 opacity-0 transition-opacity group-hover:opacity-100 {isSelected ||
+      class="ml-auto h-full w-0.5 rounded-r-sm {surface.grip} opacity-0 transition-opacity group-hover/card:opacity-100 {isSelected ||
       drag?.mode === 'resize-end'
         ? 'opacity-100!'
         : ''}"
