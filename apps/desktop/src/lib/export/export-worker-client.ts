@@ -13,12 +13,14 @@ export function exportWorkerSupported(): boolean {
 	return typeof Worker !== "undefined" && typeof OffscreenCanvas !== "undefined";
 }
 
-/** Render a job in a worker → encoded mp4 bytes. Rejects on worker error (the
- *  caller rebuilds a fresh job for the main-thread fallback, since the bitmaps
- *  were transferred out). Rejects with the abort reason if cancelled. */
+/** Render a job in a worker → encoded mp4 bytes. With `transfer` (default) the
+ *  bitmaps move zero-copy but the job is left detached; pass `transfer: false` to
+ *  clone them instead, keeping the job re-runnable for a main-thread fallback
+ *  when the store isn't around to rebuild it. Rejects on worker error / cancel. */
 export function runExportJobInWorker(
 	job: ExportJob,
 	runtime: ExportRuntime = {},
+	opts: { transfer?: boolean } = {},
 ): Promise<Uint8Array> {
 	return new Promise<Uint8Array>((resolve, reject) => {
 		if (runtime.signal?.aborted) {
@@ -53,6 +55,6 @@ export function runExportJobInWorker(
 		};
 
 		runtime.signal?.addEventListener("abort", onAbort);
-		post({ type: "render", job }, collectTransferables(job));
+		post({ type: "render", job }, opts.transfer === false ? [] : collectTransferables(job));
 	});
 }

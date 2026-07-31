@@ -11,7 +11,10 @@ import {
 	listenToExportJobsChanged,
 	refreshTray,
 	retryExportJob,
+	saveBrowserExportVideo,
 } from "$lib/ipc";
+import { renderJobToBytes } from "$lib/export/browser-export";
+import type { ExportJob } from "$lib/export/export-job";
 import {
 	clearJobProgress,
 	setJobProgress,
@@ -44,7 +47,11 @@ export type ExportItemStatus =
 	| "cancelled"
 	| "interrupted";
 
-export type ExportItemPhase = "preparing" | "encoding" | "finalizing" | "cancelling";
+export type ExportItemPhase = "preparing" | "rendering" | "encoding" | "finalizing" | "cancelling";
+
+/** The render phase (browser compositing) owns 0..RENDER_MAX of the unified bar;
+ *  the backend mux is the fast tail from RENDER_MAX..100. */
+const RENDER_MAX = 95;
 
 /** Everything needed to run an export, captured at enqueue time (render state
  *  included) so the backend can run it after the source editor is closed. */
@@ -65,6 +72,9 @@ export interface ExportItem {
 	path?: string;
 	/** Failure message once it errors. */
 	error?: string;
+	/** True for browser-engine exports: a render phase (0..RENDER_MAX) precedes the
+	 *  backend mux, so backend progress maps to the RENDER_MAX..100 tail. */
+	hasRenderPhase?: boolean;
 }
 
 function messageOf(e: unknown): string {
@@ -104,6 +114,19 @@ function createExportActivityStore() {
 	// center knows a "foregrounded" job actually has a panel on screen.
 	let editorPresent = $state(false);
 
+	// Browser-render phase: pending render jobs + the in-flight one. The render runs
+	// HERE (app-scoped) so it survives closing its editor, serial (N=1) so two
+	// encoders never contend. The rendered video is then handed to the backend queue.
+	type RenderReq = {
+		id: string;
+		job: ExportJob;
+		spec: { filename: string; filePath: string; params: ExportRunParams };
+	};
+	const renderQueue: RenderReq[] = [];
+	let renderingId: string | null = null;
+	let renderAbort: AbortController | null = null;
+	let renderRunning = false;
+
 	const find = (id: string) => items.find((i) => i.id === id);
 	const runningItem = () => items.find((i) => i.status === "running");
 
@@ -119,6 +142,7 @@ function createExportActivityStore() {
 			return;
 		}
 		const prev = new Map(items.map((i) => [i.id, i]));
+		const backendIds = new Set(rows.map((d) => d.id));
 		const next = rows.map((d) => {
 			const item = fromDto(d);
 			const p = prev.get(d.id);
@@ -126,9 +150,20 @@ function createExportActivityStore() {
 				item.progress = Math.max(item.progress, p.progress);
 				item.phase = p.phase;
 			}
+			// hasRenderPhase is local-only (not in the DTO); carry it across so the
+			// backend mux keeps mapping onto the RENDER_MAX..100 tail.
+			if (p?.hasRenderPhase) item.hasRenderPhase = true;
 			return item;
 		});
-		items.splice(0, items.length, ...next);
+		// Keep local items still in the browser-render phase — the backend doesn't
+		// know about them until the render hands off, so they're absent from `rows`.
+		const localRenders = items.filter(
+			(i) =>
+				i.hasRenderPhase &&
+				!backendIds.has(i.id) &&
+				(i.status === "running" || i.status === "queued"),
+		);
+		items.splice(0, items.length, ...next, ...localRenders);
 	}
 
 	/** One-shot user feedback + taskbar clear on a terminal outcome. Fired from the
@@ -165,10 +200,19 @@ function createExportActivityStore() {
 		switch (e.status) {
 			case "started":
 			case "preparing":
-				if (it.status === "running") it.phase = "preparing";
+				// Browser items already rendered 0..RENDER_MAX; the backend is only the mux.
+				if (it.status === "running") it.phase = it.hasRenderPhase ? "finalizing" : "preparing";
 				break;
 			case "progress": {
 				if (it.status !== "running") return;
+				if (it.hasRenderPhase) {
+					// Map the backend mux (0..100) onto the RENDER_MAX..100 tail of the bar.
+					it.phase = "finalizing";
+					const frac = Math.min(100, Math.max(0, e.progress)) / 100;
+					it.progress = Math.max(it.progress, RENDER_MAX + Math.round(frac * (100 - RENDER_MAX)));
+					void setJobProgress(it.progress);
+					return;
+				}
 				const next = Math.min(100, Math.max(0, e.progress));
 				if (it.phase === "preparing") it.phase = "encoding";
 				it.progress = Math.max(it.progress, next);
@@ -190,6 +234,66 @@ function createExportActivityStore() {
 			case "error":
 				finishFeedback(it, "error", undefined, e.message);
 				break;
+		}
+	}
+
+	/** Serial render runner: composite the next queued job in the browser (off the
+	 *  main thread), persist the video, then hand it to the backend queue, which
+	 *  drives the mux tail. One render at a time; loops until the queue drains. */
+	async function pumpRenderQueue() {
+		if (renderRunning) return;
+		const req = renderQueue.shift();
+		if (!req) return;
+		renderRunning = true;
+		renderingId = req.id;
+		renderAbort = new AbortController();
+		const it = find(req.id);
+		if (it) {
+			it.status = "running";
+			it.phase = "rendering";
+			it.startedAt = Date.now();
+			it.progress = 0;
+		}
+		try {
+			const bytes = await renderJobToBytes(req.job, {
+				signal: renderAbort.signal,
+				onProgress: (f) => {
+					const item = find(req.id);
+					if (item && item.status === "running" && item.phase === "rendering") {
+						item.progress = Math.min(RENDER_MAX, Math.round(f * RENDER_MAX));
+						void setJobProgress(item.progress);
+					}
+				},
+			});
+			const exact = bytes.buffer.slice(
+				bytes.byteOffset,
+				bytes.byteOffset + bytes.byteLength,
+			) as ArrayBuffer;
+			const browserVideoPath = await saveBrowserExportVideo(exact);
+			// Hand off to the durable backend queue; its events drive the mux tail.
+			void enqueueExport({ ...req.spec.params, browserVideoPath, exportId: req.id })
+				.then((repairs) => {
+					if (repairs.length > 0) {
+						toast.warning("Auto-repaired the timeline before export", {
+							description: `${repairs.join("; ")}. Please double-check the exported video.`,
+						});
+					}
+				})
+				.catch((e) => {
+					const item = find(req.id);
+					if (item) finishFeedback(item, "error", undefined, messageOf(e));
+				});
+		} catch (err) {
+			const item = find(req.id);
+			if (item) {
+				if (renderAbort?.signal.aborted) finishFeedback(item, "cancelled");
+				else finishFeedback(item, "error", undefined, messageOf(err));
+			}
+		} finally {
+			renderRunning = false;
+			renderingId = null;
+			renderAbort = null;
+			void pumpRenderQueue();
 		}
 	}
 
@@ -289,9 +393,52 @@ function createExportActivityStore() {
 				});
 		},
 
+		/** Hand a browser-engine export to the app-scoped render queue. The render
+		 *  runs here (surviving the source editor closing), then feeds the backend
+		 *  queue via {@link enqueue}. `job` is the pre-built self-contained snapshot. */
+		enqueueBrowserExport(spec: {
+			id: string;
+			filename: string;
+			filePath: string;
+			job: ExportJob;
+			params: ExportRunParams;
+		}) {
+			if (!find(spec.id)) {
+				items.push({
+					id: spec.id,
+					filename: spec.filename,
+					filePath: spec.filePath,
+					status: "queued",
+					phase: "rendering",
+					progress: 0,
+					startedAt: null,
+					hasRenderPhase: true,
+				});
+			}
+			renderQueue.push({
+				id: spec.id,
+				job: spec.job,
+				spec: { filename: spec.filename, filePath: spec.filePath, params: spec.params },
+			});
+			void pumpRenderQueue();
+		},
+
 		/** Cancel/remove an item: a queued one is dropped; a running one is stopped.
 		 *  Optimistic locally, then reconciled via `export-jobs-changed`. */
 		async cancel(id: string) {
+			// Browser-render phase: abort the in-flight render, or drop a queued one —
+			// the backend has no job for it yet, so there's nothing to cancel there.
+			if (id === renderingId) {
+				renderAbort?.abort();
+				return;
+			}
+			const qi = renderQueue.findIndex((r) => r.id === id);
+			if (qi >= 0) {
+				renderQueue.splice(qi, 1);
+				const idx = items.findIndex((i) => i.id === id);
+				if (idx >= 0) items.splice(idx, 1);
+				return;
+			}
 			const it = find(id);
 			if (it) {
 				if (it.status === "queued") {

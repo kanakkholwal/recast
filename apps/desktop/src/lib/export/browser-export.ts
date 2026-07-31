@@ -16,6 +16,7 @@ import type { ExportQuality } from "./browser-export-plan";
 import { buildExportJob, type ExportJobInputs } from "./build-export-job";
 import { runExportJob, type ExportRuntime } from "./run-export-job";
 import { exportWorkerSupported, runExportJobInWorker } from "./export-worker-client";
+import { closeJobBitmaps, type ExportJob } from "./export-job";
 
 export interface BrowserExportOptions {
 	/** Source video asset URL (what the preview decodes, e.g. `convertFileSrc(...)`). */
@@ -66,6 +67,30 @@ async function renderToBytes(
 			console.warn("export worker failed; falling back to main-thread render", err);
 			const fresh = await buildExportJob(store, jobOpts);
 			return runExportJob(fresh, runtime);
+		}
+	}
+	return runExportJob(job, runtime);
+}
+
+/** Render a PRE-BUILT job → encoded bytes, for the app-scoped export queue (which
+ *  runs after the editor store may be gone). Clones bitmaps to the worker so a
+ *  failure can retry the same job main-thread; captions stay main-thread. */
+export async function renderJobToBytes(
+	job: ExportJob,
+	runtime: ExportRuntime,
+): Promise<Uint8Array> {
+	if (exportWorkerSupported() && !job.caption) {
+		try {
+			const bytes = await runExportJobInWorker(job, runtime, { transfer: false });
+			closeJobBitmaps(job); // the worker consumed clones; free our originals
+			return bytes;
+		} catch (err) {
+			if (runtime.signal?.aborted) {
+				closeJobBitmaps(job);
+				throw err;
+			}
+			console.warn("export worker failed; falling back to main-thread render", err);
+			return runExportJob(job, runtime); // closes the bitmaps in its finally
 		}
 	}
 	return runExportJob(job, runtime);

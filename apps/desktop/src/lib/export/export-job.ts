@@ -73,10 +73,9 @@ export interface ExportJob {
 	caption: CaptionJob | null;
 }
 
-/** Gather every transferable in the job for `postMessage`'s transfer list, so the
- *  bitmaps move zero-copy instead of being cloned. Deduped — the cursor sprite
- *  fallbacks (drag/rightPress → press → rest) can share one bitmap. */
-export function collectTransferables(job: ExportJob): Transferable[] {
+/** Every distinct bitmap the job owns. Deduped — the cursor sprite fallbacks
+ *  (drag/rightPress → press → rest) can share one bitmap. */
+function jobBitmaps(job: ExportJob): ImageBitmap[] {
 	const seen = new Set<ImageBitmap>();
 	const add = (b: ImageBitmap | null | undefined) => {
 		if (b) seen.add(b);
@@ -90,4 +89,15 @@ export function collectTransferables(job: ExportJob): Transferable[] {
 	}
 	if (job.annotation) for (const [, bmp] of job.annotation.images) add(bmp);
 	return [...seen];
+}
+
+/** Bitmaps for `postMessage`'s transfer list, to move them zero-copy. */
+export function collectTransferables(job: ExportJob): Transferable[] {
+	return jobBitmaps(job);
+}
+
+/** Free the job's bitmaps. Call after a worker render (which consumed clones) so
+ *  the main-thread originals don't leak; the main-thread path closes its own. */
+export function closeJobBitmaps(job: ExportJob): void {
+	for (const bmp of jobBitmaps(job)) bmp.close();
 }

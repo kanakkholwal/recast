@@ -17,6 +17,7 @@ import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
 import { ensureFontLoaded } from "$lib/fonts/font-options";
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { toStatic } from "$lib/state-snapshot.svelte";
 import type { FrameGeometry } from "../../components/editor/frame-params";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
 import type { ExportJob, CameraJob, AnnotationJob, CaptionJob } from "./export-job";
@@ -219,18 +220,30 @@ export async function buildExportJob(
 		pressEvents: buildPressEvents(cursorSamples),
 	});
 	const metaWH = { width: meta.width, height: meta.height };
+	const camera = buildCameraData(store, opts.cameraUrl, base.geom);
+	const annotation = await buildAnnotationData(store, metaWH, base.canvasPxW, base.canvasPxH);
+	const caption = await buildCaptionData(store, metaWH, base.canvasPxW, base.canvasPxH);
 
+	// De-proxy every store-sourced field so the job survives `postMessage` to the
+	// render worker; bitmaps (built locally) stay out of the snapshot.
 	return {
-		base,
-		timeMap,
+		base: toStatic(base),
+		timeMap: toStatic(timeMap),
 		outputDurationSec,
 		fps: opts.fps,
 		encodingConfig: videoEncodingConfigFor(opts.quality),
 		videoUrl: opts.videoUrl,
 		backgroundImage,
 		cursorSprites: await buildCursorSprites(store),
-		camera: buildCameraData(store, opts.cameraUrl, base.geom),
-		annotation: await buildAnnotationData(store, metaWH, base.canvasPxW, base.canvasPxH),
-		caption: await buildCaptionData(store, metaWH, base.canvasPxW, base.canvasPxH),
+		camera: camera ? toStatic(camera) : null,
+		annotation: staticAnnotation(annotation),
+		caption: caption ? toStatic(caption) : null,
 	};
+}
+
+/** Snapshot the annotation data while preserving its transferable bitmaps. */
+function staticAnnotation(a: AnnotationJob | null): AnnotationJob | null {
+	if (!a) return null;
+	const { images, ...rest } = a;
+	return { ...toStatic(rest), images };
 }

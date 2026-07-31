@@ -57,7 +57,7 @@ import {
 	timelineMaxHeight,
 } from "$lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "$lib/editor/time";
-import { runBrowserExport } from "$lib/export/browser-export";
+import { buildExportJob } from "$lib/export/build-export-job";
 import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { chooseExportEngine } from "$lib/export/choose-export-engine";
@@ -1330,9 +1330,6 @@ async function handleExport() {
 			durationSec: meta ? Math.round(meta.duration) : undefined,
 		});
 
-		// Hand the fully-built export to the queue; the store runs it (after any
-		// already-running one), so it survives leaving this editor.
-		let browserVideoPath: string | undefined;
 		// Resolve the export engine. Browser export is on when the master flag is set OR
 		// the user opted into the beta; otherwise Rust. The resolver still falls back per
 		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
@@ -1350,56 +1347,57 @@ async function handleExport() {
 			reason: engine.reason,
 			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
 		});
-		if (engine.engine === "browser") {
-			try {
-				// GIF renders at its own target fps (the picker is MP4/WebM-only); the
-				// Rust palette pass re-reads this browser video, so match its fps here.
-				const gifFps =
-					store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
-				const renderFps =
-					store.exportFormat === "gif"
-						? (gifFps ?? meta?.fps ?? 15)
-						: store.exportFps && store.exportFps > 0
-							? store.exportFps
-							: (meta?.fps ?? 30);
-				const renderStart = performance.now();
-				browserVideoPath = await runBrowserExport(store, {
-					videoUrl: videoSrc,
-					cameraUrl: cameraSrc,
-					quality: store.exportQuality as ExportQuality,
-					fps: renderFps,
-				});
-				log.info("export", "export_render", {
-					exportId,
-					renderMs: Math.round(performance.now() - renderStart),
-				});
-			} catch (e) {
-				log.error("export", "export_render_failed", { exportId, message: String(e) });
-				console.error("browser export render failed; using the Rust compositor", e);
-				browserVideoPath = undefined;
-			}
-		}
 
-		exportActivity.enqueue({
-			id: exportId,
-			filename: data.filename,
-			// Stable route path for identity/adoption; the actual media path is in
-			// params.inputPath below.
-			filePath: data.filePath,
-			params: {
-				inputPath: documentPath || data.filePath,
-				format: store.exportFormat,
-				quality: store.exportQuality,
-				renderState: finalRenderState,
-				gifSettings: store.exportFormat === "gif" ? store.gifSettings : undefined,
-				speed: store.exportSpeed,
-				// GIF carries fps in gifSettings; MP4/WebM use the picker (null=source).
-				fps: store.exportFormat === "gif" ? undefined : store.exportFps,
-				// No-op unless a transcript exists and caption options are enabled.
-				captions: buildCaptionExport(store),
-				browserVideoPath,
-			},
-		});
+		// Params the backend mux/export job needs, shared by both engines. The stable
+		// route path is `filePath`; the actual media path is `inputPath`.
+		const params = {
+			inputPath: documentPath || data.filePath,
+			format: store.exportFormat,
+			quality: store.exportQuality,
+			renderState: finalRenderState,
+			gifSettings: store.exportFormat === "gif" ? store.gifSettings : undefined,
+			speed: store.exportSpeed,
+			// GIF carries fps in gifSettings; MP4/WebM use the picker (null=source).
+			fps: store.exportFormat === "gif" ? undefined : store.exportFps,
+			// No-op unless a transcript exists and caption options are enabled.
+			captions: buildCaptionExport(store),
+		};
+
+		if (engine.engine === "browser") {
+			// GIF renders at its own target fps (the picker is MP4/WebM-only); the Rust
+			// palette pass re-reads this browser video, so match its fps here.
+			const gifFps =
+				store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
+			const renderFps =
+				store.exportFormat === "gif"
+					? (gifFps ?? meta?.fps ?? 15)
+					: store.exportFps && store.exportFps > 0
+						? store.exportFps
+						: (meta?.fps ?? 30);
+			// Snapshot the scene now (store alive); the app-scoped render queue composites
+			// it off the main thread and hands the video to the backend — so the export
+			// survives closing this editor, and a second export queues behind it.
+			const job = await buildExportJob(store, {
+				videoUrl: videoSrc,
+				cameraUrl: cameraSrc,
+				quality: store.exportQuality as ExportQuality,
+				fps: renderFps,
+			});
+			exportActivity.enqueueBrowserExport({
+				id: exportId,
+				filename: data.filename,
+				filePath: data.filePath,
+				job,
+				params,
+			});
+		} else {
+			exportActivity.enqueue({
+				id: exportId,
+				filename: data.filename,
+				filePath: data.filePath,
+				params,
+			});
+		}
 	} catch (err) {
 		const message =
 			typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
