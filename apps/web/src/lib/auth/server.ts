@@ -20,12 +20,7 @@ import {
 import { sendTemplatedEmail } from "$lib/email";
 import { publicEnv } from "$lib/env/public";
 import { serverEnv } from "$lib/env/server";
-import {
-	checkout,
-	polar,
-	portal,
-	webhooks,
-} from "@polar-sh/better-auth";
+import { checkout, polar, portal, webhooks } from "@polar-sh/better-auth";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { admin, magicLink, organization } from "better-auth/plugins";
@@ -79,16 +74,12 @@ function createAuth() {
 		},
 		emailAndPassword: {
 			enabled: true,
-			// In production, public sign-up is closed — the waitlist endpoint
-			// creates user rows directly. Dev keeps signup open for iteration.
-			disableSignUp: !dev,
 			// We don't block sign-IN on verification (locked-out users with a
 			// flipped password can't recover). Instead the dashboard layout
 			// redirects unverified users to /verify-email — view-only is fine,
 			// mutations aren't reachable. See [dashboard/+layout.server.ts].
 			requireEmailVerification: false,
 			sendResetPassword: async ({ user, url }) => {
-				if (await isOnWaitlist(user.email)) return;
 				await sendTemplatedEmail({
 					to: user.email,
 					template: "reset-password",
@@ -107,7 +98,6 @@ function createAuth() {
 			autoSignInAfterVerification: true,
 			expiresIn: 60 * 60 * 24, // 24h
 			sendVerificationEmail: async ({ user, url }) => {
-				if (await isOnWaitlist(user.email)) return;
 				await sendTemplatedEmail({
 					to: user.email,
 					template: "verify-email",
@@ -135,6 +125,18 @@ function createAuth() {
 					},
 				},
 			},
+			// Private beta reserved a `status: "pending"` user row per waitlist
+			// email and skipped team creation for it. Sign-ups are open now, so
+			// the first session those accounts get promotes them in place —
+			// otherwise they'd sit locked out forever: they can't sign up (the
+			// email is taken) and had no team to land in.
+			session: {
+				create: {
+					after: async (createdSession) => {
+						await activatePendingUser(createdSession.userId);
+					},
+				},
+			},
 		},
 	});
 }
@@ -149,7 +151,7 @@ export function getAuth(): AuthInstance {
 	return cached;
 }
 
-// Production hosts the web app is served from. 
+// Production hosts the web app is served from.
 const PRODUCTION_TRUSTED_ORIGINS = [
 	"https://recast.li",
 	"https://www.recast.li",
@@ -176,10 +178,6 @@ function buildTrustedOrigins(): string[] {
 
 function buildSocialProviders() {
 	const providers: Record<string, { clientId: string; clientSecret: string }> = {};
-	// Social sign-in is dev-only for now — production gates this at the UI
-	// level (SocialButtons.svelte) and here so misconfigured client IDs
-	// can't accidentally enable a path.
-	if (!dev) return providers;
 	const env = serverEnv();
 	if (env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET) {
 		providers.github = {
@@ -196,6 +194,17 @@ function buildSocialProviders() {
 	return providers;
 }
 
+/**
+ * Which OAuth buttons the auth pages may render. Env-driven rather than
+ * hardcoded so an unconfigured provider never shows a button that dead-ends
+ * on a Better Auth "provider not found".
+ */
+export function enabledSocialProviders(): SocialProviderId[] {
+	return Object.keys(buildSocialProviders()) as SocialProviderId[];
+}
+
+export type SocialProviderId = "github" | "google";
+
 function buildPlugins() {
 	// Admin plugin — owns `role`, `banned`, `banReason`, `banExpires` on
 	// user and `impersonatedBy` on session. Endpoints live under
@@ -207,11 +216,12 @@ function buildPlugins() {
 	});
 
 	const linkPlugin = magicLink({
-		// Existing-users-only — waitlist sign-up is the only way to get a row.
+		// Existing-users-only: /signup owns account creation, so it can collect a
+		// name and get consent to the terms. A link for an unknown email would
+		// mint a nameless account that never agreed to anything.
 		disableSignUp: true,
 		expiresIn: 60 * 10,
 		sendMagicLink: async ({ email, url }) => {
-			if (await isOnWaitlist(email)) return;
 			// Look up the user's name so the template can address them.
 			const db = getDb();
 			const [row] = await db
@@ -237,30 +247,26 @@ function buildPlugins() {
 	const polarPlugins =
 		polarClient && proProductId && webhookSecret
 			? [
-				polar({
-					client: polarClient,
-					createCustomerOnSignUp: true,
-					use: [
-						checkout({
-							products: [{ productId: proProductId, slug: "pro" }],
-							successUrl: "/dashboard?upgraded=1",
-							authenticatedUsersOnly: true,
-						}),
-						portal(),
-						webhooks({
-							secret: webhookSecret,
-							onSubscriptionActive: async (payload) =>
-								handleSubscriptionEvent(payload),
-							onSubscriptionUpdated: async (payload) =>
-								handleSubscriptionEvent(payload),
-							onSubscriptionCanceled: async (payload) =>
-								handleSubscriptionEnded(payload),
-							onSubscriptionRevoked: async (payload) =>
-								handleSubscriptionEnded(payload),
-						}),
-					],
-				}),
-			]
+					polar({
+						client: polarClient,
+						createCustomerOnSignUp: true,
+						use: [
+							checkout({
+								products: [{ productId: proProductId, slug: "pro" }],
+								successUrl: "/dashboard?upgraded=1",
+								authenticatedUsersOnly: true,
+							}),
+							portal(),
+							webhooks({
+								secret: webhookSecret,
+								onSubscriptionActive: async (payload) => handleSubscriptionEvent(payload),
+								onSubscriptionUpdated: async (payload) => handleSubscriptionEvent(payload),
+								onSubscriptionCanceled: async (payload) => handleSubscriptionEnded(payload),
+								onSubscriptionRevoked: async (payload) => handleSubscriptionEnded(payload),
+							}),
+						],
+					}),
+				]
 			: [];
 
 	// Organization plugin — owns the `organization`, `member`, `invitation`
@@ -283,15 +289,10 @@ function buildPlugins() {
 			const owned = await db
 				.select({ plan: organizationTable.plan })
 				.from(memberTable)
-				.innerJoin(
-					organizationTable,
-					eq(memberTable.organizationId, organizationTable.id),
-				)
+				.innerJoin(organizationTable, eq(memberTable.organizationId, organizationTable.id))
 				.where(and(eq(memberTable.userId, u.id), eq(memberTable.role, "owner")));
 			const hasPaidTeam = owned.some((o) => o.plan !== "free");
-			const cap = hasPaidTeam
-				? USER_TEAM_OWNERSHIP_CAPS.paid
-				: USER_TEAM_OWNERSHIP_CAPS.free;
+			const cap = hasPaidTeam ? USER_TEAM_OWNERSHIP_CAPS.paid : USER_TEAM_OWNERSHIP_CAPS.free;
 			return owned.length < cap;
 		},
 		membershipLimit: async (_u, org) => {
@@ -360,9 +361,17 @@ function buildPlugins() {
 	// for bearer — it adds request middleware that runs before route handlers.
 	const bearerPlugin = bearer();
 
-	return [adminPlugin, linkPlugin, orgPlugin, devicePlugin, bearerPlugin, ...polarPlugins, haveIBeenPwned({
-		enabled: !dev,
-	})];
+	return [
+		adminPlugin,
+		linkPlugin,
+		orgPlugin,
+		devicePlugin,
+		bearerPlugin,
+		...polarPlugins,
+		haveIBeenPwned({
+			enabled: !dev,
+		}),
+	];
 }
 
 /**
@@ -370,9 +379,8 @@ function buildPlugins() {
  * Idempotent — safe to call twice (the membership check short-circuits).
  *
  * Skipped silently for waitlist (`status === "pending"`) users so we don't
- * spawn orphan teams for emails the user hasn't activated yet. That means
- * activation has to call this again, otherwise an approved waitlist user
- * signs in with no team at all — see the admin waitlist/invite actions.
+ * spawn orphan teams for emails nobody has claimed. Activation has to call
+ * this again — see [activatePendingUser] and the admin invite actions.
  */
 export async function ensureDefaultTeamForUser(u: {
 	id: string;
@@ -398,11 +406,11 @@ export async function ensureDefaultTeamForUser(u: {
 		const orgId = crypto.randomUUID();
 		// Slug needs to be unique — suffix with a short id so two "Kanak's
 		// Team" rows don't collide on the org.slug unique index.
-		const slugBase = first
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, "-")
-			.replace(/(^-|-$)/g, "")
-			|| "team";
+		const slugBase =
+			first
+				.toLowerCase()
+				.replace(/[^a-z0-9]+/g, "-")
+				.replace(/(^-|-$)/g, "") || "team";
 		const slug = `${slugBase}-${orgId.slice(0, 6)}`;
 
 		// Both writes in one transaction — a failure on the member insert
@@ -433,19 +441,36 @@ export async function ensureDefaultTeamForUser(u: {
 }
 
 /**
- * Returns true if the user with this email exists and is still pending
- * waitlist approval. Magic link + password reset both short-circuit on
- * this so pending users can't slip in via either path before being
- * activated (admin flips status: pending → active in /admin/waitlist).
+ * Promotes a leftover `status: "pending"` waitlist row to a real account the
+ * first time it gets a session, and gives it the team `ensureDefaultTeamForUser`
+ * refused to create while it was pending. No-op for accounts already active.
  */
-async function isOnWaitlist(email: string): Promise<boolean> {
+async function activatePendingUser(userId: string): Promise<void> {
 	const db = getDb();
-	const rows = await db
-		.select({ status: userTable.status })
-		.from(userTable)
-		.where(eq(userTable.email, email))
-		.limit(1);
-	return rows[0]?.status === "pending";
+	try {
+		const [row] = await db
+			.select({
+				status: userTable.status,
+				name: userTable.name,
+				email: userTable.email,
+			})
+			.from(userTable)
+			.where(eq(userTable.id, userId))
+			.limit(1);
+		if (row?.status !== "pending") return;
+
+		await db
+			.update(userTable)
+			.set({ status: "active", updatedAt: new Date() })
+			.where(eq(userTable.id, userId));
+		await ensureDefaultTeamForUser({
+			id: userId,
+			name: row.name ?? "",
+			email: row.email,
+		});
+	} catch (err) {
+		console.error("[auth] activatePendingUser failed", err);
+	}
 }
 
 async function handleSubscriptionEvent(payload: unknown): Promise<void> {
@@ -462,9 +487,7 @@ async function handleSubscriptionEvent(payload: unknown): Promise<void> {
 		| null
 		| undefined;
 	const currentPeriodEnd = periodEndRaw ? new Date(periodEndRaw) : null;
-	const cancelAtPeriodEnd = Boolean(
-		data.cancelAtPeriodEnd ?? data.cancel_at_period_end ?? false,
-	);
+	const cancelAtPeriodEnd = Boolean(data.cancelAtPeriodEnd ?? data.cancel_at_period_end ?? false);
 
 	if (!userId || !polarSubscriptionId) return;
 
@@ -504,9 +527,7 @@ async function handleSubscriptionEnded(payload: unknown): Promise<void> {
 		? await findWorkspaceByPolarSubscription(polarSubscriptionId)
 		: null;
 	if (!organizationId) {
-		console.error(
-			`[billing] could not resolve workspace to downgrade for ${polarSubscriptionId}`,
-		);
+		console.error(`[billing] could not resolve workspace to downgrade for ${polarSubscriptionId}`);
 		return;
 	}
 	await downgradeToFree(organizationId);
@@ -517,8 +538,6 @@ function extractUserId(payload: unknown): string | null {
 	const v =
 		data.customerExternalId ??
 		data.customer_external_id ??
-		((data.customer as Record<string, unknown> | undefined)?.externalId as
-			| string
-			| undefined);
+		((data.customer as Record<string, unknown> | undefined)?.externalId as string | undefined);
 	return typeof v === "string" && v.length > 0 ? v : null;
 }

@@ -17,7 +17,7 @@ import { publicEnv } from "$lib/env/public";
  * Methods we use:
  *   authClient.signIn.email({ email, password, rememberMe })
  *   authClient.signIn.magicLink({ email, callbackURL })
- *   authClient.signIn.social({ provider, callbackURL })   // dev only
+ *   authClient.signIn.social({ provider, callbackURL })
  *   authClient.signOut()
  *   authClient.requestPasswordReset({ email, redirectTo })
  *   authClient.resetPassword({ newPassword, token })
@@ -59,5 +59,5 @@ export const authClient = createAuthClient({
 	],
 });
 
-/** Providers we expose social buttons for (dev only). */
+/** Providers we expose social buttons for; which ones render is env-driven. */
 export type SocialProvider = "github" | "google";

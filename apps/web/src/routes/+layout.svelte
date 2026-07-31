@@ -1,73 +1,68 @@
 <script lang="ts">
-  import { dev } from "$app/environment";
-  import { page } from "$app/state";
-  import { analytics } from "$lib/analytics/client";
-  import { webConsent } from "$lib/analytics/consent.svelte";
-  import { authClient } from "$lib/auth/client";
-  import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
-  import {
-    AppLoading,
-    DevThemeToggle,
-    Navbar,
-    SeoMeta,
-    ThemeShortcut,
-  } from "$lib/components";
-  import { onMount } from "svelte";
-  import ConsentBanner from "$lib/components/ConsentBanner.svelte";
-  import { NavProgress } from "@recast/ui/nav-progress";
+import { dev } from "$app/environment";
+import { page } from "$app/state";
+import { analytics } from "$lib/analytics/client";
+import { webConsent } from "$lib/analytics/consent.svelte";
+import { authClient } from "$lib/auth/client";
+import ImpersonationBanner from "$lib/auth/components/ImpersonationBanner.svelte";
+import { AppLoading, DevThemeToggle, Navbar, SeoMeta, ThemeShortcut } from "$lib/components";
+import { onMount } from "svelte";
+import ConsentBanner from "$lib/components/ConsentBanner.svelte";
+import { NavProgress } from "@recast/ui/nav-progress";
 
-  import { Toaster } from "@recast/ui/sonner";
-  import { ModeWatcher } from "@recast/ui/theme";
-  import {
-    buildSiteJsonLd,
-    isChromeless as isChromelessPath,
-    isIndexable,
-  } from "./layout.logic";
-  import "../app.css";
+import { Toaster } from "@recast/ui/sonner";
+import { ModeWatcher } from "@recast/ui/theme";
+import { buildSiteJsonLd, isChromeless as isChromelessPath, isIndexable } from "./layout.logic";
+import "../app.css";
 // Player theme — imported once at the root so any /share or dashboard
-  // route that mounts <RecastPlayer> picks up the branded CSS variables.
-  import "@recast/player/styles.css";
-  import "@recast/application/styles.css";
+// route that mounts <RecastPlayer> picks up the branded CSS variables.
+import "@recast/player/styles.css";
+import "@recast/application/styles.css";
 
-  let { children } = $props();
+let { children } = $props();
 
-  // Retire the initial splash (rendered by app.html on product routes) once the
-  // app has hydrated — fade via CSS, then drop it from the DOM.
-  onMount(() => {
-    const el = document.getElementById("app-splash");
-    if (!el) return;
-    document.documentElement.classList.add("splash-hydrated");
-    const t = setTimeout(() => {
-      el.remove();
-      document.documentElement.classList.remove("splash-active", "splash-hydrated");
-    }, 360);
-    return () => clearTimeout(t);
-  });
+// Retire the initial splash (rendered by app.html on product routes) once the
+// app has hydrated — fade via CSS, then drop it from the DOM.
+onMount(() => {
+	const el = document.getElementById("app-splash");
+	if (!el) return;
+	document.documentElement.classList.add("splash-hydrated");
+	const t = setTimeout(() => {
+		el.remove();
+		document.documentElement.classList.remove(
+			"splash-active",
+			"splash-hydrated",
+			"splash-dashboard",
+			"splash-share",
+		);
+	}, 360);
+	return () => clearTimeout(t);
+});
 
-  const isChromeless = $derived(isChromelessPath(page.url.pathname));
-  const indexable = $derived(isIndexable(page.url.pathname));
-  const siteJsonLd = $derived(buildSiteJsonLd(page.url.origin));
+const isChromeless = $derived(isChromelessPath(page.url.pathname));
+const indexable = $derived(isIndexable(page.url.pathname));
+const siteJsonLd = $derived(buildSiteJsonLd(page.url.origin));
 
-  // Returning visitor who already accepted → re-enable replay + persistent id
-  // before any events fire this session.
-  $effect(() => {
-    if (webConsent.hasAccepted) analytics.upgradePersistence();
-  });
+// Returning visitor who already accepted → re-enable replay + persistent id
+// before any events fire this session.
+$effect(() => {
+	if (webConsent.hasAccepted) analytics.upgradePersistence();
+});
 
-  // Tie events to the signed-in user (aliases the anonymous distinct id) and
-  // drop the identity on sign-out. Gated by product consent inside the client.
-  const session = authClient.useSession();
-  let lastUserId: string | null = null;
-  $effect(() => {
-    const userId = $session.data?.user?.id ?? null;
-    if (userId && userId !== lastUserId) {
-      analytics.identify(userId);
-      lastUserId = userId;
-    } else if (!userId && lastUserId) {
-      analytics.reset();
-      lastUserId = null;
-    }
-  });
+// Tie events to the signed-in user (aliases the anonymous distinct id) and
+// drop the identity on sign-out. Gated by product consent inside the client.
+const session = authClient.useSession();
+let lastUserId: string | null = null;
+$effect(() => {
+	const userId = $session.data?.user?.id ?? null;
+	if (userId && userId !== lastUserId) {
+		analytics.identify(userId);
+		lastUserId = userId;
+	} else if (!userId && lastUserId) {
+		analytics.reset();
+		lastUserId = null;
+	}
+});
 </script>
 
 <!-- Site-wide default social/SEO tags. Routes that need their own card (e.g.

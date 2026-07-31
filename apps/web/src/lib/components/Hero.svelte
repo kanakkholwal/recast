@@ -1,10 +1,17 @@
 <script lang="ts">
+import { authClient } from "$lib/auth/client";
 import { Container, HeroBackdrop, MacWindow, Section, SelectionWord } from "$lib/components";
 import { autoplayInView, prefersReducedMotion, TextLoop } from "$lib/motion-core";
 import { ArrowRight, CloudDownloadIcon, Megaphone } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { fly } from "svelte/transition";
 import { backdropUrl, heroStagger, platforms, rise, steps, words } from "./Hero.logic";
+
+// The desktop app needs no account; Cloud sharing does. The secondary CTA
+// carries that second door, and points at the dashboard once you're in so a
+// signed-in visitor isn't asked to sign up again.
+const session = authClient.useSession();
+const signedIn = $derived(Boolean($session.data?.user));
 
 // Svelte transitions use WAAPI, which the CSS reduced-motion guard can't
 // reach; gate the mount choreography here so a reduced-motion visitor gets
@@ -98,10 +105,17 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
           <CloudDownloadIcon class="size-4" />
           Download for Desktop
         </Button>
-        <!-- <Button href="#proof" variant="outline" size="lg" class="group/cta gap-2">
-					Watch it work
-					<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
-				</Button> -->
+        <Button
+          href={signedIn ? "/dashboard" : "/signup"}
+          variant="outline"
+          size="xl"
+          class="group/cta gap-2"
+        >
+          {signedIn ? "Go to dashboard" : "Share your first demo"}
+          <ArrowRight
+            class="size-4 transition-transform group-hover/cta:translate-x-0.5"
+          />
+        </Button>
       </div>
 
       <div
@@ -115,7 +129,7 @@ let { previewSrc = "" }: { previewSrc?: string } = $props();
           <span class="relative inline-flex size-1.5 rounded-full bg-primary"
           ></span>
         </span>
-        Free forever · No sign-up
+        Free forever · No account needed to record
         <span
           class="mx-2 hidden h-1 w-1 rounded-full bg-muted-foreground/40 sm:inline-block"
         ></span>

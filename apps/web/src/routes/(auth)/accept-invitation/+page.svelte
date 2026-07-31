@@ -1,104 +1,96 @@
 <script lang="ts">
-	import { goto, invalidateAll } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import Logo from "$lib/logo.svelte";
-	import { isInviteBlocked } from "./invitation.logic";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		AlertTriangle,
-		ArrowRight,
-		Check,
-		LoaderCircle,
-		MailCheck,
-		Wand2,
-		X,
-	} from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import Logo from "$lib/logo.svelte";
+import { isInviteBlocked } from "./invitation.logic";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { AlertTriangle, ArrowRight, Check, LoaderCircle, MailCheck, Wand2, X } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	let { data } = $props();
+let { data } = $props();
 
-	let accepting = $state(false);
-	let rejecting = $state(false);
-	let sendingLink = $state(false);
-	let linkSent = $state(false);
-	/** Either action in flight — prevents accept + reject racing each other. */
-	const busy = $derived(accepting || rejecting);
+let accepting = $state(false);
+let rejecting = $state(false);
+let sendingLink = $state(false);
+let linkSent = $state(false);
+/** Either action in flight — prevents accept + reject racing each other. */
+const busy = $derived(accepting || rejecting);
 
-	const blocked = $derived(isInviteBlocked(data.invite, data.viewer));
+const blocked = $derived(isInviteBlocked(data.invite, data.viewer));
 
-	async function accept() {
-		if (busy) return;
-		accepting = true;
-		const toastId = toast.loading(`Joining ${data.invite.orgName}…`);
-		try {
-			const { error } = await authClient.organization.acceptInvitation({
-				invitationId: data.invite.id,
-			});
-			if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
-			toast.success(`Welcome to ${data.invite.orgName}.`, { id: toastId });
-			// Force-rerun every loader so the dashboard's auth + team gate
-			// sees the new membership / active-org cookie immediately;
-			// without this the gate can bounce the user back to onboarding.
-			await invalidateAll();
-			await goto("/dashboard", { invalidateAll: true });
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't accept the invitation.", {
-				id: toastId,
-			});
-		} finally {
-			accepting = false;
-		}
+async function accept() {
+	if (busy) return;
+	accepting = true;
+	const toastId = toast.loading(`Joining ${data.invite.orgName}…`);
+	try {
+		const { error } = await authClient.organization.acceptInvitation({
+			invitationId: data.invite.id,
+		});
+		if (error) throw new Error(error.message ?? "Couldn't accept the invitation.");
+		toast.success(`Welcome to ${data.invite.orgName}.`, { id: toastId });
+		// Force-rerun every loader so the dashboard's auth + team gate
+		// sees the new membership / active-org cookie immediately;
+		// without this the gate can bounce the user back to onboarding.
+		await invalidateAll();
+		await goto("/dashboard", { invalidateAll: true });
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't accept the invitation.", {
+			id: toastId,
+		});
+	} finally {
+		accepting = false;
 	}
+}
 
-	async function reject() {
-		if (busy) return;
-		rejecting = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.organization.rejectInvitation({
-						invitationId: data.invite.id,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't decline the invitation.");
-				})(),
-				{
-					loading: "Declining…",
-					success: "Invitation declined.",
-					error: (err) => (err as Error)?.message ?? "Couldn't decline the invitation.",
-				},
-			);
-			await goto("/");
-		} finally {
-			rejecting = false;
-		}
+async function reject() {
+	if (busy) return;
+	rejecting = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.organization.rejectInvitation({
+					invitationId: data.invite.id,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't decline the invitation.");
+			})(),
+			{
+				loading: "Declining…",
+				success: "Invitation declined.",
+				error: (err) => (err as Error)?.message ?? "Couldn't decline the invitation.",
+			},
+		);
+		await goto("/");
+	} finally {
+		rejecting = false;
 	}
+}
 
-	async function sendSignInLink() {
-		if (sendingLink) return;
-		sendingLink = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.signIn.magicLink({
-						email: data.invite.email,
-						// Round-trip the user back here once they click the link.
-						callbackURL: `/accept-invitation?id=${data.invite.id}`,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
-				})(),
-				{
-					loading: "Sending sign-in link…",
-					success: "Check your inbox. The link expires in 10 minutes.",
-					error: (err) => (err as Error)?.message ?? "Couldn't send the sign-in link.",
-				},
-			);
-			linkSent = true;
-		} finally {
-			sendingLink = false;
-		}
+async function sendSignInLink() {
+	if (sendingLink) return;
+	sendingLink = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.signIn.magicLink({
+					email: data.invite.email,
+					// Round-trip the user back here once they click the link.
+					callbackURL: `/accept-invitation?id=${data.invite.id}`,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
+			})(),
+			{
+				loading: "Sending sign-in link…",
+				success: "Check your inbox. The link expires in 10 minutes.",
+				error: (err) => (err as Error)?.message ?? "Couldn't send the sign-in link.",
+			},
+		);
+		linkSent = true;
+	} finally {
+		sendingLink = false;
 	}
+}
 </script>
 
 <svelte:head>
@@ -130,7 +122,7 @@
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 shadow-craft-lg sm:p-7">
+		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
 			{#if data.invite.status !== "pending"}
 				<div class="flex flex-col items-center gap-3 text-center text-sm text-muted-foreground">
 					<AlertTriangle class="size-5 text-amber-500" />
@@ -185,7 +177,7 @@
 						<p class="text-center text-[11px] text-muted-foreground">
 							Already have a password?
 							<a
-								href={`/login?next=/accept-invitation?id=${data.invite.id}`}
+								href={`/login?next=${encodeURIComponent(`/accept-invitation?id=${data.invite.id}`)}`}
 								class="font-semibold text-foreground hover:text-primary"
 							>
 								Sign in with password

@@ -1,21 +1,29 @@
 <script lang="ts">
-  import { GITHUB_URL, navLinks } from "$lib/components/nav-data";
-  import Logo from "$lib/logo.svelte";
-  import { prefersReducedMotion } from "$lib/motion-core";
-  import { Menu, X } from "@recast/icons";
-  import { GithubBrand } from "@recast/ui/brand-icons";
-  import { Button } from "@recast/ui/button";
-  import { slide } from "svelte/transition";
+import { authClient } from "$lib/auth/client";
+import { GITHUB_URL, navLinks } from "$lib/components/nav-data";
+import Logo from "$lib/logo.svelte";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { LayoutDashboard, Menu, X } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { slide } from "svelte/transition";
 
-  // Minimal inline nav: brand left, links centered, Download primary right, with
-  // a compact disclosure on mobile. Replaces the old hamburger-collapse menu so
-  // the links are always visible, matching the refined hero direction.
-  let open = $state(false);
-  const reduced = $derived(prefersReducedMotion());
-  const close = () => (open = false);
+// Minimal inline nav: brand left, links centered, Download primary right, with
+// a compact disclosure on mobile. Replaces the old hamburger-collapse menu so
+// the links are always visible, matching the refined hero direction.
+let open = $state(false);
+const reduced = $derived(prefersReducedMotion());
+const close = () => (open = false);
 
-  const linkClass =
-    "inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground";
+// Signed-in visitors get "Dashboard" where signed-out ones get "Sign in". The
+// signed-out pair is also what renders while the session resolves — it's the
+// common case, and both slots are the same width, so the swap doesn't shift
+// the bar.
+const session = authClient.useSession();
+const signedIn = $derived(Boolean($session.data?.user));
+
+const linkClass =
+	"inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground";
 </script>
 
 <svelte:window
@@ -27,7 +35,7 @@
 <div class="fixed inset-x-0 top-4 z-50 flex justify-center px-4">
   <nav
     aria-label="Primary"
-    class="glass-strong shadow-lg border-border-subtle flex w-full max-w-3xl items-center gap-2 rounded-xl p-1.5"
+    class="glass-strong border-border-subtle flex w-full max-w-3xl items-center gap-2 rounded-xl p-1.5"
   >
     <a
       href="/"
@@ -63,6 +71,14 @@
       >
         <GithubBrand class="size-4" />
       </a>
+      {#if signedIn}
+        <a href="/dashboard" class="hidden {linkClass} md:inline-flex">
+          <LayoutDashboard class="mr-1.5 size-3.5" />
+          Dashboard
+        </a>
+      {:else}
+        <a href="/login" class="hidden {linkClass} md:inline-flex">Sign in</a>
+      {/if}
       <Button href="/download" size="sm" variant="dark" class="gap-1.5">
         Download
       </Button>
@@ -122,5 +138,32 @@
         </a>
       </li>
     </ul>
+
+    <div class="mt-2 border-t border-border-low/60 pt-2">
+      {#if signedIn}
+        <a
+          href="/dashboard"
+          onclick={close}
+          class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-foreground/5"
+        >
+          Go to dashboard
+        </a>
+      {:else}
+        <a
+          href="/login"
+          onclick={close}
+          class="block rounded-lg px-3 py-2.5 text-sm font-medium text-foreground/80 transition-colors hover:bg-foreground/5 hover:text-foreground"
+        >
+          Sign in
+        </a>
+        <a
+          href="/signup"
+          onclick={close}
+          class="block rounded-lg px-3 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-foreground/5"
+        >
+          Start free
+        </a>
+      {/if}
+    </div>
   </div>
 {/if}

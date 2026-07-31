@@ -1,153 +1,269 @@
 <script lang="ts">
-	import {
-	  Container,
-	  Footer,
-	  HeroBackdrop,
-	  Reveal,
-	  Section,
-	  SectionHeader,
-	  SeoMeta
-	} from "$lib/components";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import { PLANS } from "$lib/billing/catalog";
-	import {
-	  ArrowRight,
-	  Building2,
-	  Check,
-	  Cloud,
-	  Download,
-	  HardDriveUpload,
-	  LoaderCircle,
-	  Mail,
-	  Minus,
-	  ShieldCheck,
-	  Tag,
-	  Users,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
-	import {
-	  extraSeatPrice,
-	  formatUsd,
-	  gb,
-	  LOOM,
-	  proPrice,
-	  teamComparison,
-	} from "./pricing.logic";
+import { goto } from "$app/navigation";
+import {
+	Container,
+	Footer,
+	HeroBackdrop,
+	Reveal,
+	Section,
+	SectionHeader,
+	SeoMeta,
+} from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { PLANS } from "$lib/billing/catalog";
+import {
+	ArrowRight,
+	Building2,
+	Check,
+	Cloud,
+	Download,
+	HardDriveUpload,
+	Mail,
+	Minus,
+	ShieldCheck,
+	Tag,
+	Users,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { extraSeatPrice, formatUsd, gb, LOOM, proPrice, teamComparison } from "./pricing.logic";
 
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-	let annual = $state(false);
-	const pro = $derived(proPrice(annual));
-	const extraSeat = $derived(extraSeatPrice(annual));
-	const teams = $derived(teamComparison(annual));
+let annual = $state(false);
+const pro = $derived(proPrice(annual));
+const extraSeat = $derived(extraSeatPrice(annual));
+const teams = $derived(teamComparison(annual));
 
-	let email = $state("");
-	let joined = $state(false);
-	let loading = $state(false);
-	async function joinWaitlist(e: SubmitEvent) {
-		e.preventDefault();
-		if (!email.trim() || loading) return;
-		loading = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const res = await fetch("/api/waitlist", {
-						method: "POST",
-						headers: { "Content-Type": "application/json" },
-						body: JSON.stringify({ email, source: "pricing" }),
-					});
-					const data = (await res.json().catch(() => ({}))) as {
-						ok?: boolean;
-						error?: string;
-					};
-					if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
-				})(),
-				{
-					loading: "Adding you to the waitlist…",
-					success: "You're on the list. We'll email when access opens.",
-					error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
-				},
-			);
-			joined = true;
-		} finally {
-			loading = false;
-		}
-	}
+// Upgrading is a workspace action, so Pro can't be bought from here — the
+// CTA creates the account and Polar checkout runs from settings/billing.
+let email = $state("");
+const signupHref = $derived(
+	email.trim()
+		? `/signup?email=${encodeURIComponent(email.trim())}&source=pricing`
+		: "/signup?source=pricing",
+);
+function startWithEmail(e: SubmitEvent) {
+	e.preventDefault();
+	goto(signupHref);
+}
 
-	type Cell = boolean | string;
-	type Row = { label: string; desktop: Cell; cloudFree: Cell; cloudPro: Cell; enterprise: Cell };
-	type RowGroup = { heading: string; rows: Row[] };
+type Cell = boolean | string;
+type Row = { label: string; desktop: Cell; cloudFree: Cell; cloudPro: Cell; enterprise: Cell };
+type RowGroup = { heading: string; rows: Row[] };
 
-	const free = PLANS.free;
-	const proPlan = PLANS.pro;
+const free = PLANS.free;
+const proPlan = PLANS.pro;
 
-	const groups: RowGroup[] = [
-		{
-			heading: "Desktop app",
-			rows: [
-				{ label: "Record, auto-polish, edit, export", desktop: true, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Smart zoom, cursor smoothing, silence cuts", desktop: true, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Annotations, blur, camera bubble", desktop: true, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Hardware-accelerated export", desktop: true, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Account required to record", desktop: "Never", cloudFree: "Never", cloudPro: "Never", enterprise: "Never" },
-			],
-		},
-		{
-			heading: "Limits",
-			rows: [
-				{ label: "Creators", desktop: "No account", cloudFree: `${free.seats.included}`, cloudPro: `${proPlan.seats.included} included, then ${formatUsd(proPlan.seats.monthlyUsd)}`, enterprise: `Up to ${PLANS.enterprise.seats.max}` },
-				{ label: "Active share links", desktop: "—", cloudFree: `${free.limits.activeRecasts}`, cloudPro: `${proPlan.limits.activeRecasts}`, enterprise: "By agreement" },
-				{ label: "Hosted storage", desktop: "—", cloudFree: gb(free.limits.storageBytes), cloudPro: gb(proPlan.limits.storageBytes), enterprise: "By agreement" },
-				{ label: "Monthly delivery to viewers", desktop: "—", cloudFree: gb(free.limits.deliveryBytesPerMonth), cloudPro: gb(proPlan.limits.deliveryBytesPerMonth), enterprise: "By agreement" },
-				{ label: "Recording length", desktop: "No limit", cloudFree: "10 min", cloudPro: "4 hours", enterprise: "8 hours" },
-				{ label: "Playback quality", desktop: "Source", cloudFree: "720p", cloudPro: "4K", enterprise: "4K" },
-			],
-		},
-		{
-			heading: "Sharing",
-			rows: [
-				{ label: "Hosted Recast player page", desktop: false, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Watch analytics", desktop: false, cloudFree: "Basic", cloudPro: "Full", enterprise: "Full + export" },
-				{ label: "Password protection and link expiry", desktop: false, cloudFree: false, cloudPro: true, enterprise: true },
-				{ label: "Per-viewer access controls", desktop: false, cloudFree: false, cloudPro: true, enterprise: true },
-				{ label: "Custom branding and domain", desktop: false, cloudFree: false, cloudPro: true, enterprise: true },
-				{ label: "Recast watermark on player", desktop: "—", cloudFree: "Yes", cloudPro: "No", enterprise: "No" },
-			],
-		},
-		{
-			heading: "Storage",
-			rows: [
-				{ label: "Bring your own bucket", desktop: true, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Recast-managed storage", desktop: false, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Custom S3 / R2 / Azure / GCP", desktop: false, cloudFree: false, cloudPro: true, enterprise: true },
-				{ label: "Data residency control", desktop: false, cloudFree: false, cloudPro: false, enterprise: true },
-			],
-		},
-		{
-			heading: "Team and admin",
-			rows: [
-					{ label: "Roles (owner, admin, member)", desktop: false, cloudFree: true, cloudPro: true, enterprise: true },
-				{ label: "Audit log", desktop: false, cloudFree: false, cloudPro: false, enterprise: true },
-				{ label: "SSO / SAML / SCIM", desktop: false, cloudFree: false, cloudPro: false, enterprise: true },
-				{ label: "Dedicated success and SLAs", desktop: false, cloudFree: false, cloudPro: false, enterprise: true },
-			],
-		},
-	];
+const groups: RowGroup[] = [
+	{
+		heading: "Desktop app",
+		rows: [
+			{
+				label: "Record, auto-polish, edit, export",
+				desktop: true,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Smart zoom, cursor smoothing, silence cuts",
+				desktop: true,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Annotations, blur, camera bubble",
+				desktop: true,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Hardware-accelerated export",
+				desktop: true,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Account required to record",
+				desktop: "Never",
+				cloudFree: "Never",
+				cloudPro: "Never",
+				enterprise: "Never",
+			},
+		],
+	},
+	{
+		heading: "Limits",
+		rows: [
+			{
+				label: "Creators",
+				desktop: "No account",
+				cloudFree: `${free.seats.included}`,
+				cloudPro: `${proPlan.seats.included} included, then ${formatUsd(proPlan.seats.monthlyUsd)}`,
+				enterprise: `Up to ${PLANS.enterprise.seats.max}`,
+			},
+			{
+				label: "Active share links",
+				desktop: "—",
+				cloudFree: `${free.limits.activeRecasts}`,
+				cloudPro: `${proPlan.limits.activeRecasts}`,
+				enterprise: "By agreement",
+			},
+			{
+				label: "Hosted storage",
+				desktop: "—",
+				cloudFree: gb(free.limits.storageBytes),
+				cloudPro: gb(proPlan.limits.storageBytes),
+				enterprise: "By agreement",
+			},
+			{
+				label: "Monthly delivery to viewers",
+				desktop: "—",
+				cloudFree: gb(free.limits.deliveryBytesPerMonth),
+				cloudPro: gb(proPlan.limits.deliveryBytesPerMonth),
+				enterprise: "By agreement",
+			},
+			{
+				label: "Recording length",
+				desktop: "No limit",
+				cloudFree: "10 min",
+				cloudPro: "4 hours",
+				enterprise: "8 hours",
+			},
+			{
+				label: "Playback quality",
+				desktop: "Source",
+				cloudFree: "720p",
+				cloudPro: "4K",
+				enterprise: "4K",
+			},
+		],
+	},
+	{
+		heading: "Sharing",
+		rows: [
+			{
+				label: "Hosted Recast player page",
+				desktop: false,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Watch analytics",
+				desktop: false,
+				cloudFree: "Basic",
+				cloudPro: "Full",
+				enterprise: "Full + export",
+			},
+			{
+				label: "Password protection and link expiry",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Per-viewer access controls",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Custom branding and domain",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Recast watermark on player",
+				desktop: "—",
+				cloudFree: "Yes",
+				cloudPro: "No",
+				enterprise: "No",
+			},
+		],
+	},
+	{
+		heading: "Storage",
+		rows: [
+			{
+				label: "Bring your own bucket",
+				desktop: true,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Recast-managed storage",
+				desktop: false,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Custom S3 / R2 / Azure / GCP",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{
+				label: "Data residency control",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: false,
+				enterprise: true,
+			},
+		],
+	},
+	{
+		heading: "Team and admin",
+		rows: [
+			{
+				label: "Roles (owner, admin, member)",
+				desktop: false,
+				cloudFree: true,
+				cloudPro: true,
+				enterprise: true,
+			},
+			{ label: "Audit log", desktop: false, cloudFree: false, cloudPro: false, enterprise: true },
+			{
+				label: "SSO / SAML / SCIM",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: false,
+				enterprise: true,
+			},
+			{
+				label: "Dedicated success and SLAs",
+				desktop: false,
+				cloudFree: false,
+				cloudPro: false,
+				enterprise: true,
+			},
+		],
+	},
+];
 
-	type ColKey = "desktop" | "cloudFree" | "cloudPro" | "enterprise";
-	const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foreground" }[] = [
-		{ key: "desktop", label: "Desktop", tone: "foreground" },
-		{ key: "cloudFree", label: "Cloud Free", tone: "muted" },
-		{ key: "cloudPro", label: "Cloud Pro", tone: "primary" },
-		{ key: "enterprise", label: "Enterprise", tone: "foreground" },
-	];
+type ColKey = "desktop" | "cloudFree" | "cloudPro" | "enterprise";
+const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foreground" }[] = [
+	{ key: "desktop", label: "Desktop", tone: "foreground" },
+	{ key: "cloudFree", label: "Cloud Free", tone: "muted" },
+	{ key: "cloudPro", label: "Cloud Pro", tone: "primary" },
+	{ key: "enterprise", label: "Enterprise", tone: "foreground" },
+];
 </script>
 
 <SeoMeta
@@ -191,7 +307,7 @@
 						<HardDriveUpload class="size-3.5 text-foreground" /> Bring your own storage
 					</span>
 					<span class="inline-flex items-center gap-1.5 rounded-full border border-border-low/60 bg-card/40 px-3 py-1 ring-1 ring-inset ring-border-low/30">
-						<Tag class="size-3.5 text-foreground" /> Price locked for beta users
+						<Tag class="size-3.5 text-foreground" /> No card to start
 					</span>
 				</div>
 
@@ -239,7 +355,7 @@
 							</span>
 							<span class="glass-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground/70">
 								<Cloud class="size-3" />
-								In private beta
+								No card
 							</span>
 						</div>
 						<div class="mt-3 flex items-baseline gap-2">
@@ -286,7 +402,7 @@
 							</span>
 							<span class="glass-chip inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground/80">
 								<Cloud class="size-3 text-primary" />
-								Opens after beta
+								Most popular
 							</span>
 						</div>
 						<div class="relative mt-3 flex items-baseline gap-2">
@@ -324,39 +440,21 @@
 						</ul>
 
 						<div class="relative mt-8 pt-2">
-							{#if joined}
-								<div
-									class="flex items-center gap-3 rounded-xl border border-primary/30 bg-primary/8 px-4 py-3.5"
-									in:fly={{ y: 8, duration: 400, easing: cubicOut }}
-								>
-									<span class="grid size-7 place-items-center rounded-full bg-primary/15 text-primary">
-										<Check class="size-4" />
-									</span>
-									<span class="text-sm font-medium text-foreground">
-										You're in. This price is locked for you.
-									</span>
-								</div>
-							{:else}
-								<form class="flex flex-col gap-2.5" onsubmit={joinWaitlist}>
-									<label class="sr-only" for="pricing-email">Email address</label>
-									<input
-										id="pricing-email"
-										type="email"
-										required
-										bind:value={email}
-										placeholder="founder@startup.com"
-										class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
-									/>
-									<Button type="submit" size="lg" disabled={loading} class="gap-2">
-										{loading ? "Joining…" : "Lock this price"}
-										{#if loading}
-											<LoaderCircle class="size-4 animate-spin" />
-										{:else}
-											<ArrowRight class="size-4" />
-										{/if}
-									</Button>
-								</form>
-							{/if}
+							<form class="flex flex-col gap-2.5" onsubmit={startWithEmail}>
+								<label class="sr-only" for="pricing-email">Email address</label>
+								<input
+									id="pricing-email"
+									type="email"
+									bind:value={email}
+									autocomplete="email"
+									placeholder="founder@startup.com"
+									class="w-full rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60"
+								/>
+								<Button type="submit" size="lg" class="group/cta gap-2">
+									Start free, upgrade anytime
+									<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+								</Button>
+							</form>
 						</div>
 					</article>
 				</Reveal>
@@ -521,8 +619,8 @@
 
 			<Reveal variant="up" class="mt-8">
 				<p class="mx-auto max-w-2xl text-balance text-center text-xs leading-relaxed text-muted-foreground">
-					Cloud is in private beta and free while we onboard the first founders. Join now and
-					{formatUsd(proPrice(false))} a month stays your price when paid plans open.
+					Cloud Free needs no card and no trial clock — upgrade to Pro at
+					{formatUsd(proPrice(false))} a month whenever you outgrow it.
 					Desktop is free forever, no card, no account.
 					<a href="mailto:hello@recast.li?subject=Recast%20Enterprise" class="text-foreground underline-offset-2 hover:underline">Talk to us</a> for Enterprise.
 				</p>

@@ -1,20 +1,20 @@
 <script lang="ts">
-	import Logo from "$lib/logo.svelte";
-	import type { Snippet } from "svelte";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import Logo from "$lib/logo.svelte";
+import type { Snippet } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	let {
-		title,
-		description,
-		footer,
-		children,
-	}: {
-		title: string;
-		description?: string;
-		footer?: Snippet;
-		children: Snippet;
-	} = $props();
+let {
+	title,
+	description,
+	footer,
+	children,
+}: {
+	title: string;
+	description?: string;
+	footer?: Snippet;
+	children: Snippet;
+} = $props();
 </script>
 
 <div class="w-full max-w-sm" in:fly={{ y: 16, duration: 600, easing: cubicOut }}>
@@ -43,7 +43,7 @@
 		{/if}
 	</div>
 
-	<div class="glass-card mt-8 rounded-2xl p-6 shadow-craft-lg sm:p-7">
+	<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
 		{@render children()}
 	</div>
 

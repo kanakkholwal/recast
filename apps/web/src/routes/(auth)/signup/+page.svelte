@@ -1,75 +1,134 @@
 <script lang="ts">
-	import { goto } from "$app/navigation";
-	import AuthCard from "$lib/auth/components/AuthCard.svelte";
-	import OrDivider from "$lib/auth/components/OrDivider.svelte";
-	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
-	import { authClient } from "$lib/auth/client";
-	import {
-		STRENGTH_COLORS,
-		STRENGTH_LABELS,
-		canSignUp,
-		passwordsMatch,
-		scorePasswordStrength,
-	} from "$lib/auth/password.logic";
-	import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { Checkbox } from "@recast/ui/checkbox";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import { cubicOut } from "svelte/easing";
-	import { slide } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import { authClient } from "$lib/auth/client";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import { safeNext } from "$lib/auth/redirect";
+import {
+	STRENGTH_COLORS,
+	STRENGTH_LABELS,
+	canSignUp,
+	passwordsMatch,
+	scorePasswordStrength,
+} from "$lib/auth/password.logic";
+import { AlertCircle, ArrowRight, Eye, EyeOff, LoaderCircle } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Checkbox } from "@recast/ui/checkbox";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import { untrack } from "svelte";
+import { cubicOut } from "svelte/easing";
+import { fly, slide } from "svelte/transition";
 
-	let name = $state("");
-	let email = $state("");
-	let password = $state("");
-	let confirmPassword = $state("");
-	let agreed = $state(false);
-	let showPassword = $state(false);
-	let loading = $state(false);
+let { data } = $props();
 
-	const passwordStrength = $derived(scorePasswordStrength(password));
-	const matches = $derived(passwordsMatch(password, confirmPassword));
-	const canSubmit = $derived(
-		canSignUp({ name, email, password, confirmPassword, agreed }),
-	);
+let name = $state("");
+// Seeded once from the `?email=` handoff (/login's "no account" banner, the
+// retired /waitlist route, the homepage CTA), then plain editable state.
+let email = $state(untrack(() => page.url.searchParams.get("email")?.trim() ?? ""));
+let password = $state("");
+let confirmPassword = $state("");
+let agreed = $state(false);
+let showPassword = $state(false);
+let loading = $state(false);
+/** Set when the lookup says this email already has an account. */
+let existing = $state<string | null>(null);
 
-	async function signUp(e: SubmitEvent) {
-		e.preventDefault();
-		if (!canSubmit || loading) return;
-		loading = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.signUp.email({ name, email: email.trim(), password });
-					if (error) throw new Error(error.message ?? "Couldn't create your account.");
-				})(),
-				{
-					loading: "Creating your account…",
-					success: "Account created. Welcome to Recast.",
-					error: (err) => (err as Error)?.message ?? "Couldn't create your account.",
-				},
-			);
-			await goto("/dashboard");
-		} finally {
-			loading = false;
+const next = $derived(safeNext(page.url.searchParams.get("next")));
+const loginHref = $derived(
+	`/login?next=${encodeURIComponent(next)}${email.trim() ? `&email=${encodeURIComponent(email.trim())}` : ""}`,
+);
+
+const passwordStrength = $derived(scorePasswordStrength(password));
+const matches = $derived(passwordsMatch(password, confirmPassword));
+const canSubmit = $derived(canSignUp({ name, email, password, confirmPassword, agreed }));
+
+$effect(() => {
+	if (existing && existing !== email.trim()) existing = null;
+});
+
+async function signUp(e: SubmitEvent) {
+	e.preventDefault();
+	if (!canSubmit || loading) return;
+	loading = true;
+	const trimmedEmail = email.trim();
+	try {
+		// "User already exists" is the single most common sign-up failure and
+		// the toast alone leaves people stuck. Catch it first so the banner
+		// can hand them a link to /login instead. Only a definite verdict
+		// blocks — `error`/`invalid` fall through to the real auth call.
+		const status = await lookupEmailStatus(trimmedEmail);
+		if (status === "active" || status === "pending") {
+			existing = trimmedEmail;
+			return;
 		}
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.signUp.email({
+					name,
+					email: trimmedEmail,
+					password,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't create your account.");
+			})(),
+			{
+				loading: "Creating your account…",
+				success: "Account created. Welcome to Recast.",
+				error: (err) => (err as Error)?.message ?? "Couldn't create your account.",
+			},
+		);
+		// invalidateAll so the destination's server load reads the fresh
+		// session cookie rather than the signed-out data it already cached.
+		await goto(next, { invalidateAll: true });
+	} finally {
+		loading = false;
 	}
+}
 </script>
 
 <svelte:head>
-	<title>Sign up - Recast</title>
+	<title>Start free - Recast</title>
 </svelte:head>
 
 <AuthCard
-	title="Create your account"
+	title="Start sharing free"
 	description="Record once. Ship a demo, not a draft."
 >
-	<SocialButtons />
+	<SocialButtons providers={data.socialProviders} callbackURL={next} />
 
-	<div class="my-5">
-		<OrDivider label="or sign up with email" />
-	</div>
+	{#if data.socialProviders.length > 0}
+		<div class="my-5">
+			<OrDivider label="or sign up with email" />
+		</div>
+	{/if}
+
+	{#if existing}
+		<div
+			class="mb-4 flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/8 p-3.5 text-xs"
+			in:fly={{ y: 6, duration: 280, easing: cubicOut }}
+		>
+			<AlertCircle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
+			<div class="min-w-0 flex-1">
+				<p class="font-medium text-foreground">
+					<span class="font-mono">{existing}</span> already has an account
+				</p>
+				<p class="mt-0.5 text-muted-foreground">
+					Sign in instead — or reset the password if you don't remember it.
+				</p>
+				<a
+					href={loginHref}
+					class="mt-2 inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
+				>
+					Sign in
+					<ArrowRight class="size-3.5" />
+				</a>
+			</div>
+		</div>
+	{/if}
 
 	<form class="flex flex-col gap-3.5" onsubmit={signUp}>
 		<Label class="flex flex-col items-stretch gap-1.5">
@@ -169,9 +228,9 @@
 			<Checkbox bind:checked={agreed} id="terms" class="mt-0.5" />
 			<span class="text-xs font-medium text-foreground/85">
 				I agree to Recast's
-				<a href="/" class="text-primary hover:underline">Terms</a>
+				<a href="/terms-of-service" class="text-primary hover:underline">Terms</a>
 				and
-				<a href="/" class="text-primary hover:underline">Privacy Policy</a>.
+				<a href="/privacy-policy" class="text-primary hover:underline">Privacy Policy</a>.
 			</span>
 		</Label>
 
@@ -180,7 +239,7 @@
 			disabled={loading || !canSubmit}
 			class="group/cta mt-2 w-full gap-2"
 		>
-			{loading ? "Creating account…" : "Create account"}
+			{loading ? "Setting up your workspace…" : "Start free"}
 			{#if loading}
 				<LoaderCircle class="size-4 animate-spin" />
 			{:else}
@@ -190,8 +249,8 @@
 	</form>
 
 	{#snippet footer()}
-		Already have an account?
-		<a href="/login" class="font-semibold text-foreground hover:text-primary">
+		Free tier, no card. Already have an account?
+		<a href={loginHref} class="font-semibold text-foreground hover:text-primary">
 			Sign in
 		</a>
 	{/snippet}
