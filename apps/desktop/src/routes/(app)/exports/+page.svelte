@@ -705,6 +705,20 @@ function activateEntry(entry: RecordingEntry) {
   />
 {/if}
 
+{#if bulkDeleteOpen}
+  <ConfirmDialog
+    open={true}
+    title={`Move ${selectedCount} export${selectedCount === 1 ? "" : "s"} to trash?`}
+    description="The selected exports will be sent to the recycle bin. You can restore them from there if needed."
+    confirmLabel="Move to trash"
+    variant="destructive"
+    onConfirm={selection.bulkDelete}
+    onOpenChange={(v) => {
+      if (!v) bulkDeleteOpen = false;
+    }}
+  />
+{/if}
+
 {#if renameTarget}
   <RenameDialog
     open={true}
