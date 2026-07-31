@@ -12,7 +12,7 @@ import { computeCanvasGeometry } from "$lib/canvas-geometry";
 import { loadBackgroundBitmap } from "../../components/editor/background-source";
 import { buildPressEvents } from "../../components/editor/cursor-animation.logic";
 import { buildExportBase } from "./export-scene";
-import { videoEncodingConfigFor, type ExportQuality } from "./browser-export-plan";
+import type { ExportQuality } from "./browser-export-plan";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
 import { resolveCaptionFont } from "$lib/fonts/font-options";
@@ -222,7 +222,7 @@ export async function buildExportJob(
 		timeMap: toStatic(timeMap),
 		outputDurationSec,
 		fps: opts.fps,
-		encodingConfig: videoEncodingConfigFor(opts.quality),
+		quality: opts.quality,
 		videoUrl: opts.videoUrl,
 		backgroundImage,
 		cursorSprites: await buildCursorSprites(store),

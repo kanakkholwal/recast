@@ -56,7 +56,7 @@ $effect(() => {
   title={entry.filename}
   subtitle={`${formatSize(entry.sizeBytes)} · ${formatDateTime(entry.created)}`}
   icon={isImage ? ImageIcon : Video}
-  widthClass="max-w-3xl"
+  widthClass="sm:max-w-3xl"
   bodyClass="p-0! max-h-none"
   onOpenChange={(v) => {
     if (!v) onclose();

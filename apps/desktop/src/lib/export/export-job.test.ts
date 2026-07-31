@@ -10,7 +10,7 @@ function job(over: Partial<ExportJob> = {}): ExportJob {
 		timeMap: { spans: [], outputDuration: 0 },
 		outputDurationSec: 0,
 		fps: 30,
-		encodingConfig: { codec: "avc" } as ExportJob["encodingConfig"],
+		quality: "high",
 		videoUrl: "file:///v.mp4",
 		backgroundImage: null,
 		cursorSprites: null,

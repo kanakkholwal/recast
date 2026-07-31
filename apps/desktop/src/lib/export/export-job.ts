@@ -14,7 +14,7 @@
 
 import type { FrameInput } from "../../components/editor/frame-params";
 import type { TimeMap } from "$lib/timeline/time-map";
-import type { VideoEncodingConfig } from "@recast/media/mediabunny";
+import type { ExportQuality } from "./browser-export-plan";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
 import type { AnnotationLayerInputs } from "./annotation-layer-export";
@@ -65,7 +65,9 @@ export interface ExportJob {
 	/** Total output duration after cuts/speed (seconds). */
 	outputDurationSec: number;
 	fps: number;
-	encodingConfig: VideoEncodingConfig;
+	/** Quality tier ONLY — the encoder config carries a branded MediaBunny `Quality`
+	 *  object that doesn't survive `postMessage`, so the worker rebuilds it. */
+	quality: ExportQuality;
 	/** Source video URL — the worker opens its own decoder on it. */
 	videoUrl: string;
 	/** Decoded image/wallpaper background (transferable), or null for colour/gradient. */

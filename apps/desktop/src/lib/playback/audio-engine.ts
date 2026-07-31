@@ -158,6 +158,9 @@ export class AudioTimelineEngine {
 	// Bumped on every (re)schedule so an in-flight async top-up bails instead
 	// of scheduling stale nodes after a scrub.
 	#generation = 0;
+	// Bumped on every setMusicClips so a slower concurrent call can't push stale
+	// buffers (doubled music + leaked gain nodes) after a newer one took over.
+	#musicGen = 0;
 	// Aborts the in-flight decode on a scrub so a stale 12s window can't block the
 	// fresh one — without it a seek can stall until the next interval top-up.
 	#abort: AbortController | null = null;
@@ -284,6 +287,7 @@ export class AudioTimelineEngine {
 	 * dropped, mirroring the export.
 	 */
 	async setMusicClips(clips: ReadonlyArray<MusicClipSpec>): Promise<void> {
+		const gen = ++this.#musicGen;
 		this.#disposeMusic();
 		for (const spec of clips) {
 			if (spec.gain <= 0) continue;
@@ -291,6 +295,9 @@ export class AudioTimelineEngine {
 				const res = await fetch(spec.url);
 				if (!res.ok) continue;
 				const buffer = await this.#ctx.decodeAudioData(await res.arrayBuffer());
+				// A newer call took over while we were decoding — drop this result
+				// (its #disposeMusic already ran) so we don't double up or leak a gain.
+				if (gen !== this.#musicGen) return;
 				const gain = this.#ctx.createGain();
 				gain.connect(this.#ctx.destination);
 				this.#music.push({ spec, buffer, gain });
@@ -298,6 +305,7 @@ export class AudioTimelineEngine {
 				// Skip a clip that won't fetch/decode.
 			}
 		}
+		if (gen !== this.#musicGen) return;
 		if (this.#scheduled) this.#scheduleMusic(this.positionOutputSec ?? this.#anchorOutputTime);
 	}
 

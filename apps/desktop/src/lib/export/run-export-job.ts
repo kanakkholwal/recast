@@ -16,13 +16,14 @@ import { cursorOverlayFactory } from "./cursor-overlay-export";
 import { drawAnnotationLayerExport } from "./annotation-layer-export";
 import { drawCaptionLayerExport } from "./caption-layer-export";
 import { makeExportFrameAt } from "./export-frame-input";
+import { videoEncodingConfigFor } from "./browser-export-plan";
 import {
 	applyZoomFollow,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
 } from "../../components/editor/_components/camera-overlay.logic";
 import type { ShapeImage } from "@recast/render";
-import type { ExportJob, CameraJob, CaptionJob } from "./export-job";
+import { closeJobBitmaps, type ExportJob, type CameraJob, type CaptionJob } from "./export-job";
 
 /** Runtime callbacks that can't cross into the job payload (they're live handles). */
 export interface ExportRuntime {
@@ -30,12 +31,18 @@ export interface ExportRuntime {
 	signal?: AbortSignal;
 }
 
+// Dedupe registrations so the persistent main-thread `document.fonts` doesn't
+// accumulate a FontFace per export (the worker's set dies with the worker).
+const registeredCaptionFonts = new Set<string>();
+
 /** Register the caption webfont in THIS scope (the worker's `self.fonts` or the
  *  main thread's `document.fonts`) before painting. System fonts carry no `font`
  *  and are already available to OffscreenCanvas. */
 async function ensureCaptionFont(cap: CaptionJob | null): Promise<void> {
 	const f = cap?.font;
 	if (!f) return;
+	const key = `${f.family}:${f.weight}:${f.url}`;
+	if (registeredCaptionFonts.has(key)) return;
 	const set =
 		typeof document !== "undefined"
 			? document.fonts
@@ -45,6 +52,7 @@ async function ensureCaptionFont(cap: CaptionJob | null): Promise<void> {
 		const face = new FontFace(f.family, `url("${f.url}")`, { weight: String(f.weight) });
 		await face.load();
 		(set as unknown as { add(x: FontFace): void }).add(face);
+		registeredCaptionFonts.add(key);
 	} catch {
 		/* fall back to the stack's next family */
 	}
@@ -120,7 +128,8 @@ export async function runExportJob(
 			height: job.base.canvasPxH,
 			fps: job.fps,
 			outputDurationSec: job.outputDurationSec,
-			encodingConfig: job.encodingConfig,
+			// Rebuilt here (not in the job): the branded MediaBunny `Quality` can't cross postMessage.
+			encodingConfig: videoEncodingConfigFor(job.quality),
 			frameAt,
 			backgroundImage: job.backgroundImage,
 			overlays,
@@ -131,7 +140,8 @@ export async function runExportJob(
 			signal: runtime.signal,
 		});
 	} finally {
-		job.backgroundImage?.close();
-		if (anno) for (const [, bmp] of anno.images) bmp.close();
+		// Close EVERY bitmap the job owns (bg + cursor sprites + annotation images),
+		// deduped + idempotent — so an early throw (e.g. GL init) can't leak sprites.
+		closeJobBitmaps(job);
 	}
 }
