@@ -1278,9 +1278,31 @@ async function handleExport() {
 	exportNow = Date.now();
 
 	try {
-		// Build the render state (audio cuts/speed + metadata; for Rust also the
-		// text→PNG / cursor sprites it composites). Browser uses only the audio half.
-		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store);
+		// Resolve the export engine FIRST — it decides whether the render state needs
+		// its visual half. Browser export is on when the master flag is set OR the user
+		// opted into the beta; otherwise Rust. The resolver still falls back per
+		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
+		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
+		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
+		const engine = chooseExportEngine({
+			masterEnabled: wantBrowser,
+			forceLegacy: false,
+			blockedReason: browserExportBlockedReason(store),
+			capabilitySupported: capability?.supported ?? false,
+		});
+		log.info("export", "export_engine", {
+			exportId,
+			engine: engine.engine,
+			reason: engine.reason,
+			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
+		});
+
+		// Build the render state (audio cuts/speed + metadata; for Rust ALSO the
+		// text→PNG / cursor sprites it composites). The browser engine composites those
+		// itself in buildExportJob, so skip that rasterization here — no double work.
+		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
+			skipVisualRaster: engine.engine === "browser",
+		});
 
 		// Warn (but don't block) if any image annotation can't be loaded. The
 		// export skips them silently otherwise, shipping a video with them gone.
@@ -1312,24 +1334,6 @@ async function handleExport() {
 			cuts: finalRenderState.cuts?.length ?? 0,
 			padding: finalRenderState.padding ?? 0,
 			durationSec: meta ? Math.round(meta.duration) : undefined,
-		});
-
-		// Resolve the export engine. Browser export is on when the master flag is set OR
-		// the user opted into the beta; otherwise Rust. The resolver still falls back per
-		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
-		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
-		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
-		const engine = chooseExportEngine({
-			masterEnabled: wantBrowser,
-			forceLegacy: false,
-			blockedReason: browserExportBlockedReason(store),
-			capabilitySupported: capability?.supported ?? false,
-		});
-		log.info("export", "export_engine", {
-			exportId,
-			engine: engine.engine,
-			reason: engine.reason,
-			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
 		});
 
 		// Params the backend mux/export job needs, shared by both engines. The stable
