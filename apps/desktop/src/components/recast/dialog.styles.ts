@@ -15,3 +15,10 @@ export const DIALOG_HEADER = "space-y-0 border-b border-border/40 px-4 py-3.5 te
 /** Footer bar: bordered, muted, actions right. */
 export const DIALOG_FOOTER =
 	"flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5";
+
+/**
+ * Scrolling body. The ceiling matches the most generous one the dialogs used
+ * before they were unified — a tighter cap shrank the share and player dialogs.
+ * Media dialogs pass `max-h-none` and size themselves.
+ */
+export const DIALOG_BODY = "max-h-[min(88vh,720px)] overflow-y-auto px-4 py-3.5";

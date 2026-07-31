@@ -10,7 +10,7 @@
  */
 import type { IconComponent } from "@recast/icons";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
+import { DIALOG_BODY, DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 
@@ -24,9 +24,9 @@ interface Props {
 	icon?: IconComponent;
 	/** Tints the icon chip. Never the only signal — the copy says it too. */
 	tone?: Tone;
-	/** Caps the dialog width; body scrolls inside it. */
+	/** Caps the dialog width; body scrolls inside it. Prefixed or not, both work. */
 	widthClass?: string;
-	/** Extra classes for the scrolling body. */
+	/** Extra classes for the scrolling body. `max-h-none` lets media size itself. */
 	bodyClass?: string;
 	onOpenChange: (open: boolean) => void;
 	children: Snippet;
@@ -60,9 +60,11 @@ const TONE_CHIP: Record<Tone, string> = {
 		onOpenChange(v);
 	}}
 >
+	<!-- sm:max-w-none clears Dialog.Content's own `sm:max-w-sm`, which tailwind-merge
+	     can't fold into an unprefixed `max-w-*` — without it widthClass is inert above 640px. -->
 	<Dialog.Content
 		showCloseButton={false}
-		class={cn("block! gap-0!", DIALOG_SURFACE, widthClass)}
+		class={cn("block! gap-0! w-[calc(100%-2rem)] sm:max-w-none", DIALOG_SURFACE, widthClass)}
 	>
 		<Dialog.Header class={cn("flex-row items-start gap-3", DIALOG_HEADER)}>
 			{#if Icon}
@@ -90,7 +92,7 @@ const TONE_CHIP: Record<Tone, string> = {
 			</span>
 		</Dialog.Header>
 
-		<div class={cn("max-h-[min(70vh,560px)] overflow-y-auto px-4 py-3.5", bodyClass)}>
+		<div class={cn(DIALOG_BODY, bodyClass)}>
 			{@render children()}
 		</div>
 
