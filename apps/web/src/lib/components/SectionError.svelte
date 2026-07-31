@@ -1,47 +1,42 @@
 <script lang="ts">
-	import { Button } from "@recast/ui/button";
-	import { ArrowLeft, RotateCcw } from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
-	import {
-		ACCENT_BACKDROP,
-		ACCENT_RING,
-		errorCopy,
-		pickStatusIcon,
-	} from "$lib/error/error-copy";
+import { Button } from "@recast/ui/button";
+import { ArrowLeft, RotateCcw } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { ACCENT_BACKDROP, ACCENT_RING, errorCopy, pickStatusIcon } from "$lib/error/error-copy";
 
-	// Compact, shell-preserving error card for section-scoped `+error.svelte`
-	// boundaries (dashboard, admin). Unlike the full-page global error, this sits
-	// inside the section's layout so the sidebar + header stay put — a page load
-	// or streamed-promise rejection degrades in place instead of blowing away the
-	// whole shell.
-	let {
-		status,
-		message = "",
-		homeHref,
-		homeLabel,
-	}: {
-		status: number;
-		message?: string;
-		homeHref: string;
-		homeLabel: string;
-	} = $props();
+// Compact, shell-preserving error card for section-scoped `+error.svelte`
+// boundaries (dashboard, admin). Unlike the full-page global error, this sits
+// inside the section's layout so the sidebar + header stay put — a page load
+// or streamed-promise rejection degrades in place instead of blowing away the
+// whole shell.
+let {
+	status,
+	message = "",
+	homeHref,
+	homeLabel,
+}: {
+	status: number;
+	message?: string;
+	homeHref: string;
+	homeLabel: string;
+} = $props();
 
-	const isServerError = $derived(status >= 500);
-	const copy = $derived(errorCopy(status, message, isServerError));
-	const accentRing = $derived(ACCENT_RING[copy.accent]);
-	const accentBackdrop = $derived(ACCENT_BACKDROP[copy.accent]);
-	const StatusIcon = $derived(pickStatusIcon(status, isServerError));
+const isServerError = $derived(status >= 500);
+const copy = $derived(errorCopy(status, message, isServerError));
+const accentRing = $derived(ACCENT_RING[copy.accent]);
+const accentBackdrop = $derived(ACCENT_BACKDROP[copy.accent]);
+const StatusIcon = $derived(pickStatusIcon(status, isServerError));
 
-	// A hard reload is the reliable recovery from a route error boundary (it
-	// re-runs every load from scratch) and matches the global error page's
-	// "Try again". `invalidateAll()` doesn't dependably exit a boundary's
-	// failed state, so we don't use it here.
+// A hard reload is the reliable recovery from a route error boundary (it
+// re-runs every load from scratch) and matches the global error page's
+// "Try again". `invalidateAll()` doesn't dependably exit a boundary's
+// failed state, so we don't use it here.
 </script>
 
 <div class="grid min-h-[60vh] place-items-center px-4 py-10">
 	<div
-		class="glass-card relative w-full max-w-md overflow-hidden rounded-2xl p-7 text-center shadow-craft-lg"
+		class="glass-card relative w-full max-w-md overflow-hidden rounded-2xl p-7 text-center"
 		in:fly={{ y: 16, duration: 420, easing: cubicOut }}
 	>
 		<div

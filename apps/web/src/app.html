@@ -7,12 +7,34 @@
 	<meta name="color-scheme" content="light dark" />
 	<link rel="icon" href="/favicon.ico" />
 
+	<script>
+		// Resolve the stored theme before first paint. Without this the splash (and
+		// then every page) painted light until ModeWatcher mounted, so anyone on a
+		// forced dark theme got a white flash on every hard load. Mirrors
+		// apps/desktop/src/app.html; `mode-watcher-mode` is ModeWatcher's key.
+		(function () {
+			try {
+				var stored = localStorage.getItem("mode-watcher-mode");
+				var prefersDark =
+					window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+				var resolved = stored && stored !== "system" ? stored : prefersDark ? "dark" : "light";
+				var root = document.documentElement;
+				if (resolved === "dark") {
+					root.classList.add("dark");
+					root.setAttribute("data-theme", "dark");
+				} else {
+					root.setAttribute("data-theme", "light");
+				}
+			} catch (_) {}
+		})();
+	</script>
+
 	<!-- Initial splash — pure HTML/CSS so it paints instantly on a hard load,
 	     before any bundle runs, covering the hydration gap on product routes.
 	     The root layout fades + removes it once hydrated (see +layout.svelte).
-	     Colours use prefers-color-scheme since the app theme class isn't set
-	     this early; a brief mismatch (if the user forced a non-system theme)
-	     resolves the moment the app hydrates. -->
+	     Same plate/mark/shimmer language as the desktop boot screen and
+	     <AppLoading>; colours are literal because app.css hasn't loaded yet —
+	     keep them in sync with packages/design/src/index.css. -->
 	<style>
 		#app-splash {
 			position: fixed;
@@ -21,42 +43,124 @@
 			display: none;
 			align-items: center;
 			justify-content: center;
-			background: #ffffff;
+			background: oklch(0.985 0 0);
+			color: oklch(21.779% 0.00002 271.152);
+			font-family: "Geist Variable", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 			opacity: 1;
 			transition: opacity 320ms ease;
+			--splash-muted: oklch(55.102% 0.02343 264.389);
+			--splash-accent: oklch(0.52 0.20 264);
+			--splash-track: oklch(0.52 0.20 264 / 0.16);
+			--splash-mark-bg: oklch(21.779% 0.00002 271.152);
+			--splash-mark-fg: oklch(0.985 0 0);
+			--splash-mark-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.28);
+		}
+		html.dark #app-splash,
+		html[data-theme="dark"] #app-splash {
+			background: oklch(20.352% 0.00157 197.844);
+			color: oklch(95.514% 0.00011 271.152);
+			--splash-muted: oklch(64.009% 0.00007 271.152);
+			--splash-accent: oklch(0.70 0.155 264);
+			--splash-track: oklch(0.70 0.155 264 / 0.16);
+			--splash-mark-bg: oklch(95.514% 0.00011 271.152);
+			--splash-mark-fg: oklch(20.352% 0.00157 197.844);
+			--splash-mark-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.6);
 		}
 		html.splash-active #app-splash { display: flex; }
 		html.splash-active.splash-hydrated #app-splash {
 			opacity: 0;
 			pointer-events: none;
 		}
+		#app-splash .app-splash-plate {
+			display: flex;
+			flex-direction: column;
+			align-items: center;
+			gap: 14px;
+			padding: 32px;
+			animation: app-splash-plate-in 380ms cubic-bezier(0.16, 1, 0.3, 1) both;
+		}
 		#app-splash .app-splash-mark {
-			position: relative;
 			display: grid;
 			place-items: center;
-			width: 64px;
-			height: 64px;
-			border-radius: 18px;
-			background: #0b0b0b;
-			color: #ffffff;
-			box-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.28);
-			animation: app-splash-pulse 1.5s ease-in-out infinite;
+			width: 56px;
+			height: 56px;
+			border-radius: 16px;
+			background: var(--splash-mark-bg);
+			color: var(--splash-mark-fg);
+			box-shadow: var(--splash-mark-shadow);
+			animation: app-splash-pop 400ms cubic-bezier(0.2, 0.7, 0.3, 1) both;
 		}
-		#app-splash svg { width: 34px; height: 34px; display: block; }
-		@media (prefers-color-scheme: dark) {
-			#app-splash { background: #0a0a0a; }
-			#app-splash .app-splash-mark {
-				background: #fafafa;
-				color: #0a0a0a;
-				box-shadow: 0 12px 34px -10px rgba(0, 0, 0, 0.6);
-			}
+		#app-splash svg { width: 30px; height: 30px; display: block; }
+		#app-splash .app-splash-wordmark {
+			font-size: 20px;
+			font-weight: 600;
+			letter-spacing: -0.01em;
+			line-height: 1;
 		}
-		@keyframes app-splash-pulse {
-			0%, 100% { transform: scale(1); }
-			50% { transform: scale(1.07); }
+		#app-splash .app-splash-tag {
+			font-family: "Geist Mono Variable", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+			font-size: 11px;
+			letter-spacing: 0.18em;
+			text-transform: uppercase;
+			color: var(--splash-muted);
+			line-height: 1;
+		}
+		/* One line per product surface — a viewer opening a share link shouldn't
+		   read workspace copy. Keyed off a class the arming script puts on <html>
+		   rather than on the splash itself: that runs in <head>, before the splash
+		   element exists, so the right line is present on the very first paint. */
+		#app-splash .app-splash-status {
+			font-size: 12.5px;
+			color: var(--splash-muted);
+			line-height: 1;
+			margin-top: -2px;
+		}
+		#app-splash .app-splash-status span { display: none; }
+		html.splash-dashboard #app-splash .app-splash-status span[data-for="dashboard"],
+		html.splash-share #app-splash .app-splash-status span[data-for="share"] {
+			display: inline;
+		}
+		#app-splash .app-splash-bar {
+			position: relative;
+			width: 132px;
+			height: 3px;
+			border-radius: 999px;
+			background: var(--splash-track);
+			overflow: hidden;
+			margin-top: 2px;
+		}
+		#app-splash .app-splash-bar::after {
+			content: "";
+			position: absolute;
+			inset-block: 0;
+			left: 0;
+			width: 40%;
+			border-radius: inherit;
+			background: linear-gradient(90deg, transparent, var(--splash-accent), transparent);
+			animation: app-splash-shimmer 1.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+			will-change: transform;
+		}
+		@keyframes app-splash-shimmer {
+			from { transform: translateX(-120%); }
+			to { transform: translateX(350%); }
+		}
+		@keyframes app-splash-pop {
+			from { transform: scale(0.88); opacity: 0; }
+			to { transform: scale(1); opacity: 1; }
+		}
+		@keyframes app-splash-plate-in {
+			from { transform: translateY(4px); opacity: 0; }
+			to { transform: translateY(0); opacity: 1; }
 		}
 		@media (prefers-reduced-motion: reduce) {
+			#app-splash .app-splash-plate,
 			#app-splash .app-splash-mark { animation: none; }
+			#app-splash .app-splash-bar::after {
+				width: 100%;
+				background: var(--splash-accent);
+				opacity: 0.85;
+				animation: none;
+			}
 		}
 	</style>
 	<script>
@@ -66,9 +170,11 @@
 		(function () {
 			try {
 				var p = location.pathname;
-				if (p.indexOf("/dashboard") !== 0 && p.indexOf("/share/") !== 0) return;
+				var surface =
+					p.indexOf("/dashboard") === 0 ? "dashboard" : p.indexOf("/share/") === 0 ? "share" : null;
+				if (!surface) return;
 				var root = document.documentElement;
-				root.classList.add("splash-active");
+				root.classList.add("splash-active", "splash-" + surface);
 				// Safety net: if hydration never runs (bundle error, dead network),
 				// retire the splash anyway so the viewer is never stuck on it.
 				setTimeout(function () {
@@ -91,6 +197,7 @@
 	<div style="display: contents">%sveltekit.body%</div>
 
 	<div id="app-splash" aria-hidden="true">
+		<div class="app-splash-plate">
 		<span class="app-splash-mark">
 			<svg viewBox="0 0 584 584" fill="none" xmlns="http://www.w3.org/2000/svg">
 				<path d="M200.12 204.56C200.12 167.8 170.32 138 133.56 138C96.7999 138 67 167.8 67 204.56V378.64C67 415.4 96.7999 445.2 133.56 445.2C170.32 445.2 200.12 415.4 200.12 378.64V204.56Z" fill="currentColor" />
@@ -106,6 +213,14 @@
 				<path d="M486.28 271.6L451.28 291.6V331.6L486.28 311.6V271.6Z" stroke="currentColor" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" />
 			</svg>
 		</span>
+		<div class="app-splash-wordmark">Recast</div>
+		<div class="app-splash-tag">Record · Polish · Share</div>
+		<div class="app-splash-status">
+			<span data-for="dashboard">Opening your workspace</span>
+			<span data-for="share">Preparing the player</span>
+		</div>
+		<div class="app-splash-bar"></div>
+		</div>
 	</div>
 </body>
 

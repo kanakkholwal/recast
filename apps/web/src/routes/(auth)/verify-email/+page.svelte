@@ -1,65 +1,59 @@
 <script lang="ts">
-	import { goto, invalidateAll } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import Logo from "$lib/logo.svelte";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowRight,
-		LoaderCircle,
-		LogOut,
-		MailCheck,
-		RefreshCw,
-	} from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import Logo from "$lib/logo.svelte";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { ArrowRight, LoaderCircle, LogOut, MailCheck, RefreshCw } from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	let { data } = $props();
+let { data } = $props();
 
-	let sending = $state(false);
-	let checking = $state(false);
-	let sentOnce = $state(false);
+let sending = $state(false);
+let checking = $state(false);
+let sentOnce = $state(false);
 
-	async function resend() {
-		if (sending) return;
-		sending = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.sendVerificationEmail({
-						email: data.email,
-						callbackURL: "/dashboard",
-					});
-					if (error) throw new Error(error.message ?? "Couldn't send the verification email.");
-				})(),
-				{
-					loading: "Sending verification email…",
-					success: "Sent. Check your inbox.",
-					error: (err) => (err as Error)?.message ?? "Couldn't send the verification email.",
-				},
-			);
-			sentOnce = true;
-		} finally {
-			sending = false;
-		}
+async function resend() {
+	if (sending) return;
+	sending = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.sendVerificationEmail({
+					email: data.email,
+					callbackURL: "/dashboard",
+				});
+				if (error) throw new Error(error.message ?? "Couldn't send the verification email.");
+			})(),
+			{
+				loading: "Sending verification email…",
+				success: "Sent. Check your inbox.",
+				error: (err) => (err as Error)?.message ?? "Couldn't send the verification email.",
+			},
+		);
+		sentOnce = true;
+	} finally {
+		sending = false;
 	}
+}
 
-	async function refresh() {
-		// User clicked the link in another tab → re-run loaders so the gate
-		// sees the new `emailVerified` and lets them through.
-		if (checking) return;
-		checking = true;
-		try {
-			await invalidateAll();
-		} finally {
-			checking = false;
-		}
+async function refresh() {
+	// User clicked the link in another tab → re-run loaders so the gate
+	// sees the new `emailVerified` and lets them through.
+	if (checking) return;
+	checking = true;
+	try {
+		await invalidateAll();
+	} finally {
+		checking = false;
 	}
+}
 
-	async function signOut() {
-		await authClient.signOut();
-		await goto("/login");
-	}
+async function signOut() {
+	await authClient.signOut();
+	await goto("/login");
+}
 </script>
 
 <svelte:head>
@@ -94,7 +88,7 @@
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 shadow-craft-lg sm:p-7">
+		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
 			<div class="space-y-2.5">
 				<Button onclick={refresh} disabled={checking} class="group/cta w-full gap-2">
 					{#if checking}

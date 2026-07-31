@@ -1,110 +1,106 @@
 <script lang="ts">
-	import { goto, invalidateAll } from "$app/navigation";
-	import { authClient } from "$lib/auth/client";
-	import Logo from "$lib/logo.svelte";
-	import { formatUserCode, normalizeUserCode } from "./device-code.logic";
-	import {
-		AlertTriangle,
-		ArrowRight,
-		Check,
-		KeyRound,
-		LoaderCircle,
-		Monitor,
-		X,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { goto, invalidateAll } from "$app/navigation";
+import { authClient } from "$lib/auth/client";
+import Logo from "$lib/logo.svelte";
+import { formatUserCode, normalizeUserCode } from "./device-code.logic";
+import {
+	AlertTriangle,
+	ArrowRight,
+	Check,
+	KeyRound,
+	LoaderCircle,
+	Monitor,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	let { data } = $props();
+let { data } = $props();
 
-	// Manual code-entry input — only used if the desktop didn't pre-fill via
-	// verification_uri_complete (i.e. the user typed the URL or wrote the
-	// code down). Initialized once from data.userCode — if the user navigates
-	// (the only way `data` changes here), the page remounts anyway.
-	let manualCode = $state("");
-	$effect(() => {
-		manualCode = data.userCode ?? "";
-	});
-	let manualSubmitting = $state(false);
+// Manual code-entry input — only used if the desktop didn't pre-fill via
+// verification_uri_complete (i.e. the user typed the URL or wrote the
+// code down). Initialized once from data.userCode — if the user navigates
+// (the only way `data` changes here), the page remounts anyway.
+let manualCode = $state("");
+$effect(() => {
+	manualCode = data.userCode ?? "";
+});
+let manualSubmitting = $state(false);
 
-	let approving = $state(false);
-	let denying = $state(false);
-	const busy = $derived(approving || denying);
+let approving = $state(false);
+let denying = $state(false);
+const busy = $derived(approving || denying);
 
-	async function submitManualCode() {
-		const code = normalizeUserCode(manualCode);
-		if (!code) return;
-		manualSubmitting = true;
-		try {
-			// Navigating to /device?user_code=... re-runs the +page.server.ts
-			// load, which redirects unauthenticated users to /login first and
-			// only then calls the plugin's GET /device (session-binding step).
-			await goto(`/device?user_code=${encodeURIComponent(code)}`, {
-				invalidateAll: true,
-			});
-		} finally {
-			manualSubmitting = false;
-		}
+async function submitManualCode() {
+	const code = normalizeUserCode(manualCode);
+	if (!code) return;
+	manualSubmitting = true;
+	try {
+		// Navigating to /device?user_code=... re-runs the +page.server.ts
+		// load, which redirects unauthenticated users to /login first and
+		// only then calls the plugin's GET /device (session-binding step).
+		await goto(`/device?user_code=${encodeURIComponent(code)}`, {
+			invalidateAll: true,
+		});
+	} finally {
+		manualSubmitting = false;
 	}
+}
 
-	async function approve() {
-		if (busy || !data.userCode) return;
-		approving = true;
-		const toastId = toast.loading("Approving device…");
-		try {
-			const { error } = await authClient.device.approve({
-				userCode: data.userCode,
-			});
-			if (error)
-				throw new Error(error.error_description ?? "Couldn't approve the device.");
-			toast.success("Device signed in. Return to the desktop app.", {
-				id: toastId,
-			});
-			// The desktop poller picks this up within `interval` seconds. No
-			// auto-redirect: the user came here from the desktop and likely
-			// wants to switch back manually.
-			await invalidateAll();
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't approve the device.", {
-				id: toastId,
-			});
-			approving = false;
-		}
+async function approve() {
+	if (busy || !data.userCode) return;
+	approving = true;
+	const toastId = toast.loading("Approving device…");
+	try {
+		const { error } = await authClient.device.approve({
+			userCode: data.userCode,
+		});
+		if (error) throw new Error(error.error_description ?? "Couldn't approve the device.");
+		toast.success("Device signed in. Return to the desktop app.", {
+			id: toastId,
+		});
+		// The desktop poller picks this up within `interval` seconds. No
+		// auto-redirect: the user came here from the desktop and likely
+		// wants to switch back manually.
+		await invalidateAll();
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't approve the device.", {
+			id: toastId,
+		});
+		approving = false;
 	}
+}
 
-	async function deny() {
-		if (busy || !data.userCode) return;
-		denying = true;
-		try {
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.device.deny({
-						userCode: data.userCode!,
-					});
-					if (error)
-						throw new Error(error.error_description ?? "Couldn't deny the request.");
-				})(),
-				{
-					loading: "Denying…",
-					success: "Device request denied.",
-					error: (err) => (err as Error)?.message ?? "Couldn't deny the request.",
-				},
-			);
-			await invalidateAll();
-		} finally {
-			denying = false;
-		}
+async function deny() {
+	if (busy || !data.userCode) return;
+	denying = true;
+	try {
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.device.deny({
+					userCode: data.userCode!,
+				});
+				if (error) throw new Error(error.error_description ?? "Couldn't deny the request.");
+			})(),
+			{
+				loading: "Denying…",
+				success: "Device request denied.",
+				error: (err) => (err as Error)?.message ?? "Couldn't deny the request.",
+			},
+		);
+		await invalidateAll();
+	} finally {
+		denying = false;
 	}
+}
 
-	// Status returned by GET /device — "pending" means waiting on user
-	// approval (the normal case after a fresh device.code call); "approved"
-	// is what we transition into right after the user clicks Approve (the
-	// load function re-runs via invalidateAll); "denied" means rejected.
-	const deviceStatus = $derived(
-		(data.device as { status?: string } | null)?.status ?? null,
-	);
+// Status returned by GET /device — "pending" means waiting on user
+// approval (the normal case after a fresh device.code call); "approved"
+// is what we transition into right after the user clicks Approve (the
+// load function re-runs via invalidateAll); "denied" means rejected.
+const deviceStatus = $derived((data.device as { status?: string } | null)?.status ?? null);
 </script>
 
 <svelte:head>
@@ -163,7 +159,7 @@
 			</p>
 		</div>
 
-		<div class="glass-card mt-8 rounded-2xl p-6 shadow-craft-lg sm:p-7">
+		<div class="glass-card mt-8 rounded-2xl p-6 sm:p-7">
 			{#if !data.userCode}
 				<!-- Manual code entry. We don't require sign-in to render this —
 				     the user might be writing the code down before they sign in.

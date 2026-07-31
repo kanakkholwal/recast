@@ -38,7 +38,7 @@ export const footerCols: { title: string; links: NavLink[] }[] = [
 			EXTENSIONS,
 			PRICING,
 			{ label: "Download", href: "/download" },
-			{ label: "Join Waitlist", href: "/waitlist" },
+			{ label: "Sign in", href: "/login" },
 		],
 	},
 	{

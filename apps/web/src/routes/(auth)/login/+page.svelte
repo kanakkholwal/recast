@@ -1,130 +1,144 @@
 <script lang="ts">
-	import { dev } from "$app/environment";
-	import { goto } from "$app/navigation";
-	import { page } from "$app/state";
-	import { authClient } from "$lib/auth/client";
-	import { lookupEmailStatus } from "$lib/auth/lookup";
-	import AuthCard from "$lib/auth/components/AuthCard.svelte";
-	import OrDivider from "$lib/auth/components/OrDivider.svelte";
-	import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
-	import {
-	  AlertCircle,
-	  ArrowRight,
-	  Eye,
-	  EyeOff,
-	  LoaderCircle,
-	  MailCheck,
-	  Wand2,
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { Checkbox } from "@recast/ui/checkbox";
-	import { Input } from "@recast/ui/input";
-	import { Label } from "@recast/ui/label";
-	import { toast } from "@recast/ui/sonner";
-	import * as Tabs from "@recast/ui/tabs";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
+import { goto } from "$app/navigation";
+import { page } from "$app/state";
+import { authClient } from "$lib/auth/client";
+import { lookupEmailStatus } from "$lib/auth/lookup";
+import { safeNext } from "$lib/auth/redirect";
+import AuthCard from "$lib/auth/components/AuthCard.svelte";
+import OrDivider from "$lib/auth/components/OrDivider.svelte";
+import SocialButtons from "$lib/auth/components/SocialButtons.svelte";
+import {
+	AlertCircle,
+	ArrowRight,
+	Eye,
+	EyeOff,
+	LoaderCircle,
+	MailCheck,
+	Wand2,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { Checkbox } from "@recast/ui/checkbox";
+import { Input } from "@recast/ui/input";
+import { Label } from "@recast/ui/label";
+import { toast } from "@recast/ui/sonner";
+import * as Tabs from "@recast/ui/tabs";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
 
-	let method = $state<"link" | "password">("link");
+let { data } = $props();
 
-	let email = $state("");
-	let password = $state("");
-	let rememberMe = $state(false);
-	let showPassword = $state(false);
-	let loading = $state(false);
-	let linkSent = $state(false);
-	/**
-	 * Inline status banner shown when the lookup reveals the email isn't
-	 * eligible to sign in yet. Kept inline (rather than a toast) so the CTA
-	 * to the waitlist stays visible.
-	 *   - `unknown` → no account on file; offer waitlist
-	 *   - `pending` → on the waitlist; tell them to wait
-	 */
-	let preflight = $state<{ status: "unknown" | "pending"; email: string } | null>(
-		null,
-	);
+let method = $state<"link" | "password">("link");
 
-	const next = $derived(page.url.searchParams.get("next") || "/dashboard");
+let email = $state("");
+let password = $state("");
+let rememberMe = $state(false);
+let showPassword = $state(false);
+let loading = $state(false);
+let linkSent = $state(false);
+/**
+ * Inline status banner shown when the lookup reveals this email can't take
+ * the path the user picked. Kept inline (rather than a toast) so its CTA
+ * stays on screen.
+ *   - `unknown`    → no account on file; offer sign-up
+ *   - `nopassword` → waitlist-era row that never set one; offer magic link
+ */
+let preflight = $state<{
+	reason: "unknown" | "nopassword";
+	email: string;
+} | null>(null);
 
-	// Clear the inline waitlist banner the moment the user edits their email,
-	// so the stale banner doesn't linger after they fix a typo.
-	$effect(() => {
-		if (preflight && preflight.email !== email.trim()) preflight = null;
-	});
+const next = $derived(safeNext(page.url.searchParams.get("next")));
+const signupHref = $derived(
+	`/signup?next=${encodeURIComponent(next)}${email.trim() ? `&email=${encodeURIComponent(email.trim())}` : ""}`,
+);
 
-	// Returns `true` if we should proceed to the auth call, `false` if the
-	// inline banner has been shown and the call should be skipped. `invalid`
-	// falls through so the auth call surfaces the real validation error.
-	async function preflightEmail(emailInput: string): Promise<boolean> {
-		const status = await lookupEmailStatus(emailInput);
-		if (status === "unknown" || status === "pending") {
-			preflight = { status, email: emailInput };
-			return false;
-		}
-		preflight = null;
-		return true;
+// Clear the inline banner the moment the user edits their email, so a stale
+// banner doesn't linger after they fix a typo.
+$effect(() => {
+	if (preflight && preflight.email !== email.trim()) preflight = null;
+});
+
+/**
+ * Returns `true` if we should proceed to the auth call, `false` if the
+ * inline banner has been shown and the call should be skipped. `invalid`
+ * falls through so the auth call surfaces the real validation error.
+ *
+ * `pending` is a waitlist-era row: it can sign in now, but it never set a
+ * password, so only the password tab has to head it off.
+ */
+async function preflightEmail(emailInput: string, via: "link" | "password"): Promise<boolean> {
+	const status = await lookupEmailStatus(emailInput);
+	if (status === "unknown") {
+		preflight = { reason: "unknown", email: emailInput };
+		return false;
 	}
-
-	async function signInWithLink(e: SubmitEvent) {
-		e.preventDefault();
-		const trimmedEmail = email.trim();
-		if (!trimmedEmail || loading) return;
-		loading = true;
-		try {
-			const ok = await preflightEmail(trimmedEmail);
-			if (!ok) return;
-			await toast.promise(
-				(async () => {
-					const { error } = await authClient.signIn.magicLink({
-						email: trimmedEmail,
-						callbackURL: next,
-					});
-					if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
-				})(),
-				{
-					loading: "Sending sign-in link…",
-					success: "Check your inbox. The link expires in 10 minutes.",
-					error: (err) => (err as Error)?.message ?? "Couldn't send the sign-in link.",
-				},
-			);
-			linkSent = true;
-		} finally {
-			loading = false;
-		}
+	if (status === "pending" && via === "password") {
+		preflight = { reason: "nopassword", email: emailInput };
+		return false;
 	}
+	preflight = null;
+	return true;
+}
 
-	async function signInWithPassword(e: SubmitEvent) {
-		e.preventDefault();
-		if (loading) return;
-		loading = true;
-		const trimmedEmail = email.trim();
-		const ok = await preflightEmail(trimmedEmail);
-		if (!ok) {
-			loading = false;
-			return;
-		}
-		const toastId = toast.loading("Signing you in…");
-		try {
-			const { error } = await authClient.signIn.email({
-				email: trimmedEmail,
-				password,
-				rememberMe,
-			});
-			if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
-			toast.success("Welcome back.", { id: toastId });
-			// Force a fresh load chain so the destination's server load sees
-			// the new session cookie immediately, not whatever the client had
-			// cached pre-login.
-			await goto(next, { invalidateAll: true });
-		} catch (err) {
-			toast.error(
-				(err as Error)?.message ?? "Sign in failed. Check your credentials.",
-				{ id: toastId },
-			);
-		} finally {
-			loading = false;
-		}
+async function signInWithLink(e: SubmitEvent) {
+	e.preventDefault();
+	const trimmedEmail = email.trim();
+	if (!trimmedEmail || loading) return;
+	loading = true;
+	try {
+		const ok = await preflightEmail(trimmedEmail, "link");
+		if (!ok) return;
+		await toast.promise(
+			(async () => {
+				const { error } = await authClient.signIn.magicLink({
+					email: trimmedEmail,
+					callbackURL: next,
+				});
+				if (error) throw new Error(error.message ?? "Couldn't send the sign-in link.");
+			})(),
+			{
+				loading: "Sending sign-in link…",
+				success: "Check your inbox. The link expires in 10 minutes.",
+				error: (err) => (err as Error)?.message ?? "Couldn't send the sign-in link.",
+			},
+		);
+		linkSent = true;
+	} finally {
+		loading = false;
 	}
+}
+
+async function signInWithPassword(e: SubmitEvent) {
+	e.preventDefault();
+	if (loading) return;
+	loading = true;
+	const trimmedEmail = email.trim();
+	const ok = await preflightEmail(trimmedEmail, "password");
+	if (!ok) {
+		loading = false;
+		return;
+	}
+	const toastId = toast.loading("Signing you in…");
+	try {
+		const { error } = await authClient.signIn.email({
+			email: trimmedEmail,
+			password,
+			rememberMe,
+		});
+		if (error) throw new Error(error.message ?? "Sign in failed. Check your credentials.");
+		toast.success("Welcome back.", { id: toastId });
+		// Force a fresh load chain so the destination's server load sees
+		// the new session cookie immediately, not whatever the client had
+		// cached pre-login.
+		await goto(next, { invalidateAll: true });
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Sign in failed. Check your credentials.", {
+			id: toastId,
+		});
+	} finally {
+		loading = false;
+	}
+}
 </script>
 
 <svelte:head>
@@ -132,9 +146,9 @@
 </svelte:head>
 
 <AuthCard title="Welcome back" description="Sign in to your Recast account.">
-	<SocialButtons />
+	<SocialButtons providers={data.socialProviders} callbackURL={next} />
 
-	{#if dev}
+	{#if data.socialProviders.length > 0}
 		<div class="my-5">
 			<OrDivider label="or continue with email" />
 		</div>
@@ -147,30 +161,40 @@
 		>
 			<AlertCircle class="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400" />
 			<div class="min-w-0 flex-1">
-				{#if preflight.status === "unknown"}
+				{#if preflight.reason === "unknown"}
 					<p class="font-medium text-foreground">
 						No account for <span class="font-mono">{preflight.email}</span>
 					</p>
 					<p class="mt-0.5 text-muted-foreground">
-						Recast Cloud is invite-only right now. Join the waitlist and
-						we'll email you the moment your spot is ready.
+						Recast Cloud is free to start. No card, no trial clock.
 					</p>
 					<a
-						href={`/waitlist?email=${encodeURIComponent(preflight.email)}&source=login`}
+						href={signupHref}
 						class="mt-2 inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
 					>
-						Join the waitlist
+						Start free with this email
 						<ArrowRight class="size-3.5" />
 					</a>
 				{:else}
 					<p class="font-medium text-foreground">
-						You're on the waitlist
+						This account has no password yet
 					</p>
 					<p class="mt-0.5 text-muted-foreground">
-						<span class="font-mono">{preflight.email}</span> is queued. We'll
-						email you a sign-in link the moment access opens. No need to
-						retry here.
+						<span class="font-mono">{preflight.email}</span> was created from the
+						waitlist. Sign in with a one-time link, then set a password from
+						settings.
 					</p>
+					<button
+						type="button"
+						onclick={() => {
+							method = "link";
+							preflight = null;
+						}}
+						class="mt-2 inline-flex items-center gap-1.5 font-semibold text-primary hover:underline"
+					>
+						Email me a sign-in link
+						<ArrowRight class="size-3.5" />
+					</button>
 				{/if}
 			</div>
 		</div>
@@ -321,16 +345,9 @@
 	{/if}
 
 	{#snippet footer()}
-		{#if dev}
-			Don't have an account?
-			<a href="/signup" class="font-semibold text-foreground hover:text-primary">
-				Sign up
-			</a>
-		{:else}
-			Need an account?
-			<a href="/waitlist" class="font-semibold text-foreground hover:text-primary">
-				Join the waitlist
-			</a>
-		{/if}
+		New to Recast?
+		<a href={signupHref} class="font-semibold text-foreground hover:text-primary">
+			Start free
+		</a>
 	{/snippet}
 </AuthCard>

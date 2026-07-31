@@ -1,4 +1,5 @@
 <script lang="ts">
+import { goto } from "$app/navigation";
 import {
 	BeforeAfterSlider,
 	Container,
@@ -23,7 +24,6 @@ import {
 	Download,
 	HardDriveUpload,
 	KeyRound,
-	LoaderCircle,
 	Minus,
 	Play,
 	Plus,
@@ -34,10 +34,9 @@ import { GithubBrand } from "@recast/ui/brand-icons";
 import { Button } from "@recast/ui/button";
 import { Image } from "@unpic/svelte";
 
-import { toast } from "@recast/ui/sonner";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
-import { fly, slide } from "svelte/transition";
+import { slide } from "svelte/transition";
 import {
 	beforeAfterClips,
 	cloudFeatures,
@@ -61,41 +60,19 @@ import {
 // the FAQ expand + waitlist reveal in JS. See motion-core/reduced-motion.
 const reduced = $derived(prefersReducedMotion());
 
-// Recast Cloud — premium hosted tier (not shipped yet). Drive sharing
-// covers the free user-owned path today; Cloud is the future paid
-// offering with workspace, analytics, and access controls beyond what a
-// Drive link can express.
+// Recast Cloud — the hosted tier. Drive sharing stays the free user-owned
+// path; Cloud adds the workspace, analytics, and access controls a raw Drive
+// link can't express. Sign-ups are open, so the email field hands off to
+// /signup prefilled rather than capturing a waitlist row.
 let email = $state("");
-let joined = $state(false);
-let loading = $state(false);
-async function joinWaitlist(e: SubmitEvent) {
+const signupHref = $derived(
+	email.trim()
+		? `/signup?email=${encodeURIComponent(email.trim())}&source=home-cloud`
+		: "/signup?source=home-cloud",
+);
+function startWithEmail(e: SubmitEvent) {
 	e.preventDefault();
-	if (!email.trim() || loading) return;
-	loading = true;
-	try {
-		toast.promise(
-			(async () => {
-				const res = await fetch("/api/waitlist", {
-					method: "POST",
-					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ email, source: "home-cloud" }),
-				});
-				const data = (await res.json().catch(() => ({}))) as {
-					ok?: boolean;
-					error?: string;
-				};
-				if (!data.ok) throw new Error(data.error ?? "Couldn't join the waitlist.");
-			})(),
-			{
-				loading: "Adding you to the waitlist…",
-				success: "You're on the list. We'll email when access opens.",
-				error: (err) => (err as Error)?.message ?? "Couldn't join the waitlist.",
-			},
-		);
-		joined = true;
-	} finally {
-		loading = false;
-	}
+	goto(signupHref);
 }
 
 // Per-feature error flag. Flipped by the <img>'s onerror handler when the
@@ -365,7 +342,7 @@ function dragScroll(node: HTMLElement) {
 				align="center"
 			/>
 
-			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-3xl shadow-craft-xl">
+			<div class="glass-card relative mx-auto mt-14 max-w-3xl overflow-hidden rounded-3xl">
 				<div class="relative z-10">
 					<div class="grid grid-cols-2 border-b border-border-low/50 bg-foreground/2 text-[11px] font-semibold uppercase tracking-[0.16em]">
 						<div class="flex items-center gap-2 px-6 py-4 text-muted-foreground">
@@ -555,7 +532,7 @@ function dragScroll(node: HTMLElement) {
 							<!-- Tilted visual. 3D perspective on the wrapper, the inner
 							     plate carries the rotation so hover can soften it. -->
 							<div
-								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-lg pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:shadow-craft-xl"
+								class="relative h-52 overflow-hidden rounded-2xl border border-border-low/50 bg-linear-to-br from-foreground/5 via-foreground/2 to-transparent shadow-craft-sm pointer-fine:transition-shadow pointer-fine:duration-200 pointer-fine:ease-out pointer-fine:group-hover/feat:shadow-craft-md"
 								style="perspective: 1200px;"
 							>
 								<!-- Dot grid backdrop. Faint, decorative — the techy vibe. -->
@@ -760,7 +737,7 @@ function dragScroll(node: HTMLElement) {
 
 					<div class="lg:col-span-7">
 						<Reveal variant="morph">
-							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
+							<div class="glass-card relative overflow-hidden rounded-2xl p-7 sm:p-9">
 								<div class="relative">
 									<span class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
 										<HardDriveUpload class="size-3 text-foreground/70" />
@@ -795,9 +772,8 @@ function dragScroll(node: HTMLElement) {
 		</Container>
 	</Section>
 
-	<!-- Coming next - Recast Cloud (premium hosted offering, waitlist). The
-	     Drive flow above is the free, user-owned default; this section is the
-	     paid future for users who outgrow a raw Drive link. -->
+	<!-- Recast Cloud — the hosted offering. The Drive flow above is the free,
+	     user-owned default; this is for people who outgrow a raw Drive link. -->
 	<Section id="cloud" spacing="tight" class="border-t border-border-low/60">
 		<Container size="wide">
 			<ShowcasePanel tone="neutral">
@@ -805,7 +781,7 @@ function dragScroll(node: HTMLElement) {
 					<div class="lg:col-span-5">
 						<span class="inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/70">
 							<span class="size-1.5 rounded-full bg-primary"></span>
-							Coming next · Recast Cloud
+							Recast Cloud · live
 						</span>
 						<h2 class="text-balance mt-5 text-3xl font-semibold leading-[1.04] tracking-tight text-foreground sm:text-4xl md:text-5xl lg:text-[3.25rem]">
 							When a Drive link
@@ -835,14 +811,14 @@ function dragScroll(node: HTMLElement) {
 
 					<div class="lg:col-span-7">
 						<Reveal variant="morph">
-							<div class="glass-card relative overflow-hidden rounded-2xl p-7 shadow-craft-lg sm:p-9">
+							<div class="glass-card relative overflow-hidden rounded-2xl p-7 sm:p-9">
 								<div class="relative">
 									<span class="inline-flex items-center gap-2 rounded-full bg-foreground/5 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/80">
 										<Cloud class="size-3.5 text-foreground/70" />
 										Recast Cloud
 										<span class="text-muted-foreground/40">·</span>
-										<span class="size-1.5 rounded-full bg-foreground/40"></span>
-										waitlist open
+										<span class="size-1.5 rounded-full bg-primary"></span>
+										open to everyone
 									</span>
 
 									<h3 class="mt-6 text-2xl font-semibold tracking-tight text-foreground">
@@ -888,54 +864,35 @@ function dragScroll(node: HTMLElement) {
 									</div>
 
 									<h4 class="mt-7 text-[13px] font-semibold tracking-tight text-foreground">
-										Get early access.
+										Ship your first hosted demo.
 									</h4>
 									<p class="mt-1 text-sm leading-relaxed text-muted-foreground">
-										Drop your email and we'll let you in before the public launch.
+										Drop your email, upload a take, send the link. Free tier, no card.
 									</p>
 
-									{#if joined}
-										<div
-											class="mt-7 flex items-center gap-3 rounded-xl border border-border-low/60 bg-foreground/3 px-4 py-3.5"
-											in:fly={reduced ? { duration: 0 } : { y: 8, duration: 400, easing: cubicOut }}
-										>
-											<span class="grid size-7 place-items-center rounded-full bg-foreground/8 text-foreground">
-												<Check class="size-4" />
-											</span>
-											<span class="text-sm font-medium text-foreground">
-												You're on the list. We'll be in touch.
-											</span>
-										</div>
-									{:else}
-										<form
-											class="mt-7 flex flex-col gap-2.5 sm:flex-row"
-											onsubmit={joinWaitlist}
-											out:slide={{ duration: reduced ? 0 : 250 }}
-										>
-											<input
-												type="email"
-												required
-												bind:value={email}
-												placeholder="founder@startup.com"
-												class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
-											/>
-											<Button type="submit" disabled={loading} variant="dark" class="gap-2">
-												{loading ? "Joining…" : "Join waitlist"}
-												{#if loading}
-													<LoaderCircle class="size-4 animate-spin" />
-											{:else}
-												<ArrowRight class="size-4" />
-											{/if}
+									<form class="mt-7 flex flex-col gap-2.5 sm:flex-row" onsubmit={startWithEmail}>
+										<label class="sr-only" for="home-cloud-email">Work email</label>
+										<input
+											id="home-cloud-email"
+											type="email"
+											bind:value={email}
+											autocomplete="email"
+											placeholder="founder@startup.com"
+											class="flex-1 rounded-lg border border-border-low/70 bg-background/80 px-3.5 py-2.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground/70 focus:border-primary/60 focus-visible:ring-2 focus-visible:ring-primary/30"
+										/>
+										<Button type="submit" variant="dark" class="group/cta gap-2">
+											Start sharing free
+											<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
 										</Button>
 									</form>
-								{/if}
 
-								<p class="mt-4 text-xs text-muted-foreground">
-									Until Cloud lands, the free app + Drive flow covers the whole loop. No card, ever, just for joining the list.
-								</p>
+									<p class="mt-4 text-xs text-muted-foreground">
+										Already have an account?
+										<a href="/login" class="font-semibold text-foreground hover:text-primary">Sign in</a>.
+									</p>
+								</div>
+
 							</div>
-
-						</div>
 					</Reveal>
 				</div>
 			</div>
@@ -1009,12 +966,15 @@ function dragScroll(node: HTMLElement) {
 							<span class="text-sm text-muted-foreground">+ controls</span>
 						</div>
 						<p class="relative mt-3 text-sm leading-relaxed text-muted-foreground">
-							A Loom-style hosted layer: watch analytics, per-viewer access, link expiry, team workspaces, and custom branding. Storage stays your call, yours or ours. Coming soon.
+							A Loom-style hosted layer: watch analytics, per-viewer access, link expiry, team workspaces, and custom branding. Storage stays your call, yours or ours.
 						</p>
-						<div class="relative mt-7">
-							<Button href="/pricing" variant="dark" class="group/cta gap-2">
-								See what's planned
+						<div class="relative mt-7 flex flex-wrap items-center gap-3">
+							<Button href="/signup" variant="dark" class="group/cta gap-2">
+								Start free
 								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+							</Button>
+							<Button href="/pricing" variant="light">
+								See pricing
 							</Button>
 						</div>
 					</article>
@@ -1114,8 +1074,8 @@ function dragScroll(node: HTMLElement) {
 				<div class="mx-auto flex max-w-3xl flex-col items-center text-center">
 					<Reveal variant="scale" duration={420}>
 						<div class="glass-chip inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.18em] text-foreground/80">
-							<span class="size-1.5 rounded-full bg-foreground/40"></span>
-							v0.4 beta · ready when you are
+							<span class="size-1.5 rounded-full bg-primary"></span>
+							Ready when you are
 						</div>
 					</Reveal>
 
@@ -1177,14 +1137,31 @@ function dragScroll(node: HTMLElement) {
 					{/each}
 				</div>
 
-				<Reveal variant="up" delay={420} duration={460} class="mt-8 flex justify-center">
-					<a
-						href="/download"
-						class="group/cta inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
-					>
-						All downloads and checksums
-						<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
-					</a>
+				<!-- Second door out of this section: the desktop app needs no account,
+				     but sharing and analytics live behind one, so the CTA row has to
+				     offer both instead of only the download. -->
+				<Reveal variant="up" delay={420} duration={460} class="mt-9">
+					<div class="flex flex-col items-center gap-3">
+						<p class="text-sm text-muted-foreground">
+							Want hosted sharing, watch analytics, and a team workspace?
+						</p>
+						<div class="flex flex-wrap items-center justify-center gap-3">
+							<Button href="/signup" variant="light" class="group/cta gap-2">
+								Share your first demo
+								<ArrowRight class="size-4 transition-transform group-hover/cta:translate-x-0.5" />
+							</Button>
+							<Button href="/login" variant="ghost" class="text-muted-foreground">
+								Sign in
+							</Button>
+						</div>
+						<a
+							href="/download"
+							class="group/cta mt-2 inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition-colors hover:text-foreground"
+						>
+							All downloads and checksums
+							<ArrowRight class="size-3.5 transition-transform group-hover/cta:translate-x-0.5" />
+						</a>
+					</div>
 				</Reveal>
 			</ShowcasePanel>
 		</Container>

@@ -7,23 +7,21 @@ import { isValidEmail, normalizeEmail } from "$lib/validation/email";
 import type { RequestHandler } from "./$types";
 
 /**
- * Pre-flight email lookup for the login form. Production-only signup means
- * "log in" should never silently create an account, so the form needs to
- * differentiate three cases before calling auth:
+ * Pre-flight email lookup shared by /login and /signup, so each form can answer
+ * a dead end with a link instead of a cryptic toast:
  *
- *   - `unknown`  → no row at all, route them to /waitlist instead of a
- *                  cryptic "invalid credentials" toast.
- *   - `pending`  → on the waitlist, magic-link is suppressed server-side
- *                  ([isOnWaitlist] short-circuits sendMagicLink). Tell them
- *                  explicitly so they don't keep retrying.
- *   - `active`   → proceed with the actual auth call.
+ *   - `unknown`  → no row at all. Login offers sign-up; sign-up proceeds.
+ *   - `pending`  → a waitlist-era row that never set a password. It can sign in
+ *                  by magic link now, so only the password tab heads it off;
+ *                  sign-up sends them to /login.
+ *   - `active`   → a real account. Login proceeds; sign-up sends them to /login.
  *
- * Banned users intentionally surface as `active` here — Better Auth's own
- * sign-in path returns the ban reason, which is the right message to show.
+ * Banned users intentionally surface as `active` — Better Auth's own sign-in
+ * path returns the ban reason, which is the right message to show.
  *
- * Exposing existence is a deliberate trade-off: we already publish a public
- * waitlist endpoint that takes any email, so an attacker can already probe
- * registration. The UX win outweighs the marginal info leak.
+ * Exposing existence is a deliberate trade-off. Both the sign-up and sign-in
+ * endpoints already leak it through their error messages, so the rate limit
+ * below (not secrecy) is what bounds enumeration.
  */
 export const POST: RequestHandler = async ({ request, getClientAddress }) => {
 	// Bound the existence-oracle: a generous per-IP cap that real login forms

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { Switch as SwitchPrimitive } from "bits-ui";
-	import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
+import { Switch as SwitchPrimitive } from "bits-ui";
+import { cn, type WithoutChildrenOrChild } from "@recast/ui/utils";
 
-	let {
-		ref = $bindable(null),
-		checked = $bindable(false),
-		class: className,
-		...restProps
-	}: WithoutChildrenOrChild<SwitchPrimitive.RootProps> = $props();
+let {
+	ref = $bindable(null),
+	checked = $bindable(false),
+	class: className,
+	...restProps
+}: WithoutChildrenOrChild<SwitchPrimitive.RootProps> = $props();
 </script>
 
 <SwitchPrimitive.Root
@@ -18,7 +18,9 @@
 		"peer inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-transparent outline-none transition-colors",
 		"focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2 focus-visible:ring-offset-background",
 		"data-[state=checked]:bg-primary",
-		"data-[state=unchecked]:bg-input data-[state=unchecked]:ring-1 data-[state=unchecked]:ring-inset data-[state=unchecked]:ring-border/50",
+		// --border-control, not --border/50: the off-track fill is only 1.17:1 on
+		// a card, so the boundary is what has to carry the 3:1 for the off state.
+		"data-[state=unchecked]:bg-input data-[state=unchecked]:ring-1 data-[state=unchecked]:ring-inset data-[state=unchecked]:ring-border-control",
 		"disabled:cursor-not-allowed disabled:opacity-50",
 		className,
 	)}

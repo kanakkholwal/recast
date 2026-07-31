@@ -5,6 +5,8 @@ allowBuilds:
   core-js: true
   esbuild: true
   sharp: true
+minimumReleaseAgeExclude:
+  - mediabunny@1.52.0
 # Moved here from the `pnpm` field in package.json, which pnpm 11 no longer reads
 # (it warned "keys were ignored: pnpm.overrides" on every command, meaning these
 # pins were silently NOT being applied). Settings now live in this file.

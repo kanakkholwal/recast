@@ -27,7 +27,7 @@
 		"@breezystack/lamejs": "^1.2.7",
 		"fflate": "^0.8.3",
 		"gifenc": "^1.0.3",
-		"mediabunny": "^1.51.0"
+		"mediabunny": "^1.52.0"
 	},
 	"peerDependencies": {
 		"svelte": "^5.56.1"

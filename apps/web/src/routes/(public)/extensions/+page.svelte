@@ -1,35 +1,27 @@
 <script lang="ts">
-	import {
-	  Container,
-	  Footer,
-	  HeroBackdrop,
-	  Reveal,
-	  Section,
-	  SectionHeader,
-	  SeoMeta,
-	} from "$lib/components";
-	import { prefersReducedMotion } from "$lib/motion-core";
-	import {
-	  ArrowRight,
-	  Blocks,
-	  Check,
-	  Download,
-	  Image as ImageIcon
-	} from "@recast/icons";
-	import { GithubBrand } from "@recast/ui/brand-icons";
-	import { Button } from "@recast/ui/button";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
-	import { kinds, steps, trust } from "./data";
-	
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	// 460ms per element lands the whole ladder in well under a second.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+import {
+	Container,
+	Footer,
+	HeroBackdrop,
+	Reveal,
+	Section,
+	SectionHeader,
+	SeoMeta,
+} from "$lib/components";
+import { prefersReducedMotion } from "$lib/motion-core";
+import { ArrowRight, Blocks, Check, Download, Image as ImageIcon } from "@recast/icons";
+import { GithubBrand } from "@recast/ui/brand-icons";
+import { Button } from "@recast/ui/button";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { kinds, steps, trust } from "./data";
 
-
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 </script>
 
 <SeoMeta
@@ -210,7 +202,7 @@
 
 				<div class="lg:col-span-6">
 					<Reveal variant="morph">
-						<div class="glass-card relative overflow-hidden rounded-2xl p-1.5 shadow-craft-lg">
+						<div class="glass-card relative overflow-hidden rounded-2xl p-1.5">
 							<div class="flex h-9 items-center gap-2 rounded-t-xl border-b border-border-low/40 bg-white/5 px-4">
 								<Blocks class="size-3.5 text-primary" />
 								<span class="text-[11px] font-medium text-muted-foreground">extension.json</span>
