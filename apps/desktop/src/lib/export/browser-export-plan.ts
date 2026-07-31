@@ -28,13 +28,14 @@ export function exportFrameTime(index: number, fps: number): number {
 	return fps > 0 ? index / fps : 0;
 }
 
-/** H.264 (mp4) encoding config for the quality tier. `bitrate` uses MediaBunny's
- *  subjective Quality so the encoder picks a sane rate for the resolution. */
+/** H.264 (mp4) encoding config for the quality tier. Passing a subjective Quality
+ *  makes MediaBunny ≥1.52 encode at a constant-quality quantizer (like x264 CRF)
+ *  rather than a fixed bitrate — steadier quality-per-size, closer to the Rust path. */
 export function videoEncodingConfigFor(
 	quality: ExportQuality,
 	keyFrameIntervalSec = 2,
 ): VideoEncodingConfig {
-	const bitrate =
+	const level =
 		quality === "low"
 			? QUALITY_LOW
 			: quality === "medium"
@@ -42,5 +43,5 @@ export function videoEncodingConfigFor(
 				: quality === "max"
 					? QUALITY_VERY_HIGH
 					: QUALITY_HIGH;
-	return { codec: "avc", bitrate, keyFrameInterval: keyFrameIntervalSec };
+	return { codec: "avc", quality: level, keyFrameInterval: keyFrameIntervalSec };
 }

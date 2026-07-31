@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { QUALITY_HIGH, QUALITY_LOW, QUALITY_MEDIUM, QUALITY_VERY_HIGH } from "@recast/media/mediabunny";
+import {
+	QUALITY_HIGH,
+	QUALITY_LOW,
+	QUALITY_MEDIUM,
+	QUALITY_VERY_HIGH,
+} from "@recast/media/mediabunny";
 import { exportFrameCount, exportFrameTime, videoEncodingConfigFor } from "./browser-export-plan";
 
 describe("exportFrameCount", () => {
@@ -25,11 +30,11 @@ describe("exportFrameTime", () => {
 });
 
 describe("videoEncodingConfigFor", () => {
-	it("maps quality tiers to MediaBunny Quality presets, always H.264", () => {
-		expect(videoEncodingConfigFor("low")).toMatchObject({ codec: "avc", bitrate: QUALITY_LOW });
-		expect(videoEncodingConfigFor("medium").bitrate).toBe(QUALITY_MEDIUM);
-		expect(videoEncodingConfigFor("high").bitrate).toBe(QUALITY_HIGH);
-		expect(videoEncodingConfigFor("max").bitrate).toBe(QUALITY_VERY_HIGH);
+	it("maps quality tiers to MediaBunny Quality presets (quantizer, not bitrate), always H.264", () => {
+		expect(videoEncodingConfigFor("low")).toMatchObject({ codec: "avc", quality: QUALITY_LOW });
+		expect(videoEncodingConfigFor("medium").quality).toBe(QUALITY_MEDIUM);
+		expect(videoEncodingConfigFor("high").quality).toBe(QUALITY_HIGH);
+		expect(videoEncodingConfigFor("max").quality).toBe(QUALITY_VERY_HIGH);
 	});
 
 	it("carries the key-frame interval", () => {

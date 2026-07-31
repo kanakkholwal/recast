@@ -42,46 +42,32 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ## [Unreleased]
 
+## [0.4.4] — 2026-07-30
+
 ### Highlights
-- Record your webcam alongside your screen and drop it in as a floating bubble you can move, resize, shape, and style. It grows and drifts out of the way when you zoom in.
-- A rebuilt preview engine: playback, scrubbing, and seeking are smoother, large recordings load faster, and it recovers on its own if a frame fails to decode.
-- Balance your audio: set the system and microphone levels independently, even out overall loudness on export, and add background music.
-- Redesigned the editor's properties panel: sections now live in a compact, grouped vertical rail with a clear active state, and you can drag the panel wider.
-- More precise timeline editing: the playhead tracks the video exactly, timecodes match everywhere, and the Cut tool works across every lane.
+- Roll, slide, and slip editing on the video track, so you can move a cut point or shift footage inside its slot without dragging both neighbours by hand.
+- Redesigned timeline blocks: solid, named objects at one consistent height, with track colours that follow editing conventions.
+- A resizable timeline, with the ruler and track names staying put while you scroll.
 
 ### Added
 - Roll, slide, and slip editing on the video track. Drag a split to move the cut point between two clips, drag a removed section to shift it without changing its length, and Alt+drag a clip that has a removed section on both sides to slide its footage inside its slot.
 - Fine control while dragging anything on the timeline. Hold Shift for slow, precise movement, and hold Ctrl (Cmd on macOS) to ignore snapping when you need a position the guides keep pulling you off.
-- Clip names on the timeline. Video blocks show the source file and their length, and the audio track names what it captured, so a split clip and its neighbour are no longer identical grey blocks. Move and resize it, pick a square, rounded, or circle shape, mirror it, and give it a drop shadow. It renders in the preview and the exported video.
-- Grow the camera on zoom. As a zoom ramps in, the bubble grows and drifts away from the focus so it never covers the zoomed area, with its own transition length and easing.
-- Per-cut camera positioning. Set a different camera position for each cut and the bubble glides between them, with easing you control.
-- Independent audio levels for the system and microphone tracks, each with its own volume, a mute toggle, and smooth fades.
-- Loudness normalization on export, evening out overall volume to a broadcast target (EBU R128).
-- Background music and extra audio clips on the timeline, with volume, looping, and fades.
-- Title presets for dropping in a styled title in one click.
-- A "dip" transition that briefly fades through the background on a scene change.
-- A dedicated audio waveform lane in the timeline, shown alongside the thumbnails so you can cut against the sound.
-- Drag across the Zoom or Cuts lane to create a zoom region or remove a section, the same gesture in both.
-- A resizable properties panel: drag its edge to set the width, and it is remembered between sessions.
+- Clip names on the timeline. Video blocks show the source file and their length, and the audio track names what it captured, so a split clip and its neighbour are no longer identical grey blocks.
 - A resizable timeline: drag its top edge, or focus the handle and use the arrow keys, to trade height between the timeline and the preview. It stops well short of taking over the window, and the height is remembered between sessions.
-- Cut sections are now selectable and can be removed from the keyboard, like zoom regions and markup.
 
 ### Changed
 - Redesigned the timeline blocks. Clips are solid, readable objects with their name inside them, at one consistent height across every track, instead of faint tinted strips.
 - New timeline track colours, picked to match editing conventions rather than the brand: red for removed sections, green for the recording's audio, teal for music, blue for zoom, violet for markup.
 - The waveform now appears only in the Audio track. It used to be redrawn faintly behind the Cuts track whenever you hid the Audio one, which put it back on screen at the moment you asked for it to go away.
 - The Camera panel now says why there is no camera to edit: the camera was off, it was switched on but failed to record, or the recording was made before Recast could capture a camera at all.
-- The properties panel section switcher is now a grouped vertical icon rail instead of a wrapping row of icons, with consistent active states and calmer motion.
-- In the Background section, the controls follow the order you build a look: background first, then framing (padding and corner radius), then drop shadow. Corner radius has a tighter range and finer steps.
-- Timeline editing shortcuts (Split, Cut, and set in/out points) now work without clicking the timeline first, and the on-screen keys reflect that.
-- The smoother WebCodecs playback engine is now the default, so playback stays fluid across cuts and splits. It falls back to the standard player automatically where a device cannot use it.
-- The editor now respects the system "reduce motion" setting throughout.
-- The preview shows a scrubber only when the timeline is hidden, so there are no longer two scrubbers at once.
 - The Zoom and Markup tracks now appear once they hold something and stay out of the way while empty, so a fresh recording opens with a shorter timeline and a bigger preview. Turning either on or off in the Layers menu keeps your choice.
 - The mouse wheel now scrolls the timeline down to tracks that do not fit, instead of only ever scrolling sideways. Shift+wheel still pans, Ctrl (Cmd on macOS) still zooms, and with nothing below the fold the wheel pans as before.
 - The time ruler and the track names now stay put while you scroll the timeline. The ruler holds at the top as the tracks scroll under it, and the names stay pinned at the left as you scroll sideways, so you never lose track of where you are or which track you are looking at.
+- Easing is now picked from named presets with a live preview, with the curve editor tucked behind a Custom option, and the same control is used everywhere easing appears.
 
 ### Fixed
+- Exporting a project whose zoom dips below 1x could crash partway through encoding. The frame was being scaled smaller than the region the encoder was told to read from, so it read past the end of it.
+- If the hardware encoder fails mid-export, the export now falls back to software encoding instead of failing outright.
 - Uploading a finished export to Recast Cloud or Google Drive looked like nothing had happened. The buttons now show that the click landed and go quiet while the transfer runs, so a single export can no longer be uploaded three times because it seemed unresponsive. Once it lands, the same button copies the link, and a failed one offers a retry.
 - Sharing an export to Recast Cloud from the editor never opened its progress window; it only appeared in the activity centre. It now opens the same window a share from the Exports page does.
 - Dragging a zoom or markup block on the timeline barely moved it. The drag maths mixed up pixels and seconds, so a block travelled a hundredth of the distance your pointer did, which read as the block being stuck.
@@ -90,9 +76,69 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 - The preview's progress bar lagged behind its own handle, and stepped forward in visible jumps during playback instead of moving smoothly.
 - The preview had no scrubber at all in fullscreen when the timeline was open.
 - Very short blocks were nearly impossible to grab by the edge to resize.
+
+## [0.4.3] — 2026-07-27
+
+### Highlights
+- Record your webcam alongside your screen and drop it in as a floating bubble you can move, resize, shape, and style. It grows and drifts out of the way when you zoom in.
+- A rebuilt preview engine: playback, scrubbing, and seeking are smoother, large recordings load faster, and it recovers on its own if a frame fails to decode.
+- Balance your audio: set the system and microphone levels independently, even out overall loudness on export, and add background music.
+
+### Added
+- Camera overlay. Your webcam records as its own track and appears as a bubble in the editor. Move and resize it, pick a square, rounded, or circle shape, mirror it, and give it a drop shadow. It renders in the preview and the exported video.
+- Grow the camera on zoom. As a zoom ramps in, the bubble grows and drifts away from the focus so it never covers the zoomed area, with its own transition length and easing.
+- Per-cut camera positioning. Set a different camera position for each cut and the bubble glides between them, with easing you control.
+- Independent audio levels for the system and microphone tracks, each with its own volume, a mute toggle, and smooth fades.
+- Loudness normalization on export, evening out overall volume to a broadcast target (EBU R128).
+- Background music and extra audio clips on the timeline, with volume, looping, and fades.
+- Title presets for dropping in a styled title in one click.
+- A "dip" transition that briefly fades through the background on a scene change.
+
+### Changed
+- Rebuilt the preview's media pipeline. Frames are cached and reused instead of re-decoded, heavy work is deferred until the editor is idle, and a failed decode now recovers on its own rather than leaving the preview stuck on a stale frame.
+
+## [0.4.2] — 2026-07-18
+
+### Added
+- Command-line control of projects and exports, on top of the existing recording verbs, so Recast can be driven from a script. Settings has a toggle for installing the `recast` command automatically.
+
+### Changed
+- The app now presents itself as "Recast" rather than "recast" in the window title, installer, and system metadata.
+- Only one copy of Recast runs at a time. Opening a second one focuses the window you already have instead of starting a rival instance.
+- The tray menu is reorganised, with your recent projects and exports listed directly in it.
+- Refreshed the icon set across the sidebar and recording panel.
+
+### Fixed
+- On macOS, the FFmpeg binaries Recast downloads are cleared of the Apple quarantine flag. Without it macOS blocked them, and Recast silently fell back to whatever FFmpeg happened to be on your PATH, or to none at all.
+
+## [0.4.1] — 2026-07-16
+
+### Highlights
+- Redesigned the editor's properties panel: sections now live in a compact, grouped vertical rail with a clear active state, and you can drag the panel wider.
+- More precise timeline editing: the playhead tracks the video exactly, timecodes match everywhere, and the Cut tool works across every lane.
+
+### Added
+- A dedicated audio waveform lane in the timeline, shown alongside the thumbnails so you can cut against the sound.
+- Drag across the Zoom or Cuts lane to create a zoom region or remove a section, the same gesture in both.
+- A resizable properties panel: drag its edge to set the width, and it is remembered between sessions.
+- Cut sections are now selectable and can be removed from the keyboard, like zoom regions and markup.
+- A `transcribe` command for the command-line interface, so captions can be generated without opening the editor.
+
+### Changed
+- The properties panel section switcher is now a grouped vertical icon rail instead of a wrapping row of icons, with consistent active states and calmer motion.
+- In the Background section, the controls follow the order you build a look: background first, then framing (padding and corner radius), then drop shadow. Corner radius has a tighter range and finer steps.
+- Timeline editing shortcuts (Split, Cut, and set in/out points) now work without clicking the timeline first, and the on-screen keys reflect that.
+- The smoother WebCodecs playback engine is now the default, so playback stays fluid across cuts and splits. It falls back to the standard player automatically where a device cannot use it.
+- The editor now respects the system "reduce motion" setting throughout.
+- The preview shows a scrubber only when the timeline is hidden, so there are no longer two scrubbers at once.
+
+### Fixed
 - The Cut (razor) tool now works when clicking over any lane, not only empty timeline space, and can be exited with the keyboard or Escape.
 - Undo now correctly reverses a cut dragged out on the Cuts lane.
 - The timeline playhead no longer lags behind the video during playback.
+- Exports crashed on macOS when the hardware encoder was asked for a quality target it does not accept. It is now given a bitrate instead.
+- Exporting burned-in captions with an FFmpeg build that lacks the subtitle filters now fails with a message that says so, instead of producing a video with no captions in it.
+- The bundled FFmpeg is verified to ship those subtitle filters at build time, so that case should not reach you in the first place.
 
 ## [0.4.0] — 2026-07-11
 
@@ -182,11 +228,16 @@ See [`.changeset/README.md`](.changeset/README.md) for the full flow.
 
 ### Added
 - Update older recordings to the current project format in bulk from the library, or one at a time from a recording's menu. Recordings that still use the old format are marked so you can see which need updating.
+- Hardware-accelerated encoding on Apple Silicon, so exports use the Mac's media engine instead of the CPU.
 
 ### Changed
 - Silence detection is far more accurate. It now uses on-device voice detection to find genuinely silent, speech-free stretches and suggest them for removal, instead of judging by volume alone, which often mistook breathing, typing, and background hum for speech. Suggestions appear instantly when a recording opens, and now show up for camera-only recordings, not just screen recordings. Nothing is removed automatically, the quiet parts are only suggested for you to accept or skip.
 - Recordings now save in a new project format that keeps each part of your edit (background, zoom, annotations, audio) in its own section, so project files are more robust and easier to inspect. Older recordings are updated to the new format when you open them, and a copy of the original is kept alongside it first.
 - The editor stays responsive on long recordings. Adjusting cursor smoothing no longer freezes the preview, undo and redo are quicker, and autosave no longer causes a brief stutter.
+
+### Fixed
+- Recording a selected region on a Retina display captured the wrong area, because the selection was measured in points and the capture in pixels.
+- Buttons went sticky and double-clicks were swallowed on macOS, caused by window drag regions overlapping the controls beneath them.
 
 ## [0.2.8] — 2026-06-28
 
