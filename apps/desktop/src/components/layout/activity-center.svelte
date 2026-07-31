@@ -10,6 +10,8 @@ import { openFileLocation } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { exportActivity, type ExportItem } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
+import { encodeEditorPath } from "$lib/library/editor-window";
+import { exportEtaMs, formatElapsed } from "$lib/format/time";
 import RecastMark from "$components/recast-mark.svelte";
 import {
 	CheckCircle2,
@@ -59,10 +61,45 @@ const busy = $derived(
 
 const exportPhaseLabel: Record<string, string> = {
 	preparing: "Preparing export",
+	rendering: "Rendering video",
 	encoding: "Rendering video",
 	finalizing: "Finalising file",
 	cancelling: "Cancelling export",
 };
+
+// Browser render (0..95) + mux (95..100) is one continuous bar; the Rust path is
+// determinate only while encoding. Preparing/cancelling/Rust-finalizing pulse.
+function exportDeterminate(item: ExportItem): boolean {
+	if (item.hasRenderPhase) return item.phase === "rendering" || item.phase === "finalizing";
+	return item.phase === "encoding";
+}
+function exportProgressText(item: ExportItem): string {
+	if (exportDeterminate(item)) return `${Math.round(item.progress)}%`;
+	return item.phase === "preparing" ? "Preparing…" : "";
+}
+
+// Ticking clock for the elapsed/ETA readouts; runs only while something is in
+// flight so it isn't an always-on timer.
+let now = $state(Date.now());
+$effect(() => {
+	if (!busy) return;
+	now = Date.now();
+	const t = setInterval(() => (now = Date.now()), 1000);
+	return () => clearInterval(t);
+});
+function exportElapsed(item: ExportItem): string {
+	return item.startedAt ? `${formatElapsed(now - item.startedAt)} elapsed` : "";
+}
+function exportEta(item: ExportItem): string {
+	const ms = exportEtaMs({
+		hasProgress: item.progress > 0,
+		finalizing: item.phase === "finalizing",
+		progress: item.progress,
+		now,
+		startedAt: item.startedAt ?? 0,
+	});
+	return ms == null ? "" : `~${formatElapsed(ms)} left`;
+}
 
 // "Clear all" dismisses every FINISHED item across the panel, leaving anything
 // still in progress or queued/uploading. Reuses each store's per-item dismiss.
@@ -84,7 +121,8 @@ function clearAll() {
 let open = $state(false);
 
 // A finished export opens the Exports page; an active/queued one reopens its
-// panel in the owning editor.
+// panel and navigates to the owning project (the render runs app-scoped, so its
+// editor may not be mounted).
 function openExportItem(item: ExportItem) {
 	open = false;
 	if (item.status === "success") {
@@ -92,6 +130,7 @@ function openExportItem(item: ExportItem) {
 		return;
 	}
 	exportActivity.show(item.id);
+	void goto(`/editor/${encodeEditorPath(item.filePath)}`);
 }
 
 async function showExportInFolder(path: string) {
@@ -268,7 +307,7 @@ async function openLink(link: string) {
 						</div>
 						{#if item.status === "running"}
 							<div class="h-1 overflow-hidden rounded-full bg-muted">
-								{#if item.phase === "encoding"}
+								{#if exportDeterminate(item)}
 									<div
 										class="h-full rounded-full bg-primary transition-[width] duration-200"
 										style="width: {Math.round(item.progress)}%"
@@ -279,19 +318,24 @@ async function openLink(link: string) {
 									></div>
 								{/if}
 							</div>
-							<div class="flex items-center justify-between">
-								<span
-									class="font-mono text-[11px] font-semibold tabular-nums text-primary"
-								>
-									{item.phase === "encoding" || item.phase === "finalizing"
-										? `${Math.round(item.progress)}%`
-										: item.phase === "preparing"
-											? "Preparing…"
-											: ""}
-								</span>
+							<div class="flex items-center justify-between gap-2">
+								<div class="flex min-w-0 items-baseline gap-2">
+									<span
+										class="font-mono text-[11px] font-semibold tabular-nums text-primary"
+									>
+										{exportProgressText(item)}
+									</span>
+									{#if exportElapsed(item)}
+										<span class="truncate text-[10px] tabular-nums text-muted-foreground/70">
+											{exportElapsed(item)}{exportEta(item)
+												? ` · ${exportEta(item)}`
+												: ""}
+										</span>
+									{/if}
+								</div>
 								<button
 									type="button"
-									class="text-[10px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
+									class="shrink-0 text-[10px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
 									disabled={item.phase === "cancelling"}
 									onclick={() => exportActivity.cancel(item.id)}
 								>

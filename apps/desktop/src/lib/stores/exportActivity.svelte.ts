@@ -20,6 +20,7 @@ import {
 	setJobProgress,
 	setJobProgressIndeterminate,
 } from "$lib/taskbarProgress";
+import { log } from "$lib/logger";
 import { toast } from "@recast/ui/sonner";
 
 /**
@@ -57,6 +58,23 @@ const RENDER_MAX = 95;
  *  included) so the backend can run it after the source editor is closed. */
 export type ExportRunParams = Omit<RunExportOptions, "exportId" | "onState">;
 
+/** Snapshot for the `export_completed` performance event: correlate wall time
+ *  against the source (duration/resolution/fps/size) + settings. Captured at
+ *  enqueue since the source editor may be gone by the time the export finishes. */
+export interface ExportTelemetry {
+	engine: "browser" | "rust";
+	format: string;
+	quality: string;
+	/** Output length after cuts/speed (seconds) — what actually gets rendered. */
+	outputDurationSec: number;
+	srcDurationSec: number;
+	srcWidth: number;
+	srcHeight: number;
+	srcFps: number;
+	srcCodec: string;
+	srcBytes: number;
+}
+
 export interface ExportItem {
 	id: string;
 	filename: string;
@@ -66,8 +84,14 @@ export interface ExportItem {
 	phase: ExportItemPhase;
 	/** 0..100. Held at 100 on success. */
 	progress: number;
-	/** When the FFmpeg run started (null while queued), for the ETA readout. */
+	/** When the FFmpeg run started (null while queued), for the ETA readout. Wall
+	 *  clock (Date.now / backend unix-ms) so it survives the DTO round-trip. */
 	startedAt: number | null;
+	/** Monotonic (performance.now) start, for accurate duration telemetry — immune
+	 *  to clock adjustments, unlike the wall-clock `startedAt`. Local-only. */
+	perfStartedAt?: number;
+	/** When it reached a terminal state, for the "Exported in …" readout. */
+	finishedAt?: number;
 	/** Output path once it succeeds. */
 	path?: string;
 	/** Failure message once it errors. */
@@ -75,6 +99,11 @@ export interface ExportItem {
 	/** True for browser-engine exports: a render phase (0..RENDER_MAX) precedes the
 	 *  backend mux, so backend progress maps to the RENDER_MAX..100 tail. */
 	hasRenderPhase?: boolean;
+	/** Performance snapshot, emitted on finish. Local-only (not in the DTO). */
+	telemetry?: ExportTelemetry;
+	/** Browser render wall time (ms) + the video-only byte size it produced. */
+	renderMs?: number;
+	outputBytes?: number;
 }
 
 function messageOf(e: unknown): string {
@@ -152,7 +181,17 @@ function createExportActivityStore() {
 			}
 			// hasRenderPhase is local-only (not in the DTO); carry it across so the
 			// backend mux keeps mapping onto the RENDER_MAX..100 tail.
-			if (p?.hasRenderPhase) item.hasRenderPhase = true;
+			if (p?.hasRenderPhase) {
+				item.hasRenderPhase = true;
+				// Keep the render's start (not the backend mux's) so total time + ETA
+				// span the whole render→mux, not just the fast tail.
+				if (p.startedAt) item.startedAt = p.startedAt;
+			}
+			// Carry the other local-only fields so the finish telemetry stays complete.
+			if (p?.telemetry) item.telemetry = p.telemetry;
+			if (p?.perfStartedAt != null) item.perfStartedAt = p.perfStartedAt;
+			if (p?.renderMs != null) item.renderMs = p.renderMs;
+			if (p?.outputBytes != null) item.outputBytes = p.outputBytes;
 			return item;
 		});
 		// Keep local items still in the browser-render phase — the backend doesn't
@@ -166,6 +205,32 @@ function createExportActivityStore() {
 		items.splice(0, items.length, ...next, ...localRenders);
 	}
 
+	/** Performance event on every terminal outcome: wall time vs source metrics,
+	 *  so we can see how long exports take for a given length/resolution/size. */
+	function emitCompletedTelemetry(it: ExportItem, status: "success" | "cancelled" | "error") {
+		// Monotonic delta (immune to clock changes); start + finish both run here.
+		const totalMs =
+			it.perfStartedAt != null ? Math.round(performance.now() - it.perfStartedAt) : undefined;
+		const t = it.telemetry;
+		log.info("export", "export_completed", {
+			exportId: it.id,
+			status,
+			engine: t?.engine,
+			format: t?.format,
+			quality: t?.quality,
+			totalMs,
+			renderMs: it.renderMs,
+			outputBytes: it.outputBytes,
+			outputDurationSec: t ? Math.round(t.outputDurationSec) : undefined,
+			srcDurationSec: t ? Math.round(t.srcDurationSec) : undefined,
+			srcWidth: t?.srcWidth,
+			srcHeight: t?.srcHeight,
+			srcFps: t?.srcFps,
+			srcCodec: t?.srcCodec,
+			srcBytes: t?.srcBytes,
+		});
+	}
+
 	/** One-shot user feedback + taskbar clear on a terminal outcome. Fired from the
 	 *  `export-state` stream (the live signal) so it happens exactly once. */
 	function finishFeedback(
@@ -175,12 +240,14 @@ function createExportActivityStore() {
 		error?: string,
 	) {
 		it.status = status;
+		it.finishedAt = Date.now();
 		if (status === "success") {
 			it.progress = 100;
 			it.path = path;
 		} else if (status === "error") {
 			it.error = error;
 		}
+		emitCompletedTelemetry(it, status);
 		void clearJobProgress();
 		if (status === "success") {
 			toast.success("Export complete", { description: it.filename });
@@ -197,6 +264,14 @@ function createExportActivityStore() {
 	function applyState(e: ExportStateEvent) {
 		const it = find(e.exportId);
 		if (!it) return;
+		// First live signal of processing → stamp the monotonic start (browser items
+		// already stamped it at render start; this covers the Rust path).
+		if (
+			it.perfStartedAt == null &&
+			(e.status === "started" || e.status === "preparing" || e.status === "progress")
+		) {
+			it.perfStartedAt = performance.now();
+		}
 		switch (e.status) {
 			case "started":
 			case "preparing":
@@ -247,11 +322,13 @@ function createExportActivityStore() {
 		renderRunning = true;
 		renderingId = req.id;
 		renderAbort = new AbortController();
+		const perfStart = performance.now();
 		const it = find(req.id);
 		if (it) {
 			it.status = "running";
 			it.phase = "rendering";
 			it.startedAt = Date.now();
+			it.perfStartedAt = perfStart;
 			it.progress = 0;
 		}
 		try {
@@ -265,6 +342,11 @@ function createExportActivityStore() {
 					}
 				},
 			});
+			const rendered = find(req.id);
+			if (rendered) {
+				rendered.renderMs = Math.round(performance.now() - perfStart);
+				rendered.outputBytes = bytes.byteLength;
+			}
 			const exact = bytes.buffer.slice(
 				bytes.byteOffset,
 				bytes.byteOffset + bytes.byteLength,
@@ -360,7 +442,13 @@ function createExportActivityStore() {
 		/** Hand a fully-built export to the backend queue. Inserts an optimistic
 		 *  `queued` item so the editor's ring/panel show immediately, then reconciles
 		 *  with the backend on the next `export-jobs-changed`. */
-		enqueue(spec: { id: string; filename: string; filePath: string; params: ExportRunParams }) {
+		enqueue(spec: {
+			id: string;
+			filename: string;
+			filePath: string;
+			params: ExportRunParams;
+			telemetry?: ExportTelemetry;
+		}) {
 			if (!find(spec.id)) {
 				items.push({
 					id: spec.id,
@@ -370,6 +458,7 @@ function createExportActivityStore() {
 					phase: "preparing",
 					progress: 0,
 					startedAt: null,
+					telemetry: spec.telemetry,
 				});
 			}
 			void enqueueExport({ ...spec.params, exportId: spec.id })
@@ -402,6 +491,7 @@ function createExportActivityStore() {
 			filePath: string;
 			job: ExportJob;
 			params: ExportRunParams;
+			telemetry?: ExportTelemetry;
 		}) {
 			if (!find(spec.id)) {
 				items.push({
@@ -413,6 +503,7 @@ function createExportActivityStore() {
 					progress: 0,
 					startedAt: null,
 					hasRenderPhase: true,
+					telemetry: spec.telemetry,
 				});
 			}
 			renderQueue.push({

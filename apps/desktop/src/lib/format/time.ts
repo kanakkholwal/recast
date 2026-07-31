@@ -38,6 +38,32 @@ export function compactDuration(sec: number): string {
 	return sec >= 1 ? `${sec.toFixed(1)}s` : `${Math.round(sec * 1000)}ms`;
 }
 
+/** Compact elapsed time: `45s`, or `1m 05s` past a minute. */
+export function formatElapsed(ms: number): string {
+	const s = Math.floor(ms / 1000);
+	if (s < 60) return `${s}s`;
+	return `${Math.floor(s / 60)}m ${s % 60}s`;
+}
+
+/**
+ * Export ETA from elapsed × (1 − pct) / pct. Null until it's meaningful: no
+ * real progress yet, finalising, below 10 %, or under 250 ms elapsed.
+ */
+export function exportEtaMs(args: {
+	hasProgress: boolean;
+	finalizing: boolean;
+	progress: number;
+	now: number;
+	startedAt: number;
+}): number | null {
+	if (!args.hasProgress || args.finalizing) return null;
+	const pct = args.progress;
+	if (pct < 10) return null;
+	const elapsed = args.now - args.startedAt;
+	if (elapsed < 250) return null;
+	return (elapsed * (100 - pct)) / pct;
+}
+
 /**
  * Rough time-remaining label for uploads/transfers, e.g. `~45s left`,
  * `~2m 10s left`. Rounds up so it never reads 0 while work remains; under a
