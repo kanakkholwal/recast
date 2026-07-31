@@ -10,6 +10,7 @@
  */
 import type { IconComponent } from "@recast/icons";
 import * as Dialog from "@recast/ui/dialog";
+import { DIALOG_FOOTER, DIALOG_HEADER, DIALOG_SURFACE } from "./dialog.styles";
 import { cn } from "@recast/ui/utils";
 import type { Snippet } from "svelte";
 
@@ -61,12 +62,9 @@ const TONE_CHIP: Record<Tone, string> = {
 >
 	<Dialog.Content
 		showCloseButton={false}
-		class={cn(
-			"block! gap-0! overflow-hidden rounded-2xl p-0! ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong)",
-			widthClass,
-		)}
+		class={cn("block! gap-0!", DIALOG_SURFACE, widthClass)}
 	>
-		<Dialog.Header class="flex-row items-start gap-3 space-y-0 border-b border-border/40 px-4 py-3.5 text-left">
+		<Dialog.Header class={cn("flex-row items-start gap-3", DIALOG_HEADER)}>
 			{#if Icon}
 				<span
 					class={cn(
@@ -97,9 +95,7 @@ const TONE_CHIP: Record<Tone, string> = {
 		</div>
 
 		{#if footer}
-			<footer
-				class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2.5"
-			>
+			<footer class={DIALOG_FOOTER}>
 				{@render footer()}
 			</footer>
 		{/if}

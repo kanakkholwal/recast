@@ -133,6 +133,20 @@ export function googleFamilyFromStack(stack: string): string | null {
 const loaded = new Set<string>();
 
 /**
+ * Download `family` at `weight` (cached on device by Rust) and return an
+ * asset-protocol URL for its file, or null on failure. Needs the Tauri IPC, so
+ * it must run on the main thread — a worker gets the URL passed in instead.
+ */
+export async function resolveGoogleFontUrl(family: string, weight = 400): Promise<string | null> {
+	try {
+		return convertFileSrc(await ensureGoogleFont(family, weight));
+	} catch (e) {
+		console.warn(`Google font resolve failed: ${family} ${weight}`, e);
+		return null;
+	}
+}
+
+/**
  * Ensure `family` at `weight` is downloaded + registered with the document.
  * Idempotent per family+weight; failures are swallowed (the text just falls
  * back to the next family in the stack).
@@ -141,11 +155,13 @@ export async function loadGoogleFont(family: string, weight = 400): Promise<void
 	const key = `${family}:${weight}`;
 	if (loaded.has(key)) return;
 	loaded.add(key);
+	const url = await resolveGoogleFontUrl(family, weight);
+	if (!url) {
+		loaded.delete(key);
+		return;
+	}
 	try {
-		const path = await ensureGoogleFont(family, weight);
-		const face = new FontFace(family, `url("${convertFileSrc(path)}")`, {
-			weight: String(weight),
-		});
+		const face = new FontFace(family, `url("${url}")`, { weight: String(weight) });
 		await face.load();
 		// `FontFaceSet.add` is missing from the lib typings in this config.
 		(document.fonts as unknown as { add(f: FontFace): void }).add(face);

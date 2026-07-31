@@ -6,6 +6,7 @@ import {
 	googleFamilyFromStack,
 	googleFontStack,
 	loadGoogleFont,
+	resolveGoogleFontUrl,
 } from "./google-fonts";
 
 export interface FontOption {
@@ -34,9 +35,7 @@ const isSystem = (value: string) => SYSTEM_FONTS.some((f) => f.value === value);
 /** Human label for a stored font value (family name for Google fonts). */
 export function fontLabel(value: string): string {
 	return (
-		ALL_FONTS.find((f) => f.value === value)?.label ??
-		googleFamilyFromStack(value) ??
-		"Custom"
+		ALL_FONTS.find((f) => f.value === value)?.label ?? googleFamilyFromStack(value) ?? "Custom"
 	);
 }
 
@@ -45,4 +44,18 @@ export function ensureFontLoaded(value: string, weight = 400): void {
 	if (isSystem(value)) return;
 	const family = googleFamilyFromStack(value);
 	if (family) void loadGoogleFont(family, weight);
+}
+
+/** Resolve a caption font value to `{ family, url }` for the export worker to
+ *  register in its own scope, or null for system fonts (already available to
+ *  OffscreenCanvas) and failed loads. Runs main-thread (needs the Tauri IPC). */
+export async function resolveCaptionFont(
+	value: string,
+	weight = 400,
+): Promise<{ family: string; url: string } | null> {
+	if (isSystem(value)) return null;
+	const family = googleFamilyFromStack(value);
+	if (!family) return null;
+	const url = await resolveGoogleFontUrl(family, weight);
+	return url ? { family, url } : null;
 }

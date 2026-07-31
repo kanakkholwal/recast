@@ -29,8 +29,11 @@ export interface AnnotationJob extends Omit<AnnotationLayerInputs, "getImage" | 
 }
 
 /** Caption layer as data — already fully serializable (transcript/style/timeMap/
- *  geometry). The worker loads the face named by `style.fontFamily` before paint. */
-export type CaptionJob = CaptionLayerInputs;
+ *  geometry). `font` is the resolved webfont the worker registers before paint;
+ *  absent for system fonts (OffscreenCanvas already has those). */
+export type CaptionJob = CaptionLayerInputs & {
+	font?: { family: string; url: string; weight: number };
+};
 
 /** Camera bubble as data: everything CameraExportInputs needs except the resolved
  *  `placementAt(t)` closure, which the worker rebuilds from the shared placement

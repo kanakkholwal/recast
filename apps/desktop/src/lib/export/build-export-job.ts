@@ -15,7 +15,7 @@ import { buildExportBase } from "./export-scene";
 import { videoEncodingConfigFor, type ExportQuality } from "./browser-export-plan";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
-import { ensureFontLoaded } from "$lib/fonts/font-options";
+import { resolveCaptionFont } from "$lib/fonts/font-options";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { toStatic } from "$lib/state-snapshot.svelte";
 import type { FrameGeometry } from "../../components/editor/frame-params";
@@ -136,8 +136,9 @@ async function buildAnnotationData(
 }
 
 /** Caption layer as data, or null when captions aren't burned in. Gated on the
- *  export `burnIn` intent + a transcript ONLY (matching the Rust burn). The face
- *  is loaded here so the first frame paints with it — the export can't repaint. */
+ *  export `burnIn` intent + a transcript ONLY (matching the Rust burn). The font
+ *  URL is resolved here (Tauri IPC) so the consumer — worker OR main — registers
+ *  it in its own scope before the first frame; the export can't repaint. */
 async function buildCaptionData(
 	store: EditorStore,
 	meta: { width: number; height: number },
@@ -147,18 +148,7 @@ async function buildCaptionData(
 	const transcript = store.captionTranscript;
 	const style = store.captionStyle;
 	if (!store.captionExport.burnIn || !transcript || transcript.segments.length === 0) return null;
-	// Load THIS face specifically; `document.fonts.ready` is racy. The worker will
-	// re-load it in its own scope in Phase 3; on the main thread this suffices.
-	ensureFontLoaded(style.fontFamily, style.fontWeight);
-	const family = style.fontFamily
-		.split(",")[0]
-		.trim()
-		.replace(/^['"]|['"]$/g, "");
-	try {
-		await document.fonts.load(`${style.fontWeight} 32px "${family}"`);
-	} catch {
-		/* fall back to the system face */
-	}
+	const font = await resolveCaptionFont(style.fontFamily, style.fontWeight);
 	const g = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
 	return {
 		transcript,
@@ -172,6 +162,7 @@ async function buildCaptionData(
 		},
 		canvasPxW,
 		canvasPxH,
+		font: font ? { ...font, weight: style.fontWeight } : undefined,
 	};
 }
 

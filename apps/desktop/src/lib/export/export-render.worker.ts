@@ -2,9 +2,9 @@
  * Export render worker (Phase 3): receives a serialized ExportJob, runs the
  * DOM-free consumer (run-export-job) — which owns its own OffscreenCanvas +
  * WebGL2 + MediaBunny loop — and transfers the encoded bytes back, so the whole
- * composite+encode runs off the main thread. Burned captions still route to the
- * main thread (font loading in a worker scope is a follow-up), so jobs reaching
- * here have `caption === null`.
+ * composite+encode runs off the main thread. Burned captions run here too: the
+ * job carries the resolved font URL, which run-export-job registers in this
+ * worker's `self.fonts` before the first paint.
  */
 
 import { runExportJob } from "./run-export-job";

@@ -50,8 +50,7 @@ export async function runBrowserExport(
 	return await saveBrowserExportVideo(bytes);
 }
 
-/** Render off the main thread when possible, else on it. Burned captions still
- *  render main-thread (worker font loading is a follow-up). On any worker failure
+/** Render off the main thread when possible, else on it. On any worker failure
  *  the transferred bitmaps are gone, so a fresh job is rebuilt for the fallback. */
 async function renderToBytes(
 	store: EditorStore,
@@ -59,7 +58,7 @@ async function renderToBytes(
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
 	const job = await buildExportJob(store, jobOpts);
-	if (exportWorkerSupported() && !job.caption) {
+	if (exportWorkerSupported()) {
 		try {
 			return await runExportJobInWorker(job, runtime);
 		} catch (err) {
@@ -74,12 +73,12 @@ async function renderToBytes(
 
 /** Render a PRE-BUILT job → encoded bytes, for the app-scoped export queue (which
  *  runs after the editor store may be gone). Clones bitmaps to the worker so a
- *  failure can retry the same job main-thread; captions stay main-thread. */
+ *  failure can retry the same job main-thread. */
 export async function renderJobToBytes(
 	job: ExportJob,
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
-	if (exportWorkerSupported() && !job.caption) {
+	if (exportWorkerSupported()) {
 		try {
 			const bytes = await runExportJobInWorker(job, runtime, { transfer: false });
 			closeJobBitmaps(job); // the worker consumed clones; free our originals

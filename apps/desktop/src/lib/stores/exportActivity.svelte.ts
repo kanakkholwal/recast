@@ -123,6 +123,7 @@ function fromDto(d: ExportJobDto): ExportItem {
 		phase: d.phase,
 		progress: d.progress,
 		startedAt: d.startedAt ?? null,
+		finishedAt: d.finishedAt ?? undefined,
 		path: d.path ?? undefined,
 		error: d.error ?? undefined,
 	};
@@ -208,9 +209,13 @@ function createExportActivityStore() {
 	/** Performance event on every terminal outcome: wall time vs source metrics,
 	 *  so we can see how long exports take for a given length/resolution/size. */
 	function emitCompletedTelemetry(it: ExportItem, status: "success" | "cancelled" | "error") {
-		// Monotonic delta (immune to clock changes); start + finish both run here.
-		const totalMs =
+		// Browser render is timed monotonically (clock-safe, exact render start); the
+		// Rust path prefers the backend's authoritative wall span (SQLite start→finish).
+		const monotonicMs =
 			it.perfStartedAt != null ? Math.round(performance.now() - it.perfStartedAt) : undefined;
+		const wallMs =
+			it.startedAt != null && it.finishedAt != null ? it.finishedAt - it.startedAt : undefined;
+		const totalMs = it.hasRenderPhase ? (monotonicMs ?? wallMs) : (wallMs ?? monotonicMs);
 		const t = it.telemetry;
 		log.info("export", "export_completed", {
 			exportId: it.id,

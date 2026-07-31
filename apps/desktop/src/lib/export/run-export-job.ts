@@ -22,12 +22,32 @@ import {
 	cameraPlacementAt,
 } from "../../components/editor/_components/camera-overlay.logic";
 import type { ShapeImage } from "@recast/render";
-import type { ExportJob, CameraJob } from "./export-job";
+import type { ExportJob, CameraJob, CaptionJob } from "./export-job";
 
 /** Runtime callbacks that can't cross into the job payload (they're live handles). */
 export interface ExportRuntime {
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
+}
+
+/** Register the caption webfont in THIS scope (the worker's `self.fonts` or the
+ *  main thread's `document.fonts`) before painting. System fonts carry no `font`
+ *  and are already available to OffscreenCanvas. */
+async function ensureCaptionFont(cap: CaptionJob | null): Promise<void> {
+	const f = cap?.font;
+	if (!f) return;
+	const set =
+		typeof document !== "undefined"
+			? document.fonts
+			: (globalThis as { fonts?: FontFaceSet }).fonts;
+	if (!set) return;
+	try {
+		const face = new FontFace(f.family, `url("${f.url}")`, { weight: String(f.weight) });
+		await face.load();
+		(set as unknown as { add(x: FontFace): void }).add(face);
+	} catch {
+		/* fall back to the stack's next family */
+	}
 }
 
 /** Rebuild CameraExportInputs.placementAt from the serialized keyframe/zoom-follow
@@ -91,6 +111,7 @@ export async function runExportJob(
 				drawCaptionLayerExport(ctx, originalSec, outputSec, cap)
 		: null;
 
+	await ensureCaptionFont(job.caption);
 	const frameAt = makeExportFrameAt(job.base, job.timeMap);
 	try {
 		return await renderTimelineToVideo({
