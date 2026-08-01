@@ -372,9 +372,22 @@ function createExportActivityStore() {
 				});
 		} catch (err) {
 			const item = find(req.id);
-			if (item) {
-				if (renderAbort?.signal.aborted) finishFeedback(item, "cancelled");
-				else finishFeedback(item, "error", undefined, messageOf(err));
+			if (renderAbort?.signal.aborted) {
+				if (item) finishFeedback(item, "cancelled");
+			} else {
+				// The browser render died (e.g. GPU context loss on a long/heavy export).
+				// Don't lose the user's export — fall back to the Rust compositor, which
+				// handles it reliably. No browserVideoPath ⇒ Rust composites from scratch.
+				console.warn("[exportActivity] browser render failed; falling back to Rust", err);
+				if (item) {
+					item.hasRenderPhase = false;
+					item.phase = "preparing";
+					item.progress = 0;
+				}
+				void enqueueExport({ ...req.spec.params, exportId: req.id }).catch((e) => {
+					const it = find(req.id);
+					if (it) finishFeedback(it, "error", undefined, messageOf(e));
+				});
 			}
 		} finally {
 			renderRunning = false;
@@ -403,6 +416,11 @@ function createExportActivityStore() {
 		/** Any export currently encoding. */
 		get running() {
 			return runningItem() != null;
+		},
+		/** A browser render is compositing frames right now. Drives the preview to
+		 *  freeze so it stops fighting the export for this GPU + decoder. */
+		get renderingInBrowser() {
+			return items.some((i) => i.status === "running" && i.phase === "rendering");
 		},
 		/** Any item at all (queued, running, or an undismissed result). */
 		get active() {

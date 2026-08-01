@@ -15,6 +15,7 @@ import { RenderWorkerClient } from "$lib/playback/render-worker-client";
 import { renderWorkerCapable } from "$lib/playback/render-worker-protocol";
 import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
 import { assetsStore } from "$lib/stores/assets-store.svelte";
+import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { type EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Spinner } from "@recast/ui/spinner";
@@ -650,6 +651,10 @@ function updateSvgCursor(next: SvgCursorParams | null) {
 function draw() {
 	if (!canvasEl || !store.metadata) return;
 	if (!renderWorkerClient && (!gl || !renderCore)) return;
+	// While a browser export composites, freeze the preview: skip decode/upload/
+	// draw so it stops fighting the export for this GPU + decoder (a long export
+	// otherwise loses its context). Last frame stays — no teardown, no flicker.
+	if (exportActivity.renderingInBrowser) return;
 	if (!resizeCanvas()) return;
 
 	// Refresh the smoothed cursor path if any of its inputs changed since
