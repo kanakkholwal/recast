@@ -51,6 +51,7 @@ import {
 } from "./profiles.logic";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
 
 // mode = 'create' means draft is not yet in the store; mode = 'edit' means
 // draft mirrors an existing entry. Persistence only happens on Save.
@@ -762,7 +763,7 @@ const capabilities: Cap[] = [
     <Dialog.Content
       showCloseButton={false}
       style="width: {dialogWidth}px; max-width: calc(100vw - 2rem);"
-      class="block! gap-0! overflow-hidden rounded-2xl p-0! ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong) transition-[width] duration-300 ease-out"
+      class={cn("block! gap-0! transition-[width] duration-300 ease-out", DIALOG_SURFACE)}
     >
       <header
         class="flex items-center justify-between gap-3 border-b border-border/40 px-5 py-4"

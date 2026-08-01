@@ -1,29 +1,31 @@
 <script lang="ts">
-  import * as Dialog from "@recast/ui/dialog";
-  import { Kbd } from "@recast/ui/kbd";
-  import { Keyboard } from "@recast/icons";
-  import {
-    formatChordTokens,
-    shortcutDefs,
-    shortcutsByCategory,
-    shortcutsDialog,
-    type ShortcutDef,
-  } from "$lib/shortcuts/registry.svelte";
+import * as Dialog from "@recast/ui/dialog";
+import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { cn } from "@recast/ui/utils";
+import { Kbd } from "@recast/ui/kbd";
+import { Keyboard } from "@recast/icons";
+import {
+	formatChordTokens,
+	shortcutDefs,
+	shortcutsByCategory,
+	shortcutsDialog,
+	type ShortcutDef,
+} from "$lib/shortcuts/registry.svelte";
 
-  // The list is static (declared once in the registry); compute the grouping
-  // and the Mod+/ display tokens a single time.
-  const groups = shortcutsByCategory();
-  const openTokens = formatChordTokens("Mod+/");
+// The list is static (declared once in the registry); compute the grouping
+// and the Mod+/ display tokens a single time.
+const groups = shortcutsByCategory();
+const openTokens = formatChordTokens("Mod+/");
 
-  function tokensFor(def: ShortcutDef): string[] {
-    return def.display ?? formatChordTokens(def.keys);
-  }
+function tokensFor(def: ShortcutDef): string[] {
+	return def.display ?? formatChordTokens(def.keys);
+}
 </script>
 
 <Dialog.Root bind:open={shortcutsDialog.open}>
   <Dialog.Content
     showCloseButton={false}
-    class="top-[6%] w-[min(92vw,52rem)] max-w-none translate-y-0 overflow-hidden rounded-xl p-0 ring-1 ring-border sm:max-w-none"
+    class={cn("top-[6%] w-[min(92vw,52rem)] max-w-none translate-y-0 sm:max-w-none", DIALOG_SURFACE)}
   >
     <Dialog.Header class="border-b border-border px-4 py-2.5">
       <Dialog.Title

@@ -33,6 +33,10 @@ export interface ExportPrepHooks {
 
 export interface BuildExportRenderStateOptions {
 	hooks?: ExportPrepHooks;
+	/** Skip the text→PNG / cursor-sprite rasterization. The browser engine
+	 *  composites those itself, and the mux job never reads them — so doing it here
+	 *  too is pure double work. Audio/cuts/speed/metadata are unaffected. */
+	skipVisualRaster?: boolean;
 }
 
 export interface ExportRenderStatePayload {
@@ -51,9 +55,27 @@ export async function buildExportRenderState(
 	store: EditorStore,
 	opts: BuildExportRenderStateOptions = {},
 ): Promise<ExportRenderStatePayload> {
-	const { hooks } = opts;
+	const { hooks, skipVisualRaster } = opts;
 	const renderState = store.toRenderState();
 	const meta = store.metadata;
+
+	// Browser engine: the mux job reads only audio/cuts/speed, and buildExportJob
+	// rasterizes the visuals itself — so skip the text/cursor raster passes.
+	// Annotations are dropped entirely: the mux never draws them, and Rust only
+	// knows pre-rasterized (image) annotations, so raw `text` kinds would fail to
+	// deserialize. Cuts still gate the audio warp.
+	if (skipVisualRaster) {
+		return {
+			renderState: {
+				...renderState,
+				annotations: [],
+				zoomRegions: store.focusEnabled ? renderState.zoomRegions : [],
+				cuts: store.effectiveCuts,
+			},
+			metadata: meta,
+		};
+	}
+
 	const paddingPx = framePaddingPixels(renderState.padding ?? 0, meta);
 	const canvasW = meta ? meta.width + paddingPx * 2 : 0;
 	const canvasH = meta ? meta.height + paddingPx * 2 : 0;

@@ -29,6 +29,7 @@ import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
 import EditorToolbar from "$components/editor/EditorToolbar.svelte";
 import ExportDialog from "$components/editor/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
+import ExportStageLoader from "$components/editor/ExportStageLoader.svelte";
 import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
 import Timeline from "$components/editor/Timeline.svelte";
 import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
@@ -57,8 +58,11 @@ import {
 	timelineMaxHeight,
 } from "$lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "$lib/editor/time";
-import { runBrowserExport } from "$lib/export/browser-export";
-import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
+import { buildExportJob } from "$lib/export/build-export-job";
+import {
+	browserExportBlockedReason,
+	resolveExportFps,
+} from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { chooseExportEngine } from "$lib/export/choose-export-engine";
 import { probeBrowserExportCapability } from "$lib/export/export-capability";
@@ -97,17 +101,13 @@ import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { createEditorStore, type VideoMetadata } from "$lib/stores/editor-store.svelte";
 import { experimentalStore } from "$lib/stores/experimental.svelte";
-import { exportActivity } from "$lib/stores/exportActivity.svelte";
+import { exportActivity, type ExportTelemetry } from "$lib/stores/exportActivity.svelte";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import { createTileProvider, type TileProvider } from "$lib/timeline/filmstrip-source";
 import { originalToOutput } from "$lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
-import {
-	basename,
-	exportEtaMs as computeExportEtaMs,
-	formatElapsed,
-	parseLayout,
-} from "./editor-page.logic";
+import { basename, parseLayout } from "./editor-page.logic";
+import { exportEtaMs as computeExportEtaMs, formatElapsed } from "$lib/format/time";
 
 interface Props {
 	data: {
@@ -1202,15 +1202,13 @@ const exportHasProgress = $derived((myItem?.progress ?? 0) > 0);
 // Items ahead of this editor's queued export (the running one counts).
 const queueAhead = $derived(myExportId ? exportActivity.queuePosition(myExportId) : 0);
 
-// Preparing-stage substages, surfaced in the dialog instead of a generic spinner.
-let prepText = $state<"pending" | "running" | "done">("pending");
-let prepCursor = $state<"pending" | "running" | "done">("pending");
-let prepSending = $state<"pending" | "running" | "done">("pending");
-function resetPrep() {
-	prepText = "pending";
-	prepCursor = "pending";
-	prepSending = "pending";
-}
+// The one minimal export stage, driving the themed loader + labels. Prepare =
+// snapshot/rasterize (buildingExport) or pre-first-frame; render = frame loop
+// (determinate); finalise = mux (browser) / FFmpeg tail (Rust).
+type ExportStage = "prepare" | "render" | "finalise";
+const exportStage = $derived<ExportStage>(
+	exportFinalizing ? "finalise" : buildingExport || !exportHasProgress ? "prepare" : "render",
+);
 
 // Eased display percentage: raw FFmpeg progress is jumpy, so lerp the ring
 // toward it each animation tick while exporting.
@@ -1247,10 +1245,6 @@ $effect(() => {
 	};
 });
 
-function renderStateHasText(): boolean {
-	return store.annotations.some((a) => a.kind.kind === "text");
-}
-
 // ETA from elapsed × (1 − pct) / pct; only meaningful past ≥10% progress.
 function exportEtaMs(): number | null {
 	return computeExportEtaMs({
@@ -1281,21 +1275,36 @@ const exportResult = $derived<ExportResult | null>(
 async function handleExport() {
 	if (isExportingHere) return;
 	const exportId = createExportId();
-	resetPrep();
 	buildingExport = true;
 	myExportId = exportId;
 	exportActivity.show(exportId);
 	exportNow = Date.now();
 
 	try {
-		// Build the payload Rust renders (text→PNG, cursor→sprite sheet); the
-		// hooks drive the frontend "Preparing…" sub-stages.
+		// Resolve the export engine FIRST — it decides whether the render state needs
+		// its visual half. Browser export is on when the master flag is set OR the user
+		// opted into the beta; otherwise Rust. The resolver still falls back per
+		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
+		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
+		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
+		const engine = chooseExportEngine({
+			masterEnabled: wantBrowser,
+			forceLegacy: false,
+			blockedReason: browserExportBlockedReason(store),
+			capabilitySupported: capability?.supported ?? false,
+		});
+		log.info("export", "export_engine", {
+			exportId,
+			engine: engine.engine,
+			reason: engine.reason,
+			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
+		});
+
+		// Build the render state (audio cuts/speed + metadata; for Rust ALSO the
+		// text→PNG / cursor sprites it composites). The browser engine composites those
+		// itself in buildExportJob, so skip that rasterization here — no double work.
 		const { renderState: finalRenderState, metadata: meta } = await buildExportRenderState(store, {
-			hooks: {
-				onText: (s) => (prepText = s),
-				onCursor: (s) => (prepCursor = s),
-				onSending: (s) => (prepSending = s),
-			},
+			skipVisualRaster: engine.engine === "browser",
 		});
 
 		// Warn (but don't block) if any image annotation can't be loaded. The
@@ -1330,76 +1339,67 @@ async function handleExport() {
 			durationSec: meta ? Math.round(meta.duration) : undefined,
 		});
 
-		// Hand the fully-built export to the queue; the store runs it (after any
-		// already-running one), so it survives leaving this editor.
-		let browserVideoPath: string | undefined;
-		// Resolve the export engine. Browser export is on when the master flag is set OR
-		// the user opted into the beta; otherwise Rust. The resolver still falls back per
-		// capability/eligibility, and `forceLegacy` is the (later) default-on opt-out.
-		const wantBrowser = BROWSER_EXPORT_ENABLED || experimentalStore.isEnabled("browserExportBeta");
-		const capability = wantBrowser ? await probeBrowserExportCapability() : null;
-		const engine = chooseExportEngine({
-			masterEnabled: wantBrowser,
-			forceLegacy: false,
-			blockedReason: browserExportBlockedReason(store),
-			capabilitySupported: capability?.supported ?? false,
-		});
-		log.info("export", "export_engine", {
-			exportId,
-			engine: engine.engine,
-			reason: engine.reason,
-			hardwareAccelerated: capability?.hardwareAccelerated ?? false,
-		});
-		if (engine.engine === "browser") {
-			try {
-				// GIF renders at its own target fps (the picker is MP4/WebM-only); the
-				// Rust palette pass re-reads this browser video, so match its fps here.
-				const gifFps =
-					store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
-				const renderFps =
-					store.exportFormat === "gif"
-						? (gifFps ?? meta?.fps ?? 15)
-						: store.exportFps && store.exportFps > 0
-							? store.exportFps
-							: (meta?.fps ?? 30);
-				const renderStart = performance.now();
-				browserVideoPath = await runBrowserExport(store, {
-					videoUrl: videoSrc,
-					cameraUrl: cameraSrc,
-					quality: store.exportQuality as ExportQuality,
-					fps: renderFps,
-				});
-				log.info("export", "export_render", {
-					exportId,
-					renderMs: Math.round(performance.now() - renderStart),
-				});
-			} catch (e) {
-				log.error("export", "export_render_failed", { exportId, message: String(e) });
-				console.error("browser export render failed; using the Rust compositor", e);
-				browserVideoPath = undefined;
-			}
-		}
+		// Params the backend mux/export job needs, shared by both engines. The stable
+		// route path is `filePath`; the actual media path is `inputPath`.
+		const params = {
+			inputPath: documentPath || data.filePath,
+			format: store.exportFormat,
+			quality: store.exportQuality,
+			renderState: finalRenderState,
+			gifSettings: store.exportFormat === "gif" ? store.gifSettings : undefined,
+			speed: store.exportSpeed,
+			// GIF carries fps in gifSettings; MP4/WebM use the picker (null=source).
+			fps: store.exportFormat === "gif" ? undefined : store.exportFps,
+			// No-op unless a transcript exists and caption options are enabled.
+			captions: buildCaptionExport(store),
+		};
 
-		exportActivity.enqueue({
-			id: exportId,
-			filename: data.filename,
-			// Stable route path for identity/adoption; the actual media path is in
-			// params.inputPath below.
-			filePath: data.filePath,
-			params: {
-				inputPath: documentPath || data.filePath,
-				format: store.exportFormat,
-				quality: store.exportQuality,
-				renderState: finalRenderState,
-				gifSettings: store.exportFormat === "gif" ? store.gifSettings : undefined,
-				speed: store.exportSpeed,
-				// GIF carries fps in gifSettings; MP4/WebM use the picker (null=source).
-				fps: store.exportFormat === "gif" ? undefined : store.exportFps,
-				// No-op unless a transcript exists and caption options are enabled.
-				captions: buildCaptionExport(store),
-				browserVideoPath,
-			},
-		});
+		// Performance snapshot for the `export_completed` event — source metrics the
+		// export time is correlated against. Emitted by the store when it finishes.
+		const src = store.metadata;
+		const telemetry: ExportTelemetry = {
+			engine: engine.engine === "browser" ? "browser" : "rust",
+			format: store.exportFormat,
+			quality: String(store.exportQuality),
+			outputDurationSec: store.timeMap.outputDuration,
+			srcDurationSec: src?.duration ?? 0,
+			srcWidth: src?.width ?? 0,
+			srcHeight: src?.height ?? 0,
+			srcFps: src?.fps ?? 0,
+			srcCodec: src?.codec ?? "",
+			srcBytes: src?.sizeBytes ?? 0,
+		};
+
+		if (engine.engine === "browser") {
+			// The rate the browser renderer encodes at (shared with the eligibility gate
+			// so a source it deemed light enough renders at the fps it judged).
+			const renderFps = resolveExportFps(store);
+			// Snapshot the scene now (store alive); the app-scoped render queue composites
+			// it off the main thread and hands the video to the backend — so the export
+			// survives closing this editor, and a second export queues behind it.
+			const job = await buildExportJob(store, {
+				videoUrl: videoSrc,
+				cameraUrl: cameraSrc,
+				quality: store.exportQuality as ExportQuality,
+				fps: renderFps,
+			});
+			exportActivity.enqueueBrowserExport({
+				id: exportId,
+				filename: data.filename,
+				filePath: data.filePath,
+				job,
+				params,
+				telemetry,
+			});
+		} else {
+			exportActivity.enqueue({
+				id: exportId,
+				filename: data.filename,
+				filePath: data.filePath,
+				params,
+				telemetry,
+			});
+		}
 	} catch (err) {
 		const message =
 			typeof err === "string" ? err : err instanceof Error ? err.message : String(err);
@@ -1943,44 +1943,8 @@ $effect(() => {
 	return () => clearInterval(timer);
 });
 
-// Substages. During the frontend prep window (buildingExport) the rasterize
-// sub-steps drive text/cursor/ship; once enqueued, the render state is built,
-// so those are done and the single FFmpeg pass (which stitches cuts + overlays
-// cursor/annotations/captions/zoom AND encodes) is the "Render frames" step.
-const stages = $derived.by(() => {
-	const prepFinished = !buildingExport;
-	const running = myItem?.status === "running";
-	const textState = prepFinished ? "done" : prepText;
-	const cursorState = prepFinished ? "done" : prepCursor;
-	const shipState = prepFinished ? "done" : prepSending;
-	return [
-		{
-			key: "text" as const,
-			label: "Render text overlays",
-			state: textState,
-			skip: textState === "done" && !renderStateHasText(),
-		},
-		{
-			key: "cursor" as const,
-			label: "Render cursor sprites",
-			state: cursorState,
-			skip: cursorState === "done" && store.cursorSettings.style === "dot",
-		},
-		{
-			key: "ship" as const,
-			label: "Hand off to encoder",
-			state: shipState,
-		},
-		{
-			key: "encode" as const,
-			label: exportFinalizing ? "Finalise file" : "Render frames",
-			state: (!prepFinished ? "pending" : running || exportFinalizing ? "running" : "pending") as
-				| "pending"
-				| "running"
-				| "done",
-		},
-	];
-});
+// The 3-stage rail order, for the minimal progress dots under the ring.
+const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -2356,15 +2320,8 @@ const stages = $derived.by(() => {
 {/snippet}
 
 {#snippet progress()}
-  {@const isPreparing =
-    !exportHasProgress && !exportFinalizing}
+  {@const isPreparing = !exportHasProgress && !exportFinalizing}
   {@const eta = exportEtaMs()}
-  {@const ringPct = isPreparing
-    ? 0
-    : exportFinalizing
-      ? 100
-      : Math.min(100, Math.max(0, displayPct))}
-  {@const RING_R = 52}
 
   <div class="flex h-full min-h-0 flex-col">
     <header class="shrink-0 border-b border-border/40 px-5 pb-3.5 pt-4">
@@ -2403,147 +2360,32 @@ const stages = $derived.by(() => {
       <div
         class="mx-auto flex min-h-full w-full max-w-xs flex-col items-center justify-center gap-5 px-5 py-6"
       >
-      <div
-        class="relative size-32"
-        role="progressbar"
-        aria-label="Export progress"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={isPreparing ? undefined : Math.floor(ringPct)}
-        aria-valuetext={isPreparing
-          ? "Preparing"
-          : exportFinalizing
-            ? "Finalising"
-            : `${Math.floor(ringPct)}%`}
-      >
-        <svg
-          viewBox="0 0 120 120"
-          class="size-full -rotate-90 overflow-visible"
-        >
-          <!-- Track -->
-          <circle
-            cx="60"
-            cy="60"
-            r={RING_R}
-            stroke="currentColor"
-            stroke-width="6"
-            class="fill-none text-muted"
-          />
-          {#if isPreparing}
-                  <!-- Indeterminate spinner. `pathLength="100"` decouples the
-                       dash math from 2πr so precision can't leave it short of full. -->
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r={RING_R}
-                    pathLength="100"
-                    stroke="currentColor"
-                    stroke-width="6"
-                    stroke-linecap="round"
-                    class="fill-none text-primary origin-center animate-spin"
-                    style="stroke-dasharray: 25 100; animation-duration: 1.2s;"
-                  />
-                {:else}
-                  <!-- Dash values in inline style so they participate in the CSS
-                       transition; mixing attribute + style breaks it in some engines. -->
-                  <circle
-                    cx="60"
-                    cy="60"
-                    r={RING_R}
-                    pathLength="100"
-                    stroke="currentColor"
-                    stroke-width="6"
-                    stroke-linecap="round"
-                    class="fill-none text-primary"
-                    style="stroke-dasharray: 100; stroke-dashoffset: {100 - ringPct}; transition: stroke-dashoffset 220ms cubic-bezier(0.65, 0, 0.35, 1);"
-                  />
-                  {#if exportFinalizing}
-                    <!-- Pulsing tip while we wait on FFmpeg's mux/move. -->
-                    <circle
-                      cx="60"
-                      cy={60 - RING_R}
-                      r="3.5"
-                      class="fill-primary animate-pulse"
-                    />
-                  {/if}
-                {/if}
-              </svg>
-              <!-- Percentage during encode; dashes while preparing/finalising. -->
-              <div
-                class="absolute inset-0 flex flex-col items-center justify-center"
-              >
-                {#if isPreparing}
-                  <span class="text-[13px] font-medium text-foreground">Preparing</span>
-                {:else if exportFinalizing}
-                  <span class="text-[13px] font-medium text-foreground">Finalising</span>
-                  <span class="text-[11px] text-muted-foreground">Writing the file</span>
-                {:else}
-                  <span
-                    class="font-mono text-2xl font-semibold tabular-nums text-foreground"
-                  >
-                    {Math.floor(ringPct)}<span
-                      class="text-base text-muted-foreground">%</span
-                    >
-                  </span>
-                  {#if eta !== null}
-                    <span class="text-[11px] text-muted-foreground">
-                      ~{formatElapsed(eta)} left
-                    </span>
-                  {:else if exportStartedAt}
-                    <span class="text-[11px] text-muted-foreground">
-                      {formatElapsed(exportNow - exportStartedAt)} elapsed
-                    </span>
-                  {/if}
-                {/if}
-              </div>
-            </div>
+      <ExportStageLoader stage={exportStage} pct={displayPct} />
 
-            <!-- Substage stepper: done steps check off, the active step is the
-                 highlighted row with a live pulsing dot, the rest stay dim. One
-                 clear "which is happening now" language across all substages. -->
-            <ul class="flex w-full flex-col gap-0.5 self-stretch text-[11px]">
-              {#each stages as s (s.key)}
-                {#if !s.skip}
-                  {@const done = s.state === "done"}
-                  {@const active = s.state === "running"}
-                  <li
-                    class="flex items-center gap-2.5 rounded-md px-2 py-1.5 transition-colors duration-200 {active
-                      ? 'bg-primary/5'
-                      : ''}"
-                  >
-                    <span class="grid size-3.5 shrink-0 place-items-center">
-                      {#if done}
-                        <CheckCircle2 size={13} class="text-success" />
-                      {:else if active}
-                        <span
-                          class="relative flex size-2.5 items-center justify-center"
-                        >
-                          <span
-                            class="absolute inline-flex size-full rounded-full bg-primary/50 motion-safe:animate-ping"
-                          ></span>
-                          <span
-                            class="relative inline-flex size-2 rounded-full bg-primary"
-                          ></span>
-                        </span>
-                      {:else}
-                        <span
-                          class="size-2 rounded-full border border-muted-foreground/30"
-                        ></span>
-                      {/if}
-                    </span>
-                    <span
-                      class="min-w-0 flex-1 truncate {active
-                        ? 'font-medium text-foreground'
-                        : done
-                          ? 'text-muted-foreground'
-                          : 'text-muted-foreground/50'}"
-                    >
-                      {s.label}{active ? "…" : ""}
-                    </span>
-                  </li>
-                {/if}
-              {/each}
-            </ul>
+      {#if !exportCancelling}
+        <p class="text-[11px] tabular-nums text-muted-foreground">
+          {#if eta !== null}
+            ~{formatElapsed(eta)} left
+          {:else if exportStartedAt}
+            {formatElapsed(exportNow - exportStartedAt)} elapsed
+          {/if}
+        </p>
+      {/if}
+
+      <!-- Minimal 3-stage rail: past stages filled, the current one widened. -->
+      <div class="flex items-center gap-2" aria-hidden="true">
+        {#each EXPORT_STAGES as st, i (st)}
+          {@const active = st === exportStage}
+          {@const done = EXPORT_STAGES.indexOf(exportStage) > i}
+          <span
+            class="h-1.5 rounded-full transition-all duration-300 {active
+              ? 'w-6 bg-primary'
+              : done
+                ? 'w-1.5 bg-primary/60'
+                : 'w-1.5 bg-muted-foreground/25'}"
+          ></span>
+        {/each}
+      </div>
           </div>
     </div>
 
@@ -2615,6 +2457,11 @@ const stages = $derived.by(() => {
         <CheckCircle2 class="size-4 text-success" />
         Export complete
       </h3>
+      {#if myItem?.startedAt != null && myItem?.finishedAt != null}
+        <p class="mt-0.5 text-[11px] text-muted-foreground">
+          Exported in {formatElapsed(myItem.finishedAt - myItem.startedAt)}
+        </p>
+      {/if}
       {#if exportResult?.kind === "success"}
         <!-- Where it went is the point of this screen, so the path is
              selectable and copyable rather than a truncated tooltip. -->

@@ -14,7 +14,7 @@
 
 import type { FrameInput } from "../../components/editor/frame-params";
 import type { TimeMap } from "$lib/timeline/time-map";
-import type { VideoEncodingConfig } from "@recast/media/mediabunny";
+import type { ExportQuality } from "./browser-export-plan";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
 import type { AnnotationLayerInputs } from "./annotation-layer-export";
@@ -29,8 +29,13 @@ export interface AnnotationJob extends Omit<AnnotationLayerInputs, "getImage" | 
 }
 
 /** Caption layer as data — already fully serializable (transcript/style/timeMap/
- *  geometry). The worker loads the face named by `style.fontFamily` before paint. */
-export type CaptionJob = CaptionLayerInputs;
+ *  geometry). `font` is the resolved webfont the worker registers before paint
+ *  (absent for system fonts). `mainThreadOnly` marks a fontsource/document-only
+ *  font the worker can't see, so the whole render stays on the main thread. */
+export type CaptionJob = CaptionLayerInputs & {
+	font?: { family: string; url: string; weight: number };
+	mainThreadOnly?: boolean;
+};
 
 /** Camera bubble as data: everything CameraExportInputs needs except the resolved
  *  `placementAt(t)` closure, which the worker rebuilds from the shared placement
@@ -62,7 +67,9 @@ export interface ExportJob {
 	/** Total output duration after cuts/speed (seconds). */
 	outputDurationSec: number;
 	fps: number;
-	encodingConfig: VideoEncodingConfig;
+	/** Quality tier ONLY — the encoder config carries a branded MediaBunny `Quality`
+	 *  object that doesn't survive `postMessage`, so the worker rebuilds it. */
+	quality: ExportQuality;
 	/** Source video URL — the worker opens its own decoder on it. */
 	videoUrl: string;
 	/** Decoded image/wallpaper background (transferable), or null for colour/gradient. */
@@ -73,10 +80,9 @@ export interface ExportJob {
 	caption: CaptionJob | null;
 }
 
-/** Gather every transferable in the job for `postMessage`'s transfer list, so the
- *  bitmaps move zero-copy instead of being cloned. Deduped — the cursor sprite
- *  fallbacks (drag/rightPress → press → rest) can share one bitmap. */
-export function collectTransferables(job: ExportJob): Transferable[] {
+/** Every distinct bitmap the job owns. Deduped — the cursor sprite fallbacks
+ *  (drag/rightPress → press → rest) can share one bitmap. */
+function jobBitmaps(job: ExportJob): ImageBitmap[] {
 	const seen = new Set<ImageBitmap>();
 	const add = (b: ImageBitmap | null | undefined) => {
 		if (b) seen.add(b);
@@ -90,4 +96,15 @@ export function collectTransferables(job: ExportJob): Transferable[] {
 	}
 	if (job.annotation) for (const [, bmp] of job.annotation.images) add(bmp);
 	return [...seen];
+}
+
+/** Bitmaps for `postMessage`'s transfer list, to move them zero-copy. */
+export function collectTransferables(job: ExportJob): Transferable[] {
+	return jobBitmaps(job);
+}
+
+/** Free the job's bitmaps. Call after a worker render (which consumed clones) so
+ *  the main-thread originals don't leak; the main-thread path closes its own. */
+export function closeJobBitmaps(job: ExportJob): void {
+	for (const bmp of jobBitmaps(job)) bmp.close();
 }

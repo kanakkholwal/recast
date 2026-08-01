@@ -18,12 +18,11 @@ import {
 	Link2,
 	Minus,
 } from "@recast/icons";
+import DialogShell from "$components/recast/DialogShell.svelte";
+import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
-import * as Dialog from "@recast/ui/dialog";
 import { Input } from "@recast/ui/input";
 import { toast } from "@recast/ui/sonner";
-import { Spinner } from "@recast/ui/spinner";
-import { cn } from "@recast/ui/utils";
 
 let { uploadId }: { uploadId: string } = $props();
 
@@ -89,132 +88,75 @@ async function openLink() {
 }
 </script>
 
-<Dialog.Root
+<DialogShell
 	open={true}
+	{title}
+	subtitle={fileName}
+	icon={status === "complete"
+		? Check
+		: status === "error"
+			? AlertTriangle
+			: status === "cancelled"
+				? Ban
+				: BrandGoogleDrive}
+	tone={status === "error" ? "destructive" : status === "cancelled" ? "muted" : "default"}
+	widthClass="sm:max-w-lg"
 	onOpenChange={(v) => {
 		if (v) return;
-		// Backdrop / Esc: background it while running, else dismiss.
 		if (status === "uploading") onMinimize();
 		else onClose();
 	}}
 >
-	<Dialog.Content showCloseButton={false} class="sm:max-w-lg">
-		<Dialog.Header>
-			<Dialog.Title class="flex items-center gap-2">
-				<span
-					class={cn(
-						"grid size-7 place-items-center rounded-lg",
-						status === "error"
-							? "bg-destructive/10 text-destructive"
-							: status === "cancelled"
-								? "bg-muted text-muted-foreground"
-								: "bg-primary/10 text-primary",
-					)}
-				>
-					{#if status === "complete"}
-						<Check class="size-3.5" />
-					{:else if status === "error"}
-						<AlertTriangle class="size-3.5" />
-					{:else if status === "cancelled"}
-						<Ban class="size-3.5" />
-					{:else}
-						<BrandGoogleDrive class="size-3.5" />
-					{/if}
-				</span>
-				{title}
-			</Dialog.Title>
-			<Dialog.Description class="truncate">{fileName}</Dialog.Description>
-		</Dialog.Header>
-
-		{#if status === "complete"}
-			<div class="flex items-center gap-2">
-				<Input value={link} readonly class="h-9 font-mono text-xs" />
-				<Button
-					variant="outline"
-					size="sm"
-					class="h-9 shrink-0 gap-1.5"
-					onclick={copyLink}
-				>
-					<Link2 class="size-3.5" /> Copy
-				</Button>
-				<Button
-					variant="outline"
-					size="sm"
-					class="h-9 shrink-0 gap-1.5"
-					onclick={openLink}
-				>
-					<ExternalLink class="size-3.5" /> Open
-				</Button>
-			</div>
-		{:else}
-			<div class="space-y-2.5" aria-live="polite">
-				<div class="flex items-center justify-between gap-2 text-xs">
-					<span
-						class={cn(
-							"font-medium",
-							status === "error" ? "text-destructive" : "text-foreground",
-						)}
-					>
-						{phaseLabel}
-					</span>
-					{#if status === "uploading"}
-						<Spinner class="size-3.5 shrink-0 text-muted-foreground" />
-					{/if}
-				</div>
-
+	{#if status === "complete"}
+		<div class="flex items-center gap-2">
+			<Input value={link} readonly aria-label="Drive link" class="h-9 font-mono text-xs" />
+			<Button variant="outline" size="sm" class="h-9 shrink-0 gap-1.5" onclick={copyLink}>
+				<Link2 class="size-3.5" /> Copy
+			</Button>
+			<Button variant="outline" size="sm" class="h-9 shrink-0 gap-1.5" onclick={openLink}>
+				<ExternalLink class="size-3.5" /> Open
+			</Button>
+		</div>
+	{:else}
+		<UploadProgress
+			{phaseLabel}
+			{pct}
+			active={status === "uploading"}
+			failed={status === "error"}
+			{transferLabel}
+		>
+			{#snippet trailing()}
+				<!-- Cancel is a low-emphasis link, not a footer button, so the
+				     destructive action is never the dialog's default focus. -->
 				{#if status === "uploading"}
-					<div class="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-						{#if indeterminate}
-							<div
-								class="h-full w-1/3 rounded-full bg-primary motion-safe:animate-pulse"
-							></div>
-						{:else}
-							<div
-								class="h-full rounded-full bg-primary transition-[width] duration-200"
-								style="width: {pct ?? 0}%"
-							></div>
-						{/if}
-					</div>
-					<!-- Cancel is a low-emphasis link here, not a footer button, so the
-					     destructive action is separated from the primary Minimize and is
-					     never the dialog's default focus. -->
-					<div class="flex items-center justify-between gap-2">
-						<span class="text-[10px] font-medium tabular-nums text-muted-foreground">
-							{transferLabel ?? ""}
-						</span>
-						<button
-							type="button"
-							class="text-[11px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline"
-							onclick={() => gdrive.cancelUpload(uploadId)}
-						>
-							Cancel upload
-						</button>
-					</div>
-				{:else if status === "error"}
-					<p class="text-[11px] leading-relaxed text-muted-foreground">
-						{upload?.error ?? "Something went wrong during the upload."}
-					</p>
+					<button
+						type="button"
+						class="text-[11px] font-medium text-muted-foreground/80 transition-colors hover:text-foreground hover:underline"
+						onclick={() => gdrive.cancelUpload(uploadId)}
+					>
+						Cancel upload
+					</button>
 				{/if}
-			</div>
+			{/snippet}
+		</UploadProgress>
+		{#if status === "error"}
+			<p class="mt-2.5 text-[11px] leading-relaxed text-muted-foreground">
+				{upload?.error ?? "Something went wrong during the upload."}
+			</p>
 		{/if}
+	{/if}
 
-		<Dialog.Footer>
-			{#if status === "uploading"}
-				<Button variant="default_soft" size="sm" onclick={onMinimize}>
-					<Minus />
-					Minimize
-				</Button>
-			{:else if status === "complete"}
-				<Button onclick={onClose}>
-					Done
-					<Check />
-				</Button>
-			{:else}
-				<Button variant="ghost"  size="sm" onclick={onClose}>Close</Button>
-				<Button size="sm" onclick={() => gdrive.retry(uploadId)}>
-					Try again
-				</Button>
-			{/if}
-		</Dialog.Footer>
-	</Dialog.Content>
-</Dialog.Root>
+	{#snippet footer()}
+		{#if status === "uploading"}
+			<Button variant="default_soft" size="xs" onclick={onMinimize}>
+				<Minus />
+				Minimize
+			</Button>
+		{:else if status === "complete"}
+			<Button size="xs" onclick={onClose}>Done</Button>
+		{:else}
+			<Button variant="ghost" size="xs" onclick={onClose}>Close</Button>
+			<Button size="xs" onclick={() => gdrive.retry(uploadId)}>Try again</Button>
+		{/if}
+	{/snippet}
+</DialogShell>

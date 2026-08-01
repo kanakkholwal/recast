@@ -1,37 +1,35 @@
 <script lang="ts">
-  import { config } from "$constants/app";
-  import {
-    KIND_META,
-    LATEST_RELEASE,
-    type ChangeKind,
-  } from "$constants/changelog";
-  import { whatsNew } from "$lib/stores/whats-new.svelte";
-  import { ArrowRight, AiWand } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Dialog from "@recast/ui/dialog";
-  import { Markdown } from "@recast/ui/markdown";
+import { config } from "$constants/app";
+import { KIND_META, LATEST_RELEASE, type ChangeKind } from "$constants/changelog";
+import { whatsNew } from "$lib/stores/whats-new.svelte";
+import { ArrowRight, AiWand } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { cn } from "@recast/ui/utils";
+import { Markdown } from "@recast/ui/markdown";
 
-  // Order changes so additions surface first, then changes, then fixes.
-  const ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
+// Order changes so additions surface first, then changes, then fixes.
+const ORDER: ChangeKind[] = ["added", "changed", "fixed", "deprecated"];
 
-  const grouped = $derived.by(() => {
-    const map = new Map<ChangeKind, string[]>();
-    for (const c of LATEST_RELEASE.changes) {
-      if (!map.has(c.kind)) map.set(c.kind, []);
-      map.get(c.kind)!.push(c.summary);
-    }
-    return ORDER.filter((k) => map.has(k)).map((k) => [k, map.get(k)!] as const);
-  });
+const grouped = $derived.by(() => {
+	const map = new Map<ChangeKind, string[]>();
+	for (const c of LATEST_RELEASE.changes) {
+		if (!map.has(c.kind)) map.set(c.kind, []);
+		map.get(c.kind)!.push(c.summary);
+	}
+	return ORDER.filter((k) => map.has(k)).map((k) => [k, map.get(k)!] as const);
+});
 
-  function handleOpenChange(v: boolean) {
-    if (!v) whatsNew.dismiss();
-    else whatsNew.open = true;
-  }
+function handleOpenChange(v: boolean) {
+	if (!v) whatsNew.dismiss();
+	else whatsNew.open = true;
+}
 </script>
 
 <Dialog.Root open={whatsNew.open} onOpenChange={handleOpenChange}>
   <Dialog.Content
-    class="max-w-xl overflow-hidden rounded-xl p-0 ring-1 ring-border"
+    class={cn("max-w-xl", DIALOG_SURFACE)}
   >
     <Dialog.Header class="sr-only">
       <Dialog.Title>What's new in Recast {LATEST_RELEASE.version}</Dialog.Title>

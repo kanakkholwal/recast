@@ -1,74 +1,68 @@
 <script lang="ts">
-  // Inspector for one screen state: the frame that was read, every element the OCR
-  // engine found drawn in place over it, and the same elements as a readable list.
-  // This is the surface that answers "why did it produce THAT?", so the picture and
-  // the structured output have to be visibly the same thing: a box on the frame and
-  // its row in the list are one element, and highlighting either highlights both.
-  import { clock } from "$lib/format/time";
-  import type { ScreenStateSpan } from "$lib/ipc-types";
-  import { Badge } from "@recast/ui/badge";
-  import { Button } from "@recast/ui/button";
-  import * as Dialog from "@recast/ui/dialog";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { Check, Copy, SquareDashedMousePointer } from "@recast/icons";
-  import { boxLabel, boxStyle, regionLabel, spanAsText } from "./dev-ocr-panel.logic";
+// Inspector for one screen state: the frame that was read, every element the OCR
+// engine found drawn in place over it, and the same elements as a readable list.
+// This is the surface that answers "why did it produce THAT?", so the picture and
+// the structured output have to be visibly the same thing: a box on the frame and
+// its row in the list are one element, and highlighting either highlights both.
+import { clock } from "$lib/format/time";
+import type { ScreenStateSpan } from "$lib/ipc-types";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import DialogShell from "$components/recast/DialogShell.svelte";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { Check, Copy, SquareDashedMousePointer } from "@recast/icons";
+import { boxLabel, boxStyle, regionLabel, spanAsText } from "./dev-ocr-panel.logic";
 
-  interface Props {
-    span: ScreenStateSpan | null;
-    open: boolean;
-    onOpenChange: (open: boolean) => void;
-    onSeek: (t: number) => void;
-  }
-  let { span, open, onOpenChange, onSeek }: Props = $props();
+interface Props {
+	span: ScreenStateSpan | null;
+	open: boolean;
+	onOpenChange: (open: boolean) => void;
+	onSeek: (t: number) => void;
+}
+let { span, open, onOpenChange, onSeek }: Props = $props();
 
-  // Two ways to read the same frame: the raw capture, and the capture with every
-  // recognized box drawn on it. Toggling between them is how you check the OCR
-  // against what was actually on screen. Defaults to annotated (the reason to open).
-  let annotated = $state(true);
+// Two ways to read the same frame: the raw capture, and the capture with every
+// recognized box drawn on it. Toggling between them is how you check the OCR
+// against what was actually on screen. Defaults to annotated (the reason to open).
+let annotated = $state(true);
 
-  // Hover/focus is a transient preview; a click pins the element so it survives the
-  // pointer moving away. Highlighting either the box or the row lights up both.
-  let previewed = $state<number | null>(null);
-  let pinned = $state<number | null>(null);
-  const active = $derived(previewed ?? pinned);
+// Hover/focus is a transient preview; a click pins the element so it survives the
+// pointer moving away. Highlighting either the box or the row lights up both.
+let previewed = $state<number | null>(null);
+let pinned = $state<number | null>(null);
+const active = $derived(previewed ?? pinned);
 
-  let rowEls: Record<number, HTMLElement | undefined> = {};
-  let copied = $state(false);
+let rowEls: Record<number, HTMLElement | undefined> = {};
+let copied = $state(false);
 
-  function pin(id: number) {
-    pinned = id;
-    rowEls[id]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
-  }
+function pin(id: number) {
+	pinned = id;
+	rowEls[id]?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+}
 
-  async function copyAsText() {
-    if (!span) return;
-    await navigator.clipboard.writeText(spanAsText(span, clock));
-    copied = true;
-    setTimeout(() => (copied = false), 1500);
-  }
+async function copyAsText() {
+	if (!span) return;
+	await navigator.clipboard.writeText(spanAsText(span, clock));
+	copied = true;
+	setTimeout(() => (copied = false), 1500);
+}
 
-  function jump() {
-    if (!span) return;
-    onSeek(span.start);
-    onOpenChange(false);
-  }
+function jump() {
+	if (!span) return;
+	onSeek(span.start);
+	onOpenChange(false);
+}
 </script>
 
-<Dialog.Root {open} {onOpenChange}>
-  <!-- The base content is `sm:max-w-sm`, so the override has to carry the variant. -->
-  <Dialog.Content class="sm:max-w-4xl">
-    {#if span}
-      <Dialog.Header>
-        <Dialog.Title class="flex items-center gap-2">
-          <SquareDashedMousePointer class="size-4" />
-          Screen at {clock(span.start)}
-        </Dialog.Title>
-        <Dialog.Description>
-          Held until {clock(span.end)}. The engine read
-          {span.elements.length}
-          {span.elements.length === 1 ? "element" : "elements"} from this frame.
-        </Dialog.Description>
-      </Dialog.Header>
+{#if span}
+  <DialogShell
+    {open}
+    title={`Screen at ${clock(span.start)}`}
+    subtitle={`Held until ${clock(span.end)} · ${span.elements.length} ${span.elements.length === 1 ? "element" : "elements"} read`}
+    icon={SquareDashedMousePointer}
+    widthClass="sm:max-w-4xl"
+    {onOpenChange}
+  >
 
       <div class="grid gap-4 md:grid-cols-[1.6fr_1fr]">
         <div class="flex flex-col gap-2 self-start">
@@ -159,18 +153,17 @@
         </div>
       </div>
 
-      <Dialog.Footer class="gap-2 sm:justify-between">
-        <Button variant="ghost" size="sm" onclick={copyAsText}>
+      {#snippet footer()}
+        <Button variant="ghost" size="xs" class="mr-auto" onclick={copyAsText}>
           {#if copied}
-            <Check class="size-4" />
+            <Check class="size-3.5" />
             Copied
           {:else}
-            <Copy class="size-4" />
+            <Copy class="size-3.5" />
             Copy as text
           {/if}
         </Button>
-        <Button size="sm" onclick={jump}>Jump to {clock(span.start)}</Button>
-      </Dialog.Footer>
-    {/if}
-  </Dialog.Content>
-</Dialog.Root>
+        <Button size="xs" onclick={jump}>Jump to {clock(span.start)}</Button>
+      {/snippet}
+  </DialogShell>
+{/if}

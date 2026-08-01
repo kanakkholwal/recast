@@ -1,183 +1,179 @@
 <script lang="ts">
-  import {
-    fetchManifestPreview,
-    hasUpdate,
-    installFromUrl,
-    removeExtension,
-    toggleExtension,
-    type RegistryIndexEntry,
-  } from "$lib/extensions";
-  import type {
-    ExtensionContributions,
-    ExtensionManifest,
-    InstalledExtension,
-  } from "$lib/ipc-types";
-  import { extensionsStore } from "$lib/stores/extensions-store.svelte";
-  import { buildContributionGroups } from "./extensions-panel.logic";
-  import {
-    Blend,
-    Blocks,
-    Captions,
-    Download,
-    FileBox,
-    Image,
-    MousePointer,
-    Palette,
-    ShieldCheck,
-    Spline,
-    Trash2,
-    Waves,
-  } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Dialog from "@recast/ui/dialog";
-  import { Kbd } from "@recast/ui/kbd";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { Spinner } from "@recast/ui/spinner";
-  import { toast } from "@recast/ui/sonner";
-  import type { Component } from "svelte";
+import {
+	fetchManifestPreview,
+	hasUpdate,
+	installFromUrl,
+	removeExtension,
+	toggleExtension,
+	type RegistryIndexEntry,
+} from "$lib/extensions";
+import type { ExtensionContributions, ExtensionManifest, InstalledExtension } from "$lib/ipc-types";
+import { extensionsStore } from "$lib/stores/extensions-store.svelte";
+import { buildContributionGroups } from "./extensions-panel.logic";
+import {
+	Blend,
+	Blocks,
+	Captions,
+	Download,
+	FileBox,
+	Image,
+	MousePointer,
+	Palette,
+	ShieldCheck,
+	Spline,
+	Trash2,
+	Waves,
+} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { cn } from "@recast/ui/utils";
+import { Kbd } from "@recast/ui/kbd";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { Spinner } from "@recast/ui/spinner";
+import { toast } from "@recast/ui/sonner";
+import type { Component } from "svelte";
 
-  interface Props {
-    open: boolean;
-    /** Registry metadata (manifestUrl + version). Null for a local-only install. */
-    entry: RegistryIndexEntry | null;
-    /** The installed record, when this pack is installed. */
-    installed: InstalledExtension | null;
-  }
+interface Props {
+	open: boolean;
+	/** Registry metadata (manifestUrl + version). Null for a local-only install. */
+	entry: RegistryIndexEntry | null;
+	/** The installed record, when this pack is installed. */
+	installed: InstalledExtension | null;
+}
 
-  let { open = $bindable(), entry, installed }: Props = $props();
+let { open = $bindable(), entry, installed }: Props = $props();
 
-  // Installed packs already carry the manifest; for a registry entry we fetch it
-  // (the index only has summary metadata) so contents show before install.
-  let manifest = $state<ExtensionManifest | null>(null);
-  let loadingManifest = $state(false);
-  // Guards the load effect against re-fetching the same target on every re-run.
-  let loadKey = "";
+// Installed packs already carry the manifest; for a registry entry we fetch it
+// (the index only has summary metadata) so contents show before install.
+let manifest = $state<ExtensionManifest | null>(null);
+let loadingManifest = $state(false);
+// Guards the load effect against re-fetching the same target on every re-run.
+let loadKey = "";
 
-  $effect(() => {
-    if (!open) {
-      loadKey = "";
-      return;
-    }
-    const key = installed
-      ? `i:${installed.manifest.id}:${installed.manifest.version}`
-      : entry
-        ? `e:${entry.id}:${entry.manifestUrl}`
-        : "";
-    if (key === loadKey) return;
-    loadKey = key;
+$effect(() => {
+	if (!open) {
+		loadKey = "";
+		return;
+	}
+	const key = installed
+		? `i:${installed.manifest.id}:${installed.manifest.version}`
+		: entry
+			? `e:${entry.id}:${entry.manifestUrl}`
+			: "";
+	if (key === loadKey) return;
+	loadKey = key;
 
-    if (installed) {
-      manifest = installed.manifest;
-      loadingManifest = false;
-    } else if (entry) {
-      manifest = null;
-      loadingManifest = true;
-      fetchManifestPreview(entry.manifestUrl)
-        .then((m) => {
-          manifest = m;
-        })
-        .finally(() => {
-          loadingManifest = false;
-        });
-    }
-  });
+	if (installed) {
+		manifest = installed.manifest;
+		loadingManifest = false;
+	} else if (entry) {
+		manifest = null;
+		loadingManifest = true;
+		fetchManifestPreview(entry.manifestUrl)
+			.then((m) => {
+				manifest = m;
+			})
+			.finally(() => {
+				loadingManifest = false;
+			});
+	}
+});
 
-  const isInstalled = $derived(!!installed);
-  const name = $derived(installed?.manifest.name ?? entry?.name ?? manifest?.name ?? "Extension");
-  const installedVersion = $derived(installed?.manifest.version);
-  const latestVersion = $derived(entry?.version ?? manifest?.version);
-  const author = $derived(
-    installed?.manifest.author ?? entry?.author ?? manifest?.author ?? null,
-  );
-  // Only the registry entry carries a description; the manifest has none.
-  const description = $derived(entry?.description ?? null);
-  const updateAvailable = $derived(
-    isInstalled && hasUpdate(installedVersion ?? "0.0.0", latestVersion),
-  );
-  const manifestUrl = $derived(entry?.manifestUrl ?? null);
+const isInstalled = $derived(!!installed);
+const name = $derived(installed?.manifest.name ?? entry?.name ?? manifest?.name ?? "Extension");
+const installedVersion = $derived(installed?.manifest.version);
+const latestVersion = $derived(entry?.version ?? manifest?.version);
+const author = $derived(installed?.manifest.author ?? entry?.author ?? manifest?.author ?? null);
+// Only the registry entry carries a description; the manifest has none.
+const description = $derived(entry?.description ?? null);
+const updateAvailable = $derived(
+	isInstalled && hasUpdate(installedVersion ?? "0.0.0", latestVersion),
+);
+const manifestUrl = $derived(entry?.manifestUrl ?? null);
 
-  // Icon-bearing definition table stays in the component; the pure map/filter
-  // lives in the shared logic module.
-  const contributionDefs: Array<{
-    key: keyof ExtensionContributions;
-    label: string;
-    icon: IconComponent;
-  }> = [
-    { key: "cursors", label: "Cursors", icon: MousePointer },
-    { key: "backgrounds", label: "Backgrounds", icon: Image },
-    { key: "gradients", label: "Gradients", icon: Blend },
-    { key: "colors", label: "Colors", icon: Palette },
-    { key: "easings", label: "Easing presets", icon: Spline },
-    { key: "smoothings", label: "Smoothing presets", icon: Waves },
-    { key: "captionPresets", label: "Caption themes", icon: Captions },
-  ];
-  const groups = $derived(buildContributionGroups(manifest, contributionDefs));
+// Icon-bearing definition table stays in the component; the pure map/filter
+// lives in the shared logic module.
+const contributionDefs: Array<{
+	key: keyof ExtensionContributions;
+	label: string;
+	icon: IconComponent;
+}> = [
+	{ key: "cursors", label: "Cursors", icon: MousePointer },
+	{ key: "backgrounds", label: "Backgrounds", icon: Image },
+	{ key: "gradients", label: "Gradients", icon: Blend },
+	{ key: "colors", label: "Colors", icon: Palette },
+	{ key: "easings", label: "Easing presets", icon: Spline },
+	{ key: "smoothings", label: "Smoothing presets", icon: Waves },
+	{ key: "captionPresets", label: "Caption themes", icon: Captions },
+];
+const groups = $derived(buildContributionGroups(manifest, contributionDefs));
 
-  const assetCount = $derived(manifest?.assets?.length ?? 0);
+const assetCount = $derived(manifest?.assets?.length ?? 0);
 
-  // Which action is in flight, so the matching button shows a spinner + verb.
-  // GOTCHA: `installed`/`entry` are reactive props that go null the moment the
-  // store updates, so handlers must capture any name/id for the toast BEFORE awaiting.
-  let pending = $state<null | "install" | "update" | "uninstall">(null);
+// Which action is in flight, so the matching button shows a spinner + verb.
+// GOTCHA: `installed`/`entry` are reactive props that go null the moment the
+// store updates, so handlers must capture any name/id for the toast BEFORE awaiting.
+let pending = $state<null | "install" | "update" | "uninstall">(null);
 
-  async function onInstall() {
-    if (!manifestUrl || pending) return;
-    pending = "install";
-    try {
-      const ext = await installFromUrl(manifestUrl);
-      toast.success(`Installed ${ext.manifest.name}`);
-    } catch (err) {
-      toast.error(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      pending = null;
-    }
-  }
+async function onInstall() {
+	if (!manifestUrl || pending) return;
+	pending = "install";
+	try {
+		const ext = await installFromUrl(manifestUrl);
+		toast.success(`Installed ${ext.manifest.name}`);
+	} catch (err) {
+		toast.error(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
 
-  async function onUpdate() {
-    if (!manifestUrl || pending) return;
-    pending = "update";
-    try {
-      const ext = await installFromUrl(manifestUrl);
-      toast.success(`Updated ${ext.manifest.name} to v${ext.manifest.version}`);
-    } catch (err) {
-      toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      pending = null;
-    }
-  }
+async function onUpdate() {
+	if (!manifestUrl || pending) return;
+	pending = "update";
+	try {
+		const ext = await installFromUrl(manifestUrl);
+		toast.success(`Updated ${ext.manifest.name} to v${ext.manifest.version}`);
+	} catch (err) {
+		toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
 
-  async function onUninstall() {
-    if (!installed || pending) return;
-    // Capture before await: `installed` goes null when the store drops the pack.
-    const { id, name: packName } = installed.manifest;
-    pending = "uninstall";
-    try {
-      await removeExtension(id);
-      toast.success(`Removed ${packName}`);
-      open = false;
-    } catch (err) {
-      toast.error(`Remove failed: ${err instanceof Error ? err.message : String(err)}`);
-    } finally {
-      pending = null;
-    }
-  }
+async function onUninstall() {
+	if (!installed || pending) return;
+	// Capture before await: `installed` goes null when the store drops the pack.
+	const { id, name: packName } = installed.manifest;
+	pending = "uninstall";
+	try {
+		await removeExtension(id);
+		toast.success(`Removed ${packName}`);
+		open = false;
+	} catch (err) {
+		toast.error(`Remove failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
 
-  async function onToggle(next: boolean) {
-    if (!installed) return;
-    const { id } = installed.manifest;
-    try {
-      await toggleExtension(id, next);
-    } catch (err) {
-      toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
-    }
-  }
+async function onToggle(next: boolean) {
+	if (!installed) return;
+	const { id } = installed.manifest;
+	try {
+		await toggleExtension(id, next);
+	} catch (err) {
+		toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
 </script>
 
 <Dialog.Root bind:open>
   <Dialog.Content
     showCloseButton={false}
-    class="top-[10%] w-[min(92vw,32rem)] max-w-none translate-y-0 gap-0 overflow-hidden rounded-xl p-0 ring-1 ring-border sm:max-w-none"
+    class={cn("top-[10%] w-[min(92vw,32rem)] max-w-none translate-y-0 gap-0 sm:max-w-none", DIALOG_SURFACE)}
   >
     <Dialog.Header class="space-y-0 border-b border-border px-4 py-2.5 text-left">
       <div class="flex items-center gap-2.5">

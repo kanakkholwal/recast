@@ -1,122 +1,103 @@
 <script lang="ts">
-	import { AlertTriangle } from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import * as Dialog from "@recast/ui/dialog";
-	import { toErrorMessage } from "./dialog.logic";
+import { AlertTriangle } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import DialogShell from "./DialogShell.svelte";
+import { toErrorMessage } from "./dialog.logic";
 
-	interface Props {
-		open: boolean;
-		title: string;
-		description?: string;
-		confirmLabel?: string;
-		cancelLabel?: string;
-		variant?: "default" | "destructive";
-		/** Called on confirm. Throw or reject to keep the dialog open with the error displayed. */
-		onConfirm: () => void | Promise<void>;
-		onOpenChange: (open: boolean) => void;
-	}
+interface Props {
+	open: boolean;
+	title: string;
+	description?: string;
+	confirmLabel?: string;
+	cancelLabel?: string;
+	variant?: "default" | "destructive";
+	/** Called on confirm. Throw or reject to keep the dialog open with the error displayed. */
+	onConfirm: () => void | Promise<void>;
+	onOpenChange: (open: boolean) => void;
+}
 
-	let {
-		open = $bindable(false),
-		title,
-		description,
-		confirmLabel = "Confirm",
-		cancelLabel = "Cancel",
-		variant = "default",
-		onConfirm,
-		onOpenChange,
-	}: Props = $props();
+let {
+	open = $bindable(false),
+	title,
+	description,
+	confirmLabel = "Confirm",
+	cancelLabel = "Cancel",
+	variant = "default",
+	onConfirm,
+	onOpenChange,
+}: Props = $props();
 
-	let error = $state<string | null>(null);
-	let busy = $state(false);
+let error = $state<string | null>(null);
+let busy = $state(false);
+let cancelEl = $state<HTMLButtonElement | null>(null);
 
-	$effect(() => {
-		if (open) {
-			error = null;
-			busy = false;
-		}
-	});
-
-	async function confirm() {
-		if (busy) return;
-		busy = true;
+$effect(() => {
+	if (open) {
 		error = null;
-		try {
-			await onConfirm();
-			close();
-		} catch (e) {
-			error = toErrorMessage(e);
-			busy = false;
-		}
+		busy = false;
+		// Cancel takes focus, so Enter on a destructive prompt backs out rather
+		// than confirming. Deliberate accepts still need one deliberate move.
+		queueMicrotask(() => cancelEl?.focus());
 	}
+});
 
-	function close() {
-		open = false;
-		onOpenChange(false);
+async function confirm() {
+	if (busy) return;
+	busy = true;
+	error = null;
+	try {
+		await onConfirm();
+		close();
+	} catch (e) {
+		error = toErrorMessage(e);
+		busy = false;
 	}
+}
 
-	function handleKeydown(e: KeyboardEvent) {
-		e.stopPropagation();
-		if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-			e.preventDefault();
-			confirm();
-		}
-		if (e.key === "Escape") {
-			e.preventDefault();
-			close();
-		}
+function close() {
+	open = false;
+	onOpenChange(false);
+}
+
+// On the window, not on a wrapper div: the footer buttons are siblings of the
+// body, so a handler scoped to the body never saw a keypress once focus moved
+// to Cancel — which is where focus starts.
+function onWindowKeydown(e: KeyboardEvent) {
+	if (!open || busy) return;
+	if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+		e.preventDefault();
+		confirm();
 	}
+}
 </script>
 
-<Dialog.Root
+<svelte:window onkeydown={onWindowKeydown} />
+
+<DialogShell
 	bind:open
-	onOpenChange={(v) => {
-		open = v;
-		onOpenChange(v);
-	}}
+	{title}
+	icon={variant === "destructive" ? AlertTriangle : undefined}
+	tone={variant === "destructive" ? "destructive" : "default"}
+	{onOpenChange}
 >
-	<Dialog.Content
-		showCloseButton={false}
-		class="top-[30%] max-w-md translate-y-0 overflow-hidden rounded-2xl p-0 ring-1 ring-border/60 shadow-(--shadow-craft-inset-strong)"
-	>
-		<Dialog.Header class="sr-only">
-			<Dialog.Title>{title}</Dialog.Title>
-			{#if description}
-				<Dialog.Description>{description}</Dialog.Description>
-			{/if}
-		</Dialog.Header>
+	<p class="text-[11px] leading-relaxed text-muted-foreground">
+		{description ?? "This can't be undone."}
+	</p>
+	{#if error}
+		<p class="mt-2 text-[11px] text-destructive" role="alert">{error}</p>
+	{/if}
 
-		<div class="flex items-start gap-3 px-4 py-3.5" onkeydown={handleKeydown} role="alertdialog" tabindex="-1">
-			{#if variant === "destructive"}
-				<div class="flex size-8 shrink-0 items-center justify-center rounded-lg border border-destructive/20 bg-destructive/10 text-destructive">
-					<AlertTriangle size={14} />
-				</div>
-			{/if}
-			<div class="min-w-0 flex-1">
-				<h3 class="text-[13px] font-semibold tracking-tight text-foreground">{title}</h3>
-				{#if description}
-					<p class="mt-1 text-[11px] leading-relaxed text-muted-foreground">{description}</p>
-				{/if}
-				{#if error}
-					<p class="mt-2 text-[11px] text-destructive">{error}</p>
-				{/if}
-			</div>
-		</div>
-
-		<footer
-			class="flex items-center justify-end gap-2 border-t border-border/40 bg-muted/30 px-3 py-2"
+	{#snippet footer()}
+		<Button bind:ref={cancelEl} variant="ghost" size="xs" onclick={close} disabled={busy}>
+			{cancelLabel}
+		</Button>
+		<Button
+			variant={variant === "destructive" ? "destructive" : "default"}
+			size="xs"
+			onclick={confirm}
+			disabled={busy}
 		>
-			<Button variant="ghost" size="xs" onclick={close} disabled={busy}>
-				{cancelLabel}
-			</Button>
-			<Button
-				variant={variant === "destructive" ? "destructive" : "default"}
-				size="xs"
-				onclick={confirm}
-				disabled={busy}
-			>
-				{busy ? "Working…" : confirmLabel}
-			</Button>
-		</footer>
-	</Dialog.Content>
-</Dialog.Root>
+			{busy ? "Working…" : confirmLabel}
+		</Button>
+	{/snippet}
+</DialogShell>
