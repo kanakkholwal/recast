@@ -34,6 +34,86 @@ export const KIND_META: Record<ChangeKind, { label: string; icon: IconComponent;
 // RELEASES:START, auto-generated, do not edit by hand
 export const RELEASES: readonly ChangelogRelease[] = [
 	{
+		version: "0.4.5",
+		date: "2026-08-01",
+		highlights: [
+			"One design across every dialog, from renaming a file to uploading one, replacing the three styles they had drifted into.",
+			"The editor and Settings remember where you were, so a reload puts back the panel tab, sidebar, and timeline you had open.",
+			"Frame-stepping and scrubbing keep the audio with the picture, and the preview's controls are laid out play on the left, annotation in the middle, fullscreen on the right.",
+		],
+		changes: [
+			{
+				kind: "added",
+				summary:
+					"Share destinations now carry their real mark: the Recast logo for Recast Cloud, the Drive logo for Google Drive, and the icon your own system uses for its share sheet, so the list reads at a glance instead of showing three near-identical clouds.",
+			},
+			{
+				kind: "added",
+				summary:
+					"Uploads report their progress to screen readers. The phase and percentage were on screen but were never announced, on the one operation in the app worth following.",
+			},
+			{
+				kind: "changed",
+				summary:
+					"Every dialog now looks and behaves the same way. Rename, delete, upload, share, and the preview window had drifted into three different styles depending on when each was written, and each had picked up its own focus and keyboard quirks along the way.",
+			},
+			{
+				kind: "changed",
+				summary:
+					"The preview player's controls are laid out in three zones: play and position on the left, the annotation tools in the middle, and fullscreen and playback settings on the right.",
+			},
+			{
+				kind: "changed",
+				summary:
+					"The editor keeps the open panel tab, the sidebar, and the timeline in the page address, so reloading, or coming back to a project, leaves everything where you had it rather than snapping to defaults.",
+			},
+			{
+				kind: "changed",
+				summary:
+					"The same is true of Settings: each tab has its own address, so a link that sends you to Settings to turn something on now lands on the tab that holds it.",
+			},
+			{
+				kind: "changed",
+				summary:
+					"Recordings and Exports now share one search, sort, and grid/list control. They were separate copies, which is why a fix to one of them never showed up on the other.",
+			},
+			{
+				kind: "changed",
+				summary: "Deleting a share now asks first, as deleting a recording already did.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"Stepping a frame or scrubbing the preview moved the video but left the system and microphone audio where they were, so sound drifted out of sync with the picture.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"The arrow keys in the preview were being taken by the page instead of stepping the video.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"Opening Profiles switched on the webcam even if you never opened a camera preview.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"The library claimed you had nothing recorded during the moment before it finished loading, and a scan that failed looked exactly like an empty folder.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"Links meant to open in your browser did nothing when clicked inside the app window.",
+			},
+			{
+				kind: "fixed",
+				summary:
+					"Keyboard shortcuts were written with the macOS Command symbol on Windows and Linux.",
+			},
+		],
+	},
+	{
 		version: "0.4.4",
 		date: "2026-07-30",
 		highlights: [

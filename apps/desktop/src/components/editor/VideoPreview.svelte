@@ -15,6 +15,7 @@ import { RenderWorkerClient } from "$lib/playback/render-worker-client";
 import { renderWorkerCapable } from "$lib/playback/render-worker-protocol";
 import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
 import { assetsStore } from "$lib/stores/assets-store.svelte";
+import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { type EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Spinner } from "@recast/ui/spinner";
@@ -1354,7 +1355,12 @@ $effect(() => {
 // Start/stop the per-video-frame draw loop with playback. In the WebCodecs
 // path, also run the picture clock so output time advances while playing.
 $effect(() => {
-	if (store.isPlaying) {
+	// A browser export shares this GPU + decoder. Suspend continuous playback while
+	// it renders (that 60fps decode loop is what starved the export's context), but
+	// leave the frame up and paused scrubs live — it stays watchable. isPlaying is
+	// untouched, so playback auto-resumes when the render finishes.
+	const suspendForExport = exportActivity.renderingInBrowser;
+	if (store.isPlaying && !suspendForExport) {
 		// Seed + start the picture clock ONLY on the paused→playing transition.
 		// This effect ALSO re-runs whenever effectiveCuts/outPoint change; the
 		// `!picClock.playing` guard stops those re-runs from re-seeding the clock
