@@ -40,4 +40,28 @@ describe("browserExportBlockedReason", () => {
 			).toBeNull();
 		}
 	});
+
+	it("allows 1080p60 (highest verified browser tier)", () => {
+		expect(
+			browserExportBlockedReason(store({ metadata: { width: 1920, height: 1080, fps: 60 } })),
+		).toBeNull();
+	});
+
+	it("routes heavy sources (1080p120, 4K) to Rust", () => {
+		expect(
+			browserExportBlockedReason(store({ metadata: { width: 1920, height: 1080, fps: 120 } })),
+		).not.toBeNull();
+		expect(
+			browserExportBlockedReason(store({ metadata: { width: 3840, height: 2160, fps: 30 } })),
+		).not.toBeNull();
+	});
+
+	it("uses the picker fps, not the source rate, for the throughput check", () => {
+		// 120fps source but exporting at 30 → light enough for the browser.
+		expect(
+			browserExportBlockedReason(
+				store({ metadata: { width: 1920, height: 1080, fps: 120 }, exportFps: 30 }),
+			),
+		).toBeNull();
+	});
 });

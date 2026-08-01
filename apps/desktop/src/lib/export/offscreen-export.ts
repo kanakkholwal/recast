@@ -188,6 +188,21 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	const input = new Input({ source: new UrlSource(opts.videoUrl), formats: ALL_FORMATS });
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
 	let camInput: Input | null = null;
+
+	// A lost context can strand `source.add` (the encoder can't read the dead
+	// canvas), hanging the export forever at N%. Reject the encoder awaits the
+	// instant the event fires so it fails cleanly instead of stalling.
+	let rejectOnLost: (e: Error) => void = () => {};
+	const lostPromise = new Promise<never>((_, reject) => {
+		rejectOnLost = reject;
+	});
+	lostPromise.catch(() => {}); // always "handled" so a late loss isn't an unhandled rejection
+	const onContextLost = (e: Event) => {
+		e.preventDefault();
+		rejectOnLost(new Error("export failed: GPU context lost mid-render"));
+	};
+	canvas.addEventListener("webglcontextlost", onContextLost);
+
 	try {
 		const track = await input.getPrimaryVideoTrack();
 		if (!track) throw new Error("no video track to export");
@@ -283,11 +298,13 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 				}
 			}
 
-			await source.add(outputSec, frameDur); // backpressure
+			// Race the encoder awaits against context loss — the only awaits that hang
+			// when the GL canvas dies (the decoder awaits are WebCodecs, unaffected).
+			await Promise.race([source.add(outputSec, frameDur), lostPromise]); // backpressure
 			opts.onProgress?.((i + 1) / frames);
 		}
 
-		await output.finalize();
+		await Promise.race([output.finalize(), lostPromise]);
 		const buf = (output.target as BufferTarget).buffer;
 		if (!buf) throw new Error("export produced no data");
 		return new Uint8Array(buf);
@@ -299,6 +316,8 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		}
 		throw err;
 	} finally {
+		rejectOnLost = () => {};
+		canvas.removeEventListener("webglcontextlost", onContextLost);
 		for (const o of overlays) o.dispose();
 		input.dispose();
 		camInput?.dispose();

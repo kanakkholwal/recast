@@ -15,6 +15,7 @@ import { RenderWorkerClient } from "$lib/playback/render-worker-client";
 import { renderWorkerCapable } from "$lib/playback/render-worker-protocol";
 import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
 import { assetsStore } from "$lib/stores/assets-store.svelte";
+import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { type EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Spinner } from "@recast/ui/spinner";
@@ -1159,6 +1160,16 @@ function runMbRecover() {
 	mbRecoverNonce++;
 }
 
+// While a browser export is RENDERING, free the preview's WebCodecs decoder: two
+// decoders on one 1080p source over-subscribes the GPU and loses the export's
+// context mid-render. draw() falls back to the <video> element; the decoder is
+// rebuilt when the render finishes (mux doesn't touch the GPU).
+const suspendPreviewDecode = $derived(
+	exportActivity.items.some(
+		(i) => i.hasRenderPhase && i.status === "running" && i.phase === "rendering",
+	),
+);
+
 // MediaBunny frame source (re)created when the media src changes. Owns its own
 // worker + decoder; disposed and rebuilt per source. A decode failure (e.g.
 // an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
@@ -1168,8 +1179,9 @@ $effect(() => {
 	// Read so a recovery bump re-runs this effect; the rebuild also resets
 	// loadedMbSrc, so the same-src guard below doesn't short-circuit it.
 	void mbRecoverNonce;
-	// No src: tear down any live engine and fall back to the <video> path.
-	if (!src) {
+	// No src, or suspended for an export render: tear down the engine and fall
+	// back to the <video> path (a live export re-runs this when it finishes).
+	if (!src || suspendPreviewDecode) {
 		clearTimeout(mbRecoverTimer);
 		mbRecoverTimer = undefined;
 		mbRecoverPending = false;

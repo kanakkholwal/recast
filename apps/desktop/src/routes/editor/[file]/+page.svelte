@@ -59,7 +59,10 @@ import {
 } from "$lib/editor/panel-size";
 import { formatClock, frameStepOutput } from "$lib/editor/time";
 import { buildExportJob } from "$lib/export/build-export-job";
-import { browserExportBlockedReason } from "$lib/export/browser-export-eligibility";
+import {
+	browserExportBlockedReason,
+	resolveExportFps,
+} from "$lib/export/browser-export-eligibility";
 import type { ExportQuality } from "$lib/export/browser-export-plan";
 import { chooseExportEngine } from "$lib/export/choose-export-engine";
 import { probeBrowserExportCapability } from "$lib/export/export-capability";
@@ -1368,16 +1371,9 @@ async function handleExport() {
 		};
 
 		if (engine.engine === "browser") {
-			// GIF renders at its own target fps (the picker is MP4/WebM-only); the Rust
-			// palette pass re-reads this browser video, so match its fps here.
-			const gifFps =
-				store.gifSettings.fps && store.gifSettings.fps > 0 ? store.gifSettings.fps : null;
-			const renderFps =
-				store.exportFormat === "gif"
-					? (gifFps ?? meta?.fps ?? 15)
-					: store.exportFps && store.exportFps > 0
-						? store.exportFps
-						: (meta?.fps ?? 30);
+			// The rate the browser renderer encodes at (shared with the eligibility gate
+			// so a source it deemed light enough renders at the fps it judged).
+			const renderFps = resolveExportFps(store);
 			// Snapshot the scene now (store alive); the app-scoped render queue composites
 			// it off the main thread and hands the video to the backend — so the export
 			// survives closing this editor, and a second export queues behind it.
