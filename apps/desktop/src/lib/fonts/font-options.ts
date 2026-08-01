@@ -5,6 +5,7 @@ import {
 	GOOGLE_FONTS,
 	googleFamilyFromStack,
 	googleFontStack,
+	isGoogleFont,
 	loadGoogleFont,
 	resolveGoogleFontUrl,
 } from "./google-fonts";
@@ -39,23 +40,30 @@ export function fontLabel(value: string): string {
 	);
 }
 
-/** Fetch + register the font if it's a Google font (no-op for system fonts). */
+/** Fetch + register the font if it's a Google font. No-op for system stacks and
+ *  fontsource-bundled fonts (Geist, etc.) — those are already in the document. */
 export function ensureFontLoaded(value: string, weight = 400): void {
 	if (isSystem(value)) return;
 	const family = googleFamilyFromStack(value);
-	if (family) void loadGoogleFont(family, weight);
+	if (family && isGoogleFont(family)) void loadGoogleFont(family, weight);
 }
 
-/** Resolve a caption font value to `{ family, url }` for the export worker to
- *  register in its own scope, or null for system fonts (already available to
- *  OffscreenCanvas) and failed loads. Runs main-thread (needs the Tauri IPC). */
-export async function resolveCaptionFont(
-	value: string,
-	weight = 400,
-): Promise<{ family: string; url: string } | null> {
-	if (isSystem(value)) return null;
+/** Where a burned-caption export must render to get `value` at the right font.
+ *  `worker` with no font: a system/generic stack OffscreenCanvas already has.
+ *  `worker` with a font: a Google font, resolved to a URL the worker registers.
+ *  `main`: a fontsource-bundled (or otherwise document-only) font the worker's
+ *  `self.fonts` can't see — render on the main thread, where `document.fonts` has it. */
+export type CaptionFontPlan =
+	| { where: "worker"; font?: { family: string; url: string; weight: number } }
+	| { where: "main" };
+
+export async function planCaptionFont(value: string, weight = 400): Promise<CaptionFontPlan> {
+	if (isSystem(value)) return { where: "worker" };
 	const family = googleFamilyFromStack(value);
-	if (!family) return null;
-	const url = await resolveGoogleFontUrl(family, weight);
-	return url ? { family, url } : null;
+	if (!family) return { where: "worker" }; // generic stack (ui-serif, ui-monospace, …)
+	if (isGoogleFont(family)) {
+		const url = await resolveGoogleFontUrl(family, weight);
+		return url ? { where: "worker", font: { family, url, weight } } : { where: "main" };
+	}
+	return { where: "main" }; // fontsource-bundled or custom — only document.fonts has it
 }

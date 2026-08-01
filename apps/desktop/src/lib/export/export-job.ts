@@ -29,10 +29,12 @@ export interface AnnotationJob extends Omit<AnnotationLayerInputs, "getImage" | 
 }
 
 /** Caption layer as data — already fully serializable (transcript/style/timeMap/
- *  geometry). `font` is the resolved webfont the worker registers before paint;
- *  absent for system fonts (OffscreenCanvas already has those). */
+ *  geometry). `font` is the resolved webfont the worker registers before paint
+ *  (absent for system fonts). `mainThreadOnly` marks a fontsource/document-only
+ *  font the worker can't see, so the whole render stays on the main thread. */
 export type CaptionJob = CaptionLayerInputs & {
 	font?: { family: string; url: string; weight: number };
+	mainThreadOnly?: boolean;
 };
 
 /** Camera bubble as data: everything CameraExportInputs needs except the resolved

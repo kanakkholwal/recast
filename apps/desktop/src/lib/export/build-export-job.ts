@@ -15,7 +15,7 @@ import { buildExportBase } from "./export-scene";
 import type { ExportQuality } from "./browser-export-plan";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
-import { resolveCaptionFont } from "$lib/fonts/font-options";
+import { planCaptionFont } from "$lib/fonts/font-options";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { toStatic } from "$lib/state-snapshot.svelte";
 import type { FrameGeometry } from "../../components/editor/frame-params";
@@ -148,7 +148,7 @@ async function buildCaptionData(
 	const transcript = store.captionTranscript;
 	const style = store.captionStyle;
 	if (!store.captionExport.burnIn || !transcript || transcript.segments.length === 0) return null;
-	const font = await resolveCaptionFont(style.fontFamily, style.fontWeight);
+	const plan = await planCaptionFont(style.fontFamily, style.fontWeight);
 	const g = computeCanvasGeometry(meta.width, meta.height, store.padding, store.outputAspect);
 	return {
 		transcript,
@@ -162,7 +162,8 @@ async function buildCaptionData(
 		},
 		canvasPxW,
 		canvasPxH,
-		font: font ? { ...font, weight: style.fontWeight } : undefined,
+		font: plan.where === "worker" ? plan.font : undefined,
+		mainThreadOnly: plan.where === "main",
 	};
 }
 

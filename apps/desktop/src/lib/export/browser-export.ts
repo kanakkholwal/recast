@@ -58,7 +58,7 @@ async function renderToBytes(
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
 	const job = await buildExportJob(store, jobOpts);
-	if (exportWorkerSupported()) {
+	if (exportWorkerSupported() && !job.caption?.mainThreadOnly) {
 		try {
 			return await runExportJobInWorker(job, runtime);
 		} catch (err) {
@@ -78,7 +78,7 @@ export async function renderJobToBytes(
 	job: ExportJob,
 	runtime: ExportRuntime,
 ): Promise<Uint8Array> {
-	if (exportWorkerSupported()) {
+	if (exportWorkerSupported() && !job.caption?.mainThreadOnly) {
 		try {
 			const bytes = await runExportJobInWorker(job, runtime, { transfer: false });
 			closeJobBitmaps(job); // the worker consumed clones; free our originals

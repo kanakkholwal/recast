@@ -130,6 +130,12 @@ export function googleFamilyFromStack(stack: string): string | null {
 	return m ? m[1] : null;
 }
 
+/** Whether `family` is a fetchable Google font. Fontsource-bundled fonts (Geist,
+ *  etc.) also sit behind a quoted family but are NOT on Google — don't fetch them. */
+export function isGoogleFont(family: string): boolean {
+	return (GOOGLE_FONTS as readonly string[]).includes(family);
+}
+
 const loaded = new Set<string>();
 
 /**
