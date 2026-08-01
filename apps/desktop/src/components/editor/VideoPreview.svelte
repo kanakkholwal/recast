@@ -651,10 +651,6 @@ function updateSvgCursor(next: SvgCursorParams | null) {
 function draw() {
 	if (!canvasEl || !store.metadata) return;
 	if (!renderWorkerClient && (!gl || !renderCore)) return;
-	// While a browser export composites, freeze the preview: skip decode/upload/
-	// draw so it stops fighting the export for this GPU + decoder (a long export
-	// otherwise loses its context). Last frame stays — no teardown, no flicker.
-	if (exportActivity.renderingInBrowser) return;
 	if (!resizeCanvas()) return;
 
 	// Refresh the smoothed cursor path if any of its inputs changed since
@@ -1359,7 +1355,12 @@ $effect(() => {
 // Start/stop the per-video-frame draw loop with playback. In the WebCodecs
 // path, also run the picture clock so output time advances while playing.
 $effect(() => {
-	if (store.isPlaying) {
+	// A browser export shares this GPU + decoder. Suspend continuous playback while
+	// it renders (that 60fps decode loop is what starved the export's context), but
+	// leave the frame up and paused scrubs live — it stays watchable. isPlaying is
+	// untouched, so playback auto-resumes when the render finishes.
+	const suspendForExport = exportActivity.renderingInBrowser;
+	if (store.isPlaying && !suspendForExport) {
 		// Seed + start the picture clock ONLY on the paused→playing transition.
 		// This effect ALSO re-runs whenever effectiveCuts/outPoint change; the
 		// `!picClock.playing` guard stops those re-runs from re-seeding the clock

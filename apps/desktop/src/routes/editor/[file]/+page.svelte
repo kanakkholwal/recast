@@ -1371,6 +1371,10 @@ async function handleExport() {
 		};
 
 		if (engine.engine === "browser") {
+			// Browser render shares this GPU + decoder; pause preview playback so the
+			// two don't fight for it. The frame stays up and scrubbable — just not
+			// auto-playing. (Rust exports don't touch the GPU, so they stay live.)
+			store.isPlaying = false;
 			// The rate the browser renderer encodes at (shared with the eligibility gate
 			// so a source it deemed light enough renders at the fps it judged).
 			const renderFps = resolveExportFps(store);
