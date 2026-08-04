@@ -1,38 +1,31 @@
 <script lang="ts">
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { clipDisplayName, collectCredits, pickAudioFile } from "$lib/audio/music";
-  import {
-    AudioLines,
-    ExternalLink,
-    Plus,
-    Repeat,
-    Trash2,
-    Volume2,
-    VolumeX,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { toast } from "@recast/ui/sonner";
-  import { openUrl } from "@tauri-apps/plugin-opener";
-  import PanelSection from "./PanelSection.svelte";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { clipDisplayName, collectCredits, pickAudioFile } from "$lib/audio/music";
+import { AudioLines, ExternalLink, Plus, Repeat, Trash2, Volume2, VolumeX } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { toast } from "@recast/ui/sonner";
+import { getEditorServices } from "$lib/editor/services";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-  }
-  let { store }: Props = $props();
+interface Props {
+	store: EditorStore;
+}
+let { store }: Props = $props();
 
-  const credits = $derived(collectCredits(store.musicClips));
+const shell = getEditorServices().shell;
 
-  async function addMusic() {
-    try {
-      const path = await pickAudioFile();
-      if (path) store.addMusicClip({ kind: "local", path });
-    } catch (error) {
-      toast.error(`Could not add audio: ${error}`);
-    }
-  }
+const credits = $derived(collectCredits(store.musicClips));
 
+async function addMusic() {
+	try {
+		const path = await pickAudioFile();
+		if (path) store.addMusicClip({ kind: "local", path });
+	} catch (error) {
+		toast.error(`Could not add audio: ${error}`);
+	}
+}
 </script>
 
 <div class="flex flex-col gap-1">
@@ -153,11 +146,11 @@
             class="rounded-md border border-border/50 bg-card/40 px-2 py-1.5 text-[11px] text-foreground"
           >
             <div class="leading-snug">{c.attribution}</div>
-            {#if c.license}
+            {#if c.license && shell}
               <button
                 type="button"
                 class="mt-0.5 inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground"
-                onclick={() => c.license && void openUrl(c.license)}
+                onclick={() => c.license && void shell.openExternal(c.license)}
               >
                 <ExternalLink size={9} /> View license
               </button>

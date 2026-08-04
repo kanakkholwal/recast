@@ -12,8 +12,9 @@
  * Rust-rendered strip (`MAX_STREAM_BYTES`).
  */
 
-import { type FilmstripTile, LruCache } from './filmstrip';
-import type { FromFilmstripWorker, ToFilmstripWorker } from './filmstrip-protocol';
+import { type MediaRef, toMediaRef } from "@recast/media";
+import { type FilmstripTile, LruCache } from "./filmstrip";
+import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
@@ -95,40 +96,38 @@ class MediabunnyTileProvider implements TileProvider {
 	private constructor(worker: Worker, onChange: () => void) {
 		this.#worker = worker;
 		this.#onChange = onChange;
-		this.#cache = new LruCache<string>(MAX_TILES, (url) =>
-			URL.revokeObjectURL(url),
-		);
-		this.#hoverCache = new LruCache<string>(MAX_HOVER_FRAMES, (url) =>
-			URL.revokeObjectURL(url),
-		);
-		this.#worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) =>
-			this.#onMessage(e.data);
+		this.#cache = new LruCache<string>(MAX_TILES, (url) => URL.revokeObjectURL(url));
+		this.#hoverCache = new LruCache<string>(MAX_HOVER_FRAMES, (url) => URL.revokeObjectURL(url));
+		this.#worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => this.#onMessage(e.data);
 	}
 
 	static async create(
-		url: string,
+		src: MediaRef | Blob | string,
 		tileHeightPx: number,
 		onChange: () => void,
 		durationSec?: number,
 	): Promise<MediabunnyTileProvider> {
-		// No `fetch().arrayBuffer()` here anymore: the worker range-streams the
-		// file via UrlSource, so the main thread never holds the whole recording.
-		// That whole-file buffer (~600MB, doubled by the worker's Blob copy) was
-		// the single largest allocation when opening a 4K clip.
-		const worker = new Worker(
-			new URL('./filmstrip-worker.ts', import.meta.url),
-			{ type: 'module' },
-		);
+		// No `fetch().arrayBuffer()` here anymore: the worker reads the source
+		// lazily, so the main thread never holds the whole recording. That
+		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
+		// single largest allocation when opening a 4K clip.
+		const worker = new Worker(new URL("./filmstrip-worker.ts", import.meta.url), {
+			type: "module",
+		});
 		try {
 			await new Promise<void>((resolve, reject) => {
 				worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => {
 					const m = e.data;
-					if (m.type === 'ready') resolve();
-					else if (m.type === 'error') reject(new Error(m.message));
+					if (m.type === "ready") resolve();
+					else if (m.type === "error") reject(new Error(m.message));
 				};
-				worker.onerror = (e) =>
-					reject(new Error(e.message || 'filmstrip worker error'));
-				const init: ToFilmstripWorker = { type: 'init', url, tileHeightPx, durationSec };
+				worker.onerror = (e) => reject(new Error(e.message || "filmstrip worker error"));
+				const init: ToFilmstripWorker = {
+					type: "init",
+					src: toMediaRef(src),
+					tileHeightPx,
+					durationSec,
+				};
 				worker.postMessage(init);
 			});
 		} catch (err) {
@@ -175,7 +174,7 @@ class MediabunnyTileProvider implements TileProvider {
 		// First request kicks off the one-time build; the reply lands in #onMessage.
 		if (!this.#storyboard && !this.#storyboardRequested) {
 			this.#storyboardRequested = true;
-			const msg: ToFilmstripWorker = { type: 'storyboard' };
+			const msg: ToFilmstripWorker = { type: "storyboard" };
 			this.#worker.postMessage(msg);
 		}
 		return this.#storyboard;
@@ -208,13 +207,13 @@ class MediabunnyTileProvider implements TileProvider {
 			requests.push({ id, originalSec });
 		}
 		this.#pending.clear();
-		const msg: ToFilmstripWorker = { type: 'decode', requests };
+		const msg: ToFilmstripWorker = { type: "decode", requests };
 		this.#worker.postMessage(msg);
 	}
 
 	#onMessage(msg: FromFilmstripWorker): void {
-		if (msg.type === 'error') {
-			console.error('filmstrip worker:', msg.message);
+		if (msg.type === "error") {
+			console.error("filmstrip worker:", msg.message);
 			// A per-request decode error carries its id: release it so the tile can
 			// be re-requested and #idToKey/#inflight don't grow without bound.
 			if (msg.id !== undefined) {
@@ -224,7 +223,7 @@ class MediabunnyTileProvider implements TileProvider {
 			}
 			return;
 		}
-		if (msg.type === 'storyboard') {
+		if (msg.type === "storyboard") {
 			if (this.#disposed) return;
 			this.#storyboard = {
 				url: URL.createObjectURL(msg.blob),
@@ -238,13 +237,13 @@ class MediabunnyTileProvider implements TileProvider {
 			this.#onChange();
 			return;
 		}
-		if (msg.type !== 'tile') return;
+		if (msg.type !== "tile") return;
 		const cacheKey = this.#idToKey.get(msg.id);
 		this.#idToKey.delete(msg.id);
 		if (cacheKey === undefined) return;
 		this.#inflight.delete(cacheKey);
 		if (this.#disposed) return;
-		const target = cacheKey.startsWith('hover:') ? this.#hoverCache : this.#cache;
+		const target = cacheKey.startsWith("hover:") ? this.#hoverCache : this.#cache;
 		target.set(cacheKey, URL.createObjectURL(msg.blob));
 		this.#onChange();
 	}
@@ -253,7 +252,7 @@ class MediabunnyTileProvider implements TileProvider {
 		if (this.#disposed) return;
 		this.#disposed = true;
 		try {
-			const msg: ToFilmstripWorker = { type: 'dispose' };
+			const msg: ToFilmstripWorker = { type: "dispose" };
 			this.#worker.postMessage(msg);
 		} catch {
 			/* worker already gone */
@@ -270,12 +269,12 @@ class MediabunnyTileProvider implements TileProvider {
 }
 
 export interface TileProviderInput {
-	/** Tauri asset URL of the source video. */
-	url: string;
+	/** The source video: a Tauri asset URL on desktop, the picked File on web. */
+	src: MediaRef | Blob | string;
 	/**
-	 * Source size (bytes) from the probe. The worker now range-streams via
-	 * UrlSource, so this no longer gates whole-file residency; it stays as a
-	 * hint for very-large-file policy (see `MAX_STREAM_BYTES`).
+	 * Source size (bytes) from the probe. The worker reads lazily, so this no
+	 * longer gates whole-file residency; it stays as a hint for very-large-file
+	 * policy (see `MAX_STREAM_BYTES`).
 	 */
 	sizeBytes?: number;
 	/** Known duration (ffprobe) so the worker skips a full container walk. */
@@ -292,13 +291,9 @@ export interface TileProviderInput {
  * MediaBunny worker reports a decode error; the caller falls back to the
  * Rust-strip renderer in those cases. Never throws.
  */
-export async function createTileProvider(
-	input: TileProviderInput,
-): Promise<TileProvider | null> {
-	if (typeof Worker === 'undefined' || typeof OffscreenCanvas === 'undefined') {
-		console.info(
-			'Filmstrip: WebView lacks Worker/OffscreenCanvas; using strip fallback.',
-		);
+export async function createTileProvider(input: TileProviderInput): Promise<TileProvider | null> {
+	if (typeof Worker === "undefined" || typeof OffscreenCanvas === "undefined") {
+		console.info("Filmstrip: WebView lacks Worker/OffscreenCanvas; using strip fallback.");
 		return null;
 	}
 	// Only multi-GB sources fall back now; the worker streams the rest.
@@ -310,13 +305,13 @@ export async function createTileProvider(
 	}
 	try {
 		return await MediabunnyTileProvider.create(
-			input.url,
+			input.src,
 			input.tileHeightPx,
 			input.onChange,
 			input.durationSec,
 		);
 	} catch (err) {
-		console.warn('Filmstrip decoder unavailable, using strip fallback', err);
+		console.warn("Filmstrip decoder unavailable, using strip fallback", err);
 		return null;
 	}
 }

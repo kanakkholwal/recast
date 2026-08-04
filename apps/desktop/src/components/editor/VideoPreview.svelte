@@ -20,7 +20,7 @@ import { type EditorStore } from "$lib/stores/editor-store.svelte";
 import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
 import { Spinner } from "@recast/ui/spinner";
 import { toast } from "@recast/ui/sonner";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { onDestroy, onMount } from "svelte";
 import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 import CameraOverlay from "./_components/CameraOverlay.svelte";
@@ -385,7 +385,7 @@ async function loadBackgroundIfNeeded() {
 async function loadCursorTrackIfNeeded() {
 	if (!cursorPath || cursorPath === loadedCursorPath) return;
 	try {
-		const url = convertFileSrc(cursorPath);
+		const url = getEditorServices().resolveAssetUrl(cursorPath);
 		const res = await fetch(url);
 		if (!res.ok) throw new Error(`HTTP ${res.status}`);
 		const json = (await res.json()) as {

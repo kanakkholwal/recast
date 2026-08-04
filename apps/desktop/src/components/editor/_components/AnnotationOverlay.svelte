@@ -42,7 +42,7 @@ import type {
 	AnnotationKind,
 	EditorStore,
 } from "$lib/stores/editor-store.svelte";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { onDestroy, onMount } from "svelte";
 
 interface Props {
@@ -285,7 +285,7 @@ function getImage(path: string): ImageEntry {
 			e.failed = true;
 			e.failedAt = Date.now();
 		};
-		img.src = convertFileSrc(path);
+		img.src = getEditorServices().resolveAssetUrl(path);
 		imageCache.set(path, entry);
 	}
 	return entry;

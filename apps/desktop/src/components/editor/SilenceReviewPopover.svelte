@@ -1,172 +1,168 @@
 <script lang="ts">
-  import { detectSilence, type SilenceSegment } from "$lib/ipc";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { overlapsAny } from "$lib/timeline/cuts";
-  import {
-    clockDecis as formatTime,
-    compactDuration as formatDuration,
-  } from "$lib/format/time";
-  import {
-    BULK_MIN_CONFIDENCE,
-    confidenceBarClass,
-    confidenceLabel,
-    confidenceTextClass,
-    cutBounds,
-    parseSensitivity,
-    SENSITIVITY_OPTIONS,
-    SENSITIVITY_PRESETS,
-    type Sensitivity,
-  } from "./silence-review.logic";
-  import {
-    AlertTriangle,
-    Check,
-    Eye,
-    RotateCcw,
-    Scissors,
-    Sparkles,
-    VolumeX,
-    XCircle,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import * as Tooltip from "@recast/ui/tooltip";
-  import { cn } from "@recast/ui/utils";
-  import { safeStorage } from "@recast/ui/persisted-state";
+import { getEditorServices, type SilenceSegment } from "$lib/editor/services";
+import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { overlapsAny } from "$lib/timeline/cuts";
+import { clockDecis as formatTime, compactDuration as formatDuration } from "$lib/format/time";
+import {
+	BULK_MIN_CONFIDENCE,
+	confidenceBarClass,
+	confidenceLabel,
+	confidenceTextClass,
+	cutBounds,
+	parseSensitivity,
+	SENSITIVITY_OPTIONS,
+	SENSITIVITY_PRESETS,
+	type Sensitivity,
+} from "./silence-review.logic";
+import {
+	AlertTriangle,
+	Check,
+	Eye,
+	RotateCcw,
+	Scissors,
+	Sparkles,
+	VolumeX,
+	XCircle,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Tooltip from "@recast/ui/tooltip";
+import { cn } from "@recast/ui/utils";
+import { safeStorage } from "@recast/ui/persisted-state";
 
-  interface Props {
-    store: EditorStore;
-    onclose: () => void;
-  }
+interface Props {
+	store: EditorStore;
+	onclose: () => void;
+}
 
-  let { store, onclose }: Props = $props();
+let { store, onclose }: Props = $props();
 
-  // Persisted across sessions (presets/options live in silence-review.logic).
-  const SENSITIVITY_KEY = "recast-silence-sensitivity";
+// Persisted across sessions (presets/options live in silence-review.logic).
+const SENSITIVITY_KEY = "recast-silence-sensitivity";
 
-  let sensitivity = $state<Sensitivity>(
-    parseSensitivity(safeStorage.get<string>(SENSITIVITY_KEY, "")),
-  );
+let sensitivity = $state<Sensitivity>(
+	parseSensitivity(safeStorage.get<string>(SENSITIVITY_KEY, "")),
+);
 
-  function setSensitivity(next: Sensitivity) {
-    if (next === sensitivity) return;
-    sensitivity = next;
-    safeStorage.set(SENSITIVITY_KEY, next);
-  }
+function setSensitivity(next: Sensitivity) {
+	if (next === sensitivity) return;
+	sensitivity = next;
+	safeStorage.set(SENSITIVITY_KEY, next);
+}
 
-  type Status = "idle" | "loading" | "ready" | "error" | "empty";
-  let status = $state<Status>("idle");
-  let errorMsg = $state<string | null>(null);
-  // Suggestions the user hasn't yet cut or dismissed.
-  let pending = $state<SilenceSegment[]>([]);
+type Status = "idle" | "loading" | "ready" | "error" | "empty";
+let status = $state<Status>("idle");
+let errorMsg = $state<string | null>(null);
+// Suggestions the user hasn't yet cut or dismissed.
+let pending = $state<SilenceSegment[]>([]);
 
-  // Re-runs whenever `sensitivity` changes.
-  $effect(() => {
-    void sensitivity;
-    void loadSuggestions();
-  });
+// Re-runs whenever `sensitivity` changes.
+$effect(() => {
+	void sensitivity;
+	void loadSuggestions();
+});
 
-  async function loadSuggestions() {
-    if (!store.audioPath && !store.microphonePath) {
-      status = "error";
-      errorMsg = "This clip has no audio track to analyse.";
-      return;
-    }
-    status = "loading";
-    errorMsg = null;
-    try {
-      const result = await detectSilence(
-        store.audioPath,
-        store.microphonePath,
-        store.cursorPath,
-        SENSITIVITY_PRESETS[sensitivity],
-      );
-      // Drop anything already removed by a cut, or previously dismissed,
-      // then surface the strongest candidates first.
-      pending = result
-        .filter(
-          (s) =>
-            !overlapsAny(store.cuts, s.start, s.end) &&
-            !overlapsAny(store.dismissedSilences, s.start, s.end),
-        )
-        .sort((a, b) => b.confidence - a.confidence);
-      status = pending.length === 0 ? "empty" : "ready";
-    } catch (err) {
-      console.error("Failed to detect silence", err);
-      errorMsg = err instanceof Error ? err.message : String(err);
-      status = "error";
-    }
-  }
+async function loadSuggestions() {
+	if (!store.audioPath && !store.microphonePath) {
+		status = "error";
+		errorMsg = "This clip has no audio track to analyse.";
+		return;
+	}
+	status = "loading";
+	errorMsg = null;
+	try {
+		const analysis = getEditorServices().analysis;
+		const result = analysis
+			? await analysis.detectSilence({
+					audioPath: store.audioPath,
+					microphonePath: store.microphonePath,
+					cursorPath: store.cursorPath,
+					options: SENSITIVITY_PRESETS[sensitivity],
+				})
+			: [];
+		// Drop anything already removed by a cut, or previously dismissed,
+		// then surface the strongest candidates first.
+		pending = result
+			.filter(
+				(s) =>
+					!overlapsAny(store.cuts, s.start, s.end) &&
+					!overlapsAny(store.dismissedSilences, s.start, s.end),
+			)
+			.sort((a, b) => b.confidence - a.confidence);
+		status = pending.length === 0 ? "empty" : "ready";
+	} catch (err) {
+		console.error("Failed to detect silence", err);
+		errorMsg = err instanceof Error ? err.message : String(err);
+		status = "error";
+	}
+}
 
+// Zoom regions and annotations a cut must not bisect: splitting one would
+// need overlay-time surgery the MVP intentionally avoids.
+const blockers = $derived.by(() => [
+	...store.zoomRegions.map((z) => ({ start: z.start, end: z.end })),
+	...store.annotations.map((a) => ({ start: a.start, end: a.end })),
+	...store.cuts.map((c) => ({ start: c.start, end: c.end })),
+]);
 
-  // Zoom regions and annotations a cut must not bisect: splitting one would
-  // need overlay-time surgery the MVP intentionally avoids.
-  const blockers = $derived.by(() => [
-    ...store.zoomRegions.map((z) => ({ start: z.start, end: z.end })),
-    ...store.annotations.map((a) => ({ start: a.start, end: a.end })),
-    ...store.cuts.map((c) => ({ start: c.start, end: c.end })),
-  ]);
+function isBlocked(seg: SilenceSegment): boolean {
+	return overlapsAny(blockers, seg.start, seg.end);
+}
 
-  function isBlocked(seg: SilenceSegment): boolean {
-    return overlapsAny(blockers, seg.start, seg.end);
-  }
+function previewAt(seg: SilenceSegment) {
+	store.seek(seg.start);
+}
 
-  function previewAt(seg: SilenceSegment) {
-    store.seek(seg.start);
-  }
+/** Apply the keep-margin and commit a cut. Returns true if a cut landed. */
+function commitCut(seg: SilenceSegment): boolean {
+	const b = cutBounds(seg.start, seg.end);
+	if (!b) return false;
+	return store.addCut(b.start, b.end, "silence") !== null;
+}
 
-  /** Apply the keep-margin and commit a cut. Returns true if a cut landed. */
-  function commitCut(seg: SilenceSegment): boolean {
-    const b = cutBounds(seg.start, seg.end);
-    if (!b) return false;
-    return store.addCut(b.start, b.end, "silence") !== null;
-  }
+function cut(seg: SilenceSegment) {
+	if (isBlocked(seg)) return;
+	commitCut(seg);
+	pending = pending.filter((s) => s !== seg);
+	if (pending.length === 0) status = "empty";
+}
 
-  function cut(seg: SilenceSegment) {
-    if (isBlocked(seg)) return;
-    commitCut(seg);
-    pending = pending.filter((s) => s !== seg);
-    if (pending.length === 0) status = "empty";
-  }
+function dismiss(seg: SilenceSegment) {
+	store.dismissSilence(seg.start, seg.end);
+	pending = pending.filter((s) => s !== seg);
+	if (pending.length === 0) status = "empty";
+}
 
-  function dismiss(seg: SilenceSegment) {
-    store.dismissSilence(seg.start, seg.end);
-    pending = pending.filter((s) => s !== seg);
-    if (pending.length === 0) status = "empty";
-  }
+function cutAll() {
+	const remaining: SilenceSegment[] = [];
+	for (const seg of pending) {
+		if (isBlocked(seg) || seg.confidence < BULK_MIN_CONFIDENCE) {
+			remaining.push(seg);
+			continue;
+		}
+		commitCut(seg);
+	}
+	pending = remaining;
+	if (pending.length === 0) status = "empty";
+}
 
-  function cutAll() {
-    const remaining: SilenceSegment[] = [];
-    for (const seg of pending) {
-      if (isBlocked(seg) || seg.confidence < BULK_MIN_CONFIDENCE) {
-        remaining.push(seg);
-        continue;
-      }
-      commitCut(seg);
-    }
-    pending = remaining;
-    if (pending.length === 0) status = "empty";
-  }
+function dismissAll() {
+	for (const seg of pending) store.dismissSilence(seg.start, seg.end);
+	pending = [];
+	status = "empty";
+}
 
-  function dismissAll() {
-    for (const seg of pending) store.dismissSilence(seg.start, seg.end);
-    pending = [];
-    status = "empty";
-  }
+// Clear dismissed decisions and re-scan so rejected suggestions re-surface.
+function resetDismissedAndRescan() {
+	store.clearDismissedSilences();
+	void loadSuggestions();
+}
 
-  // Clear dismissed decisions and re-scan so rejected suggestions re-surface.
-  function resetDismissedAndRescan() {
-    store.clearDismissedSilences();
-    void loadSuggestions();
-  }
-
-  const bulkCount = $derived(
-    pending.filter((s) => !isBlocked(s) && s.confidence >= BULK_MIN_CONFIDENCE)
-      .length,
-  );
-  const totalRecoverable = $derived(
-    pending
-      .filter((s) => !isBlocked(s))
-      .reduce((sum, s) => sum + (s.end - s.start), 0),
-  );
+const bulkCount = $derived(
+	pending.filter((s) => !isBlocked(s) && s.confidence >= BULK_MIN_CONFIDENCE).length,
+);
+const totalRecoverable = $derived(
+	pending.filter((s) => !isBlocked(s)).reduce((sum, s) => sum + (s.end - s.start), 0),
+);
 </script>
 
 <div

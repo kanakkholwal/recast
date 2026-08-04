@@ -20,6 +20,7 @@
  * pressing M to mute everything still works instantly.
  */
 
+import type { MediaRef } from "@recast/media";
 import { AudioChunkStore } from "./audio-chunk-store";
 import { gainFromPercent } from "./audio-gain";
 import {
@@ -112,8 +113,8 @@ export interface AudioTrack {
 }
 
 export interface AudioTrackSpec {
-	/** URL to fetch + decode. `null` skips this slot. */
-	url: string | null;
+	/** Where to read + decode the audio from. `null`/`""` skips this slot. */
+	src: MediaRef | Blob | string | null;
 	kind: AudioTrackKind;
 }
 
@@ -192,9 +193,9 @@ export class AudioTimelineEngine {
 		fadeGain.connect(ctx.destination);
 		const tracks: AudioTrack[] = [];
 		for (const spec of specs) {
-			if (!spec.url) continue;
+			if (!spec.src) continue;
 			try {
-				const store = await AudioChunkStore.create(spec.url);
+				const store = await AudioChunkStore.create(spec.src);
 				if (!store) continue;
 				const gain = ctx.createGain();
 				gain.connect(fadeGain);

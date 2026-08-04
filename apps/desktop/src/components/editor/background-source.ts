@@ -2,32 +2,33 @@
  * Resolve a scene's `backgroundValue` to a loadable URL, shared by the preview
  * (WebGL texture upload) and the offline export renderer. Handles extension
  * wallpapers (`ext:`), downloadable assets (`asset:`), data/http/root URLs, and
- * raw filesystem paths (→ Tauri asset protocol). Returns "" when there's no
- * image to load (colour/gradient, or an asset not cached yet).
+ * raw asset refs (→ the host's resolver). Returns "" when there's no image to
+ * load (colour/gradient, or an asset not cached yet).
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { resolveAsset } from "$lib/assets";
 import { resolveBackgroundWireValue } from "$lib/registry";
 import { assetsStore } from "$lib/stores/assets-store.svelte";
 
 export async function resolveBackgroundSrc(value: string): Promise<string> {
 	if (!value) return "";
+	const resolve = getEditorServices().resolveAssetUrl;
 	if (value.startsWith("ext:")) {
 		const wire = resolveBackgroundWireValue(value);
 		if (!wire || wire.startsWith("#")) return "";
-		return convertFileSrc(wire);
+		return resolve(wire);
 	}
-	// Defensive: keep gradient/colour values away from convertFileSrc, since a
+	// Defensive: keep gradient/colour values away from the resolver, since a
 	// stray write leaving a CSS gradient here while type briefly reads "image"
 	// would otherwise log a bogus "File does not exist" via the asset protocol.
 	if (value.includes("gradient(") || value.startsWith("#")) return "";
 	if (value.startsWith("asset:") && !value.startsWith("asset://")) {
 		const id = value.slice("asset:".length);
 		const cached = await resolveAsset(id);
-		if (cached) return convertFileSrc(cached);
+		if (cached) return resolve(cached);
 		const thumb = assetsStore.thumbPaths[id];
-		if (thumb) return convertFileSrc(thumb);
+		if (thumb) return resolve(thumb);
 		return "";
 	}
 	if (
@@ -39,7 +40,7 @@ export async function resolveBackgroundSrc(value: string): Promise<string> {
 	) {
 		return value;
 	}
-	return convertFileSrc(value);
+	return resolve(value);
 }
 
 /** Decode a scene background to an `ImageBitmap`, or null when it isn't an image

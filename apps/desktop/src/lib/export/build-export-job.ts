@@ -16,7 +16,7 @@ import type { ExportQuality } from "./browser-export-plan";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
 import { planCaptionFont } from "$lib/fonts/font-options";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { toStatic } from "$lib/state-snapshot.svelte";
 import type { FrameGeometry } from "../../components/editor/frame-params";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
@@ -98,9 +98,9 @@ async function preloadAnnotationBitmaps(
 	await Promise.all(
 		[...paths].map(async (p) => {
 			try {
-				// Rasterized-text annotations carry a data: URL; file paths go through
-				// the asset protocol.
-				const src = p.startsWith("data:") ? p : convertFileSrc(p);
+				// Rasterized-text annotations carry a data: URL; file refs go through
+				// the host's resolver.
+				const src = p.startsWith("data:") ? p : getEditorServices().resolveAssetUrl(p);
 				out.push([p, await createImageBitmap(await (await fetch(src)).blob())]);
 			} catch {
 				/* miss → omitted; consumer draws the placeholder */

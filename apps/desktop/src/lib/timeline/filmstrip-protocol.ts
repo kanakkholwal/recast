@@ -4,13 +4,14 @@
  * definition without importing the other's runtime code.
  */
 
+import type { MediaRef } from "@recast/media";
+
 /** Provider → worker. */
 export type ToFilmstripWorker =
-	/** The source video URL (range-streamed via MediaBunny's UrlSource — never
-	 *  the whole file in memory), the device-pixel tile height to downscale each
-	 *  thumbnail to, and the known duration so the worker skips a full container
-	 *  walk to compute it. */
-	| { type: "init"; url: string; tileHeightPx: number; durationSec?: number }
+	/** The source ref (range-streamed or file-sliced — never the whole file in
+	 *  memory), the device-pixel tile height to downscale each thumbnail to, and
+	 *  the known duration so the worker skips a full container walk. */
+	| { type: "init"; src: MediaRef; tileHeightPx: number; durationSec?: number }
 	/** A batch of thumbnails to decode. Each `id` correlates the reply. The worker
 	 *  groups them by GOP so one keyframe decode serves every tile in it. */
 	| { type: "decode"; requests: Array<{ id: number; originalSec: number }> }

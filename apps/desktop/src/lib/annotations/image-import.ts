@@ -1,7 +1,9 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
-import type { AnnotationKind, EditorStore } from "$lib/stores/editor-store.svelte";
 import { toast } from "@recast/ui/sonner";
+import { getEditorServices } from "$lib/editor/services";
+import type { AnnotationKind, EditorStore } from "$lib/stores/editor-store.svelte";
 import { fitImageBox } from "./resize-constraints";
+
+const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "gif"];
 
 export type ImageAnnotationKind = Extract<AnnotationKind, { kind: "image" }>;
 
@@ -15,23 +17,19 @@ function loadNaturalSize(src: string): Promise<{ w: number; h: number } | null> 
 	});
 }
 
-/** Open an image file picker. Returns the absolute path, or null if cancelled. */
+/** Open an image file picker. Returns the asset ref, or null if the host has no
+ *  picker or the user cancelled. */
 export async function pickImageFile(): Promise<string | null> {
-	const { open } = await import("@tauri-apps/plugin-dialog");
-	const selected = await open({
-		multiple: false,
-		directory: false,
-		title: "Insert Image",
-		filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
-	});
-	return typeof selected === "string" ? selected : null;
+	const pick = getEditorServices().pickFile;
+	if (!pick) return null;
+	return await pick({ accept: IMAGE_EXTENSIONS, title: "Insert Image" });
 }
 
 /**
  * Open a file picker and build a centered, aspect-correct image annotation kind.
  * Returns null if the user cancelled. `frameAspect` = video width / height (px).
- * The absolute path is stored on `path`; the export pipeline decodes it directly
- * and the preview loads it through `convertFileSrc`.
+ * The ref is stored on `path`; the export pipeline decodes it directly and the
+ * preview loads it through the host's resolver.
  */
 export async function pickImageAnnotation(
 	frameAspect: number,
@@ -39,7 +37,7 @@ export async function pickImageAnnotation(
 	const selected = await pickImageFile();
 	if (!selected) return null;
 
-	const natural = await loadNaturalSize(convertFileSrc(selected));
+	const natural = await loadNaturalSize(getEditorServices().resolveAssetUrl(selected));
 	const box = fitImageBox(natural, frameAspect > 0 ? frameAspect : 16 / 9);
 	return { kind: "image", ...box, path: selected, opacity: 1, radius: 0 };
 }

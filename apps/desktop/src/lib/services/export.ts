@@ -5,7 +5,7 @@
  * callback. See ./README.md for the headless-core layering.
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { rasterizeCursorSprites } from "$lib/export/rasterize-cursor";
 import { expandTextAnnotations } from "$lib/export/rasterize-text";
 import {
@@ -149,8 +149,9 @@ export async function findMissingImageAnnotations(store: EditorStore): Promise<s
 		}
 	}
 	if (paths.size === 0) return [];
+	const resolve = getEditorServices().resolveAssetUrl;
 	const checks = await Promise.all(
-		[...paths].map((p) => canLoadImage(convertFileSrc(p)).then((ok) => ({ p, ok }))),
+		[...paths].map((p) => canLoadImage(resolve(p)).then((ok) => ({ p, ok }))),
 	);
 	return checks.filter((c) => !c.ok).map((c) => c.p);
 }

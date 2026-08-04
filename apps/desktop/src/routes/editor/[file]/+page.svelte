@@ -51,6 +51,8 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "$lib/editor/editor-url";
+import { setEditorServices } from "$lib/editor/services";
+import { tauriEditorServices } from "$lib/editor/services.tauri";
 import {
 	clampTimelineHeight,
 	TIMELINE_DEFAULT_HEIGHT_PX,
@@ -117,6 +119,10 @@ interface Props {
 }
 
 let { data }: Props = $props();
+
+// Context copy of the app-scoped services, so the editor tree reads them the
+// same way it will once it lives in @recast/editor.
+setEditorServices(tauriEditorServices);
 
 const store = createEditorStore();
 
@@ -656,8 +662,8 @@ async function ensureAudioEngine() {
 	const gen = audioEngineGen;
 	try {
 		const eng = await AudioTimelineEngine.create([
-			{ url: systemAudioSrc, kind: "system" },
-			{ url: micAudioSrc, kind: "mic" },
+			{ src: systemAudioSrc, kind: "system" },
+			{ src: micAudioSrc, kind: "mic" },
 		]);
 		// Decoding both tracks takes seconds on a long recording, and the file can
 		// change or the editor close in that window. Adopting a stale engine
@@ -897,7 +903,7 @@ async function setupTileProvider(url: string) {
 	disposeTileProvider();
 	const dpr = browser ? window.devicePixelRatio || 1 : 1;
 	const provider = await createTileProvider({
-		url,
+		src: url,
 		sizeBytes: store.metadata?.sizeBytes,
 		durationSec: store.metadata?.duration,
 		tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),

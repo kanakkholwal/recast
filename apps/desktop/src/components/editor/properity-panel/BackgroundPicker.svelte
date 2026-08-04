@@ -29,7 +29,7 @@ import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import * as Tabs from "@recast/ui/tabs";
 import { cn } from "@recast/ui/utils";
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { getEditorServices } from "$lib/editor/services";
 import { Image } from "@unpic/svelte";
 import {
 	imagePreviewSrc,
@@ -65,6 +65,8 @@ const DEFAULT_BACKGROUND_VALUES: Record<BackgroundType, string> = {
 
 let { store }: Props = $props();
 
+const services = getEditorServices();
+
 let recents = $state<string[]>(getRecentColors());
 function rememberColor(color: string) {
 	recents = pushRecentColor(color);
@@ -97,19 +99,17 @@ function applyBackground(type: BackgroundType, value = getSelectionValue(type)) 
 }
 
 async function pickBackgroundImage() {
-	const { open } = await import("@tauri-apps/plugin-dialog");
-	const selected = await open({
-		multiple: false,
-		directory: false,
+	const selected = await services.pickFile?.({
+		accept: ["png", "jpg", "jpeg", "webp"],
 		title: "Choose Background Image",
-		filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }],
 	});
-	if (!selected || typeof selected !== "string") return;
+	if (!selected) return;
 	store.setBackground({ type: "image", value: selected });
 }
 
-// Wrapper: injects Tauri's convertFileSrc into the shared resolver.
-const getImagePreviewSrc = (value: string): string => imagePreviewSrc(value, convertFileSrc);
+// Wrapper: injects the host's resolver into the shared preview helper.
+const getImagePreviewSrc = (value: string): string =>
+	imagePreviewSrc(value, services.resolveAssetUrl);
 
 $effect(() => {
 	blurValue = store.backgroundBlur;

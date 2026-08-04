@@ -27,3 +27,20 @@ export const PANEL_TABS = [
 ] as const;
 
 export type PanelTab = (typeof PANEL_TABS)[number];
+
+/**
+ * The subset a browser host can serve. No `cursor` (an uploaded clip carries no
+ * cursor track), no `music` (its asset packs are installed natively), no `dev`.
+ * Captions is present but import-only — see `EditorServices.transcription`.
+ */
+export const WEB_PANEL_TABS = [
+	"clip",
+	"background",
+	"focus",
+	"annotations",
+	"camera",
+	"captions",
+	"audio",
+	"info",
+	"extensions",
+] as const satisfies readonly PanelTab[];

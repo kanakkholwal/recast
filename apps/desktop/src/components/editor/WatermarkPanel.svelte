@@ -1,75 +1,67 @@
 <script lang="ts">
-	import type { EditorStore, WatermarkPosition } from "$lib/stores/editor-store.svelte";
-	import { ImagePlus, Stamp, Trash2 } from "@recast/icons";
-	import { toast } from "@recast/ui/sonner";
-	import { convertFileSrc } from "@tauri-apps/api/core";
-	import InspectorHint from "./InspectorHint.svelte";
-	import { SliderControl } from "@recast/ui/slider-control";
-	import { getFileLabel } from "./watermark-panel.logic";
+import type { EditorStore, WatermarkPosition } from "$lib/stores/editor-store.svelte";
+import { ImagePlus, Stamp, Trash2 } from "@recast/icons";
+import { toast } from "@recast/ui/sonner";
+import { getEditorServices } from "$lib/editor/services";
+import InspectorHint from "./InspectorHint.svelte";
+import { SliderControl } from "@recast/ui/slider-control";
+import { getFileLabel } from "./watermark-panel.logic";
 
-	interface Props {
-		store: EditorStore;
+interface Props {
+	store: EditorStore;
+}
+
+const positions: Array<{ value: WatermarkPosition; label: string }> = [
+	{ value: "top-left", label: "Top Left" },
+	{ value: "top-right", label: "Top Right" },
+	{ value: "bottom-left", label: "Bottom Left" },
+	{ value: "bottom-right", label: "Bottom Right" },
+];
+
+let { store }: Props = $props();
+
+function updateWatermarkSettings(
+	updates: Partial<EditorStore["watermarkSettings"]>,
+	trackUndo = false,
+) {
+	if (trackUndo) {
+		store.pushUndoState();
 	}
+	store.updateWatermarkSettings(updates);
+}
 
-	const positions: Array<{ value: WatermarkPosition; label: string }> = [
-		{ value: "top-left", label: "Top Left" },
-		{ value: "top-right", label: "Top Right" },
-		{ value: "bottom-left", label: "Bottom Left" },
-		{ value: "bottom-right", label: "Bottom Right" },
-	];
+async function handlePickWatermark() {
+	const services = getEditorServices();
+	const selected = await services.pickFile?.({
+		accept: ["png", "jpg", "jpeg", "webp"],
+		title: "Choose Watermark Image",
+	});
+	if (!selected) return;
 
-	let { store }: Props = $props();
-
-	function updateWatermarkSettings(
-		updates: Partial<EditorStore["watermarkSettings"]>,
-		trackUndo = false,
-	) {
-		if (trackUndo) {
-			store.pushUndoState();
-		}
-		store.updateWatermarkSettings(updates);
-	}
-
-	async function handlePickWatermark() {
-		const { open } = await import("@tauri-apps/plugin-dialog");
-		const selected = await open({
-			multiple: false,
-			directory: false,
-			title: "Choose Watermark Image",
-			filters: [
-				{
-					name: "Images",
-					extensions: ["png", "jpg", "jpeg", "webp"],
-				},
-			],
-		});
-
-		if (!selected || typeof selected !== "string") return;
-
-		try {
-			updateWatermarkSettings(
-				{
-					enabled: true,
-					imagePath: selected,
-					imageSrc: convertFileSrc(selected),
-				},
-				true,
-			);
-		} catch (error) {
-			toast.error(`Could not load watermark: ${error}`);
-		}
-	}
-
-	function clearWatermark() {
+	try {
 		updateWatermarkSettings(
 			{
-				enabled: false,
-				imagePath: "",
-				imageSrc: "",
+				enabled: true,
+				imagePath: selected,
+				imageSrc: services.resolveAssetUrl(selected),
 			},
 			true,
 		);
+	} catch (error) {
+		toast.error(`Could not load watermark: ${error}`);
 	}
+}
+
+function clearWatermark() {
+	updateWatermarkSettings(
+		{
+			enabled: false,
+			imagePath: "",
+			imageSrc: "",
+		},
+		true,
+	);
+}
 </script>
 
 <div class="flex flex-col gap-4 animate-in fade-in duration-300">

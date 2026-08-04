@@ -12,7 +12,7 @@ import { Button } from "@recast/ui/button";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";
 import { clockCentis } from "$lib/format/time";
-import { suggestZoomRegions, type ZoomSuggestion } from "$lib/ipc";
+import { getEditorServices, type ZoomSuggestion } from "$lib/editor/services";
 import type { EditorStore } from "$lib/stores/editor-store.svelte";
 import {
 	findFreeSlot as _findFreeSlot,
@@ -50,7 +50,8 @@ async function loadSuggestions() {
 	status = "loading";
 	errorMsg = null;
 	try {
-		const result = await suggestZoomRegions(store.cursorPath);
+		const analysis = getEditorServices().analysis;
+		const result = analysis ? await analysis.suggestZoomRegions(store.cursorPath) : [];
 		pending = result;
 		status = result.length === 0 ? "empty" : "ready";
 	} catch (err) {

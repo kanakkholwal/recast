@@ -1,10 +1,9 @@
 // Shared on-demand Google Fonts loader, used by captions (and reusable by
-// annotations). A font is fetched + cached on device by the Rust side on first
-// use, then registered with the document via the FontFace API so any element
-// using that family renders it. The full searchable catalog can come later;
-// this curated set covers the common display/caption choices.
-import { ensureGoogleFont } from "$lib/ipc";
-import { convertFileSrc } from "@tauri-apps/api/core";
+// annotations). A font is fetched + cached on device by the host's asset service
+// on first use, then registered with the document via the FontFace API so any
+// element using that family renders it. The full searchable catalog can come
+// later; this curated set covers the common display/caption choices.
+import { getEditorServices } from "$lib/editor/services";
 
 /** Curated, searchable set of popular Google Fonts offered in pickers. */
 export const GOOGLE_FONTS = [
@@ -138,14 +137,24 @@ export function isGoogleFont(family: string): boolean {
 
 const loaded = new Set<string>();
 
+/** Google's own woff2 endpoint, for hosts with no on-device font cache. The css2
+ *  API needs a browser-shaped UA to return woff2, which is why it isn't the
+ *  desktop path. */
+function googleCdnFontUrl(family: string, weight: number): string {
+	const name = family.replace(/ /g, "+");
+	return `https://fonts.googleapis.com/css2?family=${name}:wght@${weight}&display=swap`;
+}
+
 /**
- * Download `family` at `weight` (cached on device by Rust) and return an
- * asset-protocol URL for its file, or null on failure. Needs the Tauri IPC, so
- * it must run on the main thread — a worker gets the URL passed in instead.
+ * Resolve a loadable URL for `family` at `weight`, or null on failure. A host
+ * with an asset service caches the file on device; without one we fetch Google's
+ * CDN directly. Main-thread only — a worker gets the URL passed in instead.
  */
 export async function resolveGoogleFontUrl(family: string, weight = 400): Promise<string | null> {
 	try {
-		return convertFileSrc(await ensureGoogleFont(family, weight));
+		const services = getEditorServices();
+		if (!services.assets) return googleCdnFontUrl(family, weight);
+		return services.resolveAssetUrl(await services.assets.googleFont(family, weight));
 	} catch (e) {
 		console.warn(`Google font resolve failed: ${family} ${weight}`, e);
 		return null;

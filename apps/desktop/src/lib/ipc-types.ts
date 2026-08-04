@@ -4,8 +4,18 @@
  */
 
 import type { CaptionAnimation } from "@recast/captions";
+import type { EditorRenderState, Transcript, VideoMetadata } from "$lib/editor/render-state";
 import type { RecordingProfile } from "$lib/profiles";
-import type { EditorRenderState, VideoMetadata } from "$lib/stores/editor-store.svelte";
+
+// The document model, re-exported so `$lib/ipc-types` importers keep their
+// specifier. The dependency runs one way: wire types depend on the model.
+export type {
+	EditorRenderState,
+	Transcript,
+	TranscriptSegment,
+	TranscriptWord,
+	VideoMetadata,
+} from "$lib/editor/render-state";
 
 export interface DisplayInfo {
 	id: number;
@@ -489,27 +499,6 @@ export interface DeviceCapabilities {
 	 *  into this build. False in a `--no-default-features` build, where only remote
 	 *  endpoints can transcribe. */
 	captionsAvailable: boolean;
-}
-
-export interface TranscriptWord {
-	start: number;
-	end: number;
-	text: string;
-}
-
-export interface TranscriptSegment {
-	id: string;
-	start: number;
-	end: number;
-	text: string;
-	words: TranscriptWord[];
-}
-
-export interface Transcript {
-	engine: string;
-	modelId: string;
-	language: string | null;
-	segments: TranscriptSegment[];
 }
 
 /** Progress tick for a caption-model download. `total` is 0 when the server

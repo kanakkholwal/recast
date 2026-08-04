@@ -4,7 +4,7 @@
  * here, next to the worker entry it points at.
  */
 
-import { MediabunnyVideoSource } from '@recast/media/playback';
+import { type MediaRef, MediabunnyVideoSource } from "@recast/media/playback";
 
 /**
  * `known` is the recording's ffprobe metadata. Passing it lets the worker skip
@@ -12,12 +12,12 @@ import { MediabunnyVideoSource } from '@recast/media/playback';
  * container on a fragmented MP4 — that was the 30s open timeout on 4K files.
  */
 export function createMediabunnySource(
-	url: string,
+	src: MediaRef | Blob | string,
 	known?: { durationSec?: number; fps?: number },
 ): Promise<MediabunnyVideoSource> {
-	return MediabunnyVideoSource.create(url, {
+	return MediabunnyVideoSource.create(src, {
 		createWorker: () =>
-			new Worker(new URL('./mediabunny-worker.ts', import.meta.url), { type: 'module' }),
+			new Worker(new URL("./mediabunny-worker.ts", import.meta.url), { type: "module" }),
 		durationSec: known?.durationSec,
 		fps: known?.fps,
 	});

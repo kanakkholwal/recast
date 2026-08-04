@@ -29,22 +29,23 @@
 // MediaBunny primitives through `@recast/media` (the allowed channel —
 // see the override in biome.json). Same scope rule as the other worker
 // files in this package.
-import { ALL_FORMATS, CanvasSink, Input, UrlSource } from '@recast/media/mediabunny';
+import { ALL_FORMATS, CanvasSink, Input, mediaRefSource } from "@recast/media/mediabunny";
+import type { MediaRef } from "@recast/media";
 
-type InitMessage = { type: 'init'; url: string; tileHeightPx: number; durationSec?: number };
+type InitMessage = { type: "init"; src: MediaRef; tileHeightPx: number; durationSec?: number };
 type DecodeMessage = {
-	type: 'decode';
+	type: "decode";
 	requests: Array<{ id: number; originalSec: number }>;
 };
-type StoryboardMessage = { type: 'storyboard' };
-type DisposeMessage = { type: 'dispose' };
+type StoryboardMessage = { type: "storyboard" };
+type DisposeMessage = { type: "dispose" };
 
 type ToFilmstripWorker = InitMessage | DecodeMessage | StoryboardMessage | DisposeMessage;
 
-type ReadyMessage = { type: 'ready' };
-type TileMessage = { type: 'tile'; id: number; blob: Blob; width: number; height: number };
+type ReadyMessage = { type: "ready" };
+type TileMessage = { type: "tile"; id: number; blob: Blob; width: number; height: number };
 type StoryboardResultMessage = {
-	type: 'storyboard';
+	type: "storyboard";
 	blob: Blob;
 	cols: number;
 	rows: number;
@@ -53,7 +54,7 @@ type StoryboardResultMessage = {
 	count: number;
 	durationSec: number;
 };
-type ErrorMessage = { type: 'error'; message: string; id?: number };
+type ErrorMessage = { type: "error"; message: string; id?: number };
 
 type FromFilmstripWorker = ReadyMessage | TileMessage | StoryboardResultMessage | ErrorMessage;
 
@@ -71,17 +72,17 @@ let videoHeight = 0;
 let videoDurationSec = 0;
 let disposed = false;
 
-async function init(url: string, hPx: number, durationSec?: number): Promise<void> {
+async function init(src: MediaRef, hPx: number, durationSec?: number): Promise<void> {
 	tileHeightPx = hPx;
-	// UrlSource range-streams the file; it never holds the whole thing resident,
-	// unlike the old BlobSource that pinned ~600MB (plus a spec-mandated Blob
-	// copy) for the entire session on a 4K recording.
+	// Both ref kinds read lazily: UrlSource range-requests, BlobSource slices a
+	// disk-backed File. What pinned ~600MB per 4K session was a Blob materialized
+	// from the whole file — never do that (see MediaRef's docs).
 	input = new Input({
-		source: new UrlSource(url),
+		source: mediaRefSource(src),
 		formats: ALL_FORMATS,
 	});
 	const track = await input.getPrimaryVideoTrack();
-	if (!track) throw new Error('Filmstrip: no video track in input.');
+	if (!track) throw new Error("Filmstrip: no video track in input.");
 	// Trust the caller's ffprobe duration; computeDuration() walks every fragment
 	// of a fragmented MP4, which over a streamed source means many range reads.
 	videoDurationSec =
@@ -91,9 +92,12 @@ async function init(url: string, hPx: number, durationSec?: number): Promise<voi
 	videoWidth = w ?? 0;
 	videoHeight = h ?? 0;
 	// Fit the tile into the requested height, keep aspect.
-	const tileWidth = Math.max(2, Math.round((tileHeightPx * (videoWidth || 1)) / (videoHeight || 1)));
-	sink = new CanvasSink(track, { width: tileWidth, fit: 'contain' });
-	post({ type: 'ready' });
+	const tileWidth = Math.max(
+		2,
+		Math.round((tileHeightPx * (videoWidth || 1)) / (videoHeight || 1)),
+	);
+	sink = new CanvasSink(track, { width: tileWidth, fit: "contain" });
+	post({ type: "ready" });
 }
 
 async function decodeRequests(requests: Array<{ id: number; originalSec: number }>): Promise<void> {
@@ -110,12 +114,12 @@ async function decodeRequests(requests: Array<{ id: number; originalSec: number 
 			if (disposed) return;
 			// A Blob is structured-cloneable but NOT transferable; listing it
 			// throws and loses the whole tile.
-			post({ type: 'tile', id: req.id, blob, width: src.width, height: src.height });
+			post({ type: "tile", id: req.id, blob, width: src.width, height: src.height });
 		} catch (err) {
 			// Carry the request id so the provider clears it from in-flight;
 			// without it the tile is wedged forever and the id/inflight maps grow.
 			post({
-				type: 'error',
+				type: "error",
 				id: req.id,
 				message: err instanceof Error ? err.message : String(err),
 			});
@@ -127,7 +131,7 @@ async function canvasToJpeg(src: OffscreenCanvas): Promise<Blob> {
 	// Re-encode at the tile's native size. Quality 0.82 is the visual sweet
 	// spot for thumbnails; the editor doesn't read EXIF or any deep
 	// metadata, so the lossy path is fine.
-	const blob = await src.convertToBlob({ type: 'image/jpeg', quality: 0.82 });
+	const blob = await src.convertToBlob({ type: "image/jpeg", quality: 0.82 });
 	return blob;
 }
 
@@ -140,12 +144,12 @@ async function buildStoryboard(): Promise<void> {
 	const totalW = cellW * cols;
 	const totalH = cellH * rows;
 	const sprite = new OffscreenCanvas(totalW, totalH);
-	const ctx2d = sprite.getContext('2d', { alpha: false });
+	const ctx2d = sprite.getContext("2d", { alpha: false });
 	if (!ctx2d) {
-		post({ type: 'error', message: 'Filmstrip: cannot acquire 2D context for storyboard.' });
+		post({ type: "error", message: "Filmstrip: cannot acquire 2D context for storyboard." });
 		return;
 	}
-	ctx2d.fillStyle = '#000';
+	ctx2d.fillStyle = "#000";
 	ctx2d.fillRect(0, 0, totalW, totalH);
 	const count = cols * rows;
 	const timestamps: number[] = [];
@@ -162,9 +166,9 @@ async function buildStoryboard(): Promise<void> {
 			const row = Math.floor(i / cols);
 			ctx2d.drawImage(src, col * cellW, row * cellH, cellW, cellH);
 		}
-		const blob = await sprite.convertToBlob({ type: 'image/jpeg', quality: 0.85 });
+		const blob = await sprite.convertToBlob({ type: "image/jpeg", quality: 0.85 });
 		post({
-			type: 'storyboard',
+			type: "storyboard",
 			blob,
 			cols,
 			rows,
@@ -175,7 +179,7 @@ async function buildStoryboard(): Promise<void> {
 		});
 	} catch (err) {
 		post({
-			type: 'error',
+			type: "error",
 			message: err instanceof Error ? err.message : String(err),
 		});
 	}
@@ -197,21 +201,21 @@ function dispose(): void {
 ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
 	const msg = e.data;
 	switch (msg.type) {
-		case 'init':
-			void init(msg.url, msg.tileHeightPx, msg.durationSec).catch((err) => {
+		case "init":
+			void init(msg.src, msg.tileHeightPx, msg.durationSec).catch((err) => {
 				post({
-					type: 'error',
+					type: "error",
 					message: err instanceof Error ? err.message : String(err),
 				});
 			});
 			return;
-		case 'decode':
+		case "decode":
 			void decodeRequests(msg.requests);
 			return;
-		case 'storyboard':
+		case "storyboard":
 			void buildStoryboard();
 			return;
-		case 'dispose':
+		case "dispose":
 			dispose();
 			return;
 	}

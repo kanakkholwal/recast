@@ -10,8 +10,8 @@
  * after each `await ensureRange`, so the order never shifts mid-use.
  */
 
-import { ALL_FORMATS, AudioBufferSink, Input, UrlSource } from "@recast/media/mediabunny";
-import { missingRanges, type AudioChunk } from "@recast/media";
+import { ALL_FORMATS, AudioBufferSink, Input, mediaRefSource } from "@recast/media/mediabunny";
+import { type AudioChunk, type MediaRef, missingRanges, toMediaRef } from "@recast/media";
 
 interface Resident {
 	startSec: number;
@@ -34,8 +34,8 @@ export class AudioChunkStore {
 
 	/** Open the source and its primary audio track. Null when there's no audio
 	 *  track (caller skips this source). */
-	static async create(url: string): Promise<AudioChunkStore | null> {
-		const input = new Input({ source: new UrlSource(url), formats: ALL_FORMATS });
+	static async create(src: MediaRef | Blob | string): Promise<AudioChunkStore | null> {
+		const input = new Input({ source: mediaRefSource(toMediaRef(src)), formats: ALL_FORMATS });
 		try {
 			const track = await input.getPrimaryAudioTrack();
 			if (!track) {
@@ -74,7 +74,11 @@ export class AudioChunkStore {
 		while (i > 0 && this.#resident[i - 1].startSec > startSec) i--;
 		// A neighbouring window already yielded this chunk — don't double-insert.
 		if (i > 0 && Math.abs(this.#resident[i - 1].startSec - startSec) < SAME_START_EPS) return;
-		if (i < this.#resident.length && Math.abs(this.#resident[i].startSec - startSec) < SAME_START_EPS) return;
+		if (
+			i < this.#resident.length &&
+			Math.abs(this.#resident[i].startSec - startSec) < SAME_START_EPS
+		)
+			return;
 		this.#resident.splice(i, 0, { startSec, durationSec, buffer });
 	}
 

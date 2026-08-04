@@ -4,7 +4,7 @@
  * from `.logic.ts` modules and unit tests without loading the editor store.
  */
 
-import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
+import type { VideoMetadata } from "$lib/editor/render-state";
 
 export const MAX_FRAME_PADDING_PERCENT = 20;
 

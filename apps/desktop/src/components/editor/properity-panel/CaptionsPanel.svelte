@@ -46,15 +46,9 @@ import { formatSize } from "$lib/format/files";
 import { clock } from "$lib/format/time";
 import {
 	type CaptionModelInfo,
-	captionCapabilities,
 	type DeviceCapabilities,
-	deleteCaptionModel,
-	downloadCaptionModel,
-	exportCaptions,
-	hasTranscribableAudio,
-	listCaptionModels,
-	transcribeProject,
-} from "$lib/ipc";
+	getEditorServices,
+} from "$lib/editor/services";
 import { registry } from "$lib/registry";
 import type { CaptionPresetValue } from "$lib/registry/types";
 import { toOutputTimeTranscript } from "$lib/services/export";
@@ -79,6 +73,12 @@ interface Props {
 	store: EditorStore;
 }
 let { store }: Props = $props();
+
+// Absent on hosts with no on-device ASR (web): the whole generate surface —
+// model picker, download, probe — hides and import stays the only way in.
+const services = getEditorServices();
+const asr = services.transcription;
+const captionFiles = services.captionFiles;
 
 let view = $state<StyleView>(lastView);
 function setView(next: StyleView) {
@@ -139,13 +139,13 @@ const capabilityLine = $derived.by(() => {
 // Re-probe whenever the project's audio sources change (e.g. project reload).
 $effect(() => {
 	const paths = [store.audioPath, store.microphonePath];
-	if (!paths.some(Boolean)) {
+	if (!asr || !paths.some(Boolean)) {
 		audioProbe = false;
 		return;
 	}
 	audioProbe = null;
 	let cancelled = false;
-	hasTranscribableAudio(paths)
+	asr.hasTranscribableAudio(paths)
 		.then((present) => {
 			if (!cancelled) audioProbe = present;
 		})
@@ -165,8 +165,9 @@ const families = $derived(groupModelsByFamily(models));
 const gpuLabel = $derived(gpuLabelOf(caps));
 
 async function refresh() {
+	if (!asr) return;
 	try {
-		const list = await listCaptionModels();
+		const list = await asr.listModels();
 		// Remote endpoints are an experimental surface; hide them (and any models
 		// they contribute) unless the user opted in.
 		const showRemote = experimentalStore.isEnabled("remoteTranscription");
@@ -180,8 +181,9 @@ async function refresh() {
 }
 
 onMount(() => {
+	if (!asr) return;
 	void refresh();
-	captionCapabilities()
+	asr.capabilities()
 		.then((c) => (caps = c))
 		.catch(() => {});
 });
@@ -192,11 +194,12 @@ function pick(id: string) {
 }
 
 async function handleDownload(id: string) {
+	if (!asr) return;
 	downloadingId = id;
 	downloadPct = 0;
 	try {
 		// Progress is scoped to this download's channel, so no model-id filtering.
-		await downloadCaptionModel(id, (p) => {
+		await asr.downloadModel(id, (p) => {
 			downloadPct = downloadProgressPct(p.downloaded, p.total);
 		});
 		toast.success("Model downloaded");
@@ -209,8 +212,9 @@ async function handleDownload(id: string) {
 }
 
 async function handleDelete(id: string) {
+	if (!asr) return;
 	try {
-		await deleteCaptionModel(id);
+		await asr.deleteModel(id);
 		await refresh();
 	} catch (e) {
 		toast.error(`Could not delete model: ${e}`);
@@ -219,6 +223,7 @@ async function handleDelete(id: string) {
 
 async function generate() {
 	if (
+		!asr ||
 		!selected ||
 		!selected.installed ||
 		!selected.runnable ||
@@ -232,7 +237,7 @@ async function generate() {
 	startedAt = Date.now();
 	elapsedMs = 0;
 	try {
-		store.transcript = await transcribeProject({
+		store.transcript = await asr.transcribe({
 			audioPath: store.audioPath,
 			microphonePath: store.microphonePath,
 			modelId: selected.id,
@@ -251,18 +256,12 @@ async function generate() {
 
 async function exportSubs(format: "srt" | "vtt") {
 	const t = store.transcript;
-	if (!t) return;
+	if (!t || !captionFiles) return;
 	try {
-		const { save } = await import("@tauri-apps/plugin-dialog");
-		const dest = await save({
-			defaultPath: `captions.${format}`,
-			filters: [{ name: format.toUpperCase(), extensions: [format] }],
-		});
-		if (!dest) return;
 		// Map onto the output timeline (trim + cuts + speed) so cues line up with
-		// the exported video, not the raw recording, using the same warp the export dialog
-		// and Cloud track apply.
-		await exportCaptions(toOutputTimeTranscript(store.timeMap, t), format, dest);
+		// the exported video, not the raw recording, using the same warp the export
+		// dialog and Cloud track apply.
+		await captionFiles.exportSidecar(toOutputTimeTranscript(store.timeMap, t), format);
 		toast.success(`Exported ${format.toUpperCase()}`);
 	} catch (e) {
 		toast.error(`Export failed: ${e}`);

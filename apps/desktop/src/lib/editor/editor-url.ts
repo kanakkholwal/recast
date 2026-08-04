@@ -22,10 +22,14 @@ export const TIMELINE_PARAM = "timeline";
  * build has it — otherwise a production URL could select a tab with no trigger
  * in the rail, leaving the panel showing no selection at all.
  */
-export function parsePanelTab(raw: string | null | undefined, allowDev = false): PanelTab | null {
+export function parsePanelTab(
+	raw: string | null | undefined,
+	allowDev = false,
+	available: readonly PanelTab[] = PANEL_TABS,
+): PanelTab | null {
 	if (!raw) return null;
 	const value = raw.trim().toLowerCase();
-	const match = PANEL_TABS.find((t) => t === value);
+	const match = available.find((t) => t === value);
 	if (!match) return null;
 	if (match === "dev" && !allowDev) return null;
 	return match;

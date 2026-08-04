@@ -1,7 +1,7 @@
 <script lang="ts">
 import { formatBytes as formatBytesBase } from "$lib/format/bytes";
 import { clock } from "$lib/format/time";
-import { openFileLocation } from "$lib/ipc";
+import { getEditorServices } from "$lib/editor/services";
 import type { AnnotationKindName, EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
@@ -123,10 +123,12 @@ async function copyToClipboard(text: string, label: string) {
 	}
 }
 
+const shell = getEditorServices().shell;
+
 async function revealInFolder(path: string) {
-	if (!path) return;
+	if (!path || !shell) return;
 	try {
-		await openFileLocation(path);
+		await shell.openFileLocation(path);
 	} catch (err) {
 		const msg = typeof err === "string" ? err : String(err);
 		toast.error(`Could not open folder: ${msg}`);
@@ -278,22 +280,24 @@ async function revealInFolder(path: string) {
               </Tooltip.Trigger>
               <Tooltip.Content>Copy path</Tooltip.Content>
             </Tooltip.Root>
-            <Tooltip.Root>
-              <Tooltip.Trigger>
-                {#snippet child({ props })}
-                  <Button
-                    {...props as Record<string, unknown>}
-                    variant="ghost"
-                    size="icon-sm"
-                    onclick={() => revealInFolder(store.videoPath)}
-                    aria-label="Reveal in folder"
-                  >
-                    <FolderOpen size={11} />
-                  </Button>
-                {/snippet}
-              </Tooltip.Trigger>
-              <Tooltip.Content>Reveal in folder</Tooltip.Content>
-            </Tooltip.Root>
+            {#if shell}
+              <Tooltip.Root>
+                <Tooltip.Trigger>
+                  {#snippet child({ props })}
+                    <Button
+                      {...props as Record<string, unknown>}
+                      variant="ghost"
+                      size="icon-sm"
+                      onclick={() => revealInFolder(store.videoPath)}
+                      aria-label="Reveal in folder"
+                    >
+                      <FolderOpen size={11} />
+                    </Button>
+                  {/snippet}
+                </Tooltip.Trigger>
+                <Tooltip.Content>Reveal in folder</Tooltip.Content>
+              </Tooltip.Root>
+            {/if}
           </div>
         </div>
         <p
