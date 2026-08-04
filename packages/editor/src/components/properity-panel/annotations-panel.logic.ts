@@ -1,6 +1,6 @@
 /** AnnotationsPanel pure helpers: image basename + the active-tool status hint. */
 
-import type { AnnotationKindName } from "$lib/stores/editor-store.svelte";
+import type { AnnotationKindName } from "../../stores/editor-store.svelte";
 
 /** Last path segment, handling both `/` and `\` separators. */
 export function imageFileName(path: string): string {

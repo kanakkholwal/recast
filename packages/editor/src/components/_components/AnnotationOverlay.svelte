@@ -1,5 +1,5 @@
 <script lang="ts">
-import { evalOpacity } from "$lib/annotations/eval";
+import { evalOpacity } from "../../lib/annotations/eval";
 import { annotationZoom } from "./annotation-projection.logic";
 import { nudgeVectorPx } from "./annotation-keys.logic";
 import {
@@ -7,8 +7,8 @@ import {
 	hitTestAnnotation,
 	hitTestHandle,
 	type HandleName,
-} from "$lib/annotations/hit";
-import { isEditableTarget } from "$lib/dom/editable";
+} from "../../lib/annotations/hit";
+import { isEditableTarget } from "../../lib/dom/editable";
 import {
 	canvasToUV,
 	compositionRectPx,
@@ -16,16 +16,16 @@ import {
 	uvToCanvas,
 	videoRectPx,
 	type Rect,
-} from "$lib/annotations/uv";
-import { snap, snapBox, type SnapAnchor } from "$lib/annotations/snap";
+} from "../../lib/annotations/uv";
+import { snap, snapBox, type SnapAnchor } from "../../lib/annotations/snap";
 import {
 	constrain45,
 	constrainSquare,
 	isCornerHandle,
 	lockAspect,
-} from "$lib/annotations/resize-constraints";
-import { clickPlacedArrow, clickPlacedBox } from "$lib/annotations/place-defaults";
-import { disposeCanvasTokens, selectionPalette } from "$lib/annotations/canvas-tokens";
+} from "../../lib/annotations/resize-constraints";
+import { clickPlacedArrow, clickPlacedBox } from "../../lib/annotations/place-defaults";
+import { disposeCanvasTokens, selectionPalette } from "../../lib/annotations/canvas-tokens";
 import {
 	blurTint,
 	cursorForHandle,
@@ -41,8 +41,8 @@ import type {
 	AnnotationAnchor,
 	AnnotationKind,
 	EditorStore,
-} from "$lib/stores/editor-store.svelte";
-import { getEditorServices } from "$lib/editor/services";
+} from "../../stores/editor-store.svelte";
+import { getEditorServices } from "../../lib/editor/services";
 import { onDestroy, onMount } from "svelte";
 
 interface Props {

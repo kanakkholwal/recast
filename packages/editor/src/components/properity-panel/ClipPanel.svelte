@@ -1,7 +1,7 @@
 <script lang="ts">
-import { clockCentis } from "$lib/format/time";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { MAX_SEGMENT_SPEED, MIN_SEGMENT_SPEED } from "$lib/timeline/segment-speed";
+import { clockCentis } from "../../lib/format/time";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { MAX_SEGMENT_SPEED, MIN_SEGMENT_SPEED } from "../../lib/timeline/segment-speed";
 import {
 	ArrowDown,
 	ArrowLeft,
@@ -12,8 +12,8 @@ import {
 	SquareSplitHorizontal,
 	Trash2,
 } from "@recast/icons";
-import type { SeamTransition } from "$lib/scenes/seam";
-import type { MotionTone } from "$lib/scenes/segment-anim";
+import type { SeamTransition } from "../../lib/scenes/seam";
+import type { MotionTone } from "../../lib/scenes/segment-anim";
 import { Button } from "@recast/ui/button";
 import { Segmented } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";

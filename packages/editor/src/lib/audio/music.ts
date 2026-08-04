@@ -7,6 +7,8 @@
  * offline-first (never a hotlink URL).
  */
 
+import { tryGetEditorServices } from "../editor/services";
+
 export interface AudioClipSourceLocal {
 	kind: "local";
 	/** Absolute path to an imported audio file. */
@@ -92,11 +94,7 @@ export function isVoiceClip(clip: AudioClip): boolean {
 
 /** A detached-recording-audio clip: the source's own file, played linearly from
  *  `offsetSec` at output 0, gain/mute carried from its per-source setting. */
-export function voiceClip(
-	id: string,
-	path: string,
-	over: Partial<AudioClip> = {},
-): AudioClip {
+export function voiceClip(id: string, path: string, over: Partial<AudioClip> = {}): AudioClip {
 	return {
 		...defaultAudioClip(id, { kind: "local", path }),
 		role: "voice",
@@ -110,14 +108,12 @@ export function voiceClip(
 
 /** Open an audio file picker. Returns the absolute path, or null if cancelled. */
 export async function pickAudioFile(): Promise<string | null> {
-	const { open } = await import("@tauri-apps/plugin-dialog");
-	const selected = await open({
-		multiple: false,
-		directory: false,
+	const pick = tryGetEditorServices()?.pickFile;
+	if (!pick) return null;
+	return await pick({
+		accept: ["mp3", "wav", "m4a", "aac", "ogg", "flac"],
 		title: "Add music or audio",
-		filters: [{ name: "Audio", extensions: ["mp3", "wav", "m4a", "aac", "ogg", "flac"] }],
 	});
-	return typeof selected === "string" ? selected : null;
 }
 
 /** Display name for a clip (the source file's basename). */
@@ -158,10 +154,7 @@ export function moveClip(clip: AudioClip, newStart: number, outputDuration: numb
 
 /** Drag the right edge to `newEnd` (start fixed). */
 export function trimClipRight(clip: AudioClip, newEnd: number, outputDuration: number): AudioClip {
-	const end = Math.max(
-		clip.startOutputSec + MIN_CLIP_DURATION,
-		Math.min(newEnd, outputDuration),
-	);
+	const end = Math.max(clip.startOutputSec + MIN_CLIP_DURATION, Math.min(newEnd, outputDuration));
 	return { ...clip, durationSec: end - clip.startOutputSec };
 }
 

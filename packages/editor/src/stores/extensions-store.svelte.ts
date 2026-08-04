@@ -8,7 +8,7 @@
  * registry (`lib/registry`); `lib/extensions.ts` keeps the two in sync.
  */
 
-import type { InstalledExtension } from "$lib/ipc-types";
+import type { InstalledExtension } from "../lib/wire-types";
 
 function createExtensionsStore() {
 	let installed = $state<InstalledExtension[]>([]);

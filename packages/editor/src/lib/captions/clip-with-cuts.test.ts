@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
+import type { TranscriptSegment, TranscriptWord } from "../wire-types";
 import {
 	activeClippedSegment,
 	captionSpanAt,

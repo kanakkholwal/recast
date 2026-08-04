@@ -9,7 +9,7 @@
  * Pure functions, no DOM. Vitest covers the math (see clip-captions.test.ts).
  */
 
-import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
+import type { TranscriptSegment, TranscriptWord } from "../wire-types";
 
 export interface KeptSpan {
 	/** Original-recording span start (seconds). */

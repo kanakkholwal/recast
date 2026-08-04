@@ -6,8 +6,8 @@
 
 // Runtime import via relative path (not `$lib`): this module is unit-tested and
 // the standalone vitest config has no `$lib` alias.
-import { totalCutDuration } from "../../lib/timeline/cuts";
-import type { TimelineCut } from "$lib/timeline/cuts";
+import { totalCutDuration } from "../lib/timeline/cuts";
+import type { TimelineCut } from "../lib/timeline/cuts";
 
 export interface FpsOption {
 	value: number | null;

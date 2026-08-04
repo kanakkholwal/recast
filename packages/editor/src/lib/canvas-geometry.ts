@@ -11,7 +11,7 @@
 // We never CROP the comp, only extend around it, so every annotation, cursor,
 // and focus region keeps its source-pixel coordinates across aspect changes.
 
-import { aspectRatio, type OutputAspect } from "$lib/stores/editor-store.svelte";
+import { aspectRatio, type OutputAspect } from "../stores/editor-store.svelte";
 
 export interface CanvasGeometry {
 	/** Final canvas width in source pixels. */
@@ -34,11 +34,7 @@ export interface CanvasGeometry {
 }
 
 /** Convert padding-percent (0..20 of the shorter source edge) to pixels. */
-export function paddingPxFromPercent(
-	srcW: number,
-	srcH: number,
-	paddingPct: number,
-): number {
+export function paddingPxFromPercent(srcW: number, srcH: number, paddingPct: number): number {
 	const pct = Math.max(0, Math.min(20, paddingPct));
 	const shorter = Math.min(srcW, srcH);
 	return Math.round((shorter * pct) / 100);

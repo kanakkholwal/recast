@@ -1,11 +1,11 @@
 <script lang="ts" module>
-  export type ExportPanelPhase =
-    | "options"
-    | "queued"
-    | "progress"
-    | "success"
-    | "cancelled"
-    | "error";
+export type ExportPanelPhase =
+	| "options"
+	| "queued"
+	| "progress"
+	| "success"
+	| "cancelled"
+	| "error";
 </script>
 
 <script lang="ts">
@@ -13,7 +13,7 @@
   import { onMount } from "svelte";
   import { cubicOut } from "svelte/easing";
   import { fade } from "svelte/transition";
-  import { isOverlayOpen } from "$lib/dom/keyboard";
+  import { isOverlayOpen } from "../lib/dom/keyboard";
 
   // Inline right-rail export surface: the same phase snippets that used to live
   // in a portaled modal, re-homed where the properties panel was so the live

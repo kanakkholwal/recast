@@ -13,9 +13,12 @@
  * pulls in Tauri APIs; callers import this module directly.
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
-import type { InstalledExtension } from "$lib/ipc-types";
-import { log } from "$lib/logger";
+import { tryGetEditorServices } from "../editor/services";
+
+/** Identity on hosts whose refs are already loadable (web object URLs). */
+const resolveRef = (r: string) => tryGetEditorServices()?.resolveAssetUrl(r) ?? r;
+import type { InstalledExtension } from "../wire-types";
+import { log } from "../log";
 import { registry } from "./registry.svelte";
 import { extEntryId, type RegistryEntry } from "./types";
 import { DEFAULT_CAPTION_STYLE } from "@recast/captions";
@@ -33,7 +36,7 @@ function assetMap(ext: InstalledExtension): AssetMap {
 /** Fetch a hydrated SVG asset's text via the Tauri asset protocol. */
 async function loadSvg(path: string): Promise<string | null> {
 	try {
-		const res = await fetch(convertFileSrc(path));
+		const res = await fetch(resolveRef(path));
 		if (!res.ok) return null;
 		return await res.text();
 	} catch (err) {
@@ -111,14 +114,13 @@ export async function registerExtension(ext: InstalledExtension): Promise<number
 		// Prefer an explicit thumb asset, then the hydrated per-asset thumbnail
 		// the installer downloaded, and only fall back to decoding the full-res
 		// image as a thumbnail when neither exists.
-		const thumbPath =
-			(b.thumb && assets.get(b.thumb)?.path) || mainAsset.thumbPath || full;
+		const thumbPath = (b.thumb && assets.get(b.thumb)?.path) || mainAsset.thumbPath || full;
 		entries.push({
 			id: extEntryId(extId, b.id),
 			kind: "background",
 			label: b.label,
 			source: { kind: "extension", extId },
-			thumbUrl: convertFileSrc(thumbPath),
+			thumbUrl: resolveRef(thumbPath),
 			value: { wireValue: full },
 		});
 	}

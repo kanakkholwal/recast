@@ -1,9 +1,6 @@
 /** Annotation kind-group predicates shared across the property panels. */
 
-import type {
-	AnnotationKind,
-	AnnotationKindName,
-} from "$lib/stores/editor-store.svelte";
+import type { AnnotationKind, AnnotationKindName } from "../../stores/editor-store.svelte";
 
 /** Vector shapes drawn with a stroke: rect, ellipse, arrow. */
 export function isShape(kind: AnnotationKindName): boolean {
@@ -21,9 +18,7 @@ export function hasFill(kind: AnnotationKindName): boolean {
 }
 
 /** Box-model kinds positioned by an (x, y, w, h) rect: everything but arrow. */
-export function isBoxKind(
-	kind: AnnotationKind,
-): kind is Extract<AnnotationKind, { w: number }> {
+export function isBoxKind(kind: AnnotationKind): kind is Extract<AnnotationKind, { w: number }> {
 	return (
 		kind.kind === "rect" ||
 		kind.kind === "ellipse" ||

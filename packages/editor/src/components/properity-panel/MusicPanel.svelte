@@ -1,12 +1,12 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { clipDisplayName, collectCredits, pickAudioFile } from "$lib/audio/music";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { clipDisplayName, collectCredits, pickAudioFile } from "../../lib/audio/music";
 import { AudioLines, ExternalLink, Plus, Repeat, Trash2, Volume2, VolumeX } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import { toast } from "@recast/ui/sonner";
-import { getEditorServices } from "$lib/editor/services";
+import { getEditorServices } from "../../lib/editor/services";
 import PanelSection from "./PanelSection.svelte";
 
 interface Props {

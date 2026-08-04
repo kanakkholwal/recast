@@ -11,17 +11,17 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
-import { EASE_IN_OUT } from "$lib/easing/cubic-bezier";
-import { buildTimeMap, outputToOriginal } from "$lib/timeline/time-map";
-import type { CursorSettings, ShadowSettings, ZoomRegion } from "$lib/stores/editor-store.svelte";
-import { computeFrameParams, type FrameUniforms } from "../../components/editor/frame-params";
-import type { CursorSampleJS } from "../../components/editor/video-preview.logic";
+import { EASE_IN_OUT } from "../easing/cubic-bezier";
+import { buildTimeMap, outputToOriginal } from "../timeline/time-map";
+import type { CursorSettings, ShadowSettings, ZoomRegion } from "../../stores/editor-store.svelte";
+import { computeFrameParams, type FrameUniforms } from "../../components/frame-params";
+import type { CursorSampleJS } from "../../components/video-preview.logic";
 
 // computeCanvasGeometry does a value import of the runes store (`aspectRatio`),
 // pulling a $constants chain the Node runner can't resolve. Mock it to a padded
 // layout — parity/covariance holds for any geometry; the math is covered by the
 // canvas-geometry + export-scene suites.
-vi.mock("$lib/canvas-geometry", () => ({
+vi.mock("../canvas-geometry", () => ({
 	computeCanvasGeometry: () => ({
 		canvasW: 2100,
 		canvasH: 1180,

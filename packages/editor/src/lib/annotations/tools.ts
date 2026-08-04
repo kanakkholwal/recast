@@ -1,6 +1,6 @@
 import type { IconComponent } from "@recast/icons";
 import { MousePointer2 } from "@recast/icons";
-import type { AnnotationKindName } from "$lib/stores/editor-store.svelte";
+import type { AnnotationKindName } from "../../stores/editor-store.svelte";
 import { defaultKindIcon, defaultKindLabel } from "./kind-label";
 
 export type AnnotationToolId = AnnotationKindName | "select";

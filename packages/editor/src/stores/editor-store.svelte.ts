@@ -8,25 +8,25 @@
 
 import { type CaptionStyle, DEFAULT_CAPTION_STYLE } from "@recast/captions";
 import { backgroundNeedsShadow, migrateBackgroundValue } from "@recast/design/backgrounds";
-import { scaleTranscript, transcriptTimeScale } from "$lib/captions/normalize";
-import { resolveTokenRgb, resolveTokenRgba } from "../annotations/canvas-tokens";
+import { scaleTranscript, transcriptTimeScale } from "../lib/captions/normalize";
+import { resolveTokenRgb, resolveTokenRgba } from "../lib/annotations/canvas-tokens";
 import {
 	type AudioClip,
 	type AudioClipSource,
 	defaultAudioClip,
 	splitClip,
 	voiceClip,
-} from "../audio/music";
-import type { CursorSampleLike } from "../cursor/smoothing";
-import { EASE, EASE_IN_OUT, type Easing } from "../easing/cubic-bezier";
-import type { TimeMode } from "../editor/time";
-import { log } from "../logger";
-import { resolveBackgroundWireValue } from "../registry/resolve";
+} from "../lib/audio/music";
+import type { CursorSampleLike } from "../lib/cursor/smoothing";
+import { EASE, EASE_IN_OUT, type Easing } from "../lib/easing/cubic-bezier";
+import type { TimeMode } from "../lib/editor/time";
+import { log } from "../lib/log";
+import { resolveBackgroundWireValue } from "../lib/registry/resolve";
 import {
 	setSeamTransition as applySeamTransition,
 	seamTransitionAt as readSeamTransition,
 	type SeamTransition,
-} from "../scenes/seam";
+} from "../lib/scenes/seam";
 import {
 	segmentAnimAt as animAtAnchor,
 	type MotionTone,
@@ -35,8 +35,8 @@ import {
 	type SceneAnimSpec,
 	type SegmentAnim,
 	setSegmentAnim as upsertSegmentAnim,
-} from "../scenes/segment-anim";
-import { type CutSource, type TimelineCut, totalCutDuration } from "../timeline/cuts";
+} from "../lib/scenes/segment-anim";
+import { type CutSource, type TimelineCut, totalCutDuration } from "../lib/timeline/cuts";
 import {
 	buildSpeedOf,
 	pruneSegmentSpeeds,
@@ -44,21 +44,21 @@ import {
 	segmentSpeedAt as speedAtAnchor,
 	segmentSpeedAtTime as speedAtTime,
 	setSegmentSpeed as upsertSegmentSpeed,
-} from "../timeline/segment-speed";
+} from "../lib/timeline/segment-speed";
 import {
 	deriveSegments,
 	planDeleteSegment,
 	planSplit,
 	type Segment,
 	segmentAt,
-} from "../timeline/segments";
+} from "../lib/timeline/segments";
 import {
 	buildGapMap,
 	displayTimeMap,
 	originalToOutput,
 	outputToOriginal,
 	timeMapFromSegments,
-} from "../timeline/time-map";
+} from "../lib/timeline/time-map";
 import { experimentalStore } from "./experimental.svelte";
 import {
 	type Annotation,
@@ -102,9 +102,9 @@ import {
 	normalizeFramePaddingPercent,
 	type PanelTab,
 	wallpaperBackgroundValue,
-} from "$lib/editor/render-state";
+} from "../lib/editor/render-state";
 
-export * from "$lib/editor/render-state";
+export * from "../lib/editor/render-state";
 
 export function createEditorStore() {
 	// Video source

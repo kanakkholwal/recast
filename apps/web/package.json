@@ -30,6 +30,7 @@
 		"@recast/application": "workspace:*",
 		"@recast/captions": "workspace:*",
 		"@recast/design": "workspace:*",
+		"@recast/editor": "workspace:*",
 		"@recast/icons": "workspace:*",
 		"@recast/media": "workspace:*",
 		"@recast/player": "workspace:*",

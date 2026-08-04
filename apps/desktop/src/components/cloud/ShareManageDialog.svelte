@@ -9,8 +9,8 @@ import CloudShareSettings from "./CloudShareSettings.svelte";
 import { type CloudUploadRecord } from "$lib/ipc";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { Button } from "@recast/ui/button";
-import DialogShell from "$components/recast/DialogShell.svelte";
-import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import { toast } from "@recast/ui/sonner";
 import { Link2, Trash2 } from "@recast/icons";
 

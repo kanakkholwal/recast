@@ -8,7 +8,10 @@
  * `$derived(src)` short-circuit and avoid redundant `<img>` decodes.
  */
 
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { tryGetEditorServices } from "../lib/editor/services";
+
+/** Identity on hosts whose refs are already loadable (web object URLs). */
+const resolveRef = (r: string) => tryGetEditorServices()?.resolveAssetUrl(r) ?? r;
 
 function createAssetsStore() {
 	let paths = $state<Record<string, string>>({});
@@ -55,12 +58,12 @@ function createAssetsStore() {
 		setPath(id: string, path: string) {
 			if (paths[id] === path) return;
 			paths = { ...paths, [id]: path };
-			urls = { ...urls, [id]: convertFileSrc(path) };
+			urls = { ...urls, [id]: resolveRef(path) };
 		},
 		setThumbPath(id: string, path: string) {
 			if (thumbPaths[id] === path) return;
 			thumbPaths = { ...thumbPaths, [id]: path };
-			thumbUrls = { ...thumbUrls, [id]: convertFileSrc(path) };
+			thumbUrls = { ...thumbUrls, [id]: resolveRef(path) };
 		},
 		setFailed(ids: string[]) {
 			failed = ids;

@@ -9,9 +9,9 @@
  *     lands on what the user was actually pointing at
  */
 
-import type { CursorSampleLike } from "$lib/cursor/smoothing";
-import type { ZoomSuggestion } from "$lib/ipc-types";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import type { CursorSampleLike } from "../cursor/smoothing";
+import type { ZoomSuggestion } from "../wire-types";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 
 // Asymmetric window: short lead-in, long hold. With the default 0.35 s ramps
 // this leaves a ~2 s plateau at full zoom; a symmetric 1 s window held only
@@ -101,9 +101,7 @@ export function resolveZoomCenter(
 	const cand = samples[lo];
 	const prev = lo > 0 ? samples[lo - 1] : cand;
 	const nearest =
-		Math.abs(cand.timestampUs - targetUs) <= Math.abs(prev.timestampUs - targetUs)
-			? cand
-			: prev;
+		Math.abs(cand.timestampUs - targetUs) <= Math.abs(prev.timestampUs - targetUs) ? cand : prev;
 	const x = Math.min(1, Math.max(0, nearest.x / canvasW));
 	const y = Math.min(1, Math.max(0, nearest.y / canvasH));
 	return { x, y };

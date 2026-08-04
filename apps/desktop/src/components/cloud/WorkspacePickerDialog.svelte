@@ -9,7 +9,7 @@
  */
 import type { CloudWorkspace } from "$lib/stores/cloudShare.svelte";
 import { planLabel, roleLabel } from "$components/settings/cloud-signin.logic";
-import DialogShell from "$components/recast/DialogShell.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { Button } from "@recast/ui/button";
 import { cn } from "@recast/ui/utils";
 import { Check, Crown, Send, Users } from "@recast/icons";

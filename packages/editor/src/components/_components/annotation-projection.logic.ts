@@ -1,5 +1,5 @@
-import { evalZoom, type ZoomRegionLike } from "$lib/annotations/eval";
-import type { AnnotationAnchor } from "$lib/stores/editor-store.svelte";
+import { evalZoom, type ZoomRegionLike } from "../../lib/annotations/eval";
+import type { AnnotationAnchor } from "../../stores/editor-store.svelte";
 import { IDENTITY_ZOOM } from "./annotation-draw.logic";
 
 /**

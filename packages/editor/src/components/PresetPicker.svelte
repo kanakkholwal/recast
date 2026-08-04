@@ -20,7 +20,7 @@ import { tick, untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { prefersReducedMotion } from "svelte/motion";
 import { fade, scale } from "svelte/transition";
-import LazyExternalImage from "$components/common/LazyExternalImage.svelte";
+import LazyExternalImage from "./common/LazyExternalImage.svelte";
 import {
 	aspectClass,
 	bgPreviewStyle,

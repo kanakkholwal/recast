@@ -1,11 +1,11 @@
 <script lang="ts">
-import { evalOpacity, evalZoom } from "$lib/annotations/eval";
-import { ensureFontLoaded } from "$lib/fonts/font-options";
-import { canvasToUV, compositionRectPx, uvToCanvas, videoRectPx } from "$lib/annotations/uv";
-import { snap } from "$lib/annotations/snap";
+import { evalOpacity, evalZoom } from "../../lib/annotations/eval";
+import { ensureFontLoaded } from "../../lib/fonts/font-options";
+import { canvasToUV, compositionRectPx, uvToCanvas, videoRectPx } from "../../lib/annotations/uv";
+import { snap } from "../../lib/annotations/snap";
 import { IDENTITY_ZOOM, withAlpha } from "./annotation-draw.logic";
 import { buildAnnotationSnapAnchors } from "./annotation-snap.logic";
-import type { Annotation, AnnotationAnchor, EditorStore } from "$lib/stores/editor-store.svelte";
+import type { Annotation, AnnotationAnchor, EditorStore } from "../../stores/editor-store.svelte";
 import { onDestroy, onMount, tick } from "svelte";
 
 // HTML layer (sibling to the 2D AnnotationOverlay) so text gets the WebView's

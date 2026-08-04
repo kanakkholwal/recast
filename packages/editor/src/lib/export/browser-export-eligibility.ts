@@ -5,7 +5,7 @@
  * editor page both consult it.
  */
 
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 
 /** Effective export frame rate — the rate the renderer actually encodes at: the
  *  picker value, else the GIF setting, else the source rate. Shared so the editor

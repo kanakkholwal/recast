@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
 import { Plus, ZoomIn } from "@recast/icons";
 import type { TimeMode } from "./timeline-helpers";
 import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
@@ -23,8 +23,8 @@ interface Props {
 	/** Card placement + lane height, computed by the timeline so the track rail
 	 *  and this lane can never disagree on how tall the lane is. */
 	layout: LaneCardLayout;
-	onCopy: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
-	onDuplicate: (region: import("$lib/stores/editor-store.svelte").ZoomRegion) => void;
+	onCopy: (region: import("../../../stores/editor-store.svelte").ZoomRegion) => void;
+	onDuplicate: (region: import("../../../stores/editor-store.svelte").ZoomRegion) => void;
 }
 
 let { store, pixelsPerSecond, fps, duration, timeMode, layout, onCopy, onDuplicate }: Props =

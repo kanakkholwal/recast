@@ -5,13 +5,13 @@
  * slice in as an argument (zoom regions, cursor samples, idle periods, …).
  */
 
-import type { Easing } from "$lib/easing/cubic-bezier";
-import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
-import { activeZoomIndex } from "$lib/zoom/resolve";
+import type { Easing } from "../lib/easing/cubic-bezier";
+import type { ZoomRegion } from "../stores/editor-store.svelte";
+import { activeZoomIndex } from "../lib/zoom/resolve";
 // Runtime import via relative path (not `$lib`): the standalone vitest config
 // has no `$lib` alias, and this module is unit-tested. Type-only `$lib` imports
 // elsewhere are fine; they're erased before the test runs.
-import { bezierY } from "../../lib/easing/cubic-bezier";
+import { bezierY } from "../lib/easing/cubic-bezier";
 
 export type CursorSampleJS = {
 	timestampUs: number;

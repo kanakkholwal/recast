@@ -1,8 +1,8 @@
 <script lang="ts">
-import type { EditorStore, WatermarkPosition } from "$lib/stores/editor-store.svelte";
+import type { EditorStore, WatermarkPosition } from "../stores/editor-store.svelte";
 import { ImagePlus, Stamp, Trash2 } from "@recast/icons";
 import { toast } from "@recast/ui/sonner";
-import { getEditorServices } from "$lib/editor/services";
+import { getEditorServices } from "../lib/editor/services";
 import InspectorHint from "./InspectorHint.svelte";
 import { SliderControl } from "@recast/ui/slider-control";
 import { getFileLabel } from "./watermark-panel.logic";

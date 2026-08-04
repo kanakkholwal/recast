@@ -1,7 +1,7 @@
 <script lang="ts">
-import InspectorHint from "$components/editor/InspectorHint.svelte";
-import { experimentalStore } from "$lib/stores/experimental.svelte";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import InspectorHint from "../../InspectorHint.svelte";
+import { experimentalStore } from "../../../stores/experimental.svelte";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
 import {
 	AudioLines,
 	Clapperboard,

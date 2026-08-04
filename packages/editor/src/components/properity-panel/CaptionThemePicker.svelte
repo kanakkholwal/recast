@@ -2,7 +2,7 @@
 import { type CaptionStyle, resolveCaptionAnimation, type TranscriptWord } from "@recast/captions";
 import CaptionBox from "@recast/captions/box";
 import { cn } from "@recast/ui/utils";
-import { ensureFontLoaded } from "$lib/fonts/font-options";
+import { ensureFontLoaded } from "../../lib/fonts/font-options";
 
 // A grid of real previews instead of a searchable dropdown. Six themes did not
 // need a command palette, and the old row (44px swatch + name + description)

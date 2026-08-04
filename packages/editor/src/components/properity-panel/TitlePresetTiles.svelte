@@ -1,5 +1,5 @@
 <script lang="ts">
-import { TITLE_PRESETS, type TitlePreset } from "$lib/annotations/title-presets";
+import { TITLE_PRESETS, type TitlePreset } from "../../lib/annotations/title-presets";
 
 // Each tile lays the preset's own text out at its real UV position, size and
 // weight, so you pick by look instead of guessing what "Lower third" means.

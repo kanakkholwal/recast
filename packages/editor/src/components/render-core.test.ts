@@ -2,10 +2,26 @@ import { describe, expect, it, vi } from "vitest";
 import { RenderCore, type RenderPass } from "./render-core";
 import type { WebGL2Backend } from "./webgl2-backend";
 import { computeFrameParams, type FrameInput } from "./frame-params";
-import type { CursorSettings, ShadowSettings } from "$lib/stores/editor-store.svelte";
+import type { CursorSettings, ShadowSettings } from "../stores/editor-store.svelte";
 
-const CURSOR_OFF = { enabled: false, style: "dot", size: 1, hideWhenIdle: false, idleTimeout: 2, highlightClicks: false, highlightOpacity: 50, highlightColor: "#3b82f6" } as unknown as CursorSettings;
-const SHADOW_OFF = { enabled: false, opacity: 0, blur: 0, spread: 0, offsetY: 0, color: "#000000" } as unknown as ShadowSettings;
+const CURSOR_OFF = {
+	enabled: false,
+	style: "dot",
+	size: 1,
+	hideWhenIdle: false,
+	idleTimeout: 2,
+	highlightClicks: false,
+	highlightOpacity: 50,
+	highlightColor: "#3b82f6",
+} as unknown as CursorSettings;
+const SHADOW_OFF = {
+	enabled: false,
+	opacity: 0,
+	blur: 0,
+	spread: 0,
+	offsetY: 0,
+	color: "#000000",
+} as unknown as ShadowSettings;
 
 function input(): FrameInput {
 	return {

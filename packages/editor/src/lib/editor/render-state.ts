@@ -484,7 +484,7 @@ import {
 	framePaddingPixels,
 	MAX_FRAME_PADDING_PERCENT,
 	normalizeFramePaddingPercent,
-} from "$lib/editor/frame-padding";
+} from "./frame-padding";
 
 export {
 	clampFramePaddingPercent,
@@ -682,8 +682,8 @@ export interface DeleteSelectionResult {
 // Re-exported so the many existing `import type { PanelTab } from "…/editor-store"`
 // sites keep working; the list itself lives in a module light enough to import
 // from a unit test (see panel-tabs.ts).
-export { PANEL_TABS, type PanelTab } from "$lib/editor/panel-tabs";
-import type { PanelTab } from "$lib/editor/panel-tabs";
+export { PANEL_TABS, type PanelTab } from "./panel-tabs";
+import type { PanelTab } from "./panel-tabs";
 
 /** Active timeline pointer tool. `select` is the default (scrub/drag/select);
  *  `razor` arms the click-to-cut tool. A tool is state of the whole timeline,

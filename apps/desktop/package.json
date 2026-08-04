@@ -33,6 +33,7 @@
 		"@recast/analytics": "workspace:*",
 		"@recast/captions": "workspace:*",
 		"@recast/design": "workspace:*",
+		"@recast/editor": "workspace:*",
 		"@recast/icons": "workspace:*",
 		"@recast/media": "workspace:*",
 		"@recast/render": "workspace:*",

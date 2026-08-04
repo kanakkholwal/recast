@@ -1,18 +1,13 @@
 import { describe, expect, it } from "vitest";
-import type { Transcript, TranscriptSegment, TranscriptWord } from "$lib/ipc";
-import { buildTimeMap } from "$lib/timeline/time-map";
-import { toOutputTimeTranscript } from "$lib/captions/output-time";
+import type { Transcript, TranscriptSegment, TranscriptWord } from "../wire-types";
+import { buildTimeMap } from "../timeline/time-map";
+import { toOutputTimeTranscript } from "./output-time";
 
 function word(start: number, end: number, text: string): TranscriptWord {
 	return { start, end, text };
 }
 
-function seg(
-	id: string,
-	start: number,
-	end: number,
-	words: TranscriptWord[],
-): TranscriptSegment {
+function seg(id: string, start: number, end: number, words: TranscriptWord[]): TranscriptSegment {
 	return { id, start, end, text: words.map((w) => w.text).join(" "), words };
 }
 

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { scaleTranscript, transcriptTimeScale } from "./normalize";
-import type { Transcript } from "$lib/ipc";
+import type { Transcript } from "../wire-types";
 
 function tx(): Transcript {
 	return {

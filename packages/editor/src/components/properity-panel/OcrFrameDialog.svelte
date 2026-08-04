@@ -4,11 +4,11 @@
 // This is the surface that answers "why did it produce THAT?", so the picture and
 // the structured output have to be visibly the same thing: a box on the frame and
 // its row in the list are one element, and highlighting either highlights both.
-import { clock } from "$lib/format/time";
-import type { ScreenStateSpan } from "$lib/ipc-types";
+import { clock } from "../../lib/format/time";
+import type { ScreenStateSpan } from "../../lib/wire-types";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
-import DialogShell from "$components/recast/DialogShell.svelte";
+import DialogShell from "../dialog/DialogShell.svelte";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { Check, Copy, SquareDashedMousePointer } from "@recast/icons";
 import { boxLabel, boxStyle, regionLabel, spanAsText } from "./dev-ocr-panel.logic";

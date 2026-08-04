@@ -4,12 +4,12 @@
  * "Includes" grouping live here so the two views can't drift.
  */
 
-import { hasUpdate, type RegistryIndexEntry } from "$lib/extensions";
+import { hasUpdate, type RegistryIndexEntry } from "../../lib/extensions";
 import type {
 	ExtensionContributions,
 	ExtensionManifest,
 	InstalledExtension,
-} from "$lib/ipc-types";
+} from "../../lib/wire-types";
 
 /** Contribution kinds a pack can declare, in display order. */
 const CONTRIBUTION_KEYS: (keyof ExtensionContributions)[] = [

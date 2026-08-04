@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { CameraCapture } from "$lib/ipc-types";
-import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
+import type { CameraCapture } from "../../lib/wire-types";
+import type { EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	Blocks,

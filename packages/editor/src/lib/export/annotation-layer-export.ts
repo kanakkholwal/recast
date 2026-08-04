@@ -7,12 +7,12 @@
  */
 
 import { paintArrow, paintBlur, paintBoxAnnotation, type ShapeImage } from "@recast/render";
-import { evalOpacity, evalZoom } from "$lib/annotations/eval";
-import { IDENTITY_ZOOM } from "../../components/editor/_components/annotation-draw.logic";
-import { compositionRectPx, uvToCanvas, videoRectPx } from "$lib/annotations/uv";
+import { evalOpacity, evalZoom } from "../annotations/eval";
+import { IDENTITY_ZOOM } from "../../components/_components/annotation-draw.logic";
+import { compositionRectPx, uvToCanvas, videoRectPx } from "../annotations/uv";
 import { normaliseBox } from "@recast/render";
-import type { Annotation, OutputAspect, VideoMetadata } from "$lib/stores/editor-store.svelte";
-import type { ZoomRegionLike } from "$lib/annotations/eval";
+import type { Annotation, OutputAspect, VideoMetadata } from "../../stores/editor-store.svelte";
+import type { ZoomRegionLike } from "../annotations/eval";
 import type { BlurLayerEnv } from "./offscreen-export";
 
 export interface AnnotationLayerInputs {

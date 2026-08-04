@@ -5,10 +5,14 @@
 // read off it, and where on the frame that text was). Dev builds only, so the
 // output can be eyeballed against the real video before this is wired into the
 // agent/CLI surface for real.
-import { clock } from "$lib/format/time";
-import { getEditorServices, type OcrProgress, type VideoTextTimeline } from "$lib/editor/services";
-import type { ScreenStateSpan } from "$lib/ipc-types";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { clock } from "../../lib/format/time";
+import {
+	getEditorServices,
+	type OcrProgress,
+	type VideoTextTimeline,
+} from "../../lib/editor/services";
+import type { ScreenStateSpan } from "../../lib/wire-types";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import { Badge } from "@recast/ui/badge";
 import { Button } from "@recast/ui/button";
 import { Progress } from "@recast/ui/progress";

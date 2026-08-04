@@ -1,8 +1,8 @@
 <script lang="ts">
-import { formatBytes as formatBytesBase } from "$lib/format/bytes";
-import { clock } from "$lib/format/time";
-import { getEditorServices } from "$lib/editor/services";
-import type { AnnotationKindName, EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
+import { formatBytes as formatBytesBase } from "../../lib/format/bytes";
+import { clock } from "../../lib/format/time";
+import { getEditorServices } from "../../lib/editor/services";
+import type { AnnotationKindName, EditorStore, PanelTab } from "../../stores/editor-store.svelte";
 import type { IconComponent } from "@recast/icons";
 import {
 	ArrowUpRight,

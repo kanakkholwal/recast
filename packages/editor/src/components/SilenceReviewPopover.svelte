@@ -1,8 +1,8 @@
 <script lang="ts">
-import { getEditorServices, type SilenceSegment } from "$lib/editor/services";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { overlapsAny } from "$lib/timeline/cuts";
-import { clockDecis as formatTime, compactDuration as formatDuration } from "$lib/format/time";
+import { getEditorServices, type SilenceSegment } from "../lib/editor/services";
+import type { EditorStore } from "../stores/editor-store.svelte";
+import { overlapsAny } from "../lib/timeline/cuts";
+import { clockDecis as formatTime, compactDuration as formatDuration } from "../lib/format/time";
 import {
 	BULK_MIN_CONFIDENCE,
 	confidenceBarClass,

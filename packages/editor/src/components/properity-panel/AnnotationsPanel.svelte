@@ -1,16 +1,16 @@
 <script lang="ts">
-import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-import { clockCentis as fmtTime } from "$lib/format/time";
+import { kindIcon, kindLabel } from "../../lib/annotations/kind-label";
+import { clockCentis as fmtTime } from "../../lib/format/time";
 import { imageFileName, toolHint as toolHintFor } from "./annotations-panel.logic";
 import { isOutsideClip, regionMaxRamp, retimeEnd, retimeStart } from "./focus-panel.logic";
-import { FONT_WEIGHTS, STROKE_SWATCHES } from "$lib/annotations/palette";
-import { getRecentColors, pushRecentColor } from "$lib/annotations/recent-colors";
-import { EASE } from "$lib/easing/cubic-bezier";
+import { FONT_WEIGHTS, STROKE_SWATCHES } from "../../lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
+import { EASE } from "../../lib/easing/cubic-bezier";
 import {
 	DEFAULT_ANNOTATION_RAMP,
 	type Annotation,
 	type EditorStore,
-} from "$lib/stores/editor-store.svelte";
+} from "../../stores/editor-store.svelte";
 import {
 	AlignCenter,
 	AlignLeft,
@@ -19,8 +19,8 @@ import {
 	Trash2,
 } from "@recast/icons";
 import { toast } from "@recast/ui/sonner";
-import { pickImageFile } from "$lib/annotations/image-import";
-import type { TitlePreset } from "$lib/annotations/title-presets";
+import { pickImageFile } from "../../lib/annotations/image-import";
+import type { TitlePreset } from "../../lib/annotations/title-presets";
 import { Button } from "@recast/ui/button";
 import { ColorField } from "@recast/ui/color-field";
 import { Kbd } from "@recast/ui/kbd";
@@ -31,7 +31,7 @@ import { SliderControl } from "@recast/ui/slider-control";
 import { Textarea } from "@recast/ui/textarea";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
-import { motionDuration } from "$lib/motion.svelte";
+import { motionDuration } from "../../lib/motion.svelte";
 import InspectorHint from "../InspectorHint.svelte";
 import EasingControl from "./EasingControl.svelte";
 import AnnotationAppearance from "./annotations/AnnotationAppearance.svelte";

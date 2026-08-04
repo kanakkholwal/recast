@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildTimeMap } from "$lib/timeline/time-map";
-import type { FrameInput } from "../../components/editor/frame-params";
+import { buildTimeMap } from "../timeline/time-map";
+import type { FrameInput } from "../../components/frame-params";
 import { makeExportFrameAt, makeIndexedExportFrameAt } from "./export-frame-input";
 
 const base = {

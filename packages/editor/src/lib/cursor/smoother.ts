@@ -3,11 +3,7 @@
 // pass if the worker can't be created. Owns no rendering; callers apply the
 // result (the smoothed sample array) however they like.
 
-import {
-	smoothCursorPath,
-	type CursorSampleLike,
-	type SmoothingOptions,
-} from "./smoothing";
+import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
 
 type ResultMsg = { id: number; samples: CursorSampleLike[] };
 type Listener = (samples: CursorSampleLike[]) => void;
@@ -26,10 +22,7 @@ export class CursorSmoother {
 	constructor(onResult: Listener) {
 		this.#onResult = onResult;
 		try {
-			this.#worker = new Worker(
-				new URL("./smoothing-worker.ts", import.meta.url),
-				{ type: "module" },
-			);
+			this.#worker = new Worker(new URL("./smoothing-worker", import.meta.url), { type: "module" });
 			this.#worker.onmessage = (e: MessageEvent<ResultMsg>) => {
 				// Drop superseded results: only the latest request matters.
 				if (e.data.id !== this.#reqId) return;

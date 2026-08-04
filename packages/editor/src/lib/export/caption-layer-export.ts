@@ -5,9 +5,9 @@
  * the preview overlay, so preview == export by construction.
  */
 
-import { paintCaptionChunk, resolveCaptionView } from "$lib/captions/caption-render";
-import type { Transcript } from "$lib/ipc";
-import type { TimeMap } from "$lib/timeline/time-map";
+import { paintCaptionChunk, resolveCaptionView } from "../captions/caption-render";
+import type { Transcript } from "../wire-types";
+import type { TimeMap } from "../timeline/time-map";
 import type { CaptionStyle } from "@recast/captions";
 
 /** The video rect inside the output frame, as fractions of the canvas (the

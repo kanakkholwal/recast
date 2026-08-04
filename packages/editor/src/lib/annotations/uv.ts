@@ -1,12 +1,12 @@
 // Pure UV ↔ canvas geometry shared by the 2D annotation overlay and the HTML
 // text layer. Both MUST use the same math or they drift when zoom/padding change.
 
-import { computeCanvasGeometry } from "$lib/canvas-geometry";
+import { computeCanvasGeometry } from "../canvas-geometry";
 import {
 	framePaddingPixels,
 	type OutputAspect,
 	type VideoMetadata,
-} from "$lib/stores/editor-store.svelte";
+} from "../../stores/editor-store.svelte";
 import { evalZoom, type ZoomRegionLike } from "./eval";
 import { canvasToUV, normaliseBox, uvToCanvas, type Rect } from "@recast/render";
 

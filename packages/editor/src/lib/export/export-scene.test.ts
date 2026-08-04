@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 // `aspectRatio`), which pulls a $constants chain vitest can't resolve. Mock it —
 // this test covers buildExportBase's OWN logic (rounding + field passthrough),
 // not the geometry math (which is pure and covered separately).
-vi.mock("$lib/canvas-geometry", () => ({
+vi.mock("../canvas-geometry", () => ({
 	computeCanvasGeometry: () => ({
 		canvasW: 1920.4,
 		canvasH: 1080.6,

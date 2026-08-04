@@ -7,7 +7,7 @@
  * them per frame. Rasterizing once amortises the SVG decode across all frames.
  */
 
-import { resolveCursorSprite } from "$lib/registry";
+import { resolveCursorSprite } from "../registry";
 
 export interface CursorSpriteBundle {
 	/** PNG data URL of the resting sprite. Always populated. */
@@ -85,19 +85,14 @@ export async function rasterizeCursorSprites(
 		rightPressHotspot: rightPress
 			? uv(style.rightPressedHotspot ?? style.pressedHotspot ?? style.hotspot)
 			: undefined,
-		dragHotspot: drag
-			? uv(style.dragHotspot ?? style.pressedHotspot ?? style.hotspot)
-			: undefined,
+		dragHotspot: drag ? uv(style.dragHotspot ?? style.pressedHotspot ?? style.hotspot) : undefined,
 		pixelSize: px,
 	};
 	cache.set(cacheKey, bundle);
 	return bundle;
 }
 
-async function renderSvgToDataUrl(
-	svg: string,
-	pixelSize: number,
-): Promise<string | null> {
+async function renderSvgToDataUrl(svg: string, pixelSize: number): Promise<string | null> {
 	const blob = new Blob([svg.trim()], { type: "image/svg+xml" });
 	const url = URL.createObjectURL(blob);
 	try {
@@ -105,8 +100,7 @@ async function renderSvgToDataUrl(
 		img.decoding = "async";
 		const loaded = new Promise<HTMLImageElement>((resolve, reject) => {
 			img.onload = () => resolve(img);
-			img.onerror = () =>
-				reject(new Error("rasterize-cursor: failed to decode SVG sprite"));
+			img.onerror = () => reject(new Error("rasterize-cursor: failed to decode SVG sprite"));
 		});
 		img.src = url;
 		await loaded;

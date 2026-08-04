@@ -6,19 +6,19 @@
  * (run-export-job) is pure so it can move into the render worker (Phase 3).
  */
 
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { buildGradientUniforms } from "../../components/editor/gradient.logic";
-import { computeCanvasGeometry } from "$lib/canvas-geometry";
-import { loadBackgroundBitmap } from "../../components/editor/background-source";
-import { buildPressEvents } from "../../components/editor/cursor-animation.logic";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { buildGradientUniforms } from "../../components/gradient.logic";
+import { computeCanvasGeometry } from "../canvas-geometry";
+import { loadBackgroundBitmap } from "../../components/background-source";
+import { buildPressEvents } from "../../components/cursor-animation.logic";
 import { buildExportBase } from "./export-scene";
 import type { ExportQuality } from "./browser-export-plan";
 import { rasterizeCursorSprites } from "./rasterize-cursor";
 import { expandTextAnnotations } from "./rasterize-text";
-import { planCaptionFont } from "$lib/fonts/font-options";
-import { getEditorServices } from "$lib/editor/services";
-import { toStatic } from "$lib/state-snapshot.svelte";
-import type { FrameGeometry } from "../../components/editor/frame-params";
+import { planCaptionFont } from "../fonts/font-options";
+import { getEditorServices } from "../editor/services";
+import { toStatic } from "../state-snapshot.svelte";
+import type { FrameGeometry } from "../../components/frame-params";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
 import type { ExportJob, CameraJob, AnnotationJob, CaptionJob } from "./export-job";
 

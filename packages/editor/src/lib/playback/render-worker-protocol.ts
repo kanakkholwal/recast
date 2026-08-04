@@ -10,7 +10,7 @@
  * relayed for now and ready to wire decode→render directly (Phase 3f).
  */
 
-import type { FrameUniforms } from "../../components/editor/frame-params";
+import type { FrameUniforms } from "../../components/frame-params";
 
 /** Main → worker. `bitmap`/`frame` fields are transferred, not cloned. */
 export type ToRenderWorker =

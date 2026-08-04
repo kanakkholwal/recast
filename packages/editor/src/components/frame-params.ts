@@ -10,7 +10,7 @@
  * no store access, so it unit-tests in a plain Node run.
  */
 
-import { evalSceneAt } from "$lib/scenes/eval";
+import { evalSceneAt } from "../lib/scenes/eval";
 import { hexToRgba } from "./color.logic";
 import {
 	evaluateZoomAt,
@@ -26,15 +26,15 @@ import {
 	pressStateAt,
 	type PressEvent,
 } from "./cursor-animation.logic";
-import type { Segment } from "$lib/timeline/segments";
-import type { SegmentAnim } from "$lib/scenes/segment-anim";
-import type { Easing } from "$lib/easing/cubic-bezier";
+import type { Segment } from "../lib/timeline/segments";
+import type { SegmentAnim } from "../lib/scenes/segment-anim";
+import type { Easing } from "../lib/easing/cubic-bezier";
 import type {
 	CursorSettings,
 	ShadowSettings,
 	StoredCursorId,
 	ZoomRegion,
-} from "$lib/stores/editor-store.svelte";
+} from "../stores/editor-store.svelte";
 
 /** Source-video rectangle inside the canvas, in canvas-geometry pixels (the
  *  `computeCanvasGeometry` output, before the render-buffer scale). */

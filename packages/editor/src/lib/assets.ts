@@ -2,9 +2,9 @@
  * External-asset download/cache helper.
  *
  * Startup flow:
- *   1. `hydrateCachedAssets()`: offline read of the on-disk lock file, so the
+ *   1. `assetService()!.hydrate()`: offline read of the on-disk lock file, so the
  *      UI upgrades past the placeholder immediately.
- *   2. `ensureAssetsInstalled(manifestUrl)`: fetch manifest, SHA-256-verified
+ *   2. `assetService()!.ensureInstalled(manifestUrl)`: fetch manifest, SHA-256-verified
  *      download of missing/mismatched assets (thumbs first so the grid is usable).
  *   3. On `window.online`, retry failed downloads.
  *
@@ -12,13 +12,12 @@
  * `wallpapers-v1` release so dev builds work out of the box.
  */
 
-import { isTauriApp } from "$lib/runtime/tauri";
-import {
-	ensureAssetsInstalled,
-	getCachedAssetPath,
-	hydrateCachedAssets,
-} from "$lib/ipc";
-import { assetsStore } from "$lib/stores/assets-store.svelte";
+import { tryGetEditorServices } from "./editor/services";
+
+// Null on a host with no on-device store: every install/cache path no-ops and
+// the UI keeps its remote URLs.
+const assetService = () => tryGetEditorServices()?.assets ?? null;
+import { assetsStore } from "../stores/assets-store.svelte";
 
 const DEFAULT_MANIFEST_URL =
 	"https://github.com/kanakkholwal/recast/releases/download/wallpapers-v1/manifest.json";
@@ -35,12 +34,12 @@ let hydrated = false;
 /** Populate the store from the persisted lock file without touching the network. */
 async function hydrateFromDisk(): Promise<void> {
 	if (hydrated) return;
-	if (!(await isTauriApp())) {
+	if (!(assetService() !== null)) {
 		hydrated = true;
 		return;
 	}
 	try {
-		const entries = await hydrateCachedAssets();
+		const entries = await assetService()!.hydrate();
 		for (const entry of entries) {
 			if (entry.path) assetsStore.setPath(entry.id, entry.path);
 			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
@@ -52,12 +51,12 @@ async function hydrateFromDisk(): Promise<void> {
 }
 
 async function runInstall(): Promise<void> {
-	if (!(await isTauriApp())) return;
+	if (!(assetService() !== null)) return;
 	await hydrateFromDisk();
 	assetsStore.setInstalling(true);
 	assetsStore.setError(null);
 	try {
-		const result = await ensureAssetsInstalled(manifestUrl());
+		const result = await assetService()!.ensureInstalled(manifestUrl());
 		for (const entry of result.hydrated) {
 			if (entry.path) assetsStore.setPath(entry.id, entry.path);
 			if (entry.thumbPath) assetsStore.setThumbPath(entry.id, entry.thumbPath);
@@ -85,9 +84,11 @@ async function runInstall(): Promise<void> {
 function warmThumbnailCache() {
 	if (typeof window === "undefined") return;
 	const ric =
-		(window as Window & {
-			requestIdleCallback?: (cb: () => void) => number;
-		}).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 0));
+		(
+			window as Window & {
+				requestIdleCallback?: (cb: () => void) => number;
+			}
+		).requestIdleCallback ?? ((cb: () => void) => window.setTimeout(cb, 0));
 	ric(() => {
 		for (const url of Object.values(assetsStore.thumbUrls)) {
 			if (!url) continue;
@@ -111,8 +112,8 @@ export function ensureAssets(): Promise<void> {
 export async function resolveAsset(id: string): Promise<string | null> {
 	const cached = assetsStore.paths[id];
 	if (cached) return cached;
-	if (!(await isTauriApp())) return null;
-	const path = await getCachedAssetPath(id);
+	if (!(assetService() !== null)) return null;
+	const path = await assetService()!.getCachedPath(id);
 	if (path) assetsStore.setPath(id, path);
 	return path;
 }

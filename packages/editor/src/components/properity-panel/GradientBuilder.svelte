@@ -1,138 +1,132 @@
 <script lang="ts">
-  import {
-    DEFAULT_GRADIENT,
-    MAX_GRADIENT_STOPS,
-    parseGradient,
-    serializeGradient,
-    type EditorStore,
-    type GradientSpec,
-  } from "$lib/stores/editor-store.svelte";
-  import { Move, Plus, RotateCw, Trash2 } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { ColorField } from "@recast/ui/color-field";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cn } from "@recast/ui/utils";
-  import {
-    clampStopPos,
-    insertStopInWidestGap,
-    posFromPointerX,
-    sampleStopColor,
-  } from "./background-picker.logic";
-  import PanelSection from "./PanelSection.svelte";
+import {
+	DEFAULT_GRADIENT,
+	MAX_GRADIENT_STOPS,
+	parseGradient,
+	serializeGradient,
+	type EditorStore,
+	type GradientSpec,
+} from "../../stores/editor-store.svelte";
+import { Move, Plus, RotateCw, Trash2 } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { ColorField } from "@recast/ui/color-field";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
+import {
+	clampStopPos,
+	insertStopInWidestGap,
+	posFromPointerX,
+	sampleStopColor,
+} from "./background-picker.logic";
+import PanelSection from "./PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-    /** Shared recent-colors list (also used by the color/shadow pickers). */
-    recents: string[];
-    /** Record a freshly-picked color into the shared recents. */
-    onRememberColor: (color: string) => void;
-  }
+interface Props {
+	store: EditorStore;
+	/** Shared recent-colors list (also used by the color/shadow pickers). */
+	recents: string[];
+	/** Record a freshly-picked color into the shared recents. */
+	onRememberColor: (color: string) => void;
+}
 
-  let { store, recents, onRememberColor }: Props = $props();
+let { store, recents, onRememberColor }: Props = $props();
 
-  // Local editing draft so dragging a stop doesn't round-trip through the store
-  // every pointer-move; streamed back via setBackgroundLive (coalesced undo). It
-  // serialises to the same CSS string both renderers (preview + Rust export) parse.
-  let gradientDraft = $derived<GradientSpec>(
-    parseGradient(
-      store.backgroundType === "gradient" ? store.backgroundValue : DEFAULT_GRADIENT,
-    ),
-  );
-  let selectedStop = $state(0);
-  let gradientBarEl = $state<HTMLDivElement | null>(null);
+// Local editing draft so dragging a stop doesn't round-trip through the store
+// every pointer-move; streamed back via setBackgroundLive (coalesced undo). It
+// serialises to the same CSS string both renderers (preview + Rust export) parse.
+let gradientDraft = $derived<GradientSpec>(
+	parseGradient(store.backgroundType === "gradient" ? store.backgroundValue : DEFAULT_GRADIENT),
+);
+let selectedStop = $state(0);
+let gradientBarEl = $state<HTMLDivElement | null>(null);
 
-  // Reconcile the draft on outside changes (undo/redo, preset click). The
-  // serialise-compare stops our own live edits from bouncing back into the drag.
-  $effect(() => {
-    if (store.backgroundType !== "gradient") return;
-    const current = store.backgroundValue;
-    if (current !== serializeGradient(gradientDraft)) {
-      gradientDraft = parseGradient(current);
-      if (selectedStop >= gradientDraft.stops.length) selectedStop = 0;
-    }
-  });
+// Reconcile the draft on outside changes (undo/redo, preset click). The
+// serialise-compare stops our own live edits from bouncing back into the drag.
+$effect(() => {
+	if (store.backgroundType !== "gradient") return;
+	const current = store.backgroundValue;
+	if (current !== serializeGradient(gradientDraft)) {
+		gradientDraft = parseGradient(current);
+		if (selectedStop >= gradientDraft.stops.length) selectedStop = 0;
+	}
+});
 
-  const gradientCss = $derived(serializeGradient(gradientDraft));
+const gradientCss = $derived(serializeGradient(gradientDraft));
 
-  // Live commit (drag gestures) → single coalesced undo entry. Discrete edits
-  // (add/remove stop) pass `live=false` for a clean, individually-undoable step.
-  function commitGradient(next: GradientSpec, live = true) {
-    gradientDraft = next;
-    const value = serializeGradient(next);
-    if (live) store.setBackgroundLive("gradient", value);
-    else store.setBackground({ type: "gradient", value });
-  }
+// Live commit (drag gestures) → single coalesced undo entry. Discrete edits
+// (add/remove stop) pass `live=false` for a clean, individually-undoable step.
+function commitGradient(next: GradientSpec, live = true) {
+	gradientDraft = next;
+	const value = serializeGradient(next);
+	if (live) store.setBackgroundLive("gradient", value);
+	else store.setBackground({ type: "gradient", value });
+}
 
-  function setStopColor(i: number, color: string) {
-    commitGradient({
-      ...gradientDraft,
-      stops: gradientDraft.stops.map((s, j) => (j === i ? { ...s, color } : s)),
-    });
-  }
+function setStopColor(i: number, color: string) {
+	commitGradient({
+		...gradientDraft,
+		stops: gradientDraft.stops.map((s, j) => (j === i ? { ...s, color } : s)),
+	});
+}
 
-  function setStopPos(i: number, pos: number) {
-    const clamped = clampStopPos(pos);
-    commitGradient({
-      ...gradientDraft,
-      stops: gradientDraft.stops.map((s, j) => (j === i ? { ...s, pos: clamped } : s)),
-    });
-  }
+function setStopPos(i: number, pos: number) {
+	const clamped = clampStopPos(pos);
+	commitGradient({
+		...gradientDraft,
+		stops: gradientDraft.stops.map((s, j) => (j === i ? { ...s, pos: clamped } : s)),
+	});
+}
 
-  function setAngle(angle: number) {
-    commitGradient({ ...gradientDraft, angle });
-  }
+function setAngle(angle: number) {
+	commitGradient({ ...gradientDraft, angle });
+}
 
-  // Wrapper: samples the reactive draft's stops via the shared sRGB helper.
-  const sampleDraftColor = (pos: number): string =>
-    sampleStopColor(gradientDraft.stops, pos);
+// Wrapper: samples the reactive draft's stops via the shared sRGB helper.
+const sampleDraftColor = (pos: number): string => sampleStopColor(gradientDraft.stops, pos);
 
-  function addStop() {
-    if (gradientDraft.stops.length >= MAX_GRADIENT_STOPS) return;
-    const stops = [
-      ...gradientDraft.stops,
-      insertStopInWidestGap(gradientDraft.stops),
-    ];
-    commitGradient({ ...gradientDraft, stops }, false);
-    selectedStop = stops.length - 1;
-  }
+function addStop() {
+	if (gradientDraft.stops.length >= MAX_GRADIENT_STOPS) return;
+	const stops = [...gradientDraft.stops, insertStopInWidestGap(gradientDraft.stops)];
+	commitGradient({ ...gradientDraft, stops }, false);
+	selectedStop = stops.length - 1;
+}
 
-  function removeStop(i: number) {
-    if (gradientDraft.stops.length <= 2) return;
-    const stops = gradientDraft.stops.filter((_, j) => j !== i);
-    commitGradient({ ...gradientDraft, stops }, false);
-    selectedStop = Math.min(selectedStop, stops.length - 1);
-  }
+function removeStop(i: number) {
+	if (gradientDraft.stops.length <= 2) return;
+	const stops = gradientDraft.stops.filter((_, j) => j !== i);
+	commitGradient({ ...gradientDraft, stops }, false);
+	selectedStop = Math.min(selectedStop, stops.length - 1);
+}
 
-  // Drag a stop handle along the bar. Streams position live; the whole drag
-  // coalesces to one undo entry via `setBackgroundLive`.
-  function startStopDrag(e: PointerEvent, i: number) {
-    e.preventDefault();
-    selectedStop = i;
-    const bar = gradientBarEl;
-    if (!bar) return;
-    const rect = bar.getBoundingClientRect();
-    const move = (ev: PointerEvent) => {
-      setStopPos(i, posFromPointerX(ev.clientX, rect));
-    };
-    const up = () => {
-      window.removeEventListener("pointermove", move);
-      window.removeEventListener("pointerup", up);
-    };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", up);
-  }
+// Drag a stop handle along the bar. Streams position live; the whole drag
+// coalesces to one undo entry via `setBackgroundLive`.
+function startStopDrag(e: PointerEvent, i: number) {
+	e.preventDefault();
+	selectedStop = i;
+	const bar = gradientBarEl;
+	if (!bar) return;
+	const rect = bar.getBoundingClientRect();
+	const move = (ev: PointerEvent) => {
+		setStopPos(i, posFromPointerX(ev.clientX, rect));
+	};
+	const up = () => {
+		window.removeEventListener("pointermove", move);
+		window.removeEventListener("pointerup", up);
+	};
+	window.addEventListener("pointermove", move);
+	window.addEventListener("pointerup", up);
+}
 
-  // Double-click an empty spot on the bar to drop a new stop there.
-  function addStopAtPointer(e: MouseEvent) {
-    if (gradientDraft.stops.length >= MAX_GRADIENT_STOPS) return;
-    const bar = gradientBarEl;
-    if (!bar) return;
-    const rect = bar.getBoundingClientRect();
-    const pos = clampStopPos(posFromPointerX(e.clientX, rect));
-    const stops = [...gradientDraft.stops, { color: sampleDraftColor(pos), pos }];
-    commitGradient({ ...gradientDraft, stops }, false);
-    selectedStop = stops.length - 1;
-  }
+// Double-click an empty spot on the bar to drop a new stop there.
+function addStopAtPointer(e: MouseEvent) {
+	if (gradientDraft.stops.length >= MAX_GRADIENT_STOPS) return;
+	const bar = gradientBarEl;
+	if (!bar) return;
+	const rect = bar.getBoundingClientRect();
+	const pos = clampStopPos(posFromPointerX(e.clientX, rect));
+	const stops = [...gradientDraft.stops, { color: sampleDraftColor(pos), pos }];
+	commitGradient({ ...gradientDraft, stops }, false);
+	selectedStop = stops.length - 1;
+}
 </script>
 
 <!-- Custom gradient builder: drag stops, double-click to add, edit the

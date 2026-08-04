@@ -5,8 +5,8 @@
  * existing importers keep one import site.
  */
 
-import type { HandleName } from "$lib/annotations/hit";
-import type { ZoomTransform } from "$lib/annotations/eval";
+import type { HandleName } from "../../lib/annotations/hit";
+import type { ZoomTransform } from "../../lib/annotations/eval";
 export {
 	type StrokeStyle,
 	type Point,

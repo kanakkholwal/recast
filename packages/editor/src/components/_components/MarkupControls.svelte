@@ -1,13 +1,13 @@
 <script lang="ts">
-import { insertImageAnnotation } from "$lib/annotations/image-import";
+import { insertImageAnnotation } from "../../lib/annotations/image-import";
 import {
 	ANNOTATION_TOOLS,
 	IMAGE_TOOL,
 	toolForHotkey,
 	type AnnotationToolId,
-} from "$lib/annotations/tools";
-import { isEditableTarget } from "$lib/dom/editable";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+} from "../../lib/annotations/tools";
+import { isEditableTarget } from "../../lib/dom/editable";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import { Eye, EyeOff } from "@recast/icons";
 import * as Tooltip from "@recast/ui/tooltip";
 import { cn } from "@recast/ui/utils";

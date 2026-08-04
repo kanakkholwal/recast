@@ -1,6 +1,6 @@
 /** Pure helpers for ZoomSuggestionsPopover: identity, labelling, centre norm. */
 
-import type { ZoomSuggestion, ZoomSuggestionReason } from "$lib/ipc-types";
+import type { ZoomSuggestion, ZoomSuggestionReason } from "../lib/wire-types";
 
 /** Stable list key for a suggestion (timestamp + reason). */
 export function keyOf(sug: ZoomSuggestion): string {

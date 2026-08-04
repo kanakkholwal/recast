@@ -7,8 +7,8 @@
  * for annotations, which live in zoomed space). Keep the two separate.
  */
 
-import { framePaddingPixels } from "$lib/editor/frame-padding";
-import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
+import { framePaddingPixels } from "../../lib/editor/frame-padding";
+import type { VideoMetadata } from "../../stores/editor-store.svelte";
 
 type Meta = Pick<VideoMetadata, "width" | "height"> | null | undefined;
 
@@ -16,16 +16,7 @@ type Meta = Pick<VideoMetadata, "width" | "height"> | null | undefined;
 export const MIN_SCALE = 1.05;
 export const MAX_SCALE = 3;
 
-export type HandleName =
-	| "nw"
-	| "n"
-	| "ne"
-	| "e"
-	| "se"
-	| "s"
-	| "sw"
-	| "w"
-	| "body";
+export type HandleName = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "body";
 
 export interface Box {
 	x: number;
@@ -38,11 +29,7 @@ export interface Box {
 export const HANDLE_RADIUS_PX = 6;
 
 /** UV-space box for a zoom region: a `1/scale`-side square centred on (centerX, centerY), clamped inside [0,1]². */
-export function regionBox(r: {
-	scale: number;
-	centerX: number;
-	centerY: number;
-}): Box {
+export function regionBox(r: { scale: number; centerX: number; centerY: number }): Box {
 	const s = Math.max(1.001, r.scale);
 	const w = 1 / s;
 	const h = 1 / s;

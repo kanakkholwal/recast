@@ -2,7 +2,7 @@
 // throw: a missing `ext:` id (pack uninstalled) degrades to a built-in default
 // and logs, so export/preview can't crash on a removed pack.
 
-import { log } from "$lib/logger";
+import { log } from "../log";
 import { registry } from "./registry.svelte";
 import {
 	isExtId,
@@ -79,19 +79,14 @@ const cursorDataUrlCache = new Map<string, string>();
  * Resolve a stored cursor id + state to a preview-ready SVG data URL, or null
  * when unresolvable (caller hides the overlay).
  */
-export function resolveCursorDataUrl(
-	id: string,
-	state: CursorState,
-): string | null {
+export function resolveCursorDataUrl(id: string, state: CursorState): string | null {
 	const key = `${id}:${state}`;
 	const cached = cursorDataUrlCache.get(key);
 	if (cached) return cached;
 	const sprite = resolveCursorSprite(id);
 	if (!sprite) return null;
 	const svg = cursorSpriteSvg(sprite, state);
-	const url =
-		"data:image/svg+xml;utf8," +
-		encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
+	const url = "data:image/svg+xml;utf8," + encodeURIComponent(svg.trim().replace(/\n\s*/g, " "));
 	cursorDataUrlCache.set(key, url);
 	return url;
 }

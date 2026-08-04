@@ -111,7 +111,7 @@ class MediabunnyTileProvider implements TileProvider {
 		// lazily, so the main thread never holds the whole recording. That
 		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
 		// single largest allocation when opening a 4K clip.
-		const worker = new Worker(new URL("./filmstrip-worker.ts", import.meta.url), {
+		const worker = new Worker(new URL("./filmstrip-worker", import.meta.url), {
 			type: "module",
 		});
 		try {

@@ -6,9 +6,13 @@ import {
 	removeExtension,
 	toggleExtension,
 	type RegistryIndexEntry,
-} from "$lib/extensions";
-import type { ExtensionContributions, ExtensionManifest, InstalledExtension } from "$lib/ipc-types";
-import { extensionsStore } from "$lib/stores/extensions-store.svelte";
+} from "../../lib/extensions";
+import type {
+	ExtensionContributions,
+	ExtensionManifest,
+	InstalledExtension,
+} from "../../lib/wire-types";
+import { extensionsStore } from "../../stores/extensions-store.svelte";
 import { buildContributionGroups } from "./extensions-panel.logic";
 import {
 	Blend,
@@ -27,7 +31,7 @@ import {
 import type { IconComponent } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import * as Dialog from "@recast/ui/dialog";
-import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { DIALOG_SURFACE } from "../dialog/dialog.styles";
 import { cn } from "@recast/ui/utils";
 import { Kbd } from "@recast/ui/kbd";
 import { SegmentedToggle } from "@recast/ui/segmented";

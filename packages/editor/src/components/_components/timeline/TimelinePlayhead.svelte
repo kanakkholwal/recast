@@ -1,5 +1,5 @@
 <script lang="ts">
-import { motionDuration } from "$lib/motion.svelte";
+import { motionDuration } from "../../../lib/motion.svelte";
 import { formatTimeByMode, type TimeMode } from "./timeline-helpers";
 
 // Positioned with `transform: translate3d`, not `left`: `left` relays out the

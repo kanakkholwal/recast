@@ -9,9 +9,9 @@
  * the cursor track) and hands them in, keeping this testable.
  */
 
-import { computeCanvasGeometry } from "$lib/canvas-geometry";
-import type { OutputAspect } from "$lib/stores/editor-store.svelte";
-import type { FrameInput } from "../../components/editor/frame-params";
+import { computeCanvasGeometry } from "../canvas-geometry";
+import type { OutputAspect } from "../../stores/editor-store.svelte";
+import type { FrameInput } from "../../components/frame-params";
 
 /** Store-sourced scene fields — a FrameInput minus the values this module derives
  *  (geometry + render-buffer size) and the per-frame `playbackTime`. */

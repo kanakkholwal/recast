@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ZoomRegionLike } from "$lib/annotations/eval";
+import type { ZoomRegionLike } from "../../lib/annotations/eval";
 import { annotationZoom } from "./annotation-projection.logic";
 
 const LINEAR = { x1: 0, y1: 0, x2: 1, y2: 1 };

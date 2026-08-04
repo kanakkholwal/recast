@@ -1,0 +1,73 @@
+{
+	"name": "@recast/editor",
+	"version": "0.0.1",
+	"private": true,
+	"type": "module",
+	"description": "The Recast non-linear video editor: store, timeline, WebGL preview, overlays and export compositor. Host-agnostic — capabilities come in via EditorServices.",
+	"exports": {
+		".": {
+			"svelte": "./src/index.ts",
+			"types": "./src/index.ts",
+			"default": "./src/index.ts"
+		},
+		"./services": {
+			"svelte": "./src/lib/editor/services.ts",
+			"types": "./src/lib/editor/services.ts",
+			"default": "./src/lib/editor/services.ts"
+		},
+		"./render-state": {
+			"svelte": "./src/lib/editor/render-state.ts",
+			"types": "./src/lib/editor/render-state.ts",
+			"default": "./src/lib/editor/render-state.ts"
+		},
+		"./wire-types": {
+			"types": "./src/lib/wire-types.ts",
+			"default": "./src/lib/wire-types.ts"
+		},
+		"./store": {
+			"svelte": "./src/stores/editor-store.svelte.ts",
+			"types": "./src/stores/editor-store.svelte.ts",
+			"default": "./src/stores/editor-store.svelte.ts"
+		},
+		"./components/_components/timeline/timeline-drag.svelte": "./src/components/_components/timeline/timeline-drag.svelte.ts",
+		"./lib/motion.svelte": "./src/lib/motion.svelte.ts",
+		"./lib/registry/registry.svelte": "./src/lib/registry/registry.svelte.ts",
+		"./lib/state-snapshot.svelte": "./src/lib/state-snapshot.svelte.ts",
+		"./stores/assets-store.svelte": "./src/stores/assets-store.svelte.ts",
+		"./stores/editor-store.svelte": "./src/stores/editor-store.svelte.ts",
+		"./stores/experimental.svelte": "./src/stores/experimental.svelte.ts",
+		"./stores/extensions-store.svelte": "./src/stores/extensions-store.svelte.ts",
+		"./*.svelte": {
+			"svelte": "./src/*.svelte",
+			"default": "./src/*.svelte"
+		},
+		"./*.json": "./src/*.json",
+		"./*": {
+			"svelte": "./src/*.ts",
+			"types": "./src/*.ts",
+			"default": "./src/*.ts"
+		}
+	},
+	"dependencies": {
+		"@recast/captions": "workspace:*",
+		"@recast/design": "workspace:*",
+		"@recast/icons": "workspace:*",
+		"@recast/media": "workspace:*",
+		"@recast/render": "workspace:*",
+		"@recast/ui": "workspace:*"
+	},
+	"peerDependencies": {
+		"svelte": "^5.56.1"
+	},
+	"devDependencies": {
+		"svelte": "^5.56.1",
+		"typescript": "^5.9.3",
+		"vitest": "^4.1.10"
+	},
+	"scripts": {
+		"build": "exit 0",
+		"check": "exit 0",
+		"test:unit": "vitest run",
+		"test:unit:watch": "vitest"
+	}
+}

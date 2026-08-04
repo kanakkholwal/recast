@@ -6,9 +6,9 @@ import {
 	trimClipLeft,
 	trimClipRight,
 	type AudioClip,
-} from "$lib/audio/music";
-import type { EditorStore, PanelTab } from "$lib/stores/editor-store.svelte";
-import { originalToOutput } from "$lib/timeline/time-map";
+} from "../../../lib/audio/music";
+import type { EditorStore, PanelTab } from "../../../stores/editor-store.svelte";
+import { originalToOutput } from "../../../lib/timeline/time-map";
 import { AudioLines, Repeat, Scissors, Trash2 } from "@recast/icons";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {

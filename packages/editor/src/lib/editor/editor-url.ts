@@ -1,4 +1,4 @@
-import { PANEL_TABS, type PanelTab } from "$lib/editor/panel-tabs";
+import { PANEL_TABS, type PanelTab } from "./panel-tabs";
 
 /**
  * Editor view state carried in the URL, so a reload or a shared link lands on

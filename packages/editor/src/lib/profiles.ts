@@ -7,9 +7,9 @@
  */
 
 import { safeStorage } from "@recast/ui/persisted-state";
-import type { AudioDeviceInfo } from "$lib/ipc-types";
-import type { BrowserCamera } from "$lib/camera/browser-devices";
-import { findCamera } from "$lib/camera/browser-devices";
+import type { AudioDeviceInfo } from "./wire-types";
+import type { BrowserCamera } from "./camera/browser-devices";
+import { findCamera } from "./camera/browser-devices";
 
 /** Stored profile record. v2 schema, adding device identity fields over v1. */
 export interface RecordingProfile {
@@ -91,13 +91,7 @@ const OFF_SLOT = "off";
  * pin an explicit pre-roll. Keep `null` first so the auto-pick walk exhausts
  * every device combo at "inherit" before introducing pinned countdowns.
  */
-export const COUNTDOWN_OPTIONS: readonly (number | null)[] = [
-	null,
-	0,
-	3,
-	5,
-	10,
-];
+export const COUNTDOWN_OPTIONS: readonly (number | null)[] = [null, 0, 3, 5, 10];
 
 /** Stable slot token for a countdown value, used in `capSig` and combo walks.
  *  `null`/absent → "inherit"; otherwise the literal seconds. */
@@ -105,15 +99,11 @@ export function countdownToken(cd: number | null | undefined): string {
 	return cd == null ? "inherit" : String(cd);
 }
 
-function micSlot(
-	p: Pick<RecordingProfile, "microphone" | "micDeviceId">,
-): string {
+function micSlot(p: Pick<RecordingProfile, "microphone" | "micDeviceId">): string {
 	if (!p.microphone) return OFF_SLOT;
 	return p.micDeviceId ?? DEFAULT_SLOT;
 }
-function camSlot(
-	p: Pick<RecordingProfile, "camera" | "cameraDeviceId">,
-): string {
+function camSlot(p: Pick<RecordingProfile, "camera" | "cameraDeviceId">): string {
 	if (!p.camera) return OFF_SLOT;
 	return p.cameraDeviceId ?? DEFAULT_SLOT;
 }
@@ -129,9 +119,7 @@ export function capSig(p: RecordingProfile): string {
 }
 
 /** Enforce the "exactly one default" invariant in-place (returns a new array). */
-export function ensureExactlyOneDefault(
-	list: RecordingProfile[],
-): RecordingProfile[] {
+export function ensureExactlyOneDefault(list: RecordingProfile[]): RecordingProfile[] {
 	if (list.length === 0) return list;
 	const defaults = list.filter((p) => p.isDefault);
 	if (defaults.length === 1) return list;
@@ -206,11 +194,7 @@ function isV1(p: unknown): p is RecordingProfileV1 {
 
 function isV2(p: unknown): p is RecordingProfile {
 	return (
-		typeof p === "object" &&
-		p !== null &&
-		"id" in p &&
-		"micDeviceId" in p &&
-		"cameraLabel" in p
+		typeof p === "object" && p !== null && "id" in p && "micDeviceId" in p && "cameraLabel" in p
 	);
 }
 
@@ -260,9 +244,7 @@ export function loadProfilesEnabled(): boolean {
  * A present-but-empty key still returns a (migrated) list so `enabled` carries
  * over. Distinguished from `loadProfiles`, which seeds instead of returning null.
  */
-export function readLegacyProfiles():
-	| { profiles: RecordingProfile[]; enabled: boolean }
-	| null {
+export function readLegacyProfiles(): { profiles: RecordingProfile[]; enabled: boolean } | null {
 	// `null` sentinel: absent key -> null; present key -> the parsed value.
 	const raw = safeStorage.get<unknown[] | null>(PROFILES_STORAGE_KEY, null);
 	if (raw === null) return null;
@@ -311,9 +293,7 @@ export function reconcileProfileHydration(
 
 /** The default profile, or the first one if no default flag is set; null only
  *  when the list is empty. */
-export function findDefaultProfile(
-	list: RecordingProfile[],
-): RecordingProfile | null {
+export function findDefaultProfile(list: RecordingProfile[]): RecordingProfile | null {
 	if (list.length === 0) return null;
 	return list.find((p) => p.isDefault) ?? list[0];
 }
@@ -323,11 +303,11 @@ export function findDefaultProfile(
 export type DeviceResolution<T> =
 	| { kind: "matched"; device: T }
 	| {
-		kind: "fallback";
-		requestedLabel: string;
-		device: T;
-		reason: string;
-	}
+			kind: "fallback";
+			requestedLabel: string;
+			device: T;
+			reason: string;
+	  }
 	| { kind: "missing"; requestedLabel: string }
 	| { kind: "none" };
 
@@ -408,8 +388,7 @@ export function resolveCamera(
 		const matched = findCamera(available, query);
 		if (matched) {
 			const exactId =
-				profile.cameraDeviceId &&
-				available.some((c) => c.deviceId === profile.cameraDeviceId);
+				profile.cameraDeviceId && available.some((c) => c.deviceId === profile.cameraDeviceId);
 			if (exactId) return { kind: "matched", device: matched };
 			return {
 				kind: "fallback",
@@ -420,8 +399,7 @@ export function resolveCamera(
 		}
 	}
 
-	const def =
-		available.find((c) => !c.isVirtual) ?? available[0] ?? null;
+	const def = available.find((c) => !c.isVirtual) ?? available[0] ?? null;
 	if (def && (profile.cameraLabel || profile.cameraDeviceId)) {
 		return {
 			kind: "fallback",

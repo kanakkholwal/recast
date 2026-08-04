@@ -14,16 +14,16 @@
  * narrow `resolve.ts` only), so there is no import cycle.
  */
 
-import { CURSOR_STYLES } from "$lib/cursor/styles";
-import { SMOOTHING_PRESETS } from "$lib/cursor/smoothing";
-import { EASING_PRESETS } from "$lib/easing/cubic-bezier";
+import { CURSOR_STYLES } from "../cursor/styles";
+import { SMOOTHING_PRESETS } from "../cursor/smoothing";
+import { EASING_PRESETS } from "../easing/cubic-bezier";
 import {
 	CAPTION_PRESETS,
 	COLOR_PRESETS,
 	GRADIENT_PRESETS,
 	WALLPAPERS,
 	wallpaperBackgroundValue,
-} from "$lib/stores/editor-store.svelte";
+} from "../../stores/editor-store.svelte";
 import { registry } from "./registry.svelte";
 import type { RegistryEntry, Source } from "./types";
 

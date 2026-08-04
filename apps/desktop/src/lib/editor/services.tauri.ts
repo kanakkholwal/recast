@@ -10,20 +10,30 @@ import {
 	deleteCaptionModel,
 	detectSilence,
 	downloadCaptionModel,
+	ensureAssetsInstalled,
 	ensureGoogleFont,
+	enqueueExport,
 	exportCaptions,
 	exportScreenText,
 	extractWaveform,
+	fetchExtensionRegistry,
 	generateThumbnails,
+	getCachedAssetPath,
 	getVideoMetadata,
 	hasTranscribableAudio,
+	hydrateCachedAssets,
+	installExtension,
 	listCaptionModels,
+	listInstalledExtensions,
 	openFileLocation,
 	readVideoText,
+	saveBrowserExportVideo,
+	setExtensionEnabled,
 	suggestZoomRegions,
 	transcribeProject,
+	uninstallExtension,
 } from "$lib/ipc";
-import type { EditorServices, PickFileOptions } from "./services";
+import type { EditorServices, PickFileOptions } from "@recast/editor/services";
 
 /** Assets that are already loadable stay untouched; only real paths go through
  *  the asset protocol. */
@@ -83,6 +93,25 @@ export const tauriEditorServices: EditorServices = {
 	},
 	assets: {
 		googleFont: ensureGoogleFont,
+		ensureInstalled: ensureAssetsInstalled,
+		getCachedPath: getCachedAssetPath,
+		hydrate: hydrateCachedAssets,
+	},
+	extensions: {
+		fetchRegistry: fetchExtensionRegistry,
+		install: installExtension,
+		listInstalled: listInstalledExtensions,
+		setEnabled: setExtensionEnabled,
+		uninstall: uninstallExtension,
+	},
+	exportSink: {
+		// Rust muxes the audio into this video-only mp4 (`-c:v copy`), so the
+		// bytes land in a temp file rather than coming back as a Blob.
+		deliver: (bytes) =>
+			saveBrowserExportVideo(
+				bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer,
+			),
+		enqueue: (job) => enqueueExport(job as Parameters<typeof enqueueExport>[0]),
 	},
 	shell: {
 		openFileLocation,

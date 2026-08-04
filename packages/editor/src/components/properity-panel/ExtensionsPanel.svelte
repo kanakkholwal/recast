@@ -4,10 +4,10 @@ import {
 	loadRegistryIndex,
 	toggleExtension,
 	type RegistryIndexEntry,
-} from "$lib/extensions";
-import type { InstalledExtension } from "$lib/ipc-types";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { extensionsStore } from "$lib/stores/extensions-store.svelte";
+} from "../../lib/extensions";
+import type { InstalledExtension } from "../../lib/wire-types";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { extensionsStore } from "../../stores/extensions-store.svelte";
 import { Blocks, ChevronRight, Download, Package, RefreshCw } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";

@@ -9,7 +9,7 @@
  * the blur-annotation mirror can still read it back.
  */
 
-import type { FrameParams } from "../../components/editor/frame-params";
+import type { FrameParams } from "../../components/frame-params";
 import {
 	coalesceRender,
 	type FromRenderWorker,
@@ -47,7 +47,7 @@ export class RenderWorkerClient {
 		// alpha blending on every present (MDN canvas-optimization guidance).
 		this.#present = opts.canvas.getContext("bitmaprenderer", { alpha: false });
 		if (!this.#present) throw new Error("bitmaprenderer context unavailable");
-		this.#worker = new Worker(new URL("./render-worker.ts", import.meta.url), { type: "module" });
+		this.#worker = new Worker(new URL("./render-worker", import.meta.url), { type: "module" });
 		this.#worker.onmessage = (e: MessageEvent<FromRenderWorker>) => this.#onMessage(e.data);
 		this.#worker.postMessage({
 			type: "init",

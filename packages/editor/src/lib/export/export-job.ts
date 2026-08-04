@@ -12,10 +12,10 @@
  * is DOM-bound and stays main-thread, emitting the bitmaps carried here.
  */
 
-import type { FrameInput } from "../../components/editor/frame-params";
-import type { TimeMap } from "$lib/timeline/time-map";
+import type { FrameInput } from "../../components/frame-params";
+import type { TimeMap } from "../timeline/time-map";
 import type { ExportQuality } from "./browser-export-plan";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import type { CursorSpriteSources } from "./cursor-overlay-export";
 import type { AnnotationLayerInputs } from "./annotation-layer-export";
 import type { CaptionLayerInputs } from "./caption-layer-export";

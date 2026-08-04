@@ -1,11 +1,11 @@
 <script lang="ts">
 import { AudioLines, Mic, Music2, Pencil, Scissors, Video, ZoomIn } from "@recast/icons";
 import { onMount, untrack } from "svelte";
-import { type AudioClip, clipEndSec } from "$lib/audio/music";
-import type { EditorStore, ZoomRegion } from "$lib/stores/editor-store.svelte";
-import type { TileProvider } from "$lib/timeline/filmstrip-source";
-import { storyboardCrop } from "$lib/timeline/storyboard";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { type AudioClip, clipEndSec } from "../lib/audio/music";
+import type { EditorStore, ZoomRegion } from "../stores/editor-store.svelte";
+import type { TileProvider } from "../lib/timeline/filmstrip-source";
+import { storyboardCrop } from "../lib/timeline/storyboard";
+import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
 import TimelineAnnotationLane from "./_components/timeline/TimelineAnnotationLane.svelte";
 import TimelineAudioLane from "./_components/timeline/TimelineAudioLane.svelte";
 import TimelineClipBar from "./_components/timeline/TimelineClipBar.svelte";
@@ -964,7 +964,7 @@ function duplicateRegion(r: ZoomRegion) {
 }
 
 // Store nudges the geometry diagonally; we add a +0.25s time shift on top.
-function duplicateAnnotation(annotation: import("$lib/stores/editor-store.svelte").Annotation) {
+function duplicateAnnotation(annotation: import("../stores/editor-store.svelte").Annotation) {
 	if (duration <= 0) return;
 	const dup = store.duplicateAnnotation(annotation.id);
 	if (!dup) return;

@@ -8,8 +8,8 @@
  * same way the preview's picture clock does.
  */
 
-import type { FrameInput } from "../../components/editor/frame-params";
-import { outputToOriginal, type TimeMap } from "$lib/timeline/time-map";
+import type { FrameInput } from "../../components/frame-params";
+import { outputToOriginal, type TimeMap } from "../timeline/time-map";
 import { exportFrameTime } from "./browser-export-plan";
 
 /** Scene at output frame `index`: what to composite + the source time to sample. */

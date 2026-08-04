@@ -2,14 +2,14 @@
 // its shape's border-radius, and the drag clamp. The .svelte owns the video
 // element, sync effects, and pointer wiring.
 
-import { bezierY, type Easing } from "$lib/easing/cubic-bezier";
-import type { CanvasGeometry } from "$lib/canvas-geometry";
+import { bezierY, type Easing } from "../../lib/easing/cubic-bezier";
+import type { CanvasGeometry } from "../../lib/canvas-geometry";
 import type {
 	CameraKeyframe,
 	CameraOverlayShape,
 	CameraPlacement,
 	ZoomRegion,
-} from "$lib/stores/editor-store.svelte";
+} from "../../stores/editor-store.svelte";
 
 export type { CameraKeyframe };
 

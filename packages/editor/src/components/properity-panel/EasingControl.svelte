@@ -1,6 +1,6 @@
 <script lang="ts">
-import { bezierY, easingEquals, type Easing } from "$lib/easing/cubic-bezier";
-import { registry } from "$lib/registry";
+import { bezierY, easingEquals, type Easing } from "../../lib/easing/cubic-bezier";
+import { registry } from "../../lib/registry";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { cn } from "@recast/ui/utils";
 import BezierEditor from "../_components/BezierEditor.svelte";

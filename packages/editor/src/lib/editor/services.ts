@@ -9,17 +9,20 @@
 
 import { getContext, hasContext, setContext } from "svelte";
 import type {
+	AssetInstallResult,
 	CaptionDownloadProgress,
 	CaptionModelInfo,
 	DeviceCapabilities,
+	HydratedAsset,
+	InstalledExtension,
 	OcrProgress,
 	SilenceDetectOptions,
 	SilenceSegment,
 	TranscribeProgress,
 	VideoTextTimeline,
 	ZoomSuggestion,
-} from "$lib/ipc-types";
-import type { Transcript, VideoMetadata } from "$lib/editor/render-state";
+} from "../wire-types";
+import type { Transcript, VideoMetadata } from "./render-state";
 
 export type {
 	CaptionDownloadProgress,
@@ -93,9 +96,34 @@ export interface MediaAnalysisService {
 	videoMetadata(path: string): Promise<VideoMetadata>;
 }
 
+/** On-device asset install/cache. Absent on hosts with no local store, where
+ *  wallpapers and fonts are fetched over HTTP instead. */
 export interface AssetService {
 	/** Download-once + cache a Google Font woff2; resolves to an asset ref. */
 	googleFont(family: string, weight: number): Promise<string>;
+	ensureInstalled(manifestUrl: string): Promise<AssetInstallResult>;
+	getCachedPath(id: string): Promise<string | null>;
+	hydrate(): Promise<HydratedAsset[]>;
+}
+
+/** Asset-pack install. Absent ⇒ the Extensions panel is read-only. */
+export interface ExtensionService {
+	fetchRegistry<T = unknown>(indexUrl: string): Promise<T>;
+	install(manifestUrl: string): Promise<InstalledExtension>;
+	listInstalled(): Promise<InstalledExtension[]>;
+	setEnabled(extId: string, enabled: boolean): Promise<void>;
+	uninstall(extId: string): Promise<void>;
+}
+
+/**
+ * Where a finished export goes. Desktop persists the browser-composited video
+ * to a temp file and hands the path to the Rust mux job; web hands back a Blob
+ * for download. `enqueue` is the native render queue — absent on web, where the
+ * browser compositor is the only engine.
+ */
+export interface ExportSink {
+	deliver(bytes: Uint8Array, suggestedName: string): Promise<string | null>;
+	enqueue?(job: unknown): Promise<string[]>;
 }
 
 export interface ShellService {
@@ -129,10 +157,14 @@ export interface EditorServices {
 	mediaAnalysis?: MediaAnalysisService;
 	/** Omit ⇒ Music panel hides; fonts fall back to a direct fetch. */
 	assets?: AssetService;
+	/** Omit ⇒ the Extensions panel lists but cannot install. */
+	extensions?: ExtensionService;
 	/** Omit ⇒ "reveal in folder" and credit links hide. */
 	shell?: ShellService;
 	/** Omit ⇒ the dev OCR panel is unavailable. */
 	ocr?: OcrService;
+	/** Where a finished export lands. Omit ⇒ export is unavailable. */
+	exportSink?: ExportSink;
 }
 
 const KEY = Symbol("recast.editor.services");

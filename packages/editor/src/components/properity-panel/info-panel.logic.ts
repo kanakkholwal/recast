@@ -1,6 +1,6 @@
 /** InfoPanel helpers: relative-time labels, path basename, and annotation-kind counts. */
 
-import type { Annotation } from "$lib/stores/editor-store.svelte";
+import type { Annotation } from "../../stores/editor-store.svelte";
 
 /**
  * Chat-style relative time vs a `current` epoch (ms): "just now", "5s", "3 min",

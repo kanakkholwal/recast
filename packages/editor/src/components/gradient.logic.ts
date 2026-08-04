@@ -4,10 +4,7 @@
  * and the Rust rasteriser so preview === export.
  */
 
-import {
-	MAX_GRADIENT_STOPS,
-	parseGradient,
-} from "$lib/stores/editor-store.svelte";
+import { MAX_GRADIENT_STOPS, parseGradient } from "../stores/editor-store.svelte";
 import { hexToRgba } from "./color.logic";
 
 /**

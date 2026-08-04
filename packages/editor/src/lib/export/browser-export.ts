@@ -10,8 +10,8 @@
  * consumer is DOM-free and relocates unchanged.
  */
 
-import { saveBrowserExportVideo } from "$lib/ipc";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { getEditorServices } from "../editor/services";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import type { ExportQuality } from "./browser-export-plan";
 import { buildExportJob, type ExportJobInputs } from "./build-export-job";
 import { runExportJob, type ExportRuntime } from "./run-export-job";
@@ -47,7 +47,10 @@ export async function runBrowserExport(
 	});
 	// Copy out of the (possibly larger) backing buffer so the transfer is exact.
 	const bytes = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
-	return await saveBrowserExportVideo(bytes);
+	const sink = getEditorServices().exportSink;
+	if (!sink) throw new Error("no export sink is installed");
+	const delivered = await sink.deliver(new Uint8Array(bytes), "export.mp4");
+	return delivered ?? "";
 }
 
 /** Render off the main thread when possible, else on it. On any worker failure

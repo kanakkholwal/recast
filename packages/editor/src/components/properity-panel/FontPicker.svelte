@@ -1,50 +1,50 @@
 <script lang="ts">
-  // Searchable font combobox (system + a curated set of popular Google Fonts),
-  // shared by the caption and annotation panels. Picking a Google font fetches +
-  // registers it on demand.
-  import {
-    ensureFontLoaded,
-    fontLabel,
-    GOOGLE_FONT_OPTIONS,
-    SYSTEM_FONTS,
-    type FontOption,
-  } from "$lib/fonts/font-options";
-  import { Check, ChevronsUpDown, Search } from "@recast/icons";
-  import * as Popover from "@recast/ui/popover";
+// Searchable font combobox (system + a curated set of popular Google Fonts),
+// shared by the caption and annotation panels. Picking a Google font fetches +
+// registers it on demand.
+import {
+	ensureFontLoaded,
+	fontLabel,
+	GOOGLE_FONT_OPTIONS,
+	SYSTEM_FONTS,
+	type FontOption,
+} from "../../lib/fonts/font-options";
+import { Check, ChevronsUpDown, Search } from "@recast/icons";
+import * as Popover from "@recast/ui/popover";
 
-  let {
-    value,
-    weight = 400,
-    onChange,
-  }: {
-    value: string;
-    /** Weight to fetch for Google fonts. */
-    weight?: number;
-    onChange: (value: string) => void;
-  } = $props();
+let {
+	value,
+	weight = 400,
+	onChange,
+}: {
+	value: string;
+	/** Weight to fetch for Google fonts. */
+	weight?: number;
+	onChange: (value: string) => void;
+} = $props();
 
-  let open = $state(false);
-  let query = $state("");
+let open = $state(false);
+let query = $state("");
 
-  const filtered = $derived.by(() => {
-    const q = query.trim().toLowerCase();
-    const match = (f: FontOption) => !q || f.label.toLowerCase().includes(q);
-    return {
-      system: SYSTEM_FONTS.filter(match),
-      google: GOOGLE_FONT_OPTIONS.filter(match),
-    };
-  });
+const filtered = $derived.by(() => {
+	const q = query.trim().toLowerCase();
+	const match = (f: FontOption) => !q || f.label.toLowerCase().includes(q);
+	return {
+		system: SYSTEM_FONTS.filter(match),
+		google: GOOGLE_FONT_OPTIONS.filter(match),
+	};
+});
 
-  function onOpenChange(next: boolean) {
-    open = next;
-    if (next) query = "";
-  }
+function onOpenChange(next: boolean) {
+	open = next;
+	if (next) query = "";
+}
 
-  function pick(v: string) {
-    onChange(v);
-    ensureFontLoaded(v, weight);
-    open = false;
-  }
+function pick(v: string) {
+	onChange(v);
+	ensureFontLoaded(v, weight);
+	open = false;
+}
 </script>
 
 <Popover.Root {open} {onOpenChange}>

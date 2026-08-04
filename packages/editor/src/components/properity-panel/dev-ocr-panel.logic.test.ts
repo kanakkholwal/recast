@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { OcrProgress, OcrStats, ScreenStateSpan, VideoTextTimeline } from "$lib/ipc-types";
+import type {
+	OcrProgress,
+	OcrStats,
+	ScreenStateSpan,
+	VideoTextTimeline,
+} from "../../lib/wire-types";
 import {
 	boxLabel,
 	boxRect,
@@ -142,8 +147,20 @@ describe("span text", () => {
 		end: 4,
 		preview: null,
 		elements: [
-			{ id: 0, kind: "text", bbox: [0.1, 0.05, 0.4, 0.1], content: "Export Settings", source: "ocrs" },
-			{ id: 1, kind: "text", bbox: [0.1, 0.2, 0.3, 0.25], content: "Frame rate 60fps", source: "ocrs" },
+			{
+				id: 0,
+				kind: "text",
+				bbox: [0.1, 0.05, 0.4, 0.1],
+				content: "Export Settings",
+				source: "ocrs",
+			},
+			{
+				id: 1,
+				kind: "text",
+				bbox: [0.1, 0.2, 0.3, 0.25],
+				content: "Frame rate 60fps",
+				source: "ocrs",
+			},
 		],
 	};
 	const tc = (t: number) => `0:0${t}`;
@@ -179,7 +196,13 @@ describe("export", () => {
 				end: 4,
 				preview: "data:image/jpeg;base64,AAAA",
 				elements: [
-					{ id: 0, kind: "text", bbox: [0.1, 0.05, 0.4, 0.1], content: "Export Settings", source: "ocrs" },
+					{
+						id: 0,
+						kind: "text",
+						bbox: [0.1, 0.05, 0.4, 0.1],
+						content: "Export Settings",
+						source: "ocrs",
+					},
 				],
 			},
 			{ start: 4, end: 4, preview: null, elements: [] },

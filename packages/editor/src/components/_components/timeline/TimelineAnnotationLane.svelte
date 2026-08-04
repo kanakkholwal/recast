@@ -1,6 +1,6 @@
 <script lang="ts">
-import type { Annotation, EditorStore } from "$lib/stores/editor-store.svelte";
-import { originalToOutput } from "$lib/timeline/time-map";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
+import { originalToOutput } from "../../../lib/timeline/time-map";
 import type { TimeMode } from "./timeline-helpers";
 import { buildSnapTargets, snapLabel, type SnapTarget } from "./timeline-snap";
 import type { LaneCardLayout } from "./timeline-stack";

@@ -1,65 +1,67 @@
 <script lang="ts">
-  import { EASING_PRESETS, easingEquals } from "$lib/easing/cubic-bezier";
-  import {
-    defaultSpec,
-    intensityRange,
-    MAX_ANIM_MS,
-    MIN_ANIM_MS,
-    type SceneAnimKind,
-    type SceneAnimDir,
-    type SceneAnimSpec,
-  } from "$lib/scenes/segment-anim";
-  import type { EditorStore } from "$lib/stores/editor-store.svelte";
-  import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
-  import type { IconComponent } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cn } from "@recast/ui/utils";
+import { EASING_PRESETS, easingEquals } from "../../lib/easing/cubic-bezier";
+import {
+	defaultSpec,
+	intensityRange,
+	MAX_ANIM_MS,
+	MIN_ANIM_MS,
+	type SceneAnimKind,
+	type SceneAnimDir,
+	type SceneAnimSpec,
+} from "../../lib/scenes/segment-anim";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Clock, Move3d } from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
 
-  // One side (entrance or exit) of a segment's scene animation. Reads/writes the
-  // spec through `store.setSegmentAnim` (coalesced undo). Kept dumb: all state is
-  // the store's; this only maps controls onto a SceneAnimSpec.
+// One side (entrance or exit) of a segment's scene animation. Reads/writes the
+// spec through `store.setSegmentAnim` (coalesced undo). Kept dumb: all state is
+// the store's; this only maps controls onto a SceneAnimSpec.
 
-  interface Props {
-    store: EditorStore;
-    /** Original start anchor of the selected segment. */
-    start: number;
-    side: "in" | "out";
-  }
-  let { store, start, side }: Props = $props();
+interface Props {
+	store: EditorStore;
+	/** Original start anchor of the selected segment. */
+	start: number;
+	side: "in" | "out";
+}
+let { store, start, side }: Props = $props();
 
-  const KINDS: { id: SceneAnimKind; label: string }[] = [
-    { id: "fade", label: "Fade" },
-    { id: "slide", label: "Slide" },
-    { id: "scale", label: "Scale" },
-    { id: "shrink", label: "Shrink" },
-    { id: "pop", label: "Pop" },
-    { id: "rotate", label: "Rotate" },
-  ];
-  const DIRS: { id: SceneAnimDir; icon: IconComponent }[] = [
-    { id: "left", icon: ArrowLeft },
-    { id: "right", icon: ArrowRight },
-    { id: "up", icon: ArrowUp },
-    { id: "down", icon: ArrowDown },
-  ];
+const KINDS: { id: SceneAnimKind; label: string }[] = [
+	{ id: "fade", label: "Fade" },
+	{ id: "slide", label: "Slide" },
+	{ id: "scale", label: "Scale" },
+	{ id: "shrink", label: "Shrink" },
+	{ id: "pop", label: "Pop" },
+	{ id: "rotate", label: "Rotate" },
+];
+const DIRS: { id: SceneAnimDir; icon: IconComponent }[] = [
+	{ id: "left", icon: ArrowLeft },
+	{ id: "right", icon: ArrowRight },
+	{ id: "up", icon: ArrowUp },
+	{ id: "down", icon: ArrowDown },
+];
 
-  const spec = $derived<SceneAnimSpec | null>(
-    store.segmentAnimAt(start)?.[side] ?? null,
-  );
-  const range = $derived(spec ? intensityRange(spec.kind) : null);
-  const intensityValue = $derived(spec?.intensity ?? range?.default ?? 0);
+const spec = $derived<SceneAnimSpec | null>(store.segmentAnimAt(start)?.[side] ?? null);
+const range = $derived(spec ? intensityRange(spec.kind) : null);
+const intensityValue = $derived(spec?.intensity ?? range?.default ?? 0);
 
-  function write(next: SceneAnimSpec | null) {
-    store.setSegmentAnim(start, side, next);
-  }
-  function pickKind(kind: SceneAnimKind) {
-    const base = defaultSpec(kind, side, store.motionTone);
-    // Keep the user's tuning (duration/easing) when swapping the kind.
-    write({ ...base, durationMs: spec?.durationMs ?? base.durationMs, easing: spec?.easing ?? base.easing });
-  }
-  function patch(part: Partial<SceneAnimSpec>) {
-    if (spec) write({ ...spec, ...part });
-  }
+function write(next: SceneAnimSpec | null) {
+	store.setSegmentAnim(start, side, next);
+}
+function pickKind(kind: SceneAnimKind) {
+	const base = defaultSpec(kind, side, store.motionTone);
+	// Keep the user's tuning (duration/easing) when swapping the kind.
+	write({
+		...base,
+		durationMs: spec?.durationMs ?? base.durationMs,
+		easing: spec?.easing ?? base.easing,
+	});
+}
+function patch(part: Partial<SceneAnimSpec>) {
+	if (spec) write({ ...spec, ...part });
+}
 </script>
 
 <div class="space-y-2">

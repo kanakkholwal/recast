@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import { browserExportBlockedReason } from "./browser-export-eligibility";
 
 // Minimal store shape for browserExportBlockedReason + its buildCaptionExport call.

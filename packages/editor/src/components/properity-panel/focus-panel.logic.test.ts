@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type { ZoomRegion } from "../../stores/editor-store.svelte";
 import {
 	focusWindow,
 	isOutsideClip,

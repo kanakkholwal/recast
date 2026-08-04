@@ -11,8 +11,8 @@ let advancedWasOpen = $state(false);
     ExportSpeed,
     GifDither,
     GifQuality,
-  } from "$lib/stores/editor-store.svelte";
-  import { clockCentis as formatTime } from "$lib/format/time";
+  } from "../stores/editor-store.svelte";
+  import { clockCentis as formatTime } from "../lib/format/time";
   import {
     buildFpsOptions,
     clampSourceFps,
@@ -26,7 +26,7 @@ let advancedWasOpen = $state(false);
   import { cn } from "@recast/ui/utils";
   import { cubicOut } from "svelte/easing";
   import { fade, slide } from "svelte/transition";
-  import { motionDuration } from "$lib/motion.svelte";
+  import { motionDuration } from "../lib/motion.svelte";
   import {
     estimateExportBytes,
     formatByteRange,

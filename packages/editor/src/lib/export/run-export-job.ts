@@ -21,7 +21,7 @@ import {
 	applyZoomFollow,
 	cameraFollowScaleAt,
 	cameraPlacementAt,
-} from "../../components/editor/_components/camera-overlay.logic";
+} from "../../components/_components/camera-overlay.logic";
 import type { ShapeImage } from "@recast/render";
 import { closeJobBitmaps, type ExportJob, type CameraJob, type CaptionJob } from "./export-job";
 

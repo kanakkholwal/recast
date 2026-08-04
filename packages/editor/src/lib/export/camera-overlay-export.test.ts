@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { FrameGeometry } from "../../components/editor/frame-params";
+import type { FrameGeometry } from "../../components/frame-params";
 import { bubbleCornerRadiusPx, cameraBubbleRect, coverUvRect } from "./camera-overlay-export";
 
 // 1920x1080 video at (40,60) inside a 2000x1200 canvas — mirrors camera.rs tests.

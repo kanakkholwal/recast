@@ -1,26 +1,26 @@
 <script lang="ts">
-import { analytics } from "$lib/analytics/client";
-import { computeCanvasGeometry } from "$lib/canvas-geometry";
-import { CursorSmoother } from "$lib/cursor/smoother";
-import { smoothingStrengthToSigmaMs } from "$lib/cursor/smoothing";
-import { CAMERA_OVERLAY_UI_ENABLED } from "$lib/feature-flags";
-import { PlaybackClock } from "$lib/playback/clock";
+import { analytics } from "../lib/host-hooks";
+import { computeCanvasGeometry } from "../lib/canvas-geometry";
+import { CursorSmoother } from "../lib/cursor/smoother";
+import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
+import { CAMERA_OVERLAY_UI_ENABLED } from "../lib/feature-flags";
+import { PlaybackClock } from "../lib/playback/clock";
 import type { MediabunnyVideoSource } from "@recast/media/playback";
-import { createMediabunnySource } from "$lib/playback/mediabunny";
-import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "$lib/registry";
+import { createMediabunnySource } from "../lib/playback/mediabunny";
+import { cursorSpriteHotspot, resolveCursorDataUrl, resolveCursorSprite } from "../lib/registry";
 import { RenderCore } from "./render-core";
 import { resolveBackgroundSrc } from "./background-source";
 import { WebGL2Backend } from "./webgl2-backend";
-import { RenderWorkerClient } from "$lib/playback/render-worker-client";
-import { renderWorkerCapable } from "$lib/playback/render-worker-protocol";
+import { RenderWorkerClient } from "../lib/playback/render-worker-client";
+import { renderWorkerCapable } from "../lib/playback/render-worker-protocol";
 import { computeFrameParams, type FrameInput, type SvgCursorParams } from "./frame-params";
-import { assetsStore } from "$lib/stores/assets-store.svelte";
-import { exportActivity } from "$lib/stores/exportActivity.svelte";
-import { type EditorStore } from "$lib/stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import { assetsStore } from "../stores/assets-store.svelte";
+import { exportActivity } from "../lib/host-hooks";
+import { type EditorStore } from "../stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
 import { Spinner } from "@recast/ui/spinner";
 import { toast } from "@recast/ui/sonner";
-import { getEditorServices } from "$lib/editor/services";
+import { getEditorServices } from "../lib/editor/services";
 import { onDestroy, onMount } from "svelte";
 import AnnotationOverlay from "./_components/AnnotationOverlay.svelte";
 import CameraOverlay from "./_components/CameraOverlay.svelte";
@@ -36,8 +36,8 @@ import {
 	type CursorSampleJS,
 	type IdlePeriodJS,
 } from "./video-preview.logic";
-import { AudioStallMonitor, resolveAvSync } from "$lib/playback/av-sync";
-import { FrameTextureRing } from "$lib/playback/frame-textures";
+import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
+import { FrameTextureRing } from "../lib/playback/frame-textures";
 import { textureRingFrames } from "@recast/media";
 
 interface Props {
@@ -209,7 +209,7 @@ let loadedCursorPath = "";
 let svgCursor = $state<{
 	visible: boolean;
 	alpha: number;
-	styleId: import("$lib/stores/editor-store.svelte").StoredCursorId;
+	styleId: import("../stores/editor-store.svelte").StoredCursorId;
 	pressed: boolean;
 	right: boolean; // active press was a right-click (sprite slot)
 	dragging: boolean; // active press is a drag (sprite slot)

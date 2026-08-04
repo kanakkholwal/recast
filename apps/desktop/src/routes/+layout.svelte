@@ -8,7 +8,10 @@ import "@recast/player/styles.css";
 import { onNavigate } from "$app/navigation";
 import { page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
+import { setEditorHostHooks, setLogSink } from "@recast/editor";
 import { setEditorServicesForApp } from "$lib/editor/services";
+import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
+import { exportActivity } from "$lib/stores/exportActivity.svelte";
 import { tauriEditorServices } from "$lib/editor/services.tauri";
 import { launchRecordingPanel, takePendingNewRecording, takePendingOpenFile } from "$lib/ipc";
 import { openProjectFromExternalPath } from "$lib/openProject";
@@ -20,6 +23,14 @@ let { children } = $props();
 // App-scoped, not editor-scoped: the export queue and the asset helpers run
 // outside any editor component and still need the Tauri implementations.
 setEditorServicesForApp(tauriEditorServices);
+// The editor package defaults these to no-ops; hand it the real ones so
+// telemetry, shortcut chords and the export-render pause keep working.
+setEditorHostHooks({
+	analytics,
+	shortcuts: { chordLabel, registerShortcutHandlers },
+	exportActivity,
+});
+setLogSink(log);
 
 // First-run privacy prompt, shown once in the main window only.
 let showFirstRun = $state(false);

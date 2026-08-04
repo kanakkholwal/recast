@@ -6,9 +6,9 @@
  * the pixel rect, the cover-crop/mirror UV sub-rect, and the corner radius.
  */
 
-import type { FrameGeometry } from "../../components/editor/frame-params";
-import type { QuadRect, UvRect } from "../../components/editor/overlay-quad";
-import type { CameraOverlayShape, CameraPlacement } from "$lib/stores/editor-store.svelte";
+import type { FrameGeometry } from "../../components/frame-params";
+import type { QuadRect, UvRect } from "../../components/overlay-quad";
+import type { CameraOverlayShape, CameraPlacement } from "../../stores/editor-store.svelte";
 
 /** Bubble rect in render-buffer px: square, sized off video width (matching the
  *  preview's `aspect-ratio: 1`), clamped inside the canvas for legacy placements. */

@@ -9,7 +9,7 @@
  * never collide with built-ins and degrade gracefully when the pack is removed.
  */
 
-import type { Easing } from "$lib/easing/cubic-bezier";
+import type { Easing } from "../easing/cubic-bezier";
 import type { CaptionAnimation } from "@recast/captions";
 
 export type AssetKind =
@@ -21,9 +21,7 @@ export type AssetKind =
 	| "smoothing"
 	| "captionPreset";
 
-export type Source =
-	| { kind: "builtin" }
-	| { kind: "extension"; extId: string };
+export type Source = { kind: "builtin" } | { kind: "extension"; extId: string };
 
 /** Hotspot in sprite-space pixels (sprites are authored at 64×64). */
 export interface Hotspot {

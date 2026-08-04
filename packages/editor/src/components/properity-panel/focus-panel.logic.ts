@@ -3,8 +3,8 @@
  * sparkline path that visualises it, and a region's max ramp length.
  */
 
-import type { Easing } from "$lib/easing/cubic-bezier";
-import type { ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type { Easing } from "../../lib/easing/cubic-bezier";
+import type { ZoomRegion } from "../../stores/editor-store.svelte";
 
 /**
  * Time bounds for a new zoom region parked at `currentTime`: a short pre-roll

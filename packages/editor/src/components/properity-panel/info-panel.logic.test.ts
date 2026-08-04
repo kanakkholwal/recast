@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Annotation } from "$lib/stores/editor-store.svelte";
+import type { Annotation } from "../../stores/editor-store.svelte";
 import { basename, countByKind, formatRelative } from "./info-panel.logic";
 
 describe("formatRelative", () => {

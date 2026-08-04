@@ -23,17 +23,17 @@ import { SliderControl } from "@recast/ui/slider-control";
 import { cn } from "@recast/ui/utils";
 import { cubicOut } from "svelte/easing";
 import { fly } from "svelte/transition";
-import { EASE, type Easing, easingEquals } from "$lib/easing/cubic-bezier";
-import { clockCentis as fmtTime } from "$lib/format/time";
-import { motionDuration } from "$lib/motion.svelte";
-import { registry } from "$lib/registry";
+import { EASE, type Easing, easingEquals } from "../../lib/easing/cubic-bezier";
+import { clockCentis as fmtTime } from "../../lib/format/time";
+import { motionDuration } from "../../lib/motion.svelte";
+import { registry } from "../../lib/registry";
 import {
 	DEFAULT_ZOOM_CENTER,
 	type EditorStore,
 	type ZoomRegion,
-} from "$lib/stores/editor-store.svelte";
-import { resolveZoomCenter } from "$lib/zoom/auto-apply";
-import { overlappingZoomIds } from "$lib/zoom/resolve";
+} from "../../stores/editor-store.svelte";
+import { resolveZoomCenter } from "../../lib/zoom/auto-apply";
+import { overlappingZoomIds } from "../../lib/zoom/resolve";
 import EasingControl from "./EasingControl.svelte";
 import {
 	computeNewZoomBounds,

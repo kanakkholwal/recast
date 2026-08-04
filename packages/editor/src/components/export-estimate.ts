@@ -7,7 +7,7 @@
  * src-tauri/src/commands/ffmpeg.rs. Keep the two in lockstep.
  */
 
-import type { ExportFormat, ExportQuality, ExportSpeed } from "$lib/stores/editor-store.svelte";
+import type { ExportFormat, ExportQuality, ExportSpeed } from "../stores/editor-store.svelte";
 
 export interface Resolution {
 	width: number;

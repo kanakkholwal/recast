@@ -5,7 +5,7 @@
 // different clocks (they did: one showed output time, the other original time).
 // Re-exported so the timeline subviews keep a single local import.
 
-import { formatRulerTick, type TimeMode } from "$lib/editor/time";
+import { formatRulerTick, type TimeMode } from "../../../lib/editor/time";
 
 export {
 	formatClock,
@@ -14,7 +14,7 @@ export {
 	formatSmpte,
 	formatTimeByMode,
 	type TimeMode,
-} from "$lib/editor/time";
+} from "../../../lib/editor/time";
 
 export function effectiveFps(metadataFps: number | undefined): number {
 	const f = metadataFps ?? 0;

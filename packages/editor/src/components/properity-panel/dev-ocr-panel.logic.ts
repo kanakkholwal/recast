@@ -11,7 +11,7 @@ import type {
 	ScreenElement,
 	ScreenStateSpan,
 	VideoTextTimeline,
-} from "$lib/ipc-types";
+} from "../../lib/wire-types";
 
 /** What the panel is doing. `idle` and `error` are panel states; the rest mirror the backend's phases. */
 export type RunStatus = "idle" | "running" | "ready" | "error";
@@ -224,7 +224,9 @@ export function timelineToMarkdown(
 			lines.push("_No text read; kept because the picture changed._");
 		} else {
 			for (const el of span.elements) {
-				lines.push(`- **${el.id}** "${el.content}" — ${regionLabel(el.bbox)} (${boxLabel(el.bbox)})`);
+				lines.push(
+					`- **${el.id}** "${el.content}" — ${regionLabel(el.bbox)} (${boxLabel(el.bbox)})`,
+				);
 			}
 		}
 		return lines.join("\n");

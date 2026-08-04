@@ -1,6 +1,6 @@
 /** AnnotationAppearance pure helpers. */
 
-import type { AnnotationGlow } from "$lib/stores/editor-store.svelte";
+import type { AnnotationGlow } from "../../../stores/editor-store.svelte";
 
 /**
  * Glow base used when enabling glow or patching a field: keep the existing glow

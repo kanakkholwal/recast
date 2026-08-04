@@ -1,80 +1,80 @@
 <script lang="ts">
-  import { hasFill as kindHasFill, hasStroke as kindHasStroke } from "$lib/annotations/kind-groups";
-  import { FILL_SWATCHES, STROKE_SWATCHES } from "$lib/annotations/palette";
-  import {
-    getRecentColors,
-    pushRecentColor,
-  } from "$lib/annotations/recent-colors";
-  import type {
-    Annotation,
-    AnnotationGlow,
-    AnnotationStrokeStyle,
-    EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import { defaultGlow } from "./annotation-appearance.logic";
-  import { AiAtom } from "@recast/icons";
-  import { ColorPicker } from "@recast/ui/color-picker";
-  import * as Popover from "@recast/ui/popover";
-  import { Segmented } from "@recast/ui/segmented";
-  import { SegmentedToggle } from "@recast/ui/segmented";
-  import { SliderControl } from "@recast/ui/slider-control";
-  import { cn } from "@recast/ui/utils";
-  import PanelSection from "../PanelSection.svelte";
+import {
+	hasFill as kindHasFill,
+	hasStroke as kindHasStroke,
+} from "../../../lib/annotations/kind-groups";
+import { FILL_SWATCHES, STROKE_SWATCHES } from "../../../lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "../../../lib/annotations/recent-colors";
+import type {
+	Annotation,
+	AnnotationGlow,
+	AnnotationStrokeStyle,
+	EditorStore,
+} from "../../../stores/editor-store.svelte";
+import { defaultGlow } from "./annotation-appearance.logic";
+import { AiAtom } from "@recast/icons";
+import { ColorPicker } from "@recast/ui/color-picker";
+import * as Popover from "@recast/ui/popover";
+import { Segmented } from "@recast/ui/segmented";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { SliderControl } from "@recast/ui/slider-control";
+import { cn } from "@recast/ui/utils";
+import PanelSection from "../PanelSection.svelte";
 
-  interface Props {
-    store: EditorStore;
-    annotation: Annotation;
-  }
+interface Props {
+	store: EditorStore;
+	annotation: Annotation;
+}
 
-  let { store, annotation }: Props = $props();
+let { store, annotation }: Props = $props();
 
-  const STROKE_STYLES: { value: AnnotationStrokeStyle; label: string }[] = [
-    { value: "solid", label: "Solid" },
-    { value: "dashed", label: "Dashed" },
-    { value: "dotted", label: "Dotted" },
-  ];
+const STROKE_STYLES: { value: AnnotationStrokeStyle; label: string }[] = [
+	{ value: "solid", label: "Solid" },
+	{ value: "dashed", label: "Dashed" },
+	{ value: "dotted", label: "Dotted" },
+];
 
-  let recents = $state<string[]>(getRecentColors());
+let recents = $state<string[]>(getRecentColors());
 
-  function rememberColor(color: string) {
-    recents = pushRecentColor(color);
-  }
+function rememberColor(color: string) {
+	recents = pushRecentColor(color);
+}
 
-  function setStroke(update: Partial<Annotation["stroke"]>) {
-    store.updateAnnotation(annotation.id, {
-      stroke: { ...annotation.stroke, ...update },
-    });
-  }
+function setStroke(update: Partial<Annotation["stroke"]>) {
+	store.updateAnnotation(annotation.id, {
+		stroke: { ...annotation.stroke, ...update },
+	});
+}
 
-  function setStrokeColor(color: string) {
-    setStroke({ color });
-    rememberColor(color);
-  }
+function setStrokeColor(color: string) {
+	setStroke({ color });
+	rememberColor(color);
+}
 
-  function setFill(color: string) {
-    store.updateAnnotation(annotation.id, { fill: color });
-    if (color !== "transparent") rememberColor(color);
-  }
+function setFill(color: string) {
+	store.updateAnnotation(annotation.id, { fill: color });
+	if (color !== "transparent") rememberColor(color);
+}
 
-  function setOpacity(value01: number) {
-    store.updateAnnotation(annotation.id, {
-      opacity: Math.max(0, Math.min(1, value01)),
-    });
-  }
+function setOpacity(value01: number) {
+	store.updateAnnotation(annotation.id, {
+		opacity: Math.max(0, Math.min(1, value01)),
+	});
+}
 
-  function setGlow(update: Partial<AnnotationGlow> | null) {
-    if (update === null) {
-      store.updateAnnotation(annotation.id, { glow: undefined });
-      return;
-    }
-    const base = defaultGlow(annotation.glow, annotation.stroke.color);
-    store.updateAnnotation(annotation.id, {
-      glow: { ...base, ...update },
-    });
-  }
+function setGlow(update: Partial<AnnotationGlow> | null) {
+	if (update === null) {
+		store.updateAnnotation(annotation.id, { glow: undefined });
+		return;
+	}
+	const base = defaultGlow(annotation.glow, annotation.stroke.color);
+	store.updateAnnotation(annotation.id, {
+		glow: { ...base, ...update },
+	});
+}
 
-  const hasStroke = $derived(kindHasStroke(annotation.kind.kind));
-  const hasFill = $derived(kindHasFill(annotation.kind.kind));
+const hasStroke = $derived(kindHasStroke(annotation.kind.kind));
+const hasFill = $derived(kindHasFill(annotation.kind.kind));
 </script>
 
 <PanelSection

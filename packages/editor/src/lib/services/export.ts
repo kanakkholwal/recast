@@ -5,22 +5,25 @@
  * callback. See ./README.md for the headless-core layering.
  */
 
-import { getEditorServices } from "$lib/editor/services";
-import { rasterizeCursorSprites } from "$lib/export/rasterize-cursor";
-import { expandTextAnnotations } from "$lib/export/rasterize-text";
-import {
-	type ExportGifSettings,
-	type ExportSpeed,
-	type Transcript,
-	enqueueExport as enqueueExportIpc,
-} from "$lib/ipc";
+import { getEditorServices } from "../editor/services";
+
+// The native render queue. Absent on hosts where the browser compositor is the
+// only engine, which surface the failure rather than silently exporting nothing.
+function enqueueViaSink(job: unknown): Promise<string[]> {
+	const enqueue = getEditorServices().exportSink?.enqueue;
+	if (!enqueue) throw new Error("this host has no native export queue");
+	return enqueue(job);
+}
+import { rasterizeCursorSprites } from "../export/rasterize-cursor";
+import { expandTextAnnotations } from "../export/rasterize-text";
+import { type ExportGifSettings, type ExportSpeed, type Transcript } from "../wire-types";
 import {
 	type EditorRenderState,
 	type EditorStore,
 	type VideoMetadata,
 	framePaddingPixels,
-} from "$lib/stores/editor-store.svelte";
-import { toOutputTimeTranscript } from "$lib/captions/output-time";
+} from "../../stores/editor-store.svelte";
+import { toOutputTimeTranscript } from "../captions/output-time";
 
 /** Optional progress hooks for the hybrid-raster "Preparing…" phase. Each fires
  *  as its lane starts/finishes so the UI can show sub-stage progress. Omit for
@@ -258,7 +261,7 @@ export async function enqueueExport(opts: RunExportOptions): Promise<string[]> {
 	// Returns any auto-repairs the backend applied to the render state (e.g. a
 	// too-long trim_end clamped to the real video length) so a UI caller can
 	// surface a "verify this" notice. Empty = nothing needed repair.
-	return enqueueExportIpc({
+	return enqueueViaSink({
 		inputPath: opts.inputPath,
 		format: opts.format,
 		quality: opts.quality,

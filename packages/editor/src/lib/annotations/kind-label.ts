@@ -1,7 +1,7 @@
 // Display helpers for annotations: kind-aware label and icon. Used by the
 // layer panel, the status rail, and the selected-annotation header.
 
-import type { Annotation, AnnotationKindName } from "$lib/stores/editor-store.svelte";
+import type { Annotation, AnnotationKindName } from "../../stores/editor-store.svelte";
 import { ArrowUpRight, Circle, Droplets, ImageIcon, Square, Type as TypeIcon } from "@recast/icons";
 import type { IconComponent } from "@recast/icons";
 

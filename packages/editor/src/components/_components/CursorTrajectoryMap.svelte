@@ -1,64 +1,62 @@
 <script lang="ts">
-  import {
-    smoothCursorPath,
-    smoothingStrengthToSigmaMs,
-    type CursorSampleLike,
-  } from "$lib/cursor/smoothing";
-  import { pathFrom } from "./cursor-trajectory.logic";
+import {
+	smoothCursorPath,
+	smoothingStrengthToSigmaMs,
+	type CursorSampleLike,
+} from "../../lib/cursor/smoothing";
+import { pathFrom } from "./cursor-trajectory.logic";
 
-  interface Props {
-    samples: CursorSampleLike[];
-    /** Video width in pixels (used to normalise the trajectory). */
-    videoWidth: number;
-    videoHeight: number;
-    smoothing: number;
-    snapToClicks: boolean;
-    snapWindowMs: number;
-    /** Max pixels of panel width to render into. Height is derived from aspect. */
-    width?: number;
-    /**
-     * If set, sample the trajectory to this many points along the full path
-     * (keeps SVG cheap on long recordings). Default 400.
-     */
-    maxPoints?: number;
-  }
+interface Props {
+	samples: CursorSampleLike[];
+	/** Video width in pixels (used to normalise the trajectory). */
+	videoWidth: number;
+	videoHeight: number;
+	smoothing: number;
+	snapToClicks: boolean;
+	snapWindowMs: number;
+	/** Max pixels of panel width to render into. Height is derived from aspect. */
+	width?: number;
+	/**
+	 * If set, sample the trajectory to this many points along the full path
+	 * (keeps SVG cheap on long recordings). Default 400.
+	 */
+	maxPoints?: number;
+}
 
-  let {
-    samples,
-    videoWidth,
-    videoHeight,
-    smoothing,
-    snapToClicks,
-    snapWindowMs,
-    width = 220,
-    maxPoints = 400,
-  }: Props = $props();
+let {
+	samples,
+	videoWidth,
+	videoHeight,
+	smoothing,
+	snapToClicks,
+	snapWindowMs,
+	width = 220,
+	maxPoints = 400,
+}: Props = $props();
 
-  const aspect = $derived(videoHeight > 0 ? videoHeight / videoWidth : 9 / 16);
-  const height = $derived(Math.round(width * aspect));
+const aspect = $derived(videoHeight > 0 ? videoHeight / videoWidth : 9 / 16);
+const height = $derived(Math.round(width * aspect));
 
-  const smoothed = $derived.by(() => {
-    return smoothCursorPath(samples, {
-      sigmaMs: smoothingStrengthToSigmaMs(smoothing),
-      snapToClicks,
-      snapWindowMs,
-    });
-  });
+const smoothed = $derived.by(() => {
+	return smoothCursorPath(samples, {
+		sigmaMs: smoothingStrengthToSigmaMs(smoothing),
+		snapToClicks,
+		snapWindowMs,
+	});
+});
 
-  const rawPath = $derived(pathFrom(samples, videoWidth, videoHeight, maxPoints));
-  const smoothedPath = $derived(
-    pathFrom(smoothed.samples, videoWidth, videoHeight, maxPoints),
-  );
+const rawPath = $derived(pathFrom(samples, videoWidth, videoHeight, maxPoints));
+const smoothedPath = $derived(pathFrom(smoothed.samples, videoWidth, videoHeight, maxPoints));
 
-  const clickMarks = $derived.by(() => {
-    if (videoWidth <= 0 || videoHeight <= 0) return [] as { x: number; y: number }[];
-    return smoothed.clickAnchors.map((c) => ({
-      x: c.x / videoWidth,
-      y: c.y / videoHeight,
-    }));
-  });
+const clickMarks = $derived.by(() => {
+	if (videoWidth <= 0 || videoHeight <= 0) return [] as { x: number; y: number }[];
+	return smoothed.clickAnchors.map((c) => ({
+		x: c.x / videoWidth,
+		y: c.y / videoHeight,
+	}));
+});
 
-  const isEmpty = $derived(samples.length === 0 || videoWidth <= 0 || videoHeight <= 0);
+const isEmpty = $derived(samples.length === 0 || videoWidth <= 0 || videoHeight <= 0);
 </script>
 
 <div

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { PANEL_TABS } from "$lib/editor/panel-tabs";
+import { PANEL_TABS } from "./panel-tabs";
 import {
 	boolParam,
 	PANEL_PARAM,

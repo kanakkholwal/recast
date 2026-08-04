@@ -39,21 +39,21 @@ import { Switch } from "@recast/ui/switch";
 import * as Tabs from "@recast/ui/tabs";
 import { cn } from "@recast/ui/utils";
 import { onMount } from "svelte";
-import { FONT_WEIGHTS } from "$lib/annotations/palette";
-import { getRecentColors, pushRecentColor } from "$lib/annotations/recent-colors";
-import { ensureFontLoaded } from "$lib/fonts/font-options";
-import { formatSize } from "$lib/format/files";
-import { clock } from "$lib/format/time";
+import { FONT_WEIGHTS } from "../../lib/annotations/palette";
+import { getRecentColors, pushRecentColor } from "../../lib/annotations/recent-colors";
+import { ensureFontLoaded } from "../../lib/fonts/font-options";
+import { formatSize } from "../../lib/format/files";
+import { clock } from "../../lib/format/time";
 import {
 	type CaptionModelInfo,
 	type DeviceCapabilities,
 	getEditorServices,
-} from "$lib/editor/services";
-import { registry } from "$lib/registry";
-import type { CaptionPresetValue } from "$lib/registry/types";
-import { toOutputTimeTranscript } from "$lib/services/export";
-import type { CaptionStyle, EditorStore } from "$lib/stores/editor-store.svelte";
-import { experimentalStore } from "$lib/stores/experimental.svelte";
+} from "../../lib/editor/services";
+import { registry } from "../../lib/registry";
+import type { CaptionPresetValue } from "../../lib/registry/types";
+import { toOutputTimeTranscript } from "../../lib/services/export";
+import type { CaptionStyle, EditorStore } from "../../stores/editor-store.svelte";
+import { experimentalStore } from "../../stores/experimental.svelte";
 import CaptionThemePicker from "./CaptionThemePicker.svelte";
 import {
 	captionStyleMatchesPreset,

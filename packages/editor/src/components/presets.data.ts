@@ -1,4 +1,4 @@
-import type { BackgroundType } from "$lib/stores/editor-store.svelte";
+import type { BackgroundType } from "../stores/editor-store.svelte";
 export type Preset = {
 	id: string;
 	label: string;

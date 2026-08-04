@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { isEditableTarget } from "$lib/dom/editable";
-import { clock } from "$lib/format/time";
+import type { EditorStore } from "../../stores/editor-store.svelte";
+import { isEditableTarget } from "../../lib/dom/editable";
+import { clock } from "../../lib/format/time";
 import {
 	activePreset as activePresetLabel,
 	dbForVolume,
@@ -16,7 +16,7 @@ import { Segmented, SegmentedToggle } from "@recast/ui/segmented";
 import { SliderControl } from "@recast/ui/slider-control";
 import { cubicOut } from "svelte/easing";
 import { scale } from "svelte/transition";
-import { motionDuration } from "$lib/motion.svelte";
+import { motionDuration } from "../../lib/motion.svelte";
 import PanelSection from "./PanelSection.svelte";
 import SettingRow from "./SettingRow.svelte";
 

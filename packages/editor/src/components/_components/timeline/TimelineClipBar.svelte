@@ -1,11 +1,11 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-import { type FilmstripTile, planFilmstrip } from "$lib/timeline/filmstrip";
-import type { TileProvider } from "$lib/timeline/filmstrip-source";
-import { storyboardCellSec, storyboardCoverCrop } from "$lib/timeline/storyboard";
-import { deriveSeams } from "$lib/timeline/segments";
-import { motionDuration } from "$lib/motion.svelte";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
+import { type FilmstripTile, planFilmstrip } from "../../../lib/timeline/filmstrip";
+import type { TileProvider } from "../../../lib/timeline/filmstrip-source";
+import { storyboardCellSec, storyboardCoverCrop } from "../../../lib/timeline/storyboard";
+import { deriveSeams } from "../../../lib/timeline/segments";
+import { motionDuration } from "../../../lib/motion.svelte";
 import { Gauge, RotateCcw, SquareSplitHorizontal, Trash2 } from "@recast/icons";
 import * as ContextMenu from "@recast/ui/context-menu";
 import { fade } from "svelte/transition";

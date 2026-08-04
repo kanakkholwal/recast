@@ -1,8 +1,8 @@
 <script lang="ts">
-import { EASE } from "$lib/easing/cubic-bezier";
-import { motionDuration } from "$lib/motion.svelte";
-import { registry } from "$lib/registry";
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
+import { EASE } from "../../lib/easing/cubic-bezier";
+import { motionDuration } from "../../lib/motion.svelte";
+import { registry } from "../../lib/registry";
+import type { EditorStore } from "../../stores/editor-store.svelte";
 import {
 	Activity,
 	AiAtom,

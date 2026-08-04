@@ -24,13 +24,9 @@ import {
 	type CaptionStyle,
 	type TranscriptWord,
 } from "@recast/captions";
-import {
-	activeClippedSegment,
-	captionSpanAt,
-	keptCaptionSpans,
-} from "$lib/captions/clip-with-cuts";
-import { originalToOutput, type TimeMap } from "$lib/timeline/time-map";
-import type { Transcript } from "$lib/ipc";
+import { activeClippedSegment, captionSpanAt, keptCaptionSpans } from "./clip-with-cuts";
+import { originalToOutput, type TimeMap } from "../timeline/time-map";
+import type { Transcript } from "../wire-types";
 
 /** 2D surface shared by the preview canvas and the export offscreen canvas. */
 export type CaptionCtx = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;

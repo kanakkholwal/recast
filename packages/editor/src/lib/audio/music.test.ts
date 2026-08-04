@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { musicFadeFactor } from "$lib/playback/audio-engine";
+import { musicFadeFactor } from "../playback/audio-engine";
 import {
 	type AudioClip,
 	clipDisplayName,

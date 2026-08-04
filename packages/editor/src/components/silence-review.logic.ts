@@ -6,7 +6,7 @@
  * component.
  */
 
-import type { SilenceDetectOptions } from "$lib/ipc-types";
+import type { SilenceDetectOptions } from "../lib/wire-types";
 
 export type Sensitivity = "relaxed" | "balanced" | "aggressive";
 

@@ -27,7 +27,7 @@ export function runExportJobInWorker(
 			reject(new DOMException("export cancelled", "AbortError"));
 			return;
 		}
-		const worker = new Worker(new URL("./export-render.worker.ts", import.meta.url), {
+		const worker = new Worker(new URL("./export-render.worker", import.meta.url), {
 			type: "module",
 		});
 		const onAbort = () => post({ type: "cancel" });

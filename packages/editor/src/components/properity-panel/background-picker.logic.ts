@@ -3,7 +3,7 @@
  * background `image` value classification, and per-mode value validation.
  */
 
-import type { BackgroundType } from "$lib/stores/editor-store.svelte";
+import type { BackgroundType } from "../../stores/editor-store.svelte";
 
 /** A gradient colour stop: `color` is a hex string, `pos` is 0..100. */
 export interface GradientStop {
@@ -15,11 +15,7 @@ export interface GradientStop {
 export function lerpHex(c0: string, c1: string, f: number): string {
 	const parse = (h: string): [number, number, number] => {
 		const s = h.replace("#", "");
-		return [
-			parseInt(s.slice(0, 2), 16),
-			parseInt(s.slice(2, 4), 16),
-			parseInt(s.slice(4, 6), 16),
-		];
+		return [parseInt(s.slice(0, 2), 16), parseInt(s.slice(2, 4), 16), parseInt(s.slice(4, 6), 16)];
 	};
 	const [r0, g0, b0] = parse(c0);
 	const [r1, g1, b1] = parse(c1);
@@ -58,10 +54,7 @@ export function clampStopPos(pos: number): number {
 
 /** Pointer x → gradient-bar position (0..100, unclamped). `rect` needs only its
  *  left edge and width, so a plain object stands in for a DOMRect. */
-export function posFromPointerX(
-	clientX: number,
-	rect: { left: number; width: number },
-): number {
+export function posFromPointerX(clientX: number, rect: { left: number; width: number }): number {
 	return ((clientX - rect.left) / Math.max(rect.width, 1)) * 100;
 }
 
@@ -86,11 +79,7 @@ export function insertStopInWidestGap(stops: GradientStop[]): GradientStop {
 
 /** Non-image values that can linger in `backgroundValue` after a tab switch. */
 function isNonImageValue(value: string): boolean {
-	return (
-		value.includes("gradient(") ||
-		value.startsWith("#") ||
-		value.startsWith("asset:")
-	);
+	return value.includes("gradient(") || value.startsWith("#") || value.startsWith("asset:");
 }
 
 /** Sources that can be shown directly without going through `convertFileSrc`. */
@@ -126,10 +115,7 @@ export function isValidImageValue(value: string): boolean {
  * the value as-is for direct sources, else run through `resolve` (inject
  * `convertFileSrc` at the call site to keep this Tauri-free).
  */
-export function imagePreviewSrc(
-	value: string,
-	resolve: (v: string) => string,
-): string {
+export function imagePreviewSrc(value: string, resolve: (v: string) => string): string {
 	if (!value) return "";
 	if (isNonImageValue(value)) return "";
 	if (isDirectSrc(value)) return value;

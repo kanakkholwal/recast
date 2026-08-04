@@ -11,12 +11,8 @@
  * display setting governs all of them at once.
  */
 
-import { clockCentis } from "$lib/format/time";
-import {
-	originalToOutput,
-	outputToOriginal,
-	type TimeMap,
-} from "$lib/timeline/time-map";
+import { clockCentis } from "../format/time";
+import { originalToOutput, outputToOriginal, type TimeMap } from "../timeline/time-map";
 
 /** How every timecode in the editor is rendered. Owned by the store. */
 export type TimeMode = "smpte" | "seconds" | "frames";
@@ -32,9 +28,7 @@ export function formatSmpte(seconds: number, fps: number): string {
 	const ss = String(totalSecs % 60).padStart(2, "0");
 	const mm = String(Math.floor(totalSecs / 60) % 60).padStart(2, "0");
 	const hours = Math.floor(totalSecs / 3600);
-	return hours > 0
-		? `${String(hours).padStart(2, "0")}:${mm}:${ss}:${ff}`
-		: `${mm}:${ss}:${ff}`;
+	return hours > 0 ? `${String(hours).padStart(2, "0")}:${mm}:${ss}:${ff}` : `${mm}:${ss}:${ff}`;
 }
 
 /** `M:SS.cc`. The plain wall-clock reading. */
@@ -47,11 +41,7 @@ export function formatFrames(seconds: number, fps: number): string {
 	return `${Math.max(0, Math.round(seconds * fps))}f`;
 }
 
-export function formatTimeByMode(
-	seconds: number,
-	mode: TimeMode,
-	fps: number,
-): string {
+export function formatTimeByMode(seconds: number, mode: TimeMode, fps: number): string {
 	switch (mode) {
 		case "smpte":
 			return formatSmpte(seconds, fps);

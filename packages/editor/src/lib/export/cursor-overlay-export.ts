@@ -5,11 +5,11 @@
  * main shader, so this pass only exists for sprite styles.
  */
 
-import type { SvgCursorParams } from "../../components/editor/frame-params";
-import type { WebGL2Backend } from "../../components/editor/webgl2-backend";
-import type { RenderPass, RenderPassContext } from "../../components/editor/render-core";
-import type { FrameParams } from "../../components/editor/frame-params";
-import type { QuadRect } from "../../components/editor/overlay-quad";
+import type { SvgCursorParams } from "../../components/frame-params";
+import type { WebGL2Backend } from "../../components/webgl2-backend";
+import type { RenderPass, RenderPassContext } from "../../components/render-core";
+import type { FrameParams } from "../../components/frame-params";
+import type { QuadRect } from "../../components/overlay-quad";
 import type { ExportOverlay, ExportOverlayFactory } from "./offscreen-export";
 
 export type CursorState = "rest" | "press" | "rightPress" | "drag";

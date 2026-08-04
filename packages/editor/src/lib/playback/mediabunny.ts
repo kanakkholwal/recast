@@ -17,7 +17,7 @@ export function createMediabunnySource(
 ): Promise<MediabunnyVideoSource> {
 	return MediabunnyVideoSource.create(src, {
 		createWorker: () =>
-			new Worker(new URL("./mediabunny-worker.ts", import.meta.url), { type: "module" }),
+			new Worker(new URL("./mediabunny-worker", import.meta.url), { type: "module" }),
 		durationSec: known?.durationSec,
 		fps: known?.fps,
 	});

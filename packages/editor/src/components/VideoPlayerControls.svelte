@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
-import { formatTimeByMode, frameStepOutput } from "$lib/editor/time";
+import type { EditorStore } from "../stores/editor-store.svelte";
+import { originalToOutput, outputToOriginal } from "../lib/timeline/time-map";
+import { formatTimeByMode, frameStepOutput } from "../lib/editor/time";
 import {
 	Camera,
 	LoaderCircle,

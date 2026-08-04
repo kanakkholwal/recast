@@ -7,9 +7,9 @@
  * compositor across both threads. Frames arrive over a dedicated MessagePort.
  */
 
-import { WebGL2Backend } from "../../components/editor/webgl2-backend";
-import { RenderCore } from "../../components/editor/render-core";
-import type { FrameParams } from "../../components/editor/frame-params";
+import { WebGL2Backend } from "../../components/webgl2-backend";
+import { RenderCore } from "../../components/render-core";
+import type { FrameParams } from "../../components/frame-params";
 import { FrameTextureRing } from "./frame-textures";
 import type { FramePortMessage, FromRenderWorker, ToRenderWorker } from "./render-worker-protocol";
 

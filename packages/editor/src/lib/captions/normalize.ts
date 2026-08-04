@@ -7,7 +7,7 @@
  * Scaling every timestamp by videoDuration/audioDuration removes the linear drift.
  */
 
-import type { Transcript } from "$lib/ipc";
+import type { Transcript } from "../wire-types";
 
 /** The correction factor, or 1 (identity) when it can't be trusted. Clamped to a
  *  small window so a bad/absent probe never mistimes captions — a real CFR gap is

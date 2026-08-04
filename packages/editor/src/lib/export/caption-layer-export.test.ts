@@ -5,8 +5,8 @@ import {
 	paintCaptionChunk,
 	resolveCaptionView,
 	type CaptionView,
-} from "$lib/captions/caption-render";
-import { buildTimeMap } from "$lib/timeline/time-map";
+} from "../captions/caption-render";
+import { buildTimeMap } from "../timeline/time-map";
 import {
 	DEFAULT_CAPTION_STYLE,
 	resolveCaptionAnimation,

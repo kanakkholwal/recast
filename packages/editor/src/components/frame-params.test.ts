@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { EASE_IN_OUT } from "$lib/easing/cubic-bezier";
+import { EASE_IN_OUT } from "../lib/easing/cubic-bezier";
 import { computeFrameParams, type FrameInput } from "./frame-params";
 import type { CursorSampleJS } from "./video-preview.logic";
-import type { CursorSettings, ShadowSettings, ZoomRegion } from "$lib/stores/editor-store.svelte";
+import type { CursorSettings, ShadowSettings, ZoomRegion } from "../stores/editor-store.svelte";
 
 const GEOM = { canvasW: 1920, canvasH: 1080, videoX: 100, videoY: 50, videoW: 1720, videoH: 980 };
 

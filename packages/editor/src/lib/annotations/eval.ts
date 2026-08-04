@@ -3,9 +3,9 @@
 // math is unit-testable and fixed in one place.
 
 import type { ZoomTransform } from "@recast/render";
-import { bezierY, type Easing } from "$lib/easing/cubic-bezier";
-import type { Annotation } from "$lib/stores/editor-store.svelte";
-import { activeZoomIndex } from "$lib/zoom/resolve";
+import { bezierY, type Easing } from "../easing/cubic-bezier";
+import type { Annotation } from "../../stores/editor-store.svelte";
+import { activeZoomIndex } from "../zoom/resolve";
 
 // Re-exported so existing importers of `./eval` keep one site; the transform
 // type now lives with the pure projection in @recast/render.

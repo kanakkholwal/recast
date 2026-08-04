@@ -1,104 +1,97 @@
 <script lang="ts">
-  import { kindIcon, kindLabel } from "$lib/annotations/kind-label";
-  import { clockDecis as fmtTime } from "$lib/format/time";
-  import type {
-    Annotation,
-    EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import {
-    Copy,
-    Eye,
-    EyeOff,
-    GripVertical,
-    Lock,
-    Trash2,
-    Unlock,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { cn } from "@recast/ui/utils";
-  import { reorderZ } from "./annotation-layer.logic";
+import { kindIcon, kindLabel } from "../../../lib/annotations/kind-label";
+import { clockDecis as fmtTime } from "../../../lib/format/time";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
+import { Copy, Eye, EyeOff, GripVertical, Lock, Trash2, Unlock } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
+import { reorderZ } from "./annotation-layer.logic";
 
-  interface Props {
-    store: EditorStore;
-  }
+interface Props {
+	store: EditorStore;
+}
 
-  let { store }: Props = $props();
+let { store }: Props = $props();
 
-  // Topmost (highest z) at the top of the panel, like Photoshop/Figma.
-  const ordered = $derived([...store.annotationsByZ].reverse());
+// Topmost (highest z) at the top of the panel, like Photoshop/Figma.
+const ordered = $derived([...store.annotationsByZ].reverse());
 
-  let renamingId = $state<string | null>(null);
-  let dragId = $state<string | null>(null);
-  let dragOverId = $state<string | null>(null);
+let renamingId = $state<string | null>(null);
+let dragId = $state<string | null>(null);
+let dragOverId = $state<string | null>(null);
 
-  function startRename(a: Annotation) {
-    if (a.locked) return;
-    renamingId = a.id;
-  }
+function startRename(a: Annotation) {
+	if (a.locked) return;
+	renamingId = a.id;
+}
 
-  function commitRename(a: Annotation, el: HTMLElement) {
-    const next = el.innerText.trim();
-    store.renameAnnotation(a.id, next);
-    renamingId = null;
-  }
+function commitRename(a: Annotation, el: HTMLElement) {
+	const next = el.innerText.trim();
+	store.renameAnnotation(a.id, next);
+	renamingId = null;
+}
 
-  function handleRenameKey(e: KeyboardEvent, a: Annotation) {
-    const el = e.currentTarget as HTMLElement;
-    if (e.key === "Enter") {
-      e.preventDefault();
-      el.blur();
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      el.innerText = kindLabel(a);
-      el.blur();
-    }
-  }
+function handleRenameKey(e: KeyboardEvent, a: Annotation) {
+	const el = e.currentTarget as HTMLElement;
+	if (e.key === "Enter") {
+		e.preventDefault();
+		el.blur();
+	} else if (e.key === "Escape") {
+		e.preventDefault();
+		el.innerText = kindLabel(a);
+		el.blur();
+	}
+}
 
-  function handleHover(id: string | null) {
-    store.hoveredAnnotationId = id;
-  }
+function handleHover(id: string | null) {
+	store.hoveredAnnotationId = id;
+}
 
-  function handleDragStart(e: DragEvent, a: Annotation) {
-    if (a.locked) {
-      e.preventDefault();
-      return;
-    }
-    dragId = a.id;
-    e.dataTransfer?.setData("text/plain", a.id);
-    e.dataTransfer!.effectAllowed = "move";
-  }
+function handleDragStart(e: DragEvent, a: Annotation) {
+	if (a.locked) {
+		e.preventDefault();
+		return;
+	}
+	dragId = a.id;
+	e.dataTransfer?.setData("text/plain", a.id);
+	e.dataTransfer!.effectAllowed = "move";
+}
 
-  function handleDragOver(e: DragEvent, target: Annotation) {
-    if (!dragId) return;
-    e.preventDefault();
-    e.dataTransfer!.dropEffect = "move";
-    dragOverId = target.id;
-  }
+function handleDragOver(e: DragEvent, target: Annotation) {
+	if (!dragId) return;
+	e.preventDefault();
+	e.dataTransfer!.dropEffect = "move";
+	dragOverId = target.id;
+}
 
-  function handleDragLeave(target: Annotation) {
-    if (dragOverId === target.id) dragOverId = null;
-  }
+function handleDragLeave(target: Annotation) {
+	if (dragOverId === target.id) dragOverId = null;
+}
 
-  function handleDrop(e: DragEvent, target: Annotation) {
-    if (!dragId || dragId === target.id) {
-      dragId = null;
-      dragOverId = null;
-      return;
-    }
-    e.preventDefault();
+function handleDrop(e: DragEvent, target: Annotation) {
+	if (!dragId || dragId === target.id) {
+		dragId = null;
+		dragOverId = null;
+		return;
+	}
+	e.preventDefault();
 
-    // Visual order is top → bottom; reorderZ returns the store's bottom → top.
-    const next = reorderZ(ordered.map((a) => a.id), dragId, target.id);
-    if (!next) return;
-    store.setAnnotationZOrder(next);
-    dragId = null;
-    dragOverId = null;
-  }
+	// Visual order is top → bottom; reorderZ returns the store's bottom → top.
+	const next = reorderZ(
+		ordered.map((a) => a.id),
+		dragId,
+		target.id,
+	);
+	if (!next) return;
+	store.setAnnotationZOrder(next);
+	dragId = null;
+	dragOverId = null;
+}
 
-  function handleDragEnd() {
-    dragId = null;
-    dragOverId = null;
-  }
+function handleDragEnd() {
+	dragId = null;
+	dragOverId = null;
+}
 </script>
 
 <section class="flex flex-col gap-1">

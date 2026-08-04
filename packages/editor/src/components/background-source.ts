@@ -6,10 +6,10 @@
  * load (colour/gradient, or an asset not cached yet).
  */
 
-import { getEditorServices } from "$lib/editor/services";
-import { resolveAsset } from "$lib/assets";
-import { resolveBackgroundWireValue } from "$lib/registry";
-import { assetsStore } from "$lib/stores/assets-store.svelte";
+import { getEditorServices } from "../lib/editor/services";
+import { resolveAsset } from "../lib/assets";
+import { resolveBackgroundWireValue } from "../lib/registry";
+import { assetsStore } from "../stores/assets-store.svelte";
 
 export async function resolveBackgroundSrc(value: string): Promise<string> {
 	if (!value) return "";

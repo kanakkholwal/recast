@@ -1,7 +1,7 @@
 <script lang="ts">
-import type { EditorStore } from "$lib/stores/editor-store.svelte";
-import { type TimelineCut } from "$lib/timeline/cuts";
-import { originalToOutput, outputToOriginal } from "$lib/timeline/time-map";
+import type { EditorStore } from "../../../stores/editor-store.svelte";
+import { type TimelineCut } from "../../../lib/timeline/cuts";
+import { originalToOutput, outputToOriginal } from "../../../lib/timeline/time-map";
 import { Scissors, X } from "@recast/icons";
 import { dragEngaged, PRECISION_SCALE } from "./timeline-card-drag.logic";
 import {

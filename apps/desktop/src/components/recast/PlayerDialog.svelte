@@ -4,7 +4,7 @@ import type { RecordingEntry } from "$lib/ipc";
 import { captionSidecarVtt, openFileLocation } from "$lib/ipc";
 import { FolderOpen, Image as ImageIcon, Video } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import DialogShell from "./DialogShell.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { RecastPlayer } from "@recast/player";
 import { convertFileSrc } from "@tauri-apps/api/core";
 

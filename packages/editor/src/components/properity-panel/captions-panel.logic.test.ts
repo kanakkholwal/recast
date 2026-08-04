@@ -1,7 +1,7 @@
 import { CAPTION_PRESETS, type CaptionStyle } from "@recast/captions";
 import { describe, expect, it } from "vitest";
-import type { CaptionModelInfo, TranscriptSegment } from "$lib/ipc-types";
-import type { CaptionPresetValue } from "$lib/registry/types";
+import type { CaptionModelInfo, TranscriptSegment } from "../../lib/wire-types";
+import type { CaptionPresetValue } from "../../lib/registry/types";
 import {
 	captionStyleMatchesPreset,
 	downloadProgressPct,

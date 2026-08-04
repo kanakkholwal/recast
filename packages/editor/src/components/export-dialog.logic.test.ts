@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { TimelineCut } from "$lib/timeline/cuts";
+import type { TimelineCut } from "../lib/timeline/cuts";
 import {
 	buildFpsOptions,
 	clampSourceFps,

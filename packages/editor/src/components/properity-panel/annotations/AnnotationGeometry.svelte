@@ -1,84 +1,80 @@
 <script lang="ts">
-  import { isBoxKind } from "$lib/annotations/kind-groups";
-  import { normaliseBox } from "$lib/annotations/uv";
-  import type {
-    Annotation,
-    EditorStore,
-  } from "$lib/stores/editor-store.svelte";
-  import {
-    AlignCenter as AlignCenterX,
-    AlignEndHorizontal,
-    AlignEndVertical,
-    AlignStartHorizontal,
-    AlignStartVertical,
-    AlignVerticalSpaceAround,
-  } from "@recast/icons";
-  import { Input } from "@recast/ui/input";
-  import { cn } from "@recast/ui/utils";
-  import PanelSection from "../PanelSection.svelte";
-  import { alignTarget, fmt, parseAndCommit } from "./annotation-geometry.logic";
+import { isBoxKind } from "../../../lib/annotations/kind-groups";
+import { normaliseBox } from "../../../lib/annotations/uv";
+import type { Annotation, EditorStore } from "../../../stores/editor-store.svelte";
+import {
+	AlignCenter as AlignCenterX,
+	AlignEndHorizontal,
+	AlignEndVertical,
+	AlignStartHorizontal,
+	AlignStartVertical,
+	AlignVerticalSpaceAround,
+} from "@recast/icons";
+import { Input } from "@recast/ui/input";
+import { cn } from "@recast/ui/utils";
+import PanelSection from "../PanelSection.svelte";
+import { alignTarget, fmt, parseAndCommit } from "./annotation-geometry.logic";
 
-  interface Props {
-    store: EditorStore;
-    annotation: Annotation;
-  }
+interface Props {
+	store: EditorStore;
+	annotation: Annotation;
+}
 
-  let { store, annotation }: Props = $props();
+let { store, annotation }: Props = $props();
 
-  function setBox(updates: Partial<{ x: number; y: number; w: number; h: number }>) {
-    if (isBoxKind(annotation.kind)) {
-      store.pushUndoState();
-      store.updateAnnotation(annotation.id, {
-        kind: { ...annotation.kind, ...updates },
-      });
-    }
-  }
+function setBox(updates: Partial<{ x: number; y: number; w: number; h: number }>) {
+	if (isBoxKind(annotation.kind)) {
+		store.pushUndoState();
+		store.updateAnnotation(annotation.id, {
+			kind: { ...annotation.kind, ...updates },
+		});
+	}
+}
 
-  function setArrow(updates: Partial<{ x1: number; y1: number; x2: number; y2: number }>) {
-    if (annotation.kind.kind !== "arrow") return;
-    store.pushUndoState();
-    store.updateAnnotation(annotation.id, {
-      kind: { ...annotation.kind, ...updates },
-    });
-  }
+function setArrow(updates: Partial<{ x1: number; y1: number; x2: number; y2: number }>) {
+	if (annotation.kind.kind !== "arrow") return;
+	store.pushUndoState();
+	store.updateAnnotation(annotation.id, {
+		kind: { ...annotation.kind, ...updates },
+	});
+}
 
-  // Frame-relative alignment. For boxes we move the whole rect; for arrows we
-  // shift both endpoints by the same delta so direction is preserved.
-  function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
-    store.pushUndoState();
-    const box = normaliseBox(annotation.kind);
-    const target = alignTarget(box, axis, anchor);
-    if (annotation.kind.kind === "arrow") {
-      const k = annotation.kind;
-      const dx = axis === "x" ? target - box.x : 0;
-      const dy = axis === "y" ? target - box.y : 0;
-      store.updateAnnotation(annotation.id, {
-        kind: {
-          ...k,
-          x1: k.x1 + dx,
-          y1: k.y1 + dy,
-          x2: k.x2 + dx,
-          y2: k.y2 + dy,
-        },
-      });
-      return;
-    }
+// Frame-relative alignment. For boxes we move the whole rect; for arrows we
+// shift both endpoints by the same delta so direction is preserved.
+function alignFrame(axis: "x" | "y", anchor: "start" | "center" | "end") {
+	store.pushUndoState();
+	const box = normaliseBox(annotation.kind);
+	const target = alignTarget(box, axis, anchor);
+	if (annotation.kind.kind === "arrow") {
+		const k = annotation.kind;
+		const dx = axis === "x" ? target - box.x : 0;
+		const dy = axis === "y" ? target - box.y : 0;
+		store.updateAnnotation(annotation.id, {
+			kind: {
+				...k,
+				x1: k.x1 + dx,
+				y1: k.y1 + dy,
+				x2: k.x2 + dx,
+				y2: k.y2 + dy,
+			},
+		});
+		return;
+	}
 
-    if (!isBoxKind(annotation.kind)) return;
-    const updates: Partial<{ x: number; y: number }> =
-      axis === "x" ? { x: target } : { y: target };
-    store.updateAnnotation(annotation.id, {
-      kind: { ...annotation.kind, ...updates },
-    });
-  }
+	if (!isBoxKind(annotation.kind)) return;
+	const updates: Partial<{ x: number; y: number }> = axis === "x" ? { x: target } : { y: target };
+	store.updateAnnotation(annotation.id, {
+		kind: { ...annotation.kind, ...updates },
+	});
+}
 
-  const isArrow = $derived(annotation.kind.kind === "arrow");
+const isArrow = $derived(annotation.kind.kind === "arrow");
 
-  const INPUT_CLASS = "h-7 px-2 text-[11px] tabular-nums";
-  const ALIGN_BTN =
-    "grid size-7 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
+const INPUT_CLASS = "h-7 px-2 text-[11px] tabular-nums";
+const ALIGN_BTN =
+	"grid size-7 place-items-center rounded-md border border-border/60 bg-card/60 text-muted-foreground transition-colors hover:border-border hover:text-foreground focus:outline-none focus:ring-2 focus:ring-ring/40";
 
-  const FIELD_LABEL = "flex flex-col gap-0.5 text-[10px] text-muted-foreground";
+const FIELD_LABEL = "flex flex-col gap-0.5 text-[10px] text-muted-foreground";
 </script>
 
 <PanelSection title="Geometry" flush collapsible defaultOpen={false}>

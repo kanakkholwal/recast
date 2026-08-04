@@ -1,4 +1,4 @@
-import type { BackgroundType, LayoutMode, OutputAspect } from "$lib/stores/editor-store.svelte";
+import type { BackgroundType, LayoutMode, OutputAspect } from "../stores/editor-store.svelte";
 
 /** The slice of editor state a preset owns. Everything else is left alone. */
 export interface PresetLook {

@@ -4,14 +4,14 @@ import {
 	cameraPresetFromPlacement,
 	type CameraPositionPreset,
 	type EditorStore,
-} from "$lib/stores/editor-store.svelte";
+} from "../../stores/editor-store.svelte";
 import { cameraPlacementAt } from "../_components/camera-overlay.logic";
 import { VideoOff } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import { SegmentedToggle } from "@recast/ui/segmented";
 import { cn } from "@recast/ui/utils";
 import { SliderControl } from "@recast/ui/slider-control";
-import type { CameraCapture } from "$lib/ipc-types";
+import type { CameraCapture } from "../../lib/wire-types";
 import { cameraAvailability, dotStyleFor, labelFor } from "./camera-panel.logic";
 import EasingControl from "./EasingControl.svelte";
 import PanelSection from "./PanelSection.svelte";

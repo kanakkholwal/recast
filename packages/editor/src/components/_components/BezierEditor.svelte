@@ -4,7 +4,7 @@ import {
 	EASING_OVERSHOOT,
 	sampleCurve,
 	type Easing,
-} from "$lib/easing/cubic-bezier";
+} from "../../lib/easing/cubic-bezier";
 import { Input } from "@recast/ui/input";
 import { cn } from "@recast/ui/utils";
 

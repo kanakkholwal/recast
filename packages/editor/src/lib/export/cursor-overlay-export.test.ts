@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SvgCursorParams } from "../../components/editor/frame-params";
+import type { SvgCursorParams } from "../../components/frame-params";
 import { cursorSpriteRect, pickCursorState } from "./cursor-overlay-export";
 
 const base: SvgCursorParams = {

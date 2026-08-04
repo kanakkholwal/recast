@@ -3,7 +3,7 @@
 // on first use, then registered with the document via the FontFace API so any
 // element using that family renders it. The full searchable catalog can come
 // later; this curated set covers the common display/caption choices.
-import { getEditorServices } from "$lib/editor/services";
+import { getEditorServices } from "../editor/services";
 
 /** Curated, searchable set of popular Google Fonts offered in pickers. */
 export const GOOGLE_FONTS = [

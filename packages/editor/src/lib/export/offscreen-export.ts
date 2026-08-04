@@ -24,14 +24,10 @@ import {
 	VideoSampleSink,
 	type VideoEncodingConfig,
 } from "@recast/media/mediabunny";
-import {
-	RenderCore,
-	type RenderPass,
-	type RenderPassContext,
-} from "../../components/editor/render-core";
-import { WebGL2Backend } from "../../components/editor/webgl2-backend";
-import type { FrameGeometry, FrameInput } from "../../components/editor/frame-params";
-import type { CameraOverlayShape, CameraPlacement } from "$lib/stores/editor-store.svelte";
+import { RenderCore, type RenderPass, type RenderPassContext } from "../../components/render-core";
+import { WebGL2Backend } from "../../components/webgl2-backend";
+import type { FrameGeometry, FrameInput } from "../../components/frame-params";
+import type { CameraOverlayShape, CameraPlacement } from "../../stores/editor-store.svelte";
 import { exportFrameCount, exportFrameTime } from "./browser-export-plan";
 import { bubbleCornerRadiusPx, cameraBubbleRect, coverUvRect } from "./camera-overlay-export";
 

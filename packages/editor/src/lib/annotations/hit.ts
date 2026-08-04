@@ -2,13 +2,10 @@
 // topmost selection. All functions take container-pixel inputs and return
 // container-pixel positions or string handle IDs, with no DOM dependencies.
 
-import type { Annotation } from "$lib/stores/editor-store.svelte";
+import type { Annotation } from "../../stores/editor-store.svelte";
 import { normaliseBox } from "./uv";
 
-export type HandleName =
-	| "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w"
-	| "body"
-	| "p1" | "p2"; // arrow endpoints
+export type HandleName = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w" | "body" | "p1" | "p2"; // arrow endpoints
 
 export interface Point {
 	x: number;
@@ -21,10 +18,7 @@ export function pointToSegmentDist(p: Point, a: Point, b: Point): number {
 	const dy = b.y - a.y;
 	const lenSq = dx * dx + dy * dy;
 	if (lenSq === 0) return Math.hypot(p.x - a.x, p.y - a.y);
-	const t = Math.max(
-		0,
-		Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq),
-	);
+	const t = Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq));
 	const cx = a.x + t * dx;
 	const cy = a.y + t * dy;
 	return Math.hypot(p.x - cx, p.y - cy);
@@ -66,26 +60,16 @@ export interface HitOptions {
  * Returns which handle (or "body") of the given annotation is under `pt`, or
  * `null` if the pointer is outside.
  */
-export function hitTestHandle(
-	pt: Point,
-	a: Annotation,
-	opts: HitOptions,
-): HandleName | null {
+export function hitTestHandle(pt: Point, a: Annotation, opts: HitOptions): HandleName | null {
 	if (a.hidden) return null;
 
 	if (a.kind.kind === "arrow") {
 		const p1 = opts.project(a, a.kind.x1, a.kind.y1);
 		const p2 = opts.project(a, a.kind.x2, a.kind.y2);
-		if (
-			Math.abs(pt.x - p1.x) <= opts.handleSlop &&
-			Math.abs(pt.y - p1.y) <= opts.handleSlop
-		) {
+		if (Math.abs(pt.x - p1.x) <= opts.handleSlop && Math.abs(pt.y - p1.y) <= opts.handleSlop) {
 			return "p1";
 		}
-		if (
-			Math.abs(pt.x - p2.x) <= opts.handleSlop &&
-			Math.abs(pt.y - p2.y) <= opts.handleSlop
-		) {
+		if (Math.abs(pt.x - p2.x) <= opts.handleSlop && Math.abs(pt.y - p2.y) <= opts.handleSlop) {
 			return "p2";
 		}
 		if (pointToSegmentDist(pt, p1, p2) <= opts.lineSlop) return "body";
@@ -102,10 +86,7 @@ export function hitTestHandle(
 
 	const handles = handlePositions(x, y, w, h);
 	for (const [name, p] of Object.entries(handles)) {
-		if (
-			Math.abs(pt.x - p.x) <= opts.handleSlop &&
-			Math.abs(pt.y - p.y) <= opts.handleSlop
-		) {
+		if (Math.abs(pt.x - p.x) <= opts.handleSlop && Math.abs(pt.y - p.y) <= opts.handleSlop) {
 			return name as HandleName;
 		}
 	}
@@ -146,12 +127,7 @@ export function hitTestAnnotation(
 		const box = normaliseBox(a.kind);
 		const topLeft = opts.project(a, box.x, box.y);
 		const bottomRight = opts.project(a, box.x + box.w, box.y + box.h);
-		if (
-			pt.x >= topLeft.x &&
-			pt.x <= bottomRight.x &&
-			pt.y >= topLeft.y &&
-			pt.y <= bottomRight.y
-		) {
+		if (pt.x >= topLeft.x && pt.x <= bottomRight.x && pt.y >= topLeft.y && pt.y <= bottomRight.y) {
 			return a;
 		}
 	}
