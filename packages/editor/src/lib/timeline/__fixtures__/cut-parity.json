@@ -1,0 +1,48 @@
+{
+	"_comment": "SHARED cut-parity fixtures. Loaded by BOTH the frontend (apps/desktop/src/lib/timeline/cuts.test.ts) and the Rust export pipeline (apps/desktop/src-tauri/src/commands/editor.rs, cut_export_tests::kept_duration_matches_shared_parity_fixtures). For each case, `expectedKeptDuration` MUST equal both (a) the editor's collapsed [trimStart,trimEnd] length = originalToOutput(trimEnd) - originalToOutput(trimStart), and (b) the export's output duration = (trimEnd-trimStart) - sum(collect_export_cuts). If cut math changes on either side and the two stop agreeing, one of these tests fails. Times are in seconds; cuts are [start,end] pairs on the ORIGINAL recording timeline.",
+	"cases": [
+		{ "name": "no cuts", "trimStart": 0, "trimEnd": 10, "cuts": [], "expectedKeptDuration": 10 },
+		{
+			"name": "single interior cut",
+			"trimStart": 0,
+			"trimEnd": 10,
+			"cuts": [[3, 5]],
+			"expectedKeptDuration": 8
+		},
+		{
+			"name": "two interior cuts",
+			"trimStart": 0,
+			"trimEnd": 12,
+			"cuts": [[2, 4], [7, 8]],
+			"expectedKeptDuration": 9
+		},
+		{
+			"name": "cut straddling in-point clamps",
+			"trimStart": 10,
+			"trimEnd": 20,
+			"cuts": [[8, 12]],
+			"expectedKeptDuration": 8
+		},
+		{
+			"name": "cut entirely before trim is dropped",
+			"trimStart": 10,
+			"trimEnd": 20,
+			"cuts": [[0, 5]],
+			"expectedKeptDuration": 10
+		},
+		{
+			"name": "overlapping cuts merge",
+			"trimStart": 10,
+			"trimEnd": 20,
+			"cuts": [[11, 13], [12, 15]],
+			"expectedKeptDuration": 6
+		},
+		{
+			"name": "cut straddling out-point clamps",
+			"trimStart": 0,
+			"trimEnd": 10,
+			"cuts": [[8, 14]],
+			"expectedKeptDuration": 8
+		}
+	]
+}
