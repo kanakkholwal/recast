@@ -22,7 +22,9 @@ import type {
 	VideoTextTimeline,
 	ZoomSuggestion,
 } from "../wire-types";
-import type { Transcript, VideoMetadata } from "./render-state";
+import type { Transcript, TranscriptSegment, TranscriptWord, VideoMetadata } from "./render-state";
+
+export type { Transcript, TranscriptSegment, TranscriptWord, VideoMetadata };
 
 export type {
 	CaptionDownloadProgress,

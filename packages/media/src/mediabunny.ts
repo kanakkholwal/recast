@@ -16,6 +16,7 @@ export function mediaRefSource(ref: MediaRef): BlobSource | UrlSource {
 export {
 	ALL_FORMATS,
 	AudioBufferSink,
+	AudioBufferSource,
 	BlobSource,
 	BufferTarget,
 	CanvasSink,

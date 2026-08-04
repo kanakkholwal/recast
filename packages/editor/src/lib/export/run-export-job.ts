@@ -124,6 +124,7 @@ export async function runExportJob(
 	try {
 		return await renderTimelineToVideo({
 			videoUrl: job.videoUrl,
+			audio: job.audio,
 			width: job.base.canvasPxW,
 			height: job.base.canvasPxH,
 			fps: job.fps,

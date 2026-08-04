@@ -15,15 +15,25 @@
 
 import {
 	ALL_FORMATS,
+	AudioBufferSink,
+	AudioBufferSource,
 	BufferTarget,
 	CanvasSource,
 	Input,
+	mediaRefSource,
 	Mp4OutputFormat,
 	Output,
-	UrlSource,
 	VideoSampleSink,
 	type VideoEncodingConfig,
 } from "@recast/media/mediabunny";
+import { type MediaRef, type Region, toMediaRef } from "@recast/media";
+import {
+	type AudioSpan,
+	applyFade,
+	applyGain,
+	planAudioSpans,
+	resampleLinear,
+} from "./audio-export";
 import { RenderCore, type RenderPass, type RenderPassContext } from "../../components/render-core";
 import { WebGL2Backend } from "../../components/webgl2-backend";
 import type { FrameGeometry, FrameInput } from "../../components/frame-params";
@@ -56,8 +66,8 @@ export interface BlurLayerEnv {
  *  time as the main video) + the resolved per-frame placement. The bubble draws
  *  on top of all other overlays, matching the preview's stacking. */
 export interface CameraExportInputs {
-	/** Camera stream URL (`convertFileSrc(camera.mp4)`). */
-	url: string;
+	/** Camera stream. */
+	url: MediaRef | string;
 	geom: FrameGeometry;
 	shape: CameraOverlayShape;
 	cornerRadius: number | undefined;
@@ -67,8 +77,8 @@ export interface CameraExportInputs {
 }
 
 export interface OffscreenExportOptions {
-	/** Source video URL (range-streamed for random access). */
-	videoUrl: string;
+	/** Source video. A `blob` ref streams off a File; a `url` ref range-requests. */
+	videoUrl: MediaRef | string;
 	/** Composited output size (px). */
 	width: number;
 	height: number;
@@ -100,8 +110,23 @@ export interface OffscreenExportOptions {
 	captionLayer?:
 		| ((ctx: OffscreenCanvasRenderingContext2D, originalSec: number, outputSec: number) => void)
 		| null;
+	/** Source audio to carry into the mux. Omitted ⇒ a video-only mp4. */
+	audio?: AudioExportInputs | null;
 	onProgress?: (fraction: number) => void;
 	signal?: AbortSignal;
+}
+
+/** The recording's own audio track, warped onto the output timeline by the same
+ *  regions the preview plays. */
+export interface AudioExportInputs {
+	/** Where to read the audio from; usually the same ref as the video. */
+	source: MediaRef | string;
+	/** Kept regions (trim + cuts + per-segment speed), in original time. */
+	regions: readonly Region[];
+	/** Master volume 0..1 and the fade envelope, mirroring the preview. */
+	gain?: number;
+	fadeInSec?: number;
+	fadeOutSec?: number;
 }
 
 // MediaBunny's VideoDecoderWrapper.close isn't idempotent: on teardown the
@@ -125,7 +150,70 @@ function installClosedCodecGuard() {
 	});
 }
 
-/** Render + encode the timeline in the browser; resolves with a video-only mp4. */
+/**
+ * Decode the source's audio for `spans` and append it to `source` in output
+ * order. Streams span by span so a long recording never holds its whole PCM.
+ */
+async function encodeAudioSpans(
+	audio: AudioExportInputs,
+	spans: readonly AudioSpan[],
+	totalOutputSec: number,
+	source: AudioBufferSource,
+	signal?: AbortSignal,
+): Promise<void> {
+	const input = new Input({
+		source: mediaRefSource(toMediaRef(audio.source)),
+		formats: ALL_FORMATS,
+	});
+	try {
+		const track = await input.getPrimaryAudioTrack();
+		if (!track) return;
+		const sink = new AudioBufferSink(track);
+		const gain = audio.gain ?? 1;
+		const fadeIn = audio.fadeInSec ?? 0;
+		const fadeOut = audio.fadeOutSec ?? 0;
+		for (const span of spans) {
+			if (signal?.aborted) throw new Error("export cancelled");
+			let outCursor = span.outputStart;
+			for await (const { buffer, timestamp } of sink.buffers(span.sourceStart, span.sourceEnd)) {
+				if (signal?.aborted) throw new Error("export cancelled");
+				// Clip to the span: a decoded buffer can overhang both ends.
+				const startInBuf = Math.max(0, span.sourceStart - timestamp);
+				const endInBuf = Math.min(buffer.duration, span.sourceEnd - timestamp);
+				if (endInBuf <= startInBuf) continue;
+				const from = Math.floor(startInBuf * buffer.sampleRate);
+				const to = Math.floor(endInBuf * buffer.sampleRate);
+				const frames = to - from;
+				if (frames <= 0) continue;
+
+				const channels: Float32Array[] = [];
+				for (let c = 0; c < buffer.numberOfChannels; c++) {
+					const raw = buffer.getChannelData(c).subarray(from, to);
+					const warped = resampleLinear(new Float32Array(raw), span.rate);
+					applyGain(warped, gain);
+					applyFade(warped, buffer.sampleRate, totalOutputSec, fadeIn, fadeOut, outCursor);
+					channels.push(warped);
+				}
+				const outFrames = channels[0]?.length ?? 0;
+				if (outFrames === 0) continue;
+				const out = new AudioBuffer({
+					length: outFrames,
+					numberOfChannels: channels.length,
+					sampleRate: buffer.sampleRate,
+				});
+				for (let c = 0; c < channels.length; c++) {
+					out.copyToChannel(channels[c] as Float32Array<ArrayBuffer>, c);
+				}
+				await source.add(out);
+				outCursor += outFrames / buffer.sampleRate;
+			}
+		}
+	} finally {
+		input.dispose();
+	}
+}
+
+/** Render + encode the timeline in the browser; resolves with an mp4. */
 export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promise<Uint8Array> {
 	installClosedCodecGuard();
 	const canvas = new OffscreenCanvas(opts.width, opts.height);
@@ -181,7 +269,10 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 	passes.push(...overlays.map((o) => o.pass));
 	const renderCore = new RenderCore(backend, passes);
 
-	const input = new Input({ source: new UrlSource(opts.videoUrl), formats: ALL_FORMATS });
+	const input = new Input({
+		source: mediaRefSource(toMediaRef(opts.videoUrl)),
+		formats: ALL_FORMATS,
+	});
 	const output = new Output({ format: new Mp4OutputFormat(), target: new BufferTarget() });
 	let camInput: Input | null = null;
 
@@ -207,7 +298,10 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		// Camera bubble: its own decoder, sampled at the same original time.
 		let camSink: VideoSampleSink | null = null;
 		if (opts.camera) {
-			camInput = new Input({ source: new UrlSource(opts.camera.url), formats: ALL_FORMATS });
+			camInput = new Input({
+				source: mediaRefSource(toMediaRef(opts.camera.url)),
+				formats: ALL_FORMATS,
+			});
 			const camTrack = await camInput.getPrimaryVideoTrack();
 			if (camTrack) camSink = new VideoSampleSink(camTrack);
 		}

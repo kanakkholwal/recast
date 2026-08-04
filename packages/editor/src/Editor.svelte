@@ -81,7 +81,8 @@ let {
 	class: className,
 }: EditorProps = $props();
 
-setEditorServices(services);
+// Installed once, at init: capabilities are a property of the host, not state.
+setEditorServices(untrack(() => services));
 
 // Layout: the host may drive it (bindable, e.g. from a URL) or leave it to us,
 // in which case we seed from localStorage and remember changes.
@@ -178,7 +179,7 @@ onDestroy(() => {
 	audioEngine?.dispose();
 });
 
-const audioPositionSec = () => audioEngine?.positionSec() ?? null;
+const audioPositionSec = () => audioEngine?.positionOutputSec ?? null;
 
 function handleTimeUpdate() {
 	// The WebCodecs clock owns `store.currentTime`; echoing the element's time
@@ -268,7 +269,11 @@ function nudgeSidebar(delta: number) {
 		</div>
 
 		{#if sidebarOpen}
-			<!-- Keyboard-resizable so the panel width isn't pointer-only. -->
+			<!-- Keyboard-resizable so the panel width isn't pointer-only. A focusable
+			     separator is the ARIA window-splitter pattern, which the a11y rule
+			     below doesn't model. -->
+			<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+			<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 			<div
 				class="hover:bg-primary/40 focus-visible:bg-primary/60 w-1 shrink-0 cursor-col-resize"
 				role="separator"

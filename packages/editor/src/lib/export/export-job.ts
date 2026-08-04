@@ -1,3 +1,5 @@
+import type { MediaRef } from "@recast/media";
+import type { AudioExportInputs } from "./offscreen-export";
 /**
  * Serializable export job — the handoff contract between the main thread (which
  * snapshots the scene + rasterizes DOM-bound assets to bitmaps) and the render
@@ -71,7 +73,9 @@ export interface ExportJob {
 	 *  object that doesn't survive `postMessage`, so the worker rebuilds it. */
 	quality: ExportQuality;
 	/** Source video URL — the worker opens its own decoder on it. */
-	videoUrl: string;
+	videoUrl: MediaRef | string;
+	/** Source audio to carry into the mux; omitted ⇒ a video-only mp4. */
+	audio?: AudioExportInputs | null;
 	/** Decoded image/wallpaper background (transferable), or null for colour/gradient. */
 	backgroundImage: ImageBitmap | null;
 	cursorSprites: CursorSpriteSources | null;

@@ -1,3 +1,5 @@
+import type { MediaRef } from "@recast/media";
+import type { AudioExportInputs } from "./offscreen-export";
 /**
  * Export job producer (main thread) — snapshots the editor scene and rasterizes
  * every DOM-bound asset (background, cursor sprites, annotation images, caption
@@ -24,7 +26,9 @@ import type { ExportJob, CameraJob, AnnotationJob, CaptionJob } from "./export-j
 
 export interface ExportJobInputs {
 	/** Source video asset URL (`convertFileSrc(...)`). */
-	videoUrl: string;
+	videoUrl: MediaRef | string;
+	/** Source audio, when the host wants the browser export to carry it. */
+	audio?: AudioExportInputs | null;
 	/** Camera stream URL, or empty/undefined when none. */
 	cameraUrl?: string;
 	quality: ExportQuality;
@@ -225,6 +229,7 @@ export async function buildExportJob(
 		fps: opts.fps,
 		quality: opts.quality,
 		videoUrl: opts.videoUrl,
+		audio: opts.audio ?? null,
 		backgroundImage,
 		cursorSprites: await buildCursorSprites(store),
 		camera: camera ? toStatic(camera) : null,
