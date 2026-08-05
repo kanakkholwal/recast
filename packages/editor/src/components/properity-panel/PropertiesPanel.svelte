@@ -15,6 +15,7 @@ import {
 	Volume,
 	ZoomIn,
 } from "@recast/icons";
+import { untrack } from "svelte";
 import * as Tabs from "@recast/ui/tabs";
 import * as Tooltip from "@recast/ui/tooltip";
 import AnnotationsPanel from "./AnnotationsPanel.svelte";
@@ -38,6 +39,9 @@ interface Props {
 	cameraCapture?: CameraCapture;
 	/** Forwarded to FocusPanel; the editor page owns the auto-zoom run. */
 	onRegenerateAutoZoom?: () => void;
+	/** Sections this host can serve. Omit ⇒ all of them. A section the host
+	 *  can't back is hidden rather than shown broken. */
+	panels?: readonly PanelTab[];
 }
 
 // A section is one of three kinds. The rail groups by kind (thin dividers
@@ -154,12 +158,31 @@ const TABS: TabType[] = [
 ];
 
 const GROUP_ORDER: TabGroup[] = ["composition", "selection", "meta"];
+
+let {
+	store,
+	cameraPath = null,
+	cameraCapture = "legacy",
+	onRegenerateAutoZoom,
+	panels,
+}: Props = $props();
+
+const visibleTabs = $derived(panels ? TABS.filter((t) => panels.includes(t.id)) : TABS);
 // Grouped + ordered for the rail; empty groups drop out so dividers stay honest.
-const groupedTabs = GROUP_ORDER.map((g) => TABS.filter((t) => t.group === g)).filter(
-	(g) => g.length > 0,
+const groupedTabs = $derived(
+	GROUP_ORDER.map((g) => visibleTabs.filter((t) => t.group === g)).filter((g) => g.length > 0),
 );
 
-let { store, cameraPath = null, cameraCapture = "legacy", onRegenerateAutoZoom }: Props = $props();
+// A host that drops the active section (or a stale persisted one) would leave
+// the rail with nothing selected and the body blank.
+$effect(() => {
+	const tabs = visibleTabs;
+	untrack(() => {
+		if (tabs.length > 0 && !tabs.some((t) => t.id === store.activePanel)) {
+			store.activePanel = tabs[0].id;
+		}
+	});
+});
 
 // Switch to Clip when a clip/segment is selected from the timeline.
 $effect(() => {
@@ -182,7 +205,7 @@ $effect(() => {
 	}
 });
 
-const activeTab = $derived(TABS.find((t) => t.id === store.activePanel) ?? TABS[0]);
+const activeTab = $derived(visibleTabs.find((t) => t.id === store.activePanel) ?? visibleTabs[0]);
 
 const tabContentClass = "min-h-0 flex-1 overflow-y-auto px-3 py-3 scrollbar-transparent";
 </script>

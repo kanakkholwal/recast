@@ -1,9 +1,11 @@
 <script lang="ts">
+import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { Button } from "@recast/ui/button";
-import { Download, Sparkles, Upload } from "@recast/icons";
+import { AlertTriangle, Download, Sparkles, Upload } from "@recast/icons";
 import { ACCEPTED_EXTENSIONS, probeSource } from "$lib/playground/probe";
 import { SAMPLE_CLIP } from "$lib/playground/sample";
+import { checkSupport, type SupportVerdict } from "$lib/playground/support";
 import { playgroundSession } from "$lib/playground/session.svelte";
 
 let dragging = $state(false);
@@ -11,6 +13,15 @@ let busy = $state(false);
 let error = $state<string | null>(null);
 let showDesktopCta = $state(false);
 let fileInput = $state<HTMLInputElement | null>(null);
+
+// Probed on mount, not at module scope: this route is prerendered, so the
+// build-time environment would answer for every visitor.
+let support = $state<SupportVerdict | null>(null);
+onMount(() => {
+	support = checkSupport();
+});
+
+const canEdit = $derived(support?.canEdit ?? true);
 
 const accept = ACCEPTED_EXTENSIONS.map((e) => `.${e}`).join(",");
 
@@ -33,6 +44,7 @@ async function accepted(file: File) {
 function onDrop(event: DragEvent) {
 	event.preventDefault();
 	dragging = false;
+	if (!canEdit) return;
 	const file = event.dataTransfer?.files?.[0];
 	if (file) void accepted(file);
 }
@@ -69,6 +81,21 @@ async function loadSample() {
 		</p>
 	</header>
 
+	<!-- Support is stated BEFORE a file is picked: finding out after choosing a
+	     clip and waiting through a probe is the worse order. -->
+	{#if support?.message}
+		<div
+			class="flex items-start gap-3 rounded-lg border px-4 py-3 text-sm {support.level ===
+			'unsupported'
+				? 'border-destructive/30 bg-destructive/5 text-destructive'
+				: 'border-warning/30 bg-warning/5 text-warning'}"
+			role="status"
+		>
+			<AlertTriangle class="mt-0.5 size-4 shrink-0" />
+			<p class="min-w-0 flex-1 text-pretty">{support.message}</p>
+		</div>
+	{/if}
+
 	<!-- The dropzone is a button so keyboard and screen-reader users get the same
 	     affordance as a drag. -->
 	<button
@@ -76,7 +103,7 @@ async function loadSample() {
 		class="border-border-low hover:border-primary/60 focus-visible:border-primary flex flex-col items-center gap-3 rounded-xl border-2 border-dashed px-6 py-16 transition-colors {dragging
 			? 'border-primary bg-primary/5'
 			: ''}"
-		disabled={busy}
+		disabled={busy || !canEdit}
 		onclick={() => fileInput?.click()}
 		ondragover={(e) => {
 			e.preventDefault();
@@ -104,7 +131,7 @@ async function loadSample() {
 	/>
 
 	<div class="flex flex-col items-center gap-3">
-		<Button variant="secondary" disabled={busy} onclick={loadSample}>
+		<Button variant="secondary" disabled={busy || !canEdit} onclick={loadSample}>
 			<Sparkles class="size-4" />
 			Try a sample clip ({SAMPLE_CLIP.durationLabel} · {SAMPLE_CLIP.sizeLabel})
 		</Button>

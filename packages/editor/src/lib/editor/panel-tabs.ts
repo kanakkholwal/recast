@@ -29,18 +29,21 @@ export const PANEL_TABS = [
 export type PanelTab = (typeof PANEL_TABS)[number];
 
 /**
- * The subset a browser host can serve. No `cursor` (an uploaded clip carries no
- * cursor track), no `music` (its asset packs are installed natively), no `dev`.
- * Captions is present but import-only — see `EditorServices.transcription`.
+ * The subset a browser host can serve.
+ *
+ * Out: `music` and `extensions` (their packs install natively), `info` (no
+ * filesystem to reveal), `audio` (its per-track gains describe a recording's
+ * system/mic pair, which an uploaded file doesn't have), and `dev`.
+ * `cursor` stays: the panel's controls are inert without a cursor track, but it
+ * is how the feature is discovered. Captions is import-only — see
+ * `EditorServices.transcription`.
  */
 export const WEB_PANEL_TABS = [
 	"clip",
 	"background",
 	"focus",
 	"annotations",
+	"cursor",
 	"camera",
 	"captions",
-	"audio",
-	"info",
-	"extensions",
 ] as const satisfies readonly PanelTab[];

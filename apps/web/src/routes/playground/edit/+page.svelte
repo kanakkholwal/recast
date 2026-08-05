@@ -1,16 +1,14 @@
 <script lang="ts">
-import { onMount } from "svelte";
 import { goto } from "$app/navigation";
 import { Button } from "@recast/ui/button";
 import { Spinner } from "@recast/ui/spinner";
+import { onMount } from "svelte";
 // Type-only: a value import here would statically bind the whole editor and
 // defeat the split below (rolldown reports INEFFECTIVE_DYNAMIC_IMPORT).
 import type { Editor as EditorComponent, EditorStore, PanelTab } from "@recast/editor";
 import { webEditorServices } from "$lib/playground/services";
 import { playgroundSession } from "$lib/playground/session.svelte";
 
-// Code-split: the editor is tens of thousands of lines and must never land in
-// the landing page's bundle.
 let Editor = $state<typeof EditorComponent | null>(null);
 let store = $state<EditorStore | null>(null);
 let panels = $state<readonly PanelTab[]>([]);
@@ -54,11 +52,16 @@ const audioTracks = $derived(
 	<meta name="robots" content="noindex" />
 </svelte:head>
 
-<div class="h-dvh w-full">
+<!-- This route is chromeless (see layout.logic.ts): no marketing navbar, because
+     the editor is a full-height app that carries its own toolbar. -->
+<div class="h-dvh w-full overflow-hidden">
 	{#if loadError}
 		<div class="flex h-full flex-col items-center justify-center gap-4">
 			<p class="text-muted-foreground">The editor failed to load.</p>
-			<Button variant="secondary" onclick={() => location.reload()}>Try again</Button>
+			<div class="flex gap-2">
+				<Button variant="secondary" onclick={() => location.reload()}>Try again</Button>
+				<Button variant="ghost" href="/playground">Start over</Button>
+			</div>
 		</div>
 	{:else if Editor && store && playgroundSession.ready}
 		<Editor
@@ -66,6 +69,7 @@ const audioTracks = $derived(
 			services={webEditorServices}
 			videoSrc={playgroundSession.source!.objectUrl}
 			cameraSrc={playgroundSession.camera?.objectUrl ?? ""}
+			cameraPath={playgroundSession.camera ? playgroundSession.camera.objectUrl : null}
 			{audioTracks}
 			{panels}
 			filename={playgroundSession.source!.file.name}

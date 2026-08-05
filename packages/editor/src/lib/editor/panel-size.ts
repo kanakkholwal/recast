@@ -9,6 +9,19 @@
  * a laptop, and the preview is the thing being edited.
  */
 
+/** The properties rail is laid out for 352px and gets cramped below it; past
+ *  600px the controls just stretch. */
+export const SIDEBAR_MIN_WIDTH_PX = 352;
+export const SIDEBAR_MAX_WIDTH_PX = 600;
+export const SIDEBAR_DEFAULT_WIDTH_PX = 384;
+
+/** `width` brought inside the sidebar bounds. A non-finite value (an empty
+ *  localStorage read parses to NaN) falls back to the default, not the floor. */
+export function clampSidebarWidth(width: number): number {
+	if (!Number.isFinite(width)) return SIDEBAR_DEFAULT_WIDTH_PX;
+	return Math.min(SIDEBAR_MAX_WIDTH_PX, Math.max(SIDEBAR_MIN_WIDTH_PX, Math.round(width)));
+}
+
 /** Ruler + clip bar + one lane + the toolbar, near enough. */
 export const TIMELINE_MIN_HEIGHT_PX = 180;
 /** Absolute ceiling. Past this the extra height is just empty lane space. */

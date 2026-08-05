@@ -1,7 +1,7 @@
 /**
  * Pure shell state helpers for `<Editor />`: layout persistence and the
- * loop-vs-pause decision at end of clip. Split out so they're unit-testable
- * without mounting the editor.
+ * end-of-clip transport decision. Split out so they're unit-testable without
+ * mounting the editor. Panel bounds live in `lib/editor/panel-size`.
  */
 
 export interface ShellLayout {
@@ -11,10 +11,7 @@ export interface ShellLayout {
 
 export const LAYOUT_KEY = "recast-editor-layout";
 export const SIDEBAR_WIDTH_KEY = "recast-editor-sidebar-width";
-
-export const SIDEBAR_MIN = 352;
-export const SIDEBAR_MAX = 600;
-export const SIDEBAR_DEFAULT = 384;
+export const TIMELINE_HEIGHT_KEY = "recast-editor-timeline-height";
 
 export const DEFAULT_LAYOUT: ShellLayout = { sidebar: true, timeline: true };
 
@@ -30,11 +27,6 @@ export function parseLayout(raw: string | null): ShellLayout {
 	} catch {
 		return { ...DEFAULT_LAYOUT };
 	}
-}
-
-export function clampSidebarWidth(w: number): number {
-	if (!Number.isFinite(w)) return SIDEBAR_DEFAULT;
-	return Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
 }
 
 /**
@@ -54,10 +46,8 @@ export function shouldEchoElementTime(webcodecsActive: boolean): boolean {
 	return !webcodecsActive;
 }
 
-/** Panels the host offers, filtered to those the services can actually serve. */
-export function visiblePanels<T extends string>(
-	requested: readonly T[],
-	available: { [K in T]?: boolean },
-): T[] {
-	return requested.filter((p) => available[p] !== false);
+/** Read a persisted number, falling back when the key is absent or junk. */
+export function readStoredNumber(raw: string | null, fallback: number): number {
+	const n = Number(raw);
+	return raw !== null && Number.isFinite(n) && n > 0 ? n : fallback;
 }
