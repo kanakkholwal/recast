@@ -53,6 +53,7 @@ import {
 	recordingFeatures,
 	shareFeatures,
 	stabilityChip,
+	stabilityChipOnFill,
 	storageTiers,
 } from "./data";
 
@@ -914,8 +915,8 @@ function dragScroll(node: HTMLElement) {
 				{#each founderUse as item, i}
 					{@const Icon = item.icon}
 					<Reveal variant="up" delay={i * 70}>
-						<article class="glass-card group flex h-full flex-col rounded-2xl p-7">
-							<span class="glass-chip grid size-11 place-items-center rounded-xl text-foreground/70 transition-colors group-hover:text-foreground">
+						<article class="flex h-full flex-col rounded-2xl border border-border-low bg-card p-7">
+							<span class="grid size-11 place-items-center rounded-xl bg-foreground/[0.04] text-foreground/70">
 								<Icon class="size-5" />
 							</span>
 							<h3 class="mt-6 text-lg font-semibold tracking-tight text-foreground">
@@ -936,7 +937,7 @@ function dragScroll(node: HTMLElement) {
 		<Container>
 			<div class="grid gap-4 md:grid-cols-2">
 				<Reveal variant="left">
-					<article class="glass-card flex h-full flex-col rounded-2xl p-8">
+					<article class="flex h-full flex-col rounded-2xl border border-border-low bg-card p-8">
 						<span class="text-[11px] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
 							The app
 						</span>
@@ -957,7 +958,9 @@ function dragScroll(node: HTMLElement) {
 				</Reveal>
 
 				<Reveal variant="right" delay={80}>
-					<article class="glass-card relative flex h-full flex-col overflow-hidden rounded-2xl p-8 ring-1 ring-foreground/15 transition-[transform,box-shadow] duration-300 ease-out hover:-translate-y-1 hover:shadow-craft-lg motion-reduce:transition-none">
+					<!-- Featured tier reads through a stronger border, not a lift: the
+					     Free card beside it has no hover, so an animated one broke the pair. -->
+					<article class="relative flex h-full flex-col overflow-hidden rounded-2xl border border-foreground/15 bg-card p-8">
 						<span class="relative text-[11px] font-semibold uppercase tracking-[0.16em] text-foreground/70">
 							Recast Cloud
 						</span>
@@ -1126,7 +1129,7 @@ function dragScroll(node: HTMLElement) {
 									<span
 										class={cn(
 											"ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset",
-											chip.cls,
+											stabilityChipOnFill,
 										)}
 									>
 										{chip.label}

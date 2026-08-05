@@ -22,8 +22,10 @@ const close = () => (open = false);
 const session = authClient.useSession();
 const signedIn = $derived(Boolean($session.data?.user));
 
+// whitespace-nowrap is load-bearing: without it "Sign in" wraps to two lines
+// and the whole bar grows a row as soon as the viewport tightens.
 const linkClass =
-	"inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground";
+	"inline-flex items-center whitespace-nowrap rounded-lg px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-foreground/5 hover:text-foreground";
 </script>
 
 <svelte:window
@@ -39,7 +41,7 @@ const linkClass =
   >
     <a
       href="/"
-      class="group/logo flex items-center gap-2.5 rounded-xl px-2 py-1 transition-transform active:scale-[0.97]"
+      class="group/logo flex shrink-0 items-center gap-2.5 rounded-xl px-2 py-1 transition-transform active:scale-[0.97]"
       aria-label="Recast home"
     >
       <span
@@ -47,7 +49,7 @@ const linkClass =
       >
         <Logo size="20" color="transparent" fill="currentColor" />
       </span>
-      <span class="text-[15px] font-semibold tracking-tight text-foreground">
+      <span class="text-[15px] font-semibold tracking-tight whitespace-nowrap text-foreground">
         Recast
       </span>
     </a>
@@ -61,7 +63,7 @@ const linkClass =
       {/each}
     </ul>
 
-    <div class="ml-auto flex items-center gap-1.5 md:ml-0">
+    <div class="ml-auto flex shrink-0 items-center gap-1.5 md:ml-0">
       <a
         href={GITHUB_URL}
         target="_blank"

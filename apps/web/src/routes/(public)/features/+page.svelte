@@ -1,41 +1,36 @@
 <script lang="ts">
-	import {
-	  Container,
-	  Footer,
-	  HeroBackdrop,
-	  Reveal,
-	  Section,
-	  SectionHeader,
-	  SeoMeta
-	} from "$lib/components";
-	import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
-	import {
-	  gapRows,
-	  pillars,
-	  platforms,
-	  stabilityChip,
-	  supports,
-	  verbs
-	} from "./data";
+import {
+	Container,
+	Footer,
+	HeroBackdrop,
+	Reveal,
+	Section,
+	SectionHeader,
+	SeoMeta,
+} from "$lib/components";
+import { prefersReducedMotion, TextLoop } from "$lib/motion-core";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import {
+	gapRows,
+	pillars,
+	platforms,
+	stabilityChip,
+	stabilityChipOnFill,
+	supports,
+	verbs,
+} from "./data";
 
-	// Hero entrance: same 80ms stagger as the rest of the public pages.
-	// 460ms per element lands the whole ladder in well under a second.
-	const reduced = $derived(prefersReducedMotion());
-	const heroStagger = 80;
-	const riseM = (delay: number) =>
-		reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
+// Hero entrance: same 80ms stagger as the rest of the public pages.
+// 460ms per element lands the whole ladder in well under a second.
+const reduced = $derived(prefersReducedMotion());
+const heroStagger = 80;
+const riseM = (delay: number) =>
+	reduced ? { duration: 0 } : { y: 12, duration: 460, delay, easing: cubicOut };
 
-	import {
-	  ArrowRight,
-	  Check
-	} from "@recast/icons";
-	import { Button } from "@recast/ui/button";
-	import { cn } from "@recast/ui/utils";
-
-
-
+import { ArrowRight, Check } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
 </script>
 
 <SeoMeta
@@ -356,7 +351,7 @@
 								>
 									<Icon class="size-4" />
 									Download for {p.label}
-									<span class={cn("ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset", chip.cls)}>
+									<span class={cn("ml-1 inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ring-1 ring-inset", stabilityChipOnFill)}>
 										{chip.label}
 									</span>
 								</Button>
