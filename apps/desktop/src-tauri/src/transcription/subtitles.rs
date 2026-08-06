@@ -1488,8 +1488,10 @@ mod tests {
 
     #[test]
     fn matches_shared_caption_parity_fixture() {
-        let raw =
-            include_str!("../../../../../packages/captions/src/__fixtures__/caption-parity.json");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../packages/captions/src/__fixtures__/caption-parity.json"
+        ));
         let file: ParityFile = serde_json::from_str(raw).expect("parse fixture");
         assert!(!file.cases.is_empty());
 

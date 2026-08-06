@@ -375,7 +375,10 @@ mod tests {
     fn geometric_transform_matches_shared_parity_fixture() {
         // Same file scenes/eval.test.ts asserts against — proves the Rust export
         // evaluator and the TS preview evaluator agree on slide/scale/shrink/pop.
-        let raw = include_str!("../../../src/lib/scenes/__fixtures__/scene-parity.json");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../packages/editor/src/lib/scenes/__fixtures__/scene-parity.json"
+        ));
         // Parse loosely: easing is an array in the fixture.
         let json: serde_json::Value = serde_json::from_str(raw).unwrap();
         for case in json["cases"].as_array().unwrap() {
