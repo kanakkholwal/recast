@@ -22,12 +22,17 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use parking_lot::RwLock;
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager, State};
 
+use super::error::AppResult;
 use super::system::write_atomic;
 use super::types::{AppState, EditorSession, EditorWriterKind};
 
 const SESSION_FILE_NAME: &str = "recast_session.json";
+
+/// Frontend listener channel for lock transitions. The payload is the whole
+/// `EditorSession`, so the GUI never has to poll to learn who holds the project.
+const SESSION_CHANGED_EVENT: &str = "editor-session:changed";
 
 /// On-disk shape. Mirrors `EditorSession` plus the holder's PID so we can
 /// detect a crashed holder on boot.
@@ -244,6 +249,64 @@ pub(crate) fn load_on_startup(state: &AppState, app: &AppHandle) -> bool {
         session.writer
     );
     true
+}
+
+/// Persist + broadcast in one step. Every lock transition must go through this,
+/// otherwise the GUI keeps rendering a stale holder.
+pub(crate) fn commit(state: &AppState, app: &AppHandle) {
+    persist(state, app);
+    let _ = app.emit(SESSION_CHANGED_EVENT, snapshot(state));
+}
+
+#[tauri::command]
+pub async fn get_editor_session(state: State<'_, AppState>) -> AppResult<EditorSession> {
+    Ok(snapshot(&state))
+}
+
+/// Claim the project for the GUI. Called when an editor window opens a project;
+/// a held lock surfaces the same `editor_locked` string the CLI gets.
+#[tauri::command]
+pub async fn acquire_editor_write(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    project_path: String,
+    writer_id: String,
+) -> AppResult<EditorSession> {
+    try_acquire_write(
+        &state,
+        PathBuf::from(project_path),
+        EditorWriterKind::Ui,
+        writer_id,
+    )?;
+    commit(&state, &app);
+    Ok(snapshot(&state))
+}
+
+/// Release only if `writer_id` still owns the lock. Safe to call on unmount
+/// even after the TTL handed the project to someone else.
+#[tauri::command]
+pub async fn release_editor_write(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    writer_id: String,
+) -> AppResult<bool> {
+    let released = release_if_owner(&state, &writer_id);
+    if released {
+        commit(&state, &app);
+    }
+    Ok(released)
+}
+
+/// Evict whoever holds the lock. Backs the editor's "Take over" button, so the
+/// user is never stranded behind an agent that stopped responding.
+#[tauri::command]
+pub async fn force_release_editor_write(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Option<EditorWriterKind>> {
+    let prior = force_release(&state);
+    commit(&state, &app);
+    Ok(prior)
 }
 
 fn session_file(app: &AppHandle) -> Option<PathBuf> {

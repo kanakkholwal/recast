@@ -26,6 +26,9 @@ import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
+import { agentSession } from "@recast/editor";
+import AgentSessionBadge from "@recast/editor/components/AgentSessionBadge.svelte";
+import { acquireEditorWrite, releaseEditorWrite } from "$lib/editor/agent-session.tauri";
 import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
 import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
 import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
@@ -461,6 +464,45 @@ function stopAutosave() {
 		autosaveTimer = null;
 	}
 }
+
+// Project write-lock + agent listener. The GUI is a first-class holder, so an
+// agent that patches this project while it's open is refused rather than
+// silently racing the autosave above.
+const editorWriterId = `ui:${crypto.randomUUID().slice(0, 8)}`;
+
+$effect(() => {
+	const path = documentPath;
+	if (!path) return;
+	let cancelled = false;
+
+	acquireEditorWrite(path, editorWriterId).catch((err) => {
+		// An agent already holds it: stay read-only rather than pretending we own
+		// the project. `agentSession.active` drives the banner + inert panels.
+		if (!cancelled) log.warn("editor", "write-lock unavailable", { err: String(err) });
+	});
+
+	const unbind = agentSession.bind({
+		store,
+		projectPath: path,
+		// Refuse-by-default: unsaved edits are never discarded without a choice.
+		onConflict: () =>
+			new Promise<boolean>((resolve) => {
+				toast.warning("The agent changed this project", {
+					description: "You have unsaved edits, so its version wasn't loaded.",
+					duration: 15_000,
+					action: { label: "Load agent version", onClick: () => resolve(true) },
+					onDismiss: () => resolve(false),
+					onAutoClose: () => resolve(false),
+				});
+			}),
+	});
+
+	return () => {
+		cancelled = true;
+		unbind();
+		void releaseEditorWrite(editorWriterId).catch(() => {});
+	};
+});
 
 // Tell the export store a panel-hosting editor is on screen. A fresh editor
 // never has the panel open yet, so clear any stale foreground left by an
@@ -1963,19 +2005,24 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
   class="fixed inset-0 flex min-h-screen w-full flex-col overflow-hidden bg-background text-foreground"
 >
   <CustomTitlebar wrapperClass="h-9">
-    <EditorToolbar
-      {store}
-      filename={data.filename}
-      onexport={onExportButton}
-      exportMode={exportButtonMode}
-      exportRunning={myItem?.status === "running"}
-      onsave={handleSave}
-      {isSaving}
-      {showSidebar}
-      {showTimeline}
-      onToggleSidebar={() => (showSidebar = !showSidebar)}
-      onToggleTimeline={() => (showTimeline = !showTimeline)}
-    />
+    <!-- `inert` (not per-control `disabled`) so a future toolbar action can't
+         silently miss the gate: it blocks pointer + tab + a11y tree in one. -->
+    <div class="flex min-w-0 flex-1 items-center" inert={agentSession.active}>
+      <EditorToolbar
+        {store}
+        filename={data.filename}
+        onexport={onExportButton}
+        exportMode={exportButtonMode}
+        exportRunning={myItem?.status === "running"}
+        onsave={handleSave}
+        {isSaving}
+        {showSidebar}
+        {showTimeline}
+        onToggleSidebar={() => (showSidebar = !showSidebar)}
+        onToggleTimeline={() => (showTimeline = !showTimeline)}
+      />
+    </div>
+    <AgentSessionBadge />
   </CustomTitlebar>
 
   <!-- Foreground upload dialogs (cloud share + Drive), reopened by clicking an
@@ -2119,7 +2166,12 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
                     : ''}"
                 ></div>
               </div>
-              <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+              <!-- Blunt for now: this also freezes scrubbing. Timeline needs a
+                   `readonly` mode (seek yes, structural edits no) — until then
+                   playback stays reachable via the transport controls. -->
+              <div class="contents" inert={agentSession.active}>
+                <Timeline {store} {videoEl} {tileProvider} {filmstripVersion} />
+              </div>
             </div>
           </div>
         {/if}
@@ -2175,7 +2227,7 @@ const EXPORT_STAGES: ExportStage[] = ["prepare", "render", "finalise"];
                 : ''}"
             ></div>
           </div>
-          <div class="h-full" style="width: {sidebarWidth}px;">
+          <div class="h-full" style="width: {sidebarWidth}px;" inert={agentSession.active}>
             <PropertiesPanel
               {store}
               {cameraPath}

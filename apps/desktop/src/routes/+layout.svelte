@@ -8,7 +8,8 @@ import "@recast/player/styles.css";
 import { onNavigate } from "$app/navigation";
 import { page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
-import { setEditorHostHooks, setLogSink } from "@recast/editor";
+import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
+import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
 import { setEditorServicesForApp } from "$lib/editor/services";
 import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { exportActivity } from "$lib/stores/exportActivity.svelte";
@@ -30,6 +31,9 @@ setEditorHostHooks({
 	shortcuts: { chordLabel, registerShortcutHandlers },
 	exportActivity,
 });
+// Lets the editor observe agent edits + the project write-lock. Without a
+// driver installed the listener stays idle, which is the web build's behaviour.
+setAgentSessionDriver(tauriAgentSessionDriver);
 setLogSink(log);
 
 // First-run privacy prompt, shown once in the main window only.

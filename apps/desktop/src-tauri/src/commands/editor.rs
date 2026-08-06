@@ -596,7 +596,9 @@ where
     .map_err(|e| e.to_string())?;
 
     crate::commands::record_activity(state);
-    crate::commands::persist(state, app);
+    // `commit` persists AND broadcasts the lock, so the GUI learns an agent took
+    // the project on the agent's first patch rather than only on the next poll.
+    crate::commands::editor_session::commit(state, app);
     let _ = app.emit("editor-state:changed", serde_json::json!({ "path": path }));
     Ok(result)
 }
