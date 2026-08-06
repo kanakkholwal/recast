@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Pencil } from "@recast/icons";
 import { Button } from "@recast/ui/button";
-import DialogShell from "./DialogShell.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import { stemSelectionRange, toErrorMessage } from "./dialog.logic";
 
 interface Props {

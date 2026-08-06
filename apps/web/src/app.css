@@ -7,6 +7,7 @@
 @source "../node_modules/@recast/ui/src";
 @source "../node_modules/@recast/player/src";
 @source "../node_modules/@recast/application/src";
+@source "../node_modules/@recast/editor/src";
 
 @variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 

@@ -109,6 +109,9 @@ importers:
       '@recast/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@recast/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@recast/media':
         specifier: workspace:*
         version: link:../../packages/media
@@ -290,6 +293,9 @@ importers:
       '@recast/design':
         specifier: workspace:*
         version: link:../../packages/design
+      '@recast/editor':
+        specifier: workspace:*
+        version: link:../../packages/editor
       '@recast/icons':
         specifier: workspace:*
         version: link:../../packages/icons
@@ -397,6 +403,40 @@ importers:
       tw-animate-css:
         specifier: ^1.4.0
         version: 1.4.0
+
+  packages/editor:
+    dependencies:
+      '@recast/captions':
+        specifier: workspace:*
+        version: link:../captions
+      '@recast/design':
+        specifier: workspace:*
+        version: link:../design
+      '@recast/icons':
+        specifier: workspace:*
+        version: link:../icons
+      '@recast/media':
+        specifier: workspace:*
+        version: link:../media
+      '@recast/render':
+        specifier: workspace:*
+        version: link:../render
+      '@recast/ui':
+        specifier: workspace:*
+        version: link:../ui
+      '@unpic/svelte':
+        specifier: ^1.0.1
+        version: 1.0.1(svelte@5.56.3)
+    devDependencies:
+      svelte:
+        specifier: 5.56.3
+        version: 5.56.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@25.6.0)(vite@8.1.4(@types/node@25.6.0)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.3)(yaml@2.9.0))
 
   packages/icons:
     dependencies:

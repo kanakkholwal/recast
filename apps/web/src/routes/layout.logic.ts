@@ -27,6 +27,9 @@ export function isChromeless(pathname: string): boolean {
 		// ships its own top bar. Its landing (/tools/screenshot-editor) keeps the
 		// site chrome.
 		pathname.startsWith("/tools/screenshot-editor/edit") ||
+		// The video editor playground is one page: the drop surface swaps
+		// in-place for a full-height editor, so it owns its whole shell.
+		pathname.startsWith("/playground") ||
 		pathname === "/accept-invitation" ||
 		pathname === "/verify-email" ||
 		CHROMELESS_PATHS.has(pathname)
@@ -56,8 +59,7 @@ const PUBLIC_PREFIXES = [
 /** True on the home page and the public marketing/tool trees. */
 export function isIndexable(pathname: string): boolean {
 	return (
-		pathname === "/" ||
-		PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+		pathname === "/" || PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
 	);
 }
 
@@ -72,10 +74,7 @@ export function buildSiteJsonLd(origin: string): string {
 			"@type": "Organization",
 			name: "Recast",
 			url: origin,
-			sameAs: [
-				"https://github.com/kanakkholwal/recast",
-				"https://x.com/kanakkholwal",
-			],
+			sameAs: ["https://github.com/kanakkholwal/recast", "https://x.com/kanakkholwal"],
 		},
 		{
 			"@context": "https://schema.org",

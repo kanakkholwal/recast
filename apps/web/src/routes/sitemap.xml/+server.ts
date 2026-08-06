@@ -22,6 +22,8 @@ const STATIC_PATHS = [
 	// TOOLS and has to be listed by hand. Its landing page is the indexable one;
 	// /tools/screenshot-editor/edit is the client-only app and stays out.
 	"/tools/screenshot-editor",
+	// One route: the editor is a client-only island on this same URL.
+	"/playground",
 ];
 
 function siteOrigin(fallback: string): string {

@@ -11,19 +11,27 @@
 
 // This worker now lives INSIDE `packages/media`, so it imports MediaBunny
 // directly rather than bouncing through the package barrel.
-import { ALL_FORMATS, Input, UrlSource, type VideoSample, VideoSampleSink } from 'mediabunny';
-import { textureRingFrames } from '../cache/frame-budget';
+import {
+	ALL_FORMATS,
+	Input,
+	type InputVideoTrack,
+	type VideoSample,
+	VideoSampleSink,
+} from "mediabunny";
+import { textureRingFrames } from "../cache/frame-budget";
+import type { MediaRef } from "../media-ref";
+import { mediaRefSource } from "../mediabunny";
 
 /** Mirror of `MediaErrorCode` (REQUIREMENTS.md §2). Kept in-worker because
  *  the worker doesn't import from `@recast/media` to avoid a worker-side
  *  cycle through the package barrel. */
 type MediabunnyErrorCode =
-	| 'unsupported'
-	| 'bad-input'
-	| 'worker-died'
-	| 'cancelled'
-	| 'internal'
-	| 'too-large';
+	| "unsupported"
+	| "bad-input"
+	| "worker-died"
+	| "cancelled"
+	| "internal"
+	| "too-large";
 
 /** Carries a classified code out of `init` so the caller can tell an
  *  undecodable codec from a corrupt file. */
@@ -41,12 +49,17 @@ class WorkerError extends Error {
  * ffprobe metadata. Supplying them skips two container walks that are O(file) on
  * a fragmented MP4 — see `init`.
  */
-type InitMessage = { type: 'init'; url: string; durationSec?: number; fps?: number };
-type SeekMessage = { type: 'seek'; seq: number; originalSec: number };
+type InitMessage = { type: "init"; src: MediaRef; durationSec?: number; fps?: number };
+type SeekMessage = { type: "seek"; seq: number; originalSec: number };
 /** Playhead advanced normally; feeds decode-ahead backpressure, never seeks. */
-type PlayheadMessage = { type: 'playhead'; originalSec: number };
-type PrefetchMessage = { type: 'prefetch'; seq: number; originalSec: number; lookaheadSec?: number };
-type DisposeMessage = { type: 'dispose' };
+type PlayheadMessage = { type: "playhead"; originalSec: number };
+type PrefetchMessage = {
+	type: "prefetch";
+	seq: number;
+	originalSec: number;
+	lookaheadSec?: number;
+};
+type DisposeMessage = { type: "dispose" };
 
 export type ToMediabunnyWorker =
 	| InitMessage
@@ -56,7 +69,7 @@ export type ToMediabunnyWorker =
 	| DisposeMessage;
 
 type ReadyMessage = {
-	type: 'ready';
+	type: "ready";
 	width: number;
 	height: number;
 	durationSec: number;
@@ -64,7 +77,7 @@ type ReadyMessage = {
 };
 
 type FrameMessage = {
-	type: 'frame';
+	type: "frame";
 	seq: number;
 	/** Real presentation timestamp of this frame, seconds. The cache keys on it. */
 	originalSec: number;
@@ -76,7 +89,7 @@ type FrameMessage = {
 	height: number;
 };
 
-type ErrorMessage = { type: 'error'; code: MediabunnyErrorCode; message: string };
+type ErrorMessage = { type: "error"; code: MediabunnyErrorCode; message: string };
 
 export type FromMediabunnyWorker = ReadyMessage | FrameMessage | ErrorMessage;
 
@@ -143,7 +156,33 @@ function awaitPlayhead(): Promise<void> {
 	return new Promise((resolve) => playheadWaiters.push(resolve));
 }
 
-async function init(url: string, hints: { durationSec?: number; fps?: number } = {}): Promise<void> {
+/**
+ * `prefer-hardware`, but only once `isConfigSupported` confirms a hardware
+ * decoder exists for this exact config. Asking for it blind throws at
+ * `configure()` on machines without one, which would drop the whole preview to
+ * the `<video>` fallback rather than decode in software.
+ */
+async function decodeAcceleration(
+	track: InputVideoTrack,
+): Promise<"prefer-hardware" | "no-preference"> {
+	try {
+		if (typeof VideoDecoder === "undefined") return "no-preference";
+		const config = await track.getDecoderConfig();
+		if (!config) return "no-preference";
+		const probe = await VideoDecoder.isConfigSupported({
+			...config,
+			hardwareAcceleration: "prefer-hardware",
+		});
+		return probe.supported ? "prefer-hardware" : "no-preference";
+	} catch {
+		return "no-preference";
+	}
+}
+
+async function init(
+	src: MediaRef,
+	hints: { durationSec?: number; fps?: number } = {},
+): Promise<void> {
 	disposed = false;
 	// Per-step timing: a slow open used to surface only as a 30s timeout with no
 	// indication of which container call was walking the file.
@@ -154,44 +193,43 @@ async function init(url: string, hints: { durationSec?: number; fps?: number } =
 		console.log(`[mb-worker] init ${label} ${(now - stepAt).toFixed(0)}ms`);
 		stepAt = now;
 	};
-	// `UrlSource` makes fetch() calls internally; for Tauri desktop the
-	// asset-protocol URLs (`asset://localhost/...` and `tauri://...`) flow
-	// through Tauri webview's network layer, same as the legacy
-	// `WebCodecsVideoSource` does for its progressive ingestion path.
+	// `UrlSource` fetches internally; on Tauri desktop the asset-protocol URLs
+	// (`asset://localhost/...`, `tauri://...`) flow through the webview's network
+	// layer. A `blob` ref slices the File instead — never a whole-file fetch.
 	input = new Input({
-		source: new UrlSource(url),
+		source: mediaRefSource(src),
 		formats: ALL_FORMATS,
 	});
 	try {
 		if (!(await input.canRead())) {
 			throw new Error("MediaBunny couldn't read this file.");
 		}
-		step('canRead');
+		step("canRead");
 		const track = await input.getPrimaryVideoTrack();
-		if (!track) throw new Error('No video track in the input.');
-		step('getPrimaryVideoTrack');
+		if (!track) throw new Error("No video track in the input.");
+		step("getPrimaryVideoTrack");
 		// Parsing the container proves nothing about decodability — HEVC on a
 		// Windows box without the codec extension parses fine and then throws on
 		// the first decode, seconds later, with the picture already "ready".
 		if (!(await track.canDecode())) {
 			const codec = await track.getCodec();
-			throw new WorkerError('unsupported', `This system can't decode ${codec ?? 'this'} video.`);
+			throw new WorkerError("unsupported", `This system can't decode ${codec ?? "this"} video.`);
 		}
-		step('canDecode');
+		step("canDecode");
 		// Nothing reads this duration — it exists only to fill the `ready`
 		// payload — yet `computeDuration()` walks every fragment of a fragmented
 		// MP4. On a 600MB 4K recording that alone blew the 30s init timeout.
 		// Trust the host's ffprobe value when it has one.
 		const durationSec = hints.durationSec ?? (await input.computeDuration());
-		step('computeDuration');
+		step("computeDuration");
 		// `codedWidth` is the sync deprecated getter (returns 0 until
 		// metadata loads); prefer the async variant for the ready payload.
 		const width = await track.getCodedWidth();
 		const height = await track.getCodedHeight();
-		step('codedDimensions');
+		step("codedDimensions");
 		// Samples, not canvases: the frames go straight to the consumer, so no
 		// per-frame canvas allocation and no canvas→VideoFrame copy.
-		sink = new VideoSampleSink(track);
+		sink = new VideoSampleSink(track, { hardwareAcceleration: await decodeAcceleration(track) });
 		// Real rate, not a hardcoded 30: the source derives each frame's
 		// duration from it, and telemetry cohorts on it.
 		let fps = 30;
@@ -214,12 +252,12 @@ async function init(url: string, hints: { durationSec?: number; fps?: number } =
 		// isn't overwritten before the playhead reaches it.
 		const ahead = Math.max(2, textureRingFrames(width, height) - 2);
 		lookaheadSec = ahead / Math.max(1, fps);
-		step('packetStats');
-		post({ type: 'ready', width, height, durationSec, fps });
+		step("packetStats");
+		post({ type: "ready", width, height, durationSec, fps });
 	} catch (err) {
 		post({
-			type: 'error',
-			code: err instanceof WorkerError ? err.code : 'bad-input',
+			type: "error",
+			code: err instanceof WorkerError ? err.code : "bad-input",
 			message: err instanceof Error ? err.message : String(err),
 		});
 		throw err;
@@ -234,7 +272,7 @@ async function init(url: string, hints: { durationSec?: number; fps?: number } =
  */
 async function runFrom(seq: number, startSec: number): Promise<void> {
 	if (!sink) {
-		post({ type: 'error', code: 'worker-died', message: 'Sink not initialized.' });
+		post({ type: "error", code: "worker-died", message: "Sink not initialized." });
 		return;
 	}
 	const myRun = ++runId;
@@ -268,7 +306,7 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 			sample.close();
 			// Post the REAL presentation timestamp, not the requested one: the
 			// cache keys on it, and the reader looks up by nearest-at-or-before.
-			post({ type: 'frame', seq, originalSec: timestamp, frame, width, height }, [frame]);
+			post({ type: "frame", seq, originalSec: timestamp, frame, width, height }, [frame]);
 			sent++;
 			deliveredSec = timestamp;
 			while (myRun === runId && !disposed && timestamp > playheadSec + lookaheadSec) {
@@ -289,14 +327,14 @@ async function runFrom(seq: number, startSec: number): Promise<void> {
 	} catch (err) {
 		if (myRun === runId && !disposed) {
 			post({
-				type: 'error',
-				code: 'internal',
+				type: "error",
+				code: "internal",
 				message: err instanceof Error ? err.message : String(err),
 			});
 		}
 	} finally {
 		if (DIAG) {
-			const why = disposed ? 'disposed' : myRun !== runId ? 'superseded' : 'end-of-stream';
+			const why = disposed ? "disposed" : myRun !== runId ? "superseded" : "end-of-stream";
 			console.log(`[mb-worker] run ${seq} ended after ${sent} frames (${why})`);
 		}
 		// Stop absorbing seeks into a run that is no longer streaming, or a
@@ -339,7 +377,7 @@ async function prefetch(seq: number, originalSec: number): Promise<void> {
 		const width = frame.codedWidth;
 		const height = frame.codedHeight;
 		sample.close();
-		post({ type: 'frame', seq, originalSec: timestamp, frame, width, height }, [frame]);
+		post({ type: "frame", seq, originalSec: timestamp, frame, width, height }, [frame]);
 	} catch {
 		/* prefetch is best-effort */
 	} finally {
@@ -374,14 +412,14 @@ export function startMediabunnyWorker(): void {
 function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 	const msg = e.data;
 	switch (msg.type) {
-		case 'init':
-			void init(msg.url, { durationSec: msg.durationSec, fps: msg.fps }).catch((err) => {
+		case "init":
+			void init(msg.src, { durationSec: msg.durationSec, fps: msg.fps }).catch((err) => {
 				// init() already posts an error message; just log here for the
 				// developer console and bail.
-				console.error('[mb-worker] init failed:', err);
+				console.error("[mb-worker] init failed:", err);
 			});
 			return;
-		case 'seek':
+		case "seek":
 			// A drag issues near-identical targets back to back. If the live run
 			// is already streaming through this point, moving its playhead is
 			// enough — superseding would kill a warm decoder and hold the
@@ -400,15 +438,15 @@ function handleMessage(e: MessageEvent<ToMediabunnyWorker>): void {
 			notifyPlayhead();
 			void runFrom(msg.seq, msg.originalSec);
 			return;
-		case 'playhead':
+		case "playhead":
 			// Steady playback: only releases backpressure, never restarts decode.
 			playheadSec = msg.originalSec;
 			notifyPlayhead();
 			return;
-		case 'prefetch':
+		case "prefetch":
 			void prefetch(msg.seq, msg.originalSec);
 			return;
-		case 'dispose':
+		case "dispose":
 			dispose();
 			return;
 	}

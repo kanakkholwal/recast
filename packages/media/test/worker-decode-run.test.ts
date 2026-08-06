@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 /**
  * Drives the REAL decode worker against a mocked MediaBunny. The source-side
@@ -97,10 +97,13 @@ function fakeSamples(startTimestamp = 0) {
 	};
 }
 
-vi.mock('mediabunny', () => ({
+vi.mock("mediabunny", () => ({
 	ALL_FORMATS: [],
 	UrlSource: class {
 		constructor(readonly url: string) {}
+	},
+	BlobSource: class {
+		constructor(readonly blob: Blob) {}
 	},
 	VideoSampleSink: class {
 		samples(startTimestamp?: number) {
@@ -122,7 +125,7 @@ vi.mock('mediabunny', () => ({
 				getCodedHeight: async () => videoHeight,
 				computePacketStats: async () => ({ averagePacketRate: 60 }),
 				canDecode: async () => canDecode,
-				getCodec: async () => 'hevc',
+				getCodec: async () => "hevc",
 			};
 		}
 		async computeDuration() {
@@ -134,7 +137,7 @@ vi.mock('mediabunny', () => ({
 
 type Posted = { msg: { type: string; [k: string]: unknown }; transfer: unknown[] };
 
-describe('decode run against MediaBunny sample semantics', () => {
+describe("decode run against MediaBunny sample semantics", () => {
 	let posted: Posted[];
 	let onmessage: ((e: { data: unknown }) => void) | null;
 
@@ -152,7 +155,7 @@ describe('decode run against MediaBunny sample semantics', () => {
 		openFrames = new Set();
 		const fakeSelf = {
 			postMessage(msg: unknown, transfer: unknown[] = []) {
-				posted.push({ msg: msg as Posted['msg'], transfer });
+				posted.push({ msg: msg as Posted["msg"], transfer });
 			},
 			set onmessage(h: (e: { data: unknown }) => void) {
 				onmessage = h;
@@ -161,40 +164,40 @@ describe('decode run against MediaBunny sample semantics', () => {
 				return onmessage as (e: { data: unknown }) => void;
 			},
 		};
-		vi.stubGlobal('self', fakeSelf);
+		vi.stubGlobal("self", fakeSelf);
 	});
 
 	afterEach(async () => {
 		// Stop any run still in flight, or it posts frames into the next test's
 		// buffer — the worker module outlives the per-test globals.
-		onmessage?.({ data: { type: 'dispose' } });
+		onmessage?.({ data: { type: "dispose" } });
 		await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS * 2));
 		vi.unstubAllGlobals();
 		vi.resetModules();
 	});
 
 	async function boot() {
-		const { startMediabunnyWorker } = await import('../src/playback/worker');
+		const { startMediabunnyWorker } = await import("../src/playback/worker");
 		startMediabunnyWorker();
-		onmessage?.({ data: { type: 'init', url: 'asset://x.mp4' } });
-		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === 'ready')).toBe(true));
+		onmessage?.({ data: { type: "init", src: { kind: "url", url: "asset://x.mp4" } } });
+		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === "ready")).toBe(true));
 	}
 
-	const frames = () => posted.filter((p) => p.msg.type === 'frame');
+	const frames = () => posted.filter((p) => p.msg.type === "frame");
 
-	it('streams frames and transfers each one', async () => {
+	it("streams frames and transfers each one", async () => {
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
-		expect(posted.filter((p) => p.msg.type === 'error')).toEqual([]);
+		expect(posted.filter((p) => p.msg.type === "error")).toEqual([]);
 		// Every frame must be in its message's transfer list, or it is structured-
 		// cloned (a full copy) instead of moved.
 		for (const p of frames()) expect(p.transfer).toContain(p.msg.frame);
 	});
 
-	it('closes every sample it takes a frame from', async () => {
+	it("closes every sample it takes a frame from", async () => {
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(2));
 		await new Promise((r) => setTimeout(r, 100));
 		// A sample holds its own decode surface; leaking them exhausts the pool.
@@ -202,7 +205,7 @@ describe('decode run against MediaBunny sample semantics', () => {
 		expect([...openSamples].filter((s) => !s.closed)).toEqual([]);
 	});
 
-	it('bounds decode-ahead by the frame budget, not a fixed duration', async () => {
+	it("bounds decode-ahead by the frame budget, not a fixed duration", async () => {
 		// 4K: frameBudget allows a handful of frames. A fixed 0.75s lookahead
 		// decoded ~45 frames per window against a 4-frame cache, and the churn
 		// (two full-frame allocations each) took the renderer down.
@@ -210,46 +213,46 @@ describe('decode run against MediaBunny sample semantics', () => {
 		videoHeight = 2160;
 		framesAvailable = 600;
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
 		// Let it run well past any short-lived burst, then confirm it parked.
 		await new Promise((r) => setTimeout(r, 150));
 		expect(frames().length).toBeLessThan(12);
 	});
 
-	it('rejects an undecodable codec at init instead of on the first decode', async () => {
+	it("rejects an undecodable codec at init instead of on the first decode", async () => {
 		canDecode = false;
-		const { startMediabunnyWorker } = await import('../src/playback/worker');
+		const { startMediabunnyWorker } = await import("../src/playback/worker");
 		startMediabunnyWorker();
-		onmessage?.({ data: { type: 'init', url: 'asset://x.mp4' } });
-		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === 'error')).toBe(true));
-		const err = posted.find((p) => p.msg.type === 'error')?.msg;
-		expect(err?.code).toBe('unsupported');
-		expect(String(err?.message)).toContain('hevc');
-		expect(posted.some((p) => p.msg.type === 'ready')).toBe(false);
+		onmessage?.({ data: { type: "init", src: { kind: "url", url: "asset://x.mp4" } } });
+		await vi.waitFor(() => expect(posted.some((p) => p.msg.type === "error")).toBe(true));
+		const err = posted.find((p) => p.msg.type === "error")?.msg;
+		expect(err?.code).toBe("unsupported");
+		expect(String(err?.message)).toContain("hevc");
+		expect(posted.some((p) => p.msg.type === "ready")).toBe(false);
 	});
 
-	it('releases a run parked on backpressure when a seek supersedes it', async () => {
+	it("releases a run parked on backpressure when a seek supersedes it", async () => {
 		framesAvailable = 600;
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(liveRuns).toBe(1));
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0));
 
 		// Scrub elsewhere without ever sending a `playhead` — exactly what a
 		// paused click-to-click scrub does.
-		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: 30 } });
+		onmessage?.({ data: { type: "seek", seq: 2, originalSec: 30 } });
 		await vi.waitFor(() => expect(liveRuns).toBe(1), { timeout: 2000 });
 	});
 
-	it('tears down the previous run before starting the next', async () => {
+	it("tears down the previous run before starting the next", async () => {
 		// A superseded run is blocked in `for await` until its first sample
 		// arrives, so it cannot notice it has been replaced. Waiting for that
 		// left one live decoder per scrub tick until the pool was exhausted.
 		framesAvailable = 600;
 		await boot();
 		for (let i = 0; i < 20; i++) {
-			onmessage?.({ data: { type: 'seek', seq: i + 1, originalSec: i * 5 } });
+			onmessage?.({ data: { type: "seek", seq: i + 1, originalSec: i * 5 } });
 		}
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(0), { timeout: 2000 });
 		// Peak, not eventual: every run alive at the same instant is holding its
@@ -257,37 +260,37 @@ describe('decode run against MediaBunny sample semantics', () => {
 		expect(peakRuns).toBeLessThanOrEqual(2);
 	});
 
-	it('absorbs a seek the live run is already streaming through', async () => {
+	it("absorbs a seek the live run is already streaming through", async () => {
 		// A drag issues one seek per pointer move, all within a few frames of
 		// each other. Restarting for a target the run has already decoded pays
 		// full decoder startup and holds the picture on the last frame — which
 		// is the freeze that only clears when you drag again.
 		framesAvailable = 600;
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(3));
 		const runsBefore = runsStarted;
 		const covered = frames()[2]?.msg.originalSec as number;
-		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: covered } });
+		onmessage?.({ data: { type: "seek", seq: 2, originalSec: covered } });
 		await new Promise((r) => setTimeout(r, DECODER_STARTUP_MS * 3));
 		expect(runsStarted).toBe(runsBefore);
 	});
 
-	it('restarts once the run that covered a target has ended', async () => {
+	it("restarts once the run that covered a target has ended", async () => {
 		// Coverage must die with the run, or a seek inside its old window is
 		// absorbed into nothing and no frame is ever decoded.
 		framesAvailable = 4;
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(liveRuns).toBe(0), { timeout: 2000 });
 		const runsBefore = runsStarted;
-		onmessage?.({ data: { type: 'seek', seq: 2, originalSec: 1 / 60 } });
+		onmessage?.({ data: { type: "seek", seq: 2, originalSec: 1 / 60 } });
 		await vi.waitFor(() => expect(runsStarted).toBe(runsBefore + 1), { timeout: 2000 });
 	});
 
-	it('posts each frame under its real presentation timestamp', async () => {
+	it("posts each frame under its real presentation timestamp", async () => {
 		await boot();
-		onmessage?.({ data: { type: 'seek', seq: 1, originalSec: 0 } });
+		onmessage?.({ data: { type: "seek", seq: 1, originalSec: 0 } });
 		await vi.waitFor(() => expect(frames().length).toBeGreaterThan(2));
 		const stamps = frames().map((p) => p.msg.originalSec as number);
 		expect(stamps[0]).toBeCloseTo(0, 6);

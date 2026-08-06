@@ -2,7 +2,32 @@
 // the page file stays focused on layout. Each export is its own const so
 // the bundler can tree-shake whatever the page doesn't actually use.
 
-import { Camera, Crop, Cpu, FileBox, HardDrive, HardDriveUpload, Highlighter, Layers, Layout, MemoryStick, Monitor, MousePointer2, Pause, Scissors, ShieldCheck, Sparkles, Target, VolumeX, WifiOff, Zap, Apple,  AiWand, Keyboard, UserX } from "@recast/icons";
+import {
+	Camera,
+	Crop,
+	Cpu,
+	FileBox,
+	HardDrive,
+	HardDriveUpload,
+	Highlighter,
+	Layers,
+	Layout,
+	MemoryStick,
+	Monitor,
+	MousePointer2,
+	Pause,
+	Scissors,
+	ShieldCheck,
+	Sparkles,
+	Target,
+	VolumeX,
+	WifiOff,
+	Zap,
+	Apple,
+	AiWand,
+	Keyboard,
+	UserX,
+} from "@recast/icons";
 import { GithubBrand } from "@recast/ui/brand-icons";
 
 export const pillars = [
@@ -32,7 +57,12 @@ export const pillars = [
 export const platforms = [
 	{ icon: Monitor, label: "Windows", stability: "stable" as const, note: "Daily-driver stable" },
 	{ icon: Apple, label: "macOS", stability: "beta" as const, note: "Active beta (12.0+)" },
-	{ icon: Monitor, label: "Linux", stability: "beta" as const, note: "Active beta (Wayland + X11)" },
+	{
+		icon: Monitor,
+		label: "Linux",
+		stability: "beta" as const,
+		note: "Active beta (Wayland + X11)",
+	},
 ];
 
 export const stabilityChip: Record<"stable" | "beta", { label: string; cls: string }> = {
@@ -45,6 +75,12 @@ export const stabilityChip: Record<"stable" | "beta", { label: string; cls: stri
 		cls: "bg-amber-500/12 text-amber-600 ring-amber-500/25 dark:text-amber-400",
 	},
 };
+
+// `cls` above assumes a page/card surface. Inside a filled button the chip
+// sits on primary or foreground, where emerald-600 and amber-600 both fail
+// contrast — so there it derives from the button's own ink instead, and the
+// label is what distinguishes stable from beta.
+export const stabilityChipOnFill = "bg-current/20 ring-current/35";
 
 // Side-by-side comparison rows. Each row: a feature label + the
 // comparison value per product. The tone of the value is set by

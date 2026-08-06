@@ -25,13 +25,14 @@
  * `frameAt` is the older cache-backed path, kept for consumers that want it.
  */
 
-import { getFrameCache } from '../cache';
-import { frameCacheCapBytes } from '../cache/frame-budget';
-import { isUnsupportedContainer } from '../cache/unsupported-formats';
-import type { CachedFrame } from '../cache/storage';
-import { MediaError } from '../errors';
-import { markNow, measureSince } from '../marks';
-import type { FromMediabunnyWorker, ToMediabunnyWorker } from './worker';
+import { getFrameCache } from "../cache";
+import { frameCacheCapBytes } from "../cache/frame-budget";
+import { isUnsupportedContainer } from "../cache/unsupported-formats";
+import type { CachedFrame } from "../cache/storage";
+import { MediaError } from "../errors";
+import { markNow, measureSince } from "../marks";
+import { type MediaRef, mediaRefExtension, mediaRefKey, toMediaRef } from "../media-ref";
+import type { FromMediabunnyWorker, ToMediabunnyWorker } from "./worker";
 
 /** Backwards tolerance before a request counts as a jump, not jitter. */
 const FRAME_SLACK_SEC = 0.05;
@@ -101,7 +102,7 @@ export class MediabunnyVideoSource {
 	 * distinguish at this layer. Reports `progressive` to match the
 	 * WebCodecs source's semantic vocabulary for telemetry.
 	 */
-	readonly ingestion: 'whole' | 'progressive' = 'progressive';
+	readonly ingestion: "whole" | "progressive" = "progressive";
 
 	/** See {@link WebCodecsVideoSource.onFrame}. */
 	onFrame: (() => void) | null = null;
@@ -137,22 +138,23 @@ export class MediabunnyVideoSource {
 	}
 
 	/**
-	 * Open `url` and resolve once the source can answer `frameAt`. Rejects if
+	 * Open `src` and resolve once the source can answer `frameAt`. Rejects if
 	 * the worker dies or the input is unreadable; the caller should fall back
-	 * to the `<video>` element.
+	 * to the `<video>` element. A bare string is treated as a URL ref.
 	 */
 	static async create(
-		url: string,
+		src: MediaRef | Blob | string,
 		options: MediabunnySourceOptions,
 	): Promise<MediabunnyVideoSource> {
-		if (typeof Worker === 'undefined' || typeof VideoFrame === 'undefined') {
-			throw new MediaError('unsupported', 'Worker/VideoFrame unavailable in this WebView');
+		if (typeof Worker === "undefined" || typeof VideoFrame === "undefined") {
+			throw new MediaError("unsupported", "Worker/VideoFrame unavailable in this WebView");
 		}
+		const ref = toMediaRef(src);
 		// Reject known-undecodable containers up front rather than spawning a
 		// worker to discover it. The caller falls back to <video> either way.
-		const ext = url.split('?')[0]?.split('.').pop() ?? '';
+		const ext = mediaRefExtension(ref);
 		if (ext && isUnsupportedContainer(ext)) {
-			throw new MediaError('unsupported', `MediaBunny cannot decode .${ext} files`);
+			throw new MediaError("unsupported", `MediaBunny cannot decode .${ext} files`);
 		}
 		const worker = options.createWorker();
 		let timer: ReturnType<typeof setTimeout> | undefined;
@@ -165,10 +167,10 @@ export class MediabunnyVideoSource {
 			}>((resolve, reject) => {
 				worker.onmessage = (e: MessageEvent<FromMediabunnyWorker>) => {
 					const msg = e.data;
-					if (msg.type === 'ready') {
+					if (msg.type === "ready") {
 						resolve(msg);
-					} else if (msg.type === 'error') {
-						reject(new MediaError('bad-input', msg.message));
+					} else if (msg.type === "error") {
+						reject(new MediaError("bad-input", msg.message));
 					}
 				};
 				// A worker that fails to LOAD fires onerror with an empty message,
@@ -176,19 +178,19 @@ export class MediabunnyVideoSource {
 				worker.onerror = (e) =>
 					reject(
 						new MediaError(
-							'worker-died',
-							e.message || `worker script failed to load: ${e.filename || 'unknown'}`,
+							"worker-died",
+							e.message || `worker script failed to load: ${e.filename || "unknown"}`,
 						),
 					);
 				// Without this a stalled read (an asset-protocol fetch that never
 				// settles) leaves the caller waiting forever with no error.
 				timer = setTimeout(
-					() => reject(new MediaError('worker-died', 'Timed out opening the media source')),
+					() => reject(new MediaError("worker-died", "Timed out opening the media source")),
 					INIT_TIMEOUT_MS,
 				);
 				const init: ToMediabunnyWorker = {
-					type: 'init',
-					url,
+					type: "init",
+					src: ref,
 					durationSec: options.durationSec,
 					fps: options.fps,
 				};
@@ -198,7 +200,7 @@ export class MediabunnyVideoSource {
 			const source = new MediabunnyVideoSource(worker, meta);
 			// Singleton cache keyed by bare timestamp: scope it or another
 			// recording's frame answers reads for this one.
-			source.#cache.setScope(url);
+			source.#cache.setScope(mediaRefKey(ref));
 			// Frames are GPU surfaces; a cap that is safe at 1080p starves the
 			// decoder's pool at 4K, which is the classic ~8fps stall.
 			source.#cache.memoryCapBytes = frameCacheCapBytes(meta.width, meta.height);
@@ -236,10 +238,10 @@ export class MediabunnyVideoSource {
 		if (this.#disposed) {
 			// Transferred frames are ours now; dropping one without closing leaks
 			// a decode surface.
-			if (msg.type === 'frame') msg.frame.close();
+			if (msg.type === "frame") msg.frame.close();
 			return;
 		}
-		if (msg.type === 'frame') {
+		if (msg.type === "frame") {
 			// Frames from a superseded run are still valid pictures for their own
 			// timestamp, so cache them. Dropping late frames (the old behavior)
 			// threw away work and starved the display.
@@ -263,30 +265,32 @@ export class MediabunnyVideoSource {
 			// timeline. Only the first frame of a run closes the seek measure.
 			if (!this.#sawFirstFrame) {
 				this.#sawFirstFrame = true;
-				measureSince('time-to-first-frame', this.#startedAtMs, {
+				measureSince("time-to-first-frame", this.#startedAtMs, {
 					width: this.width,
 					height: this.height,
 				});
 			}
 			if (this.#seekStartedMs > 0) {
-				measureSince('seek-latency', this.#seekStartedMs, { seq: msg.seq });
+				measureSince("seek-latency", this.#seekStartedMs, { seq: msg.seq });
 				this.#seekStartedMs = 0;
 			}
 			// Log jumps only: the run streams every frame, so per-frame logging
 			// would put 30-60 lines/sec into the dev console.
 			if (DIAG && msg.seq !== this.#loggedSeq) {
 				this.#loggedSeq = msg.seq;
-				console.log(`[mb] run ${msg.seq} @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`);
+				console.log(
+					`[mb] run ${msg.seq} @ ${msg.originalSec.toFixed(3)}s (${msg.width}x${msg.height})`,
+				);
 			}
 			// Paint, since the editor's rAF loop is the only thing that re-renders
 			// during a pause, and a freshly-decoded seek target needs to repaint.
 			this.onFrame?.();
 			return;
 		}
-		if (msg.type === 'error') {
+		if (msg.type === "error") {
 			// A dead run means a frozen picture, not a degraded one — never
 			// downgrade this to a warning.
-			console.error('[mb] decode run failed:', msg.code, msg.message);
+			console.error("[mb] decode run failed:", msg.code, msg.message);
 			this.onError?.(new MediaError(msg.code, msg.message));
 		}
 	}
@@ -322,7 +326,7 @@ export class MediabunnyVideoSource {
 		const isJump = this.#lastRequestSec < 0 || delta < -FRAME_SLACK_SEC || delta > JUMP_SEC;
 		this.#lastRequestSec = originalSec;
 		if (isJump) this.#requestSeek(originalSec);
-		else this.#post({ type: 'playhead', originalSec });
+		else this.#post({ type: "playhead", originalSec });
 	}
 
 	/**
@@ -351,7 +355,7 @@ export class MediabunnyVideoSource {
 		this.#pendingSeekSec = null;
 		this.#lastSeekPostedMs = markNow();
 		this.#seekStartedMs = markNow();
-		this.#post({ type: 'seek', seq: ++this.#seq, originalSec: target });
+		this.#post({ type: "seek", seq: ++this.#seq, originalSec: target });
 	}
 
 	frameAt(originalSec: number, floorSec = 0): VideoFrame | null {
@@ -378,7 +382,7 @@ export class MediabunnyVideoSource {
 	 */
 	prefetch(originalSec: number): void {
 		if (this.#disposed) return;
-		this.#post({ type: 'prefetch', seq: ++this.#seq, originalSec });
+		this.#post({ type: "prefetch", seq: ++this.#seq, originalSec });
 	}
 
 	dispose(): void {
@@ -387,7 +391,7 @@ export class MediabunnyVideoSource {
 		clearTimeout(this.#seekTimer);
 		this.#seekTimer = undefined;
 		if (this.onStats) this.onStats(this.stats());
-		this.#post({ type: 'dispose' });
+		this.#post({ type: "dispose" });
 		// Persistent cache survives on purpose: the next session should hit it.
 		// Worker self-closes; terminate is the backstop.
 		this.#worker.terminate();

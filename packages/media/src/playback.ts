@@ -10,7 +10,8 @@
  * - Demux and decode run in the worker, never on the main thread.
  */
 
-import { MediaError } from './errors';
+import { MediaError } from "./errors";
+import { type MediaRef, toMediaRef } from "./media-ref";
 
 /**
  * A media input: a URL (Tauri `asset:` on desktop, range-capable HTTP on web)
@@ -26,9 +27,9 @@ export type FrameHandle = number;
  * via `source.on(...)` and unsubscribes via the returned cleanup function.
  */
 export type PlaybackEvent =
-	| { kind: 'ready'; duration: number }
-	| { kind: 'error'; error: Error }
-	| { kind: 'ended' };
+	| { kind: "ready"; duration: number }
+	| { kind: "error"; error: Error }
+	| { kind: "ended" };
 
 /**
  * A frame returned from `PlaybackSource.seek`. The consumer owns it and MUST
@@ -81,36 +82,31 @@ export interface PlaybackSource {
 	prefetchAround(seconds: number, lookaheadSeconds?: number): Promise<void>;
 
 	/** Subscribe to a lifecycle event. Returns an unsubscribe function. */
-	on(event: 'ready' | 'error' | 'ended', handler: (payload: PlaybackEvent) => void): Unsubscribe;
+	on(event: "ready" | "error" | "ended", handler: (payload: PlaybackEvent) => void): Unsubscribe;
 
 	/** Stop decoding, release GPU buffers and the worker. Idempotent. */
 	dispose(): Promise<void>;
 }
 
 /**
- * Open `source` as a worker-bridged playback source. URL only for now; wrap
- * `Blob`/`File` with `URL.createObjectURL`. `createWorker` is supplied by the
- * host app so the worker URL resolves against its root — see
- * `MediabunnySourceOptions`.
+ * Open `source` as a worker-bridged playback source. A `Blob`/`File` is sliced
+ * directly — do NOT wrap it in an object URL, which can degrade to fetching the
+ * whole file into memory. `createWorker` is supplied by the host app so the
+ * worker URL resolves against its root — see `MediabunnySourceOptions`.
  */
 export async function openMediaSource(
-	source: MediaSource,
+	source: MediaRef | MediaSource,
 	options: { createWorker: () => Worker; signal?: AbortSignal },
 ): Promise<PlaybackSource> {
 	const { signal } = options;
-	if (signal?.aborted) throw new MediaError('cancelled', 'openMediaSource aborted');
-	const url = typeof source === 'string' ? source : null;
-	if (!url) {
-		throw new MediaError(
-			'unsupported',
-			'openMediaSource currently accepts a URL; wrap Blob/File with URL.createObjectURL',
-		);
-	}
-	const { MediabunnyVideoSource } = await import('./playback/index');
-	const impl = await MediabunnyVideoSource.create(url, { createWorker: options.createWorker });
+	if (signal?.aborted) throw new MediaError("cancelled", "openMediaSource aborted");
+	const { MediabunnyVideoSource } = await import("./playback/index");
+	const impl = await MediabunnyVideoSource.create(toMediaRef(source), {
+		createWorker: options.createWorker,
+	});
 	if (signal?.aborted) {
 		impl.dispose();
-		throw new MediaError('cancelled', 'openMediaSource aborted');
+		throw new MediaError("cancelled", "openMediaSource aborted");
 	}
 	return adaptToPlaybackSource(impl);
 }
@@ -138,7 +134,7 @@ export async function prefetchAround(
  * `PlaybackSource` surface, awaiting `onFrame` on a cache miss.
  */
 function adaptToPlaybackSource(
-	impl: import('./playback/source').MediabunnyVideoSource,
+	impl: import("./playback/source").MediabunnyVideoSource,
 ): PlaybackSource {
 	let currentTime = 0;
 	let disposed = false;
@@ -159,7 +155,7 @@ function adaptToPlaybackSource(
 		},
 
 		async seek(seconds: number, signal?: AbortSignal): Promise<PlaybackFrame | null> {
-			if (signal?.aborted) throw new MediaError('cancelled', 'seek aborted');
+			if (signal?.aborted) throw new MediaError("cancelled", "seek aborted");
 			currentTime = seconds;
 			const immediate = impl.frameAt(seconds);
 			const wrap = (frame: VideoFrame): PlaybackFrame => ({
@@ -176,13 +172,13 @@ function adaptToPlaybackSource(
 				let settled = false;
 				const cleanup = () => {
 					impl.onFrame = prev;
-					signal?.removeEventListener('abort', onAbort);
+					signal?.removeEventListener("abort", onAbort);
 				};
 				const onAbort = () => {
 					if (settled) return;
 					settled = true;
 					cleanup();
-					reject(new MediaError('cancelled', 'seek aborted'));
+					reject(new MediaError("cancelled", "seek aborted"));
 				};
 				impl.onFrame = () => {
 					prev?.();
@@ -192,7 +188,7 @@ function adaptToPlaybackSource(
 					const frame = impl.frameAt(seconds);
 					resolve(frame ? wrap(frame) : null);
 				};
-				signal?.addEventListener('abort', onAbort, { once: true });
+				signal?.addEventListener("abort", onAbort, { once: true });
 			});
 		},
 
@@ -211,7 +207,7 @@ function adaptToPlaybackSource(
 			if (disposed) return;
 			disposed = true;
 			impl.dispose();
-			emit('ended', { kind: 'ended' });
+			emit("ended", { kind: "ended" });
 			listeners.clear();
 		},
 	};
@@ -219,7 +215,7 @@ function adaptToPlaybackSource(
 
 /** Clear every entry in the shared decoded-frame cache. */
 export async function evictCache(): Promise<number> {
-	const { getFrameCache } = await import('./cache');
+	const { getFrameCache } = await import("./cache");
 	return getFrameCache().evictCache();
 }
 
@@ -230,9 +226,9 @@ export async function cacheStats(): Promise<{
 	capBytes: number;
 	oldestEntryAgeMs: number;
 }> {
-	const { getFrameCache } = await import('./cache');
+	const { getFrameCache } = await import("./cache");
 	return getFrameCache().cacheStats();
 }
 
 // Audio scheduling math, shared with the desktop engine.
-export type { Region, ScheduledChunk } from './audio/schedule';
+export type { Region, ScheduledChunk } from "./audio/schedule";

@@ -1,8 +1,8 @@
 import { docvia } from "@docvia/plugin-vite";
-import adapter from '@sveltejs/adapter-auto';
-import { sveltekit } from '@sveltejs/kit/vite';
-import tailwindcss from '@tailwindcss/vite';
-import { defineConfig } from 'vite';
+import adapter from "@sveltejs/adapter-auto";
+import { sveltekit } from "@sveltejs/kit/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { defineConfig } from "vite";
 import docviaConfig from "./docvia.config";
 
 export default defineConfig({
@@ -12,7 +12,7 @@ export default defineConfig({
 			compilerOptions: {
 				// Force runes mode for the project, except for libraries. Can be removed in svelte 6.
 				runes: ({ filename }) =>
-					filename.split(/[/\\]/).includes('node_modules') ? undefined : true
+					filename.split(/[/\\]/).includes("node_modules") ? undefined : true,
 			},
 
 			// Deployed to Cloudflare Workers (static assets + SSR worker). The
@@ -53,15 +53,15 @@ export default defineConfig({
 			// 	}
 			// }),
 			alias: {
-				$components: 'src/components',
-				$utils: 'src/utils',
-				$hooks: 'src/lib/hooks',
-				$constants: 'src/constants',
-				$tools: 'src/tools',
-				$stores: 'src/stores',
+				$components: "src/components",
+				$utils: "src/utils",
+				$hooks: "src/lib/hooks",
+				$constants: "src/constants",
+				$tools: "src/tools",
+				$stores: "src/stores",
 			},
 		}),
-		docvia(docviaConfig)
+		docvia(docviaConfig),
 	],
 	clearScreen: false,
 	// `@takumi-rs/wasm` (used by /api/og) ships its WebAssembly binary as an
@@ -70,7 +70,7 @@ export default defineConfig({
 	// inline it (see assetsInlineLimit). The native `@takumi-rs/core` addon
 	// doesn't bundle on Vercel, so /api/og runs the wasm renderer instead.
 	ssr: {
-		noExternal: ['@takumi-rs/wasm'],
+		noExternal: ["@takumi-rs/wasm"],
 	},
 	build: {
 		// Base64-inline the takumi wasm so its bytes ship *inside* the /api/og
@@ -78,8 +78,7 @@ export default defineConfig({
 		// static assets dir takumi's stock loader expects, and the 5 MB binary is
 		// too large for an Edge function — inlining sidesteps both. Everything
 		// else keeps Vite's default size threshold (return undefined).
-		assetsInlineLimit: (filePath) =>
-			filePath.includes('takumi_wasm_bg') ? true : undefined,
+		assetsInlineLimit: (filePath) => (filePath.includes("takumi_wasm_bg") ? true : undefined),
 	},
 	// Surfaced as a global so analytics can tag every event with the running
 	// build. npm_package_version is set by the pnpm/npm script runner.
@@ -92,7 +91,7 @@ export default defineConfig({
 		host: "0.0.0.0",
 		watch: {
 			// tell vite to ignore watching `src-tauri`
-			ignored: ['**/src-tauri/**'],
+			ignored: ["**/src-tauri/**"],
 		},
 		// Warm up the routes / leaf files that get hit on practically every
 		// dev session. Vite kicks off transforms in parallel at boot so the
@@ -101,13 +100,13 @@ export default defineConfig({
 		// (parallel pressure on the worker pool).
 		warmup: {
 			clientFiles: [
-				'./src/routes/+layout.svelte',
-				'./src/routes/+page.svelte',
-				'./src/routes/dashboard/+layout.svelte',
-				'./src/routes/dashboard/+page.svelte',
-				'./src/routes/share/[id]/+page.svelte',
-				'./src/routes/(auth)/login/+page.svelte',
-				'./src/lib/auth/client.ts',
+				"./src/routes/+layout.svelte",
+				"./src/routes/+page.svelte",
+				"./src/routes/dashboard/+layout.svelte",
+				"./src/routes/dashboard/+page.svelte",
+				"./src/routes/share/[id]/+page.svelte",
+				"./src/routes/(auth)/login/+page.svelte",
+				"./src/lib/auth/client.ts",
 			],
 		},
 	},
@@ -118,31 +117,33 @@ export default defineConfig({
 	// the share page (player + bits-ui) and dashboard (drizzle/auth client).
 	optimizeDeps: {
 		include: [
-			'@recast/icons',
-			'better-auth/client/plugins',
-			'better-auth/svelte',
-			'bits-ui',
-			'clsx',
-			'mode-watcher',
-			'svelte-sonner',
-			'tailwind-merge',
-			'tailwind-variants',
+			"@recast/icons",
+			"better-auth/client/plugins",
+			"better-auth/svelte",
+			"bits-ui",
+			"clsx",
+			"mode-watcher",
+			"svelte-sonner",
+			"tailwind-merge",
+			"tailwind-variants",
 			// posthog-js is a transitive dep of @recast/analytics (dynamic import);
 			// pre-bundle it so the first capture doesn't trigger a reload cascade.
-			'posthog-js',
+			"posthog-js",
 		],
 		exclude: [
 			// Workspace packages — leave them out of prebundling so edits
 			// to packages/* hot-reload instantly instead of getting
 			// re-optimized as if they were external deps.
-			'@recast/ui',
-			'@recast/design',
-			'@recast/icons',
-			'@recast/player',
-			'@recast/analytics',
-			'@recast/captions',
+			"@recast/ui",
+			"@recast/design",
+			"@recast/icons",
+			"@recast/player",
+			"@recast/analytics",
+			"@recast/captions",
+			"@recast/media",
+			"@recast/editor",
 		],
 	},
 	// Env variables starting with the item of `envPrefix` will be exposed in tauri's source code through `import.meta.env`.
-	envPrefix: ['VITE_', 'TAURI_ENV_*']
+	envPrefix: ["VITE_", "TAURI_ENV_*"],
 });

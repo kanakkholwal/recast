@@ -26,16 +26,16 @@ import { browser } from "$app/environment";
 import { afterNavigate, goto, replaceState } from "$app/navigation";
 import { page } from "$app/state";
 import UploadDialogsHost from "$components/cloud/UploadDialogsHost.svelte";
-import EditorToolbar from "$components/editor/EditorToolbar.svelte";
-import ExportDialog from "$components/editor/ExportDialog.svelte";
-import ExportPanel, { type ExportPanelPhase } from "$components/editor/ExportPanel.svelte";
-import ExportStageLoader from "$components/editor/ExportStageLoader.svelte";
-import PropertiesPanel from "$components/editor/properity-panel/PropertiesPanel.svelte";
-import Timeline from "$components/editor/Timeline.svelte";
-import VideoPlayerControls from "$components/editor/VideoPlayerControls.svelte";
-import VideoPreview from "$components/editor/VideoPreview.svelte";
+import EditorToolbar from "@recast/editor/components/EditorToolbar.svelte";
+import ExportDialog from "@recast/editor/components/ExportDialog.svelte";
+import ExportPanel, { type ExportPanelPhase } from "@recast/editor/components/ExportPanel.svelte";
+import ExportStageLoader from "@recast/editor/components/ExportStageLoader.svelte";
+import PropertiesPanel from "@recast/editor/components/properity-panel/PropertiesPanel.svelte";
+import Timeline from "@recast/editor/components/Timeline.svelte";
+import VideoPlayerControls from "@recast/editor/components/VideoPlayerControls.svelte";
+import VideoPreview from "@recast/editor/components/VideoPreview.svelte";
 import CustomTitlebar from "$components/layout/custom-titlebar.svelte";
-import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import PlayerDialog from "$components/recast/PlayerDialog.svelte";
 import RecastMark from "$components/recast-mark.svelte";
 import EditorSkeleton from "$components/skeletons/EditorSkeleton.svelte";
@@ -51,6 +51,8 @@ import {
 	TIMELINE_PARAM,
 	withEditorParams,
 } from "$lib/editor/editor-url";
+import { setEditorServices } from "$lib/editor/services";
+import { tauriEditorServices } from "$lib/editor/services.tauri";
 import {
 	clampTimelineHeight,
 	TIMELINE_DEFAULT_HEIGHT_PX,
@@ -117,6 +119,10 @@ interface Props {
 }
 
 let { data }: Props = $props();
+
+// Context copy of the app-scoped services, so the editor tree reads them the
+// same way it will once it lives in @recast/editor.
+setEditorServices(tauriEditorServices);
 
 const store = createEditorStore();
 
@@ -656,8 +662,8 @@ async function ensureAudioEngine() {
 	const gen = audioEngineGen;
 	try {
 		const eng = await AudioTimelineEngine.create([
-			{ url: systemAudioSrc, kind: "system" },
-			{ url: micAudioSrc, kind: "mic" },
+			{ src: systemAudioSrc, kind: "system" },
+			{ src: micAudioSrc, kind: "mic" },
 		]);
 		// Decoding both tracks takes seconds on a long recording, and the file can
 		// change or the editor close in that window. Adopting a stale engine
@@ -897,7 +903,7 @@ async function setupTileProvider(url: string) {
 	disposeTileProvider();
 	const dpr = browser ? window.devicePixelRatio || 1 : 1;
 	const provider = await createTileProvider({
-		url,
+		src: url,
 		sizeBytes: store.metadata?.sizeBytes,
 		durationSec: store.metadata?.duration,
 		tileHeightPx: Math.round(FILMSTRIP_TILE_HEIGHT * dpr),

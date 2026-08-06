@@ -1,0 +1,386 @@
+<script lang="ts">
+import {
+	fetchManifestPreview,
+	hasUpdate,
+	installFromUrl,
+	removeExtension,
+	toggleExtension,
+	type RegistryIndexEntry,
+} from "../../lib/extensions";
+import type {
+	ExtensionContributions,
+	ExtensionManifest,
+	InstalledExtension,
+} from "../../lib/wire-types";
+import { extensionsStore } from "../../stores/extensions-store.svelte";
+import { buildContributionGroups } from "./extensions-panel.logic";
+import {
+	Blend,
+	Blocks,
+	Captions,
+	Download,
+	FileBox,
+	Image,
+	MousePointer,
+	Palette,
+	ShieldCheck,
+	Spline,
+	Trash2,
+	Waves,
+} from "@recast/icons";
+import type { IconComponent } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import * as Dialog from "@recast/ui/dialog";
+import { DIALOG_SURFACE } from "../dialog/dialog.styles";
+import { cn } from "@recast/ui/utils";
+import { Kbd } from "@recast/ui/kbd";
+import { SegmentedToggle } from "@recast/ui/segmented";
+import { Spinner } from "@recast/ui/spinner";
+import { toast } from "@recast/ui/sonner";
+import type { Component } from "svelte";
+
+interface Props {
+	open: boolean;
+	/** Registry metadata (manifestUrl + version). Null for a local-only install. */
+	entry: RegistryIndexEntry | null;
+	/** The installed record, when this pack is installed. */
+	installed: InstalledExtension | null;
+}
+
+let { open = $bindable(), entry, installed }: Props = $props();
+
+// Installed packs already carry the manifest; for a registry entry we fetch it
+// (the index only has summary metadata) so contents show before install.
+let manifest = $state<ExtensionManifest | null>(null);
+let loadingManifest = $state(false);
+// Guards the load effect against re-fetching the same target on every re-run.
+let loadKey = "";
+
+$effect(() => {
+	if (!open) {
+		loadKey = "";
+		return;
+	}
+	const key = installed
+		? `i:${installed.manifest.id}:${installed.manifest.version}`
+		: entry
+			? `e:${entry.id}:${entry.manifestUrl}`
+			: "";
+	if (key === loadKey) return;
+	loadKey = key;
+
+	if (installed) {
+		manifest = installed.manifest;
+		loadingManifest = false;
+	} else if (entry) {
+		manifest = null;
+		loadingManifest = true;
+		fetchManifestPreview(entry.manifestUrl)
+			.then((m) => {
+				manifest = m;
+			})
+			.finally(() => {
+				loadingManifest = false;
+			});
+	}
+});
+
+const isInstalled = $derived(!!installed);
+const name = $derived(installed?.manifest.name ?? entry?.name ?? manifest?.name ?? "Extension");
+const installedVersion = $derived(installed?.manifest.version);
+const latestVersion = $derived(entry?.version ?? manifest?.version);
+const author = $derived(installed?.manifest.author ?? entry?.author ?? manifest?.author ?? null);
+// Only the registry entry carries a description; the manifest has none.
+const description = $derived(entry?.description ?? null);
+const updateAvailable = $derived(
+	isInstalled && hasUpdate(installedVersion ?? "0.0.0", latestVersion),
+);
+const manifestUrl = $derived(entry?.manifestUrl ?? null);
+
+// Icon-bearing definition table stays in the component; the pure map/filter
+// lives in the shared logic module.
+const contributionDefs: Array<{
+	key: keyof ExtensionContributions;
+	label: string;
+	icon: IconComponent;
+}> = [
+	{ key: "cursors", label: "Cursors", icon: MousePointer },
+	{ key: "backgrounds", label: "Backgrounds", icon: Image },
+	{ key: "gradients", label: "Gradients", icon: Blend },
+	{ key: "colors", label: "Colors", icon: Palette },
+	{ key: "easings", label: "Easing presets", icon: Spline },
+	{ key: "smoothings", label: "Smoothing presets", icon: Waves },
+	{ key: "captionPresets", label: "Caption themes", icon: Captions },
+];
+const groups = $derived(buildContributionGroups(manifest, contributionDefs));
+
+const assetCount = $derived(manifest?.assets?.length ?? 0);
+
+// Which action is in flight, so the matching button shows a spinner + verb.
+// GOTCHA: `installed`/`entry` are reactive props that go null the moment the
+// store updates, so handlers must capture any name/id for the toast BEFORE awaiting.
+let pending = $state<null | "install" | "update" | "uninstall">(null);
+
+async function onInstall() {
+	if (!manifestUrl || pending) return;
+	pending = "install";
+	try {
+		const ext = await installFromUrl(manifestUrl);
+		toast.success(`Installed ${ext.manifest.name}`);
+	} catch (err) {
+		toast.error(`Install failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
+
+async function onUpdate() {
+	if (!manifestUrl || pending) return;
+	pending = "update";
+	try {
+		const ext = await installFromUrl(manifestUrl);
+		toast.success(`Updated ${ext.manifest.name} to v${ext.manifest.version}`);
+	} catch (err) {
+		toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
+
+async function onUninstall() {
+	if (!installed || pending) return;
+	// Capture before await: `installed` goes null when the store drops the pack.
+	const { id, name: packName } = installed.manifest;
+	pending = "uninstall";
+	try {
+		await removeExtension(id);
+		toast.success(`Removed ${packName}`);
+		open = false;
+	} catch (err) {
+		toast.error(`Remove failed: ${err instanceof Error ? err.message : String(err)}`);
+	} finally {
+		pending = null;
+	}
+}
+
+async function onToggle(next: boolean) {
+	if (!installed) return;
+	const { id } = installed.manifest;
+	try {
+		await toggleExtension(id, next);
+	} catch (err) {
+		toast.error(`Update failed: ${err instanceof Error ? err.message : String(err)}`);
+	}
+}
+</script>
+
+<Dialog.Root bind:open>
+  <Dialog.Content
+    showCloseButton={false}
+    class={cn("top-[10%] w-[min(92vw,32rem)] max-w-none translate-y-0 gap-0 sm:max-w-none", DIALOG_SURFACE)}
+  >
+    <Dialog.Header class="space-y-0 border-b border-border px-4 py-2.5 text-left">
+      <div class="flex items-center gap-2.5">
+        {#if entry?.iconUrl}
+          <img src={entry.iconUrl} alt="" class="size-8 shrink-0 rounded-md object-cover" />
+        {:else}
+          <div
+            class="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/50 bg-muted/50"
+          >
+            <Blocks class="size-4 text-muted-foreground" />
+          </div>
+        {/if}
+        <div class="min-w-0 flex-1">
+          <Dialog.Title
+            class="flex items-center gap-1.5 text-[13px] font-semibold tracking-tight text-foreground"
+          >
+            <span class="truncate">{name}</span>
+            {#if installedVersion}
+              <span class="shrink-0 font-mono text-[10px] font-normal text-muted-foreground/70">
+                v{installedVersion}
+              </span>
+            {:else if latestVersion}
+              <span class="shrink-0 font-mono text-[10px] font-normal text-muted-foreground/70">
+                v{latestVersion}
+              </span>
+            {/if}
+            {#if updateAvailable}
+              <span
+                class="shrink-0 rounded-full bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] font-medium text-primary"
+              >
+                v{latestVersion}
+              </span>
+            {/if}
+          </Dialog.Title>
+          <Dialog.Description class="text-[11px] text-muted-foreground">
+            {#if author}{author} · {/if}Asset pack
+          </Dialog.Description>
+        </div>
+      </div>
+    </Dialog.Header>
+
+    <div class="max-h-[70vh] overflow-y-auto overflow-x-hidden">
+      <div class="divide-y divide-border/30">
+        <div class="px-4 py-3">
+          {#if description}
+            <p class="text-[11.5px] leading-relaxed text-pretty text-foreground/90">
+              {description}
+            </p>
+          {/if}
+          <div
+            class="mt-2.5 flex items-center gap-1.5 rounded-lg border border-border/60 bg-card/40 px-2.5 py-1.5 text-[10.5px] text-muted-foreground shadow-(--shadow-craft-inset)"
+          >
+            <ShieldCheck class="size-3.5 shrink-0 text-muted-foreground" />
+            <span>
+              Runs no code. Every asset is downloaded over HTTPS and SHA-256
+              verified before install.
+            </span>
+          </div>
+        </div>
+
+        {#if loadingManifest}
+          <div class="flex items-center justify-center py-10">
+            <Spinner class="size-5 text-muted-foreground" />
+          </div>
+        {:else if manifest}
+          {#if groups.length > 0}
+            <div class="space-y-3 px-4 py-3">
+              <h4
+                class="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground"
+              >
+                Includes
+              </h4>
+              {#each groups as g (g.key)}
+                {@const Icon = g.icon}
+                <section class="min-w-0">
+                  <div class="mb-1.5 flex items-center gap-1.5">
+                    <Icon class="size-3.5 text-muted-foreground" />
+                    <span class="text-[11px] font-medium text-foreground">{g.label}</span>
+                    <span class="font-mono text-[9px] text-muted-foreground/70">
+                      {g.items.length}
+                    </span>
+                  </div>
+                  <div class="flex flex-wrap gap-1">
+                    {#each g.items as item (item)}
+                      <span
+                        class="rounded-md border border-border/50 bg-muted/30 px-1.5 py-0.5 text-[10px] text-foreground/80"
+                      >
+                        {item}
+                      </span>
+                    {/each}
+                  </div>
+                </section>
+              {/each}
+            </div>
+          {/if}
+
+          {#if assetCount > 0}
+            <div class="px-4 py-3">
+              <div class="mb-1.5 flex items-center gap-1.5">
+                <FileBox class="size-3.5 text-muted-foreground" />
+                <span class="text-[11px] font-medium text-foreground">Assets</span>
+                <span class="font-mono text-[9px] text-muted-foreground/70">{assetCount}</span>
+              </div>
+              <div class="flex flex-wrap gap-x-2 gap-y-0.5">
+                {#each manifest.assets as a (a.id)}
+                  <span class="font-mono text-[10px] text-muted-foreground/80">{a.filename}</span>
+                {/each}
+              </div>
+            </div>
+          {/if}
+
+          {#if isInstalled}
+            <div class="flex items-center justify-between gap-2 px-4 py-3">
+              <span class="text-[11px] font-medium text-foreground">Enabled</span>
+              <SegmentedToggle
+                checked={installed?.enabled ?? false}
+                offLabel="Off"
+                onLabel="On"
+                size="xs"
+                aria-label={`${name} enabled`}
+                onCheckedChange={onToggle}
+              />
+            </div>
+          {/if}
+        {:else}
+          <div class="px-4 py-8 text-center text-[11px] text-muted-foreground">
+            Couldn't load this extension's details.
+          </div>
+        {/if}
+      </div>
+    </div>
+
+    <footer
+      class="flex h-10 items-center justify-between gap-2 border-t border-border bg-muted/30 px-3 text-[11px] text-muted-foreground"
+    >
+      <div class="flex items-center gap-3">
+        {#if isInstalled}
+          <Button
+            variant="destructive_soft"
+            size="xs"
+            disabled={extensionsStore.busy}
+            onclick={onUninstall}
+          >
+            {#if pending === "uninstall"}
+              <Spinner class="size-3" />
+              Removing…
+            {:else}
+              <Trash2 class="size-3" />
+              Uninstall
+            {/if}
+          </Button>
+        {:else}
+          <span class="flex items-center gap-1">
+            <Kbd>Esc</Kbd>
+            <span>Cancel</span>
+          </span>
+        {/if}
+      </div>
+      <div class="flex items-center gap-1.5">
+        {#if isInstalled}
+          {#if updateAvailable}
+            <Button
+              variant="default"
+              size="xs"
+              disabled={extensionsStore.busy}
+              onclick={onUpdate}
+            >
+              {#if pending === "update"}
+                <Spinner class="size-3" />
+                Updating…
+              {:else}
+                <Download class="size-3" />
+                Update to v{latestVersion}
+              {/if}
+            </Button>
+          {/if}
+          <Dialog.Close>
+            {#snippet child({ props })}
+              <Button variant="ghost" size="xs" {...props}>Done</Button>
+            {/snippet}
+          </Dialog.Close>
+        {:else}
+          <Dialog.Close>
+            {#snippet child({ props })}
+              <Button variant="ghost" size="xs" {...props}>Cancel</Button>
+            {/snippet}
+          </Dialog.Close>
+          <Button
+            variant="default"
+            size="xs"
+            disabled={!manifestUrl || extensionsStore.busy}
+            onclick={onInstall}
+          >
+            {#if pending === "install"}
+              <Spinner class="size-3" />
+              Installing…
+            {:else}
+              <Download class="size-3" />
+              Install
+            {/if}
+          </Button>
+        {/if}
+      </div>
+    </footer>
+  </Dialog.Content>
+</Dialog.Root>

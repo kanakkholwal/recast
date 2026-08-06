@@ -22,13 +22,18 @@ const EXTENSIONS: NavLink = { label: "Extensions", href: "/extensions" };
 // Not a product offering — a resource. They exist to catch people searching for
 // a quick browser tool, so they sit under Resources, not Product.
 const TOOLS: NavLink = { label: "Tools", href: "/tools" };
+// Try-before-you-download: the real editor, running in the visitor's browser.
+// Not linked from the chrome yet — the route is still unfinished.
+const PLAYGROUND: NavLink = { label: "Playground", href: "/playground" };
+void PLAYGROUND;
 const PRICING: NavLink = { label: "Pricing", href: "/pricing" };
 const CHANGELOG: NavLink = { label: "Changelog", href: "/changelog" };
 const BLOG: NavLink = { label: "Blog", href: "/blog" };
 
-// Inline top-nav links, always visible on desktop. Kept short for a minimal
-// bar; everything else lives in the footer.
-export const navLinks: NavLink[] = [FEATURES, EXTENSIONS, PRICING, CHANGELOG];
+// Inline top-nav links, always visible on desktop. Three max — the bar also
+// carries GitHub, Sign in and Download, and a fourth link pushed those into a
+// wrap. Extensions lives in the footer; Playground is held back until it ships.
+export const navLinks: NavLink[] = [FEATURES, PRICING, CHANGELOG];
 
 export const footerCols: { title: string; links: NavLink[] }[] = [
 	{

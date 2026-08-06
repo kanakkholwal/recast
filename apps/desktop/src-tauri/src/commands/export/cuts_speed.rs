@@ -523,7 +523,10 @@ mod cut_export_tests {
         // `expectedKeptDuration`, which the frontend also matches against its
         // collapsed-timeline length. If the two cut models ever diverge, one of
         // these two tests fails.
-        let raw = include_str!("../../../../src/lib/timeline/__fixtures__/cut-parity.json");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../packages/editor/src/lib/timeline/__fixtures__/cut-parity.json"
+        ));
         let doc: serde_json::Value = serde_json::from_str(raw).expect("valid fixture json");
         let cases = doc["cases"].as_array().expect("cases array");
         for case in cases {
@@ -557,7 +560,10 @@ mod cut_export_tests {
         // asserts against (segment-speed.test.ts → "speed parity"). For every case
         // the export's warped output duration must equal the frontend time-map's,
         // or the two speed models have diverged. All cases use trimStart=0.
-        let raw = include_str!("../../../../src/lib/timeline/__fixtures__/speed-parity.json");
+        let raw = include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../../packages/editor/src/lib/timeline/__fixtures__/speed-parity.json"
+        ));
         let doc: serde_json::Value = serde_json::from_str(raw).expect("valid fixture json");
         for case in doc["cases"].as_array().expect("cases array") {
             let name = case["name"].as_str().unwrap_or("?");

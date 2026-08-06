@@ -1,5 +1,2 @@
-/** Deep, de-proxied clone of Svelte `$state` — required before a value crosses
- *  `postMessage`, which throws DataCloneError on a state proxy. */
-export function toStatic<T>(value: T): T {
-	return $state.snapshot(value) as T;
-}
+// Moved to @recast/editor. Re-exported so existing import paths keep working.
+export * from "@recast/editor/lib/state-snapshot.svelte";

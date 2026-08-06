@@ -50,7 +50,7 @@ import {
 	summarize,
 } from "./profiles.logic";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
-import ConfirmDialog from "$components/recast/ConfirmDialog.svelte";
+import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
 import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
 
 // mode = 'create' means draft is not yet in the store; mode = 'edit' means

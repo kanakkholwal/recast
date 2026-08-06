@@ -18,7 +18,7 @@ import {
 	Link2,
 	Minus,
 } from "@recast/icons";
-import DialogShell from "$components/recast/DialogShell.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
 import { Input } from "@recast/ui/input";

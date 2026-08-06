@@ -12,7 +12,7 @@ import { etaLabel } from "$lib/format/time";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import { AlertTriangle, Check, Minus } from "@recast/icons";
 import Logo from "$components/logo.svelte";
-import DialogShell from "$components/recast/DialogShell.svelte";
+import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
 import UploadProgress from "$components/recast/UploadProgress.svelte";
 import { Button } from "@recast/ui/button";
 import CloudShareSettings from "./CloudShareSettings.svelte";
