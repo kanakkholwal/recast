@@ -16,5 +16,16 @@ export { PANEL_TABS, WEB_PANEL_TABS } from "./lib/editor/panel-tabs";
 export type { PanelTab } from "./lib/editor/panel-tabs";
 export { setEditorHostHooks } from "./lib/host-hooks";
 export type { EditorAnalytics, ExportActivityHost, ShortcutHost } from "./lib/host-hooks";
+
+export { agentSession, setAgentSessionDriver } from "./lib/agent/session.svelte";
+export type { BindOptions as AgentSessionBindOptions } from "./lib/agent/session.svelte";
+export type {
+	AgentActivity,
+	AgentSessionDriver,
+	AgentSessionEvent,
+	AgentSessionMode,
+	AgentSessionSnapshot,
+	AgentWriter,
+} from "./lib/agent/types";
 export { setLogSink } from "./lib/log";
 export type { LogSink } from "./lib/log";
