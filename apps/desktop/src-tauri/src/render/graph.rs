@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use super::node_types::{
     Annotation, AudioSettings, BackgroundNode, CameraOverlaySettings, CursorNode, RenderNode,
-    ShadowSettings, TrimNode, WatermarkSettings, ZoomNode, ZoomRegion,
+    ShadowSettings, TrimNode, ZoomNode, ZoomRegion,
 };
 
 fn default_bounce_speed_ms() -> f64 {
@@ -134,8 +134,6 @@ pub struct RenderState {
     #[serde(default)]
     pub music_clips: Vec<crate::render::node_types::AudioClip>,
     #[serde(default)]
-    pub watermark_settings: WatermarkSettings,
-    #[serde(default)]
     pub camera_overlay: CameraOverlaySettings,
     // Hybrid-raster cursor sprite. Populated by the JS export trigger
     // when the active style is non-`dot`; the soft-dot path is unchanged
@@ -207,7 +205,6 @@ impl Default for RenderState {
             shadow: ShadowSettings::default(),
             audio_settings: AudioSettings::default(),
             music_clips: Vec::new(),
-            watermark_settings: WatermarkSettings::default(),
             camera_overlay: CameraOverlaySettings::default(),
             cursor_sprite_rest: None,
             cursor_sprite_press: None,

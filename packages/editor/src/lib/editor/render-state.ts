@@ -312,18 +312,6 @@ export function effectiveTrackVolume(settings: AudioSettings, kind: "system" | "
 	return Math.max(0, Math.min(1, v / 100));
 }
 
-export type WatermarkPosition = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-
-export interface WatermarkSettings {
-	enabled: boolean;
-	imagePath: string;
-	imageSrc: string;
-	opacity: number; // 0-100
-	scale: number; // 8-35 percent of frame width
-	position: WatermarkPosition;
-	inset: number; // pixels
-}
-
 export type CameraOverlayShape = "square" | "rectangle" | "rounded" | "circle";
 export type CameraOverlayAnimationPreset = "none" | "soft" | "lively";
 export type CameraMotionSource = "live-recorded" | "manual";
@@ -586,7 +574,6 @@ export interface EditorRenderState {
 	audioSettings: AudioSettings;
 	/** Music / extra-audio clips on the output timeline. Optional for back-compat. */
 	musicClips?: AudioClip[];
-	watermarkSettings: WatermarkSettings;
 	cameraOverlay: CameraOverlaySettings;
 	/**
 	 * Editor layout mode (`auto` / column-stacked variants etc.). Optional

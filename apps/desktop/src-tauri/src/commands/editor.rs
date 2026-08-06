@@ -323,42 +323,6 @@ fn build_credits_comment(clips: &[crate::render::node_types::AudioClip]) -> Opti
     Some(format!("Music: {}", seen.join("; ")))
 }
 
-fn append_watermark_to_complex(
-    existing: Option<&str>,
-    current_video_map: &str,
-    watermark_input_index: usize,
-    settings: &crate::render::node_types::WatermarkSettings,
-    canvas_width: u32,
-    _canvas_height: u32,
-) -> (String, String) {
-    let normalized_current = if current_video_map.starts_with('[') {
-        current_video_map.to_string()
-    } else {
-        format!("[{current_video_map}]")
-    };
-    let scale_width = ((canvas_width as f64) * (settings.scale / 100.0).clamp(0.02, 1.0))
-        .round()
-        .max(1.0) as u32;
-    let opacity = (settings.opacity / 100.0).clamp(0.0, 1.0);
-    let inset = settings.inset.max(0.0).round() as i32;
-    let x = match settings.position.as_str() {
-        "top-left" | "bottom-left" => inset.to_string(),
-        _ => format!("W-w-{inset}"),
-    };
-    let y = match settings.position.as_str() {
-        "top-left" | "top-right" => inset.to_string(),
-        _ => format!("H-h-{inset}"),
-    };
-    let stage = format!(
-        "[{watermark_input_index}:v]format=rgba,scale={scale_width}:-1,colorchannelmixer=aa={opacity:.4}[wm];{normalized_current}[wm]overlay=x={x}:y={y}:format=auto[vwm]"
-    );
-    let complex = match existing {
-        Some(existing) if !existing.is_empty() => format!("{existing};{stage}"),
-        _ => stage,
-    };
-    (complex, "[vwm]".into())
-}
-
 #[tauri::command]
 pub async fn get_video_metadata(path: String) -> AppResult<VideoMetadata> {
     // ffprobe spawn off the main thread — see generate_thumbnails for context.
@@ -2573,31 +2537,6 @@ pub(crate) async fn run_export_job(
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
 
-    let watermark_path = if request.render_state.watermark_settings.enabled
-        && !request
-            .render_state
-            .watermark_settings
-            .image_path
-            .trim()
-            .is_empty()
-    {
-        let path = PathBuf::from(request.render_state.watermark_settings.image_path.trim());
-        path.exists().then_some(path)
-    } else {
-        None
-    };
-    let watermark_input_index = watermark_path
-        .as_ref()
-        .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
-    if let Some(ref path) = watermark_path {
-        args.extend([
-            "-loop".to_string(),
-            "1".to_string(),
-            "-i".to_string(),
-            path.to_string_lossy().to_string(),
-        ]);
-    }
-
     //  Camera overlay
     //
     // Composite the project's `camera.mp4` onto the screen video at the
@@ -2647,18 +2586,15 @@ pub(crate) async fn run_export_job(
     };
     let camera_mask_path = camera_mask.as_ref().map(|m| m.path.clone());
 
-    let camera_input_index = camera_bubble.as_ref().map(|_| {
-        1 + export_plan.extra_inputs.len()
-            + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
-    });
+    let camera_input_index = camera_bubble
+        .as_ref()
+        .map(|_| 1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize);
     if let Some((ref path, _, _, _, _)) = camera_bubble {
         args.extend(["-i".to_string(), path.to_string_lossy().to_string()]);
     }
     let camera_mask_input_index = camera_mask_path.as_ref().map(|_| {
         1 + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
     });
     if let Some(ref path) = camera_mask_path {
@@ -2712,7 +2648,6 @@ pub(crate) async fn run_export_job(
     let camera_shadow_input_index = camera_shadow_path.as_ref().map(|_| {
         1 + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
             + camera_mask_input_index.is_some() as usize
     });
@@ -2752,7 +2687,6 @@ pub(crate) async fn run_export_job(
         let mut next_audio_input_index = 1
             + export_plan.extra_inputs.len()
             + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize
             + camera_input_index.is_some() as usize
             + camera_mask_input_index.is_some() as usize
             + camera_shadow_input_index.is_some() as usize;
@@ -2807,20 +2741,7 @@ pub(crate) async fn run_export_job(
             (initial_filter_complex, initial_video_map)
         };
 
-    if let Some(watermark_input_index) = watermark_input_index {
-        let (new_complex, new_map) = append_watermark_to_complex(
-            filter_complex_after_cursor.as_deref(),
-            &video_map_after_cursor,
-            watermark_input_index,
-            &request.render_state.watermark_settings,
-            canvas_width,
-            canvas_height,
-        );
-        filter_complex_after_cursor = Some(new_complex);
-        video_map_after_cursor = new_map;
-    }
-
-    // Camera overlay: composited after the watermark so the speaker bubble
+    // Camera overlay: composited after the cursor so the speaker bubble
     // sits on top of any branding mark and below the annotation blur (which
     // a user might want to apply over their own face).
     if let (Some(cam_idx), Some((_, bx, by, bw, bh))) = (camera_input_index, camera_bubble.as_ref())
@@ -2991,10 +2912,8 @@ pub(crate) async fn run_export_job(
     let gif_settings: GifSettings = request.gif_settings.clone().unwrap_or_default();
     let mut palette_temp_path: Option<PathBuf> = None;
     let progress_band = if request.format == "gif" {
-        let palette_input_index = 1
-            + export_plan.extra_inputs.len()
-            + cursor_overlay_path.is_some() as usize
-            + watermark_path.is_some() as usize;
+        let palette_input_index =
+            1 + export_plan.extra_inputs.len() + cursor_overlay_path.is_some() as usize;
         let gif_out = run_gif_pass(GifPassParams {
             app: &app,
             export_id: &export_id,

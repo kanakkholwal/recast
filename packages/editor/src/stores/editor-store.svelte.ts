@@ -94,7 +94,6 @@ import {
 	type Transcript,
 	type VideoMetadata,
 	WALLPAPERS,
-	type WatermarkSettings,
 	type ZoomRegion,
 	cameraPlacementFromPreset,
 	clampFramePaddingPercent,
@@ -305,16 +304,6 @@ export function createEditorStore() {
 	// Music / extra-audio clips laid on the output timeline (mixed in at export).
 	let musicClips = $state<AudioClip[]>([]);
 
-	// Watermark settings
-	let watermarkSettings = $state<WatermarkSettings>({
-		enabled: false,
-		imagePath: "",
-		imageSrc: "",
-		opacity: 70,
-		scale: 18,
-		position: "bottom-right",
-		inset: 24,
-	});
 	// Camera overlay defaults, Phase 1 spec:
 	// - Bottom-right corner at 16% size, 1:1 aspect
 	// - Rounded shape (16% corner radius)
@@ -406,7 +395,6 @@ export function createEditorStore() {
 			annotations,
 			cursorSettings,
 			audioSettings,
-			watermarkSettings,
 			cameraOverlay,
 			layoutMode,
 			outputAspect,
@@ -570,7 +558,6 @@ export function createEditorStore() {
 		} else {
 			audioSettings = audioSettings;
 		}
-		watermarkSettings = s.watermarkSettings ? { ...s.watermarkSettings } : watermarkSettings;
 		// Camera overlay was previously captured in the snapshot but not
 		// restored here, which silently destroyed camera-overlay edits on
 		// undo. Deep-copy so subsequent mutations don't alias the snapshot.
@@ -714,10 +701,6 @@ export function createEditorStore() {
 	function updateAudioSettings(updates: Partial<AudioSettings>) {
 		audioSettings = { ...audioSettings, ...updates };
 		log.debounced("audio-settings", "audio", "settings_changed", { ...updates });
-	}
-
-	function updateWatermarkSettings(updates: Partial<WatermarkSettings>) {
-		watermarkSettings = { ...watermarkSettings, ...updates };
 	}
 
 	function updateShadow(updates: Partial<ShadowSettings>) {
@@ -1285,15 +1268,6 @@ export function createEditorStore() {
 			fadeOut: 0,
 			normalizeLoudness: false,
 		};
-		watermarkSettings = {
-			enabled: false,
-			imagePath: "",
-			imageSrc: "",
-			opacity: 70,
-			scale: 18,
-			position: "bottom-right",
-			inset: 24,
-		};
 		cameraOverlay = {
 			enabled: false,
 			mirror: true,
@@ -1751,7 +1725,6 @@ export function createEditorStore() {
 			musicClips: musicClips.map((c) => ({ ...c, source: { ...c.source } })),
 			transcript,
 			captionStyle: { ...captionStyle },
-			watermarkSettings: { ...watermarkSettings },
 			cameraOverlay: {
 				...cameraOverlay,
 				defaultPlacement: { ...cameraOverlay.defaultPlacement },
@@ -1858,7 +1831,6 @@ export function createEditorStore() {
 		captionStyle = state.captionStyle
 			? { ...DEFAULT_CAPTION_STYLE, ...state.captionStyle }
 			: { ...DEFAULT_CAPTION_STYLE };
-		watermarkSettings = state.watermarkSettings ?? watermarkSettings;
 		// Camera overlay defaults match the Phase 1 spec: bottom-right at
 		// 16% size. Older projects stored top-right at 22%; the explicit
 		// `?? `-fallbacks below preserve those if present, only swapping in
@@ -2441,13 +2413,6 @@ export function createEditorStore() {
 			isDirty = true;
 		},
 
-		get watermarkSettings() {
-			return watermarkSettings;
-		},
-		set watermarkSettings(v: WatermarkSettings) {
-			watermarkSettings = v;
-		},
-
 		get cameraOverlay() {
 			return cameraOverlay;
 		},
@@ -2558,7 +2523,6 @@ export function createEditorStore() {
 		setCursorMotionEasingLive,
 		updateCursorSettings,
 		updateAudioSettings,
-		updateWatermarkSettings,
 		updateShadow,
 		updateCameraOverlay,
 		updateCameraOverlayLive,

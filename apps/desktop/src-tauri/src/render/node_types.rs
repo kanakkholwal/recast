@@ -173,55 +173,6 @@ pub struct AudioClip {
     pub ducking: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WatermarkSettings {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default)]
-    pub image_path: String,
-    #[serde(default)]
-    pub image_src: String,
-    #[serde(default = "default_watermark_opacity")]
-    pub opacity: f64,
-    #[serde(default = "default_watermark_scale")]
-    pub scale: f64,
-    #[serde(default = "default_watermark_position")]
-    pub position: String,
-    #[serde(default = "default_watermark_inset")]
-    pub inset: f64,
-}
-
-impl Default for WatermarkSettings {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            image_path: String::new(),
-            image_src: String::new(),
-            opacity: default_watermark_opacity(),
-            scale: default_watermark_scale(),
-            position: default_watermark_position(),
-            inset: default_watermark_inset(),
-        }
-    }
-}
-
-fn default_watermark_opacity() -> f64 {
-    70.0
-}
-
-fn default_watermark_scale() -> f64 {
-    18.0
-}
-
-fn default_watermark_position() -> String {
-    "bottom-right".into()
-}
-
-fn default_watermark_inset() -> f64 {
-    24.0
-}
-
 fn default_camera_shape() -> String {
     "rounded".into()
 }

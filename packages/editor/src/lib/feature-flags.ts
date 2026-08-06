@@ -7,13 +7,6 @@
  */
 
 /**
- * Editor-side camera overlay UI (properties tab + draggable preview overlay).
- * Enabled now that camera recording (WebView MediaRecorder), editor
- * resize/reposition, and zoom-follow with preview↔export parity are wired.
- */
-export const CAMERA_OVERLAY_UI_ENABLED = true;
-
-/**
  * Migration master flag: run exports through the browser compositor (RenderCore,
  * WYSIWYG with the preview) + FFmpeg mux, instead of the legacy Rust/FFmpeg
  * compositor. OFF until the A/B parity gate passes; the resolver

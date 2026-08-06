@@ -3,7 +3,6 @@ import { analytics } from "../lib/host-hooks";
 import { computeCanvasGeometry } from "../lib/canvas-geometry";
 import { CursorSmoother } from "../lib/cursor/smoother";
 import { smoothingStrengthToSigmaMs } from "../lib/cursor/smoothing";
-import { CAMERA_OVERLAY_UI_ENABLED } from "../lib/feature-flags";
 import { PlaybackClock } from "../lib/playback/clock";
 import type { MediabunnyVideoSource } from "@recast/media/playback";
 import { createMediabunnySource } from "../lib/playback/mediabunny";
@@ -129,15 +128,12 @@ let lastBgKey = "";
 // render worker on an OffscreenCanvas; the main thread posts uniforms + relays
 // frames and presents the returned ImageBitmap. Old main-thread GL path is the
 // fallback when unsupported or if worker init throws.
-const RENDER_WORKER_ENABLED = true;
 let renderWorkerClient: RenderWorkerClient | null = null;
-const useRenderWorker =
-	RENDER_WORKER_ENABLED &&
-	renderWorkerCapable({
-		OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
-		VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
-		Worker: (globalThis as { Worker?: unknown }).Worker,
-	});
+const useRenderWorker = renderWorkerCapable({
+	OffscreenCanvas: (globalThis as { OffscreenCanvas?: unknown }).OffscreenCanvas,
+	VideoFrame: (globalThis as { VideoFrame?: unknown }).VideoFrame,
+	Worker: (globalThis as { Worker?: unknown }).Worker,
+});
 
 // Preview engine: `MediabunnyVideoSource` runs in a Web Worker and
 // owns the MediaBunny Input + CanvasSink lifecycle. The composite samples
@@ -1530,10 +1526,7 @@ const isAnnotationActive = $derived(
 			{/if}
 		{/if}
 		<!-- Above the cursor SVG so the bubble isn't clipped behind a cursor in
-		     its corner. Owns its own video element, synced via store.currentTime.
-		     TODO(camera-recording): gated behind CAMERA_OVERLAY_UI_ENABLED. See
-		     apps/desktop/docs/camera-recording-todo.md. -->
-		{#if CAMERA_OVERLAY_UI_ENABLED}
+		     its corner. Owns its own video element, synced via store.currentTime. -->
 		<CameraOverlay
 			{store}
 			{videoEl}
@@ -1541,7 +1534,6 @@ const isAnnotationActive = $derived(
 			targetEl={previewRectEl}
 			previewTime={smoothPreviewTime ?? 0}
 		/>
-		{/if}
 		<CaptionOverlay {store} previewTime={smoothPreviewTime ?? undefined} />
 	</div>
 
