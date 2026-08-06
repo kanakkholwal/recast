@@ -1,0 +1,1 @@
+ALTER TABLE "share" DROP COLUMN "watermark";
