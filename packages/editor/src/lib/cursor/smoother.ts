@@ -4,6 +4,7 @@
 // result (the smoothed sample array) however they like.
 
 import { smoothCursorPath, type CursorSampleLike, type SmoothingOptions } from "./smoothing";
+import { createEditorWorker } from "../host-hooks";
 
 type ResultMsg = { id: number; samples: CursorSampleLike[] };
 type Listener = (samples: CursorSampleLike[]) => void;
@@ -22,7 +23,7 @@ export class CursorSmoother {
 	constructor(onResult: Listener) {
 		this.#onResult = onResult;
 		try {
-			this.#worker = new Worker(new URL("./smoothing-worker", import.meta.url), { type: "module" });
+			this.#worker = createEditorWorker("smoothing");
 			this.#worker.onmessage = (e: MessageEvent<ResultMsg>) => {
 				// Drop superseded results: only the latest request matters.
 				if (e.data.id !== this.#reqId) return;

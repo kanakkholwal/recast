@@ -12,12 +12,16 @@ type InMsg =
 
 let raw: CursorSampleLike[] = [];
 
-self.onmessage = (e: MessageEvent<InMsg>) => {
-	const msg = e.data;
-	if (msg.type === "load") {
-		raw = msg.raw;
-		return;
-	}
-	const { samples } = smoothCursorPath(raw, msg.opts);
-	self.postMessage({ id: msg.id, samples });
-};
+/** Install this worker's RPC on its global scope. Called by the host app's
+ *  entry module — this package never spawns a worker itself. */
+export function startSmoothingWorker(): void {
+	self.onmessage = (e: MessageEvent<InMsg>) => {
+		const msg = e.data;
+		if (msg.type === "load") {
+			raw = msg.raw;
+			return;
+		}
+		const { samples } = smoothCursorPath(raw, msg.opts);
+		self.postMessage({ id: msg.id, samples });
+	};
+}

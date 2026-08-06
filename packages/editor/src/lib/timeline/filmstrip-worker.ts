@@ -198,25 +198,29 @@ function dispose(): void {
 	sink = null;
 }
 
-ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
-	const msg = e.data;
-	switch (msg.type) {
-		case "init":
-			void init(msg.src, msg.tileHeightPx, msg.durationSec).catch((err) => {
-				post({
-					type: "error",
-					message: err instanceof Error ? err.message : String(err),
+/** Install this worker's RPC on its global scope. Called by the host app's
+ *  entry module — this package never spawns a worker itself. */
+export function startFilmstripWorker(): void {
+	ctx.onmessage = (e: MessageEvent<ToFilmstripWorker>) => {
+		const msg = e.data;
+		switch (msg.type) {
+			case "init":
+				void init(msg.src, msg.tileHeightPx, msg.durationSec).catch((err) => {
+					post({
+						type: "error",
+						message: err instanceof Error ? err.message : String(err),
+					});
 				});
-			});
-			return;
-		case "decode":
-			void decodeRequests(msg.requests);
-			return;
-		case "storyboard":
-			void buildStoryboard();
-			return;
-		case "dispose":
-			dispose();
-			return;
-	}
-};
+				return;
+			case "decode":
+				void decodeRequests(msg.requests);
+				return;
+			case "storyboard":
+				void buildStoryboard();
+				return;
+			case "dispose":
+				dispose();
+				return;
+		}
+	};
+}

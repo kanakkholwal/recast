@@ -15,6 +15,7 @@ import {
 	type FromRenderWorker,
 	type ToRenderWorker,
 } from "./render-worker-protocol";
+import { createEditorWorker } from "../host-hooks";
 
 export interface RenderWorkerClientOptions {
 	canvas: HTMLCanvasElement;
@@ -47,7 +48,7 @@ export class RenderWorkerClient {
 		// alpha blending on every present (MDN canvas-optimization guidance).
 		this.#present = opts.canvas.getContext("bitmaprenderer", { alpha: false });
 		if (!this.#present) throw new Error("bitmaprenderer context unavailable");
-		this.#worker = new Worker(new URL("./render-worker", import.meta.url), { type: "module" });
+		this.#worker = createEditorWorker("render");
 		this.#worker.onmessage = (e: MessageEvent<FromRenderWorker>) => this.#onMessage(e.data);
 		this.#worker.postMessage({
 			type: "init",

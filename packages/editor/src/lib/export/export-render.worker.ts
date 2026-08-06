@@ -15,21 +15,25 @@ const post = (msg: FromExportWorker, transfer: Transferable[] = []) =>
 
 let aborter: AbortController | null = null;
 
-self.onmessage = async (e: MessageEvent<ToExportWorker>) => {
-	const msg = e.data;
-	if (msg.type === "cancel") {
-		aborter?.abort();
-		return;
-	}
-	if (msg.type !== "render") return;
-	aborter = new AbortController();
-	try {
-		const bytes = await runExportJob(msg.job, {
-			onProgress: (fraction) => post({ type: "progress", fraction }),
-			signal: aborter.signal,
-		});
-		post({ type: "done", bytes }, [bytes.buffer]);
-	} catch (err) {
-		post({ type: "error", message: err instanceof Error ? err.message : String(err) });
-	}
-};
+/** Install this worker's RPC on its global scope. Called by the host app's
+ *  entry module — this package never spawns a worker itself. */
+export function startExportRenderWorker(): void {
+	self.onmessage = async (e: MessageEvent<ToExportWorker>) => {
+		const msg = e.data;
+		if (msg.type === "cancel") {
+			aborter?.abort();
+			return;
+		}
+		if (msg.type !== "render") return;
+		aborter = new AbortController();
+		try {
+			const bytes = await runExportJob(msg.job, {
+				onProgress: (fraction) => post({ type: "progress", fraction }),
+				signal: aborter.signal,
+			});
+			post({ type: "done", bytes }, [bytes.buffer]);
+		} catch (err) {
+			post({ type: "error", message: err instanceof Error ? err.message : String(err) });
+		}
+	};
+}

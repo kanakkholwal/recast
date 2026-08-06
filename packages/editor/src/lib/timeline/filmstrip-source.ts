@@ -15,6 +15,7 @@
 import { type MediaRef, toMediaRef } from "@recast/media";
 import { type FilmstripTile, LruCache } from "./filmstrip";
 import type { FromFilmstripWorker, ToFilmstripWorker } from "./filmstrip-protocol";
+import { createEditorWorker } from "../host-hooks";
 
 /** A built storyboard sprite: one image of `cols`×`rows` cells (`cellW`×`cellH`
  *  each) holding `count` frames evenly spaced across `durationSec`. Cell `i`
@@ -111,9 +112,7 @@ class MediabunnyTileProvider implements TileProvider {
 		// lazily, so the main thread never holds the whole recording. That
 		// whole-file buffer (~600MB, doubled by the worker's Blob copy) was the
 		// single largest allocation when opening a 4K clip.
-		const worker = new Worker(new URL("./filmstrip-worker", import.meta.url), {
-			type: "module",
-		});
+		const worker = createEditorWorker("filmstrip");
 		try {
 			await new Promise<void>((resolve, reject) => {
 				worker.onmessage = (e: MessageEvent<FromFilmstripWorker>) => {

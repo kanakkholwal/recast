@@ -10,6 +10,7 @@ import { page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
 import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
 import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
+import { workerHost } from "$lib/workers";
 import { setEditorServicesForApp } from "$lib/editor/services";
 import { chordLabel, registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import { exportActivity } from "$lib/stores/exportActivity.svelte";
@@ -28,6 +29,7 @@ setEditorServicesForApp(tauriEditorServices);
 // telemetry, shortcut chords and the export-render pause keep working.
 setEditorHostHooks({
 	analytics,
+	workers: workerHost,
 	shortcuts: { chordLabel, registerShortcutHandlers },
 	exportActivity,
 });

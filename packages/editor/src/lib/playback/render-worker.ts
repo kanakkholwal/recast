@@ -162,10 +162,14 @@ function handle(msg: ToRenderWorker): void {
 	}
 }
 
-self.onmessage = (e: MessageEvent<ToRenderWorker>) => {
-	try {
-		handle(e.data);
-	} catch (err) {
-		post({ type: "error", message: err instanceof Error ? err.message : String(err) });
-	}
-};
+/** Install this worker's RPC on its global scope. Called by the host app's
+ *  entry module — this package never spawns a worker itself. */
+export function startRenderWorker(): void {
+	self.onmessage = (e: MessageEvent<ToRenderWorker>) => {
+		try {
+			handle(e.data);
+		} catch (err) {
+			post({ type: "error", message: err instanceof Error ? err.message : String(err) });
+		}
+	};
+}

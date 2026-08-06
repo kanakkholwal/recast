@@ -72,6 +72,9 @@ async function mountEditor() {
 	loadError = false;
 	try {
 		const m = await import("@recast/editor");
+		// The package never spawns workers; this app owns every `new Worker`.
+		const { workerHost } = await import("$lib/workers");
+		m.setEditorHostHooks({ workers: workerHost });
 		const next = m.createEditorStore();
 		const meta = playgroundSession.metadata!;
 		next.metadata = { ...meta, codec: "", sizeBytes: playgroundSession.source!.file.size };

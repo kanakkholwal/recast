@@ -5,6 +5,7 @@
  */
 
 import { type MediaRef, MediabunnyVideoSource } from "@recast/media/playback";
+import { createEditorWorker } from "../host-hooks";
 
 /**
  * `known` is the recording's ffprobe metadata. Passing it lets the worker skip
@@ -16,8 +17,7 @@ export function createMediabunnySource(
 	known?: { durationSec?: number; fps?: number },
 ): Promise<MediabunnyVideoSource> {
 	return MediabunnyVideoSource.create(src, {
-		createWorker: () =>
-			new Worker(new URL("./mediabunny-worker", import.meta.url), { type: "module" }),
+		createWorker: () => createEditorWorker("mediabunny"),
 		durationSec: known?.durationSec,
 		fps: known?.fps,
 	});
