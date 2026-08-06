@@ -3,10 +3,11 @@ import { isChromeless } from "./layout.logic";
 
 describe("isChromeless", () => {
 	// The editor is full-height and ships the EditorToolbar; the marketing navbar
-	// stacked above it pushes the editor past the viewport.
-	it("drops the chrome on the video editor but keeps it on its landing", () => {
+	// stacked above it pushes the editor past the viewport. The drop surface is
+	// the same page, so it goes chromeless too.
+	it("drops the chrome across the whole video editor playground", () => {
+		expect(isChromeless("/playground")).toBe(true);
 		expect(isChromeless("/playground/edit")).toBe(true);
-		expect(isChromeless("/playground")).toBe(false);
 	});
 
 	it("keeps the existing app-shell routes chromeless", () => {

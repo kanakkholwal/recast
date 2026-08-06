@@ -181,6 +181,7 @@ describe("shouldRecoverMbSource", () => {
 describe("classifyMbError", () => {
 	it("maps messages to PII-safe reason codes", () => {
 		expect(classifyMbError(new Error("worker unavailable"))).toBe("unsupported");
+		expect(classifyMbError(new Error("worker script failed to load: /x.js"))).toBe("worker_failed");
 		expect(classifyMbError(new Error("no video track found"))).toBe("no_video_track");
 		expect(classifyMbError(new Error("decoder config unsupported"))).toBe("codec_unsupported");
 		expect(classifyMbError(new Error("fetch failed"))).toBe("fetch_failed");

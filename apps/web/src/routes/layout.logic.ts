@@ -27,10 +27,9 @@ export function isChromeless(pathname: string): boolean {
 		// ships its own top bar. Its landing (/tools/screenshot-editor) keeps the
 		// site chrome.
 		pathname.startsWith("/tools/screenshot-editor/edit") ||
-		// Same deal for the video editor: /playground/edit is a full-height app
-		// and carries the editor's own toolbar. Its landing (/playground) keeps
-		// the site chrome.
-		pathname.startsWith("/playground/edit") ||
+		// The video editor playground is one page: the drop surface swaps
+		// in-place for a full-height editor, so it owns its whole shell.
+		pathname.startsWith("/playground") ||
 		pathname === "/accept-invitation" ||
 		pathname === "/verify-email" ||
 		CHROMELESS_PATHS.has(pathname)

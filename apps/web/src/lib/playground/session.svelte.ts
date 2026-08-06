@@ -2,9 +2,8 @@
  * The playground's in-memory session: the picked source (and optional camera
  * clip), their object URLs, and the probed metadata.
  *
- * Deliberately ephemeral — nothing is persisted. The landing page fills this in
- * and navigates to `/playground/edit`, which sends the visitor back if it's
- * empty (a direct link or a reload).
+ * Deliberately ephemeral — nothing is persisted. `/playground` fills this in and
+ * swaps its drop surface for the editor; a reload lands back on the picker.
  */
 
 import type { MediaRef } from "@recast/media";

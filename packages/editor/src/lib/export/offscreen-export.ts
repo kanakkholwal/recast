@@ -224,6 +224,7 @@ export async function renderTimelineToVideo(opts: OffscreenExportOptions): Promi
 		antialias: false,
 		premultipliedAlpha: false,
 		preserveDrawingBuffer: true,
+		powerPreference: "high-performance",
 	});
 	if (!gl) throw new Error("WebGL2 unavailable for export");
 	const backend = WebGL2Backend.create(gl);

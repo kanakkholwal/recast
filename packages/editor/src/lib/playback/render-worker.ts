@@ -48,6 +48,7 @@ function ensureCanvas(w: number, h: number): boolean {
 			alpha: false,
 			antialias: false,
 			premultipliedAlpha: false,
+			powerPreference: "high-performance",
 		});
 		if (!ctx) return false;
 		gl = ctx;

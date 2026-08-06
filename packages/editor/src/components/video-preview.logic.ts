@@ -182,6 +182,10 @@ export function shouldRecoverMbSource(code: string, attempts: number, maxAttempt
 // in principle carry a URL/path, so we NEVER send it; only this enum.
 export function classifyMbError(err: unknown): string {
 	const m = (err instanceof Error ? err.message : String(err)).toLowerCase();
+	// A worker that never loaded is a BUILD problem, not a codec one. Lumping it
+	// under `unsupported` sent every such report chasing the user's video.
+	if (m.includes("worker script failed to load") || m.includes("worker-died"))
+		return "worker_failed";
 	if (m.includes("unavailable") || m.includes("worker") || m.includes("videoframe"))
 		return "unsupported";
 	if (m.includes("track")) return "no_video_track";

@@ -81,6 +81,7 @@ let {
 	store,
 	services,
 	videoSrc,
+	video,
 	cameraSrc = "",
 	cameraPath = null,
 	cameraCapture = "legacy",
@@ -299,17 +300,22 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 		className,
 	)}
 >
-	<EditorToolbar
-		{store}
-		{filename}
-		{onexport}
-		{onsave}
-		{isSaving}
-		showSidebar={sidebarOpen}
-		showTimeline={timelineOpen}
-		onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
-		onToggleTimeline={() => (timelineOpen = !timelineOpen)}
-	/>
+	<!-- The toolbar's own root is `h-full`, so it needs a sized, non-shrinking
+	     row here or it expands to the whole column (desktop sizes it via
+	     CustomTitlebar's h-9 wrapper). -->
+	<div class="h-9 shrink-0">
+		<EditorToolbar
+			{store}
+			{filename}
+			{onexport}
+			{onsave}
+			{isSaving}
+			showSidebar={sidebarOpen}
+			showTimeline={timelineOpen}
+			onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
+			onToggleTimeline={() => (timelineOpen = !timelineOpen)}
+		/>
+	</div>
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		<!-- Preview + playback + timeline -->
@@ -325,6 +331,7 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 						bind:captureFrame
 						bind:webcodecsActive
 						{videoSrc}
+						{video}
 						{cursorPath}
 						{cameraSrc}
 						onTimeUpdate={handleTimeUpdate}

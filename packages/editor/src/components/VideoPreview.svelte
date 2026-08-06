@@ -38,12 +38,15 @@ import {
 } from "./video-preview.logic";
 import { AudioStallMonitor, resolveAvSync } from "../lib/playback/av-sync";
 import { FrameTextureRing } from "../lib/playback/frame-textures";
-import { textureRingFrames } from "@recast/media";
+import { type MediaRef, mediaRefKey, textureRingFrames } from "@recast/media";
 
 interface Props {
 	store: EditorStore;
 	videoEl: HTMLVideoElement | null;
 	videoSrc: string;
+	/** Same source as a ref. Decode streams off this; `videoSrc` only feeds the
+	 *  `<video>` fallback element. Falls back to `videoSrc` when absent. */
+	video?: MediaRef;
 	cursorPath: string | null;
 	/** convertFileSrc(camera.mp4) for this project, or empty when no
 	 *  camera was recorded. Forwarded to CameraOverlay; the overlay
@@ -79,6 +82,7 @@ let {
 	store,
 	videoEl = $bindable(null),
 	videoSrc,
+	video,
 	cursorPath,
 	cameraSrc = "",
 	onTimeUpdate,
@@ -282,6 +286,9 @@ function initGL() {
 		antialias: false,
 		premultipliedAlpha: false,
 		preserveDrawingBuffer: false,
+		// Hybrid-GPU laptops default to the integrated chip; compositing 4K
+		// per frame is exactly the case that wants the discrete one.
+		powerPreference: "high-performance",
 	});
 	if (!g) {
 		console.error("WebGL2 not supported in this WebView");
@@ -1150,7 +1157,7 @@ function scheduleMbRecover() {
 // be allocated on a dead context.
 function runMbRecover() {
 	mbRecoverTimer = undefined;
-	if (!videoSrc) return;
+	if (!video && !videoSrc) return;
 	if (glLost || !gl) {
 		mbRecoverPending = true;
 		return;
@@ -1165,7 +1172,9 @@ function runMbRecover() {
 // an unsupported codec — see `unsupported-formats.ts` in @recast/media) leaves
 // mbSource null so draw() falls back to the <video> element automatically.
 $effect(() => {
-	const src = videoSrc;
+	// Prefer the ref: a `blob:` URL through UrlSource can degrade to a
+	// whole-file fetch, while a File ref slices lazily off disk.
+	const src: MediaRef | null = video ?? (videoSrc ? { kind: "url", url: videoSrc } : null);
 	// Read so a recovery bump re-runs this effect; the rebuild also resets
 	// loadedMbSrc, so the same-src guard below doesn't short-circuit it.
 	void mbRecoverNonce;
@@ -1188,8 +1197,9 @@ $effect(() => {
 		requestRedraw();
 		return;
 	}
-	if (src === loadedMbSrc) return;
-	loadedMbSrc = src;
+	const key = mediaRefKey(src);
+	if (key === loadedMbSrc) return;
+	loadedMbSrc = key;
 	mbReady = false;
 	mbFallbackNotified = false;
 	webcodecsActive = false;

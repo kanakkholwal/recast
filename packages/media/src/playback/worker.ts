@@ -11,7 +11,13 @@
 
 // This worker now lives INSIDE `packages/media`, so it imports MediaBunny
 // directly rather than bouncing through the package barrel.
-import { ALL_FORMATS, Input, type VideoSample, VideoSampleSink } from "mediabunny";
+import {
+	ALL_FORMATS,
+	Input,
+	type InputVideoTrack,
+	type VideoSample,
+	VideoSampleSink,
+} from "mediabunny";
 import { textureRingFrames } from "../cache/frame-budget";
 import type { MediaRef } from "../media-ref";
 import { mediaRefSource } from "../mediabunny";
@@ -150,6 +156,29 @@ function awaitPlayhead(): Promise<void> {
 	return new Promise((resolve) => playheadWaiters.push(resolve));
 }
 
+/**
+ * `prefer-hardware`, but only once `isConfigSupported` confirms a hardware
+ * decoder exists for this exact config. Asking for it blind throws at
+ * `configure()` on machines without one, which would drop the whole preview to
+ * the `<video>` fallback rather than decode in software.
+ */
+async function decodeAcceleration(
+	track: InputVideoTrack,
+): Promise<"prefer-hardware" | "no-preference"> {
+	try {
+		if (typeof VideoDecoder === "undefined") return "no-preference";
+		const config = await track.getDecoderConfig();
+		if (!config) return "no-preference";
+		const probe = await VideoDecoder.isConfigSupported({
+			...config,
+			hardwareAcceleration: "prefer-hardware",
+		});
+		return probe.supported ? "prefer-hardware" : "no-preference";
+	} catch {
+		return "no-preference";
+	}
+}
+
 async function init(
 	src: MediaRef,
 	hints: { durationSec?: number; fps?: number } = {},
@@ -200,7 +229,7 @@ async function init(
 		step("codedDimensions");
 		// Samples, not canvases: the frames go straight to the consumer, so no
 		// per-frame canvas allocation and no canvas→VideoFrame copy.
-		sink = new VideoSampleSink(track);
+		sink = new VideoSampleSink(track, { hardwareAcceleration: await decodeAcceleration(track) });
 		// Real rate, not a hardcoded 30: the source derives each frame's
 		// duration from it, and telemetry cohorts on it.
 		let fps = 30;

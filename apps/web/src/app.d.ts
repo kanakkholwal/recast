@@ -18,7 +18,11 @@ declare global {
 		}
 		// interface Locals {}
 		// interface PageData {}
-		// interface PageState {}
+		// Shallow-routing state. `/playground` swaps its drop surface for the
+		// editor on one route, so Back returns to the picker.
+		interface PageState {
+			playgroundEditing?: boolean;
+		}
 		// interface Platform {}
 	}
 
