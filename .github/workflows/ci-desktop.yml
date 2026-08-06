@@ -87,12 +87,16 @@ jobs:
       # types svelte-check needs below.
       - name: Install workspace dependencies
         run: pnpm install --no-frozen-lockfile
+      - name: Shared package unit tests
+        run: pnpm test:captions && pnpm test:media && pnpm test:editor && pnpm test:player && pnpm test:render
       - name: Desktop UI unit tests
         run: pnpm test:desktop
       # Typecheck the Svelte/TS half. Fails on ERRORS only (warnings are reported
       # but don't block), matching the local `pnpm check` gate. Catches the class
       # of break the vitest suite can't: a bad prop/event type or a component
       # that no longer compiles.
+      - name: Typecheck shared editor package (svelte-check)
+        run: pnpm --filter @recast/editor check
       - name: Typecheck desktop frontend (svelte-check)
         run: pnpm --filter recast-desktop check
 

@@ -14,5 +14,5 @@
 		"verbatimModuleSyntax": false,
 		"types": ["svelte"]
 	},
-	"include": ["src/**/*.ts", "src/**/*.svelte"]
+	"include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte"]
 }

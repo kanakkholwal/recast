@@ -361,7 +361,7 @@ pub(crate) async fn run_gif_pass(p: GifPassParams<'_>) -> Result<GifPassOutput, 
 
     // Wire the palette PNG in as the last FFmpeg input. GIF mode skips audio
     // inputs entirely, so input ordering up to this point is:
-    //   0=source, 1..=extra_inputs, [cursor], [watermark]
+    //   0=source, 1..=extra_inputs, [cursor]
     // Palette appends after that.
     let palette_input_args = ["-i".to_string(), palette_path.to_string_lossy().to_string()];
 

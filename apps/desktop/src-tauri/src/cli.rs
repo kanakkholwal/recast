@@ -279,7 +279,7 @@ enum EditorAction {
     },
     /// Universal mutator. Set any scalar/struct field in RenderState by
     /// dotted-path JSON pointer; e.g. `borderRadius`, `cursorSize`,
-    /// `audioSettings.volume`, `watermarkSettings.opacity`. Pair with
+    /// `audioSettings.volume`, `cursorSettings.size`. Pair with
     /// `--value <JSON>` (string for strings, number, true/false,
     /// array, object). For array fields where you want to add or
     /// remove entries use the targeted verbs (cut/zoom/split-point/
@@ -288,7 +288,7 @@ enum EditorAction {
         path: String,
         /// Dotted JSON pointer inside `RenderState`, e.g.
         /// `borderRadius`, `cursorSize`, `audioSettings.volume`,
-        /// `watermarkSettings.opacity`, `annotations.0.fill`.
+        /// `cursorSettings.size`, `annotations.0.fill`.
         #[arg(long, value_name = "DOTTED.PATH")]
         field: String,
         /// JSON value to set. Strings need quoting inside `--value`;

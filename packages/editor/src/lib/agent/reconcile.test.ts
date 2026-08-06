@@ -20,7 +20,7 @@ describe("planReconcile", () => {
 	it("skips when the only difference is null-vs-omitted", () => {
 		expect(
 			planReconcile({
-				current: { trimEnd: 10, cameraOverlay: null },
+				current: { trimEnd: 10, lastAppliedPresetId: null },
 				incoming: { trimEnd: 10 },
 				dirty: false,
 			}).action,

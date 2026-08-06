@@ -52,16 +52,18 @@ describe("WEB_PANEL_TABS", () => {
 	});
 
 	it("omits the tabs that need a native host", () => {
-		expect(WEB_PANEL_TABS).not.toContain("cursor");
 		expect(WEB_PANEL_TABS).not.toContain("music");
+		expect(WEB_PANEL_TABS).not.toContain("info");
+		expect(WEB_PANEL_TABS).not.toContain("audio");
+		expect(WEB_PANEL_TABS).not.toContain("extensions");
 		expect(WEB_PANEL_TABS).not.toContain("dev");
 	});
 
 	// A deep link to a tab the host doesn't serve must fall back, not render a
 	// dead panel.
 	it("rejects an unavailable tab when parsing a URL param", () => {
-		expect(parsePanelTab("cursor", false, WEB_PANEL_TABS)).toBeNull();
-		expect(parsePanelTab("cursor")).toBe("cursor");
+		expect(parsePanelTab("music", false, WEB_PANEL_TABS)).toBeNull();
+		expect(parsePanelTab("music")).toBe("music");
 		expect(parsePanelTab("captions", false, WEB_PANEL_TABS)).toBe("captions");
 	});
 });

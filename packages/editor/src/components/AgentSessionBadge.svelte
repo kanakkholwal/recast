@@ -1,7 +1,7 @@
 <script lang="ts">
 import { Button } from "@recast/ui/button";
 import * as Popover from "@recast/ui/popover";
-import { Bot } from "@lucide/svelte";
+import { Sparkles } from "@recast/icons";
 import { agentSession } from "../lib/agent/session.svelte";
 
 let open = $state(false);
@@ -21,7 +21,7 @@ async function takeOver() {
 </script>
 
 {#if agentSession.active}
-  <Popover.Root bind:open>
+  <Popover.Root {open} onOpenChange={(v) => (open = v)}>
     <Popover.Trigger>
       {#snippet child({ props })}
         <button
@@ -37,7 +37,7 @@ async function takeOver() {
             ></span>
             <span class="relative inline-flex size-1.5 rounded-full bg-foreground/70"></span>
           </span>
-          <Bot class="size-3" aria-hidden="true" />
+          <Sparkles class="size-3" aria-hidden="true" />
           Agent editing
         </button>
       {/snippet}

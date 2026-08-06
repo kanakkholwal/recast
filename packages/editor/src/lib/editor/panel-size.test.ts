@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+	clampSidebarWidth,
 	clampTimelineHeight,
+	SIDEBAR_DEFAULT_WIDTH_PX,
+	SIDEBAR_MAX_WIDTH_PX,
+	SIDEBAR_MIN_WIDTH_PX,
 	TIMELINE_DEFAULT_HEIGHT_PX,
 	TIMELINE_MAX_HEIGHT_PX,
 	TIMELINE_MAX_SHARE,
@@ -69,5 +73,19 @@ describe("clampTimelineHeight", () => {
 
 	it("recovers from a corrupt stored value", () => {
 		expect(clampTimelineHeight(Number.NaN, COLUMN)).toBe(TIMELINE_DEFAULT_HEIGHT_PX);
+	});
+});
+
+describe("clampSidebarWidth", () => {
+	it("holds the panel between its bounds", () => {
+		expect(clampSidebarWidth(10)).toBe(SIDEBAR_MIN_WIDTH_PX);
+		expect(clampSidebarWidth(99999)).toBe(SIDEBAR_MAX_WIDTH_PX);
+		expect(clampSidebarWidth(400.6)).toBe(401);
+	});
+
+	// localStorage returns "" for a missing key, and Number("") is 0 — which must
+	// not collapse the panel to its minimum on first open.
+	it("uses the default for a non-numeric stored value", () => {
+		expect(clampSidebarWidth(Number.NaN)).toBe(SIDEBAR_DEFAULT_WIDTH_PX);
 	});
 });
