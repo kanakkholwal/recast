@@ -54,7 +54,6 @@ const DEMO: DemoOrResolved = {
 		ctaUrl: "https://recast.li",
 		commentsEnabled: true,
 		viewsCount: 1280,
-		watermark: true,
 		searchable: false,
 	},
 	canManage: false,
@@ -74,7 +73,6 @@ export const load: PageServerLoad = async ({ params, request, cookies }) => {
 		.api.getSession({ headers: request.headers })
 		.catch(() => null)) as SessionShape | null;
 
-	// Drives the player watermark: a signed-in viewer already knows what Recast is.
 	const signedIn = session != null;
 
 	const viewer = await loadViewer(session?.user.id ?? null);

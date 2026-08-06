@@ -1,103 +1,96 @@
 <script lang="ts">
-	import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
-	import { authClient } from "$lib/auth/client";
-	import { Badge } from "@recast/ui/badge";
-	import { Button } from "@recast/ui/button";
-	import { toast } from "@recast/ui/sonner";
-	import {
-		ArrowUpRight,
-		Check,
-		CreditCard,
-		Crown,
-		Gauge,
-		LoaderCircle,
-		Minus,
-		Rocket,
-		ShieldCheck,
-		Users,
-	} from "@recast/icons";
-	import { cubicOut } from "svelte/easing";
-	import { fly } from "svelte/transition";
-	import {
-		approxViews,
-		formatBytes,
-		formatUsd,
-		meterTone,
-		seatView,
-	} from "./billing.logic";
+import SettingsSection from "$lib/dashboard/components/SettingsSection.svelte";
+import { authClient } from "$lib/auth/client";
+import { Badge } from "@recast/ui/badge";
+import { Button } from "@recast/ui/button";
+import { toast } from "@recast/ui/sonner";
+import {
+	ArrowUpRight,
+	Check,
+	CreditCard,
+	Crown,
+	Gauge,
+	LoaderCircle,
+	Minus,
+	Rocket,
+	ShieldCheck,
+	Users,
+} from "@recast/icons";
+import { cubicOut } from "svelte/easing";
+import { fly } from "svelte/transition";
+import { approxViews, formatBytes, formatUsd, meterTone, seatView } from "./billing.logic";
 
-	let { data } = $props();
+let { data } = $props();
 
-	let checkingOut = $state(false);
-	let openingPortal = $state(false);
+let checkingOut = $state(false);
+let openingPortal = $state(false);
 
-	const plan = $derived(data.plan);
-	const isPaid = $derived(plan.id !== "free");
-	const canUsePortal = $derived(Boolean(data.subscription?.polarCustomerId));
-	const status = $derived<string>(data.subscription?.status ?? "none");
+const plan = $derived(data.plan);
+const isPaid = $derived(plan.id !== "free");
+const canUsePortal = $derived(Boolean(data.subscription?.polarCustomerId));
+const status = $derived<string>(data.subscription?.status ?? "none");
 
-	const seats = $derived(
-		seatView(data.seats, plan.seats.included, plan.seats.max, plan.seats.monthlyUsd),
-	);
-	const delivery = $derived(data.delivery);
-	const deliveryPct = $derived(Math.round((delivery?.ratio ?? 0) * 100));
-	const storagePct = $derived(Math.round(data.quota?.storagePctUsed ?? 0));
+const seats = $derived(
+	seatView(data.seats, plan.seats.included, plan.seats.max, plan.seats.monthlyUsd),
+);
+const delivery = $derived(data.delivery);
+const deliveryPct = $derived(Math.round((delivery?.ratio ?? 0) * 100));
+const storagePct = $derived(Math.round(data.quota?.storagePctUsed ?? 0));
 
-	const periodEndLabel = $derived(
-		data.subscription?.currentPeriodEnd
-			? new Date(data.subscription.currentPeriodEnd).toLocaleDateString("en-US", {
-					month: "short",
-					day: "numeric",
-					year: "numeric",
-				})
-			: null,
-	);
+const periodEndLabel = $derived(
+	data.subscription?.currentPeriodEnd
+		? new Date(data.subscription.currentPeriodEnd).toLocaleDateString("en-US", {
+				month: "short",
+				day: "numeric",
+				year: "numeric",
+			})
+		: null,
+);
 
-	const featureRows = $derived([
-		{ label: "Watch analytics", on: plan.features.analytics },
-		{ label: "Password protection", on: plan.features.passwordProtection },
-		{ label: "Link expiry controls", on: plan.features.linkExpiry },
-		{ label: "Per-viewer access", on: plan.features.perViewerAccess },
-		{ label: "Custom branding", on: plan.features.customBranding },
-		{ label: "No Recast watermark", on: !plan.features.watermark },
-	]);
+const featureRows = $derived([
+	{ label: "Watch analytics", on: plan.features.analytics },
+	{ label: "Password protection", on: plan.features.passwordProtection },
+	{ label: "Link expiry controls", on: plan.features.linkExpiry },
+	{ label: "Per-viewer access", on: plan.features.perViewerAccess },
+	{ label: "Custom branding", on: plan.features.customBranding },
+]);
 
-	// The workspace must be pinned before Polar redirects, or the webhook can't
-	// tell which workspace the payment belongs to.
-	async function startCheckout() {
-		if (checkingOut || !data.billingConfigured || !data.isOwner) return;
-		checkingOut = true;
-		try {
-			const res = await fetch("/api/billing/checkout-intent", {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ workspaceId: data.workspace.id, seats: seats.used }),
-			});
-			if (!res.ok) {
-				const body = (await res.json().catch(() => ({}))) as { message?: string };
-				throw new Error(body.message ?? "Couldn't start checkout.");
-			}
-			const { error } = await authClient.checkout({ slug: "pro" });
-			if (error) throw new Error(error.message ?? "Couldn't start checkout.");
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't start checkout.");
-		} finally {
-			checkingOut = false;
+// The workspace must be pinned before Polar redirects, or the webhook can't
+// tell which workspace the payment belongs to.
+async function startCheckout() {
+	if (checkingOut || !data.billingConfigured || !data.isOwner) return;
+	checkingOut = true;
+	try {
+		const res = await fetch("/api/billing/checkout-intent", {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ workspaceId: data.workspace.id, seats: seats.used }),
+		});
+		if (!res.ok) {
+			const body = (await res.json().catch(() => ({}))) as { message?: string };
+			throw new Error(body.message ?? "Couldn't start checkout.");
 		}
+		const { error } = await authClient.checkout({ slug: "pro" });
+		if (error) throw new Error(error.message ?? "Couldn't start checkout.");
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't start checkout.");
+	} finally {
+		checkingOut = false;
 	}
+}
 
-	async function openPortal() {
-		if (openingPortal || !canUsePortal) return;
-		openingPortal = true;
-		try {
-			const { error } = await authClient.customer.portal();
-			if (error) throw new Error(error.message ?? "Couldn't open billing portal.");
-		} catch (err) {
-			toast.error((err as Error)?.message ?? "Couldn't open billing portal.");
-		} finally {
-			openingPortal = false;
-		}
+async function openPortal() {
+	if (openingPortal || !canUsePortal) return;
+	openingPortal = true;
+	try {
+		const { error } = await authClient.customer.portal();
+		if (error) throw new Error(error.message ?? "Couldn't open billing portal.");
+	} catch (err) {
+		toast.error((err as Error)?.message ?? "Couldn't open billing portal.");
+	} finally {
+		openingPortal = false;
 	}
+}
 </script>
 
 <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">

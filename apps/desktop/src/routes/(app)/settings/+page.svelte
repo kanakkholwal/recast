@@ -793,7 +793,7 @@ const editorSegments: SegmentedOption<EditorBehavior>[] = [
 
         <Tabs.Content value="cloud" class="flex min-w-0 flex-col gap-8">
               <!-- Optional. Cloud unlocks the Loom-style sharing layer. Free
-                   tier = 10 active links + watermark; paid removes both. -->
+                   tier = 10 active links; paid lifts the cap. -->
               <SectionCard
                 id="settings-cloud"
                 label="Recast Cloud"

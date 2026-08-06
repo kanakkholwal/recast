@@ -32,10 +32,7 @@ export const shareVisibilityEnum = pgEnum("share_visibility", [
 	"public",
 ]);
 
-export const shareMemberRoleEnum = pgEnum("share_member_role", [
-	"viewer",
-	"commenter",
-]);
+export const shareMemberRoleEnum = pgEnum("share_member_role", ["viewer", "commenter"]);
 
 export const share = pgTable(
 	"share",
@@ -55,7 +52,6 @@ export const share = pgTable(
 		passwordHash: text("password_hash"),
 		expiresAt: timestamp("expires_at"),
 		/** Free plan: always true and shown on player. Pro removes. */
-		watermark: boolean("watermark").notNull().default(true),
 		/**
 		 * Owner's call-to-action — the "next step" a founder wants the viewer
 		 * to take (book a call, try it, reply). Rendered as a persistent

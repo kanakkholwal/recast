@@ -71,7 +71,6 @@ import {
 	X,
 } from "@recast/icons";
 import {
-	RECAST_BRANDING,
 	RecastPlayer,
 	type RecastPlayerActionEvent,
 	type RecastPlayerApi,
@@ -107,10 +106,6 @@ const access = $derived(data.access);
 const okAccess = $derived(access.ok ? access : null);
 const deniedAccess = $derived(access.ok ? null : access);
 const recast = $derived(okAccess?.recast);
-
-// Watermark only for logged-out viewers — anyone signed in already knows what
-// Recast is. Custom/removable branding is a paid-plan concern for later.
-const playerBranding = $derived(data.signedIn ? null : RECAST_BRANDING);
 
 // Caption track for the player, when this recast has a captions sidecar.
 const captionTracks = $derived<RecastPlayerTrack[]>(
@@ -408,7 +403,6 @@ let commentsEnabled = $state(
 // Owner opt-in to search indexing (public shares only). Optimistic, like the
 // comments toggle; the <svelte:head> robots/canonical below key off it.
 let searchable = $state(untrack(() => (data.access.ok ? data.access.share.searchable : false)));
-const watermark = $derived(shareMeta?.watermark ?? true);
 const viewsCount = $derived(shareMeta?.viewsCount ?? 0);
 
 let comments = $state<ShareComment[]>([]);
@@ -898,9 +892,7 @@ async function signOut() {
 // Share→signup is the page's growth loop: a stranger watching a polished
 // recast is the highest-intent moment to convert. Track each acquisition
 // surface so the funnel is measurable by placement (header / end-card / mark).
-function trackSignupCta(
-	placement: "header" | "end-card" | "watermark" | "mid-watch" | "positioning-chip",
-) {
+function trackSignupCta(placement: "header" | "end-card" | "mid-watch" | "positioning-chip") {
 	if (!browser) return;
 	analytics.capture("share_signup_cta_click", {
 		placement,
@@ -1474,7 +1466,6 @@ $effect(() => {
 								aspectRatio={playerAspect}
 								tracks={captionTracks}
 								markers={commentMarkers}
-								branding={playerBranding}
 								onengagement={onEngagement}
 								onaction={onPlayerAction}
 							/>
@@ -2075,24 +2066,6 @@ $effect(() => {
 				</aside>
 			{/if}
 
-			<!-- Free-tier growth loop: every shared link quietly markets Recast and
-			     doubles as a soft acquisition CTA. Pro removes the watermark. -->
-			{#if watermark}
-				<footer class="mt-12 flex justify-center">
-					<a
-						href="/signup"
-						onclick={() => trackSignupCta("watermark")}
-						class="group/made inline-flex items-center gap-2 rounded-full border border-border-low/40 bg-foreground/3 px-3 py-1.5 text-[11px] text-muted-foreground transition-colors hover:border-border hover:text-foreground"
-					>
-						<span class="grid size-4 place-items-center rounded bg-foreground p-0.5 text-background">
-							<Logo size="12" color="transparent" fill="currentColor" />
-						</span>
-						Made with <span class="font-semibold text-foreground">Recast</span>
-						<span aria-hidden="true" class="text-border-low">·</span>
-						<span class="font-medium text-foreground/80 transition-colors group-hover/made:text-foreground">Record yours free</span>
-					</a>
-				</footer>
-			{/if}
 
 			<!-- Mid-watch nudge: a subtle floating pill, fixed at bottom-center,
 			     shown once at ~50% watched for a cold visitor. Dismissible, out of

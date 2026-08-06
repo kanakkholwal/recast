@@ -637,7 +637,7 @@ function dragScroll(node: HTMLElement) {
 		<Container>
 			<Reveal variant="up" delay={150}>
 				<p class="mx-auto mt-6 max-w-3xl text-center text-sm leading-relaxed text-muted-foreground">
-					Plus trim &amp; cut, background &amp; padding, drop shadow, watermark, custom export presets. Nothing locked behind a "Pro" tier.
+					Plus trim &amp; cut, background &amp; padding, drop shadow, custom export presets. Nothing locked behind a "Pro" tier.
 				</p>
 			</Reveal>
 		</Container>

@@ -21,12 +21,7 @@ import { normalizeEmail } from "$lib/share/grant";
  * old share rows. New writes should use `workspace`; consumers treat the
  * two identically.
  */
-export type ShareVisibility =
-	| "public"
-	| "workspace"
-	| "team"
-	| "selected"
-	| "private";
+export type ShareVisibility = "public" | "workspace" | "team" | "selected" | "private";
 
 export type ResolvedShare =
 	| {
@@ -56,7 +51,6 @@ export type ResolvedShare =
 				ctaUrl: string | null;
 				commentsEnabled: boolean;
 				viewsCount: number;
-				watermark: boolean;
 				/** Owner opt-in to search indexing (public shares only). */
 				searchable: boolean;
 			};
@@ -121,7 +115,6 @@ export async function resolveShareAccess(
 			ctaUrl: share.ctaUrl,
 			commentsEnabled: share.commentsEnabled,
 			viewsCount: share.viewsCount,
-			watermark: share.watermark,
 			searchable: share.searchable,
 			ownerId: share.ownerId,
 			ownerEmail: user.email,
@@ -148,9 +141,7 @@ export async function resolveShareAccess(
 
 	const isOwner = viewer?.id === row.ownerId;
 	const isAdmin = viewer?.role === "admin";
-	const inOrg =
-		row.organizationId != null &&
-		viewer?.memberships.has(row.organizationId) === true;
+	const inOrg = row.organizationId != null && viewer?.memberships.has(row.organizationId) === true;
 	// Owners/admins of the recast's workspace manage every share in it, not
 	// just the ones they personally created. See `resolveShareManage`.
 	const workspaceRole = viewer?.memberships.get(row.workspaceId);
@@ -228,7 +219,6 @@ export async function resolveShareAccess(
 			ctaUrl: row.ctaUrl,
 			commentsEnabled: row.commentsEnabled,
 			viewsCount: row.viewsCount,
-			watermark: row.watermark,
 			searchable: row.searchable,
 		},
 		canManage,

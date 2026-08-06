@@ -296,7 +296,7 @@ onDestroy(() => auth.dispose());
         </div>
         {#if !isPaid}
           <p class="text-[10.5px] text-muted-foreground">
-            Pro removes the share watermark and lifts your active-link limit.
+            Pro lifts your active-link limit.
           </p>
         {/if}
       </div>

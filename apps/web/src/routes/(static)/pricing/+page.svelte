@@ -186,13 +186,6 @@ const groups: RowGroup[] = [
 				cloudPro: true,
 				enterprise: true,
 			},
-			{
-				label: "Recast watermark on player",
-				desktop: "—",
-				cloudFree: "Yes",
-				cloudPro: "No",
-				enterprise: "No",
-			},
 		],
 	},
 	{
@@ -371,7 +364,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 								`${free.limits.activeRecasts} active share links, ${free.seats.included} creators`,
 								`${gb(free.limits.storageBytes)} hosted storage, ${gb(free.limits.deliveryBytesPerMonth)} delivered a month`,
 								"720p playback, 10-minute recordings",
-								"Basic watch analytics, Recast watermark",
+								"Basic watch analytics",
 								"Or bring your own bucket and lift every storage cap",
 							] as point}
 								<li class="flex items-start gap-2.5 text-sm text-foreground/85">
@@ -427,7 +420,7 @@ const columns: { key: ColKey; label: string; tone: "muted" | "primary" | "foregr
 							{#each [
 								`${proPlan.limits.activeRecasts} active links, ${gb(proPlan.limits.storageBytes)} storage`,
 								`${gb(proPlan.limits.deliveryBytesPerMonth)} delivered a month`,
-								"4K playback, 4-hour recordings, no watermark",
+								"4K playback, 4-hour recordings",
 								"Full watch analytics — who watched, how far",
 								"Password protection, link expiry, per-viewer access",
 								"Custom branding, your own domain, or your own bucket",

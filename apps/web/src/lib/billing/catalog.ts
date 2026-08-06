@@ -51,7 +51,6 @@ export type PlanFeatures = {
 	passwordProtection: boolean;
 	linkExpiry: boolean;
 	perViewerAccess: boolean;
-	watermark: boolean;
 	auditLog: boolean;
 	sso: boolean;
 };
@@ -93,7 +92,6 @@ export const PLANS: Record<PlanId, Plan> = {
 			passwordProtection: false,
 			linkExpiry: false,
 			perViewerAccess: false,
-			watermark: true,
 			auditLog: false,
 			sso: false,
 		},
@@ -119,7 +117,6 @@ export const PLANS: Record<PlanId, Plan> = {
 			passwordProtection: true,
 			linkExpiry: true,
 			perViewerAccess: true,
-			watermark: false,
 			auditLog: false,
 			sso: false,
 		},
@@ -147,7 +144,6 @@ export const PLANS: Record<PlanId, Plan> = {
 			passwordProtection: true,
 			linkExpiry: true,
 			perViewerAccess: true,
-			watermark: false,
 			auditLog: true,
 			sso: true,
 		},
@@ -177,20 +173,14 @@ export type WorkspaceLimitOverrides = {
 };
 
 /** Flattens a plan into the shape the enforcement paths read. */
-export function limitsFor(
-	planId: PlanId,
-	overrides?: WorkspaceLimitOverrides | null,
-): QuotaLimits {
+export function limitsFor(planId: PlanId, overrides?: WorkspaceLimitOverrides | null): QuotaLimits {
 	const plan = PLANS[planId];
 	const pick = (override: number | null | undefined, fallback: number): number =>
 		override != null && override > 0 ? override : fallback;
 
 	return {
 		storageBytes: pick(overrides?.storageLimitBytes, plan.limits.storageBytes),
-		deliveryBytesPerMonth: pick(
-			overrides?.deliveryLimitBytes,
-			plan.limits.deliveryBytesPerMonth,
-		),
+		deliveryBytesPerMonth: pick(overrides?.deliveryLimitBytes, plan.limits.deliveryBytesPerMonth),
 		activeRecasts: pick(overrides?.activeRecastsLimit, plan.limits.activeRecasts),
 		maxDurationSec: plan.limits.maxDurationSec,
 		members: pick(overrides?.seatLimit, plan.seats.max),
