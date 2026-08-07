@@ -116,7 +116,7 @@ fn claim_next_queued(db: &Db) -> Option<ClaimedJob> {
 
 fn finish_success(db: &Db, id: &str, output_path: &str) {
     let now = now_millis();
-    let _ = db.with(|c| {
+    let written = db.with(|c| {
         c.execute(
             "UPDATE export_jobs \
              SET status = 'success', phase = 'finalizing', progress = 100, \
@@ -125,11 +125,12 @@ fn finish_success(db: &Db, id: &str, output_path: &str) {
         )?;
         Ok(())
     });
+    log_terminal_write(written, id, "success");
 }
 
 fn finish_cancelled(db: &Db, id: &str) {
     let now = now_millis();
-    let _ = db.with(|c| {
+    let written = db.with(|c| {
         c.execute(
             "UPDATE export_jobs SET status = 'cancelled', phase = 'cancelling', finished_at = ? \
              WHERE id = ?",
@@ -137,17 +138,27 @@ fn finish_cancelled(db: &Db, id: &str) {
         )?;
         Ok(())
     });
+    log_terminal_write(written, id, "cancelled");
 }
 
 fn finish_error(db: &Db, id: &str, message: String) {
     let now = now_millis();
-    let _ = db.with(|c| {
+    let written = db.with(|c| {
         c.execute(
             "UPDATE export_jobs SET status = 'error', error = ?, finished_at = ? WHERE id = ?",
             params![message, now, id],
         )?;
         Ok(())
     });
+    log_terminal_write(written, id, "error");
+}
+
+/// A failed terminal write leaves the row `running`, so the UI shows an export
+/// that never finishes. Nothing here can undo it, but it must not be silent.
+fn log_terminal_write<E: std::fmt::Display>(result: Result<(), E>, id: &str, status: &str) {
+    if let Err(e) = result {
+        log::error!("export job {id} finished as {status} but the row could not be updated: {e}");
+    }
 }
 
 fn load_payload(path: &str) -> Result<ExportRequest, String> {
@@ -187,20 +198,43 @@ fn write_sidecar(output_path: &str, sidecar: &CaptionSidecar) {
 /// and it runs one job at a time, this IS the concurrency-of-1 guarantee.
 pub(crate) fn spawn_export_worker(app: AppHandle) {
     let wake = { app.state::<AppState>().export_wake.clone() };
-    tauri::async_runtime::spawn(async move {
-        loop {
-            // Drain first so queued-at-startup jobs (survivors of a restart) run
-            // without waiting for a notify.
-            loop {
-                let db = { app.state::<AppState>().db.clone() };
-                let Some(job) = claim_next_queued(&db) else {
-                    break;
-                };
-                run_one(&app, job).await;
-            }
-            wake.notified().await;
-        }
-    });
+    // Its OWN thread and runtime, not `tauri::async_runtime::spawn`. Between its
+    // awaits this worker does minutes of blocking work — bundle extraction,
+    // ffprobe, background prebake, a full cursor pre-render — plus blocking
+    // SQLite claims and a blocking payload read, all of which parked a shared
+    // runtime worker and starved every other command. The queue is serial by
+    // design, so one dedicated thread matches it exactly.
+    let spawned = std::thread::Builder::new()
+        .name("recast-export-worker".into())
+        .spawn(move || {
+            let runtime = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(runtime) => runtime,
+                Err(e) => {
+                    log::error!("export worker runtime failed to start: {e}");
+                    return;
+                }
+            };
+            runtime.block_on(async move {
+                loop {
+                    // Drain first so queued-at-startup jobs (survivors of a restart) run
+                    // without waiting for a notify.
+                    loop {
+                        let db = { app.state::<AppState>().db.clone() };
+                        let Some(job) = claim_next_queued(&db) else {
+                            break;
+                        };
+                        run_one(&app, job).await;
+                    }
+                    wake.notified().await;
+                }
+            });
+        });
+    if let Err(e) = spawned {
+        log::error!("export worker thread failed to start: {e}");
+    }
 }
 
 async fn run_one(app: &AppHandle, job: ClaimedJob) {

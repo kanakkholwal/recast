@@ -112,12 +112,13 @@ export function buildTimeMarkers(
 	pixelsPerSecond: number,
 	mode: TimeMode,
 	fps: number,
+	window?: TickWindow,
 ): TimeMarker[] {
 	if (duration <= 0) return [];
 	const markers: TimeMarker[] = [];
 	const interval = rulerInterval(pixelsPerSecond);
 
-	for (let t = 0; t <= duration + interval * 0.5; t += interval) {
+	for (const t of tickTimes(duration, interval, window)) {
 		markers.push({
 			time: t,
 			label: formatRulerTick(t, mode, fps, interval),
@@ -163,12 +164,34 @@ export function buildWaveformPath(p: {
 }
 
 // Minor tick marks between labels.
-export function buildMinorTicks(duration: number, pixelsPerSecond: number): number[] {
+export function buildMinorTicks(
+	duration: number,
+	pixelsPerSecond: number,
+	window?: TickWindow,
+): number[] {
 	if (duration <= 0) return [];
-	const ticks: number[] = [];
 	const interval = pixelsPerSecond > 180 ? 0.25 : pixelsPerSecond > 80 ? 0.5 : 1;
-	for (let t = 0; t <= duration + interval * 0.5; t += interval) {
-		ticks.push(t);
-	}
-	return ticks;
+	return tickTimes(duration, interval, window);
+}
+
+/** Visible slice of the timeline, in OUTPUT seconds. Omit for the whole thing. */
+export interface TickWindow {
+	startSec: number;
+	endSec: number;
+}
+
+/**
+ * Tick times on the `interval` grid, clipped to `window`. Generated from the
+ * grid INDEX rather than by accumulating `t += interval`, so a tick's value —
+ * and therefore its `{#each}` key — is identical no matter where the window
+ * starts. Accumulating would shift every value as the user scrolls and
+ * re-create the whole row each frame.
+ */
+function tickTimes(duration: number, interval: number, window?: TickWindow): number[] {
+	const lastIdx = Math.floor((duration + interval * 0.5) / interval);
+	const firstIdx = window ? Math.max(0, Math.floor(window.startSec / interval)) : 0;
+	const endIdx = window ? Math.min(lastIdx, Math.ceil(window.endSec / interval)) : lastIdx;
+	const times: number[] = [];
+	for (let i = firstIdx; i <= endIdx; i++) times.push(i * interval);
+	return times;
 }

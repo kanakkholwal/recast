@@ -199,12 +199,19 @@ $effect(() => {
 $effect(() => {
 	if (!store.isPlaying || isDraggingPlayhead || !timelineEl) return;
 	const px = xOf(store.currentTime);
-	const view = timelineEl.clientWidth;
-	const left = timelineEl.scrollLeft;
-	const margin = Math.min(view * 0.12, 120);
-	if (px < left + margin || px > left + view - margin) {
-		timelineEl.scrollLeft = Math.max(0, px - margin);
-	}
+	// Cached, not read off the element: this runs on every ~25Hz `currentTime`
+	// publish, and a `clientWidth`/`scrollLeft` read followed by a `scrollLeft`
+	// write in the same effect forces a synchronous layout of a subtree holding
+	// the whole ruler. Untracked because that write fires the scroll handler,
+	// which sets `scrollLeft` — tracking it would make this effect re-enter.
+	untrack(() => {
+		const view = timelineWidth;
+		const left = scrollLeft;
+		const margin = Math.min(view * 0.12, 120);
+		if (px < left + margin || px > left + view - margin) {
+			timelineEl!.scrollLeft = Math.max(0, px - margin);
+		}
+	});
 });
 
 // Trim/playhead writes round to the nearest frame so preview and export agree
@@ -1131,6 +1138,8 @@ onMount(() => {
             {pixelsPerSecond}
             {timeMode}
             fps={effectiveFps()}
+            viewportLeftPx={scrollLeft}
+            viewportWidthPx={timelineWidth}
           />
         </div>
 
