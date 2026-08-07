@@ -1,26 +1,19 @@
 {
 	"compilerOptions": {
-	"rewriteRelativeImportExtensions": true,
+		"target": "ES2022",
+		"module": "ESNext",
+		"moduleResolution": "bundler",
+		"lib": ["ES2022", "DOM", "DOM.Iterable"],
+		"strict": true,
+		"noEmit": true,
+		"skipLibCheck": true,
 		"allowJs": true,
-		"checkJs": true,
+		"resolveJsonModule": true,
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
-		"resolveJsonModule": true,
-		"skipLibCheck": true,
-		"sourceMap": true,
-		"strict": true,
-		"module": "es2015",
-		"moduleResolution": "bundler",
-		"lib": ["ES2022"],
-        "baseUrl": ".",
-		"ignoreDeprecations": "6.0",
-        "paths": {
-			"$lib": ["src/lib/*"],
-			"$hooks": ["src/hooks/*"],
-			"$components": ["src/components/*"],
-			"$ui": ["src/components/ui/*"],
-
-        }
+		"isolatedModules": true,
+		"verbatimModuleSyntax": false,
+		"types": ["svelte"]
 	},
-	"include": ["src",]
+	"include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.svelte"]
 }

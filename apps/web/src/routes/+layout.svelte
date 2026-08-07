@@ -1,6 +1,6 @@
 <script lang="ts">
 import { dev } from "$app/environment";
-import { page } from "$app/state";
+import { navigating, page } from "$app/state";
 import { analytics } from "$lib/analytics/client";
 import { webConsent } from "$lib/analytics/consent.svelte";
 import { authClient } from "$lib/auth/client";
@@ -83,7 +83,7 @@ $effect(() => {
     <meta name="robots" content="noindex, nofollow" />
   {/if}
 </svelte:head>
-<NavProgress />
+<NavProgress active={navigating.to !== null} />
 <!-- Branded loading screen for navigations into product areas (/dashboard,
      /share). The thin NavProgress bar still covers everything else. -->
 <AppLoading />

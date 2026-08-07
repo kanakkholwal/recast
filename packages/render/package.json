@@ -9,11 +9,12 @@
 		}
 	},
 	"devDependencies": {
+		"typescript": "^5.9.3",
 		"vitest": "^3.2.4"
 	},
 	"scripts": {
 		"build": "exit 0",
-		"check": "exit 0",
+		"check": "tsc --noEmit -p tsconfig.json",
 		"test:unit": "vitest run --passWithNoTests",
 		"test:unit:watch": "vitest"
 	}

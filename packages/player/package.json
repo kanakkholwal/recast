@@ -22,11 +22,13 @@
 	},
 	"devDependencies": {
 		"svelte": "^5.56.1",
+		"svelte-check": "^4.4.2",
+		"typescript": "^5.9.3",
 		"vitest": "^3.2.4"
 	},
 	"scripts": {
 		"build": "exit 0",
-		"check": "exit 0",
+		"check": "svelte-check --tsconfig ./tsconfig.json --threshold error",
 		"test:unit": "vitest run",
 		"test:unit:watch": "vitest"
 	}

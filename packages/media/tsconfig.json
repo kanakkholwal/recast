@@ -10,7 +10,7 @@
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"verbatimModuleSyntax": true,
-		"types": []
+		"types": ["node"]
 	},
 	"include": ["src/**/*.ts", "test/**/*.ts"]
 }

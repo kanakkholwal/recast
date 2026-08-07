@@ -6,7 +6,7 @@ import "../app.css";
 import "@recast/player/styles.css";
 
 import { onNavigate } from "$app/navigation";
-import { page } from "$app/state";
+import { navigating, page } from "$app/state";
 import { handleDeepLink } from "$lib/deepLink";
 import { setAgentSessionDriver, setEditorHostHooks, setLogSink } from "@recast/editor";
 import { tauriAgentSessionDriver } from "$lib/editor/agent-session.tauri";
@@ -353,7 +353,7 @@ $effect(() => {
 />
 
 <TooltipProvider>
-  <NavProgress />
+  <NavProgress active={navigating.to !== null} />
   <ModeWatcher />
   <!-- Gate the Toaster out of overlay windows (too small to host a Sonner card);
        toast.* becomes a no-op there. -->
