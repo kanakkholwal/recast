@@ -257,7 +257,7 @@ pub async fn ensure_assets_installed(
     // disk without a network round-trip.
     let lock_path = dir.join("manifest.lock.json");
     if let Ok(json) = serde_json::to_vec_pretty(&manifest) {
-        let _ = fs::write(&lock_path, json).await;
+        let _ = crate::commands::system::write_replace_async(&lock_path, &json).await;
     }
 
     result.hydrated = hydrate_from_lock(&dir);

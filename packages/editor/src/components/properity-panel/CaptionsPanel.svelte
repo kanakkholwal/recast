@@ -246,8 +246,10 @@ async function generate() {
 			},
 		});
 	} catch (e) {
+		// Keep whatever transcript is already loaded: this runs as "Regenerate"
+		// with real data on screen, and `transcript` is not in the undo snapshot,
+		// so clearing it here is unrecoverable.
 		error = `${e}`;
-		store.transcript = null;
 	} finally {
 		transcribing = false;
 		phase = "";

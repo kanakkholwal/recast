@@ -1,5 +1,6 @@
 # Turborepo internal cache
 .turbo
+.scratch
 
 node_modules
 

@@ -197,7 +197,7 @@ fn verify_signature(_manifest_bytes: &[u8], _signature: Option<&str>) -> Result<
 
 async fn write_state(dir: &Path, enabled: bool) {
     if let Ok(json) = serde_json::to_vec_pretty(&ExtState { enabled }) {
-        let _ = fs::write(dir.join("state.json"), json).await;
+        let _ = crate::commands::system::write_replace_async(&dir.join("state.json"), &json).await;
     }
 }
 
@@ -302,7 +302,7 @@ pub async fn install_extension(
 
     let lock_path = dir.join("extension.lock.json");
     if let Ok(json) = serde_json::to_vec_pretty(&manifest) {
-        fs::write(&lock_path, json)
+        crate::commands::system::write_replace_async(&lock_path, &json)
             .await
             .map_err(|e| AppError::msg(format!("write lock: {e}")))?;
     }

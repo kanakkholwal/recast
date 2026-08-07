@@ -1138,7 +1138,16 @@ async function finalizeAndClose() {
 	try {
 		if (isRecording) await stopRecording();
 	} catch (e) {
+		// Closing anyway would discard the take with no way back. Stay open so
+		// the user can retry the stop.
 		console.error("finalize-on-close failed:", e);
+		isClosing = false;
+		notify(
+			"error",
+			`Couldn't finish the recording: ${e instanceof Error ? e.message : e}. The panel stayed open — try stopping again.`,
+			8000,
+		);
+		return;
 	}
 	emit("refresh-recordings");
 	closeCameraPreview();

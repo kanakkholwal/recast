@@ -1202,7 +1202,7 @@ async function maybeRunAutoZoom() {
 	await runAutoZoom({ silentEmpty: true });
 }
 
-async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
+async function runAutoZoom(opts: { silentEmpty?: boolean; undoOnError?: boolean } = {}) {
 	if (autoZoomRunning) return;
 	if (!cursorPath) return;
 	autoZoomRunning = true;
@@ -1228,15 +1228,26 @@ async function runAutoZoom(opts: { silentEmpty?: boolean } = {}) {
 		}
 	} catch (err) {
 		console.warn("Auto-zoom failed:", err);
+		// Analysis throws before it mutates anything, so on a regenerate the only
+		// change is the caller's clear — which `clearAutoZooms` pushed undo for.
+		toast.error("Couldn't generate focus moments", {
+			description: opts.undoOnError
+				? "Your previous focus moments were removed. Undo to bring them back."
+				: undefined,
+			action: opts.undoOnError ? { label: "Undo", onClick: () => store.undo() } : undefined,
+		});
 	} finally {
 		autoZoomRunning = false;
 	}
 }
 
 function regenerateAutoZoom() {
+	// Only offer Undo if the clear actually pushed an undo entry, otherwise the
+	// button would revert whatever unrelated edit came before it.
+	const hadAuto = store.zoomRegions.some((z) => z.source === "auto");
 	store.clearAutoZooms();
 	store.autoZoomApplied = false;
-	void runAutoZoom({ silentEmpty: false });
+	void runAutoZoom({ silentEmpty: false, undoOnError: hadAuto });
 }
 
 // Export lifecycle UI. The exportActivity store owns the queue + run; this
