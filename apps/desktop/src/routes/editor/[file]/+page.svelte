@@ -114,7 +114,14 @@ import {
 } from "@recast/editor/lib/timeline/filmstrip-source";
 import { originalToOutput } from "@recast/editor/lib/timeline/time-map";
 import { settingsHref } from "../../(app)/settings/settings-tabs";
-import { basename, parseLayout } from "./editor-page.logic";
+import { basename } from "./editor-page.logic";
+import {
+	DEFAULT_LAYOUT,
+	LAYOUT_KEY,
+	parseLayout,
+	SIDEBAR_WIDTH_KEY,
+	TIMELINE_HEIGHT_KEY,
+} from "@recast/editor/editor-shell.logic";
 import { exportEtaMs as computeExportEtaMs, formatElapsed } from "@recast/editor/lib/format/time";
 
 interface Props {
@@ -145,9 +152,8 @@ let captureFrame = $state<(() => Promise<Blob | null>) | undefined>(undefined);
 let loopEnabled = $state(false);
 
 // Persisted sidebar/timeline visibility; missing or malformed falls back to all visible.
-const LAYOUT_KEY = "recast-editor-layout";
 function loadLayout(): { sidebar: boolean; timeline: boolean } {
-	if (!browser) return { sidebar: true, timeline: true };
+	if (!browser) return { ...DEFAULT_LAYOUT };
 	return parseLayout(localStorage.getItem(LAYOUT_KEY));
 }
 const initialLayout = loadLayout();
@@ -222,7 +228,6 @@ $effect(() => {
 // keys) and persisted, so a chosen width survives reopening the editor. The
 // floor is the panel's old fixed width (w-88, 352px): the dense panels were
 // already tight there, so we never let it shrink below it, only grow.
-const SIDEBAR_WIDTH_KEY = "recast-editor-sidebar-width";
 const SIDEBAR_MIN = 352;
 const SIDEBAR_MAX = 600;
 const SIDEBAR_DEFAULT = 384;
@@ -298,7 +303,6 @@ function onSidebarHandleKey(e: KeyboardEvent) {
 // on screen, and the ceiling is a share of the editor column so the timeline can
 // never take the preview's space (which is what made this necessary — every lane
 // visible at once left the video a strip).
-const TIMELINE_HEIGHT_KEY = "recast-editor-timeline-height";
 let editorColumnH = $state(0);
 let timelineHeight = $state(TIMELINE_DEFAULT_HEIGHT_PX);
 let resizingTimeline = $state(false);

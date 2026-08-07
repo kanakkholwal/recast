@@ -1,5 +1,6 @@
 <script lang="ts">
 import { onDestroy, onMount, untrack } from "svelte";
+import { createAudioEngineHost } from "@recast/editor";
 import { pushState } from "$app/navigation";
 import { page } from "$app/state";
 import Logo from "$lib/logo.svelte";
@@ -196,6 +197,9 @@ const audioTracks = $derived(
 		? [{ src: playgroundSession.videoRef, kind: "system" as const }]
 		: undefined,
 );
+// The editor no longer builds this: an AudioContext is host-owned so a host
+// driving its own transport can't race a second engine.
+const audio = createAudioEngineHost(() => audioTracks);
 </script>
 
 <svelte:window onbeforeunload={beforeUnload} />
@@ -227,7 +231,7 @@ const audioTracks = $derived(
 				video={playgroundSession.videoRef ?? undefined}
 				cameraSrc={playgroundSession.camera?.objectUrl ?? ""}
 				cameraPath={playgroundSession.camera ? playgroundSession.camera.objectUrl : null}
-				{audioTracks}
+				audioEngine={audio.current}
 				{panels}
 				{tileProvider}
 				{filmstripVersion}

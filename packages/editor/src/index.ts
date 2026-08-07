@@ -5,7 +5,7 @@
  */
 
 export { default as Editor } from "./Editor.svelte";
-export type { EditorProps } from "./Editor.svelte";
+export type { EditorProps, ToolbarControls } from "./Editor.svelte";
 
 export { createEditorStore } from "./stores/editor-store.svelte";
 export type { EditorStore } from "./stores/editor-store.svelte";
@@ -33,5 +33,9 @@ export type {
 	AgentSessionSnapshot,
 	AgentWriter,
 } from "./lib/agent/types";
+export { createAudioEngineHost } from "./lib/playback/audio-engine-host.svelte";
+export type { AudioEngineHolder } from "./lib/playback/audio-engine-host.svelte";
+export { AudioTimelineEngine } from "./lib/playback/audio-engine";
+export type { AudioTrackSpec } from "./lib/playback/audio-engine";
 export { setLogSink } from "./lib/log";
 export type { LogSink } from "./lib/log";

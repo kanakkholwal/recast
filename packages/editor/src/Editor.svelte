@@ -3,10 +3,18 @@ import type { MediaRef } from "@recast/media";
 import type { Snippet } from "svelte";
 import type { PanelTab } from "./lib/editor/panel-tabs";
 import type { EditorServices } from "./lib/editor/services";
-import type { AudioTrackSpec } from "./lib/playback/audio-engine";
+import type { AudioTimelineEngine } from "./lib/playback/audio-engine";
 import type { TileProvider } from "./lib/timeline/filmstrip-source";
 import type { CameraCapture } from "./lib/wire-types";
 import type { EditorStore } from "./stores/editor-store.svelte";
+
+/** Handed to the `toolbar` snippet so a host-owned toolbar drives the shell. */
+export interface ToolbarControls {
+	showSidebar: boolean;
+	showTimeline: boolean;
+	toggleSidebar: () => void;
+	toggleTimeline: () => void;
+}
 
 export interface EditorProps {
 	/** The host owns the store so it can load, save and inspect the document. */
@@ -22,8 +30,10 @@ export interface EditorProps {
 	/** Why that path is or isn't set, so the panel can say which. */
 	cameraCapture?: CameraCapture;
 	cursorPath?: string | null;
-	/** Audio the preview plays. On web this is the source's own track. */
-	audioTracks?: readonly AudioTrackSpec[];
+	/** Transport audio. HOST-owned: an AudioContext is an OS audio thread, and a
+	 *  host driving its own transport must not race a second engine. Build it
+	 *  with `createAudioEngineHost`. */
+	audioEngine?: AudioTimelineEngine | null;
 	/** Which properties tabs this host serves. Defaults to all of them. */
 	panels?: readonly PanelTab[];
 	filename?: string;
@@ -41,13 +51,21 @@ export interface EditorProps {
 	onRegenerateAutoZoom?: () => void;
 	/** Replaces the properties rail while the host runs its export flow. */
 	exportPanel?: Snippet;
+	/** Replaces the default toolbar row, for hosts that own window chrome
+	 *  (a native titlebar, status badges). Receives the panel toggles so the
+	 *  host's own toolbar still drives the shell. */
+	toolbar?: Snippet<[ToolbarControls]>;
+	/** Full-width strip directly under the toolbar, for inline notices. */
+	banner?: Snippet;
+	/** Rendered at the shell root: dialogs, portals, activity hosts. */
+	overlays?: Snippet;
 	class?: string;
 }
 </script>
 
 <script lang="ts">
 import { cn } from "@recast/ui/utils";
-import { onDestroy, untrack } from "svelte";
+import { untrack } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { slide } from "svelte/transition";
 import EditorToolbar from "./components/EditorToolbar.svelte";
@@ -75,7 +93,6 @@ import {
 	timelineMaxHeight,
 } from "./lib/editor/panel-size";
 import { setEditorServices } from "./lib/editor/services";
-import { AudioTimelineEngine } from "./lib/playback/audio-engine";
 
 let {
 	store,
@@ -86,7 +103,7 @@ let {
 	cameraPath = null,
 	cameraCapture = "legacy",
 	cursorPath = null,
-	audioTracks,
+	audioEngine = null,
 	panels = PANEL_TABS,
 	filename = "",
 	tileProvider = null,
@@ -99,6 +116,9 @@ let {
 	isSaving = false,
 	onRegenerateAutoZoom,
 	exportPanel,
+	toolbar,
+	banner,
+	overlays,
 	class: className,
 }: EditorProps = $props();
 
@@ -190,37 +210,6 @@ $effect(() => {
 	}
 });
 
-// --- audio ---
-// Rebuilt whenever the track list changes. Adopting a stale engine would strand
-// its AudioContext (an OS audio thread) plus its decoded PCM.
-let audioEngine = $state<AudioTimelineEngine | null>(null);
-let audioGen = 0;
-
-$effect(() => {
-	const specs = audioTracks;
-	const gen = ++audioGen;
-	const previous = untrack(() => audioEngine);
-	previous?.dispose();
-	audioEngine = null;
-	if (!specs?.length) return;
-	void AudioTimelineEngine.create([...specs])
-		.then((engine) => {
-			if (gen !== audioGen) {
-				engine.dispose();
-				return;
-			}
-			audioEngine = engine;
-		})
-		.catch(() => {
-			// Nothing decodable: the preview stays silent rather than failing.
-		});
-});
-
-onDestroy(() => {
-	audioGen++;
-	audioEngine?.dispose();
-});
-
 function handleTimeUpdate() {
 	// The WebCodecs clock owns `store.currentTime`; echoing the element's time
 	// while it free-runs through the un-cut source snaps playback across cuts.
@@ -303,19 +292,29 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 	<!-- The toolbar's own root is `h-full`, so it needs a sized, non-shrinking
 	     row here or it expands to the whole column (desktop sizes it via
 	     CustomTitlebar's h-9 wrapper). -->
-	<div class="h-9 shrink-0">
-		<EditorToolbar
-			{store}
-			{filename}
-			{onexport}
-			{onsave}
-			{isSaving}
-			showSidebar={sidebarOpen}
-			showTimeline={timelineOpen}
-			onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
-			onToggleTimeline={() => (timelineOpen = !timelineOpen)}
-		/>
-	</div>
+	{#if toolbar}
+		{@render toolbar({
+			showSidebar: sidebarOpen,
+			showTimeline: timelineOpen,
+			toggleSidebar: () => (sidebarOpen = !sidebarOpen),
+			toggleTimeline: () => (timelineOpen = !timelineOpen),
+		})}
+	{:else}
+		<div class="h-9 shrink-0">
+			<EditorToolbar
+				{store}
+				{filename}
+				{onexport}
+				{onsave}
+				{isSaving}
+				showSidebar={sidebarOpen}
+				showTimeline={timelineOpen}
+				onToggleSidebar={() => (sidebarOpen = !sidebarOpen)}
+				onToggleTimeline={() => (timelineOpen = !timelineOpen)}
+			/>
+		</div>
+	{/if}
+	{@render banner?.()}
 
 	<div class="flex min-h-0 flex-1 overflow-hidden">
 		<!-- Preview + playback + timeline -->
@@ -426,4 +425,5 @@ function onTimelineHandleKey(event: KeyboardEvent) {
 			</aside>
 		{/if}
 	</div>
+	{@render overlays?.()}
 </div>
