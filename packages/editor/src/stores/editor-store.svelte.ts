@@ -1107,13 +1107,15 @@ export function createEditorStore() {
 		log.info("annotation", "removed", { id });
 	}
 
-	/** Sorted view by (zIndex, insertion-order). Higher z draws later. */
-	function annotationsByZ(): Annotation[] {
-		return [...annotations]
+	/** Sorted view by (zIndex, insertion-order). Higher z draws later.
+	 *  Memoized: the overlay reads this twice per drawn frame, and as a plain
+	 *  function every read allocated two arrays and re-sorted. */
+	const annotationsByZOrdered = $derived.by(() =>
+		[...annotations]
 			.map((a, idx) => ({ a, idx, z: a.zIndex ?? idx }))
 			.sort((a, b) => a.z - b.z || a.idx - b.idx)
-			.map((e) => e.a);
-	}
+			.map((e) => e.a),
+	);
 
 	function toggleAnnotationLock(id: string) {
 		pushUndoState();
@@ -1173,7 +1175,7 @@ export function createEditorStore() {
 	 * skip over multiple neighbours.
 	 */
 	function reorderAnnotation(id: string, direction: 1 | -1) {
-		const ordered = annotationsByZ();
+		const ordered = annotationsByZOrdered;
 		const idx = ordered.findIndex((a) => a.id === id);
 		if (idx === -1) return;
 		const targetIdx = idx + direction;
@@ -2332,7 +2334,7 @@ export function createEditorStore() {
 			return annotations;
 		},
 		get annotationsByZ() {
-			return annotationsByZ();
+			return annotationsByZOrdered;
 		},
 		get selectedAnnotationId() {
 			return selectedAnnotationId;

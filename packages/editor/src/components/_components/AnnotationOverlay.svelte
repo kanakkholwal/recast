@@ -450,8 +450,20 @@ function drawHoverFlash(ctx: CanvasRenderingContext2D, a: Annotation, t: number)
 
 //  Frame loop
 
+// Whether the last draw put anything on the canvas. A `clearRect` over a
+// full-viewport DPR layer dirties it for the compositor every frame even when
+// there is nothing to draw — which is the common case.
+let paintedLastFrame = false;
+
 function draw() {
 	if (!canvasEl || !store.metadata) return;
+
+	const ordered = store.annotationsGloballyHidden ? [] : store.annotationsByZ;
+	const willPaint = ordered.length > 0;
+	// Still runs the frame that goes empty, so the last annotation is cleared.
+	if (!willPaint && !paintedLastFrame) return;
+	paintedLastFrame = willPaint;
+
 	resizeToContainer();
 	const ctx = canvasEl.getContext("2d");
 	if (!ctx) return;
@@ -461,8 +473,6 @@ function draw() {
 	if (store.annotationsGloballyHidden) return;
 
 	const t = playbackTime();
-	// Iterate by z-order so stacking is deterministic.
-	const ordered = store.annotationsByZ;
 	for (const a of ordered) {
 		if (a.hidden) continue;
 		const opacity = evalOpacity(a, t);

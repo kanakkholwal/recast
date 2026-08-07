@@ -23,16 +23,12 @@ export type ToFilmstripWorker =
 
 /** Worker → provider. */
 export type FromFilmstripWorker =
-	| {
-			type: "ready";
-			width: number;
-			height: number;
-			durationSec: number;
-			fps: number;
-	  }
+	/** Init finished and the sink is live. Carries nothing: the provider already
+	 *  knows the dimensions it asked for. */
+	| { type: "ready" }
 	/** A decoded, downscaled thumbnail as a compressed blob (cheap to clone; the
 	 *  provider turns it into an object URL for an `<img>`). */
-	| { type: "tile"; id: number; blob: Blob }
+	| { type: "tile"; id: number; blob: Blob; width: number; height: number }
 	/** The finished storyboard sprite: a single image of `cols`×`rows` cells, each
 	 *  `cellW`×`cellH`, holding `count` frames evenly spaced across `durationSec`.
 	 *  Cell `i` (col `i%cols`, row `i/cols`) samples time `((i+0.5)/count)·dur`. */
@@ -49,4 +45,8 @@ export type FromFilmstripWorker =
 	/** `id` is set when a specific decode request failed, so the provider can
 	 *  clear it from in-flight (allowing a retry) instead of leaking the entry.
 	 *  Absent for init/storyboard errors that aren't tied to one request. */
-	| { type: "error"; message: string; id?: number };
+	| { type: "error"; message: string; id?: number }
+	/** A queued request evicted unanswered because the scroll outran the decoder.
+	 *  The provider must still clear it from in-flight or the tile wedges, but it
+	 *  is not a failure and must not be logged as one. */
+	| { type: "drop"; id: number };

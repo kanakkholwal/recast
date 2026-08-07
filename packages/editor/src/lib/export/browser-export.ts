@@ -45,11 +45,13 @@ export async function runBrowserExport(
 		onProgress: opts.onProgress,
 		signal: opts.signal,
 	});
-	// Copy out of the (possibly larger) backing buffer so the transfer is exact.
-	const bytes = mp4.buffer.slice(mp4.byteOffset, mp4.byteOffset + mp4.byteLength) as ArrayBuffer;
 	const sink = getEditorServices().exportSink;
 	if (!sink) throw new Error("no export sink is installed");
-	const delivered = await sink.deliver(new Uint8Array(bytes), "export.mp4");
+	// Handed over as-is. This used to `slice` the whole backing buffer into a
+	// second copy, and the sink sliced again — two extra full-file copies of a
+	// multi-GB export, all three live at once. Narrowing to the exact bytes is
+	// the sink's job, and only when the view isn't already the whole buffer.
+	const delivered = await sink.deliver(mp4, "export.mp4");
 	return delivered ?? "";
 }
 

@@ -927,6 +927,12 @@ function draw() {
 }
 
 function requestRedraw() {
+	// While playing, `startVideoFrameLoop` already draws every rAF. This handle is
+	// separate from `wcRafHandle`, so without this guard the ~25Hz `currentTime`
+	// publish from inside draw() re-entered here and scheduled a SECOND full
+	// composite — ~85 draws/sec instead of 60. `stopVideoFrameLoop` paints once on
+	// the way out so a change made mid-playback isn't stranded.
+	if (wcRafHandle !== null) return;
 	if (rafHandle !== null) return;
 	rafHandle = requestAnimationFrame(() => {
 		rafHandle = null;
@@ -975,6 +981,9 @@ function stopVideoFrameLoop() {
 	if (wcRafHandle !== null) {
 		cancelAnimationFrame(wcRafHandle);
 		wcRafHandle = null;
+		// Property changes during playback were swallowed by the guard in
+		// `requestRedraw`; paint once now so the paused frame is current.
+		requestRedraw();
 	}
 }
 
