@@ -6,7 +6,7 @@
  * engine decodes a window ahead of the playhead and evicts behind it.
  *
  * Chunk indices in `chunks()` line up with `buffer(i)` only until the next
- * `ensureRange`/`evictBefore`; the engine slices + reads buffers synchronously
+ * `ensureRange`/`evictOutside`; the engine slices + reads buffers synchronously
  * after each `await ensureRange`, so the order never shifts mid-use.
  */
 
@@ -20,6 +20,17 @@ interface Resident {
 }
 
 const SAME_START_EPS = 1e-4;
+
+/** Chunks overlapping `[startSec, endSec]`. An inverted range keeps everything,
+ *  so a bad bound degrades to the old retain-all rather than silencing audio. */
+export function keepInWindow<T extends { startSec: number; durationSec: number }>(
+	resident: readonly T[],
+	startSec: number,
+	endSec: number,
+): T[] {
+	if (endSec < startSec) return [...resident];
+	return resident.filter((r) => r.startSec + r.durationSec > startSec && r.startSec < endSec);
+}
 
 export class AudioChunkStore {
 	#input: Input;
@@ -82,11 +93,17 @@ export class AudioChunkStore {
 		this.#resident.splice(i, 0, { startSec, durationSec, buffer });
 	}
 
-	/** Drop chunks that end at or before `beforeSec` (played, out of window). A
+	/** Drop chunks lying entirely outside `[startSec, endSec]`. A
 	 *  `BufferSourceNode` already started keeps its own buffer alive, so this only
-	 *  releases our reference. */
-	evictBefore(beforeSec: number): void {
-		this.#resident = this.#resident.filter((r) => r.startSec + r.durationSec > beforeSec);
+	 *  releases our reference.
+	 *
+	 *  Two-sided on purpose: the old `evictBefore` kept everything AHEAD of the
+	 *  playhead, so every backward seek stranded the window decoded at the old
+	 *  position — ~16 s per jump, for the rest of the session. Evicting too
+	 *  eagerly only costs a re-decode, since `ensureRange` is awaited before
+	 *  anything is scheduled. */
+	evictOutside(startSec: number, endSec: number): void {
+		this.#resident = keepInWindow(this.#resident, startSec, endSec);
 	}
 
 	dispose(): void {

@@ -482,7 +482,11 @@ export class AudioTimelineEngine {
 				this.#scheduledUpToOutput = windowEnd;
 			}
 			const behind = outputToSource(this.#regions, Math.max(0, heard - AUDIO_BEHIND_SEC));
-			for (const track of this.#tracks) track.store.evictBefore(behind);
+			// Bound the FORWARD side too. Source time is monotonic in output time
+			// (cuts only remove), so a single source range covers the kept window;
+			// a cut spanned by it is over-retained, which is bounded and harmless.
+			const ahead = outputToSource(this.#regions, windowEnd + AUDIO_BEHIND_SEC);
+			for (const track of this.#tracks) track.store.evictOutside(behind, ahead);
 		} catch (err) {
 			console.error("audio streaming top-up failed:", err);
 		} finally {
