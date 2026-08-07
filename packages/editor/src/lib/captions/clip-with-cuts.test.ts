@@ -43,6 +43,36 @@ describe("keptCaptionSpans", () => {
 		]);
 	});
 
+	it("reuses the merged result for the same spans array", () => {
+		// Called once per rendered caption frame; rebuilding over every span each
+		// time was the cost. Identity, not deep equality — the time map is a
+		// `$derived.by`, so a new array IS the invalidation signal.
+		const spans = [
+			{ origStart: 0, origEnd: 5 },
+			{ origStart: 6, origEnd: 10 },
+		];
+		expect(keptCaptionSpans({ spans })).toBe(keptCaptionSpans({ spans }));
+	});
+
+	it("rebuilds when the spans array is replaced", () => {
+		const first = keptCaptionSpans({ spans: [{ origStart: 0, origEnd: 5 }] });
+		const second = keptCaptionSpans({ spans: [{ origStart: 0, origEnd: 9 }] });
+		expect(second).not.toBe(first);
+		expect(second).toEqual([{ origStart: 0, origEnd: 9 }]);
+	});
+
+	it("does not hand back a merged array that aliases its input spans", () => {
+		// The cached result is now shared between callers, so merging must copy —
+		// mutating `origEnd` in place would corrupt the caller's time map.
+		const input = [
+			{ origStart: 0, origEnd: 5 },
+			{ origStart: 5, origEnd: 10 },
+		];
+		const merged = keptCaptionSpans({ spans: input });
+		expect(merged[0]).not.toBe(input[0]);
+		expect(input[0]?.origEnd).toBe(5);
+	});
+
 	it("captionSpanAt finds the merged span, or null inside a cut", () => {
 		const spans = keptCaptionSpans({
 			spans: [

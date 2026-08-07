@@ -27,9 +27,19 @@ const SPAN_EPS = 1e-3;
  * carries one span PER SEGMENT, so without this a caption spanning a split loses
  * the words on the far side of the split boundary.
  */
+/**
+ * Memoized on the `spans` array identity. This is called once per rendered
+ * caption frame — i.e. at rAF rate — and rebuilt a merged array over EVERY span
+ * each time. The time map is a `$derived.by`, so its spans array is a new object
+ * only when the cuts actually change, which is exactly the invalidation we want.
+ */
+const mergedSpanCache = new WeakMap<object, KeptSpan[]>();
+
 export function keptCaptionSpans(map: {
 	spans: ReadonlyArray<{ origStart: number; origEnd: number }>;
 }): KeptSpan[] {
+	const cached = mergedSpanCache.get(map.spans);
+	if (cached) return cached;
 	const merged: KeptSpan[] = [];
 	for (const s of map.spans) {
 		const last = merged[merged.length - 1];
@@ -39,6 +49,7 @@ export function keptCaptionSpans(map: {
 			merged.push({ origStart: s.origStart, origEnd: s.origEnd });
 		}
 	}
+	mergedSpanCache.set(map.spans, merged);
 	return merged;
 }
 
