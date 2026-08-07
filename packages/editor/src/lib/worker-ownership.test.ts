@@ -15,7 +15,7 @@ const LIB = dirname(fileURLToPath(import.meta.url));
 const SRC = resolve(LIB, "..");
 
 function sourceFiles(dir: string): string[] {
-	return readdirSync(dir).flatMap((entry) => {
+	return readdirSync(dir).flatMap((entry: string) => {
 		const full = join(dir, entry);
 		if (statSync(full).isDirectory()) return sourceFiles(full);
 		return /\.(ts|svelte)$/.test(entry) && !/\.test\.ts$/.test(entry) ? [full] : [];

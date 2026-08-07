@@ -1,132 +1,109 @@
 <script lang="ts">
-  import {
-    CameraAccessError,
-    enumerateCameras,
-    type CameraAccessReason,
-  } from "$lib/camera/browser-devices";
-  import {
-    getAudioDevices,
-    type AudioDeviceInfo,
-    type CameraDeviceInfo,
-  } from "$lib/ipc";
-  import {
-    Camera,
-    CameraOff,
-    Check,
-    Mic,
-    MicOff,
-    RefreshCw,
-    ShieldAlert,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { cn } from "@recast/ui/utils";
-  import { emit } from "@tauri-apps/api/event";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
-  import { wrapIndex } from "$lib/util/wrap-index";
-  import {
-    mapCameras,
-    parseDevicePickerParams,
-    pickDefault,
-  } from "./device-picker.logic";
+import {
+	CameraAccessError,
+	enumerateCameras,
+	type CameraAccessReason,
+} from "@recast/editor/lib/camera/browser-devices";
+import { getAudioDevices, type AudioDeviceInfo, type CameraDeviceInfo } from "$lib/ipc";
+import { Camera, CameraOff, Check, Mic, MicOff, RefreshCw, ShieldAlert, X } from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { cn } from "@recast/ui/utils";
+import { emit } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { onMount } from "svelte";
+import { wrapIndex } from "$lib/util/wrap-index";
+import { mapCameras, parseDevicePickerParams, pickDefault } from "./device-picker.logic";
 
-  const { deviceType, selectedId } = parseDevicePickerParams(
-    window.location.search,
-  );
+const { deviceType, selectedId } = parseDevicePickerParams(window.location.search);
 
-  let devices = $state<(AudioDeviceInfo | CameraDeviceInfo)[]>([]);
-  let currentSelectedId = $state<string | null>(selectedId);
-  let isLoading = $state(true);
-  // Set only when camera access is a blocker (no API / refused), distinct from
-  // an empty list (no camera plugged in); drives an actionable empty state.
-  let accessError = $state<{ reason: CameraAccessReason; message: string } | null>(
-    null,
-  );
+let devices = $state<(AudioDeviceInfo | CameraDeviceInfo)[]>([]);
+let currentSelectedId = $state<string | null>(selectedId);
+let isLoading = $state(true);
+// Set only when camera access is a blocker (no API / refused), distinct from
+// an empty list (no camera plugged in); drives an actionable empty state.
+let accessError = $state<{ reason: CameraAccessReason; message: string } | null>(null);
 
-  const isMic = deviceType === "mic";
-  const title = isMic ? "Microphone" : "Camera";
+const isMic = deviceType === "mic";
+const title = isMic ? "Microphone" : "Camera";
 
-  let listEl = $state<HTMLElement | null>(null);
+let listEl = $state<HTMLElement | null>(null);
 
-  // Keep the selected row visible when arrowing through a longer device list.
-  $effect(() => {
-    void currentSelectedId;
-    listEl
-      ?.querySelector<HTMLElement>('[data-active="true"]')
-      ?.scrollIntoView({ block: "nearest" });
-  });
+// Keep the selected row visible when arrowing through a longer device list.
+$effect(() => {
+	void currentSelectedId;
+	listEl?.querySelector<HTMLElement>('[data-active="true"]')?.scrollIntoView({ block: "nearest" });
+});
 
-  onMount(() => {
-    fetchDevices();
-  });
+onMount(() => {
+	fetchDevices();
+});
 
-  async function fetchDevices() {
-    isLoading = true;
-    accessError = null;
-    try {
-      if (isMic) {
-        devices = await getAudioDevices();
-      } else {
-        // From the WebView's MediaDevices so the deviceId is one getUserMedia
-        // accepts. Non-virtual first, so the default below prefers a real webcam.
-        devices = mapCameras(await enumerateCameras());
-      }
-      if (!currentSelectedId) {
-        const def = pickDefault(devices, isMic);
-        if (def) currentSelectedId = def;
-      }
-    } catch (e) {
-      if (e instanceof CameraAccessError) {
-        // Show the actionable card, not the generic "no cameras found".
-        accessError = { reason: e.reason, message: e.message };
-        devices = [];
-      } else {
-        console.error(e);
-      }
-    } finally {
-      isLoading = false;
-    }
-  }
+async function fetchDevices() {
+	isLoading = true;
+	accessError = null;
+	try {
+		if (isMic) {
+			devices = await getAudioDevices();
+		} else {
+			// From the WebView's MediaDevices so the deviceId is one getUserMedia
+			// accepts. Non-virtual first, so the default below prefers a real webcam.
+			devices = mapCameras(await enumerateCameras());
+		}
+		if (!currentSelectedId) {
+			const def = pickDefault(devices, isMic);
+			if (def) currentSelectedId = def;
+		}
+	} catch (e) {
+		if (e instanceof CameraAccessError) {
+			// Show the actionable card, not the generic "no cameras found".
+			accessError = { reason: e.reason, message: e.message };
+			devices = [];
+		} else {
+			console.error(e);
+		}
+	} finally {
+		isLoading = false;
+	}
+}
 
-  function selectDevice(id: string) {
-    currentSelectedId = id;
-    emit("device-selected", {
-      type: deviceType,
-      id,
-      name: devices.find((d) => d.id === id)?.name ?? "",
-    });
-    getCurrentWindow().close();
-  }
+function selectDevice(id: string) {
+	currentSelectedId = id;
+	emit("device-selected", {
+		type: deviceType,
+		id,
+		name: devices.find((d) => d.id === id)?.name ?? "",
+	});
+	getCurrentWindow().close();
+}
 
-  function turnOff() {
-    emit("device-selected", { type: deviceType, id: null, name: "" });
-    getCurrentWindow().close();
-  }
+function turnOff() {
+	emit("device-selected", { type: deviceType, id: null, name: "" });
+	getCurrentWindow().close();
+}
 
-  function closeWindow() {
-    getCurrentWindow().close();
-  }
+function closeWindow() {
+	getCurrentWindow().close();
+}
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeWindow();
-      return;
-    }
-    if (isLoading || devices.length === 0) return;
-    const idx = devices.findIndex((d) => d.id === currentSelectedId);
-    if (e.key === "ArrowDown") {
-      e.preventDefault();
-      currentSelectedId = devices[wrapIndex(idx + 1, devices.length)].id;
-    } else if (e.key === "ArrowUp") {
-      e.preventDefault();
-      currentSelectedId = devices[wrapIndex(idx - 1, devices.length)].id;
-    } else if (e.key === "Enter" && currentSelectedId) {
-      e.preventDefault();
-      selectDevice(currentSelectedId);
-    }
-  }
+function handleKeydown(e: KeyboardEvent) {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		closeWindow();
+		return;
+	}
+	if (isLoading || devices.length === 0) return;
+	const idx = devices.findIndex((d) => d.id === currentSelectedId);
+	if (e.key === "ArrowDown") {
+		e.preventDefault();
+		currentSelectedId = devices[wrapIndex(idx + 1, devices.length)].id;
+	} else if (e.key === "ArrowUp") {
+		e.preventDefault();
+		currentSelectedId = devices[wrapIndex(idx - 1, devices.length)].id;
+	} else if (e.key === "Enter" && currentSelectedId) {
+		e.preventDefault();
+		selectDevice(currentSelectedId);
+	}
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

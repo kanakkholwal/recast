@@ -1,4 +1,4 @@
-import { createRateTracker } from "$lib/format/transfer-rate";
+import { createRateTracker } from "@recast/editor/lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {

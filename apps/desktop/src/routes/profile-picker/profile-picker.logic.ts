@@ -1,6 +1,6 @@
 /** URL param + profile summary for the profile-picker window. */
 
-import type { RecordingProfile } from "$lib/profiles";
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
 
 export function parseSelectedParam(search: string): string | null {
 	return new URLSearchParams(search).get("selected") ?? null;
@@ -14,10 +14,8 @@ export function parseSelectedParam(search: string): string | null {
 export function summarize(profile: RecordingProfile): string[] {
 	const out: string[] = [];
 	if (profile.systemAudio) out.push("Audio");
-	if (profile.microphone)
-		out.push(profile.micLabel ? `Mic: ${profile.micLabel}` : "Mic");
-	if (profile.camera)
-		out.push(profile.cameraLabel ? `Cam: ${profile.cameraLabel}` : "Camera");
+	if (profile.microphone) out.push(profile.micLabel ? `Mic: ${profile.micLabel}` : "Mic");
+	if (profile.camera) out.push(profile.cameraLabel ? `Cam: ${profile.cameraLabel}` : "Camera");
 	if (out.length === 0) out.push("Silent capture");
 	return out;
 }

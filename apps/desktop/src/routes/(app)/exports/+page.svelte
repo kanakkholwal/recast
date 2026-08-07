@@ -21,7 +21,7 @@ import {
 	selectTickClass,
 	thumbFrameClass,
 } from "$lib/library/card-styles";
-import { formatSize, getExtension, isImageFile } from "$lib/format/files";
+import { formatSize, getExtension, isImageFile } from "@recast/editor/lib/format/files";
 import {
 	deleteFile,
 	listExports,

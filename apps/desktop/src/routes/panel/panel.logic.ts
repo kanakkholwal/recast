@@ -1,6 +1,6 @@
 /** Pure mappers + fps/timer math for the recording panel window. */
 
-import type { CaptureIntentState, LastSource } from "$lib/ipc-types";
+import type { CaptureIntentState, LastSource } from "@recast/editor/lib/wire-types";
 
 export type TargetSource = {
 	type: "monitor" | "window" | "region";
@@ -34,18 +34,11 @@ export function clampFpsToDisplay(
 /** Persisted `LastSource` → the panel's in-memory selected source. */
 export function lastSourceToTarget(last: LastSource): TargetSource {
 	return {
-		type:
-			last.kind === "window"
-				? "window"
-				: last.kind === "region"
-					? "region"
-					: "monitor",
+		type: last.kind === "window" ? "window" : last.kind === "region" ? "region" : "monitor",
 		id: last.id,
 		label: last.label,
 		region:
-			last.kind === "region" &&
-			last.regionWidth != null &&
-			last.regionHeight != null
+			last.kind === "region" && last.regionWidth != null && last.regionHeight != null
 				? {
 						x: last.regionX ?? 0,
 						y: last.regionY ?? 0,
@@ -59,12 +52,7 @@ export function lastSourceToTarget(last: LastSource): TargetSource {
 /** Selected source → the `LastSource` payload persisted for next launch. */
 export function targetToLastSource(source: TargetSource): LastSource {
 	return {
-		kind:
-			source.type === "monitor"
-				? "monitor"
-				: source.type === "window"
-					? "window"
-					: "region",
+		kind: source.type === "monitor" ? "monitor" : source.type === "window" ? "window" : "region",
 		id: source.id,
 		label: source.label,
 		regionX: source.region?.x ?? null,
@@ -81,9 +69,7 @@ export function targetTypeToIntent(type: TargetSource["type"]): string {
 }
 
 /** `CaptureIntent.targetType` → the panel's source type, or null if unset. */
-export function intentToTargetType(
-	t: string | null | undefined,
-): TargetSource["type"] | null {
+export function intentToTargetType(t: string | null | undefined): TargetSource["type"] | null {
 	if (t === "display") return "monitor";
 	if (t === "window" || t === "region") return t;
 	return null;

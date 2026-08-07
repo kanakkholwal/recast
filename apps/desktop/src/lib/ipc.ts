@@ -5,8 +5,8 @@
 
 // Type-only: erased at runtime, so no ESM cycle with `$lib/profiles` (which
 // imports value bindings from here).
-import type { RecordingProfile } from "$lib/profiles";
-import type { VideoMetadata } from "$lib/stores/editor-store.svelte";
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
+import type { VideoMetadata } from "@recast/editor/stores/editor-store.svelte";
 import type {
 	AssetInstallResult,
 	AudioDeviceInfo,
@@ -57,7 +57,7 @@ import type {
 	VideoTextTimeline,
 	WindowInfo,
 	ZoomSuggestion,
-} from "$lib/ipc-types";
+} from "@recast/editor/lib/wire-types";
 import { analytics } from "$lib/analytics/client";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -155,7 +155,7 @@ export type {
 	WindowInfo,
 	ZoomSuggestion,
 	ZoomSuggestionReason,
-} from "$lib/ipc-types";
+} from "@recast/editor/lib/wire-types";
 
 // System commands
 

@@ -1,4 +1,4 @@
-import { createRateTracker } from "$lib/format/transfer-rate";
+import { createRateTracker } from "@recast/editor/lib/format/transfer-rate";
 import { isTauriApp } from "$lib/runtime/tauri";
 import { toast } from "@recast/ui/sonner";
 import {
@@ -57,7 +57,6 @@ export type CloudAuth = {
 		storageBytes: number;
 	};
 };
-
 
 /**
  * Preferred upload workspace (org id). Validated against live membership on
@@ -122,14 +121,11 @@ function createCloudShareStore() {
 		listenersAttached = true;
 		const { listen } = await import("@tauri-apps/api/event");
 
-		await listen<{ path: string; message: string }>(
-			"recast-cloud:error",
-			({ payload }) => {
-				const existing = uploads[payload.path];
-				if (!existing) return;
-				uploads[payload.path] = { ...existing, status: "error", error: payload.message };
-			},
-		);
+		await listen<{ path: string; message: string }>("recast-cloud:error", ({ payload }) => {
+			const existing = uploads[payload.path];
+			if (!existing) return;
+			uploads[payload.path] = { ...existing, status: "error", error: payload.message };
+		});
 	}
 
 	/** Mirror sign-in state + plan/quota + workspaces from `auth_status`. */

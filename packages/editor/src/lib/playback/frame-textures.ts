@@ -50,7 +50,14 @@ export class FrameTextureRing {
 	#uploads = 0;
 	#totalUploadMs = 0;
 	#maxUploadMs = 0;
+	#slowUploads = 0;
 	#warnedSlow = false;
+	// Windowed counters, reset every report. A lifetime max never decays, so one
+	// cold-start spike pins it forever and the number stops tracking reality.
+	#winUploads = 0;
+	#winTotalMs = 0;
+	#winMaxMs = 0;
+	#winSlow = 0;
 
 	constructor(gl: WebGL2RenderingContext, capacity: number) {
 		this.#gl = gl;
@@ -108,29 +115,54 @@ export class FrameTextureRing {
 		this.#uploads++;
 		this.#totalUploadMs += ms;
 		if (ms > this.#maxUploadMs) this.#maxUploadMs = ms;
-		if (ms > SLOW_UPLOAD_MS && !this.#warnedSlow) {
-			this.#warnedSlow = true;
-			console.warn(
-				`Frame upload took ${ms.toFixed(1)}ms — the decoded frame is likely CPU-backed, ` +
-					`so every frame pays a full copy on the main thread.`,
-			);
+		this.#winUploads++;
+		this.#winTotalMs += ms;
+		if (ms > this.#winMaxMs) this.#winMaxMs = ms;
+		if (ms > SLOW_UPLOAD_MS) {
+			this.#slowUploads++;
+			this.#winSlow++;
+			if (!this.#warnedSlow) {
+				this.#warnedSlow = true;
+				console.warn(
+					`Frame upload took ${ms.toFixed(1)}ms — the decoded frame is likely CPU-backed, ` +
+						`so every frame pays a full copy on the main thread.`,
+				);
+			}
 		}
 		// Periodic in dev so a healthy pipeline is visibly healthy, rather than
 		// silent (which is indistinguishable from "not running").
-		if (import.meta.env.DEV && this.#uploads % UPLOAD_LOG_EVERY === 0) {
-			const s = this.uploadStats;
+		if (import.meta.env.DEV && this.#winUploads >= UPLOAD_LOG_EVERY) {
+			const avg = this.#winTotalMs / this.#winUploads;
+			const slowPct = (this.#winSlow / this.#winUploads) * 100;
+			// Report the WINDOW, not lifetime: "is it slow right now" is the only
+			// actionable question, and a cumulative mean dilutes a live problem.
 			console.log(
-				`[ring] ${s.count} uploads, avg ${s.avgMs.toFixed(2)}ms, max ${s.maxMs.toFixed(2)}ms ` +
-					`(capacity ${this.capacity})`,
+				`[ring] last ${this.#winUploads} uploads: avg ${avg.toFixed(2)}ms, ` +
+					`max ${this.#winMaxMs.toFixed(2)}ms, slow ${this.#winSlow} (${slowPct.toFixed(1)}%) ` +
+					`— ${this.#uploads} total, capacity ${this.capacity}`,
 			);
+			this.#winUploads = 0;
+			this.#winTotalMs = 0;
+			this.#winMaxMs = 0;
+			this.#winSlow = 0;
 		}
 	}
 
-	get uploadStats(): { count: number; maxMs: number; avgMs: number } {
+	/** Session totals, for analytics. `slowCount` is the actionable one: a high
+	 *  `maxMs` can be a single cold-start frame, a high `slowCount` cannot. */
+	get uploadStats(): {
+		count: number;
+		maxMs: number;
+		avgMs: number;
+		slowCount: number;
+		slowPct: number;
+	} {
 		return {
 			count: this.#uploads,
 			maxMs: this.#maxUploadMs,
 			avgMs: this.#uploads > 0 ? this.#totalUploadMs / this.#uploads : 0,
+			slowCount: this.#slowUploads,
+			slowPct: this.#uploads > 0 ? (this.#slowUploads / this.#uploads) * 100 : 0,
 		};
 	}
 

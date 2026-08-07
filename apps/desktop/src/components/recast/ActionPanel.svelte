@@ -1,23 +1,23 @@
 <script lang="ts">
-	import * as Command from "@recast/ui/command";
-	import * as Dialog from "@recast/ui/dialog";
-	import { Kbd } from "@recast/ui/kbd";
-	import { cn } from "@recast/ui/utils";
-	import type { RecastAction } from "./types";
+import * as Command from "@recast/ui/command";
+import * as Dialog from "@recast/ui/dialog";
+import { Kbd } from "@recast/ui/kbd";
+import { cn } from "@recast/ui/utils";
+import type { RecastAction } from "@recast/editor/components/dialog/types";
 
-	interface Props {
-		open: boolean;
-		actions: RecastAction[];
-		title?: string;
-		onOpenChange: (open: boolean) => void;
-	}
+interface Props {
+	open: boolean;
+	actions: RecastAction[];
+	title?: string;
+	onOpenChange: (open: boolean) => void;
+}
 
-	let { open = $bindable(false), actions, title = "Actions", onOpenChange }: Props = $props();
+let { open = $bindable(false), actions, title = "Actions", onOpenChange }: Props = $props();
 
-	function runAction(action: RecastAction) {
-		onOpenChange(false);
-		queueMicrotask(() => action.onAction());
-	}
+function runAction(action: RecastAction) {
+	onOpenChange(false);
+	queueMicrotask(() => action.onAction());
+}
 </script>
 
 <Dialog.Root

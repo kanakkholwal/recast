@@ -4,7 +4,7 @@
  * normalization. No store, DOM, or IPC: callers pass probed devices in.
  */
 
-import type { RecordingProfile } from "$lib/profiles";
+import type { RecordingProfile } from "@recast/editor/lib/profiles";
 
 // Device pickers live in a side panel so the dialog grows wider, not taller,
 // when a capability is enabled. Below `sm` they fall back inline.

@@ -1,491 +1,467 @@
 <script lang="ts">
-  import {
-    Circle,
-    FlipHorizontal2,
-    LoaderCircle,
-    Maximize2,
-    Square,
-    Squircle,
-    X,
-  } from "@recast/icons";
-  import { Button } from "@recast/ui/button";
-  import { emit, listen } from "@tauri-apps/api/event";
-  import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
-  import { onMount } from "svelte";
+import {
+	Circle,
+	FlipHorizontal2,
+	LoaderCircle,
+	Maximize2,
+	Square,
+	Squircle,
+	X,
+} from "@recast/icons";
+import { Button } from "@recast/ui/button";
+import { emit, listen } from "@tauri-apps/api/event";
+import { LogicalSize, getCurrentWindow } from "@tauri-apps/api/window";
+import { onMount } from "svelte";
 
-  import {
-    CameraNotFoundError,
-    openCameraStream,
-  } from "$lib/camera/browser-devices";
-  import {
-    finishCameraFlush,
-    saveRecordedCamera,
-    setWindowAspectRatio,
-    updateCameraPreviewState,
-    validateCameraSource,
-  } from "$lib/ipc";
-  import { isBrowserDeviceId } from "$lib/runtime/device-id";
-  import {
-    allowedShapesFor,
-    ASPECT_RATIO,
-    ASPECTS,
-    buildPreviewState,
-    computeSizeConstraints,
-    CONTROL_BAR_HEIGHT,
-    fitInsideMax,
-    MAX_SCREEN_FRACTION,
-    MIN_LOGICAL_SIZE,
-    pickCameraMimeType,
-    targetWindowSize,
-    WINDOW_RADIUS,
-    type AspectKey,
-    type CameraStatus,
-    type ShapeKey,
-  } from "./camera-preview.logic";
+import { CameraNotFoundError, openCameraStream } from "@recast/editor/lib/camera/browser-devices";
+import {
+	finishCameraFlush,
+	saveRecordedCamera,
+	setWindowAspectRatio,
+	updateCameraPreviewState,
+	validateCameraSource,
+} from "$lib/ipc";
+import { isBrowserDeviceId } from "$lib/runtime/device-id";
+import {
+	allowedShapesFor,
+	ASPECT_RATIO,
+	ASPECTS,
+	buildPreviewState,
+	computeSizeConstraints,
+	CONTROL_BAR_HEIGHT,
+	fitInsideMax,
+	MAX_SCREEN_FRACTION,
+	MIN_LOGICAL_SIZE,
+	pickCameraMimeType,
+	targetWindowSize,
+	WINDOW_RADIUS,
+	type AspectKey,
+	type CameraStatus,
+	type ShapeKey,
+} from "./camera-preview.logic";
 
-  // Cached max logical size; aspect-snap helpers clamp against it because the
-  // OS max-size only bounds drag-resize, not our programmatic setSize calls.
-  let maxLogicalW = $state(640);
-  let maxLogicalH = $state(360);
+// Cached max logical size; aspect-snap helpers clamp against it because the
+// OS max-size only bounds drag-resize, not our programmatic setSize calls.
+let maxLogicalW = $state(640);
+let maxLogicalH = $state(360);
 
-  let videoEl: HTMLVideoElement | null = $state(null);
-  let stream: MediaStream | null = $state(null);
-  let errorMessage: string | null = $state(null);
-  let statusMessage = $state("Connecting to camera…");
-  let status = $state<CameraStatus>("loading");
-  let isMirrored = $state(true);
-  let aspect = $state<AspectKey>("1:1");
-  let shape = $state<ShapeKey>("rounded");
-  let liveProbeTimer: number | null = $state(null);
-  let videoFrameSeen = $state(false);
-  let isSnapping = false;
+let videoEl: HTMLVideoElement | null = $state(null);
+let stream: MediaStream | null = $state(null);
+let errorMessage: string | null = $state(null);
+let statusMessage = $state("Connecting to camera…");
+let status = $state<CameraStatus>("loading");
+let isMirrored = $state(true);
+let aspect = $state<AspectKey>("1:1");
+let shape = $state<ShapeKey>("rounded");
+let liveProbeTimer: number | null = $state(null);
+let videoFrameSeen = $state(false);
+let isSnapping = false;
 
-  // Camera track recorder: the SAME stream feeds the <video> preview and this
-  // recorder, so the device is opened once. Recording it separately here (rather
-  // than a second FFmpeg device-open in Rust) is what stops the "camera in use"
-  // failure. Bytes are handed to Rust on flush, before stop_recording runs.
-  let mediaRecorder: MediaRecorder | null = null;
-  let recordedChunks: Blob[] = [];
+// Camera track recorder: the SAME stream feeds the <video> preview and this
+// recorder, so the device is opened once. Recording it separately here (rather
+// than a second FFmpeg device-open in Rust) is what stops the "camera in use"
+// failure. Bytes are handed to Rust on flush, before stop_recording runs.
+let mediaRecorder: MediaRecorder | null = null;
+let recordedChunks: Blob[] = [];
 
-  const params = new URLSearchParams(window.location.search);
-  // Accepts both legacy DirectShow names and browser MediaDevices ids.
-  const deviceQuery = params.get("deviceId");
+const params = new URLSearchParams(window.location.search);
+// Accepts both legacy DirectShow names and browser MediaDevices ids.
+const deviceQuery = params.get("deviceId");
 
-  $effect(() => {
-    if (videoEl && stream) {
-      videoEl.srcObject = stream;
-    }
-  });
+$effect(() => {
+	if (videoEl && stream) {
+		videoEl.srcObject = stream;
+	}
+});
 
-  onMount(() => {
-    // Make the WebView see-through so only the inner rounded container paints;
-    // the OS window is already transparent, so corners show the desktop.
-    const html = document.documentElement;
-    const body = document.body;
-    html.style.background = "transparent";
-    html.style.overflow = "hidden";
-    html.style.scrollbarGutter = "auto";
-    (html.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth =
-      "none";
-    body.style.background = "transparent";
-    body.style.overflow = "hidden";
-    body.style.margin = "0";
+onMount(() => {
+	// Make the WebView see-through so only the inner rounded container paints;
+	// the OS window is already transparent, so corners show the desktop.
+	const html = document.documentElement;
+	const body = document.body;
+	html.style.background = "transparent";
+	html.style.overflow = "hidden";
+	html.style.scrollbarGutter = "auto";
+	(html.style as CSSStyleDeclaration & { scrollbarWidth?: string }).scrollbarWidth = "none";
+	body.style.background = "transparent";
+	body.style.overflow = "hidden";
+	body.style.margin = "0";
 
-    void applySizeConstraints();
-    void startCamera();
-    void applyAspect(aspect, { snap: true });
+	void applySizeConstraints();
+	void startCamera();
+	void applyAspect(aspect, { snap: true });
 
-    const unlistenStop = listen("camera-stop", () => {
-      stopCamera();
-      getCurrentWindow().close();
-    });
-    const unlistenStarted = listen<{ startedAtUnixMs: number }>(
-      "camera-recording-started",
-      () => {
-        startRecorder();
-        void reportPreviewState();
-      },
-    );
-    const unlistenStopped = listen("camera-recording-stopped", () => {});
-    // MediaRecorder pause/resume tracks the recording's own pause so the camera
-    // track drops paused spans and stays aligned with the screen timeline.
-    const unlistenPaused = listen("camera-recording-paused", () => {
-      if (mediaRecorder?.state === "recording") mediaRecorder.pause();
-    });
-    const unlistenResumed = listen("camera-recording-resumed", () => {
-      if (mediaRecorder?.state === "paused") mediaRecorder.resume();
-    });
-    // Stop requested (driven by Rust stop_recording): finalize the recorder and
-    // hand the bytes to Rust, which is waiting on the delivery before it writes
-    // the project.
-    const unlistenFlush = listen("camera-flush", () => flushRecorder());
+	const unlistenStop = listen("camera-stop", () => {
+		stopCamera();
+		getCurrentWindow().close();
+	});
+	const unlistenStarted = listen<{ startedAtUnixMs: number }>("camera-recording-started", () => {
+		startRecorder();
+		void reportPreviewState();
+	});
+	const unlistenStopped = listen("camera-recording-stopped", () => {});
+	// MediaRecorder pause/resume tracks the recording's own pause so the camera
+	// track drops paused spans and stays aligned with the screen timeline.
+	const unlistenPaused = listen("camera-recording-paused", () => {
+		if (mediaRecorder?.state === "recording") mediaRecorder.pause();
+	});
+	const unlistenResumed = listen("camera-recording-resumed", () => {
+		if (mediaRecorder?.state === "paused") mediaRecorder.resume();
+	});
+	// Stop requested (driven by Rust stop_recording): finalize the recorder and
+	// hand the bytes to Rust, which is waiting on the delivery before it writes
+	// the project.
+	const unlistenFlush = listen("camera-flush", () => flushRecorder());
 
-    // Push preview state only on actual window changes, not on a poll
-    // (the old 350ms poll hit a Rust mutex thrice a second even when idle).
-    const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
-      void snapToAspect(payload.width, payload.height);
-      void reportPreviewState();
-    });
-    const unlistenMove = getCurrentWindow().onMoved(() => {
-      void reportPreviewState();
-    });
+	// Push preview state only on actual window changes, not on a poll
+	// (the old 350ms poll hit a Rust mutex thrice a second even when idle).
+	const unlistenResize = getCurrentWindow().onResized(({ payload }) => {
+		void snapToAspect(payload.width, payload.height);
+		void reportPreviewState();
+	});
+	const unlistenMove = getCurrentWindow().onMoved(() => {
+		void reportPreviewState();
+	});
 
-    return () => {
-      stopCamera();
-      if (liveProbeTimer !== null) window.clearTimeout(liveProbeTimer);
-      unlistenStop.then((fn) => fn());
-      unlistenStarted.then((fn) => fn());
-      unlistenStopped.then((fn) => fn());
-      unlistenPaused.then((fn) => fn());
-      unlistenResumed.then((fn) => fn());
-      unlistenFlush.then((fn) => fn());
-      unlistenResize.then((fn) => fn());
-      unlistenMove.then((fn) => fn());
-    };
-  });
+	return () => {
+		stopCamera();
+		if (liveProbeTimer !== null) window.clearTimeout(liveProbeTimer);
+		unlistenStop.then((fn) => fn());
+		unlistenStarted.then((fn) => fn());
+		unlistenStopped.then((fn) => fn());
+		unlistenPaused.then((fn) => fn());
+		unlistenResumed.then((fn) => fn());
+		unlistenFlush.then((fn) => fn());
+		unlistenResize.then((fn) => fn());
+		unlistenMove.then((fn) => fn());
+	};
+});
 
-  async function startCamera() {
-    try {
-      errorMessage = null;
-      status = "loading";
-      statusMessage = "Connecting to camera…";
+async function startCamera() {
+	try {
+		errorMessage = null;
+		status = "loading";
+		statusMessage = "Connecting to camera…";
 
-      // Validation only applies to DirectShow names; skip browser deviceId hashes.
-      if (deviceQuery && !isBrowserDeviceId(deviceQuery)) {
-        try {
-          const validation = await validateCameraSource(deviceQuery);
-          if (validation.status === "warning" || validation.status === "error") {
-            status = validation.status === "error" ? "failed" : "warning";
-            statusMessage =
-              validation.statusMessage ?? "Camera source requires validation.";
-          }
-        } catch {
-          // Non-fatal. Preview can still open via browser enumeration.
-        }
-      }
+		// Validation only applies to DirectShow names; skip browser deviceId hashes.
+		if (deviceQuery && !isBrowserDeviceId(deviceQuery)) {
+			try {
+				const validation = await validateCameraSource(deviceQuery);
+				if (validation.status === "warning" || validation.status === "error") {
+					status = validation.status === "error" ? "failed" : "warning";
+					statusMessage = validation.statusMessage ?? "Camera source requires validation.";
+				}
+			} catch {
+				// Non-fatal. Preview can still open via browser enumeration.
+			}
+		}
 
-      const { stream: openedStream, camera } = await openCameraStream(
-        deviceQuery,
-      );
-      stream = openedStream;
-      console.info(
-        `[camera-preview] opened ${camera.label} (virtual=${camera.isVirtual})`,
-      );
+		const { stream: openedStream, camera } = await openCameraStream(deviceQuery);
+		stream = openedStream;
+		console.info(`[camera-preview] opened ${camera.label} (virtual=${camera.isVirtual})`);
 
-      startLivelinessProbe();
-      window.setTimeout(() => {
-        void reportPreviewState();
-      }, 150);
-    } catch (e) {
-      const msg =
-        e instanceof CameraNotFoundError
-          ? e.message
-          : e instanceof Error
-            ? e.message
-            : String(e);
-      console.error("Camera access failed:", e);
-      errorMessage = msg;
-      status = "failed";
-      statusMessage = msg;
-    }
-  }
+		startLivelinessProbe();
+		window.setTimeout(() => {
+			void reportPreviewState();
+		}, 150);
+	} catch (e) {
+		const msg =
+			e instanceof CameraNotFoundError ? e.message : e instanceof Error ? e.message : String(e);
+		console.error("Camera access failed:", e);
+		errorMessage = msg;
+		status = "failed";
+		statusMessage = msg;
+	}
+}
 
-  function startLivelinessProbe() {
-    videoFrameSeen = false;
+function startLivelinessProbe() {
+	videoFrameSeen = false;
 
-    const markLive = () => {
-      if (!videoEl) return;
-      if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
-        videoFrameSeen = true;
-        if (status !== "failed") {
-          status = "live";
-          statusMessage = "Camera live";
-        }
-      }
-    };
+	const markLive = () => {
+		if (!videoEl) return;
+		if (videoEl.videoWidth > 0 && videoEl.videoHeight > 0) {
+			videoFrameSeen = true;
+			if (status !== "failed") {
+				status = "live";
+				statusMessage = "Camera live";
+			}
+		}
+	};
 
-    const interval = window.setInterval(() => {
-      markLive();
-      if (videoFrameSeen) window.clearInterval(interval);
-    }, 150);
+	const interval = window.setInterval(() => {
+		markLive();
+		if (videoFrameSeen) window.clearInterval(interval);
+	}, 150);
 
-    liveProbeTimer = window.setTimeout(() => {
-      window.clearInterval(interval);
-      if (!videoFrameSeen && status !== "failed") {
-        status = "warning";
-        statusMessage = "Camera opened but no live frames arrived.";
-      }
-    }, 2200);
-  }
+	liveProbeTimer = window.setTimeout(() => {
+		window.clearInterval(interval);
+		if (!videoFrameSeen && status !== "failed") {
+			status = "warning";
+			statusMessage = "Camera opened but no live frames arrived.";
+		}
+	}, 2200);
+}
 
-  function makeRecorder(mimeType: string): MediaRecorder | null {
-    try {
-      return new MediaRecorder(stream!, mimeType ? { mimeType } : undefined);
-    } catch {
-      return null;
-    }
-  }
+function makeRecorder(mimeType: string): MediaRecorder | null {
+	try {
+		return new MediaRecorder(stream!, mimeType ? { mimeType } : undefined);
+	} catch {
+		return null;
+	}
+}
 
-  function startRecorder() {
-    if (!stream || mediaRecorder) return;
-    // isTypeSupported can lie (true, but the constructor still throws for some
-    // MP4/H.264 strings on Chromium), so fall back to the browser default —
-    // which always constructs (WebM) and Rust transcodes.
-    const rec = makeRecorder(pickCameraMimeType()) ?? makeRecorder("");
-    if (!rec) {
-      console.error("[camera-preview] MediaRecorder unavailable for this stream");
-      return;
-    }
-    recordedChunks = [];
-    rec.ondataavailable = (e) => {
-      if (e.data.size > 0) recordedChunks.push(e.data);
-    };
-    // 1s timeslice so data flushes incrementally instead of buffering the whole
-    // take in one chunk (bounds memory on a long recording).
-    rec.start(1000);
-    mediaRecorder = rec;
-  }
+function startRecorder() {
+	if (!stream || mediaRecorder) return;
+	// isTypeSupported can lie (true, but the constructor still throws for some
+	// MP4/H.264 strings on Chromium), so fall back to the browser default —
+	// which always constructs (WebM) and Rust transcodes.
+	const rec = makeRecorder(pickCameraMimeType()) ?? makeRecorder("");
+	if (!rec) {
+		console.error("[camera-preview] MediaRecorder unavailable for this stream");
+		return;
+	}
+	recordedChunks = [];
+	rec.ondataavailable = (e) => {
+		if (e.data.size > 0) recordedChunks.push(e.data);
+	};
+	// 1s timeslice so data flushes incrementally instead of buffering the whole
+	// take in one chunk (bounds memory on a long recording).
+	rec.start(1000);
+	mediaRecorder = rec;
+}
 
-  // Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls
-  // finishCameraFlush at the end (success, failure, or nothing recorded) so
-  // stop_recording's wait is released promptly and the reason a track went
-  // missing reaches the backend log instead of the hidden WebView console.
-  async function flushRecorder() {
-    const rec = mediaRecorder;
-    mediaRecorder = null;
-    if (!rec || rec.state === "inactive") {
-      await finishCameraFlush("camera recorder was not running").catch(() => {});
-      return;
-    }
-    await new Promise<void>((resolve) => {
-      rec.onstop = async () => {
-        let error: string | null = null;
-        try {
-          const blob = new Blob(recordedChunks, { type: rec.mimeType });
-          recordedChunks = [];
-          if (blob.size > 0) {
-            await saveRecordedCamera(await blob.arrayBuffer());
-          } else {
-            error = "camera recorder produced no data";
-          }
-        } catch (e) {
-          error = e instanceof Error ? e.message : String(e);
-          console.error("[camera-preview] camera save failed:", e);
-        }
-        await finishCameraFlush(error).catch(() => {});
-        resolve();
-      };
-      rec.stop();
-    });
-  }
+// Stop the recorder, assemble the blob, and deliver it to Rust. ALWAYS calls
+// finishCameraFlush at the end (success, failure, or nothing recorded) so
+// stop_recording's wait is released promptly and the reason a track went
+// missing reaches the backend log instead of the hidden WebView console.
+async function flushRecorder() {
+	const rec = mediaRecorder;
+	mediaRecorder = null;
+	if (!rec || rec.state === "inactive") {
+		await finishCameraFlush("camera recorder was not running").catch(() => {});
+		return;
+	}
+	await new Promise<void>((resolve) => {
+		rec.onstop = async () => {
+			let error: string | null = null;
+			try {
+				const blob = new Blob(recordedChunks, { type: rec.mimeType });
+				recordedChunks = [];
+				if (blob.size > 0) {
+					await saveRecordedCamera(await blob.arrayBuffer());
+				} else {
+					error = "camera recorder produced no data";
+				}
+			} catch (e) {
+				error = e instanceof Error ? e.message : String(e);
+				console.error("[camera-preview] camera save failed:", e);
+			}
+			await finishCameraFlush(error).catch(() => {});
+			resolve();
+		};
+		rec.stop();
+	});
+}
 
-  function stopCamera() {
-    // Best-effort recorder teardown; a graceful flush goes through `flushRecorder`.
-    if (mediaRecorder && mediaRecorder.state !== "inactive") {
-      try {
-        mediaRecorder.stop();
-      } catch {
-        // Already stopping/stopped.
-      }
-    }
-    mediaRecorder = null;
-    if (stream) {
-      stream.getTracks().forEach((t) => t.stop());
-      stream = null;
-    }
-  }
+function stopCamera() {
+	// Best-effort recorder teardown; a graceful flush goes through `flushRecorder`.
+	if (mediaRecorder && mediaRecorder.state !== "inactive") {
+		try {
+			mediaRecorder.stop();
+		} catch {
+			// Already stopping/stopped.
+		}
+	}
+	mediaRecorder = null;
+	if (stream) {
+		stream.getTracks().forEach((t) => t.stop());
+		stream = null;
+	}
+}
 
-  function closeWindow() {
-    // Tell the panel the user dismissed the preview so its camera toggle syncs.
-    // Only the user paths (this button + Escape) run through here; the panel's
-    // own programmatic closes use a raw close() and must not flip the toggle.
-    void emit("camera-preview-closed");
-    stopCamera();
-    getCurrentWindow().close();
-  }
+function closeWindow() {
+	// Tell the panel the user dismissed the preview so its camera toggle syncs.
+	// Only the user paths (this button + Escape) run through here; the panel's
+	// own programmatic closes use a raw close() and must not flip the toggle.
+	void emit("camera-preview-closed");
+	stopCamera();
+	getCurrentWindow().close();
+}
 
-  // Apply OS min/max size constraints. Cap is keyed off screen width; every
-  // aspect is landscape-or-square (ratio ≥ 1) so a square max box bounds the
-  // window by width without clipping the proportional height.
-  async function applySizeConstraints() {
-    const { maxLogicalW: maxW, maxLogicalH: maxH, minLogicalW, minWinH } =
-      computeSizeConstraints(window.screen.availWidth || 1920);
-    // Square video bounding box; the window adds the control strip on top.
-    maxLogicalW = maxW;
-    maxLogicalH = maxH;
+// Apply OS min/max size constraints. Cap is keyed off screen width; every
+// aspect is landscape-or-square (ratio ≥ 1) so a square max box bounds the
+// window by width without clipping the proportional height.
+async function applySizeConstraints() {
+	const {
+		maxLogicalW: maxW,
+		maxLogicalH: maxH,
+		minLogicalW,
+		minWinH,
+	} = computeSizeConstraints(window.screen.availWidth || 1920);
+	// Square video bounding box; the window adds the control strip on top.
+	maxLogicalW = maxW;
+	maxLogicalH = maxH;
 
-    const win = getCurrentWindow();
-    try {
-      await win.setMinSize(new LogicalSize(minLogicalW, minWinH));
-      await win.setMaxSize(
-        new LogicalSize(maxLogicalW, maxLogicalH + CONTROL_BAR_HEIGHT),
-      );
-    } catch (e) {
-      console.warn("camera preview size constraints failed:", e);
-    }
+	const win = getCurrentWindow();
+	try {
+		await win.setMinSize(new LogicalSize(minLogicalW, minWinH));
+		await win.setMaxSize(new LogicalSize(maxLogicalW, maxLogicalH + CONTROL_BAR_HEIGHT));
+	} catch (e) {
+		console.warn("camera preview size constraints failed:", e);
+	}
 
-    // Install (or refresh) the native aspect lock for the current aspect.
-    void applyNativeAspectLock();
-  }
+	// Install (or refresh) the native aspect lock for the current aspect.
+	void applyNativeAspectLock();
+}
 
-  // Hand the aspect ratio to the Windows-native WM_SIZING constraint so drag
-  // resizes proportionally. No-op off Windows, where `snapToAspect` is the
-  // fallback. The drag rect is in physical pixels, so the min crosses as such.
-  async function applyNativeAspectLock() {
-    try {
-      const ratio = ASPECT_RATIO[aspect];
-      const dpr = window.devicePixelRatio || 1;
-      await setWindowAspectRatio(
-        "camera-preview",
-        ratio,
-        1,
-        MAX_SCREEN_FRACTION,
-        Math.round(MIN_LOGICAL_SIZE * dpr),
-        Math.round(CONTROL_BAR_HEIGHT * dpr),
-      );
-    } catch (e) {
-      // Non-Windows / older build. The JS snap-to-aspect path still applies.
-      console.warn("native aspect lock unavailable:", e);
-    }
-  }
+// Hand the aspect ratio to the Windows-native WM_SIZING constraint so drag
+// resizes proportionally. No-op off Windows, where `snapToAspect` is the
+// fallback. The drag rect is in physical pixels, so the min crosses as such.
+async function applyNativeAspectLock() {
+	try {
+		const ratio = ASPECT_RATIO[aspect];
+		const dpr = window.devicePixelRatio || 1;
+		await setWindowAspectRatio(
+			"camera-preview",
+			ratio,
+			1,
+			MAX_SCREEN_FRACTION,
+			Math.round(MIN_LOGICAL_SIZE * dpr),
+			Math.round(CONTROL_BAR_HEIGHT * dpr),
+		);
+	} catch (e) {
+		// Non-Windows / older build. The JS snap-to-aspect path still applies.
+		console.warn("native aspect lock unavailable:", e);
+	}
+}
 
-  async function applyAspect(
-    next: AspectKey,
-    opts: { snap?: boolean } = {},
-  ) {
-    aspect = next;
-    // Re-sync the native ratio so the next drag uses the new aspect.
-    void applyNativeAspectLock();
-    if (opts.snap) {
-      const win = getCurrentWindow();
-      const size = await win.outerSize();
-      const factor = window.devicePixelRatio || 1;
-      // Window width == video width (no horizontal chrome).
-      const widthLogical = size.width / factor;
-      const ratio = ASPECT_RATIO[next];
-      const [clampedW, clampedVideoH] = targetWindowSize(
-        widthLogical,
-        ratio,
-        maxLogicalW,
-        maxLogicalH,
-      );
-      isSnapping = true;
-      // Window height = video height + control strip.
-      await win.setSize(
-        new LogicalSize(clampedW, clampedVideoH + CONTROL_BAR_HEIGHT),
-      );
-      window.setTimeout(() => {
-        isSnapping = false;
-      }, 50);
-    }
-    void reportPreviewState();
-  }
+async function applyAspect(next: AspectKey, opts: { snap?: boolean } = {}) {
+	aspect = next;
+	// Re-sync the native ratio so the next drag uses the new aspect.
+	void applyNativeAspectLock();
+	if (opts.snap) {
+		const win = getCurrentWindow();
+		const size = await win.outerSize();
+		const factor = window.devicePixelRatio || 1;
+		// Window width == video width (no horizontal chrome).
+		const widthLogical = size.width / factor;
+		const ratio = ASPECT_RATIO[next];
+		const [clampedW, clampedVideoH] = targetWindowSize(
+			widthLogical,
+			ratio,
+			maxLogicalW,
+			maxLogicalH,
+		);
+		isSnapping = true;
+		// Window height = video height + control strip.
+		await win.setSize(new LogicalSize(clampedW, clampedVideoH + CONTROL_BAR_HEIGHT));
+		window.setTimeout(() => {
+			isSnapping = false;
+		}, 50);
+	}
+	void reportPreviewState();
+}
 
-  async function snapToAspect(physWidth: number, physHeight: number) {
-    if (isSnapping) return;
-    const factor = window.devicePixelRatio || 1;
-    const w = physWidth / factor;
-    // Drag deltas arrive as *window* dimensions, so peel off the control strip to
-    // get the video box the aspect ratio actually governs.
-    const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
-    const target = ASPECT_RATIO[aspect];
-    const expectedVideoH = w / target;
-    const [clampedW, clampedVideoH] = fitInsideMax(
-      w,
-      expectedVideoH,
-      target,
-      maxLogicalW,
-      maxLogicalH,
-    );
-    if (
-      Math.abs(clampedVideoH - videoH) <= 1 &&
-      Math.abs(clampedW - w) <= 1
-    ) return;
-    isSnapping = true;
-    try {
-      await getCurrentWindow().setSize(
-        new LogicalSize(clampedW, clampedVideoH + CONTROL_BAR_HEIGHT),
-      );
-    } finally {
-      window.setTimeout(() => {
-        isSnapping = false;
-      }, 50);
-    }
-  }
+async function snapToAspect(physWidth: number, physHeight: number) {
+	if (isSnapping) return;
+	const factor = window.devicePixelRatio || 1;
+	const w = physWidth / factor;
+	// Drag deltas arrive as *window* dimensions, so peel off the control strip to
+	// get the video box the aspect ratio actually governs.
+	const videoH = physHeight / factor - CONTROL_BAR_HEIGHT;
+	const target = ASPECT_RATIO[aspect];
+	const expectedVideoH = w / target;
+	const [clampedW, clampedVideoH] = fitInsideMax(
+		w,
+		expectedVideoH,
+		target,
+		maxLogicalW,
+		maxLogicalH,
+	);
+	if (Math.abs(clampedVideoH - videoH) <= 1 && Math.abs(clampedW - w) <= 1) return;
+	isSnapping = true;
+	try {
+		await getCurrentWindow().setSize(new LogicalSize(clampedW, clampedVideoH + CONTROL_BAR_HEIGHT));
+	} finally {
+		window.setTimeout(() => {
+			isSnapping = false;
+		}, 50);
+	}
+}
 
-  function cycleAspect() {
-    const nextIndex = (ASPECTS.indexOf(aspect) + 1) % ASPECTS.length;
-    const next = ASPECTS[nextIndex];
-    // Circle → rounded off 1:1; a circle on a non-square box renders as an
-    // ellipse the editor's composited bubble doesn't support.
-    if (next !== "1:1" && shape === "circle") {
-      shape = "rounded";
-    }
-    void applyAspect(next, { snap: true });
-  }
+function cycleAspect() {
+	const nextIndex = (ASPECTS.indexOf(aspect) + 1) % ASPECTS.length;
+	const next = ASPECTS[nextIndex];
+	// Circle → rounded off 1:1; a circle on a non-square box renders as an
+	// ellipse the editor's composited bubble doesn't support.
+	if (next !== "1:1" && shape === "circle") {
+		shape = "rounded";
+	}
+	void applyAspect(next, { snap: true });
+}
 
-  function cycleShape() {
-    const allowed = allowedShapesFor(aspect);
-    const idx = allowed.indexOf(shape);
-    // Start from the first allowed option if the current shape isn't allowed.
-    shape = allowed[(idx === -1 ? 0 : idx + 1) % allowed.length];
-    void reportPreviewState();
-  }
+function cycleShape() {
+	const allowed = allowedShapesFor(aspect);
+	const idx = allowed.indexOf(shape);
+	// Start from the first allowed option if the current shape isn't allowed.
+	shape = allowed[(idx === -1 ? 0 : idx + 1) % allowed.length];
+	void reportPreviewState();
+}
 
-  function toggleMirror() {
-    isMirrored = !isMirrored;
-    void reportPreviewState();
-  }
+function toggleMirror() {
+	isMirrored = !isMirrored;
+	void reportPreviewState();
+}
 
-  // `circle` is 50% (box is always 1:1 then), `rounded` matches the token.
-  const cssRadius = $derived.by(() => {
-    switch (shape) {
-      case "circle":
-        return "50%";
-      case "square":
-        return "0px";
-      default:
-        return `${WINDOW_RADIUS}px`;
-    }
-  });
+// `circle` is 50% (box is always 1:1 then), `rounded` matches the token.
+const cssRadius = $derived.by(() => {
+	switch (shape) {
+		case "circle":
+			return "50%";
+		case "square":
+			return "0px";
+		default:
+			return `${WINDOW_RADIUS}px`;
+	}
+});
 
-  // Icon + tooltip for the current shape, drives the cycle button's label.
-  const shapeMeta = $derived.by(() => {
-    switch (shape) {
-      case "circle":
-        return { icon: Circle, label: "Circle" };
-      case "square":
-        return { icon: Square, label: "Square" };
-      default:
-        return { icon: Squircle, label: "Rounded" };
-    }
-  });
+// Icon + tooltip for the current shape, drives the cycle button's label.
+const shapeMeta = $derived.by(() => {
+	switch (shape) {
+		case "circle":
+			return { icon: Circle, label: "Circle" };
+		case "square":
+			return { icon: Square, label: "Square" };
+		default:
+			return { icon: Squircle, label: "Rounded" };
+	}
+});
 
-  async function reportPreviewState() {
-    const win = getCurrentWindow();
-    const position = await win.outerPosition();
-    const size = await win.outerSize();
-    const state = buildPreviewState(
-      position,
-      size,
-      {
-        width: Math.max(window.screen.availWidth || 1, 1),
-        height: Math.max(window.screen.availHeight || 1, 1),
-      },
-      window.devicePixelRatio || 1,
-      shape,
-      isMirrored,
-      status,
-    );
-    await updateCameraPreviewState(state);
-  }
+async function reportPreviewState() {
+	const win = getCurrentWindow();
+	const position = await win.outerPosition();
+	const size = await win.outerSize();
+	const state = buildPreviewState(
+		position,
+		size,
+		{
+			width: Math.max(window.screen.availWidth || 1, 1),
+			height: Math.max(window.screen.availHeight || 1, 1),
+		},
+		window.devicePixelRatio || 1,
+		shape,
+		isMirrored,
+		status,
+	);
+	await updateCameraPreviewState(state);
+}
 
-  function handleKeydown(e: KeyboardEvent) {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      closeWindow();
-    }
-  }
+function handleKeydown(e: KeyboardEvent) {
+	if (e.key === "Escape") {
+		e.preventDefault();
+		closeWindow();
+	}
+}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />

@@ -821,7 +821,6 @@ pub fn set_cloud_api_url(
 /// upload, share). Intentionally not exposed via Tauri command — the
 /// frontend should never see the raw token. Sync features should call
 /// dedicated Rust commands that fetch + use this internally.
-#[allow(dead_code)]
 pub fn current_session_token() -> Option<String> {
     read_session_token()
 }

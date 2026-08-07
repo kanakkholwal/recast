@@ -17,7 +17,7 @@ import {
 	selectTickClass,
 	thumbFrameClass,
 } from "$lib/library/card-styles";
-import { formatSize } from "$lib/format/files";
+import { formatSize } from "@recast/editor/lib/format/files";
 import {
 	deleteFile,
 	launchRecordingPanel,

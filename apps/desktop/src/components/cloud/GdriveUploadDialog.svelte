@@ -6,8 +6,8 @@
  * activity center; the store fires success/error toasts either way. Drive
  * uploads can be cancelled, so the running state offers Cancel.
  */
-import { formatSize } from "$lib/format/files";
-import { etaLabel } from "$lib/format/time";
+import { formatSize } from "@recast/editor/lib/format/files";
+import { etaLabel } from "@recast/editor/lib/format/time";
 import { gdrive } from "$lib/stores/gdrive.svelte";
 import {
 	AlertTriangle,

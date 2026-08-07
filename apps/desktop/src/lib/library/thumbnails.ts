@@ -1,6 +1,6 @@
 /** Thumbnail loading + the immutable thumbnail-map updates for the listings. */
 
-import { relativeDate } from "$lib/format/files";
+import { relativeDate } from "@recast/editor/lib/format/files";
 import { generateThumbnails, type RecordingEntry } from "$lib/ipc";
 
 export type ThumbnailMap = Record<string, string>;
@@ -12,9 +12,7 @@ export type ThumbnailMap = Record<string, string>;
  */
 export function createThumbnailLoader() {
 	let pass = 0;
-	return async function load(
-		items: RecordingEntry[],
-	): Promise<ThumbnailMap | null> {
+	return async function load(items: RecordingEntry[]): Promise<ThumbnailMap | null> {
 		const current = ++pass;
 		const settled = await Promise.allSettled(
 			items.map(async (item) => {
@@ -32,11 +30,7 @@ export function createThumbnailLoader() {
 }
 
 /** Re-key a thumbnail under a renamed path; unchanged if none was cached. */
-export function renameThumbnail(
-	map: ThumbnailMap,
-	oldPath: string,
-	newPath: string,
-): ThumbnailMap {
+export function renameThumbnail(map: ThumbnailMap, oldPath: string, newPath: string): ThumbnailMap {
 	const existing = map[oldPath];
 	if (!existing) return map;
 	const { [oldPath]: _, ...rest } = map;
@@ -51,10 +45,7 @@ export function removeThumbnail(map: ThumbnailMap, path: string): ThumbnailMap {
 }
 
 /** Drop several paths' thumbnails in one immutable pass. */
-export function removeThumbnails(
-	map: ThumbnailMap,
-	paths: Iterable<string>,
-): ThumbnailMap {
+export function removeThumbnails(map: ThumbnailMap, paths: Iterable<string>): ThumbnailMap {
 	const next = { ...map };
 	for (const p of paths) delete next[p];
 	return next;

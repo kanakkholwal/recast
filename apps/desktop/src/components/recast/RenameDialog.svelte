@@ -2,7 +2,7 @@
 import { Pencil } from "@recast/icons";
 import { Button } from "@recast/ui/button";
 import DialogShell from "@recast/editor/components/dialog/DialogShell.svelte";
-import { stemSelectionRange, toErrorMessage } from "./dialog.logic";
+import { stemSelectionRange, toErrorMessage } from "@recast/editor/components/dialog/dialog.logic";
 
 interface Props {
 	open: boolean;

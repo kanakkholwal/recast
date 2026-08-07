@@ -1,7 +1,7 @@
 /** URL params + device mapping/defaulting for the device-picker window. */
 
-import type { BrowserCamera } from "$lib/camera/browser-devices";
-import type { AudioDeviceInfo, CameraDeviceInfo } from "$lib/ipc-types";
+import type { BrowserCamera } from "@recast/editor/lib/camera/browser-devices";
+import type { AudioDeviceInfo, CameraDeviceInfo } from "@recast/editor/lib/wire-types";
 
 export type DeviceType = "mic" | "camera";
 
@@ -40,8 +40,6 @@ export function pickDefault(
 	isMic: boolean,
 ): string | null {
 	if (devices.length === 0) return null;
-	const def = isMic
-		? (devices as AudioDeviceInfo[]).find((d) => d.isDefault)
-		: devices[0];
+	const def = isMic ? (devices as AudioDeviceInfo[]).find((d) => d.isDefault) : devices[0];
 	return def?.id ?? null;
 }

@@ -33,9 +33,13 @@ import { onMount } from "svelte";
 import { cubicOut } from "svelte/easing";
 import { fade, fly } from "svelte/transition";
 
-import { enumerateCameras, type BrowserCamera } from "$lib/camera/browser-devices";
+import { enumerateCameras, type BrowserCamera } from "@recast/editor/lib/camera/browser-devices";
 import { getAudioDevices, type AudioDeviceInfo } from "$lib/ipc";
-import { COUNTDOWN_OPTIONS, countdownToken, type RecordingProfile } from "$lib/profiles";
+import {
+	COUNTDOWN_OPTIONS,
+	countdownToken,
+	type RecordingProfile,
+} from "@recast/editor/lib/profiles";
 import { profilesStore } from "$lib/stores/profiles.svelte";
 import {
 	buildDuplicate,
@@ -51,7 +55,7 @@ import {
 } from "./profiles.logic";
 import { registerShortcutHandlers } from "$lib/shortcuts/registry.svelte";
 import ConfirmDialog from "@recast/editor/components/dialog/ConfirmDialog.svelte";
-import { DIALOG_SURFACE } from "$components/recast/dialog.styles";
+import { DIALOG_SURFACE } from "@recast/editor/components/dialog/dialog.styles";
 
 // mode = 'create' means draft is not yet in the store; mode = 'edit' means
 // draft mirrors an existing entry. Persistence only happens on Save.

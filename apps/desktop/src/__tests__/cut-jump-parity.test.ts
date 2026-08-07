@@ -16,10 +16,18 @@
  * a 4K recording, scrub across the cut, observe the frame).
  */
 
-import { describe, expect, it } from 'vitest';
-import { outputToOriginal, spanAtOriginal, timeMapFromSegments } from '../lib/timeline/time-map';
-import { activeClippedSegment, clipSegmentToSpan, clipWordsToSpan } from '../lib/captions/clip-with-cuts';
-import type { TranscriptSegment, TranscriptWord } from '$lib/ipc';
+import { describe, expect, it } from "vitest";
+import {
+	outputToOriginal,
+	spanAtOriginal,
+	timeMapFromSegments,
+} from "@recast/editor/lib/timeline/time-map";
+import {
+	activeClippedSegment,
+	clipSegmentToSpan,
+	clipWordsToSpan,
+} from "@recast/editor/lib/captions/clip-with-cuts";
+import type { TranscriptSegment, TranscriptWord } from "$lib/ipc";
 
 const N_ITERATIONS = 50;
 const CUT = { start: 10, end: 12 };
@@ -35,7 +43,7 @@ const segments = (function () {
 const timeMap = timeMapFromSegments(segments);
 const outputDuration = timeMap.outputDuration;
 
-describe('cut-jump parity: the playback surface is correct across a cut', () => {
+describe("cut-jump parity: the playback surface is correct across a cut", () => {
 	it(`50 iterations of seek-and-span-lookup complete in p95 < 250ms`, () => {
 		// The fixture simulates the editor's cut-jump behavior:
 		//   - Player requests a seek to just after the cut
@@ -72,7 +80,7 @@ describe('cut-jump parity: the playback surface is correct across a cut', () => 
 		expect(p95).toBeLessThan(250);
 	});
 
-	it('supersede: a new seek cancels a stale in-flight seek (output-side)', () => {
+	it("supersede: a new seek cancels a stale in-flight seek (output-side)", () => {
 		// Simulate the editor's preview loop:
 		//   1. At output 9.5 (pre-cut), the active segment is one in the
 		//      pre-cut kept span.
@@ -104,23 +112,23 @@ describe('cut-jump parity: the playback surface is correct across a cut', () => 
 	});
 });
 
-describe('cut-jump parity: caption clipping behaves across a cut', () => {
+describe("cut-jump parity: caption clipping behaves across a cut", () => {
 	// A segment that spans the cut. We assert the post-cut display
 	// shows ONLY the kept portion, with clipped per-word timing.
 	const spanningSegment: TranscriptSegment = {
-		id: 'spanning',
+		id: "spanning",
 		start: 9, // 1s before the cut
 		end: 13, // 1s after the cut
-		text: 'spans the cut',
+		text: "spans the cut",
 		words: [
-			{ start: 9, end: 9.5, text: 'spans' },
-			{ start: 9.5, end: 10.5, text: 'the' }, // crosses cut start
-			{ start: 10.5, end: 11.5, text: 'cut' }, // inside cut
-			{ start: 11.5, end: 13, text: 'now' }, // post cut
+			{ start: 9, end: 9.5, text: "spans" },
+			{ start: 9.5, end: 10.5, text: "the" }, // crosses cut start
+			{ start: 10.5, end: 11.5, text: "cut" }, // inside cut
+			{ start: 11.5, end: 13, text: "now" }, // post cut
 		],
 	};
 
-	it('a cut-crossing segment clips to the kept span', () => {
+	it("a cut-crossing segment clips to the kept span", () => {
 		const postSpan = { origStart: 12, origEnd: 60 };
 		const clipped = activeClippedSegment([spanningSegment], postSpan, 12.3);
 		expect(clipped).not.toBeNull();
@@ -128,17 +136,17 @@ describe('cut-jump parity: caption clipping behaves across a cut', () => {
 		expect(clipped?.visible).toEqual({ start: 12, end: 13 });
 	});
 
-	it('word-level animation re-times across a cut', () => {
+	it("word-level animation re-times across a cut", () => {
 		const postSpan = { origStart: 12, origEnd: 60 };
 		const clipped = clipWordsToSpan(spanningSegment.words, postSpan);
 		// Words before the cut are dropped; the post-cut words are kept.
-		expect(clipped.map((w) => w.text)).toEqual(['now']);
+		expect(clipped.map((w) => w.text)).toEqual(["now"]);
 		// The "now" word's start is clipped to the span start.
 		expect(clipped[0]?.start).toBe(12);
 		expect(clipped[0]?.end).toBe(13);
 	});
 
-	it('the previous segment is no longer active after the cut', () => {
+	it("the previous segment is no longer active after the cut", () => {
 		const preSpan = { origStart: 0, origEnd: 10 };
 		const preClipped = activeClippedSegment([spanningSegment], preSpan, 9.5);
 		expect(preClipped).not.toBeNull();
@@ -155,13 +163,13 @@ describe('cut-jump parity: caption clipping behaves across a cut', () => {
 		expect(preClipped?.visible).not.toEqual(postClipped?.visible);
 	});
 
-	it('a caption that does NOT span the cut is gone after the cut', () => {
+	it("a caption that does NOT span the cut is gone after the cut", () => {
 		const preOnlySegment: TranscriptSegment = {
-			id: 'pre-only',
+			id: "pre-only",
 			start: 4,
 			end: 6,
-			text: 'before the cut',
-			words: [{ start: 4, end: 6, text: 'before' }],
+			text: "before the cut",
+			words: [{ start: 4, end: 6, text: "before" }],
 		};
 		const postSpan = { origStart: 12, origEnd: 60 };
 		const result = activeClippedSegment([preOnlySegment], postSpan, 12.3);
@@ -169,14 +177,16 @@ describe('cut-jump parity: caption clipping behaves across a cut', () => {
 		expect(result).toBeNull();
 	});
 
-	it('clipSegmentToSpan returns null when the segment is entirely outside', () => {
+	it("clipSegmentToSpan returns null when the segment is entirely outside", () => {
 		const span = { origStart: 12, origEnd: 60 };
-		expect(clipSegmentToSpan({ id: 'a', start: 1, end: 3, text: '', words: [] }, span)).toBeNull();
-		expect(clipSegmentToSpan({ id: 'a', start: 61, end: 65, text: '', words: [] }, span)).toBeNull();
+		expect(clipSegmentToSpan({ id: "a", start: 1, end: 3, text: "", words: [] }, span)).toBeNull();
+		expect(
+			clipSegmentToSpan({ id: "a", start: 61, end: 65, text: "", words: [] }, span),
+		).toBeNull();
 	});
 });
 
-describe('cut-jump parity: editor audio engine per-track math', () => {
+describe("cut-jump parity: editor audio engine per-track math", () => {
 	// A simple truth table for master × per-track gain composition.
 	// The production code computes `volume * trackVolume / 10000` then
 	// zeros it on any mute. The test pins the contract.
@@ -190,32 +200,33 @@ describe('cut-jump parity: editor audio engine per-track math', () => {
 	): { system: number; mic: number } {
 		const sys =
 			masterMuted || systemMuted ? 0 : Math.max(0, Math.min(1, (master * systemVolume) / 10_000));
-		const mic = masterMuted || micMuted ? 0 : Math.max(0, Math.min(1, (master * micVolume) / 10_000));
+		const mic =
+			masterMuted || micMuted ? 0 : Math.max(0, Math.min(1, (master * micVolume) / 10_000));
 		return { system: sys, mic: mic };
 	}
 
-	it('master mute zeros both tracks regardless of per-track volumes', () => {
+	it("master mute zeros both tracks regardless of per-track volumes", () => {
 		expect(effective(100, true, 100, false, 100, false)).toEqual({ system: 0, mic: 0 });
 		expect(effective(200, true, 200, false, 200, false)).toEqual({ system: 0, mic: 0 });
 	});
 
-	it('system-only mute silences system but not mic', () => {
+	it("system-only mute silences system but not mic", () => {
 		expect(effective(100, false, 100, true, 100, false)).toEqual({ system: 0, mic: 1 });
 	});
 
-	it('mic-only mute silences mic but not system', () => {
+	it("mic-only mute silences mic but not system", () => {
 		expect(effective(100, false, 100, false, 100, true)).toEqual({ system: 1, mic: 0 });
 	});
 
-	it('200% master × 200% track = 4× (clamped to 1)', () => {
+	it("200% master × 200% track = 4× (clamped to 1)", () => {
 		expect(effective(200, false, 200, false, 200, false)).toEqual({ system: 1, mic: 1 });
 	});
 
-	it('50% master × 50% track = 0.25', () => {
+	it("50% master × 50% track = 0.25", () => {
 		expect(effective(50, false, 50, false, 50, false)).toEqual({ system: 0.25, mic: 0.25 });
 	});
 
-	it('master × track math is independent for system vs mic', () => {
+	it("master × track math is independent for system vs mic", () => {
 		// Loud system, soft mic.
 		expect(effective(100, false, 150, false, 25, false)).toEqual({ system: 1, mic: 0.25 });
 		// Soft system, loud mic.
@@ -223,12 +234,12 @@ describe('cut-jump parity: editor audio engine per-track math', () => {
 	});
 });
 
-describe('cut-jump parity: layer system clip math', () => {
+describe("cut-jump parity: layer system clip math", () => {
 	// The editor's annotation layers have a parallel time-map problem. An
 	// annotation at original time [9, 11] that crosses a cut at [10, 12]
 	// should only be shown during the kept portion. The math is the same as
 	// caption clipping; the test pins the contract.
-	it('a layer that spans a cut is visible only on the kept portion', () => {
+	it("a layer that spans a cut is visible only on the kept portion", () => {
 		const layer = { start: 9, end: 11 };
 		const span = { origStart: 12, origEnd: 60 };
 		const visible = {

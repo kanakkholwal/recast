@@ -1,5 +1,5 @@
 import { browser } from "$app/environment";
-import { enqueueExport, type RunExportOptions } from "$lib/services/export";
+import { enqueueExport, type RunExportOptions } from "@recast/editor/lib/services/export";
 import { notifyJobDone } from "$lib/notify";
 import {
 	type ExportJobDto,
@@ -13,8 +13,8 @@ import {
 	retryExportJob,
 	saveBrowserExportVideo,
 } from "$lib/ipc";
-import { renderJobToBytes } from "$lib/export/browser-export";
-import type { ExportJob } from "$lib/export/export-job";
+import { renderJobToBytes } from "@recast/editor/lib/export/browser-export";
+import type { ExportJob } from "@recast/editor/lib/export/export-job";
 import {
 	clearJobProgress,
 	setJobProgress,

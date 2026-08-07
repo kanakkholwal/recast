@@ -4,16 +4,14 @@
  * from probed displays, and the 60→null persistence sentinel.
  */
 
-import type { DisplayInfo, LastSource } from "$lib/ipc-types";
+import type { DisplayInfo, LastSource } from "@recast/editor/lib/wire-types";
 
 /**
  * 60 is always offered; 120/144/240 appear only when a display can present them
  * (the -2 tolerance covers 119.88/143.86-style reported rates).
  */
 export function computeFpsOptions(maxRefreshHz: number): number[] {
-	return [60, 120, 144, 240].filter(
-		(rate) => rate === 60 || maxRefreshHz >= rate - 2,
-	);
+	return [60, 120, 144, 240].filter((rate) => rate === 60 || maxRefreshHz >= rate - 2);
 }
 
 /** Desired rate capped to the highest option this display supports. */
@@ -26,10 +24,7 @@ export function clampFps(desiredFps: number, options: number[]): number {
  * source, else the highest attached display (windows/regions don't pin one).
  * Falls back to 60 when nothing usable is reported.
  */
-export function resolveMaxRefresh(
-	displays: DisplayInfo[],
-	last: LastSource | null,
-): number {
+export function resolveMaxRefresh(displays: DisplayInfo[], last: LastSource | null): number {
 	const globalMax = displays.reduce((m, d) => Math.max(m, d.refreshHz || 0), 0);
 	let selected = 0;
 	if (last?.kind === "monitor") {

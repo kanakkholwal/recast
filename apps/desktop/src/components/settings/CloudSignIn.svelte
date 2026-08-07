@@ -1,5 +1,5 @@
 <script lang="ts">
-import { formatBytes } from "$lib/format/bytes";
+import { formatBytes } from "@recast/editor/lib/format/bytes";
 import { cloudShare } from "$lib/stores/cloudShare.svelte";
 import {
 	ArrowUpRight,

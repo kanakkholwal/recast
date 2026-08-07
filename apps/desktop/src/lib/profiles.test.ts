@@ -5,7 +5,7 @@ import {
 	findDefaultProfile,
 	reconcileProfileHydration,
 	type RecordingProfile,
-} from "./profiles";
+} from "@recast/editor/lib/profiles";
 
 function profile(over: Partial<RecordingProfile> = {}): RecordingProfile {
 	return {
@@ -71,10 +71,7 @@ describe("reconcileProfileHydration (localStorage -> backend migration)", () => 
 
 	it("repairs a broken default invariant when adopting", () => {
 		const backend = {
-			profiles: [
-				profile({ id: "a", isDefault: false }),
-				profile({ id: "b", isDefault: false }),
-			],
+			profiles: [profile({ id: "a", isDefault: false }), profile({ id: "b", isDefault: false })],
 			enabled: true,
 			initialized: true,
 		};

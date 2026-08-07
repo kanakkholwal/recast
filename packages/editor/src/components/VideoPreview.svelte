@@ -1271,6 +1271,8 @@ $effect(() => {
 					max_av_drift_ms: Math.round(maxAvDriftSec * 1000),
 					max_upload_ms: Math.round((frameRing?.uploadStats.maxMs ?? 0) * 100) / 100,
 					avg_upload_ms: Math.round((frameRing?.uploadStats.avgMs ?? 0) * 100) / 100,
+					slow_upload_count: frameRing?.uploadStats.slowCount ?? 0,
+					slow_upload_pct: Math.round((frameRing?.uploadStats.slowPct ?? 0) * 10) / 10,
 					width: source.width,
 					height: source.height,
 					fps: Math.round(source.fps),

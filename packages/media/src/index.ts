@@ -11,12 +11,11 @@
  */
 
 export { MediaError } from "./errors";
-export type { MediaErrorCode } from "./errors";
 
 // input + conversion
 export { openInput } from "./input";
 export type { MediaSource } from "./input";
-export { mediaRefExtension, mediaRefKey, toMediaRef } from "./media-ref";
+export { mediaRefKey, toMediaRef } from "./media-ref";
 export type { MediaRef } from "./media-ref";
 export {
 	runConversion,
@@ -64,12 +63,8 @@ export type { GifWriter } from "./encoders";
 export {
 	FrameCache,
 	getFrameCache,
-	setFrameCache,
-	setFrameStorage,
-	resetFrameCache,
 } from "./cache";
 export type { CacheStats, FrameCacheConfig } from "./cache";
-export { IndexedDBFrameStorage } from "./cache/indexeddb-storage";
 export { frameBudget, frameCacheCapBytes, textureRingFrames } from "./cache/frame-budget";
 export type { FrameBudget } from "./cache/frame-budget";
 export { estimateFrameBytes } from "./cache/storage";
