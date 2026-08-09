@@ -414,7 +414,9 @@ async function loadCursorTrackIfNeeded() {
 				requestRedraw();
 			});
 		}
-		smoother.load(cursorSamplesRaw);
+		// By URL: the worker re-reads the track itself rather than us paying a
+		// structured clone of ~225k sample objects on the main thread.
+		smoother.load(cursorSamplesRaw, url);
 		ensureSmoothingCurrent();
 	} catch (err) {
 		console.warn("Cursor track load failed:", err);

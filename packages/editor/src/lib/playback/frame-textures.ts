@@ -45,6 +45,8 @@ export class FrameTextureRing {
 	#gl: WebGL2RenderingContext;
 	#textures: WebGLTexture[] = [];
 	#slots: RingSlot[] = [];
+	/** Allocated storage size per slot, parallel to `#textures`. */
+	#dims: Array<{ w: number; h: number }> = [];
 	#next = 0;
 	#lastBound = -1;
 	#uploads = 0;
@@ -65,13 +67,20 @@ export class FrameTextureRing {
 			const tex = gl.createTexture();
 			if (!tex) break;
 			gl.bindTexture(gl.TEXTURE_2D, tex);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-			gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+			this.#applyParams();
 			this.#textures.push(tex);
 			this.#slots.push({ tsUs: -1 });
+			// 0×0 means "storage not allocated yet"; the first `put` sizes it.
+			this.#dims.push({ w: 0, h: 0 });
 		}
+	}
+
+	#applyParams(): void {
+		const gl = this.#gl;
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+		gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 	}
 
 	get capacity(): number {
@@ -84,17 +93,41 @@ export class FrameTextureRing {
 	 */
 	put(frame: VideoFrame, tsUs: number): boolean {
 		const gl = this.#gl;
-		const tex = this.#textures[this.#next];
+		let tex = this.#textures[this.#next];
 		const slot = this.#slots[this.#next];
-		if (!tex || !slot) return false;
+		const dim = this.#dims[this.#next];
+		if (!tex || !slot || !dim) return false;
+		const w = frame.displayWidth;
+		const h = frame.displayHeight;
+		if (w <= 0 || h <= 0) return false;
 		gl.activeTexture(gl.TEXTURE0);
 		gl.bindTexture(gl.TEXTURE_2D, tex);
 		gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
 		const startedMs = performance.now();
 		try {
-			gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frame);
+			if (dim.w !== w || dim.h !== h) {
+				// `texStorage2D` is immutable, so a size change needs a fresh texture.
+				// The ring is normally rebuilt on a resolution change; this is the
+				// safety net for anything that doesn't.
+				if (dim.w !== 0) {
+					gl.deleteTexture(tex);
+					const fresh = gl.createTexture();
+					if (!fresh) return false;
+					tex = fresh;
+					this.#textures[this.#next] = fresh;
+					gl.bindTexture(gl.TEXTURE_2D, fresh);
+					this.#applyParams();
+				}
+				// Allocate ONCE with a sized internal format. `texImage2D` per frame
+				// re-specified the whole level, so the driver revalidated and could
+				// reallocate 33 MB of storage on every 4K frame.
+				gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+				dim.w = w;
+				dim.h = h;
+			}
+			gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, frame);
 		} catch (err) {
-			console.error("WebGL texImage2D failed for VideoFrame:", err);
+			console.error("WebGL frame upload failed:", err);
 			slot.tsUs = -1;
 			return false;
 		}
@@ -202,5 +235,6 @@ export class FrameTextureRing {
 		for (const tex of this.#textures) this.#gl.deleteTexture(tex);
 		this.#textures = [];
 		this.#slots = [];
+		this.#dims = [];
 	}
 }

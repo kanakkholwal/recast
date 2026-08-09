@@ -290,12 +290,24 @@ export class AudioTimelineEngine {
 	async setMusicClips(clips: ReadonlyArray<MusicClipSpec>): Promise<void> {
 		const gen = ++this.#musicGen;
 		this.#disposeMusic();
+		// One decode per distinct URL. `AudioBuffer`s are shareable across source
+		// nodes, so the same track placed twice used to cost two full decodes and
+		// two resident copies of its PCM.
+		const decoded = new Map<string, Promise<AudioBuffer>>();
+		const decode = (url: string): Promise<AudioBuffer> => {
+			const existing = decoded.get(url);
+			if (existing) return existing;
+			const pending = fetch(url).then(async (res) => {
+				if (!res.ok) throw new Error(`HTTP ${res.status}`);
+				return this.#ctx.decodeAudioData(await res.arrayBuffer());
+			});
+			decoded.set(url, pending);
+			return pending;
+		};
 		for (const spec of clips) {
 			if (spec.gain <= 0) continue;
 			try {
-				const res = await fetch(spec.url);
-				if (!res.ok) continue;
-				const buffer = await this.#ctx.decodeAudioData(await res.arrayBuffer());
+				const buffer = await decode(spec.url);
 				// A newer call took over while we were decoding — drop this result
 				// (its #disposeMusic already ran) so we don't double up or leak a gain.
 				if (gen !== this.#musicGen) return;

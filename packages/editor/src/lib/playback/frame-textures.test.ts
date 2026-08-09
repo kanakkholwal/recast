@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickSlot, type RingSlot } from "./frame-textures";
+import { FrameTextureRing, pickSlot, type RingSlot } from "./frame-textures";
 
 const slots = (...ts: number[]): RingSlot[] => ts.map((tsUs) => ({ tsUs }));
 
@@ -35,5 +35,82 @@ describe("pickSlot", () => {
 
 	it("handles an empty ring", () => {
 		expect(pickSlot([], 1_000, 0)).toBe(-1);
+	});
+});
+
+/** Records the calls the upload path is judged on. */
+function fakeGl() {
+	const calls = { storage: [] as Array<[number, number]>, sub: 0, created: 0, deleted: 0 };
+	const gl = {
+		TEXTURE_2D: 1,
+		TEXTURE0: 2,
+		RGBA: 3,
+		RGBA8: 4,
+		UNSIGNED_BYTE: 5,
+		TEXTURE_WRAP_S: 6,
+		TEXTURE_WRAP_T: 7,
+		TEXTURE_MIN_FILTER: 8,
+		TEXTURE_MAG_FILTER: 9,
+		CLAMP_TO_EDGE: 10,
+		LINEAR: 11,
+		UNPACK_PREMULTIPLY_ALPHA_WEBGL: 12,
+		createTexture: () => {
+			calls.created++;
+			return { id: calls.created };
+		},
+		deleteTexture: () => {
+			calls.deleted++;
+		},
+		bindTexture() {},
+		activeTexture() {},
+		texParameteri() {},
+		pixelStorei() {},
+		texStorage2D: (_t: number, _l: number, _f: number, w: number, h: number) => {
+			calls.storage.push([w, h]);
+		},
+		texSubImage2D: () => {
+			calls.sub++;
+		},
+	};
+	return { gl: gl as unknown as WebGL2RenderingContext, calls };
+}
+
+const frame = (w: number, h: number) =>
+	({ displayWidth: w, displayHeight: h }) as unknown as VideoFrame;
+
+describe("FrameTextureRing upload", () => {
+	it("allocates storage once per slot, then only sub-uploads", () => {
+		const { gl, calls } = fakeGl();
+		const ring = new FrameTextureRing(gl, 2);
+		for (let i = 0; i < 10; i++) ring.put(frame(3840, 2160), i * 1000);
+
+		// 2 slots -> 2 allocations, not one per frame.
+		expect(calls.storage).toEqual([
+			[3840, 2160],
+			[3840, 2160],
+		]);
+		expect(calls.sub).toBe(10);
+	});
+
+	it("reallocates a slot when the frame size changes", () => {
+		const { gl, calls } = fakeGl();
+		const ring = new FrameTextureRing(gl, 1);
+		ring.put(frame(1920, 1080), 0);
+		ring.put(frame(3840, 2160), 1000);
+
+		expect(calls.storage).toEqual([
+			[1920, 1080],
+			[3840, 2160],
+		]);
+		// Immutable storage can't be resized, so the texture is replaced.
+		expect(calls.deleted).toBe(1);
+	});
+
+	it("rejects a degenerate frame instead of allocating zero-sized storage", () => {
+		const { gl, calls } = fakeGl();
+		const ring = new FrameTextureRing(gl, 1);
+		expect(ring.put(frame(0, 0), 0)).toBe(false);
+		expect(calls.storage).toEqual([]);
+		expect(calls.sub).toBe(0);
 	});
 });
